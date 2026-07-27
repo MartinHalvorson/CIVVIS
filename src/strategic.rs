@@ -1611,6 +1611,14 @@ impl Ai for StrategicAi {
     fn review_census(&self) -> Option<ReviewCensus> {
         Some(self.census)
     }
+
+    /// The reasoning an observer sees is the inner agent's. This wrapper's
+    /// rollouts run over *clones* of that agent, whose journals are silent by
+    /// construction, so a hypothetical line of play never reaches the log —
+    /// only the plan this agent went on to carry out.
+    fn attach_journal(&mut self, journal: crate::reasoning::Journal) {
+        self.inner.attach_journal(journal);
+    }
 }
 
 #[derive(Clone, Copy, Debug)]

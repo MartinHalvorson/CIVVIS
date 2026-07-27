@@ -5,6 +5,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::game::{
     City, Game, Item, RememberedCity, DIPLOMATIC_VICTORY_POINTS, EXOPLANET_DESTINATION,
+    EXOPLANET_TARGETS,
 };
 use crate::world::Tile;
 use crate::Pos;
@@ -60,6 +61,35 @@ pub fn knows_globe(p: &crate::game::Player) -> bool {
     p.went_around
         || GLOBE_TECHS.iter().any(|tech| p.techs.contains(*tech))
         || p.great_people.iter().any(|id| id.as_str() == GLOBE_GREAT_PERSON)
+}
+
+/// The instruments that reach past what an eye can see.
+///
+/// The five wandering stars are naked-eye objects and always were: Mercury,
+/// Venus, Mars, Jupiter and Saturn are in every sky anybody has ever looked at,
+/// and a people who know their world is a ball can place all five of them. The
+/// rung above is the one the telescope opened, and it opened as one rung —
+/// Uranus in 1781, Ceres in 1801, Neptune in 1846 by being predicted before it
+/// was looked for, and in 1838 the first measured distance to another star. So
+/// this gate hands over the outer system and a neighbourhood with real
+/// distances in it at the same moment, because that is when both arrived.
+///
+/// Newton is the recruit who does it without the discovery, for the same reason
+/// Hypatia opens the globe: he built the reflecting telescope every one of
+/// those findings was made with a descendant of.
+pub const OUTER_SYSTEM_TECHS: [&str; 1] = ["scientific_theory"];
+pub const OUTER_SYSTEM_GREAT_PERSON: &str = "isaac_newton";
+
+/// Whether this civilization can see past the five wanderers. A people who have
+/// not proved their world round are not handed the outer planets by a tech:
+/// there is no system to put them in yet.
+pub fn sees_outer_system(p: &crate::game::Player) -> bool {
+    knows_globe(p)
+        && (OUTER_SYSTEM_TECHS.iter().any(|tech| p.techs.contains(*tech))
+            || p.great_people
+                .iter()
+                .any(|id| id.as_str() == OUTER_SYSTEM_GREAT_PERSON)
+            || p.science_projects.contains(EXOPLANET_EYE))
 }
 
 /// The shape of a Planet world, for a client that has to draw it.
@@ -432,6 +462,12 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
             "knows_globe": omniscient || knows_globe(p),
             "globe_techs": GLOBE_TECHS,
             "globe_great_person": GLOBE_GREAT_PERSON,
+            // The middle rung: the outer system, and the neighbourhood with
+            // real distances on it. Reported the same way and for the same
+            // reason as the two either side of it.
+            "sees_outer_system": omniscient || sees_outer_system(p),
+            "outer_system_techs": OUTER_SYSTEM_TECHS,
+            "outer_system_great_person": OUTER_SYSTEM_GREAT_PERSON,
             "sees_exoplanet": omniscient || p.science_projects.contains(EXOPLANET_EYE),
             "exoplanet_eye": EXOPLANET_EYE,
             "civics": p.civics, "civic": p.civic,
@@ -518,6 +554,16 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
             "science_projects": p.science_projects,
             "exoplanet_distance": round1(p.exoplanet_distance),
             "exoplanet_speed": round1(g.exoplanet_speed(pid)),
+            // Which world this expedition is aimed at, and how much of the
+            // neighbourhood this civilization has found. Before the launch the
+            // target is what it *would* set out for, which is what makes the
+            // survey legible while there is still time to deepen it.
+            "exoplanet_target": g.exoplanet_target(pid).id,
+            "exoplanet_target_name": g.exoplanet_target(pid).name,
+            "exoplanet_target_ly": g.exoplanet_target(pid).light_years,
+            "exoplanet_launched": p.exoplanet_target.is_some(),
+            "exoplanet_surveyed": g.exoplanet_survey(pid).len(),
+            "exoplanet_roster": EXOPLANET_TARGETS.len(),
             "pantheon": p.pantheon,
             "religion": p.religion,
             "religion_beliefs": p.religion_beliefs,
@@ -1011,6 +1057,12 @@ fn recent_events(g: &Game, pid: usize, omniscient: bool) -> Vec<Value> {
         .map(|event| {
             json!({
                 "turn": event.turn,
+                // Whose event this is. The omniscient feed rotates through the
+                // seats, so "the civilization being observed" is a different
+                // answer on the next frame and the browser cannot infer this
+                // from the frame it arrived on — which is what the event log's
+                // civ filter needs, and the text only spells out in prose.
+                "player": event.player,
                 "category": event.category,
                 "text": event.text,
                 "pos": event.pos.map(|pos| [pos.0, pos.1]),
@@ -1846,6 +1898,83 @@ mod tests {
         assert_eq!(observation(&game, 0)["me"]["sees_exoplanet"], json!(true));
     }
 
+    /// The rung between the round world and the space age.
+    ///
+    /// The five wandering stars are naked-eye objects — Mercury, Venus, Mars,
+    /// Jupiter and Saturn have been in every sky anybody ever looked at — so a
+    /// people who know their world is a ball can place all five. Everything
+    /// past Saturn arrived with the telescope, and it arrived as one piece:
+    /// Uranus in 1781, Ceres in 1801, Neptune in 1846 by prediction, and in
+    /// 1838 the first measured distance to another star. The gate hands over
+    /// the outer system and a neighbourhood with real distances in it together,
+    /// because that is when both of them turned up.
+    #[test]
+    fn the_outer_system_waits_for_the_instrument_that_found_it() {
+        let mut game = Game::new(2, 18, 12, 5_517, 25, 0);
+
+        // A people who cannot place their own world round have no system to put
+        // an outer planet in, so the discovery on its own is not enough.
+        game.players[0]
+            .techs
+            .insert(OUTER_SYSTEM_TECHS[0].to_string());
+        assert_eq!(observation(&game, 0)["me"]["knows_globe"], json!(false));
+        assert_eq!(
+            observation(&game, 0)["me"]["sees_outer_system"],
+            json!(false),
+        );
+
+        // With the round world proved, the same discovery opens it.
+        game.players[0].went_around = true;
+        assert_eq!(
+            observation(&game, 0)["me"]["sees_outer_system"],
+            json!(true),
+        );
+
+        // Newton is the recruit who does it without the discovery, for the same
+        // reason Hypatia opens the globe: the reflecting telescope every one of
+        // those findings was made with a descendant of is his.
+        game.players[0].techs.remove(OUTER_SYSTEM_TECHS[0]);
+        assert_eq!(
+            observation(&game, 0)["me"]["sees_outer_system"],
+            json!(false),
+        );
+        game.players[0]
+            .great_people
+            .push(OUTER_SYSTEM_GREAT_PERSON.to_string());
+        assert_eq!(
+            observation(&game, 0)["me"]["sees_outer_system"],
+            json!(true),
+        );
+
+        // A civilization that skipped straight to putting an eye above the air
+        // is not sent back down a rung for it. The ladder only ever climbs.
+        let mut leaper = Game::new(2, 18, 12, 5_519, 25, 0);
+        leaper.players[0].went_around = true;
+        leaper.players[0]
+            .science_projects
+            .insert(EXOPLANET_EYE.to_string());
+        let seen = observation(&leaper, 0);
+        assert_eq!(seen["me"]["sees_exoplanet"], json!(true));
+        assert_eq!(seen["me"]["sees_outer_system"], json!(true));
+
+        // And a spectator was never the party in the dark about any of it.
+        let watching = observation_spectator(&game, 1);
+        assert_eq!(watching["me"]["sees_outer_system"], json!(true));
+        assert_eq!(
+            observation_player_view(&game, 1)["me"]["sees_outer_system"],
+            json!(false),
+        );
+
+        // The client is told which discovery it was, so it does not have to
+        // invent the sentence naming it.
+        let own = observation(&game, 0);
+        assert_eq!(own["me"]["outer_system_techs"], json!(OUTER_SYSTEM_TECHS));
+        assert_eq!(
+            own["me"]["outer_system_great_person"],
+            json!(OUTER_SYSTEM_GREAT_PERSON),
+        );
+    }
+
     /// A launch is a fact about the world, not about the shape the world is
     /// drawn in, so the same craft belongs over a flat board as over the globe.
     /// A sheet of paper has no limb for it to pass behind, so what a flat map
@@ -1934,6 +2063,27 @@ mod tests {
         let personal = categories(&observation(&game, 0));
         assert!(personal.iter().any(|category| category == "Science"));
         assert!(personal.iter().any(|category| category == "Culture"));
+    }
+
+    /// Every entry says whose it is.
+    ///
+    /// The omniscient feed rotates through the seats, so the combined log a
+    /// spectator reads is fed from all of them and "the civilization being
+    /// observed" is a different answer on the next frame. Without this the
+    /// browser's event log can show an entry it cannot attribute, and its civ
+    /// filter hides an entry that plainly names the civilization in its text.
+    #[test]
+    fn an_event_on_the_wire_names_the_civilization_it_belongs_to() {
+        let mut game = Game::new(3, 18, 12, 7, 25, 0);
+        game.note(1, "War", "declared war on somebody", None);
+        for observed in [observation(&game, 1), observation_spectator(&game, 1)] {
+            let events = observed["events"].as_array().unwrap();
+            let mine = events
+                .iter()
+                .find(|event| event["category"] == "War")
+                .expect("the war note");
+            assert_eq!(mine["player"], 1);
+        }
     }
 
     /// The browser draws its blast, writes its log entry and marks its war card

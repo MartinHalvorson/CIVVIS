@@ -2404,3 +2404,125 @@ one context read as true in another. The genome was present in the repository
 and absent in the process; the fallback was correct in a checkout and wrong in
 deployment. Ship-and-verify means verifying where the code runs, not where it
 was written.
+
+## 2026-07-27 — PRE-REGISTRATION: the shipped genome may be tuned for the wrong map
+
+Written before the runs report, so the prediction is on record rather than
+fitted to the outcome.
+
+`data/evolved/best.json` was evolved and validated entirely at **4 players on
+24×16**. The exhibition runs **6 players on 74×46 with 9 city-states**
+(`tools/spectator_supervisor.py`'s own command line).
+
+```
+validation : 24x16 =  384 tiles / 4 players =  96 tiles per player
+deployment : 74x46 = 3404 tiles / 6 players = 567 tiles per player
+             -> 5.9x more room per player where it actually runs
+```
+
+The champion's expansion genes moved sharply toward building tall:
+
+| gene | default | champion | change |
+|---|---|---|---|
+| `city_target` | 4.000 | 2.408 | **−40%** |
+| `settler_min_pop` | 2.000 | 4.457 | **+123%** |
+| `settle_dist` | 0.400 | 0.692 | +73% |
+| `min_city_dist` | 4.000 | 3.638 | −9% |
+| `settler_stop_turn` | 150.0 | 143.2 | −5% |
+
+It targets 40% fewer cities and demands a city more than twice as populous
+before producing a settler. On 96 tiles per player that is correct — there is
+nowhere to put more cities. On 567 tiles per player, land is nearly free and
+under-expansion is a severe error.
+
+**Prediction: the shipped genome under-expands at the deployment configuration
+and may be weaker than `Weights::default()` there.** The eval prints city
+counts, so the mechanism is checkable independently of the win rate.
+
+**Runs in flight**, both pre-registered, fresh disjoint seeds, stock budget:
+
+```
+ai_eval advanced_evolved advanced --players 6 --width 74 --height 46 \
+        --city-states 9 --pairs 200 --seed 190000 --turns 500
+ai_eval strategic_deep strategic_deep_default --players 4 --pairs 500 \
+        --seed 180000 --turns 500
+```
+
+**If the prediction holds**, the artifact needs scoping to small four-player
+maps or re-evolving at the deployment configuration, and this file will say so.
+**If it is refuted**, the genome transfers and the mechanism above is wrong.
+
+### The process failure this exposes, which is not statistical
+
+The genome carries a 1300-map validation, a 500-map confirmation and a 240-map
+pilot. **All three used the configuration it was evolved on.** Three
+independent seed sets cannot detect a mismatch between where a thing is
+measured and where it is deployed — that is not a power problem, it is a
+different error, and adding maps would never have found it.
+
+It is the second instance of that error in two days. The first was the working
+directory: `data/evolved/best.json` resolved in a checkout and not in the
+process that serves games, until the genome was compiled into the binary.
+**Both were invisible to every statistic and visible immediately on reading
+what the deployment actually does.**
+
+## 2026-07-27 — every result in this file was measured at one map density
+
+The entry above pre-registers a mismatch for the shipped genome: evolved and
+validated at 4 players on 24×16, deployed at 6 players on 74×46. Checking
+whether that was one experiment's mistake or a property of the harness:
+
+```
+recorded `ai_eval` commands in this file          20
+      ... that specify a map size                  1   (the deployment check itself)
+ai_eval defaults                                  --width 24 --height 16 --players 2
+```
+
+**Nineteen of twenty ran at 24×16.** So every strength number in this
+ledger — `strategic_r20`, `strategic_h80`, the `strategic_deep` promotion,
+`policy_wide`'s −313, branch fidelity's +37, the genome's +49 — was measured at
+
+```
+     24x16 / 4 players =  96 tiles per player
+     74x46 / 6 players = 567 tiles per player   (what the exhibition runs)
+```
+
+**about one sixth of the deployment density**, and none has been checked for
+density sensitivity.
+
+### This is a caveat, not a retraction
+
+Mechanisms differ in how much density can matter to them, and the difference is
+not rhetorical:
+
+- **Expansion weights are directly coupled.** `city_target`, `settler_min_pop`
+  and `settle_dist` answer "how many cities can I fit and when should I stop",
+  which is a question *about* density. The shipped genome moved `city_target`
+  −40% and `settler_min_pop` +123%, which is the correct answer at 96 tiles per
+  player and plausibly the wrong one at 567. That one has a mechanism and a
+  pre-registered test.
+- **Branch fidelity has no obvious coupling.** Projecting a rollout from the
+  planner in force rather than a fresh one is a construction fix; nothing in it
+  refers to available land. Lower risk — but unchecked, which is a different
+  thing from safe.
+- **Macro-search depth and cadence are in between.** More room means longer
+  games and different victory-lane dynamics, so the horizon that saturates at
+  24×16 need not saturate at 74×46. The 22/56/89% saturation table is itself a
+  24×16 measurement.
+
+### What to do about it
+
+Cheap and worth doing: **state the map size in every recorded command.** Nineteen
+entries here do not, so a reader cannot tell what was measured without knowing
+the binary's defaults.
+
+Expensive and worth doing selectively: re-measure the promoted changes at
+deployment density. A deployment-config game costs roughly 200× a 24×16 one, so
+this is a per-result decision, not a sweep. Note that **matching density does
+not require matching dimensions** — 47×47 at four players is 552 tiles per
+player, close to deployment, at about 6× the cost of 24×16 rather than 200×.
+
+The general form, which has now cost this session twice: **a number is true
+inside the conditions that produced it.** The first instance was a working
+directory, the second is a map density, and both were invisible to every
+statistic computed on top of them.

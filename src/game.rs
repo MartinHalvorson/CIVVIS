@@ -11748,6 +11748,63 @@ pub const GAME_MODES: [&str; 2] = ["apocalypse", "secret_societies"];
 
 pub const EXOPLANET_DESTINATION: f64 = 50.0;
 
+/// A world the expedition can be sent to.
+///
+/// These are the real ones: every temperate planet inside fifty light-years
+/// that is actually argued about as a target, at the distance the trip really
+/// is, with the thing that is really wrong with it. There is a genuine
+/// trade-off in the list and it is the trade-off the field has — the nearest
+/// worlds are around flare stars and tidally locked, and the calmest star with
+/// a temperate planet is nearly five times further away.
+pub struct ExoplanetTarget {
+    pub id: &'static str,
+    pub name: &'static str,
+    /// The trip, in light-years.
+    pub light_years: f64,
+    /// How habitable it is thought to be. This is what the expedition aims
+    /// for, because the distance costs nothing (see [`Game::exoplanet_pace`]).
+    pub grade: u8,
+}
+
+/// Ordered by distance, nearest first. **Append, never insert** — a saved
+/// target is stored by id, but the survey draws from this list by index and
+/// re-ordering it re-rolls which worlds a given seed reveals.
+pub const EXOPLANET_TARGETS: [ExoplanetTarget; 10] = [
+    ExoplanetTarget { id: "proxima_b", name: "Proxima Centauri b", light_years: 4.24, grade: 1 },
+    ExoplanetTarget { id: "tau_ceti_e", name: "Tau Ceti e", light_years: 11.91, grade: 1 },
+    ExoplanetTarget { id: "gj273_b", name: "Luyten's Star b", light_years: 12.35, grade: 2 },
+    ExoplanetTarget { id: "teegarden_b", name: "Teegarden's Star b", light_years: 12.50, grade: 2 },
+    ExoplanetTarget { id: "wolf1061_c", name: "Wolf 1061 c", light_years: 14.05, grade: 1 },
+    ExoplanetTarget { id: "hd20794_d", name: "82 Eridani d", light_years: 19.71, grade: 2 },
+    ExoplanetTarget { id: "gj667_cc", name: "Gliese 667 Cc", light_years: 23.62, grade: 2 },
+    ExoplanetTarget { id: "gliese12_b", name: "Gliese 12 b", light_years: 39.70, grade: 1 },
+    ExoplanetTarget { id: "trappist1_e", name: "TRAPPIST-1 e", light_years: 40.66, grade: 2 },
+    ExoplanetTarget { id: "lhs1140_b", name: "LHS 1140 b", light_years: 48.93, grade: 3 },
+];
+
+/// Where the expedition goes if nothing has been surveyed at all: the world
+/// anybody would already have heard of, at the far end of the list and very
+/// nearly the fifty light-years this engine has always quoted.
+pub const EXOPLANET_DEFAULT_TARGET: &str = "lhs1140_b";
+
+/// How many of the roster a civilization has found, per thing it has put above
+/// the air. Detection is not a matter of distance — TRAPPIST-1 is forty
+/// light-years out and was found early because its star is small enough for a
+/// planet to blot out a real fraction of it, while plenty of nearer worlds are
+/// still argued over — so what a survey buys is *more of the list*, not the
+/// near end of it.
+///
+/// This is the payoff the Moon landing and the Mars colony did not have. Both
+/// were dead ends: the Moon paid a one-off Culture bonus and Mars paid nothing
+/// at all, so a civilization racing the science victory correctly skipped
+/// straight past both. Now they are the survey, and what they buy is which
+/// world humanity actually reaches.
+pub const EXOPLANET_SURVEY: [(&str, usize); 3] = [
+    ("launch_earth_satellite", 3),
+    ("launch_moon_landing", 2),
+    ("launch_mars_colony", 2),
+];
+
 /// Every civilization's standing in every victory race, each as a percentage of
 /// what that race requires. Produced by [`Game::victory_races`].
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -11785,6 +11842,10 @@ pub const GOVERNMENT_BASE_ANARCHY_TURNS: u32 = 2;
 /// Shipped `DIPLOMACY_PEACE_MIN_TURNS`: a peace treaty holds for ten turns on
 /// standard speed before either signatory may declare war again.
 const PEACE_TREATY_TURNS: u32 = 10;
+/// Shipped `Eras_XP1.GameEraMinimumTurns`: every era is held open this many
+/// standard turns before the next one may begin, whatever the leader has
+/// researched. It is the same 40 for every era in the table.
+const ERA_MINIMUM_TURNS: u32 = 40;
 /// Shipped `DIPLOMACY_WAR_MIN_TURNS`: a war runs ten turns before either side
 /// may sue for peace. Declaring is a commitment, not a gesture.
 const WAR_MIN_TURNS: u32 = 10;
@@ -13277,6 +13338,17 @@ pub struct Player {
     /// budget is negative: one per complete 10 Gold of deficit.
     #[serde(default)]
     pub bankruptcy_amenity_penalty: i64,
+    /// Extra weight this empire's governors put on food when assigning
+    /// citizens, added to `citizen_strategy`'s food appetite.
+    ///
+    /// Per **player**, not per game, because `ai_eval` is seat-mirrored: both
+    /// arms play the same map, so anything global cannot be a treatment arm.
+    /// Zero is the shipped behaviour and old saves default to it. Nothing in
+    /// the engine sets this — an agent does, which is the point: citizen
+    /// assignment is the one city-level decision no player, human or AI, can
+    /// currently express.
+    #[serde(default)]
+    pub citizen_food_bias: f64,
     pub faith: f64,
     /// Gathering Storm strategic-resource stockpiles. Luxuries remain copy
     /// based and are intentionally not represented here.
@@ -13385,6 +13457,16 @@ pub struct Player {
     pub dedications: BTreeSet<String>,
     #[serde(default)]
     pub dedication_choices: usize,
+    /// How often each Dedication trigger has fired for this civilization since
+    /// the current age began, counted whether or not it was dedicated. A
+    /// Dedication is a bet on your own behaviour, so the only honest estimate
+    /// of what one would pay is what the behaviour it names actually did.
+    #[serde(default)]
+    pub era_triggers: BTreeMap<String, i64>,
+    /// `era_triggers` as it stood when the last age ended — the evidence a
+    /// civilization has in hand at the moment it must dedicate the next one.
+    #[serde(default)]
+    pub last_era_triggers: BTreeMap<String, i64>,
     /// Cities this civilization's religion has taken at least once, so
     /// Exodus of the Evangelists pays only for the first conversion of each.
     #[serde(default)]
@@ -13455,6 +13537,11 @@ pub struct Player {
     /// Light-years travelled after launching the Exoplanet Expedition.
     #[serde(default)]
     pub exoplanet_distance: f64,
+    /// Which world the expedition was aimed at, by id in [`EXOPLANET_TARGETS`].
+    /// Set once, when the expedition launches, from what had been surveyed by
+    /// then; `None` until then, and on a save written before targets existed.
+    #[serde(default)]
+    pub exoplanet_target: Option<String>,
     #[serde(default)]
     pub envoys: Vec<(usize, i64)>, // (city-state pid, envoys placed)
     #[serde(default)]
@@ -13490,6 +13577,7 @@ impl Player {
             gold: 0.0,
             gold_per_turn: 0.0,
             bankruptcy_amenity_penalty: 0,
+            citizen_food_bias: 0.0,
             faith: 0.0,
             strategic_resources: BTreeMap::new(),
             strategic_resource_shortages: BTreeMap::new(),
@@ -13528,6 +13616,8 @@ impl Player {
             golden_age_threshold: 24,
             dedications: BTreeSet::new(),
             dedication_choices: 0,
+            era_triggers: BTreeMap::new(),
+            last_era_triggers: BTreeMap::new(),
             converted_cities: BTreeSet::new(),
             discovered_natural_wonders: BTreeSet::new(),
             governors: Vec::new(),
@@ -13552,6 +13642,7 @@ impl Player {
             religious_tourism_lifetime: 0.0,
             science_projects: BTreeSet::new(),
             exoplanet_distance: 0.0,
+            exoplanet_target: None,
             envoys: Vec::new(),
             counters: BTreeMap::new(),
             great_work_pieces: Vec::new(),
@@ -13907,10 +13998,9 @@ pub struct Event {
     pub turn: u32,
     /// The civilization this happened to. Events are visible only to them.
     pub player: usize,
-    /// General, Cities, War, Nuclear, Science, Culture, Faith, People,
-    /// Diplomacy. `Nuclear` is deliberately its own category rather than a
-    /// flavour of `War`: it is the only one a client is expected to give a
-    /// distinct icon and a place at the top of the log.
+    /// One of [`EVENT_CATEGORIES`]. `Nuclear` is deliberately its own category
+    /// rather than a flavour of `War`: it is the only one a client is expected
+    /// to give a distinct icon and a place at the top of the log.
     pub category: String,
     pub text: String,
     /// Where to look, when there is somewhere to look.
@@ -13922,6 +14012,34 @@ pub struct Event {
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub important: bool,
 }
+
+/// Every category [`Event`] can carry.
+///
+/// This is a vocabulary, not a hint: the browser's event log offers a filter
+/// per kind, and a kind gathers categories, so a category nothing on the
+/// client claims is an entry a reader can see in the combined log and never
+/// reach by asking a narrower question. `browser_lets_an_observer_narrow_the_
+/// two_chronicles` in `server.rs` checks this list against the client's
+/// grouping, so adding one here without grouping it there fails the build.
+/// `Game::note` asserts membership in debug builds, which is what catches a
+/// category invented at a call site and declared nowhere.
+///
+/// `Faith` is currently written only by the browser, which files a religion
+/// being founded under it. It stays declared because the classification is
+/// shared: the log the reader sees is fed from both sides.
+pub const EVENT_CATEGORIES: [&str; 11] = [
+    "General",
+    "World",
+    "Cities",
+    "War",
+    "Nuclear",
+    "Science",
+    "Culture",
+    "Faith",
+    "People",
+    "Diplomacy",
+    "CityState",
+];
 
 /// Ruleset identifiers are snake_case; event text is for people.
 fn pretty(id: &str) -> String {
@@ -14431,6 +14549,9 @@ pub struct Game {
     pub barb_alerted_until: BTreeMap<Pos, u32>,
     pub routes: Vec<TradeRoute>,
     pub world_era: usize,
+    /// Turn `world_era` last changed. Shipped `Eras_XP1.GameEraMinimumTurns`
+    /// holds an era open for 40 standard turns before the next one may start.
+    pub world_era_since: u32,
     /// Irreversible Gathering Storm climate phase, from 0 (pre-warming) to 7.
     pub climate_phase: u8,
     /// Meteor showers landed so far - the Apocalypse pack budgets a fixed
@@ -14613,6 +14734,8 @@ struct GameSer {
     #[serde(default)]
     world_era: usize,
     #[serde(default)]
+    world_era_since: u32,
+    #[serde(default)]
     climate_phase: u8,
     #[serde(default)]
     meteor_strikes: u32,
@@ -14713,6 +14836,7 @@ impl From<GameSer> for Game {
             barb_alerted_until: s.barb_alerted_until.into_iter().collect(),
             routes: s.routes,
             world_era: s.world_era,
+            world_era_since: s.world_era_since,
             climate_phase: s.climate_phase,
             meteor_strikes: s.meteor_strikes,
             disaster_intensity: s.disaster_intensity,
@@ -14862,6 +14986,7 @@ impl From<Game> for GameSer {
             barb_alerted_until: g.barb_alerted_until.into_iter().collect(),
             routes: g.routes,
             world_era: g.world_era,
+            world_era_since: g.world_era_since,
             climate_phase: g.climate_phase,
             meteor_strikes: g.meteor_strikes,
             disaster_intensity: g.disaster_intensity,
@@ -15046,6 +15171,7 @@ impl Game {
             barb_alerted_until: BTreeMap::new(),
             routes: Vec::new(),
             world_era: start_era,
+            world_era_since: 0,
             climate_phase: 0,
             meteor_strikes: 0,
             disaster_intensity,
@@ -15728,6 +15854,10 @@ impl Game {
         text: impl Into<String>,
         pos: Option<Pos>,
     ) {
+        debug_assert!(
+            EVENT_CATEGORIES.contains(&category),
+            "{category} is not one of the event categories the browser's log filter groups"
+        );
         if self
             .players
             .get(pid)
@@ -16121,6 +16251,11 @@ impl Game {
             Some("goody_hut") => {
                 self.map.tiles.get_mut(&pos).unwrap().improvement = None;
                 self.roll_goody_reward(owner, uid, pos);
+                // MOMENT_GOODY_HUT_TRIGGERED, +1, from the Ancient era on and
+                // never obsolete. Only a major banks Era Score.
+                if !self.players[owner].is_minor {
+                    self.add_era_score(owner, 1);
+                }
             }
             Some("meteor_goody") => {
                 // The crashed meteor is its own goody type with its own
@@ -16507,12 +16642,51 @@ impl Game {
             return;
         }
         // Reaching for a seat mutably copies it, so ask before taking.
-        if !self.players[first].met.contains(&second) {
-            self.players[first].met.insert(second);
+        // MOMENT_PLAYER_MET_MAJOR is +1 to each side, and completing the table
+        // is MOMENT_PLAYER_MET_ALL_MAJORS at +3, or +5 first in the world.
+        let major = |pid: usize| {
+            self.players
+                .get(pid)
+                .is_some_and(|player| !player.is_minor && !player.is_barbarian)
+        };
+        let between_majors = major(first) && major(second);
+        for (observer, subject) in [(first, second), (second, first)] {
+            if self.players[observer].met.contains(&subject) {
+                continue;
+            }
+            self.players[observer].met.insert(subject);
+            if between_majors {
+                self.add_era_score(observer, 1);
+                self.note_met_all_majors(observer);
+            }
         }
-        if !self.players[second].met.contains(&first) {
-            self.players[second].met.insert(first);
+    }
+
+    /// `MOMENT_PLAYER_MET_ALL_MAJORS`, +3, or +5 as
+    /// `MOMENT_PLAYER_MET_ALL_MAJORS_FIRST_IN_WORLD`.
+    fn note_met_all_majors(&mut self, pid: usize) {
+        if self.players[pid].counters.contains_key("met_all_majors") {
+            return;
         }
+        let outstanding = self
+            .players
+            .iter()
+            .any(|other| {
+                other.id != pid
+                    && other.alive
+                    && !other.is_minor
+                    && !other.is_barbarian
+                    && !self.players[pid].met.contains(&other.id)
+            });
+        if outstanding {
+            return;
+        }
+        self.players[pid].counters.insert("met_all_majors".to_string(), 1);
+        let first_in_world = !self
+            .players
+            .iter()
+            .any(|other| other.id != pid && other.counters.contains_key("met_all_majors"));
+        self.add_era_score(pid, if first_in_world { 5 } else { 3 });
     }
 
     /// Pre-game teams are permanent. `None` means an ordinary free-for-all
@@ -29797,6 +29971,7 @@ impl Game {
             culture: 1.20,
             faith: 0.90,
         };
+        weights.food += player.citizen_food_bias;
         let mut focus = "balanced".to_string();
 
         // Existing districts make cities lean into their established role.
@@ -30063,8 +30238,23 @@ impl Game {
     /// value without violating nutrition. This keeps the hot turn loop fast
     /// while preventing a production-focused governor from starving a city.
     pub fn city_citizen_plan(&self, cid: u32) -> CitizenPlan {
+        self.city_citizen_plan_weighted(cid, None)
+    }
+
+    /// The same citizen assignment under a substituted weight vector.
+    ///
+    /// `None` is exactly [`Self::city_citizen_plan`] — this is additive and
+    /// changes no behaviour. It exists so an instrument can ask what a city
+    /// *would* work under different appetites without the engine adopting
+    /// them, which is how `docs/OPENINGS.md` bounds the food ceiling on the
+    /// capital: expansion is gated by capital growth, and the shipped weights
+    /// value production at 1.55 against food at 1.25.
+    pub fn city_citizen_plan_weighted(&self, cid: u32, weights: Option<Yields>) -> CitizenPlan {
         let city = &self.cities[&cid];
-        let strategy = self.citizen_strategy(cid);
+        let mut strategy = self.citizen_strategy(cid);
+        if let Some(weights) = weights {
+            strategy.weights = weights;
+        }
         let mut center = self.workable_tile_yields(city.pos);
         center.food = center.food.max(2.0);
         center.production = center.production.max(1.0);
@@ -30707,7 +30897,22 @@ impl Game {
         yields
     }
 
+    /// Yields this city would produce if its citizens were assigned under
+    /// `weights` instead of its own appetites.
+    ///
+    /// `None` is exactly what the city actually produces, so this is additive
+    /// and changes no behaviour; it is never on the cached path. It exists so
+    /// an instrument can bound the food available to a capital without the
+    /// engine adopting a different governor — see `docs/OPENINGS.md`.
+    pub fn city_yields_weighted(&self, cid: u32, weights: Yields) -> Yields {
+        self.city_yields_inner(cid, Some(weights))
+    }
+
     fn city_yields_uncached(&self, cid: u32) -> Yields {
+        self.city_yields_inner(cid, None)
+    }
+
+    fn city_yields_inner(&self, cid: u32, weights: Option<Yields>) -> Yields {
         // A city's yields reach for two empire-wide derivations — its Amenity
         // band and its housed Great Works. Opening a scope here means they are
         // taken once per city rather than once per lookup, and nests harmlessly
@@ -30719,7 +30924,7 @@ impl Game {
         center.food = center.food.max(2.0);
         center.production = center.production.max(1.0);
         ys.add(center);
-        let citizen_plan = self.city_citizen_plan(cid);
+        let citizen_plan = self.city_citizen_plan_weighted(cid, weights);
         for pos in citizen_plan.worked_tiles {
             ys.add(self.workable_tile_yields(pos));
         }
@@ -36517,7 +36722,78 @@ impl Game {
         self.cities.insert(cid, city);
         self.reveal(pid, pos, 3);
         self.note(pid, "Cities", format!("founded {founded}"), Some(pos));
+        if !is_minor {
+            self.note_city_founding_moments(pid, pos);
+        }
         cid
+    }
+
+    /// The `MOMENT_CITY_BUILT_*` family, all +1 and all stackable — the shipped
+    /// game pays a city for every unusual thing about where it stands, and a
+    /// well-sited city commonly earns two or three at once.
+    ///
+    /// Modelled here: on Desert, on Snow, on Tundra, next to a floodable river,
+    /// next to a volcano, next to a natural wonder, and next to another
+    /// civilization's city. `MOMENT_CITY_BUILT_NEW_CONTINENT` is +2 and
+    /// `MOMENT_CITY_BUILT_BECAME_LARGEST_CIV_BY_MARGIN` +3; the first is here,
+    /// the second needs a population comparison this call site cannot see.
+    fn note_city_founding_moments(&mut self, pid: usize, pos: Pos) {
+        let Some(tile) = self.map.get(pos) else {
+            return;
+        };
+        let terrain = tile.terrain.clone();
+        let mut earned = 0;
+        if terrain.starts_with("desert") {
+            earned += 1;
+        }
+        if terrain.starts_with("snow") {
+            earned += 1;
+        }
+        if terrain.starts_with("tundra") {
+            earned += 1;
+        }
+        if tile.has_river() {
+            earned += 1;
+        }
+        // A neighbourhood is read once, so the three adjacency moments share a
+        // single walk of the surrounding tiles.
+        let mut volcano = false;
+        let mut natural_wonder = false;
+        for neighbour in hex::neighbors(pos) {
+            let Some(near) = self.map.get(neighbour) else {
+                continue;
+            };
+            if near.feature.as_deref() == Some("volcano") {
+                volcano = true;
+            }
+            if near
+                .feature
+                .as_deref()
+                .is_some_and(|feature| self.rules.features.get(feature).is_some_and(|spec| spec.natural_wonder))
+            {
+                natural_wonder = true;
+            }
+        }
+        if volcano {
+            earned += 1;
+        }
+        if natural_wonder {
+            earned += 1;
+        }
+        if self
+            .cities
+            .values()
+            .any(|other| other.owner != pid && self.wdist(other.pos, pos) <= 5)
+        {
+            earned += 1;
+        }
+        if self.on_foreign_continent(pid, pos) {
+            // MOMENT_CITY_BUILT_NEW_CONTINENT is worth 2.
+            earned += 2;
+        }
+        if earned > 0 {
+            self.add_era_score(pid, earned);
+        }
     }
 
     fn feature_removal_unlocked(&self, pid: usize, feature: &str) -> bool {
@@ -39123,6 +39399,7 @@ impl Game {
     fn install_government(&mut self, pid: usize, g: &str) {
         self.players[pid].government = Some(g.to_string());
         self.players[pid].past_governments.insert(g.to_string());
+        self.note_government_tier_moment(pid, g);
         self.players[pid].pending_government = None;
         self.players[pid].anarchy_turns = 0;
         // new slot layout: drop slotted cards until they fit again
@@ -43484,6 +43761,123 @@ impl Game {
             .collect()
     }
 
+    /// The `MOMENT_CITY_SIZE_*_FIRST` ladder: the first time any city of this
+    /// civilization reaches 10, 15, 20 and 25 Population, +1 each, or +2 as the
+    /// `_FIRST_IN_WORLD` variant. The four thresholds are the ones the shipped
+    /// moment descriptions name.
+    fn note_city_size_moment(&mut self, pid: usize, pop: i64) {
+        if self.players[pid].is_minor || self.players[pid].is_barbarian {
+            return;
+        }
+        let Some(size) = [(10, "small"), (15, "medium"), (20, "large"), (25, "extra_large")]
+            .into_iter()
+            .find(|(threshold, _)| *threshold == pop)
+            .map(|(_, name)| name)
+        else {
+            return;
+        };
+        let key = format!("city_size:{size}");
+        if self.players[pid].counters.contains_key(&key) {
+            return;
+        }
+        self.players[pid].counters.insert(key.clone(), 1);
+        let first_in_world = !self
+            .players
+            .iter()
+            .any(|other| other.id != pid && other.counters.contains_key(&key));
+        self.add_era_score(pid, if first_in_world { 2 } else { 1 });
+    }
+
+    /// `MOMENT_GOVERNMENT_ENACTED_TIER_N_FIRST`, +2, or +3 as
+    /// `_FIRST_IN_WORLD`. Tiers follow the shipped unlock civics: Political
+    /// Philosophy opens tier 1, Divine Right / Exploration / Reformed Church
+    /// tier 2, the Modern trio tier 3, and the Information trio tier 4.
+    fn note_government_tier_moment(&mut self, pid: usize, government: &str) {
+        if self.players[pid].is_minor || self.players[pid].is_barbarian {
+            return;
+        }
+        let tier = match government {
+            "autocracy" | "oligarchy" | "classical_republic" => 1,
+            "monarchy" | "merchant_republic" | "theocracy" => 2,
+            "communism" | "democracy" | "fascism" => 3,
+            "corporate_libertarianism" | "digital_democracy" | "synthetic_technocracy" => 4,
+            // Chiefdom is the starting government and names no moment.
+            _ => return,
+        };
+        let key = format!("government_tier:{tier}");
+        if self.players[pid].counters.contains_key(&key) {
+            return;
+        }
+        self.players[pid].counters.insert(key.clone(), 1);
+        let first_in_world = !self
+            .players
+            .iter()
+            .any(|other| other.id != pid && other.counters.contains_key(&key));
+        self.add_era_score(pid, if first_in_world { 3 } else { 2 });
+    }
+
+    /// `MOMENT_TECH_RESEARCHED_IN_ERA_FIRST` (+1) and
+    /// `MOMENT_CIVIC_CULTURVATED_IN_ERA_FIRST` (+1), each doubled to +2 by their
+    /// `_IN_WORLD` variant: the first node a civilization finishes from each era
+    /// of each tree, once per era per tree.
+    ///
+    /// These two are among the highest-frequency Historic Moments in the
+    /// shipped game — every civilization earns up to eight of each over a full
+    /// game — and CIVVIS awarded neither, which is a large part of why 79% of
+    /// its age transitions were Dark.
+    fn note_era_first_tree_node(&mut self, pid: usize, technology: bool, node: &str) {
+        // Only a major banks Era Score, and only a major may hold the
+        // first-in-world claim — otherwise a city-state researching ahead
+        // silently downgrades every major's moment from +2 to +1.
+        if self.players[pid].is_minor || self.players[pid].is_barbarian {
+            return;
+        }
+        let era = if technology {
+            self.rules.techs.get(node).map(|spec| spec.era)
+        } else {
+            self.rules.civics.get(node).map(|spec| spec.era)
+        };
+        let Some(era) = era else {
+            return;
+        };
+        let tree = if technology { "tech" } else { "civic" };
+        let key = format!("era_first:{tree}:{era}");
+        if self.players[pid].counters.contains_key(&key) {
+            return;
+        }
+        self.players[pid].counters.insert(key.clone(), 1);
+        let first_in_world = !self
+            .players
+            .iter()
+            .any(|other| other.id != pid && other.counters.contains_key(&key));
+        self.add_era_score(pid, if first_in_world { 2 } else { 1 });
+    }
+
+    /// What a Dedication would have paid over the era that just ended, in Era
+    /// Score, given what this civilization actually did in it.
+    ///
+    /// This is a *measured* projection, not a prior: the count of every trigger
+    /// firing is kept whether or not the trigger was dedicated, so the answer
+    /// to "which Dedication should I take" is the same shape as "which one
+    /// would have paid me most last era". A civilization's behaviour is the
+    /// most autocorrelated thing about it, which is why last era's tally beats
+    /// any static ranking — a warmonger has been killing Corps, a builder has
+    /// been laying Districts, and the tally already says which one you are.
+    pub fn projected_dedication_score(&self, pid: usize, dedication: &str) -> i64 {
+        let Some(spec) = self.rules.dedications.get(dedication) else {
+            return 0;
+        };
+        let Some(player) = self.players.get(pid) else {
+            return 0;
+        };
+        spec.triggers
+            .iter()
+            .map(|(trigger, amount)| {
+                amount * player.last_era_triggers.get(trigger).copied().unwrap_or(0)
+            })
+            .sum()
+    }
+
     /// A Dedication's Golden-Age half, which only a Golden or Heroic Age turns
     /// on.
     fn dedication_active(&self, pid: usize, dedication: &str) -> bool {
@@ -43524,15 +43918,32 @@ impl Game {
         let _ = building;
     }
 
-    /// A Dedication's Normal-Age half. Every Dedication pays Era Score for the
-    /// behaviour it names whatever age chose it — which is the whole point of
-    /// dedicating a Normal or Dark Age, since that score is what buys the next
-    /// Golden one.
+    /// A Dedication's Normal-Age half: Era Score for the behaviour it names,
+    /// which is the whole point of dedicating a Normal or Dark Age, since that
+    /// score is what buys the next Golden one.
+    ///
+    /// **A Golden Age pays no Era Score.** Every quest modifier hangs off
+    /// `PLAYER_ELIGIBLE_FOR_COMMEMORATION_QUEST`, a `TEST_ANY` set whose only
+    /// two members are an inverted `REQUIREMENT_PLAYER_HAS_GOLDEN_AGE` and a
+    /// `REQUIREMENT_PLAYER_ALWAYS_ALLOWED_COMMEMORATION_QUEST` that nothing in
+    /// the shipped data grants. So the two halves are exclusive, and that is
+    /// what stops a Golden Age from financing its own successor: it hands out
+    /// its bonus and banks nothing, while a Dark or Normal Age banks the score
+    /// that buys the next one.
     ///
     /// `count` is how many times the trigger just happened, so a kill that
     /// resolves several units at once pays for all of them.
     fn dedication_trigger(&mut self, pid: usize, trigger: &str, count: i64) {
         if count <= 0 || pid >= self.players.len() {
+            return;
+        }
+        // Counted before either gate, so the tally is the behaviour itself and
+        // not the subset a past choice happened to be paid for.
+        *self.players[pid]
+            .era_triggers
+            .entry(trigger.to_string())
+            .or_insert(0) += count;
+        if matches!(self.players[pid].age.as_str(), "golden" | "heroic") {
             return;
         }
         let earned: i64 = self.players[pid]
@@ -43582,6 +43993,22 @@ impl Game {
         if progress_era <= self.world_era {
             return;
         }
+        // Shipped `Eras_XP1.GameEraMinimumTurns` is 40 for every era, scaled by
+        // speed. Without that floor the world era tracks the single most
+        // advanced civilization with nothing holding it back, and a leader who
+        // opens two eras in consecutive turns gives the whole table an age it
+        // had no turns to bank Era Score in. Measured before this: the 10th
+        // percentile of the gap between age transitions was **one turn**, and
+        // 79% of all transitions were Dark.
+        //
+        // Only the floor is modelled. `GameEraMaximumTurns` (60) would force
+        // the world era forward past what anybody has researched, which reaches
+        // much further into wonder eligibility, Dark Age card windows and
+        // unit obsolescence than the evidence here justifies.
+        let minimum = self.game_speed.scale_turns(ERA_MINIMUM_TURNS);
+        if self.turn.saturating_sub(self.world_era_since) < minimum {
+            return;
+        }
         // A late unlock can put the leader several columns ahead of the
         // world's current age (for example after restoring an older save or
         // receiving a rules-driven research grant). Each intervening era is
@@ -43589,6 +44016,7 @@ impl Game {
         // never collapse all of those transitions into one.
         let era = self.world_era.saturating_add(1).min(progress_era);
         self.world_era = era;
+        self.world_era_since = self.turn;
         let majors: Vec<usize> = self
             .players
             .iter()
@@ -43638,6 +44066,9 @@ impl Game {
             player.dedication_choices = if player.age == "heroic" { 3 } else { 1 };
             player.era_score = 0;
             player.era_score_baseline = 0;
+            // The era that just ended becomes the evidence for the dedication
+            // about to be chosen, and the new one starts its own tally.
+            player.last_era_triggers = std::mem::take(&mut player.era_triggers);
             // The age just entered counts toward the next threshold: shipped
             // THRESHOLD_SHIFT_PER_PAST_DARK_AGE -10 and
             // _PER_PAST_GOLDEN_AGE +5 make ages self-correcting, so a
@@ -43678,6 +44109,97 @@ impl Game {
                 self.players[pid].policies.retain(|slotted| *slotted != policy);
             }
         }
+    }
+
+    /// Which worlds this civilization has found, as indices into
+    /// [`EXOPLANET_TARGETS`].
+    ///
+    /// The neighbourhood is the same for everybody — it is a fact about the
+    /// sky, not about a civilization — so the *order* worlds are found in is
+    /// one shuffle drawn from the game's own seed and shared by every player.
+    /// What differs is how far down that order each of them has got, which is
+    /// what their instruments above the air have bought them.
+    pub fn exoplanet_survey(&self, pid: usize) -> Vec<usize> {
+        let depth = EXOPLANET_SURVEY
+            .iter()
+            .filter(|(project, _)| self.players[pid].science_projects.contains(*project))
+            .map(|(_, found)| *found)
+            .sum::<usize>()
+            + self.exoplanet_laser_stations(pid);
+        if depth == 0 {
+            return Vec::new();
+        }
+        let mut order: Vec<usize> = (0..EXOPLANET_TARGETS.len()).collect();
+        // A Fisher-Yates shuffle off the map seed, so a given world is found in
+        // a given order every time that world is played and in a different one
+        // in the next. Drawn with the same splitmix the rest of the engine
+        // uses rather than the live RNG, because reading the live stream here
+        // would make every later roll in the game depend on how many space
+        // projects happen to have finished.
+        let mut state = self.seed ^ 0x9E37_79B9_7F4A_7C15;
+        for index in (1..order.len()).rev() {
+            state = state
+                .wrapping_add(0x9E37_79B9_7F4A_7C15)
+                .rotate_left(31)
+                .wrapping_mul(0xBF58_476D_1CE4_E5B9);
+            let pick = (state >> 33) as usize % (index + 1);
+            order.swap(index, pick);
+        }
+        order.truncate(depth.min(EXOPLANET_TARGETS.len()));
+        order
+    }
+
+    fn exoplanet_laser_stations(&self, pid: usize) -> usize {
+        let counters = &self.players[pid].counters;
+        (counters
+            .get("project:lagrange_laser_station")
+            .copied()
+            .unwrap_or(0)
+            + counters
+                .get("project:terrestrial_laser_station")
+                .copied()
+                .unwrap_or(0))
+        .max(0) as usize
+    }
+
+    /// The world the expedition sets out for, decided the moment it launches.
+    ///
+    /// The best world found, and the nearest of those if two are graded alike.
+    /// It aims for the *best* rather than the nearest because a light-year
+    /// currently costs nothing — see [`EXOPLANET_DESTINATION`], which is the
+    /// whole trip whichever world it is — so there is nothing to trade a worse
+    /// world for. A civilization that surveyed nothing takes the one anybody
+    /// would already have heard of.
+    pub fn exoplanet_choice(&self, pid: usize) -> &'static str {
+        self.exoplanet_survey(pid)
+            .into_iter()
+            .map(|index| &EXOPLANET_TARGETS[index])
+            .max_by(|a, b| {
+                a.grade
+                    .cmp(&b.grade)
+                    .then(b.light_years.total_cmp(&a.light_years))
+            })
+            .map(|target| target.id)
+            .unwrap_or(EXOPLANET_DEFAULT_TARGET)
+    }
+
+    /// The world the expedition is going to, or would go to if it left now.
+    pub fn exoplanet_target(&self, pid: usize) -> &'static ExoplanetTarget {
+        let chosen = self.players[pid]
+            .exoplanet_target
+            .as_deref()
+            .unwrap_or_else(|| self.exoplanet_choice(pid));
+        EXOPLANET_TARGETS
+            .iter()
+            .find(|target| target.id == chosen)
+            // A save naming a world this build does not have is a save from a
+            // future roster, not a corrupt one. Fall back rather than panic.
+            .unwrap_or_else(|| {
+                EXOPLANET_TARGETS
+                    .iter()
+                    .find(|target| target.id == EXOPLANET_DEFAULT_TARGET)
+                    .expect("the default target is in the roster")
+            })
     }
 
     pub fn exoplanet_speed(&self, pid: usize) -> f64 {
@@ -45093,6 +45615,9 @@ impl Game {
             self.reconcile_closed_border_units(None);
         }
         if first {
+            self.note_era_first_tree_node(pid, technology, node);
+        }
+        if first {
             self.players[pid].envoys_free +=
                 effects.get("free_envoys").copied().unwrap_or(0.0) as i64;
             *self.players[pid]
@@ -45834,6 +46359,7 @@ impl Game {
             growth_bonus -= 20.0;
         }
         let mut grew = false;
+        let mut grew_to: Option<i64> = None;
         {
             let city = self.cities.get_mut(&cid).unwrap();
             let mut surplus = ys.food - 2.0 * city.pop as f64;
@@ -45850,6 +46376,7 @@ impl Game {
                 city.pop += 1;
                 city.food -= need;
                 grew = true;
+                grew_to = Some(city.pop as i64);
             } else if city.food < 0.0 {
                 city.pop = (city.pop - 1).max(1);
                 city.food = 0.0;
@@ -45880,6 +46407,9 @@ impl Game {
         }
         if grew {
             self.apply_growth_pressure(cid);
+        }
+        if let Some(pop) = grew_to {
+            self.note_city_size_moment(pid, pop);
         }
         let queue_head = self.cities[&cid].queue.first().cloned();
         if let Some(item) = queue_head {
@@ -46639,6 +47169,13 @@ impl Game {
                 }
                 if project == "exoplanet_expedition" {
                     self.players[pid].exoplanet_distance = 0.0;
+                    // Where it is going is settled now and never again. A
+                    // survey that deepens after the ship has left does not turn
+                    // it round: the choice is the one that was available on the
+                    // day, which is what makes finishing the Moon and Mars
+                    // before launching worth anything.
+                    let chosen = self.exoplanet_choice(pid);
+                    self.players[pid].exoplanet_target = Some(chosen.to_string());
                 }
                 true
             }
@@ -47853,11 +48390,15 @@ mod dedication_era_tests {
     #[test]
     fn every_dedication_opens_in_the_eras_its_commemoration_ships_for() {
         // CommemorationTypes carries MinimumGameEra/MaximumGameEra per
-        // category, and Policies_XP1 carries the same window again for each
-        // Golden Age card. The two agree wherever both exist -- Free Enquiry
-        // and SCIENTIFIC both Classical-Medieval, To Arms and MILITARY both
-        // Industrial-Atomic, and four more -- which is what makes these
-        // windows trustworthy rather than inferred.
+        // category, and Policies_XP1 carries a window again for each
+        // same-named Golden Age card. They agree almost everywhere -- Free
+        // Enquiry and SCIENTIFIC both Classical-Medieval, To Arms and MILITARY
+        // both Industrial-Atomic, and four more -- which is what makes these
+        // windows trustworthy rather than inferred. Sky and Stars is the one
+        // exception; see the note on its row.
+        //
+        // Eras.ChronologyIndex is ONE-based (ERA_ANCIENT is 1), so every index
+        // here is that column minus one.
         let expected: &[(&str, usize, usize)] = &[
             ("free_inquiry", 1, 2),          // SCIENTIFIC / POLICY_FREE_ENQUIRY
             ("pen_brush_and_voice", 1, 2),   // CULTURAL
@@ -47869,7 +48410,14 @@ mod dedication_era_tests {
             ("to_arms", 4, 6),               // MILITARY / POLICY_TO_ARMS
             ("wish_you_were_here", 6, 8),    // TOURISM / same-named card
             ("bodyguard_of_lies", 6, 8),     // ESPIONAGE
-            ("sky_and_stars", 6, 8),         // POLICY_SKY_AND_STARS
+            // The ONE place the two sources disagree, and the only one where it
+            // matters which is authoritative. COMMEMORATION_AERONAUTICAL opens
+            // at ERA_INFORMATION; the leftover POLICY_SKY_AND_STARS card says
+            // ERA_ATOMIC. The Commemoration governs -- it is the table the age
+            // transition reads, and CommemorationModifiers already carries the
+            // Golden-Age half directly, which is what makes the same-named
+            // RequiresGoldenAge cards dead data rather than a second opinion.
+            ("sky_and_stars", 7, 8),         // COMMEMORATION_AERONAUTICAL
             ("automaton_warfare", 7, 8),     // AUTOMATON
         ];
         let mut game = Game::new_full(1, 24, 16, 22_508, 120, 0, false);
@@ -53525,6 +54073,9 @@ mod victory_conditions {
         g.world_era = 3;
         g.players[0].civics.clear();
         g.players[0].techs.insert("smart_materials".to_string());
+        // An era is held open for its shipped 40-turn minimum before the next
+        // one may start, so stand far enough into this one to leave it.
+        g.turn = 40;
         g.process_eras();
         assert_eq!(
             g.world_era, 4,
@@ -53825,6 +54376,111 @@ mod victory_conditions {
         assert_eq!(g.players[0].exoplanet_distance, EXOPLANET_DESTINATION);
         assert_eq!(g.winner, Some(0));
         assert_eq!(g.victory_type.as_deref(), Some("science"));
+    }
+
+    /// The expedition goes to a real place, and which one is what a space
+    /// programme buys.
+    ///
+    /// The Moon landing and the Mars colony were dead ends: the Moon paid a
+    /// one-off Culture bonus, Mars paid nothing at all, so a civilization
+    /// racing the science victory correctly skipped straight past both. They
+    /// are the survey now. The trip is the same length whichever world it is —
+    /// `EXOPLANET_DESTINATION` is unchanged and deliberately so, because the
+    /// distances in that roster span eleven to one and turning them loose on
+    /// the victory race is a balance change that has to be measured over whole
+    /// games before it ships. What the survey buys today is the world itself.
+    #[test]
+    fn the_expedition_goes_where_the_survey_reached() {
+        let mut g = game_with_capitals(3, 420, 300);
+        let cid = g.player_city_ids(0)[0];
+        let project = |name: &str| Item::Project {
+            project: name.to_string(),
+        };
+
+        // Surveyed nothing, so the only world it can name is the one anybody
+        // would already have heard of.
+        assert!(g.exoplanet_survey(0).is_empty());
+        assert_eq!(g.exoplanet_choice(0), EXOPLANET_DEFAULT_TARGET);
+
+        // The eye above the air finds the first three.
+        assert!(g.complete_item(0, cid, &project("launch_earth_satellite")));
+        let thin = g.exoplanet_survey(0);
+        assert_eq!(thin.len(), 3);
+
+        // And the rest of the programme finds more of them. The order is a
+        // fact about the sky, so every civilization finds the same worlds in
+        // the same order and a deeper survey is a strict superset of a
+        // shallower one — a rival who has looked less can never know a world
+        // this one does not.
+        assert!(g.complete_item(0, cid, &project("launch_moon_landing")));
+        assert!(g.complete_item(0, cid, &project("launch_mars_colony")));
+        let deep = g.exoplanet_survey(0);
+        assert_eq!(deep.len(), 7);
+        assert_eq!(&deep[..3], &thin[..], "a survey only ever adds");
+
+        let rival = g.player_city_ids(1)[0];
+        assert!(g.complete_item(1, rival, &project("launch_earth_satellite")));
+        assert_eq!(g.exoplanet_survey(1), thin, "one sky, one order");
+
+        // The deeper survey reaches the better world.
+        let near = |pid: usize| g.exoplanet_target(pid).grade;
+        assert!(
+            near(0) >= near(1),
+            "seven candidates cannot grade worse than three of the same seven",
+        );
+
+        // The choice is made on the day the ship leaves and never revisited: a
+        // survey that deepens afterwards does not turn it round, which is what
+        // makes finishing the Moon and Mars *before* launching worth anything.
+        assert!(g.complete_item(0, cid, &project("exoplanet_expedition")));
+        let sent = g.players[0].exoplanet_target.clone();
+        assert_eq!(sent.as_deref(), Some(g.exoplanet_choice(0)));
+        *g.players[0]
+            .counters
+            .entry("project:lagrange_laser_station".to_string())
+            .or_insert(0) += 3;
+        assert!(g.exoplanet_survey(0).len() > 7, "the survey did deepen");
+        assert_eq!(
+            g.players[0].exoplanet_target, sent,
+            "a launched expedition does not change its mind",
+        );
+
+        // A different world is a different sky. Two seeds must not agree on the
+        // order the neighbourhood is found in, or the survey is a fixed list
+        // and the Moon and Mars buy the same thing every game.
+        let mut other = game_with_capitals(2, 999_331, 300);
+        let there = other.player_city_ids(0)[0];
+        assert!(other.complete_item(0, there, &project("launch_earth_satellite")));
+        let mut differs = other.exoplanet_survey(0) != thin;
+        for seed in [77_003_u64, 5_150_927, 31_337] {
+            if differs {
+                break;
+            }
+            let mut world = game_with_capitals(2, seed, 300);
+            let city = world.player_city_ids(0)[0];
+            assert!(world.complete_item(0, city, &project("launch_earth_satellite")));
+            differs = world.exoplanet_survey(0) != thin;
+        }
+        assert!(differs, "the roster must be shuffled per game");
+
+        // Every world the engine can send an expedition to is one the viewer
+        // can draw. The two rosters are written out separately — the client
+        // needs positions and palettes the engine has no use for — so the ids
+        // are pinned against each other here rather than left to drift into a
+        // destination that renders as nothing.
+        let client = include_str!("../web/index.html");
+        for target in EXOPLANET_TARGETS.iter() {
+            assert!(
+                client.contains(&format!("id:\"{}\"", target.id)),
+                "{} is not in the viewer's roster",
+                target.id,
+            );
+            assert!(
+                client.contains(target.name),
+                "{} is not named in the viewer",
+                target.name,
+            );
+        }
     }
 
     #[test]
@@ -57728,6 +58384,8 @@ mod district_mechanics {
         game.players[0].age = "dark".to_string();
         game.players[0].era_score = game.players[0].golden_age_threshold;
         game.players[0].techs.insert("horseback_riding".to_string());
+        // An era is held open for its shipped 40-turn minimum.
+        game.turn = 40;
         game.process_eras();
         assert_eq!(game.players[0].age, "heroic");
         assert_eq!(game.players[0].dedication_choices, 3);

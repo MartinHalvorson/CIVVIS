@@ -53,7 +53,7 @@ End Turn button announces them, and the order `Enter` walks them.
 | 6 | A policy slot is empty | Government panel |
 | 7 | No research is selected | Science card / tech tree |
 | 8 | No civic is selected | Culture card / civics tree |
-| 9 | A city is producing nothing | City command panel |
+| 9 | A city is producing nothing | city screen ▸ Build |
 | 10 | A unit has moves and no orders | select the unit; move, fortify, skip or sleep |
 
 Blockers 1–4 and 7–10 are engine-legal actions the client can already resolve;
@@ -117,7 +117,7 @@ the action from the UI without a debugger.
 | World Congress | `congress_vote` | yes — Government panel |
 | Ages | `choose_dedication`, `choose_secret_society` | yes — Government panel |
 | Conquest | `keep_city`, `raze_city`, `liberate_city` | yes — modal |
-| Setup | difficulty, leader choice, save and load | yes — Game settings ▸ Single player, with a leader, a difficulty and the server's saves |
+| Setup | difficulty, leader choice, save and load | yes — Game setup ▸ Single player, with a leader, a difficulty and the server's saves |
 | Auto-play | `POST /autoplay` | yes — a league strategy and a turn count under the End Turn button |
 
 Rows marked "no" or "partial" are the remaining work, in roughly that order of
@@ -158,7 +158,7 @@ Great Work slots".
 
 ## Setup
 
-The browser's Game settings panel used to offer one mode — an AI-only
+The browser's Game setup panel used to offer one mode — an AI-only
 simulation — with "Single player · later" greyed out beside it. Single player
 is no longer "later", and the modes are listed in the order this project
 values them:
@@ -241,7 +241,8 @@ Two things the client does deliberately:
   and reads "An agent is playing", and both selects lock. A lit control that
   quietly does nothing is worse than a disabled one that explains itself.
 
-The roster is the committed league snapshot under `data/league` unless this
+The roster is the committed league snapshot under `data/league`, compiled into
+the binary so it is found wherever the program was started from, unless this
 game is already being rated against another one, in which case it is that one
 and the ratings shown are the ratings in play. Reading it is a labelling
 concern only: nothing about auto-play seats a rival differently.

@@ -38,8 +38,14 @@ pub const BUILTIN_AIS: [&str; 10] = [
 /// tournament ratings. Keeping them out of `BUILTIN_AIS` prevents a control
 /// factory from being pooled into the same player/leader rating key as
 /// its treatment.
-pub const EVAL_ONLY_AIS: [&str; 30] = [
+pub const EVAL_ONLY_AIS: [&str; 37] = [
+    "advanced_banking_dedication",
+    "advanced_civ_blind",
+    "advanced_settler_commit",
+    "advanced_food_first",
+    "advanced_measured_dedication",
     "advanced_lane_reachable",
+    "advanced_parallel_settlers",
     "advanced_relief_scoped",
     "strategic_score",
     "strategic_doctrine",
@@ -51,6 +57,7 @@ pub const EVAL_ONLY_AIS: [&str; 30] = [
     "strategic_rot20",
     "strategic_rot10",
     "strategic_deep",
+    "strategic_ultra",
     "strategic_deep_default",
     "strategic_deep_tempo",
     "strategic_deep_conversion",
@@ -471,6 +478,46 @@ pub fn builtin_ai(name: &str, seed: u64) -> Box<dyn Ai> {
         // mirrored maps -- 49.6% paired score, Elo-equivalent -3, sign
         // p=1.0000, gate INCONCLUSIVE -- which is why it is an entrant and
         // not the default.
+        // Ablation for the civilization-aware decision layer: identical to
+        // `advanced` except that it ignores every by-name civilization signal
+        // (the Greece and China lane floors, the unique-unit tech bonus, the
+        // Egypt/China wonder exemption). It still builds whatever uniques it
+        // has -- that is mechanics. Paired against `advanced` this bounds what
+        // the existing per-civilization code is worth, which is the ceiling
+        // any better per-civilization play has to beat. See `docs/OPENINGS.md`.
+        // Treatment for the expansion-tempo axis: identical to `advanced`
+        // except that its governors want food while the empire is short of
+        // its city target. See `docs/OPENINGS.md` §11 for the ceiling that
+        // motivated it and for the production it trades away.
+        "advanced_food_first" => {
+            let mut ai = AdvancedAi::new();
+            ai.food_first = 0.6;
+            Box::new(ai)
+        }
+        // Treatment for the settler-commitment axis: identical to `advanced`
+        // except that a settler holds its chosen site across a turn it could
+        // not move, for up to three such turns. See `docs/OPENINGS.md` §15.
+        "advanced_settler_commit" => {
+            let mut ai = AdvancedAi::new();
+            ai.settler_commit = true;
+            Box::new(ai)
+        }
+        "advanced_civ_blind" => {
+            let mut ai = AdvancedAi::new();
+            ai.civ_blind = true;
+            Box::new(ai)
+        }
+        // Treatment for the expansion-rate axis: identical to `advanced`
+        // except that it may hold more than one settler at a time, up to its
+        // shortfall against the city target. Paired against `advanced` this
+        // isolates the empire-wide `counts.settlers == 0` serialization and
+        // nothing else. See `docs/OPENINGS.md` for the measurement that
+        // motivated it and for what would refute it.
+        "advanced_parallel_settlers" => {
+            let mut ai = AdvancedAi::new();
+            ai.parallel_settlers = true;
+            Box::new(ai)
+        }
         "advanced_lane_reachable" => {
             let mut ai = AdvancedAi::new();
             ai.refuse_unreachable_lanes = true;
@@ -493,6 +540,25 @@ pub fn builtin_ai(name: &str, seed: u64) -> Box<dyn Ai> {
                 .map(AdvancedAi::with_weights)
                 .unwrap_or_else(AdvancedAi::new),
         ),
+        // The Dedication chooser that ranks the offer by what each Dedication
+        // would have paid over the era just ended. **A recorded negative
+        // result**, kept as an evaluator arm: over 120 mirrored maps against
+        // the shipped alphabetical default it took 41.2% of games, 10 map
+        // directions to 31, sign p=0.0015, e-process crossing against it at
+        // map 51, and terminal score 46.3% (p=0.0000). See `docs/AGES.md`.
+        "advanced_measured_dedication" => {
+            let mut w = crate::evolve::load_champion("evolved").unwrap_or_default();
+            w.dedication_choice = crate::ai::DedicationChoice::Measured;
+            Box::new(AdvancedAi::with_weights(w))
+        }
+        // The repair for that loss: rank on the projection only in a Normal or
+        // Dark Age, where Era Score is the literal objective, and leave the
+        // Golden and Heroic choice exactly as the default makes it.
+        "advanced_banking_dedication" => {
+            let mut w = crate::evolve::load_champion("evolved").unwrap_or_default();
+            w.dedication_choice = crate::ai::DedicationChoice::Banking;
+            Box::new(AdvancedAi::with_weights(w))
+        }
         "advanced_v1" => Box::new(AdvancedAi::legacy()),
         "random" => Box::new(RandomAi::new(seed)),
         "evolved" => Box::new(
@@ -609,6 +675,19 @@ pub fn builtin_ai(name: &str, seed: u64) -> Box<dyn Ai> {
                 crate::evolve::load_champion("evolved").unwrap_or_default(),
             );
             ai.review_every = 20;
+            ai.horizon = 80;
+            Box::new(ai)
+        }
+        // The first strength-first budget above `strategic_deep`: preserve
+        // its full 80-round horizon and spend another doubling on the
+        // generation-14-favored review cadence. This is deliberately an
+        // evaluator-only 8x entrant until an independent promotion gate says
+        // that the extra compute buys strength.
+        "strategic_ultra" => {
+            let mut ai = crate::strategic::StrategicAi::with_weights(
+                crate::evolve::load_champion("evolved").unwrap_or_default(),
+            );
+            ai.review_every = 10;
             ai.horizon = 80;
             Box::new(ai)
         }
@@ -1024,6 +1103,7 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         // and the net is non-definitional because the search runs without
         // one. There is no separate published netless name to degrade to.
         "strategic_deep" => (vec![genome, value(false)], "strategic_deep"),
+        "strategic_ultra" => (vec![genome, value(false)], "strategic_ultra"),
         // The frozen genome is in code; only the same optional value net read
         // by `strategic_deep` remains in its provenance.
         "strategic_deep_default" => (vec![value(false)], "strategic_deep_default"),
@@ -1066,6 +1146,12 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         ),
         "advanced" => (Vec::new(), "advanced"),
         "advanced_lane_reachable" => (Vec::new(), "advanced_lane_reachable"),
+        "advanced_banking_dedication" => (Vec::new(), "advanced_banking_dedication"),
+        "advanced_measured_dedication" => (Vec::new(), "advanced_measured_dedication"),
+        "advanced_parallel_settlers" => (Vec::new(), "advanced_parallel_settlers"),
+        "advanced_civ_blind" => (Vec::new(), "advanced_civ_blind"),
+        "advanced_settler_commit" => (Vec::new(), "advanced_settler_commit"),
+        "advanced_food_first" => (Vec::new(), "advanced_food_first"),
         "advanced_v1" => (Vec::new(), "advanced_v1"),
         "advanced_relief_scoped" => (Vec::new(), "advanced_relief_scoped"),
         "random" => (Vec::new(), "random"),
@@ -1552,9 +1638,15 @@ mod tests {
             // Anything else reaching that state fell through to the
             // catch-all and is claiming to need nothing while quietly
             // needing a net.
-            const SCRIPTED: [&str; 6] = [
+            const SCRIPTED: [&str; 12] = [
                 "advanced",
+                "advanced_settler_commit",
+                "advanced_banking_dedication",
+                "advanced_civ_blind",
+                "advanced_food_first",
                 "advanced_lane_reachable",
+                "advanced_measured_dedication",
+                "advanced_parallel_settlers",
                 "advanced_relief_scoped",
                 "advanced_v1",
                 "basic",
@@ -1599,6 +1691,15 @@ mod tests {
         assert_eq!(ai.review_census(), Some(Default::default()));
         let provenance = builtin_provenance("strategic_deep_tempo", "unused");
         assert_eq!(provenance.effective, "strategic_deep_tempo");
+        assert!(!provenance.degraded());
+    }
+
+    #[test]
+    fn ultra_challenger_constructs_a_searching_agent() {
+        let ai = builtin_ai("strategic_ultra", 1);
+        assert_eq!(ai.review_census(), Some(Default::default()));
+        let provenance = builtin_provenance("strategic_ultra", "unused");
+        assert_eq!(provenance.effective, "strategic_ultra");
         assert!(!provenance.degraded());
     }
 

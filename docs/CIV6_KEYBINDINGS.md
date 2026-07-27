@@ -56,7 +56,7 @@ make the board playable without reaching for the mouse first.
 | `Ctrl+,` | `CivilopediaBack` | Back along the Civilopedia trail |
 | `Ctrl+.` | `CivilopediaForward` | Forward along it |
 | `End` | `ToggleFSMap` | Full-screen map: deck away, whole world framed |
-| `Home` | `PauseMenu` | Game settings, which is where saving and starting live |
+| `Home` | `PauseMenu` | Game setup, which is where saving and starting live |
 | `F5` | `QuickSave` | Write `quicksave` |
 | `F6` | `QuickLoad` | Load `quicksave`, or the newest save if there is none |
 | `[` | `PrevCity` | Previous city |

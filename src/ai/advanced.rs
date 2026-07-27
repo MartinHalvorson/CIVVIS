@@ -5,7 +5,9 @@
 //! civilian work, and military movement pursue the same medium-term goal.
 use super::{Ai, BasicAi, ForceReport, PlanReport, UnitDoctrine, Weights};
 use crate::game::{Action, ActionFamilies, CongressResolution, DiplomaticDeal, Game, Item};
+use crate::reasoning::{plain, Journal};
 use crate::rules::Yields;
+use crate::think;
 use crate::Pos;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 
@@ -368,6 +370,12 @@ impl EmpireCounts {
     }
 }
 
+/// Consecutive turns a committed settler may fail to move before its site is
+/// released. Three is long enough to walk around a unit standing in the way
+/// and short enough that a genuinely unreachable site cannot hold a settler
+/// hostage — the failure mode #492 was merged to remove.
+const SETTLER_STALL_LIMIT: u32 = 3;
+
 #[derive(Clone)]
 pub struct AdvancedAi {
     base: BasicAi,
@@ -418,6 +426,106 @@ pub struct AdvancedAi {
     /// 120 `advanced` wins were religious, so the science lane the filter
     /// exists to refuse was rarely the one being contested.
     pub refuse_unreachable_lanes: bool,
+    /// Tell this empire's governors to want food while it is still short of
+    /// its city target.
+    ///
+    /// `docs/OPENINGS.md` §8 and §11: capital growth gates every settler — a
+    /// settler needs `pop >= 2` and consumes one — and the capital gains about
+    /// one population per 23 turns, which *is* the city founding interval.
+    /// `citizen_strategy` ships wanting production 1.55 against food 1.25, and
+    /// reassigning the same tiles toward food raises the capital's food
+    /// **surplus** 44–87% at a cost of 18–27% of its production.
+    ///
+    /// Growth gates the settler; production pays for it. Which wins is not
+    /// derivable, so this is an eval arm (`advanced_food_first`) and not a
+    /// default. The bias is +0.6 — a moderate shift that puts food just above
+    /// production, not the food-10.0 arm that measured the ceiling — and it is
+    /// **withdrawn once the empire reaches its city target**, so it buys
+    /// expansion tempo rather than permanently detuning the economy.
+    pub food_first: f64,
+    /// Hold a settler's chosen site across a turn it could not move, instead
+    /// of forgetting it.
+    ///
+    /// `docs/OPENINGS.md` §15: over 17,701 settler-turns the agent ends 27.1%
+    /// of them holding no destination at all, and 3.5% holding a different one
+    /// than the turn before. The cause is not a re-plan — `settler_step`
+    /// discards the target on any turn the unit fails to move, and filters it
+    /// out whenever `route_step` is momentarily `None` (a friendly unit in the
+    /// way, a zone of control, an unrevealed tile). None of those mean the
+    /// site got worse.
+    ///
+    /// The commitment is **bounded**, which is the whole design: an unbounded
+    /// hold would re-create exactly the livelock #492 was merged to fix, a
+    /// settler retrying an unreachable site forever. After
+    /// `SETTLER_STALL_LIMIT` consecutive turns without moving, the target is
+    /// released and the ordinary search runs again.
+    pub settler_commit: bool,
+    /// Consecutive turns each settler has failed to move, when `settler_commit`
+    /// is on. Reset on any successful step.
+    settler_stalls: BTreeMap<u32, u32>,
+    /// Let more than one settler exist at a time, up to the shortfall against
+    /// the city target.
+    ///
+    /// The settler production gate carries `counts.settlers == 0` on an
+    /// `EmpireCounts`, so today at most one settler may exist in the whole
+    /// empire. The conjunct beside it already caps cities-plus-settlers at
+    /// `desired_cities`, so this one adds no cap — it is purely serialization,
+    /// and a four-city empire therefore expands no faster than a one-city one.
+    ///
+    /// Measured before building (`docs/OPENINGS.md` §6): over 60 maps at 4
+    /// players on 32×22 the seat first holds 2/3/4/5/6 cities on turns
+    /// 37.0/71.0/89.5/118.7/150.2 — gaps of +34.0/+18.5/+29.2/+31.5 that **do
+    /// not shrink as the empire grows**, which is what serialization looks
+    /// like and is not what compounding expansion looks like. A seat spends
+    /// 60.8 ± 3.8 turns short of its city target with a settler already
+    /// walking, against 68.5 ± 4.2 turns short with none.
+    ///
+    /// This is a *rate* lever and is not the `city_target` sweep in
+    /// `docs/GENOME.md`, which is a *target* lever and saturates above six.
+    /// Reaching six cities on turn 90 rather than turn 150 compounds those
+    /// yields for sixty turns at the same target.
+    ///
+    /// ⚠ **Measured near-INERT by its own fires-check, and never taken to an
+    /// eval.** Over the same 60 maps, turning it on moves the founding cadence
+    /// from 37.0/71.0/89.5/118.7/150.2 to 37.6/71.0/89.1/117.6/148.7 and
+    /// leaves cities-at-turn-50 at 1.95 either way.
+    ///
+    /// The mechanism story above was wrong. `counts.settlers == 0` is
+    /// redundant on top of engine rules that already bind harder: a settler
+    /// requires `pop >= 2` and **consumes a population** on completion
+    /// (`Game` at the `settler_no_population` governor check), and successive
+    /// settlers cost 80, 110, 140 production. A one- or two-city empire
+    /// therefore cannot afford a second settler whether or not the AI permits
+    /// one, so lifting the permission buys nothing. The 60.8 ± 3.8 turns a
+    /// seat spends short of target with a settler walking are not turns this
+    /// clause forbids a second — they are turns the empire could not pay for
+    /// one.
+    ///
+    /// Kept as the `advanced_parallel_settlers` entrant with the null
+    /// recorded, on the `advanced_lane_reachable` precedent, so the axis can
+    /// be re-measured rather than re-derived if the settler economy changes.
+    pub parallel_settlers: bool,
+    /// Ignore every by-name civilization signal in the decision layer.
+    ///
+    /// An **ablation**, not a strategy. `docs/GENOME.md`'s rule is that a null
+    /// on selection is uninterpretable without the ceiling beside it: before
+    /// asking whether per-civilization openings could be *better*, ask what
+    /// the civilization-aware code already there is *worth*. This is that
+    /// question, asked the cheapest honest way — by taking it away.
+    ///
+    /// Six sites, all decision-layer rather than mechanics: the Greece
+    /// culture-lane preference and its +45 culture floor, the China +45
+    /// science floor, the +55 unique-unit bonus in `tech_value`, and the
+    /// `Egypt | China` wonder exemption in `production_value` (twice). It
+    /// deliberately does **not** touch which unique unit or district a
+    /// civilization may build — that is mechanics, and ablating it would
+    /// measure the uniques rather than the decisions about them.
+    ///
+    /// Reachable as the `advanced_civ_blind` entrant. A large cost means the
+    /// civilization-aware code carries real weight and better per-
+    /// civilization play could exist. A small cost bounds the layer, the way
+    /// deleting the opening book bounded that one at −0.003.
+    pub civ_blind: bool,
 }
 
 impl Default for AdvancedAi {
@@ -429,6 +537,26 @@ impl Default for AdvancedAi {
 impl AdvancedAi {
     pub fn new() -> AdvancedAi {
         Self::configured(BasicAi::new(), true, None)
+    }
+
+    /// Where this agent tells an observer what it is doing.
+    ///
+    /// There is one journal per agent, not one per layer: the baseline inside
+    /// `base` writes to this same log, so a civilization's turn reads as a
+    /// single account of its reasoning instead of two that have to be
+    /// interleaved. Off unless a spectator attached one.
+    fn journal(&self) -> &Journal {
+        &self.base.journal
+    }
+
+    /// The tile this settler is currently marching to, if it holds one.
+    ///
+    /// Read-only, for instruments. `docs/OPENINGS.md` §14 measured that a
+    /// settler walks 2.32x its straight-line distance; whether that is a bad
+    /// path or a changing destination cannot be told from the outside without
+    /// this, and the two want completely different repairs.
+    pub fn settler_target(&self, uid: u32) -> Option<Pos> {
+        self.settler_targets.get(&uid).copied()
     }
 
     pub fn targeting(target: VictoryTarget) -> AdvancedAi {
@@ -463,6 +591,11 @@ impl AdvancedAi {
             force_groups_dirty: false,
             scoped_relief_hold: false,
             refuse_unreachable_lanes: false,
+            food_first: 0.0,
+            settler_commit: false,
+            settler_stalls: BTreeMap::new(),
+            parallel_settlers: false,
+            civ_blind: false,
         }
     }
 
@@ -953,7 +1086,7 @@ impl AdvancedAi {
             };
         }
         if !self.victory_planning {
-            let preferred = if g.players[pid].civ == "Greece" {
+            let preferred = if !self.civ_blind && g.players[pid].civ == "Greece" {
                 GrandStrategy::Culture
             } else {
                 GrandStrategy::Science
@@ -1006,7 +1139,7 @@ impl AdvancedAi {
             .max(readiness)
             .max(project_progress)
             .max(travel_progress)
-            .max((player.civ == "China") as i32 * 45);
+            .max((!self.civ_blind && player.civ == "China") as i32 * 45);
 
         let culture_target = living_majors
             .iter()
@@ -1073,7 +1206,8 @@ impl AdvancedAi {
             },
             VictoryFocus {
                 strategy: GrandStrategy::Culture,
-                progress: culture.max((player.civ == "Greece") as i32 * 45),
+                progress: culture
+                    .max((!self.civ_blind && player.civ == "Greece") as i32 * 45),
             },
             VictoryFocus {
                 strategy: GrandStrategy::Religion,
@@ -1455,24 +1589,29 @@ impl AdvancedAi {
             self.victory_denial_with_culture_pressures(g, pid, &rival_culture_pressures)
         };
         let emergency_objective = g.emergency_objective(pid).cloned();
-        let strategy = if at_war && (threatened_city.is_some() || my_power * 1.25 < strongest_rival)
+        // Each arm carries the reason it fired. The strings are static and
+        // cost nothing to build; they exist so the spectator's reasoning log
+        // can say which of these tests the empire's whole plan turned on
+        // instead of only naming the strategy that came out.
+        let (strategy, because) = if at_war
+            && (threatened_city.is_some() || my_power * 1.25 < strongest_rival)
         {
-            GrandStrategy::Recovery
+            (GrandStrategy::Recovery, "at war and losing ground at home")
         } else if emergency_objective.is_some() {
-            GrandStrategy::Conquest
+            (GrandStrategy::Conquest, "an emergency objective is standing")
         } else if basil_tagma_timing {
-            GrandStrategy::Conquest
+            (GrandStrategy::Conquest, "Tagma timing is live")
         } else if let Some(target) = active_victory_target {
             if target == VictoryTarget::Religion && g.players[pid].religion.is_none() {
-                GrandStrategy::Religion
+                (GrandStrategy::Religion, "the religion lane still needs a religion")
             } else if cities.len() < desired_cities && has_site && g.turn < g.standard_duration(175)
             {
-                GrandStrategy::Expansion
+                (GrandStrategy::Expansion, "the assigned lane can still afford to expand first")
             } else {
-                target.strategy()
+                (target.strategy(), "following the assigned victory lane")
             }
         } else if let Some((_, counter)) = denial {
-            counter
+            (counter, "countering a rival close to winning")
         } else if at_war
             || (g.turn >= 55 && cities.len() >= 2 && my_power > weakest_rival * 1.80 + 20.0)
             || (military_civ
@@ -1480,7 +1619,7 @@ impl AdvancedAi {
                 && cities.len() >= 2
                 && my_power >= strongest_rival * 1.10)
         {
-            GrandStrategy::Conquest
+            (GrandStrategy::Conquest, "strong enough to take what a neighbour has")
         } else if self.religious_opening_viable(g, pid) {
             // A Prophet is a finite global race, not an economic goal that can
             // wait until the generic city target is complete. Religious
@@ -1489,14 +1628,25 @@ impl AdvancedAi {
             // Keep that commitment independent of the generic progress race:
             // improving a contender's science readiness must not make it
             // abandon a nearly earned, globally limited Prophet.
-            GrandStrategy::Religion
+            (GrandStrategy::Religion, "a Prophet is a finite race worth entering now")
         } else if victory.progress >= 65 {
-            victory.strategy
+            (victory.strategy, "already well down its best victory lane")
         } else if cities.len() < desired_cities && has_site && Self::expansion_window_open(g) {
-            GrandStrategy::Expansion
+            (GrandStrategy::Expansion, "short of cities with land still open")
         } else {
-            victory.strategy
+            (victory.strategy, "its best available victory lane")
         };
+        think!(self.journal(), Strategy, Strategy,
+               "Grand strategy: {}", strategy.as_str();
+               "{because} — {} cities of {desired_cities} wanted, power {my_power:.0} \
+                against the strongest rival's {strongest_rival:.0}; \
+                best lane {} at {}% progress",
+               cities.len(), victory.strategy.as_str(), victory.progress);
+        if let Some(city) = threatened_city.and_then(|id| g.cities.get(&id)) {
+            think!(self.journal(), Strategy, Strategy,
+                   "{} is under threat", city.name;
+                   "the plan is written around defending it"; city.pos);
+        }
 
         // Finish wars already in progress before selecting the next major
         // rival. In particular, this gives hostile city-states an explicit
@@ -1587,6 +1737,31 @@ impl AdvancedAi {
                         .map(|c| c.id)
                 })
             });
+
+        if self.journal().wants(crate::reasoning::Level::Strategy) {
+            match target_player.and_then(|id| g.players.get(id)) {
+                Some(rival) => {
+                    let objective = target_city
+                        .and_then(|id| g.cities.get(&id))
+                        .map(|city| format!("first objective {}", city.name))
+                        .unwrap_or_else(|| "no city objective yet".to_string());
+                    let at_war_now = if g.is_at_war(pid, rival.id) {
+                        "already at war"
+                    } else if wartime_rivals.is_empty() {
+                        "not yet at war"
+                    } else {
+                        "chosen from the wars already running"
+                    };
+                    think!(self.journal(), Strategy, Strategy,
+                           "Campaign aimed at {}", rival.civ;
+                           "{at_war_now}; {objective}");
+                }
+                None => {
+                    think!(self.journal(), Strategy, Strategy, "No campaign target";
+                           "no rival is both reachable and worth opening against");
+                }
+            }
+        }
 
         StrategicPlan {
             strategy,
@@ -2020,15 +2195,46 @@ impl AdvancedAi {
                     })
                     .cloned()
             });
-            let pick = goal_pick.or_else(|| {
-                available.into_iter().max_by(|a, b| {
-                    self.tech_value(g, pid, a, plan.strategy)
-                        .partial_cmp(&self.tech_value(g, pid, b, plan.strategy))
-                        .unwrap()
-                        .then_with(|| b.cmp(a))
-                })
+            let pick = goal_pick.clone().or_else(|| {
+                available
+                    .iter()
+                    .max_by(|a, b| {
+                        self.tech_value(g, pid, a, plan.strategy)
+                            .partial_cmp(&self.tech_value(g, pid, b, plan.strategy))
+                            .unwrap()
+                            .then_with(|| b.cmp(a))
+                    })
+                    .cloned()
             });
             if let Some(tech) = pick {
+                if self.journal().wants(crate::reasoning::Level::Decision) {
+                    let why = match (forced_goal, &goal_pick) {
+                        (Some(goal), Some(_)) => {
+                            format!("the cheapest step toward {}, which {} needs",
+                                    plain(goal), objective.as_str())
+                        }
+                        _ => {
+                            let runner_up = available
+                                .iter()
+                                .filter(|other| **other != tech)
+                                .max_by(|a, b| {
+                                    self.tech_value(g, pid, a, plan.strategy)
+                                        .partial_cmp(&self.tech_value(g, pid, b, plan.strategy))
+                                        .unwrap()
+                                        .then_with(|| b.cmp(a))
+                                })
+                                .map(|other| {
+                                    format!("ahead of {} at {:.0}", plain(other),
+                                            self.tech_value(g, pid, other, plan.strategy))
+                                })
+                                .unwrap_or_else(|| "with nothing else on offer".to_string());
+                            format!("worth {:.0} to the {} plan, {runner_up}",
+                                    self.tech_value(g, pid, &tech, plan.strategy),
+                                    plan.strategy.as_str())
+                        }
+                    };
+                    think!(self.journal(), Research, Decision, "Researching {}", plain(&tech); "{why}");
+                }
                 let _ = g.apply(pid, &Action::Research { tech });
             }
         }
@@ -2077,15 +2283,47 @@ impl AdvancedAi {
                     })
                     .cloned()
             });
-            let pick = goal_pick.or_else(|| {
-                available.into_iter().max_by(|a, b| {
-                    self.civic_value(g, pid, a, plan.strategy)
-                        .partial_cmp(&self.civic_value(g, pid, b, plan.strategy))
-                        .unwrap()
-                        .then_with(|| b.cmp(a))
-                })
+            let pick = goal_pick.clone().or_else(|| {
+                available
+                    .iter()
+                    .max_by(|a, b| {
+                        self.civic_value(g, pid, a, plan.strategy)
+                            .partial_cmp(&self.civic_value(g, pid, b, plan.strategy))
+                            .unwrap()
+                            .then_with(|| b.cmp(a))
+                    })
+                    .cloned()
             });
             if let Some(civic) = pick {
+                if self.journal().wants(crate::reasoning::Level::Decision) {
+                    let why = match (forced_goal, &goal_pick) {
+                        (Some(goal), Some(_)) => {
+                            format!("the cheapest step toward {}, which {} needs",
+                                    plain(goal), objective.as_str())
+                        }
+                        _ => {
+                            let runner_up = available
+                                .iter()
+                                .filter(|other| **other != civic)
+                                .max_by(|a, b| {
+                                    self.civic_value(g, pid, a, plan.strategy)
+                                        .partial_cmp(&self.civic_value(g, pid, b, plan.strategy))
+                                        .unwrap()
+                                        .then_with(|| b.cmp(a))
+                                })
+                                .map(|other| {
+                                    format!("ahead of {} at {:.0}", plain(other),
+                                            self.civic_value(g, pid, other, plan.strategy))
+                                })
+                                .unwrap_or_else(|| "with nothing else on offer".to_string());
+                            format!("worth {:.0} to the {} plan, {runner_up}",
+                                    self.civic_value(g, pid, &civic, plan.strategy),
+                                    plan.strategy.as_str())
+                        }
+                    };
+                    think!(self.journal(), Research, Decision, "Adopting the {} civic", plain(&civic);
+                           "{why}");
+                }
                 let _ = g.apply(pid, &Action::Civic { civic });
             }
         }
@@ -2294,8 +2532,20 @@ impl AdvancedAi {
             if choice_capacity < current_capacity
                 || (returning && choice_capacity == current_capacity)
             {
+                think!(self.journal(), Government, Detail,
+                       "Staying under {}",
+                       plain(g.players[pid].government.as_deref().unwrap_or("no government"));
+                       "{} offers {choice_capacity} policy slots against the \
+                        current {current_capacity}{}, and two turns of Anarchy is not \
+                        worth paying for that",
+                       plain(&government),
+                       if returning { " and has been run before" } else { "" });
                 return;
             }
+            think!(self.journal(), Government, Decision, "Changing government to {}", plain(&government);
+                   "{choice_capacity} policy slots against {current_capacity} now; \
+                    the {} plan wants it",
+                   objective.as_str());
             let _ = g.apply(pid, &Action::Government { government });
         }
     }
@@ -2335,6 +2585,8 @@ impl AdvancedAi {
             .cloned()
             .collect();
         for card in obsolete_active {
+            think!(self.journal(), Policies, Decision, "Retiring {}", plain(&card);
+                   "a successor card has replaced it on the menu");
             let _ = g.apply(pid, &Action::UnslotPolicy { policy: card });
         }
 
@@ -2563,11 +2815,35 @@ impl AdvancedAi {
             .cloned()
             .collect();
         for card in unsafe_dark_cards {
+            think!(self.journal(), Policies, Decision, "Dropping the Dark Age card {}", plain(&card);
+                   "its downside no longer suits the {} plan", objective.as_str());
             let _ = g.apply(pid, &Action::UnslotPolicy { policy: card });
         }
 
+        // The portfolio itself is a decision, and the order is the whole of
+        // the reasoning behind every slot below: an observer who can see the
+        // ranking can tell a card that was skipped from one that never made
+        // the list.
+        if self.journal().wants(crate::reasoning::Level::Detail) {
+            let held: Vec<&str> = desired
+                .iter()
+                .copied()
+                .filter(|card| g.players[pid].policies.contains(*card))
+                .collect();
+            think!(self.journal(), Policies, Detail,
+                   "Policy portfolio for the {} plan", objective.as_str();
+                   "wants, in order: {}; already slotted: {}",
+                   desired.iter().map(|card| plain(card)).collect::<Vec<_>>().join(", "),
+                   if held.is_empty() {
+                       "none".to_string()
+                   } else {
+                       held.iter().map(|card| plain(card)).collect::<Vec<_>>().join(", ")
+                   });
+        }
+
+        let wanted = desired.len();
         let available: HashSet<String> = g.available_policies(pid).into_iter().collect();
-        for card in desired.iter().copied() {
+        for (rank, card) in desired.iter().copied().enumerate() {
             if g.players[pid].policies.contains(card) || !available.contains(card) {
                 continue;
             }
@@ -2579,6 +2855,9 @@ impl AdvancedAi {
             )
             .is_ok()
             {
+                think!(self.journal(), Policies, Decision, "Slotted {}", plain(card);
+                       "priority {} of {wanted} for the {} plan, into a free slot",
+                       rank + 1, objective.as_str());
                 continue;
             }
 
@@ -2616,6 +2895,11 @@ impl AdvancedAi {
                 )
                 .is_ok()
                 {
+                    think!(self.journal(), Policies, Decision,
+                           "Slotted {} over {}", plain(card), plain(&current);
+                           "priority {} of {wanted} for the {} plan; {} was the oldest \
+                            card the plan does not want",
+                           rank + 1, objective.as_str(), plain(&current));
                     break;
                 }
                 // A type mismatch can make one particular swap invalid. Put
@@ -2646,7 +2930,9 @@ impl AdvancedAi {
                 } else {
                     power * 1.1
                 };
-                if g.rules.civs[&g.players[pid].civ].unique_unit.as_deref() == Some(name) {
+                if !self.civ_blind
+                    && g.rules.civs[&g.players[pid].civ].unique_unit.as_deref() == Some(name)
+                {
                     value += 55.0;
                 }
             }
@@ -3901,13 +4187,7 @@ impl AdvancedAi {
     }
 
     fn advanced_diplomacy(&mut self, g: &mut Game, pid: usize, plan: &StrategicPlan) {
-        while let Some(dedication) = g.available_dedications(pid).into_iter().next() {
-            if g.apply(pid, &Action::ChooseDedication { dedication })
-                .is_err()
-            {
-                break;
-            }
-        }
+        crate::ai::choose_dedications(g, pid, self.base.w.dedication_choice);
         let incoming: Vec<u32> = g
             .pending_deals
             .iter()
@@ -3915,19 +4195,28 @@ impl AdvancedAi {
             .map(|deal| deal.id)
             .collect();
         for deal_id in incoming {
-            let Some((accept, peace)) = g
+            let Some((accept, peace, worth, from)) = g
                 .pending_deals
                 .iter()
                 .find(|deal| deal.id == deal_id)
                 .map(|deal| {
-                    (
-                        self.incoming_deal_value(g, pid, deal, plan) >= 0.0,
-                        deal.peace,
-                    )
+                    let worth = self.incoming_deal_value(g, pid, deal, plan);
+                    (worth >= 0.0, deal.peace, worth, deal.from)
                 })
             else {
                 continue;
             };
+            if self.journal().wants(crate::reasoning::Level::Decision) {
+                let who = g
+                    .players
+                    .get(from)
+                    .map(|player| player.civ.clone())
+                    .unwrap_or_else(|| format!("player {from}"));
+                let kind = if peace { "peace offer" } else { "deal" };
+                think!(self.journal(), Diplomacy, Decision,
+                       "{} {who}'s {kind}", if accept { "Accepting" } else { "Refusing" };
+                       "worth {worth:+.0} to the {} plan", plan.strategy.as_str());
+            }
             let action = if accept {
                 Action::AcceptDeal { deal: deal_id }
             } else {
@@ -3967,6 +4256,10 @@ impl AdvancedAi {
                     } else {
                         1
                     };
+                    think!(self.journal(), Diplomacy, Decision,
+                           "Voting {} on {}", plain(&choice), plain(&resolution.id);
+                           "{votes} vote{} behind it, on the {} plan",
+                           if votes == 1 { "" } else { "s" }, plan.strategy.as_str());
                     let _ = g.apply(
                         pid,
                         &Action::CongressVote {
@@ -4012,6 +4305,19 @@ impl AdvancedAi {
                         && plan.target_player != Some(*other))
                     || (fatigued && g.player_city_ids(*other).len() > 1))
             {
+                if self.journal().wants(crate::reasoning::Level::Decision) {
+                    let their_power = g.military_power(*other);
+                    let because = if my_power < their_power * 0.62 {
+                        "outmatched"
+                    } else if plan.strategy == GrandStrategy::Recovery {
+                        "this is not the war the recovery plan is fighting"
+                    } else {
+                        "the war has stalled"
+                    };
+                    think!(self.journal(), Diplomacy, Decision,
+                           "Offering peace to {}", g.players[*other].civ;
+                           "{because}: {my_power:.0} power against their {their_power:.0}");
+                }
                 // Peace between majors is bilateral. The former direct
                 // MakePeace let an outmatched defender terminate a winning
                 // invasion on the first legal turn, even when the conqueror
@@ -4095,8 +4401,39 @@ impl AdvancedAi {
             });
         if close_enough && ready && staged {
             if let Some(action) = self.preferred_war_opening(g, pid, target) {
+                if self.journal().wants(crate::reasoning::Level::Strategy) {
+                    let casus = match &action {
+                        Action::DeclareWarWithCasusBelli { casus_belli, .. } => {
+                            format!(" under a {} casus belli", plain(casus_belli))
+                        }
+                        _ => String::new(),
+                    };
+                    think!(self.journal(), Military, Strategy,
+                           "Declaring war on {}", g.players[target].civ;
+                           "{my_power:.0} power against their {target_power:.0}, the army is \
+                            staged within reach of the first objective{casus}{}",
+                           if urgent_denial {
+                               ", and they are close enough to winning that waiting loses it"
+                           } else {
+                               ""
+                           });
+                }
                 let _ = g.apply(pid, &action);
             }
+        } else if self.journal().wants(crate::reasoning::Level::Detail) {
+            // Not opening a war is a decision too, and the observer cannot see
+            // it any other way: an army that sits still for thirty turns looks
+            // identical to one with no plan.
+            let blocker = if !close_enough {
+                "no city of theirs is within 18 tiles of one of mine"
+            } else if !ready {
+                "the army is not strong enough yet"
+            } else {
+                "the army has not finished staging"
+            };
+            think!(self.journal(), Military, Detail,
+                   "Holding off war with {}", g.players[target].civ;
+                   "{blocker}; {my_power:.0} power against their {target_power:.0}");
         }
     }
 
@@ -4196,8 +4533,26 @@ impl AdvancedAi {
                     )
                 })
                 .max()
-                .map(|(_, _, _, id)| id);
-            let Some(target) = target else { break };
+                .map(|(score, _, _, id)| (id, score));
+            let Some((target, score)) = target else { break };
+            if self.journal().wants(crate::reasoning::Level::Decision) {
+                let mine = g.envoys_at(pid, target) + 1;
+                let suzerain = g
+                    .suzerain_of(target)
+                    .and_then(|leader| g.players.get(leader))
+                    .map(|leader| leader.civ.clone());
+                let standing = match &suzerain {
+                    Some(civ) if *civ == g.players[pid].civ => "already its Suzerain".to_string(),
+                    Some(civ) => format!("{civ} holds it"),
+                    None => "nobody is its Suzerain".to_string(),
+                };
+                think!(self.journal(), Diplomacy, Decision,
+                       "Sending an envoy to {}", g.players[target].civ;
+                       "a {} city-state worth {score} to the {} plan; {standing}, \
+                        this makes {mine} envoy{}",
+                       g.cs_type(&g.players[target].civ), strategy.as_str(),
+                       if mine == 1 { "" } else { "s" });
+            }
             if g.apply(pid, &Action::SendEnvoy { player: target }).is_err() {
                 break;
             }
@@ -4279,12 +4634,20 @@ impl AdvancedAi {
                 ));
             }
         }
-        if let Some((_, _, action)) = candidates.into_iter().max_by(|left, right| {
+        if let Some((score, _, action)) = candidates.into_iter().max_by(|left, right| {
             left.0
                 .partial_cmp(&right.0)
                 .unwrap_or(std::cmp::Ordering::Equal)
                 .then_with(|| left.1.cmp(&right.1))
         }) {
+            if let Action::PatronizeGreatPerson { kind, currency } = &action {
+                let price = g
+                    .great_person_patronage_price(pid, kind, currency)
+                    .unwrap_or(0.0);
+                think!(self.journal(), Economy, Decision, "Buying out the {} race", plain(kind);
+                       "{price:.0} {currency}, worth {score:.0} to the {} plan",
+                       strategy.as_str());
+            }
             let _ = g.apply(pid, &action);
         }
     }
@@ -4546,10 +4909,40 @@ impl AdvancedAi {
                     .total_cmp(&right.0)
                     .then_with(|| left.1.cmp(&right.1))
             });
-            let Some((_, _, action)) = best else { break };
+            let Some((score, _, action)) = best else { break };
             let is_unit = matches!(action, Action::Buy { .. });
+            let before = g.players[pid].gold;
             if g.apply(pid, &action).is_err() {
                 break;
+            }
+            if self.journal().wants(crate::reasoning::Level::Decision) {
+                let spent = (before - g.players[pid].gold).max(0.0);
+                let (city, what) = match &action {
+                    Action::Buy { city, unit, formation, .. } => (
+                        Some(*city),
+                        if *formation == 0 {
+                            plain(unit)
+                        } else {
+                            format!("a formation of {}", plain(unit))
+                        },
+                    ),
+                    Action::BuyBuilding { city, building, .. } => (Some(*city), plain(building)),
+                    Action::BuyDistrict { city, district, .. } => {
+                        (Some(*city), format!("a {} district", plain(district)))
+                    }
+                    Action::BuyPlot { city, pos, .. } => {
+                        (Some(*city), format!("the tile at {pos:?}"))
+                    }
+                    _ => (None, "something".to_string()),
+                };
+                let where_ = city
+                    .and_then(|id| g.cities.get(&id))
+                    .map(|city| city.name.clone())
+                    .unwrap_or_else(|| "the empire".to_string());
+                think!(self.journal(), Economy, Decision, "Buying {what} for {where_}";
+                       "{spent:.0} Gold, worth {score:.0} to the {} plan; {:.0} left \
+                        above a reserve of {reserve:.0}",
+                       plan.strategy.as_str(), g.players[pid].gold);
             }
             purchased = true;
             purchased_units += is_unit as usize;
@@ -5409,11 +5802,24 @@ impl AdvancedAi {
             let Some((governor, city)) = appointment else {
                 break;
             };
-            if g.apply(pid, &Action::AppointGovernor { governor, city })
-                .is_err()
+            let where_ = g
+                .cities
+                .get(&city)
+                .map(|city| city.name.clone())
+                .unwrap_or_else(|| format!("city {city}"));
+            if g.apply(
+                pid,
+                &Action::AppointGovernor {
+                    governor: governor.clone(),
+                    city,
+                },
+            )
+            .is_err()
             {
                 break;
             }
+            think!(self.journal(), Government, Decision, "Posting {} to {where_}", plain(&governor);
+                   "the city the {} plan gets most from", plan.strategy.as_str());
         }
 
     }
@@ -6407,8 +6813,17 @@ impl AdvancedAi {
                 } else {
                     Self::expansion_window_open(g)
                 };
+                // One settler at a time empire-wide unless the treatment is
+                // on. The clause above already caps cities-plus-settlers at
+                // the target, so `parallel_settlers` widens the *rate* and
+                // never the total: a seat two cities short may walk two.
+                let in_flight_allowed = if self.parallel_settlers {
+                    plan.desired_cities.saturating_sub(city_count).max(1)
+                } else {
+                    1
+                };
                 if city_count + counts.settlers < plan.desired_cities
-                    && counts.settlers == 0
+                    && counts.settlers < in_flight_allowed
                     && city.pop >= 2
                     && expansion_open
                     && site.is_some()
@@ -6661,7 +7076,8 @@ impl AdvancedAi {
                     return -10_000.0;
                 }
                 if spec.wonder {
-                    let wonder_civ = matches!(g.players[pid].civ.as_str(), "Egypt" | "China");
+                    let wonder_civ = !self.civ_blind
+                        && matches!(g.players[pid].civ.as_str(), "Egypt" | "China");
                     if threatened
                         || city.buildings.len() < 3
                         || turns > remaining_turns * 0.65
@@ -6945,7 +7361,8 @@ impl AdvancedAi {
             }
             Item::Wonder { wonder, .. } => {
                 let spec = &g.rules.wonders[wonder];
-                let wonder_civ = matches!(g.players[pid].civ.as_str(), "Egypt" | "China");
+                let wonder_civ = !self.civ_blind
+                    && matches!(g.players[pid].civ.as_str(), "Egypt" | "China");
                 let already_queued = g.cities.values().any(|other| {
                     matches!(
                         other.queue.first(),
@@ -7433,9 +7850,16 @@ impl AdvancedAi {
             });
             if target == Some(current) && g.can_found_city(uid) {
                 self.settler_targets.remove(&uid);
+                think!(self.journal(), Expansion, Decision, "Founding the capital at {current:?}";
+                       "the site is worth {:.1}", self.settle_value(g, pid, current); current);
                 return g.apply(pid, &Action::FoundCity { unit: uid }).is_ok();
             }
             if let Some(target) = target {
+                think!(self.journal(), Expansion, Detail,
+                       "Walking the first settler toward {target:?}";
+                       "worth {:.1} against {:.1} where it stands",
+                       self.settle_value(g, pid, target),
+                       self.settle_value(g, pid, current); target);
                 let moved = self.base.settler_step_toward(g, pid, uid, target);
                 if !moved {
                     self.settler_targets.remove(&uid);
@@ -7454,7 +7878,12 @@ impl AdvancedAi {
                 && tile
                     .owner_city
                     .is_none_or(|cid| g.cities[&cid].owner == pid)
-                && (*target == current || g.route_step(uid, *target, 0).is_some())
+                // A momentarily unavailable route is not a bad site. Under
+                // `settler_commit` the stall counter decides when to give up,
+                // not a single blocked turn.
+                && (*target == current
+                    || g.route_step(uid, *target, 0).is_some()
+                    || self.settler_commit)
         });
         let target = valid_target.or_else(|| {
             let local = self.best_reachable_settle_site(g, pid, uid, 8);
@@ -7479,6 +7908,11 @@ impl AdvancedAi {
         };
         if current == target && g.can_found_city(uid) {
             self.settler_targets.remove(&uid);
+            think!(self.journal(), Expansion, Decision, "Founding a city at {current:?}";
+                   "the site is worth {:.1}; the empire holds {} cities and wants {}",
+                   self.settle_value(g, pid, current),
+                   g.player_city_ids(pid).len(),
+                   self.plan.as_ref().map_or(0, |plan| plan.desired_cities); current);
             return g.apply(pid, &Action::FoundCity { unit: uid }).is_ok();
         }
         if let Some(escort) = g.units[&uid].linked_to.filter(|peer| {
@@ -7491,8 +7925,20 @@ impl AdvancedAi {
             }
             return false;
         }
+        think!(self.journal(), Expansion, Detail, "Settler marching to {target:?}";
+               "{} tiles away, the site is worth {:.1}",
+               g.wdist(current, target), self.settle_value(g, pid, target); target);
         let moved = self.base.settler_step_toward(g, pid, uid, target);
-        if !moved {
+        if moved {
+            self.settler_stalls.remove(&uid);
+        } else if self.settler_commit {
+            let stalls = self.settler_stalls.entry(uid).or_insert(0);
+            *stalls += 1;
+            if *stalls >= SETTLER_STALL_LIMIT {
+                self.settler_targets.remove(&uid);
+                self.settler_stalls.remove(&uid);
+            }
+        } else {
             self.settler_targets.remove(&uid);
         }
         moved
@@ -7624,6 +8070,11 @@ impl AdvancedAi {
         let here = self.worthwhile_improvements(g, pid, current, strategy);
         if let Some(improvement) = here.first() {
             self.builder_targets.remove(&uid);
+            think!(self.journal(), Expansion, Detail,
+                   "Building a {} at {current:?}", plain(improvement);
+                   "worth {:.1} to the {} plan, best of {} that fit this tile",
+                   self.improvement_value(g, current, improvement, strategy),
+                   strategy.as_str(), here.len(); current);
             return g
                 .apply(
                     pid,
@@ -8483,6 +8934,29 @@ impl AdvancedAi {
             });
         }
         self.force_groups.sort_by_key(|group| group.id);
+        // What the armies have been told to do. This is the layer between the
+        // grand strategy and the individual attacks below it, and it is the
+        // one an observer cannot infer from watching units move: a group that
+        // holds and a group that has nowhere to go look identical on the map.
+        if self.journal().wants(crate::reasoning::Level::Decision) {
+            for group in &self.force_groups {
+                let held = match group.posture {
+                    ForcePosture::Hold if group.local_strength_ratio < LOCAL_SUPERIORITY_FLOOR => {
+                        " — too weak locally to advance"
+                    }
+                    ForcePosture::Hold => " — held back to cover a threat",
+                    ForcePosture::Muster => " — still gathering",
+                    _ => "",
+                };
+                think!(self.journal(), Military, Decision,
+                       "A {} force of {} will {}",
+                       group.domain.as_str(), group.units.len(), group.posture.as_str();
+                       "objective {:?}, {:.0}% ready, {:.2} local strength against the \
+                        enemy there{held}",
+                       group.objective, group.readiness * 100.0, group.local_strength_ratio;
+                       group.objective);
+            }
+        }
         for group in &self.force_groups {
             self.census.count_posture(group.posture);
             if group.posture == ForcePosture::Hold {
@@ -8632,7 +9106,7 @@ impl AdvancedAi {
                     * (1.0 - group.local_strength_ratio)
                     * advance.max(0) as f64;
             }
-            value
+            value + self.base.livelock_penalty(uid, tile)
         };
 
         let stay = score(g, upos);
@@ -9719,11 +10193,41 @@ impl AdvancedAi {
                 }
             }
         }
-        if let Some((score, _, action)) = best {
+        if let Some((score, at, action)) = best {
             let required_margin = if unit.hp < 55 { 12.0 } else { 0.0 };
-            if score > required_margin && g.apply(pid, &action).is_ok() {
-                self.force_groups_dirty = true;
-                return true;
+            if score > required_margin {
+                if self.journal().wants(crate::reasoning::Level::Detail) {
+                    let verb = match &action {
+                        Action::Ranged { .. } => "shells",
+                        Action::PriorityTarget { .. } => "targets",
+                        _ => "attacks",
+                    };
+                    let defender = g
+                        .city_at(at)
+                        .and_then(|cid| g.cities.get(&cid))
+                        .map(|city| city.name.clone())
+                        .or_else(|| {
+                            g.units_at(at)
+                                .first()
+                                .map(|oid| plain(&g.units[oid].kind))
+                        })
+                        .unwrap_or_else(|| format!("{at:?}"));
+                    let orders = group
+                        .as_ref()
+                        .map(|orders| {
+                            format!("{} group at {:.2} local strength",
+                                    orders.posture.as_str(), orders.local_strength_ratio)
+                        })
+                        .unwrap_or_else(|| "unattached".to_string());
+                    think!(self.journal(), Military, Detail,
+                           "{} {verb} {defender}", plain(&unit.kind);
+                           "worth {score:.0} over a margin of {required_margin:.0}, \
+                            on {} health, {orders}", unit.hp; at);
+                }
+                if g.apply(pid, &action).is_ok() {
+                    self.force_groups_dirty = true;
+                    return true;
+                }
             }
         }
 
@@ -10155,7 +10659,7 @@ impl AdvancedAi {
     }
 
     fn advanced_units(&mut self, g: &mut Game, pid: usize, plan: &StrategicPlan) {
-        self.base.begin_movement_turn();
+        self.base.begin_movement_turn(g, pid);
         if self.victory_planning {
             self.rebuild_force_groups(g, pid, plan);
         } else {
@@ -10187,6 +10691,7 @@ impl AdvancedAi {
             (order, *uid)
         });
         for uid in ids {
+            let mut took_a_turn = false;
             for _ in 0..8 {
                 if !g.units.contains_key(&uid) || g.units[&uid].moves_left <= 0.0 {
                     break;
@@ -10226,6 +10731,10 @@ impl AdvancedAi {
                 if !acted {
                     break;
                 }
+                took_a_turn = true;
+            }
+            if !took_a_turn {
+                self.base.hold_stood_down_unit(g, pid, uid);
             }
         }
         self.settler_targets
@@ -10646,7 +11155,14 @@ impl Ai for AdvancedAi {
     }
 
     fn take_turn(&mut self, g: &mut Game, pid: usize) {
+        // Stamp the context once, for every layer. Nothing below repeats the
+        // turn number or the acting civilization.
+        self.journal().begin_turn(g.turn, pid);
         g.with_deferred_visibility(|g| self.take_turn_inner(g, pid));
+    }
+
+    fn attach_journal(&mut self, journal: Journal) {
+        self.base.attach_journal(journal);
     }
 }
 
@@ -10671,6 +11187,15 @@ impl AdvancedAi {
             self.plan = Some(self.assess(g, pid));
         }
         let plan = self.plan.clone().unwrap();
+        if self.food_first != 0.0 {
+            // Want food only while short of the target. Past it the extra
+            // food buys nothing this treatment is arguing for, and the
+            // production it costs is real.
+            let short = g.player_city_ids(pid).len() < plan.desired_cities;
+            if let Some(seat) = g.players.get_mut(pid) {
+                seat.citizen_food_bias = if short { self.food_first } else { 0.0 };
+            }
+        }
         self.census.count(plan.strategy);
         self.advanced_research(g, pid, &plan);
         if self.victory_planning {

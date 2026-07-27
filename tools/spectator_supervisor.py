@@ -1641,8 +1641,15 @@ def main() -> int:
             log("active runtime is behind the worktree; scheduling a safe live refresh")
 
         while True:
-            state = read_state(args.port)
-            if state is None:
+            # A restart is asked for by the person watching, and the moment it
+            # is most needed is the moment a long AI turn holds the simulation
+            # lock — which is exactly when `/state` cannot be built and this
+            # loop used to see nothing at all. `/runtime` answers from atomics
+            # beside the session, so the request is read while the turn runs.
+            manual_request = manual_new_game_request(read_json(args.port, "/runtime") or {})
+            if manual_request is None:
+                state = read_state(args.port)
+            if manual_request is None and state is None:
                 now = time.monotonic()
                 unavailable_since = unavailable_since or now
                 alive = process_alive(process, adopted_pid)
@@ -1698,7 +1705,11 @@ def main() -> int:
             busy_check_at = 0.0
             busy_until = 0.0
 
-            manual_request = manual_new_game_request(state)
+            # `/state` remains the fallback: this supervisor re-execs itself
+            # from newer source while an older promoted runtime is still live,
+            # and that runtime answers `/runtime` without the request in it.
+            if manual_request is None:
+                manual_request = manual_new_game_request(state)
             if manual_request is not None:
                 mode, requested_settings, preserve_pause = manual_request
                 if mode == "fresh_code":
