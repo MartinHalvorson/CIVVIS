@@ -2286,15 +2286,14 @@ fn apply_tectonics(wm: &mut WorldMap, land: &BTreeSet<Pos>, rng: &mut Rng) {
     }
 }
 
-/// The latitude a world with no poles is painted at.
+/// The latitude to paint at when nothing else names one.
 ///
-/// A poleless world still has to hand `TerrainGenerator.lua`'s bands *some*
-/// latitude, and this is the one that reads as warm everywhere: below
-/// [`TUNDRA_LATITUDE`], so no tile is ever cold enough for tundra or snow, and
-/// inside the desert belt, so the dry fractal is still free to lay deserts
-/// down wherever it is dry. What the bands then decide is rainfall alone,
-/// which is exactly what a world without cold ends should be deciding on.
-const POLELESS_LATITUDE: f64 = 0.34;
+/// `TerrainGenerator.lua`'s bands always need *some* latitude, and this is the
+/// one that reads as warm: below [`TUNDRA_LATITUDE`], so it is never cold
+/// enough for tundra or snow, and inside the desert belt, so the dry fractal
+/// is still free to lay deserts down wherever it is dry. Only the randomized
+/// arm below can reach it, and only if its own thermal fractal were missing.
+const TEMPERATE_LATITUDE: f64 = 0.34;
 
 /// The grain of the fractal that lays out heat on a randomized world.
 ///
@@ -2312,11 +2311,9 @@ const THERMAL_FRACTAL_GRAIN: u32 = 3;
 ///
 /// With poles, latitude is where the tile actually is: hottest across the
 /// middle of the world and colder with every step towards either extreme,
-/// ending in tundra and then snow. Without them, every tile is handed the same
-/// warm latitude instead, so there is no cold end to the world at all and the
-/// two fractals decide everything between desert, plains and grassland.
-/// Randomized hands each tile a latitude drawn from a fourth fractal, so the
-/// full range from snow to jungle survives but stops running north to south.
+/// ending in tundra and then snow. Randomized hands each tile a latitude drawn
+/// from a fourth fractal instead, so the full range from snow to jungle
+/// survives but stops running north to south.
 ///
 /// That fourth fractal is built **only** for `Randomized`. Drawing it
 /// unconditionally would advance `rng` before the desert and plains fractals
@@ -2338,11 +2335,10 @@ fn assign_biomes(wm: &mut WorldMap, land: &[Pos], poles: MapPoles, rng: &mut Rng
         }
         let base = match poles {
             MapPoles::Poles => wm.polar_fraction(*pos),
-            MapPoles::NoPoles => POLELESS_LATITUDE,
             // `thermal` is Some for exactly this arm.
             MapPoles::Randomized => thermal
                 .as_ref()
-                .map_or(POLELESS_LATITUDE, |f| f.at(col, row) as f64 / 255.0),
+                .map_or(TEMPERATE_LATITUDE, |f| f.at(col, row) as f64 / 255.0),
         };
         let latitude =
             (base + (128.0 - variation.at(col, row) as f64) / (255.0 * 5.0)).clamp(0.0, 1.0);
@@ -4206,7 +4202,6 @@ mod river_tests {
     const FLAT: MapTopology = MapTopology::Flat;
     const GLOBE: MapTopology = MapTopology::Planet;
     const POLED: MapPoles = MapPoles::Poles;
-    const POLELESS: MapPoles = MapPoles::NoPoles;
     const SCATTERED: MapPoles = MapPoles::Randomized;
 
     /// Every world type but Earth, in the order the lobby lists them: most
@@ -4603,7 +4598,7 @@ mod river_tests {
         let rules = Rules::embedded();
         for (index, size) in [&CIV6_MAP_SIZES[0], &CIV6_MAP_SIZES[3]].into_iter().enumerate() {
             for topology in [FLAT, GLOBE] {
-                for poles in [POLED, POLELESS] {
+                for poles in [POLED, SCATTERED] {
                     let mut rng = Rng::new(
                         52_000
                             + index as u64 * 4
@@ -4735,13 +4730,13 @@ mod river_tests {
         let rules = Rules::embedded();
         for (index, script) in ROLLED_TYPES.into_iter().enumerate() {
             for topology in [FLAT, GLOBE] {
-                for poles in [POLED, MapPoles::NoPoles] {
+                for poles in [POLED, SCATTERED] {
                     for size in [&CIV6_MAP_SIZES[1], &CIV6_MAP_SIZES[3]] {
                         let mut rng = Rng::new(
                             41_000
                                 + index as u64 * 8
                                 + topology.is_globe() as u64 * 2
-                                + matches!(poles, MapPoles::NoPoles) as u64,
+                                + matches!(poles, SCATTERED) as u64,
                         );
                         let (world, spawns) = generate_with_script(
                             &rules,
@@ -4872,35 +4867,14 @@ mod river_tests {
         }
     }
 
-    /// And what "no poles" means: no cold end to the world at all. Not a
-    /// milder one — none. Snow, tundra and sea ice are the three things a
-    /// latitude puts on a map, and a world without poles carries none of them
-    /// at any latitude, including the two rows that used to be its ice caps.
+    /// Snow, tundra and sea ice are the three things a cold end puts on a map,
+    /// and a poled world carries all three. This is the control the randomized
+    /// world is read against: when that one grows no ice, it is the setting and
+    /// not a generator that has stopped making ice at all.
     #[test]
-    fn a_world_without_poles_has_no_cold_end_at_any_latitude() {
+    fn a_poled_world_grows_snow_tundra_and_a_sea_ice_band() {
         let rules = Rules::embedded();
         for topology in [FLAT, GLOBE] {
-            for (index, script) in ROLLED_TYPES.into_iter().enumerate() {
-                let mut rng = Rng::new(46_000 + index as u64 * 4);
-                let (world, _) = generate_with_script(
-                    &rules, 60, 38, 4, 6, 3, 2, script, topology, POLELESS, &mut rng,
-                );
-                let where_ = format!("{script:?} on {topology:?} without poles");
-                for (pos, tile) in world.tiles.iter() {
-                    assert!(
-                        !matches!(tile.terrain.as_str(), "snow" | "tundra"),
-                        "{where_}: {} at {pos:?}, {:.2} from the equator",
-                        tile.terrain,
-                        world.polar_fraction(*pos)
-                    );
-                    assert!(
-                        tile.feature.as_deref() != Some("ice"),
-                        "{where_}: sea ice at {pos:?}"
-                    );
-                }
-            }
-            // The same world with poles does carry all three, so the absence
-            // above is the setting and not a broken generator.
             let mut rng = Rng::new(46_000);
             let (poled, _) = generate_with_script(
                 &rules, 60, 38, 4, 6, 3, 2, MapScript::Pangaea, topology, POLED, &mut rng,
@@ -4980,9 +4954,9 @@ mod river_tests {
         }
     }
 
-    /// Randomized worlds keep the cold terrains that a poleless world drops,
-    /// and drop the polar sea-ice band that a poled world grows — cold ground
-    /// exists, it just isn't at the ends of the world.
+    /// A randomized world keeps every cold terrain and drops only the polar
+    /// sea-ice band that a poled world grows — cold ground exists, it just
+    /// isn't at the ends of the world.
     #[test]
     fn a_randomized_world_has_cold_terrain_but_no_polar_ice_band() {
         let rules = Rules::embedded();
@@ -5008,13 +4982,14 @@ mod river_tests {
     }
 
     /// The guard on the whole change: the thermal fractal is drawn only for a
-    /// randomized world, so a poled or poleless world from a given seed is the
-    /// same world it was before that fractal existed.
+    /// randomized world, so a poled world from a given seed is the same world
+    /// it was before that fractal existed — and either setting redraws its own
+    /// world exactly, however many fractals it consumed getting there.
     #[test]
     fn only_randomized_worlds_draw_the_thermal_fractal() {
         let rules = Rules::embedded();
         for topology in [FLAT, GLOBE] {
-            for poles in [POLED, POLELESS] {
+            for poles in [POLED, SCATTERED] {
                 let mut first = Rng::new(51_000);
                 let (a, _) = generate_with_script(
                     &rules, 60, 38, 4, 6, 3, 2, MapScript::Continents, topology, poles, &mut first,

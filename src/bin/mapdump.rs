@@ -9,7 +9,7 @@
 //!                 [--script land_only|lakes|inland_sea|grand_canals|pangaea|
 //!                  continents|small_continents|islands|water_world|
 //!                  true_start_earth]
-//!                 [--shape flat|planet] [--poles poles|no_poles|randomized]
+//!                 [--shape flat|planet] [--poles poles|randomized]
 //!                 [--maps N] [--quiet]
 //!
 //! `--shape planet` is a globe, and its rectangle is the storage the sphere is
