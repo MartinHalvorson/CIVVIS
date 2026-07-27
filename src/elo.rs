@@ -38,7 +38,7 @@ pub const BUILTIN_AIS: [&str; 10] = [
 /// tournament ratings. Keeping them out of `BUILTIN_AIS` prevents a control
 /// factory from being pooled into the same player/leader rating key as
 /// its treatment.
-pub const EVAL_ONLY_AIS: [&str; 22] = [
+pub const EVAL_ONLY_AIS: [&str; 25] = [
     "advanced_lane_reachable",
     "advanced_relief_scoped",
     "strategic_score",
@@ -51,6 +51,9 @@ pub const EVAL_ONLY_AIS: [&str; 22] = [
     "strategic_rot20",
     "strategic_rot10",
     "strategic_deep",
+    "strategic_deep_expand",
+    "strategic_deep_consolidate",
+    "strategic_deep_militarize",
     "production",
     "production_net",
     "policy_wide",
@@ -578,6 +581,35 @@ pub fn builtin_ai(name: &str, seed: u64) -> Box<dyn Ai> {
             ai.horizon = 80;
             Box::new(ai)
         }
+        // Static genome challengers for the strongest measured search
+        // budget. Unlike `strategic_doctrine`, these do not ask a noisy
+        // per-review rollout to choose a play style. Each applies one bounded
+        // Doctrine perturbation for the whole game, so a paired evaluation
+        // measures whether that policy itself is stronger.
+        "strategic_deep_expand" => {
+            let weights = crate::strategic::Doctrine::Expand
+                .apply(&crate::evolve::load_champion("evolved").unwrap_or_default());
+            let mut ai = crate::strategic::StrategicAi::with_weights(weights);
+            ai.review_every = 20;
+            ai.horizon = 80;
+            Box::new(ai)
+        }
+        "strategic_deep_consolidate" => {
+            let weights = crate::strategic::Doctrine::Consolidate
+                .apply(&crate::evolve::load_champion("evolved").unwrap_or_default());
+            let mut ai = crate::strategic::StrategicAi::with_weights(weights);
+            ai.review_every = 20;
+            ai.horizon = 80;
+            Box::new(ai)
+        }
+        "strategic_deep_militarize" => {
+            let weights = crate::strategic::Doctrine::Militarize
+                .apply(&crate::evolve::load_champion("evolved").unwrap_or_default());
+            let mut ai = crate::strategic::StrategicAi::with_weights(weights);
+            ai.review_every = 20;
+            ai.horizon = 80;
+            Box::new(ai)
+        }
         // The same opponent-model treatment on the strongest measured macro
         // search, isolating whether better branch fidelity still helps when
         // each review already spends the promoted 20x80 budget.
@@ -890,6 +922,9 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         // and the net is non-definitional because the search runs without
         // one. There is no separate published netless name to degrade to.
         "strategic_deep" => (vec![genome, value(false)], "strategic_deep"),
+        "strategic_deep_expand" => (vec![genome, value(false)], "strategic_deep_expand"),
+        "strategic_deep_consolidate" => (vec![genome, value(false)], "strategic_deep_consolidate"),
+        "strategic_deep_militarize" => (vec![genome, value(false)], "strategic_deep_militarize"),
         "strategic_deep_rivals" => (vec![genome, value(false)], "strategic_deep_rivals"),
         "strategic_rot10" => (vec![genome, value(false)], "strategic_rot10"),
         // The genome tunes both its rollout policy and its scripted
@@ -1278,8 +1313,8 @@ pub fn leaderboard(pool: &EloPool) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        builtin_provenance, collapsed_entrants, expected, scheduled_seats, seat_schedule,
-        win_shares, EloPool, RatedPlayer, RatingKey, BUILTIN_AIS, CHAMPION_FILE,
+        builtin_ai, builtin_provenance, collapsed_entrants, expected, scheduled_seats,
+        seat_schedule, win_shares, EloPool, RatedPlayer, RatingKey, BUILTIN_AIS, CHAMPION_FILE,
         ELO_SCHEMA_VERSION, EVAL_ONLY_AIS, VALUENET_FILE,
     };
     use crate::rng::Rng;
@@ -1415,6 +1450,18 @@ mod tests {
             }
         }
         fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn static_doctrine_challengers_construct_searching_agents() {
+        for name in [
+            "strategic_deep_expand",
+            "strategic_deep_consolidate",
+            "strategic_deep_militarize",
+        ] {
+            let ai = builtin_ai(name, 1);
+            assert_eq!(ai.review_census(), Some(Default::default()), "{name}");
+        }
     }
 
     fn player(name: &str, leader: &str, civ: &str, score: i64, won: bool) -> RatedPlayer {
