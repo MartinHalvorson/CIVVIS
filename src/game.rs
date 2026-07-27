@@ -17334,6 +17334,21 @@ impl Game {
     }
 
     /// Sum a reusable modifier bundle attached directly to one player.
+    /// Whether a seat carries no runtime modifier bundle.
+    ///
+    /// [`crate::rules::EffectIndex`] speaks for the ruleset, and the ruleset
+    /// is fixed once a game begins — but `Rules::modifiers` is swapped in
+    /// wholesale when a resolution installs a bundle, so an indexed answer
+    /// about it could be stale. Every collection path that consults the index
+    /// pairs it with this, and a seat carrying an attachment simply takes the
+    /// unoptimized route. The overwhelming majority of seats carry none.
+    #[inline]
+    fn has_no_attachments(&self, pid: usize) -> bool {
+        self.players
+            .get(pid)
+            .is_none_or(|player| player.attached_modifiers.is_empty())
+    }
+
     pub fn player_modifier_effect(&self, pid: usize, effect: &str) -> f64 {
         self.players
             .get(pid)
@@ -17444,6 +17459,12 @@ impl Game {
     /// callers provide the game context (unit class, district family, city
     /// state, and so on). Anarchy suppresses cards but not external modifiers.
     pub fn policy_effect(&self, pid: usize, effect: &str) -> f64 {
+        // A runtime attachment can carry any key at all, and the table it
+        // comes from is swapped in after the ruleset is indexed, so the
+        // index only settles this for a seat carrying no attachments.
+        if !self.rules.effect_index.policies(effect) && self.has_no_attachments(pid) {
+            return 0.0;
+        }
         let attached = self.player_modifier_effect(pid, effect);
         if self.in_anarchy(pid) {
             return attached; // the cards come out; external modifiers remain
@@ -17461,6 +17482,15 @@ impl Game {
     /// policies, researched nodes and civilization traits are empire-wide;
     /// infrastructure, beliefs and Governors contribute only where active.
     fn city_modifier_effect(&self, city: &City, effect: &str) -> f64 {
+        // Nine sweeps follow, over the player's policies, trees, traits,
+        // buildings, districts, wonders, beliefs, pantheon and Governors.
+        // Every one of them ends in `spec.effects.get(effect)`, so if nothing
+        // in the ruleset grants this key they all add up to the same nothing
+        // — unless the owner carries a runtime attachment, which the index
+        // cannot speak for.
+        if !self.rules.effect_index.any(effect) && self.has_no_attachments(city.owner) {
+            return 0.0;
+        }
         let pid = city.owner;
         self.policy_effect(pid, effect)
             + self.tree_effect(pid, effect)
@@ -17477,6 +17507,17 @@ impl Game {
         let mut selectors = vec![building, "*"];
         if let Some(replaced) = self.rules.buildings[building].replaces.as_deref() {
             selectors.push(replaced);
+        }
+        // Each surviving selector costs six assembled keys and six collection
+        // sweeps. A selector no modifier anywhere names contributes zero to
+        // all six, so it is dropped before a key is built for it — but only
+        // where the index speaks for every source, which excludes a seat
+        // carrying runtime attachments.
+        if self.has_no_attachments(city.owner) {
+            selectors.retain(|selector| self.rules.effect_index.modifies_building_yields(selector));
+            if selectors.is_empty() {
+                return Yields::default();
+            }
         }
         let effect = |yield_type: &str| {
             selectors
@@ -17504,6 +17545,9 @@ impl Game {
         if let Some(replaced) = self.rules.units[unit].replaces.as_deref() {
             selectors.push(replaced);
         }
+        if self.has_no_attachments(city.owner) {
+            selectors.retain(|selector| self.rules.effect_index.discounts_unit_purchase(selector));
+        }
         selectors
             .into_iter()
             .map(|selector| {
@@ -17513,6 +17557,11 @@ impl Game {
     }
 
     fn modifier_grants_ability(&self, pid: usize, ability: &str) -> bool {
+        // Assembling the key allocates, and this is asked behind every
+        // `has_ability` call, so rule the question out on the borrowed name.
+        if !self.rules.effect_index.grants_ability(ability) && self.has_no_attachments(pid) {
+            return false;
+        }
         let effect = grant_ability_effect_key(ability);
         let religion = self.players.get(pid).and_then(|player| player.religion.as_deref());
         self.policy_effect(pid, &effect)
@@ -19316,6 +19365,9 @@ impl Game {
     }
 
     fn religion_belief_effect(&self, religion: &str, effect: &str) -> f64 {
+        if !self.rules.effect_index.beliefs(effect) {
+            return 0.0;
+        }
         let Some(founder) = self.religion_founder(religion) else {
             return 0.0;
         };
@@ -23176,6 +23228,9 @@ impl Game {
     }
 
     fn city_building_effect(&self, city: &City, effect: &str) -> f64 {
+        if !self.rules.effect_index.buildings(effect) {
+            return 0.0;
+        }
         city.buildings
             .iter()
             .filter_map(|building| {
@@ -23196,6 +23251,12 @@ impl Game {
     }
 
     fn empire_wonder_effect(&self, pid: usize, effect: &str) -> f64 {
+        // No wonder in the ruleset grants anything towards this, so no
+        // arrangement of built wonders can either — and the alternative is
+        // walking every city in the world to reach that same zero.
+        if !self.rules.effect_index.wonders(effect) {
+            return 0.0;
+        }
         self.cities
             .values()
             .filter(|city| city.owner == pid)
@@ -28938,6 +28999,9 @@ impl Game {
     }
 
     fn city_district_effect(&self, city: &City, effect: &str) -> f64 {
+        if !self.rules.effect_index.districts(effect) {
+            return 0.0;
+        }
         city.districts
             .iter()
             .filter(|(district, position)| self.district_is_active(city, district, **position))
@@ -41872,6 +41936,11 @@ impl Game {
     }
 
     fn governor_effect(&self, pid: usize, cid: u32, effect: &str) -> f64 {
+        // Deciding whether a Governor is established walks the roster and the
+        // city; no title or promotion granting this makes that moot.
+        if !self.rules.effect_index.governors(effect) {
+            return 0.0;
+        }
         self.players[pid]
             .governor_roster
             .iter()

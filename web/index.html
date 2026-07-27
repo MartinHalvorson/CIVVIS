@@ -14375,6 +14375,24 @@ function drawSkyLandings(place, crew, alpha) {
   cx.restore();
 }
 
+// One orbit per civilization, in the world's own frame. A craft is up there
+// whatever shape the map is drawn in, so its orbit is settled here rather than
+// by whichever view happens to be open: the same launch leans the same way and
+// crosses the equator in the same place seen from space or from underneath.
+// Only the pace is left to the view, as a dial rather than a number of
+// milliseconds — a lap of a globe is half hidden behind the world and a lap of
+// a flat board is a crossing of the whole picture, which are not the same
+// length of time to watch.
+function skyOrbit(player) {
+  return {
+    inclination:(.30 + .95 * hash2(player.id, 3)) *
+      (hash2(player.id, 13) < .5 ? 1 : -1),
+    node:6.283 * hash2(player.id, 9),
+    phase:6.283 * hash2(player.id, 7),
+    pace:hash2(player.id, 5),
+  };
+}
+
 // Orbits are real circles seen at an angle, so a satellite passing behind the
 // world goes behind it. The depth that decides is the same one the projection
 // throws away.
@@ -14397,9 +14415,7 @@ function drawSkySatellites(crew, camera, radius, centerX, centerY, alpha, now) {
             basis.ring * (basis.uz * along + basis.wz * across)];
   };
   const flight = crew.map((player, index) => {
-    const inclination = (.30 + .95 * hash2(player.id, 3)) *
-      (hash2(player.id, 13) < .5 ? 1 : -1);
-    const node = 6.283 * hash2(player.id, 9);
+    const {inclination, node, phase, pace} = skyOrbit(player);
     // Kept in Earth radii so the ring stands off the limb by the same margin
     // whatever the zoom, the way the old pixel figure did.
     const ring = 1.38 + Math.min(8, radius * .5) / Math.max(1, radius) +
@@ -14409,8 +14425,7 @@ function drawSkySatellites(crew, camera, radius, centerX, centerY, alpha, now) {
     const basis = {ring,
       ux:cosNode, uy:sinNode, uz:0,
       wx:-sinNode * cosLean, wy:cosNode * cosLean, wz:sinLean};
-    const angle = now / (9200 + 3400 * hash2(player.id, 5)) * 6.283
-      + hash2(player.id, 7) * 6.283;
+    const angle = now / (9200 + 3400 * pace) * 6.283 + phase;
     const at = planetProject(site(basis, angle), view, radius, centerX, centerY);
     return {player, basis, x:at.x, y:at.y, behind:at.z < 0};
   });
@@ -14754,6 +14769,172 @@ function planetSkyAnimating() {
   if (planetEarthRadius() > SKY_SURFACE) return false;
   const crews = skyCrews();
   return crews.satellite.length > 0 || crews.expedition.length > 0;
+}
+
+// --------------------------------------------------- the flat board's sky
+//
+// A finished launch is a fact about the world, not about the shape the world
+// is drawn in: the civilization with a satellite over the globe has the same
+// one over a flat board. What a flat board cannot show is the orbit itself,
+// because a sheet of paper has no limb for a craft to pass behind. What it
+// shows instead is the thing a flat map has always shown, and the reason
+// anybody recognises a satellite on a chart at all: the ground track, the line
+// directly under the craft. Its crest is the inclination, its length is one
+// revolution, and every pass lies west of the one before because the world
+// turned underneath while the craft went round. That drift is the whole
+// difference between an orbit and a wave scrolling across a chart — it never
+// quite repeats, which is exactly how a ground track reads.
+
+// How far the world turns under one revolution, as a fraction of its width. A
+// real low orbit takes about a sixteenth of a day and so lands a sixteenth of
+// the world west each pass; a tenth here, because the trail drawn behind the
+// craft is a little over one revolution long and at a sixteenth its two passes
+// lie close enough to read as one thick line rather than as two.
+const FLAT_SAT_DRIFT = .1;
+// One revolution in wall-clock milliseconds, before each craft's own pace.
+const FLAT_SAT_LAP = 27000;
+
+// How much of the sky is in the picture. Zoomed in, a map is a place you are
+// standing in and the four hundred kilometres above it are not part of that
+// view; pulled back to a survey of the world, they are. It fades rather than
+// switches, because a craft that appears on a zoom notch reads as a glitch.
+function flatSkyShown() {
+  if (!state || planetMap()) return 0;
+  return Math.max(0, Math.min(1, (.86 - cam.scale) / .34));
+}
+
+// Nothing else on a strategic board moves between turns, so the map only keeps
+// asking for frames while there is a craft up there and the camera is far
+// enough back to see it.
+function flatSkyAnimating() {
+  return flatSkyShown() > .02 && skyCrews().satellite.length > 0;
+}
+
+// Where the craft is over the world, `theta` round its orbit from the
+// ascending node:
+//
+//   sin(latitude) = sin(inclination) · sin(theta)
+//   longitude     = node + atan2(cos(inclination)·sin theta, cos theta)
+//                        − drift · theta
+//
+// The first is the orbit leaning over the equator. The second is that same
+// orbit's own longitude — unwrapped past the ±180° cut atan2 puts in, or the
+// track would jump a world's width every half revolution — less the turn the
+// world made underneath in the same time.
+function flatSatelliteGround(orbit, theta) {
+  const lat = Math.asin(Math.sin(orbit.inclination) * Math.sin(theta));
+  const swing = Math.atan2(Math.cos(orbit.inclination) * Math.sin(theta),
+                           Math.cos(theta));
+  const lon = orbit.node + swing + 6.283185 * Math.round((theta - swing) / 6.283185)
+    - FLAT_SAT_DRIFT * theta;
+  // Rows are latitude on a flat board — the same reading the climate bands are
+  // laid out by — so the poles are the first and last row and the equator is
+  // the middle one.
+  const span = S * 1.5 * Math.max(1, state.map.height - 1);
+  return [WW() * lon / 6.283185, span * (.5 - lat / Math.PI)];
+}
+
+// A world point folded into the copy of the world the map actually drew, then
+// turned into view coordinates by the same rotate-and-squash `hexXY` uses. The
+// track therefore lies on the ground rather than on the lens: pan, turn or
+// tilt the board and it stays over the same continent, which is the whole
+// claim a ground track makes. A cylinder folds about the camera, the way the
+// tiles themselves do. A world drawn with its ends left on — an open chart, or
+// a viewer who has switched wrapping off — folds about the middle of the one
+// sheet there is, so the craft cannot fly over paper with no world on it.
+function flatSkyProject(worldX, worldY) {
+  const at = mapWrapsX() ? wrapX(worldX)
+    : wrapNear(worldX, chartIsOpen() ? chartAnchorX() : WW() / 2, WW());
+  const wx = at - cam.x, wy = wrapY(worldY) - cam.y;
+  return {copy:at, x:COSR * wx - SINR * wy, y:(SINR * wx + COSR * wy) * YS};
+}
+
+function drawFlatSatellites(now) {
+  const shown = flatSkyShown();
+  if (shown <= .02) return;
+  const crew = skyCrews().satellite;
+  if (!crew.length) return;
+  // The marker for something four hundred kilometres up is not a scale drawing
+  // of it — at this zoom the craft is far smaller than one pixel — so it holds
+  // its size on screen while the ground under it zooms. Its height and the
+  // circle it can see from up there are real distances across a real world and
+  // are kept as fractions of the world's own width, so they zoom with it.
+  const pixel = 1 / cam.scale;
+  const lift = WW() * .012;
+  const horizon = WW() * .048;
+  const halfW = MAPW / 2 * pixel + horizon, halfH = MAPH / 2 * pixel + horizon;
+  cx.save();
+  cx.lineCap = "round";
+  // Every line goes down twice, dark and wide first. A jersey colour at a
+  // quarter alpha is legible over open sea and gone entirely over sunlit sand,
+  // which is how the track came out visible only where the world happened to
+  // be dark; the same ink the labels are cut against fixes it everywhere.
+  const inked = (colour, width, alpha) => {
+    cx.globalAlpha = shown * alpha * .5;
+    cx.strokeStyle = "#07100f"; cx.lineWidth = (width + 1.5) * pixel;
+    cx.stroke();
+    cx.globalAlpha = shown * alpha;
+    cx.strokeStyle = colour; cx.lineWidth = width * pixel;
+    cx.stroke();
+  };
+  for (const player of crew) {
+    const orbit = skyOrbit(player);
+    const theta = orbit.phase +
+      now / (FLAT_SAT_LAP * (.82 + .5 * orbit.pace)) * 6.283185;
+    const colour = pcol(player.id);
+    const track = (fromRev, toRev, width, alpha, dashed) => {
+      const steps = Math.max(8, Math.round(Math.abs(toRev - fromRev) * 60));
+      cx.setLineDash(dashed ? [3.5 * pixel, 4.5 * pixel] : []);
+      cx.beginPath();
+      let last = null;
+      for (let step = 0; step <= steps; step++) {
+        const turn = fromRev + (toRev - fromRev) * step / steps;
+        const at = flatSkyProject(
+          ...flatSatelliteGround(orbit, theta + 6.283185 * turn));
+        // Where the track folds round to the far side of a wrapping world the
+        // line stops and starts again: joining those two points would draw a
+        // stroke straight back across the picture.
+        if (last !== null && Math.abs(at.copy - last) < WW() / 2)
+          cx.lineTo(at.x, at.y);
+        else cx.moveTo(at.x, at.y);
+        last = at.copy;
+      }
+      inked(colour, width, alpha);
+    };
+    // A little over one revolution behind, so the pass before this one is
+    // still on the paper to be told apart from it, and a dashed quarter ahead
+    // to say the line goes on.
+    track(-1.35, 0, 1, .2, false);
+    track(-.38, 0, 1.4, .45, false);
+    track(0, .3, 1, .16, true);
+
+    const here = flatSkyProject(...flatSatelliteGround(orbit, theta));
+    if (Math.abs(here.x) > halfW || Math.abs(here.y) > halfH) continue;
+    cx.setLineDash([]);
+    // The ground it can see, laid on the plane the board is drawn in, and a
+    // drop line to its own point on that ground: without one the craft is a
+    // speck beside the track rather than a thing above it.
+    cx.beginPath(); cx.ellipse(here.x, here.y, horizon, horizon * YS, 0, 0, 7);
+    cx.globalAlpha = shown * .06;
+    cx.fillStyle = colour; cx.fill();
+    inked(colour, .9, .22);
+    cx.beginPath(); cx.moveTo(here.x, here.y); cx.lineTo(here.x, here.y - lift);
+    inked(colour, .9, .4);
+    // The craft itself, in the same body-and-two-wings the globe draws, so the
+    // same launch is recognisably the same object in either view — cut against
+    // the same ink, because it crosses ground of every colour there is.
+    const size = 3.8 * pixel, top = here.y - lift;
+    const panel = (x, y, w, h, fill) => {
+      cx.fillStyle = fill; cx.fillRect(x, y, w, h); cx.strokeRect(x, y, w, h);
+    };
+    cx.globalAlpha = shown;
+    cx.strokeStyle = "#07100f"; cx.lineWidth = .9 * pixel;
+    const wing = pcol2(player.id);
+    panel(here.x - size * 2.6, top - size * .3, size * 1.4, size * .6, wing);
+    panel(here.x + size * 1.2, top - size * .3, size * 1.4, size * .6, wing);
+    panel(here.x - size, top - size * .55, size * 2, size * 1.1, colour);
+  }
+  cx.restore();
 }
 
 // The flat board and the globe share the same terrain atlas, but not the same
@@ -17197,6 +17378,10 @@ function draw() {
     cx.fillStyle = f.col; cx.fillText(f.txt, f.x, fy);
     cx.globalAlpha = 1;
   }
+  // The sky over the board: above everything standing on the ground, and under
+  // the weather and the flash, which are the frame itself rather than things in
+  // the world.
+  drawFlatSatellites(now0);
   drawNuclearBlasts(now0);
   lastSmokeBucket = smokeBucket;
   if (MODE.atmosphere) drawAtmosphere(now0);
@@ -24293,7 +24478,7 @@ function animTick(now) {
     anim.sparks.length > 0 || anim.deaths.length > 0 || anim.strike ||
     anim.shots.length > 0 || anim.bursts.length > 0 || anim.motes.length > 0 ||
     anim.scars.length > 0 || anim.battles.length > 0 || shakeUntil > now ||
-    anim.blasts.length > 0 || planetSkyAnimating();
+    anim.blasts.length > 0 || planetSkyAnimating() || flatSkyAnimating();
   // Never spend more than about half the wall clock painting. Cinematic asks
   // for a repaint thirty times a second so its weather and water keep moving,
   // which is right on a machine that can afford it and ruinous on one that
