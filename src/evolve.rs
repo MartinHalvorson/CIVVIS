@@ -468,6 +468,7 @@ pub fn evolve(cfg: &EvoCfg) {
         "evolve: pop {} · {} games/genome · {}x{} {}p {}t · {} threads · resuming at gen {}",
         cfg.pop, cfg.games, cfg.width, cfg.height, cfg.players, cfg.max_turns, cfg.threads, gen0
     );
+    report_selection_resolution(cfg.games);
     for gen in gen0..gen0.saturating_add(cfg.generations) {
         let opponents = opponent_pool(&champ, &archive);
         let fits = evaluate_all(&pop, &opponents, cfg, gen);
@@ -679,5 +680,65 @@ mod tests {
             serde_json::from_str(r#"{"gen":3,"fitness":91.5,"weights":{}}"#).unwrap();
         assert_eq!(champion.validation_score, 0.0);
         assert_eq!(champion.validation_games, 0);
+    }
+}
+
+
+/// Effect size a bounded genome move is worth, measured over 24 mid-game
+/// positions with the four `Doctrine` perturbations continued to a real
+/// result against five opponent policies each: mean win rates 0.375 / 0.367 /
+/// 0.325 / 0.292, an 0.083 spread (`docs/SUPERHUMAN.md`,
+/// `search_probe --genome`).
+const GENOME_EFFECT: f64 = 0.083;
+
+/// State, at startup, what this run's fitness measurement can actually
+/// distinguish.
+///
+/// A fitness averaged over `games` carries a standard error of about
+/// `sqrt(0.25 / games)`. At the default of 8 that is 0.177, so the
+/// measurement resolves 0.354 at two sigma while the effect being selected on
+/// is 0.083 — four times below its own noise floor, and selection is drift
+/// rather than hill-climbing. A 54-minute run at the default promoted nothing
+/// and never left generation 0.
+///
+/// This is one line of arithmetic and it is the difference between a night of
+/// compute that can find something and one that cannot, so it is printed
+/// rather than left in a document.
+fn report_selection_resolution(games: usize) {
+    let se = (0.25 / games.max(1) as f64).sqrt();
+    let resolves = 2.0 * se;
+    let verdict = if resolves <= GENOME_EFFECT {
+        "resolves the measured genome effect".to_string()
+    } else {
+        let needed = (0.25 / (GENOME_EFFECT / 2.0).powi(2)).ceil() as usize;
+        format!(
+            "BELOW the measured genome effect of {GENOME_EFFECT:.3} — selection is largely \
+             drift; about {needed} games/genome would resolve it"
+        )
+    };
+    println!("  fitness SE {se:.3} → resolves {resolves:.3} at 2σ · {verdict}");
+}
+
+#[cfg(test)]
+mod resolution_tests {
+    use super::{report_selection_resolution, GENOME_EFFECT};
+
+    /// The arithmetic this warning rests on, pinned so a change to it is
+    /// deliberate: the shipped default cannot resolve the effect, and the
+    /// figure the warning recommends can.
+    #[test]
+    fn the_default_game_count_is_below_the_genome_effect() {
+        let se = |games: usize| (0.25f64 / games as f64).sqrt();
+        assert!(
+            2.0 * se(8) > GENOME_EFFECT,
+            "the default of 8 games/genome would resolve {:.3}, which is not above the \
+             {GENOME_EFFECT:.3} effect — the warning is stale",
+            2.0 * se(8)
+        );
+        let needed = (0.25 / (GENOME_EFFECT / 2.0f64).powi(2)).ceil() as usize;
+        assert!(2.0 * se(needed) <= GENOME_EFFECT);
+        // Does not panic, and is cheap enough to sit in a startup path.
+        report_selection_resolution(8);
+        report_selection_resolution(needed);
     }
 }
