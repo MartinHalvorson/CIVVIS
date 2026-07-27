@@ -166,6 +166,12 @@ struct Seat {
     still_spent: u32,
     still_crowded: u32,
     still_unexplained: u32,
+    /// Standing still with no destination *while the empire is paying for
+    /// another settler*. The production gate cannot test reachability -- there
+    /// is no unit yet to test it with -- so if it keeps authorising settlers
+    /// while one already has nowhere to go, the gate is optimistic in exactly
+    /// the way §17 describes.
+    still_no_target_while_building: u32,
     /// Finished journeys: (turns alive, steps taken, straight-line distance).
     settler_trips: Vec<(u32, u32, u32)>,
     /// Turns short of the city target with no settler anywhere.
@@ -574,6 +580,9 @@ fn main() {
                         }
                         if fleet_aim_missing.contains(id) {
                             seat.still_no_target += 1;
+                            if building {
+                                seat.still_no_target_while_building += 1;
+                            }
                         } else if *moves <= 0.0 {
                             seat.still_spent += 1;
                         } else if crowded.contains(id) {
@@ -1126,6 +1135,10 @@ fn main() {
     let crowd: u32 = seats.iter().map(|s| s.still_crowded).sum();
     let unex: u32 = seats.iter().map(|s| s.still_unexplained).sum();
     let still_total = (no_t + spent + crowd + unex).max(1);
+    let no_t_building: u32 = seats
+        .iter()
+        .map(|s| s.still_no_target_while_building)
+        .sum();
     println!(
         "\nwhy a settler stood still ({still_total} such settler-turns):\n  \
          {no_t:6} held no destination at all               ({:.0}%)\n  \
@@ -1134,11 +1147,15 @@ fn main() {
          {unex:6} unexplained                               ({:.0}%)\n\
          Civilization VI allows one unit per tile per domain, so an empire's own escort \
          blocks a settler as surely as a rival does. 'Occupied' is a necessary condition \
-         for congestion, not proof the settler wanted one of those tiles.",
+         for congestion, not proof the settler wanted one of those tiles.\n  \
+         of the no-destination turns, {no_t_building} ({:.0}%) happened while the empire was \
+         paying for ANOTHER settler -- the production gate cannot test reachability because \
+         there is no unit yet to test it with, so this is the asymmetry firing.",
         100.0 * no_t as f64 / still_total as f64,
         100.0 * spent as f64 / still_total as f64,
         100.0 * crowd as f64 / still_total as f64,
-        100.0 * unex as f64 / still_total as f64
+        100.0 * unex as f64 / still_total as f64,
+        100.0 * no_t_building as f64 / no_t.max(1) as f64
     );
     let moved: Vec<f64> = seats.iter().map(|s| s.settler_moved_turns as f64).collect();
     let stood: Vec<f64> = seats.iter().map(|s| s.settler_idle_turns as f64).collect();
