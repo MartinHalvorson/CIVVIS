@@ -2291,3 +2291,71 @@ a floor of 0.224 at affordable replica counts.
 would be required. This is the same discipline that retired the sealed-rollout
 family and the commitment-margin hypothesis, applied one level up: not "does the
 treatment fire" but "is there anything here to find".
+
+## 2026-07-27 — ★ SHIPPED: the first evolved genome, and what it replaces
+
+Every strategic agent in this repository resolves its genome through
+`evolve::load_champion("evolved").unwrap_or_default()`. `evolved/` was
+gitignored and **no `best.json` existed on this machine or in a fresh clone**,
+so `advanced`, `advanced_evolved`, `strategic`, `strategic_deep`, the
+exhibition and the fleet all silently played `Weights::default()`. The
+hand-written defaults were never the intended agent — they were what the
+loader returned when the intended one was missing. **Every strength number
+published before today was measured on top of that.**
+
+`data/evolved/best.json` is now a committed champion, on the same arrangement
+as `data/league`: `.gitignore` anchors `/evolved/` to the repo root only, and
+`load_champion` prefers a local `evolved/` so an in-progress run is never
+shadowed by the snapshot.
+
+### How it was earned
+
+`civvis evolve --pop 24 --generations 25 --games 96 --players 4 --width 24
+--height 16 --turns 500 --seed 7`, promoted at generation 2 by the unmodified
+gate: SPRT **22–32 = 40.7%** against the incumbent where parity at a
+four-player table is 25% (Fishtest-style, H1 0.40, LLR bounds ±2.94), holdout
+no regression.
+
+Then evaluated against the defaults it replaces, pre-registered, at the stock
+500-turn budget:
+
+```
+ai_eval advanced_evolved advanced --players 4 --pairs 1300 --seed 172000 --turns 500
+
+game-win share: advanced_evolved 1419/2600 (54.6%)  advanced 1181/2600 (45.4%)
+paired-map score: 54.6% (95% Wilson CI 51.9%..57.3%), Elo-equivalent +32 (CI +13..+51)
+paired direction: evolved 253, neutral 913, advanced 134; sign p=0.0000
+anytime evidence: evolved peak e=1.601e7, crossed at map 746
+terminal-score direction: evolved 836, neutral 2, advanced 462; sign p=0.0000
+promotion gate: PASS
+```
+
+| seed | maps | for | against | sign p |
+|---|---|---|---|---|
+| 170000 | 240 | 46 | 27 | 0.0344 |
+| 171000 | 500 | 80 | 51 | 0.0141 |
+| 172000 | 1300 | 253 | 134 | 0.0000 |
+| **pooled, disjoint** | **2040** | **379** | **212** | **~1e-13** |
+
+Two earlier runs were reported here as unpromoted positives because they read
+INCONCLUSIVE on the fixed-*n* Wilson bound. At 54.6% that bound needs about
+1200 maps; 1300 were run so the criterion could be met rather than loosened.
+
+### What is and is not established
+
+- **Established:** the committed genome beats `Weights::default()` for
+  `AdvancedAi` at four players and the stock budget, on three disjoint seed
+  sets.
+- **Not established:** transfer to `StrategicAi`. `strategic` and
+  `strategic_deep` load the same champion and wrap an `AdvancedAi`, so they
+  inherit it, but no paired run has measured them under it. #466 is testing a
+  league-selected genome under `strategic_deep`; this one wants the same
+  treatment before any claim is made about those entrants.
+- **Not established:** transfer to other player counts or map sizes. The
+  genome was evolved at 4p on 24×16 and evaluated there. `auto_dimension`
+  gives 60×38 for four players in ordinary play, and that is a different
+  distribution.
+- **Superseded numbers:** any published comparison whose entrants resolve
+  through `load_champion` now differs from its recorded value, because the
+  loader no longer returns `None`. Re-measure rather than compare across the
+  boundary.

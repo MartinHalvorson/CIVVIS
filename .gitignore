@@ -3,7 +3,9 @@ target/
 .idea/
 .pytest_cache/
 civvis-play*.log
-evolved/
+# Runtime evolution state at the repo root only; data/evolved/ is a committed
+# champion, the same arrangement as the league snapshot below.
+/evolved/
 # Runtime league state at the repo root only; data/league/ is a committed snapshot.
 /league/
 *.log
