@@ -55,7 +55,15 @@ fn number(args: &[String], flag: &str, default: usize) -> usize {
 }
 
 /// One mirrored map pair: the scrambled genome against the shipped one.
-fn duel(candidate: &Weights, players: usize, w: i32, h: i32, seed: u64, turns: u32) -> f64 {
+fn duel(
+    candidate: &Weights,
+    players: usize,
+    w: i32,
+    h: i32,
+    seed: u64,
+    turns: u32,
+    lane: bool,
+) -> f64 {
     let mut share = 0.0;
     for treated in 0..2usize {
         let mut game = Game::new(players, w, h, seed, turns, 0);
@@ -84,14 +92,25 @@ fn duel(candidate: &Weights, players: usize, w: i32, h: i32, seed: u64, turns: u
         let mut mine = 0.0;
         let mut table = 0.0;
         for player in game.players.iter().filter(|p| !p.is_minor) {
-            let score = game.score(player.id) as f64;
-            table += score;
+            let value = if lane {
+                game.victory_threat(player.id)
+            } else {
+                game.score(player.id) as f64
+            };
+            table += value;
             if is_treated(player.id) {
-                mine += score;
+                mine += value;
             }
         }
-        let won = if game.winner.is_some_and(is_treated) { 1.0 } else { 0.0 };
-        share += 0.8 * (mine / table.max(1.0)) + 0.2 * won;
+        if lane {
+            // Lane progress already tracks victory, so no win term is folded in;
+            // mixing them would reintroduce the binary variance the continuous
+            // statistic exists to avoid.
+            share += if table > 0.0 { mine / table } else { 0.5 };
+        } else {
+            let won = if game.winner.is_some_and(is_treated) { 1.0 } else { 0.0 };
+            share += 0.8 * (mine / table.max(1.0)) + 0.2 * won;
+        }
     }
     share / 2.0
 }
@@ -106,6 +125,7 @@ fn main() {
     let turns = number(&args, "--turns", 500) as u32;
     let seed0 = number(&args, "--seed", 1_100_000) as u64;
     let jobs = number(&args, "--jobs", parallel::default_jobs());
+    let lane = args.iter().any(|arg| arg == "--lane");
 
     let bounds = Weights::bounds();
     let names = Weights::gene_names();
@@ -115,6 +135,10 @@ fn main() {
         "gene_leverage: {} blocks x {draws} random draws x {maps} mirrored maps, \
          {players}p {width}x{height}, {turns} turns, seed {seed0}",
         BLOCKS.len()
+    );
+    println!(
+        "  statistic: {}",
+        if lane { "victory-lane progress (tracks WINS)" } else { "score share (tracks the ECONOMY)" }
     );
     println!("  each draw replaces a block with uniform samples from its own bounds");
     println!("  parity 0.500; a block that matters scores BELOW parity when scrambled\n");
@@ -144,7 +168,7 @@ fn main() {
         v[gene] = value;
         let genome = Weights::from_vec(&v);
         let shares = parallel::map(maps, jobs, move |index| {
-            duel(&genome, players, width, height, seed0 + index as u64, turns)
+            duel(&genome, players, width, height, seed0 + index as u64, turns, lane)
         });
         let n = shares.len().max(1) as f64;
         let mean = shares.iter().sum::<f64>() / n;
@@ -222,7 +246,7 @@ fn main() {
             }
             let genome = Weights::from_vec(&v);
             let shares = parallel::map(maps, jobs, move |index| {
-                duel(&genome, players, width, height, seed0 + index as u64, turns)
+                duel(&genome, players, width, height, seed0 + index as u64, turns, lane)
             });
             let n = shares.len().max(1) as f64;
             let mean = shares.iter().sum::<f64>() / n;
@@ -279,7 +303,7 @@ fn main() {
             v[gene] = value;
             let genome = Weights::from_vec(&v);
             let shares = parallel::map(maps, jobs, move |index| {
-                duel(&genome, players, width, height, seed0 + index as u64, turns)
+                duel(&genome, players, width, height, seed0 + index as u64, turns, lane)
             });
             let n = shares.len().max(1) as f64;
             let mean = shares.iter().sum::<f64>() / n;
@@ -316,7 +340,7 @@ fn main() {
             let genome = Weights::from_vec(&v);
             let map_seed = seed0 + 1_000 * (draw as u64 + 1);
             let shares = parallel::map(maps, jobs, move |index| {
-                duel(&genome, players, width, height, map_seed + index as u64, turns)
+                duel(&genome, players, width, height, map_seed + index as u64, turns, lane)
             });
             per_draw.push(shares.iter().sum::<f64>() / shares.len().max(1) as f64);
         }
