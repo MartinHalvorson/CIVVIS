@@ -768,34 +768,64 @@ fn wars_json(g: &Game, explored: &BTreeSet<Pos>) -> Vec<Value> {
                     total.units += toll.units;
                     total.cities += toll.cities;
                     total.city_names.extend(toll.city_names.iter().cloned());
+                    total.city_losses.extend(toll.city_losses.iter().cloned());
                     for (kind, count) in &toll.unit_kinds {
                         *total.unit_kinds.entry(kind.clone()).or_insert(0) += count;
                     }
                 }
             }
 
-            // A participant may appear in several fronts at once. Merge those
-            // copies into one interval, but keep a genuine later re-entry as a
-            // separate row by including its entry turn in the key.
-            let mut participation: BTreeMap<
-                (usize, bool, Option<usize>, u32),
-                (Option<u32>, i64, Option<i64>, BTreeMap<u32, i64>),
-            > = BTreeMap::new();
+            // One belligerent is one entry, however many fronts it fought on and
+            // however many times it entered. A participant appearing in several
+            // fronts at once is the same interval seen twice; a city-state whose
+            // Suzerain changes leaves the war and comes back, which is the same
+            // belligerent with a second interval. Both merge here so the log can
+            // give an entity one section listing its whole involvement, and so
+            // the effort it spent is counted per unit across every interval
+            // rather than once per row.
+            let mut participation: BTreeMap<(usize, bool), Vec<&crate::game::WarParticipation>> =
+                BTreeMap::new();
             for participant in records.iter().flat_map(|war| &war.participants) {
                 participation
-                    .entry((
-                        participant.player,
-                        participant.declarer_side,
-                        participant.suzerain,
-                        participant.entered,
-                    ))
-                    .and_modify(|(exited, strength, peak, saw_action_units)| {
-                        *exited = match (*exited, participant.exited) {
-                            (Some(first), Some(second)) => Some(first.max(second)),
-                            _ => None,
-                        };
-                        *strength = (*strength).max(participant.strength);
-                        *peak = match (*peak, participant.peak_strength) {
+                    .entry((participant.player, participant.declarer_side))
+                    .or_default()
+                    .push(participant);
+            }
+            let mut side_losses = [
+                crate::game::WarLosses::default(),
+                crate::game::WarLosses::default(),
+            ];
+            for (player, toll) in &losses {
+                let declarer_side = participation
+                    .keys()
+                    .find(|(participant, _)| participant == player)
+                    .map(|(_, side)| *side)
+                    .unwrap_or(*player == anchor.declarer);
+                let total = &mut side_losses[if declarer_side { 0 } else { 1 }];
+                total.units += toll.units;
+                total.cities += toll.cities;
+            }
+            let parties = participation
+                .into_iter()
+                .map(|((player, declarer_side), entries)| {
+                    // Keyed by entry turn, so the two copies of one interval a
+                    // pair of fronts produces collapse while a real re-entry
+                    // stays its own interval. Still being in on one front is
+                    // still being in.
+                    let mut intervals: BTreeMap<u32, Option<u32>> = BTreeMap::new();
+                    let mut saw_action_units: BTreeMap<u32, i64> = BTreeMap::new();
+                    let mut peak_strength: Option<i64> = None;
+                    for participant in &entries {
+                        intervals
+                            .entry(participant.entered)
+                            .and_modify(|exited| {
+                                *exited = match (*exited, participant.exited) {
+                                    (Some(first), Some(second)) => Some(first.max(second)),
+                                    _ => None,
+                                };
+                            })
+                            .or_insert(participant.exited);
+                        peak_strength = match (peak_strength, participant.peak_strength) {
                             (Some(first), Some(second)) => Some(first.max(second)),
                             (known, None) | (None, known) => known,
                         };
@@ -805,34 +835,25 @@ fn wars_json(g: &Game, explored: &BTreeSet<Pos>) -> Vec<Value> {
                                 .and_modify(|known| *known = (*known).max(*value))
                                 .or_insert(*value);
                         }
-                    })
-                    .or_insert((
-                        participant.exited,
-                        participant.strength,
-                        participant.peak_strength,
-                        participant.saw_action_units.clone(),
-                    ));
-            }
-            let mut side_losses = [
-                crate::game::WarLosses::default(),
-                crate::game::WarLosses::default(),
-            ];
-            for (player, toll) in &losses {
-                let declarer_side = participation
-                    .keys()
-                    .find(|(participant, _, _, _)| participant == player)
-                    .map(|(_, side, _, _)| *side)
-                    .unwrap_or(*player == anchor.declarer);
-                let total = &mut side_losses[if declarer_side { 0 } else { 1 }];
-                total.units += toll.units;
-                total.cities += toll.cities;
-            }
-            let parties = participation
-                .into_iter()
-                .map(|(
-                    (player, declarer_side, suzerain, entered),
-                    (exited, strength, peak_strength, saw_action_units),
-                )| {
+                    }
+                    let entered = intervals.keys().next().copied().unwrap_or(started);
+                    // Strength on first entering the war, not the largest of
+                    // several entries: this is the "before" of the comparison.
+                    let strength = entries
+                        .iter()
+                        .filter(|participant| participant.entered == entered)
+                        .map(|participant| participant.strength)
+                        .max()
+                        .unwrap_or(0);
+                    // A belligerent has left only if its latest interval closed.
+                    let exited = intervals.values().next_back().copied().flatten();
+                    let suzerain = entries
+                        .iter()
+                        .filter(|participant| participant.entered == entered)
+                        .find_map(|participant| participant.suzerain)
+                        .or_else(|| {
+                            entries.iter().find_map(|participant| participant.suzerain)
+                        });
                     let toll = losses.get(&player).cloned().unwrap_or_default();
                     let saw_action_strength = saw_action_units.values().sum::<i64>();
                     json!({
@@ -841,6 +862,13 @@ fn wars_json(g: &Game, explored: &BTreeSet<Pos>) -> Vec<Value> {
                         "suzerain": suzerain,
                         "entered": entered,
                         "exited": exited,
+                        "intervals": intervals
+                            .iter()
+                            .map(|(entered, exited)| json!({
+                                "entered": entered,
+                                "exited": exited,
+                            }))
+                            .collect::<Vec<_>>(),
                         "strength": strength,
                         "strength_start": strength,
                         "strength_peak": peak_strength,
@@ -849,6 +877,7 @@ fn wars_json(g: &Game, explored: &BTreeSet<Pos>) -> Vec<Value> {
                         "cities_lost": toll.cities,
                         "unit_kinds": toll.unit_kinds,
                         "city_names": toll.city_names,
+                        "city_losses": toll.city_losses,
                     })
                 })
                 .collect::<Vec<_>>();

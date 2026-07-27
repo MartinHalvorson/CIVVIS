@@ -6483,8 +6483,42 @@ mod tests {
         let losses = EMBEDDED_INDEX.find("war-row-label\">Losses").unwrap();
         let chronology = EMBEDDED_INDEX.find("war-row-label\">Chronology").unwrap();
         assert!(belligerents < losses && losses < chronology);
-        assert!(EMBEDDED_INDEX.contains("entered Turn ${party.entered}"));
-        assert!(EMBEDDED_INDEX.contains("peaced out Turn ${party.exited}"));
+        // A belligerent gets one section carrying its whole involvement, so the
+        // note is built from that belligerent's intervals rather than from one
+        // row per interval, and a second entry reads as a re-entry.
+        assert!(EMBEDDED_INDEX.contains("entered ${turn}${interval.entered}"));
+        assert!(EMBEDDED_INDEX.contains("re-entered ${turn}${interval.entered}"));
+        assert!(EMBEDDED_INDEX
+            .contains("peaced out ${notes.length ? \"\" : \"Turn \"}${interval.exited}"));
+        assert!(EMBEDDED_INDEX.contains("function warMergeParties(parties)"));
+        assert!(EMBEDDED_INDEX.contains("function warPartyIntervals(party)"));
+        // The bar rules the line under the name it measures, so the name comes
+        // first in the row and the bar follows it.
+        let belligerent_row = EMBEDDED_INDEX
+            .split("function warBelligerentRows(")
+            .nth(1)
+            .unwrap()
+            .split("function nuclearStrikeFor(")
+            .next()
+            .unwrap();
+        let party_name = belligerent_row.find("class=\"war-party-name\"").unwrap();
+        let bar = belligerent_row.find("class=\"war-belligerent-bar\"").unwrap();
+        let note = belligerent_row.find("class=\"war-party-note\"").unwrap();
+        assert!(
+            party_name < bar && bar < note,
+            "the effort bar belongs below the belligerent's name, above its notes"
+        );
+        assert!(belligerent_row.contains("(initial aggressor)"));
+        assert!(belligerent_row.contains("party.player === war.aggressor"));
+        // Cities are listed under the belligerent that lost them, said plainly,
+        // and ranked capital first then by the population that changed hands.
+        assert!(EMBEDDED_INDEX.contains("function warCityLosses(party, war)"));
+        assert!(EMBEDDED_INDEX.contains("loss.razed ? \"razed\" : \"conquered\""));
+        assert!(EMBEDDED_INDEX
+            .contains("Number(b.capital) - Number(a.capital) || b.pop - a.pop"));
+        // The class the ledger is ordered by is reachable on the row, never a
+        // banner across it.
+        assert!(!EMBEDDED_INDEX.contains("war-loss-category"));
         assert!(EMBEDDED_INDEX.contains("sort((a, b) => a.turn - b.turn)"));
         assert!(EMBEDDED_INDEX.contains("built the world's first"));
         assert!(EMBEDDED_INDEX.contains("changed government from"));
