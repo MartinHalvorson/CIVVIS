@@ -19,6 +19,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, OpenOptions};
 use std::io::{self, ErrorKind, Write};
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -1344,10 +1345,39 @@ fn seed_league(dir: &str) -> League {
 
 pub fn load_league(dir: &str) -> Option<League> {
     let raw = fs::read_to_string(Path::new(dir).join("league.json")).ok()?;
-    let mut league: League = serde_json::from_str(&raw).ok()?;
+    Some(parse_league(&raw)?)
+}
+
+fn parse_league(raw: &str) -> Option<League> {
+    let mut league: League = serde_json::from_str(raw).ok()?;
     migrate_legacy_leader_ratings(&mut league);
     ensure_usernames(&mut league);
     Some(league)
+}
+
+/// The committed roster, compiled into the binary.
+///
+/// `load_league` reads a *directory*, so the snapshot under `data/league` was
+/// only ever found when the process happened to be started with a checkout
+/// root as its working directory. That is true of `cargo test` and of a
+/// developer standing in a checkout, and false of everything else: the
+/// installed binary run from anywhere, a launcher that starts it from `/`, and
+/// the published WASM build, which has no filesystem at all. Every one of
+/// those showed a provisional 1500 down the whole table, because a seat with
+/// no roster row behind it is exactly that (see `display_rating`).
+///
+/// A rating on screen must not depend on which directory the binary was
+/// started from, so the snapshot travels with the code. It is a read-only
+/// prior: nothing is ever recorded into it — `record_league_result` still
+/// requires a `--league` directory — and a roster on disk always wins.
+const SHIPPED_LEAGUE: &str = include_str!("../data/league/league.json");
+
+/// The shipped roster, parsed once. `None` only if the committed snapshot
+/// itself stopped parsing, which is a build-time mistake rather than a
+/// runtime condition.
+pub fn shipped_league() -> Option<League> {
+    static PARSED: OnceLock<Option<League>> = OnceLock::new();
+    PARSED.get_or_init(|| parse_league(SHIPPED_LEAGUE)).clone()
 }
 
 fn default_leader(civilization: &str) -> String {
@@ -2632,6 +2662,50 @@ mod tests {
         assert!(shown.civ_specific && !shown.provisional);
         // A different civilization still falls back to the global rating.
         assert!(!display_rating(Some(&fresh), "Egypt").civ_specific);
+    }
+
+    /// The committed roster travels with the code, so a rating never depends
+    /// on which directory the binary was started from.
+    ///
+    /// It used to be read out of `data/league`, a path resolved against the
+    /// working directory — found by `cargo test` and by a developer standing
+    /// in a checkout, and by nothing else. Started from anywhere else the read
+    /// failed, no seat had a roster row behind it, and the whole table showed
+    /// the provisional 1500 that means "the league has never heard of this
+    /// player". The published WASM build, which has no filesystem at all,
+    /// could never show anything else.
+    #[test]
+    fn the_shipped_roster_is_compiled_in_and_its_entrants_are_rated() {
+        let league = shipped_league().expect("the committed snapshot parses");
+        assert!(
+            league.strategies.len() >= 10,
+            "a roster of {} is not the shipped snapshot",
+            league.strategies.len()
+        );
+        assert!(
+            league.strategies.iter().any(|s| !s.retired && !s.human),
+            "the auto-play control has entrants to offer"
+        );
+
+        // `advanced` is the entrant every unseated table is labelled with:
+        // majors run the default hierarchical AI, which is what this row
+        // rates. If it is not here, an ordinary game has nothing to show.
+        let advanced = league
+            .strategies
+            .iter()
+            .find(|s| s.name == "advanced")
+            .expect("the default entrant is in the shipped roster");
+        assert!(advanced.games > 0, "and it has actually played");
+        let shown = display_rating(Some(advanced), "Rome");
+        assert!(
+            !shown.provisional,
+            "a rating with games behind it is not provisional"
+        );
+        assert!(
+            (800.0..=2600.0).contains(&shown.rating),
+            "{} is not a rating",
+            shown.rating
+        );
     }
 
     /// The worked example from Glickman's Glicko-2 paper: 1500/200/0.06
