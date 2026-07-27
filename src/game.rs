@@ -42124,9 +42124,21 @@ impl Game {
         let mut foreign_pressure = 0.0;
         let mut pressure_by_civ: BTreeMap<usize, f64> = BTreeMap::new();
         for source in self.cities.values() {
-            // City-states and ordinary Free Cities do not exert population
-            // Loyalty pressure in the standard Gathering Storm ruleset.
-            if self.players[source.owner].is_minor || self.players[source.owner].is_barbarian {
+            let owner = &self.players[source.owner];
+            // A true barbarian speaks for nobody. The Free Cities seat carries
+            // the same hostile flag so that everyone is at war with it, so it
+            // has to be named apart from them here.
+            if owner.is_barbarian && !owner.is_free_city {
+                continue;
+            }
+            // A minor civilization projects no pressure onto its neighbours:
+            // the shipped population tooltip drops the "also applies to other
+            // cities within 9 tiles" clause for minors. Its own Citizens still
+            // speak for the city they live in, and that is the whole domestic
+            // side of a city-state's or Free City's own balance. Skipping them
+            // outright left every city-state comparing 0 against its
+            // neighbours and reading a permanent -20.
+            if (owner.is_minor || owner.is_free_city) && source.id != cid {
                 continue;
             }
             let distance = self.wdist(source.pos, cpos);
@@ -42161,8 +42173,14 @@ impl Game {
         let mut delta = (10.0 * (domestic_pressure - foreign_pressure)
             / (domestic_pressure.min(foreign_pressure) + 0.5))
             .clamp(-20.0, 20.0);
+        // `IDENTITY_PER_TURN_FROM_FREE_CITIES` 10 and
+        // `IDENTITY_PER_TURN_FROM_CITY_STATES` 20 — a Free City's desire for
+        // independence and a city-state's base strength as itself. The Free
+        // Cities seat is also a minor, so it answers first.
         if self.players[pid].is_free_city {
             delta += 10.0;
+        } else if self.players[pid].is_minor {
+            delta += 20.0;
         }
         delta += Self::happiness_loyalty_delta(self.city_amenity_surplus(city));
         if self.city_yields(cid).food + f64::EPSILON < 2.0 * city.pop as f64 {
@@ -42203,11 +42221,28 @@ impl Game {
                 self.civ_effect(pid, "garrison_loyalty")
             };
         }
-        let occupied = city
+        // Occupation. Rise & Fall charged a flat -1 to -5; Gathering Storm
+        // rescaled it to "Loyalty penalties based on the conqueror's
+        // Grievances caused against the city's original owner" —
+        // `IDENTITY_PER_TURN_FROM_OCCUPATION_MULTIPLIER` 25 percent of those
+        // Grievances, held between `_MIN` 0 and `_MAX` 10. The penalty is
+        // charged whether or not a garrison stands there; what a garrison buys
+        // is `IDENTITY_PER_TURN_FROM_MARTIAL_LAW` +8, which is why holding a
+        // fresh conquest down with troops raises its Loyalty rather than
+        // merely stopping the bleed.
+        let occupier = city
             .occupied_from
-            .is_some_and(|former| self.players.get(former).is_some_and(|player| player.alive));
-        if occupied && !garrisoned {
-            delta -= 5.0;
+            .filter(|former| self.players.get(*former).is_some_and(|player| player.alive));
+        if let Some(former) = occupier {
+            let grievances = self.players[former]
+                .grievances
+                .get(&pid)
+                .copied()
+                .unwrap_or(0.0);
+            delta -= (0.25 * grievances).clamp(0.0, 10.0);
+            if garrisoned {
+                delta += 8.0;
+            }
         }
         if let Some(founded_religion) = self.players[pid].religion.as_deref() {
             if let Some(city_religion) = self.city_religion(city) {
@@ -42316,8 +42351,17 @@ impl Game {
     /// first revolts into the hostile Free Cities seat at 100 Loyalty. A Free
     /// City at zero then joins the living major that accumulated the greatest
     /// population pressure during its independence.
+    ///
+    /// A city-state runs the same rules as anybody else. It is not exempt —
+    /// what keeps it in place is the +20 base strength it carries and the fact
+    /// that its own Citizens are the whole domestic side of its balance. An
+    /// overwhelmed city-state revolts into a Free City like a major's city
+    /// does. Barbarians hold no Loyalty at all — but the Free Cities seat is
+    /// flagged as one so that everybody is at war with it, so it is named
+    /// apart from them.
     fn process_loyalty(&mut self, pid: usize) {
-        if self.players[pid].is_minor && !self.players[pid].is_free_city {
+        let player = &self.players[pid];
+        if player.is_barbarian && !player.is_free_city {
             return;
         }
 
@@ -54017,14 +54061,28 @@ mod victory_conditions {
         assert_eq!(g.cities[&city].captured_from, None);
         assert_eq!(g.cities[&city].occupied_from, Some(1));
 
+        // The capture left player 1 aggrieved, and Gathering Storm charges
+        // 25% of those Grievances (capped at 10) for as long as the city is
+        // occupied. A garrison does not cancel that penalty; it pays the
+        // separate +8 of Martial Law on top of it.
+        let grievances = g.players[1].grievances[&0];
         let mut without_garrison = g.clone();
         let before = without_garrison.cities[&city].loyalty;
         without_garrison.process_loyalty(0);
         let ungarrisoned_gain = without_garrison.cities[&city].loyalty - before;
+        let mut unoccupied = g.clone();
+        unoccupied.cities.get_mut(&city).unwrap().occupied_from = None;
+        let before = unoccupied.cities[&city].loyalty;
+        unoccupied.process_loyalty(0);
+        assert_eq!(
+            unoccupied.cities[&city].loyalty - before,
+            ungarrisoned_gain + (0.25 * grievances).clamp(0.0, 10.0),
+            "occupation charges 25% of the founder's Grievances"
+        );
         g.spawn_test_unit("warrior", 0, position);
         let before = g.cities[&city].loyalty;
         g.process_loyalty(0);
-        assert_eq!(g.cities[&city].loyalty - before, ungarrisoned_gain + 5.0);
+        assert_eq!(g.cities[&city].loyalty - before, ungarrisoned_gain + 8.0);
     }
 
     #[test]
@@ -54345,6 +54403,68 @@ mod victory_conditions {
         assert_eq!(g.cities[&capital].loyalty, 100.0);
         assert!(g.cities[&capital].free_city_pressure.is_empty());
         assert!(!g.players[free_cities].alive);
+    }
+
+    #[test]
+    fn a_city_state_weighs_its_own_citizens_and_carries_its_base_strength() {
+        let mut g = game_with_capitals(2, 4_245, 300);
+        g.players[1].is_minor = true;
+        let state = g.player_city_ids(1)[0];
+        let major = g.player_city_ids(0)[0];
+        let neighbor = g.nbrs(g.cities[&state].pos)[0];
+        g.cities.get_mut(&major).unwrap().pos = neighbor;
+        g.cities.get_mut(&major).unwrap().pop = 6;
+        g.cities.get_mut(&state).unwrap().pop = 6;
+
+        // Its own Citizens are the whole domestic side of the balance. Before
+        // they counted, a city-state compared 0 against its neighbours and read
+        // a permanent -20 that nothing ever applied. Here it holds its ground
+        // against an equally sized Capital one tile away, whose Citizens press
+        // at double rate, and the +20 base carries it clear.
+        let change = g.city_loyalty_per_turn(&g.cities[&state].clone());
+        assert!(
+            change > 0.0,
+            "a city-state that counts nothing for itself reads a permanent -20; got {change}"
+        );
+        // And that domestic side really is its own Population.
+        g.cities.get_mut(&state).unwrap().pop = 12;
+        assert!(
+            g.city_loyalty_per_turn(&g.cities[&state].clone()) > change,
+            "its own Citizens have to move the balance"
+        );
+
+        // And it is not exempt from the rules: swamp it and it revolts into a
+        // Free City exactly as a major's city does.
+        g.cities.get_mut(&major).unwrap().pop = 60;
+        g.cities.get_mut(&state).unwrap().pop = 1;
+        g.cities.get_mut(&state).unwrap().loyalty = 1.0;
+        g.process_loyalty(1);
+        let free_cities = g
+            .players
+            .iter()
+            .find(|player| player.is_free_city)
+            .unwrap()
+            .id;
+        assert_eq!(g.cities[&state].owner, free_cities);
+        assert_eq!(g.cities[&state].loyalty, 100.0);
+    }
+
+    #[test]
+    fn a_minor_city_projects_no_pressure_onto_its_neighbours() {
+        let mut g = game_with_capitals(3, 4_246, 300);
+        g.players[2].is_minor = true;
+        let target = g.player_city_ids(0)[0];
+        let minor = g.player_city_ids(2)[0];
+        let neighbor = g.nbrs(g.cities[&target].pos)[0];
+        g.cities.get_mut(&minor).unwrap().pos = neighbor;
+
+        let baseline = g.city_loyalty_per_turn(&g.cities[&target].clone());
+        g.cities.get_mut(&minor).unwrap().pop = 40;
+        assert_eq!(
+            g.city_loyalty_per_turn(&g.cities[&target].clone()),
+            baseline,
+            "a city-state next door must not press a major's city"
+        );
     }
 
     #[test]
