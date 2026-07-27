@@ -670,4 +670,47 @@ mod tests {
             );
         }
     }
+
+    /// A rollout, not a fixture: city-states must actually reach civilizations
+    /// and ask them for things over a real game. A quest system that only
+    /// works when a test hands it a met city-state is a quest system nobody
+    /// ever sees.
+    #[test]
+    fn city_states_issue_and_pay_quests_over_a_real_rollout() {
+        use crate::ai::{AdvancedAi, Ai};
+        let mut game = Game::new_full(4, 44, 28, 4_242, 120, 6, false);
+        let mut ais = AdvancedAi::fleet(&game);
+        let mut outstanding = 0usize;
+        let mut completed = 0usize;
+        // A quest leaving a civilization's book while its target is satisfied
+        // is a completion; a quest replaced by a new era is not.
+        let mut held: Vec<BTreeMap<usize, CityStateQuest>> =
+            vec![BTreeMap::new(); game.players.len()];
+        while game.winner.is_none() && game.turn <= 90 {
+            let pid = game.current;
+            ais[pid].take_turn(&mut game, pid);
+            if game.winner.is_none() && game.current == pid {
+                let _ = game.apply(pid, &Action::EndTurn);
+            }
+            for player in 0..4 {
+                let now = game.players[player].quests.clone();
+                for (minor, was) in &held[player] {
+                    let replaced = now.get(minor) != Some(was);
+                    if replaced && was.era == game.world_era {
+                        completed += 1;
+                    }
+                }
+                outstanding = outstanding.max(now.len());
+                held[player] = now;
+            }
+        }
+        assert!(
+            outstanding > 0,
+            "no city-state asked anybody for anything in ninety turns"
+        );
+        assert!(
+            completed > 0,
+            "ninety turns of four empires and six city-states finished no quest"
+        );
+    }
 }
