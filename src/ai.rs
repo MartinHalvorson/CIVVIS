@@ -7,13 +7,41 @@ use crate::think;
 use crate::Pos;
 use std::cell::RefCell;
 use std::cmp::Ordering;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 
 /// A bounded first-step initiative bonus breaks positional and formation ties
 /// in favor of doing something useful with the turn. Four points can overcome
 /// a couple of lost adjacency bonuses, but not the much larger penalty for
 /// stepping into a dangerous attack envelope.
 const FIRST_MOVE_SCORE_BONUS: f64 = 4.0;
+
+/// How many turns of a unit's recent whereabouts to keep. A livelock is not
+/// visible in one decision — every individual step looks like the best one
+/// available — so it can only be recognized from a unit's own recent past.
+const LIVELOCK_WINDOW: usize = 6;
+
+/// A unit whose whole recent past fits in this many tiles has not gone
+/// anywhere. Three allows a genuine three-tile shuffle around an obstacle to
+/// be recognized as one, while any unit on a real march leaves the footprint
+/// within two turns and is never considered again.
+const LIVELOCK_FOOTPRINT: usize = 3;
+
+/// What leaving a proven-fruitless footprint is worth to a unit that is
+/// circling inside it, in the same units the tactical scorers use. Two hexes
+/// of positional error is a price worth paying to get out of a loop; walking
+/// into an even fight, at roughly fifteen points of threat, is not — so this
+/// redirects a stuck unit without ever ordering it to its death.
+const LIVELOCK_ESCAPE_VALUE: f64 = 8.0;
+
+/// After this many fruitless turns the tabu has had every chance to work and
+/// has not: whatever the unit is trying to reach, it cannot. Standing it down
+/// is strictly better than another lap — it fortifies, heals, and stops
+/// paying for a route search that keeps returning the same answer.
+const LIVELOCK_STAND_DOWN_AFTER: u32 = 2 * LIVELOCK_WINDOW as u32;
+
+/// Long enough for the neighbours, borders, and enemies that produced the
+/// loop to have moved on before the unit tries again.
+const LIVELOCK_STAND_DOWN_TURNS: u32 = 4;
 
 /// Unlevied city-state forces defend the state and its immediate approaches;
 /// ownership transfers to the Suzerain while levied, so those units naturally
@@ -835,6 +863,69 @@ pub(crate) enum UnitDoctrine {
     Carrier,
 }
 
+/// Everything about a unit that changes when it accomplishes something:
+/// charges spent improving, building, or spreading; experience from a fight;
+/// damage taken or healed; a promotion chosen; a concert played. Whatever else
+/// a unit did with a turn, if none of this moved then the turn bought nothing.
+type WorkMark = (i32, i64, i32, usize, i64);
+
+fn work_mark(g: &Game, uid: u32) -> WorkMark {
+    let unit = &g.units[&uid];
+    (
+        unit.charges,
+        unit.xp,
+        unit.hp,
+        unit.promotions.len(),
+        unit.album_sales,
+    )
+}
+
+/// One unit's recent whereabouts, which is the only place a livelock is
+/// visible. Every step of a loop is individually the best move available, so
+/// no single decision can be blamed for it; only the unit's own history shows
+/// that the decisions together are going nowhere.
+#[derive(Clone, Default)]
+struct UnitMotion {
+    /// The tile this unit began each of its last `LIVELOCK_WINDOW` turns on,
+    /// newest last.
+    tiles: VecDeque<Pos>,
+    /// The work fingerprint as of the last turn it changed.
+    work: WorkMark,
+    /// Consecutive turns since the fingerprint last changed.
+    fruitless: u32,
+    /// While this is in the future the unit holds its ground instead of
+    /// issuing orders it has already proved are worthless.
+    resume_turn: u32,
+    /// This turn's verdict, settled once when the window is taken down. The
+    /// tactical scorers ask about it for every candidate tile of every unit,
+    /// which is far too hot a path to re-derive it in.
+    looping: bool,
+}
+
+impl UnitMotion {
+    /// How many distinct tiles the window covers.
+    fn footprint(&self) -> usize {
+        let mut seen: Vec<Pos> = Vec::with_capacity(self.tiles.len());
+        for tile in &self.tiles {
+            if !seen.contains(tile) {
+                seen.push(*tile);
+            }
+        }
+        seen.len()
+    }
+
+    /// A full window of turns spent moving between a handful of tiles while
+    /// nothing about the unit changed. Both halves matter: a unit that has
+    /// stopped is a different (already reported) problem, and a unit that is
+    /// spending charges or trading blows is working, however small its circuit.
+    fn circling(&self) -> bool {
+        if self.tiles.len() < LIVELOCK_WINDOW || (self.fruitless as usize) < LIVELOCK_WINDOW {
+            return false;
+        }
+        (2..=LIVELOCK_FOOTPRINT).contains(&self.footprint())
+    }
+}
+
 #[derive(Clone)]
 pub struct BasicAi {
     minor: bool,
@@ -862,6 +953,11 @@ pub struct BasicAi {
     /// otherwise be undone by A* with the unit's next movement point, and the
     /// identical round trip would repeat forever.
     last_path_step_from: RefCell<HashMap<u32, (u32, Pos)>>,
+    /// The same round trip spread over two turns instead of one, which nothing
+    /// inside a single turn's reasoning can see. Each unit's recent
+    /// whereabouts are remembered here, and a unit found circling is priced
+    /// out of the tiles it has already proved are worthless.
+    unit_motion: BTreeMap<u32, UnitMotion>,
     /// Where this agent tells an observer what it is doing. Off unless a
     /// spectator attached one; see [`crate::reasoning`].
     pub(crate) journal: Journal,
@@ -1640,6 +1736,7 @@ impl BasicAi {
             patrol_posts: HashMap::new(),
             settler_targets: HashMap::new(),
             last_path_step_from: RefCell::new(HashMap::new()),
+            unit_motion: BTreeMap::new(),
             journal: Journal::default(),
         }
     }
@@ -1657,6 +1754,7 @@ impl BasicAi {
             patrol_posts: HashMap::new(),
             settler_targets: HashMap::new(),
             last_path_step_from: RefCell::new(HashMap::new()),
+            unit_motion: BTreeMap::new(),
             journal: Journal::default(),
         }
     }
@@ -1729,10 +1827,117 @@ impl BasicAi {
 
 impl BasicAi {
     /// Reset caches whose contents depend on the current player's borders and
-    /// movement capabilities. Persistent destinations live across turns; the
-    /// expensive all-map candidate scan does not need to.
-    pub(crate) fn begin_movement_turn(&mut self) {
+    /// movement capabilities, and take down where every unit is standing
+    /// before any of them moves. Persistent destinations live across turns;
+    /// the expensive all-map candidate scan does not need to.
+    pub(crate) fn begin_movement_turn(&mut self, g: &Game, pid: usize) {
         self.patrol_posts.clear();
+        self.observe_unit_motion(g, pid);
+    }
+
+    /// Record this turn's starting tile for every unit, and judge each unit
+    /// against the window that has just closed. This is the only point in the
+    /// turn where a livelock can be seen at all: it is a property of a unit's
+    /// history, not of any decision the unit is about to make.
+    fn observe_unit_motion(&mut self, g: &Game, pid: usize) {
+        let ids = g.player_unit_ids(pid);
+        self.unit_motion
+            .retain(|uid, _| g.units.get(uid).is_some_and(|unit| unit.owner == pid));
+        for uid in ids {
+            let mark = work_mark(g, uid);
+            let pos = g.units[&uid].pos;
+            let motion = self.unit_motion.entry(uid).or_default();
+            if motion.tiles.is_empty() {
+                motion.work = mark;
+            }
+            if motion.work != mark {
+                // The unit achieved something, so whatever it was doing was
+                // worth doing. Judge it from here rather than against a
+                // history that has just been made irrelevant.
+                *motion = UnitMotion {
+                    work: mark,
+                    resume_turn: motion.resume_turn,
+                    ..UnitMotion::default()
+                };
+            } else {
+                motion.fruitless += 1;
+            }
+            motion.tiles.push_back(pos);
+            while motion.tiles.len() > LIVELOCK_WINDOW {
+                motion.tiles.pop_front();
+            }
+            motion.looping = motion.circling();
+            if motion.looping && motion.fruitless >= LIVELOCK_STAND_DOWN_AFTER {
+                // The tabu has had a full second window to redirect this unit
+                // and has not. Stop paying for the same fruitless search, hold
+                // the ground, and come back to the problem with a clean slate
+                // once the world around it has changed.
+                *motion = UnitMotion {
+                    work: mark,
+                    resume_turn: g.turn + LIVELOCK_STAND_DOWN_TURNS,
+                    ..UnitMotion::default()
+                };
+            }
+        }
+    }
+
+    /// Hold a unit that is serving out a stand-down, and report that its turn
+    /// is spent. A stand-down suppresses a unit's own plans, never a decision
+    /// already in front of it: a unit with an enemy in reach, or a Settler
+    /// standing on ground it can found on, has something concrete to do this
+    /// turn, and whatever loop it was in, that is not a loop.
+    pub(crate) fn stand_down_step(&self, g: &mut Game, pid: usize, uid: u32) -> bool {
+        let standing_down = self
+            .unit_motion
+            .get(&uid)
+            .is_some_and(|motion| g.turn < motion.resume_turn);
+        if !standing_down || Self::enemy_within_reach(g, pid, uid) || g.can_found_city(uid) {
+            return false;
+        }
+        self.fortify_or_stop(g, pid, uid);
+        true
+    }
+
+    /// Whether anything this unit could act against stands close enough to
+    /// reach this turn. Two tiles covers a ranged unit's envelope and a melee
+    /// unit's approach-and-strike without paying for a real threat search.
+    fn enemy_within_reach(g: &Game, pid: usize, uid: u32) -> bool {
+        let Some(unit) = g.units.get(&uid) else {
+            return false;
+        };
+        g.wdisk(unit.pos, 2).into_iter().any(|pos| {
+            g.units_at(pos)
+                .into_iter()
+                .any(|other| g.is_at_war(pid, g.units[&other].owner))
+                || g.city_at(pos)
+                    .is_some_and(|city| g.is_at_war(pid, g.cities[&city].owner))
+        })
+    }
+
+    /// What a candidate tile is worth against the fact that this unit has been
+    /// going in circles. Nothing at all for a unit that is getting somewhere —
+    /// which is almost every unit, almost always — and for one that is not, a
+    /// flat charge for every tile of the footprint it keeps re-entering,
+    /// including the one it is standing on. Any tile outside the loop is
+    /// thereby worth `LIVELOCK_ESCAPE_VALUE` more than any tile inside it.
+    pub(crate) fn livelock_penalty(&self, uid: u32, tile: Pos) -> f64 {
+        match self.unit_motion.get(&uid) {
+            Some(motion) if motion.looping && motion.tiles.contains(&tile) => {
+                -LIVELOCK_ESCAPE_VALUE
+            }
+            _ => 0.0,
+        }
+    }
+
+    /// Whether a plain pathing step should be refused because it walks back
+    /// into a footprint this unit has already exhausted. Unlike the tactical
+    /// scorers there is nothing to trade off here — the route is chosen for
+    /// progress alone — so the tabu is absolute while it lasts, and it lasts
+    /// only until the window slides off the loop or the stand-down fires.
+    fn retreads_a_loop(&self, uid: u32, to: Pos) -> bool {
+        self.unit_motion
+            .get(&uid)
+            .is_some_and(|motion| motion.looping && motion.tiles.contains(&to))
     }
 
     /// Run each available agent once. The baseline establishes sources before
@@ -4352,7 +4557,7 @@ impl BasicAi {
     }
 
     fn units(&mut self, g: &mut Game, pid: usize) {
-        self.begin_movement_turn();
+        self.begin_movement_turn(g, pid);
         self.prepare_unit_formations(g, pid);
         self.recovering_units
             .retain(|uid| g.units.get(uid).is_some_and(|unit| unit.owner == pid));
@@ -4361,6 +4566,9 @@ impl BasicAi {
         self.settler_targets
             .retain(|uid, _| g.units.get(uid).is_some_and(|unit| unit.owner == pid));
         for uid in g.player_unit_ids(pid) {
+            if self.stand_down_step(g, pid, uid) {
+                continue;
+            }
             for _ in 0..8 {
                 if !g.units.contains_key(&uid) {
                     break;
@@ -4541,7 +4749,7 @@ impl BasicAi {
             // refuse to leave their initial cluster even when a safe campaign
             // route is open.
             s += self.w.mv_support * adjacent_support.min(2) as f64;
-            s
+            s + self.livelock_penalty(uid, tile)
         };
         let stay = score(g, upos);
         let holding_role_position = g.wdist(upos, target) == preferred_range;
@@ -4629,6 +4837,12 @@ impl BasicAi {
             .get(&uid)
             .is_some_and(|(turn, previous)| *turn == g.turn && *previous == to);
         if reverses_last_step {
+            return false;
+        }
+        // The same refusal over the unit's last several turns rather than its
+        // last several movement points. A route that keeps proposing a tile
+        // this unit has already been standing on all window is not a route.
+        if self.retreads_a_loop(uid, to) {
             return false;
         }
         // Settlers use the shared route-order tool exposed to network clients
@@ -5075,14 +5289,7 @@ impl BasicAi {
         let Some(next) = g.route_step(uid, target, 0) else {
             return false;
         };
-        g.apply(
-            pid,
-            &Action::Move {
-                unit: uid,
-                to: next,
-            },
-        )
-        .is_ok()
+        self.path_move(g, pid, uid, next)
     }
 
     /// Whether this empire has any tile left for a Builder to work on: an
@@ -5714,14 +5921,10 @@ impl BasicAi {
             Some(p) if g.can_move(uid, p) => p,
             _ => return false,
         };
-        g.apply(
-            pid,
-            &Action::Move {
-                unit: uid,
-                to: next,
-            },
-        )
-        .is_ok()
+        // The exhaustive search is the greedy walk's fallback, so it must
+        // honour the same refusals — otherwise a Scout barred from retreading
+        // its loop by the cheap path takes the identical step here.
+        self.path_move(g, pid, uid, next)
     }
 
     fn patrol_tile(&self, g: &Game, pid: usize, uid: u32, pos: Pos) -> bool {
@@ -5753,15 +5956,14 @@ impl BasicAi {
                     .route_step(uid, target, 0)
                     .filter(|pos| g.can_move(uid, *pos))
                 {
-                    return g
-                        .apply(
-                            pid,
-                            &Action::Move {
-                                unit: uid,
-                                to: next,
-                            },
-                        )
-                        .is_ok();
+                    // A dense frontier can offer two adjacent posts, and a
+                    // unit that keeps swapping between them is pacing, not
+                    // patrolling. `path_move` declines the retread, which
+                    // sends the selection below after a post it has not
+                    // already worn out.
+                    if self.path_move(g, pid, uid, next) {
+                        return true;
+                    }
                 }
             }
             self.patrol_targets.remove(&uid);
@@ -5823,7 +6025,9 @@ impl BasicAi {
         // all-map path search when a unit is isolated on another landmass.
         for offset in 0..posts.len().min(24) {
             let target = posts[(start + offset) % posts.len()];
-            if target == current {
+            // A post inside the footprint this unit has been circling is not a
+            // destination; it is where the circling has been happening.
+            if target == current || self.retreads_a_loop(uid, target) {
                 continue;
             }
             let Some(next) = g
@@ -5832,16 +6036,11 @@ impl BasicAi {
             else {
                 continue;
             };
+            if !self.path_move(g, pid, uid, next) {
+                continue;
+            }
             self.patrol_targets.insert(uid, target);
-            return g
-                .apply(
-                    pid,
-                    &Action::Move {
-                        unit: uid,
-                        to: next,
-                    },
-                )
-                .is_ok();
+            return true;
         }
         false
     }
@@ -6215,6 +6414,149 @@ impl BasicAi {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A quiet one-player world with a lone Scout, so nothing else on the map
+    /// can move the unit or attack it while its whereabouts are recorded.
+    fn scouted_world() -> (Game, Vec<Pos>, u32) {
+        let mut g = Game::new_full(1, 20, 12, 5, 300, 0, true);
+        // Nothing else on the map, so the only thing the record can be
+        // measuring is the Scout's own itinerary.
+        g.units.clear();
+        let mut ground: Vec<Pos> = g
+            .map
+            .tiles
+            .iter()
+            .filter(|(_, tile)| !g.rules.is_water(tile) && g.rules.is_passable(tile))
+            .map(|(pos, _)| *pos)
+            .collect();
+        ground.sort();
+        assert!(ground.len() > 8, "the case needs somewhere to walk");
+        let scout = g.spawn_test_unit("scout", 0, ground[0]);
+        (g, ground, scout)
+    }
+
+    /// Walk one unit through a scripted sequence of tiles, letting the agent
+    /// take down where the unit stood at the start of each turn exactly as a
+    /// real movement phase would.
+    fn observe_walk(tiles: &[usize], spend_charge_on: Option<usize>) -> (BasicAi, Game, Vec<Pos>, u32) {
+        let (mut g, ground, scout) = scouted_world();
+        let mut ai = BasicAi::new();
+        for (turn, tile) in tiles.iter().enumerate() {
+            g.units.get_mut(&scout).unwrap().pos = ground[*tile];
+            if spend_charge_on == Some(turn) {
+                g.units.get_mut(&scout).unwrap().charges += 1;
+            }
+            ai.begin_movement_turn(&g, 0);
+            g.turn += 1;
+        }
+        (ai, g, ground, scout)
+    }
+
+    /// The single-turn reversal ban cannot see a round trip that takes two
+    /// turns to complete, and every step of one is individually the best move
+    /// available. Only the unit's own recent history gives the loop away.
+    #[test]
+    fn a_unit_shuttling_between_two_tiles_is_priced_out_of_both() {
+        let shuttle: Vec<usize> = (0..LIVELOCK_WINDOW + 2).map(|turn| turn % 2).collect();
+        let (ai, _g, ground, scout) = observe_walk(&shuttle, None);
+
+        assert!(ai.livelock_penalty(scout, ground[0]) < 0.0);
+        assert!(ai.livelock_penalty(scout, ground[1]) < 0.0);
+        assert_eq!(
+            ai.livelock_penalty(scout, ground[7]),
+            0.0,
+            "anywhere it has not already been is worth going"
+        );
+        assert!(ai.retreads_a_loop(scout, ground[1]));
+        assert!(!ai.retreads_a_loop(scout, ground[7]));
+    }
+
+    #[test]
+    fn a_unit_that_is_getting_somewhere_is_left_alone() {
+        let march: Vec<usize> = (0..LIVELOCK_WINDOW + 2).collect();
+        let (ai, _g, ground, scout) = observe_walk(&march, None);
+        for tile in &ground[..8] {
+            assert_eq!(ai.livelock_penalty(scout, *tile), 0.0);
+        }
+    }
+
+    /// A Builder working two tiles beside a city occupies the same footprint
+    /// as a Builder stuck between them. Spending the charge is the difference,
+    /// and it is what the work fingerprint exists to see.
+    #[test]
+    fn a_unit_that_accomplishes_something_keeps_its_ground() {
+        let shuttle: Vec<usize> = (0..LIVELOCK_WINDOW + 2).map(|turn| turn % 2).collect();
+        let halfway = Some(LIVELOCK_WINDOW / 2);
+        let (working, _g, ground, scout) = observe_walk(&shuttle, halfway);
+        assert_eq!(working.livelock_penalty(scout, ground[0]), 0.0);
+
+        let (idle, _g, ground, scout) = observe_walk(&shuttle, None);
+        assert!(idle.livelock_penalty(scout, ground[0]) < 0.0);
+    }
+
+    /// A three-tile shuffle is still a loop; a four-tile circuit is a unit
+    /// covering ground, and pricing that would punish ordinary movement.
+    #[test]
+    fn the_footprint_bound_separates_a_loop_from_a_march() {
+        let (looping, _g, ground, scout) =
+            observe_walk(&(0..12).map(|turn| turn % 3).collect::<Vec<_>>(), None);
+        assert!(looping.livelock_penalty(scout, ground[0]) < 0.0);
+
+        let (marching, _g, ground, scout) =
+            observe_walk(&(0..12).map(|turn| turn % 4).collect::<Vec<_>>(), None);
+        assert_eq!(marching.livelock_penalty(scout, ground[0]), 0.0);
+    }
+
+    /// The tabu redirects a unit that has somewhere else to go. A unit with
+    /// nowhere else to go keeps circling anyway, and for that one the answer
+    /// is to stop: hold the ground, take the fortification, and come back to
+    /// the problem once the world has moved on.
+    #[test]
+    fn a_unit_still_looping_after_a_second_window_stands_down_and_starts_over() {
+        let shuttle: Vec<usize> = (0..LIVELOCK_STAND_DOWN_AFTER as usize + 1)
+            .map(|turn| turn % 2)
+            .collect();
+        let (ai, mut g, ground, scout) = observe_walk(&shuttle, None);
+
+        assert!(
+            ai.stand_down_step(&mut g, 0, scout),
+            "the unit holds instead of taking orders"
+        );
+        assert!(g.units[&scout].fortified);
+        assert_eq!(
+            ai.livelock_penalty(scout, ground[0]),
+            0.0,
+            "the stand-down clears the record, so the retry is unencumbered"
+        );
+
+        g.turn += LIVELOCK_STAND_DOWN_TURNS;
+        assert!(
+            !ai.stand_down_step(&mut g, 0, scout),
+            "and it ends on its own"
+        );
+    }
+
+    /// Standing down suppresses a unit's own plans, never its part in a fight.
+    #[test]
+    fn a_stood_down_unit_still_answers_an_enemy_in_reach() {
+        let shuttle: Vec<usize> = (0..LIVELOCK_STAND_DOWN_AFTER as usize + 1)
+            .map(|turn| turn % 2)
+            .collect();
+        let (ai, mut g, ground, scout) = observe_walk(&shuttle, None);
+        let barbarian = g
+            .players
+            .iter()
+            .find(|player| player.is_barbarian)
+            .map(|player| player.id)
+            .expect("every game seats the barbarians");
+        g.spawn_test_unit("warrior", barbarian, ground[1]);
+
+        assert!(
+            !ai.stand_down_step(&mut g, 0, scout),
+            "an enemy within reach is something concrete to do"
+        );
+        assert!(!g.units[&scout].fortified);
+    }
 
     #[test]
     fn a_game_no_enabled_victory_can_end_still_stops_at_its_turn_limit() {
