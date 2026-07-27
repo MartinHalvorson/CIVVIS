@@ -373,8 +373,21 @@
   .split { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
   .split .sec { min-width: 0; }
   .strategy-sec { padding: 0; overflow: hidden; }
-  .strategy-track { min-height: 84px; padding: 10px 13px 11px; }
-  .strategy-track + .strategy-track { border-top: 1px solid var(--line-soft); }
+  /* The separator is each track's own bottom edge rather than the next one's
+     top. Two of these tracks are conditional — the seat picker is not offered
+     when there is only one seat, and a seat with no published plan has no plan
+     track — and `+` still matches a hidden sibling, so a top border would leave
+     a hairline under the header with nothing above it. */
+  .strategy-track { min-height: 84px; padding: 10px 13px 11px; border-bottom: 1px solid var(--line-soft); }
+  .strategy-track:last-child { border-bottom: 0; }
+  /* The seat picker is a bar, not a track: it holds one control and must not
+     reserve a track's worth of height above the plan it selects. */
+  .strategy-track.strategy-pick { min-height: 0; padding: 9px 13px; }
+  /* The plan is rows of label and value, so it takes the height its content
+     needs rather than a card slot's fixed 55px. */
+  .strategy-track.strategy-plan-track { min-height: 0; }
+  .strategy-track.strategy-plan-track .strategy-heading span::before { background: var(--gold); box-shadow: 0 0 9px #d7b66a77; }
+  .strategy-plan { display: flex; flex-direction: column; gap: 1px; }
   .strategy-heading {
     display: flex; align-items: center; justify-content: space-between; min-height: 23px; margin-bottom: 4px;
     color: var(--muted); font-size: var(--type-label); font-weight: 850; letter-spacing: .11em; text-transform: uppercase;
@@ -3623,10 +3636,42 @@
       </div>
     </details>
 
-    <!-- The three logs run deepest-cause first: why a civilization acted, then
-         the wars that reasoning started, then the world's own record of what
-         happened. An observer reading downward reads a turn in the order it
-         was decided. -->
+    <!-- The column runs deepest-cause first: what a civilization is trying to
+         do *now*, then why it acted, then the wars that reasoning started, then
+         the world's own record of what happened. An observer reading downward
+         reads a turn in the order it was decided.
+
+         Active strategy leads because it is the standing plan every entry below
+         it is an instance of: the reasoning log is an account over turns, and
+         this is the current answer. It names one civilization at a time — the
+         standings table already carries every seat's doctrine in its PLAN
+         column, and twenty research cards would bury the logs. -->
+    <details class="sidebar-section" id="strategysec" data-section="active-strategy" open>
+      <summary class="section-label">
+        <span class="section-title"><span class="section-icon" aria-hidden="true">◆</span><span>Active strategy</span></span>
+        <span class="section-meta"><span class="event-scope" id="strategyscope"></span><span class="section-chevron" aria-hidden="true"></span></span>
+      </summary>
+      <div class="sec strategy-sec">
+        <div class="strategy-track strategy-pick">
+          <label class="reason-filter"><span>Civ</span>
+            <select id="strategyplayer" aria-label="Whose active strategy to show"></select>
+          </label>
+        </div>
+        <div class="strategy-track strategy-plan-track" id="strategyplantrack">
+          <div class="strategy-heading"><span>Grand strategy</span></div>
+          <div id="strategyplan"></div>
+        </div>
+        <div class="strategy-track">
+          <div class="strategy-heading"><span>Research</span><span><button class="mini" onclick='openPedia()'>Pedia</button> <button class="mini" onclick='openTree("techs")'>Tree</button></span></div>
+          <div id="research" class="progress-slot"></div>
+        </div>
+        <div class="strategy-track culture">
+          <div class="strategy-heading"><span>Civic development</span><button class="mini" onclick='openTree("civics")'>Tree</button></div>
+          <div id="civics" class="progress-slot"></div>
+        </div>
+      </div>
+    </details>
+
     <details class="sidebar-section" id="reasonsec" data-section="ai-reasoning" open>
       <summary class="section-label">
         <span class="section-title"><span class="section-icon" aria-hidden="true">◉</span><span>AI reasoning log</span></span>
@@ -3672,22 +3717,6 @@
       <div class="sec"><div id="events" class="event-list"><div class="empty-state">The world is quiet—for now.</div></div></div>
     </details>
 
-    <details class="sidebar-section" id="strategysec" data-section="active-strategy" open>
-      <summary class="section-label">
-        <span class="section-title"><span class="section-icon" aria-hidden="true">◆</span><span>Active strategy</span></span>
-        <span class="section-meta"><span class="rule"></span><span class="section-chevron" aria-hidden="true"></span></span>
-      </summary>
-      <div class="sec strategy-sec">
-        <div class="strategy-track">
-          <div class="strategy-heading"><span>Research</span><span><button class="mini" onclick='openPedia()'>Pedia</button> <button class="mini" onclick='openTree("techs")'>Tree</button></span></div>
-          <div id="research" class="progress-slot"></div>
-        </div>
-        <div class="strategy-track culture">
-          <div class="strategy-heading"><span>Civic development</span><button class="mini" onclick='openTree("civics")'>Tree</button></div>
-          <div id="civics" class="progress-slot"></div>
-        </div>
-      </div>
-    </details>
     <details class="sidebar-section" id="govsec" data-section="government" style="display:none" open>
       <summary class="section-label">
         <span class="section-title"><span class="section-icon" aria-hidden="true">♜</span><span>Government</span></span>
@@ -8405,12 +8434,24 @@ function adoptTiles(st) {
 // a `let` declared after that point would be in its temporal dead zone and the
 // throw would take the whole client with it.
 const REASON_FILTER_KEY = "civvis-reasoning-filters-v1";
-let reasoningLog = {cursor: 0, world: null, thoughts: [], dropped: 0, truncatedTurns: 0};
+let reasoningLog = {cursor: 0, world: null, viewer: null, thoughts: [], dropped: 0, truncatedTurns: 0};
 let reasonFilters = {player: "all", level: "decision", topic: "all"};
 try {
   const saved = JSON.parse(localStorage.getItem(REASON_FILTER_KEY) || "null");
   if (saved && typeof saved === "object") reasonFilters = {...reasonFilters, ...saved};
 } catch (e) { /* a corrupt preference is not worth a dead page */ }
+// Which seat the Active strategy panel is speaking for, and the world that
+// choice belongs to.
+//
+// It is deliberately *not* part of `reasonFilters`: the log answers "what has
+// every civilization been thinking", the plan answers "what is this one doing
+// now", and a reader routinely wants those two set differently. It is also
+// deliberately not remembered across games the way the reasoning filters are —
+// a new world reseats every civilization, so the player 5 stored last night is
+// not the player 5 on screen this morning. A new world reopens on whoever is
+// leading it.
+let strategySeat = null;
+let strategySeatWorld = null;
 
 function paintedQuery() {
   // Only the watching loop says what it holds. Saying so is also what asks the
@@ -8860,14 +8901,17 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
   }
   updateSpecPauseButtons();
   if (SPEC) updatePaceControl(st);
-  const fullMapSpectator = SPEC && (st.view_player === null || st.view_player === undefined);
   document.getElementById("humanfooter").style.display = SPEC ? "none" : "grid";
   // Keep the same restart node through simulation and human games. Its label,
   // glyph and emphasis change with the selected next world below.
   document.getElementById("specbar").style.display = "block";
   document.body.classList.toggle("watching-sim", SPEC);
   document.getElementById("observer-settings").style.display = SPEC ? "block" : "none";
-  document.getElementById("strategysec").style.display = fullMapSpectator ? "none" : "block";
+  // Active strategy used to be withheld from the omniscient spectator because
+  // the panel could only ever speak for `state.me`, and above the world there
+  // is no single "me". It now names the civilization it is speaking for, so
+  // the one view that can read every plan is the last one that should hide it.
+  document.getElementById("strategysec").style.display = "block";
   if (SPEC) closeTrade();
   syncViewPlayer();
   if (newWorld && st.seed !== undefined) { lastSeed = st.seed; loadTacks(); }
@@ -22349,6 +22393,180 @@ function drawResearchSlot(el, kind, name, progress, total, perTurn, boosted) {
   card.querySelector(".research-eta").textContent = eta;
   card.querySelector(".research-turn-label").textContent = `turn${eta === 1 ? "" : "s"}`;
 }
+// -------------------------------------------------------- active strategy
+//
+// One civilization's current answer, sitting above the log of how it got
+// there. The reasoning log is an account over turns; this is what its agent
+// believes right now — the doctrine every entry below is an instance of, and
+// the two tracks the empire is actually spending on.
+//
+// Which seats it may speak for is a fog question, not a layout one, and it is
+// already settled by the observation:
+//   * a game you are playing, and Watch as — `view_player` names one seat, and
+//     that is the only seat whose laboratory and war plan this page has been
+//     sent. The picker collapses to the header label.
+//   * the omniscient spectator — `view_player` is null, every living major's
+//     plan is on the wire, and the picker chooses between them.
+// Nobody reads a rival's mind: the same rule `reasoning_json` applies to a
+// rival's thoughts, applied here to a rival's plan.
+function strategySeats() {
+  const players = (state && state.players) || [];
+  const viewer = state ? state.view_player : null;
+  if (viewer !== null && viewer !== undefined) return players[viewer] ? [viewer] : [];
+  return players
+    .filter(p => p && !p.is_minor && !p.is_barbarian && p.met !== false && p.alive)
+    .map(p => p.id);
+}
+
+// The seat on show, settling the default when there is no live choice.
+function strategyViewSeat() {
+  const seats = strategySeats();
+  const world = state ? state.seed ?? null : null;
+  if (strategySeatWorld !== world) {
+    strategySeatWorld = world;
+    strategySeat = null;
+  }
+  if (!seats.length) return null;
+  if (seats.includes(strategySeat)) return strategySeat;
+  // Open on whoever is leading rather than on seat 0: in an exhibition the
+  // plan worth reading first is the one that is working. It is pinned as soon
+  // as it is picked, so the panel does not hop to another civilization every
+  // time the standings change underneath it.
+  const players = state.players || [];
+  strategySeat = seats.slice().sort((a, b) =>
+    (players[b]?.score || 0) - (players[a]?.score || 0) || a - b)[0];
+  return strategySeat;
+}
+
+function setStrategySeat(value) {
+  const seat = Number(value);
+  strategySeat = Number.isInteger(seat) ? seat : null;
+  if (state) drawStrategyPanel();
+}
+
+// Keep the picker in step with the world without rebuilding it every frame — a
+// <select> replaced under an open dropdown closes it.
+function syncStrategyOptions(seats, seat) {
+  const select = document.getElementById("strategyplayer");
+  const pick = document.querySelector(".strategy-pick");
+  if (!select || !pick) return;
+  // One seat is not a choice. Say whose plan this is in the header instead of
+  // offering a dropdown that can only be set to what it already says.
+  pick.style.display = seats.length > 1 ? "block" : "none";
+  const signature = `${state.seed}|${seats.join(",")}`;
+  if (select.dataset.signature !== signature) {
+    select.dataset.signature = signature;
+    select.innerHTML = seats.map(id =>
+      `<option value="${id}">${reasonEscape(reasonPlayerName(id))}</option>`).join("");
+  }
+  if (seat !== null) select.value = String(seat);
+}
+
+// What the agent is trying to do, in the rows the dossier uses. Only the parts
+// that are true: a civilization with nothing under threat and no campaign does
+// not need two rows saying so in a sidebar this narrow.
+function strategyPlanHtml(p) {
+  const plan = p.ai_plan || null;
+  const strategy = plan?.strategy || p.ai_strategy || "";
+  if (!plan && !strategy) return "";
+  const row = (label, value, title) => value === null || value === undefined || value === ""
+    ? ""
+    : `<div class="dossier-row"${title ? ` title="${reasonEscape(title)}"` : ""}>` +
+      `<span>${label}</span><b>${value}</b></div>`;
+  const planAge = plan ? Math.max(0, (state.turn || 0) - (plan.assessed_turn || 0)) : null;
+  const forces = plan?.forces || [];
+  const chips = forces.slice(0, 4).map(force =>
+    `<span class="force-chip ${force.posture}" title="${reasonEscape(`${titleCase(force.posture)} · ` +
+      `${force.units} ${force.domain === "sea" ? "naval" : "land"} units · objective ` +
+      `${force.objective?.[0]},${force.objective?.[1]} · local strength ` +
+      `${Math.round((force.strength_ratio || 0) * 100)}% of the defenders · readiness ` +
+      `${Math.round((force.readiness || 0) * 100)}%`)}">` +
+    `${force.domain === "sea" ? "⚓" : "⚔"} ${titleCase(force.posture)} ×${force.units}</span>`).join("");
+  const target = plan?.target_city
+    ? `${reasonEscape(plan.target_city.name)}${plan.target_civ ? ` (${reasonEscape(plan.target_civ)})` : ""}`
+    : plan?.target_civ ? reasonEscape(plan.target_civ) : "";
+  return `<div class="strategy-plan">` +
+    row("Doctrine", strategy
+      ? `<span class="ai-plan ${reasonEscape(strategy)}">${titleCase(strategy)}</span>` : "",
+      "The medium-term plan every department of this AI is currently serving") +
+    (plan ? row("Victory lane", plan.victory_target ? titleCase(plan.victory_target) : "Opportunistic",
+      plan.victory_target
+        ? "A committed game-ending objective"
+        : "No committed objective — the plan follows whichever lane is going best") +
+      row("Reassessed", planAge === 0 ? "This turn" : `Turn ${plan.assessed_turn} · ${planAge} ago`,
+        "When this plan was last reconsidered") +
+      row("Cities", `${p.cities} of ${plan.desired_cities}`,
+        "Cities held against the cities this plan wants") +
+      row("Campaign", target, target ? "The city or civilization this plan is measured against" : "") +
+      row("Defending", plan.threatened_city ? reasonEscape(plan.threatened_city.name) : "",
+        plan.threatened_city ? "The city this plan expects to lose first" : "") +
+      (chips
+        ? `<div class="dossier-note">${chips}${forces.length > 4
+            ? ` <span class="dossier-empty">+${forces.length - 4} more</span>` : ""}</div>`
+        : "")
+      : "") +
+    `</div>`;
+}
+
+// Where this seat's research and civics are to be read from. The observed
+// seat's own ride in `me`; every major's ride in `players[]`, but only on the
+// omniscient view — the one view entitled to look inside a rival's laboratory.
+function strategyStudy(p) {
+  const source = state.view_player === p.id ? (state.me || {}) : p;
+  const list = (all, one, boosted) => Array.isArray(all) ? all : (boosted && one ? [one] : []);
+  return {
+    research: source.research,
+    researchProgress: source.research_progress || 0,
+    boostedTechs: list(source.boosted_techs, source.research, source.research_boosted),
+    civic: source.civic,
+    civicProgress: source.civic_progress || 0,
+    boostedCivics: list(source.boosted_civics, source.civic, source.civic_boosted),
+    science: source.yields?.science ?? p.yields?.science ?? 0,
+    culture: source.yields?.culture ?? p.yields?.culture ?? 0,
+  };
+}
+
+function drawStrategyPanel() {
+  const scope = document.getElementById("strategyscope");
+  const track = document.getElementById("strategyplantrack");
+  const planEl = document.getElementById("strategyplan");
+  const rdiv = document.getElementById("research");
+  const cdiv = document.getElementById("civics");
+  if (!scope || !track || !planEl || !rdiv || !cdiv) return;
+  const seats = strategySeats();
+  const seat = strategyViewSeat();
+  syncStrategyOptions(seats, seat);
+  const p = seat === null ? null : (state.players || [])[seat];
+  if (!p) {
+    scope.textContent = "";
+    scope.title = "";
+    track.style.display = "none";
+    rdiv.dataset.researchKey = ""; cdiv.dataset.researchKey = "";
+    rdiv.innerHTML = cdiv.innerHTML =
+      `<div class="empty-state">No civilization is standing.</div>`;
+    return;
+  }
+  scope.textContent = p.civ;
+  scope.title = seats.length > 1
+    ? `${p.civ}'s current plan — pick another civilization to read theirs`
+    : `${p.civ}'s current plan`;
+  const plan = strategyPlanHtml(p);
+  // A seat with no published plan — a human's own, or a baseline agent that
+  // reports none — keeps the two tracks and drops the empty heading rather
+  // than printing a row that says nothing.
+  // Compared as a property rather than a data attribute: this is a few hundred
+  // characters of markup and it has no business being in the DOM twice.
+  track.style.display = plan ? "block" : "none";
+  if (plan && track.strategyHtml !== plan) {
+    track.strategyHtml = plan;
+    planEl.innerHTML = plan;
+  }
+  const study = strategyStudy(p);
+  drawResearchSlot(rdiv, "science", study.research, study.researchProgress,
+    study.research ? techCost(study.research) : 0, study.science, study.boostedTechs);
+  drawResearchSlot(cdiv, "culture", study.civic, study.civicProgress,
+    study.civic ? civicCost(study.civic) : 0, study.culture, study.boostedCivics);
+}
 // ---------------------------------------------------------------- reasoning
 //
 // The AI reasoning log. The event log says what happened and the war log keeps
@@ -22391,15 +22609,27 @@ function reasonEscape(text) {
 
 // Take a delta into this page's copy of the log.
 //
-// Two things reset it: the server saying the cursor named a log it does not
-// have (`reset`), and a new world arriving under a tab that was watching the
-// last one. Without the second, a page that survives the exhibition's handoff
-// shows the previous game's reasoning above the new one's.
+// Three things reset it. The server saying the cursor named a log it does not
+// have (`reset`); a new world arriving under a tab that was watching the last
+// one — without which a page that survives the exhibition's handoff shows the
+// previous game's reasoning above the new one's; and a change of observed
+// seat.
+//
+// That last one is a fog rule. `reasoning_json` stops *sending* a rival's
+// thoughts the moment Watch as is entered, but the page is still holding
+// everything it absorbed while it was above the world, so without this the
+// redaction is defeated by having watched first: the log names every
+// civilization while the Active strategy panel above it names one. Only the
+// held thoughts go — the cursor survives, because the world has not changed
+// and asking from zero would have the server resend the whole ring.
 function absorbReasoning(st) {
   if (!st) return;
   const world = st.seed ?? null;
-  if (reasoningLog.world !== world) {
-    reasoningLog = {cursor: 0, world, thoughts: [], dropped: 0, truncatedTurns: 0};
+  const viewer = st.view_player ?? null;
+  const newWorld = reasoningLog.world !== world;
+  if (newWorld || reasoningLog.viewer !== viewer) {
+    reasoningLog = {cursor: newWorld ? 0 : reasoningLog.cursor, world, viewer,
+                    thoughts: [], dropped: 0, truncatedTurns: 0};
   }
   const delta = st.ai_reasoning;
   if (!delta || !Array.isArray(delta.thoughts)) return;
@@ -23279,12 +23509,7 @@ function drawSide(force = true) {
   const scroller = document.querySelector(".side-scroll");
   const priorScroll = scroller ? scroller.scrollTop : 0;
   const me = state.me;
-  const rdiv = document.getElementById("research");
-  drawResearchSlot(rdiv, "science", me.research, me.research_progress,
-    me.research ? techCost(me.research) : 0, me.yields.science, me.boosted_techs);
-  const cdiv = document.getElementById("civics");
-  drawResearchSlot(cdiv, "culture", me.civic, me.civic_progress,
-    me.civic ? civicCost(me.civic) : 0, me.yields.culture, me.boosted_civics);
+  drawStrategyPanel();
   const govs = legalFor("government");
   const dedications = legalFor("choose_dedication");
   const societies = legalFor("choose_secret_society");
@@ -27002,6 +27227,13 @@ document.getElementById("newgame-options").addEventListener("change", stageSelec
   player.onchange = () => setReasonFilter("player", player.value);
   level.onchange = () => setReasonFilter("level", level.value);
   topic.onchange = () => setReasonFilter("topic", topic.value);
+}
+// Whose plan the Active strategy panel above the log is showing. Its options
+// are filled from the world on every frame; only the omniscient spectator ever
+// has more than one to offer.
+{
+  const seat = document.getElementById("strategyplayer");
+  seat.onchange = () => setStrategySeat(seat.value);
 }
 {
   const cinema = document.getElementById("cinemachk");
