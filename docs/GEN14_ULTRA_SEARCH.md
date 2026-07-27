@@ -100,3 +100,56 @@ empire.
 The pre-registered paired-map rule is mechanical: 12 ultra-favorable maps to
 seven deep-favorable maps earns the already fixed independent run at seed
 122000. The development block remains excluded from that decision.
+
+## Independent gate result
+
+The fixed 300-map gate completed at near-exact parity:
+
+```text
+mirrored head-to-head: 300 maps, 600 games, 4 players, average 140.5 turns
+game-win share: strategic_ultra 302/600 (50.3%) strategic_deep 298/600 (49.7%)
+paired-map score for strategic_ultra: 50.3% (95% Wilson CI 44.7%..56.0%), Elo-equivalent +2 (CI -37..+42)
+paired outcomes: strategic_ultra sweeps 25, neutral splits/draws 252, strategic_deep sweeps 23, draw-mixed 0
+paired direction: strategic_ultra-favored 25, neutral 252, strategic_deep-favored 23; exact two-sided sign p=0.8854 (INCONCLUSIVE DIRECTION)
+anytime-valid betting evidence (2.5% per direction after 20 maps): strategic_ultra peak e=1.000e0, p<=1.0000 (not crossed); strategic_deep peak e=1.575e0, p<=0.6350 (not crossed)
+promotion gate: INCONCLUSIVE — effect size or anytime-valid evidence has not cleared parity after 300 maps
+paired terminal-score diagnostic for strategic_ultra: 50.0% (not a promotion input)
+terminal-score direction: strategic_ultra-favored 138, neutral 16, strategic_deep-favored 146; exact two-sided sign p=0.6779
+```
+
+Again the treatment fired. Ultra reached 6,461 of 12,226 reviews and switched
+plans 3.66 times per game; deep reached 3,533 of 6,595 and switched 2.76 times.
+The extra decisions changed conversion mix without improving total conversion:
+ultra won 226 religious games to 206 and added five culture wins, while deep
+won 85 score games to 66 and seven domination games to five. Their terminal
+economies were nearly indistinguishable, with ultra score 142.6 to deep 142.4
+but small deep leads in cities, population, production, military, and gold.
+
+Across the development and gate blocks, the descriptive total is 427-413 games
+and 37-30 decisive maps for ultra over 420 maps. The point estimate is mildly
+favorable, but the development maps earned the gate and are excluded from its
+decision. The independent block is the result that controls promotion.
+
+## Decision
+
+`strategic_ultra` does not earn promotion. Its doubled compute clearly produced
+more reviews and more plan switching, yet the independent gate measured +2 Elo,
+25-23 map directions, and exactly even terminal score. With no
+non-inferiority concession for an agent that costs twice as much, this is a
+failure to justify the budget even before applying the formal gate; the gate
+itself is **INCONCLUSIVE**.
+
+The result also closes a tempting extrapolation. Generation 14 benefited from
+10-turn cadence when horizon fell to 40, but that gain does not add to a full
+80-round horizon. Review frequency and depth interact: buying both beyond
+20x80 changes routing without a measurable strength return. `strategic_deep`
+remains the evidence-backed top rung, `strategic_ultra` remains evaluator-only,
+and no runtime default changes.
+
+## Upstream reconciliation
+
+`13f7d3a` landed while the gate was running. It adds an observer-only AI
+reasoning journal; headless mode is off by default, cloned rollout agents are
+silent, and its validation produced byte-identical game results on all ten
+soak seeds. It does not alter either compared policy, so the gate remains
+current after reconciliation.
