@@ -15619,65 +15619,435 @@ function planetCells(camera, scale, centerX, centerY,
 }
 
 // ------------------------------------------------------------- the sky beyond
-// A Planet world hangs in a solar system, and the space race is the one victory
-// whose progress happens entirely off the map. Pulling the camera back past the
-// surface brings the Moon into frame, then Mars, then the exoplanet — and
-// whatever each civilization has already sent up is standing there when they
-// arrive: a satellite in orbit, a rover on the Moon, a colony on Mars, and the
-// expedition itself somewhere out in the dark on its way to the other star.
+// A Planet world hangs in a solar system, in a neighbourhood of stars, in a
+// galaxy, and the space race is the one victory whose progress happens entirely
+// off the map. Pulling the camera back past the surface leaves the Earth behind
+// and keeps going: the Moon, the Sun and the planets, the stars within reach,
+// and finally the whole galaxy with all of that inside one dot of it. Whatever
+// each civilization has already sent up is standing there on the way — a
+// satellite in orbit, a rover on the Moon, a colony on Mars, and the expedition
+// itself somewhere out in the dark on its way to another star.
 //
-// Distance is the honest thing to get wrong here. At true scale the Moon alone
-// sits sixty Earths away and the exoplanet is millions of screens past that, so
-// there is no zoom at which any two of them share a picture. The system is
-// compressed instead: every body keeps its order and its size against Earth,
-// and only the gaps are squeezed. They stay *multiples of the Earth's drawn
-// radius*, which is the whole trick — the arrangement is fixed out there and
-// the camera is the only thing that moves, so zooming out really does leave one
-// body behind and reach the next.
-// `orbit` is the gap in Earth radii and `size` the true radius against Earth's,
-// so a body's largest possible apparent size is size/orbit of the stage — which
-// is what the orbits are really tuned to. Each one is set to come in about
-// three zoom steps after the last and to be worth looking at when it does; the
-// floor keeps it from dissolving once the camera has gone past it. The Moon and
-// Mars are their real fractions of the Earth; the exoplanet is deliberately not
-// — a world twice the size of home is a reason to cross fifty light-years for
-// it, and it is the one body out here nobody has ever measured anyway.
+// **Everything out here is at true scale.** That is the change. The old sky put
+// the Moon six Earth radii away, Mars at eighteen and the exoplanet at
+// fifty-two, so that three zoom steps could visit all of them. It made a
+// picture, but the picture was a lie about the one thing the view is for. The
+// real gaps are the content: the Moon is sixty Earths away, Mars at closest is
+// six hundred times further than that, and the destination is another hundred
+// thousand times further again. A camera that has to cross those gaps is how
+// the distances get stated, and the ladder of scales it climbs on the way is
+// the only honest answer to what fifty light-years means.
 //
-// All three bearings point the same way, into the lower right, so the system is
-// one chain leaving home rather than three unrelated directions. Zooming out is
-// then a single motion: the Moon swings in from the bottom right corner, Mars
-// follows it up the same diagonal, and the exoplanet comes in last behind both.
-// `frequency` is that world's own tiling — the same hexagons-and-twelve-
+// The ruler is the Earth's own radius, because it is the one length the player
+// already has underfoot. Every distance below is written in the unit it is
+// actually published in — kilometres for a radius, astronomical units for an
+// orbit, light-years for a star — and converted here, once, so that every
+// number in the tables is one that can be looked up and checked.
+const EARTH_KM = 6371;              // IUGG mean radius
+const AU_KM = 149597870.7;          // IAU 2012 definition, exact
+const LY_KM = 9.4607304725808e12;   // exact, from the defined metre and year
+const AU = AU_KM / EARTH_KM;        // 23,481 Earth radii
+const LIGHT_YEAR = LY_KM / EARTH_KM;// 1.485e9 Earth radii
+
+// How much of all this a civilization is allowed to be looking at, as four
+// rungs rather than the three there were. The rungs are the actual history of
+// finding each thing out, which is also the order a people would find them out
+// again:
+//
+//   chart   nothing. A flat sheet, no sky and no system, as before.
+//   eye     the round world. Everything anybody ever saw without an instrument:
+//           the Sun, the Moon, and the five wandering stars. Mercury, Venus,
+//           Mars, Jupiter and Saturn are naked-eye objects and were known to
+//           every civilization that ever looked up — which is why the sky at
+//           this rung is a real solar system and not two rocks.
+//   glass   the telescope, and the arithmetic behind it. Uranus was found in
+//           1781, Ceres in 1801, Neptune in 1846 by being predicted first, and
+//           the first stellar parallax in 1838 — which is when the distance to
+//           another star stopped being a guess. That is one rung: the outer
+//           system, and a neighbourhood with real distances in it.
+//   space   an instrument above the air. No planet at another star had ever
+//           been seen from the ground; the first came in 1992, and the shape of
+//           our own galaxy was not settled until the 1920s. Both wait for the
+//           satellite, which is the gate that was already there.
+const SKY_RUNG_ORDER = {chart:0, eye:1, glass:2, space:3};
+
+// ---------------------------------------------------------------- the system
+//
+// `km` is the body's own radius, `au` its semi-major axis about the Sun and
+// `moonKm` its semi-major axis about its parent, in kilometres; `period` is its
+// year in ours. `floor` is the smallest it is ever drawn — at true scale a
+// planet is a fraction of a pixel across the moment its whole orbit is in
+// frame, and a solar system of nothing is not a picture of a solar system.
+// `frequency` is that world's own tiling: the same hexagons-and-twelve-
 // pentagons construction the Earth has, coarser on a smaller world so a tile is
 // about the same size on screen whichever one you are standing over.
-const SKY_BODIES = [
-  {id:"moon", name:"The Moon",  orbit:6.4, size:.272, floor:3,   bearing:.42,
-   tint:"#c3c6cb", dark:"#31333a", frequency:9,  seed:1721},
-  {id:"mars", name:"Mars",      orbit:18,  size:.532, floor:4.5, bearing:.56,
-   tint:"#c8683c", dark:"#3d1d13", frequency:11, seed:4409},
-  {id:"exo",  name:"Exoplanet", orbit:52,  size:2,    floor:7.5, bearing:.68,
-   tint:"#6ec7b2", dark:"#123a3d", frequency:14, seed:9137},
+const SKY_SYSTEM_SPECS = [
+  {id:"sun", name:"The Sun", km:695700, au:0, period:0, rung:"eye", floor:3.4,
+   tint:"#fff2c0", dark:"#e07d10", light:true},
+
+  {id:"mercury", name:"Mercury", km:2439.7, au:0.38710, period:0.24085,
+   rung:"eye", floor:2.2, tint:"#a49a90", dark:"#2b2723", frequency:8,  seed:2617},
+  {id:"venus",   name:"Venus",   km:6051.8, au:0.72333, period:0.61520,
+   rung:"eye", floor:2.4, tint:"#e8dcb0", dark:"#4d4126", frequency:10, seed:3121},
+  {id:"earth",   name:"Earth",   km:6371,   au:1.00000, period:1.00000,
+   rung:"eye", floor:2.4, tint:"#5aa0d8", dark:"#123048"},
+  {id:"moon",    name:"The Moon", km:1737.4, moonKm:384400, parent:"earth",
+   period:0.074803, rung:"eye", floor:2.0, tint:"#c3c6cb", dark:"#31333a",
+   frequency:9, seed:1721},
+  {id:"mars",    name:"Mars",    km:3389.5, au:1.52371, period:1.88082,
+   rung:"eye", floor:2.2, tint:"#c8683c", dark:"#3d1d13", frequency:11, seed:4409},
+
+  {id:"ceres",   name:"Ceres",   km:473,    au:2.76750, period:4.6011,
+   rung:"glass", floor:1.6, tint:"#8c8378", dark:"#2a2622", frequency:6, seed:5501},
+
+  {id:"jupiter", name:"Jupiter", km:69911,  au:5.20440, period:11.862,
+   rung:"eye", floor:3.0, tint:"#d8bd94", dark:"#5a4127", frequency:13, seed:6113,
+   giant:true},
+  {id:"io",       name:"Io",       km:1821.6, moonKm:421700,  parent:"jupiter",
+   period:0.0048450, rung:"glass", floor:1.4, tint:"#e2d08a", dark:"#4a3a12",
+   frequency:7, seed:6217},
+  {id:"europa",   name:"Europa",   km:1560.8, moonKm:671034,  parent:"jupiter",
+   period:0.0097225, rung:"glass", floor:1.4, tint:"#ddd4c4", dark:"#4a4438",
+   frequency:7, seed:6301},
+  {id:"ganymede", name:"Ganymede", km:2634.1, moonKm:1070412, parent:"jupiter",
+   period:0.0195900, rung:"glass", floor:1.5, tint:"#9d9384", dark:"#332f28",
+   frequency:8, seed:6373},
+  {id:"callisto", name:"Callisto", km:2410.3, moonKm:1882709, parent:"jupiter",
+   period:0.0456890, rung:"glass", floor:1.5, tint:"#7c7264", dark:"#2a251f",
+   frequency:8, seed:6449},
+
+  {id:"saturn",  name:"Saturn",  km:58232,  au:9.58260, period:29.457,
+   rung:"eye", floor:3.0, tint:"#e6d3a4", dark:"#5e4d2c", frequency:13, seed:7219,
+   giant:true, rings:[1.24, 2.27]},
+  {id:"titan",    name:"Titan",    km:2574.7, moonKm:1221870, parent:"saturn",
+   period:0.0436880, rung:"glass", floor:1.5, tint:"#d9a05a", dark:"#4a3418",
+   frequency:8, seed:7307},
+
+  {id:"uranus",  name:"Uranus",  km:25362,  au:19.2184, period:84.021,
+   rung:"glass", floor:2.4, tint:"#b6e3e6", dark:"#1f5761", frequency:12, seed:8291,
+   giant:true, rings:[1.64, 2.00]},
+  {id:"neptune", name:"Neptune", km:24622,  au:30.0700, period:164.79,
+   rung:"glass", floor:2.4, tint:"#7ba4dd", dark:"#1b3161", frequency:12, seed:9377,
+   giant:true},
+  {id:"pluto",   name:"Pluto",   km:1188.3, au:39.4820, period:247.94,
+   rung:"glass", floor:1.4, tint:"#cbb9a4", dark:"#40372e", frequency:6, seed:1031},
 ];
-// Home, written the same way, so the camera can treat the world underfoot as
-// one body among four instead of as a special case everywhere.
-const SKY_EARTH = {id:"earth", name:"Earth", orbit:0, size:1, bearing:0};
-function skyWorlds() { return [SKY_EARTH, ...SKY_BODIES]; }
-function skyBody(id) { return skyWorlds().find(body => body.id === id) || null; }
-// The worlds this civilization is allowed to be looking at, home included. The
-// camera reckons with these rather than with everything that is out there: a
-// body nobody has ever seen must not pull the camera toward it, set how far the
-// zoom goes, or answer for what a drag is turning.
-function skyKnownWorlds() { return [SKY_EARTH, ...visibleSkyBodies()]; }
-// Where a body sits, in Earth radii from the Earth. The arrangement is fixed;
-// the camera is the only thing that moves.
-function skyBodyPos(body) {
-  return [Math.cos(body.bearing) * body.orbit, Math.sin(body.bearing) * body.orbit];
+
+// ------------------------------------------------------- the neighbourhood
+//
+// Every star within about fifty light-years that anybody has a name for, at its
+// real distance and in its real direction. `l` and `b` are galactic longitude
+// and latitude in degrees and `ly` is the distance, which is the coordinate
+// system the galaxy itself is defined in: `l` = 0 points at the galactic
+// centre, `b` = 0 is the plane of the disc. Storing them this way is what lets
+// the same numbers place a star in the local bubble and place the bubble in the
+// galaxy, without a second table that could disagree with the first.
+//
+// `mag` is absolute visual magnitude, used only to decide how brightly a star
+// is drawn, and `km` is its radius where it is known. The list is dominated by
+// red dwarfs because the real neighbourhood is: of the sixty-odd systems
+// inside 16 light-years, over three quarters are M dwarfs and exactly four —
+// Sirius, Procyon, Altair and Alpha Centauri A — are brighter than the Sun.
+const SKY_STAR_SPECS = [
+  {id:"alpha_cen",  name:"Alpha Centauri",   ly:4.37,  l:315.73, b:-0.68,  type:"G2V",  km:854000},
+  {id:"barnard",    name:"Barnard's Star",   ly:5.96,  l:31.01,  b:14.06,  type:"M4V",  km:135000},
+  {id:"wolf359",    name:"Wolf 359",         ly:7.86,  l:244.09, b:56.11,  type:"M6V",  km:112000},
+  {id:"lalande",    name:"Lalande 21185",    ly:8.31,  l:185.14, b:65.39,  type:"M2V",  km:274000},
+  {id:"sirius",     name:"Sirius",           ly:8.60,  l:227.23, b:-8.89,  type:"A1V",  km:1191000},
+  {id:"luyten726",  name:"Luyten 726-8",     ly:8.73,  l:175.46, b:-75.65, type:"M5V",  km:98000},
+  {id:"ross154",    name:"Ross 154",         ly:9.70,  l:11.30,  b:-10.28, type:"M3V",  km:167000},
+  {id:"ross248",    name:"Ross 248",         ly:10.30, l:110.00, b:-16.90, type:"M5V",  km:112000},
+  {id:"eps_eri",    name:"Epsilon Eridani",  ly:10.48, l:195.84, b:-48.05, type:"K2V",  km:512000},
+  {id:"lac9352",    name:"Lacaille 9352",    ly:10.72, l:8.36,   b:-66.01, type:"M1V",  km:328000},
+  {id:"ross128",    name:"Ross 128",         ly:11.01, l:270.06, b:59.63,  type:"M4V",  km:141000},
+  {id:"ez_aqr",     name:"EZ Aquarii",       ly:11.10, l:47.13,  b:-57.05, type:"M5V",  km:97000},
+  {id:"61_cyg",     name:"61 Cygni",         ly:11.40, l:82.31,  b:-5.82,  type:"K5V",  km:466000},
+  {id:"procyon",    name:"Procyon",          ly:11.46, l:213.70, b:13.02,  type:"F5IV", km:1440000},
+  {id:"struve2398", name:"Struve 2398",      ly:11.53, l:89.29,  b:24.22,  type:"M3V",  km:246000},
+  {id:"groom34",    name:"Groombridge 34",   ly:11.62, l:116.66, b:-18.44, type:"M1V",  km:265000},
+  {id:"dx_cnc",     name:"DX Cancri",        ly:11.68, l:201.24, b:32.42,  type:"M6V",  km:80000},
+  {id:"eps_ind",    name:"Epsilon Indi",     ly:11.87, l:336.19, b:-48.04, type:"K5V",  km:494000},
+  {id:"tau_ceti",   name:"Tau Ceti",         ly:11.91, l:173.11, b:-73.44, type:"G8V",  km:552000},
+  {id:"gj1061",     name:"GJ 1061",          ly:12.04, l:251.87, b:-34.55, type:"M5V",  km:110000},
+  {id:"yz_cet",     name:"YZ Ceti",          ly:12.13, l:170.03, b:-72.06, type:"M4V",  km:117000},
+  {id:"luyten",     name:"Luyten's Star",    ly:12.35, l:212.30, b:9.60,   type:"M3V",  km:203000},
+  {id:"teegarden",  name:"Teegarden's Star", ly:12.50, l:160.26, b:-16.99, type:"M7V",  km:87000},
+  {id:"kapteyn",    name:"Kapteyn's Star",   ly:12.83, l:250.53, b:-36.05, type:"M1V",  km:203000},
+  {id:"lac8760",    name:"Lacaille 8760",    ly:12.95, l:5.11,   b:-40.96, type:"M0V",  km:344000},
+  {id:"kruger60",   name:"Kruger 60",        ly:13.08, l:109.61, b:7.42,   type:"M3V",  km:174000},
+  {id:"ross614",    name:"Ross 614",         ly:13.35, l:212.93, b:-6.37,  type:"M4V",  km:157000},
+  {id:"wolf1061",   name:"Wolf 1061",        ly:14.05, l:4.20,   b:13.85,  type:"M3V",  km:212000},
+  {id:"van_maanen", name:"Van Maanen's Star",ly:14.07, l:121.90, b:-57.42, type:"DZ",   km:9000},
+  {id:"gliese1",    name:"Gliese 1",         ly:14.22, l:315.05, b:-75.94, type:"M2V",  km:265000},
+  {id:"tz_ari",     name:"TZ Arietis",       ly:14.60, l:161.16, b:-33.63, type:"M4V",  km:100000},
+  {id:"gj1245",     name:"GJ 1245",          ly:14.81, l:71.85,  b:16.60,  type:"M5V",  km:97000},
+  {id:"gliese687",  name:"Gliese 687",       ly:14.79, l:98.03,  b:31.20,  type:"M3V",  km:346000},
+  {id:"gliese674",  name:"Gliese 674",       ly:14.84, l:337.06, b:-11.65, type:"M3V",  km:246000},
+  {id:"gliese876",  name:"Gliese 876",       ly:15.24, l:52.86,  b:-59.58, type:"M4V",  km:250000},
+  {id:"groom1618",  name:"Groombridge 1618", ly:15.85, l:175.42, b:43.15,  type:"K7V",  km:430000},
+  {id:"gliese832",  name:"Gliese 832",       ly:16.20, l:353.09, b:-42.10, type:"M2V",  km:340000},
+  {id:"40_eri",     name:"40 Eridani",       ly:16.33, l:200.79, b:-38.06, type:"K1V",  km:562000},
+  {id:"70_oph",     name:"70 Ophiuchi",      ly:16.59, l:29.83,  b:11.35,  type:"K0V",  km:601000},
+  {id:"altair",     name:"Altair",           ly:16.73, l:47.74,  b:-8.91,  type:"A7V",  km:1300000},
+  {id:"sigma_dra",  name:"Sigma Draconis",   ly:18.80, l:88.60,  b:29.94,  type:"K0V",  km:539000},
+  {id:"eta_cas",    name:"Eta Cassiopeiae",  ly:19.32, l:122.53, b:-5.11,  type:"F9V",  km:695000},
+  {id:"36_oph",     name:"36 Ophiuchi",      ly:19.50, l:358.32, b:6.87,   type:"K2V",  km:483000},
+  {id:"82_eri",     name:"82 Eridani",       ly:19.71, l:234.62, b:-52.02, type:"G8V",  km:640000},
+  {id:"delta_pav",  name:"Delta Pavonis",    ly:19.92, l:329.32, b:-25.94, type:"G8IV", km:820000},
+  {id:"gliese581",  name:"Gliese 581",       ly:20.42, l:354.40, b:34.00,  type:"M3V",  km:200000},
+  {id:"hd219134",   name:"HD 219134",        ly:21.34, l:109.71, b:-14.29, type:"K3V",  km:539000},
+  {id:"gliese667",  name:"Gliese 667",       ly:23.62, l:0.06,   b:11.31,  type:"K3V",  km:528000},
+  {id:"vega",       name:"Vega",             ly:25.04, l:67.45,  b:19.24,  type:"A0V",  km:1930000},
+  {id:"fomalhaut",  name:"Fomalhaut",        ly:25.13, l:20.49,  b:-64.90, type:"A3V",  km:1240000},
+  {id:"chi1_ori",   name:"Chi-1 Orionis",    ly:28.26, l:188.53, b:2.10,   type:"G0V",  km:695000},
+  {id:"gliese12",   name:"Gliese 12",        ly:39.70, l:79.99,  b:-31.30, type:"M4V",  km:170000},
+  {id:"trappist1",  name:"TRAPPIST-1",       ly:40.66, l:69.50,  b:-47.14, type:"M8V",  km:83000},
+  {id:"55_cnc",     name:"55 Cancri",        ly:41.06, l:196.40, b:31.60,  type:"K0V",  km:659000},
+  {id:"ups_and",    name:"Upsilon Andromedae",ly:44.00,l:132.00, b:-19.00, type:"F8V",  km:1090000},
+  {id:"lhs1140",    name:"LHS 1140",         ly:48.93, l:175.10, b:-71.30, type:"M4.5V",km:127000},
+  {id:"tau_boo",    name:"Tau Bootis",       ly:51.00, l:358.30, b:73.90,  type:"F7V",  km:986000},
+];
+
+// ------------------------------------------------------------ the destination
+//
+// The expedition is going to a real place. These are the worlds inside fifty
+// light-years that are actually argued about as targets — the temperate ones,
+// around the stars named above — with the distance the trip really is and the
+// thing that is really wrong with each of them.
+//
+// `radius` is the planet's own radius in Earths, `hz` is a plain grade for how
+// habitable it is thought to be, and `note` is the catch. There is a genuine
+// trade-off in this list and it is the trade-off the field actually has: the
+// nearest worlds are around flare stars and tidally locked, and the calmest
+// star with a temperate planet is nearly five times further away.
+const SKY_TARGET_SPECS = [
+  {id:"proxima_b",  name:"Proxima Centauri b", star:"alpha_cen", ly:4.24,  radius:1.03,
+   hz:"marginal", tint:"#b08a6a", dark:"#3a2a1e", frequency:11, seed:4241,
+   note:"Earth-mass, in the temperate band, and one stellar flare from bare rock."},
+  {id:"tau_ceti_e", name:"Tau Ceti e",         star:"tau_ceti",  ly:11.91, radius:1.81,
+   hz:"marginal", tint:"#c9a06a", dark:"#3d2c18", frequency:12, seed:1191,
+   note:"A quiet Sun-like star, but the inner edge of the band and a debris disc."},
+  {id:"gj273_b",    name:"Luyten's Star b",    star:"luyten",    ly:12.35, radius:1.51,
+   hz:"good",     tint:"#7fae8e", dark:"#20402f", frequency:12, seed:1235,
+   note:"A super-Earth in the band around one of the calmer red dwarfs."},
+  {id:"teegarden_b",name:"Teegarden's Star b", star:"teegarden", ly:12.50, radius:1.04,
+   hz:"good",     tint:"#8fb083", dark:"#26402a", frequency:11, seed:1250,
+   note:"The best Earth-similarity score on the list, around a very old, very quiet star."},
+  {id:"wolf1061_c", name:"Wolf 1061 c",        star:"wolf1061",  ly:14.05, radius:1.66,
+   hz:"marginal", tint:"#b6a072", dark:"#39301c", frequency:12, seed:1405,
+   note:"In the band, probably tidally locked, probably a thick atmosphere."},
+  {id:"hd20794_d",  name:"82 Eridani d",       star:"82_eri",    ly:19.71, radius:1.55,
+   hz:"good",     tint:"#79a691", dark:"#1f3d33", frequency:12, seed:1971,
+   note:"A Sun-like star with a temperate super-Earth, confirmed only in 2025."},
+  {id:"gj667_cc",   name:"Gliese 667 Cc",      star:"gliese667", ly:23.62, radius:1.54,
+   hz:"good",     tint:"#84ab7e", dark:"#243d26", frequency:12, seed:2362,
+   note:"A super-Earth in the band of a triple system: three suns in its sky."},
+  {id:"gliese12_b", name:"Gliese 12 b",        star:"gliese12",  ly:39.70, radius:0.96,
+   hz:"marginal", tint:"#c2a98a", dark:"#3b3226", frequency:11, seed:3970,
+   note:"Earth-sized and temperate, and it may have no atmosphere left at all."},
+  {id:"trappist1_e",name:"TRAPPIST-1 e",       star:"trappist1", ly:40.66, radius:0.92,
+   hz:"good",     tint:"#6fa2a8", dark:"#1d3b41", frequency:11, seed:4066,
+   note:"One of seven, three of them temperate: a whole system to settle, not a world."},
+  {id:"lhs1140_b",  name:"LHS 1140 b",         star:"lhs1140",   ly:48.93, radius:1.73,
+   hz:"best",     tint:"#4f9fb0", dark:"#123a45", frequency:14, seed:4893,
+   note:"The strongest candidate anywhere: a temperate super-Earth that may be an ocean."},
+];
+
+// ---------------------------------------------------------------- the galaxy
+//
+// The Sun sits 26,700 light-years out from the centre of a barred spiral about
+// a hundred thousand light-years across, in a short spur between two of the
+// major arms. The numbers are the current best ones: the distance to Sagittarius
+// A* is 8.18 kiloparsecs (GRAVITY, 2019), the bar is about 27,000 light-years
+// end to end and leans some 27 degrees off the line from here to the centre.
+//
+// The frame is the same galactic one the stars above are in, so the Sun is at
+// the origin and the centre is 26,700 light-years towards l = 0. That is what
+// makes the last zoom step mean anything: the bubble of stars the camera has
+// just come out of is drawn in the same coordinates as the galaxy it sits in,
+// so its size against the disc is measured rather than asserted.
+const GALAXY_SUN_RADIUS_LY = 26700;   // Sun to Sagittarius A*
+const GALAXY_DISC_LY = 50000;         // stellar disc, half of the ~100,000 across
+const GALAXY_BAR_LY = 13500;          // half-length of the bar
+const GALAXY_BAR_ANGLE = 27 * Math.PI / 180;
+// The four major arms, as logarithmic spirals about the centre. An arm is
+// written by where it crosses *our* line — `atUs` is its distance from the
+// centre in the direction the Sun lies in — and by its pitch angle, because
+// that is the way the arms are actually measured: the Sagittarius-Carina arm is
+// some six thousand light-years inside us and the Perseus arm about the same
+// distance outside, and those two numbers are what put the Sun between them.
+// Writing an arm by an arbitrary starting radius instead would place it
+// correctly nowhere in particular and here by luck.
+//
+// r(theta) = atUs * exp(tan(pitch) * (theta - PI)), with theta measured from
+// the centre and PI pointing back at us. A spiral arm is a density wave and not
+// an object, so these are traces of where the star-forming gas is rather than a
+// fit to anything.
+const GALAXY_ARMS = [
+  {id:"norma",       name:"Norma",             atUs:10000, pitch:16.0, width:1500},
+  {id:"scutum",      name:"Scutum-Centaurus",  atUs:15500, pitch:14.1, width:2200},
+  {id:"sagittarius", name:"Sagittarius-Carina",atUs:21000, pitch:17.1, width:2000},
+  {id:"perseus",     name:"Perseus",           atUs:33000, pitch:10.4, width:2300},
+];
+// The Orion Spur is not one of the four. It is a bridge between Sagittarius and
+// Perseus, about 3,500 light-years across and 20,000 long, and every star in
+// the roster above — every star anybody has ever named — is inside it.
+const GALAXY_SPUR = {name:"Orion Spur", length:20000, width:3500, lean:-0.33};
+
+// --------------------------------------------------------- building the sky
+//
+// One conversion, in one place. A spec carries published units; a body carries
+// Earth radii, which is what every drawing and camera routine out here speaks.
+function skyMakeBody(spec) {
+  const orbitRadius = spec.au != null ? spec.au * AU
+                    : spec.moonKm != null ? spec.moonKm / EARTH_KM : 0;
+  // How far this body is from the thing it is drawn next to, which is what
+  // decides whether there is room for it to be drawn at all. The Sun has
+  // nothing to be beside, so it is always there.
+  return {...spec, kind:"body", size:spec.km / EARTH_KM,
+          orbitRadius, separation:orbitRadius || Infinity};
 }
-// The far end of the zoom is the shot that holds the whole system: the
-// outermost body just inside the stage, and no smaller an Earth than that
-// needs. A world this small is a dot, but it is a dot with everything it ever
-// sent out in frame around it.
-const SKY_MIN_EARTH = 3.4;
+// Galactic longitude and latitude, in degrees, to the plane the neighbourhood
+// and the galaxy are both drawn in: x towards the centre, y round the disc, and
+// the height out of the plane kept so a star off it can be shown standing off
+// it rather than quietly flattened into it.
+function skyGalacticPoint(l, b, ly) {
+  const lon = l * Math.PI / 180, lat = b * Math.PI / 180;
+  const flat = ly * Math.cos(lat);
+  return {x:flat * Math.cos(lon), y:flat * Math.sin(lon), z:ly * Math.sin(lat)};
+}
+// Roughly how much light a star of each class puts out, in Suns. Two orders of
+// magnitude either side of the Sun is not a detail out here, it is the whole
+// character of the neighbourhood: three quarters of it is red dwarfs putting
+// out a hundredth of a Sun, and the half-dozen stars anybody has a
+// constellation name for are the handful of A and F stars scattered among them.
+// Drawn at a flat size they all read as equals, which is the one thing the
+// local sky is not.
+const SKY_STAR_LUM = {O:30000, B:120, A:20, F:3, G:1, K:.3, M:.012, D:.0006};
+function skyMakeStar(spec) {
+  const at = skyGalacticPoint(spec.l, spec.b, spec.ly);
+  // Apparent brightness from here: light out, over distance squared. Turned
+  // into a drawn radius by its logarithm, because that is how an eye and a
+  // photographic plate both answer the same question.
+  const lum = SKY_STAR_LUM[spec.type[0]] ?? .01;
+  const glow = lum / (spec.ly * spec.ly);
+  const rank = Math.max(0, Math.min(1, (Math.log10(glow) + 3.4) / 3.4));
+  return {...spec, kind:"star", size:spec.km / EARTH_KM,
+          galactic:at, glow, rank, separation:spec.ly * LIGHT_YEAR,
+          floor:spec.floor || (1.0 + 2.1 * rank * rank),
+          tint:SKY_STAR_TINT[spec.type[0]] || "#ffd9a8"};
+}
+// A star's colour is its spectral class, which is its temperature. The one
+// white dwarf in the list is its own case: a dead core the size of the Earth,
+// far too hot for its brightness, and it is drawn the blue-white it is.
+const SKY_STAR_TINT = {
+  O:"#9db4ff", B:"#aec6ff", A:"#dbe4ff", F:"#fbf9ff",
+  G:"#fff4e2", K:"#ffd2a1", M:"#ff9d63", D:"#e8f0ff",
+};
+const SKY_SYSTEM = SKY_SYSTEM_SPECS.map(skyMakeBody);
+const SKY_STARS = SKY_STAR_SPECS.map(skyMakeStar);
+const SKY_EARTH = SKY_SYSTEM.find(body => body.id === "earth");
+const SKY_SUN = SKY_SYSTEM.find(body => body.id === "sun");
+
+// The destination, as a world in the sky. It keeps the id `exo` whatever it is
+// pointed at, because it is one thing — the place the expedition is going —
+// and everything that draws a route to it, seats a crew on it or names it in a
+// caption is asking about that one thing rather than about a catalogue entry.
+const SKY_TARGETS = SKY_TARGET_SPECS.map(spec => {
+  const star = SKY_STARS.find(body => body.id === spec.star);
+  return {...spec, kind:"world", size:spec.radius, floor:2.6,
+          star, rung:"space", separation:spec.ly * LIGHT_YEAR,
+          galactic:skyGalacticPoint(star.l, star.b, spec.ly)};
+});
+// Which one. The server names it once a civilization has chosen where to send
+// the expedition; until then — and for a viewer of an older server that does
+// not say — it is the strongest candidate anybody actually has, which is the
+// one at the far end of the list and very nearly the fifty light-years the
+// engine has always quoted.
+const SKY_TARGET_FALLBACK = "lhs1140_b";
+function skyTargetId(st = state) {
+  return st?.me?.exoplanet_target || st?.exoplanet_target || SKY_TARGET_FALLBACK;
+}
+function skyTarget(st = state) {
+  return SKY_TARGETS.find(world => world.id === skyTargetId(st))
+      || SKY_TARGETS[SKY_TARGETS.length - 1];
+}
+function skyExoBody(st = state) {
+  const target = skyTarget(st);
+  return {...target, id:"exo", catalogue:target.id, name:target.name};
+}
+
+function skyWorlds() {
+  return [...SKY_SYSTEM, ...SKY_STARS, skyExoBody()];
+}
+function skyBody(id) {
+  if (id === "exo") return skyExoBody();
+  return SKY_SYSTEM.find(body => body.id === id)
+      || SKY_STARS.find(body => body.id === id) || null;
+}
+
+// ----------------------------------------------------------- where things are
+//
+// The arrangement is fixed for a game and comes off its seed, so the system is
+// the same picture every time it is looked at rather than a new throw of the
+// dice per frame. It is not tied to the in-game year on purpose: at forty years
+// a turn Mercury goes round a hundred and sixty times between two of them, so a
+// date-accurate orrery would teleport every planet on every end of turn and
+// read as a fault rather than as an orbit.
+function skyEpochSeed() {
+  return (state?.seed ?? 0) | 0;
+}
+let SKY_POS_CACHE = null, SKY_POS_KEY = null;
+function skyPositions() {
+  const key = `${skyEpochSeed()}:${skyTargetId()}`;
+  if (SKY_POS_CACHE && SKY_POS_KEY === key) return SKY_POS_CACHE;
+  const seed = skyEpochSeed();
+  const helio = new Map();
+  // Parents before children: the Moon's place is the Earth's place plus its own
+  // orbit, and Jupiter's moons the same one level down.
+  const place = body => {
+    if (helio.has(body.id)) return helio.get(body.id);
+    let base = [0, 0];
+    if (body.parent) {
+      const parent = SKY_SYSTEM.find(other => other.id === body.parent);
+      if (parent) base = place(parent);
+    }
+    const phase = 6.283185 * hash2(seed + Math.round(body.orbitRadius), 71);
+    const at = [base[0] + Math.cos(phase) * body.orbitRadius,
+                base[1] + Math.sin(phase) * body.orbitRadius];
+    helio.set(body.id, at);
+    return at;
+  };
+  for (const body of SKY_SYSTEM) place(body);
+  const earth = helio.get("earth") || [0, 0];
+  const out = new Map();
+  for (const [id, at] of helio) out.set(id, [at[0] - earth[0], at[1] - earth[1]]);
+  // Out here the Sun is the origin and the Earth's own kilometre-scale offset
+  // from it is a rounding error, but it is carried anyway so that one rule —
+  // everything is measured from the Earth's centre — holds all the way out.
+  for (const body of [...SKY_STARS, skyExoBody()])
+    out.set(body.id, [body.galactic.x * LIGHT_YEAR - earth[0],
+                      body.galactic.y * LIGHT_YEAR - earth[1]]);
+  SKY_POS_CACHE = out; SKY_POS_KEY = key;
+  return out;
+}
+// Where a body sits, in Earth radii from the Earth's centre. The camera is the
+// only thing that moves; this is the arrangement it moves through.
+function skyBodyPos(body) {
+  return skyPositions().get(body.id) || [0, 0];
+}
+// How far out of the galactic plane, in Earth radii, for the stars that are
+// drawn standing off it.
+function skyBodyLift(body) {
+  return body.galactic ? body.galactic.z * LIGHT_YEAR : 0;
+}
+// The far end of the zoom is the shot that holds everything this civilization
+// knows is out there, and there is no floor under the Earth in it any more.
+// There cannot be: the old stop kept home at least three and a half pixels
+// across, and at three and a half pixels for an Earth the galaxy is eleven
+// thousand million pixels wide. Home being a dot too small to see is not a
+// failure of the picture out here, it is the picture.
+//
 // Above this the globe is a place; below it, a marble. Space fades in across
 // that line.
 const SKY_SURFACE = 96;
@@ -15732,39 +16102,62 @@ function skyLaunchInFlight(playerId, mission, now = performance.now()) {
 }
 // When a body stops being a marble and starts being a place. Its own ground
 // fades in over the painted ball, and the threshold cannot be one number for
-// all three: a tile is about `2 * r / frequency` across, so a world carrying
+// all of them: a tile is about `2 * r / frequency` across, so a world carrying
 // twice the tiles needs twice the disc before any of them can be told apart.
-// Below this the mesh is mush and the marble already says everything.
+// Below this the mesh is mush and the marble already says everything. A star
+// and the Sun have no ground to stand on and never reach it.
 function skyGroundFade(place) {
+  if (!place.frequency) return 0;
   const start = 3 * place.frequency;
   return Math.max(0, Math.min(1, (place.r - start) / (3 * place.frequency)));
 }
 
-// How much of all this a civilization is allowed to be looking at.
-//
-// The sky is not the same sky for everyone under it. A people who have not
-// worked out that their world is a ball are not handed the proof by the camera:
-// they get the chart projection above, the zoom stops well before their world
-// could become an object, and there is nothing standing around it. Either proof
-// of a round world opens the globe, and with it the two neighbours anyone can
-// point at on a clear night. The other star is not one of those — no eye on the
-// ground has ever seen a planet at another sun — so the far end of the system
-// waits until a civilization has actually put something above the air.
+// ------------------------------------------------------- what may be looked at
 //
 // The server decides all of it, in the same place and for the same reason it
 // decides who has found north, and a spectator watches from outside the world
-// and was never the party in the dark.
+// and was never the party in the dark. A client talking to a server that has
+// not been told about the middle rung yet reads it off the same discovery the
+// server would have used, so an old server serves a sky one rung short rather
+// than a broken one.
 function knowsGlobe(st = state) {
   return !st || !!st.spectate || st.me?.knows_globe !== false;
+}
+function seesOuterSystem(st = state) {
+  if (!st || st.spectate) return true;
+  if (st.me?.sees_outer_system !== undefined) return !!st.me.sees_outer_system;
+  return knowsGlobe(st) && (st.me?.techs || []).includes("scientific_theory");
 }
 function seesExoplanet(st = state) {
   return !st || !!st.spectate || st.me?.sees_exoplanet !== false;
 }
-function visibleSkyBodies(st = state) {
-  if (!knowsGlobe(st)) return [];
-  return seesExoplanet(st) ? SKY_BODIES
-                           : SKY_BODIES.filter(body => body.id !== "exo");
+function skyRung(st = state) {
+  if (!knowsGlobe(st)) return "chart";
+  if (seesExoplanet(st)) return "space";
+  return seesOuterSystem(st) ? "glass" : "eye";
 }
+function skyRungAtLeast(rung, st = state) {
+  return SKY_RUNG_ORDER[skyRung(st)] >= SKY_RUNG_ORDER[rung];
+}
+// Every world this civilization is allowed to be looking at, home included. The
+// camera reckons with these rather than with everything that is out there: a
+// body nobody has ever seen must not pull the camera toward it, set how far the
+// zoom goes, or answer for what a drag is turning.
+function visibleSkyBodies(st = state) {
+  const rung = skyRung(st);
+  if (rung === "chart") return [];
+  const out = SKY_SYSTEM.filter(body =>
+    body.id !== "earth" && SKY_RUNG_ORDER[body.rung] <= SKY_RUNG_ORDER[rung]);
+  if (SKY_RUNG_ORDER[rung] >= SKY_RUNG_ORDER.glass) out.push(...SKY_STARS);
+  if (rung === "space") out.push(skyExoBody());
+  return out;
+}
+function skyKnownWorlds(st = state) { return [SKY_EARTH, ...visibleSkyBodies(st)]; }
+// Whether the neighbourhood is known well enough to be drawn as one, which is
+// the same question as whether a star has a distance rather than just a place
+// in a constellation.
+function knowsNeighbourhood(st = state) { return skyRungAtLeast("glass", st); }
+function knowsGalaxy(st = state) { return skyRungAtLeast("space", st); }
 function globeDiscoveryLabel() {
   const techs = state?.me?.globe_techs;
   return Array.isArray(techs) && techs.length
@@ -15911,7 +16304,14 @@ function skyRanks(values) {
   return ranks;
 }
 // One rule per world, reading the same two ranked fields: `broad` is the shape
-// of the ground and `fine` is what has happened to it since. Both run 0 to 1.
+// of the ground and `fine` is what has happened to it since. Both run 0 to 1,
+// and `point` is the cell's own unit vector, so `point[2]` is the sine of its
+// latitude — which is how anything banded or capped is written.
+//
+// Every one of these is the thing that world is actually known for. That is the
+// whole point of putting the real solar system in: Io should be sulphur and
+// Europa should be cracked ice, because then a tiling of them is worth flying
+// out to look at rather than a differently tinted marble.
 const SKY_GROUND = {
   // Maria are the dark floods the near side is famous for; everything else is
   // the pale battered highland, with the brightest fine noise as the rays of
@@ -15921,6 +16321,27 @@ const SKY_GROUND = {
     if (fine > .90) return "#d3d7dd";
     if (fine < .10) return "#787e88";
     return broad > .74 ? "#b3b8c0" : "#9aa0a9";
+  },
+  // Airless, unresurfaced, and the darkest of the rocky worlds: Mercury
+  // reflects about as much light as old asphalt. Smooth plains in the lows, the
+  // Caloris ejecta as the brightest fine noise, and a few permanently shadowed
+  // polar craters that hold ice on a planet that reaches 430 degrees.
+  mercury(point, broad, fine) {
+    if (Math.abs(point[2]) > .97 && fine < .35) return "#cfd6dd";
+    if (broad < .30) return fine > .8 ? "#6d675f" : "#5c5750";
+    if (fine > .93) return "#c3bab0";
+    return broad > .72 ? "#a09589" : "#867d73";
+  },
+  // What is drawn is the cloud deck, because that is all anyone has ever seen
+  // of Venus in visible light — a featureless pale yellow ball. The structure
+  // is the ultraviolet one: dark streaks in a band round the equator and the
+  // polar collars, in an atmosphere that laps the planet every four days.
+  venus(point, broad, fine) {
+    const polar = Math.abs(point[2]);
+    if (polar > .88) return fine > .5 ? "#d9c98f" : "#cbb87e";
+    if (broad < .28 && polar < .55) return "#c4ae74";
+    if (fine > .82) return "#f6ecc4";
+    return broad > .70 ? "#eee0ae" : "#e3d29b";
   },
   // Rust everywhere, dark volcanic plain where the ground is low, wind-blown
   // dust where it is high, and a cap at each pole. The caps are latitude, not
@@ -15933,33 +16354,183 @@ const SKY_GROUND = {
     if (broad > .72) return fine > .6 ? "#dfa273" : "#cf8a58";
     return fine < .22 ? "#9c4d2d" : "#b45c36";
   },
-  // A living world, which is the whole reason for the fifty-light-year trip:
-  // ocean, shelf, forest, a highland spine, and ice at both ends.
-  exo(point, broad, fine) {
+  // Dark carbonaceous ground, and the bright spots in Occator that turned out
+  // to be salt left behind by brine reaching the surface.
+  ceres(point, broad, fine) {
+    if (fine > .965) return "#e8edf1";
+    if (broad < .35) return "#443f39";
+    return broad > .75 ? "#6a6259" : "#57504a";
+  },
+  // The most volcanically active body there is: sulphur and sulphur dioxide
+  // frost in yellows and whites, repaved fast enough that it has no craters at
+  // all, with black silicate lava at the vents.
+  io(point, broad, fine) {
+    if (fine > .93) return "#241d10";
+    if (broad < .22) return "#8e5a1c";
+    if (broad > .80) return "#f4ecc4";
+    return fine < .3 ? "#d9b447" : "#e8cf72";
+  },
+  // The smoothest solid surface in the system: water ice, cracked across by the
+  // lineae, stained rust-brown where salts have come up through them. Under it,
+  // more liquid water than every ocean on Earth put together.
+  europa(point, broad, fine) {
+    if (fine > .88) return "#9c6a4a";
+    if (fine > .80) return "#c39072";
+    if (broad < .30) return "#dfe6ee";
+    return broad > .74 ? "#f2f6fa" : "#e7edf3";
+  },
+  // The largest moon in the system, and the only one with a magnetic field of
+  // its own: dark cratered terrain two-thirds covered by younger bright grooved
+  // ground, with fresh craters punched white through both.
+  ganymede(point, broad, fine) {
+    if (fine > .95) return "#e9eef4";
+    if (broad < .38) return fine > .6 ? "#5d564c" : "#4c4640";
+    return fine > .55 ? "#b4ada1" : "#948d83";
+  },
+  // The most heavily cratered object known — a surface so old nothing has
+  // happened to it since it formed. Dark, and evenly so.
+  callisto(point, broad, fine) {
+    if (fine > .93) return "#cfc9bd";
+    if (fine < .12) return "#2c2823";
+    return broad > .6 ? "#6b6357" : "#544d44";
+  },
+  // The one moon with a real atmosphere, and the haze is what you see: orange
+  // all over. Under it the dark equatorial dune seas, the bright highlands of
+  // Xanadu, and lakes of liquid methane at the north pole.
+  titan(point, broad, fine) {
+    const polar = point[2];
+    if (polar > .84 && broad < .55) return "#3a3f52";
+    if (Math.abs(polar) < .35 && broad < .42) return "#6d5330";
+    if (broad > .78) return "#f0c98a";
+    return fine > .6 ? "#dda85e" : "#c9924c";
+  },
+  // A nitrogen-ice plain two thousand kilometres across, shaped like a heart,
+  // sitting in ground stained red-brown by tholins.
+  pluto(point, broad, fine) {
+    if (broad > .74) return fine > .5 ? "#f2ead8" : "#e5dbc6";
+    if (broad < .24) return "#5a4335";
+    return fine > .66 ? "#c3a892" : "#a98c74";
+  },
+
+  // ---- the giants, which have no ground at all.
+  //
+  // A gas giant tiled into hexagons is a strange object and it is meant to be:
+  // there is nothing to stand on, so what the tiling quantises is the cloud
+  // deck. Bands are latitude and only latitude — belts and zones are set by the
+  // rotation, not by anything underneath — so these read `point[2]` and use the
+  // noise only to ruffle the edges, which is what the real bands do to each
+  // other where they shear past in opposite directions.
+  jupiter(point, broad, fine) {
+    const lat = point[2] + (fine - .5) * .07;
+    const band = Math.abs(lat);
+    if (band > .93) return "#8f8375";
+    // The Great Red Spot: a storm wider than the Earth, in the south, and it
+    // has been there since somebody first had a telescope good enough to see it.
+    if (lat < -.28 && lat > -.46 && broad > .93) return "#b4552f";
+    const zone = Math.sin(lat * 13.2) > 0;
+    if (band < .09) return fine > .5 ? "#c9a273" : "#b98f61";
+    if (zone) return fine > .7 ? "#f2e6cd" : "#e6d5b4";
+    return fine < .3 ? "#8d6a44" : "#a37f55";
+  },
+  // The same construction, softer: Saturn's bands are the same physics seen
+  // through a deeper, colder haze, so they are there but barely.
+  saturn(point, broad, fine) {
+    const lat = point[2] + (fine - .5) * .05;
+    const band = Math.abs(lat);
+    if (band > .95) return "#7d8fa0";
+    // The hexagon: a standing wave round the north pole, six-sided, and drawn
+    // here on a world made of hexagons entirely by coincidence.
+    if (lat > .86) return "#93a7b8";
+    const zone = Math.sin(lat * 9.4) > 0;
+    if (zone) return fine > .6 ? "#f0dfae" : "#e6d3a0";
+    return fine < .35 ? "#c2a778" : "#d4bb8c";
+  },
+  // Almost nothing. Uranus is a flat pale disc in every photograph ever taken
+  // of it, and drawing bands that are not there would be inventing them.
+  uranus(point, broad, fine) {
+    const band = Math.abs(point[2] + (fine - .5) * .05);
+    if (band > .90) return "#cfeef0";
+    return broad > .5 ? "#b9e6e9" : "#a9dbe0";
+  },
+  // Deep blue from methane, and unlike Uranus it does have weather: the fastest
+  // winds in the system, bright cirrus streaks of methane ice, and dark storms
+  // that come and go over a few years.
+  neptune(point, broad, fine) {
+    const lat = point[2] + (fine - .5) * .06;
+    if (Math.abs(lat) > .92) return "#9dbde8";
+    if (lat < -.22 && lat > -.42 && broad > .94) return "#20356e";
+    if (fine > .88) return "#e2ecfb";
+    return Math.sin(lat * 7.1) > 0 ? "#6f9ade" : "#5b83c8";
+  },
+
+  // ---- the destination.
+  //
+  // Three worlds, because the roster grades its candidates three ways and the
+  // grade is the one thing actually claimed about a place nobody has seen. Each
+  // is the honest picture of that grade rather than a nicer version of the last
+  // one: `best` is the ocean world the expedition is hoping for, `good` is a
+  // world with water and land on it, and `marginal` is what the nearby
+  // candidates mostly are — a locked, scoured rock with an atmosphere piled up
+  // on the night side, which is still worth crossing four light-years to see.
+  exo_best(point, broad, fine) {
     const polar = Math.abs(point[2]);
-    if (polar > .93 + (fine - .5) * .04) return "#dbeef2";
+    if (polar > .94 + (fine - .5) * .04) return "#dbeef2";
+    if (broad < .74) return broad < .40 ? "#0c3f4d" : "#14606f";
+    if (broad < .80) return "#2b8f93";
+    return fine > .55 ? "#6ea86f" : "#8fbb7d";
+  },
+  exo_good(point, broad, fine) {
+    const polar = Math.abs(point[2]);
+    if (polar > .93 + (fine - .5) * .04) return "#e2f0f4";
     if (broad < .30) return "#0f4954";
-    if (broad < .58) return "#17697a";
-    if (broad < .64) return "#2b8f93";
+    if (broad < .55) return "#17697a";
+    if (broad < .61) return "#2b8f93";
     if (broad > .90) return fine > .5 ? "#a9c78a" : "#7fae6e";
     return fine > .62 ? "#63a869" : "#4a9159";
+  },
+  // Tidally locked: one face has faced its star for ever. The substellar point
+  // is baked, the far side is where everything the atmosphere still carries has
+  // frozen out, and the only temperate ground on the world is the ring between
+  // them. `point[0]` is the face that happens to be turned starward, which is
+  // as arbitrary as any other choice and the same every time for a given seed.
+  exo_marginal(point, broad, fine) {
+    const day = point[0];
+    if (day > .82) return fine > .6 ? "#b4653a" : "#9c5330";
+    if (day < -.74) return fine > .5 ? "#dfe9f2" : "#c6d4e2";
+    if (day < -.40) return "#6d7f92";
+    if (broad < .38) return "#4d5f5a";
+    return fine > .6 ? "#9a8f6a" : "#7f7757";
   },
 };
 // Built the first time a world is close enough to show its ground, and kept:
 // the tiling is a property of the world, exactly as Earth's is.
 const SKY_GLOBES = new Map();
+// Which rule paints a body. The destination is the one that is not simply its
+// own id: `exo` is whichever world the expedition was aimed at, so it is
+// painted by that world's grade, and cached under the catalogue entry rather
+// than under `exo` — two civilizations may be going to two different places,
+// and one cache line called "exo" would hand the second one the first one's
+// planet.
+function skyGlobeKey(body) {
+  return body.catalogue || body.id;
+}
+function skyGroundRule(body) {
+  if (body.catalogue) return SKY_GROUND[`exo_${body.hz}`] || SKY_GROUND.exo_good;
+  return SKY_GROUND[body.id] || SKY_GROUND.moon;
+}
 function skyGlobe(body) {
-  let globe = SKY_GLOBES.get(body.id);
+  const key = skyGlobeKey(body);
+  let globe = SKY_GLOBES.get(key);
   if (globe) return globe;
   const cells = skyGlobeMesh(body.frequency);
   const shape = skyWaves(body.seed, 9, 1.1, 3.3);
   const weather = skyWaves(body.seed + 101, 11, 5, 15);
   const broad = skyRanks(cells.map(cell => skyNoise(shape, cell.center)));
   const fine = skyRanks(cells.map(cell => skyNoise(weather, cell.center)));
-  const paint = SKY_GROUND[body.id] || SKY_GROUND.moon;
+  const paint = skyGroundRule(body);
   globe = cells.map((cell, index) =>
     ({...cell, fill:paint(cell.center, broad[index], fine[index])}));
-  SKY_GLOBES.set(body.id, globe);
+  SKY_GLOBES.set(key, globe);
   return globe;
 }
 
@@ -15971,8 +16542,9 @@ function skyView(id) {
   let view = SKY_VIEWS.get(id);
   if (!view) {
     const body = skyBody(id);
-    view = {longitude:6.283 * hash2(body ? Math.round(body.orbit * 10) : 0, 53),
-            latitude:(hash2(body ? Math.round(body.orbit * 10) : 0, 59) - .5) * .8};
+    const key = body ? (body.seed || Math.round(body.size * 1e4)) : 0;
+    view = {longitude:6.283 * hash2(key, 53),
+            latitude:(hash2(key, 59) - .5) * .8};
     SKY_VIEWS.set(id, view);
   }
   return view;
@@ -16329,17 +16901,47 @@ function skySystemFrame() {
                            (frame.bottom - frame.top) * .09);
   const width = Math.max(80, frame.right - frame.left - padding * 2);
   const height = Math.max(80, frame.bottom - frame.top - padding * 2);
-  let minX = -1, maxX = 1, minY = -1, maxY = 1;
-  for (const body of visibleSkyBodies()) {
-    const [x, y] = skyBodyPos(body);
-    minX = Math.min(minX, x - body.size); maxX = Math.max(maxX, x + body.size);
-    minY = Math.min(minY, y - body.size); maxY = Math.max(maxY, y + body.size);
-  }
+  // What the far end of the zoom is a picture *of* is the outermost thing this
+  // civilization has any business knowing about, and that is a rung, not a
+  // bounding box over the bodies. A box over the bodies was right when there
+  // were three of them in a row; now the outermost known object at the middle
+  // rung is a star fifty light-years away, so a box would make Pluto's orbit
+  // one three-hundred-thousandth of the stop and there would be no shot of the
+  // solar system anywhere on the way out. Each rung ends on the horizon that
+  // rung's instruments actually reach.
+  const box = skyOutermostFrame();
   return {
-    x:(minX + maxX) / 2, y:(minY + maxY) / 2,
-    radius:Math.max(SKY_MIN_EARTH, Math.min(width / (maxX - minX), height / (maxY - minY))),
+    x:box.x, y:box.y,
+    radius:Math.min(width / (2 * box.reach), height / (2 * box.reach)),
   };
 }
+// The horizon of each rung, centred where that picture wants to be centred.
+//
+//   eye     Saturn's orbit. The naked eye's solar system ends exactly there —
+//           Saturn is the last of the five wanderers, and everything past it
+//           needed a lens. Centred on the Sun, because at this scale home is
+//           one of six dots going round it.
+//   glass   the neighbourhood the telescope put distances on: a bubble of
+//           stars about fifty light-years across, centred on the Sun again
+//           because the Sun is the middle of it by construction.
+//   space   the galaxy, centred between here and the middle of it so that both
+//           the far rim and the Sun are in frame at the stop.
+function skyOutermostFrame() {
+  const [ex, ey] = skyBodyPos(SKY_SUN);
+  if (knowsGalaxy()) {
+    const centre = GALAXY_SUN_RADIUS_LY * LIGHT_YEAR;
+    return {x:ex + centre / 2, y:ey,
+            reach:(GALAXY_DISC_LY + GALAXY_SUN_RADIUS_LY / 2) * LIGHT_YEAR};
+  }
+  if (knowsNeighbourhood())
+    return {x:ex, y:ey, reach:SKY_BUBBLE_LY * LIGHT_YEAR};
+  const saturn = SKY_SYSTEM.find(body => body.id === "saturn");
+  return {x:ex, y:ey, reach:(saturn ? saturn.orbitRadius : 10 * AU) * 1.16};
+}
+// The radius of the neighbourhood, and the number the whole view is built to
+// put in proportion. Fifty light-years is the reach of the roster above and of
+// the expedition the engine has always sent out.
+const SKY_BUBBLE_LY = 52;
 // A chart pulls back to the edge of what a chart can honestly hold. Distance
 // across the sheet is angle over the ground, so the corner of the stage is at
 // `reach / radius` radians from the middle of it, and past about a hundred
@@ -16371,11 +16973,20 @@ function planetMinScale() {
 }
 // The world the camera is heading for, by the same reckoning the buttons aim
 // by: nearest, with a large world counting as nearer than a pebble beside it.
-function skyNearestWorld(pan = SKY_PAN) {
+//
+// At true scale "nearest" has to be measured against the *picture*, not against
+// a constant. Dividing by `size + 2` made a body two Earth radii wide worth a
+// two-radius head start, which was the right allowance in a system eighty
+// radii across and is nothing at all in one four hundred million times that:
+// standing over the Earth, Alpha Centauri came out nearer than the Moon by
+// eleven decimal places of tie-break noise. The allowance is a fixed slice of
+// what is on the stage instead, so it means the same thing at every scale.
+function skyNearestWorld(pan = SKY_PAN, radius = planetEarthRadius()) {
+  const slack = Math.max(1e-9, skyStageSpan() * .25 / Math.max(1e-12, radius));
   let best = null;
   for (const body of skyKnownWorlds()) {
     const [px, py] = skyBodyPos(body);
-    const away = Math.hypot(px - pan.x, py - pan.y) / (body.size + 2);
+    const away = Math.hypot(px - pan.x, py - pan.y) / (body.size + slack);
     if (!best || away < best.away) best = {away, body};
   }
   return best ? best.body : SKY_EARTH;
@@ -16397,8 +17008,14 @@ function planetMaxScale(pan = SKY_PAN, body = skyNearestWorld(pan)) {
   // of the Earth, so filling the frame with it costs four times the Earth's
   // closest zoom, and stopping at 3.2 would leave the one body nobody can miss
   // permanently the smallest thing on screen.
+  //
+  // The old ceiling of 6 was set when the smallest thing out here was a quarter
+  // of an Earth. Ceres is a hundredth, and a hundredth of an Earth at a zoom of
+  // 6 is a disc the width of a word — so the cap has to be a long way above
+  // whatever the largest body needs, and the per-body stop is what actually
+  // holds. It is a cap against arithmetic going wrong, not a design.
   const stage = Math.max(160, Math.min(MAPW, MAPH));
-  return Math.min(6, stage * .58 / body.size / Math.max(1, WW() / (2 * Math.PI)));
+  return Math.min(400, stage * .58 / body.size / Math.max(1, WW() / (2 * Math.PI)));
 }
 // Every path that sets a globe's zoom goes through here, so a world nobody has
 // proved round cannot be zoomed out of by any other route: an opening fit, a
@@ -16464,27 +17081,263 @@ function skyCaptionClear(place) {
   return skyOnStage(place.x, place.y, place.r + 8);
 }
 
+// ------------------------------------------------------------ room for a name
+//
+// At true scale the bodies bunch. Pulled back far enough to hold Neptune's
+// orbit, the four inner planets and the Sun are inside one twentieth of the
+// stage, and five captions land on the same forty pixels: the first shot of the
+// whole system read `EARTH` over `MARS` over `THE SUN` as one illegible stack.
+// It is not a spacing bug — the picture is correct and the labels simply do not
+// all fit — so the answer is to let the important ones take the room and drop
+// the rest, rather than to move anything away from where it is.
+//
+// Claims are staked in order of what the label is worth, which is why they are
+// gathered through the body loop and only settled once it has finished. Home
+// outranks a bigger disc; the world the expedition is going to outranks
+// everything, because it is the one the whole view is about.
+let SKY_LABEL_BOXES = [];
+function skyLabelReset() { SKY_LABEL_BOXES = []; }
+function skyLabelClaim(x, y, halfWidth, halfHeight) {
+  const box = {left:x - halfWidth, right:x + halfWidth,
+               top:y - halfHeight, bottom:y + halfHeight};
+  for (const taken of SKY_LABEL_BOXES)
+    if (box.left < taken.right && box.right > taken.left &&
+        box.top < taken.bottom && box.bottom > taken.top) return false;
+  SKY_LABEL_BOXES.push(box);
+  return true;
+}
+function skyLabelRank(body) {
+  if (body.id === "exo") return 3;
+  if (body.id === "earth") return 2;
+  if (body.id === "sun") return 1;
+  return 0;
+}
+
 // Stars belong to the screen, not to the world: they do not slide when the
 // globe turns, and they come up only as the sky opens behind it.
-function drawSkyStars(depth) {
+//
+// They are also a stand-in, and they have to know when to stop being one. From
+// the ground a star is a fixed point of light at no particular distance, which
+// is exactly what a field painted onto the screen is; once the camera is far
+// enough out that the *real* stars are on the stage at their real distances,
+// the painted ones are a second sky over the first, and out at the galaxy they
+// are a handful of specks stuck to the lens in front of a hundred billion. So
+// they fade out over the same span the neighbourhood fades in.
+function drawSkyStars(depth, radius) {
+  const bubble = SKY_BUBBLE_LY * LIGHT_YEAR * radius;
+  const real = knowsNeighbourhood() ? skyFade(bubble, 22, 120) : 0;
+  const shown = depth * (1 - real);
+  if (shown <= .01) return;
   cx.save();
   cx.fillStyle = "#dceaf6";
   for (let i = 0; i < 130; i++) {
     const size = .5 + 1.2 * hash2(i, 31);
-    cx.globalAlpha = depth * (.20 + .60 * hash2(i, 41));
+    cx.globalAlpha = shown * (.20 + .60 * hash2(i, 41));
     cx.fillRect(hash2(i, 11) * MAPW, hash2(i, 23) * MAPH,
                 size, size);
   }
   cx.restore();
 }
 
-// Every body out here is the same object — a ball lit from the same side as the
-// globe is — so only its colour, its size and what is standing on it change.
-function drawSkyBall(place, alpha) {
-  const {x, y, r, tint, dark} = place;
+// A colour at an alpha. `shade` returns an opaque `rgb()` and the tables above
+// hold hex, and both get faded out here, so this takes either. Handing a hex
+// parser an `rgb(...)` string silently yields NaN and a fill of nothing, which
+// is a blank ring rather than an error.
+function skyAlpha(colour, a) {
+  if (colour[0] === "#") {
+    const n = parseInt(colour.slice(1), 16);
+    return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
+  }
+  const parts = colour.match(/-?\d+(\.\d+)?/g) || [0, 0, 0];
+  return `rgba(${parts[0]},${parts[1]},${parts[2]},${a})`;
+}
+// A ramp between two thresholds, which is most of what deciding whether
+// something is worth drawing at this scale comes down to.
+function skyFade(value, low, high) {
+  return Math.max(0, Math.min(1, (value - low) / Math.max(1e-9, high - low)));
+}
+// How wide a thing is on screen, from its size out here.
+function skyPixels(earthRadii, radius) { return earthRadii * radius; }
+
+// ------------------------------------------------------------------ orbits
+//
+// The rings are the picture. At true scale a planet is a floored dot and the
+// only thing on the stage carrying any information about where it is are the
+// circles it goes round on: the spacing of the orbits is what says inner system
+// and outer system, and the gap between Mars and Jupiter is what says there is
+// a belt in it. Without them the solar system is nine dots in the dark and
+// could be anything.
+//
+// A ring is drawn once it is wide enough to be a ring rather than a smudge, and
+// it stops being drawn when it is so much bigger than the stage that only a
+// nearly straight piece of it is in frame — that piece is not information, it
+// is a line across the picture.
+function drawSkyOrbits(radius, centerX, centerY, alpha) {
+  const span = skyStageSpan();
+  const bodies = visibleSkyBodies().filter(body => body.orbitRadius > 0);
+  if (!bodies.length) return;
+  cx.save();
+  cx.lineWidth = 1;
+  for (const body of bodies) {
+    const ring = body.orbitRadius * radius;
+    const shown = alpha * skyFade(ring, 9, 26) * (1 - skyFade(ring, span * 1.6, span * 5));
+    if (shown <= .01) continue;
+    const parent = body.parent ? skyBody(body.parent) : SKY_SUN;
+    if (!parent) continue;
+    const [px, py] = skyBodyPos(parent);
+    const x = centerX + px * radius, y = centerY + py * radius;
+    // Nothing to draw if the whole ring is off the stage in one direction.
+    if (Math.abs(x) > span * 9 && Math.abs(y) > span * 9) continue;
+    cx.globalAlpha = shown * (body.parent ? .22 : .34);
+    cx.strokeStyle = body.parent ? "#8fa6bb" : "#7f94ab";
+    cx.beginPath(); cx.arc(x, y, ring, 0, 6.283185); cx.stroke();
+  }
+  cx.restore();
+}
+
+// The asteroid belt, which is the one part of the system that is a place rather
+// than an object: two and a half thousand times as many things as there are
+// named bodies out here, and all of them between Mars and Jupiter. Drawn as
+// what it is, a sparse ring of specks, so that the gap in the orbit spacing has
+// something in it.
+const SKY_BELT = {inner:2.06, outer:3.28, count:340};
+function drawSkyBelt(radius, centerX, centerY, alpha) {
+  if (!skyRungAtLeast("glass")) return;
+  const inner = SKY_BELT.inner * AU * radius, outer = SKY_BELT.outer * AU * radius;
+  const shown = alpha * skyFade(outer - inner, 8, 30) *
+                (1 - skyFade(outer, skyStageSpan() * 2.2, skyStageSpan() * 6));
+  if (shown <= .01) return;
+  const [sx, sy] = skyBodyPos(SKY_SUN);
+  const x = centerX + sx * radius, y = centerY + sy * radius;
+  cx.save();
+  cx.globalAlpha = shown * .5;
+  cx.fillStyle = "#9aa7b4";
+  for (let i = 0; i < SKY_BELT.count; i++) {
+    const angle = 6.283185 * hash2(i, 13);
+    const at = inner + (outer - inner) * hash2(i, 27);
+    const lift = (hash2(i, 39) - .5) * (outer - inner) * .12;
+    cx.fillRect(x + Math.cos(angle) * at, y + Math.sin(angle) * at + lift, 1, 1);
+  }
+  cx.restore();
+}
+
+// --------------------------------------------------------- lit from somewhere
+//
+// One sun, one direction. Every ball out here is lit from wherever the Sun
+// actually is on the stage rather than from a fixed upper left, which is the
+// difference between a row of spheres and a solar system: cross to the far side
+// of Jupiter and the crescent turns to follow you round.
+function skySunDirection(place, radius, centerX, centerY) {
+  const [sx, sy] = skyBodyPos(SKY_SUN);
+  const x = centerX + sx * radius, y = centerY + sy * radius;
+  const dx = x - place.x, dy = y - place.y;
+  const away = Math.hypot(dx, dy);
+  if (!(away > 1e-9)) return {x:-.55, y:-.6};
+  return {x:dx / away, y:dy / away};
+}
+
+// A star is not a lit ball, it is the thing doing the lighting, so it is drawn
+// the other way round: a hot core, a glow that reaches well past the disc, and
+// the four-point flare an eye or a lens puts on anything much brighter than its
+// surroundings. The Sun gets the same treatment as every other star, because it
+// is one, and at the far end of the zoom that is exactly how it should read.
+function drawSkyStarBall(place, alpha) {
+  const {x, y, r, tint} = place;
+  const reach = r * (place.id === "sun" ? 7 : 5);
   cx.save();
   cx.globalAlpha = alpha;
-  const lit = cx.createRadialGradient(x - r * .34, y - r * .38, r * .06, x, y, r);
+  const halo = cx.createRadialGradient(x, y, r * .6, x, y, reach);
+  halo.addColorStop(0, skyAlpha(tint, .5));
+  halo.addColorStop(.35, skyAlpha(tint, .16));
+  halo.addColorStop(1, skyAlpha(tint, 0));
+  cx.fillStyle = halo;
+  cx.beginPath(); cx.arc(x, y, reach, 0, 7); cx.fill();
+  // The flare, only once the star is more than a speck: below that it is one
+  // pixel of light and adding spikes to it makes a snowflake, not a star.
+  if (r > 2.2) {
+    cx.globalAlpha = alpha * .5;
+    cx.strokeStyle = skyAlpha(tint, .8);
+    cx.lineWidth = Math.max(.7, r * .16);
+    cx.beginPath();
+    cx.moveTo(x - reach * .8, y); cx.lineTo(x + reach * .8, y);
+    cx.moveTo(x, y - reach * .8); cx.lineTo(x, y + reach * .8);
+    cx.stroke();
+  }
+  cx.globalAlpha = alpha;
+  const core = cx.createRadialGradient(x, y, 0, x, y, r);
+  core.addColorStop(0, "#ffffff");
+  core.addColorStop(.45, shade(tint, 1.08));
+  core.addColorStop(1, tint);
+  cx.fillStyle = core;
+  cx.beginPath(); cx.arc(x, y, r, 0, 7); cx.fill();
+  cx.restore();
+}
+
+// Rings, for the two worlds out here that have any worth drawing. They are a
+// disc and not a circle — a gap runs through Saturn's and the whole thing is
+// nine metres thick over two hundred thousand kilometres, so it is drawn as a
+// squashed annulus that passes behind the planet and in front of it. The tilt
+// is the one thing left to the seed: it is the same for a game, and it is what
+// makes an approach to Saturn arrive at a particular Saturn.
+// Everything is drawn in the ring's own frame — translated to the planet,
+// turned to the ring's lean and squashed across — for the same reason the
+// galactic bar is: a round gradient in that frame is the annulus's own radial
+// gradient, and the near and far halves are simply the two signs of the local
+// across-axis. Done in stage coordinates instead, the gradient does not follow
+// the ellipse and "in front of the planet" has to be guessed at with a
+// rectangle that is wrong the moment the ring is not level.
+function skyRingFrame(place) {
+  const tilt = .18 + .42 * hash2(place.seed || 1, 83);
+  const lean = (hash2(place.seed || 1, 91) - .5) * .9;
+  return {tilt, lean};
+}
+function drawSkyRingHalf(place, alpha, side) {
+  const [inner, outer] = place.rings;
+  const {tilt, lean} = skyRingFrame(place);
+  cx.save();
+  cx.translate(place.x, place.y);
+  cx.rotate(lean);
+  cx.scale(1, tilt);
+  const reach = place.r * outer;
+  // The half of the ring plane on one side of the planet. `side` is +1 for the
+  // part passing in front and -1 for the part going round the back.
+  cx.beginPath();
+  cx.rect(-reach * 1.2, side > 0 ? 0 : -reach * 1.2, reach * 2.4, reach * 1.2);
+  cx.clip();
+  const band = cx.createRadialGradient(0, 0, place.r * inner, 0, 0, reach);
+  band.addColorStop(0, skyAlpha(place.tint, .34));
+  band.addColorStop(.30, skyAlpha(place.tint, .80));
+  // The Cassini division: a gap four thousand kilometres wide, swept clear by
+  // Mimas, and the one piece of structure in a ring visible from here.
+  band.addColorStop(.52, skyAlpha(place.dark, .10));
+  band.addColorStop(.62, skyAlpha(place.tint, .66));
+  band.addColorStop(.94, skyAlpha(place.tint, .30));
+  band.addColorStop(1, skyAlpha(place.tint, 0));
+  // The same alpha both sides. Dimming the far half looked right where the
+  // planet stands between the two, and drew a hard horizontal seam straight
+  // across the open ring on either side of it, where there is nothing between
+  // them at all. What is really darker back there is the planet's shadow, and
+  // that falls on the piece already hidden behind the planet.
+  cx.globalAlpha = alpha * .78;
+  cx.fillStyle = band;
+  // The annulus: the outer disc with the inner one taken out of it, both in the
+  // same path so the even-odd rule can do the subtraction.
+  cx.beginPath();
+  cx.arc(0, 0, reach, 0, 7);
+  cx.arc(0, 0, place.r * inner, 0, 7);
+  cx.fill("evenodd");
+  cx.restore();
+}
+
+// Every solid body out here is the same object — a ball lit from wherever the
+// Sun is — so only its colour, its size and what is standing on it change.
+function drawSkyBall(place, alpha, light) {
+  const {x, y, r, tint, dark} = place;
+  if (place.kind === "star" || place.light) return drawSkyStarBall(place, alpha);
+  const lx = -(light ? light.x : -.55), ly = -(light ? light.y : -.6);
+  cx.save();
+  cx.globalAlpha = alpha;
+  const lit = cx.createRadialGradient(x + lx * r * .34, y + ly * r * .38, r * .06, x, y, r);
   lit.addColorStop(0, shade(tint, 1.06));
   lit.addColorStop(.55, shade(tint, .68));
   lit.addColorStop(.9, dark);
@@ -16492,7 +17345,8 @@ function drawSkyBall(place, alpha) {
   cx.fillStyle = lit;
   cx.beginPath(); cx.arc(x, y, r, 0, 7); cx.fill();
   // Detail that only exists once there is room for it: craters, a polar cap, a
-  // banded atmosphere. Below a few pixels every one of them is a smudge.
+  // banded atmosphere. Below a few pixels every one of them is a smudge, and
+  // the tiled ground takes over well before the body is large.
   if (place.id === "moon" && r > 8) {
     cx.fillStyle = "rgba(46,48,55,.42)";
     for (let i = 0; i < 5; i++) {
@@ -16506,10 +17360,20 @@ function drawSkyBall(place, alpha) {
     cx.fillStyle = "rgba(233,240,246,.72)";
     cx.beginPath(); cx.ellipse(x - r * .1, y - r * .78, r * .34, r * .17, 0, 0, 7); cx.fill();
   }
-  if (place.id === "exo" && r > 7) {
+  if (place.giant && r > 5) {
     cx.save();
     cx.beginPath(); cx.arc(x, y, r, 0, 7); cx.clip();
-    cx.fillStyle = "rgba(18,74,84,.38)";
+    cx.fillStyle = skyAlpha(place.dark, .30);
+    for (let i = 0; i < 4; i++) {
+      const cy = y + r * (-.62 + .38 * i);
+      cx.fillRect(x - r, cy, r * 2, r * (.08 + .06 * hash2(i + place.seed, 5)));
+    }
+    cx.restore();
+  }
+  if (place.catalogue && r > 7) {
+    cx.save();
+    cx.beginPath(); cx.arc(x, y, r, 0, 7); cx.clip();
+    cx.fillStyle = skyAlpha(place.dark, .34);
     for (let i = 0; i < 3; i++) {
       const cy = y + r * (-.5 + .42 * i);
       cx.fillRect(x - r, cy, r * 2, r * (.1 + .07 * hash2(i, 5)));
@@ -16518,6 +17382,407 @@ function drawSkyBall(place, alpha) {
   }
   cx.restore();
 }
+
+// ------------------------------------------------------- the neighbourhood
+//
+// Fifty light-years of stars, at their real distances and in their real
+// directions, drawn in the plane of the galaxy. The plane matters: it is the
+// same frame the galaxy is drawn in a few zoom steps later, so the bubble the
+// camera has just come out of and the disc it sits in are the same coordinates
+// and the comparison between them is measured rather than asserted.
+//
+// A star off the plane gets a line down to it. That is the oldest trick in a
+// star chart and it is the only way a flat picture can say a third dimension is
+// there — without it Van Maanen's Star, which is nearly straight below us, sits
+// on top of the Sun and reads as being nowhere at all.
+function drawSkyNeighbourhood(radius, centerX, centerY, alpha) {
+  if (!knowsNeighbourhood() || alpha <= .01) return;
+  const [sx, sy] = skyBodyPos(SKY_SUN);
+  const sunX = centerX + sx * radius, sunY = centerY + sy * radius;
+  const bubble = SKY_BUBBLE_LY * LIGHT_YEAR * radius;
+  cx.save();
+  // The boundary of the roster: a shell fifty light-years out, which is the
+  // reach of the expedition and the edge of what is drawn star by star.
+  if (bubble > 40 && bubble < skyStageSpan() * 8) {
+    cx.globalAlpha = alpha * .16;
+    cx.strokeStyle = "#7fd0c4";
+    cx.setLineDash([5, 7]);
+    cx.lineWidth = 1;
+    cx.beginPath(); cx.arc(sunX, sunY, bubble, 0, 7); cx.stroke();
+    cx.setLineDash([]);
+    if (skyOnStage(sunX, sunY + bubble, 30)) {
+      cx.globalAlpha = alpha * .5;
+      cx.fillStyle = "#8fded1";
+      cx.font = "600 10px system-ui, sans-serif";
+      cx.textAlign = "center";
+      cx.fillText(`${SKY_BUBBLE_LY} light-years`, sunX, sunY + bubble + 13);
+    }
+  }
+  cx.restore();
+}
+
+// A star's own drawing, which is a dot with a line under it and a name if there
+// is room. Kept apart from the body loop because a star is placed by the same
+// arithmetic but is not the same kind of thing: nobody flies to one, it has no
+// ground, and what it is for is to be a distance.
+function drawSkyStar(body, place, radius, centerX, centerY, alpha) {
+  const lift = skyBodyLift(body) * radius;
+  // Standing off the plane. The drop line goes to where the star would be if it
+  // were in the disc, which is the point the distance across the page is
+  // measured to.
+  if (Math.abs(lift) > 3 && Math.abs(lift) < skyStageSpan() * 3) {
+    cx.save();
+    cx.globalAlpha = alpha * .22;
+    cx.strokeStyle = body.tint;
+    cx.lineWidth = .8;
+    cx.beginPath();
+    cx.moveTo(place.x, place.y - lift); cx.lineTo(place.x, place.y);
+    cx.stroke();
+    cx.globalAlpha = alpha * .3;
+    cx.fillStyle = "#8ea3b8";
+    cx.fillRect(place.x - 1.4, place.y - .5, 2.8, 1);
+    cx.restore();
+  }
+  drawSkyStarBall({...place, y:place.y - lift}, alpha);
+}
+
+// ---------------------------------------------------------------- the galaxy
+//
+// And this is the answer to the question the whole view exists to ask. The
+// expedition crosses fifty light-years, which is the longest journey anybody in
+// the game ever makes and sounds like the edge of everything. The galaxy is a
+// hundred thousand light-years across and the Sun is twenty-six thousand seven
+// hundred out from the middle of it. So fifty light-years is one two-thousandth
+// of the way across, and about one five-hundredth of the way to the centre: on
+// a picture of the galaxy the size of a dinner plate, the entire neighbourhood
+// the last screen was full of is half a millimetre wide.
+//
+// Nothing states that. It is drawn: the bubble is the same fifty light-years it
+// was one zoom step ago, in the same coordinates, and it comes out the size it
+// comes out.
+function galaxyArmPoint(arm, theta) {
+  const k = Math.tan(arm.pitch * Math.PI / 180);
+  const r = arm.atUs * Math.exp(k * (theta - Math.PI));
+  return [Math.cos(theta) * r, Math.sin(theta) * r, r];
+}
+// The speckle that makes a spiral arm read as stars rather than as a painted
+// stripe. Built once in the arms' own coordinates and reused at every scale.
+let GALAXY_SPECKLE = null;
+function galaxySpeckle() {
+  if (GALAXY_SPECKLE) return GALAXY_SPECKLE;
+  const out = [];
+  GALAXY_ARMS.forEach((arm, index) => {
+    for (let i = 0; i < 620; i++) {
+      const seed = index * 9377 + i;
+      const along = hash2(seed, 19);
+      const theta = Math.PI - 3.1 + 6.2 * along;
+      const [ax, ay, r] = galaxyArmPoint(arm, theta);
+      if (r > GALAXY_DISC_LY || r < GALAXY_BAR_LY * .7) continue;
+      // Scattered across the arm, and further across it further out, which is
+      // what a disc that flares does. Two draws from the hash squared toward
+      // the middle: a spiral arm is a ridge with a falloff either side, not a
+      // stripe of even density, and a flat scatter reads as a painted band.
+      const spread = arm.width * (.55 + 1.1 * r / GALAXY_DISC_LY);
+      const across = (hash2(seed, 31) + hash2(seed, 37) - 1);
+      const jx = across * spread, jy = (hash2(seed, 43) + hash2(seed, 47) - 1) * spread;
+      out.push({x:ax + jx, y:ay + jy, r,
+                // Dimmer toward the ends of the trace, so an arm frays out
+                // rather than stopping at a cut edge.
+                bright:(.25 + .75 * hash2(seed, 57)) *
+                       Math.min(1, 3.4 * Math.min(along, 1 - along) + .12) *
+                       (1 - .55 * Math.abs(across))});
+    }
+  });
+  // Plus the disc between the arms, which is not empty — most of the galaxy's
+  // stars are not in an arm at all. Without it the picture is four ribbons on
+  // black and reads as a diagram of a galaxy rather than as one.
+  for (let i = 0; i < 900; i++) {
+    const angle = 6.283185 * hash2(i, 61);
+    // Square-rooted so the scatter is even per unit area rather than piling up
+    // in the middle, then pulled inward, because the disc really does thin out.
+    const r = GALAXY_DISC_LY * Math.sqrt(hash2(i, 67)) * (.35 + .65 * hash2(i, 71));
+    if (r < GALAXY_BAR_LY * .9) continue;
+    out.push({x:Math.cos(angle) * r, y:Math.sin(angle) * r, r, field:true,
+              bright:(.10 + .30 * hash2(i, 73)) * (1 - r / GALAXY_DISC_LY * .8)});
+  }
+  GALAXY_SPECKLE = out;
+  return out;
+}
+function drawSkyGalaxy(radius, centerX, centerY, alpha) {
+  if (alpha <= .01) return;
+  const [sx, sy] = skyBodyPos(SKY_SUN);
+  const sunX = centerX + sx * radius, sunY = centerY + sy * radius;
+  const ly = LIGHT_YEAR * radius;
+  // The centre is 26,700 light-years from here towards galactic longitude zero,
+  // which in this frame is straight along +x.
+  const coreX = sunX + GALAXY_SUN_RADIUS_LY * ly, coreY = sunY;
+  const disc = GALAXY_DISC_LY * ly;
+  cx.save();
+  cx.globalAlpha = alpha;
+  // The disc: a smooth fall-off from the bulge, which is most of the light and
+  // all of the mass that is not dark.
+  const glow = cx.createRadialGradient(coreX, coreY, disc * .02, coreX, coreY, disc);
+  glow.addColorStop(0, "rgba(255,244,214,.95)");
+  glow.addColorStop(.06, "rgba(255,231,178,.55)");
+  glow.addColorStop(.22, "rgba(196,206,240,.20)");
+  glow.addColorStop(.60, "rgba(150,172,225,.09)");
+  glow.addColorStop(1, "rgba(120,148,210,0)");
+  cx.fillStyle = glow;
+  cx.beginPath(); cx.arc(coreX, coreY, disc, 0, 7); cx.fill();
+
+  // The arms. Stroked twice — once wide and faint for the gas, once narrow and
+  // bright for the star-forming ridge down the middle of it — with the stroke
+  // colour a gradient about the core so an arm dims as it runs outward.
+  const armInk = cx.createRadialGradient(coreX, coreY, disc * .05, coreX, coreY, disc);
+  armInk.addColorStop(0, "rgba(226,232,255,.55)");
+  armInk.addColorStop(.45, "rgba(188,206,255,.34)");
+  armInk.addColorStop(1, "rgba(150,180,240,.05)");
+  cx.strokeStyle = armInk;
+  cx.lineCap = "butt";
+  cx.lineJoin = "round";
+  for (const arm of GALAXY_ARMS) {
+    const trace = [];
+    for (let step = 0; step <= 96; step++) {
+      const theta = Math.PI - 3.1 + step / 96 * 6.2;
+      const [ax, ay, r] = galaxyArmPoint(arm, theta);
+      if (r > GALAXY_DISC_LY || r < GALAXY_BAR_LY * .8) continue;
+      trace.push([coreX + ax * ly, coreY + ay * ly]);
+    }
+    if (trace.length < 2) continue;
+    // In chunks rather than in one stroke, so an arm can taper: full width and
+    // brightness where it leaves the bar, frayed to nothing at the rim. One
+    // stroke end to end gives every arm a flat cut edge in the middle of open
+    // sky, which is the tell that these are drawn curves.
+    //
+    // Chunks of several points, not one segment each. Stroking segment by
+    // segment with a round cap lays a disc at every joint, and where two of
+    // them overlap the alpha compounds — the first attempt came out as a chain
+    // of beads down each arm, which reads as a string of pearls and not as a
+    // hundred million stars. Butt caps inside a chunk, and the chunk boundaries
+    // land where the taper is already changing slowly.
+    const chunk = Math.max(2, Math.round(trace.length / 12));
+    for (const [width, fade] of [[arm.width * 1.6, .30], [arm.width * .5, .7]]) {
+      cx.lineWidth = Math.max(.8, width * ly);
+      for (let start = 0; start + 1 < trace.length; start += chunk) {
+        const stop = Math.min(trace.length - 1, start + chunk);
+        const along = (start + stop) / 2 / (trace.length - 1);
+        cx.globalAlpha = alpha * fade * Math.min(1, 3.2 * Math.min(along, 1 - along) + .10);
+        cx.beginPath();
+        for (let i = start; i <= stop; i++)
+          i === start ? cx.moveTo(trace[i][0], trace[i][1])
+                      : cx.lineTo(trace[i][0], trace[i][1]);
+        cx.stroke();
+      }
+    }
+  }
+  // The stars, which is what makes it granular instead of painted — in the arms
+  // where the young bright ones are, and between them where most of the galaxy
+  // actually lives.
+  if (disc > 120) {
+    for (const spot of galaxySpeckle()) {
+      cx.globalAlpha = alpha * spot.bright * (spot.field ? .55 : .75);
+      cx.fillStyle = spot.field ? "#c2cfe8"
+                   : spot.r < GALAXY_DISC_LY * .35 ? "#fff0cd" : "#dbe6ff";
+      const size = spot.field ? 1 : 1.3;
+      cx.fillRect(coreX + spot.x * ly, coreY + spot.y * ly, size, size);
+    }
+  }
+  // The bar: twenty-seven thousand light-years end to end, leaning some
+  // twenty-seven degrees off the line from here to the centre, and the reason
+  // this is a barred spiral rather than a plain one. Kept translucent and given
+  // its own stars — filled at the brightness a bulge deserves it came out a
+  // smooth lens sitting on the picture like a flare on the lens rather than a
+  // crowd of very old stars.
+  const barLength = GALAXY_BAR_LY * ly;
+  // Drawn in the bar's own frame — translated to the centre, turned to its
+  // lean, and squashed across — so that a *round* gradient in that frame is an
+  // elongated one on the stage. A radial gradient in stage coordinates clipped
+  // to an ellipse is brightest in a circle and dims at the ends of the long
+  // axis first, which draws a lens: the fill has to be stretched with the shape
+  // or the shape is a window and not a body.
+  cx.save();
+  cx.translate(coreX, coreY);
+  cx.rotate(GALAXY_BAR_ANGLE);
+  cx.scale(1, .34);
+  cx.globalAlpha = alpha * .62;
+  const bar = cx.createRadialGradient(0, 0, 0, 0, 0, barLength);
+  bar.addColorStop(0, "rgba(255,246,220,.92)");
+  bar.addColorStop(.35, "rgba(255,232,172,.44)");
+  bar.addColorStop(.75, "rgba(255,222,152,.14)");
+  bar.addColorStop(1, "rgba(255,214,140,0)");
+  cx.fillStyle = bar;
+  cx.beginPath(); cx.arc(0, 0, barLength, 0, 7); cx.fill();
+  cx.restore();
+  if (barLength > 26) {
+    const cos = Math.cos(GALAXY_BAR_ANGLE), sin = Math.sin(GALAXY_BAR_ANGLE);
+    cx.fillStyle = "#ffeec4";
+    for (let i = 0; i < 260; i++) {
+      const along = (hash2(i, 83) + hash2(i, 89) - 1);
+      const across = (hash2(i, 97) + hash2(i, 101) - 1) * .34;
+      cx.globalAlpha = alpha * (.18 + .5 * hash2(i, 103)) * (1 - Math.abs(along));
+      cx.fillRect(coreX + (along * cos - across * sin) * barLength,
+                  coreY + (along * sin + across * cos) * barLength, 1, 1);
+    }
+  }
+  // Sagittarius A*, four million suns in something smaller than Mercury's orbit.
+  cx.globalAlpha = alpha;
+  cx.fillStyle = "#fffdf2";
+  cx.beginPath(); cx.arc(coreX, coreY, Math.max(1.4, disc * .008), 0, 7); cx.fill();
+  cx.restore();
+}
+
+// Where we are in it, and how big the last screen was. This is drawn after the
+// galaxy and separately from it, because it is not part of the galaxy — it is
+// the measurement being made against it.
+function drawSkyHere(radius, centerX, centerY, alpha) {
+  if (alpha <= .01) return;
+  const [sx, sy] = skyBodyPos(SKY_SUN);
+  const sunX = centerX + sx * radius, sunY = centerY + sy * radius;
+  if (!skyOnStage(sunX, sunY, 90)) return;
+  const bubble = SKY_BUBBLE_LY * LIGHT_YEAR * radius;
+  const spur = GALAXY_SPUR;
+  cx.save();
+  // The Orion Spur, the piece of the galaxy every star in the roster is in.
+  cx.globalAlpha = alpha * .28;
+  cx.fillStyle = "rgba(190,214,255,.30)";
+  cx.beginPath();
+  cx.ellipse(sunX, sunY, spur.length / 2 * LIGHT_YEAR * radius,
+             spur.width / 2 * LIGHT_YEAR * radius, spur.lean, 0, 7);
+  cx.fill();
+  // The bubble at true size, and a ring at the smallest size an eye can find,
+  // so that the gap between the two is itself the statement. If the drawn ring
+  // is twenty times the real one, the real one is a twentieth of the smallest
+  // thing on the screen.
+  const shown = Math.max(3.2, bubble);
+  cx.globalAlpha = alpha * .85;
+  cx.strokeStyle = "#7fe0cf";
+  cx.lineWidth = 1.2;
+  cx.beginPath(); cx.arc(sunX, sunY, shown, 0, 7); cx.stroke();
+  if (bubble > 2) {
+    cx.globalAlpha = alpha * .5;
+    cx.beginPath(); cx.arc(sunX, sunY, bubble, 0, 7); cx.stroke();
+  }
+  cx.globalAlpha = alpha;
+  cx.fillStyle = "#ffffff";
+  cx.beginPath(); cx.arc(sunX, sunY, 1.6, 0, 7); cx.fill();
+  // The label, on a leader, out of the disc's light.
+  const leadX = sunX - shown - 8, leadY = sunY - shown - 10;
+  cx.globalAlpha = alpha * .8;
+  cx.strokeStyle = "#7fe0cf"; cx.lineWidth = .9;
+  cx.beginPath();
+  cx.moveTo(sunX - shown * .7, sunY - shown * .7);
+  cx.lineTo(leadX, leadY); cx.lineTo(leadX - 26, leadY);
+  cx.stroke();
+  cx.globalAlpha = alpha;
+  cx.textAlign = "right";
+  cx.fillStyle = "#c9f3ea";
+  cx.font = "600 11px system-ui, sans-serif";
+  // Two lines of text ending at `leadX - 30`, and the Sun's own caption is
+  // about to be offered the same patch of sky.
+  skyLabelClaim(leadX - 110, leadY + 2, 84, 16);
+  cx.fillText("here", leadX - 30, leadY - 5);
+  cx.fillStyle = "rgba(201,243,234,.72)";
+  cx.font = "10px system-ui, sans-serif";
+  // Worked out from the same constants the picture is drawn from, so the
+  // caption cannot drift away from what is on the screen next to it.
+  const share = Math.round(GALAXY_DISC_LY / SKY_BUBBLE_LY / 10) * 10;
+  cx.fillText(`${SKY_BUBBLE_LY} ly out — 1/${share.toLocaleString()} of the disc`,
+              leadX - 34, leadY + 14);
+  cx.restore();
+}
+
+// ------------------------------------------------------------- saying so
+//
+// A picture of a scale is not a statement of it. Twelve orders of magnitude go
+// past between a hexagon on the ground and the far side of the galaxy, and
+// every one of them looks like a black rectangle with some dots on it, so the
+// view has to be able to answer *how far across is this* at any point on the
+// way. A bar with a distance on it does that, in whatever unit stops the number
+// being unreadable — kilometres near home, then Earth radii, then astronomical
+// units, then light-years.
+const SKY_UNITS = [
+  {at:1 / EARTH_KM,  name:"km",         step:[1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 50000, 100000]},
+  {at:1,             name:"Earth radii",step:[1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 5000]},
+  {at:AU,            name:"AU",         step:[.1, .2, .5, 1, 2, 5, 10, 20, 50, 100, 500, 1000]},
+  {at:LIGHT_YEAR,    name:"light-years",step:[.1, .5, 1, 2, 5, 10, 20, 50, 100, 500, 1000, 5000, 20000, 100000]},
+];
+// The nicest round distance that draws a bar of about the length asked for.
+function skyScaleChoice(radius, want) {
+  for (const unit of SKY_UNITS) {
+    for (const step of unit.step) {
+      const drawn = step * unit.at * radius;
+      if (drawn >= want * .55 && drawn <= want * 1.9)
+        return {unit, step, drawn};
+    }
+  }
+  return null;
+}
+// What this picture is a picture of, in three words, and the one number that
+// makes it mean something. This is where the view answers the question it is
+// built around: at the far end it says out loud that the fifty light-years the
+// expedition crosses is a five-hundredth of the way to the middle of our own
+// galaxy, and the picture behind the words is showing exactly that.
+function skySceneCaption(radius) {
+  const span = skyStageSpan();
+  const across = span / Math.max(1e-30, radius);   // Earth radii across the stage
+  if (across > 30000 * LIGHT_YEAR)
+    return ["The Milky Way",
+            `${(GALAXY_DISC_LY * 2 / 1000).toFixed(0)},000 light-years across, and the Sun ` +
+            `${GALAXY_SUN_RADIUS_LY.toLocaleString()} out from the middle`];
+  if (across > 400 * LIGHT_YEAR)
+    return ["The Orion Spur",
+            `A bridge between two arms. Every star anybody has named is in it`];
+  if (across > 3 * LIGHT_YEAR)
+    return ["The solar neighbourhood",
+            `About 2,000 stars within ${SKY_BUBBLE_LY} light-years, and the ` +
+            `expedition is going to one of them`];
+  if (across > 120 * AU)
+    return ["Interstellar space",
+            `The nearest star is ${SKY_STARS[0].ly.toFixed(2)} light-years away — ` +
+            `${Math.round(SKY_STARS[0].ly * LIGHT_YEAR / AU).toLocaleString()} times the Earth's orbit`];
+  if (across > 3 * AU)
+    return ["The solar system", "Sunlight takes eight minutes to reach the Earth"];
+  if (across > 600)
+    return ["The Earth's orbit", "One astronomical unit: 149.6 million kilometres"];
+  if (across > 12)
+    return ["The Earth and the Moon",
+            "Sixty Earths apart, and every other world in the game is further"];
+  return null;
+}
+function drawSkyScale(radius, alpha) {
+  if (alpha <= .02) return;
+  const frame = observedFrameRect();
+  const want = Math.min(150, (frame.right - frame.left) * .16);
+  const choice = skyScaleChoice(radius, want);
+  const caption = skySceneCaption(radius);
+  if (!choice && !caption) return;
+  const x = frame.left + 18, y = frame.bottom - 20;
+  cx.save();
+  cx.globalAlpha = alpha;
+  cx.textAlign = "left";
+  if (choice) {
+    cx.strokeStyle = "rgba(214,235,241,.72)";
+    cx.lineWidth = 1;
+    cx.beginPath();
+    cx.moveTo(x, y - 5); cx.lineTo(x, y); cx.lineTo(x + choice.drawn, y);
+    cx.lineTo(x + choice.drawn, y - 5);
+    cx.stroke();
+    cx.fillStyle = "rgba(226,240,246,.86)";
+    cx.font = "600 10px system-ui, sans-serif";
+    const amount = choice.step >= 1 ? choice.step.toLocaleString() : String(choice.step);
+    cx.fillText(`${amount} ${choice.unit.name}`, x + choice.drawn + 7, y);
+  }
+  if (caption) {
+    cx.fillStyle = "rgba(232,244,250,.92)";
+    cx.font = "600 12px system-ui, sans-serif";
+    cx.fillText(caption[0], x, y - 30);
+    cx.fillStyle = "rgba(200,220,232,.66)";
+    cx.font = "11px system-ui, sans-serif";
+    cx.fillText(caption[1], x, y - 15);
+  }
+  cx.restore();
+}
+
 
 // Close enough, the ball is a world: its own tiling, turned to whatever face it
 // was last dragged to and lit from the same side the Earth is. It fades in over
@@ -16953,19 +18218,49 @@ function drawSkyCaption(place, crew, alpha, note, above) {
   cx.restore();
 }
 
-// Everything above, in the order it is seen: the far bodies first, then what is
-// standing on them, then the traffic between.
+// Everything above, assembled back to front. The order is the order a picture
+// of space has to be built in: the furthest thing first and the nearest thing
+// last, because out here the furthest thing is the biggest.
+//
+//   the galaxy      only once its disc will fit on the stage at all
+//   the bubble      the neighbourhood boundary and its stars
+//   the orbits      the rings that make a handful of dots a solar system
+//   the belt        so the gap between Mars and Jupiter has something in it
+//   the bodies      each lit from where the Sun actually is
+//   the craft       satellites, landings, the expedition, and launches
+//   the scale       and what all of it is a picture of
+//
+// None of this is above a chart. Filtering the *bodies* by what is known is not
+// enough on its own: the satellites and the expedition are drawn from whoever
+// launched them, which is every civilization rather than this one, so a
+// neighbour's craft would otherwise be seen orbiting a world its viewer has no
+// reason to believe is a ball.
 function drawPlanetSky(camera, radius, centerX, centerY) {
-  // None of this is above a chart. Filtering the *bodies* by what is known is
-  // not enough on its own: the satellites and the expedition are drawn from
-  // whoever launched them, which is every civilization rather than this one, so
-  // a neighbour's craft would otherwise be seen orbiting a world its viewer has
-  // no reason to believe is a ball.
   if (camera.chart) return;
   const crews = skyCrews();
   const now = performance.now();
+  const span = skyStageSpan();
+  // Which of the three pictures is on the stage. They are widths, not rungs:
+  // the rung says what a civilization is allowed to know, this says what is
+  // currently big enough to be worth drawing and small enough to fit.
+  const discPx = GALAXY_DISC_LY * LIGHT_YEAR * radius;
+  const bubblePx = SKY_BUBBLE_LY * LIGHT_YEAR * radius;
+  const galaxyShown = knowsGalaxy()
+    ? 1 - skyFade(discPx, span * 2.2, span * 7) : 0;
+  const starsShown = knowsNeighbourhood()
+    ? skyFade(bubblePx, 26, 95) * (1 - skyFade(bubblePx, span * 6, span * 26)) : 0;
+
+  // Before anything is drawn, because `here` puts a name on the stage too and
+  // the Sun's own caption must not be allowed to land on top of it.
+  skyLabelReset();
+  drawSkyGalaxy(radius, centerX, centerY, galaxyShown);
+  drawSkyHere(radius, centerX, centerY, galaxyShown);
+  drawSkyNeighbourhood(radius, centerX, centerY, starsShown * (1 - galaxyShown * .55));
+  drawSkyOrbits(radius, centerX, centerY, 1);
+  drawSkyBelt(radius, centerX, centerY, 1);
+
   let exo = null;
-  const placements = new Map();
+  const placements = new Map(), wantLabel = [];
   for (const body of visibleSkyBodies()) {
     const place = skyPlacement(body, radius, centerX, centerY);
     placements.set(body.id, place);
@@ -16973,50 +18268,166 @@ function drawPlanetSky(camera, radius, centerX, centerY) {
     if (!skyOnCanvas(place)) continue;
     // Under a pixel a body is noise, so it arrives by fading up rather than by
     // flickering into existence.
-    const alpha = Math.max(0, Math.min(1, (place.r - .7) / 2.4));
-    if (alpha <= 0) continue;
-    if (body.id === "exo") {
-      // Another sun, far enough off that only its light reaches here.
+    // A body arrives by fading up rather than by flickering into existence,
+    // measured on how much of a pixel there is of it.
+    //
+    // A star is the exception, and it has to be: its drawn size is a floor
+    // chosen to say how bright it is, not a measurement of anything, so putting
+    // that floor back through a sub-pixel ramp punishes a star twice for being
+    // faint. Three quarters of the roster are red dwarfs sitting at the bottom
+    // of that floor, and they came out at an eighth alpha — present in the
+    // arithmetic, invisible on the screen, and never eligible for a name. What
+    // sets a star's alpha is the same thing that sets its size: brightness.
+    let alpha = body.kind === "star"
+      ? .34 + .66 * body.rank
+      : Math.max(0, Math.min(1, (place.r - .7) / 2.4));
+    // And a body sitting inside whatever it goes round is worse than noise, it
+    // is a lie: at the whole-system shot the Moon is four thousandths of a
+    // pixel from the Earth and Io is a fifth of one from Jupiter, so drawing
+    // them there puts a moon on top of its planet and calls the pair a binary.
+    // Out at the galaxy the same thing happens to every star in the roster and
+    // to the destination — fifty light-years is a third of a pixel from there —
+    // and the first pass had the target's label sitting on top of `here`,
+    // claiming a planet was visible from outside the galaxy.
+    //
+    // One rule covers all of it, because it is one situation: a body fades in
+    // when it has somewhere to be. `separation` is its distance from whatever
+    // it is drawn beside, which is its orbit for anything in this system and
+    // its distance from the Sun for anything outside it.
+    alpha *= skyFade(body.separation * radius, 2.5, 7);
+    if (alpha <= .01) continue;
+    const light = skySunDirection(place, radius, centerX, centerY);
+    if (body.kind === "star") {
+      drawSkyStar(body, place, radius, centerX, centerY, alpha);
+      // Every star is a candidate for a name; which twelve get one is settled
+      // below, by brightness and by what will fit.
+      wantLabel.push({body, place, alpha, star:true});
+      continue;
+    }
+    if (body.id === "exo" && place.r < 34) {
+      // Another sun, far enough off that only its light reaches here. It stands
+      // for the star, not for the planet, so it is drawn only while the planet
+      // is still a point of light: six radii of teal wash around a world that
+      // fills the stage is not a halo, it is a filter over the whole picture,
+      // and the first pass turned the sky green on arrival.
       const halo = cx.createRadialGradient(place.x, place.y, place.r,
                                            place.x, place.y, place.r * 6);
       halo.addColorStop(0, "rgba(150,232,214,.20)");
       halo.addColorStop(1, "rgba(150,232,214,0)");
-      cx.save(); cx.globalAlpha = alpha; cx.fillStyle = halo;
+      cx.save();
+      cx.globalAlpha = alpha * (1 - skyFade(place.r, 16, 34));
+      cx.fillStyle = halo;
       cx.beginPath(); cx.arc(place.x, place.y, place.r * 6, 0, 7); cx.fill(); cx.restore();
     }
     const mission = body.id === "moon" ? "moon" : body.id === "mars" ? "mars" : null;
     const crew = skyCrewFor(crews, body).filter(player =>
       !mission || !skyLaunchInFlight(player.id, mission, now));
-    drawSkyBall(place, alpha);
+    // A ring goes behind its world and then in front of it, which is the whole
+    // reason Saturn is worth flying to. The far half first, then the world and
+    // its ground, then the near half over the top of both.
+    const ringed = place.rings && place.r > 3;
+    if (ringed) drawSkyRingHalf(place, alpha, -1);
+    drawSkyBall(place, alpha, light);
     // Its own ground, once there is enough of the body on screen to hold it.
     const ground = skyGroundFade(place);
     if (ground > 0) drawSkyGlobe(place, alpha * ground);
+    if (ringed) drawSkyRingHalf(place, alpha, 1);
     drawSkyLandings(place, crew, alpha);
-    if (alpha > .5 && skyCaptionClear(place)) {
-      // The exoplanet's caption belongs to whoever actually got there, which is
-      // not the same list as whoever set out.
-      const arrived = body.id === "exo"
-        ? crews.expedition.filter(p => (+p.exoplanet_distance || 0) >=
-            (+p.victories?.science?.distance_target || 50))
-        : crew;
-      drawSkyCaption(place, arrived, alpha,
-        body.id === "exo"
-          ? `${crews.expedition[0]?.victories?.science?.distance_target || 50} light-years`
-          : "",
-        body.id === "moon" && body.orbit * radius < 92);
+    // On the galaxy shot `here` already names the Sun, and with a leader on it;
+    // a second caption underneath saying the same thing twice is the picture
+    // arguing with itself.
+    const named = body.id === "sun" && galaxyShown > .4;
+    if (alpha > .5 && !named) wantLabel.push({body, place, alpha, crew});
+  }
+  // Home first, before any of the rest can take its room. Far enough out it is
+  // a dot among dots and needs saying so; the names out here are the engine's
+  // own — its four projects are the Earth satellite, the Moon landing, the Mars
+  // colony and the exoplanet expedition — so the globe under all of it is Earth.
+  if (radius < 22 && radius * AU > 6) {
+    const home = {x:centerX, y:centerY, r:Math.max(radius, 3), name:"Earth"};
+    if (skyLabelClaim(home.x, home.y + home.r + 9, 34, 11))
+      drawSkyCaption(home, crews.satellite, Math.min(1, (22 - radius) / 7), "");
+  }
+  // Then everything else, in the order the labels are worth having: the
+  // destination, home, the Sun, and after those simply whatever is biggest.
+  // A name that will not fit is dropped rather than moved, because the place it
+  // would have to move to is a lie about where the body is.
+  //
+  // A star's claim is its apparent brightness, which is the same order an eye
+  // picks names out of a sky in. Only a dozen of them get one: the roster runs
+  // to fifty-odd systems and naming every one turns the neighbourhood into a
+  // page of text with some dots behind it.
+  const worth = entry => entry.star
+    ? [1, entry.body.glow] : [2, entry.place.r];
+  wantLabel.sort((a, b) => {
+    const rank = skyLabelRank(b.body) - skyLabelRank(a.body);
+    if (rank) return rank;
+    const [aKind, aSize] = worth(a), [bKind, bSize] = worth(b);
+    return (bKind - aKind) || (bSize - aSize);
+  });
+  let starNames = 0;
+  for (const {body, place, alpha, crew, star} of wantLabel) {
+    if (!skyCaptionClear(place)) continue;
+    if (star) {
+      if (starNames >= 12) continue;
+      // Measured, not guessed from the character count. A claim sized by
+      // `4 + length * 3.1` came out about twice the ink either side, and in a
+      // bubble holding fifty-odd stars those boxes tile the whole picture: one
+      // name was granted and every other star was refused by a rectangle of
+      // empty sky belonging to a label three stars away.
+      cx.font = "10px system-ui, sans-serif";
+      const width = cx.measureText(body.name).width;
+      const left = place.x + place.r + 5;
+      if (!skyLabelClaim(left + width / 2, place.y - skyBodyLift(body) * radius + 7,
+                         width / 2 + 2, 9)) continue;
+      drawSkyStarName(body, place, radius, alpha);
+      starNames++;
+      continue;
     }
+    const above = body.id === "moon" && body.orbitRadius * radius < 92;
+    if (!skyLabelClaim(place.x, place.y + (above ? -1 : 1) * (place.r + 10),
+                       6 + body.name.length * 3.4, 12)) continue;
+    // The exoplanet's caption belongs to whoever actually got there, which is
+    // not the same list as whoever set out.
+    const arrived = body.id === "exo"
+      ? crews.expedition.filter(p => (+p.exoplanet_distance || 0) >=
+          (+p.victories?.science?.distance_target || 50))
+      : crew;
+    drawSkyCaption(place, arrived, alpha,
+      body.id === "exo" ? skyTargetNote(crews) : "", above);
   }
   if (exo) drawSkyExpeditions(crews.expedition, exo, radius, centerX, centerY, 1, now);
   drawSkySatellites(crews.satellite, camera, radius, centerX, centerY, 1, now);
   drawSkyLaunches(crews, placements, radius, centerX, centerY, now);
-  // Far enough out, home is a dot among dots and needs saying so. The names
-  // out here are the engine's own — its four projects are the Earth satellite,
-  // the Moon landing, the Mars colony and the exoplanet expedition — so the
-  // globe under all of it is Earth.
-  if (radius < 22) {
-    drawSkyCaption({x:centerX, y:centerY, r:Math.max(radius, 3), name:"Earth"},
-                   crews.satellite, Math.min(1, (22 - radius) / 7), "");
+  drawSkyScale(radius, skyDepth(radius));
+}
+
+// The destination's own line: how far it is, and the thing that is wrong with
+// it. A crossing of fifty light-years is worth a sentence about where to.
+function skyTargetNote(crews) {
+  const target = skyTarget();
+  const quoted = +crews.expedition[0]?.victories?.science?.distance_target;
+  const away = quoted || target.ly;
+  return `${away.toFixed(away < 10 ? 2 : 1)} light-years`;
+}
+// A star's name, set beside it rather than under it: a star is a point and a
+// caption centred under a point reads as a label for the gap below it.
+function drawSkyStarName(body, place, radius, alpha) {
+  const lift = skyBodyLift(body) * radius;
+  cx.save();
+  cx.globalAlpha = alpha * (place.r > 2.6 ? .82 : .55);
+  cx.fillStyle = "rgba(226,240,246,.9)";
+  cx.font = "10px system-ui, sans-serif";
+  cx.textAlign = "left";
+  cx.fillText(body.name, place.x + place.r + 5, place.y - lift + 3);
+  // The distance, once there is room for a second line — which is the whole
+  // point of the neighbourhood: these are not decorations, they are lengths.
+  if (place.r > 2.4) {
+    cx.globalAlpha = alpha * .5;
+    cx.font = "9px system-ui, sans-serif";
+    cx.fillText(`${body.ly.toFixed(1)} ly`, place.x + place.r + 5, place.y - lift + 14);
   }
+  cx.restore();
 }
 
 // Orbits only move if something asks for the frame, and a strategic view sits
@@ -17945,7 +19356,7 @@ function drawPlanetMap() {
   if (depth > 0) {
     cx.fillStyle = `rgba(2,5,10,${(depth * .78).toFixed(3)})`;
     cx.fillRect(0, 0, MAPW, MAPH);
-    drawSkyStars(depth);
+    drawSkyStars(depth, radius);
   }
 
   // Standing over Mars, the Earth is a whole screen-width of world sitting
