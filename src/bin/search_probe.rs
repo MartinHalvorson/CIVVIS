@@ -40,7 +40,8 @@ use civvis::ai::{run_game, Ai, AdvancedAi, VictoryTarget};
 use civvis::game::{Action, Game};
 use civvis::parallel;
 use civvis::production::ProductionSearchAi;
-use civvis::strategic::{ReviewPath, StrategicAi};
+use civvis::ai::Weights;
+use civvis::strategic::{Doctrine, ReviewPath, StrategicAi};
 
 /// What the rollouts would have answered at a position a prior answered
 /// instead, and which prior it was.
@@ -219,7 +220,10 @@ fn main() {
     // would produce disagrees with the proxy it would replace. If it agrees,
     // the labeller is dead too and nobody spends a week on it.
     if flag(&args, "--outcome") {
-        audit_outcome(players, maps, warmup, seed0, jobs, width, height, turns);
+        let replicas = number(&args, "--replicas", 1);
+        audit_outcome(
+            players, maps, warmup, seed0, jobs, width, height, turns, replicas,
+        );
         return;
     }
 
@@ -688,6 +692,26 @@ fn audit_production(
 }
 
 
+/// Distinct-but-sane opponent policies, so a candidate can be continued
+/// against more than one future.
+///
+/// The engine is deterministic: the same position played by the same agents
+/// always produces the same game, so a single continuation cannot be denoised
+/// by repeating it. Varying the *opponents* is the only replication this
+/// design admits. These are the four doctrine perturbations of the stock
+/// genome — bounded by evolution's own per-gene clamps, so each is a play
+/// style rather than a broken agent — plus the frozen legacy planner.
+fn opponent_pool(index: usize) -> Box<dyn Ai> {
+    let base = Weights::default();
+    match index % 5 {
+        0 => Box::new(AdvancedAi::new()) as Box<dyn Ai>,
+        4 => Box::new(AdvancedAi::legacy()) as Box<dyn Ai>,
+        other => Box::new(AdvancedAi::with_weights(
+            Doctrine::ALL[other].apply(&base),
+        )) as Box<dyn Ai>,
+    }
+}
+
 fn audit_outcome(
     players: usize,
     maps: usize,
@@ -697,6 +721,7 @@ fn audit_outcome(
     width: i32,
     height: i32,
     turns: u32,
+    replicas: usize,
 ) {
     struct Decision {
         candidates: usize,
@@ -708,6 +733,11 @@ fn audit_outcome(
         agrees: bool,
         /// Outcomes are not all identical, so the label says something.
         discriminates: bool,
+        /// Candidates whose replicas did not all agree — the direct evidence
+        /// that a single continuation is noise.
+        mixed_candidates: usize,
+        /// Highest candidate win rate minus lowest, at this decision.
+        rate_spread: f64,
     }
 
     let results = parallel::map(maps, jobs, move |index| {
@@ -742,27 +772,53 @@ fn audit_outcome(
                 continue;
             }
             let mut labelled: Vec<(String, f64, bool)> = Vec::new();
+            let mut rates: Vec<f64> = Vec::new();
+            let mut mixed = 0usize;
             for (item, proxy) in &scored {
-                let mut sim = game.clone();
-                if sim
-                    .apply(
-                        0,
-                        &Action::Produce {
-                            city: cid,
-                            item: item.clone(),
-                        },
-                    )
-                    .is_err()
-                {
+                let mut wins = 0usize;
+                let mut runs = 0usize;
+                for replica in 0..replicas.max(1) {
+                    let mut sim = game.clone();
+                    if sim
+                        .apply(
+                            0,
+                            &Action::Produce {
+                                city: cid,
+                                item: item.clone(),
+                            },
+                        )
+                        .is_err()
+                    {
+                        continue;
+                    }
+                    // The searching seat keeps the stock agent in every
+                    // replica; only the opponents vary, which is what makes
+                    // the win rate a property of the candidate.
+                    let mut ais: Vec<Box<dyn Ai>> = sim
+                        .players
+                        .iter()
+                        .map(|p| {
+                            if p.id == 0 {
+                                Box::new(AdvancedAi::new()) as Box<dyn Ai>
+                            } else {
+                                opponent_pool(replica + p.id)
+                            }
+                        })
+                        .collect();
+                    run_game(&mut sim, &mut ais);
+                    runs += 1;
+                    if sim.winner == Some(0) {
+                        wins += 1;
+                    }
+                }
+                if runs == 0 {
                     continue;
                 }
-                let mut ais: Vec<Box<dyn Ai>> = sim
-                    .players
-                    .iter()
-                    .map(|_| Box::new(AdvancedAi::new()) as Box<dyn Ai>)
-                    .collect();
-                run_game(&mut sim, &mut ais);
-                labelled.push((format!("{item:?}"), *proxy, sim.winner == Some(0)));
+                if wins > 0 && wins < runs {
+                    mixed += 1;
+                }
+                rates.push(wins as f64 / runs as f64);
+                labelled.push((format!("{item:?}"), *proxy, wins * 2 > runs));
             }
             if labelled.len() < 2 {
                 continue;
@@ -780,12 +836,16 @@ fn audit_outcome(
             // The outcome label's pick: any winning candidate. Ties keep
             // enumeration order, as everywhere else in this codebase.
             let outcome_pick = labelled.iter().find(|(_, _, won)| *won);
+            let low = rates.iter().copied().fold(f64::INFINITY, f64::min);
+            let high = rates.iter().copied().fold(f64::NEG_INFINITY, f64::max);
             out.push(Decision {
                 candidates: labelled.len(),
                 wins,
                 proxy_pick_won: proxy_pick.2,
                 agrees: outcome_pick.is_none_or(|(name, _, _)| *name == proxy_pick.0),
                 discriminates: wins > 0 && wins < labelled.len(),
+                mixed_candidates: mixed,
+                rate_spread: high - low,
             });
         }
         out
@@ -825,9 +885,57 @@ fn audit_outcome(
             100.0 * proxy_won as f64 / discriminating.len() as f64
         );
     }
+    if replicas > 1 {
+        let mixed: usize = decisions.iter().map(|d| d.mixed_candidates).sum();
+        let mut spreads: Vec<f64> = decisions.iter().map(|d| d.rate_spread).collect();
+        spreads.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        let separating = decisions.iter().filter(|d| d.rate_spread >= 0.4).count();
+        println!();
+        println!("  replicas per candidate                        {replicas}");
+        println!(
+            "  candidates whose replicas DISAGREED           {mixed} of {candidates} ({:.0}%)",
+            100.0 * mixed as f64 / candidates.max(1) as f64
+        );
+        println!(
+            "  median win-rate spread across candidates      {:.2}",
+            percentile(&spreads, 0.5)
+        );
+        println!(
+            "  decisions separating by >= 0.4 win rate       {separating} of {n} ({:.0}%)",
+            100.0 * separating as f64 / n as f64
+        );
+    }
+
+    if replicas > 1 {
+        // The criterion this mode exists to evaluate. A win rate over K
+        // replicas carries a standard error of sqrt(p(1-p)/K), about 0.224 at
+        // K=5. If the spread BETWEEN candidates is smaller than the error on
+        // each one, no amount of corpus-building separates them: the label is
+        // under its own noise floor and a search over this decision is
+        // measuring nothing it can act on.
+        let se = (0.25f64 / replicas as f64).sqrt();
+        let mut spreads: Vec<f64> = decisions.iter().map(|d| d.rate_spread).collect();
+        spreads.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        let median = percentile(&spreads, 0.5);
+        println!();
+        println!(
+            "  per-candidate standard error at {replicas} replicas   {se:.3}   \
+             vs median between-candidate spread {median:.3}"
+        );
+        if median < se {
+            let needed = (0.25 / (median / 4.0).powi(2)).ceil() as usize;
+            println!(
+                "  -> UNDER THE NOISE FLOOR. Resolving a gap of {median:.2} at 4 sigma needs \
+                 about {needed} replicas per candidate, {}x this run.",
+                needed / replicas.max(1)
+            );
+        }
+    }
+
     println!(
         "\nA decision where every continuation ends the same way carries no signal for a \
          labeller, whatever it costs to produce. Read the discrimination rate first: it \
-         bounds how much an outcome-labelled corpus could ever teach about this decision."
+         bounds how much an outcome-labelled corpus could ever teach about this decision, \
+         and the noise-floor line second: it says what that would cost."
     );
 }
