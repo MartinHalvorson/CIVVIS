@@ -7227,6 +7227,90 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("if (camera.chart && !spectator)"));
     }
 
+    /// Fog of war must not report where the stored map stops. A civilization
+    /// that has seen eighteen tiles knows eighteen tiles, and the shape of the
+    /// rectangle they are stored in is not one of the things it knows.
+    #[test]
+    fn the_map_edge_is_veiled_until_a_world_has_been_measured() {
+        // The veil is the observed civilization's, not the viewer's: a
+        // spectator is not exploring anything, and `wentAround` already
+        // answers true for one, so the exhibition keeps the whole rectangle.
+        assert!(EMBEDDED_INDEX.contains("function mapEdgeVeiled()"));
+        assert!(EMBEDDED_INDEX
+            .contains("return !!state && !planetMap() && !wentAround();"));
+        // Three to fifteen tiles, per world and per side, so the give is never
+        // the same twice and the two sides of one map never agree.
+        assert!(EMBEDDED_INDEX.contains("const MAP_VEIL_MIN = 3, MAP_VEIL_MAX = 15;"));
+        assert!(EMBEDDED_INDEX.contains("function mapEdgeVeil()"));
+        assert!(EMBEDDED_INDEX.contains(
+            "MAP_VEIL = {left:reach(0), right:reach(1), top:reach(2), bottom:reach(3)};"
+        ));
+
+        // The parchment runs past the stored rectangle rather than stopping on
+        // it, and it is drawn out to the frame on every side rather than out to
+        // the veil, so no zoom and no bearing can find the end of the sheet.
+        let hidden = EMBEDDED_INDEX
+            .split("function hiddenMapCellAt")
+            .nth(1)
+            .and_then(|tail| tail.split("function hiddenMapSeedWords").next())
+            .expect("hidden-map cell test and viewport");
+        assert!(
+            hidden.contains("col < 0 || col >= state.map.width) return mapEdgeVeiled();"),
+            "ground past the stored rectangle must read as unsurveyed, not as nothing"
+        );
+        assert!(hidden.contains("const veiled = !open && mapEdgeVeiled();"));
+        assert!(
+            hidden.contains("const span = open || veiled ? framedHexBounds(3)"),
+            "a veiled sheet is spanned by the frame, not by the map's rectangle"
+        );
+        assert!(hidden.contains("const [x, y] = open || veiled ? hexXYRaw(q, row) : hexXY(q, row);"));
+        // Only one copy of a wrapping world is drawn, so the background either
+        // side of it is somewhere nobody has been rather than somewhere that
+        // does not exist — which is what closes the same leak at full zoom-out.
+        assert!(EMBEDDED_INDEX.contains("function veilDrawsGroundAt(q, r)"));
+        assert!(hidden.contains("const test = veiled ? (q, r) => !veilDrawsGroundAt(q, r)"));
+        // A canvas compound path costs quadratic time in its own size, so a
+        // sheet that covers a whole frame has to be drawn as its rectangle.
+        assert!(hidden.contains("return {open, solid:veiled, cells, test};"));
+        assert!(EMBEDDED_INDEX
+            .contains("if (layer.solid) cx.rect(minX, minY, maxX - minX, maxY - minY);"));
+
+        // A camera that stops dead on the last row says the same thing the
+        // parchment no longer does, so the veil owns that axis while it lasts.
+        assert!(EMBEDDED_INDEX.contains("function mapVeilPanBounds()"));
+        let bounds = EMBEDDED_INDEX
+            .split("function cameraYBounds")
+            .nth(1)
+            .and_then(|tail| tail.split("function clampCameraY").next())
+            .expect("vertical camera bounds");
+        assert!(
+            bounds.contains("const veil = mapVeilPanBounds();\n  if (veil?.y) return veil.y;"),
+            "the veil must be consulted before the map's own rows frame the camera"
+        );
+        assert!(EMBEDDED_INDEX.contains("function clampCameraX(x)"));
+
+        // Soft, and bouncy: a drag past the bound is resisted rather than
+        // refused, a coast into it stretches and is handed to a spring, and
+        // both come home to the bound instead of sailing back over the world.
+        assert!(EMBEDDED_INDEX.contains("function cameraRubberBand(value, bounds, give = CAMERA_GIVE())"));
+        assert!(EMBEDDED_INDEX.contains("function holdCameraInBounds(x, y)"));
+        assert!(EMBEDDED_INDEX.contains("function handOffCameraBounce()"));
+        assert!(EMBEDDED_INDEX.contains("function settleCameraBounce(dt)"));
+        assert!(EMBEDDED_INDEX.contains("if (settleCameraBounce(dt)) active = true;"));
+        assert!(
+            EMBEDDED_INDEX.contains("[cam.x, cam.y] = holdCameraInBounds("),
+            "the drag paths must go through the rubber band"
+        );
+
+        // And the thumbnail, which is the loudest statement of extent there is.
+        let mini = EMBEDDED_INDEX
+            .split("function miniBounds()")
+            .nth(1)
+            .and_then(|tail| tail.split("function miniLayout").next())
+            .expect("minimap bounds");
+        assert!(mini.contains("if ((!chartIsOpen() && !mapEdgeVeiled()) || !tiles?.length) {"));
+    }
+
     #[test]
     fn cinematic_3d_module_covers_every_unit_renderer_family() {
         for family in [
