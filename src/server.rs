@@ -6438,7 +6438,61 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("for (const site of war.theater || []) add(site?.pos);"));
         assert!(EMBEDDED_INDEX.contains("data-war-key=\"${escapeAttr(warLogKey(war))}\""));
         assert!(EMBEDDED_INDEX.contains(">${mapAction}</button></div>"));
-        assert!(EMBEDDED_INDEX.contains("const mapAction = over ? \"View aftermath\" : \"Watch\";"));
+        // Watching is a held reading position as well as a camera move: the
+        // control is a toggle, it names the state it is in, and it reports that
+        // state to assistive technology.
+        assert!(EMBEDDED_INDEX.contains(
+            "const mapAction = watched ? \"Watching\" : (over ? \"View aftermath\" : \"Watch\");"
+        ));
+        assert!(EMBEDDED_INDEX.contains("aria-pressed=\"${watched ? \"true\" : \"false\"}\""));
+        assert!(EMBEDDED_INDEX.contains("${watched ? \" watched\" : \"\"}"));
+        assert!(EMBEDDED_INDEX.contains("${watched ? \" watching\" : \"\"}"));
+        assert!(EMBEDDED_INDEX.contains("function watchWar(warKey)"));
+        assert!(EMBEDDED_INDEX.contains("function releaseWatchedWar()"));
+        // The whole point of the hold: the watched card keeps the offset it had
+        // inside the list's viewport while the rest of the chronicle re-sorts
+        // around it, and the scroll pays for the difference.
+        assert!(EMBEDDED_INDEX.contains("function measureWatchedWar(el)"));
+        assert!(EMBEDDED_INDEX.contains("function holdWatchedWar(el)"));
+        assert!(EMBEDDED_INDEX.contains("function warCardFor(el, warKey)"));
+        let war_hold = EMBEDDED_INDEX
+            .split("function holdWatchedWar(el)")
+            .nth(1)
+            .unwrap()
+            .split("function watchWar(warKey)")
+            .next()
+            .unwrap();
+        assert!(war_hold.contains(
+            "const within = card.getBoundingClientRect().top - el.getBoundingClientRect().top + el.scrollTop;"
+        ));
+        assert!(war_hold.contains("const target = Math.max(0, Math.min(reach, within - watchedWar.offset));"));
+        assert!(war_hold.contains("el.scrollTop = target;"));
+        // Re-measured before every rebuild, so a viewer who scrolls the log
+        // moves the lock rather than fighting it, and the sort order itself is
+        // never rewritten to keep the card still.
+        let war_draw = EMBEDDED_INDEX
+            .split("function drawWarLog()")
+            .nth(1)
+            .unwrap()
+            .split("function drawSide(")
+            .next()
+            .unwrap();
+        assert!(war_draw.contains("measureWatchedWar(el);"));
+        assert!(war_draw.contains("holdWatchedWar(el);"));
+        assert!(war_draw.contains("if (watchedWar && watchedWar.seed !== state.seed) watchedWar = null;"));
+        assert!(war_draw.contains("if (watchedWar && !warCardFor(el, watchedWar.key)) watchedWar = null;"));
+        assert!(
+            !war_draw.contains("wars.sort("),
+            "the war log must stay the engine's chronicle; a hold moves the scroll, not the order"
+        );
+        assert!(EMBEDDED_INDEX
+            .contains("if (watchedWar && watchedWar.key === key) releaseWatchedWar();"));
+        assert!(EMBEDDED_INDEX.contains(".war-card.watched { border-color: #d8ad5e;"));
+        assert!(
+            EMBEDDED_INDEX.find(".war-card.ended .war-period").unwrap()
+                < EMBEDDED_INDEX.find(".war-card.watched .war-period").unwrap(),
+            "the watched rules share `.ended`'s specificity and must follow it to win"
+        );
         let war_focus = EMBEDDED_INDEX
             .split("function focusWarOnMap(warKey)")
             .nth(1)

@@ -26,13 +26,22 @@
   const MODERN_SHIPS = new Set(["ironclad", "battleship", "destroyer", "aircraft_carrier",
     "missile_cruiser"]);
   const SUBMARINES = new Set(["submarine", "nuclear_submarine"]);
+  // Ordinary terrain features, then the full Natural Wonder roster. Every one
+  // of the thirty-four is modelled: a wonder the cinematic view cannot draw is
+  // a landmark the player walks past as bare ground.
   const ENVIRONMENTS = Object.freeze([
     "hills", "mountain", "forest", "jungle", "burning_forest", "burnt_forest",
     "burning_jungle", "burnt_jungle", "marsh", "oasis", "floodplains",
     "grassland_floodplains", "plains_floodplains", "reef", "geothermal_fissure",
     "ice", "volcano", "volcanic_soil", "impact_zone", "great_barrier_reef",
     "crater_lake", "pantanal", "uluru", "yosemite", "dead_sea",
-    "mount_everest", "pamukkale",
+    "mount_everest", "pamukkale", "torres_del_paine", "eye_of_the_sahara",
+    "zhangye_danxia", "ha_long_bay", "cliffs_of_dover", "giants_causeway",
+    "galapagos_islands", "matterhorn", "kilimanjaro", "piopiotahi", "ik_kil",
+    "gobustan", "ubsunur_hollow", "mato_tipila", "delicate_arch",
+    "chocolate_hills", "vesuvius", "lake_retba", "bermuda_triangle",
+    "eyjafjallajokull", "fountain_of_youth", "lysefjord", "paititi",
+    "mount_roraima", "tsingy_de_bemaraha", "sahara_el_beyda",
   ]);
   const ENVIRONMENT_SET = new Set(ENVIRONMENTS);
 
@@ -1149,6 +1158,110 @@
     waterPatch(scene, "#79c7cf", .55 * span, .72);
   }
 
+  // --- the rest of the Natural Wonder roster.
+  //
+  // Twenty-six of the thirty-four had no model at all, so the cinematic view
+  // drew bare ground where a landmark stood. Each is built from the same
+  // primitives as the eight that did: what makes the Matterhorn a Matterhorn
+  // and not a mountain is its proportion — one horn, no range — so these are
+  // small, specific compositions rather than a shared "wonder" blob.
+
+  // A single sharp peak: one summit, not a range. Used for the horn-shaped
+  // mountains, which are the ones a player recognises by silhouette.
+  function lonePeak(scene, o, {radius = 17, height = 52, color = "#7a746a",
+    snow = .62, skirt = 0} = {}) {
+    const span = o.span || 1;
+    const random = seeded(o.seed + 503);
+    groundShadow(scene, (radius + 6) * span, .24);
+    if (skirt) {
+      scene.cone([0, 0, 0], (radius + skirt) * span, height * .28 * span,
+        color, 9, radius * .8 * span, .3);
+    }
+    const turn = random() * 6.28;
+    scene.cone([0, 0, 0], radius * span, height * span, color, 9,
+      radius * .08 * span, turn);
+    // The cap has to sit slightly proud of the rock it covers, or the two
+    // cones are coplanar and the depth sort is free to hide the snow inside
+    // the mountain — which is exactly what a Matterhorn with no snow on it
+    // looked like.
+    if (snow > 0) {
+      const line = height * snow;
+      scene.cone([0, 0, line * span], (radius * (1 - snow) + 1.2) * span,
+        (height - line) * span, "#eef3f6", 9, radius * .06 * span, turn);
+    }
+  }
+
+  // A flat-topped tower of rock. Devils Tower, a tepui, the Torres, the
+  // Tsingy needles: all the same body at different counts and proportions.
+  function stoneTowers(scene, o, {towers, color = "#8a7a66", cap = null,
+    fluted = false} = {}) {
+    const span = o.span || 1;
+    const random = seeded(o.seed + 509);
+    groundShadow(scene, 22 * span, .22);
+    for (const [x, y, radius, height] of towers) {
+      const sides = fluted ? 12 : 8;
+      scene.cone([x * span, y * span, 0], radius * span, height * span,
+        color, sides, radius * .82 * span, random() * 6.28);
+      if (cap) {
+        scene.ellipsoid([x * span, y * span, height * span],
+          [radius * .84 * span, radius * .84 * span, 1.1 * span], cap, sides, 2);
+      }
+    }
+  }
+
+  // Banded or domed ground: the striped hills, the petroglyph shelves, the
+  // chocolate drops. The colours are what separate them.
+  function banded(scene, o, {colors, count = 9, radius = 6, height = 5,
+    dome = false} = {}) {
+    const span = o.span || 1;
+    const random = seeded(o.seed + 521);
+    groundShadow(scene, 20 * span, .16);
+    for (let i = 0; i < count; i++) {
+      const a = random() * Math.PI * 2, r = Math.sqrt(random()) * 16 * span;
+      const x = Math.cos(a) * r, y = Math.sin(a) * r;
+      const size = radius * (.7 + random() * .6) * span;
+      const tall = height * (.6 + random() * .9) * span;
+      const color = colors[i % colors.length];
+      if (dome) scene.ellipsoid([x, y, tall * .3], [size, size * .9, tall], color, 9, 3);
+      else scene.cone([x, y, 0], size, tall, color, 7, size * .55, random() * 6.28);
+    }
+  }
+
+  // Water held in a bowl of rock, with the rim showing. Every lake wonder is
+  // this shape; only the water colour tells Retba from Ik-Kil.
+  function basin(scene, o, {water = "#337e9d", rim = "#7b7263", rimCount = 9,
+    depth = .7, glow: aura = null} = {}) {
+    const span = o.span || 1;
+    const random = seeded(o.seed + 541);
+    groundShadow(scene, 17 * span, .17);
+    waterPatch(scene, water, depth * span, .9);
+    for (let i = 0; i < rimCount; i++) {
+      const a = i * Math.PI * 2 / rimCount, r = (12 + random() * 3) * span;
+      crag(scene, Math.cos(a) * r, Math.sin(a) * r, (2.4 + random() * 1.8) * span,
+        (2 + random() * 3.5) * span, rim, false, random);
+    }
+    if (aura) scene.glow([0, 0, 3 * span], 10 * span, aura, .3);
+  }
+
+  // A wall of rock with water at its foot: the sea cliffs and the fjords.
+  // `face` is the colour of the exposed rock, which is the whole read.
+  function seaWall(scene, o, {face = "#efeee6", water = "#2f6d8c",
+    inlet = false} = {}) {
+    const span = o.span || 1;
+    const random = seeded(o.seed + 547);
+    groundShadow(scene, 20 * span, .2);
+    // A fjord is water first: the cliffs are what a drowned valley looks like
+    // from the deck of a ship in it, so the inlet gets the wider patch.
+    waterPatch(scene, water, (inlet ? 1.05 : .9) * span, .88);
+    const walls = inlet
+      ? [[-13, 0, 6, 26], [13, 1, 6, 24], [0, -14, 5, 20]]
+      : [[-9, 4, 8, 21], [7, 6, 7, 18]];
+    for (const [x, y, radius, height] of walls) {
+      scene.cone([x * span, y * span, 0], radius * span, height * span,
+        face, 6, radius * .88 * span, random() * 6.28);
+    }
+  }
+
   function drawEnvironment(options) {
     if (!options || !options.ctx || !ENVIRONMENT_SET.has(options.kind)) return false;
     const o = {
@@ -1192,6 +1305,132 @@
       waterPatch(scene, "#3f8295", 1.25 * o.span, .88);
       scene.cone([-12, 4, .3], 4, 5, "#d6d1bb", 7, .4, .2);
       scene.cone([11, 1, .3], 3.5, 4, "#e3ddc8", 7, .3, .8);
+    }
+    // --- the twenty-six that used to draw nothing
+    else if (o.kind === "matterhorn")
+      lonePeak(scene, o, {radius:15, height:58, color:"#6f6a63", snow:.58});
+    else if (o.kind === "kilimanjaro")
+      lonePeak(scene, o, {radius:22, height:44, color:"#6b6152", snow:.74, skirt:6});
+    else if (o.kind === "mount_roraima")
+      stoneTowers(scene, o, {color:"#6d6455", cap:"#5c7248",
+        towers:[[-8, 2, 12, 30], [9, -3, 11, 27]]});
+    else if (o.kind === "mato_tipila")
+      stoneTowers(scene, o, {color:"#9c7550", fluted:true, towers:[[0, 0, 8, 34]]});
+    else if (o.kind === "torres_del_paine")
+      stoneTowers(scene, o, {color:"#8e8880", cap:"#e7ecef",
+        towers:[[-9, 1, 5, 33], [0, -2, 5.5, 38], [9, 2, 5, 31]]});
+    else if (o.kind === "tsingy_de_bemaraha")
+      stoneTowers(scene, o, {color:"#a9a08c", fluted:true,
+        towers:[[-9, 3, 3, 19], [-2, -4, 2.6, 24], [4, 4, 3.2, 17],
+          [10, -1, 2.4, 21], [1, 8, 2.8, 15]]});
+    else if (o.kind === "giants_causeway") {
+      // Basalt columns stepping off a headland into the sea, which is the
+      // half of it a pavement of stubs on grass could not say.
+      waterPatch(scene, "#2c6d84", .8 * (o.span || 1), .84);
+      stoneTowers(scene, o, {color:"#6d766f", fluted:true,
+        towers:[[-12, 4, 4, 15], [-6, -1, 4, 20], [0, 3, 4, 17],
+          [6, -2, 4, 22], [11, 4, 4, 13], [15, 0, 4, 9]]});
+    }
+    else if (o.kind === "zhangye_danxia")
+      banded(scene, o, {colors:["#b4533c", "#d9924a", "#e6c06a", "#9a5f6d"],
+        count:11, radius:7, height:9});
+    else if (o.kind === "gobustan")
+      banded(scene, o, {colors:["#8d8272", "#a2957f", "#6f6759"],
+        count:10, radius:6, height:4});
+    else if (o.kind === "chocolate_hills")
+      banded(scene, o, {colors:["#8a6a44", "#9c7a4e", "#7a5c3b"],
+        count:13, radius:5.5, height:6, dome:true});
+    else if (o.kind === "sahara_el_beyda")
+      banded(scene, o, {colors:["#eee7d5", "#f5f1e3", "#ded4bc"],
+        count:10, radius:5, height:7, dome:true});
+    else if (o.kind === "ubsunur_hollow") {
+      // A steppe basin, not a swamp: shallow water ringed by dry ground.
+      basin(scene, o, {water:"#4d7f7a", rim:"#8a8358", rimCount:7, depth:1.05});
+      wetlands(scene, o, true);
+    }
+    else if (o.kind === "lake_retba")
+      basin(scene, o, {water:"#d4708f", rim:"#c3b291", depth:.85});
+    else if (o.kind === "ik_kil")
+      basin(scene, o, {water:"#1f6f7a", rim:"#5f6c48", rimCount:11, depth:.42});
+    else if (o.kind === "fountain_of_youth")
+      basin(scene, o, {water:"#63c6c0", rim:"#8d8a6e", depth:.4,
+        glow:"#c8fff4"});
+    else if (o.kind === "eye_of_the_sahara") {
+      const span = o.span || 1;
+      groundShadow(scene, 22 * span, .18);
+      for (let ring = 3; ring >= 1; ring--) {
+        scene.cone([0, 0, 0], ring * 7 * span, (4 - ring) * 2.4 * span,
+          ring % 2 ? "#a9834f" : "#c8ab74", 14, ring * 6 * span, .1);
+      }
+    }
+    else if (o.kind === "delicate_arch") {
+      const span = o.span || 1;
+      groundShadow(scene, 14 * span, .2);
+      scene.cone([-6 * span, 0, 0], 3.4 * span, 18 * span, "#b9713f", 8, 2.6 * span, .2);
+      scene.cone([6 * span, 0, 0], 3.4 * span, 18 * span, "#a9663a", 8, 2.6 * span, .5);
+      scene.tube([-6 * span, 0, 17 * span], [6 * span, 0, 17 * span], 2.4 * span,
+        "#c07a45", 7);
+    }
+    else if (o.kind === "cliffs_of_dover")
+      seaWall(scene, o, {face:"#eff0ea", water:"#2f7d9c"});
+    else if (o.kind === "piopiotahi")
+      seaWall(scene, o, {face:"#5d6b52", water:"#1f5468", inlet:true});
+    else if (o.kind === "lysefjord")
+      seaWall(scene, o, {face:"#77736a", water:"#27596c", inlet:true});
+    else if (o.kind === "ha_long_bay") {
+      const span = o.span || 1;
+      const random = seeded(o.seed + 563);
+      waterPatch(scene, "#2b8296", 1.15 * span, .9);
+      for (const [x, y, radius, height] of [[-11, 3, 4.5, 17], [-1, -5, 5.5, 22],
+        [7, 4, 4, 14], [13, -3, 3.4, 11]]) {
+        scene.cone([x * span, y * span, 0], radius * span, height * span,
+          "#5e6f52", 7, radius * .5 * span, random() * 6.28);
+      }
+    }
+    else if (o.kind === "galapagos_islands") {
+      const span = o.span || 1;
+      waterPatch(scene, "#1f7f95", 1.2 * span, .9);
+      for (const [x, y, radius, height] of [[-8, 2, 8, 11], [8, -3, 6.5, 8],
+        [3, 8, 4.5, 5]]) {
+        scene.cone([x * span, y * span, 0], radius * span, height * span,
+          "#6b5f4e", 9, radius * .22 * span, .3);
+      }
+    }
+    else if (o.kind === "vesuvius") volcano(scene, o);
+    else if (o.kind === "eyjafjallajokull") {
+      volcano(scene, o);
+      const span = o.span || 1;
+      scene.cone([0, 0, 12 * span], 13 * span, 9 * span, "#dce8ed", 10,
+        7 * span, .4, .92);
+    }
+    else if (o.kind === "paititi") {
+      const span = o.span || 1;
+      const random = seeded(o.seed + 571);
+      groundShadow(scene, 20 * span, .22);
+      for (let step = 0; step < 4; step++) {
+        scene.cone([0, 0, step * 5 * span], (16 - step * 3.4) * span,
+          5 * span, step & 1 ? "#9a8a63" : "#c0b087", 6,
+          (13.4 - step * 3.4) * span, .26);
+      }
+      for (let i = 0; i < 6; i++) {
+        const a = random() * Math.PI * 2, r = (12 + random() * 6) * span;
+        scene.tube([Math.cos(a) * r, Math.sin(a) * r, .4],
+          [Math.cos(a) * r, Math.sin(a) * r, (5 + random() * 4) * span],
+          .5 * span, "#3f6b3a", 5);
+      }
+    }
+    else if (o.kind === "bermuda_triangle") {
+      const span = o.span || 1;
+      waterPatch(scene, "#123f5c", 1.3 * span, .92);
+      const points = [[0, -15 * span, .6], [13 * span, 8 * span, .6],
+        [-13 * span, 8 * span, .6]];
+      scene.polygon(points, "#0d2c46", 1.6, .74);
+      scene.glow([0, 0, 4 * span], 15 * span, "#7fd8ef", .26);
+      for (let i = 0; i < 3; i++) {
+        scene.ellipsoid([Math.sin(o.time * .6 + i * 2) * 5 * span,
+          Math.cos(o.time * .5 + i * 2) * 5 * span, (5 + i * 4) * span],
+          [7 * span, 6 * span, 2.4 * span], "#9db9c6", 8, 3, .28);
+      }
     }
     scene.flush();
     return true;
