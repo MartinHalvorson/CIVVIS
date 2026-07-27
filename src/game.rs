@@ -47808,7 +47808,12 @@ mod border_growth_tests {
     use super::*;
 
     fn controlled_game(seed: u64) -> (Game, u32, Pos) {
+        controlled_game_for(seed, false)
+    }
+
+    fn controlled_game_for(seed: u64, minor: bool) -> (Game, u32, Pos) {
         let mut game = Game::new_full(1, 24, 20, seed, 120, 0, false);
+        game.players[0].is_minor = minor;
         for unit in game.units.keys().copied().collect::<Vec<_>>() {
             game.remove_unit(unit);
         }
@@ -47852,6 +47857,79 @@ mod border_growth_tests {
             .unwrap()
             .owned_tiles
             .push(position);
+    }
+
+    #[test]
+    fn only_a_full_civilization_moves_its_border_with_its_own_culture() {
+        // CivilizationLevels.CanAnnexTilesWithCulture is 1 for FULL_CIV and 0
+        // for CITY_STATE. A city-state banking enough Culture to buy the next
+        // plot several times over still does not take it; Envoys are its only
+        // route to new ground.
+        for (minor, expected) in [(false, 8), (true, 6)] {
+            let (mut game, city, _) = controlled_game_for(941_101, minor);
+            let before = game.cities[&city].owned_tiles.len();
+            assert_eq!(before, if minor { 6 } else { 7 });
+            game.cities.get_mut(&city).unwrap().border_culture = 500.0;
+            game.process_city(0, city);
+            assert_eq!(
+                game.cities[&city].owned_tiles.len(),
+                expected,
+                "minor={minor}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_city_state_cannot_buy_a_plot_with_gold() {
+        // CanAnnexTilesWithGold is 0 for CITY_STATE, so no price is ever
+        // quoted however much Gold the city-state is holding.
+        for minor in [false, true] {
+            let (mut game, city, center) = controlled_game_for(941_102, minor);
+            game.players[0].gold = 10_000.0;
+            let target = ring(&game, center, 2)
+                .into_iter()
+                .find(|position| game.map.tiles[position].owner_city.is_none())
+                .expect("a second-ring plot is unowned");
+            game.players[0].explored.insert(target);
+            assert_eq!(
+                game.plot_purchase_cost(0, city, target).is_some(),
+                !minor,
+                "minor={minor}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_city_state_founds_one_ring_tile_short_of_a_full_civilization() {
+        // StartingTilesForCity is 6 for FULL_CIV and 5 for CITY_STATE. The
+        // database does not say which neighbour is given up, so the shipped
+        // plot-influence picker decides and the worst-scoring one stays
+        // neutral.
+        let (major, major_city, center) = controlled_game_for(941_103, false);
+        assert_eq!(major.cities[&major_city].owned_tiles.len(), 7);
+        assert!(ring(&major, center, 1)
+            .into_iter()
+            .all(|position| major.map.tiles[&position].owner_city == Some(major_city)));
+
+        let (minor, minor_city, center) = controlled_game_for(941_103, true);
+        assert_eq!(minor.cities[&minor_city].owned_tiles.len(), 6);
+        let unclaimed: Vec<Pos> = ring(&minor, center, 1)
+            .into_iter()
+            .filter(|position| minor.map.tiles[position].owner_city.is_none())
+            .collect();
+        assert_eq!(unclaimed.len(), 1);
+        // The tile left out is the one the picker rates worst, not an
+        // arbitrary member of the ring.
+        let worst = ring(&minor, center, 1)
+            .into_iter()
+            .max_by(|left, right| {
+                minor
+                    .border_influence_cost(center, *left)
+                    .total_cmp(&minor.border_influence_cost(center, *right))
+                    .then(left.cmp(right))
+            })
+            .expect("the first ring is not empty");
+        assert_eq!(unclaimed[0], worst);
     }
 
     #[test]
