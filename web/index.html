@@ -654,9 +654,11 @@
   .diplomacy-elo { flex: 0 0 auto; color: var(--gold-bright); font-weight: 850; }
   /* A rating nothing has been finished behind is still the real starting
      number, so it is the same figure in the same cell — only unfilled, the
-     way an unearned thing should look. Marking it with a character instead
-     would widen the narrowest column in the table. */
-  .diplomacy-elo-value.provisional { opacity: 0.62; font-style: italic; }
+     way an unearned thing should look. Opacity and nothing else: a marker
+     character would widen the narrowest column in the table, and italics
+     would push a four-digit rating into the ellipsis this cell already
+     carries. */
+  .diplomacy-elo-value.provisional { opacity: 0.62; }
   .diplomacy-expected { flex: 0 0 auto; color: #8fd6a4; font-weight: 850; }
   .diplomacy-player { flex: 1 1 auto; color: #d9e1dc; font-weight: 750; }
   .agenda-mark { margin-left: 3px; font-size: var(--type-label); vertical-align: 1px; }
