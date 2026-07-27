@@ -11748,6 +11748,63 @@ pub const GAME_MODES: [&str; 2] = ["apocalypse", "secret_societies"];
 
 pub const EXOPLANET_DESTINATION: f64 = 50.0;
 
+/// A world the expedition can be sent to.
+///
+/// These are the real ones: every temperate planet inside fifty light-years
+/// that is actually argued about as a target, at the distance the trip really
+/// is, with the thing that is really wrong with it. There is a genuine
+/// trade-off in the list and it is the trade-off the field has — the nearest
+/// worlds are around flare stars and tidally locked, and the calmest star with
+/// a temperate planet is nearly five times further away.
+pub struct ExoplanetTarget {
+    pub id: &'static str,
+    pub name: &'static str,
+    /// The trip, in light-years.
+    pub light_years: f64,
+    /// How habitable it is thought to be. This is what the expedition aims
+    /// for, because the distance costs nothing (see [`Game::exoplanet_pace`]).
+    pub grade: u8,
+}
+
+/// Ordered by distance, nearest first. **Append, never insert** — a saved
+/// target is stored by id, but the survey draws from this list by index and
+/// re-ordering it re-rolls which worlds a given seed reveals.
+pub const EXOPLANET_TARGETS: [ExoplanetTarget; 10] = [
+    ExoplanetTarget { id: "proxima_b", name: "Proxima Centauri b", light_years: 4.24, grade: 1 },
+    ExoplanetTarget { id: "tau_ceti_e", name: "Tau Ceti e", light_years: 11.91, grade: 1 },
+    ExoplanetTarget { id: "gj273_b", name: "Luyten's Star b", light_years: 12.35, grade: 2 },
+    ExoplanetTarget { id: "teegarden_b", name: "Teegarden's Star b", light_years: 12.50, grade: 2 },
+    ExoplanetTarget { id: "wolf1061_c", name: "Wolf 1061 c", light_years: 14.05, grade: 1 },
+    ExoplanetTarget { id: "hd20794_d", name: "82 Eridani d", light_years: 19.71, grade: 2 },
+    ExoplanetTarget { id: "gj667_cc", name: "Gliese 667 Cc", light_years: 23.62, grade: 2 },
+    ExoplanetTarget { id: "gliese12_b", name: "Gliese 12 b", light_years: 39.70, grade: 1 },
+    ExoplanetTarget { id: "trappist1_e", name: "TRAPPIST-1 e", light_years: 40.66, grade: 2 },
+    ExoplanetTarget { id: "lhs1140_b", name: "LHS 1140 b", light_years: 48.93, grade: 3 },
+];
+
+/// Where the expedition goes if nothing has been surveyed at all: the world
+/// anybody would already have heard of, at the far end of the list and very
+/// nearly the fifty light-years this engine has always quoted.
+pub const EXOPLANET_DEFAULT_TARGET: &str = "lhs1140_b";
+
+/// How many of the roster a civilization has found, per thing it has put above
+/// the air. Detection is not a matter of distance — TRAPPIST-1 is forty
+/// light-years out and was found early because its star is small enough for a
+/// planet to blot out a real fraction of it, while plenty of nearer worlds are
+/// still argued over — so what a survey buys is *more of the list*, not the
+/// near end of it.
+///
+/// This is the payoff the Moon landing and the Mars colony did not have. Both
+/// were dead ends: the Moon paid a one-off Culture bonus and Mars paid nothing
+/// at all, so a civilization racing the science victory correctly skipped
+/// straight past both. Now they are the survey, and what they buy is which
+/// world humanity actually reaches.
+pub const EXOPLANET_SURVEY: [(&str, usize); 3] = [
+    ("launch_earth_satellite", 3),
+    ("launch_moon_landing", 2),
+    ("launch_mars_colony", 2),
+];
+
 /// Every civilization's standing in every victory race, each as a percentage of
 /// what that race requires. Produced by [`Game::victory_races`].
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -13469,6 +13526,11 @@ pub struct Player {
     /// Light-years travelled after launching the Exoplanet Expedition.
     #[serde(default)]
     pub exoplanet_distance: f64,
+    /// Which world the expedition was aimed at, by id in [`EXOPLANET_TARGETS`].
+    /// Set once, when the expedition launches, from what had been surveyed by
+    /// then; `None` until then, and on a save written before targets existed.
+    #[serde(default)]
+    pub exoplanet_target: Option<String>,
     #[serde(default)]
     pub envoys: Vec<(usize, i64)>, // (city-state pid, envoys placed)
     #[serde(default)]
@@ -13568,6 +13630,7 @@ impl Player {
             religious_tourism_lifetime: 0.0,
             science_projects: BTreeSet::new(),
             exoplanet_distance: 0.0,
+            exoplanet_target: None,
             envoys: Vec::new(),
             counters: BTreeMap::new(),
             great_work_pieces: Vec::new(),
@@ -44005,6 +44068,97 @@ impl Game {
         }
     }
 
+    /// Which worlds this civilization has found, as indices into
+    /// [`EXOPLANET_TARGETS`].
+    ///
+    /// The neighbourhood is the same for everybody — it is a fact about the
+    /// sky, not about a civilization — so the *order* worlds are found in is
+    /// one shuffle drawn from the game's own seed and shared by every player.
+    /// What differs is how far down that order each of them has got, which is
+    /// what their instruments above the air have bought them.
+    pub fn exoplanet_survey(&self, pid: usize) -> Vec<usize> {
+        let depth = EXOPLANET_SURVEY
+            .iter()
+            .filter(|(project, _)| self.players[pid].science_projects.contains(*project))
+            .map(|(_, found)| *found)
+            .sum::<usize>()
+            + self.exoplanet_laser_stations(pid);
+        if depth == 0 {
+            return Vec::new();
+        }
+        let mut order: Vec<usize> = (0..EXOPLANET_TARGETS.len()).collect();
+        // A Fisher-Yates shuffle off the map seed, so a given world is found in
+        // a given order every time that world is played and in a different one
+        // in the next. Drawn with the same splitmix the rest of the engine
+        // uses rather than the live RNG, because reading the live stream here
+        // would make every later roll in the game depend on how many space
+        // projects happen to have finished.
+        let mut state = self.seed ^ 0x9E37_79B9_7F4A_7C15;
+        for index in (1..order.len()).rev() {
+            state = state
+                .wrapping_add(0x9E37_79B9_7F4A_7C15)
+                .rotate_left(31)
+                .wrapping_mul(0xBF58_476D_1CE4_E5B9);
+            let pick = (state >> 33) as usize % (index + 1);
+            order.swap(index, pick);
+        }
+        order.truncate(depth.min(EXOPLANET_TARGETS.len()));
+        order
+    }
+
+    fn exoplanet_laser_stations(&self, pid: usize) -> usize {
+        let counters = &self.players[pid].counters;
+        (counters
+            .get("project:lagrange_laser_station")
+            .copied()
+            .unwrap_or(0)
+            + counters
+                .get("project:terrestrial_laser_station")
+                .copied()
+                .unwrap_or(0))
+        .max(0) as usize
+    }
+
+    /// The world the expedition sets out for, decided the moment it launches.
+    ///
+    /// The best world found, and the nearest of those if two are graded alike.
+    /// It aims for the *best* rather than the nearest because a light-year
+    /// currently costs nothing — see [`EXOPLANET_DESTINATION`], which is the
+    /// whole trip whichever world it is — so there is nothing to trade a worse
+    /// world for. A civilization that surveyed nothing takes the one anybody
+    /// would already have heard of.
+    pub fn exoplanet_choice(&self, pid: usize) -> &'static str {
+        self.exoplanet_survey(pid)
+            .into_iter()
+            .map(|index| &EXOPLANET_TARGETS[index])
+            .max_by(|a, b| {
+                a.grade
+                    .cmp(&b.grade)
+                    .then(b.light_years.total_cmp(&a.light_years))
+            })
+            .map(|target| target.id)
+            .unwrap_or(EXOPLANET_DEFAULT_TARGET)
+    }
+
+    /// The world the expedition is going to, or would go to if it left now.
+    pub fn exoplanet_target(&self, pid: usize) -> &'static ExoplanetTarget {
+        let chosen = self.players[pid]
+            .exoplanet_target
+            .as_deref()
+            .unwrap_or_else(|| self.exoplanet_choice(pid));
+        EXOPLANET_TARGETS
+            .iter()
+            .find(|target| target.id == chosen)
+            // A save naming a world this build does not have is a save from a
+            // future roster, not a corrupt one. Fall back rather than panic.
+            .unwrap_or_else(|| {
+                EXOPLANET_TARGETS
+                    .iter()
+                    .find(|target| target.id == EXOPLANET_DEFAULT_TARGET)
+                    .expect("the default target is in the roster")
+            })
+    }
+
     pub fn exoplanet_speed(&self, pid: usize) -> f64 {
         let p = &self.players[pid];
         if !p.science_projects.contains("exoplanet_expedition") {
@@ -46972,6 +47126,13 @@ impl Game {
                 }
                 if project == "exoplanet_expedition" {
                     self.players[pid].exoplanet_distance = 0.0;
+                    // Where it is going is settled now and never again. A
+                    // survey that deepens after the ship has left does not turn
+                    // it round: the choice is the one that was available on the
+                    // day, which is what makes finishing the Moon and Mars
+                    // before launching worth anything.
+                    let chosen = self.exoplanet_choice(pid);
+                    self.players[pid].exoplanet_target = Some(chosen.to_string());
                 }
                 true
             }
@@ -54172,6 +54333,111 @@ mod victory_conditions {
         assert_eq!(g.players[0].exoplanet_distance, EXOPLANET_DESTINATION);
         assert_eq!(g.winner, Some(0));
         assert_eq!(g.victory_type.as_deref(), Some("science"));
+    }
+
+    /// The expedition goes to a real place, and which one is what a space
+    /// programme buys.
+    ///
+    /// The Moon landing and the Mars colony were dead ends: the Moon paid a
+    /// one-off Culture bonus, Mars paid nothing at all, so a civilization
+    /// racing the science victory correctly skipped straight past both. They
+    /// are the survey now. The trip is the same length whichever world it is —
+    /// `EXOPLANET_DESTINATION` is unchanged and deliberately so, because the
+    /// distances in that roster span eleven to one and turning them loose on
+    /// the victory race is a balance change that has to be measured over whole
+    /// games before it ships. What the survey buys today is the world itself.
+    #[test]
+    fn the_expedition_goes_where_the_survey_reached() {
+        let mut g = game_with_capitals(3, 420, 300);
+        let cid = g.player_city_ids(0)[0];
+        let project = |name: &str| Item::Project {
+            project: name.to_string(),
+        };
+
+        // Surveyed nothing, so the only world it can name is the one anybody
+        // would already have heard of.
+        assert!(g.exoplanet_survey(0).is_empty());
+        assert_eq!(g.exoplanet_choice(0), EXOPLANET_DEFAULT_TARGET);
+
+        // The eye above the air finds the first three.
+        assert!(g.complete_item(0, cid, &project("launch_earth_satellite")));
+        let thin = g.exoplanet_survey(0);
+        assert_eq!(thin.len(), 3);
+
+        // And the rest of the programme finds more of them. The order is a
+        // fact about the sky, so every civilization finds the same worlds in
+        // the same order and a deeper survey is a strict superset of a
+        // shallower one — a rival who has looked less can never know a world
+        // this one does not.
+        assert!(g.complete_item(0, cid, &project("launch_moon_landing")));
+        assert!(g.complete_item(0, cid, &project("launch_mars_colony")));
+        let deep = g.exoplanet_survey(0);
+        assert_eq!(deep.len(), 7);
+        assert_eq!(&deep[..3], &thin[..], "a survey only ever adds");
+
+        let rival = g.player_city_ids(1)[0];
+        assert!(g.complete_item(1, rival, &project("launch_earth_satellite")));
+        assert_eq!(g.exoplanet_survey(1), thin, "one sky, one order");
+
+        // The deeper survey reaches the better world.
+        let near = |pid: usize| g.exoplanet_target(pid).grade;
+        assert!(
+            near(0) >= near(1),
+            "seven candidates cannot grade worse than three of the same seven",
+        );
+
+        // The choice is made on the day the ship leaves and never revisited: a
+        // survey that deepens afterwards does not turn it round, which is what
+        // makes finishing the Moon and Mars *before* launching worth anything.
+        assert!(g.complete_item(0, cid, &project("exoplanet_expedition")));
+        let sent = g.players[0].exoplanet_target.clone();
+        assert_eq!(sent.as_deref(), Some(g.exoplanet_choice(0)));
+        *g.players[0]
+            .counters
+            .entry("project:lagrange_laser_station".to_string())
+            .or_insert(0) += 3;
+        assert!(g.exoplanet_survey(0).len() > 7, "the survey did deepen");
+        assert_eq!(
+            g.players[0].exoplanet_target, sent,
+            "a launched expedition does not change its mind",
+        );
+
+        // A different world is a different sky. Two seeds must not agree on the
+        // order the neighbourhood is found in, or the survey is a fixed list
+        // and the Moon and Mars buy the same thing every game.
+        let mut other = game_with_capitals(2, 999_331, 300);
+        let there = other.player_city_ids(0)[0];
+        assert!(other.complete_item(0, there, &project("launch_earth_satellite")));
+        let mut differs = other.exoplanet_survey(0) != thin;
+        for seed in [77_003_u64, 5_150_927, 31_337] {
+            if differs {
+                break;
+            }
+            let mut world = game_with_capitals(2, seed, 300);
+            let city = world.player_city_ids(0)[0];
+            assert!(world.complete_item(0, city, &project("launch_earth_satellite")));
+            differs = world.exoplanet_survey(0) != thin;
+        }
+        assert!(differs, "the roster must be shuffled per game");
+
+        // Every world the engine can send an expedition to is one the viewer
+        // can draw. The two rosters are written out separately — the client
+        // needs positions and palettes the engine has no use for — so the ids
+        // are pinned against each other here rather than left to drift into a
+        // destination that renders as nothing.
+        let client = include_str!("../web/index.html");
+        for target in EXOPLANET_TARGETS.iter() {
+            assert!(
+                client.contains(&format!("id:\"{}\"", target.id)),
+                "{} is not in the viewer's roster",
+                target.id,
+            );
+            assert!(
+                client.contains(target.name),
+                "{} is not named in the viewer",
+                target.name,
+            );
+        }
     }
 
     #[test]

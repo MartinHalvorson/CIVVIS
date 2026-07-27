@@ -17686,6 +17686,16 @@ function skyScaleChoice(radius, want) {
 function skySceneCaption(radius) {
   const span = skyStageSpan();
   const across = span / Math.max(1e-30, radius);   // Earth radii across the stage
+  // Standing over the destination, the caption is the destination: its name,
+  // how far the trip was, and the thing that is wrong with it. That last part
+  // is the whole payoff of the survey — a civilization that looked harder is
+  // standing over a better world, and it should be able to read why.
+  const target = skyTarget();
+  if (across < 40 * target.size && skyRungAtLeast("space")) {
+    const [exoX, exoY] = skyBodyPos(skyExoBody());
+    if (Math.hypot(exoX - SKY_PAN.x, exoY - SKY_PAN.y) < across)
+      return [target.name, `${target.ly.toFixed(2)} light-years. ${target.note}`];
+  }
   if (across > 30000 * LIGHT_YEAR)
     return ["The Milky Way",
             `${(GALAXY_DISC_LY * 2 / 1000).toFixed(0)},000 light-years across, and the Sun ` +
