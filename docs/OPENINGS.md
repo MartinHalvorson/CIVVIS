@@ -396,20 +396,76 @@ per-civilization opening divergence in §1 is mechanics, not the by-name code.**
 Three of the six sites (the lane floors, the wonder exemption) act over the
 whole game, so the window understates them and a full eval is the right test.
 
-**Pre-registered, running:**
+**Pre-registered and run:**
 
 ```text
 ai_eval advanced_civ_blind advanced --pairs 120 --players 4 --turns 500 \
         --width 24 --height 16 --seed 310000
 ```
 
-The control arm is the stock agent, so parity is 0.500 and a *negative* edge is
-the expected direction — removing information should not help. **How to read
-it:** a large cost means the civilization-aware code carries real weight and
-better per-civilization play could exist. A small cost bounds the layer the way
-deleting the opening book bounded that one at −0.003, and would mean the
-honest answer to "hyperoptimize each civilization's decisions" is that there is
-very little there to win.
+### The result: the civilization-aware decision layer is worth nothing measurable
+
+120 maps, 240 games, 4 players, average 152.8 turns.
+
+| measure | value |
+|---|---|
+| paired-map score for `advanced_civ_blind` | **49.2%** (95% Wilson 40.4%–58.0%) |
+| Elo-equivalent | **−6** (CI −68 … +56) |
+| paired direction on wins | 10 for / 98 neutral / 12 against, sign **p = 0.8318** |
+| paired terminal score | **49.8%**, 56 for / 61 against, sign **p = 0.7117** |
+| promotion gate | **INCONCLUSIVE** |
+
+**Deleting every by-name civilization signal from the decision layer costs 0.8%
+of paired score, which this population cannot distinguish from zero** — on
+wins or on terminal score.
+
+**Read the resolution before the headline.** Wins rest on only 22 of 120 maps
+that broke, which is thin. Terminal score rests on **117 of 120** and is the
+higher-resolution column, and it says 49.8% at p = 0.7117. Two independent
+columns, the better-resolved one included, both find nothing.
+
+**What the ablation did change**, from the diagnostics — so this is a bound on
+a layer that fires, not a report on an inert one:
+
+| | `advanced_civ_blind` | `advanced` |
+|---|---|---|
+| religious victories | 110 | 101 |
+| diplomatic victories | 3 | 12 |
+| faith | 198.8 | 238.1 |
+| science / culture | 17.6 / 22.9 | 18.1 / 23.7 |
+
+The Greece and China lane floors really do route seats to different victory
+types, exactly as the fires-check predicted. It simply does not convert. Note
+also that every economic column is *slightly* worse for the ablated arm and the
+sign is consistent across all of them — weak evidence of a small real cost,
+each individually null. The honest statement is that the layer is worth **at
+most a few Elo and cannot be distinguished from zero**.
+
+### What this means for per-civilization play
+
+This is the ceiling any better per-civilization decision-making has to beat, and
+it is low. Set beside the rest of the ledger:
+
+| layer | bound |
+|---|---|
+| opening book, deleted entirely | −0.003 |
+| technology order, randomised | below 0.09 resolution |
+| civic order, randomised | below 0.09 resolution |
+| **civilization-aware decisions, deleted entirely** | **−0.8%, p = 0.83** |
+| being a particular civilization (§9) | η² = 0.064 on score, nothing on wins |
+
+⚠ **It bounds the existing code, not every possible per-civilization rule.** A
+`leader_trait`-aware opening is still untested, and this measurement cannot
+prove it would be null. But the existing code covers the cases with the most
+obvious value — a lane preference for the culture civilization, tech priority
+for the unique unit — and deleting all of it costs nothing detectable. The
+prior that a seventh by-name rule would do better is weak.
+
+**The conclusion this line of work reaches:** openings do set the tempo in this
+engine, but the tempo is set by the capital's food and the settler economy
+(§7–§8), not by which units get built or by who the civilization is. Every
+build-order and per-civilization lever anyone has measured — six of them now —
+has come back at or near zero.
 
 ## What to measure next, in order
 
@@ -424,12 +480,19 @@ very little there to win.
 3. **Lift `.min(6)`, separately.** Independent of the above, and
    `docs/GENOME.md`'s rule about candidate-set changes moving effective
    thresholds applies to expansion targets too.
-4. ~~Bound the civilization-aware channels by ablation.~~ **Built and
-   running — see §10.** Fires-check passed at 8.88 → 8.38.
-5. **Only then, per-civilization openings.** If (4) returns null the way the
-   opening book did, a `leader_trait`-aware opening is very likely null too,
-   and the honest conclusion is that this agent's strength is not in its
-   openings at all.
+4. ~~Bound the civilization-aware channels by ablation.~~ **Done — NULL, see
+   §10.** −0.8% paired, p = 0.83 on wins and p = 0.71 on terminal score.
+5. ~~Per-civilization openings.~~ **Do not build one on this evidence.** (4)
+   returned the null it was pre-registered to look for, so a
+   `leader_trait`-aware opening should not be attempted until something
+   changes the ceiling. The honest conclusion is that this agent's strength is
+   not in its openings.
+6. **Food, if anything.** §8 leaves exactly one live lever: `citizen_strategy`
+   weights production 1.55 against food 1.25, in a capital whose growth gates
+   every settler. Measuring its ceiling needs `workable_tile_yields` (private,
+   in `src/game.rs`) and therefore a wider ownership claim than this task
+   took. That is the next thing worth a paired eval — and it is an economy
+   change, not an opening one.
 
 Note the ordering has changed since the first draft: (1) and (2) are about
 tempo and outranked the per-civilization work once the expansion numbers came
