@@ -96,3 +96,57 @@ cargo run --profile ci --locked --bin ai_eval -- \
 Seed 120000 is disjoint from the development screen. Its result will stand
 alone: the 120 development maps will not be pooled into the promotion
 decision.
+
+## Independent gate result
+
+The fixed 300-map gate completed cleanly and gave dense cadence a substantial,
+consistent point estimate:
+
+```text
+mirrored head-to-head: 300 maps, 600 games, 4 players, average 141.4 turns
+game-win share: strategic_r10 324/600 (54.0%) strategic_deep 276/600 (46.0%)
+paired-map score for strategic_r10: 54.0% (95% Wilson CI 48.3%..59.6%), Elo-equivalent +28 (CI -12..+67)
+paired outcomes: strategic_r10 sweeps 46, neutral splits/draws 232, strategic_deep sweeps 22, draw-mixed 0
+paired direction: strategic_r10-favored 46, neutral 232, strategic_deep-favored 22; exact two-sided sign p=0.0049 (SIGNIFICANT strategic_r10 DIRECTION)
+anytime-valid betting evidence (2.5% per direction after 20 maps): strategic_r10 peak e=2.232e1, p<=0.0448 (not crossed); strategic_deep peak e=1.005e0, p<=0.9954 (not crossed)
+promotion gate: INCONCLUSIVE — effect size or anytime-valid evidence has not cleared parity after 300 maps
+paired terminal-score diagnostic for strategic_r10: 50.9% (not a promotion input)
+terminal-score direction: strategic_r10-favored 163, neutral 16, strategic_deep-favored 121; exact two-sided sign p=0.0148
+```
+
+The gate reproduced the screen's direction and made the mechanism more
+concrete. R10 reached 6,371 of 12,112 reviews while deep reached 3,533 of
+6,580. It switched plans 3.98 versus 2.69 times per game, won 233 religious
+games to 191 and 78 score games to 65, and averaged 146.6 terminal score to
+140.2. Deep retained small military, gold, and faith leads, but r10 led cities,
+population, food, production, culture, and completed games.
+
+Across the development and gate samples, the descriptive total is 449-391
+games and 59-30 decisive map directions for r10 over 420 maps. That agreement
+is useful evidence that the effect is not peculiar to one seed block, but it
+is not the promotion statistic: the first block selected the challenger and
+was pre-registered out of the decision.
+
+## Decision
+
+Dense 10x40 search is the strongest point estimate measured on generation 14,
+and the independent gate gives significant directional evidence that review
+cadence is more valuable than the second half of the 80-round horizon. It did
+not satisfy the rule set before the run, however. The fixed-sample Wilson
+interval still includes parity and anytime evidence peaked at 22.32 rather
+than crossing the two-sided threshold of 40, so the formal result is
+**INCONCLUSIVE**.
+
+The pre-registration permits replacement only on `promotion gate: PASS`.
+`strategic_deep` therefore remains the evidence-backed top rung and no runtime
+behavior changes. R10 remains an evaluator-only challenger. A future
+replication may treat this audit as prior evidence, but it must allocate its
+error budget before observing new maps rather than extending this gate after
+seeing a favorable result.
+
+## Upstream reconciliation
+
+`528cb11` landed while the gate was running. It adds a genome-selection probe
+and documentation but does not change any agent, entrant, default, champion,
+or evolution behavior. Both compared policies are consequently identical on
+current main, so repeating the 420-map audit would test the same contrast.
