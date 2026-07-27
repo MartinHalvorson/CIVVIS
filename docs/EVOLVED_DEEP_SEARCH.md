@@ -67,4 +67,36 @@ it earns the pre-registered disjoint 240-map reversal gate at seed 114000.
 
 ### Disjoint reversal gate
 
-Pending.
+The exact gate command reversed entrant order so the shallower agent was the
+challenger whose PASS could change the ranking:
+
+```text
+cargo run --profile ci --locked --bin ai_eval -- \
+  strategic strategic_deep \
+  --pairs 240 --players 4 --width 24 --height 16 \
+  --turns 200 --seed 114000 --jobs 12
+```
+
+The fresh 240-map result decisively reversed the development screen:
+
+- `strategic` lost 215-265 games; its paired score was 44.8%, with a
+  38.6%-51.1% Wilson interval and -36 Elo point estimate;
+- map directions were 13 shallow-favorable, 189 neutral, and 38 deep-
+  favorable; exact sign-test `p = 0.0006`;
+- anytime evidence favored deep with peak `e = 521.7`, crossing at map 71;
+- terminal score was 49.7% for shallow, with directions 109-9-122
+  (`p = 0.4299`);
+- the formal challenger gate was **INCONCLUSIVE**, so no reversal was earned.
+
+The win mechanism is victory conversion backed by a larger empire. Deep won
+182 religious games to shallow's 136 while both won exactly 70 score games.
+It averaged 144.0 score to 139.3, 2.54 cities to 2.41, 16.0 population to
+14.9, 181.6 military strength to 164.6, and 15.6 science to 14.2. Despite
+spending a slightly smaller share of observed turns labeled Religion (30.1%
+versus 31.1%), it converted 46 more religious victories.
+
+Across the screen and gate, 300 disjoint evolved-genome maps split 322-278
+games for deep and **45 map directions to 23** (pooled exact `p = 0.0103`).
+The 60-map screen was ordinary small-sample inversion; the powered fresh run
+restores the original ordering on the new policy. `strategic_deep` remains the
+evidence-backed top rung and no agent behavior changes.
