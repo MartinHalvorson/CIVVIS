@@ -462,6 +462,27 @@ pub struct AdvancedAi {
     /// recorded, on the `advanced_lane_reachable` precedent, so the axis can
     /// be re-measured rather than re-derived if the settler economy changes.
     pub parallel_settlers: bool,
+    /// Ignore every by-name civilization signal in the decision layer.
+    ///
+    /// An **ablation**, not a strategy. `docs/GENOME.md`'s rule is that a null
+    /// on selection is uninterpretable without the ceiling beside it: before
+    /// asking whether per-civilization openings could be *better*, ask what
+    /// the civilization-aware code already there is *worth*. This is that
+    /// question, asked the cheapest honest way — by taking it away.
+    ///
+    /// Six sites, all decision-layer rather than mechanics: the Greece
+    /// culture-lane preference and its +45 culture floor, the China +45
+    /// science floor, the +55 unique-unit bonus in `tech_value`, and the
+    /// `Egypt | China` wonder exemption in `production_value` (twice). It
+    /// deliberately does **not** touch which unique unit or district a
+    /// civilization may build — that is mechanics, and ablating it would
+    /// measure the uniques rather than the decisions about them.
+    ///
+    /// Reachable as the `advanced_civ_blind` entrant. A large cost means the
+    /// civilization-aware code carries real weight and better per-
+    /// civilization play could exist. A small cost bounds the layer, the way
+    /// deleting the opening book bounded that one at −0.003.
+    pub civ_blind: bool,
 }
 
 impl Default for AdvancedAi {
@@ -518,6 +539,7 @@ impl AdvancedAi {
             scoped_relief_hold: false,
             refuse_unreachable_lanes: false,
             parallel_settlers: false,
+            civ_blind: false,
         }
     }
 
@@ -1008,7 +1030,7 @@ impl AdvancedAi {
             };
         }
         if !self.victory_planning {
-            let preferred = if g.players[pid].civ == "Greece" {
+            let preferred = if !self.civ_blind && g.players[pid].civ == "Greece" {
                 GrandStrategy::Culture
             } else {
                 GrandStrategy::Science
@@ -1061,7 +1083,7 @@ impl AdvancedAi {
             .max(readiness)
             .max(project_progress)
             .max(travel_progress)
-            .max((player.civ == "China") as i32 * 45);
+            .max((!self.civ_blind && player.civ == "China") as i32 * 45);
 
         let culture_target = living_majors
             .iter()
@@ -1128,7 +1150,8 @@ impl AdvancedAi {
             },
             VictoryFocus {
                 strategy: GrandStrategy::Culture,
-                progress: culture.max((player.civ == "Greece") as i32 * 45),
+                progress: culture
+                    .max((!self.civ_blind && player.civ == "Greece") as i32 * 45),
             },
             VictoryFocus {
                 strategy: GrandStrategy::Religion,
@@ -2851,7 +2874,9 @@ impl AdvancedAi {
                 } else {
                     power * 1.1
                 };
-                if g.rules.civs[&g.players[pid].civ].unique_unit.as_deref() == Some(name) {
+                if !self.civ_blind
+                    && g.rules.civs[&g.players[pid].civ].unique_unit.as_deref() == Some(name)
+                {
                     value += 55.0;
                 }
             }
@@ -7001,7 +7026,8 @@ impl AdvancedAi {
                     return -10_000.0;
                 }
                 if spec.wonder {
-                    let wonder_civ = matches!(g.players[pid].civ.as_str(), "Egypt" | "China");
+                    let wonder_civ = !self.civ_blind
+                        && matches!(g.players[pid].civ.as_str(), "Egypt" | "China");
                     if threatened
                         || city.buildings.len() < 3
                         || turns > remaining_turns * 0.65
@@ -7285,7 +7311,8 @@ impl AdvancedAi {
             }
             Item::Wonder { wonder, .. } => {
                 let spec = &g.rules.wonders[wonder];
-                let wonder_civ = matches!(g.players[pid].civ.as_str(), "Egypt" | "China");
+                let wonder_civ = !self.civ_blind
+                    && matches!(g.players[pid].civ.as_str(), "Egypt" | "China");
                 let already_queued = g.cities.values().any(|other| {
                     matches!(
                         other.queue.first(),

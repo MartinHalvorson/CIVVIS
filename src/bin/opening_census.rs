@@ -189,8 +189,17 @@ fn roster(size: usize) -> Vec<String> {
 }
 
 /// Play `window` turns and return seat `watch`'s capital build sequence.
-fn opening_of(mut game: Game, watch: usize, window: u32, depth: usize) -> Vec<String> {
+fn opening_of(
+    mut game: Game,
+    watch: usize,
+    window: u32,
+    depth: usize,
+    civ_blind: bool,
+) -> Vec<String> {
     let mut fleet: Vec<AdvancedAi> = AdvancedAi::fleet(&game);
+    for agent in fleet.iter_mut() {
+        agent.civ_blind = civ_blind;
+    }
     let mut builds: Vec<String> = Vec::new();
     let mut last: Option<String> = None;
     for _ in 0..window {
@@ -246,11 +255,16 @@ fn swap_probe(args: &[String]) {
     let depth = number(args, "--depth", 6);
     let window = number(args, "--window", 40) as u32;
     let watch = number(args, "--watch", 0);
+    // Fires-check for the civilization-aware ablation: this probe is exactly
+    // the measurement `civ_blind` is meant to collapse, so it is where the
+    // flag has to prove it bites before any eval is spent on it.
+    let civ_blind = args.iter().any(|arg| arg == "--civ-blind");
     let names = roster(number(args, "--roster", 21));
 
     println!(
         "opening_census --swap: seat {watch} replayed as each of {} civilizations on {maps} maps, \
-         {players} players, {width}x{height}, window {window}, depth {depth}, seed {seed0}",
+         {players} players, {width}x{height}, window {window}, depth {depth}, seed {seed0}, \
+         civ_blind {civ_blind}",
         names.len()
     );
 
@@ -265,7 +279,10 @@ fn swap_probe(args: &[String]) {
                 if let Some(seat) = game.players.get_mut(watch) {
                     seat.civ = civ.clone();
                 }
-                openings.push((civ.clone(), sequence(&opening_of(game, watch, window, depth))));
+                openings.push((
+                    civ.clone(),
+                    sequence(&opening_of(game, watch, window, depth, civ_blind)),
+                ));
             }
             openings
         }
@@ -323,6 +340,7 @@ fn main() {
     // the rivals, so it is a flag rather than a separate tool.
     let barbarians = number(&args, "--barbarians", 1) != 0;
     let parallel_settlers = args.iter().any(|arg| arg == "--parallel-settlers");
+    let census_civ_blind = args.iter().any(|arg| arg == "--civ-blind");
 
     println!(
         "opening_census: {maps} maps x {players} players, {width}x{height}, {turns} turns, \
@@ -347,6 +365,7 @@ fn main() {
         // is meant to move, so it is the right place to prove it moves.
         for agent in fleet.iter_mut() {
             agent.parallel_settlers = parallel_settlers;
+            agent.civ_blind = census_civ_blind;
         }
         let majors: Vec<usize> = (0..game.players.len())
             .filter(|pid| !game.players[*pid].is_minor)

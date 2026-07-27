@@ -366,6 +366,51 @@ distinct openings as seats. Openings barely repeat once you look eight builds
 deep — §2's "one stem" result is a property of the first four builds, not of
 the opening as a whole.
 
+## 10. What the existing per-civilization code is worth — the ablation
+
+§9 measured what *being* a civilization is worth. This measures what the
+planner's civilization-**aware code** is worth, which is the ceiling any better
+per-civilization play has to beat. Per `docs/GENOME.md`'s rule, bound the
+subsystem by ablation before optimising inside it.
+
+`advanced_civ_blind` ignores all six by-name civilization signals in the
+decision layer:
+
+| site | what it does today |
+|---|---|
+| `victory_focus` | Greece prefers the Culture lane |
+| `victory_focus` | Greece gets a +45 culture progress floor |
+| `victory_focus` | China gets a +45 science progress floor |
+| `tech_value` | +55 for a node unlocking this civilization's unique unit |
+| `production_value` ×2 | Egypt and China are exempt from the wonder refusal |
+
+It deliberately does **not** touch which unique unit or district a civilization
+may build. That is mechanics; ablating it would measure the uniques rather than
+the decisions about them.
+
+**Fires-check (the lesson from §7 applied).** On the `--swap` probe the mean
+distinct openings per map falls **8.88 → 8.38 of 21**. The flag bites — unlike
+`parallel_settlers`, which was inert and was never taken to an eval — but only
+slightly inside a 40-turn window. That is itself informative: **most of the
+per-civilization opening divergence in §1 is mechanics, not the by-name code.**
+Three of the six sites (the lane floors, the wonder exemption) act over the
+whole game, so the window understates them and a full eval is the right test.
+
+**Pre-registered, running:**
+
+```text
+ai_eval advanced_civ_blind advanced --pairs 120 --players 4 --turns 500 \
+        --width 24 --height 16 --seed 310000
+```
+
+The control arm is the stock agent, so parity is 0.500 and a *negative* edge is
+the expected direction — removing information should not help. **How to read
+it:** a large cost means the civilization-aware code carries real weight and
+better per-civilization play could exist. A small cost bounds the layer the way
+deleting the opening book bounded that one at −0.003, and would mean the
+honest answer to "hyperoptimize each civilization's decisions" is that there is
+very little there to win.
+
 ## What to measure next, in order
 
 1. ~~Relax `counts.settlers == 0`.~~ **Done, and null — see §7.** Kept as an
@@ -379,12 +424,12 @@ the opening as a whole.
 3. **Lift `.min(6)`, separately.** Independent of the above, and
    `docs/GENOME.md`'s rule about candidate-set changes moving effective
    thresholds applies to expansion targets too.
-4. **Bound the civilization-aware channels by ablation, on wins.** Strip the
-   unique-unit tech bonus and the unique-district preference and play it paired
-   against stock. The 8.88-way divergence in §1 says the channel *fires*;
-   reachability is not leverage.
+4. ~~Bound the civilization-aware channels by ablation.~~ **Built and
+   running — see §10.** Fires-check passed at 8.88 → 8.38.
 5. **Only then, per-civilization openings.** If (4) returns null the way the
-   opening book did, a `leader_trait`-aware opening is very likely null too.
+   opening book did, a `leader_trait`-aware opening is very likely null too,
+   and the honest conclusion is that this agent's strength is not in its
+   openings at all.
 
 Note the ordering has changed since the first draft: (1) and (2) are about
 tempo and outranked the per-civilization work once the expansion numbers came
