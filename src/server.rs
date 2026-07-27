@@ -5142,7 +5142,12 @@ mod tests {
         ));
         assert!(!player_hud.contains("class=\"empire-link\""));
         assert!(EMBEDDED_INDEX.contains("--hud-watch-column: 68px"));
-        assert!(EMBEDDED_INDEX.contains("width: calc(100% - 6px); height: 22px"));
+        // Watch-as and the All button heading it share one fixed track, so they
+        // are inset by the same single pixel. Four pixels of difference read as
+        // a head overhanging its own column.
+        assert!(EMBEDDED_INDEX.contains("width: calc(100% - 2px); height: 22px; margin: 0 1px;"));
+        assert_eq!(EMBEDDED_INDEX.matches("width: calc(100% - 2px);").count(), 2,
+            "the two controls in the Watch-as column are the same width at every screen size");
         // And a player with nothing behind them still wears a rating: the
         // 1500 every player starts from, marked provisional rather than
         // replaced by a dash that would read as "cannot be rated".
@@ -6711,6 +6716,37 @@ mod tests {
             "the value heads and the value cells are the same ten tracks");
         assert_eq!(EMBEDDED_INDEX.matches("grid-template-columns: var(--hud-identity-tracks);").count(), 2,
             "the identity heads and the identity cells are the same tracks");
+        // Player, ELO, WIN% and PLAN are drawn inside one button spanning four
+        // of those tracks, so that button divides itself with `subgrid` — the
+        // same tracks, not a copy of their ratios. A copy is what shipped
+        // before, and it came apart in both directions a copy can: it carried
+        // `minmax(0, …)` where the heads carry the 30px label floor and the
+        // 38px figure floor, so on a 1280px screen the ELO head stood at 38px
+        // over a 27.5px figure and every "1703" rendered as "1…"; and it never
+        // heard about a drag, so moving the ELO/WIN% bar 26px at 1920px moved
+        // the head 21px and left the figures where they were.
+        assert!(EMBEDDED_INDEX.contains(
+            "#playerhud .diplomacy-identity-secondary {\n    grid-template-columns: subgrid;\n  }"
+        ), "the four identity columns inside one button are the parent's own tracks");
+        assert!(!EMBEDDED_INDEX.contains("minmax(0, .55fr) minmax(0, .55fr)"),
+            "a second copy of the identity ratios is exactly what subgrid replaced");
+        // The rows carry a 1px border that says allied, at war or defeated, and
+        // both boxes are border-box — so the heading carries a transparent one
+        // or it divides two more pixels than a row does and every head sits off
+        // its own figures by up to a pixel, in opposite directions at the two
+        // ends of the table.
+        assert!(EMBEDDED_INDEX.contains(
+            "align-items: stretch; gap: var(--hud-column-gap); padding: 0 4px 0 3px;\n    \
+             border: 1px solid transparent;"
+        ), "the heading has the row's border box, or the columns skew across the table");
+        // For the same reason the heading gives up its inline padding wherever
+        // a row does. A breakpoint that moves one without the other reopens
+        // the skew it was moved to close.
+        assert!(EMBEDDED_INDEX.contains(
+            "#playerhud .diplomacy-card, #playerhud .ribbon-stat-heading { padding-inline: 2px; }"
+        ), "the heading is a row of the same table and gives up the same pixels");
+        assert_eq!(EMBEDDED_INDEX.matches("padding: 1px 4px 1px 3px;").count(), 1,
+            "the row's inline padding is written once, and the heading matches it");
         // `clip`, not `ellipsis`: the fitter compares integral scrollWidth with
         // integral clientWidth while the browser applies text-overflow on any
         // sub-pixel overflow, so ellipsis spends a character on a head that

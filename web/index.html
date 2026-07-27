@@ -2304,12 +2304,22 @@
     text-transform: uppercase; white-space: nowrap; text-shadow: 0 2px 5px #000;
   }
   .ribbon-heading.widget-drag-handle::before { position: absolute; left: 4px; }
-  /* The heading is the positioning context for the column bars laid over it. */
+  /* The heading is the positioning context for the column bars laid over it.
+
+     The transparent border is not decoration: a row below carries a real 1px
+     border that says whether that civilization is allied, at war or defeated,
+     and both boxes are border-box. Without the same border here the heading
+     divides two more pixels than a row does, so every column head sat a pixel
+     right of its own figures at the left of the table and a pixel left of them
+     at the right — a skew that grows across the row and cannot be seen in the
+     stylesheet, only in a rect. The heading's padding must track the row's for
+     the same reason, which is why the width breakpoints move them together. */
   .ribbon-stat-heading {
     position: relative; min-height: 12px; display: grid;
     grid-template-columns: var(--hud-lock-column, 0px)
       var(--hud-watch-column) var(--hud-identity-column) var(--hud-stats-column);
     align-items: stretch; gap: var(--hud-column-gap); padding: 0 4px 0 3px;
+    border: 1px solid transparent;
   }
   .diplomacy-identity-head {
     min-width: 0; display: grid; grid-column: 2 / 4;
@@ -2431,7 +2441,10 @@
     min-width: 0; display: grid; grid-column: 2 / 4; grid-row: 1;
     grid-template-columns: var(--hud-identity-tracks); align-items: stretch; overflow: hidden;
   }
-  #playerhud .watch-as-link { grid-column: 3; grid-row: 1; align-self: center; justify-self: start; }
+  /* Watch-as sits in the same fixed track as the All button heading it, and it
+     is inset by the same single pixel, so the two read as one column rather
+     than as a head that is four pixels wider than everything under it. */
+  #playerhud .watch-as-link { grid-column: 3; grid-row: 1; align-self: center; justify-self: stretch; }
   #playerhud .diplomacy-civ-link { grid-column: 1; grid-row: 1; }
   #playerhud .diplomacy-leader-link { grid-column: 2; grid-row: 1; }
   #playerhud .diplomacy-identity-secondary { grid-column: 4 / 8; grid-row: 1; }
@@ -2461,7 +2474,7 @@
   }
   #playerhud .diplomacy-card:hover { transform: none; }
   #playerhud .watch-as-link {
-    width: calc(100% - 6px); height: 22px; font-size: var(--type-micro);
+    width: calc(100% - 2px); height: 22px; margin: 0 1px; font-size: var(--type-micro);
   }
   /* Every identity fact uses the same six tracks as the heading above it.
      Variable-length names can ellipsize inside their own cell without moving
@@ -2470,8 +2483,26 @@
     position: relative; min-width: 0; display: grid;
     align-items: stretch; gap: 0; overflow: hidden; padding-block: 0;
   }
+  /* Player, ELO, WIN% and PLAN are four of the identity block's tracks, but
+     they are drawn inside one button that spans all four — so the button has
+     to divide itself along exactly the lines its parent already drew.
+     `subgrid` is what makes that literal. A copy of the ratios cannot be:
+     the shares here were `1 : .55 : .55 : 1.1`, which is the same proportion
+     the heading uses, and the columns still came apart in two ways that a
+     reading of the stylesheet does not show.
+     - **Floors.** The heads carry the 30px label floor and the 38px figure
+       floor; a copy carrying `minmax(0, …)` keeps shrinking after the heads
+       have stopped. Measured on a 1280px screen: the ELO head stood at its
+       38px floor over a 27.5px figure, and the value under the WIN% head was
+       11.5px to the left of it.
+     - **The seam bars.** A drag rewrites `--hud-identity-tracks`, which is
+       the heading's list *and* this block's parent — but a copy of the old
+       ratios does not hear about it at all. Dragging the ELO/WIN% bar 26px on
+       a 1920px screen moved the head 21px and left every figure where it was.
+     With subgrid these four tracks are not equal to the heading's, they are
+     the same tracks, so no drag and no floor can separate them again. */
   #playerhud .diplomacy-identity-secondary {
-    grid-template-columns: minmax(0, 1fr) minmax(0, .55fr) minmax(0, .55fr) minmax(0, 1.1fr);
+    grid-template-columns: subgrid;
   }
   #playerhud .diplomacy-identity-field {
     min-width: 0; display: flex; align-items: center; gap: 3px;
@@ -2751,7 +2782,11 @@
       --hud-watch-column: 64px;
       --hud-stat-min: 32px; --hud-stat-gap: 2px;
     }
-    #playerhud .watch-as-link { width: calc(100% - 5px); }
+    /* Watch-as takes no width override here. The All button above it does not
+       narrow at this breakpoint either, and this column is the one the two
+       controls share — a head overhanging its own column by four pixels reads
+       as the table having lost its grid. --hud-watch-column narrows instead,
+       which moves both of them. */
     /* The masthead can take the value columns under 19px here. Keep a
        four-digit figure whole: a clipped number is a wrong number. */
     #playerhud .ribbon-stat b { font-size: clamp(10px, .8vw, 14px); }
@@ -2794,7 +2829,11 @@
       top: 36px; left: 16px; right: auto; width: calc(100% - 32px);
       grid-template-columns: minmax(0, 1fr);
     }
-    #playerhud .diplomacy-card { padding-inline: 2px; }
+    /* The heading is a row of the same table, so it gives up the same two
+       pixels. Moving only the rows here slid every figure a pixel left of its
+       own head at one end of the table and two pixels right of it at the
+       other. */
+    #playerhud .diplomacy-card, #playerhud .ribbon-stat-heading { padding-inline: 2px; }
     .ribbon-heading { padding-inline: 2px; }
     .diplomacy-stat-head { font-size: var(--type-micro); }
   }
