@@ -26,6 +26,32 @@ use crate::setup::{
 };
 use crate::Pos;
 
+/// The published browser build's request router, which answers these same
+/// endpoints inside the page instead of over a socket. A child module so it
+/// can reach the private helpers below rather than widening them; `cfg`-gated
+/// so no native build compiles it.
+#[cfg(target_arch = "wasm32")]
+#[path = "wasm.rs"]
+pub mod wasm;
+
+/// Which runtime is answering, so a long-lived page can notice it is talking
+/// to a different one than it booted against and reload.
+///
+/// A native build answers with its process. `wasm32-unknown-unknown` has no
+/// process to ask about — `std::process::id()` panics outright there — and a
+/// browser tab is never handed off to a successor runtime mid-game, so the
+/// published build is always the same one identity.
+fn process_identity() -> u32 {
+    #[cfg(target_arch = "wasm32")]
+    {
+        1
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        std::process::id()
+    }
+}
+
 const EMBEDDED_INDEX: &str = include_str!("../web/index.html");
 const EMBEDDED_CINEMATIC_3D: &str = include_str!("../web/cinematic3d.js");
 const EMBEDDED_TERRAIN_ATLAS: &[u8] = include_bytes!("../web/assets/terrain-atlas.png");
@@ -1609,7 +1635,7 @@ impl Session {
                 .ok_or_else(|| "replace_finished.server_instance must be an integer".to_string())?;
             if self.game.winner.is_none()
                 || self.game.seed != expected_seed
-                || expected_instance != std::process::id() as u64
+                || expected_instance != process_identity() as u64
             {
                 return Err("finished game is no longer the active session".into());
             }
@@ -1656,7 +1682,7 @@ impl Session {
         params.spectate = true;
         self.supervisor_request = Some(json!({
             "mode": mode,
-            "server_instance": std::process::id(),
+            "server_instance": process_identity(),
             "paused": paused,
             "settings": simulation_settings(&params),
         }));
@@ -1897,7 +1923,7 @@ impl Session {
             o["legal_actions"] = json!([]);
             // Lets a long-running spectator notice that its server was
             // rebuilt/restarted between games and reload the latest UI.
-            o["server_instance"] = json!(std::process::id());
+            o["server_instance"] = json!(process_identity());
             o["server_commit"] = json!(option_env!("CIVVIS_COMMIT").unwrap_or("unknown"));
             return o;
         }
@@ -1916,7 +1942,7 @@ impl Session {
             .map(simulation_settings)
             .unwrap_or(Value::Null);
         o["legal_actions"] = serde_json::to_value(self.game.legal_actions(0)).unwrap();
-        o["server_instance"] = json!(std::process::id());
+        o["server_instance"] = json!(process_identity());
         o["server_commit"] = json!(option_env!("CIVVIS_COMMIT").unwrap_or("unknown"));
         o
     }
@@ -2995,7 +3021,7 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
             respond_json(
                 stream,
                 &json!({
-                    "server_instance": std::process::id(),
+                    "server_instance": process_identity(),
                     "seed": sh.current_seed.load(Ordering::Relaxed),
                     "commit": option_env!("CIVVIS_COMMIT").unwrap_or("unknown"),
                 }),
@@ -3325,7 +3351,7 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
                 .is_some_and(|seed| seed != session.game.seed)
                 || parsed["server_instance"]
                     .as_u64()
-                    .is_some_and(|instance| instance != std::process::id() as u64)
+                    .is_some_and(|instance| instance != process_identity() as u64)
             {
                 drop(session);
                 respond_json(stream, &json!({"error": "the game changed before auto-play began"}));
