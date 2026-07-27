@@ -5476,6 +5476,11 @@ mod river_tests {
             ("the Gulf of Mexico", -91.0, 25.0),
             ("the Bay of Bengal", 88.0, 15.0),
             ("Hudson Bay", -85.0, 58.5),
+            // The inland water Earth carries in the same grid as its
+            // coastlines, and which the script no longer rolls for itself.
+            ("the Caspian", 51.0, 42.0),
+            ("Lake Superior", -87.5, 47.7),
+            ("Lake Victoria", 33.0, -1.0),
         ] {
             let pos = nearest(longitude, latitude);
             assert!(rules.is_water(&world.tiles[&pos]), "{name} came out as land");
