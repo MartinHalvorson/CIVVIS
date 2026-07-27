@@ -298,6 +298,57 @@ fn empire_reading(g: &Game, pid: usize, w: &Weights) -> f64 {
     value + w.pol_military * strength
 }
 
+/// Take the Dedications this age offers, best first.
+///
+/// Both AI tiers used to take `available_dedications(pid).next()` — the first
+/// name in a `BTreeMap`, so every civilization in every game dedicated
+/// alphabetically. In the Classical era that is Exodus of the Evangelists,
+/// chosen by civilizations that have not founded a religion and never will.
+///
+/// The ranking is the civilization's own record. `projected_dedication_score`
+/// asks what each Dedication *would have paid* over the era that just ended,
+/// from a tally of trigger firings the engine keeps whether or not the trigger
+/// was dedicated. That single number ranks both halves of the choice, because
+/// a Dedication's two halves name the same activity: Free Inquiry counts your
+/// Eurekas and then makes Eurekas worth more, To Arms counts your Corps kills
+/// and then makes Corps cheaper. So the civilization that has been doing a
+/// thing is the one both halves pay.
+///
+/// Which half is live still changes what the number *means*, and the engine
+/// settles that: a Golden or Heroic Age banks no Era Score at all, so there the
+/// tally is read purely as "which lane am I in". In a Normal or Dark Age it is
+/// read literally, as the score that buys the next age.
+///
+/// Ties — including the all-zero tie of a civilization whose first age arrives
+/// before it has done anything the table counts — fall back to the alphabetical
+/// order this code has always used, so the choice only moves where there is
+/// evidence to move it.
+pub(crate) fn choose_dedications(g: &mut Game, pid: usize, choice: DedicationChoice) {
+    loop {
+        let mut offered = g.available_dedications(pid);
+        if offered.is_empty() {
+            return;
+        }
+        if choice == DedicationChoice::Measured {
+            offered.sort_by(|left, right| {
+                g.projected_dedication_score(pid, right)
+                    .cmp(&g.projected_dedication_score(pid, left))
+                    .then(left.cmp(right))
+            });
+        }
+        let mut progressed = false;
+        for dedication in offered {
+            if g.apply(pid, &Action::ChooseDedication { dedication }).is_ok() {
+                progressed = true;
+                break;
+            }
+        }
+        if !progressed {
+            return;
+        }
+    }
+}
+
 /// Hold the deck the empire is worth most with, and change it when that
 /// changes.
 ///
@@ -510,6 +561,26 @@ pub struct Weights {
     /// leave it alone in play.
     #[serde(default)]
     pub policy_deck: PolicyDeck,
+    /// How this strategy picks its Dedication at an age transition.
+    ///
+    /// **Not a gene**, for the same reasons as `policy_deck`: absent from
+    /// `to_vec`/`from_vec`/`bounds`, so the genome stays 48 wide.
+    #[serde(default)]
+    pub dedication_choice: DedicationChoice,
+}
+
+/// The two arms a Dedication experiment needs.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum DedicationChoice {
+    /// Ranked by what each Dedication would have paid over the era that just
+    /// ended, measured from the civilization's own trigger tally.
+    #[default]
+    Measured,
+    /// The pre-2026-07-27 behaviour: the first name `available_dedications`
+    /// returns, which is a `BTreeMap` key, which is alphabetical order. Kept as
+    /// the frozen control — every age number published before this date sits on
+    /// top of it.
+    Alphabetical,
 }
 
 /// The three arms a policy-deck experiment needs.
@@ -594,6 +665,7 @@ impl Default for Weights {
             // still work -- but the agent that plays is the one that always
             // played.
             policy_deck: PolicyDeck::Legacy,
+            dedication_choice: DedicationChoice::Measured,
         }
     }
 }
@@ -2340,13 +2412,7 @@ impl BasicAi {
     }
 
     fn diplomacy(&self, g: &mut Game, pid: usize) {
-        while let Some(dedication) = g.available_dedications(pid).into_iter().next() {
-            if g.apply(pid, &Action::ChooseDedication { dedication })
-                .is_err()
-            {
-                break;
-            }
-        }
+        choose_dedications(g, pid, self.w.dedication_choice);
         let incoming: Vec<u32> = g
             .pending_deals
             .iter()

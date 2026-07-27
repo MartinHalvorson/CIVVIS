@@ -38,7 +38,8 @@ pub const BUILTIN_AIS: [&str; 10] = [
 /// tournament ratings. Keeping them out of `BUILTIN_AIS` prevents a control
 /// factory from being pooled into the same player/leader rating key as
 /// its treatment.
-pub const EVAL_ONLY_AIS: [&str; 30] = [
+pub const EVAL_ONLY_AIS: [&str; 31] = [
+    "advanced_alpha_dedication",
     "advanced_lane_reachable",
     "advanced_relief_scoped",
     "strategic_score",
@@ -493,6 +494,17 @@ pub fn builtin_ai(name: &str, seed: u64) -> Box<dyn Ai> {
                 .map(AdvancedAi::with_weights)
                 .unwrap_or_else(AdvancedAi::new),
         ),
+        // Frozen control for the Dedication chooser. Every civilization used
+        // to take the alphabetically first Dedication its era offered, which in
+        // the Classical era is Exodus of the Evangelists — chosen by seats with
+        // no religion. This entrant keeps that behaviour so the measured
+        // chooser has something paired to beat, and so any age number published
+        // before 2026-07-27 can be reproduced.
+        "advanced_alpha_dedication" => {
+            let mut w = crate::evolve::load_champion("evolved").unwrap_or_default();
+            w.dedication_choice = crate::ai::DedicationChoice::Alphabetical;
+            Box::new(AdvancedAi::with_weights(w))
+        }
         "advanced_v1" => Box::new(AdvancedAi::legacy()),
         "random" => Box::new(RandomAi::new(seed)),
         "evolved" => Box::new(
@@ -1066,6 +1078,7 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         ),
         "advanced" => (Vec::new(), "advanced"),
         "advanced_lane_reachable" => (Vec::new(), "advanced_lane_reachable"),
+        "advanced_alpha_dedication" => (Vec::new(), "advanced_alpha_dedication"),
         "advanced_v1" => (Vec::new(), "advanced_v1"),
         "advanced_relief_scoped" => (Vec::new(), "advanced_relief_scoped"),
         "random" => (Vec::new(), "random"),
