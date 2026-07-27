@@ -663,7 +663,18 @@
   .diplomacy-elo { flex: 0 0 auto; color: var(--gold-bright); font-weight: 850; }
   .diplomacy-expected { flex: 0 0 auto; color: #8fd6a4; font-weight: 850; }
   .diplomacy-player { flex: 1 1 auto; color: #d9e1dc; font-weight: 750; }
-  .agenda-mark { margin-left: 3px; font-size: var(--type-label); vertical-align: 1px; }
+  /* The mark leads the CIV cell from a gutter of its own. It is emitted on
+     every row, empty where there is no stance to report, so that the rank
+     numbers behind it still start at one x down the whole column.
+
+     The gutter gives back the 3px flex gap that the cell puts after every one
+     of its items, so it costs the civilization's name 10px rather than 13 —
+     that name is the first thing the standings give up when the masthead is
+     narrow, and the `#` beside it carries its own left bearing anyway. */
+  .agenda-mark {
+    flex: 0 0 auto; display: inline-block; width: 10px; margin-right: -3px;
+    font-size: var(--type-label); line-height: 1; text-align: center; vertical-align: 1px;
+  }
   .agenda-mark.up { color: #8fd6a4; }
   .agenda-mark.down { color: #f2a09b; }
   .ai-plan { font-weight: 850; }
@@ -19491,13 +19502,20 @@ function drawPlayerHud() {
       // says which agenda is doing the judging.
       const opinion = +p.opinion_of_me || 0;
       const stance = opinion >= 15 ? "approves" : opinion <= -15 ? "disapproves" : "";
-      const agendaGlyph = p.id === acting && !SPEC ? ""
-        : stance === "approves" ? `<span class="agenda-mark up" title="Approves of you">▲</span>`
-        : stance === "disapproves" ? `<span class="agenda-mark down" title="Disapproves of you">▼</span>`
-        : "";
+      // Nobody reports how they feel about themselves, so the seat you are
+      // playing wears no mark of its own.
+      const shownStance = p.id === acting && !SPEC ? "" : stance;
+      // The glyph rides in the CIV cell ahead of the rank, and the empty span
+      // holds that gutter open on the rows that have nothing to say — without
+      // it every marked row would push its own `#3` a glyph's width right.
+      const agendaGlyph =
+        shownStance === "approves" ? `<span class="agenda-mark up" title="Approves of you">▲</span>`
+        : shownStance === "disapproves" ? `<span class="agenda-mark down" title="Disapproves of you">▼</span>`
+        : `<span class="agenda-mark" aria-hidden="true"></span>`;
       const agendaText = p.agenda
         ? ` · ${p.agenda.name}${stance ? ` (${stance} of you)` : ""}: ${p.agenda.description}`
         : "";
+      const civTitle = `${empireTitle}${shownStance ? ` · ${leader} ${shownStance} of you` : ""}`;
       const activeStrategy = strategy
         ? `<span class="ai-plan ${strategy}">${titleCase(strategy)}</span>`
         : `<span class="ai-plan">No active strategy</span>`;
@@ -19548,14 +19566,18 @@ function drawPlayerHud() {
         `<button class="lock-toggle" data-hud-action="lock" data-hud-civ="${p.id}" aria-pressed="${locked}" ` +
         `title="${lockTitle}" aria-label="${lockTitle}">${locked ? "◉" : "○"}</button>` +
         `<span class="diplomacy-identity-grid">` +
+        // A civilization with no capital leaves this button disabled, and a
+        // disabled control answers no hover — so the cell that now carries the
+        // agenda mark says the stance in words too, rather than resting on a
+        // tooltip that half the rows cannot show.
         `<button class="diplomacy-identity diplomacy-civ-link" data-hud-action="capital" data-hud-civ="${p.id}" ` +
-        `title="${escapeAttr(empireTitle)}" aria-label="${escapeAttr(empireTitle)}"${capital ? "" : " disabled"}>` +
-        `<span class="diplomacy-identity-field"><span class="diplomacy-rank">#${rank}</span>` +
+        `title="${escapeAttr(civTitle)}" aria-label="${escapeAttr(civTitle)}"${capital ? "" : " disabled"}>` +
+        `<span class="diplomacy-identity-field">${agendaGlyph}<span class="diplomacy-rank">#${rank}</span>` +
         `<span class="diplomacy-civ">${p.id === acting && highlightActing ? "◉ " : ""}${p.civ}</span></span></button>` +
         `<button class="diplomacy-identity diplomacy-leader-link" data-hud-action="dossier" data-hud-civ="${p.id}" aria-expanded="${expanded}" ` +
         `title="${expanded ? "Close" : "Open"} the ${p.civ} dossier · ${relationSummary}${agendaText}" ` +
         `aria-label="${expanded ? "Close" : "Open"} dossier for ${p.civ}, rank ${rank}, ${relationSummary}">` +
-        `<span class="diplomacy-identity-field"><span class="diplomacy-leader-name">${leader}</span>${agendaGlyph}</span>` +
+        `<span class="diplomacy-identity-field"><span class="diplomacy-leader-name">${leader}</span></span>` +
         `</button>` +
         `<button class="watch-as-link" data-hud-action="watch" data-hud-civ="${p.id}" ` +
         `title="${escapeAttr(watchTitle)}" aria-label="Watch as ${escapeAttr(p.civ)}">Watch as</button>` +
