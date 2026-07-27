@@ -1811,6 +1811,80 @@ impl Session {
         self.league.as_ref()?.strategies.get(index)
     }
 
+    /// Give every met major the rating it is defending and its share of the
+    /// table's single win.
+    ///
+    /// Every major carries a rating, roster or no roster. Most games run
+    /// without `--league`, and a column of dashes read as "this build cannot
+    /// rate anyone" when the truth was only that nobody at this table has
+    /// finished a rated game yet. An unknown player is a provisional 1500
+    /// that the first result moves. A standing is public the way a chess
+    /// opponent's is, so an *opponent* in an interactive game carries one
+    /// too — subject to the same fog as everything else here: a civ you have
+    /// not met is not annotated at all.
+    fn name_seat_ratings(&self, o: &mut Value) {
+        let g = &self.game;
+        let rating_of = |pid: usize| {
+            crate::league::display_rating(self.seat_entry(pid), &g.players[pid].civ)
+        };
+        // Gathered up front, because a seat's expected win share is a
+        // question about the whole table. A seat the league has no row for is
+        // in here too: leaving it out would make the remaining shares add to
+        // one between themselves and quietly claim the unrated seat cannot
+        // win.
+        let seat_elo: std::collections::BTreeMap<usize, f64> = g
+            .players
+            .iter()
+            .filter(|p| p.alive && !p.is_minor && !p.is_barbarian)
+            .map(|p| (p.id, rating_of(p.id).rating))
+            .collect();
+        // One table, one winner: the seats share out a single win rather than
+        // each answering a separate two-player question.
+        let seat_expected: std::collections::BTreeMap<usize, f64> = if seat_elo.len() > 1 {
+            let ratings: Vec<f64> = seat_elo.values().copied().collect();
+            seat_elo
+                .keys()
+                .copied()
+                .zip(crate::elo::win_shares(&ratings))
+                .collect()
+        } else {
+            std::collections::BTreeMap::new()
+        };
+        let Some(players) = o["players"].as_array_mut() else {
+            return;
+        };
+        for player in players {
+            let Some(id) = player["id"].as_u64().map(|id| id as usize) else {
+                continue;
+            };
+            if player["met"] == json!(false)
+                || !g
+                    .players
+                    .get(id)
+                    .is_some_and(|p| !p.is_minor && !p.is_barbarian)
+            {
+                continue;
+            }
+            let shown = rating_of(id);
+            // A handle names a seat only when the roster picked that seat.
+            // Otherwise the whole table is the same entrant and repeating its
+            // name down every row would hide who is who; the generated
+            // per-seat name from `name_ai_players` reads better and is just
+            // as true.
+            if let (true, Some(s)) = (self.seat_from_roster, self.seat_entry(id)) {
+                player["ai_username"] = json!(s.username);
+                player["ai_strat_label"] = json!(s.label());
+            }
+            player["ai_elo"] = json!(shown.rating.round() as i64);
+            player["ai_elo_rd"] = json!(shown.rd.round() as i64);
+            player["ai_elo_civ"] = json!(shown.civ_specific);
+            player["ai_elo_provisional"] = json!(shown.provisional);
+            if let Some(share) = seat_expected.get(&id) {
+                player["ai_expected"] = json!((share * 100.0).round() / 100.0);
+            }
+        }
+    }
+
     /// Name every major AI visible in this observation, including opponents
     /// in an interactive game. Human identity is written afterward and wins
     /// in the browser, while a seat handed over through Watch as naturally
@@ -1857,44 +1931,14 @@ impl Session {
                 Some(pid) => observation_player_view(g, pid),
                 None => observation_spectator(g, summary_pid),
             };
-            // Every living major's display elo (civ table when settled, else
-            // global, else the provisional base), gathered up front so a
-            // seat's expected win share can be computed against the rest of
-            // the table. A seat the league has no row for is still in here:
-            // leaving it out would make the remaining shares add to one
-            // between themselves and quietly claim the unrated seat cannot
-            // win.
-            let seat_elo: std::collections::BTreeMap<usize, f64> = g
-                .players
-                .iter()
-                .filter(|p| p.alive && !p.is_minor && !p.is_barbarian)
-                .map(|p| {
-                    (
-                        p.id,
-                        crate::league::display_rating(self.seat_entry(p.id), &p.civ).rating,
-                    )
-                })
-                .collect();
-            // One table, one winner: the seats share out a single win rather
-            // than each answering a separate two-player question.
-            let seat_expected: std::collections::BTreeMap<usize, f64> = if seat_elo.len() > 1 {
-                let ratings: Vec<f64> = seat_elo.values().copied().collect();
-                seat_elo
-                    .keys()
-                    .copied()
-                    .zip(crate::elo::win_shares(&ratings))
-                    .collect()
-            } else {
-                std::collections::BTreeMap::new()
-            };
             if let Some(players) = o["players"].as_array_mut() {
                 for player in players {
                     let Some(id) = player["id"].as_u64().map(|id| id as usize) else {
                         continue;
                     };
                     // A perspective the observation has already withheld does
-                    // not get its plan, its handle or its rating pinned back
-                    // on here. Only the omniscient view annotates everyone.
+                    // not get its plan pinned back on here. Only the
+                    // omniscient view annotates everyone.
                     if player["met"] == json!(false) {
                         continue;
                     }
@@ -1908,45 +1952,11 @@ impl Session {
                     if let Some(plan) = self.ais.get(id).and_then(|ai| ai.plan_report()) {
                         player["ai_plan"] = self.plan_json(&plan);
                     }
-                    // League identity: who is playing this seat and how
-                    // strong the league currently believes they are on this
-                    // civ. `ai_expected` is the elo-implied chance of winning
-                    // this table outright, so the seats sum to 1 and the
-                    // number can be checked against winners over time.
-                    //
-                    // Every major carries a rating, roster or no roster. Most
-                    // games run without `--league`, and a column of dashes
-                    // read as "this build cannot rate anyone" when the truth
-                    // was only that nobody here has finished a rated game
-                    // yet. An unknown player is a provisional 1500 that the
-                    // first result moves.
-                    let major = g
-                        .players
-                        .get(id)
-                        .is_some_and(|p| !p.is_minor && !p.is_barbarian);
-                    if major {
-                        let entry = self.seat_entry(id);
-                        let civ = &g.players[id].civ;
-                        let shown = crate::league::display_rating(entry, civ);
-                        // A handle names a seat only when the roster picked
-                        // that seat. Otherwise the whole table is the same
-                        // entrant and repeating its name down every row would
-                        // hide who is who; the generated per-seat name from
-                        // `name_ai_players` reads better and is just as true.
-                        if let (true, Some(s)) = (self.seat_from_roster, entry) {
-                            player["ai_username"] = json!(s.username);
-                            player["ai_strat_label"] = json!(s.label());
-                        }
-                        player["ai_elo"] = json!(shown.rating.round() as i64);
-                        player["ai_elo_rd"] = json!(shown.rd.round() as i64);
-                        player["ai_elo_civ"] = json!(shown.civ_specific);
-                        player["ai_elo_provisional"] = json!(shown.provisional);
-                        if let Some(share) = seat_expected.get(&id) {
-                            player["ai_expected"] = json!((share * 100.0).round() / 100.0);
-                        }
-                    }
                 }
             }
+            // League identity: who is playing each seat and how strong the
+            // league currently believes they are on this civ.
+            self.name_seat_ratings(&mut o);
             self.name_ai_players(&mut o);
             o["spectate"] = json!(true);
             o["supervised"] = json!(self.params.supervised);
@@ -1969,6 +1979,11 @@ impl Session {
             return o;
         }
         let mut o = observation(&self.game, 0);
+        // A rival you have met has a standing, the same way a chess opponent
+        // does, and the HUD has always had a column for it. It used to be
+        // empty in every interactive game because only the spectator wrote
+        // one. Their plan is still theirs; only the rating is public.
+        self.name_seat_ratings(&mut o);
         self.name_ai_players(&mut o);
         self.name_human_players(&mut o);
         o["spectate"] = json!(false);
@@ -8028,6 +8043,40 @@ mod tests {
             (shares - 1.0).abs() < 0.02,
             "one table, one winner: shares summed to {shares}"
         );
+    }
+
+    /// An interactive game rates its rivals on screen too — but only the
+    /// ones you have met, and never their plan.
+    ///
+    /// Only the spectator used to annotate ratings, so the HUD's ELO column
+    /// was empty for every opponent in every game somebody was actually
+    /// playing.
+    #[test]
+    fn an_interactive_game_rates_the_rivals_you_have_met() {
+        let mut params = current();
+        params.num_players = 3;
+        let session = Session::new(params);
+        let state = session.state();
+        assert_eq!(state["spectate"], json!(false));
+        let players = state["players"].as_array().unwrap();
+        let mut met = 0;
+        for player in players {
+            let unmet = player["met"] == json!(false);
+            let minor = player["is_minor"] == json!(true) || player["is_barbarian"] == json!(true);
+            if unmet || minor {
+                assert!(
+                    player["ai_elo"].is_null(),
+                    "an unmet or minor seat is not annotated"
+                );
+                continue;
+            }
+            met += 1;
+            assert!(player["ai_elo"].as_i64().is_some(), "a met major is rated");
+            // Their standing is public; what they intend to do with it is not.
+            assert!(player["ai_plan"].is_null());
+            assert!(player["ai_strategy"].is_null());
+        }
+        assert!(met > 0, "the player's own seat is met at the very least");
     }
 
     /// Most games are rated against nothing at all. The person is still not
