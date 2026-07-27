@@ -356,6 +356,66 @@ the decision" property that makes the lane search work.
 same number, the horizon still does not outlast the build and the search is
 blind, which is the defect that killed `PolicyAi` on 96% of its candidates.
 
+> ### ⚠ M4 IS RETIRED — measured, before it was built
+>
+> The fires-check was run first (`search_probe --production`, 71 city
+> decisions, four players) and **the premise fails**:
+>
+> - the evaluator separates **3.7 of 5.0** candidates; only **4%** of
+>   decisions score every candidate alike. The search is **not blind**.
+> - raising the horizon ceiling from 40 to **200** — long enough for any
+>   build in the game to land and compound — leaves the chosen item unchanged
+>   on **54 of 56** decisions (**96%**). The ranking does not depend on the
+>   window.
+>
+> So the design above is aimed at a defect that is not there. Cheapening the
+> rollout to afford a payoff-length horizon cannot help a ranking that is
+> already horizon-stable, and **the whole family — sealed per-city rollouts,
+> frozen rivals, payoff-length windows — is predicted-null.**
+>
+> What is left is the *objective*, not the window. **Score share is not win
+> probability.** The lane search works because its branches reach decided
+> games and return exactly 1.0/0.0 — 22% of reviews at horizon 40, 56% at 80.
+> A production rollout from mid-game essentially never decides, so it ranks
+> entirely by a proxy, and the hand-written governor's sequencing beats that
+> proxy. That is why `production_net` changed nothing: it swapped one function
+> of the 25 aggregates for another, when the problem is that no function of
+> them is win probability.
+>
+> **The surviving route is M6 → M5**, not a better online search: continue
+> branches to a real result offline, label them with the outcome, and distil.
+> A full continuation per candidate is roughly seventy times the cost of a
+> game, which is affordable as a labelling job and not as an agent.
+>
+> **Measured too, and it is thinner than it sounds.** `search_probe --outcome`
+> continues *every* candidate of a city decision to a real result at the stock
+> 500-turn budget — the label M6 would produce — over 51 decisions:
+>
+> ```
+> candidates continued per decision              5.0
+> decisions where the label DISCRIMINATES        14 of 51 (27%)
+> ...of those, proxy pick == outcome pick         3 of 14 (21%)
+> ...of those, the proxy's pick WON its game      6 of 14 (43%)
+> ```
+>
+> On **73% of decisions every candidate leads to the same outcome**, so the
+> label carries no signal at all and the seventy-fold cost buys nothing. Where
+> it does discriminate the proxy is near chance (43%), so there is real
+> headroom — but it exists on about a quarter of decisions.
+>
+> **And 27% is an upper bound, not an estimate.** The engine is deterministic,
+> so each continuation is a *single sample*, and a build that "wins" may win
+> for reasons entirely unrelated to it. Chaotic divergence and causal effect
+> are indistinguishable in this design, and determinism means the label cannot
+> be denoised by repeating it.
+>
+> **What would make M6 viable is therefore replication across opponents, not
+> more decisions.** Continue each candidate against several distinct rival
+> policies and label with the *win rate* rather than one outcome. The league
+> already maintains a rated pool of distinct strategies for exactly this kind
+> of sampling. Until that is in place, an outcome-labelled corpus over single
+> continuations would train on noise for three quarters of its rows.
+
 **Refuted by.** Separation that exists but does not survive contact with the
 empire — a city optimised in isolation starving the empire of settlers or
 military. Watch the plan-commitment and unit-count diagnostics, not the yield.
@@ -433,7 +493,7 @@ Each of these is falsified here, with the run that did it.
 
 ## 4. Sequencing
 
-**M2 (landed) → M4 → M6 → M5**, with M3 attempted only alongside its
+**M2 (landed) → M6 → M5** — M4 retired on measurement (see its entry), with M3 attempted only alongside its
 fires-check and M7 landed before M5 ships anything. **M1 is demoted out of the
 sequence** — measurement showed its premise held only for a minority of
 reviews, and the treatment moved the commitment rate without moving the score.

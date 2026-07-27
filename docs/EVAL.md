@@ -2140,3 +2140,100 @@ treatment that won changed the fewest. **Lane routing is not the lever.** The
 macro search's only output is a lane, so what remains there is compute — which
 works, and whose ceiling is already measured at horizon 80. Effort belongs on
 a decision that repeats.
+
+## 2026-07-26 — the production search is not blind, and its ranking is horizon-independent
+
+`ProductionSearchAi` is a recorded negative result (9 map directions to 21,
+p=0.0428) whose module note names a diagnosis it was never run against: *"if
+every branch returns the same number the horizon is too short for the build to
+land, and no win rate would say so."* It exposes `candidate_values` for exactly
+that check. `search_probe --production` takes it.
+
+```
+production audit: 71 city decisions over 40 maps (4p 24x16, warmup 60)
+
+  candidates projected per decision   5.0
+  values the evaluator can separate   3.7
+  median spread across candidates     0.015657
+  p90 spread                          0.070006
+  decisions where every candidate scores the SAME   3 of 71 (4%)
+  same pick at horizon 200 as at the shipped ceiling  54 of 56 (96%)
+```
+
+**Both halves of the diagnosis are false.**
+
+- **Not blind.** The evaluator separates 3.7 of 5.0 candidates; only 4% of
+  decisions score every candidate alike. Contrast `PolicyAi`, whose computed
+  gain was exactly zero on 96.4% of candidates — that is what blind looks like.
+- **Not horizon-bound.** Raising the ceiling from 40 to 200, long enough for
+  any build in the game to land and compound, leaves the chosen item unchanged
+  on 96% of decisions. `ProductionSearchAi::max_horizon` exists so this stays
+  re-measurable.
+
+So the search sees the difference, keeps seeing the same difference once every
+payoff has landed, and still loses to the scripted governor.
+
+### What that leaves: the objective, not the window
+
+**Score share is not win probability.** The lane search works because its
+branches reach *decided* games and return exactly 1.0 or 0.0 — 22% of reviews
+at horizon 40, 56% at 80. A production rollout starting mid-game and stopping
+40 or 200 rounds later essentially never decides, so it ranks entirely by a
+proxy, and on this decision the governor's hand-tuned sequencing beats that
+proxy.
+
+That also explains `production_net` cleanly: it swapped one function of the 25
+empire aggregates for another, when the problem is that **no** function of them
+is win probability.
+
+### What this retires, before it was built
+
+The obvious repair — make the rollout cheap enough (sealed per-city
+simulation, frozen rivals) to afford a payoff-length horizon — is aimed at a
+defect that is not there, and is **predicted-null**. It was on the roadmap as
+M4 in `docs/SUPERHUMAN.md` and is retired there, on measurement rather than on
+a run.
+
+The surviving route is the one the module already named: branches continued to
+a **real result**. A full continuation per candidate is roughly seventy times
+the cost of a game, so it is an offline labeller feeding a distilled policy —
+`docs/SUPERHUMAN.md` M6 then M5 — not an online agent.
+
+## 2026-07-26 — what an outcome label would actually be worth
+
+Two closed lines both ended at the same sentence — score share is not win
+probability — and both pointed at the same repair: continue each candidate to
+a **real result** and label it with the outcome. Before building that,
+`search_probe --outcome` measures the label it would produce. Every candidate
+of a city decision is continued to a natural end at the stock 500-turn budget.
+
+```
+outcome audit: 51 city decisions, every candidate continued to a real result
+               (4p 24x16, warmup 60, 500-turn budget)
+
+  candidates continued per decision              5.0
+  decisions where the label DISCRIMINATES        14 of 51 (27%)
+  ...of those, proxy pick == outcome pick         3 of 14 (21%)
+  ...of those, the proxy's pick WON its game      6 of 14 (43%)
+```
+
+**On 73% of decisions every candidate leads to the same outcome.** The label
+carries no signal there, whatever it costs to produce — and it costs about
+seventy times a game per decision. Where it does discriminate, score share
+picks the winning candidate 43% of the time, near chance, so the headroom is
+real; it just exists on about a quarter of decisions.
+
+**27% is an upper bound, not an estimate.** The engine is deterministic, so
+each continuation is a single sample and a build that "wins" may win for
+reasons unrelated to it. Chaotic divergence and causal effect are
+indistinguishable in this design, and — because the same position and the same
+agents always produce the same game — the label cannot be denoised by
+repeating it.
+
+**What that implies for the design.** An outcome-labelled corpus built from
+single continuations would train on noise for three quarters of its rows. The
+fix is replication across *opponents*, not more decisions: continue each
+candidate against several distinct rival policies and label with the resulting
+win rate. `data/league` already maintains a rated pool of distinct strategies,
+which is the natural source. That is a larger job than the labeller as
+originally scoped, and it is the honest version of it.
