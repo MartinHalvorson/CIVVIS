@@ -49,3 +49,35 @@ jobs:
       # serialising the backend over a 100k-line crate is what made this the
       # slowest step in the merge path.
       - run: cargo test --profile ci --locked
+
+  # The published build at civvis.ai/beta compiles this same crate for the
+  # browser (`src/wasm.rs`, gated to wasm32). `cargo test` never builds that
+  # target, so a perfectly ordinary change to `Params` or to `server.rs` breaks
+  # it while every gate stays green — which is exactly what happened: three
+  # PRs merged clean and the next attempt to cut a build failed on four
+  # unresolved names. This is `check`, not a full build: it costs a fraction of
+  # the time and catches the whole class of failure, which is names and types
+  # drifting out from under a target nobody compiles by hand.
+  published-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      CARGO_INCREMENTAL: 0
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      # Its own key: this target dir holds wasm artifacts and must not be
+      # shared with the native gate's.
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            target
+          key: cargo-wasm-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            cargo-wasm-${{ runner.os }}-
+      - run: cargo check --lib --locked --target wasm32-unknown-unknown
