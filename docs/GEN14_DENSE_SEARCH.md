@@ -58,3 +58,41 @@ diagnostic.
 This is a same-compute strength test, not an efficiency concession. R10 must
 beat the current top rung under its existing standard; reallocating compute is
 not valuable if it merely reaches parity.
+
+## Development screen
+
+The pre-registered 120-map screen completed on the committed generation-14
+genome. It leaned toward dense cadence without resolving the strength question:
+
+```text
+mirrored head-to-head: 120 maps, 240 games, 4 players, average 141.6 turns
+game-win share: strategic_r10 125/240 (52.1%) strategic_deep 115/240 (47.9%)
+paired-map score for strategic_r10: 52.1% (95% Wilson CI 43.2%..60.8%), Elo-equivalent +14 (CI -47..+76)
+paired outcomes: strategic_r10 sweeps 13, neutral splits/draws 99, strategic_deep sweeps 8, draw-mixed 0
+paired direction: strategic_r10-favored 13, neutral 99, strategic_deep-favored 8; exact two-sided sign p=0.3833 (INCONCLUSIVE DIRECTION)
+anytime-valid betting evidence (2.5% per direction after 20 maps): strategic_r10 peak e=1.340e1, p<=0.0746 (not crossed); strategic_deep peak e=1.000e0, p<=1.0000 (not crossed)
+promotion gate: INCONCLUSIVE — effect size or anytime-valid evidence has not cleared parity after 120 maps
+paired terminal-score diagnostic for strategic_r10: 50.3% (not a promotion input)
+terminal-score direction: strategic_r10-favored 59, neutral 7, strategic_deep-favored 54; exact two-sided sign p=0.7069
+```
+
+The treatment fired strongly: r10 reached 2,497 of 4,782 reviews while deep
+reached 1,400 of 2,628, and r10 switched plans 3.93 times per game versus
+2.68. Its extra ten game wins were mostly score wins (31 versus 25), with
+religious wins essentially level (87 versus 86). Terminal score was nearly
+flat, so the screen does not support a mechanism claim beyond the intended
+cadence increase.
+
+The 13-to-8 favorable game-win direction satisfies the pre-registered rule for
+earning, but not passing, the independent gate. The decision run is therefore:
+
+```text
+cargo run --profile ci --locked --bin ai_eval -- \
+  strategic_r10 strategic_deep \
+  --pairs 300 --players 4 --width 24 --height 16 \
+  --turns 200 --seed 120000 --jobs 12
+```
+
+Seed 120000 is disjoint from the development screen. Its result will stand
+alone: the 120 development maps will not be pooled into the promotion
+decision.
