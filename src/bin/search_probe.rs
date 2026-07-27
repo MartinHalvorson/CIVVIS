@@ -41,6 +41,7 @@ use civvis::game::{Action, Game};
 use civvis::parallel;
 use civvis::production::ProductionSearchAi;
 use civvis::ai::Weights;
+use civvis::evolve::{fitness_observations, EvoCfg};
 use civvis::strategic::{Doctrine, ReviewPath, StrategicAi};
 
 /// What the rollouts would have answered at a position a prior answered
@@ -233,6 +234,25 @@ fn main() {
     // evolution's own per-gene clamps -- so this measures the marginal value
     // of moving inside the space a GA would search, from a common position,
     // paired.
+    // Selection mode: is the breeding statistic monotone in strength?
+    //
+    // #457 split ranking from promotion — breeding consumes
+    // `50*P*score_share + 12*P*combat_share`, a continuous quantity with far
+    // lower variance than a win indicator, while the SPRT still promotes on
+    // wins alone. That is a sound variance-reduction argument *if* the
+    // continuous statistic orders genomes the same way strength does.
+    //
+    // Nobody has checked. The obvious evidence — generation winners scoring
+    // high on fitness and low on validation — is confounded by the winner's
+    // curse, because "best of 24 noisy estimates" regresses on any later
+    // measurement by construction. This avoids that entirely: every genome in
+    // the population is measured, none is selected, and the win indicator and
+    // the selection value come from *the same games*.
+    if flag(&args, "--selection") {
+        audit_selection(players, maps, seed0, jobs, width, height, turns);
+        return;
+    }
+
     if flag(&args, "--genome") {
         let replicas = number(&args, "--replicas", 5);
         audit_genome(
@@ -1079,4 +1099,299 @@ fn audit_genome(
              {needed} replicas per genome."
         );
     }
+}
+
+
+fn audit_selection(
+    players: usize,
+    population: usize,
+    seed0: u64,
+    jobs: usize,
+    width: i32,
+    height: i32,
+    turns: u32,
+) {
+    // A stand-in for `evolve::mutate`, which is crate-private: perturb each
+    // gene and clamp to the same per-gene bounds evolution respects, so every
+    // member is a play style rather than a broken agent.
+    /// Build half the population by independent per-gene noise and half by
+    /// scaled movement along the four `Doctrine` axes, so the two mutation
+    /// operators are measured on the same games with the same seeds.
+    ///
+    /// `evolve::mutate` is crate-private, so the random arm is a stand-in for
+    /// it: ±25% on about a third of genes, clamped to evolution's own bounds.
+    /// The structured arm moves several related genes together, which is what
+    /// a play style is and what a single-gene walk cannot reach in one step.
+    fn structured(index: usize) -> Weights {
+        let base = Weights::default();
+        let doctrine = Doctrine::ALL[1 + index % 3];
+        let full = doctrine.apply(&base).to_vec();
+        let start = base.to_vec();
+        // Scale the whole coordinated move, so the arm spans magnitudes rather
+        // than repeating four fixed points.
+        let scale = 0.4 + 0.6 * ((index / 3) % 5) as f64 / 4.0;
+        let mut genes = start.clone();
+        for (i, gene) in genes.iter_mut().enumerate() {
+            *gene += scale * (full[i] - start[i]);
+        }
+        for (gene, (low, high)) in genes.iter_mut().zip(Weights::bounds()) {
+            *gene = gene.clamp(low, high);
+        }
+        Weights::from_vec(&genes)
+    }
+
+    fn perturbed(index: usize) -> Weights {
+        let base = Weights::default();
+        if index == 0 {
+            return base;
+        }
+        let mut state = 0x9E3779B97F4A7C15u64 ^ (index as u64).wrapping_mul(0x2545F4914F6CDD1D);
+        let mut next = || {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            (state >> 11) as f64 / (1u64 << 53) as f64
+        };
+        let mut genes = base.to_vec();
+        for (gene, (low, high)) in genes.iter_mut().zip(Weights::bounds()) {
+            // ±25% on a third of the genes, the same scale `Doctrine` uses.
+            if next() < 0.34 {
+                *gene *= 0.75 + 0.5 * next();
+            }
+            *gene = gene.clamp(low, high);
+        }
+        Weights::from_vec(&genes)
+    }
+
+    let games = number(&std::env::args().collect::<Vec<_>>(), "--games", 48);
+    let cfg = EvoCfg {
+        generations: 1,
+        pop: population,
+        games,
+        players,
+        width,
+        height,
+        max_turns: turns,
+        seed: seed0,
+        threads: jobs,
+        dir: "evolved".to_string(),
+    };
+    let opponents = vec![Weights::default()];
+
+    // Even indices: random per-gene noise. Odd indices: coordinated movement
+    // along a doctrine axis. Same games, same seeds, so the two operators'
+    // spreads are directly comparable.
+    let results = parallel::map(population, jobs, move |index| {
+        let genome = if index % 2 == 1 {
+            structured(index)
+        } else {
+            perturbed(index)
+        };
+        // Common random numbers: `fitness_observations` derives its seeds from
+        // (cfg.seed, gen, game index) only, so every genome sees the same maps,
+        // seats and turn budgets. The comparison across the population is paired.
+        let obs = fitness_observations(&genome, &opponents, &cfg, 0, games);
+        if obs.is_empty() {
+            return None;
+        }
+        let selection: f64 = obs
+            .iter()
+            .map(|o| o.selection_value(players))
+            .sum::<f64>()
+            / obs.len() as f64;
+        let wins = obs.iter().filter(|o| o.won).count() as f64 / obs.len() as f64;
+        Some((selection, wins, index % 2 == 1))
+    });
+
+    let all: Vec<(f64, f64, bool)> = results.into_iter().flatten().collect();
+    // The operator comparison: which mutation produces candidates a gate can
+    // actually tell apart?
+    let spread_of = |structured_arm: bool| -> (f64, usize) {
+        let arm: Vec<f64> = all
+            .iter()
+            .filter(|(_, _, s)| *s == structured_arm)
+            .map(|(_, w, _)| *w)
+            .collect();
+        if arm.len() < 2 {
+            return (0.0, arm.len());
+        }
+        let m = arm.iter().sum::<f64>() / arm.len() as f64;
+        (
+            (arm.iter().map(|w| (w - m).powi(2)).sum::<f64>() / arm.len() as f64).sqrt(),
+            arm.len(),
+        )
+    };
+    let (sd_random, n_random) = spread_of(false);
+    let (sd_structured, n_structured) = spread_of(true);
+
+    let pairs: Vec<(f64, f64)> = all.iter().map(|(s, w, _)| (*s, *w)).collect();
+    if pairs.len() < 3 {
+        println!("population too small to correlate");
+        std::process::exit(1);
+    }
+    let n = pairs.len() as f64;
+    let mean = |f: &dyn Fn(&(f64, f64)) -> f64| pairs.iter().map(f).sum::<f64>() / n;
+    let (ms, mw) = (mean(&|p| p.0), mean(&|p| p.1));
+    let cov: f64 = pairs.iter().map(|p| (p.0 - ms) * (p.1 - mw)).sum::<f64>() / n;
+    let sds = (pairs.iter().map(|p| (p.0 - ms).powi(2)).sum::<f64>() / n).sqrt();
+    let sdw = (pairs.iter().map(|p| (p.1 - mw).powi(2)).sum::<f64>() / n).sqrt();
+    let r = if sds > 0.0 && sdw > 0.0 {
+        cov / (sds * sdw)
+    } else {
+        0.0
+    };
+
+    let argmax = |f: &dyn Fn(&(f64, f64)) -> f64| {
+        pairs
+            .iter()
+            .enumerate()
+            .fold(None, |top: Option<(usize, f64)>, (i, p)| {
+                let v = f(p);
+                match top.is_none_or(|(_, t)| v > t) {
+                    true => Some((i, v)),
+                    false => top,
+                }
+            })
+            .expect("non-empty")
+    };
+    let (best_selection, _) = argmax(&|p| p.0);
+    let (best_wins, _) = argmax(&|p| p.1);
+
+    println!(
+        "selection audit: {} genomes x {games} common-seed games \
+         ({players}p {width}x{height}, {turns}-turn budget, seed {seed0})",
+        pairs.len()
+    );
+    println!();
+    println!("  mean selection value   {ms:.2}   (sd {sds:.2})");
+    println!("  mean win rate          {mw:.3}   (sd {sdw:.3})");
+    println!();
+    println!("  correlation(selection value, win rate) = {r:+.3}");
+    println!(
+        "  breeding would pick genome #{best_selection}; the strongest is #{best_wins} \
+         (win rate {:.3} vs {:.3})",
+        pairs[best_selection].1, pairs[best_wins].1
+    );
+    // A correlation is only as good as the reliability of each side. The win
+    // rate is a Bernoulli mean over `games`, so it carries a standard error of
+    // sqrt(p(1-p)/games). If that error is not comfortably below the observed
+    // spread ACROSS genomes, the win-rate column is mostly measurement noise,
+    // every correlation with it is attenuated toward zero, and no verdict can
+    // be read off it. Saying so is the whole point of computing it.
+    let win_se = (mw * (1.0 - mw) / games as f64).sqrt();
+    let reliable = sdw > 2.0 * win_se;
+    println!(
+        "  win-rate SE per genome {win_se:.3} vs observed spread {sdw:.3} across genomes"
+    );
+    println!();
+    if !reliable {
+        let signal = (sdw * sdw - win_se * win_se).max(0.0).sqrt();
+        let needed = if signal > 0.0 {
+            (mw * (1.0 - mw) / (signal / 2.0).powi(2)).ceil() as usize
+        } else {
+            0
+        };
+        println!(
+            "  -> NO VERDICT. The spread across genomes is not above the error on each \
+             one, so the win-rate column is consistent with pure noise and the correlation \
+             above is attenuated from an unknown value."
+        );
+        if needed > 0 {
+            println!("     About {needed} games/genome would make it readable.");
+        } else {
+            println!(
+                "     The observed spread is entirely within measurement error, so the \
+                 games/genome needed cannot be estimated from this run — raise it and \
+                 re-measure."
+            );
+        }
+        println!(
+            "\nNo genome is selected here and both numbers come from the same games, so \
+             this carries no winner's curse — but an unbiased estimate of nothing is \
+             still nothing."
+        );
+        return;
+    }
+    if r > 0.5 {
+        println!(
+            "  -> MONOTONE ENOUGH: the continuous statistic orders genomes broadly the way \
+             strength does, so ranking on it buys variance reduction without changing the \
+             answer."
+        );
+    } else {
+        println!(
+            "  -> NOT MONOTONE: the statistic breeding consumes is only weakly related to \
+             the statistic promotion measures, so the GA climbs one hill while the gate \
+             guards another."
+        );
+    }
+
+    // The design this measurement actually implies, whichever way r falls.
+    //
+    // The tension in #457 is a false choice. Ranking on the continuous
+    // statistic buys variance and risks bias; ranking on wins is unbiased and
+    // noisy. A CONTROL VARIATE gets both: estimate the win rate, and subtract
+    // the correlated statistic's deviation from its own mean,
+    //
+    //     w_hat = win_rate - beta * (selection_value - mean_selection)
+    //     beta  = cov(win, selection) / var(selection)
+    //
+    // which is unbiased for the win rate by construction — the subtracted term
+    // has expectation zero — and carries variance `(1 - r^2)` times the plain
+    // win rate's. A high correlation buys a large reduction; a correlation of
+    // zero buys nothing and costs nothing. There is no monotonicity assumption
+    // anywhere, which is exactly what a statistic of unknown monotonicity
+    // should be used for.
+    let beta = if sds > 0.0 { cov / (sds * sds) } else { 0.0 };
+    let retained = 1.0 - r * r;
+    println!();
+    println!("  as a CONTROL VARIATE for the win rate instead of a substitute for it:");
+    println!("    beta = {beta:+.5}, variance retained = {:.1}%", 100.0 * retained);
+    if retained < 0.999 {
+        println!(
+            "    -> same precision as plain win rate on {:.0} games/genome instead of {games}",
+            games as f64 * retained
+        );
+    } else {
+        println!(
+            "    -> no reduction at this correlation, and none of the bias either: the \
+             estimator stays exactly the win rate"
+        );
+    }
+    println!(
+        "    Unbiased for the win rate whatever the correlation, because the subtracted \
+         term has expectation zero. This is what a statistic of unknown monotonicity is \
+         safe to be used for."
+    );
+    // The operator result. This is the one a breeder can act on: an operator
+    // whose candidates differ by more than the gate's resolution is searchable;
+    // one whose candidates differ by less is a random walk with a filter on the
+    // end.
+    let win_se_arm = (mw * (1.0 - mw) / games as f64).sqrt();
+    let signal = |sd: f64| (sd * sd - win_se_arm * win_se_arm).max(0.0).sqrt();
+    println!();
+    println!("  MUTATION OPERATOR, same games and seeds for both arms:");
+    println!(
+        "    random per-gene ({n_random} genomes)   observed sd {sd_random:.3}  -> true spread ~{:.3}",
+        signal(sd_random)
+    );
+    println!(
+        "    coordinated axis ({n_structured} genomes)  observed sd {sd_structured:.3}  -> true spread ~{:.3}",
+        signal(sd_structured)
+    );
+    let (a, b) = (signal(sd_random), signal(sd_structured));
+    if b > 0.0 && a > 0.0 {
+        println!("    -> coordinated moves are {:.1}x wider than random ones", b / a);
+    }
+    println!(
+        "    A gate resolving a gap of g needs about {:.0} games per candidate at the \
+         random arm's spread and {:.0} at the coordinated arm's.",
+        if a > 0.0 { mw * (1.0 - mw) / (a / 2.0).powi(2) } else { f64::NAN },
+        if b > 0.0 { mw * (1.0 - mw) / (b / 2.0).powi(2) } else { f64::NAN }
+    );
+
+    println!(
+        "\nNo genome is selected here and both numbers come from the same games, so this \
+         carries no winner's curse — unlike a comparison of generation champions."
+    );
 }

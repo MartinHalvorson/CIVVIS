@@ -426,6 +426,72 @@ blind, which is the defect that killed `PolicyAi` on 96% of its candidates.
 > would buy is a ~0.20 win-rate edge on the ~25% of decisions where the label
 > discriminates at all. Worth stating before anyone starts it.
 
+### The genome axis, measured to exhaustion
+
+The GA was run for the first time in this repository's history and produced a
+champion worth **+49 Elo** over the hand-written defaults every agent had been
+silently playing (`docs/EVAL.md`, 2026-07-27). The obvious next question is how
+much more is there. Four runs of `search_probe --selection`, at increasing
+power, say: **not much, and not findable by ranking.**
+
+Every genome in a 24-member population is measured, none is selected, and the
+win indicator and the selection value come from the same games on common seeds
+— so there is no winner's curse, unlike any comparison of generation champions.
+
+| games/genome | spread across genomes | SE per genome | spread ÷ SE |
+|---|---|---|---|
+| 48 | 0.028 | 0.065 | 0.43 |
+| 300 | 0.018 | 0.027 | 0.67 |
+| 480 | 0.025 | 0.020 | 1.25 |
+| **800** | **0.017** | **0.016** | **1.06** |
+
+**The spread between candidate genomes never clearly exceeds the error on
+measuring it.** The best estimate of the true spread is ~0.013 win rate, which
+needs about **5,000 games per candidate** to rank reliably — 24 × 5,000 per
+generation. `evolve` spends 8 by default.
+
+Split by mutation operator on the same games and seeds:
+
+| operator | true spread |
+|---|---|
+| independent per-gene noise, ±25% on a third of genes | **0.013** |
+| coordinated movement along a `Doctrine` axis | **~0.000** |
+
+**⚠ This reverses a claim made earlier in this document's history.** From two
+marginal numbers taken in different runs I asserted that coordinated
+perturbations move strength about six times more than random ones, and built a
+mutation-operator proposal on the ratio. Measured properly — same games, same
+seeds, both arms — the coordinated arm is *narrower*. The claim is withdrawn.
+
+### What follows: select at the gate, not in the ranking
+
+Most mutations are strength-neutral at any resolution that is affordable. Yet
+the GA did produce +49 Elo, through a 200-game SPRT against the incumbent. Both
+facts fit one model:
+
+> **The GA is not hill-climbing. It is filtered random search — most candidates
+> are indistinguishable, rare ones are large, and the gate is what finds them.**
+
+That explains an empirical result from #457 that had no mechanism attached: a
+measured 16-game control showed no agreement gain over the shipped 8, so the
+budget was retained. The reason is that the ranking is unresolvable at *any*
+affordable budget — 8 and 16 and 96 and 800 are all far below 5,000, so none of
+them ranks better than another.
+
+**Design consequence.** Per-genome fitness games buy a ranking that cannot
+resolve typical differences; SPRT games buy the filter that actually decides.
+More candidates through a cheap screen, gate unchanged, searches more of the
+space for the same cost. This is the opposite of the direction argued earlier
+here, and it is the direction the measurement supports.
+
+**Design consequence for the objective.** Whether the breeding statistic is
+monotone in strength remains open and is not cheaply answerable — at 800 games
+the correlation still reads `NO VERDICT`. That no longer blocks anything: used
+as a **control variate** rather than a substitute, the continuous statistic is
+unbiased for the win rate whatever its correlation, with variance `(1 − r²)`
+times the plain estimator's. A statistic of unknown monotonicity is safe there
+and nowhere else.
+
 ### The criterion that generalises all of this
 
 > **Search pays on a decision whose effect exceeds the outcome noise floor
