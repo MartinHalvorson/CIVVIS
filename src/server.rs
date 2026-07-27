@@ -5109,6 +5109,66 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("#reasonsec[open] { flex: 3 0 0; min-height: 288px; }"));
     }
 
+    /// Every topic the reasoning log offers is one a game actually reaches.
+    ///
+    /// Ignored because it plays two hundred turns of a six-player world, which
+    /// is minutes in a debug build. Run it with `cargo test --release --
+    /// --ignored reasoning_reaches_every_topic` after adding a topic: a filter
+    /// entry nothing ever writes to is a control that looks broken.
+    ///
+    /// Measured 2026-07-27 at turn 204 of seed 20260727: a median of 27
+    /// thoughts a turn and a worst turn of 70, which is the few kilobytes per
+    /// turn the delta on `/state` was designed around.
+    #[test]
+    #[ignore]
+    fn reasoning_reaches_every_topic() {
+        let mut params = watched_table();
+        params.num_players = 6;
+        params.width = 44;
+        params.height = 26;
+        params.num_city_states = 6;
+        let mut session = Session::new(params);
+        let mut seen: std::collections::BTreeMap<String, usize> = Default::default();
+        let mut per_turn: Vec<usize> = Vec::new();
+        let (mut cursor, mut turn, mut this_turn) = (0u64, session.game.turn, 0usize);
+        for _ in 0..5_000 {
+            session.step();
+            let delta = session.reasoning_json(cursor);
+            cursor = delta["cursor"].as_u64().unwrap();
+            for thought in delta["thoughts"].as_array().unwrap() {
+                *seen
+                    .entry(thought["topic"].as_str().unwrap().to_string())
+                    .or_default() += 1;
+                this_turn += 1;
+            }
+            if session.game.turn != turn {
+                per_turn.push(std::mem::take(&mut this_turn));
+                turn = session.game.turn;
+            }
+            if session.game.winner.is_some() {
+                break;
+            }
+        }
+        per_turn.sort_unstable();
+        let missing: Vec<&str> = crate::reasoning::Topic::ALL
+            .iter()
+            .map(|topic| topic.as_str())
+            .filter(|topic| !seen.contains_key(*topic))
+            .collect();
+        assert!(
+            missing.is_empty(),
+            "reached turn {} and these topics never recorded anything: {missing:?} \
+             (counts {seen:?})",
+            session.game.turn
+        );
+        let median = per_turn[per_turn.len() / 2];
+        assert!(
+            median < 200,
+            "a turn's reasoning delta has grown to {median} thoughts, which no longer \
+             belongs on the per-turn `/state` fetch"
+        );
+    }
+
     /// A spectated table, which is the only kind that records its reasoning.
     fn watched_table() -> Params {
         let mut params = current();

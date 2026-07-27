@@ -1,7 +1,7 @@
 //! Scripted AIs (mirrors civvis/ai/). BasicAi reads full state (no fog) —
 //! sparring partner, not a fair-play agent.
 use crate::game::{effective_strength, Action, ActionFamilies, Game, Item};
-use crate::reasoning::Journal;
+use crate::reasoning::{plain, Journal};
 use crate::rng::Rng;
 use crate::think;
 use crate::Pos;
@@ -2105,7 +2105,7 @@ impl BasicAi {
                 )
                 .is_ok()
                 {
-                    think!(self.journal, Faith, Decision, "Founding the pantheon {b}";
+                    think!(self.journal, Faith, Decision, "Founding the pantheon {}", plain(b);
                            "the {} choice on the standing list still unclaimed",
                            match rank { 0 => "first".to_string(), _ => format!("{}th", rank + 1) });
                     break;
@@ -2158,8 +2158,9 @@ impl BasicAi {
                     .is_ok()
                     {
                         think!(self.journal, Faith, Decision, "Founding a religion";
-                               "on the {follower} follower belief and the {founder} \
-                                founder belief, the first pair still unclaimed");
+                               "on the {} follower belief and the {} founder \
+                                belief, the first pair still unclaimed",
+                               plain(&follower), plain(founder));
                         break 'found;
                     }
                 }
@@ -2692,17 +2693,17 @@ impl BasicAi {
     /// is going.
     pub(crate) fn item_label(item: &Item) -> String {
         match item {
-            Item::Unit { unit } => unit.clone(),
+            Item::Unit { unit } => plain(unit),
             Item::Formation { unit, formation } => match formation {
-                2 => format!("an Army of {unit}"),
-                _ => format!("a Corps of {unit}"),
+                2 => format!("an Army of {}", plain(unit)),
+                _ => format!("a Corps of {}", plain(unit)),
             },
-            Item::Building { building } => building.clone(),
-            Item::District { district, pos } => format!("a {district} district at {pos:?}"),
-            Item::Wonder { wonder, pos } => format!("the wonder {wonder} at {pos:?}"),
-            Item::Repair { repair, pos } => format!("repairs to the {repair} at {pos:?}"),
-            Item::Project { project } => format!("the {project} project"),
-            Item::Product { product } => format!("the product {product}"),
+            Item::Building { building } => plain(building),
+            Item::District { district, pos } => format!("a {} district at {pos:?}", plain(district)),
+            Item::Wonder { wonder, pos } => format!("the wonder {} at {pos:?}", plain(wonder)),
+            Item::Repair { repair, pos } => format!("repairs to the {} at {pos:?}", plain(repair)),
+            Item::Project { project } => format!("the {} project", plain(project)),
+            Item::Product { product } => format!("the product {}", plain(product)),
         }
     }
 
@@ -2993,13 +2994,15 @@ impl BasicAi {
                         let cost = g.item_cost_for_city(pid, *cid, &item);
                         let per_turn = g.city_yields(*cid).production.max(0.1);
                         let city = &g.cities[cid];
+                        let turns = (cost / per_turn).ceil().max(1.0);
                         think!(self.journal, Cities, Decision,
                                "{} starts {}", city.name, Self::item_label(&item);
-                               "{cost:.0} production, about {} turns at {per_turn:.1} a turn; \
-                                the empire holds {military} military for {n_cities} cities \
-                                against a target of {:.1} each, {settlers} settlers, \
-                                {builders} builders, {traders} traders",
-                               (cost / per_turn).ceil().max(1.0),
+                               "{cost:.0} production, about {turns:.0} turn{} at \
+                                {per_turn:.1} a turn; the empire holds {military} military \
+                                for {n_cities} {} against a target of {:.1} each, \
+                                {settlers} settlers, {builders} builders, {traders} traders",
+                               if turns == 1.0 { "" } else { "s" },
+                               if n_cities == 1 { "city" } else { "cities" },
                                self.w.mil_per_city;
                                Self::item_focus(&item, city.pos));
                     }

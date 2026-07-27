@@ -5,7 +5,7 @@
 //! civilian work, and military movement pursue the same medium-term goal.
 use super::{Ai, BasicAi, ForceReport, PlanReport, UnitDoctrine, Weights};
 use crate::game::{Action, ActionFamilies, CongressResolution, DiplomaticDeal, Game, Item};
-use crate::reasoning::Journal;
+use crate::reasoning::{plain, Journal};
 use crate::rules::Yields;
 use crate::think;
 use crate::Pos;
@@ -2088,8 +2088,8 @@ impl AdvancedAi {
                 if self.journal().wants(crate::reasoning::Level::Decision) {
                     let why = match (forced_goal, &goal_pick) {
                         (Some(goal), Some(_)) => {
-                            format!("the cheapest step toward {goal}, which {} needs",
-                                    objective.as_str())
+                            format!("the cheapest step toward {}, which {} needs",
+                                    plain(goal), objective.as_str())
                         }
                         _ => {
                             let runner_up = available
@@ -2102,16 +2102,16 @@ impl AdvancedAi {
                                         .then_with(|| b.cmp(a))
                                 })
                                 .map(|other| {
-                                    format!("{other} at {:.0}",
+                                    format!("ahead of {} at {:.0}", plain(other),
                                             self.tech_value(g, pid, other, plan.strategy))
                                 })
-                                .unwrap_or_else(|| "nothing else".to_string());
-                            format!("worth {:.0} to a {} plan, ahead of {runner_up}",
+                                .unwrap_or_else(|| "with nothing else on offer".to_string());
+                            format!("worth {:.0} to the {} plan, {runner_up}",
                                     self.tech_value(g, pid, &tech, plan.strategy),
                                     plan.strategy.as_str())
                         }
                     };
-                    think!(self.journal(), Research, Decision, "Researching {tech}"; "{why}");
+                    think!(self.journal(), Research, Decision, "Researching {}", plain(&tech); "{why}");
                 }
                 let _ = g.apply(pid, &Action::Research { tech });
             }
@@ -2176,8 +2176,8 @@ impl AdvancedAi {
                 if self.journal().wants(crate::reasoning::Level::Decision) {
                     let why = match (forced_goal, &goal_pick) {
                         (Some(goal), Some(_)) => {
-                            format!("the cheapest step toward {goal}, which {} needs",
-                                    objective.as_str())
+                            format!("the cheapest step toward {}, which {} needs",
+                                    plain(goal), objective.as_str())
                         }
                         _ => {
                             let runner_up = available
@@ -2190,16 +2190,16 @@ impl AdvancedAi {
                                         .then_with(|| b.cmp(a))
                                 })
                                 .map(|other| {
-                                    format!("{other} at {:.0}",
+                                    format!("ahead of {} at {:.0}", plain(other),
                                             self.civic_value(g, pid, other, plan.strategy))
                                 })
-                                .unwrap_or_else(|| "nothing else".to_string());
-                            format!("worth {:.0} to a {} plan, ahead of {runner_up}",
+                                .unwrap_or_else(|| "with nothing else on offer".to_string());
+                            format!("worth {:.0} to the {} plan, {runner_up}",
                                     self.civic_value(g, pid, &civic, plan.strategy),
                                     plan.strategy.as_str())
                         }
                     };
-                    think!(self.journal(), Research, Decision, "Adopting the {civic} civic";
+                    think!(self.journal(), Research, Decision, "Adopting the {} civic", plain(&civic);
                            "{why}");
                 }
                 let _ = g.apply(pid, &Action::Civic { civic });
@@ -2412,16 +2412,17 @@ impl AdvancedAi {
             {
                 think!(self.journal(), Government, Detail,
                        "Staying under {}",
-                       g.players[pid].government.as_deref().unwrap_or("no government");
-                       "{government} offers {choice_capacity} policy slots against the \
+                       plain(g.players[pid].government.as_deref().unwrap_or("no government"));
+                       "{} offers {choice_capacity} policy slots against the \
                         current {current_capacity}{}, and two turns of Anarchy is not \
                         worth paying for that",
+                       plain(&government),
                        if returning { " and has been run before" } else { "" });
                 return;
             }
-            think!(self.journal(), Government, Decision, "Changing government to {government}";
+            think!(self.journal(), Government, Decision, "Changing government to {}", plain(&government);
                    "{choice_capacity} policy slots against {current_capacity} now; \
-                    a {} plan wants it",
+                    the {} plan wants it",
                    objective.as_str());
             let _ = g.apply(pid, &Action::Government { government });
         }
@@ -2462,7 +2463,7 @@ impl AdvancedAi {
             .cloned()
             .collect();
         for card in obsolete_active {
-            think!(self.journal(), Policies, Decision, "Retiring {card}";
+            think!(self.journal(), Policies, Decision, "Retiring {}", plain(&card);
                    "a successor card has replaced it on the menu");
             let _ = g.apply(pid, &Action::UnslotPolicy { policy: card });
         }
@@ -2692,8 +2693,8 @@ impl AdvancedAi {
             .cloned()
             .collect();
         for card in unsafe_dark_cards {
-            think!(self.journal(), Policies, Decision, "Dropping the Dark Age card {card}";
-                   "its downside no longer suits a {} plan", objective.as_str());
+            think!(self.journal(), Policies, Decision, "Dropping the Dark Age card {}", plain(&card);
+                   "its downside no longer suits the {} plan", objective.as_str());
             let _ = g.apply(pid, &Action::UnslotPolicy { policy: card });
         }
 
@@ -2708,10 +2709,14 @@ impl AdvancedAi {
                 .filter(|card| g.players[pid].policies.contains(*card))
                 .collect();
             think!(self.journal(), Policies, Detail,
-                   "Policy portfolio for a {} plan", objective.as_str();
+                   "Policy portfolio for the {} plan", objective.as_str();
                    "wants, in order: {}; already slotted: {}",
-                   desired.join(", "),
-                   if held.is_empty() { "none".to_string() } else { held.join(", ") });
+                   desired.iter().map(|card| plain(card)).collect::<Vec<_>>().join(", "),
+                   if held.is_empty() {
+                       "none".to_string()
+                   } else {
+                       held.iter().map(|card| plain(card)).collect::<Vec<_>>().join(", ")
+                   });
         }
 
         let wanted = desired.len();
@@ -2728,8 +2733,8 @@ impl AdvancedAi {
             )
             .is_ok()
             {
-                think!(self.journal(), Policies, Decision, "Slotted {card}";
-                       "priority {} of {wanted} for a {} plan, into a free slot",
+                think!(self.journal(), Policies, Decision, "Slotted {}", plain(card);
+                       "priority {} of {wanted} for the {} plan, into a free slot",
                        rank + 1, objective.as_str());
                 continue;
             }
@@ -2769,10 +2774,10 @@ impl AdvancedAi {
                 .is_ok()
                 {
                     think!(self.journal(), Policies, Decision,
-                           "Slotted {card} over {current}";
-                           "priority {} of {wanted} for a {} plan; {current} was the \
-                            oldest card the plan does not want",
-                           rank + 1, objective.as_str());
+                           "Slotted {} over {}", plain(card), plain(&current);
+                           "priority {} of {wanted} for the {} plan; {} was the oldest \
+                            card the plan does not want",
+                           rank + 1, objective.as_str(), plain(&current));
                     break;
                 }
                 // A type mismatch can make one particular swap invalid. Put
@@ -4092,7 +4097,7 @@ impl AdvancedAi {
                 let kind = if peace { "peace offer" } else { "deal" };
                 think!(self.journal(), Diplomacy, Decision,
                        "{} {who}'s {kind}", if accept { "Accepting" } else { "Refusing" };
-                       "worth {worth:+.0} to a {} plan", plan.strategy.as_str());
+                       "worth {worth:+.0} to the {} plan", plan.strategy.as_str());
             }
             let action = if accept {
                 Action::AcceptDeal { deal: deal_id }
@@ -4134,8 +4139,8 @@ impl AdvancedAi {
                         1
                     };
                     think!(self.journal(), Diplomacy, Decision,
-                           "Voting {choice} on {}", resolution.id;
-                           "{votes} vote{} behind it, on a {} plan",
+                           "Voting {} on {}", plain(&choice), plain(&resolution.id);
+                           "{votes} vote{} behind it, on the {} plan",
                            if votes == 1 { "" } else { "s" }, plan.strategy.as_str());
                     let _ = g.apply(
                         pid,
@@ -4281,7 +4286,7 @@ impl AdvancedAi {
                 if self.journal().wants(crate::reasoning::Level::Strategy) {
                     let casus = match &action {
                         Action::DeclareWarWithCasusBelli { casus_belli, .. } => {
-                            format!(" under a {casus_belli} casus belli")
+                            format!(" under a {} casus belli", plain(casus_belli))
                         }
                         _ => String::new(),
                     };
@@ -4425,8 +4430,10 @@ impl AdvancedAi {
                 };
                 think!(self.journal(), Diplomacy, Decision,
                        "Sending an envoy to {}", g.players[target].civ;
-                       "a {} city-state worth {score} to a {} plan; {standing}, this makes                         {mine} envoys",
-                       g.cs_type(&g.players[target].civ), strategy.as_str());
+                       "a {} city-state worth {score} to the {} plan; {standing}, \
+                        this makes {mine} envoy{}",
+                       g.cs_type(&g.players[target].civ), strategy.as_str(),
+                       if mine == 1 { "" } else { "s" });
             }
             if g.apply(pid, &Action::SendEnvoy { player: target }).is_err() {
                 break;
@@ -4519,8 +4526,8 @@ impl AdvancedAi {
                 let price = g
                     .great_person_patronage_price(pid, kind, currency)
                     .unwrap_or(0.0);
-                think!(self.journal(), Economy, Decision, "Buying out the {kind} race";
-                       "{price:.0} {currency}, worth {score:.0} to a {} plan",
+                think!(self.journal(), Economy, Decision, "Buying out the {} race", plain(kind);
+                       "{price:.0} {currency}, worth {score:.0} to the {} plan",
                        strategy.as_str());
             }
             let _ = g.apply(pid, &action);
@@ -4796,14 +4803,14 @@ impl AdvancedAi {
                     Action::Buy { city, unit, formation, .. } => (
                         Some(*city),
                         if *formation == 0 {
-                            unit.clone()
+                            plain(unit)
                         } else {
-                            format!("a formation of {unit}")
+                            format!("a formation of {}", plain(unit))
                         },
                     ),
-                    Action::BuyBuilding { city, building, .. } => (Some(*city), building.clone()),
+                    Action::BuyBuilding { city, building, .. } => (Some(*city), plain(building)),
                     Action::BuyDistrict { city, district, .. } => {
-                        (Some(*city), format!("a {district} district"))
+                        (Some(*city), format!("a {} district", plain(district)))
                     }
                     Action::BuyPlot { city, pos, .. } => {
                         (Some(*city), format!("the tile at {pos:?}"))
@@ -4815,7 +4822,8 @@ impl AdvancedAi {
                     .map(|city| city.name.clone())
                     .unwrap_or_else(|| "the empire".to_string());
                 think!(self.journal(), Economy, Decision, "Buying {what} for {where_}";
-                       "{spent:.0} Gold, worth {score:.0} to a {} plan; {:.0} left above a                         reserve of {reserve:.0}",
+                       "{spent:.0} Gold, worth {score:.0} to the {} plan; {:.0} left \
+                        above a reserve of {reserve:.0}",
                        plan.strategy.as_str(), g.players[pid].gold);
             }
             purchased = true;
@@ -5692,8 +5700,8 @@ impl AdvancedAi {
             {
                 break;
             }
-            think!(self.journal(), Government, Decision, "Posting {governor} to {where_}";
-                   "the city a {} plan gets most from", plan.strategy.as_str());
+            think!(self.journal(), Government, Decision, "Posting {} to {where_}", plain(&governor);
+                   "the city the {} plan gets most from", plan.strategy.as_str());
         }
 
     }
@@ -7920,8 +7928,8 @@ impl AdvancedAi {
         if let Some(improvement) = here.first() {
             self.builder_targets.remove(&uid);
             think!(self.journal(), Expansion, Detail,
-                   "Building a {improvement} at {current:?}";
-                   "worth {:.1} to a {} plan, best of {} that fit this tile",
+                   "Building a {} at {current:?}", plain(improvement);
+                   "worth {:.1} to the {} plan, best of {} that fit this tile",
                    self.improvement_value(g, current, improvement, strategy),
                    strategy.as_str(), here.len(); current);
             return g
@@ -8798,7 +8806,7 @@ impl AdvancedAi {
                     _ => "",
                 };
                 think!(self.journal(), Military, Decision,
-                       "{} force of {} will {}",
+                       "A {} force of {} will {}",
                        group.domain.as_str(), group.units.len(), group.posture.as_str();
                        "objective {:?}, {:.0}% ready, {:.2} local strength against the \
                         enemy there{held}",
@@ -10058,7 +10066,7 @@ impl AdvancedAi {
                         .or_else(|| {
                             g.units_at(at)
                                 .first()
-                                .map(|oid| g.units[oid].kind.clone())
+                                .map(|oid| plain(&g.units[oid].kind))
                         })
                         .unwrap_or_else(|| format!("{at:?}"));
                     let orders = group
@@ -10069,8 +10077,9 @@ impl AdvancedAi {
                         })
                         .unwrap_or_else(|| "unattached".to_string());
                     think!(self.journal(), Military, Detail,
-                           "{} {verb} {defender}", unit.kind;
-                           "worth {score:.0} over a margin of {required_margin:.0},                             on {} health, {orders}", unit.hp; at);
+                           "{} {verb} {defender}", plain(&unit.kind);
+                           "worth {score:.0} over a margin of {required_margin:.0}, \
+                            on {} health, {orders}", unit.hp; at);
                 }
                 if g.apply(pid, &action).is_ok() {
                     self.force_groups_dirty = true;

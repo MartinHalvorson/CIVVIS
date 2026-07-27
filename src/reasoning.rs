@@ -135,6 +135,18 @@ impl Topic {
     ];
 }
 
+/// A rule key as prose.
+///
+/// Everything the engine names itself by is a snake_case key — `code_of_laws`,
+/// `divine_spark`, `battering_ram` — and a sentence built out of those reads
+/// like a config file. The log is the one place in CIVVIS a person reads these
+/// keys in running text, so they lose their underscores on the way in. The
+/// case is left alone: these appear mid-sentence, and a Title Cased noun in
+/// the middle of a lower-case clause is worse than the underscore was.
+pub fn plain(key: &str) -> String {
+    key.replace('_', " ")
+}
+
 /// One thing an agent decided, and the reason it gave.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Thought {
