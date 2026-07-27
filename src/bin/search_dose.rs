@@ -87,6 +87,29 @@
 //! This is why the control exists and why it should never be the last dose to
 //! report: without it, +2.0 SE against a documented saturation story would
 //! have looked like a finding.
+//!
+//! ## Cross-checked against #477, which landed mid-run
+//!
+//! `docs/GEN14_DENSE_SEARCH.md` tests the same axis and **corroborates the
+//! under-power diagnosis**: its halved-cadence arm is this ladder's control,
+//! and over ~240 games it lost 105–135 with 1 decisive map direction to 16,
+//! crossing evidence at map 54. The control was pointing the right way; 40
+//! maps simply could not see it.
+//!
+//! It also **conflicts** with the `20/120` screen, and that is worth stating
+//! rather than smoothing over. #477 finds *halving* the horizon (20/40) leaning
+//! ahead — 308–292 over a disjoint 300-map gate — where this ladder finds
+//! *raising* it (20/120) leaning ahead. Both are sub-significant, so the
+//! economical reading is that both are noise, but they cannot both be real.
+//!
+//! ⚠ **And the arms are not the same agent.** #477 tests the committed
+//! generation-14 genome; this binary builds
+//! `StrategicAi::with_weights(Weights::default())`, so it measures the search
+//! budget on the *default* weights. #477's own observation that 20×80 against
+//! 40×40 is "nearly neutral, 61–59" on gen-14 — against the +45 Elo that
+//! promoted it on default weights — says the genome changes what the budget is
+//! worth. Any comparison between these two sets of numbers has to name the
+//! genome.
 use civvis::ai::{Ai, AdvancedAi, Weights};
 use civvis::game::{Action, Game};
 use civvis::parallel;
