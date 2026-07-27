@@ -66,6 +66,7 @@
 //! `docs/EVAL.md` records two conclusions from this evaluator that inverted at
 //! 120 maps in opposite directions, and 20-map runs on it are anti-evidence.
 use civvis::ai::{AdvancedAi, Ai, PolicyDeck, Weights};
+use std::process::exit;
 use civvis::game::{Action, Game};
 use civvis::parallel;
 
@@ -129,12 +130,25 @@ fn play(
     turns: u32,
     treated: usize,
     arms: (PolicyDeck, PolicyDeck),
+    gene: Option<(usize, f64)>,
 ) -> (Option<bool>, f64, f64) {
     let mut game = Game::new(players, width, height, seed, turns, 0);
-    let treat_w = Weights {
+    let mut treat_w = Weights {
         policy_deck: arms.0,
         ..Weights::default()
     };
+    // A single-gene arm, so a genome change can be decided on WINS. The score
+    // share that nominates a value is a selection proxy; `docs/EVAL.md` is
+    // explicit that wins and score measure different things, and a change that
+    // moves the economy without moving the victory is exactly the shape this
+    // repository has been fooled by before.
+    if let Some((index, value)) = gene {
+        let mut v = treat_w.to_vec();
+        v[index] = value;
+        let deck = treat_w.policy_deck;
+        treat_w = Weights::from_vec(&v);
+        treat_w.policy_deck = deck;
+    }
     let control_w = Weights {
         policy_deck: arms.1,
         ..Weights::default()
@@ -191,6 +205,29 @@ fn main() {
     let treat_name = text(&args, "--treatment", "live");
     let control_name = text(&args, "--control", "legacy");
     let arms = (deck(&treat_name), deck(&control_name));
+    let gene = match (
+        args.iter()
+            .position(|arg| arg == "--gene")
+            .and_then(|index| args.get(index + 1)),
+        args.iter()
+            .position(|arg| arg == "--value")
+            .and_then(|index| args.get(index + 1))
+            .and_then(|v| v.parse::<f64>().ok()),
+    ) {
+        (Some(name), Some(value)) => {
+            let Some(index) = Weights::gene_names().iter().position(|g| g == name) else {
+                eprintln!("policy_eval: no gene named {name:?}");
+                exit(2);
+            };
+            println!("  treatment also sets {name} = {value} (shipped {:.3})", Weights::default().to_vec()[index]);
+            Some((index, value))
+        }
+        (None, None) => None,
+        _ => {
+            eprintln!("policy_eval: --gene and --value must be given together");
+            exit(2);
+        }
+    };
     println!(
         "policy_eval: {treat_name} vs {control_name}, {maps} maps x 2 directions, \
          {players}p {width}x{height}, {turns} turns, seed {seed0}"
@@ -198,8 +235,8 @@ fn main() {
 
     let results = parallel::map(maps, jobs, move |index| {
         let seed = seed0 + index as u64;
-        let a = play(players, width, height, seed, turns, 0, arms);
-        let b = play(players, width, height, seed, turns, 1, arms);
+        let a = play(players, width, height, seed, turns, 0, arms, gene);
+        let b = play(players, width, height, seed, turns, 1, arms, gene);
         (a, b)
     });
 
