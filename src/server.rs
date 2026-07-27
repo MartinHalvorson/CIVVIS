@@ -5173,9 +5173,15 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("#eventsec[open] { flex: 2 0 0; min-height: 302px; }"));
         assert!(EMBEDDED_INDEX.contains("#warsec[open] { flex: 2 0 0; min-height: 266px; }"));
         assert!(EMBEDDED_INDEX.contains(".reason-list { flex: 1 1 auto; min-height: 132px;"));
-        // One filter bar, worn by all three logs in the same place.
+        // One filter bar, worn in the same place by every panel that narrows
+        // by civilization — the three logs and the Active strategy card above
+        // them. A second copy of this chrome under another name is how four
+        // pickers drift into four shapes.
         assert!(EMBEDDED_INDEX.contains(".log-filters { flex: 0 0 auto;"));
-        assert!(!EMBEDDED_INDEX.contains(".reason-filters"));
+        assert!(!EMBEDDED_INDEX.contains(".reason-filter"));
+        assert!(EMBEDDED_INDEX.contains(
+            "<label class=\"log-filter\"><span>Civ</span>\n            <select id=\"strategyplayer\""
+        ));
     }
 
     /// The war log and the game event log are narrowed the same way.

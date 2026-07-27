@@ -1763,11 +1763,11 @@
   .event-turn { color: var(--faint); font-size: var(--type-label); letter-spacing: .07em; text-transform: uppercase; }
   .empty-state { padding: 10px 0 2px; color: var(--faint); font-size: var(--type-secondary); text-align: center; }
 
-  /* A log's filter bar. All three logs wear the same one, in the same place,
-     so narrowing the war log is the gesture a reader already learned on the
-     reasoning log. The filters sit above the list and never scroll with it: a
-     reader narrowed to one civilization must not have to scroll back up to
-     change their mind. */
+  /* A panel's filter bar. The three logs and the Active strategy card above
+     them all wear the same one, in the same place, so narrowing the war log is
+     the gesture a reader already learned one panel up. In a log the filters
+     sit above the list and never scroll with it: a reader narrowed to one
+     civilization must not have to scroll back up to change their mind. */
   .log-filters { flex: 0 0 auto; display: grid; grid-template-columns: 1fr; gap: 4px; margin-bottom: 8px; }
   .log-filter { display: grid; grid-template-columns: 42px 1fr; align-items: center; gap: 7px; }
   .log-filter > span { color: var(--faint); font-size: var(--type-label); font-weight: 800; letter-spacing: .09em; text-transform: uppercase; }
