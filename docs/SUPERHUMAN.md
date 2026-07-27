@@ -126,8 +126,37 @@ Two further constraints bound any fix:
   It does **not** follow that the priors are wrong. `viable_religious_commitment`
   guards an irreversible global race that a forty-round projection scored by
   score share provably cannot price, and religion is the lane that converts
-  best in this simulator. The claim is only that the largest single input to
-  this agent's lane choice had never been measured, let alone tested.
+  best in this simulator.
+
+  **It was then tested, and removing it is null.** `strategic_noprophet`, 240
+  mirrored maps at seed 160000: 49.6%, Elo −3, 12 map directions to 14, sign
+  p=0.8450. Both pre-registered predictions fired — search exposure 57% → 63%
+  with `irreversible-religion` priors 211 → 0, religious commitment 30.3% →
+  26.8% — so the treatment did exactly what it was built to do and it changed
+  nothing.
+
+  **Why a 3× decision share converts to a 0× strength share.** `adaptive` is
+  not a lane. Returning `None` hands the turn back to `AdvancedAi`'s own
+  victory planner, which frequently picks the same lane the prior named — so
+  85% of reviews changed *label* while religious victories moved 171 to 164.
+  The prior is largely **redundant with** the behaviour underneath it, not
+  additional to it. A disagreement rate is an upper bound on behavioural
+  impact, and a very loose one.
+
+  **The consequence for this document's ranking is larger than the result.**
+  Three treatments have now moved lane decisions by very different amounts:
+
+  | treatment | lane decisions changed | strength |
+  |---|---|---|
+  | `strategic_noprophet` | ~42% of all reviews | **0** (p=0.8450) |
+  | `focused_deepening` rank-pruned | commitment 44.9% → 58.4% uncommitted | **0** (p=0.8318 repaired) |
+  | warm branches (#413) | 1 review in 4 | **+37 Elo** |
+
+  Changing *more* lane decisions is uncorrelated with strength; the one that
+  won changed the fewest. **Lane routing is not the lever**, and the macro
+  search — whose only output is a lane — is closer to exhausted than sections
+  0 and 2 imply. What is left there is compute, which works and has a measured
+  ceiling. Effort belongs on M4: a decision that repeats.
 
 ---
 

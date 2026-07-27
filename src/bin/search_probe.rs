@@ -519,8 +519,15 @@ fn audit_priors(
     }
 
     println!(
-        "\nAgreement is not correctness -- neither answer is known to be right here. \
-         The disagreement rate is what a treatment that weakens a prior would act on, \
-         and a rate near zero would say the prior is free and this line is closed."
+        "\nAgreement is not correctness -- neither answer is known to be right here.\n\
+         \n\
+         ⚠ A disagreement rate is an upper bound on behavioural impact, and a loose \
+         one. `adaptive` is not a lane: it hands the turn back to AdvancedAi's own \
+         victory planner, which frequently picks the same lane the prior named. \
+         Removing the irreversible-Prophet prior flipped 85% of its reviews from \
+         religion to adaptive and moved religious commitment only 30.3% to 26.8%, \
+         religious victories 171 to 164, and paired score not at all (49.6%, 240 maps, \
+         p=0.8450). Read this column as `the label changed`, never as `the play \
+         changed`."
     );
 }
