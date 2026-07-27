@@ -4594,100 +4594,122 @@ mod river_tests {
     ///
     /// Both shapes, because a canal is cut at an angle to an axis of the world
     /// and neither the globe nor the flat map gets to answer that differently.
+    /// Both climates and the two ends of the size table, because the smallest
+    /// world is where a canal is widest against the world it circles — a Duel
+    /// lap is under sixty tiles — and so where its far reach comes nearest the
+    /// latitude at which a poled world grows sea ice.
     #[test]
     fn six_grand_canals_each_circle_the_world_and_meet_one_another() {
         let rules = Rules::embedded();
-        for topology in [FLAT, GLOBE] {
-            for poles in [POLED, POLELESS] {
-                let mut rng = Rng::new(52_000 + topology.is_globe() as u64 * 2 + poles.has_poles() as u64);
-                let (world, _) = generate_with_script(
-                    &rules,
-                    84,
-                    54,
-                    8,
-                    12,
-                    5,
-                    4,
-                    MapScript::GrandCanals,
-                    topology,
-                    poles,
-                    &mut rng,
-                );
-                let canals = grand_canals(&world);
-                let where_ = format!("{topology:?}/{poles:?}");
-                assert!(!canals.is_empty(), "{where_}: no canal was cut at all");
+        for (index, size) in [&CIV6_MAP_SIZES[0], &CIV6_MAP_SIZES[3]].into_iter().enumerate() {
+            for topology in [FLAT, GLOBE] {
+                for poles in [POLED, POLELESS] {
+                    let mut rng = Rng::new(
+                        52_000
+                            + index as u64 * 4
+                            + topology.is_globe() as u64 * 2
+                            + poles.has_poles() as u64,
+                    );
+                    let (world, _) = generate_with_script(
+                        &rules,
+                        size.width,
+                        size.height,
+                        size.default_players,
+                        size.default_city_states,
+                        size.natural_wonders,
+                        size.continents,
+                        MapScript::GrandCanals,
+                        topology,
+                        poles,
+                        &mut rng,
+                    );
+                    let canals = grand_canals(&world);
+                    let where_ = format!("{} {topology:?}/{poles:?}", size.id);
+                    assert!(!canals.is_empty(), "{where_}: no canal was cut at all");
 
-                // Nothing dug is dry, and nothing dug is deep: the whole
-                // network is shallow water a fleet can enter on turn one.
-                for pos in &canals {
-                    let tile = &world.tiles[pos];
-                    assert!(rules.is_water(tile), "{where_}: dry land in a canal at {pos:?}");
-                    assert_eq!(
-                        tile.terrain, "coast",
-                        "{where_}: the canal at {pos:?} is {} rather than shallow water",
-                        tile.terrain
+                    // Nothing dug is dry, and nothing dug is deep: the whole
+                    // network is shallow water a fleet can enter on turn one.
+                    for pos in &canals {
+                        let tile = &world.tiles[pos];
+                        assert!(rules.is_water(tile), "{where_}: dry land in a canal at {pos:?}");
+                        assert_eq!(
+                            tile.terrain, "coast",
+                            "{where_}: the canal at {pos:?} is {} rather than shallow water",
+                            tile.terrain
+                        );
+                    }
+
+                    // Each of the six lanes on its own, split back out of the
+                    // set by which band it belongs to — and counted as a fleet
+                    // would count it, so a tile the polar band has frozen over
+                    // is not part of the lane that has to close.
+                    let half = canal_half_width(&world);
+                    let offset = CANAL_OFFSET_DEGREES.to_radians();
+                    let mut lanes = 0;
+                    for direction in CANAL_AXES {
+                        for sign in [1.0f64, -1.0] {
+                            let lane: BTreeSet<Pos> = canals
+                                .iter()
+                                .copied()
+                                .filter(|pos| {
+                                    world.tiles[pos].feature.as_deref() != Some("ice")
+                                })
+                                .filter(|pos| {
+                                    let out_of_plane = dot(world.direction(*pos), direction)
+                                        .clamp(-1.0, 1.0)
+                                        .asin();
+                                    (out_of_plane - sign * offset).abs() <= half
+                                })
+                                .collect();
+                            let named = format!(
+                                "{where_}: the canal {} of axis {direction:?}",
+                                if sign > 0.0 { "above" } else { "below" }
+                            );
+                            let mut bodies = connected_components(&world, &lane);
+                            bodies.sort_by_key(|body| std::cmp::Reverse(body.len()));
+                            let lap = bodies.first().cloned().unwrap_or_default();
+                            assert!(
+                                lap.len() * 4 >= lane.len() * 3,
+                                "{named} is not one lane: {} open tiles in {} pieces, largest {}",
+                                lane.len(),
+                                bodies.len(),
+                                lap.len()
+                            );
+                            let reached: BTreeSet<usize> = lap
+                                .iter()
+                                .map(|pos| sector_around(&world, direction, *pos))
+                                .collect();
+                            assert_eq!(
+                                reached.len(),
+                                12,
+                                "{named} stops short of closing: it reaches {} of the twelve \
+                                 sectors of a lap around its axis",
+                                reached.len()
+                            );
+                            lanes += 1;
+                        }
+                    }
+                    assert_eq!(lanes, 6, "{where_}: six canals, two around each of three axes");
+
+                    // And the six are one network, not six rings: no two axes
+                    // are parallel, so every lane crosses the four belonging to
+                    // the other two axes and a ship can get from any of them to
+                    // any other without portage.
+                    let water: BTreeSet<Pos> = world
+                        .tiles
+                        .iter()
+                        .filter(|(_, tile)| rules.is_water(tile))
+                        .map(|(pos, _)| *pos)
+                        .collect();
+                    let sea = connected_components(&world, &water)
+                        .into_iter()
+                        .max_by_key(|body| body.len())
+                        .unwrap_or_default();
+                    assert!(
+                        canals.iter().all(|pos| sea.contains(pos)),
+                        "{where_}: part of the canal network cannot be sailed to from the rest"
                     );
                 }
-
-                // Each of the six lanes on its own, split back out of the set
-                // by which band it belongs to.
-                let half = canal_half_width(&world);
-                let offset = CANAL_OFFSET_DEGREES.to_radians();
-                let mut lanes = 0;
-                for (axis, direction) in CANAL_AXES.iter().enumerate() {
-                    for sign in [1.0f64, -1.0] {
-                        let lane: BTreeSet<Pos> = canals
-                            .iter()
-                            .copied()
-                            .filter(|pos| {
-                                let out_of_plane =
-                                    dot(world.direction(*pos), *direction).clamp(-1.0, 1.0).asin();
-                                (out_of_plane - sign * offset).abs() <= half
-                            })
-                            .collect();
-                        let named = format!("{where_}: canal {axis}{}", if sign > 0.0 { "+" } else { "-" });
-                        let mut bodies = connected_components(&world, &lane);
-                        bodies.sort_by_key(|body| std::cmp::Reverse(body.len()));
-                        let lap = bodies.first().cloned().unwrap_or_default();
-                        assert!(
-                            lap.len() * 4 >= lane.len() * 3,
-                            "{named} is not one lane: {} tiles in {} pieces, largest {}",
-                            lane.len(),
-                            bodies.len(),
-                            lap.len()
-                        );
-                        let reached: BTreeSet<usize> =
-                            lap.iter().map(|pos| sector_around(&world, *direction, *pos)).collect();
-                        assert_eq!(
-                            reached.len(),
-                            12,
-                            "{named} stops short of closing: it reaches {} of the twelve sectors \
-                             of a lap around its axis",
-                            reached.len()
-                        );
-                        lanes += 1;
-                    }
-                }
-                assert_eq!(lanes, 6, "{where_}: six canals, two around each of three axes");
-
-                // And the six are one network, not six rings: no two axes are
-                // parallel, so every lane crosses the four belonging to the
-                // other two axes and a ship can get from any of them to any
-                // other without portage.
-                let water: BTreeSet<Pos> = world
-                    .tiles
-                    .iter()
-                    .filter(|(_, tile)| rules.is_water(tile))
-                    .map(|(pos, _)| *pos)
-                    .collect();
-                let sea = connected_components(&world, &water)
-                    .into_iter()
-                    .max_by_key(|body| body.len())
-                    .unwrap_or_default();
-                assert!(
-                    canals.iter().all(|pos| sea.contains(pos)),
-                    "{where_}: part of the canal network cannot be sailed to from the rest of it"
-                );
             }
         }
     }
