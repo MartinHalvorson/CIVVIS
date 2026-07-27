@@ -3808,10 +3808,16 @@ mod belief_runtime_tests {
             // camps stand seven tiles apart and out of everybody's sight, and
             // on a 44x30 world with eight majors and their city-states there
             // is only so much dark ground left that far from everything.
+            // Per seed this only asks that the world grew at all: how many
+            // camps a *particular* world can seat is a property of that world,
+            // not of the cadence. Sweeping map seeds shows the tail — a 44x30
+            // board with eight majors and their city-states sometimes has room
+            // for one camp in twelve turns and no more — so the cadence is
+            // asserted on the mean below, over all eight seeds, where it is
+            // actually measurable.
             assert!(
-                game.barb_camps.len() >= opening + 2,
-                "seed {seed} seated only {} camps in twelve turns",
-                game.barb_camps.len() - opening
+                game.barb_camps.len() > opening,
+                "seed {seed} seated no camps at all in twelve turns"
             );
             assert!(
                 game.barb_camps.len() <= game.barbarian_camp_target(),

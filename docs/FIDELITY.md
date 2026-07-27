@@ -521,8 +521,32 @@ resolved. The largest:
 
 The "Only in Civ VI" column measures scope rather than error — the units and
 buildings CIVVIS does not model are almost all civilization uniques from DLC
-packs, and the missing features are natural wonders plus the volcano system.
-That column is the content backlog.
+packs. That column is the content backlog. **Features is now empty**: the eight
+Natural Wonders it used to name (the Bermuda Triangle, Eyjafjallajökull, the
+Fountain of Youth, Lysefjord, Païtiti, Mount Roraima, Tsingy de Bemaraha and
+Sahara el Beyda) all exist, so CIVVIS carries the whole thirty-four-wonder
+roster with the shipped yields, appeal, impassability and sight.
+
+**The audit's own loader had two blind spots, and both of them libelled a
+wonder.** Fixed together with the roster:
+
+- An expansion ships a compatibility overlay that applies only when the *other*
+  expansion is installed. `DLC/Expansion1/Data/Expansion1_Expansion2.xml` is
+  Gathering Storm's rebalance of Rise and Fall content, and sorted filename
+  order applied it *before* the rows it edits existed — so every `<Update>` in
+  it silently matched nothing. The Eye of the Sahara kept Rise and Fall's 1
+  Production against CIVVIS' correct 2, and Pike and Shot's maintenance was
+  read as 4 when Gathering Storm sets it to 3 (that one was a real CIVVIS
+  error, now fixed). Cross-expansion overlays are applied last.
+- `RemoveData` files were excluded as cosmetic. They are how the later packs
+  retire content: Byzantium & Gaul deletes the Biosphere's `+8 Science` when
+  Gathering Storm is active, so the audit reported CIVVIS as missing a yield it
+  is correct not to have. Loading them also retires Twilight Valor and Letters
+  of Marque, which the same pack deletes and CIVVIS still carries — those two
+  now show in "Only in CIVVIS" as genuine backlog.
+
+With both fixed, **Wonders and Features compare 53 and 50 entries with zero
+divergences and nothing missing on either side.**
 
 **District adjacency (parallel session):** `District_Adjacencies` joined to
 `Adjacency_YieldChanges` against each district's per-source `adjacency` map,
