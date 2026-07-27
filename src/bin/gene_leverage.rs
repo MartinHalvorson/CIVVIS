@@ -119,6 +119,61 @@ fn main() {
     println!("  each draw replaces a block with uniform samples from its own bounds");
     println!("  parity 0.500; a block that matters scores BELOW parity when scrambled\n");
 
+    // Score ONE gene value at whatever power the question deserves.
+    //
+    // A sweep nominates; this decides. `--sweep` walks N points on one seed
+    // and its maximum is biased upward by construction, so the candidate it
+    // nominates has to be re-measured alone, on maps it did not choose, at
+    // enough of them to resolve the effect. Everything this session that
+    // looked like a finding and was not — the opening book at +0.05, the
+    // win-rate breeder, the expansion block — died at exactly this step.
+    if let (Some(target), Some(value)) = (
+        args.iter()
+            .position(|arg| arg == "--at")
+            .and_then(|index| args.get(index + 1)),
+        args.iter()
+            .position(|arg| arg == "--value")
+            .and_then(|index| args.get(index + 1))
+            .and_then(|v| v.parse::<f64>().ok()),
+    ) {
+        let Some(gene) = names.iter().position(|name| name == target) else {
+            eprintln!("gene_leverage: no gene named {target:?}");
+            std::process::exit(2);
+        };
+        let mut v = shipped.clone();
+        v[gene] = value;
+        let genome = Weights::from_vec(&v);
+        let shares = parallel::map(maps, jobs, move |index| {
+            duel(&genome, players, width, height, seed0 + index as u64, turns)
+        });
+        let n = shares.len().max(1) as f64;
+        let mean = shares.iter().sum::<f64>() / n;
+        let variance = if shares.len() > 1 {
+            shares.iter().map(|s| (s - mean).powi(2)).sum::<f64>() / (n - 1.0)
+        } else {
+            0.0
+        };
+        let se = (variance / n).sqrt();
+        let edge = mean - 0.5;
+        println!(
+            "{target} = {value} (shipped {:.3}), {maps} mirrored maps, seed {seed0}",
+            shipped[gene]
+        );
+        println!(
+            "  {mean:.4} +/- {se:.4}   edge {edge:+.4}  ({:.1} SE)",
+            if se > 0.0 { edge / se } else { 0.0 }
+        );
+        if se > 0.0 && edge.abs() < 2.0 * se {
+            println!("  => inside the interval. Not distinguishable from the shipped value.");
+        } else if edge > 0.0 {
+            println!(
+                "  => outside the interval and positive. Now decide it on WINS, not on score \
+                 share."
+            );
+        }
+        return;
+    }
+
     // Enumerate every district PRIORITY ORDER.
     //
     // `economy` is the only load-bearing block in the genome (+0.0193 +/-
