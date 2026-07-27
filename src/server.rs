@@ -414,6 +414,13 @@ fn completed_buildings(game: &Game) -> BTreeSet<String> {
         .collect()
 }
 
+/// One decimal place, the precision every accumulating figure in the
+/// observation is reported at. A progress bar cannot show more, and the extra
+/// digits are pure bytes on a document that is already the bottleneck.
+fn round_tenth(v: f64) -> f64 {
+    (v * 10.0).round() / 10.0
+}
+
 fn population_milestone(population: i32) -> i32 {
     if population < 4 {
         0
@@ -2039,6 +2046,40 @@ impl Session {
                     // spectator frame carries the agent's own read-out.
                     if let Some(plan) = self.ais.get(id).and_then(|ai| ai.plan_report()) {
                         player["ai_plan"] = self.plan_json(&plan);
+                    }
+                    // What this civilization is actually spending its science
+                    // and culture on, for the Active strategy panel. The
+                    // observation only ever carries the *observed* seat's, in
+                    // `me`, and above the world there is no observed seat.
+                    //
+                    // Omniscient view only. Watching as one civilization means
+                    // seeing what that civilization sees, and a rival's
+                    // laboratory is not on that list — the same rule
+                    // `reasoning_json` applies to a rival's thoughts. That seat
+                    // reads its own out of `me` as it always has.
+                    if self.view_player.is_none() {
+                        if let Some(seat) = g.players.get(id) {
+                            if !seat.is_minor && !seat.is_barbarian {
+                                player["research"] = json!(seat.research);
+                                player["research_progress"] =
+                                    json!(round_tenth(seat.research_progress));
+                                player["civic"] = json!(seat.civic);
+                                player["civic_progress"] = json!(round_tenth(seat.civic_progress));
+                                // Only whether the *current* study is boosted.
+                                // A late-game empire's whole boosted set is
+                                // dozens of strings per seat on a document that
+                                // is already the bottleneck, and the card asks
+                                // one question of it.
+                                player["research_boosted"] = json!(seat
+                                    .research
+                                    .as_ref()
+                                    .is_some_and(|tech| seat.boosted_techs.contains(tech)));
+                                player["civic_boosted"] = json!(seat
+                                    .civic
+                                    .as_ref()
+                                    .is_some_and(|civic| seat.boosted_civics.contains(civic)));
+                            }
+                        }
                     }
                 }
             }
@@ -5108,6 +5149,15 @@ mod tests {
         // the multi-megabyte world observation.
         assert!(EMBEDDED_INDEX.contains("const thinking = `&think=${reasoningLog.cursor}`;"));
         assert!(EMBEDDED_INDEX.contains("function absorbReasoning(st)"));
+        // A change of observed seat discards what the page holds, the same way
+        // a change of world does. `reasoning_json` stops sending a rival's
+        // thoughts the moment Watch as is entered, but the page had absorbed
+        // them while it was above the world — so without this the redaction is
+        // defeated by having watched first, and the log under the Active
+        // strategy panel names every civilization while the panel names one.
+        assert!(EMBEDDED_INDEX.contains("const viewer = st.view_player ?? null;"));
+        assert!(EMBEDDED_INDEX
+            .contains("if (newWorld || reasoningLog.viewer !== viewer) {"));
         // A log that is not the whole story says so.
         assert!(EMBEDDED_INDEX.contains("Earlier reasoning has been discarded"));
         // The three logs share the sidebar's spare height. Each floor is
@@ -6216,17 +6266,21 @@ mod tests {
         let strategy = EMBEDDED_INDEX
             .find("<span>Active strategy</span>")
             .expect("active strategy section");
-        // The three logs run deepest-cause first — why a civilization acted,
-        // the wars that reasoning started, then the world's record of what
-        // happened — so reading the column downward reads a turn in the order
-        // it was decided.
+        // The column runs deepest-cause first — what a civilization is trying
+        // to do now, why it acted, the wars that reasoning started, then the
+        // world's record of what happened — so reading the column downward
+        // reads a turn in the order it was decided. Active strategy leads
+        // because it is the standing plan every entry below it is an instance
+        // of: the reasoning log is an account over turns, and this is the
+        // current answer.
         assert!(
             game_settings < display_settings
-                && display_settings < reasoning_log
+                && display_settings < strategy
+                && strategy < reasoning_log
                 && reasoning_log < war_log
-                && war_log < event_log
-                && event_log < strategy,
-            "left panel should show game settings, display settings, and the three logs first"
+                && war_log < event_log,
+            "left panel should show game settings, display settings, \
+             the active strategy and then the three logs"
         );
         assert!(EMBEDDED_INDEX.contains("<span>Display settings</span>"));
         for overlay in ["players", "victory", "minimap", "controls", "lenses"] {
@@ -6552,6 +6606,18 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("p.ai_plan"));
         assert!(EMBEDDED_INDEX.contains(".civ-dossier {"));
         assert!(EMBEDDED_INDEX.contains("changed its grand strategy from"));
+        // Active strategy speaks for one civilization at a time, and which
+        // civilizations it may speak for is the observation's answer, not the
+        // panel's: `view_player` names a seat in a played game and in Watch as,
+        // and is null only for the view entitled to read every plan.
+        assert!(EMBEDDED_INDEX.contains("function strategySeats()"));
+        assert!(EMBEDDED_INDEX.contains("if (viewer !== null && viewer !== undefined) \
+             return players[viewer] ? [viewer] : [];"));
+        assert!(EMBEDDED_INDEX.contains("pick.style.display = seats.length > 1 ? \"block\" : \"none\";"));
+        // The observed seat's study rides in `me`; a rival's rides in
+        // `players[]`, and only the omniscient view is sent it.
+        assert!(EMBEDDED_INDEX
+            .contains("const source = state.view_player === p.id ? (state.me || {}) : p;"));
         // The log never reorders: an overflowing log retires its least
         // valuable entry instead of holding important ones frozen at the top.
         assert!(!EMBEDDED_INDEX.contains("e.important && now - e.at < 6000"));
@@ -6955,7 +7021,16 @@ mod tests {
         assert!(!EMBEDDED_INDEX
             .contains("civilization${summaries.length === 1 ? \"\" : \"s\"} completed"));
         assert!(EMBEDDED_INDEX.contains("id=\"strategysec\""));
-        assert!(EMBEDDED_INDEX
+        // Active strategy is no longer withheld from the omniscient spectator.
+        // It was, for as long as the panel could only ever speak for `state.me`
+        // and above the world there is no single "me"; it now names the
+        // civilization it is speaking for, so the one view that can read every
+        // plan is the last one that should hide it.
+        assert!(
+            EMBEDDED_INDEX.contains("document.getElementById(\"strategysec\").style.display = \"block\";"),
+            "the active strategy panel is shown in every view"
+        );
+        assert!(!EMBEDDED_INDEX
             .contains("document.getElementById(\"strategysec\").style.display = fullMapSpectator"));
         assert!(EMBEDDED_INDEX.contains("if (!fullMapSpectator && (SPEC || govs.length"));
         assert!(EMBEDDED_INDEX.contains(".sort((a, b) => b.score - a.score || a.id - b.id)"));
@@ -7650,6 +7725,76 @@ mod tests {
         assert!(plan["desired_cities"].as_u64().is_some());
         assert!(plan["assessed_turn"].as_u64().is_some());
         assert!(plan["forces"].is_array());
+    }
+
+    /// The Active strategy panel reads one civilization's plan beside what it
+    /// is actually spending its science and culture on. The observation only
+    /// ever carries the *observed* seat's study, in `me`, and above the world
+    /// there is no observed seat — so the omniscient view names every major's.
+    ///
+    /// Only that view. Watching as one civilization means seeing what it can
+    /// see, and a rival's laboratory is not on that list; the panel's picker
+    /// collapses to the one seat precisely because the wire gives it one.
+    #[test]
+    fn only_the_omniscient_view_reads_a_rivals_laboratory() {
+        let mut params = current();
+        params.spectate = true;
+        let mut session = Session::new(params);
+        // A world at turn 0 has chosen nothing yet.
+        for _ in 0..8 {
+            session.step();
+        }
+        let omniscient = session.state();
+        let majors = || {
+            omniscient["players"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter(|p| p["is_minor"] == json!(false) && p["is_barbarian"] == json!(false))
+        };
+        assert!(majors().count() > 1, "a table needs rivals to withhold");
+        assert!(
+            majors().any(|p| p["research"].is_string()),
+            "somebody has picked a technology by turn 8"
+        );
+        for player in majors() {
+            for field in [
+                "research",
+                "research_progress",
+                "research_boosted",
+                "civic",
+                "civic_progress",
+                "civic_boosted",
+            ] {
+                assert!(
+                    player.get(field).is_some(),
+                    "the omniscient view owes {} its {field}",
+                    player["civ"]
+                );
+            }
+            assert!(player["research_boosted"].is_boolean());
+            assert!(player["civic_boosted"].is_boolean());
+            assert!(player["research_progress"].is_number());
+        }
+        // A city-state has no research panel to fill and is not annotated.
+        for player in omniscient["players"].as_array().unwrap() {
+            if player["is_minor"] == json!(true) || player["is_barbarian"] == json!(true) {
+                assert!(player.get("research").is_none());
+            }
+        }
+
+        session.set_view_player(Some(1)).unwrap();
+        let watched = session.state();
+        for player in watched["players"].as_array().unwrap() {
+            assert!(
+                player.get("research").is_none() && player.get("civic").is_none(),
+                "watching as one civilization must not read {}'s laboratory",
+                player["civ"]
+            );
+        }
+        // The watched seat still reads its own out of `me`, as it always has.
+        assert!(watched["me"].get("research").is_some());
+        assert!(watched["me"]["boosted_techs"].is_array());
     }
 
     #[test]
