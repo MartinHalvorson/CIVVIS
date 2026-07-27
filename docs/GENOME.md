@@ -485,7 +485,9 @@ positive on the second.
 
 **Lane progress is the only statistic whose reading on the known null is
 statistically indistinguishable from zero while still reporting a positive on
-the known positive.** Its separation between the two cases is 9.0×, against
+the known positive.** ⚠ **This is superseded — see the refutation below. Both
+tests were non-adversarial, and the statistic does not survive a search that
+optimises it.** Its separation between the two cases is 9.0×, against
 2.4× for mean score share.
 
 The score functionals are not useless — `share⁴` and `top of table` do point
@@ -538,6 +540,257 @@ tighter than score**. Its ~10× advantage is over a **binary win rate**
 (SE 0.0456 over 120 games). The ordering is: score tightest but invalid, lane
 in the middle and valid, wins loosest and valid. Lane is the cheapest *valid*
 statistic, not the cheapest one.
+
+## ⚠ CORRECTION: the block-wise null was under-powered
+
+Everything above measures leverage by randomising **one block at a time**. A
+pre-registered cross-check against another agent's genome transfer shows that
+test missed something a whole-genome difference makes obvious.
+
+`ai_eval strategic_deep_league strategic_deep --players 4 --pairs 40 --turns 500`
+— the same macro-search budget on both sides, differing only in which genome
+they carry:
+
+```
+paired-map score   36.2%  (95% Wilson 23.2..51.7)   Elo-equivalent -98
+map directions     1 for / 12 against / 27 neutral
+sign test          p = 0.0034   SIGNIFICANT
+terminal score     15 vs 25, p = 0.1539
+```
+
+**A genome-scale difference moves wins at p=0.0034.** So this claim, as
+written above, is too strong:
+
+> ~~The `Weights` genome is not where superhuman strength comes from.~~
+
+The defensible version:
+
+> **No individual block showed measurable leverage at the power used, and every
+> specific improvement tested failed — but genome-scale differences
+> demonstrably move wins.** Per-block effects below that resolution can
+> accumulate across forty genes.
+
+Two qualifications that keep this honest in both directions:
+
+- **The demonstrated direction is downward.** This shows a genome can be made
+  *worse*, not that it can be made better. Selecting the highest-*rated* league
+  genome and transferring it is **harmful**, which fits `docs/RATING.md`'s
+  recorded confound — a rating pool that carried negative information can
+  nominate something systematically bad, and the transfer changes the opponent
+  anyway. Diagnostics: the transferred genome routes to domination 24 times
+  against 9, domination converts 0/7, and its adaptive seats win 19.6% against
+  34.2%.
+- **40 pairs is a screen.** The promotion gate reads INCONCLUSIVE. The
+  direction is significant; the effect size is not pinned.
+
+**What this changes about what to do next.** The genome having causal purchase
+on wins reopens the search — but only with a selection signal that tracks
+wins, which is exactly what the rest of this document establishes score share
+is not. Breeding on score selects for padding; breeding on league rating
+selected for something −98 Elo. `Game::victory_threat` is the one statistic
+validated against both a known null and a known positive, and it is the only
+one worth pointing a search at.
+
+## ★★★ REFUTED: lane progress is also a correlate, and a search finds that out
+
+This document claimed `Game::victory_threat` is a validated cheap fitness. It
+is not, and the refutation is stronger than a null.
+
+A GA over all forty genes, selecting on lane progress against the shipped
+genome, produced a champion at **+0.0886 ± 0.0280 (3.2 SE) on 48 disjoint
+maps** — three times the lane-progress edge of the one change known to win.
+Pre-registered, then decided on wins over 100 fresh mirrored maps:
+
+```
+decisive games   78/200 (39.0%)
+map directions   8 for / 30 against / 62 neutral
+sign test        p = 0.0005   SIGNIFICANT AGAINST the champion
+```
+
+**The bred genome is significantly worse.**
+
+### Why the validation was insufficient
+
+Lane progress passed two tests: parity on a change whose wins answer is parity,
+a positive on a change whose wins answer is positive. Both were
+**non-adversarial** — natural interventions not designed to exploit the
+statistic. It failed the first **adversarial** one: a search over forty genes
+for whatever maximises it.
+
+> **A statistic validated against interventions you did not design to exploit
+> it is not validated against a search that does.** Optimisation pressure is a
+> different test from correlation, and only the former is the one a fitness has
+> to survive.
+
+### The mechanism, which is specific
+
+The champion is a military build — `mil_per_city` 1.00→3.98, `attack_floor`
+0→10.5, `focus_fire` 2.50→4.50, `builder_per_city` halved. `victory_threat`
+rewards *progress toward* a victory condition, and domination is the lane this
+engine converts worst (3–8%, and 0/7 in the league-transfer diagnostics). So
+the search found the cheapest correlate to move — domination progress — and
+moved it, at the cost of winning.
+
+That is exactly `policy_wide`, one level up again. There, a value net's argmax
+over actions found the contact terms and went to −313 Elo. Here a GA's argmax
+over genomes found domination progress and went to 8 map directions against 30.
+**Same mechanism, third layer.**
+
+### What survives
+
+Every cheap end-of-game statistic tested here — score share under four
+functionals, and now lane progress — is a correlate that a search will exploit.
+The repository's original conclusion stands unweakened and now has one more
+independent confirmation:
+
+> **Only a counterfactual survives optimisation pressure.** Rollouts win;
+> regressions on outcomes do not; and no summary statistic of a finished game
+> is safe to breed against.
+
+## ★★★ Bias is fatal; noise is merely expensive
+
+The same search, the same budget, the same kind of disjoint holdout — with
+only the fitness changed:
+
+| bred on | holdout, on wins | verdict |
+|---|---|---|
+| lane progress (**biased**) | 8 map directions for / 30 against, p=0.0005 | **actively harmful** |
+| win rate (**unbiased**) | +0.0167 ± 0.0237 (0.7 SE) | parity — harmless |
+
+**That is the whole finding of this line of work.** A biased fitness does not
+merely fail to help; it converges successfully on the wrong objective and makes
+the agent worse. An unbiased one, under-resolved, simply finds nothing.
+
+The wins run also diagnoses its own failure. Selection score 0.5875, holdout
+0.5167, **fitted gap +0.0708** — and the maximum of 36 draws at a per-genome SE
+of 0.056 is worth about +0.11 by construction. The selection score was
+essentially all selection bias, which is what a search does when the signal is
+below its own noise.
+
+### And "unaffordable" was wrong
+
+This document earlier claimed a GA is trapped between a cheap invalid proxy and
+a valid unaffordable target. The second half was never costed:
+
+| maps/genome | per-genome SE | games | wall (9 cores) |
+|---|---|---|---|
+| 40 (the run above) | 0.056 | 2,880 | ~20 min |
+| 200 | 0.025 | 14,400 | ~1.6 h |
+| 400 | 0.018 | 28,800 | ~3.3 h |
+| 600 | 0.014 | 43,200 | ~4.9 h |
+
+The "865 games per genome" figure was the cost of resolving one 0.05 effect to
+significance — a far stricter requirement than selection needs, since selection
+only has to beat random. **An overnight GA on wins at 200–600 maps per genome
+is entirely practical on one machine.**
+
+> **The recommendation, stated plainly.** If a genetic search is to be run on
+> this engine, select on **wins**, never on a summary statistic, and buy
+> resolution with games. Every cheap proxy tested here — score share under four
+> functionals, and victory-lane progress — is a correlate that the search will
+> find and exploit. The cost of an unbiased fitness is hours; the cost of a
+> biased one is an agent that is measurably worse.
+
+## ★★ The shipped genome is a local optimum, measured on wins
+
+A (1+1) paired hill climb — one mutant per step, played head to head against
+the incumbent on the same 150 mirrored maps, accepted only on a 2 SE margin,
+scored on **wins**:
+
+```
+14 steps, 0 accepted
+significantly better:  0
+significantly worse:   2   (step 8 at -4.4 SE, step 11 at -2.7 SE)
+best seen:            +1.0 SE
+```
+
+**The asymmetry is the result.** Random perturbations of the shipped genome
+can hurt significantly and never help. That is what sitting at a local optimum
+looks like, and it is measured on the objective rather than on a proxy.
+
+It also explains, retrospectively, why every earlier tuning attempt returned
+null: they were sampling around a point that is already locally best. The
+handful of hand-tuned constants in `Weights::default` are, on this evidence,
+about as good as that parameterisation gets.
+
+**What this does not establish.** 150 maps resolves about 0.029, so effects
+below roughly 0.06 are invisible to this run. A small real improvement is not
+excluded — only a large one. Buying that resolution is the recipe above:
+600 maps a step reaches 0.014, at roughly five hours for a comparable number
+of steps.
+
+## ★★ The local optimum holds at four times the resolution
+
+The 150-map climb found the shipped genome locally optimal but could only see
+effects above about 0.06. Rerun at **600 maps a step** (per-step SE ~0.014,
+four times tighter), 20 steps:
+
+```
+1 of 20 steps accepted
+```
+
+**One acceptance is what noise produces.** A 2 SE bar is p≈0.046 per test, so
+twenty steps expect 0.9 false acceptances. The bar was designed to guard a
+*single* step; it does not guard a campaign of them — the same
+maximum-of-many error the hill climb was built to avoid, reintroduced one
+level up.
+
+So the accepted genome was re-measured head to head against the shipped one on
+**200 fresh maps**:
+
+```
+decisive games   205/400 (51.2%)
+map directions   18 for / 13 against / 169 neutral
+sign test        p = 0.4731
+```
+
+**It did not replicate.** The prediction from the arithmetic was exact: a bar
+that guards one test, applied twenty times, manufactures about one acceptance,
+and that acceptance evaporates on fresh maps.
+
+`genome_breed --climb` now prints the expected chance-acceptance count beside
+the observed one and labels anything within it a *nomination with a prior
+against it*.
+
+**The genome is a local optimum on wins, now confirmed at 0.014 resolution.**
+
+## Tech order and civic order are not a big lever either
+
+`src/bin/order_ablate.rs` replaces every technology and civic choice on the
+treated seats with a uniformly random *legal* one, scored on wins over 60
+mirrored maps:
+
+| ablation | directions | p |
+|---|---|---|
+| tech order | 6 for / 9 against | 0.6072 |
+| civic order | 2 for / 4 against | 0.6875 |
+| both | 6 for / 9 against | 0.6072 |
+| both, disjoint seed | 8 for / 8 against | 1.0000 |
+
+Randomising an entire subsystem should be catastrophic if it mattered much.
+It is not even detectable. Resolution is 0.09, so this bounds the layer rather
+than zeroing it.
+
+⚠ **The first version of this tool measured nothing** and returned 0 for /
+0 against / 60 neutral at exactly 50.0% — the degenerate signature of
+identical arms, which reads exactly like a settled subsystem. Two stacked
+causes: `do_research` refuses while a research is set, and `take_turn` ends
+the seat's turn internally so any later override fails with *"not your turn"*.
+Scrambling **before** the agent acts fixed it: 28,608 fires where there had
+been zero. **It shipped without a fires-check**, which every other instrument
+in this work has.
+
+## The scoreboard for the operator's list
+
+| optimization game | bounded at | verdict |
+|---|---|---|
+| policy cards | wins | layer worth p=0.0023; incumbent list captures it |
+| build order (opening book) | score | deleting it costs −0.003 |
+| tech order | wins | randomising costs < 0.09 |
+| civic order | wins | randomising costs < 0.09 |
+| city expansion | wins | at a local optimum |
+| war timing | wins | 98% of wars open with the army in position |
+| war conversion | — | **the one measured gap: 67% of siege opens a city nobody can enter** |
 
 ## The conclusion this all points at
 

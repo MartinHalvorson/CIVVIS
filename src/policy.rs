@@ -345,6 +345,13 @@ impl Ai for PolicyAi {
     fn plan_report(&self) -> Option<PlanReport> {
         self.fallback.plan_report()
     }
+
+    /// See [`crate::strategic::StrategicAi::attach_journal`]: the search runs
+    /// over clones, whose journals are silent, so only the agent that actually
+    /// moved is recorded.
+    fn attach_journal(&mut self, journal: crate::reasoning::Journal) {
+        self.fallback.attach_journal(journal);
+    }
 }
 
 #[cfg(test)]
