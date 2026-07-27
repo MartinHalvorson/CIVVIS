@@ -539,6 +539,56 @@ tighter than score**. Its ~10× advantage is over a **binary win rate**
 in the middle and valid, wins loosest and valid. Lane is the cheapest *valid*
 statistic, not the cheapest one.
 
+## ⚠ CORRECTION: the block-wise null was under-powered
+
+Everything above measures leverage by randomising **one block at a time**. A
+pre-registered cross-check against another agent's genome transfer shows that
+test missed something a whole-genome difference makes obvious.
+
+`ai_eval strategic_deep_league strategic_deep --players 4 --pairs 40 --turns 500`
+— the same macro-search budget on both sides, differing only in which genome
+they carry:
+
+```
+paired-map score   36.2%  (95% Wilson 23.2..51.7)   Elo-equivalent -98
+map directions     1 for / 12 against / 27 neutral
+sign test          p = 0.0034   SIGNIFICANT
+terminal score     15 vs 25, p = 0.1539
+```
+
+**A genome-scale difference moves wins at p=0.0034.** So this claim, as
+written above, is too strong:
+
+> ~~The `Weights` genome is not where superhuman strength comes from.~~
+
+The defensible version:
+
+> **No individual block showed measurable leverage at the power used, and every
+> specific improvement tested failed — but genome-scale differences
+> demonstrably move wins.** Per-block effects below that resolution can
+> accumulate across forty genes.
+
+Two qualifications that keep this honest in both directions:
+
+- **The demonstrated direction is downward.** This shows a genome can be made
+  *worse*, not that it can be made better. Selecting the highest-*rated* league
+  genome and transferring it is **harmful**, which fits `docs/RATING.md`'s
+  recorded confound — a rating pool that carried negative information can
+  nominate something systematically bad, and the transfer changes the opponent
+  anyway. Diagnostics: the transferred genome routes to domination 24 times
+  against 9, domination converts 0/7, and its adaptive seats win 19.6% against
+  34.2%.
+- **40 pairs is a screen.** The promotion gate reads INCONCLUSIVE. The
+  direction is significant; the effect size is not pinned.
+
+**What this changes about what to do next.** The genome having causal purchase
+on wins reopens the search — but only with a selection signal that tracks
+wins, which is exactly what the rest of this document establishes score share
+is not. Breeding on score selects for padding; breeding on league rating
+selected for something −98 Elo. `Game::victory_threat` is the one statistic
+validated against both a known null and a known positive, and it is the only
+one worth pointing a search at.
+
 ## The conclusion this all points at
 
 Every measured attempt to make this agent stronger by **tuning parameters** has
