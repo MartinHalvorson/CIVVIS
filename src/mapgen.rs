@@ -2109,6 +2109,14 @@ fn apply_tectonics(wm: &mut WorldMap, land: &BTreeSet<Pos>, rng: &mut Rng) {
 /// which is exactly what a world without cold ends should be deciding on.
 const POLELESS_LATITUDE: f64 = 0.34;
 
+/// The grain of the fractal that lays out heat on a randomized world.
+///
+/// The same octave count the desert, plains and variation fractals use, so
+/// scattered heat arrives in patches the size of a desert region rather than
+/// as per-tile confetti — a randomized world is still made of climates, they
+/// just aren't where latitude would put them.
+const THERMAL_FRACTAL_GRAIN: u32 = 3;
+
 /// Climate, the way `TerrainGenerator.lua` paints it: latitude bands whose
 /// borders are roughened by a variation fractal, with Desert and Plains cut
 /// out of two further fractals so that both arrive as regions. Desert is
@@ -2120,6 +2128,12 @@ const POLELESS_LATITUDE: f64 = 0.34;
 /// ending in tundra and then snow. Without them, every tile is handed the same
 /// warm latitude instead, so there is no cold end to the world at all and the
 /// two fractals decide everything between desert, plains and grassland.
+/// Randomized hands each tile a latitude drawn from a fourth fractal, so the
+/// full range from snow to jungle survives but stops running north to south.
+///
+/// That fourth fractal is built **only** for `Randomized`. Drawing it
+/// unconditionally would advance `rng` before the desert and plains fractals
+/// and re-roll every existing world from the same seed.
 fn assign_biomes(wm: &mut WorldMap, land: &[Pos], poles: MapPoles, rng: &mut Rng) {
     let (width, height) = (wm.width, wm.height);
     let deserts = Fractal::new(rng, width, height, 3);
@@ -2127,6 +2141,8 @@ fn assign_biomes(wm: &mut WorldMap, land: &[Pos], poles: MapPoles, rng: &mut Rng
     let variation = Fractal::new(rng, width, height, 3);
     let desert_bottom = deserts.percentile(100 - DESERT_PERCENT);
     let plains_bottom = plains.percentile(100 - PLAINS_PERCENT);
+    let thermal = matches!(poles, MapPoles::Randomized)
+        .then(|| Fractal::new(rng, width, height, THERMAL_FRACTAL_GRAIN));
 
     for pos in land {
         let (col, row) = noise_cell(wm, *pos);
@@ -2136,6 +2152,10 @@ fn assign_biomes(wm: &mut WorldMap, land: &[Pos], poles: MapPoles, rng: &mut Rng
         let base = match poles {
             MapPoles::Poles => wm.polar_fraction(*pos),
             MapPoles::NoPoles => POLELESS_LATITUDE,
+            // `thermal` is Some for exactly this arm.
+            MapPoles::Randomized => thermal
+                .as_ref()
+                .map_or(POLELESS_LATITUDE, |f| f.at(col, row) as f64 / 255.0),
         };
         let latitude =
             (base + (128.0 - variation.at(col, row) as f64) / (255.0 * 5.0)).clamp(0.0, 1.0);
@@ -4000,6 +4020,7 @@ mod river_tests {
     const GLOBE: MapTopology = MapTopology::Planet;
     const POLED: MapPoles = MapPoles::Poles;
     const POLELESS: MapPoles = MapPoles::NoPoles;
+    const SCATTERED: MapPoles = MapPoles::Randomized;
 
     /// Every world type but Earth, in the order the lobby lists them: most
     /// land first, most water last.
@@ -4562,6 +4583,124 @@ mod river_tests {
                     .any(|tile| tile.feature.as_deref() == Some("ice")),
                 "{topology:?}: the poled control grew no sea ice"
             );
+        }
+    }
+
+    /// And what "randomized" means: the full range of climates survives, but
+    /// it stops running north to south. Every band from the equator out to a
+    /// pole carries cold ground, and the equatorial band carries about as much
+    /// of it as the polar band — which is exactly what a poled world forbids,
+    /// where the middle of the world is 0% cold and the extremes are 60%+.
+    #[test]
+    fn a_randomized_world_scatters_cold_ground_across_every_latitude() {
+        let rules = Rules::embedded();
+        const BANDS: [(f64, f64); 4] = [(0.0, 0.2), (0.2, 0.45), (0.45, 0.7), (0.7, 1.01)];
+        for topology in [FLAT, GLOBE] {
+            let mut cold = [0usize; BANDS.len()];
+            let mut total = [0usize; BANDS.len()];
+            for seed in 0..3u64 {
+                let mut rng = Rng::new(37_000 + seed);
+                let (world, _) = generate_with_script(
+                    &rules, 74, 46, 6, 9, 4, 3, MapScript::LandOnly, topology, SCATTERED,
+                    &mut rng,
+                );
+                for (pos, tile) in world.tiles.iter() {
+                    if rules.is_water(tile) {
+                        continue;
+                    }
+                    let latitude = world.polar_fraction(*pos);
+                    let Some(band) = BANDS
+                        .iter()
+                        .position(|(low, high)| latitude >= *low && latitude < *high)
+                    else {
+                        continue;
+                    };
+                    total[band] += 1;
+                    if matches!(tile.terrain.as_str(), "snow" | "tundra") {
+                        cold[band] += 1;
+                    }
+                }
+            }
+            let share: Vec<usize> = (0..BANDS.len())
+                .map(|band| cold[band] * 100 / total[band].max(1))
+                .collect();
+            assert!(
+                total.iter().all(|count| *count > 100),
+                "{topology:?}: every band needs land in it to measure, got {total:?}"
+            );
+            // The equator is cold somewhere — the thing latitude bands make
+            // impossible.
+            assert!(
+                share[0] > 0,
+                "{topology:?}: randomized heat left the equator uniformly warm, shares {share:?}"
+            );
+            // And the poles are not the cold end: no band is more than four
+            // times as cold as the equatorial one. A poled world of the same
+            // size runs 0% to 60%+, which this bound rejects outright.
+            assert!(
+                share[BANDS.len() - 1] <= share[0] * 4,
+                "{topology:?}: cold still piles up at the extremes, shares {share:?}"
+            );
+        }
+    }
+
+    /// Randomized worlds keep the cold terrains that a poleless world drops,
+    /// and drop the polar sea-ice band that a poled world grows — cold ground
+    /// exists, it just isn't at the ends of the world.
+    #[test]
+    fn a_randomized_world_has_cold_terrain_but_no_polar_ice_band() {
+        let rules = Rules::embedded();
+        for topology in [FLAT, GLOBE] {
+            let mut rng = Rng::new(46_000);
+            let (world, _) = generate_with_script(
+                &rules, 60, 38, 4, 6, 3, 2, MapScript::Pangaea, topology, SCATTERED, &mut rng,
+            );
+            assert!(
+                world
+                    .tiles
+                    .values()
+                    .any(|tile| matches!(tile.terrain.as_str(), "snow" | "tundra")),
+                "{topology:?}: a randomized world grew no cold terrain at all"
+            );
+            for (pos, tile) in world.tiles.iter() {
+                assert!(
+                    tile.feature.as_deref() != Some("ice"),
+                    "{topology:?}: randomized heat still grew a polar ice cap at {pos:?}"
+                );
+            }
+        }
+    }
+
+    /// The guard on the whole change: the thermal fractal is drawn only for a
+    /// randomized world, so a poled or poleless world from a given seed is the
+    /// same world it was before that fractal existed.
+    #[test]
+    fn only_randomized_worlds_draw_the_thermal_fractal() {
+        let rules = Rules::embedded();
+        for topology in [FLAT, GLOBE] {
+            for poles in [POLED, POLELESS] {
+                let mut first = Rng::new(51_000);
+                let (a, _) = generate_with_script(
+                    &rules, 60, 38, 4, 6, 3, 2, MapScript::Continents, topology, poles, &mut first,
+                );
+                // Drawing the same world again must leave `rng` in the same
+                // place: if the biome pass had consumed an extra fractal for
+                // these settings, the second draw would diverge.
+                let mut second = Rng::new(51_000);
+                let (b, _) = generate_with_script(
+                    &rules, 60, 38, 4, 6, 3, 2, MapScript::Continents, topology, poles, &mut second,
+                );
+                assert_eq!(
+                    a.tiles.iter().map(|(_, t)| t.terrain.clone()).collect::<Vec<_>>(),
+                    b.tiles.iter().map(|(_, t)| t.terrain.clone()).collect::<Vec<_>>(),
+                    "{topology:?}/{poles:?}: the same seed drew two different worlds"
+                );
+                assert_eq!(
+                    first.next_u64(),
+                    second.next_u64(),
+                    "{topology:?}/{poles:?}: the two draws left the RNG in different places"
+                );
+            }
         }
     }
 

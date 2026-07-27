@@ -4,13 +4,14 @@ use civvis::game::{Game, GameOptions};
 use civvis::mapgen::generate_with_script;
 use civvis::rng::Rng;
 use civvis::rules::Rules;
-use civvis::setup::{MapPoles, MapTopology, CIV6_MAP_SCRIPTS, CIV6_MAP_SIZES};
+use civvis::setup::{MapPoles, MapTopology, CIV6_MAP_SCRIPTS, CIV6_MAP_SIZES, MAP_POLES};
 use civvis::world::Topology;
 
 /// Shape, climate and map script are independent setup choices. Keep every map
 /// type in the catalogue on both generation paths, including fixed-geography
-/// Earth and the warm no-poles variant; adding a type automatically adds it to
-/// this matrix.
+/// Earth, the warm no-poles variant and the randomized one; adding a type
+/// automatically adds it to this matrix, and the climate list is `MAP_POLES`
+/// itself so adding a climate does too.
 #[test]
 fn every_world_type_generates_a_playable_world_on_either_shape_and_climate() {
     let rules = Rules::embedded();
@@ -25,7 +26,10 @@ fn every_world_type_generates_a_playable_world_on_either_shape_and_climate() {
             .into_iter()
             .enumerate()
         {
-            for (poles_index, poles) in [MapPoles::Poles, MapPoles::NoPoles].into_iter().enumerate()
+            for (poles_index, poles) in MAP_POLES
+                .into_iter()
+                .map(|spec| spec.poles)
+                .enumerate()
             {
                 let seed = 71_000
                     + 101 * script_index as u64
@@ -148,6 +152,18 @@ fn every_world_type_generates_a_playable_world_on_either_shape_and_climate() {
                             !matches!(tile.terrain.as_str(), "snow" | "tundra")
                                 && tile.feature.as_deref() != Some("ice"),
                             "{case}: a no-poles world contains polar terrain at {:?}",
+                            tile.pos
+                        );
+                    }
+                }
+
+                // Randomized heat keeps cold terrain but takes away the cold
+                // *ends*: no world type grows an ice cap, on either shape.
+                if poles == MapPoles::Randomized {
+                    for tile in world.tiles.values() {
+                        assert!(
+                            tile.feature.as_deref() != Some("ice"),
+                            "{case}: a randomized world grew a polar ice cap at {:?}",
                             tile.pos
                         );
                     }
