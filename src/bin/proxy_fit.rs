@@ -29,10 +29,37 @@
 //! proxy_fit --maps 60 --players 4
 //! ```
 //!
-//! **The expected result is that nothing beats score by much**, in which case
-//! the trap is real and the conclusion is that selection here has to buy wins
-//! directly or not at all. A proxy that does much better would be the single
-//! most useful thing this line of work could produce.
+//! ## The answer, and the reading it required
+//!
+//! Over 60 games, 240 seat-games, every one decided:
+//!
+//! | proxy | AUC |
+//! |---|---|
+//! | **score share** | **0.949** |
+//! | civic share | 0.890 |
+//! | population share | 0.887 |
+//! | tech share | 0.860 |
+//! | city share | 0.854 |
+//! | military power share | 0.755 |
+//! | gold share | 0.714 |
+//! | faith share | 0.611 |
+//!
+//! Score share is a **near-perfect classifier of the winner** and the best of
+//! the eight. It is not a poor proxy — it is an excellent one.
+//!
+//! Which has to be squared with the measured fact that raising mean score share
+//! by +0.019 across four seeds returned 12 map directions to 15 on wins. Both
+//! are true, and together they locate the defect precisely: within a game the
+//! winner is almost always the top scorer, **and** a couple of points of *mean*
+//! share almost never flips who is first — it pads games already won or already
+//! lost.
+//!
+//! **So the defect is the functional, not the signal.** Winning is a threshold
+//! on score (be first), and the mean of a threshold quantity is a bad fitness
+//! for it. A selection statistic here should be **convex** in score share,
+//! rewarding being at the top far more than being two points above average,
+//! which keeps most of the 0.949 discrimination while using more of each game
+//! than a binary win does.
 use civvis::ai::{AdvancedAi, Ai, Weights};
 use civvis::game::{Action, Game};
 use civvis::parallel;
@@ -231,7 +258,30 @@ fn main() {
         .map(|(v, _)| *v)
         .unwrap_or(f64::NAN);
     println!("\nbest proxy: {} at AUC {:.3}; score share is {score_auc:.3}", best.1, best.0);
-    if best.0 - score_auc > 0.05 {
+
+    // The first version of this conclusion was wrong, and the error is worth
+    // keeping visible because it is easy to repeat: it compared the best proxy
+    // against score share, found no separation, and reported that as "no cheap
+    // quantity predicts winning". But score share came in at AUC 0.949 -- it is
+    // very nearly a perfect classifier of who won, and the best of the eight.
+    // "Nothing beats the best" is not "the best is bad".
+    if score_auc > 0.85 {
+        println!(
+            "  => score share is a NEAR-PERFECT classifier of the winner, not a poor one.\n\
+             \n     \
+             That has to be reconciled with the measured fact that raising mean score share\n     \
+             by +0.019 across four seeds produced 12 map directions to 15 on wins. Both are\n     \
+             true: within a game the winner is almost always the top scorer, AND a couple of\n     \
+             points of MEAN share almost never flips who is first -- it pads games already\n     \
+             won or already lost.\n\
+             \n     \
+             So the defect is not the signal, it is the functional. Winning is a THRESHOLD on\n     \
+             score (be first), and the mean of a threshold quantity is a bad fitness for it.\n     \
+             A selection statistic here should be convex in score share -- rewarding being at\n     \
+             the top far more than being two points above average -- which keeps most of the\n     \
+             0.949 discrimination while using more of each game than a binary win does."
+        );
+    } else if best.0 - score_auc > 0.05 {
         println!(
             "  => {} ranks seats by victory materially better than score does. A selection\n     \
              fitness built on it would be both cheap and closer to the thing that matters.\n     \
@@ -240,9 +290,8 @@ fn main() {
         );
     } else {
         println!(
-            "  => nothing separates from score share. The trap is real: on this engine no\n     \
-             cheap end-of-game quantity ranks genomes the way winning does, so selection has\n     \
-             to buy wins directly, and a GA cannot afford them."
+            "  => no proxy discriminates well and none beats the others. Selection would have\n     \
+             to buy wins directly."
         );
     }
 }
