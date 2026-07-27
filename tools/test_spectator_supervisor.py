@@ -812,13 +812,9 @@ class RecoveryTests(unittest.TestCase):
         )
         instance_guard.start()
         self.addCleanup(instance_guard.stop)
-        countdown = patch.object(
-            supervisor,
-            "FINAL_COUNTDOWN_SECONDS",
-            supervisor.MIN_FINAL_COUNTDOWN_SECONDS,
-        )
-        countdown.start()
-        self.addCleanup(countdown.stop)
+        # The countdown used to be settable, so these cases pinned it back to
+        # its floor. It is a constant now and `--cooldown` cannot move it, so
+        # there is nothing left to pin.
 
     @staticmethod
     def supervisor_args(**overrides):
@@ -1220,33 +1216,33 @@ class RecoveryTests(unittest.TestCase):
         command = supervisor.server_command(8766, settings, False, checkpoint)
         self.assertEqual(command[command.index("--resume") + 1], str(checkpoint))
         self.assertIn("--supervised", command)
-        self.assertEqual(command[command.index("--restart-ms") + 1], "10000")
         self.assertIn("--no-open", command)
 
-    def test_final_countdown_has_a_ten_second_floor_and_a_one_minute_ceiling(self):
-        self.assertEqual(supervisor.final_countdown_seconds(0.0), 10.0)
-        self.assertEqual(supervisor.final_countdown_seconds(5.0), 10.0)
-        self.assertEqual(supervisor.final_countdown_seconds(9.999), 10.0)
-        self.assertEqual(supervisor.final_countdown_seconds(10.0), 10.0)
-        self.assertEqual(supervisor.final_countdown_seconds(12.5), 12.5)
-        # A launcher cannot hand the result screen a two-minute countdown.
-        self.assertEqual(supervisor.final_countdown_seconds(110.0), 60.0)
-        self.assertEqual(supervisor.final_countdown_seconds(float("inf")), 10.0)
-        with patch.object(supervisor, "FINAL_COUNTDOWN_SECONDS", 12.5):
-            command = supervisor.server_command(
-                8766,
-                {
-                    "players": 4,
-                    "width": 60,
-                    "height": 38,
-                    "city_states": 6,
-                    "turns": 500,
-                    "map": "pangaea",
-                    "speed": "standard",
-                },
-                False,
-            )
-        self.assertEqual(command[command.index("--restart-ms") + 1], "12500")
+    def test_the_countdown_is_ten_seconds_and_no_launcher_can_change_it(self):
+        """The result screen's number has no input, here or on the server.
+
+        It used to come from `--cooldown` via `--restart-ms`, and the number a
+        viewer read was whichever value had won that chain — twice in one
+        evening the exhibition counted down from something nobody had chosen.
+        """
+        self.assertEqual(supervisor.FINAL_COUNTDOWN_SECONDS, 10.0)
+        for asked in (0.0, 5.0, 9.999, 10.0, 12.5, 60.0, 110.0, float("inf")):
+            self.assertEqual(supervisor.final_countdown_seconds(asked), 10.0)
+        # And the server is never handed a duration at all.
+        command = supervisor.server_command(
+            8766,
+            {
+                "players": 4,
+                "width": 60,
+                "height": 38,
+                "city_states": 6,
+                "turns": 500,
+                "map": "pangaea",
+                "speed": "standard",
+            },
+            False,
+        )
+        self.assertNotIn("--restart-ms", command)
 
     def test_server_command_carries_manual_victory_settings(self):
         settings = {
