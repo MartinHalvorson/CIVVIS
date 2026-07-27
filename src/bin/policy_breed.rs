@@ -146,7 +146,14 @@ fn duel(candidate: &Weights, players: usize, w: i32, h: i32, seed: u64, turns: u
     share / 2.0
 }
 
-/// The candidate's mean score share against the legacy arm over `maps` maps.
+/// The candidate's mean score share against the legacy arm, **with the standard
+/// error of that mean**.
+///
+/// The SE is not decoration. The first build of this search selected on a
+/// statistic whose noise was twice any real effect, and nothing in its output
+/// said so -- three generations of 0.500, 0.542, 0.500 looked like a search
+/// until the arithmetic was done by hand afterwards. A fitness that reports its
+/// own uncertainty cannot hide that failure a second time.
 fn fitness(
     candidate: &Weights,
     players: usize,
@@ -156,12 +163,19 @@ fn fitness(
     seed0: u64,
     turns: u32,
     jobs: usize,
-) -> f64 {
+) -> (f64, f64) {
     let genome = candidate.clone();
     let shares = parallel::map(maps, jobs, move |index| {
         duel(&genome, players, w, h, seed0 + index as u64, turns)
     });
-    shares.iter().sum::<f64>() / maps as f64
+    let n = shares.len().max(1) as f64;
+    let mean = shares.iter().sum::<f64>() / n;
+    let variance = if shares.len() > 1 {
+        shares.iter().map(|s| (s - mean).powi(2)).sum::<f64>() / (n - 1.0)
+    } else {
+        0.0
+    };
+    (mean, (variance / n).sqrt())
 }
 
 fn with_policy_genes(genes: &[f64; 8]) -> Weights {
@@ -184,6 +198,47 @@ fn main() {
     let seed0 = number(&args, "--seed", 500_000) as u64;
     let holdout_maps = number(&args, "--holdout-maps", 60);
     let jobs = number(&args, "--jobs", parallel::default_jobs());
+
+    // Evaluate one named genome against the shipped appetites and stop. The
+    // search itself is expensive and often unnecessary: once a candidate
+    // exists, the only question left is whether it survives maps it did not
+    // select against, and that is two fitness calls rather than eight
+    // generations.
+    if let Some(spec) = args
+        .iter()
+        .position(|arg| arg == "--genes")
+        .and_then(|index| args.get(index + 1))
+    {
+        let parsed: Vec<f64> = spec
+            .split(',')
+            .filter_map(|piece| piece.trim().parse().ok())
+            .collect();
+        if parsed.len() != 8 {
+            eprintln!("policy_breed: --genes needs 8 comma-separated numbers, got {}", parsed.len());
+            std::process::exit(2);
+        }
+        let mut genes = [0.0f64; 8];
+        genes.copy_from_slice(&parsed);
+        let holdout_seed = seed0 + 900_000;
+        let (mine, mine_se) = fitness(
+            &with_policy_genes(&genes), players, width, height, holdout_maps, holdout_seed, turns, jobs,
+        );
+        let (shipped, shipped_se) = fitness(
+            &Weights::default(), players, width, height, holdout_maps, holdout_seed, turns, jobs,
+        );
+        let edge = mine - shipped;
+        let edge_se = (mine_se.powi(2) + shipped_se.powi(2)).sqrt();
+        println!("candidate  {mine:.4} +/- {mine_se:.4}");
+        println!("shipped    {shipped:.4} +/- {shipped_se:.4}");
+        println!(
+            "edge       {edge:+.4} +/- {edge_se:.4}   ({:.1} SE) over {holdout_maps} disjoint maps, seed {holdout_seed}",
+            if edge_se > 0.0 { edge / edge_se } else { 0.0 }
+        );
+        if edge_se > 0.0 && edge.abs() < 2.0 * edge_se {
+            println!("=> inside the interval: not distinguishable from the shipped appetites.");
+        }
+        return;
+    }
 
     let all_bounds = Weights::bounds();
     let bounds: Vec<(f64, f64)> = POLICY_GENES.iter().map(|i| all_bounds[*i]).collect();
@@ -222,7 +277,7 @@ fn main() {
             .iter()
             .map(|genes| {
                 let candidate = with_policy_genes(genes);
-                let fit = fitness(
+                let (fit, _se) = fitness(
                     &candidate, players, width, height, maps, map_seed, turns, jobs,
                 );
                 (fit, *genes)
@@ -271,25 +326,11 @@ fn main() {
     // selection score is how much of the champion is real.
     let champion = with_policy_genes(&best.1);
     let holdout_seed = seed0 + 900_000;
-    let holdout = fitness(
-        &champion,
-        players,
-        width,
-        height,
-        holdout_maps,
-        holdout_seed,
-        turns,
-        jobs,
+    let (holdout, holdout_se) = fitness(
+        &champion, players, width, height, holdout_maps, holdout_seed, turns, jobs,
     );
-    let shipped_holdout = fitness(
-        &Weights::default(),
-        players,
-        width,
-        height,
-        holdout_maps,
-        holdout_seed,
-        turns,
-        jobs,
+    let (shipped_holdout, shipped_se) = fitness(
+        &Weights::default(), players, width, height, holdout_maps, holdout_seed, turns, jobs,
     );
 
     println!("\nchampion");
@@ -297,8 +338,26 @@ fn main() {
         println!("  pol_{name:<12} {:.4}", best.1[k]);
     }
     println!("  selection score  {:.3} (on its own maps)", best.0);
-    println!("  holdout score    {holdout:.3} ({holdout_maps} disjoint maps, seed {holdout_seed})");
-    println!("  shipped appetites{shipped_holdout:>7.3} (same holdout maps)");
+    println!("  holdout score    {holdout:.3} +/- {holdout_se:.3} ({holdout_maps} disjoint maps, seed {holdout_seed})");
+    println!("  shipped appetites{shipped_holdout:>7.3} +/- {shipped_se:.3} (same holdout maps)");
+    // The only comparison that matters, and the only one with an error bar.
+    let edge = holdout - shipped_holdout;
+    let edge_se = (holdout_se.powi(2) + shipped_se.powi(2)).sqrt();
+    println!(
+        "  champion - shipped {edge:+.3} +/- {edge_se:.3}  ({:.1} SE)",
+        if edge_se > 0.0 { edge / edge_se } else { 0.0 }
+    );
+    if edge_se > 0.0 && edge.abs() < 2.0 * edge_se {
+        println!(
+            "  => INSIDE the interval. This champion is not distinguishable from the shipped\n     \
+             appetites on maps it did not select against. Do NOT queue a policy_eval on it."
+        );
+    } else if edge > 0.0 {
+        println!(
+            "  => outside the interval and positive. THIS earns a pre-registered policy_eval\n     \
+             at 100+ mirrored maps on a fresh seed -- which decides it, not this number."
+        );
+    }
     println!(
         "\nfitted-to-the-maps gap: {:.3}. A champion that keeps its edge on the holdout has \
          earned a pre-registered policy_eval run; one that does not has been fitted.",
