@@ -936,7 +936,7 @@ fn preslav_arms_only_cavalry_and_only_on_the_high_ground() {
 
 #[test]
 fn mitla_grows_campus_cities_and_taruga_counts_resource_kinds_not_tiles() {
-    let (mut game, cities) = game_with_capitals(2, 89_012);
+    let (mut game, cities) = game_with_capitals(2, crate::rng::fixture_seed("MITLA", 89_029));
     let city = cities[0];
     let minor = add_city_state(&mut game, "Mitla");
     make_suzerain(&mut game, 0, minor);
