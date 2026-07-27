@@ -87,9 +87,6 @@ pub struct Params {
     /// A lifecycle supervisor, rather than the browser countdown, owns the
     /// transition after a completed spectator game.
     pub supervised: bool,
-    /// Requested result-screen duration. Five seconds is the minimum; a
-    /// supervisor may ask for longer when its handoff needs more time.
-    pub restart_ms: u64,
     /// League directory to seat major players from (`civvis play --league`):
     /// each civ gets its best-rated strategies and the HUD shows per-player
     /// elo. `None` still annotates elo when a `league/` dir exists, because
@@ -1004,22 +1001,22 @@ impl FrameDelivery {
     }
 }
 
-/// The result screen counts down for ten seconds before the next world.
+/// The result screen counts down for ten seconds before the next world. Not
+/// "at least ten", not "ten by default" — ten.
 ///
 /// Ten is the whole product's one answer to "how long does a finished game
-/// stay up": the browser's own countdown on a single-player finale uses it,
-/// and so does the exhibition's server-driven one. They were five and ten for
-/// a while, which is exactly long enough for the exhibition to look like it
-/// was rushing the verdict off the screen.
-const MIN_RESTART_MS: u64 = 10_000;
-/// The longest countdown any launcher can put on the result screen.
+/// stay up", and the browser's own countdown on a single-player finale is the
+/// same constant.
 ///
-/// A supervisor may still ask for longer than ten seconds when its handoff
-/// needs it, but a countdown is a promise to whoever is watching, and past a
-/// minute it stops being one. Without this the number on screen is whatever
-/// `--restart-ms` said, so a mistyped launcher flag reads as the game itself
-/// having gone wrong.
-const MAX_RESTART_MS: u64 = 60_000;
+/// **This deliberately has no input.** It used to be `--restart-ms`, floored
+/// by the server and fed by the supervisor's `--cooldown`, and the number the
+/// viewer read was whichever value had won that chain. Twice in one evening
+/// the exhibition put a countdown on screen that nobody had chosen — first two
+/// minutes, then, once a ceiling was added, exactly that ceiling. A dial whose
+/// only effect is a number on a screen, and which every layer can override, is
+/// not a setting; it is a way for the screen to be wrong. `--restart-ms` and
+/// `--cooldown` are now accepted and ignored.
+const RESULT_COUNTDOWN_MS: u64 = 10_000;
 /// How long after its last request a viewer is still considered present, and
 /// so still owed a frame for every turn.
 ///
@@ -1045,8 +1042,10 @@ const UNLIMITED_BREATH_MS: u64 = 100;
 /// Minor civilizations and barbarians take a quarter of a major's slice.
 const MINOR_SHARE: f64 = 0.25;
 
-fn final_countdown_ms(requested: u64) -> u64 {
-    requested.clamp(MIN_RESTART_MS, MAX_RESTART_MS)
+/// Ten seconds, whatever anybody asked for. Kept as a function so the two
+/// places that arm the countdown cannot each grow their own idea of it.
+fn final_countdown_ms() -> u64 {
+    RESULT_COUNTDOWN_MS
 }
 
 /// Give an unrated AI seat a compact, deterministic handle. The first half of
@@ -2787,8 +2786,8 @@ fn auto_step_loop(sh: Arc<Shared>) {
             }
             if s.game.winner.is_some() {
                 let t0 = *over_since.get_or_insert_with(Instant::now);
-                let left = final_countdown_ms(s.params.restart_ms)
-                    .saturating_sub(t0.elapsed().as_millis() as u64);
+                let left =
+                    final_countdown_ms().saturating_sub(t0.elapsed().as_millis() as u64);
                 sh.restart_in.store(left, Ordering::Relaxed);
                 if left == 0 {
                     s.start_automatic_next_game();
@@ -2838,10 +2837,7 @@ fn auto_step_loop(sh: Arc<Shared>) {
                 // the window the countdown describes.
                 if s.game.winner.is_some() {
                     over_since = Some(Instant::now());
-                    sh.restart_in.store(
-                        final_countdown_ms(s.params.restart_ms),
-                        Ordering::Relaxed,
-                    );
+                    sh.restart_in.store(final_countdown_ms(), Ordering::Relaxed);
                 }
                 // A turn is one step per seat, so a seat waits for its own
                 // share of the turn budget and the round adds up to the pace.
@@ -3623,8 +3619,8 @@ mod tests {
         chronicle_world_events, final_countdown_ms, held_frame, new_game_params, query_value,
         request_path, save_path, seat_delay_ms, strategy_roster, tile_mark, ChronicleSnapshot,
         ChronicleState, FrameDelivery, Params,
-        Session, Shared, SpectatorFrame, EMBEDDED_CINEMATIC_3D, EMBEDDED_INDEX, MAX_RESTART_MS,
-        MIN_RESTART_MS,
+        Session, Shared, SpectatorFrame, EMBEDDED_CINEMATIC_3D, EMBEDDED_INDEX,
+        RESULT_COUNTDOWN_MS,
         EMBEDDED_HIDDEN_MAP_MONSTERS, EMBEDDED_WORLD_WONDER_ATLAS, SAVE_DIR, STATE_LONG_POLL,
         VIEWER_ACTIVE,
     };
@@ -3663,13 +3659,24 @@ mod tests {
         assert_eq!(seat_delay_ms(0, 8, 12, false), 0);
     }
 
+    /// Ten seconds, and nothing can ask for anything else.
+    ///
+    /// This was a dial — `--restart-ms`, floored by the server, fed by the
+    /// supervisor's `--cooldown`. The number a viewer read was whichever value
+    /// had won that chain, and twice in one evening the exhibition counted
+    /// down from a duration nobody had chosen: first two minutes, then, once a
+    /// ceiling existed, exactly that ceiling. The dial is gone. The one thing
+    /// this must never again be is *configurable*.
     #[test]
-    fn final_countdown_is_ten_seconds_unless_longer_is_requested() {
-        assert_eq!(final_countdown_ms(0), 10_000);
-        assert_eq!(final_countdown_ms(5_000), 10_000);
-        assert_eq!(final_countdown_ms(9_999), 10_000);
-        assert_eq!(final_countdown_ms(10_000), 10_000);
-        assert_eq!(final_countdown_ms(12_500), 12_500);
+    fn the_result_countdown_is_ten_seconds_with_no_input() {
+        assert_eq!(final_countdown_ms(), 10_000);
+        assert_eq!(RESULT_COUNTDOWN_MS, 10_000);
+        // The browser's own finale countdown is the same ten seconds, so a
+        // person and the exhibition are offered the identical window.
+        assert!(EMBEDDED_INDEX.contains(&format!(
+            "const FINALE_RESTART_SECONDS = {};",
+            RESULT_COUNTDOWN_MS / 1_000
+        )));
     }
 
     #[test]
@@ -3688,17 +3695,6 @@ mod tests {
             generated_ai_name(42, 0, Some("conquest"))
         );
         assert!(generated_ai_name(42, 0, None).starts_with("Resolute"));
-    }
-
-    /// The number on the result screen is the number this function returns, so
-    /// a launcher that asks for two minutes must not get to say "the next
-    /// world begins in 110s" — that reads as the game having broken, not as a
-    /// setting somebody chose.
-    #[test]
-    fn no_launcher_can_put_a_two_minute_countdown_on_the_result_screen() {
-        assert_eq!(final_countdown_ms(110_000), MAX_RESTART_MS);
-        assert_eq!(final_countdown_ms(u64::MAX), MAX_RESTART_MS);
-        assert!(MAX_RESTART_MS >= MIN_RESTART_MS);
     }
 
     #[test]
@@ -4395,7 +4391,7 @@ mod tests {
         // Every state that carries a winner carries the countdown with it.
         assert_eq!(
             decided["restart_in"],
-            json!(MIN_RESTART_MS / 1_000),
+            json!(RESULT_COUNTDOWN_MS / 1_000),
             "a result was published without the ten seconds it is owed"
         );
 
@@ -4705,7 +4701,7 @@ mod tests {
         assert!(
             EMBEDDED_INDEX.contains(&format!(
                 "const FINALE_RESTART_SECONDS = {};",
-                MIN_RESTART_MS / 1_000
+                RESULT_COUNTDOWN_MS / 1_000
             )),
             "the browser's finale countdown must be the server's countdown"
         );
@@ -4899,7 +4895,6 @@ mod tests {
             leader_pool: LeaderPool::Civ6,
             civs: Vec::new(),
             supervised: false,
-            restart_ms: 5_000,
             league_dir: None,
             league_record: false,
         }
@@ -7683,13 +7678,16 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("id=\"play-on-indefinite\""));
         assert!(EMBEDDED_INDEX.contains("Take a look around"));
         // The two rules that resume play are named for what the person wants
-        // rather than for the rule they select; the rule itself is on the
-        // tooltip, which is why both buttons still have to carry one.
-        assert!(EMBEDDED_INDEX.contains(">Continue</button>"));
+        // rather than for the rule they select. "Continue" alone did not say
+        // what it continues *to* — the two play-on buttons differ only in
+        // which later result stops them, and a bare verb left that on the
+        // tooltip where nobody reads it.
+        assert!(EMBEDDED_INDEX.contains(">Continue to the next Victory type</button>"));
         assert!(EMBEDDED_INDEX.contains(">To infinity and beyond</button>"));
         assert!(EMBEDDED_INDEX.contains(
             "title=\"Keep playing this world without a turn limit. The exact result shown \
-             here will not repeat; the next distinct victory ends the game.\">Continue<"
+             here will not repeat; the next distinct victory ends the game.\">\
+             Continue to the next Victory type<"
         ));
         assert!(EMBEDDED_INDEX.contains(
             "title=\"Keep playing this world without a turn limit and ignore every later \
