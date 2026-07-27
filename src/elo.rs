@@ -38,7 +38,7 @@ pub const BUILTIN_AIS: [&str; 10] = [
 /// tournament ratings. Keeping them out of `BUILTIN_AIS` prevents a control
 /// factory from being pooled into the same player/leader rating key as
 /// its treatment.
-pub const EVAL_ONLY_AIS: [&str; 19] = [
+pub const EVAL_ONLY_AIS: [&str; 20] = [
     "advanced_lane_reachable",
     "advanced_relief_scoped",
     "strategic_score",
@@ -57,6 +57,7 @@ pub const EVAL_ONLY_AIS: [&str; 19] = [
     "policy_wide_frozen",
     "strategic_warm",
     "strategic_cold",
+    "strategic_noprophet",
     "strategic_deep_adaptive",
 ];
 
@@ -624,6 +625,19 @@ pub fn builtin_ai(name: &str, seed: u64) -> Box<dyn Ai> {
             ai.adaptive_horizon = true;
             Box::new(ai)
         }
+        // The irreversible-Prophet prior removed, so the rollouts answer the
+        // reviews it was short-circuiting. It answers about half of all
+        // reviews and the search disagrees with it 85% of the time
+        // (`search_probe --priors`), which makes it the largest single
+        // restriction on this search that has ever been measured -- and an
+        // entirely untested one.
+        "strategic_noprophet" => {
+            let mut ai = crate::strategic::StrategicAi::with_weights(
+                crate::evolve::load_champion("evolved").unwrap_or_default(),
+            );
+            ai.trust_religious_prior = false;
+            Box::new(ai)
+        }
         "strategic_rot20" => {
             let mut ai = crate::strategic::StrategicAi::with_weights(
                 crate::evolve::load_champion("evolved").unwrap_or_default(),
@@ -844,6 +858,7 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "strategic_rot20" => (vec![genome, value(false)], "strategic_rot20"),
         "strategic_warm" => (vec![genome, value(false)], "strategic_warm"),
         "strategic_cold" => (vec![genome, value(false)], "strategic_cold"),
+        "strategic_noprophet" => (vec![genome, value(false)], "strategic_noprophet"),
         "strategic_deep_adaptive" => (vec![genome, value(false)], "strategic_deep_adaptive"),
         // Same artifact dependencies as `strategic`: the genome tunes it,
         // and the net is non-definitional because the search runs without
