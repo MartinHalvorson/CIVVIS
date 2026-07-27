@@ -95,6 +95,70 @@ pub struct TerrainSpec {
     pub defense: f64,
 }
 
+/// Where on the map a Natural Wonder is allowed to appear.
+///
+/// This is the shipped placement rule, transcribed from the game database:
+/// `Feature_ValidTerrains` for the ground it stands on, `Feature_AdjacentTerrains`
+/// / `Feature_NotAdjacentTerrains` (plus the `Coast` and `NoCoast` columns) for
+/// the ground around it, `Feature_AdjacentFeatures` / `Feature_NotNearFeatures`
+/// for the vegetation, `Features.Tiles` for how many hexes it covers, and
+/// `MinDistanceLand` / `MaxDistanceLand` for how far offshore a water wonder
+/// sits. It is what decides whether a wonder is eligible to be *rolled* for a
+/// given map at all, so it is the input to the generation odds rather than a
+/// cosmetic hint.
+#[derive(Clone, Default, Serialize, Deserialize)]
+pub struct FeaturePlacement {
+    /// Base terrains the wonder can stand on. `mountain` covers every coloured
+    /// `TERRAIN_*_MOUNTAIN` variant, which CIVVIS spells as one terrain.
+    #[serde(default)]
+    pub terrain: Vec<String>,
+    /// `Some(true)` for the hills-only wonders (the Cliffs of Dover),
+    /// `Some(false)` for the flat-only ones (Crater Lake, Pantanal, Yosemite,
+    /// the Dead Sea, Lake Retba, the Giant's Causeway), `None` when the shipped
+    /// valid-terrain rows list both forms.
+    #[serde(default)]
+    pub hills: Option<bool>,
+    /// `Features.Tiles`: the size of the wonder's footprint. Absent in the
+    /// database means one hex.
+    #[serde(default = "one_tile")]
+    pub tiles: usize,
+    /// How many of those hexes are water rather than land. Only the Giant's
+    /// Causeway, whose columns step off a headland into the sea, sets this.
+    #[serde(default)]
+    pub water_tiles: usize,
+    /// At least one neighbour must be one of these terrains. Carries the
+    /// `Coast` column for the shore wonders and `Feature_AdjacentTerrains` for
+    /// the peaks, which must not be walled in by their own mountain range.
+    #[serde(default)]
+    pub adjacent_terrain: Vec<String>,
+    /// No neighbour may be one of these. Carries `NoCoast` as `coast`.
+    #[serde(default)]
+    pub not_adjacent_terrain: Vec<String>,
+    /// At least one neighbour must carry one of these features (Yosemite wants
+    /// Woods, Ik-Kil wants Rainforest).
+    #[serde(default)]
+    pub adjacent_feature: Vec<String>,
+    /// `Feature_NotNearFeatures`: no neighbour may carry one of these. Every
+    /// shipped row names Sea Ice, keeping the water wonders out of the pack.
+    #[serde(default)]
+    pub avoid_feature: Vec<String>,
+    /// `NoAdjacentFeatures`: no neighbour may carry *any* feature.
+    #[serde(default)]
+    pub no_adjacent_features: bool,
+    /// `NoRiver`: the hex may not have a river on it.
+    #[serde(default)]
+    pub no_river: bool,
+    /// `MinDistanceLand` / `MaxDistanceLand`: how many hexes of open water lie
+    /// between this wonder and the nearest land. The Great Barrier Reef and Ha
+    /// Long Bay hug the shore at 1, the Galapagos sit 2-3 hexes out.
+    #[serde(default)]
+    pub land_distance: Option<[i32; 2]>,
+}
+
+fn one_tile() -> usize {
+    1
+}
+
 #[derive(Clone, Serialize, Deserialize)]
 pub struct FeatureSpec {
     #[serde(default)]
@@ -113,6 +177,10 @@ pub struct FeatureSpec {
     pub move_cost: f64,
     #[serde(default)]
     pub natural_wonder: bool,
+    /// Present on every Natural Wonder and on nothing else: the ground the map
+    /// generator is allowed to seat it on.
+    #[serde(default)]
+    pub placement: FeaturePlacement,
     /// How much this feature adds to the height of the terrain under it for
     /// line of sight, the game database's ``SightThroughModifier``: Woods and
     /// Rainforest 1 — burnt over as well as standing — Everest and Yosemite 2,
@@ -1200,6 +1268,8 @@ pub struct Rules {
     pub disasters: SpecMap<DisasterSpec>,
     /// Rise & Fall's Dedications, both halves.
     pub dedications: SpecMap<DedicationSpec>,
+    /// The city-state seats this ruleset can hand out, in seating order.
+    pub city_states: CityStateRoster,
     /// Which technologies grant each global effect, and which civics do.
     ///
     /// Asking what a player's trees add up to used to walk every node they
@@ -1217,6 +1287,119 @@ pub struct Rules {
     /// several paths reach. The closure is taken once instead.
     pub tech_ancestors: SpecMap<BTreeSet<String>>,
     pub civic_ancestors: SpecMap<BTreeSet<String>>,
+    /// Which effect keys each family of specs declares at all.
+    pub effect_index: EffectIndex,
+}
+
+/// The effect keys each family of specs actually grants something towards.
+///
+/// Every path that collects a numeric modifier ends in `spec.effects.get(key)`
+/// over some family — a player's policies, their cities' buildings, the
+/// wonders they have built, a Governor's promotions. A key that no spec in the
+/// family declares can only contribute `None`, so the whole sweep is a
+/// guaranteed zero. Asking the family first turns the common answer into one
+/// lookup instead of a walk over every city, building or roster entry.
+///
+/// Built once with the ruleset, alongside the inverted tree tables and for the
+/// same reason. A mod overlay merges into the raw JSON before a [`Rules`] is
+/// constructed, so the index covers modded content too.
+#[derive(Clone, Default)]
+pub struct EffectIndex {
+    pub policies: SpecMap<()>,
+    pub civs: SpecMap<()>,
+    pub buildings: SpecMap<()>,
+    pub districts: SpecMap<()>,
+    pub wonders: SpecMap<()>,
+    pub beliefs: SpecMap<()>,
+    pub governors: SpecMap<()>,
+    /// The union of every family above, including the trees.
+    ///
+    /// This is what `Game::city_modifier_effect` and `modifier_grants_ability`
+    /// are ruled out on, so it has to cover every *ruleset* source those two
+    /// collect from — policies, the trees, civilization traits, buildings,
+    /// districts, wonders, beliefs, pantheons and Governors. It deliberately
+    /// does not cover families nothing collects this way (unit promotions,
+    /// improvements, projects, Great People): a narrower union skips more.
+    /// Add a family here the moment a collection path starts reading it, or
+    /// that path will read a zero that is wrong.
+    ///
+    /// Runtime attachments are deliberately **absent**. `Rules::modifiers` is
+    /// the one table swapped in after a ruleset is built — that is how a
+    /// World Congress resolution installs an arbitrary bundle — so an index
+    /// of it would go stale the moment it mattered. The collection paths
+    /// instead fall through whenever the seat has any attachment at all,
+    /// which needs no index and cannot be stale.
+    pub any: SpecMap<()>,
+    /// The selectors named by the three namespaced effect families.
+    ///
+    /// `building_yield:<building>:<yield>` and its two siblings are assembled
+    /// with [`format!`] at the call site, so asking whether the key exists
+    /// costs an allocation before the lookup can even miss. These sets are
+    /// keyed on the selector alone, which the caller already holds borrowed,
+    /// so the common "nothing modifies this" answer costs nothing.
+    pub building_yield_selectors: SpecMap<()>,
+    pub unit_purchase_selectors: SpecMap<()>,
+    pub granted_abilities: SpecMap<()>,
+}
+
+impl EffectIndex {
+    #[inline]
+    pub fn policies(&self, effect: &str) -> bool {
+        self.policies.contains_key(effect)
+    }
+    #[inline]
+    pub fn civs(&self, effect: &str) -> bool {
+        self.civs.contains_key(effect)
+    }
+    #[inline]
+    pub fn buildings(&self, effect: &str) -> bool {
+        self.buildings.contains_key(effect)
+    }
+    #[inline]
+    pub fn districts(&self, effect: &str) -> bool {
+        self.districts.contains_key(effect)
+    }
+    #[inline]
+    pub fn wonders(&self, effect: &str) -> bool {
+        self.wonders.contains_key(effect)
+    }
+    #[inline]
+    pub fn beliefs(&self, effect: &str) -> bool {
+        self.beliefs.contains_key(effect)
+    }
+    #[inline]
+    pub fn governors(&self, effect: &str) -> bool {
+        self.governors.contains_key(effect)
+    }
+    /// Whether anything at all in the ruleset grants this effect.
+    #[inline]
+    pub fn any(&self, effect: &str) -> bool {
+        self.any.contains_key(effect)
+    }
+    /// Whether any modifier changes the yields a named building produces.
+    #[inline]
+    pub fn modifies_building_yields(&self, selector: &str) -> bool {
+        self.building_yield_selectors.contains_key(selector)
+    }
+    /// Whether any modifier discounts the purchase of a named unit.
+    #[inline]
+    pub fn discounts_unit_purchase(&self, selector: &str) -> bool {
+        self.unit_purchase_selectors.contains_key(selector)
+    }
+    /// Whether any modifier grants a named ability.
+    #[inline]
+    pub fn grants_ability(&self, ability: &str) -> bool {
+        self.granted_abilities.contains_key(ability)
+    }
+}
+
+/// Collect the effect keys a family of specs declares.
+fn effect_key_set<'a>(keys: impl Iterator<Item = &'a String>) -> SpecMap<()> {
+    let mut set = SpecMap::new();
+    for key in keys {
+        set.insert(key.clone(), ());
+    }
+    set
 }
 
 fn shuffle_strings(values: &mut [String], rng: &mut Rng) {
@@ -1706,8 +1889,43 @@ impl DedicationSpec {
     }
 }
 
+/// One city-state seat: the identity a game stores, the shipped type whose
+/// 1/3/6 Envoy thresholds it pays, and the Suzerain bonus it carries.
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
+pub struct CityStateSpec {
+    pub name: String,
+    /// `scientific`, `cultural`, `religious`, `militaristic`, `industrial` or
+    /// `trade` — the shipped `MinorCivBonuses` rows.
+    #[serde(rename = "type")]
+    pub kind: String,
+    /// Engine key for the bespoke Suzerain bonus, absent for a seat that
+    /// carries only its type bonus.
+    #[serde(default)]
+    pub bonus: Option<String>,
+    /// Whether the engine actually implements `bonus`. A seat whose bonus is
+    /// declared but unimplemented still pays its type bonus; this flag is what
+    /// `every_declared_suzerain_bonus_is_implemented` reads so an unfinished
+    /// entry cannot be mistaken for a working one.
+    #[serde(default)]
+    pub implemented: bool,
+    /// Whether Civilization VI itself seats this city-state. The roster keeps
+    /// names beyond the shipped 48 so the largest maps have distinct
+    /// identities to hand out.
+    #[serde(default)]
+    pub shipped: bool,
+    /// The shipped Suzerain text, for clients and the Civilopedia.
+    #[serde(default)]
+    pub effect: String,
+}
+
+/// The city-state roster in seating order.
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
+pub struct CityStateRoster {
+    pub roster: Vec<CityStateSpec>,
+}
+
 /// Every ruleset file the engine ships, by the name a mod overlay uses.
-pub const DATA_FILES: [(&str, &str); 28] = [
+pub const DATA_FILES: [(&str, &str); 29] = [
     ("terrains", include_str!("../data/terrains.json")),
     ("features", include_str!("../data/features.json")),
     ("resources", include_str!("../data/resources.json")),
@@ -1736,6 +1954,7 @@ pub const DATA_FILES: [(&str, &str); 28] = [
     ("tree_effects", include_str!("../data/tree_effects.json")),
     ("disasters", include_str!("../data/disasters.json")),
     ("dedications", include_str!("../data/dedications.json")),
+    ("city_states", include_str!("../data/city_states.json")),
 ];
 
 fn add_effects(target: &mut BTreeMap<String, f64>, source: &BTreeMap<String, f64>) {
@@ -2002,10 +2221,12 @@ impl Rules {
             wmds: take(&mut files, "wmds")?,
             disasters: take(&mut files, "disasters")?,
             dedications: take(&mut files, "dedications")?,
+            city_states: take(&mut files, "city_states")?,
             tech_effects: SpecMap::default(),
             civic_effects: SpecMap::default(),
             tech_ancestors: SpecMap::default(),
             civic_ancestors: SpecMap::default(),
+            effect_index: EffectIndex::default(),
         };
         let effects: TreeEffectsData = take(&mut files, "tree_effects")?;
         for (node, values) in effects.techs {
@@ -2027,7 +2248,89 @@ impl Rules {
         rules.civic_effects = effect_sources(&rules.civics);
         rules.tech_ancestors = ancestry(&rules.techs);
         rules.civic_ancestors = ancestry(&rules.civics);
+        rules.effect_index = rules.build_effect_index();
         Ok(rules)
+    }
+
+    /// Index which effect keys each family of specs declares. See
+    /// [`EffectIndex`] for why the collection paths ask this first.
+    fn build_effect_index(&self) -> EffectIndex {
+        let beliefs = [
+            &self.beliefs.pantheon,
+            &self.beliefs.founder,
+            &self.beliefs.follower,
+            &self.beliefs.enhancer,
+            &self.beliefs.worship,
+        ];
+        let index = EffectIndex {
+            policies: effect_key_set(self.policies.values().flat_map(|spec| spec.effects.keys())),
+            civs: effect_key_set(self.civs.values().flat_map(|spec| spec.effects.keys())),
+            buildings: effect_key_set(self.buildings.values().flat_map(|spec| spec.effects.keys())),
+            districts: effect_key_set(self.districts.values().flat_map(|spec| spec.effects.keys())),
+            wonders: effect_key_set(self.wonders.values().flat_map(|spec| spec.effects.keys())),
+            beliefs: effect_key_set(
+                beliefs
+                    .into_iter()
+                    .flat_map(|table| table.values())
+                    .flat_map(|spec| spec.effects.keys()),
+            ),
+            // A Governor grants through the title itself and through each
+            // promotion its holder has taken.
+            governors: effect_key_set(self.governors.values().flat_map(|spec| {
+                spec.effects.keys().chain(
+                    spec.promotions
+                        .values()
+                        .flat_map(|promotion| promotion.effects.keys()),
+                )
+            })),
+            any: SpecMap::new(),
+            building_yield_selectors: SpecMap::new(),
+            unit_purchase_selectors: SpecMap::new(),
+            granted_abilities: SpecMap::new(),
+        };
+        // The union has to include the trees, which are indexed by effect
+        // already, even though no caller asks about them on their own.
+        let mut any = SpecMap::new();
+        for family in [
+            &index.policies,
+            &index.civs,
+            &index.buildings,
+            &index.districts,
+            &index.wonders,
+            &index.beliefs,
+            &index.governors,
+        ] {
+            for key in family.keys() {
+                any.insert(key.clone(), ());
+            }
+        }
+        for key in self.tech_effects.keys().chain(self.civic_effects.keys()) {
+            any.insert(key.clone(), ());
+        }
+        // Split the three namespaced families back into the selectors they
+        // name. A selector may not itself contain a colon — the modifier
+        // compiler rejects that — so the shape of each key is exact.
+        let mut building_yield_selectors = SpecMap::new();
+        let mut unit_purchase_selectors = SpecMap::new();
+        let mut granted_abilities = SpecMap::new();
+        for key in any.keys() {
+            if let Some(rest) = key.strip_prefix(BUILDING_YIELD_EFFECT_PREFIX) {
+                if let Some((selector, _yield_type)) = rest.split_once(':') {
+                    building_yield_selectors.insert(selector.to_string(), ());
+                }
+            } else if let Some(unit) = key.strip_prefix(UNIT_PURCHASE_EFFECT_PREFIX) {
+                unit_purchase_selectors.insert(unit.to_string(), ());
+            } else if let Some(ability) = key.strip_prefix(GRANT_ABILITY_EFFECT_PREFIX) {
+                granted_abilities.insert(ability.to_string(), ());
+            }
+        }
+        EffectIndex {
+            any,
+            building_yield_selectors,
+            unit_purchase_selectors,
+            granted_abilities,
+            ..index
+        }
     }
 
     /// Build the one authoritative unlock list from each content object's
@@ -3083,6 +3386,13 @@ mod tests {
     /// so it pays its neighbours instead — or, for Ik-Kil and Zhangye Danxia,
     /// nothing but Appeal. Six wonders used to be passable *and* pay tile
     /// yields nobody in the shipped game ever collects.
+    ///
+    /// The Bermuda Triangle is the shipped exception on the other side, and it
+    /// is deliberate rather than sloppy: its plots are ordinary Ocean a Citizen
+    /// *can* work, it pays nothing for standing there, and its whole yield is
+    /// the +5 Science it gives every neighbour. `Feature_UnitMovements` bars
+    /// passage through it while allowing a unit to end on it, which is a third
+    /// state neither half of the split describes.
     #[test]
     fn an_impassable_natural_wonder_pays_its_neighbours_not_its_own_tile() {
         let rules = Rules::embedded();
@@ -3100,6 +3410,14 @@ mod tests {
                     "{name} is impassable, so no Citizen can ever work its tile"
                 );
                 blocked += 1;
+            } else if name == "bermuda_triangle" {
+                assert_eq!(spec.yields, Yields::default(), "{name} pays no tile yield");
+                assert_ne!(
+                    spec.adjacent_yields,
+                    Yields::default(),
+                    "{name} exists to pay its neighbours"
+                );
+                passable += 1;
             } else {
                 assert_ne!(
                     spec.yields,
@@ -3118,5 +3436,109 @@ mod tests {
             passable > 0 && blocked > 0,
             "both halves of the split must be represented"
         );
+    }
+
+    /// The collection paths skip a whole sweep when the index says no spec in
+    /// the family grants an effect, so an index that misses a key would make
+    /// a real modifier silently stop applying. Every declared key must be
+    /// present in its own family and in the union.
+    #[test]
+    fn the_effect_index_covers_every_key_any_spec_declares() {
+        let rules = Rules::shipped();
+        let index = &rules.effect_index;
+        let mut checked = 0usize;
+        let mut check = |family: &str, present: bool, in_any: bool, key: &str| {
+            assert!(present, "{family} declares {key}, which its index omits");
+            assert!(in_any, "{key} is declared by {family} but missing from the union");
+        };
+        for spec in rules.policies.values() {
+            for key in spec.effects.keys() {
+                check("policies", index.policies(key), index.any(key), key);
+                checked += 1;
+            }
+        }
+        for spec in rules.civs.values() {
+            for key in spec.effects.keys() {
+                check("civs", index.civs(key), index.any(key), key);
+                checked += 1;
+            }
+        }
+        for spec in rules.buildings.values() {
+            for key in spec.effects.keys() {
+                check("buildings", index.buildings(key), index.any(key), key);
+                checked += 1;
+            }
+        }
+        for spec in rules.districts.values() {
+            for key in spec.effects.keys() {
+                check("districts", index.districts(key), index.any(key), key);
+                checked += 1;
+            }
+        }
+        for spec in rules.wonders.values() {
+            for key in spec.effects.keys() {
+                check("wonders", index.wonders(key), index.any(key), key);
+                checked += 1;
+            }
+        }
+        // `modifiers` is deliberately absent: it is swapped in at runtime, so
+        // the collection paths fall through on the seat's own attachment list
+        // rather than trusting an index of it.
+        for table in [
+            &rules.beliefs.pantheon,
+            &rules.beliefs.founder,
+            &rules.beliefs.follower,
+            &rules.beliefs.enhancer,
+            &rules.beliefs.worship,
+        ] {
+            for spec in table.values() {
+                for key in spec.effects.keys() {
+                    check("beliefs", index.beliefs(key), index.any(key), key);
+                    checked += 1;
+                }
+            }
+        }
+        for spec in rules.governors.values() {
+            for key in spec
+                .effects
+                .keys()
+                .chain(spec.promotions.values().flat_map(|p| p.effects.keys()))
+            {
+                check("governors", index.governors(key), index.any(key), key);
+                checked += 1;
+            }
+        }
+        for key in rules.tech_effects.keys().chain(rules.civic_effects.keys()) {
+            assert!(index.any(key), "tree effect {key} is missing from the union");
+            checked += 1;
+        }
+        assert!(checked > 500, "expected the shipped ruleset to declare many effects, saw {checked}");
+    }
+
+    /// The three namespaced families are ruled out on the selector alone, so
+    /// every selector named by a declared key has to be indexed.
+    #[test]
+    fn the_effect_index_covers_every_namespaced_selector() {
+        let rules = Rules::shipped();
+        let index = &rules.effect_index;
+        for key in index.any.keys() {
+            if let Some(rest) = key.strip_prefix(BUILDING_YIELD_EFFECT_PREFIX) {
+                let (selector, _) = rest.split_once(':').expect("a building yield key names a yield");
+                assert!(
+                    index.modifies_building_yields(selector),
+                    "{key} names building selector {selector}, which the index omits"
+                );
+            } else if let Some(unit) = key.strip_prefix(UNIT_PURCHASE_EFFECT_PREFIX) {
+                assert!(
+                    index.discounts_unit_purchase(unit),
+                    "{key} names unit {unit}, which the index omits"
+                );
+            } else if let Some(ability) = key.strip_prefix(GRANT_ABILITY_EFFECT_PREFIX) {
+                assert!(
+                    index.grants_ability(ability),
+                    "{key} names ability {ability}, which the index omits"
+                );
+            }
+        }
     }
 }

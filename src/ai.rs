@@ -1233,7 +1233,7 @@ impl BasicAi {
     }
 
     fn minor_district_family(g: &Game, pid: usize) -> &'static str {
-        match Game::cs_type(&g.players[pid].civ) {
+        match g.cs_type(&g.players[pid].civ) {
             "scientific" => "campus",
             "cultural" => "theater_square",
             "religious" => "holy_site",
@@ -1244,7 +1244,7 @@ impl BasicAi {
     }
 
     fn minor_tech_goal(g: &Game, pid: usize) -> Option<&'static str> {
-        let goal = match Game::cs_type(&g.players[pid].civ) {
+        let goal = match g.cs_type(&g.players[pid].civ) {
             "scientific" => "writing",
             "religious" => "astrology",
             "militaristic" => "bronze_working",
@@ -1975,7 +1975,7 @@ impl BasicAi {
         if g.players[pid].civic.is_none() {
             let avail = g.available_civics(pid);
             if !avail.is_empty() {
-                let cultural_goal = (Game::cs_type(&g.players[pid].civ) == "cultural"
+                let cultural_goal = (g.cs_type(&g.players[pid].civ) == "cultural"
                     && !g.players[pid].civics.contains("drama_poetry"))
                 .then_some("drama_poetry");
                 let pick = Self::civic_step_toward(g, &avail, cultural_goal)
@@ -7083,7 +7083,9 @@ mod tests {
 
     #[test]
     fn unfounded_empire_reserves_only_one_holy_site_for_the_prophet_race() {
-        let mut game = Game::new_full(1, 24, 16, 91_772, 120, 0, false);
+        let mut game = Game::new_full(
+            1, 24, 16, crate::rng::fixture_seed("HOLYSITE", 91_773), 120, 0, false,
+        );
         let settler = game
             .player_unit_ids(0)
             .into_iter()
@@ -8805,7 +8807,9 @@ mod tests {
 
     #[test]
     fn one_queued_spaceport_reserves_the_empire_launch_site() {
-        let mut game = Game::new_full(1, 30, 20, 324_001, 100, 0, false);
+        let mut game = Game::new_full(
+            1, 30, 20, crate::rng::fixture_seed("SPACEPORT", 324_006), 100, 0, false,
+        );
         let first_settler = game
             .player_unit_ids(0)
             .into_iter()

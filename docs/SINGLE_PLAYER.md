@@ -373,7 +373,8 @@ All three choices remove the turn cap from the continued world.
   indefinite play suppresses all of them.
 
 The offer is real on the exhibition too. Every result a browser can see is held
-for at least five seconds (`--restart-ms` may ask for longer, never shorter),
+for ten seconds — the same countdown a single-player finale runs, and not
+configurable in either place —
 the countdown is published on the same state that first carries the winner, and
 the supervisor re-reads the world after its cooldown: a continued world is not
 retired. Continuing is not a setup setting, so its uncapped turn rule is never

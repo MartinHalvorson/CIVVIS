@@ -97,10 +97,66 @@ Two further constraints bound any fix:
   exactly 1.0 or 0.0, so once every branch resolves they agree *by
   construction*. Share of reviews in that state: 22% at horizon 40, 56% at 80,
   89% at 120. Pushing horizon past 80 buys agreement, not discrimination.
-- **Half of reviews never reach the rollouts.** Three priors answer first, and
-  `urgent_counter` alone takes a third of them. In a duel the religious prior
-  answers *all* of them, which is why every published duel number for
+- **Half of reviews never reach the rollouts — and the search decides far less
+  than half the lanes.** Three priors answer first. In a duel the religious
+  prior answers *all* of them, which is why every published duel number for
   `strategic` measures a forced lane rather than search.
+
+  Audited directly (`search_probe --priors`, 200 four-player positions at
+  turn ~60), the split is worse than "half":
+
+  ```
+  who decides the lane, over 200 sampled reviews:
+    priors    answered   99 reviews and named a lane in   99 (100%)
+    rollouts  answered  101 reviews and named a lane in   33 (33%)
+    -> the priors make 3.0x as many lane decisions as the search does
+  ```
+
+  A prior always names a lane. The rollouts name one only when a lane clears
+  the adaptive baseline by the commitment margin, and two times in three none
+  does. **So the search this document is about picks roughly a quarter of the
+  lanes this agent plays**, and one predicate —
+  `viable_religious_commitment`, 92 of the 99 prior-answered reviews — picks
+  half of them on its own, disagreeing with the projection 85% of the time.
+
+  That reframes every result in section 0. Depth (`strategic_h80`, 21–5),
+  frequency (`strategic_r20`, 15–2) and branch fidelity (#413, +37 Elo) are
+  all improvements to the quarter. None of them touches the half.
+
+  It does **not** follow that the priors are wrong. `viable_religious_commitment`
+  guards an irreversible global race that a forty-round projection scored by
+  score share provably cannot price, and religion is the lane that converts
+  best in this simulator.
+
+  **It was then tested, and removing it is null.** `strategic_noprophet`, 240
+  mirrored maps at seed 160000: 49.6%, Elo −3, 12 map directions to 14, sign
+  p=0.8450. Both pre-registered predictions fired — search exposure 57% → 63%
+  with `irreversible-religion` priors 211 → 0, religious commitment 30.3% →
+  26.8% — so the treatment did exactly what it was built to do and it changed
+  nothing.
+
+  **Why a 3× decision share converts to a 0× strength share.** `adaptive` is
+  not a lane. Returning `None` hands the turn back to `AdvancedAi`'s own
+  victory planner, which frequently picks the same lane the prior named — so
+  85% of reviews changed *label* while religious victories moved 171 to 164.
+  The prior is largely **redundant with** the behaviour underneath it, not
+  additional to it. A disagreement rate is an upper bound on behavioural
+  impact, and a very loose one.
+
+  **The consequence for this document's ranking is larger than the result.**
+  Three treatments have now moved lane decisions by very different amounts:
+
+  | treatment | lane decisions changed | strength |
+  |---|---|---|
+  | `strategic_noprophet` | ~42% of all reviews | **0** (p=0.8450) |
+  | `focused_deepening` rank-pruned | commitment 44.9% → 58.4% uncommitted | **0** (p=0.8318 repaired) |
+  | warm branches (#413) | 1 review in 4 | **+37 Elo** |
+
+  Changing *more* lane decisions is uncorrelated with strength; the one that
+  won changed the fewest. **Lane routing is not the lever**, and the macro
+  search — whose only output is a lane — is closer to exhausted than sections
+  0 and 2 imply. What is left there is compute, which works and has a measured
+  ceiling. Effort belongs on M4: a decision that repeats.
 
 ---
 
@@ -300,6 +356,135 @@ the decision" property that makes the lane search work.
 same number, the horizon still does not outlast the build and the search is
 blind, which is the defect that killed `PolicyAi` on 96% of its candidates.
 
+> ### ⚠ M4 IS RETIRED — measured, before it was built
+>
+> The fires-check was run first (`search_probe --production`, 71 city
+> decisions, four players) and **the premise fails**:
+>
+> - the evaluator separates **3.7 of 5.0** candidates; only **4%** of
+>   decisions score every candidate alike. The search is **not blind**.
+> - raising the horizon ceiling from 40 to **200** — long enough for any
+>   build in the game to land and compound — leaves the chosen item unchanged
+>   on **54 of 56** decisions (**96%**). The ranking does not depend on the
+>   window.
+>
+> So the design above is aimed at a defect that is not there. Cheapening the
+> rollout to afford a payoff-length horizon cannot help a ranking that is
+> already horizon-stable, and **the whole family — sealed per-city rollouts,
+> frozen rivals, payoff-length windows — is predicted-null.**
+>
+> What is left is the *objective*, not the window. **Score share is not win
+> probability.** The lane search works because its branches reach decided
+> games and return exactly 1.0/0.0 — 22% of reviews at horizon 40, 56% at 80.
+> A production rollout from mid-game essentially never decides, so it ranks
+> entirely by a proxy, and the hand-written governor's sequencing beats that
+> proxy. That is why `production_net` changed nothing: it swapped one function
+> of the 25 aggregates for another, when the problem is that no function of
+> them is win probability.
+>
+> **The surviving route is M6 → M5**, not a better online search: continue
+> branches to a real result offline, label them with the outcome, and distil.
+> A full continuation per candidate is roughly seventy times the cost of a
+> game, which is affordable as a labelling job and not as an agent.
+>
+> **Measured too, and it is thinner than it sounds.** `search_probe --outcome`
+> continues *every* candidate of a city decision to a real result at the stock
+> 500-turn budget — the label M6 would produce — over 51 decisions:
+>
+> ```
+> candidates continued per decision              5.0
+> decisions where the label DISCRIMINATES        14 of 51 (27%)
+> ...of those, proxy pick == outcome pick         3 of 14 (21%)
+> ...of those, the proxy's pick WON its game      6 of 14 (43%)
+> ```
+>
+> On **73% of decisions every candidate leads to the same outcome**, so the
+> label carries no signal at all and the seventy-fold cost buys nothing. Where
+> it does discriminate the proxy is near chance (43%), so there is real
+> headroom — but it exists on about a quarter of decisions.
+>
+> **And 27% is an upper bound, not an estimate.** The engine is deterministic,
+> so each continuation is a *single sample*, and a build that "wins" may win
+> for reasons entirely unrelated to it. Chaotic divergence and causal effect
+> are indistinguishable in this design, and determinism means the label cannot
+> be denoised by repeating it.
+>
+> **What would make M6 viable is therefore replication across opponents, not
+> more decisions.** Continue each candidate against several distinct rival
+> policies and label with the *win rate* rather than one outcome.
+>
+> **Measured, and it puts a price on M6 rather than a plan.** Replicating over
+> five distinct opponent policies (850 full games, 12 minutes): 28% of
+> candidates changed outcome when only the opponents changed — so replication
+> does denoise — and the median win-rate spread *between* candidates is
+> **0.20** against a per-candidate standard error of **0.224 at five
+> replicas**. The signal is under its own noise floor. Resolving it needs
+> about **100 replicas per candidate**, twenty times that run: four hours for
+> 34 decisions, ~1200 hours for a 10,000-decision corpus.
+>
+> M6 is therefore a **compute project, not a coding project**, and what it
+> would buy is a ~0.20 win-rate edge on the ~25% of decisions where the label
+> discriminates at all. Worth stating before anyone starts it.
+
+### The criterion that generalises all of this
+
+> **Search pays on a decision whose effect exceeds the outcome noise floor
+> _at the sample size the search can afford_.**
+>
+> The italicised clause is the whole of it, and it took a measurement to find.
+> A rollout search deciding one build can afford a handful of samples per
+> candidate; a genetic algorithm tuning a policy parameter averages over
+> hundreds of games. They face the same noise and resolve completely different
+> effect sizes.
+>
+> | mechanism | effect | samples it can afford | resolves? |
+> |---|---|---|---|
+> | lane search | **1.0** (branch reaches a decided game, returns 1.0/0.0) | 1 | **yes** — the one component that has ever won |
+> | production search | 0.20 win rate | ~5 | no — floor is 0.224 |
+> | policy genome (GA) | 0.08 win rate | hundreds | **yes** — floor at n=120 is 0.046 |
+>
+> Measured for the genome axis (`search_probe --genome`, 24 positions, the four
+> `Doctrine` perturbations, 5 opponent replicas each): mean win rates
+> **0.375 / 0.367 / 0.325 / 0.292** for consolidate / incumbent / expand /
+> militarize — an **0.083 spread, about 65 Elo**, at 1.8 standard errors on
+> 120 games apiece. Per *position* that is under the noise floor (median
+> spread 0.200 against an SE of 0.224); in *aggregate* it is not, and a GA only
+> ever needs the aggregate.
+>
+> **So the same number that closes per-decision search opens policy-level
+> optimisation.** That is not a contradiction — it is the sample-size clause
+> doing its work, and it is why sections 0–2 kept finding null after null while
+> the untouched 40-scalar genome sat there.
+>
+This is measurable **in advance**, for any decision, by
+> `search_probe --outcome --replicas K`, and for the policy axis by
+> `search_probe --genome`. Do that before building search for a new decision
+> type. It is the same discipline that retired the sealed-rollout family and
+> the commitment-margin hypothesis, applied one level up: not "does the
+> treatment fire" but "is there anything here to find".
+>
+> **⚠ Do not extend this arithmetic to the GA — I did, and it is wrong.** The
+> Bernoulli standard error `sqrt(0.25/games)` describes a *win rate*. `evolve`
+> does not select on wins: since #457 its selection statistic is
+> `50·P·score_share + 12·P·combat_share`, a continuous quantity, and every
+> genome in a generation is scored on the **same map seeds and seats**, so the
+> comparison available to it is *paired*. A binomial SE describes neither. The
+> shipped eight-game budget was retained on a measured 16-game control showing
+> no agreement gain, and `src/bin/evolve_probe.rs` measures the real noise floor
+> of the real statistic — use it rather than the table I originally put here.
+>
+> The clause still holds where the outcome genuinely is a Bernoulli draw, which
+> is every per-decision search in section 2: those label branches by win or
+> loss and cannot pair across candidates.
+>
+> **The standing implication.** `elo::builtin_ai` resolves every strategic
+> agent through `load_champion("evolved").unwrap_or_default()`; `evolved/` is
+> gitignored and **no `best.json` exists on this machine or in a fresh clone**.
+> So the 40 evolved weights have never been evolved, and every result in this
+> document was measured on top of an untuned policy. Shipping a champion
+> genome is the one lever this repository built machinery for — a GA with an
+> anchor, a holdout and a promotion gate — and never pulled.
+
 **Refuted by.** Separation that exists but does not survive contact with the
 empire — a city optimised in isolation starving the empire of settlers or
 military. Watch the plan-commitment and unit-count diagnostics, not the yield.
@@ -377,7 +562,7 @@ Each of these is falsified here, with the run that did it.
 
 ## 4. Sequencing
 
-**M2 (landed) → M4 → M6 → M5**, with M3 attempted only alongside its
+**M2 (landed) → M6 → M5** — M4 retired on measurement (see its entry), with M3 attempted only alongside its
 fires-check and M7 landed before M5 ships anything. **M1 is demoted out of the
 sequence** — measurement showed its premise held only for a minority of
 reviews, and the treatment moved the commitment rate without moving the score.

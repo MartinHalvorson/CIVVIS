@@ -1,0 +1,162 @@
+// The door on /beta, and the whole site's request handler.
+//
+// A published build is not finished work and is not meant to be found by
+// everyone; this asks for a password before serving anything under /beta,
+// the engine included. It is a soft gate by design — one shared password, no
+// accounts — but a real one: the password is checked at Cloudflare's edge and
+// is never part of anything the browser downloads.
+//
+// Set BETA_PASSWORD in the Pages project's environment variables to change it
+// without a deploy.
+//
+// **This is a `_worker.js`, deliberately, and it must stay one.** Cloudflare
+// Pages also supports a `functions/` directory, and that is the obvious way to
+// write this — but `functions/` is resolved relative to the *working
+// directory* wrangler is invoked from, not the directory being deployed. Run
+// the deploy from anywhere but the project root and the gate is silently left
+// behind: the upload succeeds, the site works, and the beta is wide open with
+// nothing to show that anything went wrong. It happened once here already,
+// which is why `verify.py` now proves the gate challenges rather than assuming
+// it is there. A `_worker.js` sits *inside* the deployed directory and cannot
+// be separated from it.
+
+const COOKIE = "civvis_beta";
+const WEEK = 60 * 60 * 24 * 7;
+
+/// What the cookie carries: proof of the password rather than the password.
+async function token(password) {
+  const digest = await crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(`civvis.ai/beta:${password}`),
+  );
+  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+/// Compare without leaking where two strings first differ.
+function sameToken(a, b) {
+  if (typeof a !== "string" || typeof b !== "string" || a.length !== b.length) return false;
+  let differences = 0;
+  for (let i = 0; i < a.length; i++) differences |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return differences === 0;
+}
+
+function cookieValue(request, name) {
+  const header = request.headers.get("Cookie") || "";
+  for (const part of header.split(";")) {
+    const [key, ...rest] = part.trim().split("=");
+    if (key === name) return rest.join("=");
+  }
+  return null;
+}
+
+function askForIt(wrong) {
+  const page = `<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>CIVVIS — beta</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center;
+    background: radial-gradient(ellipse at 50% 0%, #10231d 0%, #07110f 60%);
+    color: #e8e2d2; font-family: Georgia, "Times New Roman", serif; padding: 24px;
+  }
+  form { width: 100%; max-width: 340px; text-align: center; }
+  h1 { margin: 0; font-size: 34px; font-weight: 400; letter-spacing: 0.34em; text-indent: 0.34em; color: #d7b66a; }
+  p { margin: 10px 0 30px; font-size: 12px; letter-spacing: 0.2em; text-transform: uppercase; color: #6f8279; }
+  input {
+    width: 100%; padding: 13px 16px; font-size: 17px; font-family: inherit; text-align: center;
+    letter-spacing: 0.3em; color: #e8e2d2; background: #0d1a17;
+    border: 1px solid #24413a; border-radius: 7px; outline: none;
+  }
+  input:focus { border-color: #d7b66a; }
+  button {
+    width: 100%; margin-top: 12px; padding: 12px; font-size: 13px; font-family: inherit;
+    letter-spacing: 0.24em; text-transform: uppercase; cursor: pointer;
+    color: #15221c; background: #d7b66a; border: 0; border-radius: 7px;
+  }
+  button:hover { background: #f6e4ac; }
+  .wrong { margin-top: 16px; font-size: 12px; letter-spacing: 0.14em; color: #c98b7a; }
+</style></head>
+<body>
+  <form method="POST">
+    <h1>CIVVIS</h1>
+    <p>Beta build</p>
+    <input name="password" type="password" autofocus autocomplete="current-password"
+           aria-label="Password" placeholder="password">
+    <button type="submit">Enter</button>
+    ${wrong ? '<div class="wrong">That is not the password.</div>' : ""}
+  </form>
+</body></html>`;
+  return new Response(page, {
+    status: wrong ? 401 : 200,
+    headers: {
+      "Content-Type": "text/html; charset=utf-8",
+      "Cache-Control": "no-store",
+      "X-Robots-Tag": "noindex",
+    },
+  });
+}
+
+/// Serve a file, with the headers a `_headers` file would have carried — that
+/// file is ignored once a `_worker.js` exists, so the rules live here instead.
+async function asset(request, env, gated) {
+  const response = await env.ASSETS.fetch(request);
+  const headers = new Headers(response.headers);
+  const path = new URL(request.url).pathname;
+
+  headers.set("X-Content-Type-Options", "nosniff");
+  headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
+  if (gated) headers.set("X-Robots-Tag", "noindex");
+
+  if (path.endsWith(".wasm")) {
+    // `WebAssembly.instantiateStreaming` refuses anything else.
+    headers.set("Content-Type", "application/wasm");
+  }
+  if (path.startsWith("/beta/assets/")) {
+    // Sprite atlases are content and change rarely.
+    headers.set("Cache-Control", "public, max-age=86400");
+  } else if (path.startsWith("/beta/")) {
+    // The engine keeps its name across builds, so it must be revalidated
+    // rather than trusted: a cached module from the last published build
+    // beside a freshly published page is a mismatch nobody can see. One small
+    // conditional request; the 6MB body only moves when the build changed.
+    headers.set("Cache-Control", "public, max-age=0, must-revalidate");
+  }
+  return new Response(response.body, { status: response.status, headers });
+}
+
+export default {
+  async fetch(request, env) {
+    const url = new URL(request.url);
+    if (!url.pathname.startsWith("/beta")) return asset(request, env, false);
+
+    const password = env.BETA_PASSWORD || "2008";
+    const expected = await token(password);
+
+    if (sameToken(cookieValue(request, COOKIE), expected)) {
+      return asset(request, env, true);
+    }
+
+    if (request.method === "POST") {
+      const form = await request.formData().catch(() => null);
+      if (form && form.get("password") === password) {
+        return new Response(null, {
+          status: 303,
+          headers: {
+            Location: url.pathname,
+            "Set-Cookie":
+              `${COOKIE}=${expected}; Path=/beta; Max-Age=${WEEK}; ` +
+              "HttpOnly; Secure; SameSite=Lax",
+            "Cache-Control": "no-store",
+          },
+        });
+      }
+      return askForIt(true);
+    }
+
+    return askForIt(false);
+  },
+};

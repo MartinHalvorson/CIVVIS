@@ -171,7 +171,7 @@ class SessionSettingsTests(unittest.TestCase):
                             "--shape",
                             shape,
                             "--poles",
-                            "no_poles",
+                            "randomized",
                         ],
                     ):
                         parsed = supervisor.parse_args()
@@ -189,7 +189,7 @@ class SessionSettingsTests(unittest.TestCase):
                     command = supervisor.server_command(8766, settings, False)
                     self.assertEqual(command[command.index("--map") + 1], map_type)
                     self.assertEqual(command[command.index("--shape") + 1], shape)
-                    self.assertEqual(command[command.index("--poles") + 1], "no_poles")
+                    self.assertEqual(command[command.index("--poles") + 1], "randomized")
 
     def test_launch_victories_are_validated_and_keep_score_disabled(self):
         self.assertEqual(
@@ -212,7 +212,7 @@ class SessionSettingsTests(unittest.TestCase):
                 "height": 24,
                 "script": "continents",
                 "shape": "planet",
-                "poles": "no_poles",
+                "poles": "randomized",
             },
             "game_speed": "online",
             "leader_pool": "expanded",
@@ -247,7 +247,7 @@ class SessionSettingsTests(unittest.TestCase):
             supervisor.session_settings(state, defaults),
             {"players": 4, "width": 55, "height": 24, "city_states": 6,
              "turns": 250, "map": "continents", "shape": "planet",
-             "poles": "no_poles", "speed": "online",
+             "poles": "randomized", "speed": "online",
              "leader_pool": "expanded",
              "victories": ["science", "culture", "domination", "score"]},
         )
@@ -329,7 +329,7 @@ class SessionSettingsTests(unittest.TestCase):
             "turns": 330,
             "map": "continents",
             "shape": "planet",
-            "poles": "no_poles",
+            "poles": "randomized",
             "speed": "quick",
             "leader_pool": "expanded",
             "victories": ["science", "domination"],
@@ -395,7 +395,7 @@ class SessionSettingsTests(unittest.TestCase):
                 "turns": 330,
                 "map": "continents",
                 "shape": "planet",
-                "poles": "no_poles",
+                "poles": "randomized",
                 "speed": "quick",
                 "leader_pool": "expanded",
                 "victories": ["science", "culture", "domination"],
@@ -415,7 +415,7 @@ class SessionSettingsTests(unittest.TestCase):
                     "turns": 330,
                     "map": "continents",
                     "shape": "planet",
-                    "poles": "no_poles",
+                    "poles": "randomized",
                     "speed": "quick",
                     "leader_pool": "expanded",
                     "victories": ["science", "culture", "domination"],
@@ -812,13 +812,9 @@ class RecoveryTests(unittest.TestCase):
         )
         instance_guard.start()
         self.addCleanup(instance_guard.stop)
-        countdown = patch.object(
-            supervisor,
-            "FINAL_COUNTDOWN_SECONDS",
-            supervisor.MIN_FINAL_COUNTDOWN_SECONDS,
-        )
-        countdown.start()
-        self.addCleanup(countdown.stop)
+        # The countdown used to be settable, so these cases pinned it back to
+        # its floor. It is a constant now and `--cooldown` cannot move it, so
+        # there is nothing left to pin.
 
     @staticmethod
     def supervisor_args(**overrides):
@@ -1220,29 +1216,33 @@ class RecoveryTests(unittest.TestCase):
         command = supervisor.server_command(8766, settings, False, checkpoint)
         self.assertEqual(command[command.index("--resume") + 1], str(checkpoint))
         self.assertIn("--supervised", command)
-        self.assertEqual(command[command.index("--restart-ms") + 1], "5000")
         self.assertIn("--no-open", command)
 
-    def test_final_countdown_has_a_five_second_floor_and_allows_longer_holds(self):
-        self.assertEqual(supervisor.final_countdown_seconds(0.0), 5.0)
-        self.assertEqual(supervisor.final_countdown_seconds(4.999), 5.0)
-        self.assertEqual(supervisor.final_countdown_seconds(5.0), 5.0)
-        self.assertEqual(supervisor.final_countdown_seconds(12.5), 12.5)
-        with patch.object(supervisor, "FINAL_COUNTDOWN_SECONDS", 12.5):
-            command = supervisor.server_command(
-                8766,
-                {
-                    "players": 4,
-                    "width": 60,
-                    "height": 38,
-                    "city_states": 6,
-                    "turns": 500,
-                    "map": "pangaea",
-                    "speed": "standard",
-                },
-                False,
-            )
-        self.assertEqual(command[command.index("--restart-ms") + 1], "12500")
+    def test_the_countdown_is_ten_seconds_and_no_launcher_can_change_it(self):
+        """The result screen's number has no input, here or on the server.
+
+        It used to come from `--cooldown` via `--restart-ms`, and the number a
+        viewer read was whichever value had won that chain — twice in one
+        evening the exhibition counted down from something nobody had chosen.
+        """
+        self.assertEqual(supervisor.FINAL_COUNTDOWN_SECONDS, 10.0)
+        for asked in (0.0, 5.0, 9.999, 10.0, 12.5, 60.0, 110.0, float("inf")):
+            self.assertEqual(supervisor.final_countdown_seconds(asked), 10.0)
+        # And the server is never handed a duration at all.
+        command = supervisor.server_command(
+            8766,
+            {
+                "players": 4,
+                "width": 60,
+                "height": 38,
+                "city_states": 6,
+                "turns": 500,
+                "map": "pangaea",
+                "speed": "standard",
+            },
+            False,
+        )
+        self.assertNotIn("--restart-ms", command)
 
     def test_server_command_carries_manual_victory_settings(self):
         settings = {

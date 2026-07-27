@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CIVVIS</title>
+<meta name="description" content="A Civilization VI-shaped strategy engine that plays itself — AI civilizations founding, expanding, warring and winning, watched turn by turn.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='16' fill='%2307110f'/%3E%3Ccircle cx='16' cy='16' r='12.5' fill='%23d7b66a' stroke='%23f6e4ac'/%3E%3Ctext x='16' y='21' text-anchor='middle' font-family='Georgia,serif' font-size='15' font-weight='700' fill='%2315221c'%3EV%3C/text%3E%3C/svg%3E">
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 42px;
+    padding: 48px 24px;
+    background:
+      radial-gradient(ellipse 120% 80% at 50% -10%, #143026 0%, transparent 60%),
+      radial-gradient(ellipse 90% 60% at 50% 110%, #101f2e 0%, transparent 55%),
+      #07110f;
+    color: #e8e2d2;
+    font-family: Georgia, "Times New Roman", serif;
+    text-align: center;
+  }
+
+  header { max-width: 640px; }
+
+  h1 {
+    margin: 0;
+    font-size: clamp(44px, 12vw, 92px);
+    font-weight: 400;
+    letter-spacing: 0.28em;
+    text-indent: 0.28em;
+    color: #d7b66a;
+    text-shadow: 0 0 44px rgba(215, 182, 106, 0.24);
+  }
+
+  .rule {
+    width: 92px;
+    height: 1px;
+    margin: 26px auto;
+    background: linear-gradient(90deg, transparent, #d7b66a, transparent);
+  }
+
+  .blurb {
+    margin: 0;
+    font-size: clamp(15px, 2.4vw, 18px);
+    line-height: 1.72;
+    color: #a9b8ae;
+  }
+
+  nav {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 14px;
+    justify-content: center;
+  }
+
+  a.button {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    padding: 14px 26px;
+    border-radius: 8px;
+    font-size: 13px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    text-decoration: none;
+    border: 1px solid #24413a;
+    color: #e8e2d2;
+    background: rgba(13, 26, 23, 0.7);
+    transition: border-color 160ms ease, color 160ms ease, transform 160ms ease;
+  }
+  a.button:hover { border-color: #d7b66a; color: #f6e4ac; transform: translateY(-1px); }
+
+  a.button.primary {
+    background: #d7b66a;
+    border-color: #d7b66a;
+    color: #15221c;
+  }
+  a.button.primary:hover { background: #f6e4ac; border-color: #f6e4ac; color: #15221c; }
+
+  svg { width: 17px; height: 17px; flex: none; }
+
+  footer {
+    font-size: 11px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: #55665e;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    a.button { transition: none; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>CIVVIS</h1>
+  <div class="rule"></div>
+  <p class="blurb">
+    A Civilization&nbsp;VI-shaped strategy engine that plays itself. Whole
+    civilizations are founded, expanded, fought over and won — every turn drawn
+    as a frame somebody can watch.
+  </p>
+</header>
+
+<nav>
+  <!-- The channel. Change this one href when the new account exists. -->
+  <a class="button primary" href="https://www.youtube.com/@MartinHalvorson">
+    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <path d="M23.5 6.2a3 3 0 0 0-2.1-2.1C19.5 3.6 12 3.6 12 3.6s-7.5 0-9.4.5A3 3 0 0 0 .5 6.2C0 8.1 0 12 0 12s0 3.9.5 5.8a3 3 0 0 0 2.1 2.1c1.9.5 9.4.5 9.4.5s7.5 0 9.4-.5a3 3 0 0 0 2.1-2.1c.5-1.9.5-5.8.5-5.8s0-3.9-.5-5.8zM9.5 15.6V8.4l6.3 3.6-6.3 3.6z"/>
+    </svg>
+    Watch on YouTube
+  </a>
+  <a class="button" href="https://github.com/MartinHalvorson/CIVVIS">
+    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <path d="M12 .3a12 12 0 0 0-3.8 23.4c.6.1.8-.3.8-.6v-2.2c-3.3.7-4-1.6-4-1.6-.6-1.4-1.4-1.8-1.4-1.8-1.1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1.1 1.8 2.8 1.3 3.5 1 .1-.8.4-1.3.8-1.6-2.7-.3-5.5-1.3-5.5-5.9 0-1.3.5-2.4 1.2-3.2-.1-.3-.5-1.5.1-3.2 0 0 1-.3 3.3 1.2a11.5 11.5 0 0 1 6 0C17.3 4.8 18.3 5.1 18.3 5.1c.6 1.7.2 2.9.1 3.2.8.8 1.2 1.9 1.2 3.2 0 4.6-2.8 5.6-5.5 5.9.4.4.8 1.1.8 2.2v3.3c0 .3.2.7.8.6A12 12 0 0 0 12 .3z"/>
+    </svg>
+    Source
+  </a>
+  <a class="button" href="/beta/">Beta build</a>
+</nav>
+
+<footer>Martin Halvorson</footer>
+
+</body>
+</html>

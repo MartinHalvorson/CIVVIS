@@ -13,7 +13,7 @@ use crate::rules::{
 };
 use crate::specmap::SpecMap;
 
-use crate::setup::{BaseRuleset, GameSpeed, MapPoles, MapScript, MapSize, MapTopology, StartEon};
+use crate::setup::{BaseRuleset, GameSpeed, MapPoles, MapScript, MapSize, MapTopology};
 use crate::world::{DistrictFoundation, RememberedTile, Tile, TileBits, TileMemory, WorldMap};
 use crate::{hex, mapgen, Pos};
 
@@ -226,14 +226,20 @@ pub const CIV6_LEADER_POOL: [&str; 50] = [
     "Indonesia",
     "Macedon",
 ];
-/// The city-states this ruleset can seat, in placement order. The first
-/// twelve carry bespoke Suzerain bonuses; the rest round out the largest
-/// map's hundred and fifty seats with their type bonuses alone. Every seat
-/// needs its own entry here — two city-states sharing a name would share an
-/// identity, and so would a city-state sharing one with a civilization or
-/// with a city that civilization can found. Append only: a city-state's
-/// index is its identity in a saved game.
-pub const CITY_STATE_NAMES: [&str; 150] = [
+/// Every city-state identity this ruleset knows. Every seat needs its own
+/// entry here — two city-states sharing a name would share an identity, and so
+/// would a city-state sharing one with a civilization or with a city that
+/// civilization can found. Append only: a city-state's index is its identity
+/// in a saved game.
+///
+/// This list is *identity*, not placement. Seating order lives in
+/// `data/city_states.json`, which puts Civilization VI's own forty-eight
+/// city-states first so an ordinary game draws only from the shipped roster
+/// and the extra names are reached only by the largest maps. Four entries here
+/// (Carthage, Stockholm, Seoul, Amsterdam) were city-states in earlier
+/// versions of the game and became playable capitals; they keep their indices
+/// so old saves still resolve, and seat after the shipped forty-eight.
+pub const CITY_STATE_NAMES: [&str; 182] = [
     "Kabul",
     "Geneva",
     "Carthage",
@@ -384,6 +390,38 @@ pub const CITY_STATE_NAMES: [&str; 150] = [
     "Cholula",
     "Chan Chan",
     "Chavin",
+    "Akkad",
+    "Anshan",
+    "Armagh",
+    "Ayutthaya",
+    "Bandar Brunei",
+    "Bologna",
+    "Buenos Aires",
+    "Caguana",
+    "Cardiff",
+    "Chinguetti",
+    "Fez",
+    "Granada",
+    "Hong Kong",
+    "Hunza",
+    "Johannesburg",
+    "Kumasi",
+    "La Venta",
+    "Lahore",
+    "Mexico City",
+    "Mitla",
+    "Muscat",
+    "Nalanda",
+    "Nan Madol",
+    "Nazca",
+    "Ngazargamu",
+    "Rapa Nui",
+    "Samarkand",
+    "Singapore",
+    "Taruga",
+    "Vatican City",
+    "Venice",
+    "Wolin",
 ];
 
 fn city_names(civ: &str) -> &'static [&'static str] {
@@ -2643,6 +2681,8 @@ fn install_test_district(game: &mut Game, city: u32, district: &str) -> Pos {
     position
 }
 
+pub mod quests;
+
 #[cfg(test)]
 mod city_state_unique_tests;
 
@@ -3768,10 +3808,16 @@ mod belief_runtime_tests {
             // camps stand seven tiles apart and out of everybody's sight, and
             // on a 44x30 world with eight majors and their city-states there
             // is only so much dark ground left that far from everything.
+            // Per seed this only asks that the world grew at all: how many
+            // camps a *particular* world can seat is a property of that world,
+            // not of the cadence. Sweeping map seeds shows the tail — a 44x30
+            // board with eight majors and their city-states sometimes has room
+            // for one camp in twelve turns and no more — so the cadence is
+            // asserted on the mean below, over all eight seeds, where it is
+            // actually measurable.
             assert!(
-                game.barb_camps.len() >= opening + 2,
-                "seed {seed} seated only {} camps in twelve turns",
-                game.barb_camps.len() - opening
+                game.barb_camps.len() > opening,
+                "seed {seed} seated no camps at all in twelve turns"
             );
             assert!(
                 game.barb_camps.len() <= game.barbarian_camp_target(),
@@ -8803,7 +8849,15 @@ mod maintenance_tests {
     }
 
     fn one_city() -> (Game, u32) {
-        let mut game = Game::new_full(1, 24, 16, 73_101, 120, 0, false);
+        let mut game = Game::new_full(
+            1,
+            24,
+            16,
+            crate::rng::fixture_seed("MAINTENANCE", 73_102),
+            120,
+            0,
+            false,
+        );
         let settler = game
             .player_unit_ids(0)
             .into_iter()
@@ -8982,6 +9036,9 @@ mod maintenance_tests {
         for unit in game.player_unit_ids(0) {
             game.remove_unit(unit);
         }
+        // Flatten the city's ground to bare plains so its yields are a known
+        // quantity. Rivers are part of that ground and were being left on it,
+        // which left one piece of the tile still up to the generator.
         for position in game.cities[&city].owned_tiles.clone() {
             let tile = game.map.tiles.get_mut(&position).unwrap();
             tile.terrain = "plains".to_string();
@@ -8989,6 +9046,7 @@ mod maintenance_tests {
             tile.hills = false;
             tile.resource = None;
             tile.improvement = None;
+            tile.river_edges = [false; 6];
         }
         let robot = game.spawn_unit("giant_death_robot", 0, game.cities[&city].pos);
         let escort = game.spawn_unit(
@@ -10747,7 +10805,7 @@ mod district_building_wonder_runtime_tests {
 
     #[test]
     fn rock_bands_are_faith_bought_and_perform_at_local_venues() {
-        let (mut game, city, position) = one_city(774_406);
+        let (mut game, city, position) = one_city(crate::rng::fixture_seed("ROCKBAND", 774_407));
         game.players[0].civics.insert("cold_war".to_string());
         game.players[0].faith = 2_000.0;
         let item = Item::Unit {
@@ -12968,6 +13026,27 @@ pub struct WarLosses {
     /// than a set so the ledger still accounts for each capture.
     #[serde(default)]
     pub city_names: Vec<String>,
+    /// The same losses with the facts that rank them. Older saves carry only
+    /// `city_names`, so this is additive rather than a replacement.
+    #[serde(default)]
+    pub city_losses: Vec<WarCityLoss>,
+}
+
+/// One city taken in a war, recorded as it falls.
+///
+/// A war log that lists lost cities has to rank them, and neither fact needed
+/// for that survives the event: a razed city has no population left to read,
+/// and a captured one keeps growing under its new owner. A capital is the
+/// largest loss a civilization can take; after that, the population that
+/// changed hands is the readable stand-in for how much city was lost.
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Debug)]
+pub struct WarCityLoss {
+    pub name: String,
+    pub turn: u32,
+    /// Population at the moment it was taken.
+    pub pop: i32,
+    /// Whether it was the loser's own capital, not merely a capital it held.
+    pub capital: bool,
 }
 
 /// One civilization's interval in a war. City-states are real belligerents
@@ -13384,6 +13463,10 @@ pub struct Player {
     /// in lockstep with the ``great_work:*`` counters. Theming reads these.
     #[serde(default)]
     pub great_work_pieces: Vec<GreatWorkPiece>,
+    /// The quest each met city-state is currently asking this civilization
+    /// for, keyed by the city-state's seat. Per pair, not per city-state.
+    #[serde(default)]
+    pub quests: BTreeMap<usize, crate::game::quests::CityStateQuest>,
     #[serde(default)]
     pub boosted_techs: BTreeSet<String>,
     #[serde(default)]
@@ -13472,6 +13555,7 @@ impl Player {
             envoys: Vec::new(),
             counters: BTreeMap::new(),
             great_work_pieces: Vec::new(),
+            quests: BTreeMap::new(),
             boosted_techs: BTreeSet::new(),
             boosted_civics: BTreeSet::new(),
         }
@@ -13888,15 +13972,11 @@ pub struct GameOptions {
     /// Which published game's rules this world is played by. Civilization VI
     /// is the only one modeled, and the only one this can be.
     pub base_ruleset: BaseRuleset,
-    /// Which sweep of time the game is played through. Only
-    /// [`StartEon::Civilization`] has a technology tree behind it today, so
-    /// only human history reaches the engine.
-    pub start_eon: StartEon,
-    /// How far into [`Self::start_eon`] the game opens, as an index into that
-    /// eon's ladder. In human history that index is the era of
+    /// How far into history the game opens, as the era of
     /// [`crate::rules::ERA_NAMES`] every civilization starts in: zero is the
     /// stock Ancient start, and anything above it is Civilization VI's
-    /// Advanced Start — the earlier eras are already researched.
+    /// Advanced Start — the earlier eras are already researched. The rungs of
+    /// the ladder this is chosen from live in [`crate::setup::START_ERAS`].
     pub start_era: usize,
     pub map_script: MapScript,
     /// What shape the world is, asked separately from what fills it: every
@@ -13951,7 +14031,6 @@ impl GameOptions {
             city_states,
             barbarians: true,
             base_ruleset: BaseRuleset::default(),
-            start_eon: StartEon::default(),
             start_era: 0,
             map_script: MapScript::Pangaea,
             map_topology: MapTopology::default(),
@@ -14294,11 +14373,9 @@ pub struct Game {
     /// actually played, rather than today's default.
     #[serde(default)]
     pub base_ruleset: BaseRuleset,
-    /// The sweep of time this world was set up in, and how far into it the
-    /// game opened. `start_era` is an index into `start_eon`'s ladder, which
-    /// for human history is an era of [`crate::rules::ERA_NAMES`].
-    #[serde(default)]
-    pub start_eon: StartEon,
+    /// How far into history this world opened, as an era of
+    /// [`crate::rules::ERA_NAMES`]. Kept on the save alongside the rest of the
+    /// setup so a restart offers what was actually played.
     #[serde(default)]
     pub start_era: usize,
     pub map_script: MapScript,
@@ -14484,9 +14561,7 @@ struct GameSer {
     #[serde(default)]
     base_ruleset: BaseRuleset,
     /// Absent in saves written before a game could open anywhere but the
-    /// Ancient era of human history, which is exactly what the defaults are.
-    #[serde(default)]
-    start_eon: StartEon,
+    /// Ancient era, which is exactly what the default is.
     #[serde(default)]
     start_era: usize,
     #[serde(default)]
@@ -14606,7 +14681,6 @@ impl From<GameSer> for Game {
             mods: s.mods,
             events: s.events.into(),
             base_ruleset: s.base_ruleset,
-            start_eon: s.start_eon,
             start_era: s.start_era,
             map_script: s.map_script,
             leader_pool: s.leader_pool,
@@ -14761,7 +14835,6 @@ impl From<Game> for GameSer {
             mods: g.mods,
             events: g.events.into(),
             base_ruleset: g.base_ruleset,
-            start_eon: g.start_eon,
             start_era: g.start_era,
             map_script: g.map_script,
             leader_pool: g.leader_pool,
@@ -14881,7 +14954,6 @@ impl Game {
             city_states: num_city_states,
             barbarians,
             base_ruleset,
-            start_eon,
             start_era,
             map_script,
             map_topology,
@@ -14896,16 +14968,10 @@ impl Game {
             leader_pool,
             randomize_civs,
         } = options;
-        // The eon is what makes a start era mean anything: only human history
-        // has trees to cut at it, so every other eon opens at its own first
-        // age however it was asked for. A rung past the end of the ladder is
-        // clamped rather than fatal — a client from a later build must not be
-        // able to construct a world that reads as a later era than exists.
-        let start_era = if start_eon == StartEon::Civilization {
-            start_era.min(StartEon::Civilization.eras().len() - 1)
-        } else {
-            start_eon.default_era()
-        };
+        // A rung past the end of the ladder is clamped rather than fatal: a
+        // client from a later build must not be able to construct a world that
+        // reads as a later era than the rules have a tree for.
+        let start_era = start_era.min(crate::setup::last_start_era());
         assert!(
             teams.is_empty() || teams.len() == num_players,
             "team assignments must be empty or contain one entry per major player"
@@ -14947,7 +15013,6 @@ impl Game {
             speed,
             human_seats,
             base_ruleset,
-            start_eon,
             start_era,
             map_script,
             leader_pool,
@@ -15040,10 +15105,21 @@ impl Game {
             g.reveal(i, *pos, 3);
         }
         let major_spawns: Vec<Pos> = spawns.iter().take(num_players).cloned().collect();
+        // Seating order is the roster's, not `CITY_STATE_NAMES`'. The roster
+        // lists Civilization VI's own forty-eight city-states first, so an
+        // ordinary game seats only city-states the real game could have
+        // seated; the extra identities exist for the largest maps alone.
+        let seating: Vec<String> = g
+            .rules
+            .city_states
+            .roster
+            .iter()
+            .map(|seat| seat.name.clone())
+            .collect();
         // Only as many city-states as the ruleset has distinct identities for:
-        // every modeled city-state carries its own unique Suzerain bonus, and
-        // two seats sharing a name would share that bonus.
-        let wanted = num_city_states.min(CITY_STATE_NAMES.len());
+        // every modeled city-state carries its own Suzerain bonus, and two
+        // seats sharing a name would share that bonus.
+        let wanted = num_city_states.min(seating.len());
         for pos in spawns.iter().skip(num_players) {
             if g.players.len() - num_players >= wanted {
                 break;
@@ -15055,9 +15131,9 @@ impl Game {
                 continue;
             };
             let pid = g.players.len();
-            let name = CITY_STATE_NAMES[pid - num_players];
-            g.players.push(Player::new(pid, name, true));
-            let city = g.found_city_for(pid, pos, Some(name.to_string()));
+            let name = seating[pid - num_players].clone();
+            g.players.push(Player::new(pid, &name, true));
+            let city = g.found_city_for(pid, pos, Some(name.clone()));
             // Gathering Storm's Ancient-era minor start is two Warriors, with
             // one more per difficulty step from Emperor onward. City-states do
             // not receive the major AI's Builders or Settlers from the general
@@ -15106,11 +15182,11 @@ impl Game {
     }
 
     /// Civilization VI's Advanced Start: a game set to open past the first age
-    /// of its eon begins with the earlier ages already behind it.
+    /// begins with the earlier ages already behind it.
     ///
-    /// This is where the eon stops being a label and becomes a rule, and only
-    /// human history has trees to cut, so only human history reaches here —
-    /// `new_with` has already pinned `start_era` to zero for every other eon.
+    /// This is where the start era stops being a label and becomes a rule.
+    /// `new_with` has already clamped it to an era the rules have a tree for,
+    /// so every value reaching here can actually be cut at.
     ///
     /// Every civilization on the board is handed it: majors and city-states
     /// alike get every technology and civic of an earlier era, and each of
@@ -15285,6 +15361,20 @@ impl Game {
     /// Handicaps reach the major civilizations only: city-states and
     /// barbarians are not on either side of the difficulty bargain.
     fn takes_handicap(&self, pid: usize) -> bool {
+        self.players
+            .get(pid)
+            .is_some_and(|player| !player.is_minor && !player.is_barbarian)
+    }
+
+    /// Whether this seat may take a new tile with its own Culture or Gold.
+    ///
+    /// `CivilizationLevels` grants both to `CIVILIZATION_LEVEL_FULL_CIV`
+    /// alone: `CanAnnexTilesWithCulture` and `CanAnnexTilesWithGold` are 0 for
+    /// `CITY_STATE`, `FREE_CITIES` and `TRIBE`. A city-state's territory grows
+    /// only through `CanAnnexTilesWithReceivedInfluence` — one tile per Envoy
+    /// it receives from its Suzerain — which `do_send_envoy` and liberation
+    /// already pay. Barbarian camps and Free Cities never annex at all.
+    pub(crate) fn annexes_tiles_with_own_yields(&self, pid: usize) -> bool {
         self.players
             .get(pid)
             .is_some_and(|player| !player.is_minor && !player.is_barbarian)
@@ -17056,12 +17146,20 @@ impl Game {
         loser: usize,
         city: &str,
         capital: bool,
+        pop: i32,
         at: Pos,
     ) {
+        let turn = self.turn;
         if let Some((war, _, _)) = self.war_ledger(taker, loser) {
             let losses = war.losses.entry(loser).or_default();
             losses.cities += 1;
             losses.city_names.push(city.to_string());
+            losses.city_losses.push(WarCityLoss {
+                name: city.to_string(),
+                turn,
+                pop,
+                capital,
+            });
         }
         let kind = if capital {
             "capital_captured"
@@ -17283,6 +17381,21 @@ impl Game {
     }
 
     /// Sum a reusable modifier bundle attached directly to one player.
+    /// Whether a seat carries no runtime modifier bundle.
+    ///
+    /// [`crate::rules::EffectIndex`] speaks for the ruleset, and the ruleset
+    /// is fixed once a game begins — but `Rules::modifiers` is swapped in
+    /// wholesale when a resolution installs a bundle, so an indexed answer
+    /// about it could be stale. Every collection path that consults the index
+    /// pairs it with this, and a seat carrying an attachment simply takes the
+    /// unoptimized route. The overwhelming majority of seats carry none.
+    #[inline]
+    fn has_no_attachments(&self, pid: usize) -> bool {
+        self.players
+            .get(pid)
+            .is_none_or(|player| player.attached_modifiers.is_empty())
+    }
+
     pub fn player_modifier_effect(&self, pid: usize, effect: &str) -> f64 {
         self.players
             .get(pid)
@@ -17393,6 +17506,12 @@ impl Game {
     /// callers provide the game context (unit class, district family, city
     /// state, and so on). Anarchy suppresses cards but not external modifiers.
     pub fn policy_effect(&self, pid: usize, effect: &str) -> f64 {
+        // A runtime attachment can carry any key at all, and the table it
+        // comes from is swapped in after the ruleset is indexed, so the
+        // index only settles this for a seat carrying no attachments.
+        if !self.rules.effect_index.policies(effect) && self.has_no_attachments(pid) {
+            return 0.0;
+        }
         let attached = self.player_modifier_effect(pid, effect);
         if self.in_anarchy(pid) {
             return attached; // the cards come out; external modifiers remain
@@ -17410,6 +17529,15 @@ impl Game {
     /// policies, researched nodes and civilization traits are empire-wide;
     /// infrastructure, beliefs and Governors contribute only where active.
     fn city_modifier_effect(&self, city: &City, effect: &str) -> f64 {
+        // Nine sweeps follow, over the player's policies, trees, traits,
+        // buildings, districts, wonders, beliefs, pantheon and Governors.
+        // Every one of them ends in `spec.effects.get(effect)`, so if nothing
+        // in the ruleset grants this key they all add up to the same nothing
+        // — unless the owner carries a runtime attachment, which the index
+        // cannot speak for.
+        if !self.rules.effect_index.any(effect) && self.has_no_attachments(city.owner) {
+            return 0.0;
+        }
         let pid = city.owner;
         self.policy_effect(pid, effect)
             + self.tree_effect(pid, effect)
@@ -17426,6 +17554,17 @@ impl Game {
         let mut selectors = vec![building, "*"];
         if let Some(replaced) = self.rules.buildings[building].replaces.as_deref() {
             selectors.push(replaced);
+        }
+        // Each surviving selector costs six assembled keys and six collection
+        // sweeps. A selector no modifier anywhere names contributes zero to
+        // all six, so it is dropped before a key is built for it — but only
+        // where the index speaks for every source, which excludes a seat
+        // carrying runtime attachments.
+        if self.has_no_attachments(city.owner) {
+            selectors.retain(|selector| self.rules.effect_index.modifies_building_yields(selector));
+            if selectors.is_empty() {
+                return Yields::default();
+            }
         }
         let effect = |yield_type: &str| {
             selectors
@@ -17453,6 +17592,9 @@ impl Game {
         if let Some(replaced) = self.rules.units[unit].replaces.as_deref() {
             selectors.push(replaced);
         }
+        if self.has_no_attachments(city.owner) {
+            selectors.retain(|selector| self.rules.effect_index.discounts_unit_purchase(selector));
+        }
         selectors
             .into_iter()
             .map(|selector| {
@@ -17462,6 +17604,11 @@ impl Game {
     }
 
     fn modifier_grants_ability(&self, pid: usize, ability: &str) -> bool {
+        // Assembling the key allocates, and this is asked behind every
+        // `has_ability` call, so rule the question out on the borrowed name.
+        if !self.rules.effect_index.grants_ability(ability) && self.has_no_attachments(pid) {
+            return false;
+        }
         let effect = grant_ability_effect_key(ability);
         let religion = self.players.get(pid).and_then(|player| player.religion.as_deref());
         self.policy_effect(pid, &effect)
@@ -17541,6 +17688,8 @@ impl Game {
         let city = self.cities.get(&cid)?;
         let tile = self.map.get(pos)?;
         if city.owner != pid
+            // `CanAnnexTilesWithGold` is a full-civilization privilege.
+            || !self.annexes_tiles_with_own_yields(pid)
             || tile.owner_city.is_some()
             || !self.players.get(pid)?.explored.contains(&pos)
             || !self
@@ -19263,6 +19412,9 @@ impl Game {
     }
 
     fn religion_belief_effect(&self, religion: &str, effect: &str) -> f64 {
+        if !self.rules.effect_index.beliefs(effect) {
+            return 0.0;
+        }
         let Some(founder) = self.religion_founder(religion) else {
             return 0.0;
         };
@@ -21426,15 +21578,30 @@ impl Game {
 
     // -------------------------------------------------- city-state envoys
 
-    pub fn cs_type(civ: &str) -> &'static str {
-        match civ {
-            "Geneva" | "Hattusa" | "Stockholm" | "Seoul" => "scientific",
-            "Mohenjo-Daro" | "Vilnius" | "Antananarivo" => "cultural",
-            "Yerevan" | "Kandy" | "Jerusalem" => "religious",
-            "Kabul" | "Carthage" | "Valletta" | "Preslav" => "militaristic",
-            "Auckland" | "Brussels" => "industrial",
-            _ => "trade", // Zanzibar and modded/extended trade city-states.
-        }
+    /// The shipped `MinorCivBonuses` type a city-state pays its 1/3/6 Envoy
+    /// thresholds in. Every seat the roster names carries one; a name the
+    /// roster does not know (a mod's own city-state) falls back to Trade,
+    /// which is the only type whose bonus needs no matching building tier.
+    pub fn cs_type<'a>(&'a self, civ: &str) -> &'a str {
+        self.rules
+            .city_states
+            .roster
+            .iter()
+            .find(|seat| seat.name == civ)
+            .map_or("trade", |seat| seat.kind.as_str())
+    }
+
+    /// The bespoke Suzerain bonus key a city-state carries, if the engine
+    /// implements one. A declared-but-unimplemented bonus reads as `None` so
+    /// no code path can act on a bonus that does not exist yet.
+    pub fn cs_bonus<'a>(&'a self, civ: &str) -> Option<&'a str> {
+        self.rules
+            .city_states
+            .roster
+            .iter()
+            .find(|seat| seat.name == civ)
+            .filter(|seat| seat.implemented)
+            .and_then(|seat| seat.bonus.as_deref())
     }
 
     fn envoy_tier_building_count(&self, city: &City, kind: &str, tier: i32) -> usize {
@@ -21497,7 +21664,7 @@ impl Game {
                 minor.alive
                     && minor.is_minor
                     && !minor.is_barbarian
-                    && Self::cs_type(&minor.civ) == kind
+                    && self.cs_type(&minor.civ) == kind
                     && self.suzerain_of(minor.id) == Some(pid)
             })
             .count()
@@ -21885,7 +22052,7 @@ impl Game {
         let threshold = [1, 3, 6]
             .into_iter()
             .find(|threshold| *threshold > current)?;
-        let kind = Self::cs_type(&state.civ);
+        let kind = self.cs_type(&state.civ);
         let mut gain = Yields::default();
         for city in self.cities.values().filter(|city| city.owner == pid) {
             let before = self.envoy_type_yields_for_count(city, kind, current);
@@ -21910,7 +22077,7 @@ impl Game {
         {
             yields.add(self.envoy_type_yields_for_count(
                 city,
-                Self::cs_type(&state.civ),
+                self.cs_type(&state.civ),
                 self.envoys_at(pid, state.id),
             ));
         }
@@ -22366,6 +22533,9 @@ impl Game {
                 if self.has_ability(pid, "iteru") && self.map.tiles[pos].has_river() {
                     bonus += 0.15; // Egypt: Iteru (river cities)
                 }
+                if self.grants_city_state_unique_bonus(pid, "Brussels") {
+                    bonus += 0.15;
+                }
             }
             Some(Item::Project { project }) => {
                 // Model the late-game factory, power and specialist stack that
@@ -22380,6 +22550,9 @@ impl Game {
                     bonus += 1.0;
                 }
                 bonus += self.gov_effects(pid).project_production_pct / 100.0;
+                if self.grants_city_state_unique_bonus(pid, "Hong Kong") {
+                    bonus += 0.20;
+                }
                 if matches!(
                     project.as_str(),
                     "build_nuclear_device" | "build_thermonuclear_device"
@@ -22788,6 +22961,17 @@ impl Game {
             s += self.empire_luxuries(u.owner) as f64; // Montezuma
         }
         s += self.civ_effect(u.owner, "combat_strength");
+        // Preslav arms cavalry for the high ground, attacking and defending
+        // alike -- the shipped modifier is a plain strength bonus keyed on the
+        // tile the unit is fighting on, not on who started the fight.
+        if matches!(
+            self.rules.units[u.kind.as_str()].promotion_class.as_str(),
+            "light_cavalry" | "heavy_cavalry"
+        ) && self.map.get(u.pos).is_some_and(|tile| tile.hills)
+            && self.grants_city_state_unique_bonus(u.owner, "Preslav")
+        {
+            s += 5.0;
+        }
         // Foreign Ministry applies only after a unit is actually levied.
         // While levied, `owner` is the Suzerain and `levied_from` is the
         // city-state that must regain the unit when the contract ends.
@@ -23091,6 +23275,9 @@ impl Game {
     }
 
     fn city_building_effect(&self, city: &City, effect: &str) -> f64 {
+        if !self.rules.effect_index.buildings(effect) {
+            return 0.0;
+        }
         city.buildings
             .iter()
             .filter_map(|building| {
@@ -23111,6 +23298,12 @@ impl Game {
     }
 
     fn empire_wonder_effect(&self, pid: usize, effect: &str) -> f64 {
+        // No wonder in the ruleset grants anything towards this, so no
+        // arrangement of built wonders can either — and the alternative is
+        // walking every city in the world to reach that same zero.
+        if !self.rules.effect_index.wonders(effect) {
+            return 0.0;
+        }
         self.cities
             .values()
             .filter(|city| city.owner == pid)
@@ -24442,6 +24635,11 @@ impl Game {
                 supply += self.district_amenity(district, *position);
                 if matches!(self.district_family(district), "canal" | "dam") {
                     supply += self.governor_effect(city.owner, city.id, "canal_dam_amenity");
+                }
+                if self.district_family(district) == "commercial_hub"
+                    && self.grants_city_state_unique_bonus(city.owner, "Muscat")
+                {
+                    supply += 1.0;
                 }
             }
         }
@@ -28848,6 +29046,9 @@ impl Game {
     }
 
     fn city_district_effect(&self, city: &City, effect: &str) -> f64 {
+        if !self.rules.effect_index.districts(effect) {
+            return 0.0;
+        }
         city.districts
             .iter()
             .filter(|(district, position)| self.district_is_active(city, district, **position))
@@ -31431,6 +31632,28 @@ impl Game {
             && !self.at_war_with_any_civilization(city.owner)
         {
             ys.science *= 1.15;
+        }
+        if self.grants_city_state_unique_bonus(city.owner, "Taruga") {
+            // +5% Science per *different* improved Strategic resource the
+            // city has, so two Iron mines are one resource, not two.
+            let kinds: BTreeSet<&str> = city
+                .owned_tiles
+                .iter()
+                .filter_map(|position| self.map.get(*position))
+                .filter(|tile| !tile.pillaged)
+                .filter_map(|tile| {
+                    let resource = tile.resource.as_deref()?;
+                    let spec = self.rules.resources.get(resource)?;
+                    let improved = tile.improvement.as_deref().is_some_and(|improvement| {
+                        spec.improvement == improvement
+                            || self.rules.improvements.get(improvement).is_some_and(|have| {
+                                have.resources.iter().any(|listed| listed == resource)
+                            })
+                    });
+                    (spec.class == "strategic" && improved).then_some(resource)
+                })
+                .collect();
+            ys.science *= 1.0 + 0.05 * kinds.len() as f64;
         }
         ys.science *= 1.0 + self.kilwa_type_bonus_pct(city.owner, city, "scientific") / 100.0;
         ys.culture *= 1.0 + self.kilwa_type_bonus_pct(city.owner, city, "cultural") / 100.0;
@@ -36263,6 +36486,17 @@ impl Game {
             center.feature = None;
             center.improvement = None;
         }
+        // Every city opens owning its centre and the whole first ring, a
+        // city-state included. `CivilizationLevels.StartingTilesForCity` is 6
+        // for a full civilization and 5 for a city-state — calibrated by
+        // Russia's `MODIFIER_PLAYER_ADJUST_CITY_TILES` Amount 5, which reads
+        // as "+5 tiles beyond the ring", so 6 is the ring and the shipped
+        // minor really does open one tile short. CIVVIS diverges here on
+        // purpose: a deliberately neutral hole inside a city's own first ring
+        // is unreadable on the map, and which of the six it should be is not
+        // in the database anyway. The rule that keeps a city-state small is
+        // the annexation gate, not this one tile — a minor still never takes
+        // ground with its own Culture or Gold and grows only on Envoys.
         let mut claim = vec![pos];
         claim.extend(self.nbrs(pos));
         for tpos in claim {
@@ -41740,6 +41974,11 @@ impl Game {
     }
 
     fn governor_effect(&self, pid: usize, cid: u32, effect: &str) -> f64 {
+        // Deciding whether a Governor is established walks the roster and the
+        // city; no title or promotion granting this makes that moot.
+        if !self.rules.effect_index.governors(effect) {
+            return 0.0;
+        }
         self.players[pid]
             .governor_roster
             .iter()
@@ -41923,9 +42162,21 @@ impl Game {
         let mut foreign_pressure = 0.0;
         let mut pressure_by_civ: BTreeMap<usize, f64> = BTreeMap::new();
         for source in self.cities.values() {
-            // City-states and ordinary Free Cities do not exert population
-            // Loyalty pressure in the standard Gathering Storm ruleset.
-            if self.players[source.owner].is_minor || self.players[source.owner].is_barbarian {
+            let owner = &self.players[source.owner];
+            // A true barbarian speaks for nobody. The Free Cities seat carries
+            // the same hostile flag so that everyone is at war with it, so it
+            // has to be named apart from them here.
+            if owner.is_barbarian && !owner.is_free_city {
+                continue;
+            }
+            // A minor civilization projects no pressure onto its neighbours:
+            // the shipped population tooltip drops the "also applies to other
+            // cities within 9 tiles" clause for minors. Its own Citizens still
+            // speak for the city they live in, and that is the whole domestic
+            // side of a city-state's or Free City's own balance. Skipping them
+            // outright left every city-state comparing 0 against its
+            // neighbours and reading a permanent -20.
+            if (owner.is_minor || owner.is_free_city) && source.id != cid {
                 continue;
             }
             let distance = self.wdist(source.pos, cpos);
@@ -41960,8 +42211,14 @@ impl Game {
         let mut delta = (10.0 * (domestic_pressure - foreign_pressure)
             / (domestic_pressure.min(foreign_pressure) + 0.5))
             .clamp(-20.0, 20.0);
+        // `IDENTITY_PER_TURN_FROM_FREE_CITIES` 10 and
+        // `IDENTITY_PER_TURN_FROM_CITY_STATES` 20 — a Free City's desire for
+        // independence and a city-state's base strength as itself. The Free
+        // Cities seat is also a minor, so it answers first.
         if self.players[pid].is_free_city {
             delta += 10.0;
+        } else if self.players[pid].is_minor {
+            delta += 20.0;
         }
         delta += Self::happiness_loyalty_delta(self.city_amenity_surplus(city));
         if self.city_yields(cid).food + f64::EPSILON < 2.0 * city.pop as f64 {
@@ -42002,11 +42259,28 @@ impl Game {
                 self.civ_effect(pid, "garrison_loyalty")
             };
         }
-        let occupied = city
+        // Occupation. Rise & Fall charged a flat -1 to -5; Gathering Storm
+        // rescaled it to "Loyalty penalties based on the conqueror's
+        // Grievances caused against the city's original owner" —
+        // `IDENTITY_PER_TURN_FROM_OCCUPATION_MULTIPLIER` 25 percent of those
+        // Grievances, held between `_MIN` 0 and `_MAX` 10. The penalty is
+        // charged whether or not a garrison stands there; what a garrison buys
+        // is `IDENTITY_PER_TURN_FROM_MARTIAL_LAW` +8, which is why holding a
+        // fresh conquest down with troops raises its Loyalty rather than
+        // merely stopping the bleed.
+        let occupier = city
             .occupied_from
-            .is_some_and(|former| self.players.get(former).is_some_and(|player| player.alive));
-        if occupied && !garrisoned {
-            delta -= 5.0;
+            .filter(|former| self.players.get(*former).is_some_and(|player| player.alive));
+        if let Some(former) = occupier {
+            let grievances = self.players[former]
+                .grievances
+                .get(&pid)
+                .copied()
+                .unwrap_or(0.0);
+            delta -= (0.25 * grievances).clamp(0.0, 10.0);
+            if garrisoned {
+                delta += 8.0;
+            }
         }
         if let Some(founded_religion) = self.players[pid].religion.as_deref() {
             if let Some(city_religion) = self.city_religion(city) {
@@ -42115,8 +42389,17 @@ impl Game {
     /// first revolts into the hostile Free Cities seat at 100 Loyalty. A Free
     /// City at zero then joins the living major that accumulated the greatest
     /// population pressure during its independence.
+    ///
+    /// A city-state runs the same rules as anybody else. It is not exempt —
+    /// what keeps it in place is the +20 base strength it carries and the fact
+    /// that its own Citizens are the whole domestic side of its balance. An
+    /// overwhelmed city-state revolts into a Free City like a major's city
+    /// does. Barbarians hold no Loyalty at all — but the Free Cities seat is
+    /// flagged as one so that everybody is at war with it, so it is named
+    /// apart from them.
     fn process_loyalty(&mut self, pid: usize) {
-        if self.players[pid].is_minor && !self.players[pid].is_free_city {
+        let player = &self.players[pid];
+        if player.is_barbarian && !player.is_free_city {
             return;
         }
 
@@ -44584,6 +44867,7 @@ impl Game {
         self.process_loyalty(pid);
         self.record_emergency_presence(pid);
         self.process_influence(pid);
+        self.check_city_state_quests(pid);
         self.irradiate_units(pid);
         let turn_unit_ids = self.player_unit_ids(pid);
         for uid in turn_unit_ids.iter().copied() {
@@ -45536,6 +45820,11 @@ impl Game {
             growth_bonus += self.policy_effect(pid, "foreign_continent_growth_pct");
         }
         growth_bonus += self.pantheon_effect(pid, "growth_pct");
+        if self.grants_city_state_unique_bonus(pid, "Mitla")
+            && self.city_has_active_district_family(&self.cities[&cid], "campus")
+        {
+            growth_bonus += 15.0;
+        }
         growth_bonus += self
             .city_resource_industry_effects(&self.cities[&cid])
             .growth_pct;
@@ -45627,7 +45916,9 @@ impl Game {
                 }
             }
         }
-        if !self.congress_effect_active("border_control_treaty", "B", &pid.to_string()) {
+        if self.annexes_tiles_with_own_yields(pid)
+            && !self.congress_effect_active("border_control_treaty", "B", &pid.to_string())
+        {
             let owned = self.cities[&cid].owned_tiles.len() as i32;
             let border_mult = 1.0
                 + (self.pantheon_effect(pid, "border_growth_pct")
@@ -46567,7 +46858,7 @@ impl Game {
         }
         let mut scored: Vec<(Pos, f64)> = candidates
             .into_iter()
-            .map(|position| (position, self.border_influence_cost(cid, position)))
+            .map(|position| (position, self.border_influence_cost(city_pos, position)))
             .collect();
         let best_score = scored
             .iter()
@@ -46597,8 +46888,7 @@ impl Game {
     /// The -105 is calibrated against the 100 ring cost on purpose: one
     /// Resource is worth slightly more than one extra ring of distance, so a
     /// city reaches past a barren adjacent plot to take it.
-    fn border_influence_cost(&self, cid: u32, position: Pos) -> f64 {
-        let city_pos = self.cities[&cid].pos;
+    fn border_influence_cost(&self, city_pos: Pos, position: Pos) -> f64 {
         let tile = &self.map.tiles[&position];
         let mut cost = 100.0 * self.wdist(position, city_pos) as f64;
         cost += match tile.terrain.as_str() {
@@ -46659,12 +46949,13 @@ impl Game {
     fn transfer_city(&mut self, cid: u32, new_owner: usize, conquest: bool) {
         let old = self.cities[&cid].owner;
         {
-            let (name, pos, capital) = {
+            let (name, pos, capital, pop) = {
                 let city = &self.cities[&cid];
                 (
                     city.name.clone(),
                     city.pos,
                     city.is_capital && city.original_owner == old,
+                    city.pop,
                 )
             };
             let verb = if conquest { "captured" } else { "took over" };
@@ -46673,7 +46964,7 @@ impl Game {
             self.note(new_owner, "War", message.clone(), Some(pos));
             self.note(old, "War", message, Some(pos));
             if conquest {
-                self.record_war_city_loss(new_owner, old, &name, capital, pos);
+                self.record_war_city_loss(new_owner, old, &name, capital, pop, pos);
             }
         }
         let captured_works = self
@@ -47771,7 +48062,12 @@ mod border_growth_tests {
     use super::*;
 
     fn controlled_game(seed: u64) -> (Game, u32, Pos) {
+        controlled_game_for(seed, false)
+    }
+
+    fn controlled_game_for(seed: u64, minor: bool) -> (Game, u32, Pos) {
         let mut game = Game::new_full(1, 24, 20, seed, 120, 0, false);
+        game.players[0].is_minor = minor;
         for unit in game.units.keys().copied().collect::<Vec<_>>() {
             game.remove_unit(unit);
         }
@@ -47815,6 +48111,94 @@ mod border_growth_tests {
             .unwrap()
             .owned_tiles
             .push(position);
+    }
+
+    #[test]
+    fn only_a_full_civilization_moves_its_border_with_its_own_culture() {
+        // CivilizationLevels.CanAnnexTilesWithCulture is 1 for FULL_CIV and 0
+        // for CITY_STATE. A city-state banking enough Culture to buy the next
+        // plot several times over still does not take it; Envoys are its only
+        // route to new ground.
+        // Both open on the same centre-plus-first-ring, so the only thing
+        // that separates the two counts afterwards is the annexation gate.
+        for (minor, expected) in [(false, 8), (true, 7)] {
+            let (mut game, city, _) = controlled_game_for(941_101, minor);
+            let before = game.cities[&city].owned_tiles.len();
+            assert_eq!(before, 7);
+            game.cities.get_mut(&city).unwrap().border_culture = 500.0;
+            game.process_city(0, city);
+            assert_eq!(
+                game.cities[&city].owned_tiles.len(),
+                expected,
+                "minor={minor}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_city_state_cannot_buy_a_plot_with_gold() {
+        // CanAnnexTilesWithGold is 0 for CITY_STATE, so no price is ever
+        // quoted however much Gold the city-state is holding.
+        for minor in [false, true] {
+            let (mut game, city, center) = controlled_game_for(941_102, minor);
+            game.players[0].gold = 10_000.0;
+            let target = ring(&game, center, 2)
+                .into_iter()
+                .find(|position| game.map.tiles[position].owner_city.is_none())
+                .expect("a second-ring plot is unowned");
+            game.players[0].explored.insert(target);
+            assert_eq!(
+                game.plot_purchase_cost(0, city, target).is_some(),
+                !minor,
+                "minor={minor}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_city_state_founds_owning_its_whole_first_ring() {
+        // A founding city-state takes the same centre-plus-first-ring as a
+        // full civilization: no plot inside its own ring is left neutral.
+        for minor in [false, true] {
+            let (game, city, center) = controlled_game_for(941_103, minor);
+            assert_eq!(
+                game.cities[&city].owned_tiles.len(),
+                7,
+                "centre plus six ring tiles, minor={minor}"
+            );
+            assert!(
+                ring(&game, center, 1)
+                    .into_iter()
+                    .all(|position| game.map.tiles[&position].owner_city == Some(city)),
+                "a ring plot was left unowned, minor={minor}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_city_state_takes_no_ring_plot_that_a_neighbour_already_holds() {
+        // The full ring is a grant of *free* ground, not a seizure: a plot a
+        // neighbouring city already owns stays with that neighbour.
+        let (mut game, held_by, _) = controlled_game_for(941_104, false);
+        let center = *game
+            .map
+            .tiles
+            .keys()
+            .find(|position| {
+                game.wdist(**position, game.cities[&held_by].pos) == 3
+                    && game.wdisk(**position, 5).len() == 91
+            })
+            .expect("a plot three tiles out with a complete radius");
+        let taken = ring(&game, center, 1)
+            .into_iter()
+            .find(|position| game.wdist(*position, game.cities[&held_by].pos) == 2)
+            .expect("a ring plot facing the neighbour");
+        claim(&mut game, held_by, taken);
+
+        game.players.push(Player::new(1, "Geneva", true));
+        let minor_city = game.found_city_for(1, center, None);
+        assert_eq!(game.map.tiles[&taken].owner_city, Some(held_by));
+        assert_eq!(game.cities[&minor_city].owned_tiles.len(), 6);
     }
 
     #[test]
@@ -53731,14 +54115,28 @@ mod victory_conditions {
         assert_eq!(g.cities[&city].captured_from, None);
         assert_eq!(g.cities[&city].occupied_from, Some(1));
 
+        // The capture left player 1 aggrieved, and Gathering Storm charges
+        // 25% of those Grievances (capped at 10) for as long as the city is
+        // occupied. A garrison does not cancel that penalty; it pays the
+        // separate +8 of Martial Law on top of it.
+        let grievances = g.players[1].grievances[&0];
         let mut without_garrison = g.clone();
         let before = without_garrison.cities[&city].loyalty;
         without_garrison.process_loyalty(0);
         let ungarrisoned_gain = without_garrison.cities[&city].loyalty - before;
+        let mut unoccupied = g.clone();
+        unoccupied.cities.get_mut(&city).unwrap().occupied_from = None;
+        let before = unoccupied.cities[&city].loyalty;
+        unoccupied.process_loyalty(0);
+        assert_eq!(
+            unoccupied.cities[&city].loyalty - before,
+            ungarrisoned_gain + (0.25 * grievances).clamp(0.0, 10.0),
+            "occupation charges 25% of the founder's Grievances"
+        );
         g.spawn_test_unit("warrior", 0, position);
         let before = g.cities[&city].loyalty;
         g.process_loyalty(0);
-        assert_eq!(g.cities[&city].loyalty - before, ungarrisoned_gain + 5.0);
+        assert_eq!(g.cities[&city].loyalty - before, ungarrisoned_gain + 8.0);
     }
 
     #[test]
@@ -54059,6 +54457,68 @@ mod victory_conditions {
         assert_eq!(g.cities[&capital].loyalty, 100.0);
         assert!(g.cities[&capital].free_city_pressure.is_empty());
         assert!(!g.players[free_cities].alive);
+    }
+
+    #[test]
+    fn a_city_state_weighs_its_own_citizens_and_carries_its_base_strength() {
+        let mut g = game_with_capitals(2, 4_245, 300);
+        g.players[1].is_minor = true;
+        let state = g.player_city_ids(1)[0];
+        let major = g.player_city_ids(0)[0];
+        let neighbor = g.nbrs(g.cities[&state].pos)[0];
+        g.cities.get_mut(&major).unwrap().pos = neighbor;
+        g.cities.get_mut(&major).unwrap().pop = 6;
+        g.cities.get_mut(&state).unwrap().pop = 6;
+
+        // Its own Citizens are the whole domestic side of the balance. Before
+        // they counted, a city-state compared 0 against its neighbours and read
+        // a permanent -20 that nothing ever applied. Here it holds its ground
+        // against an equally sized Capital one tile away, whose Citizens press
+        // at double rate, and the +20 base carries it clear.
+        let change = g.city_loyalty_per_turn(&g.cities[&state].clone());
+        assert!(
+            change > 0.0,
+            "a city-state that counts nothing for itself reads a permanent -20; got {change}"
+        );
+        // And that domestic side really is its own Population.
+        g.cities.get_mut(&state).unwrap().pop = 12;
+        assert!(
+            g.city_loyalty_per_turn(&g.cities[&state].clone()) > change,
+            "its own Citizens have to move the balance"
+        );
+
+        // And it is not exempt from the rules: swamp it and it revolts into a
+        // Free City exactly as a major's city does.
+        g.cities.get_mut(&major).unwrap().pop = 60;
+        g.cities.get_mut(&state).unwrap().pop = 1;
+        g.cities.get_mut(&state).unwrap().loyalty = 1.0;
+        g.process_loyalty(1);
+        let free_cities = g
+            .players
+            .iter()
+            .find(|player| player.is_free_city)
+            .unwrap()
+            .id;
+        assert_eq!(g.cities[&state].owner, free_cities);
+        assert_eq!(g.cities[&state].loyalty, 100.0);
+    }
+
+    #[test]
+    fn a_minor_city_projects_no_pressure_onto_its_neighbours() {
+        let mut g = game_with_capitals(3, 4_246, 300);
+        g.players[2].is_minor = true;
+        let target = g.player_city_ids(0)[0];
+        let minor = g.player_city_ids(2)[0];
+        let neighbor = g.nbrs(g.cities[&target].pos)[0];
+        g.cities.get_mut(&minor).unwrap().pos = neighbor;
+
+        let baseline = g.city_loyalty_per_turn(&g.cities[&target].clone());
+        g.cities.get_mut(&minor).unwrap().pop = 40;
+        assert_eq!(
+            g.city_loyalty_per_turn(&g.cities[&target].clone()),
+            baseline,
+            "a city-state next door must not press a major's city"
+        );
     }
 
     #[test]
@@ -54693,7 +55153,7 @@ mod victory_conditions {
 
     #[test]
     fn late_congress_rules_change_wmd_policy_projects_energy_borders_and_chops() {
-        let mut g = game_with_capitals(2, 4_134, 300);
+        let mut g = game_with_capitals(2, crate::rng::fixture_seed("CONGRESS", 4_135), 300);
         let city = g.player_city_ids(0)[0];
         let effect = |resolution: &str, outcome: &str, target: &str| CongressEffect {
             resolution: resolution.to_string(),
@@ -58756,6 +59216,67 @@ mod district_mechanics {
         assert_eq!(intervals.len(), 2);
         assert_eq!(intervals[1].entered, 27);
         assert_eq!(intervals[1].exited, None);
+
+        // Two stretches are still one belligerent. The log gives an entity one
+        // section carrying its whole involvement, so the observation merges the
+        // intervals rather than sending the same city-state twice — and the
+        // toll it paid is counted once however many times it was dragged in.
+        let observed = crate::obs::observation(&game, 0);
+        let seen = observed["wars"][0]["parties"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|party| party["player"] == city_state)
+            .collect::<Vec<_>>();
+        assert_eq!(seen.len(), 1, "one belligerent is one entry");
+        assert_eq!(seen[0]["entered"], 15);
+        assert!(seen[0]["exited"].is_null(), "it is back in the war");
+        assert_eq!(
+            seen[0]["intervals"],
+            serde_json::json!([
+                {"entered": 15, "exited": 25},
+                {"entered": 27, "exited": null},
+            ])
+        );
+        assert_eq!(seen[0]["units_lost"], 1);
+        assert_eq!(seen[0]["unit_kinds"]["warrior"], 1);
+    }
+
+    /// Ranking the cities a war took needs two facts that do not survive the
+    /// event: a razed city has no population left to read, and a captured one
+    /// keeps growing under its new owner. Both are recorded as the city falls.
+    #[test]
+    fn a_captured_city_is_recorded_with_what_ranks_it() {
+        let mut game = emergency_game_with_capitals(2, 5_507, 300);
+        game.turn = 30;
+        game.do_declare_war(0, 1).unwrap();
+        let capital = game.player_city_ids(1)[0];
+        game.cities.get_mut(&capital).unwrap().pop = 7;
+        let name = game.cities[&capital].name.clone();
+        game.capture_city(capital, 0);
+
+        let losses = game.wars[&pair(0, 1)].losses_for(1).city_losses.clone();
+        assert_eq!(losses.len(), 1);
+        assert_eq!(losses[0].name, name);
+        assert_eq!(losses[0].turn, 30);
+        assert_eq!(losses[0].pop, 7, "the population that changed hands");
+        assert!(
+            losses[0].capital,
+            "its own capital is the largest loss a civilization can take"
+        );
+
+        let observed = crate::obs::observation(&game, 0);
+        let party = observed["wars"][0]["parties"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|party| party["player"] == 1)
+            .unwrap()
+            .clone();
+        assert_eq!(party["city_losses"][0]["name"], name);
+        assert_eq!(party["city_losses"][0]["pop"], 7);
+        assert_eq!(party["city_losses"][0]["capital"], true);
+        assert_eq!(party["city_names"][0], name);
     }
 
     #[test]

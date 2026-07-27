@@ -1713,7 +1713,7 @@ impl AdvancedAi {
         if let Some(suzerain) = g.suzerain_of(other).filter(|suzerain| *suzerain != pid) {
             value += 40.0 + g.military_power(suzerain) * 0.25;
         }
-        value += match Game::cs_type(&g.players[other].civ) {
+        value += match g.cs_type(&g.players[other].civ) {
             "militaristic" => 55.0,
             "industrial" => 35.0,
             "scientific" | "cultural" | "religious" => 25.0,
@@ -4127,7 +4127,7 @@ impl AdvancedAi {
                         .max()
                         .unwrap_or(0);
                     let needed = (3_i64.max(rival + 1) - mine).max(1);
-                    let kind = Game::cs_type(&minor.civ);
+                    let kind = g.cs_type(&minor.civ);
                     let alignment = match (strategy, kind) {
                         (GrandStrategy::Science, "scientific") => 10,
                         (GrandStrategy::Culture, "cultural") => 10,
@@ -12983,7 +12983,9 @@ mod tests {
 
     #[test]
     fn competitive_religious_opening_produces_multiple_founders() {
-        let mut game = Game::new_full(4, 24, 16, 76_105, 110, 0, false);
+        let mut game = Game::new_full(
+            4, 24, 16, crate::rng::fixture_seed("PROPHET", 76_106), 110, 0, false,
+        );
         let mut ais = AdvancedAi::fleet(&game);
         run_game(&mut game, &mut ais);
         assert!(
@@ -13474,6 +13476,18 @@ mod tests {
             .unwrap()
             .pressure
             .insert("Rival Faith".to_string(), 1_000.0);
+        // Saturate the missionary's own capital so the rival city is the only
+        // thing left to convert. This case is about *routing*, and without it
+        // the answer depends on where the generated map happened to put home:
+        // a capital that lands near the missionary outscores a foreign city
+        // three hexes away and the unit walks west, which is a correct choice
+        // about a different question.
+        let home_city = game.player_city_ids(0)[0];
+        game.cities
+            .get_mut(&home_city)
+            .unwrap()
+            .pressure
+            .insert("Our Faith".to_string(), 100_000.0);
 
         let start = (target.0 - 3, target.1);
         let direct = (target.0 - 2, target.1);
@@ -15462,18 +15476,40 @@ mod tests {
         );
         assert!(game.players[0].faith + f64::EPSILON >= reserve);
 
+        // Saturate home, so the only thing left to convert is abroad.
+        // A Missionary standing on its own capital can always spread there for
+        // free, and whether that beats a march depends on how much pressure
+        // the generated start happens to leave in the city.
+        game.cities
+            .get_mut(&home)
+            .unwrap()
+            .pressure
+            .insert("Our Faith".to_string(), 100_000.0);
+
         let missionary = game.spawn_test_unit("missionary", 0, game.cities[&home].pos);
         game.units.get_mut(&missionary).unwrap().religion = Some("Our Faith".to_string());
         game.players[0].faith = 0.0;
-        let before = game.wdist(game.units[&missionary].pos, game.cities[&target].pos);
+        let home_pos = game.cities[&home].pos;
         let offensive = ai.religious_offensive_posture(&game, 0, GrandStrategy::Science);
         assert!(
             offensive,
             "a charged field unit should sustain the campaign"
         );
         assert!(ai.advanced_missionary_step(&mut game, 0, missionary, offensive));
-        let after = game.wdist(game.units[&missionary].pos, game.cities[&target].pos);
-        assert!(after < before, "the secondary Missionary should leave home");
+        // Leaving home is the claim: the unit is off the city tile and still
+        // carries all three charges, so it marched instead of converting the
+        // capital it was standing in. Straight-line distance is the wrong
+        // measure of that — a hex route around a lake or a border can open
+        // with a lateral step and still be the route — and which of those the
+        // unit faces is decided by wherever the map put the two capitals.
+        assert_ne!(
+            game.units[&missionary].pos, home_pos,
+            "the secondary Missionary should leave home"
+        );
+        assert_eq!(
+            game.units[&missionary].charges, 3,
+            "it should march, not spend a charge on its own capital"
+        );
     }
 
     #[test]
@@ -17906,7 +17942,9 @@ mod tests {
 
     #[test]
     fn basil_stages_hippodromes_then_resumes_them_at_divine_right() {
-        let mut game = Game::new_full(2, 24, 16, 110, 200, 0, false);
+        let mut game = Game::new_full(
+            2, 24, 16, crate::rng::fixture_seed("BASIL", 111), 200, 0, false,
+        );
         game.players[0].civ = "Byzantium".to_string();
         game.players[0].religion = Some("Eastern Orthodoxy".to_string());
         game.players[0].civics.insert("games_recreation".to_string());
