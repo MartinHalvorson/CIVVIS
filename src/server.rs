@@ -150,6 +150,12 @@ pub struct Session {
     league: Option<crate::league::League>,
     /// Per-seat index into `league.strategies` for rated major seats.
     seat_strategy: Vec<Option<usize>>,
+    /// Whether the roster above actually *chose* who plays each civ. Without
+    /// `--league` it did not: every major runs the default hierarchical agent
+    /// and each seat points at the entrant the league rates that agent as, so
+    /// the rating is the seat's own but the handle is one name repeated down
+    /// the table. Such a seat keeps its generated per-seat name instead.
+    seat_from_roster: bool,
     /// The strategies auto-play can hand the human seat to. `league` above is
     /// the roster this game is *rated* against and is often absent; every
     /// build ships the committed snapshot under `data/league`, so the choice
@@ -1383,12 +1389,20 @@ impl Session {
         }
     }
 
-    /// The roster named by `--league`, else a best-effort `league/` load
-    /// purely for elo labels.
+    /// The roster named by `--league`, else a best-effort load purely for
+    /// elo labels: the runtime `league/` this checkout records into, then the
+    /// snapshot every build ships. Only the named roster is ever written to,
+    /// so a labelled game still rates nothing — but it does say what the
+    /// league already knows about the agent in each seat, which used to
+    /// require passing `--league` to see at all.
     fn load_params_league(params: &Params) -> (Option<crate::league::League>, bool) {
         match &params.league_dir {
             Some(dir) => (crate::league::load_league(dir), true),
-            None => (crate::league::load_league("league"), false),
+            None => (
+                crate::league::load_league("league")
+                    .or_else(|| crate::league::load_league("data/league")),
+                false,
+            ),
         }
     }
 
@@ -1508,6 +1522,7 @@ impl Session {
             next_game_params: None,
             league,
             seat_strategy,
+            seat_from_roster,
             roster,
             autoplay_strategy: None,
             last_autoplay_request: None,
@@ -1586,6 +1601,7 @@ impl Session {
             next_game_params,
             league,
             seat_strategy,
+            seat_from_roster,
             roster,
             autoplay_strategy: None,
             last_autoplay_request: None,
@@ -1748,10 +1764,10 @@ impl Session {
     }
 
     /// Say who is playing each human seat: the handle this game registered
-    /// for them, and — once a rated roster is holding it — the rating they
-    /// are defending. A player with no finished game is `player_rated` with
-    /// zero games rather than an authoritative 1500, the same way the
-    /// leaderboards mark a provisional entrant.
+    /// for them and the rating they are defending. Somebody who has finished
+    /// nothing still has a rating — the base every player starts from — so
+    /// the seat carries 1500 marked `player_elo_provisional` rather than a
+    /// blank, and their first result moves it up or down from there.
     fn name_human_players(&self, o: &mut Value) {
         if self.human_players.is_empty() {
             return;
@@ -1769,20 +1785,30 @@ impl Session {
             player["player_name"] = json!(seat.name);
             player["player_username"] = json!(seat.username);
             player["player_rated"] = json!(seat.rated);
-            let rating = self
+            // Their own row, found by the name they were registered under —
+            // not `seat_entry`, which follows whichever agent is holding the
+            // seat. Handing it to auto-play does not hand over your rating.
+            let entry = self
                 .league
                 .as_ref()
-                .zip(self.seat_strategy.get(id).copied().flatten())
-                .map(|(league, index)| &league.strategies[index]);
-            if let Some(entry) = rating {
-                let civ = &self.game.players[id].civ;
-                let (elo, rd, civ_specific) = crate::league::display_elo(entry, civ);
-                player["player_elo"] = json!(elo.round() as i64);
-                player["player_elo_rd"] = json!(rd.round() as i64);
-                player["player_elo_civ"] = json!(civ_specific);
-                player["player_games"] = json!(entry.games);
-            }
+                .and_then(|league| league.strategies.iter().find(|s| s.name == seat.name));
+            let civ = &self.game.players[id].civ;
+            let shown = crate::league::display_rating(entry, civ);
+            player["player_elo"] = json!(shown.rating.round() as i64);
+            player["player_elo_rd"] = json!(shown.rd.round() as i64);
+            player["player_elo_civ"] = json!(shown.civ_specific);
+            player["player_elo_provisional"] = json!(shown.provisional);
+            player["player_games"] = json!(entry.map_or(0, |entry| entry.games));
         }
+    }
+
+    /// The league row backing a seat, if the league has one. `None` is the
+    /// ordinary case for a game running without a roster, and is a seat the
+    /// league has never heard of rather than a seat that cannot be rated:
+    /// `league::display_rating` gives it the provisional base.
+    fn seat_entry(&self, seat: usize) -> Option<&crate::league::Strategy> {
+        let index = self.seat_strategy.get(seat).copied().flatten()?;
+        self.league.as_ref()?.strategies.get(index)
     }
 
     /// Name every major AI visible in this observation, including opponents
@@ -1831,23 +1857,22 @@ impl Session {
                 Some(pid) => observation_player_view(g, pid),
                 None => observation_spectator(g, summary_pid),
             };
-            // Each rated seat's display elo (civ table when settled, else
-            // global), gathered up front so a seat's expected win share can
-            // be computed against the rest of the table.
-            let seat_elo: std::collections::BTreeMap<usize, f64> = self
-                .seat_strategy
+            // Every living major's display elo (civ table when settled, else
+            // global, else the provisional base), gathered up front so a
+            // seat's expected win share can be computed against the rest of
+            // the table. A seat the league has no row for is still in here:
+            // leaving it out would make the remaining shares add to one
+            // between themselves and quietly claim the unrated seat cannot
+            // win.
+            let seat_elo: std::collections::BTreeMap<usize, f64> = g
+                .players
                 .iter()
-                .enumerate()
-                .filter_map(|(pid, si)| {
-                    let (si, league) = ((*si)?, self.league.as_ref()?);
-                    let p = &g.players[pid];
-                    if !p.alive || p.is_minor || p.is_barbarian {
-                        return None;
-                    }
-                    Some((
-                        pid,
-                        crate::league::display_elo(&league.strategies[si], &p.civ).0,
-                    ))
+                .filter(|p| p.alive && !p.is_minor && !p.is_barbarian)
+                .map(|p| {
+                    (
+                        p.id,
+                        crate::league::display_rating(self.seat_entry(p.id), &p.civ).rating,
+                    )
                 })
                 .collect();
             // One table, one winner: the seats share out a single win rather
@@ -1888,17 +1913,34 @@ impl Session {
                     // civ. `ai_expected` is the elo-implied chance of winning
                     // this table outright, so the seats sum to 1 and the
                     // number can be checked against winners over time.
-                    if let (Some(league), Some(Some(si))) =
-                        (self.league.as_ref(), self.seat_strategy.get(id))
-                    {
-                        let s = &league.strategies[*si];
+                    //
+                    // Every major carries a rating, roster or no roster. Most
+                    // games run without `--league`, and a column of dashes
+                    // read as "this build cannot rate anyone" when the truth
+                    // was only that nobody here has finished a rated game
+                    // yet. An unknown player is a provisional 1500 that the
+                    // first result moves.
+                    let major = g
+                        .players
+                        .get(id)
+                        .is_some_and(|p| !p.is_minor && !p.is_barbarian);
+                    if major {
+                        let entry = self.seat_entry(id);
                         let civ = &g.players[id].civ;
-                        let (elo, rd, civ_specific) = crate::league::display_elo(s, civ);
-                        player["ai_username"] = json!(s.username);
-                        player["ai_strat_label"] = json!(s.label());
-                        player["ai_elo"] = json!(elo.round() as i64);
-                        player["ai_elo_rd"] = json!(rd.round() as i64);
-                        player["ai_elo_civ"] = json!(civ_specific);
+                        let shown = crate::league::display_rating(entry, civ);
+                        // A handle names a seat only when the roster picked
+                        // that seat. Otherwise the whole table is the same
+                        // entrant and repeating its name down every row would
+                        // hide who is who; the generated per-seat name from
+                        // `name_ai_players` reads better and is just as true.
+                        if let (true, Some(s)) = (self.seat_from_roster, entry) {
+                            player["ai_username"] = json!(s.username);
+                            player["ai_strat_label"] = json!(s.label());
+                        }
+                        player["ai_elo"] = json!(shown.rating.round() as i64);
+                        player["ai_elo_rd"] = json!(shown.rd.round() as i64);
+                        player["ai_elo_civ"] = json!(shown.civ_specific);
+                        player["ai_elo_provisional"] = json!(shown.provisional);
                         if let Some(share) = seat_expected.get(&id) {
                             player["ai_expected"] = json!((share * 100.0).round() / 100.0);
                         }
@@ -4827,9 +4869,12 @@ mod tests {
         assert!(!player_hud.contains("class=\"empire-link\""));
         assert!(EMBEDDED_INDEX.contains("--hud-watch-column: 68px"));
         assert!(EMBEDDED_INDEX.contains("width: calc(100% - 6px); height: 22px"));
-        // And a player with nothing behind them reads unrated rather than
-        // wearing the 1500 every unrated player would have.
-        assert!(player_hud.contains("(playedGames ? `${p.player_elo} ELO` : \"Unrated\")"));
+        // And a player with nothing behind them still wears a rating: the
+        // 1500 every player starts from, marked provisional rather than
+        // replaced by a dash that would read as "cannot be rated".
+        assert!(player_hud.contains("const playerElo = eloKnown ? `${eloValue}` : \"—\";"));
+        assert!(player_hud.contains("${eloProvisional ? \" provisional\" : \"\"}"));
+        assert!(EMBEDDED_INDEX.contains(".diplomacy-elo-value.provisional {"));
 
         // The side panel is the one part of a frame that is allowed to skip a
         // repaint, because below a second per turn it changes faster than
@@ -7936,6 +7981,55 @@ mod tests {
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
+    /// Every major on screen carries a rating, whether or not this game is
+    /// being rated into anything.
+    ///
+    /// The elo column used to be empty for every seat in every game that was
+    /// not launched with `--league`, which is almost all of them — a table of
+    /// dashes that reads as "this build cannot rate anyone". Two things fix
+    /// it: the snapshot every build ships is loaded for labels, and a seat
+    /// the league has no row for shows the provisional base rather than
+    /// nothing.
+    #[test]
+    fn every_major_carries_a_rating_without_a_named_roster() {
+        let mut params = current();
+        params.spectate = true;
+        params.num_players = 4;
+        let session = Session::new(params);
+        assert!(
+            session.league.is_some(),
+            "the shipped snapshot labels a game that names no roster"
+        );
+        assert!(!session.seat_from_roster, "and it seats nobody");
+
+        let state = session.state();
+        let majors: Vec<&Value> = state["players"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|p| p["is_minor"] != json!(true) && p["is_barbarian"] != json!(true))
+            .collect();
+        assert_eq!(majors.len(), 4);
+        let mut shares = 0.0;
+        for player in &majors {
+            let elo = player["ai_elo"].as_i64().expect("every major has a rating");
+            assert!((800..=2600).contains(&elo), "{elo} is not a rating");
+            assert!(player["ai_elo_rd"].as_i64().is_some());
+            shares += player["ai_expected"].as_f64().expect("and a win share");
+            // Nobody chose these seats, so the one entrant behind all of them
+            // does not get to put its handle on four different civilizations.
+            assert!(
+                player["ai_username"].is_null(),
+                "an unseated table keeps its per-seat names"
+            );
+            assert!(player["ai_name"].as_str().is_some_and(|n| !n.is_empty()));
+        }
+        assert!(
+            (shares - 1.0).abs() < 0.02,
+            "one table, one winner: shares summed to {shares}"
+        );
+    }
+
     /// Most games are rated against nothing at all. The person is still not
     /// an existing player: they get a handle for this game, and it goes no
     /// further than this game.
@@ -7947,7 +8041,12 @@ mod tests {
         let state = session.state();
         assert_eq!(state["players"][0]["player_username"], json!("Player"));
         assert_eq!(state["players"][0]["player_rated"], json!(false));
-        assert!(state["players"][0]["player_elo"].is_null());
+        // Nothing is being rated, and they have still never finished a game,
+        // so the seat wears the rating everybody starts from and says so.
+        assert_eq!(state["players"][0]["player_elo"], json!(1500));
+        assert_eq!(state["players"][0]["player_elo_rd"], json!(350));
+        assert_eq!(state["players"][0]["player_elo_provisional"], json!(true));
+        assert_eq!(state["players"][0]["player_games"], json!(0));
 
         // A spectated world has nobody at a keyboard and registers nobody.
         let mut params = current();
