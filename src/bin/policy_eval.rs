@@ -44,9 +44,18 @@
 //! it exactly rather than averaging over it.
 //!
 //! That argument is checked empirically, not just asserted: run
-//! `--treatment legacy --control legacy`. Identical arms must land near parity
-//! with a non-significant sign test. If they do not, every number this harness
-//! has produced is its own noise.
+//! `--treatment legacy --control legacy`. Measured over 60 maps at seed
+//! 600000 — **60/120 games, 0 for / 0 against / 60 neutral, score exactly
+//! 50.0%**.
+//!
+//! Read that result precisely, because it is degenerate and proves less than
+//! it looks like. Identical arms play the *same* game in both directions, so
+//! the same seat wins each time and the map is neutral by construction. What
+//! it establishes is that the harness is deterministic and contributes no
+//! noise of its own — the same self-check `ablate --grant none` uses. What it
+//! cannot establish is the null distribution for arms that genuinely differ,
+//! since there the two directions are separate games. That rests on the
+//! `q(1-q)` argument above, which is exact.
 //!
 //! ```text
 //! policy_eval --players 4 --maps 120
