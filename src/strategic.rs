@@ -389,6 +389,19 @@ pub struct StrategicAi {
     /// from 81 to 65. Exact local conversion gains did not compose into
     /// stronger game conversion; see `docs/RELIGIOUS_CONVERSION_FINISHER.md`.
     pub religious_finish_search: bool,
+    /// Search the same exact religious action space, but accept a sequence
+    /// only when applying it gives this civilization the actual religious
+    /// victory. This is the outcome-only repair to the failed conversion
+    /// proxy above: no pressure, city-majority, or development gain can
+    /// consume a unit action unless the game ends. Off by default; the
+    /// evaluator-only `strategic_deep_checkmate` entrant measures it.
+    ///
+    /// **Measured, not promoted.** Two disjoint 30-map screens -- one on the
+    /// fallback weights and one on the first shipped evolved genome -- each
+    /// split games 30-30 with every map direction neutral and identical
+    /// victory types. Removing the proxy removed both the prior harm and
+    /// measurable headroom; see `docs/RELIGIOUS_CHECKMATE_SEARCH.md`.
+    pub religious_checkmate_search: bool,
     /// Project a rotating subset of lanes instead of all of them: the
     /// adaptive baseline, the lane in force, and one challenger that
     /// advances each review. Cuts a review from seven branches to about
@@ -436,6 +449,7 @@ impl StrategicAi {
             defer_periodic_on_interrupt: true,
             terminal_tempo: false,
             religious_finish_search: false,
+            religious_checkmate_search: false,
             rotate_lanes: false,
             rotation: 0,
             doctrine: Doctrine::Incumbent,
@@ -550,9 +564,15 @@ impl StrategicAi {
 
     /// Best one- or two-action conversion sequence available at the start of
     /// this turn. Ties retain legal-action order, keeping the search fully
-    /// deterministic. Returning an empty plan means no exact sequence
-    /// improves the current religious-victory geometry.
-    fn religious_conversion_plan(&self, g: &Game, pid: usize) -> Vec<Action> {
+    /// deterministic. In checkmate mode the first exact winning sequence is
+    /// returned and every non-winning improvement is ignored; otherwise an
+    /// empty plan means no sequence improves religious-victory geometry.
+    fn religious_action_plan(
+        &self,
+        g: &Game,
+        pid: usize,
+        checkmate_only: bool,
+    ) -> Vec<Action> {
         let Some(mut best_value) = Self::conversion_value(g, pid) else {
             return Vec::new();
         };
@@ -564,7 +584,10 @@ impl StrategicAi {
                 let mut after = g.clone();
                 if after.apply(pid, action).is_ok() {
                     if let Some(value) = Self::conversion_value(&after, pid) {
-                        if value.better_than(&best_value) {
+                        if checkmate_only && value.won {
+                            return vec![action.clone()];
+                        }
+                        if !checkmate_only && value.better_than(&best_value) {
                             best_value = value;
                             best = vec![action.clone()];
                         }
@@ -588,7 +611,10 @@ impl StrategicAi {
                     continue;
                 }
                 if let Some(value) = Self::conversion_value(&after, pid) {
-                    if value.better_than(&best_value) {
+                    if checkmate_only && value.won {
+                        return vec![action.clone(), followup];
+                    }
+                    if !checkmate_only && value.better_than(&best_value) {
                         best_value = value;
                         best = vec![action.clone(), followup];
                     }
@@ -598,8 +624,13 @@ impl StrategicAi {
         best
     }
 
-    fn apply_religious_conversion_plan(&self, g: &mut Game, pid: usize) -> bool {
-        let plan = self.religious_conversion_plan(g, pid);
+    fn apply_religious_action_plan(
+        &self,
+        g: &mut Game,
+        pid: usize,
+        checkmate_only: bool,
+    ) -> bool {
+        let plan = self.religious_action_plan(g, pid, checkmate_only);
         if plan.is_empty() {
             return false;
         }
@@ -609,6 +640,10 @@ impl StrategicAi {
             }
         }
         true
+    }
+
+    fn apply_religious_conversion_plan(&self, g: &mut Game, pid: usize) -> bool {
+        self.apply_religious_action_plan(g, pid, false)
     }
 
     fn position_value(&self, g: &Game, pid: usize) -> f64 {
@@ -1491,8 +1526,15 @@ impl StrategicAi {
 impl Ai for StrategicAi {
     fn take_turn(&mut self, g: &mut Game, pid: usize) {
         let major = !g.players[pid].is_minor && !g.players[pid].is_barbarian;
-        if major && self.religious_finish_search && g.winner.is_none() {
-            self.apply_religious_conversion_plan(g, pid);
+        if major
+            && (self.religious_finish_search || self.religious_checkmate_search)
+            && g.winner.is_none()
+        {
+            if self.religious_finish_search {
+                self.apply_religious_conversion_plan(g, pid);
+            } else {
+                self.apply_religious_action_plan(g, pid, true);
+            }
             if g.winner.is_some() {
                 return;
             }
@@ -1652,19 +1694,20 @@ mod tests {
         found_capitals(&mut game, 3);
         game.players[0].religion = Some("Home Faith".to_string());
         let target = game.player_city_ids(1)[0];
-        game.cities
-            .get_mut(&target)
-            .unwrap()
+        let target_city = game.cities.get_mut(&target).unwrap();
+        target_city.atheist_pressure = 0.0;
+        target_city
             .pressure
-            .insert("Rival Faith".to_string(), 500.0);
+            .insert("Rival Faith".to_string(), 50.0);
         let missionary = game.spawn_test_unit("missionary", 0, game.cities[&target].pos);
         game.units.get_mut(&missionary).unwrap().religion = Some("Home Faith".to_string());
         game.current = 0;
 
         let stock = StrategicAi::new();
         assert!(!stock.religious_finish_search);
+        assert!(!stock.religious_checkmate_search);
         let before = StrategicAi::conversion_value(&game, 0).unwrap();
-        let plan = stock.religious_conversion_plan(&game, 0);
+        let plan = stock.religious_action_plan(&game, 0, false);
         assert!(
             matches!(
                 plan.as_slice(),
@@ -1680,7 +1723,25 @@ mod tests {
             .unwrap_or(0.0)
             == 0.0), "planning must not mutate the live game");
 
+        assert!(
+            stock.religious_action_plan(&game, 0, true).is_empty(),
+            "an exact local gain must not masquerade as checkmate"
+        );
+        let converted = game.player_city_ids(2)[0];
+        game.cities
+            .get_mut(&converted)
+            .unwrap()
+            .pressure
+            .insert("Home Faith".to_string(), 10_000.0);
+        let checkmate = stock.religious_action_plan(&game, 0, true);
+        assert!(!checkmate.is_empty(), "the exact winning sequence must be found");
+        assert_eq!(game.winner, None, "search must not mutate the live game");
+        let mut checkmate_game = game.clone();
+        assert!(stock.apply_religious_action_plan(&mut checkmate_game, 0, true));
+        assert_eq!(checkmate_game.winner, Some(0));
+
         assert!(stock.apply_religious_conversion_plan(&mut game, 0));
+        assert_eq!(game.winner, Some(0));
         let after = StrategicAi::conversion_value(&game, 0).unwrap();
         assert!(after.better_than(&before));
         assert!(game.cities.values().any(|city| {
@@ -1693,7 +1754,7 @@ mod tests {
                     > 0.0
         }));
         assert!(
-            stock.religious_conversion_plan(&game, 2).is_empty(),
+            stock.religious_action_plan(&game, 2, false).is_empty(),
             "a civilization without a founded religion has no conversion plan"
         );
         game.players[0].team = Some(0);
