@@ -32,8 +32,8 @@
   // Everything the engine answers. A path not in here is a real file — the
   // sprite atlases, the 3D cinematic — and goes to the network untouched.
   const ENGINE_ROUTES = new Set([
-    "/state", "/status", "/runtime", "/rules", "/pedia", "/save", "/load",
-    "/action", "/step", "/autoplay", "/play-on", "/route", "/view",
+    "/state", "/status", "/runtime", "/rules", "/pedia", "/save", "/saves",
+    "/load", "/action", "/step", "/autoplay", "/play-on", "/route", "/view",
     "/spectator-status", "/next-game-settings", "/new", "/supervisor-new",
     "/pace", "/next-game",
   ]);
@@ -88,11 +88,28 @@
     pending.clear();
   };
 
+  // The world this visit opens on. The engine is deterministic per seed and
+  // imports nothing, so it has no way to vary on its own — without this every
+  // visitor watches the same six civilizations play the same map for ever.
+  // `?game=<n>` pins it, which is what makes a world worth showing shareable.
+  const OPENING_SEED = (() => {
+    const asked = Number(new URL(window.location.href).searchParams.get("game"));
+    if (Number.isSafeInteger(asked) && asked > 0) return asked;
+    return Math.floor(Math.random() * 0xffffffff) + 1;
+  })();
+
   function ask(method, path, body) {
     return new Promise((resolve, reject) => {
       const id = nextId++;
       pending.set(id, { resolve, reject });
-      worker.postMessage({ id, method, path, body: body || "", wasmUrl: WASM_URL });
+      worker.postMessage({
+        id,
+        method,
+        path,
+        body: body || "",
+        wasmUrl: WASM_URL,
+        seed: OPENING_SEED,
+      });
     });
   }
 
@@ -211,10 +228,15 @@
     const started = performance.now();
     let answer = await ask(method, target, body);
     report.requests++;
-    if (answer && typeof answer.turn === "number" && !report.seenTurns.has(answer.turn)) {
-      report.seenTurns.add(answer.turn);
-      report.turns = report.seenTurns.size;
+    if (answer && typeof answer.turn === "number") {
       report.lastTurn = answer.turn;
+      // Counted per world: a new game restarts at turn one, and turns already
+      // seen in the world before it must not make the new one look replayed.
+      const stamp = `${answer.seed}:${answer.turn}`;
+      if (!report.seenTurns.has(stamp)) {
+        report.seenTurns.add(stamp);
+        report.turns = report.seenTurns.size;
+      }
     }
     if (wantsNextTurn && !paused) {
       const owed = pace - (performance.now() - started);

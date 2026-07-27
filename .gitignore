@@ -15,3 +15,6 @@ tools/__pycache__/
 # A published build is assembled, never committed: it is 6MB of engine plus a
 # copy of the viewer, all of it reproducible from the revision it names.
 /beta/dist/
+/beta/verify.png
+# wrangler's local state, created by `beta/verify.py`'s password check.
+/.wrangler/

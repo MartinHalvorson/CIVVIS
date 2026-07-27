@@ -44,6 +44,7 @@ import sys
 import tempfile
 import threading
 import time
+import urllib.error
 import urllib.request
 
 CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
@@ -56,7 +57,7 @@ REQUIRED = [
     "beta/cinematic3d.js",
     "beta/build.json",
     "beta/assets/terrain-atlas.png",
-    "functions/beta/_middleware.js",
+    "_worker.js",
 ]
 
 
@@ -244,6 +245,107 @@ class Devtools:
         return result.get("result", {}).get("value")
 
 
+# -------------------------------------------------------------- the password
+
+
+def check_gate(dist: pathlib.Path) -> list[str]:
+    """Prove the published directory actually challenges for the password.
+
+    This exists because the gate has already been lost once, silently. Written
+    as a Pages `functions/` directory it was resolved against the *working
+    directory* rather than the directory being deployed, so a deploy from one
+    level up uploaded a perfectly working, completely open beta. Nothing failed;
+    there was simply no door. So the door is opened and walked through here
+    rather than assumed to be there.
+    """
+    port = free_port()
+    log = tempfile.NamedTemporaryFile(prefix="wrangler-", suffix=".log", delete=False)
+    dev = subprocess.Popen(
+        [
+            "npx", "--yes", "wrangler", "pages", "dev", str(dist),
+            "--port", str(port), "--compatibility-date=2026-01-01",
+        ],
+        stdout=log, stderr=subprocess.STDOUT,
+    )
+    try:
+        deadline = time.time() + 120
+        ready = False
+        while time.time() < deadline and not ready:
+            if dev.poll() is not None:
+                return [f"wrangler exited before serving anything (see {log.name})"]
+            try:
+                urllib.request.urlopen(f"http://127.0.0.1:{port}/", timeout=2).read()
+                ready = True
+            except Exception:
+                time.sleep(1)
+        if not ready:
+            return [f"wrangler never came up (see {log.name})"]
+
+        problems: list[str] = []
+        base = f"http://127.0.0.1:{port}"
+
+        def get(path, cookie=None):
+            request = urllib.request.Request(base + path)
+            if cookie:
+                request.add_header("Cookie", cookie)
+            return urllib.request.urlopen(request, timeout=15)
+
+        # The landing page is public.
+        if b"Watch on YouTube" not in get("/").read():
+            problems.append("the landing page is not being served at /")
+
+        # The beta is not.
+        closed = get("/beta/").read()
+        if b"shim.js" in closed:
+            problems.append("/beta/ served the viewer without asking for the password")
+        if b"Beta build" not in closed:
+            problems.append("/beta/ did not serve the password page")
+
+        # The engine itself is behind the same door, not just the page.
+        if b"asm" in get("/beta/civvis.wasm").read()[:8]:
+            problems.append("/beta/civvis.wasm is downloadable without the password")
+
+        # A wrong password is refused.
+        wrong = urllib.request.Request(
+            base + "/beta/", data=b"password=0000", method="POST"
+        )
+        try:
+            urllib.request.urlopen(wrong, timeout=15)
+            problems.append("a wrong password was accepted")
+        except urllib.error.HTTPError as refused:
+            if refused.code != 401:
+                problems.append(f"a wrong password answered HTTP {refused.code}, wanted 401")
+
+        # The right one is not, and hands back a cookie that opens the door.
+        opener = urllib.request.build_opener(NoRedirect())
+        right = urllib.request.Request(
+            base + "/beta/", data=b"password=2008", method="POST"
+        )
+        try:
+            answer = opener.open(right, timeout=15)
+            code, cookie = answer.code, answer.headers.get("Set-Cookie")
+        except urllib.error.HTTPError as refused:
+            code, cookie = refused.code, refused.headers.get("Set-Cookie")
+        if code != 303 or not cookie:
+            problems.append(f"the password answered HTTP {code} with cookie {cookie!r}")
+        else:
+            opened = get("/beta/", cookie=cookie.split(";")[0]).read()
+            if b"shim.js" not in opened:
+                problems.append("the password did not open /beta/")
+        return problems
+    finally:
+        dev.terminate()
+        try:
+            dev.wait(timeout=15)
+        except subprocess.TimeoutExpired:
+            dev.kill()
+
+
+class NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, *args, **kwargs):
+        return None
+
+
 # ------------------------------------------------------------------- checks
 
 
@@ -253,8 +355,16 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--dist", default=str(here / "dist"))
     parser.add_argument("--seconds", type=float, default=25.0)
     parser.add_argument("--min-turns", type=int, default=3)
-    parser.add_argument("--screenshot", default=str(here / "dist" / "verify.png"))
+    # Deliberately beside the bundle, not inside it: anything written into
+    # dist/ is deployed, and a check's own screenshot has no business on
+    # civvis.ai.
+    parser.add_argument("--screenshot", default=str(here / "verify.png"))
     parser.add_argument("--chrome", default=CHROME)
+    parser.add_argument(
+        "--no-gate",
+        action="store_true",
+        help="skip the password check (it needs wrangler, and takes half a minute)",
+    )
     args = parser.parse_args(argv)
 
     dist = pathlib.Path(args.dist).resolve()
@@ -280,6 +390,16 @@ def main(argv: list[str] | None = None) -> int:
         print("    the published viewer does not load the shim", file=sys.stderr)
         return 1
     print("    the viewer is rewritten for /beta/ and loads the shim")
+
+    if not args.no_gate:
+        print("==> opening the password gate on the exact directory to be deployed")
+        gate_problems = check_gate(dist)
+        for problem in gate_problems:
+            print(f"    {problem}", file=sys.stderr)
+        if gate_problems:
+            print("\nFAILED: the beta would be published unprotected", file=sys.stderr)
+            return 1
+        print("    /beta asks for the password; the password opens it")
 
     if not pathlib.Path(args.chrome).exists():
         print(f"    no Chrome at {args.chrome}; skipping the browser check", file=sys.stderr)

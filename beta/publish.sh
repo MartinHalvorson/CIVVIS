@@ -62,7 +62,7 @@ raw_wasm="$source_tree/target/wasm32-unknown-unknown/release/civvis.wasm"
 [ -f "$raw_wasm" ] || { echo "the wasm build produced nothing at $raw_wasm" >&2; exit 1; }
 
 rm -rf "$out"
-mkdir -p "$out/beta" "$out/functions/beta"
+mkdir -p "$out/beta"
 
 if command -v wasm-opt >/dev/null; then
   echo "==> shrinking the module"
@@ -79,8 +79,9 @@ cp "$repo_root/beta/shim.js" "$repo_root/beta/worker.js" "$out/beta/"
 cp "$source_tree/web/cinematic3d.js" "$out/beta/"
 cp -R "$source_tree/web/assets" "$out/beta/assets"
 cp "$repo_root/beta/landing.html" "$out/index.html"
-cp "$repo_root/beta/_middleware.js" "$out/functions/beta/_middleware.js"
-cp "$repo_root/beta/_headers" "$out/_headers"
+# The gate travels *inside* the deployed directory. See beta/_worker.js for
+# why this is not a `functions/` directory.
+cp "$repo_root/beta/_worker.js" "$out/_worker.js"
 
 # The viewer, copied and then made to work one directory down. Each
 # substitution is checked, because a silently unmatched one publishes a page

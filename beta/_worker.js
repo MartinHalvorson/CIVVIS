@@ -1,13 +1,24 @@
-// The door on /beta.
+// The door on /beta, and the whole site's request handler.
 //
 // A published build is not finished work and is not meant to be found by
 // everyone; this asks for a password before serving anything under /beta,
-// including the engine itself. It is a soft gate by design — one shared
-// password, no accounts — but it is a real one: the password is checked on
-// Cloudflare's edge and is never part of anything the browser downloads.
+// the engine included. It is a soft gate by design — one shared password, no
+// accounts — but a real one: the password is checked at Cloudflare's edge and
+// is never part of anything the browser downloads.
 //
 // Set BETA_PASSWORD in the Pages project's environment variables to change it
 // without a deploy.
+//
+// **This is a `_worker.js`, deliberately, and it must stay one.** Cloudflare
+// Pages also supports a `functions/` directory, and that is the obvious way to
+// write this — but `functions/` is resolved relative to the *working
+// directory* wrangler is invoked from, not the directory being deployed. Run
+// the deploy from anywhere but the project root and the gate is silently left
+// behind: the upload succeeds, the site works, and the beta is wide open with
+// nothing to show that anything went wrong. It happened once here already,
+// which is why `verify.py` now proves the gate challenges rather than assuming
+// it is there. A `_worker.js` sits *inside* the deployed directory and cannot
+// be separated from it.
 
 const COOKIE = "civvis_beta";
 const WEEK = 60 * 60 * 24 * 7;
@@ -84,39 +95,68 @@ function askForIt(wrong) {
     headers: {
       "Content-Type": "text/html; charset=utf-8",
       "Cache-Control": "no-store",
+      "X-Robots-Tag": "noindex",
     },
   });
 }
 
-export async function onRequest(context) {
-  const { request, next, env } = context;
-  const password = env.BETA_PASSWORD || "2008";
-  const expected = await token(password);
+/// Serve a file, with the headers a `_headers` file would have carried — that
+/// file is ignored once a `_worker.js` exists, so the rules live here instead.
+async function asset(request, env, gated) {
+  const response = await env.ASSETS.fetch(request);
+  const headers = new Headers(response.headers);
+  const path = new URL(request.url).pathname;
 
-  if (sameToken(cookieValue(request, COOKIE), expected)) {
-    const response = await next();
-    // A build behind a password should not turn up in a search result.
-    const headers = new Headers(response.headers);
-    headers.set("X-Robots-Tag", "noindex");
-    return new Response(response.body, { status: response.status, headers });
+  headers.set("X-Content-Type-Options", "nosniff");
+  headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
+  if (gated) headers.set("X-Robots-Tag", "noindex");
+
+  if (path.endsWith(".wasm")) {
+    // `WebAssembly.instantiateStreaming` refuses anything else.
+    headers.set("Content-Type", "application/wasm");
   }
-
-  if (request.method === "POST") {
-    const form = await request.formData().catch(() => null);
-    if (form && form.get("password") === password) {
-      return new Response(null, {
-        status: 303,
-        headers: {
-          Location: new URL(request.url).pathname,
-          "Set-Cookie":
-            `${COOKIE}=${expected}; Path=/beta; Max-Age=${WEEK}; ` +
-            "HttpOnly; Secure; SameSite=Lax",
-          "Cache-Control": "no-store",
-        },
-      });
-    }
-    return askForIt(true);
+  if (path.startsWith("/beta/assets/")) {
+    // Sprite atlases are content and change rarely.
+    headers.set("Cache-Control", "public, max-age=86400");
+  } else if (path.startsWith("/beta/")) {
+    // The engine keeps its name across builds, so it must be revalidated
+    // rather than trusted: a cached module from the last published build
+    // beside a freshly published page is a mismatch nobody can see. One small
+    // conditional request; the 6MB body only moves when the build changed.
+    headers.set("Cache-Control", "public, max-age=0, must-revalidate");
   }
-
-  return askForIt(false);
+  return new Response(response.body, { status: response.status, headers });
 }
+
+export default {
+  async fetch(request, env) {
+    const url = new URL(request.url);
+    if (!url.pathname.startsWith("/beta")) return asset(request, env, false);
+
+    const password = env.BETA_PASSWORD || "2008";
+    const expected = await token(password);
+
+    if (sameToken(cookieValue(request, COOKIE), expected)) {
+      return asset(request, env, true);
+    }
+
+    if (request.method === "POST") {
+      const form = await request.formData().catch(() => null);
+      if (form && form.get("password") === password) {
+        return new Response(null, {
+          status: 303,
+          headers: {
+            Location: url.pathname,
+            "Set-Cookie":
+              `${COOKIE}=${expected}; Path=/beta; Max-Age=${WEEK}; ` +
+              "HttpOnly; Secure; SameSite=Lax",
+            "Cache-Control": "no-store",
+          },
+        });
+      }
+      return askForIt(true);
+    }
+
+    return askForIt(false);
+  },
+};

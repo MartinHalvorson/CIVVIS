@@ -56,9 +56,9 @@ function lastPanic() {
   }
 }
 
-function request(method, path, body) {
+function request(method, path, body, seed) {
   const encoded = new TextEncoder().encode(
-    JSON.stringify({ method, path, body: body || "" }),
+    JSON.stringify({ method, path, body: body || "", seed }),
   );
   const inPtr = engine.civvis_alloc(encoded.length);
   // Every view is taken *after* the call that might have grown the module's
@@ -72,10 +72,10 @@ function request(method, path, body) {
 }
 
 self.onmessage = async (event) => {
-  const { id, method, path, body, wasmUrl } = event.data;
+  const { id, method, path, body, wasmUrl, seed } = event.data;
   try {
     await boot(wasmUrl);
-    const answer = request(method, path, body);
+    const answer = request(method, path, body, seed);
     self.postMessage({ id, ok: true, answer }, [answer.buffer]);
   } catch (error) {
     const reported = String((error && error.message) || error);

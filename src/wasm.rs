@@ -39,6 +39,14 @@ thread_local! {
     /// build reads them but the page that set them.
     static PACE: Cell<u64> = const { Cell::new(0) };
     static PAUSED: Cell<bool> = const { Cell::new(false) };
+    /// The seed the opening world is rolled from.
+    ///
+    /// A module has no clock and no entropy of its own, and this one imports
+    /// nothing, so variety has to arrive from outside: left to itself every
+    /// visitor to civvis.ai/beta would watch the same six civilizations play
+    /// the same map for ever. The page sends one seed per load and the first
+    /// request to need a world uses it.
+    static OPENING_SEED: Cell<u64> = const { Cell::new(1) };
 }
 
 /// The world a page opens on before anybody has visited the lobby.
@@ -53,7 +61,7 @@ fn opening_params() -> Params {
         num_players: 6,
         width,
         height,
-        seed: 1,
+        seed: OPENING_SEED.with(Cell::get),
         base_ruleset: BaseRuleset::Civ6,
         start_eon: StartEon::Civilization,
         start_era: 0,
@@ -597,6 +605,11 @@ pub unsafe extern "C" fn civvis_request(ptr: *mut u8, len: usize) -> *mut u8 {
     let method = parsed["method"].as_str().unwrap_or("GET").to_string();
     let target = parsed["path"].as_str().unwrap_or("/").to_string();
     let body = parsed["body"].as_str().unwrap_or("").to_string();
+    // Only the first request to need a world reads this; every later one is
+    // answered by the session that request created.
+    if let Some(seed) = parsed["seed"].as_u64().filter(|seed| *seed != 0) {
+        OPENING_SEED.with(|held| held.set(seed));
+    }
 
     let answer = serde_json::to_string(&route(&method, &target, &body))
         .unwrap_or_else(|error| format!("{{\"error\":\"cannot serialise the answer: {error}\"}}"));
