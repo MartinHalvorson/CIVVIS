@@ -1,7 +1,9 @@
 //! Scripted AIs (mirrors civvis/ai/). BasicAi reads full state (no fog) —
 //! sparring partner, not a fair-play agent.
 use crate::game::{effective_strength, Action, ActionFamilies, Game, Item};
+use crate::reasoning::Journal;
 use crate::rng::Rng;
+use crate::think;
 use crate::Pos;
 use std::cell::RefCell;
 use std::cmp::Ordering;
@@ -107,6 +109,15 @@ pub trait Ai {
     fn review_census(&self) -> Option<crate::strategic::ReviewCensus> {
         None
     }
+
+    /// Write this agent's reasoning into an observer's log.
+    ///
+    /// Every seat at a watched table is handed a handle on the *same*
+    /// [`Journal`], so the record is one ordered account of a turn rather than
+    /// one log per civilization that has to be interleaved afterwards. An
+    /// agent with nothing to say about itself — the random baseline — ignores
+    /// this, which is what the default does.
+    fn attach_journal(&mut self, _journal: Journal) {}
 }
 
 impl<T: Ai + ?Sized> Ai for Box<T> {
@@ -124,6 +135,10 @@ impl<T: Ai + ?Sized> Ai for Box<T> {
 
     fn review_census(&self) -> Option<crate::strategic::ReviewCensus> {
         (**self).review_census()
+    }
+
+    fn attach_journal(&mut self, journal: Journal) {
+        (**self).attach_journal(journal);
     }
 }
 
@@ -847,6 +862,9 @@ pub struct BasicAi {
     /// otherwise be undone by A* with the unit's next movement point, and the
     /// identical round trip would repeat forever.
     last_path_step_from: RefCell<HashMap<u32, (u32, Pos)>>,
+    /// Where this agent tells an observer what it is doing. Off unless a
+    /// spectator attached one; see [`crate::reasoning`].
+    pub(crate) journal: Journal,
 }
 
 impl Default for BasicAi {
@@ -1622,6 +1640,7 @@ impl BasicAi {
             patrol_posts: HashMap::new(),
             settler_targets: HashMap::new(),
             last_path_step_from: RefCell::new(HashMap::new()),
+            journal: Journal::default(),
         }
     }
 
@@ -1638,6 +1657,7 @@ impl BasicAi {
             patrol_posts: HashMap::new(),
             settler_targets: HashMap::new(),
             last_path_step_from: RefCell::new(HashMap::new()),
+            journal: Journal::default(),
         }
     }
 
@@ -1662,7 +1682,17 @@ impl BasicAi {
 
 impl Ai for BasicAi {
     fn take_turn(&mut self, g: &mut Game, pid: usize) {
+        // Stamp the context once. Nothing below repeats the turn number or the
+        // acting civilization; the journal carries both. `AdvancedAi` opens
+        // the turn on the shared journal before delegating here, and doing it
+        // again is the same statement, so the baseline running on its own is
+        // recorded identically.
+        self.journal.begin_turn(g.turn, pid);
         g.with_deferred_visibility(|g| self.take_turn_inner(g, pid));
+    }
+
+    fn attach_journal(&mut self, journal: Journal) {
+        self.journal = journal;
     }
 }
 
@@ -2056,14 +2086,17 @@ impl BasicAi {
             );
         }
         if !self.minor && g.players[pid].pantheon.is_none() && g.players[pid].faith >= 25.0 {
-            for b in [
+            for (rank, b) in [
                 "divine_spark",
                 "fertility_rites",
                 "god_of_the_forge",
                 "religious_settlements",
                 "god_of_the_open_sky",
                 "god_of_the_sea",
-            ] {
+            ]
+            .into_iter()
+            .enumerate()
+            {
                 if g.apply(
                     pid,
                     &Action::ChoosePantheon {
@@ -2072,6 +2105,9 @@ impl BasicAi {
                 )
                 .is_ok()
                 {
+                    think!(self.journal, Faith, Decision, "Founding the pantheon {b}";
+                           "the {} choice on the standing list still unclaimed",
+                           match rank { 0 => "first".to_string(), _ => format!("{}th", rank + 1) });
                     break;
                 }
             }
@@ -2121,6 +2157,9 @@ impl BasicAi {
                     )
                     .is_ok()
                     {
+                        think!(self.journal, Faith, Decision, "Founding a religion";
+                               "on the {follower} follower belief and the {founder} \
+                                founder belief, the first pair still unclaimed");
                         break 'found;
                     }
                 }
@@ -2647,6 +2686,35 @@ impl BasicAi {
         );
     }
 
+    /// Name a production item the way an observer's reasoning log says it.
+    /// The wire carries rule keys everywhere else; this is the one place a
+    /// person reads them, so a Corps is a Corps and a district says where it
+    /// is going.
+    pub(crate) fn item_label(item: &Item) -> String {
+        match item {
+            Item::Unit { unit } => unit.clone(),
+            Item::Formation { unit, formation } => match formation {
+                2 => format!("an Army of {unit}"),
+                _ => format!("a Corps of {unit}"),
+            },
+            Item::Building { building } => building.clone(),
+            Item::District { district, pos } => format!("a {district} district at {pos:?}"),
+            Item::Wonder { wonder, pos } => format!("the wonder {wonder} at {pos:?}"),
+            Item::Repair { repair, pos } => format!("repairs to the {repair} at {pos:?}"),
+            Item::Project { project } => format!("the {project} project"),
+            Item::Product { product } => format!("the product {product}"),
+        }
+    }
+
+    /// Where on the map a production item is going, when it is going
+    /// somewhere in particular rather than into the city itself.
+    pub(crate) fn item_focus(item: &Item, city: Pos) -> Pos {
+        match item {
+            Item::District { pos, .. } | Item::Wonder { pos, .. } | Item::Repair { pos, .. } => *pos,
+            _ => city,
+        }
+    }
+
     fn cities(&mut self, g: &mut Game, pid: usize) {
         let mut settlers: usize = 0;
         let mut builders = 0;
@@ -2921,6 +2989,20 @@ impl BasicAi {
                 )
                 .is_ok()
                 {
+                    if self.journal.wants(crate::reasoning::Level::Decision) {
+                        let cost = g.item_cost_for_city(pid, *cid, &item);
+                        let per_turn = g.city_yields(*cid).production.max(0.1);
+                        let city = &g.cities[cid];
+                        think!(self.journal, Cities, Decision,
+                               "{} starts {}", city.name, Self::item_label(&item);
+                               "{cost:.0} production, about {} turns at {per_turn:.1} a turn; \
+                                the empire holds {military} military for {n_cities} cities \
+                                against a target of {:.1} each, {settlers} settlers, \
+                                {builders} builders, {traders} traders",
+                               (cost / per_turn).ceil().max(1.0),
+                               self.w.mil_per_city;
+                               Self::item_focus(&item, city.pos));
+                    }
                     match &item {
                         Item::Unit { unit } if unit == "settler" => settlers += 1,
                         Item::Unit { unit } if unit == "builder" => builders += 1,
