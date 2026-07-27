@@ -1886,7 +1886,10 @@
   .war-side.aggressor .war-belligerent.city-state .war-party { border-left: 1px solid #62756d66; }
   .war-side.defender .war-belligerent.city-state .war-party { border-right: 1px solid #62756d66; }
   .war-party-name { display: block; overflow-wrap: break-word; word-break: normal; hyphens: auto; line-height: 1.25; }
-  .war-party-role { color: #d9b48c; font-size: var(--type-caption); font-style: italic; font-weight: 650; }
+  /* The label never breaks. Wrapped, it read as "(initial" over "aggressor)"
+     and cost the row a whole line; if a long name leaves too little room it
+     moves down whole and still says one thing. */
+  .war-party-role { color: #d9b48c; font-size: var(--type-caption); font-style: italic; font-weight: 650; white-space: nowrap; }
   .war-card .war-party-name,
   .war-card .war-entity-link {
     text-shadow: -1px -1px 0 #000, 0 -1px 0 #000, 1px -1px 0 #000,
@@ -24979,8 +24982,15 @@ function warBelligerentRows(war, declarerSide, role, maxSawAction) {
     // Somebody opened this war, and that is the first thing a reader wants from
     // the belligerent column. Every other name on this side joined a war
     // somebody else started.
+    // One word, because the label shares a 133px line with the name it
+    // qualifies. "(initial aggressor)" is 88.6px of that line, so it fitted
+    // beside only 10 of the 37 names the roster can put here; the rest broke
+    // the phrase across two lines, doubled the name box and dropped this
+    // belligerent's effort bar ~14px below its opposite number's, which is the
+    // one comparison the two columns exist to make. "(aggressor)" is 58.3px
+    // and fits beside 35 of the 37.
     const opener = party.player === war.aggressor
-      ? ` <span class="war-party-role">(initial aggressor)</span>` : "";
+      ? ` <span class="war-party-role">(aggressor)</span>` : "";
     const values = declarerSide
       ? [[start, "Military strength on entry"], [peak, "Peak unit-only military strength"],
           [sawAction, "Military value of distinct units that saw action"]]

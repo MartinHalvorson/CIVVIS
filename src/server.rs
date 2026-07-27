@@ -7381,7 +7381,23 @@ mod tests {
             party_name < bar && bar < note,
             "the effort bar belongs below the belligerent's name, above its notes"
         );
-        assert!(belligerent_row.contains("(initial aggressor)"));
+        // The declarer is named in one word so the label shares the name's
+        // line: a two-line name box drops this side's effort bar below its
+        // opposite number's, and the bars are what the two columns compare.
+        // Asserted against the emitted markup rather than the whole function,
+        // so the comment above the template is still free to name the form it
+        // replaced -- a bare `contains` over the body matches the prose too.
+        assert!(belligerent_row.contains("class=\"war-party-role\">(aggressor)</span>"));
+        assert!(!belligerent_row.contains("class=\"war-party-role\">(initial"));
+        assert!(EMBEDDED_INDEX.contains(".war-party-role {")
+            && EMBEDDED_INDEX
+                .split(".war-party-role {")
+                .nth(1)
+                .unwrap()
+                .split('}')
+                .next()
+                .unwrap()
+                .contains("white-space: nowrap"));
         assert!(belligerent_row.contains("party.player === war.aggressor"));
         // Cities are listed under the belligerent that lost them, said plainly,
         // and ranked capital first then by the population that changed hands.
