@@ -628,3 +628,58 @@ pushed. **The remaining candidate this work can name is production, not food:
 what a capital could produce if its citizens were assigned for it, and whether
 the settler's 80/110/140 is what actually gates the founding cadence.** That is
 a different measurement and it inherits none of §8's assumptions.
+
+## 13. What actually gates the founding cadence: settler transit
+
+§12 left production as the last candidate. It is not that either.
+
+Decomposing every turn a seat spends below its city target — 60 maps, 4
+players, 32×22, with #492's livelock fix in the base:
+
+| where the time goes | turns per seat | share |
+|---|---|---|
+| **paying** for a settler (it is at the head of a queue) | 26.0 ± 0.8 | 20% |
+| **walking** one (it exists and has not founded) | **57.1 ± 3.1** | **44%** |
+| neither | 45.3 ± 3.6 | 35% |
+
+**A settler spends more than twice as long in transit as its city spends
+building it.** Production is 20% of the deficit. The 80/110/140 is not what
+the cadence is waiting on, and neither — per §12 — is population.
+
+**It is travel, not dithering.** Splitting the settler-turns by whether the
+unit actually changed tile:
+
+> 53.7 ± 2.3 turns **moved** (81%), 12.9 ± 1.6 turns **stood still** (19%).
+
+Four fifths of a settler's life is spent in motion. That rules out the
+comfortable explanations — it is not waiting for an escort, and it is not
+stuck against a blocked path.
+
+**Measured before and after the livelock fix**, because #492 had just landed
+and "walking in circles" is exactly the confound that would fake this result:
+57.1 turns with the fix against 60.8 without. The finding is not livelock; it
+survives the repair almost unchanged.
+
+### What is *not* established
+
+I guessed the site search had no distance penalty. It does —
+`settle_sites` subtracts `wdist(from, pos) × 0.9` inside radius 11, and ×0.45
+for the long-range naval case — so that guess is withdrawn before it reaches a
+conclusion.
+
+What the numbers do not yet say is **how far the chosen sites actually are**,
+and whether a settler reaches one directly. 53.7 moving turns per seat over
+roughly three or four settlers is ~15 moving turns each, which is a long time
+to cross a radius-11 search at a settler's movement rate. Three candidates,
+none tested:
+
+1. the sites really are near the edge of the search radius, and 0.9/hex is
+   simply too cheap against `settle_value`'s scale (the accept threshold is 12);
+2. terrain makes the effective rate about one tile a turn;
+3. the settler re-targets en route as the map reveals, and the path is not
+   monotone toward any one site.
+
+Those want a settler-level trace — origin, chosen site, `wdist` between them,
+turns taken, tiles actually stepped — which the census does not currently
+record. **That is the next measurement, and it is the first one in this
+document pointing at movement rather than economy.**

@@ -117,6 +117,19 @@ struct Seat {
     founding_turns: Vec<u32>,
     /// Turns spent holding a settler while still short of the city target.
     settler_in_flight_turns: u32,
+    /// Turns short of the target with a settler at the head of some city's
+    /// queue — i.e. time spent *paying* for one rather than walking it.
+    /// §12 left production as the remaining candidate for what gates the
+    /// founding cadence; this is the column that decides it.
+    settler_building_turns: u32,
+    /// Of the turns a settler existed, how many it ended on the same tile it
+    /// started. "Walking" is really "exists and has not founded" — a settler
+    /// that is stationary is not travelling, it is waiting or dithering, and
+    /// the two want completely different fixes.
+    settler_idle_turns: u32,
+    settler_moved_turns: u32,
+    /// Last seen position of this seat's first settler, to see movement.
+    last_settler_pos: Option<(i32, i32)>,
     /// Turns short of the city target with no settler anywhere.
     short_without_settler_turns: u32,
     /// Capital population, housing and food at fixed checkpoints. A settler
@@ -429,6 +442,20 @@ fn main() {
                     .values()
                     .filter(|u| u.owner == pid && u.kind == "settler")
                     .count();
+                // Is any of this seat's cities currently paying for a settler?
+                // Did the settler actually move this turn?
+                let settler_pos = game
+                    .units
+                    .values()
+                    .find(|u| u.owner == pid && u.kind == "settler")
+                    .map(|u| (u.pos.0, u.pos.1));
+                let building = game.cities.values().any(|c| {
+                    c.owner == pid
+                        && matches!(
+                            c.queue.first(),
+                            Some(Item::Unit { unit }) if unit == "settler"
+                        )
+                });
                 {
                     let seat = seats.get_mut(&pid).expect("major seat recorded at setup");
                     if live > 0 {
@@ -440,6 +467,8 @@ fn main() {
                     if live + in_flight < desired {
                         if in_flight > 0 {
                             seat.settler_in_flight_turns += 1;
+                        } else if building {
+                            seat.settler_building_turns += 1;
                         } else {
                             seat.short_without_settler_turns += 1;
                         }
@@ -452,6 +481,14 @@ fn main() {
                         seat.capital_lost = true;
                     }
                     seat.max_cities = seat.max_cities.max(live);
+                    if let Some(now) = settler_pos {
+                        if seat.last_settler_pos == Some(now) {
+                            seat.settler_idle_turns += 1;
+                        } else if seat.last_settler_pos.is_some() {
+                            seat.settler_moved_turns += 1;
+                        }
+                    }
+                    seat.last_settler_pos = settler_pos;
                     if matches!(turn + 1, 25 | 50 | 75 | 100) {
                         if let Some(cap) = game
                             .cities
@@ -889,11 +926,35 @@ fn main() {
         .collect();
     let (flight_mean, flight_se) = mean_se(&flight);
     let (idle_mean, idle_se) = mean_se(&idle);
+    let build: Vec<f64> = seats
+        .iter()
+        .map(|s| s.settler_building_turns as f64)
+        .collect();
+    let (build_mean, build_se) = mean_se(&build);
+    let total = flight_mean + build_mean + idle_mean;
     println!(
-        "\nturns short of the city target: {flight_mean:.1} +/- {flight_se:.1} with a settler \
-         already walking, {idle_mean:.1} +/- {idle_se:.1} with none.\n\
-         The first column is time the empire-wide `counts.settlers == 0` clause forbids a second \
-         settler; the second is time it does not explain."
+        "\nwhere the time below the city target goes, per seat:\n  \
+         {build_mean:6.1} +/- {build_se:<4.1} turns PAYING for a settler ({:.0}%)\n  \
+         {flight_mean:6.1} +/- {flight_se:<4.1} turns WALKING one       ({:.0}%)\n  \
+         {idle_mean:6.1} +/- {idle_se:<4.1} turns NEITHER            ({:.0}%)\n\
+         If production gated the cadence the first row would dominate. It is the row that \
+         decides whether the settler's 80/110/140 is the binding cost.",
+        100.0 * build_mean / total.max(0.001),
+        100.0 * flight_mean / total.max(0.001),
+        100.0 * idle_mean / total.max(0.001)
+    );
+    let moved: Vec<f64> = seats.iter().map(|s| s.settler_moved_turns as f64).collect();
+    let stood: Vec<f64> = seats.iter().map(|s| s.settler_idle_turns as f64).collect();
+    let (moved_mean, moved_se) = mean_se(&moved);
+    let (stood_mean, stood_se) = mean_se(&stood);
+    let settler_turns = moved_mean + stood_mean;
+    println!(
+        "\nof the turns a settler existed: {moved_mean:.1} +/- {moved_se:.1} MOVED ({:.0}%), \
+         {stood_mean:.1} +/- {stood_se:.1} STOOD STILL ({:.0}%).\n\
+         Standing still is not travel. If it dominates, the cadence is not paying for distance \
+         — it is a settler that has nowhere it is willing to go, or is waiting for one.",
+        100.0 * moved_mean / settler_turns.max(0.001),
+        100.0 * stood_mean / settler_turns.max(0.001)
     );
 
     let min_seats = number(&args, "--min-seats", 8);
