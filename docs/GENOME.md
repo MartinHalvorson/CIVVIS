@@ -498,6 +498,47 @@ independently-known change would strengthen it. But the two chosen are the
 strongest available: one null and one significant positive, both decided on
 wins at 120 mirrored maps.
 
+## ★★★ The ranking redone on the fitness that tracks wins
+
+The leverage ranking above used score share, which is a correlate. Redone with
+`--lane` on victory-lane progress, same seed, same draws:
+
+| block | genes | cost (wins-tracking) | |
+|---|---|---|---|
+| combat_value | 3 | +0.0318 ± 0.0268 | 1.2 SE |
+| economy | 7 | +0.0057 ± 0.0135 | 0.4 SE |
+| war_decl | 5 | +0.0023 ± 0.0023 | 1.0 SE |
+| opening | 4 | +0.0008 ± 0.0118 | 0.1 SE |
+| policy | 8 | +0.0006 ± 0.0229 | 0.0 SE |
+| movement | 2 | −0.0076 ± 0.0160 | scrambling helped |
+| doctrine | 11 | −0.0116 ± 0.0221 | scrambling helped |
+| expansion | 4 | −0.0319 ± 0.0228 | 1.4 SE, scrambling helped |
+
+**Not one block of the forty-eight genes is outside its interval.** Five costs
+positive, three negative, all scattered around zero — which is what *nothing
+matters* looks like.
+
+Two things this retracts or sharpens:
+
+- **`economy` is not load-bearing.** It fell from 3.2 SE on score to 0.4 SE on
+  wins. That headline was an economy finding, exactly as its caveat said, and
+  it does not survive on the statistic that tracks winning.
+- **The genome conclusion no longer rests on a proxy.** The earlier version had
+  to be read as "nothing moves the economy". This version reads "nothing moves
+  winning", which is the claim that was wanted all along.
+
+> **If getting a block wrong is free, getting it righter cannot pay.** A search
+> over these genes — genetic or otherwise — is not the route to a stronger
+> agent on this engine.
+
+### A note on variance, against a likely misreading
+
+Lane SEs here are 0.0135–0.0268 against score's 0.0060–0.0233, so **lane is not
+tighter than score**. Its ~10× advantage is over a **binary win rate**
+(SE 0.0456 over 120 games). The ordering is: score tightest but invalid, lane
+in the middle and valid, wins loosest and valid. Lane is the cheapest *valid*
+statistic, not the cheapest one.
+
 ## The conclusion this all points at
 
 Every measured attempt to make this agent stronger by **tuning parameters** has
