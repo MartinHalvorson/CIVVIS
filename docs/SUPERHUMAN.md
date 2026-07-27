@@ -169,6 +169,22 @@ threshold, whatever the spread is.
 candidate set changes; the plan-commitment table is the instrument, not the win
 rate.
 
+> **⚠ Do not read a commitment-rate change as a strength signal in either
+> direction.** Two treatments that lost — adaptive stopping and rank-pruned
+> focused deepening — both reduced it, and that coincidence was written up here
+> as if it were a law. `search_probe` refutes it directly. Screened at 57
+> paired positions against the stock agent:
+>
+> | knob | eval outcome | would-commit | flips toward adaptive |
+> |---|---|---|---|
+> | `--horizon 80` (`strategic_h80`) | **won 21–5, p=0.0025** | 28% → **12%** | 12 of 15 |
+> | `--rotate` (`rotate_lanes`) | **null** | 28% → **7%** | 12 of 12 |
+> | `--cold` (reverting the promotion) | **lost 34–87** | 28% → 21% | 9 of 14 |
+>
+> The knob that *won* cuts commitment further than the knob that measured
+> null, and the knob that lost cuts it least. Commitment rate is a diagnostic
+> that a treatment is doing something, not evidence about what.
+
 **Refuted by.** A margin sweep in which commitment rate moves but paired score
 does not. That would say routing is not the binding constraint, which is a
 result worth having.
@@ -188,14 +204,26 @@ whatever produced the count.
 > e=6.6e4 crossing at map 209, Elo-equivalent **+37**, `promotion gate: PASS`.
 > Three disjoint seed sets total 860 maps, 140–58, p=5.2e-09.
 >
-> **The measured mechanism is spread, not the force-group story argued below.**
-> Projecting from the plan in force roughly *doubles* the spread between branch
-> values — 0.031 → 0.062 at four players, 0.049 → 0.085 at three — so the
-> counterfactual discriminates about twice as well between lanes. A cold
-> branch's first act is to re-plan, which partially washes out the very
-> difference the branch exists to measure. The lane shift went the opposite way
-> from the force-group prediction: the promoted agent takes *fewer* domination
-> seats (32 against 51), not more.
+> **The mechanism is decision change, not dispersion, and not the force-group
+> story argued below.** Two mechanisms were proposed for this promotion and
+> both were wrong. The force-group argument predicted *more* domination; the
+> promoted agent takes less. The dispersion argument — that warm branches
+> roughly double the branch spread — rested on an **unpaired** measurement
+> comparing arms that played different games, and does not survive a paired
+> one: flipping the flag on one agent at one position, over 57 positions,
+> gives cold spread higher on 17 and lower on 20, sign p=0.7428.
+>
+> What survives is measured and modest: the two configurations **decide
+> differently on 14 of 57 positions — one review in four** — with the spread
+> distribution unchanged. Fidelity moves the search's answer rather than
+> sharpening its resolution, and those different answers win 87 mirrored map
+> directions to 34. Which lane benefits is still unexplained: the flip
+> direction is 5 toward a lane against 9 toward adaptive, p=0.4240.
+>
+> **The general lesson is about measurement, not about search.** An unpaired
+> comparison of two agents is a comparison of two *trajectories*, because each
+> agent steers itself into different positions. `search_probe` exists because
+> of this; its first run refuted a claim its author had merged an hour earlier.
 
 **Mechanism.** Project each branch from the planner **in force**, not from a
 newly constructed one. Clone the agent and apply the branch's decision through
