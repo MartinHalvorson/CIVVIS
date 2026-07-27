@@ -13014,6 +13014,27 @@ pub struct WarLosses {
     /// than a set so the ledger still accounts for each capture.
     #[serde(default)]
     pub city_names: Vec<String>,
+    /// The same losses with the facts that rank them. Older saves carry only
+    /// `city_names`, so this is additive rather than a replacement.
+    #[serde(default)]
+    pub city_losses: Vec<WarCityLoss>,
+}
+
+/// One city taken in a war, recorded as it falls.
+///
+/// A war log that lists lost cities has to rank them, and neither fact needed
+/// for that survives the event: a razed city has no population left to read,
+/// and a captured one keeps growing under its new owner. A capital is the
+/// largest loss a civilization can take; after that, the population that
+/// changed hands is the readable stand-in for how much city was lost.
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Debug)]
+pub struct WarCityLoss {
+    pub name: String,
+    pub turn: u32,
+    /// Population at the moment it was taken.
+    pub pop: i32,
+    /// Whether it was the loser's own capital, not merely a capital it held.
+    pub capital: bool,
 }
 
 /// One civilization's interval in a war. City-states are real belligerents
@@ -17113,12 +17134,20 @@ impl Game {
         loser: usize,
         city: &str,
         capital: bool,
+        pop: i32,
         at: Pos,
     ) {
+        let turn = self.turn;
         if let Some((war, _, _)) = self.war_ledger(taker, loser) {
             let losses = war.losses.entry(loser).or_default();
             losses.cities += 1;
             losses.city_names.push(city.to_string());
+            losses.city_losses.push(WarCityLoss {
+                name: city.to_string(),
+                turn,
+                pop,
+                capital,
+            });
         }
         let kind = if capital {
             "capital_captured"
@@ -46908,12 +46937,13 @@ impl Game {
     fn transfer_city(&mut self, cid: u32, new_owner: usize, conquest: bool) {
         let old = self.cities[&cid].owner;
         {
-            let (name, pos, capital) = {
+            let (name, pos, capital, pop) = {
                 let city = &self.cities[&cid];
                 (
                     city.name.clone(),
                     city.pos,
                     city.is_capital && city.original_owner == old,
+                    city.pop,
                 )
             };
             let verb = if conquest { "captured" } else { "took over" };
@@ -46922,7 +46952,7 @@ impl Game {
             self.note(new_owner, "War", message.clone(), Some(pos));
             self.note(old, "War", message, Some(pos));
             if conquest {
-                self.record_war_city_loss(new_owner, old, &name, capital, pos);
+                self.record_war_city_loss(new_owner, old, &name, capital, pop, pos);
             }
         }
         let captured_works = self
@@ -59174,6 +59204,67 @@ mod district_mechanics {
         assert_eq!(intervals.len(), 2);
         assert_eq!(intervals[1].entered, 27);
         assert_eq!(intervals[1].exited, None);
+
+        // Two stretches are still one belligerent. The log gives an entity one
+        // section carrying its whole involvement, so the observation merges the
+        // intervals rather than sending the same city-state twice — and the
+        // toll it paid is counted once however many times it was dragged in.
+        let observed = crate::obs::observation(&game, 0);
+        let seen = observed["wars"][0]["parties"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|party| party["player"] == city_state)
+            .collect::<Vec<_>>();
+        assert_eq!(seen.len(), 1, "one belligerent is one entry");
+        assert_eq!(seen[0]["entered"], 15);
+        assert!(seen[0]["exited"].is_null(), "it is back in the war");
+        assert_eq!(
+            seen[0]["intervals"],
+            serde_json::json!([
+                {"entered": 15, "exited": 25},
+                {"entered": 27, "exited": null},
+            ])
+        );
+        assert_eq!(seen[0]["units_lost"], 1);
+        assert_eq!(seen[0]["unit_kinds"]["warrior"], 1);
+    }
+
+    /// Ranking the cities a war took needs two facts that do not survive the
+    /// event: a razed city has no population left to read, and a captured one
+    /// keeps growing under its new owner. Both are recorded as the city falls.
+    #[test]
+    fn a_captured_city_is_recorded_with_what_ranks_it() {
+        let mut game = emergency_game_with_capitals(2, 5_507, 300);
+        game.turn = 30;
+        game.do_declare_war(0, 1).unwrap();
+        let capital = game.player_city_ids(1)[0];
+        game.cities.get_mut(&capital).unwrap().pop = 7;
+        let name = game.cities[&capital].name.clone();
+        game.capture_city(capital, 0);
+
+        let losses = game.wars[&pair(0, 1)].losses_for(1).city_losses.clone();
+        assert_eq!(losses.len(), 1);
+        assert_eq!(losses[0].name, name);
+        assert_eq!(losses[0].turn, 30);
+        assert_eq!(losses[0].pop, 7, "the population that changed hands");
+        assert!(
+            losses[0].capital,
+            "its own capital is the largest loss a civilization can take"
+        );
+
+        let observed = crate::obs::observation(&game, 0);
+        let party = observed["wars"][0]["parties"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|party| party["player"] == 1)
+            .unwrap()
+            .clone();
+        assert_eq!(party["city_losses"][0]["name"], name);
+        assert_eq!(party["city_losses"][0]["pop"], 7);
+        assert_eq!(party["city_losses"][0]["capital"], true);
+        assert_eq!(party["city_names"][0], name);
     }
 
     #[test]
