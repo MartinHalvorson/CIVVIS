@@ -42,4 +42,23 @@ existing win-based promotion gate may change the incumbent.
 
 ## Result
 
-Pending.
+Across 30 fresh mirrored maps (60 games), the candidate and control split wins
+30-30. Every map was neutral: zero candidate sweeps, 30 splits/draws, and zero
+control sweeps (`p = 1.0`). Paired score was 50.0%, with a 33.2%-66.8% Wilson
+interval and +0 Elo point estimate. The promotion gate was INCONCLUSIVE.
+
+The diagnostic traces were effectively identical too:
+
+- victory types were exactly two culture, 23 religious, and five score for
+  each arm;
+- macro-search exposure was 329/678 reviews for each arm;
+- plan switches and every plan-exposure percentage were identical;
+- terminal score was 50.0%, with zero favorable directions, 29 neutral, and
+  one adverse (`p = 1.0`).
+
+The outcome-only rule removed the prior treatment's harm, but also removed all
+measurable headroom. At this benchmark either there was no uniquely available
+one- or two-action checkmate, or the ordinary controller closed the same game
+on its remaining turn. Per the pre-registration, exact win ties do not earn a
+disjoint gate. The entrant remains an evaluator-only negative control, its
+flag stays off, and `strategic_deep` is unchanged.

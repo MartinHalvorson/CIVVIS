@@ -642,6 +642,8 @@ pub fn builtin_ai(name: &str, seed: u64) -> Box<dyn Ai> {
         // Outcome-only repair to the conversion treatment above. It searches
         // the same one- and two-action religious space but acts only when the
         // cloned result is an actual religious victory for this civilization.
+        // Retained evaluator-only after an exact 30-30 screen with all 30 map
+        // directions neutral and identical victory types/plan traces.
         "strategic_deep_checkmate" => {
             let mut ai = crate::strategic::StrategicAi::with_weights(
                 crate::evolve::load_champion("evolved").unwrap_or_default(),

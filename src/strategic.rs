@@ -395,6 +395,11 @@ pub struct StrategicAi {
     /// proxy above: no pressure, city-majority, or development gain can
     /// consume a unit action unless the game ends. Off by default; the
     /// evaluator-only `strategic_deep_checkmate` entrant measures it.
+    ///
+    /// **Measured, not promoted.** On 30 fresh mirrored maps it split games
+    /// 30-30 with all 30 map directions neutral, identical victory types, and
+    /// identical plan traces. Removing the proxy removed both the prior harm
+    /// and measurable headroom; see `docs/RELIGIOUS_CHECKMATE_SEARCH.md`.
     pub religious_checkmate_search: bool,
     /// Project a rotating subset of lanes instead of all of them: the
     /// adaptive baseline, the lane in force, and one challenger that
@@ -616,10 +621,6 @@ impl StrategicAi {
             }
         }
         best
-    }
-
-    fn religious_conversion_plan(&self, g: &Game, pid: usize) -> Vec<Action> {
-        self.religious_action_plan(g, pid, false)
     }
 
     fn apply_religious_action_plan(
@@ -1705,7 +1706,7 @@ mod tests {
         assert!(!stock.religious_finish_search);
         assert!(!stock.religious_checkmate_search);
         let before = StrategicAi::conversion_value(&game, 0).unwrap();
-        let plan = stock.religious_conversion_plan(&game, 0);
+        let plan = stock.religious_action_plan(&game, 0, false);
         assert!(
             matches!(
                 plan.as_slice(),
@@ -1752,7 +1753,7 @@ mod tests {
                     > 0.0
         }));
         assert!(
-            stock.religious_conversion_plan(&game, 2).is_empty(),
+            stock.religious_action_plan(&game, 2, false).is_empty(),
             "a civilization without a founded religion has no conversion plan"
         );
         game.players[0].team = Some(0);
