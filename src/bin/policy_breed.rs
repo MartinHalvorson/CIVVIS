@@ -23,13 +23,33 @@
 //! policy_breed --pop 12 --gens 10 --maps 12 --seed 500000
 //! ```
 //!
-//! **Selection is cheap and the verdict is not.** Fitness runs on few maps on
-//! purpose — selection tolerates noise, since a lucky genome has to keep
-//! winning to survive. The champion is then re-measured on a **disjoint**
-//! holdout seed set, and both numbers are printed. Read the gap: a champion
-//! far better on its selection maps than on the holdout was fitted to the
-//! maps, and `docs/EVAL.md` records that nothing under ~100 maps decides
-//! anything here. **Promote only on a fresh pre-registered `policy_eval` run.**
+//! ## Selection must out-resolve its own noise — the first build did not
+//!
+//! The first version scored genomes on **win rate** over 12 maps and was
+//! retired after three generations of 0.500, 0.542, 0.500. That is not a
+//! search converging; it is a random walk, and the arithmetic says so. A win
+//! rate over 24 games has a standard error of **0.102**, while the largest
+//! real effects this repository has ever measured are +0.053 (warm branches)
+//! and +0.065 (`strategic_deep`). Selecting on a quantity whose noise is twice
+//! the signal cannot climb, and resolving a 0.05 effect to three standard
+//! errors would need about **865 games per genome**.
+//!
+//! **This is the documented failure of the repository's own breeder** — a
+//! thousand rounds of live evolution produced no measurable gain because
+//! selection had no signal (`docs/RATING.md`). It is very easy to rebuild by
+//! accident.
+//!
+//! So fitness is `0.8 * terminal score share + 0.2 * win rate`. Score is
+//! continuous and far tighter, so it ranks genomes within a budget a search
+//! can actually afford; the win term keeps a victory worth more than the score
+//! it ends on. It is a **proxy**, and `docs/EVAL.md` is explicit that wins and
+//! score measure different things — so score *selects* and only `policy_eval`
+//! *decides*.
+//!
+//! The champion is re-measured on a **disjoint** holdout beside the shipped
+//! appetites, and the selection-minus-holdout gap is printed: that number is
+//! how much of the champion is fitting. **Promote only on a fresh
+//! pre-registered `policy_eval` run over 100+ mirrored maps.**
 //!
 //! The paired-play helper is duplicated from `policy_eval.rs` rather than
 //! shared: hoisting it would mean editing `src/lib.rs`, which another open PR
@@ -61,9 +81,27 @@ fn number(args: &[String], flag: &str, default: usize) -> usize {
         .unwrap_or(default)
 }
 
-/// One mirrored map pair. Returns games won by the candidate, out of two.
-fn duel(candidate: &Weights, players: usize, w: i32, h: i32, seed: u64, turns: u32) -> u32 {
-    let mut won = 0;
+/// One mirrored map pair. Returns the candidate's share of the table's
+/// terminal score, averaged over the two directions.
+///
+/// **Selection reads score, not wins, and that is a deliberate split.** A win
+/// rate over a handful of games is almost pure noise: at 12 maps its standard
+/// error is 0.102, while the real effects this repository has measured are
+/// +0.053 (warm branches) and +0.065 (`strategic_deep`). Selecting on a
+/// quantity whose noise is twice the signal is a random walk, and it is the
+/// documented reason a thousand rounds of live evolution produced no
+/// measurable gain (`docs/RATING.md`) -- breeding on noise. Resolving a 0.05
+/// win-rate effect to three standard errors needs about 865 games *per
+/// genome*, which no search can afford.
+///
+/// Terminal score share is continuous and far tighter, so it ranks genomes
+/// with the budget a search actually has. It is a *proxy*: `docs/EVAL.md`
+/// records that wins and score measure different things, and a change that
+/// re-routes victory lanes moves wins while score stays flat. So score selects
+/// and only `policy_eval` decides -- the champion is still judged on wins over
+/// 100+ mirrored maps before anything is promoted.
+fn duel(candidate: &Weights, players: usize, w: i32, h: i32, seed: u64, turns: u32) -> f64 {
+    let mut share = 0.0;
     for treated in 0..2usize {
         let mut game = Game::new(players, w, h, seed, turns, 0);
         let control = Weights {
@@ -91,14 +129,24 @@ fn duel(candidate: &Weights, players: usize, w: i32, h: i32, seed: u64, turns: u
                 }
             }
         }
-        if game.winner.is_some_and(is_treated) {
-            won += 1;
+        let mut mine = 0.0;
+        let mut table = 0.0;
+        for player in game.players.iter().filter(|p| !p.is_minor) {
+            let score = game.score(player.id) as f64;
+            table += score;
+            if is_treated(player.id) {
+                mine += score;
+            }
         }
+        // A win is worth more than the score it ends on, so it still counts --
+        // just not as the whole signal.
+        let won = if game.winner.is_some_and(is_treated) { 1.0 } else { 0.0 };
+        share += 0.8 * (mine / table.max(1.0)) + 0.2 * won;
     }
-    won
+    share / 2.0
 }
 
-/// Share of decisive games the candidate takes from the legacy arm.
+/// The candidate's mean score share against the legacy arm over `maps` maps.
 fn fitness(
     candidate: &Weights,
     players: usize,
@@ -110,11 +158,10 @@ fn fitness(
     jobs: usize,
 ) -> f64 {
     let genome = candidate.clone();
-    let wins = parallel::map(maps, jobs, move |index| {
+    let shares = parallel::map(maps, jobs, move |index| {
         duel(&genome, players, w, h, seed0 + index as u64, turns)
     });
-    let total: u32 = wins.iter().sum();
-    total as f64 / (2 * maps) as f64
+    shares.iter().sum::<f64>() / maps as f64
 }
 
 fn with_policy_genes(genes: &[f64; 8]) -> Weights {
@@ -163,7 +210,8 @@ fn main() {
         "policy_breed: {pop_size} genomes x {gens} generations, fitness on {maps} mirrored maps \
          ({players}p {width}x{height}, {turns} turns) against the legacy deck, seed {seed0}"
     );
-    println!("  parity is 50.0%; the shipped appetites are genome 0 of generation 0");
+    println!("  fitness is 0.8*score share + 0.2*win rate; parity is 0.500");
+    println!("  the shipped appetites are genome 0 of generation 0");
 
     let mut best = (0.0f64, seed_genes);
     for generation in 0..gens {
