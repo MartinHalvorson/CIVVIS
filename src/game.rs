@@ -22353,7 +22353,7 @@ impl Game {
     /// +% production toward the item at the head of a city's queue from
     /// slotted policy cards (Agoge, Maneuver, Maritime Industries, Ilkum,
     /// Colonization, Feudal Contract, Limes).
-    fn item_prod_mult(&self, pid: usize, cid: u32, item: Option<&Item>) -> f64 {
+    pub fn item_prod_mult(&self, pid: usize, cid: u32, item: Option<&Item>) -> f64 {
         let mut bonus: f64 = 0.0;
         let economic = self.city_resource_industry_effects(&self.cities[&cid]);
         match item {
