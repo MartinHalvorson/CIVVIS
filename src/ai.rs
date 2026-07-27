@@ -1914,7 +1914,14 @@ impl BasicAi {
             .unit_motion
             .get(&uid)
             .is_some_and(|motion| g.turn < motion.resume_turn);
-        if !standing_down || Self::enemy_within_reach(g, pid, uid) || g.can_found_city(uid) {
+        // `can_found_city` answers whether the *tile* is a legal site for this
+        // owner; it says nothing about the unit. Asking it alone exempted every
+        // unit standing on open ground, which is most of them, and the
+        // stand-down then almost never ran. Gate it the way the engine gates
+        // the action itself.
+        let can_settle_here =
+            g.units[&uid].kind == "settler" && g.can_found_city(uid);
+        if !standing_down || can_settle_here || Self::enemy_within_reach(g, pid, uid) {
             return false;
         }
         self.fortify_or_stop(g, pid, uid);
@@ -6518,15 +6525,18 @@ mod tests {
     }
 
     /// A three-tile shuffle is still a loop; a four-tile circuit is a unit
-    /// covering ground, and pricing that would punish ordinary movement.
+    /// covering ground, and pricing that would punish ordinary movement. Both
+    /// walks stop short of `LIVELOCK_STAND_DOWN_AFTER`, which would wipe the
+    /// record being examined.
     #[test]
     fn the_footprint_bound_separates_a_loop_from_a_march() {
+        let turns = LIVELOCK_WINDOW + 2;
         let (looping, _g, ground, scout) =
-            observe_walk(&(0..12).map(|turn| turn % 3).collect::<Vec<_>>(), None);
+            observe_walk(&(0..turns).map(|turn| turn % 3).collect::<Vec<_>>(), None);
         assert!(looping.livelock_penalty(scout, ground[0]) < 0.0);
 
         let (marching, _g, ground, scout) =
-            observe_walk(&(0..12).map(|turn| turn % 4).collect::<Vec<_>>(), None);
+            observe_walk(&(0..turns).map(|turn| turn % 4).collect::<Vec<_>>(), None);
         assert_eq!(marching.livelock_penalty(scout, ground[0]), 0.0);
     }
 
@@ -6556,6 +6566,38 @@ mod tests {
         assert!(
             !ai.stand_down_step(&mut g, 0, scout),
             "and it ends on its own"
+        );
+    }
+
+    /// `Game::can_found_city` answers whether the *tile* is a legal site for
+    /// the owner and says nothing about the unit, so asking it alone exempted
+    /// every unit standing on open ground — which is most of them — and the
+    /// stand-down went almost entirely unused. Only a Settler is spared.
+    #[test]
+    fn only_a_settler_is_spared_the_stand_down_by_foundable_ground() {
+        let shuttle: Vec<usize> = (0..LIVELOCK_STAND_DOWN_AFTER as usize + 1)
+            .map(|turn| turn % 2)
+            .collect();
+        let (ai, mut g, ground, scout) = observe_walk(&shuttle, None);
+        assert!(
+            g.can_found_city(scout),
+            "the case needs the unit to be standing on a legal city site"
+        );
+        assert!(
+            ai.stand_down_step(&mut g, 0, scout),
+            "a Scout on foundable ground has nothing to found"
+        );
+
+        let settler = g.spawn_test_unit("settler", 0, ground[0]);
+        let mut ai = BasicAi::new();
+        for turn in 0..=LIVELOCK_STAND_DOWN_AFTER {
+            g.units.get_mut(&settler).unwrap().pos = ground[turn as usize % 2];
+            ai.begin_movement_turn(&g, 0);
+            g.turn += 1;
+        }
+        assert!(
+            !ai.stand_down_step(&mut g, 0, settler),
+            "a Settler standing where it can found a city takes its turn"
         );
     }
 
