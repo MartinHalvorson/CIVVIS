@@ -162,6 +162,14 @@ seat-mirrored, over three draws. Cost is `0.5 − scrambled score`:
 **Only `economy` carries anything.** Everything else can be replaced with
 uniform noise for free.
 
+⚠ **Read that as economy, not as strength.** This fitness is
+`0.8 · score share + 0.2 · win rate`, and the `settler_min_pop` result below
+shows a 3.0 SE score-share gain converting to zero wins. So the ranking says
+which genes move the **economy**, which is a necessary condition for mattering
+and not a sufficient one — the same relationship divergence has to leverage,
+one level up. Every `--sweep`, the opening-book sweep and the district
+enumeration inherit the same caveat.
+
 The eleven combat-**doctrine** genes deserve their own line. That is the
 largest block in the genome and the one this repository has spent the most
 design effort on, and scrambling all eleven costs **−0.0019**. It agrees with
@@ -308,6 +316,20 @@ And the failure mode is the informative part. The score-share effect
 measurement was never wrong. **A 3.0 SE score-share gain converted to exactly
 zero win improvement.**
 
+### Every district order, enumerated
+
+All 24 measured at 24 mirrored maps each. Best three:
+
+| order | score | |
+|---|---|---|
+| commercial > theater > campus > holy | 0.5047 ± 0.0037 | 1.3 SE |
+| holy > campus > theater > commercial | 0.5039 ± 0.0058 | 0.7 SE |
+| commercial > campus > holy > theater | 0.5027 ± 0.0080 | 0.3 SE |
+
+**Not one order is outside 2 SE.** The shipped `campus > commercial > holy >
+theater` is not beatable, and leading with a Theatre Square (−0.0117) is the
+only consistently bad choice.
+
 ## ★★ THE FINDING THAT MATTERS MOST: score share does not buy wins
 
 `docs/EVAL.md` has long said wins and terminal score measure different things.
@@ -353,6 +375,31 @@ learned state-value components, the pattern is hard to miss:
 The remaining headroom identified but not taken: `campaign_staged_for_war`,
 the binding conjunct on war declaration, which is force coordination and the
 reason this agent fights only 11.5x walkovers.
+
+## Which measurements here are strength evidence, and which are not
+
+This distinction is load-bearing for reading anything above, so it is stated
+plainly rather than left implicit.
+
+**Decided on WINS — valid strength evidence:**
+
+| comparison | result |
+|---|---|
+| live deck vs legacy | 18–15, p=0.7283 — null |
+| legacy deck vs **empty** | 23–6, **p=0.0023** — the card layer matters |
+| legacy vs legacy | exact parity, zero variance — harness self-check |
+| `settler_min_pop` 5 vs 2 | 12–15, p=0.7011 — null |
+
+**Decided on score share — economy evidence only:** the block leverage
+ranking, every `--sweep`, the opening-book sweep and ablation, and the district
+enumeration. These say what moves the economy. Given the `settler_min_pop`
+result, they do **not** license a claim about strength, and the honest reading
+of every one of them is "no effect on the economy either", which is a weaker
+statement than it first appears.
+
+The asymmetry is not a flaw in those runs; it is what they cost. A win-based
+measurement of one gene value took 240 full games to reach p=0.70. Pricing all
+48 genes that way is not affordable, which is the same wall the GA hits.
 
 ## Method rules these runs paid for
 
