@@ -223,6 +223,7 @@ pub enum MapScript {
     Lakes,
     InlandSea,
     GrandCanals,
+    GrandCanalsTwo,
     #[default]
     Pangaea,
     Continents,
@@ -239,6 +240,7 @@ impl MapScript {
             Self::Lakes => "lakes",
             Self::InlandSea => "inland_sea",
             Self::GrandCanals => "grand_canals",
+            Self::GrandCanalsTwo => "grand_canals_2",
             Self::Pangaea => "pangaea",
             Self::Continents => "continents",
             Self::SmallContinents => "small_continents",
@@ -269,6 +271,11 @@ impl MapScript {
             // generator picks, so this is what is left once they have taken
             // it; see `mapgen::grand_canals`.
             Self::GrandCanals => 62,
+            // Blocks of ground with a canal around every one of them. What is
+            // left is set by how big a block is and how wide the canal around
+            // its rim: see `mapgen::CANAL_BLOCK_LAND_TILES`, which is the
+            // number this one is measured from rather than chosen against.
+            Self::GrandCanalsTwo => 44,
             Self::Pangaea => 42,
             Self::Continents => 42,
             Self::SmallContinents => 36,
@@ -456,7 +463,7 @@ pub struct MapScriptSpec {
 
 /// The world types in the order [`MapScript`] declares them: all land at the
 /// top, all water at the bottom, Earth on the end.
-pub const CIV6_MAP_SCRIPTS: [MapScriptSpec; 10] = [
+pub const CIV6_MAP_SCRIPTS: [MapScriptSpec; 11] = [
     MapScriptSpec {
         id: "land_only",
         name: "Land Only",
@@ -480,6 +487,12 @@ pub const CIV6_MAP_SCRIPTS: [MapScriptSpec; 10] = [
         name: "Grand Canals",
         description: "A world of solid ground cut by six canals that each circle it: two around the poles, two around each of the other two axes, crossing at twenty-four junctions.",
         script: MapScript::GrandCanals,
+    },
+    MapScriptSpec {
+        id: "grand_canals_2",
+        name: "Grand Canals II",
+        description: "The whole world cut into blocks of ground, each one a few dozen tiles across, and a canal around every one: a shallow shelf off either bank and a channel of deep ocean down the middle.",
+        script: MapScript::GrandCanalsTwo,
     },
     MapScriptSpec {
         id: "pangaea",
