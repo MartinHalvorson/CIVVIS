@@ -1848,14 +1848,6 @@
   }
   .spec-controls #restart-sim.primary .sub::before { content: ""; }
   .spec-controls #restart-sim.primary .sub { color: #51401f; }
-  /* A start control that is about to roll dice has to say so before it is
-     pressed, not after. The note sits directly under the control it qualifies
-     and names the settings that are still unanswered. */
-  .random-note {
-    margin-top: 7px; padding: 6px 9px; border: 1px dashed #6f5c2c; border-radius: 8px;
-    background: #241d0d80; color: var(--gold); font-size: var(--type-small); line-height: 1.4;
-  }
-  .random-note[hidden] { display: none; }
   .speed-row, .view-row { display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 10px; margin-top: 9px; }
   .speed-row span, .view-row span { color: var(--muted); font-size: var(--type-small); font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
   .setting-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 10px; color: var(--muted); font-size: var(--type-secondary); cursor: pointer; }
@@ -1874,21 +1866,8 @@
   .victory-options { grid-column: 1 / -1; padding: 9px 10px 10px; border: 1px solid var(--line-soft); border-radius: 9px; background: #09131080; }
   .victory-options h2 { margin-bottom: 8px; }
   .victory-option-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 7px 9px; }
-  .victory-option { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 5px; min-width: 0; color: var(--muted); font-size: var(--type-small); cursor: pointer; }
+  .victory-option { display: flex; align-items: center; gap: 5px; min-width: 0; color: var(--muted); font-size: var(--type-small); cursor: pointer; }
   .victory-option input { margin: 0; }
-  .victory-option-help { margin: -3px 0 8px; }
-  /* Off and ????? both leave the box unticked, so the third state has to be
-     legible in the label as well as in the box's own dash. The name stays: it
-     is the only thing that says *which* condition is being left to chance, so
-     the marker wraps under it rather than crowding it out. */
-  .victory-option .victory-random { display: none; color: var(--gold); font-weight: 800; letter-spacing: .06em; }
-  .victory-option input:indeterminate ~ .victory-random { display: inline; }
-  .victory-option:has(input:indeterminate) { color: var(--gold); }
-  /* The roll is an action on the whole settings block, so it gets the block's
-     full width under the last group rather than a half column beside one. */
-  .lucky-group { grid-column: 1 / -1; }
-  .lucky-group button { width: 100%; }
-  .lucky-help { margin-top: 5px; }
 
   /* Tech and civic overlay */
   #pedia {
@@ -3332,7 +3311,6 @@
           <button class="primary" id="specpause">⏸ Pause</button>
           <button id="restart-sim" title="Restart with the same settings"><span class="lbl">Restart sim</span><span class="sub">same settings</span></button>
         </div>
-        <div class="random-note" id="randomnote" hidden></div>
         <script>
           // A supervised restart replaces this whole page. Restore the label
           // beside the button so the default Pause text is never painted while
@@ -3355,39 +3333,30 @@
       <div class="sec settings-sec" id="game-settings">
       <div id="newgame-options">
         <label class="small">Base game ruleset<select id="baseruleset" style="margin-top:4px">
-          <option value="?????" title="Rolled among this setting's own options when the game starts">?????</option>
           <option value="civ6" selected>Civ 6</option>
         </select></label>
         <label class="small">Game mode<select id="gamemode" style="margin-top:4px">
-          <option value="?????" title="Rolled among this setting's own options when the game starts">?????</option>
           <option value="ai_sim" selected>AI-only simulation</option>
           <option value="single">Single player</option>
           <option disabled>Multiplayer · later</option>
         </select></label>
         <label class="small">Start era<select id="startera" style="margin-top:4px">
-          <option value="?????" title="Rolled among this setting's own options when the game starts">?????</option>
           <option value="stone_age" disabled>Stone Age · later</option>
           <option value="ancient" selected>Ancient</option>
         </select></label>
         <label class="small">Leader Pool<select id="leaderpool" style="margin-top:4px">
-          <option value="?????" title="Rolled among this setting's own options when the game starts">?????</option>
           <option value="civ6" selected>Civ 6 Leaders</option>
           <option value="expanded">Expanded</option>
         </select></label>
         <label class="small human-setting">Leader<select id="leader" style="margin-top:4px">
-          <option value="?????" title="Rolled among this setting's own options when the game starts">?????</option>
           <option value="">Random</option>
         </select></label>
-        <label class="small human-setting">Difficulty<select id="difficulty" style="margin-top:4px">
-          <option value="?????" title="Rolled among this setting's own options when the game starts">?????</option>
-        </select></label>
+        <label class="small human-setting">Difficulty<select id="difficulty" style="margin-top:4px"></select></label>
         <label class="small">World shape<select id="mapshape" style="margin-top:4px">
-          <option value="?????" title="Rolled among this setting's own options when the game starts">?????</option>
           <option value="flat">Flat</option>
           <option value="planet">Planet</option>
         </select></label>
         <label class="small">Map<select id="maptype" style="margin-top:4px">
-          <option value="?????" title="Rolled among this setting's own options when the game starts">?????</option>
           <option value="land_only">Land Only</option>
           <option value="lakes">Lakes</option>
           <option value="inland_sea">Inland Sea</option>
@@ -3400,12 +3369,10 @@
           <option value="true_start_earth">True Start Earth</option>
         </select></label>
         <label class="small">Thermal distribution<select id="mappoles" style="margin-top:4px">
-          <option value="?????" title="Rolled among this setting's own options when the game starts">?????</option>
           <option value="poles">Hot equator, cold poles</option>
           <option value="randomized">Randomized</option>
         </select></label>
         <label class="small">World size<select id="np" style="margin-top:4px">
-          <option value="?????" title="Rolled among this setting's own options when the game starts">?????</option>
           <option value="2">Duel · 2 civs · 3 city-states · 44×26</option>
           <option value="4" selected>Tiny · 4 civs · 6 city-states · 60×38</option>
           <option value="6">Small · 6 civs · 9 city-states · 74×46</option>
@@ -3414,7 +3381,6 @@
           <option value="12">Huge · 12 civs · 18 city-states · 106×66</option>
         </select></label>
         <label class="small">Game speed<select id="gamespeed" style="margin-top:4px">
-          <option value="?????" title="Rolled among this setting's own options when the game starts">?????</option>
           <option value="online" selected>Online · 250 turns</option>
           <option value="quick">Quick · 330 turns</option>
           <option value="standard">Standard · 500 turns</option>
@@ -3432,19 +3398,14 @@
         </div>
         <div class="victory-options" role="group" aria-labelledby="victory-options-title">
           <h2 id="victory-options-title">Victory conditions</h2>
-          <div class="small victory-option-help">A condition has three states: click it once for off, again for ?????.</div>
           <div class="victory-option-grid">
-            <label class="victory-option"><input type="checkbox" id="victory-science" checked><span>Science</span><span class="victory-random" aria-hidden="true">?????</span></label>
-            <label class="victory-option"><input type="checkbox" id="victory-culture" checked><span>Culture</span><span class="victory-random" aria-hidden="true">?????</span></label>
-            <label class="victory-option"><input type="checkbox" id="victory-religious" checked><span>Religion</span><span class="victory-random" aria-hidden="true">?????</span></label>
-            <label class="victory-option"><input type="checkbox" id="victory-diplomatic" checked><span>Diplomacy</span><span class="victory-random" aria-hidden="true">?????</span></label>
-            <label class="victory-option"><input type="checkbox" id="victory-domination" checked><span>Domination</span><span class="victory-random" aria-hidden="true">?????</span></label>
-            <label class="victory-option"><input type="checkbox" id="victory-score" checked><span>Score</span><span class="victory-random" aria-hidden="true">?????</span></label>
+            <label class="victory-option"><input type="checkbox" id="victory-science" checked>Science</label>
+            <label class="victory-option"><input type="checkbox" id="victory-culture" checked>Culture</label>
+            <label class="victory-option"><input type="checkbox" id="victory-religious" checked>Religion</label>
+            <label class="victory-option"><input type="checkbox" id="victory-diplomatic" checked>Diplomacy</label>
+            <label class="victory-option"><input type="checkbox" id="victory-domination" checked>Domination</label>
+            <label class="victory-option"><input type="checkbox" id="victory-score" checked>Score</label>
           </div>
-        </div>
-        <div class="lucky-group">
-          <button id="luckybtn" type="button" title="Roll every setting left at ????? and show what came up">🎲 I'm Feeling Lucky</button>
-          <div class="small lucky-help" id="luckyhelp"></div>
         </div>
       </div>
       </div>
@@ -3935,40 +3896,6 @@ const VICTORY_TRACKS = [
   { id:"domination", label:"Domination", icon:"⚔", color:"#f2a09b" },
   { id:"score", label:"Score", icon:"♛", color:"#f0d28c" },
 ];
-// ------------------------------------------------- settings left to chance
-// ????? is not a value a setting can be started with: it is the absence of a
-// decision, and every one of them is answered from that setting's own options
-// at the moment a game starts. The mark therefore lives in the lobby and never
-// travels — the server is only ever told what came up.
-const RANDOM_SETTING = "?????";
-// In panel order, which is also dependency order: the ruleset decides which
-// eras exist, the mode decides whether a seat exists at all, and the leader
-// pool decides who may fill it.
-const RANDOM_SELECT_IDS = ["baseruleset", "gamemode", "startera",
-  "leaderpool", "leader", "difficulty",
-  "mapshape", "maptype", "mappoles", "np", "gamespeed"];
-const RANDOM_VICTORY_IDS = VICTORY_TRACKS.map(track => `victory-${track.id}`);
-const RANDOM_SETTING_LABELS = {
-  baseruleset: "Base game ruleset", gamemode: "Game mode",
-  startera: "Start era",
-  leaderpool: "Leader pool", leader: "Leader",
-  difficulty: "Difficulty", mapshape: "World shape", maptype: "Map",
-  mappoles: "Thermal distribution", np: "World size", gamespeed: "Game speed",
-  ...Object.fromEntries(VICTORY_TRACKS.map(track =>
-    [`victory-${track.id}`, `${track.label} victory`])),
-};
-const RANDOM_SETTINGS_KEY = "civvis-random-settings-v1";
-// A world arriving from the supervisor overwrites the whole panel with its own
-// settings, so a ????? that lived only in the DOM would survive about a minute
-// on the exhibition page. It is a standing instruction, not a selection, and
-// it is remembered as one.
-let randomSettings = new Set();
-try {
-  const saved = JSON.parse(localStorage.getItem(RANDOM_SETTINGS_KEY) || "[]");
-  if (Array.isArray(saved))
-    randomSettings = new Set(saved.filter(id =>
-      RANDOM_SELECT_IDS.includes(id) || RANDOM_VICTORY_IDS.includes(id)));
-} catch (_) {}
 // ---------------------------------------------------------------- state
 let state = null, sel = null, selCity = null, RULES = null;
 let mapLens = null, tackMode = false, tacks = [], lastSeed = null, cycleIdx = -1;
@@ -7351,10 +7278,6 @@ async function boot() {
       ).join("");
       document.getElementById("gamespeed").value = "online";
     }
-    // Every list above was just rewritten from the ruleset, so the ????? that
-    // belongs to each one goes back on now — and any standing mark with it.
-    ensureRandomOptions();
-    applyRandomMarks();
     fillStrategies(RULES);
     render(adoptTiles(await fetchJSON("/state" + paintedQuery())));
     if (bootAttempts) { bootAttempts = 0; clearBootRetrying(); }
@@ -8684,15 +8607,6 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
     }
     activeSimulationSettingsKey = simulationSettingsKey(selectedSimulationSettings());
     applyQueuedSimulationSettings(st.next_game_settings);
-    // The world on screen has just written its own answer into every control.
-    // A standing ????? outranks that: it was a decision about the *next* game.
-    applyRandomMarks();
-    // The exhibition starts its own successors from the staged settings, which
-    // were rolled once when they were staged. Re-roll them now, so a standing
-    // ????? gives every world in the cycle a fresh answer instead of repeating
-    // the one that happened to come up the last time somebody touched a
-    // control.
-    if (pendingRandomSettings().length) stageSelectedSimulationSettings();
     updateRestartSimulationButton();
   }
   if (SPEC) sel = null;
@@ -23890,22 +23804,7 @@ document.getElementById("gamemode").addEventListener("change", syncSetupMode);
 document.getElementById("leaderpool").addEventListener("change", syncLeaderPool);
 document.getElementById("maptype").addEventListener("change", syncEarthShape);
 document.getElementById("savebtn").onclick = () => writeSave();
-document.getElementById("luckybtn").onclick = feelingLucky;
-// A victory condition has three states, not the two a checkbox knows: on, off
-// and ?????. The browser has already applied its own toggle by the time this
-// runs — on→off needs no repair, and the other two do, so the state the click
-// started from has to come from the mark rather than from the box.
-for (const id of RANDOM_VICTORY_IDS) {
-  const box = document.getElementById(id);
-  if (!box) continue;
-  box.addEventListener("click", () => {
-    if (randomSettings.has(id)) { box.indeterminate = false; box.checked = true; }
-    else if (box.checked) { box.checked = false; box.indeterminate = true; }
-    syncRandomSettingsFromControls();
-  });
-}
-ensureRandomOptions();
-applyRandomMarks();
+syncSetupMode();
 syncEarthShape();
 document.getElementById("diplomacybtn").onclick = () => openDiplomacy();
 document.getElementById("paneltoggle").onclick = () => togglePanel();
@@ -23952,193 +23851,39 @@ document.getElementById("viewplayer").onchange = ev => {
 let newSimulationBusy = false;
 let activeSimulationSettingsKey = null;
 let settingsStageChain = Promise.resolve();
-// Every settings select carries a ????? of its own. The RULES-driven ones are
-// rebuilt from the server's lists at boot, so the mark is put back rather than
-// written once into the markup and hoped for.
-function ensureRandomOptions() {
-  for (const id of RANDOM_SELECT_IDS) {
-    const select = document.getElementById(id);
-    if (!select || [...select.options].some(option => option.value === RANDOM_SETTING))
-      continue;
-    const option = new Option(RANDOM_SETTING, RANDOM_SETTING);
-    option.title = "Rolled among this setting's own options when the game starts";
-    select.insertBefore(option, select.firstChild);
-  }
-}
-// A roll answers the question the setting was asking, so it can only come up
-// as one of that setting's own answers. "Random leader" is the server's blank
-// rather than a leader, and the disabled entries are not offers at all.
-function rollSetting(select) {
-  const choices = [...select.options].filter(option =>
-    !option.disabled && option.value && option.value !== RANDOM_SETTING);
-  return choices.length
-    ? choices[Math.floor(Math.random() * choices.length)].value : null;
-}
-// Nobody is at the keyboard in a spectated world, so its seat settings are not
-// being left to chance — they are not being used at all, and they must not
-// appear in the note over the start control either.
-function settingApplies(id) {
-  if (id !== "leader" && id !== "difficulty") return true;
-  return (document.getElementById("gamemode") || {}).value !== "ai_sim";
-}
-function pendingRandomSettings() {
-  return [...RANDOM_SELECT_IDS, ...RANDOM_VICTORY_IDS]
-    .filter(id => randomSettings.has(id) && settingApplies(id));
-}
-function rememberRandomSettings() {
-  try { localStorage.setItem(RANDOM_SETTINGS_KEY, JSON.stringify([...randomSettings])); }
-  catch (_) {}
-}
-// The controls are the truth right after somebody has touched one. Off and
-// ????? both leave a victory box unticked, so the third state is read from
-// `indeterminate`, which is the only place it lives.
-function syncRandomSettingsFromControls() {
-  randomSettings.clear();
-  for (const id of RANDOM_SELECT_IDS) {
-    const select = document.getElementById(id);
-    if (select && select.value === RANDOM_SETTING) randomSettings.add(id);
-  }
-  for (const id of RANDOM_VICTORY_IDS) {
-    const box = document.getElementById(id);
-    if (box && box.indeterminate) randomSettings.add(id);
-  }
-  rememberRandomSettings();
-}
-// ...and the remembered marks are the truth right after anything else has
-// written the panel: a world arriving from the supervisor, staged settings
-// coming back, or the mode adopting the game on screen all overwrite these
-// controls with concrete values, and a standing ????? outlives all three.
-function applyRandomMarks() {
-  for (const id of randomSettings) {
-    const control = document.getElementById(id);
-    if (!control) continue;
-    if (control.tagName === "SELECT") {
-      if ([...control.options].some(option => option.value === RANDOM_SETTING))
-        control.value = RANDOM_SETTING;
-    } else {
-      control.checked = false;
-      control.indeterminate = true;
-    }
-  }
-  syncSetupMode();
-  updateRandomNote();
-}
-function randomSettingList(names) {
-  if (names.length < 2) return names.join("");
-  return `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
-}
-// The start control must say what it is about to decide on your behalf before
-// it is pressed. The note names the settings rather than counting them: which
-// ones are unanswered is the whole question.
-function updateRandomNote() {
-  const pending = pendingRandomSettings();
-  const names = pending.map(id => RANDOM_SETTING_LABELS[id] || id);
-  const applicable = [...RANDOM_SELECT_IDS, ...RANDOM_VICTORY_IDS].filter(settingApplies);
-  const note = document.getElementById("randomnote");
-  if (note) {
-    note.hidden = !names.length;
-    // Naming them is the point, up to where the list stops being readable.
-    // Past that the count carries it and the names go to the tooltip; a lobby
-    // that is entirely unanswered has a shorter thing to say than eighteen
-    // names in a row.
-    const subject = names.length === applicable.length ? "Every setting is"
-      : names.length > 5 ? `${names.length} settings are`
-      : `${randomSettingList(names)} ${names.length === 1 ? "is" : "are"}`;
-    note.textContent = names.length
-      ? `${subject} set to ${RANDOM_SETTING} — ${names.length === 1 ? "it is" : "each is"}` +
-        ` chosen at random among its own options when this game starts.`
-      : "";
-    note.title = names.length > 5 ? randomSettingList(names) : "";
-  }
-  const help = document.getElementById("luckyhelp");
-  if (help)
-    help.textContent = names.length
-      ? `Rolls the ${names.length} setting${names.length === 1 ? "" : "s"} left at ${RANDOM_SETTING} and shows what came up.`
-      : `Nothing is ${RANDOM_SETTING} right now, so this rolls every setting at once.`;
-  const lucky = document.getElementById("luckybtn");
-  if (lucky)
-    lucky.title = names.length
-      ? `Roll every setting left at ${RANDOM_SETTING} and show what came up`
-      : "Roll every setting at once and show what came up";
-}
-// Rolling here is different from rolling at the start: the answer is written
-// into the panel, so you can see the world you are about to get and change your
-// mind about any part of it. That consumes the mark — it has been answered.
-function feelingLucky() {
-  if (newSimulationBusy) return;
-  const pending = pendingRandomSettings();
-  // Nothing marked is still a request to be surprised, so the button rolls the
-  // whole lobby rather than sitting there doing nothing — except for the game
-  // mode. Whether you are watching or playing is not a setting of the world,
-  // and flipping it under somebody would hand them a seat they never asked
-  // for. A mode explicitly left at ????? is a different matter: that was asked
-  // for, and the first branch rolls it.
-  const targets = new Set(pending.length ? pending
-    : [...RANDOM_SELECT_IDS, ...RANDOM_VICTORY_IDS]
-        .filter(id => id !== "gamemode" && settingApplies(id)));
-  // RANDOM_SELECT_IDS is in dependency order, so each answer is in place
-  // before the setting it governs is rolled: a pool's leader list is rebuilt
-  // on the way past.
-  for (const id of RANDOM_SELECT_IDS) {
-    const select = targets.has(id) && document.getElementById(id);
-    const rolled = select && rollSetting(select);
-    if (!rolled) continue;
-    select.value = rolled;
-    if (id === "gamemode") syncSetupMode();
-    if (id === "leaderpool") syncLeaderPool();
-    if (id === "maptype") syncEarthShape();
-  }
-  for (const id of RANDOM_VICTORY_IDS) {
-    const box = targets.has(id) && document.getElementById(id);
-    if (!box) continue;
-    box.indeterminate = false;
-    box.checked = Math.random() < 0.5;
-  }
-  syncRandomSettingsFromControls();
-  stageSelectedSimulationSettings();
-}
-// A ????? reaches the server as the value it came up as, never as itself.
-// Reading without resolving keeps the mark, which is what the settings key and
-// the start control's own labelling need to see.
-function readSetting(id, resolveRandom) {
+function readSetting(id) {
   const select = document.getElementById(id);
-  if (!select) return "";
-  if (select.value !== RANDOM_SETTING) return select.value;
-  if (!resolveRandom) return RANDOM_SETTING;
-  return rollSetting(select) || "";
+  return select ? select.value : "";
 }
-function readVictorySetting(id, resolveRandom) {
+function readVictorySetting(id) {
   const box = document.getElementById(id);
-  if (!box) return true;
-  if (!box.indeterminate) return box.checked;
-  return resolveRandom ? Math.random() < 0.5 : RANDOM_SETTING;
+  return box ? box.checked : true;
 }
-function selectedSimulationSettings(resolveRandom = false) {
-  const players = readSetting("np", resolveRandom);
-  const np = players === RANDOM_SETTING ? RANDOM_SETTING : +players;
-  const gameMode = readSetting("gamemode", resolveRandom);
-  const mapScript = readSetting("maptype", resolveRandom);
-  const mapTopology = readSetting("mapshape", resolveRandom);
-  const mapPoles = readSetting("mappoles", resolveRandom);
-  const gameSpeed = readSetting("gamespeed", resolveRandom);
-  const leaderPool = readSetting("leaderpool", resolveRandom);
-  const baseRuleset = readSetting("baseruleset", resolveRandom);
-  const startEra = readSetting("startera", resolveRandom);
+function selectedSimulationSettings() {
+  const np = +readSetting("np");
+  const gameMode = readSetting("gamemode");
+  const mapScript = readSetting("maptype");
+  const mapTopology = readSetting("mapshape");
+  const mapPoles = readSetting("mappoles");
+  const gameSpeed = readSetting("gamespeed");
+  const leaderPool = readSetting("leaderpool");
+  const baseRuleset = readSetting("baseruleset");
+  const startEra = readSetting("startera");
   const victoryConditions = Object.fromEntries(VICTORY_TRACKS.map(track =>
-    [track.id, readVictorySetting(`victory-${track.id}`, resolveRandom)]));
-  const leader = readSetting("leader", resolveRandom);
-  const difficulty = readSetting("difficulty", resolveRandom);
+    [track.id, readVictorySetting(`victory-${track.id}`)]));
+  const leader = readSetting("leader");
+  const difficulty = readSetting("difficulty");
   return {num_players: np, map_script: mapScript, map_topology: mapTopology,
           map_poles: mapPoles, game_speed: gameSpeed,
           leader_pool: leaderPool,
           base_ruleset: baseRuleset, start_era: startEra,
           victory_conditions: victoryConditions,
-          spectate: gameMode === RANDOM_SETTING ? RANDOM_SETTING : gameMode === "ai_sim",
+          spectate: gameMode === "ai_sim",
           // A spectated world has nobody to hand a leader or a handicap to.
           ...(gameMode === "ai_sim" ? {} : {civs: leader ? [leader] : [], difficulty})};
 }
 // The handoff screen describes the world being built, so it reports the values
-// a roll actually produced rather than the ????? that stood in for them.
+// the payload actually carries rather than re-reading the panel behind it.
 function selectedSimulationSummary(settings = null) {
   const chosenText = (id, value) => {
     const select = document.getElementById(id);
@@ -24159,14 +23904,14 @@ function selectedSimulationSummary(settings = null) {
   const speed = chosenText("gamespeed", settings?.game_speed).split(" · ")[0];
   // The era is named only when it is not the stock start: every other setting
   // on this line is one somebody chose, and "Ancient" is what you get by
-  // choosing nothing. A rolled era was chosen too, so it is compared by value
-  // rather than by where it sits in a list that ????? has shifted along — and
-  // the stock start is the first rung that can actually be picked, not the
-  // first one listed, because the ladder opens on an age nobody has built.
+  // choosing nothing. It is compared by value rather than by where it sits in
+  // the list — the stock start is the first rung that can actually be picked,
+  // not the first one listed, because the ladder opens on an age nobody has
+  // built.
   const eras = document.getElementById("startera");
   const startEra = settings ? settings.start_era : eras?.value;
   const stockEra = [...(eras?.options || [])]
-    .find(option => option.value && option.value !== RANDOM_SETTING && !option.disabled)?.value;
+    .find(option => option.value && !option.disabled)?.value;
   const era = startEra && startEra !== stockEra ? chosenText("startera", startEra) : "";
   return [mode, size, map, speed, era].filter(Boolean).join(" · ");
 }
@@ -24193,45 +23938,32 @@ function applyQueuedSimulationSettings(settings) {
   const victories = new Set(settings.victories || []);
   for (const track of VICTORY_TRACKS)
     document.getElementById(`victory-${track.id}`).checked = victories.has(track.id);
-  applyRandomMarks();
 }
 function updateRestartSimulationButton() {
   const button = document.getElementById("restart-sim");
   const settings = selectedSimulationSettings();
-  // A ????? is a change all by itself: this control cannot press twice to the
-  // same world while one is still unanswered.
-  const rolling = pendingRandomSettings().length > 0;
   // Picking single player turns the specbar's one start control into the way
   // into that game: it becomes Start new game, and always reads as a change
-  // from the world on screen. An unanswered mode may come up either way, so it
-  // reads as a start too — the one label that is true whichever it rolls.
+  // from the world on screen.
   const human = settings.spectate !== true;
-  const changed = human || rolling || (activeSimulationSettingsKey !== null &&
+  const changed = human || (activeSimulationSettingsKey !== null &&
     simulationSettingsKey(settings) !== activeSimulationSettingsKey);
   button.classList.toggle("primary", changed);
   button.classList.toggle("human-start", human);
   button.querySelector(".lbl").textContent = human
     ? "Start new game"
     : "Restart sim";
-  button.title = rolling
-    ? `Roll every setting left at ${RANDOM_SETTING}, then start that game`
-    : human
+  button.title = human
     ? "Start a single-player game with the selected settings"
     : changed
     ? "Restart with the selected settings"
     : "Restart with the same settings";
-  button.querySelector(".sub").textContent = rolling
-    ? `with ${RANDOM_SETTING} rolled`
-    : human || changed
+  button.querySelector(".sub").textContent = human || changed
     ? "with selected settings"
     : "same settings";
-  updateRandomNote();
 }
 function stageSelectedSimulationSettings() {
-  syncRandomSettingsFromControls();
-  // The staged world is a real one waiting in the wings, so it is staged with
-  // its dice already thrown rather than with the marks that stood in for them.
-  const payload = selectedSimulationSettings(true);
+  const payload = selectedSimulationSettings();
   updateRestartSimulationButton();
   settingsStageChain = settingsStageChain.catch(() => {}).then(async () => {
     const queued = await fetchJSON("/next-game-settings", {method: "POST",
@@ -24242,9 +23974,7 @@ function stageSelectedSimulationSettings() {
   settingsStageChain.catch(error => showNewSimulationError(error, "save settings"));
 }
 function newSimulationPayload() {
-  // Starting is where a ????? finally has to be an answer. The mark itself
-  // stays on the control, so the next start rolls again.
-  return {...selectedSimulationSettings(true),
+  return {...selectedSimulationSettings(),
           seed: Math.floor(Math.random() * 1e9), force: true};
 }
 const simulationBusyControls = new Map();
@@ -24280,7 +24010,7 @@ function adoptRunningMode() {
   const select = document.getElementById("gamemode");
   if (!select || !state) return;
   select.value = SPEC ? "ai_sim" : "single";
-  applyRandomMarks();
+  syncSetupMode();
   updateRestartSimulationButton();
 }
 // Leader and difficulty are meaningless in a spectated world: nobody is at
@@ -24308,11 +24038,7 @@ function syncLeaderPool() {
   select.innerHTML = `<option value="">Random leader</option>` + leaders.map(entry =>
     `<option value="${entry.civ}" title="${escapeAttr(entry.note)}">` +
     `${entry.leader} of ${entry.civ}</option>`).join("");
-  // Changing the pool rebuilds this list, and an unanswered seat survives that:
-  // it is a decision to leave the seat open, not a leader that stopped existing.
-  ensureRandomOptions();
-  if (selected === RANDOM_SETTING) select.value = RANDOM_SETTING;
-  else if (leaders.some(entry => entry.civ === selected)) select.value = selected;
+  if (leaders.some(entry => entry.civ === selected)) select.value = selected;
 }
 
 // Fixed geography chooses the coastline, not the projection. Keep the shape

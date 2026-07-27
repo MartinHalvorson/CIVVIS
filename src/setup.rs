@@ -1146,7 +1146,7 @@ mod tests {
         for retired in ["no_poles", "none", "off", "false"] {
             assert_eq!(MapPoles::from_id(retired), None, "{retired} still names a world");
         }
-        assert_eq!(MapPoles::from_id("?????"), None);
+        assert_eq!(MapPoles::from_id("hot_and_cold"), None);
         // A save is not a lobby. A checkpoint written while that world was on
         // offer still holds a whole game, so it reads back as the default
         // rather than failing to load at all.
