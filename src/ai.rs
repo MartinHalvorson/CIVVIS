@@ -291,6 +291,19 @@ fn revise_policy_deck(g: &mut Game, pid: usize, w: &Weights) {
     if total <= 0 {
         return;
     }
+    if w.legacy_policy_deck {
+        if (g.players[pid].policies.len() as i64) < total {
+            for card in POLICY_PRIORITY {
+                let _ = g.apply(
+                    pid,
+                    &Action::SlotPolicy {
+                        policy: card.to_string(),
+                    },
+                );
+            }
+        }
+        return;
+    }
     let held: Vec<String> = g.players[pid].policies.iter().cloned().collect();
     if held.len() as i64 >= total && g.turn % POLICY_REVIEW_EVERY != 0 {
         return;
@@ -459,6 +472,17 @@ pub struct Weights {
     /// Fraction by which a challenger must beat the incumbent to take its
     /// slot. Zero re-shuffles the deck on noise; one never swaps at all.
     pub pol_swap_margin: f64,
+    /// Hold the pre-2026-07-27 deck: the twenty cards of `POLICY_PRIORITY`, in
+    /// order, and only while a slot stands empty.
+    ///
+    /// **Not a gene.** It is deliberately absent from `to_vec`/`from_vec`/
+    /// `bounds`, so the GA can neither read nor breed it and the genome stays
+    /// 48 wide. It rides on `Weights` for one reason: `AdvancedAi::with_weights`
+    /// already carries a genome into the inner `BasicAi`, so a paired control
+    /// arm costs no change to `src/ai/advanced.rs` or `src/elo.rs`. Set it in
+    /// an eval harness; leave it alone in play.
+    #[serde(default)]
+    pub legacy_policy_deck: bool,
 }
 
 pub const OPENING_MENU: [&str; 6] = [
@@ -516,6 +540,7 @@ impl Default for Weights {
             pol_faith: 0.7,
             pol_military: 0.05,
             pol_swap_margin: 0.15,
+            legacy_policy_deck: false,
         }
     }
 }
@@ -624,6 +649,11 @@ impl Weights {
             pol_faith: v[45],
             pol_military: v[46],
             pol_swap_margin: v[47],
+            // Not a gene, so the GA's vector does not carry it and a genome
+            // that round-trips through `to_vec` comes back playing the live
+            // deck. That is the intended semantics: evolution breeds appetites,
+            // never the decision to stop using them.
+            legacy_policy_deck: false,
         }
     }
 
