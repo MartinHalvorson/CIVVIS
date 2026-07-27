@@ -763,7 +763,7 @@ fn main() {
         if !quiet {
             println!(
                 "seed {seed:<5} t{:<4} {:<10} {:<10} violations={} symptoms={}",
-                g.turn,
+                g.reported_turn(),
                 g.victory_type.clone().unwrap_or_default(),
                 g.winner.map(|w| g.players[w].civ.clone()).unwrap_or_default(),
                 found.violations.values().map(|entry| entry.0).sum::<usize>(),

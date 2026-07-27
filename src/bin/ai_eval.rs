@@ -686,7 +686,7 @@ fn main() {
                 targets,
                 censuses,
             } = result;
-            total_turns += game.turn as u64;
+            total_turns += game.reported_turn() as u64;
             let score = game_score(game.winner, &seats, a);
             let terminal = terminal_score_share(&game, &seats, a);
             if index % 2 == 0 {

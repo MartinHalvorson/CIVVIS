@@ -336,7 +336,7 @@ fn standings(g: &Game) {
                 w.civ,
                 w.id,
                 g.victory_type.clone().unwrap_or_default(),
-                g.turn
+                g.reported_turn()
             );
         }
         None => println!(
@@ -643,7 +643,7 @@ fn main() {
                         Some(format!(
                             "seed {:3}  t{:<4} {:<10} {:<8} majors_alive={}/{} cities={:<2} cs_alive={}/{} [{:.2}s]{}",
                             seed,
-                            g.turn,
+                            g.reported_turn(),
                             g.victory_type.clone().unwrap_or_default(),
                             w.map_or("-", |w| w.civ.as_str()),
                             majors.iter().filter(|p| p.alive).count(),

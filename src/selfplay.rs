@@ -304,7 +304,7 @@ pub fn export(cfg: &SelfPlayCfg) -> std::io::Result<SelfPlayStats> {
                 "game {:3} seed {:<6} t{:<4} {:<10} samples={}",
                 game_index,
                 seed,
-                g.turn,
+                g.reported_turn(),
                 g.victory_type.clone().unwrap_or_else(|| "none".into()),
                 samples
             );

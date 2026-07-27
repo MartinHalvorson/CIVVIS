@@ -2291,7 +2291,7 @@ impl Session {
             &dir,
             &placements,
             self.game.seed,
-            self.game.turn,
+            self.game.reported_turn(),
             &victory,
         ) else {
             eprintln!("[league] could not rate this game into {dir}");
@@ -4851,8 +4851,11 @@ mod tests {
         assert!(played_on["error"].is_null());
         assert!(played_on["winner"].is_null(), "the world is live again");
         // The verdict survives the extension, and the countdown that was
-        // running for it does not.
-        assert_eq!(played_on["decided"]["turn"], decided["turn"]);
+        // running for it does not. It keeps the turn the result was reported
+        // on: this game runs to its three-turn limit, so the score tiebreak is
+        // dated on turn three even though the count that settled it was taken
+        // on the wrap into a fourth turn nobody plays.
+        assert_eq!(played_on["decided"]["turn"], decided["victory_turn"]);
         assert_eq!(
             played_on["decided"]["victory_type"],
             decided["victory_type"]
@@ -5205,8 +5208,8 @@ mod tests {
             .split_once("\nfunction playerHudOverview()")
             .expect("end of turn plate renderer")
             .0;
-        assert!(turn_plate.contains("<strong>${state.turn}</strong>"));
-        assert!(!victory_hud.contains("<strong>${state.turn}</strong>"));
+        assert!(turn_plate.contains("<strong>${reportedTurn()}</strong>"));
+        assert!(!victory_hud.contains("<strong>${reportedTurn()}</strong>"));
 
         let player_hud = EMBEDDED_INDEX
             .split_once("function drawPlayerHud() {")
@@ -7412,7 +7415,7 @@ mod tests {
             .map(|(rule, _)| rule)
             .unwrap_or_default();
         assert!(side_rule.contains("order: -1"));
-        assert!(EMBEDDED_INDEX.contains("<strong>${state.turn}</strong>"));
+        assert!(EMBEDDED_INDEX.contains("<strong>${reportedTurn()}</strong>"));
         assert!(!EMBEDDED_INDEX.contains("${state.turn}/${maxTurns}"));
     }
 
