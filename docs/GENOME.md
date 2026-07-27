@@ -467,9 +467,36 @@ its optimum — but it removes the *methodological* obstacle, and it is the
 right fitness for any future search on this engine, including searches over
 things that are not the genome.
 
-**Before relying on it:** one agreement on one intervention is one data point.
-It should be replicated on a second change whose wins answer is independently
-known.
+### Validated against a known positive, not just a known null
+
+One agreement on one null is not evidence — a statistic that measures nothing
+passes it for free. The discriminating case is `legacy` deck against **no cards
+at all**, whose wins answer is strongly positive (23 map directions to 6,
+p=0.0023). A valid fitness must report parity on the first *and* a clear
+positive on the second.
+
+| statistic | `settler_min_pop=5` (wins: **parity**) | `legacy vs empty` (wins: **positive**) |
+|---|---|---|
+| mean share | +0.0107 (1.2 SE) | +0.0262 (3.1 SE) |
+| share² | +0.0155 (1.2 SE) | +0.0480 (3.6 SE) |
+| share⁴ | +0.0164 (0.9 SE) | +0.0747 (4.0 SE) |
+| top of table | +0.0167 (0.6 SE) | +0.0917 (2.8 SE) |
+| **lane progress** | **+0.0031 (0.2 SE)** | **+0.0280 (1.7 SE)** |
+
+**Lane progress is the only statistic whose reading on the known null is
+statistically indistinguishable from zero while still reporting a positive on
+the known positive.** Its separation between the two cases is 9.0×, against
+2.4× for mean score share.
+
+The score functionals are not useless — `share⁴` and `top of table` do point
+the right way on both — but every one of them reports a false positive of
++0.011 to +0.017 on a change that wins nothing, which is exactly the error
+that would drive a search toward padding.
+
+**Still only two test cases.** Both come from this loop's own runs, and a third
+independently-known change would strengthen it. But the two chosen are the
+strongest available: one null and one significant positive, both decided on
+wins at 120 mirrored maps.
 
 ## The conclusion this all points at
 
