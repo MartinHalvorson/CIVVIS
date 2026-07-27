@@ -399,10 +399,9 @@ fn audit_priors(
             return None;
         }
         let (prior, path) = agent.review_detailed(&game, 0);
-        if path == ReviewPath::Rollouts {
-            return None;
-        }
-        // Force the projection the prior short-circuited.
+        // Keep the rollout-answered reviews too. The question the audit is
+        // really asking is who decides this agent's lanes, and that needs
+        // both populations counted the same way.
         let values = agent.lane_values(&game, 0);
         let reading = read(&values);
         Some(PriorAudit {
@@ -415,7 +414,15 @@ fn audit_priors(
         })
     });
 
-    let audits: Vec<PriorAudit> = results.into_iter().flatten().collect();
+    let all: Vec<PriorAudit> = results.into_iter().flatten().collect();
+    let searched_reviews: Vec<&PriorAudit> = all
+        .iter()
+        .filter(|a| a.path == ReviewPath::Rollouts)
+        .collect();
+    let audits: Vec<&PriorAudit> = all
+        .iter()
+        .filter(|a| a.path != ReviewPath::Rollouts)
+        .collect();
     if audits.is_empty() {
         println!("no position was answered by a prior in {maps} maps");
         std::process::exit(1);
@@ -436,7 +443,7 @@ fn audit_priors(
         ReviewPath::UrgentCounter,
         ReviewPath::IrreversibleReligion,
     ] {
-        let group: Vec<&PriorAudit> = audits.iter().filter(|a| a.path == path).collect();
+        let group: Vec<&&PriorAudit> = audits.iter().filter(|a| a.path == path).collect();
         if group.is_empty() {
             continue;
         }
@@ -455,7 +462,7 @@ fn audit_priors(
         );
     }
 
-    let disagreements: Vec<&PriorAudit> =
+    let disagreements: Vec<&&PriorAudit> =
         audits.iter().filter(|a| a.prior != a.searched).collect();
     println!();
     println!(
@@ -476,6 +483,39 @@ fn audit_priors(
             lane_name(audit.searched)
         );
         shown += 1;
+    }
+
+    // Who actually decides this agent's lanes. A prior always names one; the
+    // rollouts name one only when a lane clears the adaptive baseline by the
+    // commitment margin, and most of the time none does. Counting both the
+    // same way is the point of the audit.
+    let prior_decisions = audits.iter().filter(|a| a.prior.is_some()).count();
+    let search_decisions = searched_reviews
+        .iter()
+        .filter(|a| a.searched.is_some())
+        .count();
+    println!();
+    println!(
+        "who decides the lane, over {} sampled reviews:",
+        all.len()
+    );
+    println!(
+        "  priors    answered {:>4} reviews and named a lane in {:>4} ({:.0}%)",
+        audits.len(),
+        prior_decisions,
+        100.0 * prior_decisions as f64 / audits.len().max(1) as f64
+    );
+    println!(
+        "  rollouts  answered {:>4} reviews and named a lane in {:>4} ({:.0}%)",
+        searched_reviews.len(),
+        search_decisions,
+        100.0 * search_decisions as f64 / searched_reviews.len().max(1) as f64
+    );
+    if search_decisions > 0 {
+        println!(
+            "  -> the priors make {:.1}x as many lane decisions as the search does",
+            prior_decisions as f64 / search_decisions as f64
+        );
     }
 
     println!(

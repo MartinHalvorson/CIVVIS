@@ -97,10 +97,37 @@ Two further constraints bound any fix:
   exactly 1.0 or 0.0, so once every branch resolves they agree *by
   construction*. Share of reviews in that state: 22% at horizon 40, 56% at 80,
   89% at 120. Pushing horizon past 80 buys agreement, not discrimination.
-- **Half of reviews never reach the rollouts.** Three priors answer first, and
-  `urgent_counter` alone takes a third of them. In a duel the religious prior
-  answers *all* of them, which is why every published duel number for
+- **Half of reviews never reach the rollouts — and the search decides far less
+  than half the lanes.** Three priors answer first. In a duel the religious
+  prior answers *all* of them, which is why every published duel number for
   `strategic` measures a forced lane rather than search.
+
+  Audited directly (`search_probe --priors`, 200 four-player positions at
+  turn ~60), the split is worse than "half":
+
+  ```
+  who decides the lane, over 200 sampled reviews:
+    priors    answered   99 reviews and named a lane in   99 (100%)
+    rollouts  answered  101 reviews and named a lane in   33 (33%)
+    -> the priors make 3.0x as many lane decisions as the search does
+  ```
+
+  A prior always names a lane. The rollouts name one only when a lane clears
+  the adaptive baseline by the commitment margin, and two times in three none
+  does. **So the search this document is about picks roughly a quarter of the
+  lanes this agent plays**, and one predicate —
+  `viable_religious_commitment`, 92 of the 99 prior-answered reviews — picks
+  half of them on its own, disagreeing with the projection 85% of the time.
+
+  That reframes every result in section 0. Depth (`strategic_h80`, 21–5),
+  frequency (`strategic_r20`, 15–2) and branch fidelity (#413, +37 Elo) are
+  all improvements to the quarter. None of them touches the half.
+
+  It does **not** follow that the priors are wrong. `viable_religious_commitment`
+  guards an irreversible global race that a forty-round projection scored by
+  score share provably cannot price, and religion is the lane that converts
+  best in this simulator. The claim is only that the largest single input to
+  this agent's lane choice had never been measured, let alone tested.
 
 ---
 
