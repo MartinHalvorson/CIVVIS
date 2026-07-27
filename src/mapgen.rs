@@ -1276,11 +1276,12 @@ pub fn generate_with_script(
     // only because the roll happened to miss them, so any change upstream of
     // the lake pass could put a civilization out to sea.
     {
+        let keep_dry = earth_homeland_anchors(&wm, script);
         add_lakes(
             &mut wm,
             &mut land,
             large_lake_budget(script, num_continents),
-            &earth_homeland_anchors(&wm, script),
+            &keep_dry,
             rng,
         );
     }
