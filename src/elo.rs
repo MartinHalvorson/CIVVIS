@@ -38,7 +38,7 @@ pub const BUILTIN_AIS: [&str; 10] = [
 /// tournament ratings. Keeping them out of `BUILTIN_AIS` prevents a control
 /// factory from being pooled into the same player/leader rating key as
 /// its treatment.
-pub const EVAL_ONLY_AIS: [&str; 27] = [
+pub const EVAL_ONLY_AIS: [&str; 28] = [
     "advanced_lane_reachable",
     "advanced_relief_scoped",
     "strategic_score",
@@ -52,6 +52,7 @@ pub const EVAL_ONLY_AIS: [&str; 27] = [
     "strategic_rot10",
     "strategic_deep",
     "strategic_deep_tempo",
+    "strategic_deep_conversion",
     "strategic_deep_expand",
     "strategic_deep_consolidate",
     "strategic_deep_militarize",
@@ -624,6 +625,19 @@ pub fn builtin_ai(name: &str, seed: u64) -> Box<dyn Ai> {
             ai.terminal_tempo = true;
             Box::new(ai)
         }
+        // Exact one- and two-action search over religious conversions before
+        // the ordinary controller takes the rest of the turn. Same promoted
+        // 20x80 macro budget as its control. Retained evaluator-only after it
+        // lost the disjoint gate 114-126 games and religious wins fell 81-65.
+        "strategic_deep_conversion" => {
+            let mut ai = crate::strategic::StrategicAi::with_weights(
+                crate::evolve::load_champion("evolved").unwrap_or_default(),
+            );
+            ai.review_every = 20;
+            ai.horizon = 80;
+            ai.religious_finish_search = true;
+            Box::new(ai)
+        }
         // Static genome challengers for the strongest measured search
         // budget. Unlike `strategic_doctrine`, these do not ask a noisy
         // per-review rollout to choose a play style. Each applies one bounded
@@ -982,6 +996,10 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "strategic_deep_tempo" => (
             vec![genome, value(false)],
             "strategic_deep_tempo",
+        ),
+        "strategic_deep_conversion" => (
+            vec![genome, value(false)],
+            "strategic_deep_conversion",
         ),
         "strategic_deep_expand" => (vec![genome, value(false)], "strategic_deep_expand"),
         "strategic_deep_consolidate" => (vec![genome, value(false)], "strategic_deep_consolidate"),
@@ -1543,6 +1561,15 @@ mod tests {
         assert_eq!(ai.review_census(), Some(Default::default()));
         let provenance = builtin_provenance("strategic_deep_tempo", "unused");
         assert_eq!(provenance.effective, "strategic_deep_tempo");
+        assert!(!provenance.degraded());
+    }
+
+    #[test]
+    fn religious_conversion_challenger_constructs_a_searching_agent() {
+        let ai = builtin_ai("strategic_deep_conversion", 1);
+        assert_eq!(ai.review_census(), Some(Default::default()));
+        let provenance = builtin_provenance("strategic_deep_conversion", "unused");
+        assert_eq!(provenance.effective, "strategic_deep_conversion");
         assert!(!provenance.degraded());
     }
 
