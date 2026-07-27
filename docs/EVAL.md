@@ -2069,3 +2069,74 @@ calibration points cannot establish that any positive reading predicts a win,
 and this table should not be read as if they had: the winner raises spread and
 the loser is flat, but a single null sits outside that ordering because its
 spread reading is invalid. **Screen for inertness; decide with `ai_eval`.**
+
+## 2026-07-26 — the priors make 3× the search's lane decisions, and removing the biggest is null
+
+**Who decides the lane** (`search_probe --priors`, 200 four-player positions,
+warmup 60, seeds 900..):
+
+```
+  prior                        n     agrees median spread    decided
+  duel-religion                5         0%        0.0000       100%
+  urgent-counter               2         0%        0.1911        57%
+  irreversible-religion       92        15%        0.1106        32%
+
+who decides the lane, over 200 sampled reviews:
+  priors    answered   99 reviews and named a lane in   99 (100%)
+  rollouts  answered  101 reviews and named a lane in   33 (33%)
+  -> the priors make 3.0x as many lane decisions as the search does
+```
+
+A prior always names a lane; the rollouts name one only when a lane clears the
+adaptive baseline by the commitment margin, and two times in three none does.
+So the macro search picks roughly a **quarter** of the lanes this agent plays,
+and `viable_religious_commitment` picks half of them alone — disagreeing with
+the projection on 85% of the reviews it answers, always by taking Religion
+where the search would stay adaptive.
+
+Note this corrects an emphasis: `docs/AI_GAPS.md` names `urgent_counter` as the
+dominant prior, measured over whole games. At the stage where lanes are chosen
+it is not close — 2 against 92.
+
+**Removing it is null.** `strategic_noprophet` (the prior disabled), 240
+mirrored maps at fresh seed 160000:
+
+```
+game-win share: noprophet 238/480 (49.6%)  strategic 242/480 (50.4%)
+paired-map score: 49.6% (95% Wilson CI 43.3%..55.9%), Elo-equivalent -3
+paired direction: noprophet 12, neutral 214, strategic 14; sign p=0.8450
+terminal-score direction: noprophet 58, neutral 137, strategic 45; p=0.2369
+promotion gate: INCONCLUSIVE
+```
+
+Both pre-registered predictions fired, so this is a null and not a misfire:
+search exposure **57% → 63%** with `irreversible-religion` priors **211 → 0**,
+and religious commitment **30.3% → 26.8%**.
+
+### Why a 3× decision share converts to a 0× strength share
+
+**`adaptive` is not a lane.** Returning `None` hands the turn back to
+`AdvancedAi`'s own victory planner, which frequently picks the same lane the
+prior named. So 85% of those reviews changed their *label* while religious
+victories moved only 171 → 164. The prior is largely **redundant with** the
+behaviour underneath it rather than additional to it.
+
+**A disagreement rate is an upper bound on behavioural impact, and a loose
+one.** `search_probe` now says so in its own output. This is the third
+confound of this shape recorded here — after the unpaired-trajectory
+comparison and the unequal-branch-count spread — and they share a root: a
+number computed at the decision layer does not measure the play layer.
+
+### What this closes
+
+| treatment | lane decisions changed | strength |
+|---|---|---|
+| `strategic_noprophet` | ~42% of all reviews | **0** (p=0.8450) |
+| `focused_deepening`, rank-pruned | uncommitted turns 44.9% → 58.4% | **0** (p=0.8318 repaired) |
+| warm branches (#413) | 1 review in 4 | **+37 Elo** |
+
+Changing *more* lane decisions is uncorrelated with strength, and the
+treatment that won changed the fewest. **Lane routing is not the lever.** The
+macro search's only output is a lane, so what remains there is compute — which
+works, and whose ceiling is already measured at horizon 80. Effort belongs on
+a decision that repeats.
