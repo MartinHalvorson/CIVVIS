@@ -54,7 +54,7 @@
     "golden": "Spies establish presence instantly, and all offensive missions take 25% less time."
   },
   "sky_and_stars": {
-    "eras": [6, 8],
+    "eras": [7, 8],
     "triggers": { "aerodrome": 1, "great_person": 1 },
     "normal": "+1 Era Score per Aerodrome built, and each time a Great Person is earned or purchased.",
     "golden": "Unlocks the era's flight and rocketry Eurekas. +100% experience for all air units."
