@@ -89,7 +89,25 @@ pub fn load_champion(dir: &str) -> Option<Weights> {
     load_champion_record(Path::new(dir)).map(|champion| champion.weights)
 }
 
+/// Read a champion from `dir`, falling back to the committed snapshot under
+/// `data/`.
+///
+/// Every strategic agent resolves its genome through
+/// `load_champion("evolved").unwrap_or_default()`, and until now `evolved/`
+/// was gitignored with no artifact in the tree — so a fresh clone, the
+/// exhibition, the fleet and every published evaluation silently played
+/// `Weights::default()`. The hand-written defaults were never the intended
+/// agent; they were what the loader returned when the intended one was
+/// missing.
+///
+/// A local run still wins: `evolved/best.json` in the working directory
+/// overrides the snapshot, so an in-progress evolution is not shadowed by the
+/// committed one. This is the arrangement `data/league` already uses.
 fn load_champion_record(dir: &Path) -> Option<Champion> {
+    read_champion(dir).or_else(|| read_champion(&Path::new("data").join(dir)))
+}
+
+fn read_champion(dir: &Path) -> Option<Champion> {
     let raw = fs::read_to_string(dir.join("best.json")).ok()?;
     serde_json::from_str(&raw).ok()
 }
@@ -701,6 +719,32 @@ fn save_champ(
         dir.join("best.json"),
         serde_json::to_string_pretty(&c).unwrap(),
     );
+}
+
+#[cfg(test)]
+mod champion_snapshot_tests {
+    use super::load_champion;
+
+    /// The committed champion must load from a checkout with no local
+    /// `evolved/` directory — which is every fresh clone, the exhibition and
+    /// the fleet. Before this snapshot existed the loader returned `None`
+    /// there and every agent silently played `Weights::default()`.
+    #[test]
+    fn a_bare_checkout_resolves_the_committed_champion() {
+        let champion = load_champion("evolved")
+            .expect("data/evolved/best.json must resolve without a local evolved/ dir");
+        let genes = champion.to_vec();
+        assert_eq!(genes.len(), 40);
+        assert!(
+            genes.iter().all(|gene| gene.is_finite()),
+            "a champion with a non-finite gene would poison every agent that loads it"
+        );
+        assert!(
+            genes != crate::ai::Weights::default().to_vec(),
+            "the committed champion is identical to the defaults, so shipping it \
+             changes nothing and the snapshot is pointless"
+        );
+    }
 }
 
 #[cfg(test)]
