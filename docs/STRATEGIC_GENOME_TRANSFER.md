@@ -43,4 +43,26 @@ architecture gate and is live.
 
 ## Result
 
-Pending.
+Across 30 fresh mirrored maps (60 games), the frozen default lost 27-33:
+
+- paired score for the default was 45.0%, with a 28.8%-62.3% Wilson interval
+  and -35 Elo point estimate (equivalently about +35 for the champion);
+- map directions were two default-favorable, 23 neutral, and five champion-
+  favorable (`p = 0.4531`);
+- terminal score was 47.2% for the default, with directions 10-0-20
+  (`p = 0.0987`);
+- the default had 22 religious and five score victories, while the champion
+  had one culture, two domination, 27 religious, and three score victories.
+
+The development diagnostic strongly agrees with the win direction. The
+champion averaged 136.0 score to 118.5, 2.60 cities to 2.08, 15.0 population
+to 11.8, 171.0 military strength to 119.4, 14.0 science to 12.3, and 18.6
+culture to 16.0. It accumulated less gold (363.6 to 423.5), but converted the
+larger empire into six additional wins rather than merely farming the proxy.
+
+This is a favorable transfer screen for the shipped champion, not grounds for
+a reversal. The pre-registered challenger was the frozen default, and only a
+default-favorable direction could earn a disjoint gate. No gate is spent;
+`strategic_deep` correctly keeps the evolved genome. `strategic_deep_default`
+remains evaluator-only as the stable integration control for future champion
+updates.

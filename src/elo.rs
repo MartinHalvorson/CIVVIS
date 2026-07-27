@@ -615,7 +615,9 @@ pub fn builtin_ai(name: &str, seed: u64) -> Box<dyn Ai> {
         // Frozen control for testing whether the committed AdvancedAi
         // champion transfers through StrategicAi's 20x80 macro search. It
         // retains the same optional value-net path but deliberately refuses
-        // best.json, so the genome is the only policy difference.
+        // best.json, so the genome is the only policy difference. The first
+        // transfer screen favored the champion 33-27 games and 5-2 map
+        // directions; retained evaluator-only for future artifact audits.
         "strategic_deep_default" => {
             let mut ai = crate::strategic::StrategicAi::with_weights(
                 crate::ai::Weights::default(),
