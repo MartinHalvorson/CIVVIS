@@ -119,6 +119,18 @@
 //! opts in. A promotion that two independent measurements fail to reproduce,
 //! while its cost is certain, is one whose burden of proof has moved.
 //!
+//! ### Replicated on a disjoint seed; the claimed effect is excluded
+//!
+//! | seed | maps | edge |
+//! |---|---|---|
+//! | 4200000 | 100 | −0.0100 ± 0.0188 |
+//! | 4500000 | 120 | −0.0125 ± 0.0225 |
+//! | **pooled** | **220** | **−0.0110 ± 0.0144** |
+//!
+//! Elo-equivalent **−8 (95% CI −27 to +12)** against a promotion claiming
+//! **+45**. The claimed 0.065 sits **5.3 SE** away — excluded, not merely
+//! unreproduced. Pre-registered before the second run.
+//!
 //! ### The entrant-name comparison agrees, but proves less
 //!
 //! `ai_eval strategic_deep strategic --pairs 100`: 52.0% (Wilson 42.3–61.5),
