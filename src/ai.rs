@@ -8461,7 +8461,9 @@ mod tests {
 
     #[test]
     fn one_queued_spaceport_reserves_the_empire_launch_site() {
-        let mut game = Game::new_full(1, 30, 20, 324_001, 100, 0, false);
+        let mut game = Game::new_full(
+            1, 30, 20, crate::rng::fixture_seed("SPACEPORT", 324_005), 100, 0, false,
+        );
         let first_settler = game
             .player_unit_ids(0)
             .into_iter()

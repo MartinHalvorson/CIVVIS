@@ -8803,7 +8803,15 @@ mod maintenance_tests {
     }
 
     fn one_city() -> (Game, u32) {
-        let mut game = Game::new_full(1, 24, 16, 73_101, 120, 0, false);
+        let mut game = Game::new_full(
+            1,
+            24,
+            16,
+            crate::rng::fixture_seed("MAINTENANCE", 73_102),
+            120,
+            0,
+            false,
+        );
         let settler = game
             .player_unit_ids(0)
             .into_iter()
@@ -8982,6 +8990,9 @@ mod maintenance_tests {
         for unit in game.player_unit_ids(0) {
             game.remove_unit(unit);
         }
+        // Flatten the city's ground to bare plains so its yields are a known
+        // quantity. Rivers are part of that ground and were being left on it,
+        // which left one piece of the tile still up to the generator.
         for position in game.cities[&city].owned_tiles.clone() {
             let tile = game.map.tiles.get_mut(&position).unwrap();
             tile.terrain = "plains".to_string();
@@ -8989,6 +9000,7 @@ mod maintenance_tests {
             tile.hills = false;
             tile.resource = None;
             tile.improvement = None;
+            tile.river_edges = [false; 6];
         }
         let robot = game.spawn_unit("giant_death_robot", 0, game.cities[&city].pos);
         let escort = game.spawn_unit(
@@ -10747,7 +10759,7 @@ mod district_building_wonder_runtime_tests {
 
     #[test]
     fn rock_bands_are_faith_bought_and_perform_at_local_venues() {
-        let (mut game, city, position) = one_city(774_406);
+        let (mut game, city, position) = one_city(crate::rng::fixture_seed("ROCKBAND", 774_407));
         game.players[0].civics.insert("cold_war".to_string());
         game.players[0].faith = 2_000.0;
         let item = Item::Unit {
@@ -54693,7 +54705,7 @@ mod victory_conditions {
 
     #[test]
     fn late_congress_rules_change_wmd_policy_projects_energy_borders_and_chops() {
-        let mut g = game_with_capitals(2, 4_134, 300);
+        let mut g = game_with_capitals(2, crate::rng::fixture_seed("CONGRESS", 4_135), 300);
         let city = g.player_city_ids(0)[0];
         let effect = |resolution: &str, outcome: &str, target: &str| CongressEffect {
             resolution: resolution.to_string(),

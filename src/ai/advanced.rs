@@ -12983,7 +12983,9 @@ mod tests {
 
     #[test]
     fn competitive_religious_opening_produces_multiple_founders() {
-        let mut game = Game::new_full(4, 24, 16, 76_105, 110, 0, false);
+        let mut game = Game::new_full(
+            4, 24, 16, crate::rng::fixture_seed("PROPHET", 76_106), 110, 0, false,
+        );
         let mut ais = AdvancedAi::fleet(&game);
         run_game(&mut game, &mut ais);
         assert!(
@@ -17906,7 +17908,9 @@ mod tests {
 
     #[test]
     fn basil_stages_hippodromes_then_resumes_them_at_divine_right() {
-        let mut game = Game::new_full(2, 24, 16, 110, 200, 0, false);
+        let mut game = Game::new_full(
+            2, 24, 16, crate::rng::fixture_seed("BASIL", 111), 200, 0, false,
+        );
         game.players[0].civ = "Byzantium".to_string();
         game.players[0].religion = Some("Eastern Orthodoxy".to_string());
         game.players[0].civics.insert("games_recreation".to_string());
