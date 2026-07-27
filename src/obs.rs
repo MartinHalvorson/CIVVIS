@@ -443,6 +443,18 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
             "influence": round1(p.influence),
             "envoys_free": p.envoys_free,
             "envoys": p.envoys,
+            // What each met city-state is asking this civilization for, and
+            // the Envoy it pays. Per pair: a rival's quest from the same
+            // city-state is its own business.
+            "city_state_quests": p.quests.iter().map(|(minor, quest)| {
+                serde_json::json!({
+                    "city_state": minor,
+                    "kind": quest.kind,
+                    "target": quest.target,
+                    "name": Game::quest_name(&quest.kind),
+                    "description": g.quest_description(quest),
+                })
+            }).collect::<Vec<_>>(),
             "diplomatic_favor": round1(p.diplomatic_favor),
             "power_fuel_consumed": p.power_fuel_consumed,
             "co2_emissions": round1(p.co2_emissions),
@@ -605,7 +617,7 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
                 "is_barbarian": o.is_barbarian,
                 "is_free_city": o.is_free_city,
                 "cs_type": if o.is_minor && !o.is_barbarian {
-                    Some(Game::cs_type(&o.civ))
+                    Some(g.cs_type(&o.civ))
                 } else {
                     None
                 },
