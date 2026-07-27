@@ -2465,3 +2465,64 @@ directory: `data/evolved/best.json` resolved in a checkout and not in the
 process that serves games, until the genome was compiled into the binary.
 **Both were invisible to every statistic and visible immediately on reading
 what the deployment actually does.**
+
+## 2026-07-27 — every result in this file was measured at one map density
+
+The entry above pre-registers a mismatch for the shipped genome: evolved and
+validated at 4 players on 24×16, deployed at 6 players on 74×46. Checking
+whether that was one experiment's mistake or a property of the harness:
+
+```
+recorded `ai_eval` commands in this file          20
+      ... that specify a map size                  1   (the deployment check itself)
+ai_eval defaults                                  --width 24 --height 16 --players 2
+```
+
+**Nineteen of twenty ran at 24×16.** So every strength number in this
+ledger — `strategic_r20`, `strategic_h80`, the `strategic_deep` promotion,
+`policy_wide`'s −313, branch fidelity's +37, the genome's +49 — was measured at
+
+```
+     24x16 / 4 players =  96 tiles per player
+     74x46 / 6 players = 567 tiles per player   (what the exhibition runs)
+```
+
+**about one sixth of the deployment density**, and none has been checked for
+density sensitivity.
+
+### This is a caveat, not a retraction
+
+Mechanisms differ in how much density can matter to them, and the difference is
+not rhetorical:
+
+- **Expansion weights are directly coupled.** `city_target`, `settler_min_pop`
+  and `settle_dist` answer "how many cities can I fit and when should I stop",
+  which is a question *about* density. The shipped genome moved `city_target`
+  −40% and `settler_min_pop` +123%, which is the correct answer at 96 tiles per
+  player and plausibly the wrong one at 567. That one has a mechanism and a
+  pre-registered test.
+- **Branch fidelity has no obvious coupling.** Projecting a rollout from the
+  planner in force rather than a fresh one is a construction fix; nothing in it
+  refers to available land. Lower risk — but unchecked, which is a different
+  thing from safe.
+- **Macro-search depth and cadence are in between.** More room means longer
+  games and different victory-lane dynamics, so the horizon that saturates at
+  24×16 need not saturate at 74×46. The 22/56/89% saturation table is itself a
+  24×16 measurement.
+
+### What to do about it
+
+Cheap and worth doing: **state the map size in every recorded command.** Nineteen
+entries here do not, so a reader cannot tell what was measured without knowing
+the binary's defaults.
+
+Expensive and worth doing selectively: re-measure the promoted changes at
+deployment density. A deployment-config game costs roughly 200× a 24×16 one, so
+this is a per-result decision, not a sweep. Note that **matching density does
+not require matching dimensions** — 47×47 at four players is 552 tiles per
+player, close to deployment, at about 6× the cost of 24×16 rather than 200×.
+
+The general form, which has now cost this session twice: **a number is true
+inside the conditions that produced it.** The first instance was a working
+directory, the second is a map density, and both were invisible to every
+statistic computed on top of them.
