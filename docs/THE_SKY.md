@@ -112,6 +112,43 @@ ocean world the expedition is hoping for, `good` is a world with water and land
 on it, and `marginal` is what the nearby candidates mostly are — a tidally
 locked rock with its atmosphere piled up on the night side.
 
+## The survey, and where the expedition actually goes
+
+The destination is not a fixed place any more. `EXOPLANET_TARGETS` in
+`src/game.rs` is the roster the client draws, and which of it a civilization has
+found is what its space programme bought:
+
+| project | worlds found |
+|---|---|
+| `launch_earth_satellite` | 3 |
+| `launch_moon_landing` | +2 |
+| `launch_mars_colony` | +2 |
+| each laser station | +1 |
+
+The order the neighbourhood is found in is a fact about the sky, not about a
+civilization, so it is one Fisher-Yates shuffle drawn from the game's seed and
+shared by everybody: a deeper survey is always a strict superset of a shallower
+one, and a rival who has looked less can never know a world you do not. It is
+shuffled rather than ordered by distance because detection is not a matter of
+distance — TRAPPIST-1 is forty light-years out and was found early, because its
+star is small enough for a planet to blot out a real fraction of it.
+
+The choice is made the day the ship leaves and never revisited. A survey that
+deepens afterwards does not turn it round, which is what makes finishing the
+Moon and the Mars colony *before* launching worth anything — and those two
+projects had no reason to exist before this. The Moon paid a one-off Culture
+bonus, Mars paid nothing at all, so a civilization racing the science victory
+correctly skipped straight past both.
+
+**The trip is the same length whichever world it is, deliberately.**
+`EXOPLANET_DESTINATION` is still 50 and the expedition still crosses it at the
+same pace, so nothing about who wins a game or when has changed. The roster's
+real distances span 4.24 to 48.9 light-years — eleven to one — and letting that
+spread loose on the victory race would be a large balance change that has to be
+measured over whole 500-turn games before it ships, not asserted. The wiring for
+it is `Game::exoplanet_target(pid).light_years`, already reported to the client
+as `exoplanet_target_ly`; the measurement is the work, not the code.
+
 ## Fifty light-years, in galactic terms
 
 This is what the last zoom step is for, and it is drawn rather than asserted:
