@@ -509,10 +509,20 @@ result survives its own promotion mechanism turning out to be permissive.
 
 ### How much is left on the genome axis
 
-With the null corrected, **121 random mutations of the shipped champion
-produced no candidate worth +10 percentage points (~+72 Elo)**, at 60 games per
-candidate against a 200-game cap — the test rejects fast, so these are not
-marginal calls.
+With the null corrected, **242 random mutations of the shipped champion, across
+two mutation radii, produced no candidate worth +10 percentage points
+(~+72 Elo)**, at ~60 games per candidate against a 200-game cap — the test
+rejects fast, so these are not marginal calls.
+
+| operator | candidates | acceptances |
+|---|---|---|
+| ±25% on 34% of genes | 121 | **0** |
+| ±60% on 70% of genes | 121 | **0** |
+
+The two radii differ by more than 2× in step size and 2× in genes touched, and
+neither finds anything. That matters because a single radius finding nothing
+has two readings — exhausted neighbourhood, or a step too small to leave it —
+and the wide arm removes the second.
 
 Set beside the spread measurements (typical mutation worth ~0.013 win rate,
 needing ~5,000 games to resolve), the reading is:
@@ -695,6 +705,70 @@ Each of these is falsified here, with the run that did it.
 ---
 
 ## 4. Sequencing
+
+> **Rewritten 2026-07-27 on measurement.** The order below this box was written
+> when the macro search was the only subject and none of its items had numbers.
+> Since then M1 and M4 have been retired, M2 has landed, an axis the document
+> did not contain at all produced the largest measured gain, and the
+> through-line sentence turned out to be wrong. The original is kept beneath so
+> the path is visible.
+
+**The state, as measured:**
+
+| axis | status |
+|---|---|
+| macro search — lane routing | **closed.** Three treatments moved lane decisions by 42%, by a commitment collapse, and by 1-in-4; only the smallest won. Decision share is uncorrelated with strength. |
+| macro search — within-review allocation | **closed.** A shallow estimate is not rank-preserving w.r.t. the deep one, so any pruning discards signal. Retires rotation, adaptive stopping, focused deepening, progressive widening and sequential halving together. |
+| macro search — the priors | **closed.** The predicate deciding half of all reviews disagrees with the search 85% of the time, and removing it is null: `adaptive` is not a lane, it delegates to a planner that picks the same lane anyway. |
+| macro search — branch fidelity (M2) | **★ +37 Elo, shipped.** |
+| production search | **closed.** Not blind (3.7/5.0 distinct values), horizon-stable to 200 (96% same pick). It sees the difference, keeps seeing it once every payoff has landed, and still loses to the scripted governor. |
+| learned value on empire aggregates | **closed.** No function of the 25 aggregates is win probability. |
+| outcome labelling (M6→M5) | **priced.** ~1200 h for a corpus, and 73% of decisions carry no signal at all. A compute project, not a coding one. |
+| **the genome** | **★ +49 Elo, shipped — then bounded.** 242 mutations across two radii found nothing worth +72 Elo more. |
+| structural behaviour | **open, and where the evidence points.** Untouched by any of the above. |
+
+**What actually paid, and it is not what this document originally proposed.**
+Two changes shipped. Neither was a new mechanism:
+
+1. **The counterfactual was simulating the wrong thing.** Every branch of the
+   macro search was handed a *freshly constructed* planner, so it answered
+   "what if I restart and commit to this lane" while standing in for "what if I
+   commit from here". Cost: one struct clone. Worth +37 Elo.
+2. **The repository was loading its fallback.** `load_champion(…).unwrap_or_default()`
+   plus a gitignored `evolved/` plus no artifact anywhere meant every agent
+   played `Weights::default()`. Running the GA that had been built for this and
+   never completed produced +49 Elo. Cost: one evening of compute.
+
+Both were found by *checking something that looked fine*. Every mechanism this
+document proposed from first principles — allocation, margin calibration,
+sealed rollouts, structured mutation — measured null or reversed.
+
+**So the sequencing advice that survives is procedural, not architectural:**
+
+- **Measure the artifact before the algorithm.** Ask what the process actually
+  loads, at the path it actually runs from. Two of the largest findings here
+  were a silent fallback and a mis-specified null, neither visible in code
+  review.
+- **Screen before you build.** `search_probe` has retired four mechanisms for
+  minutes of compute each, against ~40 minutes per `ai_eval`. A treatment that
+  cannot move the numbers a decision is made from cannot move a win rate.
+- **Check the null when a result looks good.** A 27% acceptance rate against a
+  5% alpha was the tell that `evolve`'s SPRT tests parity at `1/players` on a
+  table whose true parity is 0.35.
+- **Structural before parametric.** The parametric axis is bounded above; the
+  structural one has never been systematically measured. `src/oracle.rs`
+  (#366) is the right instrument for ranking structural gaps, and the noise
+  floor for it is in this document.
+
+**The through-line sentence this document used to end on — "the rollout is the
+only evaluator in this codebase that has ever been right" — was wrong.** It is
+the only evaluator that was right *inside the macro search*, which is the only
+place the document was looking. The single largest gain came from an axis it
+did not mention.
+
+---
+
+### The original sequencing, kept for the path
 
 **M2 (landed) → M6 → M5** — M4 retired on measurement (see its entry), with M3 attempted only alongside its
 fires-check and M7 landed before M5 ships anything. **M1 is demoted out of the
