@@ -13,7 +13,7 @@ use crate::rules::{
 };
 use crate::specmap::SpecMap;
 
-use crate::setup::{BaseRuleset, GameSpeed, MapPoles, MapScript, MapSize, MapTopology, StartEon};
+use crate::setup::{BaseRuleset, GameSpeed, MapPoles, MapScript, MapSize, MapTopology};
 use crate::world::{DistrictFoundation, RememberedTile, Tile, TileBits, TileMemory, WorldMap};
 use crate::{hex, mapgen, Pos};
 
@@ -13888,15 +13888,11 @@ pub struct GameOptions {
     /// Which published game's rules this world is played by. Civilization VI
     /// is the only one modeled, and the only one this can be.
     pub base_ruleset: BaseRuleset,
-    /// Which sweep of time the game is played through. Only
-    /// [`StartEon::Civilization`] has a technology tree behind it today, so
-    /// only human history reaches the engine.
-    pub start_eon: StartEon,
-    /// How far into [`Self::start_eon`] the game opens, as an index into that
-    /// eon's ladder. In human history that index is the era of
+    /// How far into history the game opens, as the era of
     /// [`crate::rules::ERA_NAMES`] every civilization starts in: zero is the
     /// stock Ancient start, and anything above it is Civilization VI's
-    /// Advanced Start — the earlier eras are already researched.
+    /// Advanced Start — the earlier eras are already researched. The rungs of
+    /// the ladder this is chosen from live in [`crate::setup::START_ERAS`].
     pub start_era: usize,
     pub map_script: MapScript,
     /// What shape the world is, asked separately from what fills it: every
@@ -13951,7 +13947,6 @@ impl GameOptions {
             city_states,
             barbarians: true,
             base_ruleset: BaseRuleset::default(),
-            start_eon: StartEon::default(),
             start_era: 0,
             map_script: MapScript::Pangaea,
             map_topology: MapTopology::default(),
@@ -14294,11 +14289,9 @@ pub struct Game {
     /// actually played, rather than today's default.
     #[serde(default)]
     pub base_ruleset: BaseRuleset,
-    /// The sweep of time this world was set up in, and how far into it the
-    /// game opened. `start_era` is an index into `start_eon`'s ladder, which
-    /// for human history is an era of [`crate::rules::ERA_NAMES`].
-    #[serde(default)]
-    pub start_eon: StartEon,
+    /// How far into history this world opened, as an era of
+    /// [`crate::rules::ERA_NAMES`]. Kept on the save alongside the rest of the
+    /// setup so a restart offers what was actually played.
     #[serde(default)]
     pub start_era: usize,
     pub map_script: MapScript,
@@ -14484,9 +14477,7 @@ struct GameSer {
     #[serde(default)]
     base_ruleset: BaseRuleset,
     /// Absent in saves written before a game could open anywhere but the
-    /// Ancient era of human history, which is exactly what the defaults are.
-    #[serde(default)]
-    start_eon: StartEon,
+    /// Ancient era, which is exactly what the default is.
     #[serde(default)]
     start_era: usize,
     #[serde(default)]
@@ -14606,7 +14597,6 @@ impl From<GameSer> for Game {
             mods: s.mods,
             events: s.events.into(),
             base_ruleset: s.base_ruleset,
-            start_eon: s.start_eon,
             start_era: s.start_era,
             map_script: s.map_script,
             leader_pool: s.leader_pool,
@@ -14761,7 +14751,6 @@ impl From<Game> for GameSer {
             mods: g.mods,
             events: g.events.into(),
             base_ruleset: g.base_ruleset,
-            start_eon: g.start_eon,
             start_era: g.start_era,
             map_script: g.map_script,
             leader_pool: g.leader_pool,
@@ -14881,7 +14870,6 @@ impl Game {
             city_states: num_city_states,
             barbarians,
             base_ruleset,
-            start_eon,
             start_era,
             map_script,
             map_topology,
@@ -14896,16 +14884,10 @@ impl Game {
             leader_pool,
             randomize_civs,
         } = options;
-        // The eon is what makes a start era mean anything: only human history
-        // has trees to cut at it, so every other eon opens at its own first
-        // age however it was asked for. A rung past the end of the ladder is
-        // clamped rather than fatal — a client from a later build must not be
-        // able to construct a world that reads as a later era than exists.
-        let start_era = if start_eon == StartEon::Civilization {
-            start_era.min(StartEon::Civilization.eras().len() - 1)
-        } else {
-            start_eon.default_era()
-        };
+        // A rung past the end of the ladder is clamped rather than fatal: a
+        // client from a later build must not be able to construct a world that
+        // reads as a later era than the rules have a tree for.
+        let start_era = start_era.min(crate::setup::last_start_era());
         assert!(
             teams.is_empty() || teams.len() == num_players,
             "team assignments must be empty or contain one entry per major player"
@@ -14947,7 +14929,6 @@ impl Game {
             speed,
             human_seats,
             base_ruleset,
-            start_eon,
             start_era,
             map_script,
             leader_pool,
@@ -15106,11 +15087,11 @@ impl Game {
     }
 
     /// Civilization VI's Advanced Start: a game set to open past the first age
-    /// of its eon begins with the earlier ages already behind it.
+    /// begins with the earlier ages already behind it.
     ///
-    /// This is where the eon stops being a label and becomes a rule, and only
-    /// human history has trees to cut, so only human history reaches here —
-    /// `new_with` has already pinned `start_era` to zero for every other eon.
+    /// This is where the start era stops being a label and becomes a rule.
+    /// `new_with` has already clamped it to an era the rules have a tree for,
+    /// so every value reaching here can actually be cut at.
     ///
     /// Every civilization on the board is handed it: majors and city-states
     /// alike get every technology and civic of an earlier era, and each of
