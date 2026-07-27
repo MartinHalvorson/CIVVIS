@@ -1220,14 +1220,18 @@ class RecoveryTests(unittest.TestCase):
         command = supervisor.server_command(8766, settings, False, checkpoint)
         self.assertEqual(command[command.index("--resume") + 1], str(checkpoint))
         self.assertIn("--supervised", command)
-        self.assertEqual(command[command.index("--restart-ms") + 1], "5000")
+        self.assertEqual(command[command.index("--restart-ms") + 1], "10000")
         self.assertIn("--no-open", command)
 
-    def test_final_countdown_has_a_five_second_floor_and_allows_longer_holds(self):
-        self.assertEqual(supervisor.final_countdown_seconds(0.0), 5.0)
-        self.assertEqual(supervisor.final_countdown_seconds(4.999), 5.0)
-        self.assertEqual(supervisor.final_countdown_seconds(5.0), 5.0)
+    def test_final_countdown_has_a_ten_second_floor_and_a_one_minute_ceiling(self):
+        self.assertEqual(supervisor.final_countdown_seconds(0.0), 10.0)
+        self.assertEqual(supervisor.final_countdown_seconds(5.0), 10.0)
+        self.assertEqual(supervisor.final_countdown_seconds(9.999), 10.0)
+        self.assertEqual(supervisor.final_countdown_seconds(10.0), 10.0)
         self.assertEqual(supervisor.final_countdown_seconds(12.5), 12.5)
+        # A launcher cannot hand the result screen a two-minute countdown.
+        self.assertEqual(supervisor.final_countdown_seconds(110.0), 60.0)
+        self.assertEqual(supervisor.final_countdown_seconds(float("inf")), 10.0)
         with patch.object(supervisor, "FINAL_COUNTDOWN_SECONDS", 12.5):
             command = supervisor.server_command(
                 8766,

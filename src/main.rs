@@ -1031,7 +1031,10 @@ fn main() {
                     leader_pool: play_options.leader_pool,
                     civs: play_options.civs,
                     supervised: args.iter().any(|a| a == "--supervised"),
-                    restart_ms: arg(&args, "--restart-ms", 5_000).max(5_000) as u64,
+                    // Ten seconds of result screen. The server bounds this
+                    // either way; the floor here is what keeps a negative or
+                    // missing value from becoming an enormous `u64`.
+                    restart_ms: arg(&args, "--restart-ms", 10_000).max(10_000) as u64,
                     league_dir: {
                         let dir = arg_text(&args, "--league", "");
                         (!dir.is_empty()).then_some(dir)

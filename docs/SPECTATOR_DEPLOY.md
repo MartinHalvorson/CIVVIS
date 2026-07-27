@@ -23,7 +23,7 @@ It is one cross-platform program; only the way you keep it alive differs per OS.
    is not ready, the last verified server stays live and the supervisor retries;
    the loop never stalls on slow or broken source.
 5. When a winner appears it archives the result, keeps it on screen for
-   `--cooldown` seconds (default 5), then deals the next game on the freshest
+   `--cooldown` seconds (default 10), then deals the next game on the freshest
    verified build.
 6. Crash/stall recovery: active games are checkpointed every few seconds and
    resumed; a wedged game is nudged, then quarantined rather than looped on.
@@ -181,6 +181,8 @@ that cannot put a frame on a screen should not be holding a turn open waiting to
 
 `--players --width --height --city-states --turns --map --speed` size the game;
 `--cooldown` is the seconds the finished result stays on screen before the next
-game (the "~5–10s between games"). `--port` defaults to 8766; the fleet's watched
+game — ten by default, floored at ten and capped at sixty, because that number
+is also the countdown the result screen shows and a countdown nobody chose reads
+as a fault. `--port` defaults to 8766; the fleet's watched
 exhibition runs on **8765**. Shorter games rotate builds onto the screen more
 often, which makes a better production heartbeat.
