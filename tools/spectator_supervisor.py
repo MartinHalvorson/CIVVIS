@@ -39,14 +39,13 @@ if os.name == "nt":
     from ctypes import wintypes
 
 
-# The result screen's countdown, and so also this supervisor's own wait before
-# it retires a finished world. Ten seconds, the same number the browser counts
-# a single-player finale down from; `MAX_FINAL_COUNTDOWN_SECONDS` mirrors the
-# server's ceiling so `--cooldown` cannot ask for a countdown the server would
-# refuse to show.
-MIN_FINAL_COUNTDOWN_SECONDS = 10.0
-MAX_FINAL_COUNTDOWN_SECONDS = 60.0
-FINAL_COUNTDOWN_SECONDS = MIN_FINAL_COUNTDOWN_SECONDS
+# How long a finished world stays on screen before this supervisor retires it.
+#
+# It has to be the server's `RESULT_COUNTDOWN_MS` exactly, because the server
+# is what counts the number down in front of the viewer: retire the world
+# earlier and the countdown is cut off mid-promise, later and it sits at zero.
+# So this is not configurable either — `--cooldown` is accepted and ignored.
+FINAL_COUNTDOWN_SECONDS = 10.0
 
 MAP_TYPES = (
     "land_only",
@@ -64,13 +63,14 @@ MAP_POLES = ("poles", "no_poles")
 
 
 def final_countdown_seconds(requested: float) -> float:
-    """Use ten seconds by default while allowing a deliberate longer hold."""
-    if not math.isfinite(requested):
-        return MIN_FINAL_COUNTDOWN_SECONDS
-    return min(
-        MAX_FINAL_COUNTDOWN_SECONDS,
-        max(MIN_FINAL_COUNTDOWN_SECONDS, requested),
-    )
+    """Ten seconds, whatever `--cooldown` asked for.
+
+    The argument is still taken so an existing launcher's `--cooldown` keeps
+    parsing, and still ignored so it cannot put a number on the result screen
+    that disagrees with the countdown the server is showing.
+    """
+    del requested
+    return FINAL_COUNTDOWN_SECONDS
 
 
 SCRIPT_PATH = Path(__file__).resolve()
@@ -1055,8 +1055,6 @@ def server_command(
         str(port),
         "--spectate",
         "--supervised",
-        "--restart-ms",
-        str(math.ceil(FINAL_COUNTDOWN_SECONDS * 1000)),
     ]
     if "shape" in settings:
         args.extend(("--shape", str(settings["shape"])))
@@ -1364,12 +1362,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--cooldown",
         type=float,
-        default=MIN_FINAL_COUNTDOWN_SECONDS,
+        default=FINAL_COUNTDOWN_SECONDS,
         help=(
-            "seconds to keep the result visible "
-            f"(minimum {MIN_FINAL_COUNTDOWN_SECONDS:g}, maximum "
-            f"{MAX_FINAL_COUNTDOWN_SECONDS:g}; larger values are honored "
-            "up to that ceiling)"
+            "accepted and ignored. A finished result is always held for "
+            f"{FINAL_COUNTDOWN_SECONDS:g} seconds, because that is the "
+            "countdown the server shows the viewer"
         ),
     )
     parser.add_argument("--poll", type=float, default=0.5)
@@ -1492,8 +1489,11 @@ def release_single_instance() -> None:
 
 def main() -> int:
     args = parse_args()
-    global FINAL_COUNTDOWN_SECONDS
-    FINAL_COUNTDOWN_SECONDS = final_countdown_seconds(args.cooldown)
+    if args.cooldown != FINAL_COUNTDOWN_SECONDS:
+        log(
+            f"--cooldown {args.cooldown:g} ignored; a result is held for "
+            f"{FINAL_COUNTDOWN_SECONDS:g}s, the countdown the server shows"
+        )
     if getattr(args, "prepare_once", False):
         try:
             return 0 if prepare_latest_once() else 1
