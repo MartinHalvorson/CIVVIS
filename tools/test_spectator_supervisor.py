@@ -171,7 +171,7 @@ class SessionSettingsTests(unittest.TestCase):
                             "--shape",
                             shape,
                             "--poles",
-                            "no_poles",
+                            "randomized",
                         ],
                     ):
                         parsed = supervisor.parse_args()
@@ -189,7 +189,7 @@ class SessionSettingsTests(unittest.TestCase):
                     command = supervisor.server_command(8766, settings, False)
                     self.assertEqual(command[command.index("--map") + 1], map_type)
                     self.assertEqual(command[command.index("--shape") + 1], shape)
-                    self.assertEqual(command[command.index("--poles") + 1], "no_poles")
+                    self.assertEqual(command[command.index("--poles") + 1], "randomized")
 
     def test_launch_victories_are_validated_and_keep_score_disabled(self):
         self.assertEqual(
@@ -212,7 +212,7 @@ class SessionSettingsTests(unittest.TestCase):
                 "height": 24,
                 "script": "continents",
                 "shape": "planet",
-                "poles": "no_poles",
+                "poles": "randomized",
             },
             "game_speed": "online",
             "leader_pool": "expanded",
@@ -247,7 +247,7 @@ class SessionSettingsTests(unittest.TestCase):
             supervisor.session_settings(state, defaults),
             {"players": 4, "width": 55, "height": 24, "city_states": 6,
              "turns": 250, "map": "continents", "shape": "planet",
-             "poles": "no_poles", "speed": "online",
+             "poles": "randomized", "speed": "online",
              "leader_pool": "expanded",
              "victories": ["science", "culture", "domination", "score"]},
         )
@@ -329,7 +329,7 @@ class SessionSettingsTests(unittest.TestCase):
             "turns": 330,
             "map": "continents",
             "shape": "planet",
-            "poles": "no_poles",
+            "poles": "randomized",
             "speed": "quick",
             "leader_pool": "expanded",
             "victories": ["science", "domination"],
@@ -395,7 +395,7 @@ class SessionSettingsTests(unittest.TestCase):
                 "turns": 330,
                 "map": "continents",
                 "shape": "planet",
-                "poles": "no_poles",
+                "poles": "randomized",
                 "speed": "quick",
                 "leader_pool": "expanded",
                 "victories": ["science", "culture", "domination"],
@@ -415,7 +415,7 @@ class SessionSettingsTests(unittest.TestCase):
                     "turns": 330,
                     "map": "continents",
                     "shape": "planet",
-                    "poles": "no_poles",
+                    "poles": "randomized",
                     "speed": "quick",
                     "leader_pool": "expanded",
                     "victories": ["science", "culture", "domination"],

@@ -2601,8 +2601,12 @@ fn new_game_params(current: &Params, request: &Value) -> Params {
     if let Some(v) = request["map_poles"].as_str().and_then(MapPoles::from_id) {
         p.map_poles = v;
     }
-    if let Some(v) = request["map_poles"].as_bool() {
-        p.map_poles = if v { MapPoles::Poles } else { MapPoles::NoPoles };
+    // Heat was a boolean once — poles on or off. Only its `true` still names a
+    // world that exists, and that world is the default anyway, so a client
+    // sending the old boolean is left where it already was rather than being
+    // pushed into the one remaining alternative it never asked for.
+    if request["map_poles"].as_bool() == Some(true) {
+        p.map_poles = MapPoles::Poles;
     }
     // A globe is stored in a rectangle of its own shape, so the chosen size is
     // re-expressed whenever either the size or the shape moves, and the lobby
@@ -3632,7 +3636,9 @@ mod tests {
         Action, Game, LeaderPool, PlayOnMode, VictoryConditions, CIV6_LEADER_POOL,
     };
     use crate::server::{generated_ai_name, simulation_settings};
-    use crate::setup::{BaseRuleset, GameSpeed, MapPoles, MapScript, MapTopology, StartEon};
+    use crate::setup::{
+        BaseRuleset, GameSpeed, MapPoles, MapScript, MapTopology, StartEon, MAP_POLES,
+    };
     use serde_json::{json, Value};
     use std::io::{Read, Write};
     use std::net::{TcpListener, TcpStream};
@@ -5712,6 +5718,29 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("mappoles: \"Thermal distribution\""));
         assert!(EMBEDDED_INDEX.contains("<option value=\"randomized\">Randomized</option>"));
         assert!(!EMBEDDED_INDEX.contains("Poles<select id=\"mappoles\""));
+        // And it offers two worlds, not three: heat either follows latitude or
+        // it doesn't. The world with no cold end at all is retired, so it is
+        // gone from the markup as well as from `MAP_POLES` — the select is
+        // rebuilt from that list on load, and the two have to say the same
+        // thing or the lobby offers a world the engine will not build.
+        let thermal_options = {
+            let tail = &EMBEDDED_INDEX[thermal_setting..];
+            &tail[..tail.find("</select>").expect("unterminated thermal select")]
+        };
+        assert_eq!(
+            thermal_options.matches("<option").count(),
+            3,
+            "thermal distribution offers ????? and exactly two worlds"
+        );
+        assert!(!thermal_options.contains("no_poles"));
+        assert_eq!(MAP_POLES.len(), 2);
+        for spec in MAP_POLES {
+            assert!(
+                thermal_options.contains(&format!("value=\"{}\"", spec.id)),
+                "the lobby is missing {}",
+                spec.id
+            );
+        }
 
         let game_settings = EMBEDDED_INDEX
             .find("id=\"game-settings\"")
