@@ -64,6 +64,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use civvis::ai::{AdvancedAi, Ai};
 use civvis::game::{Action, Game, GameOptions, Item};
+use civvis::rules::Yields;
 use civvis::parallel;
 
 fn number(args: &[String], flag: &str, default: usize) -> usize {
@@ -86,6 +87,21 @@ fn label(item: &Item) -> String {
         Item::Repair { repair, .. } => format!("repair:{repair}"),
         Item::Project { project } => format!("project:{project}"),
         Item::Product { product } => format!("product:{product}"),
+    }
+}
+
+/// Straight-line hex distance on the axial coordinates the engine uses. This
+/// intentionally ignores world wrap: a settler journey that would be shorter
+/// the other way round the globe reads as *longer* here, so the steps-to-
+/// distance ratio this feeds is conservative about claiming a detour.
+fn hex_distance(a: (i32, i32), b: (i32, i32)) -> u32 {
+    let (aq, ar) = (a.0 - (a.1 - (a.1 & 1)) / 2, a.1);
+    let (bq, br) = (b.0 - (b.1 - (b.1 & 1)) / 2, b.1);
+    let (dq, dr) = (aq - bq, ar - br);
+    if (dq < 0) == (dr < 0) {
+        (dq.abs() + dr.abs()) as u32
+    } else {
+        dq.abs().max(dr.abs()) as u32
     }
 }
 
@@ -116,13 +132,41 @@ struct Seat {
     founding_turns: Vec<u32>,
     /// Turns spent holding a settler while still short of the city target.
     settler_in_flight_turns: u32,
+    /// Turns short of the target with a settler at the head of some city's
+    /// queue — i.e. time spent *paying* for one rather than walking it.
+    /// §12 left production as the remaining candidate for what gates the
+    /// founding cadence; this is the column that decides it.
+    settler_building_turns: u32,
+    /// Of the turns a settler existed, how many it ended on the same tile it
+    /// started. "Walking" is really "exists and has not founded" — a settler
+    /// that is stationary is not travelling, it is waiting or dithering, and
+    /// the two want completely different fixes.
+    settler_idle_turns: u32,
+    settler_moved_turns: u32,
+    /// Last seen position of this seat's first settler, to see movement.
+    last_settler_pos: Option<(i32, i32)>,
+    /// Per-settler trace, keyed by unit id while the unit lives: spawn turn,
+    /// spawn tile, last tile, tiles actually stepped. §13 showed transit is
+    /// what gates the founding cadence but could not say whether the sites
+    /// are far, the terrain slow, or the settler re-targeting; the ratio of
+    /// steps to straight-line distance separates the third from the first two.
+    live_settlers: BTreeMap<u32, (u32, (i32, i32), (i32, i32), u32)>,
+    /// Target this settler was marching to when last seen, and how many times
+    /// that target changed over its life. §14 left exactly one question: bad
+    /// path, or changing destination?
+    settler_aim: BTreeMap<u32, (i32, i32)>,
+    aim_changes: u32,
+    aim_samples: u32,
+    aim_lost: u32,
+    /// Finished journeys: (turns alive, steps taken, straight-line distance).
+    settler_trips: Vec<(u32, u32, u32)>,
     /// Turns short of the city target with no settler anywhere.
     short_without_settler_turns: u32,
     /// Capital population, housing and food at fixed checkpoints. A settler
     /// costs a population and 80/110/140 production, so "why is expansion
     /// slow" reduces to "how fast does the capital grow" — and whether pop
     /// sits at the housing cap separates a housing constraint from a food one.
-    checkpoints: Vec<(u32, i32, f64, f64)>,
+    checkpoints: Vec<(u32, i32, f64, f64, f64, f64, f64)>,
     cities_at_window: usize,
     /// Survival, tracked over the whole game rather than the window, because
     /// "recorded a short opening" is a proxy for early death and a proxy is
@@ -341,6 +385,13 @@ fn main() {
     let barbarians = number(&args, "--barbarians", 1) != 0;
     let parallel_settlers = args.iter().any(|arg| arg == "--parallel-settlers");
     let census_civ_blind = args.iter().any(|arg| arg == "--civ-blind");
+    let settler_commit = args.iter().any(|arg| arg == "--settler-commit");
+    let food_first = args
+        .iter()
+        .position(|arg| arg == "--food-bias")
+        .and_then(|i| args.get(i + 1))
+        .and_then(|v| v.parse::<f64>().ok())
+        .unwrap_or(0.0);
 
     println!(
         "opening_census: {maps} maps x {players} players, {width}x{height}, {turns} turns, \
@@ -366,6 +417,8 @@ fn main() {
         for agent in fleet.iter_mut() {
             agent.parallel_settlers = parallel_settlers;
             agent.civ_blind = census_civ_blind;
+            agent.food_first = food_first;
+            agent.settler_commit = settler_commit;
         }
         let majors: Vec<usize> = (0..game.players.len())
             .filter(|pid| !game.players[*pid].is_minor)
@@ -421,6 +474,32 @@ fn main() {
                     .values()
                     .filter(|u| u.owner == pid && u.kind == "settler")
                     .count();
+                // Is any of this seat's cities currently paying for a settler?
+                // Did the settler actually move this turn?
+                let settler_pos = game
+                    .units
+                    .values()
+                    .find(|u| u.owner == pid && u.kind == "settler")
+                    .map(|u| (u.pos.0, u.pos.1));
+                let settlers_now: Vec<(u32, (i32, i32))> = game
+                    .units
+                    .values()
+                    .filter(|u| u.owner == pid && u.kind == "settler")
+                    .map(|u| (u.id, (u.pos.0, u.pos.1)))
+                    .collect();
+                let aims_now: Vec<(u32, Option<(i32, i32)>)> = settlers_now
+                    .iter()
+                    .map(|(id, _)| {
+                        (*id, fleet[pid].settler_target(*id).map(|p| (p.0, p.1)))
+                    })
+                    .collect();
+                let building = game.cities.values().any(|c| {
+                    c.owner == pid
+                        && matches!(
+                            c.queue.first(),
+                            Some(Item::Unit { unit }) if unit == "settler"
+                        )
+                });
                 {
                     let seat = seats.get_mut(&pid).expect("major seat recorded at setup");
                     if live > 0 {
@@ -432,6 +511,8 @@ fn main() {
                     if live + in_flight < desired {
                         if in_flight > 0 {
                             seat.settler_in_flight_turns += 1;
+                        } else if building {
+                            seat.settler_building_turns += 1;
                         } else {
                             seat.short_without_settler_turns += 1;
                         }
@@ -444,6 +525,57 @@ fn main() {
                         seat.capital_lost = true;
                     }
                     seat.max_cities = seat.max_cities.max(live);
+                    if let Some(now) = settler_pos {
+                        if seat.last_settler_pos == Some(now) {
+                            seat.settler_idle_turns += 1;
+                        } else if seat.last_settler_pos.is_some() {
+                            seat.settler_moved_turns += 1;
+                        }
+                    }
+                    seat.last_settler_pos = settler_pos;
+                    for (id, aim) in &aims_now {
+                        seat.aim_samples += 1;
+                        match (seat.settler_aim.get(id), aim) {
+                            (Some(was), Some(now)) if was != now => {
+                                seat.aim_changes += 1;
+                                seat.settler_aim.insert(*id, *now);
+                            }
+                            (Some(_), None) => {
+                                // The agent dropped this settler's target --
+                                // one failed move does exactly that. Keep the
+                                // old value rather than forgetting it: if the
+                                // next target differs, that is a real
+                                // re-targeting and must be counted as one.
+                                seat.aim_lost += 1;
+                            }
+                            (None, Some(now)) => {
+                                seat.settler_aim.insert(*id, *now);
+                            }
+                            _ => {}
+                        }
+                    }
+                    for (id, pos) in &settlers_now {
+                        let entry = seat
+                            .live_settlers
+                            .entry(*id)
+                            .or_insert((turn + 1, *pos, *pos, 0));
+                        if entry.2 != *pos {
+                            entry.3 += 1;
+                            entry.2 = *pos;
+                        }
+                    }
+                    let gone: Vec<u32> = seat
+                        .live_settlers
+                        .keys()
+                        .copied()
+                        .filter(|id| !settlers_now.iter().any(|(live, _)| live == id))
+                        .collect();
+                    for id in gone {
+                        if let Some((born, from, last, steps)) = seat.live_settlers.remove(&id) {
+                            let straight = hex_distance(from, last);
+                            seat.settler_trips.push((turn + 1 - born, steps, straight));
+                        }
+                    }
                     if matches!(turn + 1, 25 | 50 | 75 | 100) {
                         if let Some(cap) = game
                             .cities
@@ -452,7 +584,31 @@ fn main() {
                         {
                             let housing = game.city_housing(cap);
                             let food = game.city_yields(cap.id).food;
-                            seat.checkpoints.push((turn + 1, cap.pop, housing, food));
+                            // The ceiling: what this same capital, on these
+                            // same tiles, would work under appetites that
+                            // want food. Nothing is adopted -- the engine
+                            // still runs its own weights.
+                            let now = game.city_yields(cap.id);
+                            let greedy = game.city_yields_weighted(
+                                cap.id,
+                                Yields {
+                                    food: 10.0,
+                                    production: 1.0,
+                                    gold: 0.1,
+                                    science: 0.1,
+                                    culture: 0.1,
+                                    faith: 0.1,
+                                },
+                            );
+                            seat.checkpoints.push((
+                                turn + 1,
+                                cap.pop,
+                                housing,
+                                food,
+                                greedy.food,
+                                now.production,
+                                greedy.production,
+                            ));
                         }
                     }
                     if live == 0 && seat.founded && seat.death_turn.is_none() {
@@ -792,11 +948,11 @@ fn main() {
     // Capital growth, which is what a settler is actually paid for.
     println!("\ncapital growth (a settler costs one population and 80/110/140 production)");
     println!(
-        "{:>5} {:>7} {:>16} {:>16} {:>16} {:>10}",
-        "turn", "seats", "population", "housing", "food yield", "at cap"
+        "{:>5} {:>7} {:>16} {:>16} {:>16} {:>16} {:>8} {:>7}",
+        "turn", "seats", "population", "housing", "food yield", "food if greedy", "surplus", "prod"
     );
     for mark in [25u32, 50, 75, 100] {
-        let rows: Vec<&(u32, i32, f64, f64)> = seats
+        let rows: Vec<&(u32, i32, f64, f64, f64, f64, f64)> = seats
             .iter()
             .flat_map(|s| s.checkpoints.iter())
             .filter(|(turn, ..)| *turn == mark)
@@ -805,19 +961,29 @@ fn main() {
             continue;
         }
         let pops: Vec<f64> = rows.iter().map(|(_, pop, ..)| *pop as f64).collect();
-        let house: Vec<f64> = rows.iter().map(|(_, _, h, _)| *h).collect();
-        let food: Vec<f64> = rows.iter().map(|(.., f)| *f).collect();
+        let house: Vec<f64> = rows.iter().map(|(_, _, h, ..)| *h).collect();
+        let food: Vec<f64> = rows.iter().map(|(_, _, _, f, ..)| *f).collect();
+        let greedy: Vec<f64> = rows.iter().map(|(_, _, _, _, g, _, _)| *g).collect();
+        let (greedy_mean, greedy_se) = mean_se(&greedy);
+        let prod: Vec<f64> = rows.iter().map(|(_, _, _, _, _, p, _)| *p).collect();
+        let gprod: Vec<f64> = rows.iter().map(|(.., gp)| *gp).collect();
+        let (prod_mean, _) = mean_se(&prod);
+        let (gprod_mean, _) = mean_se(&gprod);
+        // Food consumption is two per population in Civilization VI, so the
+        // surplus -- not the gross yield -- is what actually grows the city.
+        let eaten = 2.0 * pops.iter().sum::<f64>() / pops.len().max(1) as f64;
         // "At cap" means the housing headroom is under one population, i.e.
         // growth is housing-bound rather than food-bound.
         let capped = rows
             .iter()
-            .filter(|(_, pop, h, _)| (*pop as f64) >= *h - 1.0)
+            .filter(|(_, pop, h, ..)| (*pop as f64) >= *h - 1.0)
             .count();
         let (pop_mean, pop_se) = mean_se(&pops);
         let (house_mean, house_se) = mean_se(&house);
         let (food_mean, food_se) = mean_se(&food);
         println!(
-            "{:>5} {:>7} {:>9.2} +/- {:<4.2} {:>9.2} +/- {:<4.2} {:>9.2} +/- {:<4.2} {:>9.0}%",
+            "{:>5} {:>7} {:>9.2} +/- {:<4.2} {:>9.2} +/- {:<4.2} {:>9.2} +/- {:<4.2} \
+             {:>9.2} +/- {:<4.2} {:>7} {:>13}",
             mark,
             rows.len(),
             pop_mean,
@@ -826,7 +992,14 @@ fn main() {
             house_se,
             food_mean,
             food_se,
-            100.0 * capped as f64 / rows.len() as f64
+            greedy_mean,
+            greedy_se,
+            format!(
+                "{:.2}->{:.2}",
+                food_mean - eaten,
+                greedy_mean - eaten
+            ),
+            format!("{prod_mean:.2}->{gprod_mean:.2}")
         );
     }
 
@@ -840,11 +1013,77 @@ fn main() {
         .collect();
     let (flight_mean, flight_se) = mean_se(&flight);
     let (idle_mean, idle_se) = mean_se(&idle);
+    let build: Vec<f64> = seats
+        .iter()
+        .map(|s| s.settler_building_turns as f64)
+        .collect();
+    let (build_mean, build_se) = mean_se(&build);
+    let total = flight_mean + build_mean + idle_mean;
     println!(
-        "\nturns short of the city target: {flight_mean:.1} +/- {flight_se:.1} with a settler \
-         already walking, {idle_mean:.1} +/- {idle_se:.1} with none.\n\
-         The first column is time the empire-wide `counts.settlers == 0` clause forbids a second \
-         settler; the second is time it does not explain."
+        "\nwhere the time below the city target goes, per seat:\n  \
+         {build_mean:6.1} +/- {build_se:<4.1} turns PAYING for a settler ({:.0}%)\n  \
+         {flight_mean:6.1} +/- {flight_se:<4.1} turns WALKING one       ({:.0}%)\n  \
+         {idle_mean:6.1} +/- {idle_se:<4.1} turns NEITHER            ({:.0}%)\n\
+         If production gated the cadence the first row would dominate. It is the row that \
+         decides whether the settler's 80/110/140 is the binding cost.",
+        100.0 * build_mean / total.max(0.001),
+        100.0 * flight_mean / total.max(0.001),
+        100.0 * idle_mean / total.max(0.001)
+    );
+    let trips: Vec<(u32, u32, u32)> = seats
+        .iter()
+        .flat_map(|s| s.settler_trips.iter().copied())
+        .collect();
+    if !trips.is_empty() {
+        let turns_v: Vec<f64> = trips.iter().map(|(t, ..)| *t as f64).collect();
+        let steps_v: Vec<f64> = trips.iter().map(|(_, s, _)| *s as f64).collect();
+        let dist_v: Vec<f64> = trips.iter().map(|(.., d)| *d as f64).collect();
+        let (turns_m, turns_se) = mean_se(&turns_v);
+        let (steps_m, steps_se) = mean_se(&steps_v);
+        let (dist_m, dist_se) = mean_se(&dist_v);
+        println!(
+            "\nper settler journey ({} completed):\n  \
+             {turns_m:.1} +/- {turns_se:.1} turns alive\n  \
+             {steps_m:.1} +/- {steps_se:.1} tiles stepped\n  \
+             {dist_m:.1} +/- {dist_se:.1} straight-line hexes from spawn to where it ended\n  \
+             detour ratio {:.2} (steps / straight line)   pace {:.2} tiles per turn\n\
+             A ratio near 1 means the settler goes where it was sent; well above 1 means it \
+             re-targets en route. A pace near 1 with a settler's 2 movement means terrain, \
+             not indecision.",
+            trips.len(),
+            steps_m / dist_m.max(0.01),
+            steps_m / turns_m.max(0.01)
+        );
+    }
+    let aim_changes: u32 = seats.iter().map(|s| s.aim_changes).sum();
+    let aim_lost: u32 = seats.iter().map(|s| s.aim_lost).sum();
+    let aim_samples: u32 = seats.iter().map(|s| s.aim_samples).sum();
+    if aim_samples > 0 {
+        println!(
+            "\nsettler destination stability over {aim_samples} settler-turns:\n  \
+             {aim_changes} turns ended aimed SOMEWHERE ELSE than the turn before ({:.1}%)\n  \
+             {aim_lost} turns ended holding NO destination, having held one ({:.1}%)\n\
+             A settler that chose a site and walked to it would show zero of both. \
+             `AdvancedAi::settler_step` discards the target on any turn the unit fails to \
+             move (src/ai/advanced.rs, `if !moved`), so the second row is a commitment \
+             failure rather than a re-plan. Re-acquiring the same site costs only a search; \
+             the first row is the one that costs distance.",
+            100.0 * aim_changes as f64 / aim_samples as f64,
+            100.0 * aim_lost as f64 / aim_samples as f64
+        );
+    }
+    let moved: Vec<f64> = seats.iter().map(|s| s.settler_moved_turns as f64).collect();
+    let stood: Vec<f64> = seats.iter().map(|s| s.settler_idle_turns as f64).collect();
+    let (moved_mean, moved_se) = mean_se(&moved);
+    let (stood_mean, stood_se) = mean_se(&stood);
+    let settler_turns = moved_mean + stood_mean;
+    println!(
+        "\nof the turns a settler existed: {moved_mean:.1} +/- {moved_se:.1} MOVED ({:.0}%), \
+         {stood_mean:.1} +/- {stood_se:.1} STOOD STILL ({:.0}%).\n\
+         Standing still is not travel. If it dominates, the cadence is not paying for distance \
+         — it is a settler that has nowhere it is willing to go, or is waiting for one.",
+        100.0 * moved_mean / settler_turns.max(0.001),
+        100.0 * stood_mean / settler_turns.max(0.001)
     );
 
     let min_seats = number(&args, "--min-seats", 8);

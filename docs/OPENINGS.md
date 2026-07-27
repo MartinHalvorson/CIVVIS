@@ -497,3 +497,379 @@ has come back at or near zero.
 Note the ordering has changed since the first draft: (1) and (2) are about
 tempo and outranked the per-civilization work once the expansion numbers came
 in. Openings do set the tempo here — just not by *which* six things get built.
+
+## 11. The food ceiling — the first lever in this document that is not zero
+
+§8 left one live question: the capital's growth gates every settler, and
+`Game::citizen_strategy` weights **production 1.55 against food 1.25**. How
+much food is the capital giving up?
+
+Measured without changing any behaviour. `city_yields_weighted` and
+`city_citizen_plan_weighted` are additive: passing `None` is exactly what the
+engine already does, and neither is on the cached path. They let the census ask
+what a capital *would* work under different appetites while the engine keeps
+running its own. The comparison arm is deliberately extreme — food 10.0 against
+production 1.0 — because this is a **ceiling**, not a proposal.
+
+60 maps, 4 players, 32×22, capital only:
+
+| turn | population | food yield → greedy | food **surplus** → greedy | production → greedy |
+|---|---|---|---|---|
+| 25 | 2.36 | 7.15 → 8.23 | **2.43 → 3.51** (+44%) | 9.41 → 7.68 (−18%) |
+| 50 | 3.46 | 9.75 → 11.80 | **2.83 → 4.88** (+72%) | 12.66 → 9.44 (−25%) |
+| 75 | 4.68 | 12.55 → 15.31 | **3.19 → 5.95** (+87%) | 14.71 → 10.79 (−27%) |
+| 100 | 5.96 | 16.08 → 19.20 | **4.16 → 7.28** (+75%) | 18.10 → 14.07 (−22%) |
+
+**Read the surplus column, not the yield column.** Food consumption is two per
+population, and growth runs on what is left over — so a 15–22% gain in gross
+food is a **44–87% gain in the surplus that actually grows the city**. That is
+the largest headroom anything in this document has found, by an order of
+magnitude.
+
+**And read the production column beside it.** The same reassignment costs
+18–27% of capital production. That is not a footnote: a settler costs 80, then
+110, then 140 production, so the food-greedy capital reaches the population
+threshold sooner and then takes longer to build the thing it unlocked. Growth
+gates the settler; production pays for it. Which wins is not derivable from
+these numbers and is exactly what a paired eval is for.
+
+**Why this is worth doing when six other levers were not.** Every earlier lever
+here was bounded at or near zero *before* any eval — the opening book at
+−0.003, tech and civic order below resolution, the civilization-aware layer at
+p = 0.83. This one has a measured ceiling of +44–87% on the quantity that
+§7–§8 showed to be binding. It is the first candidate in this line of work with
+real headroom rather than a hypothesis.
+
+⚠ **Three cautions before anyone builds it.**
+
+1. The extreme weighting is the ceiling, not the proposal. The treatment worth
+   evaluating is a modest shift — swapping the two constants, or a food bonus
+   that decays once the empire is at its city target — not food 10.0.
+2. `citizen_strategy` is **engine-side and applies to every player**, including
+   a human seat's auto-managed cities. This is not an `AdvancedAi` flag, and
+   the change is correspondingly heavier. It belongs behind a treatment arm for
+   evaluation, and its promotion is a game-balance decision as well as a
+   strength one.
+3. The trade is against production in a repository where `docs/GENOME.md`'s
+   `gene_leverage` found **economy** to be the one load-bearing gene block.
+   Moving the food/production exchange rate is moving exactly that block, so
+   the prior that it is already near a local optimum deserves weight — and the
+   expansion sub-block was also the one where *scrambling helped*, which cuts
+   the other way. The measurement will settle it; argument will not.
+
+## 12. ⚠ Growing the capital does not speed expansion — §8's attribution retracted
+
+§11 found real headroom, so §12 spent it. `advanced_food_first` gives an
+empire's governors an extra food appetite while it is short of its city target,
+and withdraws it once the target is met. The bias is a number, so the response
+curve is measurable rather than a single guess.
+
+60 maps, 4 players, 32×22:
+
+| food bias | capital pop @50 | food surplus @50 | production @50 | city 2 | city 3 | city 4 |
+|---|---|---|---|---|---|---|
+| 0 (shipped) | 3.46 | 2.83 | 12.66 | **37.0** | **71.0** | **89.5** |
+| 0.6 | 3.58 | 2.89 | 12.75 | 39.1 | 74.4 | 97.4 |
+| 2 | 3.77 | 3.30 | 12.52 | 39.4 | 73.4 | 95.0 |
+| 6 | 4.08 | 3.89 | 11.84 | 38.2 | 77.5 | 100.7 |
+
+**The lever works exactly as designed and produces the opposite of what it was
+built for.** Population rises monotonically (3.46 → 4.08), food surplus rises
+monotonically (2.83 → 3.89, +37%), production falls (12.66 → 11.84) — and
+**every city after the first arrives later, monotonically in the dose.**
+
+**This retracts §8.** I wrote there that the capital's ~23-turn population
+regrowth interval "*is*" the founding cadence, because the two numbers matched.
+They do match, and the causal direction is wrong: making the capital grow
+faster does not make cities arrive sooner. It makes them arrive later.
+
+That is the same error as §6→§7, made twice in the same document — a real
+correlation, an attribution to the mechanism that happened to sit next to it,
+and a dose-response experiment that refuted it. The correlation between growth
+rate and founding rate is a *shared consequence* of the capital's total yield,
+not a causal chain from one to the other.
+
+**What is left standing:** the settler's binding cost is **production**, not
+population. `pop >= 2` is satisfied from turn ~25 onward at pop 2.36, so the
+population gate is rarely what a seat is waiting on; the 80/110/140 production
+is. Trading production for food therefore pays for a threshold that was not
+binding, with the currency that was.
+
+**What is not established:** the precise mechanism for the *size* of the delay.
+One turn of production per settler does not account for cities arriving 8–11
+turns later, so something else — the empire-wide reach of the bias, or its
+interaction with `citizen_strategy`'s existing `expansion` focus, which already
+adds +0.55 food and +1.15 production when a settler is queued — is carrying
+most of it. That is a further measurement, not a conclusion.
+
+**Not taken to an `ai_eval`.** The treatment is worse on the metric it was
+designed to move, in a clean monotone dose-response over 240 seats a point.
+Spending forty minutes of paired evaluation to discover its win rate is also
+worse is not a good use of the gate. The entrant ships at bias 0.6 with this
+result recorded, on the `advanced_lane_reachable` precedent, so the axis can be
+re-measured rather than re-derived.
+
+### Where that leaves the ledger
+
+| lever | bound |
+|---|---|
+| opening book, swept | −0.0019 ± 0.0148 |
+| opening book, deleted | −0.003 |
+| technology order, randomised | below 0.09 resolution |
+| civic order, randomised | below 0.09 resolution |
+| civilization-aware decisions, deleted | −0.8%, p = 0.83 |
+| being a particular civilization | η² = 0.064 score, nothing on wins |
+| one settler at a time, lifted | inert |
+| **capital food appetite, raised** | **wrong direction, monotone in the dose** |
+
+Eight levers. The build-order and per-civilization layers are bounded near
+zero; the two economy levers with real headroom both point the wrong way when
+pushed. **The remaining candidate this work can name is production, not food:
+what a capital could produce if its citizens were assigned for it, and whether
+the settler's 80/110/140 is what actually gates the founding cadence.** That is
+a different measurement and it inherits none of §8's assumptions.
+
+## 13. What actually gates the founding cadence: settler transit
+
+§12 left production as the last candidate. It is not that either.
+
+Decomposing every turn a seat spends below its city target — 60 maps, 4
+players, 32×22, with #492's livelock fix in the base:
+
+| where the time goes | turns per seat | share |
+|---|---|---|
+| **paying** for a settler (it is at the head of a queue) | 26.0 ± 0.8 | 20% |
+| **walking** one (it exists and has not founded) | **57.1 ± 3.1** | **44%** |
+| neither | 45.3 ± 3.6 | 35% |
+
+**A settler spends more than twice as long in transit as its city spends
+building it.** Production is 20% of the deficit. The 80/110/140 is not what
+the cadence is waiting on, and neither — per §12 — is population.
+
+**It is travel, not dithering.** Splitting the settler-turns by whether the
+unit actually changed tile:
+
+> 53.7 ± 2.3 turns **moved** (81%), 12.9 ± 1.6 turns **stood still** (19%).
+
+Four fifths of a settler's life is spent in motion. That rules out the
+comfortable explanations — it is not waiting for an escort, and it is not
+stuck against a blocked path.
+
+**Measured before and after the livelock fix**, because #492 had just landed
+and "walking in circles" is exactly the confound that would fake this result:
+57.1 turns with the fix against 60.8 without. The finding is not livelock; it
+survives the repair almost unchanged.
+
+### What is *not* established
+
+I guessed the site search had no distance penalty. It does —
+`settle_sites` subtracts `wdist(from, pos) × 0.9` inside radius 11, and ×0.45
+for the long-range naval case — so that guess is withdrawn before it reaches a
+conclusion.
+
+What the numbers do not yet say is **how far the chosen sites actually are**,
+and whether a settler reaches one directly. 53.7 moving turns per seat over
+roughly three or four settlers is ~15 moving turns each, which is a long time
+to cross a radius-11 search at a settler's movement rate. Three candidates,
+none tested:
+
+1. the sites really are near the edge of the search radius, and 0.9/hex is
+   simply too cheap against `settle_value`'s scale (the accept threshold is 12);
+2. terrain makes the effective rate about one tile a turn;
+3. the settler re-targets en route as the map reveals, and the path is not
+   monotone toward any one site.
+
+Those want a settler-level trace — origin, chosen site, `wdist` between them,
+turns taken, tiles actually stepped — which the census does not currently
+record. **That is the next measurement, and it is the first one in this
+document pointing at movement rather than economy.**
+
+## 14. The settler trace: fifteen turns to travel five hexes
+
+§13's three candidates, settled. Every completed settler journey on 60 maps,
+4 players, 32×22 — **963 of them** — traced from spawn to disappearance:
+
+| | |
+|---|---|
+| turns alive | **15.0 ± 0.7** |
+| tiles actually stepped | **12.1 ± 0.6** |
+| straight-line hexes, spawn to end | **5.2 ± 0.2** |
+| detour ratio (steps ÷ straight line) | **2.32** |
+| pace (steps ÷ turns) | **0.81 tiles per turn** |
+
+A settler's shipped `moves` is **2**. So a settler takes **fifteen turns to end
+up five hexes from where it was built**, walking two and a third times further
+than the straight line, at forty percent of its movement allowance.
+Going straight at full pace it would arrive in three.
+
+**Candidate 1 is refuted.** The sites are not far. 5.2 hexes is well inside the
+radius-11 search and well inside what a 0.9-per-hex penalty is pricing. Nothing
+here says the AI settles too far away.
+
+**Candidates 2 and 3 both survive, and contribute about equally.** The 2.32
+detour and the 2.47 pace shortfall multiply to ≈5.7, which is the whole
+15-turns-for-a-3-turn-trip overhead. Neither alone accounts for it.
+
+### What these two numbers do and do not prove
+
+⚠ **The pace shortfall may be entirely legitimate.** Civilization VI charges 2
+movement for hills and forest, so a settler crossing broken ground genuinely
+makes one tile a turn. 0.81 is consistent with mostly-rough terrain and proves
+no waste on its own.
+
+⚠ **Part of the detour is legitimate too.** Straight-line hex distance ignores
+mountains, water and rival borders; a path around them is longer by necessity,
+not by error. The measurement is deliberately conservative in one respect — it
+ignores world wrap, so a journey that would be shorter the other way round the
+globe is scored as *longer*, which inflates the straight-line figure and
+therefore **understates** the detour ratio.
+
+**But 2.32 is large for detour-by-necessity**, and it is the number worth
+pursuing: a settler that walks 12 tiles to sit 5 from home either re-targeted
+partway or was routed badly. The census cannot yet distinguish those, because it
+records where a settler *ended*, not the site it was *aimed at* when it spawned.
+
+**The next measurement is the aim.** Record `best_settle_site`'s answer at spawn
+and compare it to where the settler actually founded. If they differ often, the
+settler is re-targeting and the fix is commitment, not pathing. If they agree,
+the path is bad and the fix is pathing. That is one field and it decides between
+two entirely different repairs — and, unlike everything in §§5–12, it is a
+movement question, where this repository's ledger of what works is untested
+rather than uniformly zero.
+
+## 15. The settler does not keep a destination
+
+§14 posed a binary: bad path, or changing destination? `AdvancedAi` keeps a
+`settler_targets` map, so the question is answerable directly by sampling what
+each settler was aimed at, every turn it lived.
+
+17,701 settler-turns, 60 maps, 4 players, 32×22:
+
+| | count | share of settler-turns |
+|---|---|---|
+| ended aimed **somewhere else** than the turn before | 625 | **3.5%** |
+| ended holding **no destination**, having held one | 4,799 | **27.1%** |
+
+**A settler that chose a site and walked to it would show zero of both.**
+
+The mechanism is one line, and it is not a re-plan — it is a dropped
+commitment. `AdvancedAi::settler_step`:
+
+```rust
+let moved = self.base.settler_step_toward(g, pid, uid, target);
+if !moved {
+    self.settler_targets.remove(&uid);   // any blocked turn forgets the site
+}
+```
+
+The target is also filtered out whenever `g.route_step(uid, target, 0)` is
+momentarily `None` — a friendly unit in the way, a zone of control, a tile not
+yet revealed. Neither condition means the site got worse. Both throw the
+decision away and re-run the search from scratch next turn.
+
+That squares with §14's other column: 19% of settler-turns are spent standing
+still, and standing still is exactly the condition that discards the target.
+
+### ⚠ How much of the 2.32× detour this explains — not established
+
+3.5% of 15 turns is about **half a re-target per journey**. A single mid-course
+change does inflate the ratio badly, because §14's straight line is measured
+spawn-to-*end* and therefore misses the first leg entirely — so half a change
+per journey is compatible with a 2.32 mean ratio. It is not proof of it.
+
+The 27.1% column mostly costs searches rather than distance: dropping a target
+and re-acquiring *the same* site wastes compute, not movement. Only the 3.5%
+moves the unit somewhere new.
+
+**So: the destination is measurably unstable, the mechanism is identified and
+is a commitment failure rather than a judgement, and it is a plausible but
+unproven cause of the detour.** What would settle it is recording the aim at
+spawn and the founding site per journey and correlating change-count against
+that journey's own detour ratio — a per-journey join the census does not do yet.
+
+### ⚠ An instrument bug this caught, worth recording
+
+The first version of this measurement removed the settler's remembered aim when
+the agent dropped it. A different site acquired afterwards therefore compared
+against nothing and was never counted as a change. It read **1.9% changes and
+10.6% drops**; retaining the aim across a drop gives **3.5% and 27.1%**. Both
+published numbers would have understated the instability by roughly half, in
+the direction that made the agent look better.
+
+## 16. ⚠ The instability was the cure, not the disease — §15's fix refuted
+
+§15 named a candidate repair: hold the settler's site across a turn it could
+not move. `advanced_settler_commit` does exactly that, bounded at three
+consecutive stalled turns so it cannot re-create #492's livelock.
+
+It works. It is also worse at everything it was meant to improve.
+
+| | control | `settler_commit` |
+|---|---|---|
+| ended aimed somewhere else than the turn before | 3.5% | **2.5%** |
+| ended holding no destination | 27.1% | **11.9%** |
+| settler-turns spent moving | 81% | **73%** |
+| settler-turns standing still | 19% | **27%** |
+| turns alive per journey | 15.0 ± 0.7 | **16.5 ± 0.8** |
+| tiles stepped | 12.1 ± 0.6 | **13.2 ± 0.7** |
+| straight-line hexes covered | 5.2 ± 0.2 | 5.1 ± 0.2 |
+| **detour ratio** | **2.32** | **2.56** |
+| walking turns per seat, below target | 57.1 ± 3.1 | **74.4 ± 4.6** |
+
+**The commitment target is hit squarely — instability more than halves — and
+every transit measure moves the wrong way.** Settlers live longer, stand still
+half again as often, walk further, and end up no closer to home.
+
+### What that means, and what it retracts
+
+`if !moved { self.settler_targets.remove(&uid); }` **is not a bug.** It is what
+lets a blocked settler go somewhere it can actually reach. Holding the site
+makes the unit *wait* for a path instead of taking an available one, which is
+why standing still rises from 19% to 27%.
+
+So §15's framing was wrong in its causal direction, and this is the third time
+this document has made that error: **the destination instability is the
+adaptive response to being blocked, not the cause of the detour.** Measuring it
+as a defect and repairing it directly produced a stubborner, slower settler.
+
+This also survives the obvious objection about tuning. The stall limit is 3;
+any *larger* limit waits longer and any *smaller* one converges on the shipped
+behaviour, so the direction is not a bad constant — a settler that waits is
+worse than a settler that re-routes, and that is the whole result.
+
+**Not taken to an `ai_eval`**, for the third time in this document, and for the
+same reason: a treatment that is worse on its own target metric over 900+
+journeys does not need forty minutes of paired evaluation to establish that it
+is also worse on wins. The entrant ships off by default with the result
+recorded.
+
+### Where the movement thread actually stands
+
+What remains unexplained is the thing underneath both results: in the *control*,
+a settler stands still on 19% of its turns and averages 0.81 tiles per turn
+against a shipped `moves` of 2. Neither commitment nor re-targeting explains
+that — a blocked settler is blocked by something, and this document has not
+identified what. Congestion against the empire's own units, zones of control,
+and terrain cost are the candidates, and separating them is a movement-layer
+question rather than an opening one.
+
+## Closing summary: ten levers, and what the opening actually is
+
+| lever | verdict |
+|---|---|
+| opening book, swept | −0.0019 ± 0.0148 |
+| opening book, deleted entirely | −0.003 |
+| technology order, randomised | below 0.09 resolution |
+| civic order, randomised | below 0.09 resolution |
+| civilization-aware decisions, deleted | −0.8%, p = 0.83 |
+| being a particular civilization | η² = 0.064 on score, nothing on wins |
+| one-settler-at-a-time clause, lifted | inert |
+| capital food appetite, raised | wrong direction, monotone in the dose |
+| settler destination commitment | wrong direction on every transit measure |
+| **what does bind** | **settler transit: 44% of all time below the city target** |
+
+The opening in this engine is not a build order. Every build-order and
+per-civilization lever is bounded at or near zero, and the two economy levers
+with real headroom both reversed when pushed. What sets the tempo is how long a
+settler takes to turn into a city — fifteen turns to cover five hexes — and
+that is a movement problem this document has localised but not solved.
