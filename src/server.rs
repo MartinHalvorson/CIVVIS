@@ -6169,13 +6169,25 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("overflow-wrap: break-word"));
         assert!(EMBEDDED_INDEX.contains("height: 4px"));
         assert!(EMBEDDED_INDEX.contains("width: var(--war-effort, 0%)"));
+        // Both bars grow outward from the seam between the columns: each is
+        // pushed against it, squared off on that end and rounded on the other,
+        // and the seam itself is drawn as an axis under a full-height rule.
         assert!(EMBEDDED_INDEX.contains(
-            ".war-side.aggressor .war-belligerent-bar { margin-left: auto; }"
+            ".war-side.aggressor .war-belligerent-bar { margin-left: auto; border-radius: 2px 0 0 2px; }"
         ));
         assert!(EMBEDDED_INDEX.contains(
-            ".war-side.defender .war-belligerent-bar { margin-right: auto; }"
+            ".war-side.defender .war-belligerent-bar { margin-right: auto; border-radius: 0 2px 2px 0; }"
         ));
-        assert!(EMBEDDED_INDEX.contains("const effort = maxSawAction > 0 ? 100 * sawAction / maxSawAction : 0"));
+        assert!(EMBEDDED_INDEX
+            .contains(".war-columns::before { content: \"\"; position: absolute; top: 0; bottom: 0; left: 50%;"));
+        // Painted over the bars, so two sides of one row cannot fuse into a
+        // single two-tone bar with no visible origin between them.
+        assert!(EMBEDDED_INDEX.contains("box-shadow: 0 0 0 1px #0c110f"));
+        assert!(EMBEDDED_INDEX.contains("min-width: 3px; height: 4px"));
+        // The busiest army in a war tops out well short of its column's rim.
+        assert!(EMBEDDED_INDEX.contains("const WAR_EFFORT_MAX_PERCENT = 80;"));
+        assert!(EMBEDDED_INDEX.contains("const effort = WAR_EFFORT_MAX_PERCENT * share;"));
+        assert!(EMBEDDED_INDEX.contains("measured out from the centre"));
         assert!(!EMBEDDED_INDEX.contains("strength_total"));
         assert!(!EMBEDDED_INDEX.contains("Military strength at entry"));
         assert!(EMBEDDED_INDEX.contains("war-row-label\">Chronology"));
