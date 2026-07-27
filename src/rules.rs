@@ -1217,6 +1217,117 @@ pub struct Rules {
     /// several paths reach. The closure is taken once instead.
     pub tech_ancestors: SpecMap<BTreeSet<String>>,
     pub civic_ancestors: SpecMap<BTreeSet<String>>,
+    /// Which effect keys each family of specs declares at all.
+    pub effect_index: EffectIndex,
+}
+
+/// The effect keys each family of specs actually grants something towards.
+///
+/// Every path that collects a numeric modifier ends in `spec.effects.get(key)`
+/// over some family — a player's policies, their cities' buildings, the
+/// wonders they have built, a Governor's promotions. A key that no spec in the
+/// family declares can only contribute `None`, so the whole sweep is a
+/// guaranteed zero. Asking the family first turns the common answer into one
+/// lookup instead of a walk over every city, building or roster entry.
+///
+/// Built once with the ruleset, alongside the inverted tree tables and for the
+/// same reason. A mod overlay merges into the raw JSON before a [`Rules`] is
+/// constructed, so the index covers modded content too.
+#[derive(Clone, Default)]
+pub struct EffectIndex {
+    pub policies: SpecMap<()>,
+    pub civs: SpecMap<()>,
+    pub buildings: SpecMap<()>,
+    pub districts: SpecMap<()>,
+    pub wonders: SpecMap<()>,
+    pub beliefs: SpecMap<()>,
+    pub governors: SpecMap<()>,
+    pub modifiers: SpecMap<()>,
+    /// The union of every family above, including the trees.
+    ///
+    /// This is what `Game::city_modifier_effect` and `modifier_grants_ability`
+    /// are ruled out on, so it has to cover every source those two collect
+    /// from — policies and runtime attachments, the trees, civilization
+    /// traits, buildings, districts, wonders, beliefs, pantheons and
+    /// Governors. It deliberately does *not* cover families nothing collects
+    /// this way (unit promotions, improvements, projects, Great People): a
+    /// narrower union skips more. Add a family here the moment a collection
+    /// path starts reading it, or that path will read a zero that is wrong.
+    pub any: SpecMap<()>,
+    /// The selectors named by the three namespaced effect families.
+    ///
+    /// `building_yield:<building>:<yield>` and its two siblings are assembled
+    /// with [`format!`] at the call site, so asking whether the key exists
+    /// costs an allocation before the lookup can even miss. These sets are
+    /// keyed on the selector alone, which the caller already holds borrowed,
+    /// so the common "nothing modifies this" answer costs nothing.
+    pub building_yield_selectors: SpecMap<()>,
+    pub unit_purchase_selectors: SpecMap<()>,
+    pub granted_abilities: SpecMap<()>,
+}
+
+impl EffectIndex {
+    #[inline]
+    pub fn policies(&self, effect: &str) -> bool {
+        self.policies.contains_key(effect)
+    }
+    #[inline]
+    pub fn civs(&self, effect: &str) -> bool {
+        self.civs.contains_key(effect)
+    }
+    #[inline]
+    pub fn buildings(&self, effect: &str) -> bool {
+        self.buildings.contains_key(effect)
+    }
+    #[inline]
+    pub fn districts(&self, effect: &str) -> bool {
+        self.districts.contains_key(effect)
+    }
+    #[inline]
+    pub fn wonders(&self, effect: &str) -> bool {
+        self.wonders.contains_key(effect)
+    }
+    #[inline]
+    pub fn beliefs(&self, effect: &str) -> bool {
+        self.beliefs.contains_key(effect)
+    }
+    #[inline]
+    pub fn governors(&self, effect: &str) -> bool {
+        self.governors.contains_key(effect)
+    }
+    #[inline]
+    pub fn modifiers(&self, effect: &str) -> bool {
+        self.modifiers.contains_key(effect)
+    }
+    /// Whether anything at all in the ruleset grants this effect.
+    #[inline]
+    pub fn any(&self, effect: &str) -> bool {
+        self.any.contains_key(effect)
+    }
+    /// Whether any modifier changes the yields a named building produces.
+    #[inline]
+    pub fn modifies_building_yields(&self, selector: &str) -> bool {
+        self.building_yield_selectors.contains_key(selector)
+    }
+    /// Whether any modifier discounts the purchase of a named unit.
+    #[inline]
+    pub fn discounts_unit_purchase(&self, selector: &str) -> bool {
+        self.unit_purchase_selectors.contains_key(selector)
+    }
+    /// Whether any modifier grants a named ability.
+    #[inline]
+    pub fn grants_ability(&self, ability: &str) -> bool {
+        self.granted_abilities.contains_key(ability)
+    }
+}
+
+/// Collect the effect keys a family of specs declares.
+fn effect_key_set<'a>(keys: impl Iterator<Item = &'a String>) -> SpecMap<()> {
+    let mut set = SpecMap::new();
+    for key in keys {
+        set.insert(key.clone(), ());
+    }
+    set
 }
 
 fn shuffle_strings(values: &mut [String], rng: &mut Rng) {
@@ -2006,6 +2117,7 @@ impl Rules {
             civic_effects: SpecMap::default(),
             tech_ancestors: SpecMap::default(),
             civic_ancestors: SpecMap::default(),
+            effect_index: EffectIndex::default(),
         };
         let effects: TreeEffectsData = take(&mut files, "tree_effects")?;
         for (node, values) in effects.techs {
@@ -2027,7 +2139,91 @@ impl Rules {
         rules.civic_effects = effect_sources(&rules.civics);
         rules.tech_ancestors = ancestry(&rules.techs);
         rules.civic_ancestors = ancestry(&rules.civics);
+        rules.effect_index = rules.build_effect_index();
         Ok(rules)
+    }
+
+    /// Index which effect keys each family of specs declares. See
+    /// [`EffectIndex`] for why the collection paths ask this first.
+    fn build_effect_index(&self) -> EffectIndex {
+        let beliefs = [
+            &self.beliefs.pantheon,
+            &self.beliefs.founder,
+            &self.beliefs.follower,
+            &self.beliefs.enhancer,
+            &self.beliefs.worship,
+        ];
+        let index = EffectIndex {
+            policies: effect_key_set(self.policies.values().flat_map(|spec| spec.effects.keys())),
+            civs: effect_key_set(self.civs.values().flat_map(|spec| spec.effects.keys())),
+            buildings: effect_key_set(self.buildings.values().flat_map(|spec| spec.effects.keys())),
+            districts: effect_key_set(self.districts.values().flat_map(|spec| spec.effects.keys())),
+            wonders: effect_key_set(self.wonders.values().flat_map(|spec| spec.effects.keys())),
+            beliefs: effect_key_set(
+                beliefs
+                    .into_iter()
+                    .flat_map(|table| table.values())
+                    .flat_map(|spec| spec.effects.keys()),
+            ),
+            // A Governor grants through the title itself and through each
+            // promotion its holder has taken.
+            governors: effect_key_set(self.governors.values().flat_map(|spec| {
+                spec.effects.keys().chain(
+                    spec.promotions
+                        .values()
+                        .flat_map(|promotion| promotion.effects.keys()),
+                )
+            })),
+            modifiers: effect_key_set(self.modifiers.values().flat_map(|spec| spec.effects.keys())),
+            any: SpecMap::new(),
+            building_yield_selectors: SpecMap::new(),
+            unit_purchase_selectors: SpecMap::new(),
+            granted_abilities: SpecMap::new(),
+        };
+        // The union has to include the trees, which are indexed by effect
+        // already, even though no caller asks about them on their own.
+        let mut any = SpecMap::new();
+        for family in [
+            &index.policies,
+            &index.civs,
+            &index.buildings,
+            &index.districts,
+            &index.wonders,
+            &index.beliefs,
+            &index.governors,
+            &index.modifiers,
+        ] {
+            for key in family.keys() {
+                any.insert(key.clone(), ());
+            }
+        }
+        for key in self.tech_effects.keys().chain(self.civic_effects.keys()) {
+            any.insert(key.clone(), ());
+        }
+        // Split the three namespaced families back into the selectors they
+        // name. A selector may not itself contain a colon — the modifier
+        // compiler rejects that — so the shape of each key is exact.
+        let mut building_yield_selectors = SpecMap::new();
+        let mut unit_purchase_selectors = SpecMap::new();
+        let mut granted_abilities = SpecMap::new();
+        for key in any.keys() {
+            if let Some(rest) = key.strip_prefix(BUILDING_YIELD_EFFECT_PREFIX) {
+                if let Some((selector, _yield_type)) = rest.split_once(':') {
+                    building_yield_selectors.insert(selector.to_string(), ());
+                }
+            } else if let Some(unit) = key.strip_prefix(UNIT_PURCHASE_EFFECT_PREFIX) {
+                unit_purchase_selectors.insert(unit.to_string(), ());
+            } else if let Some(ability) = key.strip_prefix(GRANT_ABILITY_EFFECT_PREFIX) {
+                granted_abilities.insert(ability.to_string(), ());
+            }
+        }
+        EffectIndex {
+            any,
+            building_yield_selectors,
+            unit_purchase_selectors,
+            granted_abilities,
+            ..index
+        }
     }
 
     /// Build the one authoritative unlock list from each content object's
@@ -3118,5 +3314,112 @@ mod tests {
             passable > 0 && blocked > 0,
             "both halves of the split must be represented"
         );
+    }
+
+    /// The collection paths skip a whole sweep when the index says no spec in
+    /// the family grants an effect, so an index that misses a key would make
+    /// a real modifier silently stop applying. Every declared key must be
+    /// present in its own family and in the union.
+    #[test]
+    fn the_effect_index_covers_every_key_any_spec_declares() {
+        let rules = Rules::shipped();
+        let index = &rules.effect_index;
+        let mut checked = 0usize;
+        let mut check = |family: &str, present: bool, in_any: bool, key: &str| {
+            assert!(present, "{family} declares {key}, which its index omits");
+            assert!(in_any, "{key} is declared by {family} but missing from the union");
+        };
+        for spec in rules.policies.values() {
+            for key in spec.effects.keys() {
+                check("policies", index.policies(key), index.any(key), key);
+                checked += 1;
+            }
+        }
+        for spec in rules.civs.values() {
+            for key in spec.effects.keys() {
+                check("civs", index.civs(key), index.any(key), key);
+                checked += 1;
+            }
+        }
+        for spec in rules.buildings.values() {
+            for key in spec.effects.keys() {
+                check("buildings", index.buildings(key), index.any(key), key);
+                checked += 1;
+            }
+        }
+        for spec in rules.districts.values() {
+            for key in spec.effects.keys() {
+                check("districts", index.districts(key), index.any(key), key);
+                checked += 1;
+            }
+        }
+        for spec in rules.wonders.values() {
+            for key in spec.effects.keys() {
+                check("wonders", index.wonders(key), index.any(key), key);
+                checked += 1;
+            }
+        }
+        for spec in rules.modifiers.values() {
+            for key in spec.effects.keys() {
+                check("modifiers", index.modifiers(key), index.any(key), key);
+                checked += 1;
+            }
+        }
+        for table in [
+            &rules.beliefs.pantheon,
+            &rules.beliefs.founder,
+            &rules.beliefs.follower,
+            &rules.beliefs.enhancer,
+            &rules.beliefs.worship,
+        ] {
+            for spec in table.values() {
+                for key in spec.effects.keys() {
+                    check("beliefs", index.beliefs(key), index.any(key), key);
+                    checked += 1;
+                }
+            }
+        }
+        for spec in rules.governors.values() {
+            for key in spec
+                .effects
+                .keys()
+                .chain(spec.promotions.values().flat_map(|p| p.effects.keys()))
+            {
+                check("governors", index.governors(key), index.any(key), key);
+                checked += 1;
+            }
+        }
+        for key in rules.tech_effects.keys().chain(rules.civic_effects.keys()) {
+            assert!(index.any(key), "tree effect {key} is missing from the union");
+            checked += 1;
+        }
+        assert!(checked > 500, "expected the shipped ruleset to declare many effects, saw {checked}");
+    }
+
+    /// The three namespaced families are ruled out on the selector alone, so
+    /// every selector named by a declared key has to be indexed.
+    #[test]
+    fn the_effect_index_covers_every_namespaced_selector() {
+        let rules = Rules::shipped();
+        let index = &rules.effect_index;
+        for key in index.any.keys() {
+            if let Some(rest) = key.strip_prefix(BUILDING_YIELD_EFFECT_PREFIX) {
+                let (selector, _) = rest.split_once(':').expect("a building yield key names a yield");
+                assert!(
+                    index.modifies_building_yields(selector),
+                    "{key} names building selector {selector}, which the index omits"
+                );
+            } else if let Some(unit) = key.strip_prefix(UNIT_PURCHASE_EFFECT_PREFIX) {
+                assert!(
+                    index.discounts_unit_purchase(unit),
+                    "{key} names unit {unit}, which the index omits"
+                );
+            } else if let Some(ability) = key.strip_prefix(GRANT_ABILITY_EFFECT_PREFIX) {
+                assert!(
+                    index.grants_ability(ability),
+                    "{key} names ability {ability}, which the index omits"
+                );
+            }
+        }
     }
 }
