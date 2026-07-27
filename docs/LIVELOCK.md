@@ -104,10 +104,11 @@ heals) but not a unit doing something — and the remaining 4.26 into ordinary
 productive turns. Empires also field about 4% more units over the same 200
 turns, which is what less waste looks like from the outside.
 
-Episodes fell only from 432 to 382, while the turns inside them fell from 18.6
-each to 7.5. That is the intended shape: nothing here stops a loop from
-*starting* — a loop only exists once a unit has been in it for a window — so
-what the three responses buy is breaking one about two and a half times faster.
+Episodes fell only from 432 to 382, while the turns each one spends *past* the
+ten-turn reporting threshold fell from 18.6 to 7.5. That is the intended shape:
+nothing here stops a loop from *starting* — a loop only exists once a unit has
+been in one for a window — so what the three responses buy is breaking one about
+two and a half times faster once it exists.
 
 Neither run produced a rule violation, every game reached its turn limit, and
 total symptoms per game fell from 130–144 to 93–129.
