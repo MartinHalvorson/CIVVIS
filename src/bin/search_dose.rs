@@ -181,7 +181,22 @@ fn main() {
     println!("  parity 0.500; above means the dose beats what already shipped");
     println!("  a capped game with no victor scores 0.5, not a loss\n");
 
+    // Run one dose. The ladder runs them in order and the NEGATIVE CONTROL is
+    // last, so a long dose in the middle blocks the reading that says whether
+    // the instrument can see anything -- which is the one worth having first.
+    let only = args
+        .iter()
+        .position(|arg| arg == "--only")
+        .and_then(|index| args.get(index + 1))
+        .cloned();
+    if let Some(pattern) = &only {
+        println!("  restricted to doses matching {pattern:?}\n");
+    }
+
     for (label, review_every, horizon) in DOSES {
+        if only.as_ref().is_some_and(|p| !label.contains(p.as_str())) {
+            continue;
+        }
         let shares = parallel::map(maps, jobs, move |index| {
             duel(
                 (review_every, horizon),
