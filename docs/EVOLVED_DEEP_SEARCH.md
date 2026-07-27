@@ -123,3 +123,30 @@ gate at seed 116000, with `strategic` first so that only its formal
 `promotion gate: PASS` can reverse the recommendation. This confirmation is a
 new-policy safeguard, not an extension selected in response to the
 generation-2 outcome.
+
+### Generation-14 result
+
+Across the 60 fresh mirrored maps (120 games), deep won 61-59:
+
+- paired score 50.8%, 95% Wilson interval 38.5%-63.0%, and +6 Elo point
+  estimate for deep;
+- map directions five deep-favorable, 51 neutral, and four `strategic`-
+  favorable (`p = 1.0000`);
+- terminal score 48.8% for deep, with directions 22-3-35 (`p = 0.1112`);
+- the formal gate was **INCONCLUSIVE**, with no anytime-valid boundary
+  crossing in either direction.
+
+The diagnostics again separate victory routing from economic development.
+Deep won 48 religious games to shallow's 46, with each side taking 12 score
+games and one domination game. Shallow averaged 142.6 score to 133.3, 2.63
+cities to 2.42, and 15.9 population to 14.5. Deep reached 675 rollout reviews
+versus 450 and switched plans 2.52 times per game versus 2.06.
+
+The observed win direction is deep-favorable, so the pre-registered stopping
+rule applies: the shallow challenger does not earn the seed-116000 reversal
+gate. Generation 14 therefore provides no evidence to overturn the powered
+generation-2 result or the original default-genome promotion.
+
+`strategic_deep` remains the evidence-backed top rung. This audit changes no
+agent behavior; it confirms that the evolved genome did not make the cheaper
+40x40 budget a demonstrated replacement for the 20x80 incumbent.
