@@ -1536,6 +1536,30 @@ impl AdvancedAi {
                 && pressure.progress >= religious_match_point)
     }
 
+    /// Diagnostic seam: what this planner believes `target`'s best race is,
+    /// and how far along it reads. These are the exact numbers the denial
+    /// layer gates on, exposed so a census can compare them against
+    /// [`Game::victory_threat`] instead of re-deriving the formula — a second
+    /// implementation is how a HUD and an AI end up disagreeing about who is
+    /// about to win. Reads nothing from `self`, so any planner may ask.
+    pub fn rival_pressure(&self, g: &Game, target: usize) -> (GrandStrategy, i32) {
+        let focus = self.rival_victory_pressure(g, target);
+        (focus.strategy, focus.progress)
+    }
+
+    /// Diagnostic seam: the rival this empire would move against right now and
+    /// the counter-strategy it would adopt, or `None` when nobody clears the
+    /// bar. Same call `replan_needed` and `assess` make.
+    pub fn denial_target(&self, g: &Game, pid: usize) -> Option<(usize, GrandStrategy)> {
+        self.victory_denial(g, pid)
+    }
+
+    /// Diagnostic seam: whether `target`'s clock is short enough to skip the
+    /// ordinary war-readiness checks.
+    pub fn denial_is_urgent(&self, g: &Game, target: usize) -> bool {
+        self.urgent_victory_threat(g, target)
+    }
+
     fn assess(&self, g: &Game, pid: usize) -> StrategicPlan {
         let cities = g.player_city_ids(pid);
         let my_power = g.military_power(pid);
