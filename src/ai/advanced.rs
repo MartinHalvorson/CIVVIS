@@ -420,6 +420,69 @@ pub struct AdvancedAi {
     /// 120 `advanced` wins were religious, so the science lane the filter
     /// exists to refuse was rarely the one being contested.
     pub refuse_unreachable_lanes: bool,
+    /// Let more than one settler exist at a time, up to the shortfall against
+    /// the city target.
+    ///
+    /// The settler production gate carries `counts.settlers == 0` on an
+    /// `EmpireCounts`, so today at most one settler may exist in the whole
+    /// empire. The conjunct beside it already caps cities-plus-settlers at
+    /// `desired_cities`, so this one adds no cap — it is purely serialization,
+    /// and a four-city empire therefore expands no faster than a one-city one.
+    ///
+    /// Measured before building (`docs/OPENINGS.md` §6): over 60 maps at 4
+    /// players on 32×22 the seat first holds 2/3/4/5/6 cities on turns
+    /// 37.0/71.0/89.5/118.7/150.2 — gaps of +34.0/+18.5/+29.2/+31.5 that **do
+    /// not shrink as the empire grows**, which is what serialization looks
+    /// like and is not what compounding expansion looks like. A seat spends
+    /// 60.8 ± 3.8 turns short of its city target with a settler already
+    /// walking, against 68.5 ± 4.2 turns short with none.
+    ///
+    /// This is a *rate* lever and is not the `city_target` sweep in
+    /// `docs/GENOME.md`, which is a *target* lever and saturates above six.
+    /// Reaching six cities on turn 90 rather than turn 150 compounds those
+    /// yields for sixty turns at the same target.
+    ///
+    /// ⚠ **Measured near-INERT by its own fires-check, and never taken to an
+    /// eval.** Over the same 60 maps, turning it on moves the founding cadence
+    /// from 37.0/71.0/89.5/118.7/150.2 to 37.6/71.0/89.1/117.6/148.7 and
+    /// leaves cities-at-turn-50 at 1.95 either way.
+    ///
+    /// The mechanism story above was wrong. `counts.settlers == 0` is
+    /// redundant on top of engine rules that already bind harder: a settler
+    /// requires `pop >= 2` and **consumes a population** on completion
+    /// (`Game` at the `settler_no_population` governor check), and successive
+    /// settlers cost 80, 110, 140 production. A one- or two-city empire
+    /// therefore cannot afford a second settler whether or not the AI permits
+    /// one, so lifting the permission buys nothing. The 60.8 ± 3.8 turns a
+    /// seat spends short of target with a settler walking are not turns this
+    /// clause forbids a second — they are turns the empire could not pay for
+    /// one.
+    ///
+    /// Kept as the `advanced_parallel_settlers` entrant with the null
+    /// recorded, on the `advanced_lane_reachable` precedent, so the axis can
+    /// be re-measured rather than re-derived if the settler economy changes.
+    pub parallel_settlers: bool,
+    /// Ignore every by-name civilization signal in the decision layer.
+    ///
+    /// An **ablation**, not a strategy. `docs/GENOME.md`'s rule is that a null
+    /// on selection is uninterpretable without the ceiling beside it: before
+    /// asking whether per-civilization openings could be *better*, ask what
+    /// the civilization-aware code already there is *worth*. This is that
+    /// question, asked the cheapest honest way — by taking it away.
+    ///
+    /// Six sites, all decision-layer rather than mechanics: the Greece
+    /// culture-lane preference and its +45 culture floor, the China +45
+    /// science floor, the +55 unique-unit bonus in `tech_value`, and the
+    /// `Egypt | China` wonder exemption in `production_value` (twice). It
+    /// deliberately does **not** touch which unique unit or district a
+    /// civilization may build — that is mechanics, and ablating it would
+    /// measure the uniques rather than the decisions about them.
+    ///
+    /// Reachable as the `advanced_civ_blind` entrant. A large cost means the
+    /// civilization-aware code carries real weight and better per-
+    /// civilization play could exist. A small cost bounds the layer, the way
+    /// deleting the opening book bounded that one at −0.003.
+    pub civ_blind: bool,
 }
 
 impl Default for AdvancedAi {
@@ -475,6 +538,8 @@ impl AdvancedAi {
             force_groups_dirty: false,
             scoped_relief_hold: false,
             refuse_unreachable_lanes: false,
+            parallel_settlers: false,
+            civ_blind: false,
         }
     }
 
@@ -965,7 +1030,7 @@ impl AdvancedAi {
             };
         }
         if !self.victory_planning {
-            let preferred = if g.players[pid].civ == "Greece" {
+            let preferred = if !self.civ_blind && g.players[pid].civ == "Greece" {
                 GrandStrategy::Culture
             } else {
                 GrandStrategy::Science
@@ -1018,7 +1083,7 @@ impl AdvancedAi {
             .max(readiness)
             .max(project_progress)
             .max(travel_progress)
-            .max((player.civ == "China") as i32 * 45);
+            .max((!self.civ_blind && player.civ == "China") as i32 * 45);
 
         let culture_target = living_majors
             .iter()
@@ -1085,7 +1150,8 @@ impl AdvancedAi {
             },
             VictoryFocus {
                 strategy: GrandStrategy::Culture,
-                progress: culture.max((player.civ == "Greece") as i32 * 45),
+                progress: culture
+                    .max((!self.civ_blind && player.civ == "Greece") as i32 * 45),
             },
             VictoryFocus {
                 strategy: GrandStrategy::Religion,
@@ -2808,7 +2874,9 @@ impl AdvancedAi {
                 } else {
                     power * 1.1
                 };
-                if g.rules.civs[&g.players[pid].civ].unique_unit.as_deref() == Some(name) {
+                if !self.civ_blind
+                    && g.rules.civs[&g.players[pid].civ].unique_unit.as_deref() == Some(name)
+                {
                     value += 55.0;
                 }
             }
@@ -6695,8 +6763,17 @@ impl AdvancedAi {
                 } else {
                     Self::expansion_window_open(g)
                 };
+                // One settler at a time empire-wide unless the treatment is
+                // on. The clause above already caps cities-plus-settlers at
+                // the target, so `parallel_settlers` widens the *rate* and
+                // never the total: a seat two cities short may walk two.
+                let in_flight_allowed = if self.parallel_settlers {
+                    plan.desired_cities.saturating_sub(city_count).max(1)
+                } else {
+                    1
+                };
                 if city_count + counts.settlers < plan.desired_cities
-                    && counts.settlers == 0
+                    && counts.settlers < in_flight_allowed
                     && city.pop >= 2
                     && expansion_open
                     && site.is_some()
@@ -6949,7 +7026,8 @@ impl AdvancedAi {
                     return -10_000.0;
                 }
                 if spec.wonder {
-                    let wonder_civ = matches!(g.players[pid].civ.as_str(), "Egypt" | "China");
+                    let wonder_civ = !self.civ_blind
+                        && matches!(g.players[pid].civ.as_str(), "Egypt" | "China");
                     if threatened
                         || city.buildings.len() < 3
                         || turns > remaining_turns * 0.65
@@ -7233,7 +7311,8 @@ impl AdvancedAi {
             }
             Item::Wonder { wonder, .. } => {
                 let spec = &g.rules.wonders[wonder];
-                let wonder_civ = matches!(g.players[pid].civ.as_str(), "Egypt" | "China");
+                let wonder_civ = !self.civ_blind
+                    && matches!(g.players[pid].civ.as_str(), "Egypt" | "China");
                 let already_queued = g.cities.values().any(|other| {
                     matches!(
                         other.queue.first(),
