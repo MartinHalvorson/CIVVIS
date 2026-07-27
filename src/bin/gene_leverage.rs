@@ -119,6 +119,88 @@ fn main() {
     println!("  each draw replaces a block with uniform samples from its own bounds");
     println!("  parity 0.500; a block that matters scores BELOW parity when scrambled\n");
 
+    // Enumerate every district PRIORITY ORDER.
+    //
+    // `economy` is the only load-bearing block in the genome (+0.0193 +/-
+    // 0.0060, 3.2 SE), and the district priorities are its interesting half:
+    // they decide which district a city builds first, which is the build-order
+    // question. What matters about `d_campus`/`d_commercial`/`d_holy`/
+    // `d_theater` is their RANKING, not their magnitudes -- the AI sorts by
+    // them -- so the meaningful space is 4! = 24 orders, not a four-
+    // dimensional continuum.
+    //
+    // Small and discrete, so enumerate it. Coordinate descent over continuous
+    // values would re-run the opening book's selection bias for no reason.
+    if args.iter().any(|arg| arg == "--districts") {
+        let labels = ["campus", "commercial", "holy", "theater"];
+        let slots = [19usize, 20, 21, 22];
+        let shipped_order: Vec<f64> = slots.iter().map(|g| shipped[*g]).collect();
+        println!(
+            "enumerating all 24 district orders; shipped is campus {:.0} > commercial {:.0} > \
+             holy {:.0} > theater {:.0}\n",
+            shipped_order[0], shipped_order[1], shipped_order[2], shipped_order[3]
+        );
+        let mut perms: Vec<[usize; 4]> = Vec::new();
+        for a in 0..4 {
+            for b in 0..4 {
+                for c in 0..4 {
+                    for d in 0..4 {
+                        let p = [a, b, c, d];
+                        let mut seen = [false; 4];
+                        if p.iter().all(|x| {
+                            let fresh = !seen[*x];
+                            seen[*x] = true;
+                            fresh
+                        }) {
+                            perms.push(p);
+                        }
+                    }
+                }
+            }
+        }
+        let mut table: Vec<(f64, f64, String)> = Vec::new();
+        for perm in &perms {
+            let mut v = shipped.clone();
+            // rank 0 is built first, so it takes the highest weight.
+            for (slot_index, rank) in perm.iter().enumerate() {
+                v[slots[slot_index]] = (4 - rank) as f64;
+            }
+            let genome = Weights::from_vec(&v);
+            let shares = parallel::map(maps, jobs, move |index| {
+                duel(&genome, players, width, height, seed0 + index as u64, turns)
+            });
+            let n = shares.len().max(1) as f64;
+            let mean = shares.iter().sum::<f64>() / n;
+            let variance = if shares.len() > 1 {
+                shares.iter().map(|s| (s - mean).powi(2)).sum::<f64>() / (n - 1.0)
+            } else {
+                0.0
+            };
+            let se = (variance / n).sqrt();
+            let mut order: Vec<(usize, &str)> =
+                perm.iter().copied().zip(labels).collect();
+            order.sort_by_key(|(rank, _)| *rank);
+            let name = order
+                .iter()
+                .map(|(_, label)| *label)
+                .collect::<Vec<_>>()
+                .join(" > ");
+            println!("  {name:<44} {mean:.4} +/- {se:.4}   {:+.4}", mean - 0.5);
+            table.push((mean, se, name));
+        }
+        table.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+        println!("\nbest three:");
+        for (mean, se, name) in table.iter().take(3) {
+            println!("  {name:<44} {mean:.4} +/- {se:.4}");
+        }
+        println!(
+            "\nTaking the max of 24 noisy cells is worth about +2 SE by construction even if\n\
+             every order is identical. Re-measure the winner on disjoint maps before believing\n\
+             it, then decide it on WINS."
+        );
+        return;
+    }
+
     // Sweep one named gene across its own bounds, with an interval on each
     // point. This is the follow-up a load-bearing (or a scrambling-helped)
     // block earns: the block ablation says *whether* values matter, and only a
