@@ -426,6 +426,34 @@ pub struct AdvancedAi {
     /// 120 `advanced` wins were religious, so the science lane the filter
     /// exists to refuse was rarely the one being contested.
     pub refuse_unreachable_lanes: bool,
+    /// Weigh whether a settle site can be held, not only what it yields.
+    ///
+    /// **Off by default, on measurement.** `settle_value` scores yields,
+    /// fresh water and a coastal bonus, then penalises proximity to a rival
+    /// major — and explicitly filters barbarians out of that penalty. So a
+    /// site beside a barbarian city scores exactly as well as an empty one,
+    /// and a site with no friendly city within reach scores as well as one
+    /// inside the empire.
+    ///
+    /// Measured over 16 six-player games: barbarians take **7.0 major cities
+    /// per game**, 65% of everything a major loses, at a **median city age of
+    /// ten turns**. City-states take none. Only 4% are ever recovered by
+    /// their founder and 35% go straight to another major, so a camp launders
+    /// cities between empires. Cities held at the end correlate with final
+    /// score at r = +0.89 while cities *founded* correlate at r = -0.03:
+    /// retention is what the standings turn on, and nothing in the site score
+    /// weighs it.
+    ///
+    /// Mixed-seat A/B, three treated seats against three control in the same
+    /// game, seat assignment flipped, 72 games / 432 seats, paired per-game
+    /// t-tests: cities lost to barbarians **-0.48** (1.10 -> 0.62,
+    /// p < 0.0001) and cities held **+1.09** (p = 0.0001), both replicated on
+    /// a fresh seed set. Finishing rank -0.51 (p = 0.0042 pooled) but it
+    /// regressed from p = 0.014 to p = 0.137 between halves and the sign test
+    /// is only 42-30, so treat the rank effect as weak. **Wins did not move:
+    /// 35-37.** Shipped off with the measurement recorded, so the retention
+    /// result can be re-derived rather than re-discovered.
+    pub defensible_sites: bool,
     /// Tell this empire's governors to want food while it is still short of
     /// its city target.
     ///
@@ -591,6 +619,7 @@ impl AdvancedAi {
             force_groups_dirty: false,
             scoped_relief_hold: false,
             refuse_unreachable_lanes: false,
+            defensible_sites: false,
             food_first: 0.0,
             settler_commit: false,
             settler_stalls: BTreeMap::new(),
@@ -7584,7 +7613,53 @@ impl AdvancedAi {
         if enemy_distance < 6 {
             value -= (6 - enemy_distance) as f64 * 6.0;
         }
+        if self.defensible_sites {
+            value += self.defensibility(g, pid, pos);
+        }
         value
+    }
+
+    /// How well a site can be held, on the same scale `settle_value` uses for
+    /// everything else. Never positive: this only ever discounts a site.
+    ///
+    /// Two terms, for the two things the shipped score is silent about. A camp
+    /// or barbarian city nearby is what actually takes new cities, and it is
+    /// filtered out of the rival-proximity penalty above. Distance from the
+    /// empire's own nearest city decides whether help can arrive at all: the
+    /// measured loss lands at city age ten, which is less time than a soldier
+    /// needs to cross open ground.
+    ///
+    /// Six tiles is the same threshold the rival-proximity penalty uses, and
+    /// the isolation term is capped so a first city — which has no other city
+    /// to be near — cannot be discounted without bound.
+    fn defensibility(&self, g: &Game, pid: usize, pos: Pos) -> f64 {
+        let camp_distance = g
+            .barb_camps
+            .keys()
+            .chain(
+                g.cities
+                    .values()
+                    .filter(|city| g.players[city.owner].is_barbarian)
+                    .map(|city| &city.pos),
+            )
+            .map(|camp| g.wdist(pos, *camp))
+            .min()
+            .unwrap_or(20);
+        let exposure = match camp_distance < 6 {
+            true => (6 - camp_distance) as f64 * 7.0,
+            false => 0.0,
+        };
+        let support_distance = g
+            .player_city_ids(pid)
+            .into_iter()
+            .map(|cid| g.wdist(pos, g.cities[&cid].pos))
+            .min()
+            .unwrap_or(0);
+        let isolation = match support_distance > 6 {
+            true => (support_distance - 6).min(6) as f64 * 5.0,
+            false => 0.0,
+        };
+        -(exposure + isolation)
     }
 
     /// Lower is a better operational objective. Unlike a nearest-city rule,
@@ -12933,6 +13008,80 @@ mod tests {
         assert_eq!(
             ai.victory_denial(&game, 0),
             Some((1, GrandStrategy::Conquest))
+        );
+    }
+
+    /// The site score is silent about barbarians and about being out of
+    /// reach of your own cities. Off, it stays silent; on, both discount the
+    /// site and neither can ever raise it.
+    #[test]
+    fn a_defensible_site_score_discounts_camps_and_isolation() {
+        let mut game = Game::new_full(2, 30, 18, 7_741, 300, 0, false);
+        let settler = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .expect("every empire starts with a settler");
+        let home = game.units[&settler].pos;
+        game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+
+        // Somewhere well outside the founding city's support radius.
+        let far = game
+            .map
+            .tiles
+            .keys()
+            .copied()
+            .filter(|pos| game.map.get(*pos).is_some_and(|t| !game.rules.is_water(t)))
+            .find(|pos| game.wdist(home, *pos) > 8)
+            .expect("the map is larger than the support radius");
+
+        let plain = AdvancedAi::new();
+        let mut weighed = AdvancedAi::new();
+        weighed.defensible_sites = true;
+        assert!(
+            !plain.defensible_sites,
+            "the measurement flag ships off"
+        );
+
+        // With no camp anywhere, only the isolation term can fire.
+        assert!(game.barb_camps.is_empty());
+        assert_eq!(weighed.defensibility(&game, 0, home), 0.0);
+        assert!(
+            weighed.defensibility(&game, 0, far) < 0.0,
+            "a site out of reach of every friendly city is discounted"
+        );
+        assert_eq!(
+            plain.settle_value(&game, 0, far),
+            weighed.settle_value(&game, 0, far) - weighed.defensibility(&game, 0, far),
+            "the flag adds exactly the defensibility term and nothing else"
+        );
+
+        // A camp beside the home tile discounts it; the untreated agent
+        // scores that site exactly as it did before, which is the gap this
+        // flag exists to measure.
+        let before = plain.settle_value(&game, 0, home);
+        let camp = *game
+            .nbrs(home)
+            .iter()
+            .find(|pos| {
+                game.map
+                    .get(**pos)
+                    .is_some_and(|t| !game.rules.is_water(t))
+            })
+            .expect("a founded city has a passable neighbour");
+        game.barb_camps.insert(camp, 0);
+        assert!(
+            weighed.defensibility(&game, 0, home) < 0.0,
+            "a camp one tile away discounts the site"
+        );
+        assert_eq!(
+            plain.settle_value(&game, 0, home),
+            before,
+            "and the shipped score does not notice the camp at all"
+        );
+        assert!(
+            weighed.settle_value(&game, 0, home) < before,
+            "while the weighed score does"
         );
     }
 
