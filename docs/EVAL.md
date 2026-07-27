@@ -2359,3 +2359,48 @@ INCONCLUSIVE on the fixed-*n* Wilson bound. At 54.6% that bound needs about
   through `load_champion` now differs from its recorded value, because the
   loader no longer returns `None`. Re-measure rather than compare across the
   boundary.
+
+## 2026-07-27 — a better champion, and carrying it where it is actually used
+
+Two corrections to the entry above, both measured.
+
+### 1. Generation 14 is the champion, not generation 2
+
+The GA kept running. Generation 14 promoted through the same unmodified gate
+(SPRT 36–62 = 36.7% against the incumbent where parity is 25%, holdout no
+regression) with the run's best validation, 141.6 against 125.6.
+
+Evaluated against the **same control, the same 1300 maps and the same seed**
+as generation 2's gate run, so the two are directly comparable:
+
+| champion | paired score | Wilson | Elo | map directions | sign p |
+|---|---|---|---|---|---|
+| gen 2 | 54.6% | 51.9–57.3% | **+32** (+13..+51) | 253 – 134 | 0.0000 |
+| **gen 14** | **57.0%** | **54.3–59.7%** | **+49** (+30..+68) | **304 – 122** | 5.2e-19 |
+
+Both pass. Generation 14 is +17 Elo above generation 2 with barely overlapping
+intervals, so it replaces it in `data/evolved/best.json`.
+
+### 2. The committed file alone would never have reached a game
+
+`load_champion`'s `data/` fallback resolves against the **current working
+directory**. `tools/spectator_supervisor.py` builds from `origin/main` in a
+private worktree, `promote_binary()` copies only the binary, and the server
+runs with the *deployment* checkout as its cwd — 548 commits behind
+`origin/main` when this was written. The exhibition, the fleet, and any copied
+binary would have gone on loading `Weights::default()` while the repository
+contained a champion.
+
+The genome is now compiled in with `include_str!`, exactly as `rules.rs`
+already embeds all 29 ruleset files. Resolution order where a tree exists is
+unchanged — local `evolved/`, then `data/evolved/`, then the built-in — so an
+in-progress run still overrides the snapshot and a genome can still be swapped
+without rebuilding. The built-in answers only for the canonical `evolved`
+directory, because `--artifact-dir` asks about *that* directory and
+`--require-artifacts` depends on the answer being honest.
+
+**The general shape, which has now cost this session twice:** a number true in
+one context read as true in another. The genome was present in the repository
+and absent in the process; the fallback was correct in a checkout and wrong in
+deployment. Ship-and-verify means verifying where the code runs, not where it
+was written.
