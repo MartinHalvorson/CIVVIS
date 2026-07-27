@@ -2053,7 +2053,7 @@ impl Session {
                         player["ai_plan"] = self.plan_json(&plan);
                     }
                     // What this civilization is actually spending its science
-                    // and culture on, for the Active strategy panel. The
+                    // and culture on, for the Active AI strategy panel. The
                     // observation only ever carries the *observed* seat's, in
                     // `me`, and above the world there is no observed seat.
                     //
@@ -5179,7 +5179,7 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("#warsec[open] { flex: 2 0 0; min-height: 266px; }"));
         assert!(EMBEDDED_INDEX.contains(".reason-list { flex: 1 1 auto; min-height: 132px;"));
         // One filter bar, worn in the same place by every panel that narrows
-        // by civilization — the three logs and the Active strategy card above
+        // by civilization — the three logs and the Active AI strategy card above
         // them. A second copy of this chrome under another name is how four
         // pickers drift into four shapes.
         assert!(EMBEDDED_INDEX.contains(".log-filters { flex: 0 0 auto;"));
@@ -6383,12 +6383,12 @@ mod tests {
             .find("<span>AI reasoning log</span>")
             .expect("AI reasoning log");
         let strategy = EMBEDDED_INDEX
-            .find("<span>Active strategy</span>")
+            .find("<span>Active AI strategy</span>")
             .expect("active strategy section");
         // The column runs deepest-cause first — what a civilization is trying
         // to do now, why it acted, the wars that reasoning started, then the
         // world's record of what happened — so reading the column downward
-        // reads a turn in the order it was decided. Active strategy leads
+        // reads a turn in the order it was decided. Active AI strategy leads
         // because it is the standing plan every entry below it is an instance
         // of: the reasoning log is an account over turns, and this is the
         // current answer.
@@ -6398,8 +6398,8 @@ mod tests {
                 && strategy < reasoning_log
                 && reasoning_log < war_log
                 && war_log < event_log,
-            "left panel should show game settings, display settings, \
-             the active strategy and then the three logs"
+            "left panel should show game setup, display settings, \
+             the active AI strategy and then the three logs"
         );
         assert!(EMBEDDED_INDEX.contains("<span>Display settings</span>"));
         for overlay in ["players", "victory", "minimap", "controls", "lenses"] {
@@ -6653,7 +6653,7 @@ mod tests {
             EMBEDDED_INDEX
                 .matches("class=\"sidebar-section\"")
                 .count(),
-            8,
+            7,
             "every top-level left-panel section should be collapsible"
         );
         assert!(EMBEDDED_INDEX.contains("function initSidebarSections()"));
@@ -6725,7 +6725,7 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("p.ai_plan"));
         assert!(EMBEDDED_INDEX.contains(".civ-dossier {"));
         assert!(EMBEDDED_INDEX.contains("changed its grand strategy from"));
-        // Active strategy speaks for one civilization at a time, and which
+        // Active AI strategy speaks for one civilization at a time, and which
         // civilizations it may speak for is the observation's answer, not the
         // panel's: `view_player` names a seat in a played game and in Watch as,
         // and is null only for the view entitled to read every plan.
@@ -7140,7 +7140,7 @@ mod tests {
         assert!(!EMBEDDED_INDEX
             .contains("civilization${summaries.length === 1 ? \"\" : \"s\"} completed"));
         assert!(EMBEDDED_INDEX.contains("id=\"strategysec\""));
-        // Active strategy is no longer withheld from the omniscient spectator.
+        // Active AI strategy is no longer withheld from the omniscient spectator.
         // It was, for as long as the panel could only ever speak for `state.me`
         // and above the world there is no single "me"; it now names the
         // civilization it is speaking for, so the one view that can read every
@@ -7930,7 +7930,7 @@ mod tests {
         assert!(plan["forces"].is_array());
     }
 
-    /// The Active strategy panel reads one civilization's plan beside what it
+    /// The Active AI strategy panel reads one civilization's plan beside what it
     /// is actually spending its science and culture on. The observation only
     /// ever carries the *observed* seat's study, in `me`, and above the world
     /// there is no observed seat — so the omniscient view names every major's.
