@@ -59,24 +59,65 @@ fn text(args: &[String], flag: &str, default: &str) -> String {
 
 /// Replace this seat's current research and/or civic with a random legal one.
 ///
-/// Applied *after* the agent's turn, so the heuristic runs and is then
-/// overruled. `Action::Research` and `Action::Civic` go through the engine's
+/// Applied at the START of the seat's turn, so the agent's own `research()` —
+/// which only picks when nothing is set — accepts the substitute and the
+/// ordering heuristic never runs. `Action::Research` and `Action::Civic` go through the engine's
 /// own validation, so an illegal substitute is simply refused and the seat
 /// keeps what the agent chose — the ablation can only ever remove information,
 /// never grant something the rules forbid.
-fn scramble(game: &mut Game, pid: usize, rng: &mut Rng, tech: bool, civic: bool) {
+fn scramble(
+    game: &mut Game,
+    pid: usize,
+    rng: &mut Rng,
+    tech: bool,
+    civic: bool,
+    fired: &mut usize,
+) {
     if tech {
-        let available = game.available_techs(pid);
-        if !available.is_empty() {
-            let pick = available[rng.below(available.len())].clone();
-            let _ = game.apply(pid, &Action::Research { tech: pick });
+        // `do_research` refuses while a research is already set, so the choice
+        // has to be released before a substitute can be applied. The first
+        // version of this omitted that and EVERY override was silently
+        // rejected -- all three arms returned 0 for / 0 against / 60 neutral at
+        // exactly 50.0%, which is the degenerate signature of identical arms.
+        // Progress is carried across so the ablation costs the ordering
+        // information and not a turn of beakers.
+        if let Some(current) = game.players[pid].research.clone() {
+            let available: Vec<String> = game
+                .available_techs(pid)
+                .into_iter()
+                .filter(|t| *t != current)
+                .collect();
+            if !available.is_empty() {
+                let pick = available[rng.below(available.len())].clone();
+                let progress = game.players[pid].research_progress;
+                game.players[pid].research = None;
+                if game.apply(pid, &Action::Research { tech: pick }).is_ok() {
+                    game.players[pid].research_progress = progress;
+                    *fired += 1;
+                } else {
+                    game.players[pid].research = Some(current);
+                }
+            }
         }
     }
     if civic {
-        let available = game.available_civics(pid);
-        if !available.is_empty() {
-            let pick = available[rng.below(available.len())].clone();
-            let _ = game.apply(pid, &Action::Civic { civic: pick });
+        if let Some(current) = game.players[pid].civic.clone() {
+            let available: Vec<String> = game
+                .available_civics(pid)
+                .into_iter()
+                .filter(|c| *c != current)
+                .collect();
+            if !available.is_empty() {
+                let pick = available[rng.below(available.len())].clone();
+                let progress = game.players[pid].civic_progress;
+                game.players[pid].civic = None;
+                if game.apply(pid, &Action::Civic { civic: pick }).is_ok() {
+                    game.players[pid].civic_progress = progress;
+                    *fired += 1;
+                } else {
+                    game.players[pid].civic = Some(current);
+                }
+            }
         }
     }
 }
@@ -110,6 +151,7 @@ fn main() {
     let results = parallel::map(maps, jobs, move |index| {
         let seed = seed0 + index as u64;
         let mut out = [None, None];
+        let mut fired = 0usize;
         for (slot, treated) in (0..2usize).enumerate() {
             let mut game = Game::new(players, width, height, seed, turns, 0);
             let stock = Weights::default();
@@ -126,10 +168,20 @@ fn main() {
                     if game.winner.is_some() {
                         break;
                     }
-                    fleet[pid].take_turn(&mut game, pid);
-                    if !game.players[pid].is_minor && is_treated(pid) {
-                        scramble(&mut game, pid, &mut rng, tech, civic);
+                    // BEFORE the agent acts, not after. `take_turn` ends the
+                    // seat's turn internally, so by the time it returns
+                    // `game.current` has advanced and every override is
+                    // refused with "not your turn" -- which is why the first
+                    // version fired zero times and read as a settled
+                    // subsystem. Scrambling first also gives exactly the
+                    // ablation wanted: the agent's own research() only picks
+                    // when nothing is set, so it accepts the random choice
+                    // and the ordering heuristic is bypassed rather than
+                    // overruled.
+                    if !game.players[pid].is_minor && is_treated(pid) && game.current == pid {
+                        scramble(&mut game, pid, &mut rng, tech, civic, &mut fired);
                     }
+                    fleet[pid].take_turn(&mut game, pid);
                     if game.winner.is_none() && game.current == pid {
                         let _ = game.apply(pid, &Action::EndTurn);
                     }
@@ -137,8 +189,10 @@ fn main() {
             }
             out[slot] = game.winner.map(is_treated);
         }
-        out
+        (out, fired)
     });
+    let fires: usize = results.iter().map(|(_, f)| *f).sum();
+    let results: Vec<[Option<bool>; 2]> = results.into_iter().map(|(o, _)| o).collect();
 
     let (mut up, mut down, mut neutral, mut won, mut decisive) = (0u32, 0u32, 0u32, 0u32, 0u32);
     for pair in &results {
@@ -174,6 +228,15 @@ fn main() {
         (2.0 * tail).min(1.0)
     };
 
+    // The check this tool shipped without, and paid for: a silent no-op reads
+    // exactly like a settled subsystem.
+    println!("  scrambles applied {fires}");
+    if fires == 0 {
+        println!(
+            "\n  THE ABLATION NEVER FIRED. This is not a result about {what} order -- it is a\n  \
+             broken instrument. Do not read the numbers below."
+        );
+    }
     println!(
         "  decisive games   {won}/{decisive} ({:.1}%)",
         100.0 * won as f64 / decisive.max(1) as f64
