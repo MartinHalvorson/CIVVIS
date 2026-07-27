@@ -149,8 +149,27 @@ fn main() {
         )
     });
 
+    // A full sweep is fifty genes of full games. Verifying that one newly
+    // connected gene bites should not cost that, so `--only <substring>`
+    // narrows it -- the difference between a forty-minute answer and a
+    // one-minute one, which is the difference between checking and not.
+    let only = args
+        .iter()
+        .position(|arg| arg == "--only")
+        .and_then(|index| args.get(index + 1))
+        .cloned();
+    if let Some(pattern) = &only {
+        println!("  restricted to genes matching {pattern:?}\n");
+    }
+
     let mut rows: Vec<(usize, String, usize, Option<f64>)> = Vec::new();
     for gene in 0..genes {
+        if only
+            .as_ref()
+            .is_some_and(|pattern| !names[gene].contains(pattern.as_str()))
+        {
+            continue;
+        }
         let (lo, hi) = bounds[gene];
         // Both ends, because a gene at its default may already sit against one
         // of its own bounds and moving that way would be a no-op by arithmetic.
@@ -203,8 +222,9 @@ fn main() {
     }
 
     println!(
-        "\n{} of {genes} genes moved nothing in {maps} maps at {turns} turns.",
-        quiet.len()
+        "\n{} of {} genes probed moved nothing in {maps} maps at {turns} turns.",
+        quiet.len(),
+        rows.len()
     );
     if !quiet.is_empty() {
         println!(
