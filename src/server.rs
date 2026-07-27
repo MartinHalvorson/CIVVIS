@@ -1317,6 +1317,19 @@ impl Shared {
     /// turn-bound surface must complete one shared-snapshot render before the
     /// next turn begins. With no viewer inside `VIEWER_ACTIVE` there is
     /// nothing to wait for and an unattended exhibition still runs flat out.
+    /// Whether any viewer still present is owed `frame`.
+    ///
+    /// The same question `wait_for_turn_frame` blocks on, asked once. The
+    /// stepper uses it to re-confirm, under the frame gate, that the answer it
+    /// waited for outside the gate is still true.
+    fn frame_outstanding(&self, frame: SpectatorFrame) -> bool {
+        self.frame_delivery
+            .lock()
+            .unwrap()
+            .wait_remaining(frame, Instant::now())
+            .is_some()
+    }
+
     fn wait_for_turn_frame(&self, frame: SpectatorFrame) {
         let mut delivery = self.frame_delivery.lock().unwrap();
         loop {
@@ -2976,7 +2989,32 @@ fn auto_step_loop(sh: Arc<Shared>) {
         // step completes and receive the next snapshot as its first frame.
         // Once registered, its current frame must be painted before any more
         // simulation work starts.
-        let simulation_frame_gate = sh.simulation_frame_gate.lock().unwrap();
+        //
+        // Wait for that frame *before* taking the gate, then take it and
+        // confirm nobody seated itself in between. Waiting while holding the
+        // gate deadlocked the two halves against each other: the only way to
+        // register as a viewer is an opening `/state?painted=`, which needs
+        // this same gate, so a page arriving while the loop waited for some
+        // *other* viewer could not get in — and a restart, whose whole job is
+        // to put a new page in front of a new world, is exactly that arrival.
+        // Measured on a 74x46 six-player exhibition: 0 turns in 25 seconds.
+        // A re-check under the gate is as atomic as waiting inside it was,
+        // because seating happens under the gate too.
+        let simulation_frame_gate = loop {
+            let current_frame = {
+                let s = sh.session.lock().unwrap();
+                SpectatorFrame {
+                    seed: s.game.seed,
+                    turn: s.game.turn,
+                    finished: s.game.winner.is_some(),
+                }
+            };
+            sh.wait_for_turn_frame(current_frame);
+            let gate = sh.simulation_frame_gate.lock().unwrap();
+            if !sh.frame_outstanding(current_frame) {
+                break gate;
+            }
+        };
         // A request can pause while this loop is waiting for the frame gate.
         // Check again after entering it so a play-on-and-pause transition can
         // clear the winner without one already-admitted AI step slipping past
@@ -2988,15 +3026,6 @@ fn auto_step_loop(sh: Arc<Shared>) {
             std::thread::sleep(Duration::from_millis(150));
             continue;
         }
-        let current_frame = {
-            let s = sh.session.lock().unwrap();
-            SpectatorFrame {
-                seed: s.game.seed,
-                turn: s.game.turn,
-                finished: s.game.winner.is_some(),
-            }
-        };
-        sh.wait_for_turn_frame(current_frame);
         let cadence_started = Instant::now();
         let delay; // this seat's slice of the turn budget
         let mut waiting = false; // between games nothing is being simulated
@@ -4493,6 +4522,90 @@ mod tests {
             .expect("status is JSON");
         assert_eq!(status["frames_missed"], json!(0));
         assert_eq!(status["frames_painted"], json!(last));
+    }
+
+    /// A restart puts a new page in front of a new world, and that page's
+    /// opening `/state?painted=` is the whole of how it gets there. It must
+    /// not be made to wait on somebody else's paint.
+    ///
+    /// The stepper used to hold the frame gate across `wait_for_turn_frame`,
+    /// and seating a viewer needs that same gate — so an arriving page was
+    /// locked out for exactly as long as whoever was already watching took to
+    /// draw. Measured on a 74x46 six-player exhibition, that was 4.5s of veil
+    /// on every restart against 0.05s once the wait moved outside the gate.
+    /// Worse, the restarting page gave up at its own timeout and retried,
+    /// seating itself as a viewer owed a frame it then never painted, and the
+    /// successor stopped stepping altogether: 0 turns in 25 seconds.
+    #[test]
+    fn an_arriving_page_is_not_held_up_by_another_viewers_paint() {
+        let port = TcpListener::bind(("127.0.0.1", 0))
+            .expect("a free port")
+            .local_addr()
+            .unwrap()
+            .port();
+        let mut params = current();
+        params.spectate = true;
+        params.num_players = 3;
+        params.num_city_states = 1;
+        params.width = 24;
+        params.height = 16;
+        params.seed = 20_260_727;
+        std::thread::spawn(move || super::serve_with_game(port, false, params, None, false));
+
+        let deadline = Instant::now() + Duration::from_secs(60);
+        while http_get(port, "/status").is_none() {
+            assert!(Instant::now() < deadline, "spectator server never came up");
+            std::thread::sleep(Duration::from_millis(50));
+        }
+
+        // Somebody is already watching, and drawing slowly. The stepper owes
+        // this viewer every turn and will wait for it; the question is only
+        // whether it waits with the door held shut behind it.
+        let watcher = std::thread::spawn(move || {
+            let mut painted: Option<(u64, u32)> = None;
+            for _ in 0..8 {
+                let target = match painted {
+                    None => "/state?painted=&viewer=watcher".to_string(),
+                    Some((seed, turn)) => {
+                        format!("/state?painted={turn}&world={seed}&viewer=watcher")
+                    }
+                };
+                let Some(body) = http_get(port, &target) else {
+                    return;
+                };
+                let state: Value = serde_json::from_str(&body).expect("state is JSON");
+                std::thread::sleep(Duration::from_millis(1_500)); // the paint
+                painted = Some((
+                    state["seed"].as_u64().expect("a world"),
+                    state["turn"].as_u64().expect("a turn") as u32,
+                ));
+            }
+        });
+        std::thread::sleep(Duration::from_millis(600)); // let it take its seat
+
+        // Each arrival is a distinct page, exactly as a reload or a restart is.
+        // Asked repeatedly, because a lock-out is a race and one lucky read
+        // proves nothing.
+        for attempt in 1..=5 {
+            let started = Instant::now();
+            let body = http_get(port, &format!("/state?painted=&viewer=arriving-{attempt}"))
+                .unwrap_or_else(|| panic!("arrival {attempt}: the opening state never arrived"));
+            let elapsed = started.elapsed();
+            let state: Value = serde_json::from_str(&body)
+                .unwrap_or_else(|e| panic!("arrival {attempt}: opening state is not JSON: {e}"));
+            assert!(
+                state["turn"].is_number(),
+                "arrival {attempt}: the opening state carries no turn"
+            );
+            assert!(
+                elapsed < Duration::from_millis(600),
+                "arrival {attempt} waited {elapsed:?} for its first frame while another \
+                 viewer was painting, and a restart shows a veil for every bit of that"
+            );
+            std::thread::sleep(Duration::from_millis(150));
+        }
+        http_post(port, "/pace", "{\"paused\":true}"); // stop stepping this game
+        let _ = watcher.join();
     }
 
     /// Martin's requirement is a simulation gate, not merely an audit after
