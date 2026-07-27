@@ -605,7 +605,7 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
                 "is_barbarian": o.is_barbarian,
                 "is_free_city": o.is_free_city,
                 "cs_type": if o.is_minor && !o.is_barbarian {
-                    Some(Game::cs_type(&o.civ))
+                    Some(g.cs_type(&o.civ))
                 } else {
                     None
                 },

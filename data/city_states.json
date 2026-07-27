@@ -1,0 +1,930 @@
+{
+ "_source": "Civilization VI final patch: Civilizations, Leaders_XP2.MinorCivBonusType, LeaderTraits, Traits",
+ "_note": "`shipped` marks the 48 city-states the game actually seats. Names are identity: append only, never rename or reorder.",
+ "roster": [
+  {
+   "name": "Kabul",
+   "type": "militaristic",
+   "bonus": "kabul",
+   "implemented": true,
+   "shipped": true,
+   "effect": "Your units receive double experience from battles they initiate."
+  },
+  {
+   "name": "Geneva",
+   "type": "scientific",
+   "bonus": "geneva",
+   "implemented": true,
+   "shipped": true,
+   "effect": "Your cities earn +15% Science whenever you are not at war with any civilization."
+  },
+  {
+   "name": "Hattusa",
+   "type": "scientific",
+   "bonus": "hattusa",
+   "implemented": true,
+   "shipped": true,
+   "effect": "Provides you with 2 of each Strategic resource per turn that you have revealed but have not improved."
+  },
+  {
+   "name": "Mohenjo-Daro",
+   "type": "cultural",
+   "bonus": "mohenjo_daro",
+   "implemented": true,
+   "shipped": true,
+   "effect": "Your cities have full Housing from water, as if they were all next to a River."
+  },
+  {
+   "name": "Yerevan",
+   "type": "religious",
+   "bonus": "yerevan",
+   "implemented": true,
+   "shipped": true,
+   "effect": "Your Apostle units can choose from any possible promotion instead of receiving a random promotion."
+  },
+  {
+   "name": "Zanzibar",
+   "type": "trade",
+   "bonus": "zanzibar",
+   "implemented": true,
+   "shipped": true,
+   "effect": "Receive the Cinnamon and Cloves Luxury resources. These cannot be earned any other way in the game, and provide 6 Amenities each."
+  },
+  {
+   "name": "Auckland",
+   "type": "industrial",
+   "bonus": "auckland",
+   "implemented": true,
+   "shipped": true,
+   "effect": "Shallow water tiles you own provide +1 Production. Additional +1 when you reach the Industrial era."
+  },
+  {
+   "name": "Valletta",
+   "type": "militaristic",
+   "bonus": "valletta",
+   "implemented": true,
+   "shipped": true,
+   "effect": "City Center buildings and Encampment district buildings can be bought with Faith. Cost of purchasing Ancient, Medieval, and Renaissance Walls is reduced, but they can only be bought with Faith."
+  },
+  {
+   "name": "Vilnius",
+   "type": "cultural",
+   "bonus": "vilnius",
+   "implemented": true,
+   "shipped": true,
+   "effect": "When you enter a new era, earn 1 random Inspiration from that era."
+  },
+  {
+   "name": "Kandy",
+   "type": "religious",
+   "bonus": "kandy",
+   "implemented": true,
+   "shipped": true,
+   "effect": "Receive a Relic every time you discover a new natural wonder, and earn +50% Faith from all Relics."
+  },
+  {
+   "name": "Jerusalem",
+   "type": "religious",
+   "bonus": "jerusalem",
+   "implemented": false,
+   "shipped": true,
+   "effect": "Your cities with Holy Sites exert pressure as if they were Holy Cities (4x Religion pressure on all cities within 10 tiles)."
+  },
+  {
+   "name": "Brussels",
+   "type": "industrial",
+   "bonus": "brussels",
+   "implemented": false,
+   "shipped": true,
+   "effect": "Your cities get +15% Production towards wonders."
+  },
+  {
+   "name": "Preslav",
+   "type": "militaristic",
+   "bonus": "preslav",
+   "implemented": false,
+   "shipped": true,
+   "effect": "Your light and heavy cavalry units have +5 Strength when fighting on hill tiles."
+  },
+  {
+   "name": "Antananarivo",
+   "type": "cultural",
+   "bonus": "antananarivo",
+   "implemented": false,
+   "shipped": true,
+   "effect": "Your Civilization gains +2% Culture for each Great Person it has ever earned, up to a total of +30%."
+  },
+  {
+   "name": "Mogadishu",
+   "type": "trade",
+   "bonus": "mogadishu",
+   "implemented": false,
+   "shipped": true,
+   "effect": "Your Trader units are immune to being plundered on water tiles."
+  },
+  {
+   "name": "Cahokia",
+   "type": "trade",
+   "bonus": "cahokia",
+   "implemented": false,
+   "shipped": true,
+   "effect": "Your Builders can now make Cahokia Mounds improvements. Cahokia Mounds provide +3 Gold. Cities receive +1 Amenity from their first Cahokia Mound improvement. Upon discovering Natural History, cities receive +1 Amenity from their second Cahokia Mound improvement. +1 Food for every 2 adjacent Districts once Feudalism is discovered or for every adjacent District once Replaceable Parts is researched. Provides +1 Housing. Receive an additional Housing once Cultural Heritage is discovered. Cannot be built adjacent to other Cahokia Mounds."
+  },
+  {
+   "name": "Akkad",
+   "type": "militaristic",
+   "bonus": "akkad",
+   "implemented": false,
+   "shipped": true,
+   "effect": "Melee and anti-cavalry unit's attacks do full damage to the city's Walls."
+  },
+  {
+   "name": "Anshan",
+   "type": "scientific",
+   "bonus": "anshan",
+   "implemented": false,
+   "shipped": true,
+   "effect": "+2 Science from each Great Work of Writing. +1 Science from each Relic and Artifact."
+  },
+  {
+   "name": "Armagh",
+   "type": "religious",
+   "bonus": "armagh",
+   "implemented": false,
+   "shipped": true,
+   "effect": "Your Builders can now make Monastery improvements. Monasteries provide +2 Faith. +15 HP healing for friendly religious unit on this tile that has not attacked this turn. +1 Faith for every 2 adjacent Districts. Provides +1 Housing. Receive an additional Housing once Colonialism is discovered. Cannot be built next to another Monastery."
+  },
+  {
+   "name": "Ayutthaya",
+   "type": "cultural",
+   "bonus": "ayutthaya",
+   "implemented": false,
+   "shipped": true,
+   "effect": "Gain Culture equal to 10% of the construction cost when finishing buildings."
+  },
+  {
+   "name": "Bandar Brunei",
+   "type": "trade",
+   "bonus": "bandar_brunei",
+   "implemented": false,
+   "shipped": true,
+   "effect": "Your Trading Posts in foreign cities provide +1 Gold to your Trade Routes passing through or going to the city."
+  },
+  {
+   "name": "Bologna",
+   "type": "scientific",
+   "bonus": "bologna",
+   "implemented": false,
+   "shipped": true,
+   "effect": "Your districts with a building provide +1 Great Person point of their type ( Great Writer, Great Artist, and Great Musician for Theater Square districts with a building)."
+  },
+  {
+   "name": "Buenos Aires",
+   "type": "industrial",
+   "bonus": "buenos_aires",
+   "implemented": false,
+   "shipped": true,
+   "effect": "Your Bonus resources behave like Luxury resources, providing 1 Amenity per type."
+  },
+  {
+   "name": "Caguana",
+   "type": "cultural",
+   "bonus": "caguana",
+   "implemented": false,
+   "shipped": true,
+   "effect": "Your Builders can now make Batey improvements. +1 Culture. +1 Culture for every adjacent Bonus resource and Entertainment Complex (increased to +2 Culture when Exploration is discovered). Provides Tourism after researching Flight. Cannot be built adjacent to another Batey."
+  },
+  {
+   "name": "Cardiff",
+   "type": "industrial",
+   "bonus": "cardiff",
+   "implemented": false,
+   "shipped": true,
+   "effect": "Cities receive +2 Power for every Harbor building."
+  },
+  {
+   "name": "Chinguetti",
+   "type": "religious",
+   "bonus": "chinguetti",
+   "implemented": false,
+   "shipped": true,
+   "effect": "International and domestic Trade Routes receive +1 Faith for every follower in this city, of your founded or majority religion."
+  },
+  {
+   "name": "Fez",
+   "type": "scientific",
+   "bonus": "fez",
+   "implemented": false,
+   "shipped": true,
+   "effect": "When you use a religious unit to convert a city for the first time earn 20 Science per Population of that city (on Standard Speed)."
+  },
+  {
+   "name": "Granada",
+   "type": "militaristic",
+   "bonus": "granada",
+   "implemented": false,
+   "shipped": true,
+   "effect": "Your Builders can now make Alc\u00e1zar improvements. Alc\u00e1zars provide +2 Culture. Provides Science equal to 50% of the tile's Appeal. Occupying unit receives +4 Defense Strength, and automatically gains 2 turns of fortification. Provides Tourism after researching Flight. Cannot be built next to another Alc\u00e1zar."
+  },
+  {
+   "name": "Hong Kong",
+   "type": "industrial",
+   "bonus": "hong_kong",
+   "implemented": false,
+   "shipped": true,
+   "effect": "Your cities get +20% Production towards city projects."
+  },
+  {
+   "name": "Hunza",
+   "type": "trade",
+   "bonus": "hunza",
+   "implemented": false,
+   "shipped": true,
+   "effect": "Your Trade Routes generate +1 Gold for every 5 tiles they travel."
+  },
+  {
+   "name": "Johannesburg",
+   "type": "industrial",
+   "bonus": "johannesburg",
+   "implemented": false,
+   "shipped": true,
+   "effect": "Cities receive +1 Production for every improved resource type. After researching Industrialization it becomes +2 Production."
+  },
+  {
+   "name": "Kumasi",
+   "type": "cultural",
+   "bonus": "kumasi",
+   "implemented": false,
+   "shipped": true,
+   "effect": "Your Trade Routes to any city-state provide +2 Culture and +1 Gold for every specialty district in the origin city."
+  },
+  {
+   "name": "La Venta",
+   "type": "religious",
+   "bonus": "la_venta",
+   "implemented": false,
+   "shipped": true,
+   "effect": "Your Builders can now make Colossal Head improvements. Colossal Heads provide +2 Faith. +1 Faith for every 2 adjacent Rainforest or for every adjacent Rainforest once Humanism is discovered. +1 Faith for every 2 adjacent Woods or for every adjacent Woods once Humanism is discovered. Tourism from Faith once Flight is discovered. Cannot be built on Snow or Snow Hills."
+  },
+  {
+   "name": "Lahore",
+   "type": "militaristic",
+   "bonus": "lahore",
+   "implemented": false,
+   "shipped": true,
+   "effect": "Your cities can now train Nihang units. A unit with a unique Promotion tree that can be purchased with Faith. Combat Strength is increased when Barracks, Armory, and Military Academy buildings are first constructed."
+  },
+  {
+   "name": "Mexico City",
+   "type": "industrial",
+   "bonus": "mexico_city",
+   "implemented": false,
+   "shipped": true,
+   "effect": "Regional effects from your Industrial Zone, Water Park, and Entertainment Complex districts reach 3 tiles farther."
+  },
+  {
+   "name": "Mitla",
+   "type": "scientific",
+   "bonus": "mitla",
+   "implemented": false,
+   "shipped": true,
+   "effect": "City growth rate is 15% higher in cities with a Campus district."
+  },
+  {
+   "name": "Muscat",
+   "type": "trade",
+   "bonus": "muscat",
+   "implemented": false,
+   "shipped": true,
+   "effect": "+1 Amenity in cities with a Commercial Hub district."
+  },
+  {
+   "name": "Nalanda",
+   "type": "scientific",
+   "bonus": "nalanda",
+   "implemented": false,
+   "shipped": true,
+   "effect": "Your Builders can now make Mahavihara improvements. +2 Science and +1 Housing. +1 Faith for every adjacent Holy Site district and +1 Science for every adjacent Campus district. After researching Scientific Theory receive an additional +1 Science for every adjacent Campus. When a player constructs their first Mahavihara receive a random technology. Must be built on flat terrain not adjacent to another Mahavihara."
+  },
+  {
+   "name": "Nan Madol",
+   "type": "cultural",
+   "bonus": "nan_madol",
+   "implemented": false,
+   "shipped": true,
+   "effect": "Your districts on or next to Coast or Lake tiles provide +2 Culture."
+  },
+  {
+   "name": "Nazca",
+   "type": "religious",
+   "bonus": "nazca",
+   "implemented": false,
+   "shipped": true,
+   "effect": "Your Builders can now make Nazca Line improvements. Nazca Lines provide +1 Faith to adjacent tiles. +1 Faith to adjacent tiles with a resource. +1 Food to adjacent Desert and Desert Hill tiles after discovering Civil Service. +1 Production to adjacent flat tiles after researching Mass Production. +1 Appeal. Can only be built on flat Desert. This tile cannot be worked."
+  },
+  {
+   "name": "Ngazargamu",
+   "type": "militaristic",
+   "bonus": "ngazargamu",
+   "implemented": false,
+   "shipped": true,
+   "effect": "Land combat or Support units are 20% cheaper to purchase with Gold for each Encampment district building in that city."
+  },
+  {
+   "name": "Rapa Nui",
+   "type": "cultural",
+   "bonus": "rapa_nui",
+   "implemented": false,
+   "shipped": true,
+   "effect": "Your Builders can now make Moai improvements. Moai provide +1 Culture. +1 Culture for every 2 adjacent Moai. +2 Culture if on or adjacent to a Volcanic Soil tile. +1 Culture if adjacent to a Coast or Lake tile . Additional Culture and Tourism as you advance through the Civics and Technology Tree. Can be built on Plains, Plains Hills, Grassland, Grassland Hills, or Volcanic Soil. Cannot be placed adjacent to a Woods or Rainforest tile."
+  },
+  {
+   "name": "Samarkand",
+   "type": "trade",
+   "bonus": "samarkand",
+   "implemented": false,
+   "shipped": true,
+   "effect": "Your Builders can now make Trading Dome improvements. +2 Gold. +1 Gold for every adjacent Luxury resource. Your outgoing international Trade Routes grant +1 Gold per Trading Dome at the origin. Cannot be built next to another Trading Dome."
+  },
+  {
+   "name": "Singapore",
+   "type": "industrial",
+   "bonus": "singapore",
+   "implemented": false,
+   "shipped": true,
+   "effect": "Your cities receive +2 Production for each foreign civilization they have a Trade Route to."
+  },
+  {
+   "name": "Taruga",
+   "type": "scientific",
+   "bonus": "taruga",
+   "implemented": false,
+   "shipped": true,
+   "effect": "+5% Science in all cities for each different improved Strategic resource they have."
+  },
+  {
+   "name": "Vatican City",
+   "type": "religious",
+   "bonus": "vatican_city",
+   "implemented": false,
+   "shipped": true,
+   "effect": "When you activate a Great Person they spread 400 Religious pressure of your founded (or majority) religion to cities within 10 tiles."
+  },
+  {
+   "name": "Venice",
+   "type": "trade",
+   "bonus": "venice",
+   "implemented": false,
+   "shipped": true,
+   "effect": "Your Trade Routes to foreign cities earn +1 Gold for each Luxury resource at the destination."
+  },
+  {
+   "name": "Wolin",
+   "type": "militaristic",
+   "bonus": "wolin",
+   "implemented": false,
+   "shipped": true,
+   "effect": "Receive Great General points when a land unit defeats a major or minor civilization's unit and receive Great Admiral points when a naval unit defeats a major or minor civilization's unit equal to 25% of the opposing unit's strength (Standard Speed)."
+  },
+  {
+   "name": "Carthage",
+   "type": "militaristic",
+   "bonus": "carthage",
+   "implemented": true
+  },
+  {
+   "name": "Stockholm",
+   "type": "scientific",
+   "bonus": "stockholm",
+   "implemented": true
+  },
+  {
+   "name": "Seoul",
+   "type": "militaristic"
+  },
+  {
+   "name": "Amsterdam",
+   "type": "scientific"
+  },
+  {
+   "name": "Akragas",
+   "type": "cultural"
+  },
+  {
+   "name": "Gela",
+   "type": "industrial"
+  },
+  {
+   "name": "Tarentum",
+   "type": "religious"
+  },
+  {
+   "name": "Croton",
+   "type": "trade"
+  },
+  {
+   "name": "Kos",
+   "type": "militaristic"
+  },
+  {
+   "name": "Knidos",
+   "type": "scientific"
+  },
+  {
+   "name": "Pergamon",
+   "type": "cultural"
+  },
+  {
+   "name": "Sinope",
+   "type": "industrial"
+  },
+  {
+   "name": "Massalia",
+   "type": "religious"
+  },
+  {
+   "name": "Emporion",
+   "type": "trade"
+  },
+  {
+   "name": "Cyrene",
+   "type": "militaristic"
+  },
+  {
+   "name": "Leptis Magna",
+   "type": "scientific"
+  },
+  {
+   "name": "Thapsus",
+   "type": "cultural"
+  },
+  {
+   "name": "Malaca",
+   "type": "industrial"
+  },
+  {
+   "name": "Palmyra",
+   "type": "religious"
+  },
+  {
+   "name": "Petra",
+   "type": "trade"
+  },
+  {
+   "name": "Ebla",
+   "type": "militaristic"
+  },
+  {
+   "name": "Kadesh",
+   "type": "scientific"
+  },
+  {
+   "name": "Alalakh",
+   "type": "cultural"
+  },
+  {
+   "name": "Qatna",
+   "type": "industrial"
+  },
+  {
+   "name": "Emar",
+   "type": "religious"
+  },
+  {
+   "name": "Nuzi",
+   "type": "trade"
+  },
+  {
+   "name": "Sicyon",
+   "type": "militaristic"
+  },
+  {
+   "name": "Orchomenus",
+   "type": "scientific"
+  },
+  {
+   "name": "Tiryns",
+   "type": "cultural"
+  },
+  {
+   "name": "Megara",
+   "type": "industrial"
+  },
+  {
+   "name": "Chalcis",
+   "type": "religious"
+  },
+  {
+   "name": "Eretria",
+   "type": "trade"
+  },
+  {
+   "name": "Dodona",
+   "type": "militaristic"
+  },
+  {
+   "name": "Elis",
+   "type": "scientific"
+  },
+  {
+   "name": "Capua",
+   "type": "cultural"
+  },
+  {
+   "name": "Tarquinia",
+   "type": "industrial"
+  },
+  {
+   "name": "Veii",
+   "type": "religious"
+  },
+  {
+   "name": "Perusia",
+   "type": "trade"
+  },
+  {
+   "name": "Ancona",
+   "type": "militaristic"
+  },
+  {
+   "name": "Ragusa",
+   "type": "scientific"
+  },
+  {
+   "name": "Amalfi",
+   "type": "cultural"
+  },
+  {
+   "name": "Pisa",
+   "type": "industrial"
+  },
+  {
+   "name": "Lubeck",
+   "type": "religious"
+  },
+  {
+   "name": "Rostock",
+   "type": "trade"
+  },
+  {
+   "name": "Wismar",
+   "type": "militaristic"
+  },
+  {
+   "name": "Riga",
+   "type": "scientific"
+  },
+  {
+   "name": "Reval",
+   "type": "cultural"
+  },
+  {
+   "name": "Visby",
+   "type": "industrial"
+  },
+  {
+   "name": "Bruges",
+   "type": "religious"
+  },
+  {
+   "name": "Ghent",
+   "type": "trade"
+  },
+  {
+   "name": "Antwerp",
+   "type": "militaristic"
+  },
+  {
+   "name": "Soest",
+   "type": "scientific"
+  },
+  {
+   "name": "Bamberg",
+   "type": "cultural"
+  },
+  {
+   "name": "Goslar",
+   "type": "industrial"
+  },
+  {
+   "name": "Ulm",
+   "type": "religious"
+  },
+  {
+   "name": "Basel City",
+   "type": "trade"
+  },
+  {
+   "name": "Sankt Gallen City",
+   "type": "militaristic"
+  },
+  {
+   "name": "Zurich City",
+   "type": "scientific"
+  },
+  {
+   "name": "Bergen City",
+   "type": "cultural"
+  },
+  {
+   "name": "Trondheim",
+   "type": "industrial"
+  },
+  {
+   "name": "Wisby",
+   "type": "religious"
+  },
+  {
+   "name": "Elsinore",
+   "type": "trade"
+  },
+  {
+   "name": "Malmo",
+   "type": "militaristic"
+  },
+  {
+   "name": "Turku City",
+   "type": "scientific"
+  },
+  {
+   "name": "Abo",
+   "type": "cultural"
+  },
+  {
+   "name": "Narva",
+   "type": "industrial"
+  },
+  {
+   "name": "Derbent",
+   "type": "religious"
+  },
+  {
+   "name": "Tanais",
+   "type": "trade"
+  },
+  {
+   "name": "Chersonesos",
+   "type": "militaristic"
+  },
+  {
+   "name": "Phanagoria",
+   "type": "scientific"
+  },
+  {
+   "name": "Sarkel",
+   "type": "cultural"
+  },
+  {
+   "name": "Itil",
+   "type": "industrial"
+  },
+  {
+   "name": "Bolghar",
+   "type": "religious"
+  },
+  {
+   "name": "Suzdal",
+   "type": "trade"
+  },
+  {
+   "name": "Merv City",
+   "type": "militaristic"
+  },
+  {
+   "name": "Balasagun",
+   "type": "scientific"
+  },
+  {
+   "name": "Talas",
+   "type": "cultural"
+  },
+  {
+   "name": "Osh",
+   "type": "industrial"
+  },
+  {
+   "name": "Kashgar",
+   "type": "religious"
+  },
+  {
+   "name": "Khotan",
+   "type": "trade"
+  },
+  {
+   "name": "Turfan",
+   "type": "militaristic"
+  },
+  {
+   "name": "Dunhuang",
+   "type": "scientific"
+  },
+  {
+   "name": "Pagan City",
+   "type": "cultural"
+  },
+  {
+   "name": "Pegu City",
+   "type": "industrial"
+  },
+  {
+   "name": "Malacca",
+   "type": "religious"
+  },
+  {
+   "name": "Brunei",
+   "type": "trade"
+  },
+  {
+   "name": "Aceh",
+   "type": "militaristic"
+  },
+  {
+   "name": "Palembang",
+   "type": "scientific"
+  },
+  {
+   "name": "Makassar",
+   "type": "cultural"
+  },
+  {
+   "name": "Ternate",
+   "type": "industrial"
+  },
+  {
+   "name": "Tidore",
+   "type": "religious"
+  },
+  {
+   "name": "Hoi An City",
+   "type": "trade"
+  },
+  {
+   "name": "Luang Prabang",
+   "type": "militaristic"
+  },
+  {
+   "name": "Vientiane",
+   "type": "scientific"
+  },
+  {
+   "name": "Ayutthaya City",
+   "type": "cultural"
+  },
+  {
+   "name": "Pattani",
+   "type": "industrial"
+  },
+  {
+   "name": "Kedah",
+   "type": "religious"
+  },
+  {
+   "name": "Manila",
+   "type": "trade"
+  },
+  {
+   "name": "Cebu",
+   "type": "militaristic"
+  },
+  {
+   "name": "Ryukyu",
+   "type": "scientific"
+  },
+  {
+   "name": "Naha",
+   "type": "cultural"
+  },
+  {
+   "name": "Hakodate",
+   "type": "industrial"
+  },
+  {
+   "name": "Sakai City",
+   "type": "religious"
+  },
+  {
+   "name": "Hakata City",
+   "type": "trade"
+  },
+  {
+   "name": "Kamakura City",
+   "type": "militaristic"
+  },
+  {
+   "name": "Dazaifu",
+   "type": "scientific"
+  },
+  {
+   "name": "Gao City",
+   "type": "cultural"
+  },
+  {
+   "name": "Kano",
+   "type": "industrial"
+  },
+  {
+   "name": "Katsina",
+   "type": "religious"
+  },
+  {
+   "name": "Zaria",
+   "type": "trade"
+  },
+  {
+   "name": "Sokoto",
+   "type": "militaristic"
+  },
+  {
+   "name": "Ife",
+   "type": "scientific"
+  },
+  {
+   "name": "Nri",
+   "type": "cultural"
+  },
+  {
+   "name": "Bonny",
+   "type": "industrial"
+  },
+  {
+   "name": "Cabinda",
+   "type": "religious"
+  },
+  {
+   "name": "Ndongo",
+   "type": "trade"
+  },
+  {
+   "name": "Adal",
+   "type": "militaristic"
+  },
+  {
+   "name": "Zeila",
+   "type": "scientific"
+  },
+  {
+   "name": "Berbera",
+   "type": "cultural"
+  },
+  {
+   "name": "Barawa",
+   "type": "industrial"
+  },
+  {
+   "name": "Merca",
+   "type": "religious"
+  },
+  {
+   "name": "Poverty Point",
+   "type": "trade"
+  },
+  {
+   "name": "Chaco",
+   "type": "militaristic"
+  },
+  {
+   "name": "Mesa Verde",
+   "type": "scientific"
+  },
+  {
+   "name": "Taos",
+   "type": "cultural"
+  },
+  {
+   "name": "Zuni",
+   "type": "industrial"
+  },
+  {
+   "name": "Hopi",
+   "type": "religious"
+  },
+  {
+   "name": "Acoma",
+   "type": "trade"
+  },
+  {
+   "name": "Kabah",
+   "type": "militaristic"
+  },
+  {
+   "name": "Monte Alban",
+   "type": "scientific"
+  },
+  {
+   "name": "El Tajin",
+   "type": "cultural"
+  },
+  {
+   "name": "Cholula",
+   "type": "industrial"
+  },
+  {
+   "name": "Chan Chan",
+   "type": "religious"
+  },
+  {
+   "name": "Chavin",
+   "type": "trade"
+  }
+ ]
+}

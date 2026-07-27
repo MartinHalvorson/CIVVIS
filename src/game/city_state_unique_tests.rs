@@ -111,7 +111,7 @@ fn carthage_mohenjo_daro_and_auckland_modify_their_native_systems() {
     let base_capacity = game.trade_capacity(0);
     make_suzerain(&mut game, 0, carthage);
     assert_eq!(game.trade_capacity(0), base_capacity + 1);
-    assert_eq!(Game::cs_type("Carthage"), "militaristic");
+    assert_eq!(game.cs_type("Carthage"), "militaristic");
 
     let center = game.cities[&city].pos;
     game.map.tiles.get_mut(&center).unwrap().river_edges = [false; 6];
@@ -402,11 +402,14 @@ fn suzerains_improve_repair_and_accumulate_city_state_resources() {
 }
 
 #[test]
-fn every_roster_city_state_has_the_expected_type() {
+fn every_shipped_city_state_has_its_shipped_type() {
+    // Civilization VI's own forty-eight city-states and the
+    // `MinorCivBonuses` type each one pays its 1/3/6 Envoy thresholds in,
+    // read out of the shipped `Leaders_XP2.MinorCivBonusType` rows. Eight per
+    // type, which is the balance the real roster ships.
     let expected = [
         ("Kabul", "militaristic"),
         ("Geneva", "scientific"),
-        ("Carthage", "militaristic"),
         ("Hattusa", "scientific"),
         ("Mohenjo-Daro", "cultural"),
         ("Yerevan", "religious"),
@@ -414,11 +417,120 @@ fn every_roster_city_state_has_the_expected_type() {
         ("Auckland", "industrial"),
         ("Valletta", "militaristic"),
         ("Vilnius", "cultural"),
-        ("Stockholm", "scientific"),
         ("Kandy", "religious"),
+        ("Jerusalem", "religious"),
+        ("Brussels", "industrial"),
+        ("Preslav", "militaristic"),
+        ("Antananarivo", "cultural"),
+        ("Mogadishu", "trade"),
+        ("Cahokia", "trade"),
+        ("Akkad", "militaristic"),
+        ("Anshan", "scientific"),
+        ("Armagh", "religious"),
+        ("Ayutthaya", "cultural"),
+        ("Bandar Brunei", "trade"),
+        ("Bologna", "scientific"),
+        ("Buenos Aires", "industrial"),
+        ("Caguana", "cultural"),
+        ("Cardiff", "industrial"),
+        ("Chinguetti", "religious"),
+        ("Fez", "scientific"),
+        ("Granada", "militaristic"),
+        ("Hong Kong", "industrial"),
+        ("Hunza", "trade"),
+        ("Johannesburg", "industrial"),
+        ("Kumasi", "cultural"),
+        ("La Venta", "religious"),
+        ("Lahore", "militaristic"),
+        ("Mexico City", "industrial"),
+        ("Mitla", "scientific"),
+        ("Muscat", "trade"),
+        ("Nalanda", "scientific"),
+        ("Nan Madol", "cultural"),
+        ("Nazca", "religious"),
+        ("Ngazargamu", "militaristic"),
+        ("Rapa Nui", "cultural"),
+        ("Samarkand", "trade"),
+        ("Singapore", "industrial"),
+        ("Taruga", "scientific"),
+        ("Vatican City", "religious"),
+        ("Venice", "trade"),
+        ("Wolin", "militaristic"),
     ];
+    let game = Game::new_full(2, 24, 16, 77_001, 300, 0, false);
     for (city_state, kind) in expected {
-        assert_eq!(Game::cs_type(city_state), kind);
+        assert_eq!(game.cs_type(city_state), kind, "{city_state}");
+    }
+    for kind in [
+        "scientific",
+        "cultural",
+        "religious",
+        "militaristic",
+        "industrial",
+        "trade",
+    ] {
+        assert_eq!(
+            expected.iter().filter(|(_, have)| *have == kind).count(),
+            8,
+            "{kind}"
+        );
+    }
+    assert_eq!(expected.len(), 48);
+}
+
+#[test]
+fn the_roster_seats_the_shipped_forty_eight_before_any_other_name() {
+    // Seating order is what decides which city-states an ordinary game meets.
+    // The shipped forty-eight come first, so only the largest maps ever reach
+    // the extra identities.
+    let rules = crate::rules::Rules::shipped();
+    let roster = &rules.city_states.roster;
+    let shipped = roster.iter().filter(|seat| seat.shipped).count();
+    assert_eq!(shipped, 48);
+    assert!(
+        roster[..48].iter().all(|seat| seat.shipped),
+        "a name the game never seats was placed inside the first forty-eight"
+    );
+    assert!(
+        roster[48..].iter().all(|seat| !seat.shipped),
+        "a shipped city-state was pushed past the first forty-eight"
+    );
+    // Identity is the name, and two seats sharing one would share a Suzerain
+    // bonus.
+    let mut names: Vec<&str> = roster.iter().map(|seat| seat.name.as_str()).collect();
+    names.sort_unstable();
+    let unique = names.len();
+    names.dedup();
+    assert_eq!(names.len(), unique, "two city-state seats share a name");
+    // Every roster name must be a known identity, and every identity seatable.
+    for seat in roster {
+        assert!(
+            crate::game::CITY_STATE_NAMES.contains(&seat.name.as_str()),
+            "{} is not a city-state identity",
+            seat.name
+        );
+    }
+    assert_eq!(roster.len(), crate::game::CITY_STATE_NAMES.len());
+}
+
+#[test]
+fn no_city_state_seat_claims_a_suzerain_bonus_the_engine_does_not_have() {
+    // `implemented` is what `cs_bonus` gates on. A seat that declares a bonus
+    // it does not have would otherwise read as a working bonus that silently
+    // does nothing.
+    let rules = crate::rules::Rules::shipped();
+    let game = Game::new_full(2, 24, 16, 77_002, 300, 0, false);
+    for seat in &rules.city_states.roster {
+        if seat.implemented {
+            assert!(
+                seat.bonus.is_some(),
+                "{} is marked implemented with no bonus key",
+                seat.name
+            );
+            assert_eq!(game.cs_bonus(&seat.name), seat.bonus.as_deref(), "{}", seat.name);
+        } else {
+            assert_eq!(game.cs_bonus(&seat.name), None, "{}", seat.name);
+        }
     }
 }
 
