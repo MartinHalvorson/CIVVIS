@@ -238,19 +238,23 @@ class SessionSettingsTests(unittest.TestCase):
             "speed": "standard",
             "leader_pool": "civ6",
         }
-        # Board shape, pacing and victory selection follow the live game; the
-        # seat counts stay with the operator's flags. `/state` is fog-of-war
-        # trimmed, so the majors it lists are only the ones the viewing player
-        # can see -- deriving `--players` from them ratchets the exhibition
-        # down game after game and never recovers.
+        # Board shape, pacing and victory selection follow the live game. Seat
+        # count and map script are redrawn instead of carried, and the board
+        # size is dropped with the seat count so `civvis play` can size the map
+        # for whatever was drawn. `/state` is fog-of-war trimmed, so the majors
+        # it lists are only the ones the viewing player can see -- deriving
+        # `--players` from them ratcheted the exhibition down game after game
+        # and never recovered.
+        carried = supervisor.session_settings(state, defaults)
         self.assertEqual(
-            supervisor.session_settings(state, defaults),
-            {"players": 4, "width": 55, "height": 24, "city_states": 6,
-             "turns": 250, "map": "continents", "shape": "planet",
-             "poles": "randomized", "speed": "online",
-             "leader_pool": "expanded",
+            {key: value for key, value in carried.items()
+             if key not in ("players", "map")},
+            {"turns": 250, "shape": "planet", "poles": "randomized",
+             "speed": "online", "leader_pool": "expanded",
              "victories": ["science", "culture", "domination", "score"]},
         )
+        self.assertIn(carried["players"], supervisor.SIMULATION_PLAYER_COUNTS)
+        self.assertIn(carried["map"], supervisor.MAP_TYPES)
 
     def test_fogged_state_does_not_shrink_the_next_game(self):
         """A trimmed observation must not become the next game's seat count."""
@@ -269,9 +273,15 @@ class SessionSettingsTests(unittest.TestCase):
             "map": "pangaea",
             "speed": "online",
         }
-        carried = supervisor.session_settings(fogged, defaults)
-        self.assertEqual(carried["players"], 6)
-        self.assertEqual(carried["city_states"], 9)
+        # The seat count is redrawn from the policy, never read off the
+        # observation -- this trimmed one lists a single major, and a game
+        # started from it would be a world with nobody in it.
+        for _ in range(50):
+            carried = supervisor.session_settings(fogged, defaults)
+            self.assertIn(carried["players"], supervisor.SIMULATION_PLAYER_COUNTS)
+        # City states go with the seat count: dropping them is what lets
+        # `civvis play` seat the right number for the size it just picked.
+        self.assertNotIn("city_states", carried)
 
     def test_borrowed_turns_do_not_ratchet_the_next_game_longer(self):
         """"One more turn" raises `max_turns`; the next game must not inherit it."""
@@ -364,7 +374,17 @@ class SessionSettingsTests(unittest.TestCase):
             "speed": "standard",
             "leader_pool": "civ6",
         }
-        self.assertEqual(supervisor.session_settings({}, defaults), defaults)
+        # Everything the policy does not govern still comes from the flags.
+        rolled = supervisor.session_settings({}, defaults)
+        self.assertEqual(
+            {key: value for key, value in rolled.items()
+             if key not in ("players", "map", "speed")},
+            {"turns": 500, "leader_pool": "civ6"},
+        )
+        self.assertIn(rolled["players"], supervisor.SIMULATION_PLAYER_COUNTS)
+        self.assertIn(rolled["map"], supervisor.MAP_TYPES)
+        # Standard was asked for and Online is what the exhibition simulates.
+        self.assertEqual(rolled["speed"], "online")
 
     def test_missing_live_victory_settings_keep_previous_selection(self):
         defaults = {
@@ -1243,6 +1263,70 @@ class RecoveryTests(unittest.TestCase):
             False,
         )
         self.assertNotIn("--restart-ms", command)
+
+    def test_every_world_is_online_speed_and_an_ancient_start(self):
+        """The two pins, enforced where all three launch paths meet.
+
+        A rolled world, a staged lobby handoff and a resumed checkpoint all
+        reach `civvis play` through `server_command`, so that is where the
+        exhibition's one kind of game is decided. A handoff naming Epic is a
+        real operator action and gets said out loud rather than swallowed.
+        """
+        asked_for_epic = {
+            "players": 4,
+            "width": 60,
+            "height": 38,
+            "city_states": 6,
+            "turns": 250,
+            "map": "continents",
+            "speed": "epic",
+        }
+        command = supervisor.server_command(8766, asked_for_epic, False)
+        self.assertEqual(command[command.index("--speed") + 1], "online")
+        self.assertEqual(command[command.index("--start-era") + 1], "ancient")
+        self.assertEqual(command.count("--speed"), 1)
+
+    def test_no_world_is_started_with_teams(self):
+        """`civvis play` reads an absent `--teams` as a free-for-all."""
+        for settings in (
+            {"players": 4, "turns": 250, "map": "pangaea", "speed": "online"},
+            {"players": 8, "width": 84, "height": 54, "city_states": 12,
+             "turns": 250, "map": "islands", "speed": "online",
+             "teams": [0, 0, 1, 1, 2, 2, 3, 3]},
+        ):
+            command = supervisor.server_command(8766, settings, False)
+            self.assertNotIn("--teams", command)
+
+    def test_a_rolled_world_lets_the_binary_size_its_own_board(self):
+        """Seat count varies, so the board that holds it cannot be pinned."""
+        rolled = supervisor.rolled_simulation_settings(
+            {"players": 6, "width": 74, "height": 46, "city_states": 9,
+             "turns": 250, "map": "pangaea", "speed": "online"}
+        )
+        for dropped in ("width", "height", "city_states"):
+            self.assertNotIn(dropped, rolled)
+        command = supervisor.server_command(8766, rolled, False)
+        for flag in ("--width", "--height", "--city-states"):
+            self.assertNotIn(flag, command)
+        # An explicit size still travels -- that is how a resume keeps the
+        # board its checkpoint was written on.
+        sized = supervisor.server_command(
+            8766, {**rolled, "width": 74, "height": 46, "city_states": 9}, False
+        )
+        self.assertEqual(sized[sized.index("--width") + 1], "74")
+        self.assertEqual(sized[sized.index("--city-states") + 1], "9")
+
+    def test_rolled_worlds_vary_across_both_axes(self):
+        """Variety is the point; a roll that always answers 6/pangaea is not."""
+        seen_players, seen_maps = set(), set()
+        for _ in range(400):
+            rolled = supervisor.rolled_simulation_settings(
+                {"players": 6, "turns": 250, "map": "pangaea", "speed": "online"}
+            )
+            seen_players.add(rolled["players"])
+            seen_maps.add(rolled["map"])
+        self.assertEqual(seen_players, set(supervisor.SIMULATION_PLAYER_COUNTS))
+        self.assertEqual(seen_maps, set(supervisor.MAP_TYPES))
 
     def test_server_command_carries_manual_victory_settings(self):
         settings = {
