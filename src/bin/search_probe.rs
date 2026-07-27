@@ -36,10 +36,12 @@
 //! The baseline is always a stock `StrategicAi`; the flags describe the
 //! treatment. Both are measured **on the same positions with the same agent**,
 //! so the comparison is paired and the sign test over positions is meaningful.
-use civvis::ai::{Ai, AdvancedAi, VictoryTarget};
+use civvis::ai::{run_game, Ai, AdvancedAi, VictoryTarget};
 use civvis::game::{Action, Game};
 use civvis::parallel;
-use civvis::strategic::{ReviewPath, StrategicAi};
+use civvis::production::ProductionSearchAi;
+use civvis::ai::Weights;
+use civvis::strategic::{Doctrine, ReviewPath, StrategicAi};
 
 /// What the rollouts would have answered at a position a prior answered
 /// instead, and which prior it was.
@@ -200,6 +202,36 @@ fn main() {
     // and nobody has checked what it costs. Widening or deepening a search
     // that answers one review in two is worth less than finding out whether
     // the other one should have been answered by it.
+    // Production mode: does the *production* search see anything?
+    //
+    // `ProductionSearchAi` is a recorded negative result -- 9 map directions
+    // to 21 -- and its module note names the diagnosis it was never run
+    // against: "if every branch returns the same number the horizon is too
+    // short for the build to land, and no win rate would say so." It exposes
+    // `candidate_values` for exactly that check. Nobody has taken it.
+    // Outcome mode: does labelling a build by the GAME'S RESULT rank
+    // candidates differently from score share?
+    //
+    // Two lines closed this week both ended at the same sentence: score share
+    // is not win probability, and the lane search only works because its
+    // branches sometimes reach a decided game and return exactly 1.0 or 0.0.
+    // The proposed repair is an offline labeller that continues each candidate
+    // to a real result. Before building one, measure whether the label it
+    // would produce disagrees with the proxy it would replace. If it agrees,
+    // the labeller is dead too and nobody spends a week on it.
+    if flag(&args, "--outcome") {
+        let replicas = number(&args, "--replicas", 1);
+        audit_outcome(
+            players, maps, warmup, seed0, jobs, width, height, turns, replicas,
+        );
+        return;
+    }
+
+    if flag(&args, "--production") {
+        audit_production(players, maps, warmup, seed0, jobs, width, height, turns);
+        return;
+    }
+
     if flag(&args, "--priors") {
         audit_priors(
             players, maps, warmup, seed0, jobs, width, height, turns,
@@ -529,5 +561,381 @@ fn audit_priors(
          religious victories 171 to 164, and paired score not at all (49.6%, 240 maps, \
          p=0.8450). Read this column as `the label changed`, never as `the play \
          changed`."
+    );
+}
+
+
+fn audit_production(
+    players: usize,
+    maps: usize,
+    warmup: u32,
+    seed0: u64,
+    jobs: usize,
+    width: i32,
+    height: i32,
+    turns: u32,
+) {
+    struct CityReading {
+        candidates: usize,
+        spread: f64,
+        distinct: usize,
+        agrees_with_deep: bool,
+    }
+
+    let results = parallel::map(maps, jobs, move |index| {
+        let seed = seed0 + index as u64;
+        let mut game = Game::new(players, width, height, seed, turns, 0);
+        let mut fleet: Vec<AdvancedAi> = AdvancedAi::fleet(&game);
+        for _ in 0..warmup {
+            if game.winner.is_some() {
+                break;
+            }
+            for pid in 0..game.players.len() {
+                if game.winner.is_some() {
+                    break;
+                }
+                fleet[pid].take_turn(&mut game, pid);
+                if game.winner.is_none() && game.current == pid {
+                    let _ = game.apply(pid, &Action::EndTurn);
+                }
+            }
+        }
+        if game.winner.is_some() {
+            return Vec::new();
+        }
+        let agent = ProductionSearchAi::new();
+        let mut deep = ProductionSearchAi::new();
+        deep.max_horizon = 200;
+        let mut out = Vec::new();
+        for cid in game.player_city_ids(0) {
+            let values = agent.candidate_values(&game, 0, cid);
+            if values.len() < 2 {
+                continue;
+            }
+            // Does the CHOICE depend on the horizon? Separation says the
+            // evaluator can tell the candidates apart; this says whether it
+            // orders them the same way once every payoff has landed.
+            let best = |vals: &[(civvis::game::Item, f64)]| -> Option<String> {
+                vals.iter()
+                    .fold(None, |top: Option<&(civvis::game::Item, f64)>, cand| {
+                        match top.is_none_or(|t| cand.1 > t.1) {
+                            true => Some(cand),
+                            false => top,
+                        }
+                    })
+                    .map(|(item, _)| format!("{item:?}"))
+            };
+            let shallow_pick = best(&values);
+            let deep_pick = best(&deep.candidate_values(&game, 0, cid));
+            let agrees = shallow_pick == deep_pick;
+            let low = values.iter().map(|(_, v)| *v).fold(f64::INFINITY, f64::min);
+            let high = values
+                .iter()
+                .map(|(_, v)| *v)
+                .fold(f64::NEG_INFINITY, f64::max);
+            // How many candidates the evaluator can actually tell apart. If
+            // this is 1 the search is choosing among identical numbers and is
+            // deciding by enumeration order, not by projection.
+            let mut seen: Vec<f64> = values.iter().map(|(_, v)| *v).collect();
+            seen.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+            seen.dedup_by(|a, b| (*a - *b).abs() < 1e-12);
+            out.push(CityReading {
+                candidates: values.len(),
+                spread: high - low,
+                distinct: seen.len(),
+                agrees_with_deep: agrees,
+            });
+        }
+        out
+    });
+
+    let readings: Vec<CityReading> = results.into_iter().flatten().collect();
+    if readings.is_empty() {
+        println!("no city offered two or more candidate builds in {maps} maps");
+        std::process::exit(1);
+    }
+
+    let mut spreads: Vec<f64> = readings.iter().map(|r| r.spread).collect();
+    spreads.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    let blind = readings.iter().filter(|r| r.distinct <= 1).count();
+    let candidates: usize = readings.iter().map(|r| r.candidates).sum();
+    let distinct: usize = readings.iter().map(|r| r.distinct).sum();
+
+    println!(
+        "production audit: {} city decisions over {maps} maps \
+         ({players}p {width}x{height}, warmup {warmup}, seeds {seed0}..)",
+        readings.len()
+    );
+    println!();
+    println!("  candidates projected per decision   {:.1}", candidates as f64 / readings.len() as f64);
+    println!("  values the evaluator can separate   {:.1}", distinct as f64 / readings.len() as f64);
+    println!("  median spread across candidates     {:.6}", percentile(&spreads, 0.5));
+    println!("  p90 spread                          {:.6}", percentile(&spreads, 0.9));
+    println!("  max spread                          {:.6}", spreads.last().copied().unwrap_or(0.0));
+    println!(
+        "  decisions where every candidate scores the SAME   {blind} of {} ({:.0}%)",
+        readings.len(),
+        100.0 * blind as f64 / readings.len() as f64
+    );
+    let agrees = readings.iter().filter(|r| r.agrees_with_deep).count();
+    println!(
+        "  same pick at horizon 200 as at the shipped ceiling  {agrees} of {} ({:.0}%)",
+        readings.len(),
+        100.0 * agrees as f64 / readings.len() as f64
+    );
+    println!(
+        "\nA decision whose candidates all score alike is decided by enumeration order, \
+         not by projection. That is the failure `PolicyAi` had on 96% of its candidates, \
+         and the one this module's own note predicts for a horizon shorter than the \
+         build's payoff."
+    );
+}
+
+
+/// Distinct-but-sane opponent policies, so a candidate can be continued
+/// against more than one future.
+///
+/// The engine is deterministic: the same position played by the same agents
+/// always produces the same game, so a single continuation cannot be denoised
+/// by repeating it. Varying the *opponents* is the only replication this
+/// design admits. These are the four doctrine perturbations of the stock
+/// genome — bounded by evolution's own per-gene clamps, so each is a play
+/// style rather than a broken agent — plus the frozen legacy planner.
+fn opponent_pool(index: usize) -> Box<dyn Ai> {
+    let base = Weights::default();
+    match index % 5 {
+        0 => Box::new(AdvancedAi::new()) as Box<dyn Ai>,
+        4 => Box::new(AdvancedAi::legacy()) as Box<dyn Ai>,
+        other => Box::new(AdvancedAi::with_weights(
+            Doctrine::ALL[other].apply(&base),
+        )) as Box<dyn Ai>,
+    }
+}
+
+fn audit_outcome(
+    players: usize,
+    maps: usize,
+    warmup: u32,
+    seed0: u64,
+    jobs: usize,
+    width: i32,
+    height: i32,
+    turns: u32,
+    replicas: usize,
+) {
+    struct Decision {
+        candidates: usize,
+        /// Candidates whose continuation this seat won.
+        wins: usize,
+        /// The proxy's pick also won its continuation.
+        proxy_pick_won: bool,
+        /// Proxy pick and outcome pick are the same item.
+        agrees: bool,
+        /// Outcomes are not all identical, so the label says something.
+        discriminates: bool,
+        /// Candidates whose replicas did not all agree — the direct evidence
+        /// that a single continuation is noise.
+        mixed_candidates: usize,
+        /// Highest candidate win rate minus lowest, at this decision.
+        rate_spread: f64,
+    }
+
+    let results = parallel::map(maps, jobs, move |index| {
+        let seed = seed0 + index as u64;
+        let mut game = Game::new(players, width, height, seed, turns, 0);
+        let mut fleet: Vec<AdvancedAi> = AdvancedAi::fleet(&game);
+        for _ in 0..warmup {
+            if game.winner.is_some() {
+                break;
+            }
+            for pid in 0..game.players.len() {
+                if game.winner.is_some() {
+                    break;
+                }
+                fleet[pid].take_turn(&mut game, pid);
+                if game.winner.is_none() && game.current == pid {
+                    let _ = game.apply(pid, &Action::EndTurn);
+                }
+            }
+        }
+        if game.winner.is_some() {
+            return Vec::new();
+        }
+        let agent = ProductionSearchAi::new();
+        let mut out = Vec::new();
+        // One city per map: a full continuation per candidate is about
+        // seventy times the cost of a game, and the question is the
+        // disagreement rate, not coverage.
+        for cid in game.player_city_ids(0).into_iter().take(1) {
+            let scored = agent.candidate_values(&game, 0, cid);
+            if scored.len() < 2 {
+                continue;
+            }
+            let mut labelled: Vec<(String, f64, bool)> = Vec::new();
+            let mut rates: Vec<f64> = Vec::new();
+            let mut mixed = 0usize;
+            for (item, proxy) in &scored {
+                let mut wins = 0usize;
+                let mut runs = 0usize;
+                for replica in 0..replicas.max(1) {
+                    let mut sim = game.clone();
+                    if sim
+                        .apply(
+                            0,
+                            &Action::Produce {
+                                city: cid,
+                                item: item.clone(),
+                            },
+                        )
+                        .is_err()
+                    {
+                        continue;
+                    }
+                    // The searching seat keeps the stock agent in every
+                    // replica; only the opponents vary, which is what makes
+                    // the win rate a property of the candidate.
+                    let mut ais: Vec<Box<dyn Ai>> = sim
+                        .players
+                        .iter()
+                        .map(|p| {
+                            if p.id == 0 {
+                                Box::new(AdvancedAi::new()) as Box<dyn Ai>
+                            } else {
+                                opponent_pool(replica + p.id)
+                            }
+                        })
+                        .collect();
+                    run_game(&mut sim, &mut ais);
+                    runs += 1;
+                    if sim.winner == Some(0) {
+                        wins += 1;
+                    }
+                }
+                if runs == 0 {
+                    continue;
+                }
+                if wins > 0 && wins < runs {
+                    mixed += 1;
+                }
+                rates.push(wins as f64 / runs as f64);
+                labelled.push((format!("{item:?}"), *proxy, wins * 2 > runs));
+            }
+            if labelled.len() < 2 {
+                continue;
+            }
+            let wins = labelled.iter().filter(|(_, _, won)| *won).count();
+            let proxy_pick = labelled
+                .iter()
+                .fold(None, |top: Option<&(String, f64, bool)>, cand| {
+                    match top.is_none_or(|t| cand.1 > t.1) {
+                        true => Some(cand),
+                        false => top,
+                    }
+                })
+                .expect("labelled is non-empty");
+            // The outcome label's pick: any winning candidate. Ties keep
+            // enumeration order, as everywhere else in this codebase.
+            let outcome_pick = labelled.iter().find(|(_, _, won)| *won);
+            let low = rates.iter().copied().fold(f64::INFINITY, f64::min);
+            let high = rates.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+            out.push(Decision {
+                candidates: labelled.len(),
+                wins,
+                proxy_pick_won: proxy_pick.2,
+                agrees: outcome_pick.is_none_or(|(name, _, _)| *name == proxy_pick.0),
+                discriminates: wins > 0 && wins < labelled.len(),
+                mixed_candidates: mixed,
+                rate_spread: high - low,
+            });
+        }
+        out
+    });
+
+    let decisions: Vec<Decision> = results.into_iter().flatten().collect();
+    if decisions.is_empty() {
+        println!("no city decision could be continued to a result in {maps} maps");
+        std::process::exit(1);
+    }
+    let n = decisions.len();
+    let discriminating: Vec<&Decision> = decisions.iter().filter(|d| d.discriminates).collect();
+    let candidates: usize = decisions.iter().map(|d| d.candidates).sum();
+
+    println!(
+        "outcome audit: {n} city decisions, every candidate continued to a real result \
+         ({players}p {width}x{height}, warmup {warmup}, {turns}-turn budget, seeds {seed0}..)"
+    );
+    println!();
+    println!("  candidates continued per decision              {:.1}", candidates as f64 / n as f64);
+    println!(
+        "  decisions where the label DISCRIMINATES         {} of {n} ({:.0}%)",
+        discriminating.len(),
+        100.0 * discriminating.len() as f64 / n as f64
+    );
+    if !discriminating.is_empty() {
+        let agrees = discriminating.iter().filter(|d| d.agrees).count();
+        let proxy_won = discriminating.iter().filter(|d| d.proxy_pick_won).count();
+        println!(
+            "  ...of those, proxy pick == outcome pick        {agrees} of {} ({:.0}%)",
+            discriminating.len(),
+            100.0 * agrees as f64 / discriminating.len() as f64
+        );
+        println!(
+            "  ...of those, the proxy's pick WON its game     {proxy_won} of {} ({:.0}%)",
+            discriminating.len(),
+            100.0 * proxy_won as f64 / discriminating.len() as f64
+        );
+    }
+    if replicas > 1 {
+        let mixed: usize = decisions.iter().map(|d| d.mixed_candidates).sum();
+        let mut spreads: Vec<f64> = decisions.iter().map(|d| d.rate_spread).collect();
+        spreads.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        let separating = decisions.iter().filter(|d| d.rate_spread >= 0.4).count();
+        println!();
+        println!("  replicas per candidate                        {replicas}");
+        println!(
+            "  candidates whose replicas DISAGREED           {mixed} of {candidates} ({:.0}%)",
+            100.0 * mixed as f64 / candidates.max(1) as f64
+        );
+        println!(
+            "  median win-rate spread across candidates      {:.2}",
+            percentile(&spreads, 0.5)
+        );
+        println!(
+            "  decisions separating by >= 0.4 win rate       {separating} of {n} ({:.0}%)",
+            100.0 * separating as f64 / n as f64
+        );
+    }
+
+    if replicas > 1 {
+        // The criterion this mode exists to evaluate. A win rate over K
+        // replicas carries a standard error of sqrt(p(1-p)/K), about 0.224 at
+        // K=5. If the spread BETWEEN candidates is smaller than the error on
+        // each one, no amount of corpus-building separates them: the label is
+        // under its own noise floor and a search over this decision is
+        // measuring nothing it can act on.
+        let se = (0.25f64 / replicas as f64).sqrt();
+        let mut spreads: Vec<f64> = decisions.iter().map(|d| d.rate_spread).collect();
+        spreads.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        let median = percentile(&spreads, 0.5);
+        println!();
+        println!(
+            "  per-candidate standard error at {replicas} replicas   {se:.3}   \
+             vs median between-candidate spread {median:.3}"
+        );
+        if median < se {
+            let needed = (0.25 / (median / 4.0).powi(2)).ceil() as usize;
+            println!(
+                "  -> UNDER THE NOISE FLOOR. Resolving a gap of {median:.2} at 4 sigma needs \
+                 about {needed} replicas per candidate, {}x this run.",
+                needed / replicas.max(1)
+            );
+        }
+    }
+
+    println!(
+        "\nA decision where every continuation ends the same way carries no signal for a \
+         labeller, whatever it costs to produce. Read the discrimination rate first: it \
+         bounds how much an outcome-labelled corpus could ever teach about this decision, \
+         and the noise-floor line second: it says what that would cost."
     );
 }

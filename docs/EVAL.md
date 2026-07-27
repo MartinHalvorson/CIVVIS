@@ -2140,3 +2140,154 @@ treatment that won changed the fewest. **Lane routing is not the lever.** The
 macro search's only output is a lane, so what remains there is compute — which
 works, and whose ceiling is already measured at horizon 80. Effort belongs on
 a decision that repeats.
+
+## 2026-07-26 — the production search is not blind, and its ranking is horizon-independent
+
+`ProductionSearchAi` is a recorded negative result (9 map directions to 21,
+p=0.0428) whose module note names a diagnosis it was never run against: *"if
+every branch returns the same number the horizon is too short for the build to
+land, and no win rate would say so."* It exposes `candidate_values` for exactly
+that check. `search_probe --production` takes it.
+
+```
+production audit: 71 city decisions over 40 maps (4p 24x16, warmup 60)
+
+  candidates projected per decision   5.0
+  values the evaluator can separate   3.7
+  median spread across candidates     0.015657
+  p90 spread                          0.070006
+  decisions where every candidate scores the SAME   3 of 71 (4%)
+  same pick at horizon 200 as at the shipped ceiling  54 of 56 (96%)
+```
+
+**Both halves of the diagnosis are false.**
+
+- **Not blind.** The evaluator separates 3.7 of 5.0 candidates; only 4% of
+  decisions score every candidate alike. Contrast `PolicyAi`, whose computed
+  gain was exactly zero on 96.4% of candidates — that is what blind looks like.
+- **Not horizon-bound.** Raising the ceiling from 40 to 200, long enough for
+  any build in the game to land and compound, leaves the chosen item unchanged
+  on 96% of decisions. `ProductionSearchAi::max_horizon` exists so this stays
+  re-measurable.
+
+So the search sees the difference, keeps seeing the same difference once every
+payoff has landed, and still loses to the scripted governor.
+
+### What that leaves: the objective, not the window
+
+**Score share is not win probability.** The lane search works because its
+branches reach *decided* games and return exactly 1.0 or 0.0 — 22% of reviews
+at horizon 40, 56% at 80. A production rollout starting mid-game and stopping
+40 or 200 rounds later essentially never decides, so it ranks entirely by a
+proxy, and on this decision the governor's hand-tuned sequencing beats that
+proxy.
+
+That also explains `production_net` cleanly: it swapped one function of the 25
+empire aggregates for another, when the problem is that **no** function of them
+is win probability.
+
+### What this retires, before it was built
+
+The obvious repair — make the rollout cheap enough (sealed per-city
+simulation, frozen rivals) to afford a payoff-length horizon — is aimed at a
+defect that is not there, and is **predicted-null**. It was on the roadmap as
+M4 in `docs/SUPERHUMAN.md` and is retired there, on measurement rather than on
+a run.
+
+The surviving route is the one the module already named: branches continued to
+a **real result**. A full continuation per candidate is roughly seventy times
+the cost of a game, so it is an offline labeller feeding a distilled policy —
+`docs/SUPERHUMAN.md` M6 then M5 — not an online agent.
+
+## 2026-07-26 — what an outcome label would actually be worth
+
+Two closed lines both ended at the same sentence — score share is not win
+probability — and both pointed at the same repair: continue each candidate to
+a **real result** and label it with the outcome. Before building that,
+`search_probe --outcome` measures the label it would produce. Every candidate
+of a city decision is continued to a natural end at the stock 500-turn budget.
+
+```
+outcome audit: 51 city decisions, every candidate continued to a real result
+               (4p 24x16, warmup 60, 500-turn budget)
+
+  candidates continued per decision              5.0
+  decisions where the label DISCRIMINATES        14 of 51 (27%)
+  ...of those, proxy pick == outcome pick         3 of 14 (21%)
+  ...of those, the proxy's pick WON its game      6 of 14 (43%)
+```
+
+**On 73% of decisions every candidate leads to the same outcome.** The label
+carries no signal there, whatever it costs to produce — and it costs about
+seventy times a game per decision. Where it does discriminate, score share
+picks the winning candidate 43% of the time, near chance, so the headroom is
+real; it just exists on about a quarter of decisions.
+
+**27% is an upper bound, not an estimate.** The engine is deterministic, so
+each continuation is a single sample and a build that "wins" may win for
+reasons unrelated to it. Chaotic divergence and causal effect are
+indistinguishable in this design, and — because the same position and the same
+agents always produce the same game — the label cannot be denoised by
+repeating it.
+
+**What that implies for the design.** An outcome-labelled corpus built from
+single continuations would train on noise for three quarters of its rows. The
+fix is replication across *opponents*, not more decisions: continue each
+candidate against several distinct rival policies and label with the resulting
+win rate. `data/league` already maintains a rated pool of distinct strategies,
+which is the natural source. That is a larger job than the labeller as
+originally scoped, and it is the honest version of it.
+
+## 2026-07-27 — replicating the outcome label across opponents: the noise floor
+
+The previous entry said a single continuation cannot be denoised — the engine is
+deterministic — and that the fix is replication across *opponents*.
+`search_probe --outcome --replicas K` does that: the searching seat keeps the
+stock agent while the rivals are drawn from a pool of five distinct-but-sane
+policies (the four `Doctrine` perturbations of the stock genome, each clamped by
+evolution's own per-gene bounds, plus the frozen legacy planner). 850 full games
+at the stock 500-turn budget, 12 minutes wall.
+
+```
+outcome audit: 34 city decisions, 5 candidates, 5 opponent replicas each
+
+  decisions where the label DISCRIMINATES         8 of 34 (24%)
+  candidates whose replicas DISAGREED            48 of 170 (28%)
+  median win-rate spread across candidates       0.20
+  decisions separating by >= 0.4 win rate         9 of 34 (26%)
+```
+
+**Replication does denoise, and it reveals the label is under its own noise
+floor.** 28% of candidates changed outcome when only the opponents changed, so a
+single continuation is genuinely noise for about a quarter of them. But a win
+rate over K replicas carries a standard error of `sqrt(p(1-p)/K)` — **0.224 at
+K=5** — and the median spread *between* candidates is **0.20**. The signal is
+smaller than the error on each measurement of it.
+
+| replicas | SE | resolves a true gap of |
+|---|---|---|
+| 5 | 0.224 | 0.89 |
+| 20 | 0.112 | 0.45 |
+| 50 | 0.071 | 0.28 |
+| **100** | **0.050** | **0.20** |
+
+So resolving the effect that is actually there needs about **100 replicas per
+candidate, twenty times this run**: 4 hours for these 34 decisions, and roughly
+**1200 hours** for a 10,000-decision corpus at 873 ms per game. A pilot is
+affordable; the corpus is not, on this machine.
+
+### The general criterion, which is the durable part
+
+> **Search pays on a decision whose effect exceeds the outcome noise floor.**
+
+That is why the lane search works and the production search does not, and it is
+measurable in advance for either. A lane branch reaches a decided game 22% of the
+time at horizon 40 and 56% at 80, returning exactly 1.0 or 0.0 — an effect of 1.0
+against a floor near zero. A build choice moves the win rate by about 0.20 against
+a floor of 0.224 at affordable replica counts.
+
+**Measure the ratio before building search for any decision.**
+`search_probe --outcome --replicas K` prints it, including the replica count that
+would be required. This is the same discipline that retired the sealed-rollout
+family and the commitment-margin hypothesis, applied one level up: not "does the
+treatment fire" but "is there anything here to find".
