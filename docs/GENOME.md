@@ -275,6 +275,65 @@ threshold is not necessarily its binding one.** The real target is
 
 ---
 
+### The one surviving lead, and why it still failed
+
+`settler_min_pop = 5` — a city grows to pop 5 before building a Settler,
+i.e. slower and taller expansion — is the only value in this whole sequence to
+survive resampling. On **score share**, across four disjoint seeds:
+
+| seed | maps | edge |
+|---|---|---|
+| 1200000 | 20 | +0.0283 ± 0.0187 |
+| 1300000 | 20 | +0.0184 ± 0.0237 |
+| 1600000 | 80 | +0.0174 ± 0.0069 |
+| pooled | 120 | **+0.0187 ± 0.0062 (3.0 SE)** |
+| 1700000 (below) | 120 | +0.011 |
+
+Pre-registered before the run, decision rule fixed in advance: PASS requires
+map directions FOR > AGAINST at sign p < 0.05, score reported beside it and
+explicitly not part of the rule.
+
+```
+policy_eval --maps 120 --seed 1700000 --gene settler_min_pop --value 5
+  decisive games   117/240 (48.8%)
+  map directions   12 for / 15 against / 93 neutral
+  sign test        p = 0.7011
+  terminal score   51.1% of table
+```
+
+**NULL. The shipped value of 2 stands.**
+
+And the failure mode is the informative part. The score-share effect
+**replicated a fourth time** — 51.1% here against the pooled +0.0187. The
+measurement was never wrong. **A 3.0 SE score-share gain converted to exactly
+zero win improvement.**
+
+## ★★ THE FINDING THAT MATTERS MOST: score share does not buy wins
+
+`docs/EVAL.md` has long said wins and terminal score measure different things.
+This is that claim demonstrated **prospectively**, under a rule fixed before
+the data existed, on a change selected precisely because its score effect was
+real and replicated.
+
+It has a consequence for genetic search that is hard to escape:
+
+| fitness | SE at 24 games | valid? |
+|---|---|---|
+| win rate | 0.102 | yes, and unaffordable — a 0.05 effect needs ~865 games *per genome* |
+| score share | ~0.02 | affordable, and **provably does not convert** |
+
+**A GA over this genome is caught between a proxy that is cheap but invalid
+and a target that is valid but unaffordable.** That is a more fundamental
+reason breeding has produced nothing here than either the rating bug or the
+dead genes — those are fixable, and this is not, at any compute budget a
+search can spend per genome.
+
+It also indicts the fitness this session's own breeder used
+(`0.8 · score + 0.2 · wins`): it is 80% weighted on a quantity now shown not
+to convert. That breeder's null is therefore uninformative about the policy
+appetites — it was selecting on the wrong thing, which is a fourth distinct
+way to breed on noise.
+
 ## The conclusion this all points at
 
 Every measured attempt to make this agent stronger by **tuning parameters** has
