@@ -8,9 +8,7 @@ use civvis::game::{
     WarRecord, DEFAULT_DISASTER_INTENSITY, GAME_MODES,
 };
 use civvis::rules::Rules;
-use civvis::setup::{
-    BaseRuleset, GameSpeed, MapPoles, MapScript, MapSize, MapTopology, StartEon, START_EONS,
-};
+use civvis::setup::{self, BaseRuleset, GameSpeed, MapPoles, MapScript, MapSize, MapTopology};
 
 fn arg(args: &[String], key: &str, default: i64) -> i64 {
     args.iter()
@@ -151,36 +149,23 @@ fn base_ruleset(args: &[String]) -> BaseRuleset {
     })
 }
 
-/// The sweep of time the game is played through, and how far into it it opens.
+/// How far into history the game opens.
 ///
-/// The two are one question: an era id is only meaningful inside its own eon,
-/// so they are resolved together. An eon that is declared but not yet playable
-/// is refused here rather than quietly played as human history.
-fn start_eon_and_era(args: &[String]) -> (StartEon, usize) {
-    let id = arg_text(args, "--eon", StartEon::default().id());
-    let eon = StartEon::from_id(&id)
-        .filter(|eon| eon.is_playable())
-        .unwrap_or_else(|| {
-            let playable: Vec<&str> = START_EONS
-                .iter()
-                .filter(|spec| spec.playable)
-                .map(|spec| spec.id)
-                .collect();
-            eprintln!("cannot play the {id:?} eon yet; choose one of: {}", playable.join(", "));
-            std::process::exit(2);
-        });
-    let default = eon.era_id(eon.default_era()).to_string();
-    let era = arg_text(args, "--start-era", &default);
-    let index = eon.era_from_id(&era).unwrap_or_else(|| {
-        let ladder: Vec<&str> = eon.eras().iter().map(|spec| spec.id).collect();
-        eprintln!(
-            "unknown start era {era:?} for the {} eon; choose one of: {}",
-            eon.id(),
-            ladder.join(", ")
-        );
+/// A rung of the ladder that is declared but not built yet is refused here
+/// rather than quietly played as the Ancient era — the whole point of listing
+/// it is that it is not the same game.
+fn start_era(args: &[String]) -> usize {
+    let id = arg_text(args, "--start-era", setup::stock_start_era_id());
+    setup::start_era_from_id(&id).unwrap_or_else(|| {
+        let playable: Vec<&str> = setup::playable_start_eras().map(|spec| spec.id).collect();
+        let known = setup::START_ERAS.iter().any(|spec| spec.id == id);
+        if known {
+            eprintln!("cannot open in the {id:?} era yet; choose one of: {}", playable.join(", "));
+        } else {
+            eprintln!("unknown start era {id:?}; choose one of: {}", playable.join(", "));
+        }
         std::process::exit(2);
-    });
-    (eon, index)
+    })
 }
 
 /// Difficulty and speed are chosen the same way everywhere: by name, against
@@ -239,11 +224,9 @@ fn game_options(args: &[String], players: i64, seed: u64) -> GameOptions {
         }
         teams
     };
-    let (start_eon, start_era) = start_eon_and_era(args);
     GameOptions {
         base_ruleset: base_ruleset(args),
-        start_eon,
-        start_era,
+        start_era: start_era(args),
         map_script: MapScript::from_id(&arg_text(args, "--map", "pangaea"))
             .unwrap_or(MapScript::Pangaea),
         map_topology: map_topology(args),
@@ -1015,7 +998,6 @@ fn main() {
                     height: auto_dimension(&args, "--height", players, false),
                     seed,
                     base_ruleset: play_options.base_ruleset,
-                    start_eon: play_options.start_eon,
                     start_era: play_options.start_era,
                     map_script,
                     map_topology,
