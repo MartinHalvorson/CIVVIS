@@ -792,6 +792,30 @@ in this work has.
 | war timing | wins | 98% of wars open with the army in position |
 | war conversion | — | **the one measured gap: 67% of siege opens a city nobody can enter** |
 
+## ★ Three independent arrivals at one law
+
+This document and `docs/SUPERHUMAN.md` were written by different agents about
+different subsystems, and neither cited the other. They say the same thing.
+
+| where | finding |
+|---|---|
+| production evaluator (`SUPERHUMAN.md`, M4 retired) | "no function of the 25 aggregates **is win probability**" — which is why `production_net` changed nothing: it swapped one function for another |
+| offline outcome labelling (M6, `search_probe --outcome`) | 73% of decisions have every candidate reaching the same outcome, so the 70× label buys nothing; where it discriminates the proxy is near chance (43%); and **27% is an upper bound**, because the engine is deterministic so one continuation is one sample and chaotic divergence cannot be told from causal effect |
+| genome selection (this document) | no *functional* of terminal score is win probability — mean, share², share⁴ and top-of-table all report +0.011…+0.017 where wins say parity — and a search **exploits whichever proxy is chosen**: lane progress produced a champion at 8 map directions to 30 |
+
+> **Causal signal costs replication. There is no cheap substitute, at any level
+> of the stack.**
+
+The two prescriptions are the same shape. `SUPERHUMAN.md` proposes replicating
+M6's labels across **opponents** and scoring a win *rate* rather than one
+outcome (`search_probe --outcome --replicas K`). This document's recipe is to
+select on **wins** and buy resolution with games.
+
+Stated once, so a fourth subsystem does not have to rediscover it: **every
+cheap summary of a finished game is a correlate; correlates survive
+observation and die under optimisation; the only fix is more independent
+samples of the actual objective.**
+
 ## The conclusion this all points at
 
 Every measured attempt to make this agent stronger by **tuning parameters** has
