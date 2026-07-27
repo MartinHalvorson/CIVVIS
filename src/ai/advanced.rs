@@ -4079,7 +4079,8 @@ impl AdvancedAi {
         let ready = urgent_denial || if committed_domination {
             my_power >= target_power * 0.85 && my_power >= 30.0
         } else {
-            my_power > target_power * 1.32 + 12.0
+            my_power
+                > target_power * self.base.w.adv_war_ratio + self.base.w.adv_war_margin
         };
         let staged = plan
             .target_city

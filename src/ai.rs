@@ -485,6 +485,23 @@ pub struct Weights {
     /// Fraction by which a challenger must beat the incumbent to take its
     /// slot. Zero re-shuffles the deck on noise; one never swaps at all.
     pub pol_swap_margin: f64,
+    // How much stronger `AdvancedAi` must be before it opens an elective war:
+    // `my_power > target_power * adv_war_ratio + adv_war_margin`.
+    //
+    // These are separate genes from `war_ratio`/`war_margin`, which belong to
+    // `BasicAi` and are calibrated differently (1.8 / 20.0). `AdvancedAi` had
+    // the test written as the constants 1.32 and 12.0, and `basic` is a league
+    // anchor that pins the rating scale, so re-pointing it at the old genes
+    // would both move the anchor and make the agent *more* cautious. The
+    // defaults here are exactly the constants they replace, so connecting them
+    // changes no play at all -- it only makes the axis reachable.
+    //
+    // Worth reaching: `war_census` measured wars opening at a mean **11.5x**
+    // military advantage, so this agent fights only walkovers, and until now
+    // nothing in the genome could say otherwise. The bounds go well below the
+    // shipped value on purpose.
+    pub adv_war_ratio: f64,
+    pub adv_war_margin: f64,
     /// Which deck this strategy holds.
     ///
     /// **Not a gene.** Deliberately absent from `to_vec`/`from_vec`/`bounds`,
@@ -570,6 +587,8 @@ impl Default for Weights {
             pol_faith: 0.7,
             pol_military: 0.05,
             pol_swap_margin: 0.15,
+            adv_war_ratio: 1.32,
+            adv_war_margin: 12.0,
             policy_deck: PolicyDeck::Live,
         }
     }
@@ -626,6 +645,8 @@ impl Weights {
             self.pol_faith,
             self.pol_military,
             self.pol_swap_margin,
+            self.adv_war_ratio,
+            self.adv_war_margin,
         ]
     }
 
@@ -679,6 +700,8 @@ impl Weights {
             pol_faith: v[45],
             pol_military: v[46],
             pol_swap_margin: v[47],
+            adv_war_ratio: v[48],
+            adv_war_margin: v[49],
             // Not a gene, so the GA's vector does not carry it and a genome
             // that round-trips through `to_vec` comes back playing the live
             // deck. That is the intended semantics: evolution breeds appetites,
@@ -688,7 +711,7 @@ impl Weights {
     }
 
     /// (lo, hi) clamp per gene, same order as to_vec.
-    pub fn bounds() -> [(f64, f64); 48] {
+    pub fn bounds() -> [(f64, f64); 50] {
         [
             (2.0, 12.0),
             (1.0, 5.0),
@@ -738,6 +761,8 @@ impl Weights {
             (0.0, 3.0), // pol_faith
             (0.0, 0.5), // pol_military
             (0.0, 1.0), // pol_swap_margin
+            (0.6, 3.0), // adv_war_ratio -- shipped 1.32; below 1.0 fights from behind
+            (-10.0, 60.0), // adv_war_margin
         ]
     }
 
@@ -746,7 +771,7 @@ impl Weights {
     /// A search that reports per-gene results has to name them, and deriving
     /// the name from the index by hand is how a table ends up mislabelled by
     /// one row. `gene_names_match_the_vector` pins the length.
-    pub fn gene_names() -> [&'static str; 48] {
+    pub fn gene_names() -> [&'static str; 50] {
         [
             "city_target",
             "settler_min_pop",
@@ -796,6 +821,8 @@ impl Weights {
             "pol_faith",
             "pol_military",
             "pol_swap_margin",
+            "adv_war_ratio",
+            "adv_war_margin",
         ]
     }
 }
