@@ -9042,7 +9042,7 @@ impl AdvancedAi {
                     * (1.0 - group.local_strength_ratio)
                     * advance.max(0) as f64;
             }
-            value
+            value + self.base.livelock_penalty(uid, tile)
         };
 
         let stay = score(g, upos);
@@ -10595,7 +10595,7 @@ impl AdvancedAi {
     }
 
     fn advanced_units(&mut self, g: &mut Game, pid: usize, plan: &StrategicPlan) {
-        self.base.begin_movement_turn();
+        self.base.begin_movement_turn(g, pid);
         if self.victory_planning {
             self.rebuild_force_groups(g, pid, plan);
         } else {
@@ -10627,6 +10627,7 @@ impl AdvancedAi {
             (order, *uid)
         });
         for uid in ids {
+            let mut took_a_turn = false;
             for _ in 0..8 {
                 if !g.units.contains_key(&uid) || g.units[&uid].moves_left <= 0.0 {
                     break;
@@ -10666,6 +10667,10 @@ impl AdvancedAi {
                 if !acted {
                     break;
                 }
+                took_a_turn = true;
+            }
+            if !took_a_turn {
+                self.base.hold_stood_down_unit(g, pid, uid);
             }
         }
         self.settler_targets
