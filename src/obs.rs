@@ -1068,7 +1068,7 @@ fn victory_progress_json(g: &Game, pid: usize, leading_score: i64) -> Value {
 /// when its finder was conquered would be a very odd map.
 ///
 /// Computed once per observation because it is read for every tile on the map.
-fn revealed_resources<'a>(g: &'a Game, pid: usize, omniscient: bool) -> BTreeSet<&'a str> {
+fn revealed_resources(g: &Game, pid: usize, omniscient: bool) -> BTreeSet<&str> {
     g.rules
         .resources
         .keys()
