@@ -1911,6 +1911,7 @@ impl Session {
             o["spectator_paused"] = json!(self.spectator_paused);
             o["view_player"] = json!(self.view_player);
             o["leader_pool"] = json!(self.game.leader_pool.id());
+            o["teams"] = json!(major_teams(&self.game));
             o["victory_conditions"] = json!(self.game.victory_conditions);
             o["supervisor_request"] = json!(self.supervisor_request);
             o["next_game_settings"] = self
@@ -1932,6 +1933,7 @@ impl Session {
         o["supervised"] = json!(self.params.supervised);
         o["view_player"] = json!(0);
         o["leader_pool"] = json!(self.game.leader_pool.id());
+        o["teams"] = json!(major_teams(&self.game));
         o["victory_conditions"] = json!(self.game.victory_conditions);
         o["supervisor_request"] = json!(self.supervisor_request);
         o["next_game_settings"] = self
@@ -2501,6 +2503,20 @@ fn held_frame(token: &str) -> Option<SpectatorFrame> {
     })
 }
 
+/// The pre-game teams of a world, one entry per major seat in seat order;
+/// `null` is a seat playing for itself.
+///
+/// The lobby reads its own Teams control back out of this, so a page that
+/// reloads over a team game offers to restart *that* game rather than a
+/// free-for-all with the same map.
+fn major_teams(game: &Game) -> Vec<Option<usize>> {
+    game.players
+        .iter()
+        .filter(|player| !player.is_minor && !player.is_barbarian)
+        .map(|player| player.team)
+        .collect()
+}
+
 fn simulation_settings(params: &Params) -> Value {
     let victories = [
         (params.victory_conditions.science, "science"),
@@ -2526,6 +2542,7 @@ fn simulation_settings(params: &Params) -> Value {
         "poles": params.map_poles.id(),
         "speed": params.game_speed.id(),
         "leader_pool": params.leader_pool.id(),
+        "teams": params.teams,
         "victories": victories,
     })
 }
@@ -5253,6 +5270,7 @@ mod tests {
             "maptype",
             "mappoles",
             "np",
+            "teams",
             "gamespeed",
         ] {
             let select = format!("id=\"{setting}\"");
@@ -5314,6 +5332,31 @@ mod tests {
                 "a standing ????? is lost when the panel is rewritten: {restored}"
             );
         }
+    }
+
+    /// Teams are chosen in the lobby and are permanent once the world exists,
+    /// so the division the browser asked for has to be readable back out of
+    /// `/state`: a page that reloads over a team game offers to restart *that*
+    /// game rather than a free-for-all with the same map.
+    #[test]
+    fn a_team_division_reaches_the_world_and_comes_back_in_the_state() {
+        let stock = current();
+        let small = json!({"num_players": 4, "width": 20, "height": 14, "num_city_states": 1});
+        let mut request = small.clone();
+        request["teams"] = json!([0, 0, 1, 1]);
+        let params = new_game_params(&stock, &request);
+        assert_eq!(params.teams, vec![Some(0), Some(0), Some(1), Some(1)]);
+        let session = Session::new(params);
+        assert_eq!(session.state()["teams"], json!([0, 0, 1, 1]));
+        // A free-for-all is every seat playing for itself, said out loud, so
+        // the lobby can tell it from a world that never mentioned teams.
+        let alone = Session::new(new_game_params(&stock, &small));
+        assert_eq!(alone.state()["teams"], json!([null, null, null, null]));
+        // The staged world carries the same division, or the exhibition's next
+        // game would quietly drop it between staging and starting.
+        let mut staged = Session::new(current());
+        staged.stage_next_game_settings(&request);
+        assert_eq!(staged.state()["next_game_settings"]["teams"], json!([0, 0, 1, 1]));
     }
 
     /// Planet is drawn from geometry the client cannot derive, so the
@@ -5677,37 +5720,67 @@ mod tests {
 
         // The lobby's reading order. `#newgame-options` is a two-column grid
         // filled row by row, so document order *is* left-then-right,
-        // top-to-bottom on screen. A world is described from the outside in:
-        // what shape it is, then what is drawn on that shape, then how heat is
-        // laid out across it, then how big it is and how fast it runs.
-        let mode_setting = EMBEDDED_INDEX
-            .find("id=\"gamemode\"")
-            .expect("game mode setting");
-        let shape_setting = EMBEDDED_INDEX
-            .find("id=\"mapshape\"")
-            .expect("world shape setting");
-        let map_setting = EMBEDDED_INDEX.find("id=\"maptype\"").expect("map setting");
-        let thermal_setting = EMBEDDED_INDEX
-            .find("id=\"mappoles\"")
-            .expect("thermal distribution setting");
-        let world_setting = EMBEDDED_INDEX
-            .find("id=\"np\"")
-            .expect("world size setting");
-        let speed_setting = EMBEDDED_INDEX
-            .find("id=\"gamespeed\"")
-            .expect("game speed setting");
+        // top-to-bottom on screen, and each row is a pair that belongs
+        // together: the rules and who plays under them, then who is at the
+        // table and how they are divided, then the world from the outside in —
+        // what shape it is, what is drawn on that shape, how heat is laid out
+        // across it and how big it is — and last the clock, where history
+        // starts and how fast it runs.
+        //
+        // The two seat settings sit between the second and third rows and are
+        // hidden while nobody is at the keyboard, so they take a row of their
+        // own rather than splitting a pair.
+        let order = [
+            "baseruleset",
+            "leaderpool",
+            "gamemode",
+            "teams",
+            "leader",
+            "difficulty",
+            "mapshape",
+            "maptype",
+            "mappoles",
+            "np",
+            "startera",
+            "gamespeed",
+        ]
+        .map(|setting| {
+            EMBEDDED_INDEX
+                .find(&format!("id=\"{setting}\""))
+                .unwrap_or_else(|| panic!("browser setup is missing the {setting} select"))
+        });
         assert!(
-            mode_setting < shape_setting
-                && shape_setting < map_setting
-                && map_setting < thermal_setting
-                && thermal_setting < world_setting
-                && world_setting < speed_setting,
-            "lobby order must read mode, world shape, map, thermal distribution, size, speed"
+            order.windows(2).all(|pair| pair[0] < pair[1]),
+            "lobby order must read ruleset/pool, mode/teams, seat, shape/map, thermal/size, era/speed"
         );
-        // The ????? roll walks RANDOM_SELECT_IDS in order, so that list has to
-        // agree with the panel or a rolled answer lands before the setting it
-        // depends on has one.
-        assert!(EMBEDDED_INDEX.contains("\"mapshape\", \"maptype\", \"mappoles\", \"np\", \"gamespeed\""));
+        let thermal_setting = order[8];
+        // The ????? roll walks RANDOM_SELECT_IDS in order, so a setting is
+        // rolled only once everything it depends on has an answer. That is the
+        // panel's own order except for the teams, whose splits are a function
+        // of a world size two rows below them.
+        assert!(EMBEDDED_INDEX
+            .contains("\"mapshape\", \"maptype\", \"mappoles\", \"np\", \"teams\", \"startera\", \"gamespeed\""));
+        // Teams are a division of the table, so they sit beside the setting
+        // that says who is at it. A world opens free-for-all, and the splits a
+        // size can seat are named in the option rather than left to be found
+        // by trying one.
+        assert!(EMBEDDED_INDEX.contains("Teams<select id=\"teams\""));
+        assert!(EMBEDDED_INDEX.contains("<option value=\"ffa\" selected>Free-for-all</option>"));
+        assert!(EMBEDDED_INDEX.contains("teams: \"Teams\""));
+        assert!(EMBEDDED_INDEX.contains("const TEAM_RULES = [\"2\", \"3\", \"4\", \"pairs\"];"));
+        assert!(EMBEDDED_INDEX.contains("option.disabled = players !== null && !split;"));
+        // The size decides which splits exist, so it re-fits them before the
+        // panel stages what is now selected — and a rolled size re-fits them
+        // before the teams are rolled against it.
+        assert!(EMBEDDED_INDEX
+            .contains("document.getElementById(\"np\").addEventListener(\"change\", syncTeams);"));
+        assert!(EMBEDDED_INDEX.contains("if (id === \"np\") syncTeams();"));
+        // The server is handed the seat-by-seat assignment, never the rule
+        // that produced it; a world on screen is read back the other way.
+        assert!(EMBEDDED_INDEX
+            .contains("teams: resolveRandom ? teamAssignment(np, teamRule) : teamRule,"));
+        assert!(EMBEDDED_INDEX.contains("teamRuleFromArray(st.teams)"));
+        assert!(EMBEDDED_INDEX.contains("teamRuleFromArray(settings.teams)"));
         // Heat is a setting about climate, not about whether two ice caps
         // exist, so it is named for what it decides.
         assert!(EMBEDDED_INDEX.contains("Thermal distribution<select id=\"mappoles\""));
@@ -6890,6 +6963,7 @@ mod tests {
                 "poles": "poles",
                 "speed": "quick",
                 "leader_pool": "expanded",
+                "teams": [],
                 "victories": ["science", "religious", "diplomatic", "domination"],
             })
         );
@@ -6950,6 +7024,7 @@ mod tests {
                 "poles": "poles",
                 "speed": "quick",
                 "leader_pool": "expanded",
+                "teams": [],
                 "victories": ["science", "religious", "diplomatic", "domination"],
             })
         );
