@@ -719,6 +719,79 @@ excluded — only a large one. Buying that resolution is the recipe above:
 600 maps a step reaches 0.014, at roughly five hours for a comparable number
 of steps.
 
+## ★★ The local optimum holds at four times the resolution
+
+The 150-map climb found the shipped genome locally optimal but could only see
+effects above about 0.06. Rerun at **600 maps a step** (per-step SE ~0.014,
+four times tighter), 20 steps:
+
+```
+1 of 20 steps accepted
+```
+
+**One acceptance is what noise produces.** A 2 SE bar is p≈0.046 per test, so
+twenty steps expect 0.9 false acceptances. The bar was designed to guard a
+*single* step; it does not guard a campaign of them — the same
+maximum-of-many error the hill climb was built to avoid, reintroduced one
+level up.
+
+So the accepted genome was re-measured head to head against the shipped one on
+**200 fresh maps**:
+
+```
+decisive games   205/400 (51.2%)
+map directions   18 for / 13 against / 169 neutral
+sign test        p = 0.4731
+```
+
+**It did not replicate.** The prediction from the arithmetic was exact: a bar
+that guards one test, applied twenty times, manufactures about one acceptance,
+and that acceptance evaporates on fresh maps.
+
+`genome_breed --climb` now prints the expected chance-acceptance count beside
+the observed one and labels anything within it a *nomination with a prior
+against it*.
+
+**The genome is a local optimum on wins, now confirmed at 0.014 resolution.**
+
+## Tech order and civic order are not a big lever either
+
+`src/bin/order_ablate.rs` replaces every technology and civic choice on the
+treated seats with a uniformly random *legal* one, scored on wins over 60
+mirrored maps:
+
+| ablation | directions | p |
+|---|---|---|
+| tech order | 6 for / 9 against | 0.6072 |
+| civic order | 2 for / 4 against | 0.6875 |
+| both | 6 for / 9 against | 0.6072 |
+| both, disjoint seed | 8 for / 8 against | 1.0000 |
+
+Randomising an entire subsystem should be catastrophic if it mattered much.
+It is not even detectable. Resolution is 0.09, so this bounds the layer rather
+than zeroing it.
+
+⚠ **The first version of this tool measured nothing** and returned 0 for /
+0 against / 60 neutral at exactly 50.0% — the degenerate signature of
+identical arms, which reads exactly like a settled subsystem. Two stacked
+causes: `do_research` refuses while a research is set, and `take_turn` ends
+the seat's turn internally so any later override fails with *"not your turn"*.
+Scrambling **before** the agent acts fixed it: 28,608 fires where there had
+been zero. **It shipped without a fires-check**, which every other instrument
+in this work has.
+
+## The scoreboard for the operator's list
+
+| optimization game | bounded at | verdict |
+|---|---|---|
+| policy cards | wins | layer worth p=0.0023; incumbent list captures it |
+| build order (opening book) | score | deleting it costs −0.003 |
+| tech order | wins | randomising costs < 0.09 |
+| civic order | wins | randomising costs < 0.09 |
+| city expansion | wins | at a local optimum |
+| war timing | wins | 98% of wars open with the army in position |
+| war conversion | — | **the one measured gap: 67% of siege opens a city nobody can enter** |
+
 ## The conclusion this all points at
 
 Every measured attempt to make this agent stronger by **tuning parameters** has

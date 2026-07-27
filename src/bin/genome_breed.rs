@@ -280,7 +280,7 @@ fn main() {
             if up > down && p < 0.05 {
                 "PASS under the pre-registered rule. Confirm at the strategic_deep budget next."
             } else {
-                "NULL under the pre-registered rule. The shipped genome stands, and a lane-progress                  edge that does not convert is exactly what score share did."
+                "NULL under the pre-registered rule. The shipped genome stands."
             }
         );
         return;
