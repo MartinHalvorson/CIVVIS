@@ -1200,6 +1200,8 @@ pub struct Rules {
     pub disasters: SpecMap<DisasterSpec>,
     /// Rise & Fall's Dedications, both halves.
     pub dedications: SpecMap<DedicationSpec>,
+    /// The city-state seats this ruleset can hand out, in seating order.
+    pub city_states: CityStateRoster,
     /// Which technologies grant each global effect, and which civics do.
     ///
     /// Asking what a player's trees add up to used to walk every node they
@@ -1819,8 +1821,43 @@ impl DedicationSpec {
     }
 }
 
+/// One city-state seat: the identity a game stores, the shipped type whose
+/// 1/3/6 Envoy thresholds it pays, and the Suzerain bonus it carries.
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
+pub struct CityStateSpec {
+    pub name: String,
+    /// `scientific`, `cultural`, `religious`, `militaristic`, `industrial` or
+    /// `trade` — the shipped `MinorCivBonuses` rows.
+    #[serde(rename = "type")]
+    pub kind: String,
+    /// Engine key for the bespoke Suzerain bonus, absent for a seat that
+    /// carries only its type bonus.
+    #[serde(default)]
+    pub bonus: Option<String>,
+    /// Whether the engine actually implements `bonus`. A seat whose bonus is
+    /// declared but unimplemented still pays its type bonus; this flag is what
+    /// `every_declared_suzerain_bonus_is_implemented` reads so an unfinished
+    /// entry cannot be mistaken for a working one.
+    #[serde(default)]
+    pub implemented: bool,
+    /// Whether Civilization VI itself seats this city-state. The roster keeps
+    /// names beyond the shipped 48 so the largest maps have distinct
+    /// identities to hand out.
+    #[serde(default)]
+    pub shipped: bool,
+    /// The shipped Suzerain text, for clients and the Civilopedia.
+    #[serde(default)]
+    pub effect: String,
+}
+
+/// The city-state roster in seating order.
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
+pub struct CityStateRoster {
+    pub roster: Vec<CityStateSpec>,
+}
+
 /// Every ruleset file the engine ships, by the name a mod overlay uses.
-pub const DATA_FILES: [(&str, &str); 28] = [
+pub const DATA_FILES: [(&str, &str); 29] = [
     ("terrains", include_str!("../data/terrains.json")),
     ("features", include_str!("../data/features.json")),
     ("resources", include_str!("../data/resources.json")),
@@ -1849,6 +1886,7 @@ pub const DATA_FILES: [(&str, &str); 28] = [
     ("tree_effects", include_str!("../data/tree_effects.json")),
     ("disasters", include_str!("../data/disasters.json")),
     ("dedications", include_str!("../data/dedications.json")),
+    ("city_states", include_str!("../data/city_states.json")),
 ];
 
 fn add_effects(target: &mut BTreeMap<String, f64>, source: &BTreeMap<String, f64>) {
@@ -2115,6 +2153,7 @@ impl Rules {
             wmds: take(&mut files, "wmds")?,
             disasters: take(&mut files, "disasters")?,
             dedications: take(&mut files, "dedications")?,
+            city_states: take(&mut files, "city_states")?,
             tech_effects: SpecMap::default(),
             civic_effects: SpecMap::default(),
             tech_ancestors: SpecMap::default(),

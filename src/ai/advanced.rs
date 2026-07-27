@@ -1713,7 +1713,7 @@ impl AdvancedAi {
         if let Some(suzerain) = g.suzerain_of(other).filter(|suzerain| *suzerain != pid) {
             value += 40.0 + g.military_power(suzerain) * 0.25;
         }
-        value += match Game::cs_type(&g.players[other].civ) {
+        value += match g.cs_type(&g.players[other].civ) {
             "militaristic" => 55.0,
             "industrial" => 35.0,
             "scientific" | "cultural" | "religious" => 25.0,
@@ -4127,7 +4127,7 @@ impl AdvancedAi {
                         .max()
                         .unwrap_or(0);
                     let needed = (3_i64.max(rival + 1) - mine).max(1);
-                    let kind = Game::cs_type(&minor.civ);
+                    let kind = g.cs_type(&minor.civ);
                     let alignment = match (strategy, kind) {
                         (GrandStrategy::Science, "scientific") => 10,
                         (GrandStrategy::Culture, "cultural") => 10,

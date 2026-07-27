@@ -2069,3 +2069,171 @@ calibration points cannot establish that any positive reading predicts a win,
 and this table should not be read as if they had: the winner raises spread and
 the loser is flat, but a single null sits outside that ordering because its
 spread reading is invalid. **Screen for inertness; decide with `ai_eval`.**
+
+## 2026-07-26 — the priors make 3× the search's lane decisions, and removing the biggest is null
+
+**Who decides the lane** (`search_probe --priors`, 200 four-player positions,
+warmup 60, seeds 900..):
+
+```
+  prior                        n     agrees median spread    decided
+  duel-religion                5         0%        0.0000       100%
+  urgent-counter               2         0%        0.1911        57%
+  irreversible-religion       92        15%        0.1106        32%
+
+who decides the lane, over 200 sampled reviews:
+  priors    answered   99 reviews and named a lane in   99 (100%)
+  rollouts  answered  101 reviews and named a lane in   33 (33%)
+  -> the priors make 3.0x as many lane decisions as the search does
+```
+
+A prior always names a lane; the rollouts name one only when a lane clears the
+adaptive baseline by the commitment margin, and two times in three none does.
+So the macro search picks roughly a **quarter** of the lanes this agent plays,
+and `viable_religious_commitment` picks half of them alone — disagreeing with
+the projection on 85% of the reviews it answers, always by taking Religion
+where the search would stay adaptive.
+
+Note this corrects an emphasis: `docs/AI_GAPS.md` names `urgent_counter` as the
+dominant prior, measured over whole games. At the stage where lanes are chosen
+it is not close — 2 against 92.
+
+**Removing it is null.** `strategic_noprophet` (the prior disabled), 240
+mirrored maps at fresh seed 160000:
+
+```
+game-win share: noprophet 238/480 (49.6%)  strategic 242/480 (50.4%)
+paired-map score: 49.6% (95% Wilson CI 43.3%..55.9%), Elo-equivalent -3
+paired direction: noprophet 12, neutral 214, strategic 14; sign p=0.8450
+terminal-score direction: noprophet 58, neutral 137, strategic 45; p=0.2369
+promotion gate: INCONCLUSIVE
+```
+
+Both pre-registered predictions fired, so this is a null and not a misfire:
+search exposure **57% → 63%** with `irreversible-religion` priors **211 → 0**,
+and religious commitment **30.3% → 26.8%**.
+
+### Why a 3× decision share converts to a 0× strength share
+
+**`adaptive` is not a lane.** Returning `None` hands the turn back to
+`AdvancedAi`'s own victory planner, which frequently picks the same lane the
+prior named. So 85% of those reviews changed their *label* while religious
+victories moved only 171 → 164. The prior is largely **redundant with** the
+behaviour underneath it rather than additional to it.
+
+**A disagreement rate is an upper bound on behavioural impact, and a loose
+one.** `search_probe` now says so in its own output. This is the third
+confound of this shape recorded here — after the unpaired-trajectory
+comparison and the unequal-branch-count spread — and they share a root: a
+number computed at the decision layer does not measure the play layer.
+
+### What this closes
+
+| treatment | lane decisions changed | strength |
+|---|---|---|
+| `strategic_noprophet` | ~42% of all reviews | **0** (p=0.8450) |
+| `focused_deepening`, rank-pruned | uncommitted turns 44.9% → 58.4% | **0** (p=0.8318 repaired) |
+| warm branches (#413) | 1 review in 4 | **+37 Elo** |
+
+Changing *more* lane decisions is uncorrelated with strength, and the
+treatment that won changed the fewest. **Lane routing is not the lever.** The
+macro search's only output is a lane, so what remains there is compute — which
+works, and whose ceiling is already measured at horizon 80. Effort belongs on
+a decision that repeats.
+
+## 2026-07-26 — the production search is not blind, and its ranking is horizon-independent
+
+`ProductionSearchAi` is a recorded negative result (9 map directions to 21,
+p=0.0428) whose module note names a diagnosis it was never run against: *"if
+every branch returns the same number the horizon is too short for the build to
+land, and no win rate would say so."* It exposes `candidate_values` for exactly
+that check. `search_probe --production` takes it.
+
+```
+production audit: 71 city decisions over 40 maps (4p 24x16, warmup 60)
+
+  candidates projected per decision   5.0
+  values the evaluator can separate   3.7
+  median spread across candidates     0.015657
+  p90 spread                          0.070006
+  decisions where every candidate scores the SAME   3 of 71 (4%)
+  same pick at horizon 200 as at the shipped ceiling  54 of 56 (96%)
+```
+
+**Both halves of the diagnosis are false.**
+
+- **Not blind.** The evaluator separates 3.7 of 5.0 candidates; only 4% of
+  decisions score every candidate alike. Contrast `PolicyAi`, whose computed
+  gain was exactly zero on 96.4% of candidates — that is what blind looks like.
+- **Not horizon-bound.** Raising the ceiling from 40 to 200, long enough for
+  any build in the game to land and compound, leaves the chosen item unchanged
+  on 96% of decisions. `ProductionSearchAi::max_horizon` exists so this stays
+  re-measurable.
+
+So the search sees the difference, keeps seeing the same difference once every
+payoff has landed, and still loses to the scripted governor.
+
+### What that leaves: the objective, not the window
+
+**Score share is not win probability.** The lane search works because its
+branches reach *decided* games and return exactly 1.0 or 0.0 — 22% of reviews
+at horizon 40, 56% at 80. A production rollout starting mid-game and stopping
+40 or 200 rounds later essentially never decides, so it ranks entirely by a
+proxy, and on this decision the governor's hand-tuned sequencing beats that
+proxy.
+
+That also explains `production_net` cleanly: it swapped one function of the 25
+empire aggregates for another, when the problem is that **no** function of them
+is win probability.
+
+### What this retires, before it was built
+
+The obvious repair — make the rollout cheap enough (sealed per-city
+simulation, frozen rivals) to afford a payoff-length horizon — is aimed at a
+defect that is not there, and is **predicted-null**. It was on the roadmap as
+M4 in `docs/SUPERHUMAN.md` and is retired there, on measurement rather than on
+a run.
+
+The surviving route is the one the module already named: branches continued to
+a **real result**. A full continuation per candidate is roughly seventy times
+the cost of a game, so it is an offline labeller feeding a distilled policy —
+`docs/SUPERHUMAN.md` M6 then M5 — not an online agent.
+
+## 2026-07-26 — what an outcome label would actually be worth
+
+Two closed lines both ended at the same sentence — score share is not win
+probability — and both pointed at the same repair: continue each candidate to
+a **real result** and label it with the outcome. Before building that,
+`search_probe --outcome` measures the label it would produce. Every candidate
+of a city decision is continued to a natural end at the stock 500-turn budget.
+
+```
+outcome audit: 51 city decisions, every candidate continued to a real result
+               (4p 24x16, warmup 60, 500-turn budget)
+
+  candidates continued per decision              5.0
+  decisions where the label DISCRIMINATES        14 of 51 (27%)
+  ...of those, proxy pick == outcome pick         3 of 14 (21%)
+  ...of those, the proxy's pick WON its game      6 of 14 (43%)
+```
+
+**On 73% of decisions every candidate leads to the same outcome.** The label
+carries no signal there, whatever it costs to produce — and it costs about
+seventy times a game per decision. Where it does discriminate, score share
+picks the winning candidate 43% of the time, near chance, so the headroom is
+real; it just exists on about a quarter of decisions.
+
+**27% is an upper bound, not an estimate.** The engine is deterministic, so
+each continuation is a single sample and a build that "wins" may win for
+reasons unrelated to it. Chaotic divergence and causal effect are
+indistinguishable in this design, and — because the same position and the same
+agents always produce the same game — the label cannot be denoised by
+repeating it.
+
+**What that implies for the design.** An outcome-labelled corpus built from
+single continuations would train on noise for three quarters of its rows. The
+fix is replication across *opponents*, not more decisions: continue each
+candidate against several distinct rival policies and label with the resulting
+win rate. `data/league` already maintains a rated pool of distinct strategies,
+which is the natural source. That is a larger job than the labeller as
+originally scoped, and it is the honest version of it.
