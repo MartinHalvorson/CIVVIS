@@ -1596,7 +1596,7 @@ const HEX_ROW_SPACING: f64 = 0.866_025_403_784_438_6;
 /// The three layers of a canal, in tiles: a shelf of shallow water off either
 /// bank, and a channel of deep ocean between them.
 ///
-/// The two layers are what a canal is *for*. The shelf is water a galley can
+/// Those two are what a canal is *for*. The shelf is water a galley can
 /// work from the first turn, and it runs the whole way round a block, so every
 /// block has a coast and a use for a harbour before anyone has a ship that can
 /// leave. The channel is Ocean, which `Game::class_can_traverse` refuses to
