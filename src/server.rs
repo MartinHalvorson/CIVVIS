@@ -1004,7 +1004,22 @@ impl FrameDelivery {
     }
 }
 
-const MIN_RESTART_MS: u64 = 5_000;
+/// The result screen counts down for ten seconds before the next world.
+///
+/// Ten is the whole product's one answer to "how long does a finished game
+/// stay up": the browser's own countdown on a single-player finale uses it,
+/// and so does the exhibition's server-driven one. They were five and ten for
+/// a while, which is exactly long enough for the exhibition to look like it
+/// was rushing the verdict off the screen.
+const MIN_RESTART_MS: u64 = 10_000;
+/// The longest countdown any launcher can put on the result screen.
+///
+/// A supervisor may still ask for longer than ten seconds when its handoff
+/// needs it, but a countdown is a promise to whoever is watching, and past a
+/// minute it stops being one. Without this the number on screen is whatever
+/// `--restart-ms` said, so a mistyped launcher flag reads as the game itself
+/// having gone wrong.
+const MAX_RESTART_MS: u64 = 60_000;
 /// How long after its last request a viewer is still considered present, and
 /// so still owed a frame for every turn.
 ///
@@ -1031,7 +1046,7 @@ const UNLIMITED_BREATH_MS: u64 = 100;
 const MINOR_SHARE: f64 = 0.25;
 
 fn final_countdown_ms(requested: u64) -> u64 {
-    requested.max(MIN_RESTART_MS)
+    requested.clamp(MIN_RESTART_MS, MAX_RESTART_MS)
 }
 
 /// One seat's slice of the turn budget. Seats divide it in proportion to the
@@ -2748,7 +2763,7 @@ fn auto_step_loop(sh: Arc<Shared>) {
                 // countdown in the same breath. Arming it on the next pass
                 // instead left `/state` reporting no countdown at all for a
                 // beat, so the result screen opened on "preparing the next
-                // world" and only then began counting down from five — and the
+                // world" and only then began counting down from ten — and the
                 // window in which "one more turn" can be pressed is exactly
                 // the window the countdown describes.
                 if s.game.winner.is_some() {
@@ -3538,7 +3553,8 @@ mod tests {
         chronicle_world_events, final_countdown_ms, held_frame, new_game_params, query_value,
         request_path, save_path, seat_delay_ms, strategy_roster, tile_mark, ChronicleSnapshot,
         ChronicleState, FrameDelivery, Params,
-        Session, Shared, SpectatorFrame, EMBEDDED_CINEMATIC_3D, EMBEDDED_INDEX, MIN_RESTART_MS,
+        Session, Shared, SpectatorFrame, EMBEDDED_CINEMATIC_3D, EMBEDDED_INDEX, MAX_RESTART_MS,
+        MIN_RESTART_MS,
         EMBEDDED_HIDDEN_MAP_MONSTERS, EMBEDDED_WORLD_WONDER_ATLAS, SAVE_DIR, STATE_LONG_POLL,
         VIEWER_ACTIVE,
     };
@@ -3578,11 +3594,23 @@ mod tests {
     }
 
     #[test]
-    fn final_countdown_is_five_seconds_unless_longer_is_requested() {
-        assert_eq!(final_countdown_ms(0), 5_000);
-        assert_eq!(final_countdown_ms(4_999), 5_000);
-        assert_eq!(final_countdown_ms(5_000), 5_000);
+    fn final_countdown_is_ten_seconds_unless_longer_is_requested() {
+        assert_eq!(final_countdown_ms(0), 10_000);
+        assert_eq!(final_countdown_ms(5_000), 10_000);
+        assert_eq!(final_countdown_ms(9_999), 10_000);
+        assert_eq!(final_countdown_ms(10_000), 10_000);
         assert_eq!(final_countdown_ms(12_500), 12_500);
+    }
+
+    /// The number on the result screen is the number this function returns, so
+    /// a launcher that asks for two minutes must not get to say "the next
+    /// world begins in 110s" — that reads as the game having broken, not as a
+    /// setting somebody chose.
+    #[test]
+    fn no_launcher_can_put_a_two_minute_countdown_on_the_result_screen() {
+        assert_eq!(final_countdown_ms(110_000), MAX_RESTART_MS);
+        assert_eq!(final_countdown_ms(u64::MAX), MAX_RESTART_MS);
+        assert!(MAX_RESTART_MS >= MIN_RESTART_MS);
     }
 
     #[test]
@@ -4239,8 +4267,8 @@ mod tests {
     /// The countdown used to be armed on the stepper's *next* pass, so for a
     /// beat `/state` carried a winner and no `restart_in` at all and the
     /// result screen opened on "preparing the next world" before it started
-    /// counting. That beat is the difference between five seconds to press
-    /// "one more turn" and however much of five seconds is left over.
+    /// counting. That beat is the difference between ten seconds to press
+    /// "one more turn" and however much of ten seconds is left over.
     #[test]
     fn a_result_arrives_with_its_countdown_and_can_be_played_past() {
         let port = TcpListener::bind(("127.0.0.1", 0))
@@ -4280,7 +4308,7 @@ mod tests {
         assert_eq!(
             decided["restart_in"],
             json!(MIN_RESTART_MS / 1_000),
-            "a result was published without the five seconds it is owed"
+            "a result was published without the ten seconds it is owed"
         );
 
         let played_on: Value = serde_json::from_str(
@@ -4577,6 +4605,22 @@ mod tests {
             "a boot that finally succeeds must clear its own notice"
         );
         assert!(EMBEDDED_INDEX.contains("Connecting to the server — retrying (attempt ${attempt})"));
+    }
+
+    /// A finished game holds the screen for the same length of time whoever
+    /// was playing it. The browser counts a single-player finale down itself
+    /// and the server counts the exhibition's, so the two numbers live in
+    /// different languages and had already drifted to ten and five — one
+    /// result screen unhurried, the other hustling the verdict away.
+    #[test]
+    fn the_page_counts_a_finale_down_from_the_same_ten_seconds_the_server_does() {
+        assert!(
+            EMBEDDED_INDEX.contains(&format!(
+                "const FINALE_RESTART_SECONDS = {};",
+                MIN_RESTART_MS / 1_000
+            )),
+            "the browser's finale countdown must be the server's countdown"
+        );
     }
 
     #[test]

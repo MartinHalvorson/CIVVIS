@@ -39,7 +39,13 @@ if os.name == "nt":
     from ctypes import wintypes
 
 
-MIN_FINAL_COUNTDOWN_SECONDS = 5.0
+# The result screen's countdown, and so also this supervisor's own wait before
+# it retires a finished world. Ten seconds, the same number the browser counts
+# a single-player finale down from; `MAX_FINAL_COUNTDOWN_SECONDS` mirrors the
+# server's ceiling so `--cooldown` cannot ask for a countdown the server would
+# refuse to show.
+MIN_FINAL_COUNTDOWN_SECONDS = 10.0
+MAX_FINAL_COUNTDOWN_SECONDS = 60.0
 FINAL_COUNTDOWN_SECONDS = MIN_FINAL_COUNTDOWN_SECONDS
 
 MAP_TYPES = (
@@ -58,10 +64,13 @@ MAP_POLES = ("poles", "no_poles")
 
 
 def final_countdown_seconds(requested: float) -> float:
-    """Use five seconds by default while allowing a deliberate longer hold."""
+    """Use ten seconds by default while allowing a deliberate longer hold."""
     if not math.isfinite(requested):
         return MIN_FINAL_COUNTDOWN_SECONDS
-    return max(MIN_FINAL_COUNTDOWN_SECONDS, requested)
+    return min(
+        MAX_FINAL_COUNTDOWN_SECONDS,
+        max(MIN_FINAL_COUNTDOWN_SECONDS, requested),
+    )
 
 
 SCRIPT_PATH = Path(__file__).resolve()
@@ -1355,8 +1364,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--cooldown",
         type=float,
-        default=5.0,
-        help="seconds to keep the result visible (minimum 5; larger values are honored)",
+        default=MIN_FINAL_COUNTDOWN_SECONDS,
+        help=(
+            "seconds to keep the result visible "
+            f"(minimum {MIN_FINAL_COUNTDOWN_SECONDS:g}, maximum "
+            f"{MAX_FINAL_COUNTDOWN_SECONDS:g}; larger values are honored "
+            "up to that ceiling)"
+        ),
     )
     parser.add_argument("--poll", type=float, default=0.5)
     parser.add_argument("--build-retry", type=float, default=15.0)
