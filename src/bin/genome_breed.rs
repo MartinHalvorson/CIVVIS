@@ -409,6 +409,23 @@ fn main() {
             }
         }
         println!("\n  {accepted} of {steps} steps accepted");
+        // The 2 SE bar guards ONE step. It does not guard a campaign of them.
+        // At p ~ 0.046 per test a run of N steps expects 0.046*N false
+        // acceptances by noise alone, so an acceptance count near that number
+        // is not evidence of anything. Printing the expectation beside the
+        // count is cheaper than remembering to do the arithmetic afterwards --
+        // and on the first 20-step run it turned 1 acceptance from a result
+        // into precisely what chance predicts.
+        let expected = 0.046 * steps as f64;
+        println!(
+            "  noise alone expects about {expected:.1} acceptances at this bar over {steps} steps"
+        );
+        if (accepted as f64) <= expected + 1.0 {
+            println!(
+                "  => that is within what chance produces. Treat the genome below as a\n     \
+                 NOMINATION WITH A PRIOR AGAINST IT, not as a finding."
+            );
+        }
         if accepted == 0 {
             println!(
                 "  The incumbent survived every challenge at a 2 SE bar. On {maps} maps a step\n                   resolves about {:.3}, so effects smaller than roughly {:.2} are invisible here.",
