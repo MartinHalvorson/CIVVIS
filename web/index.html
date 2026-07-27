@@ -3335,18 +3335,22 @@
         <label class="small">Base game ruleset<select id="baseruleset" style="margin-top:4px">
           <option value="civ6" selected>Civ 6</option>
         </select></label>
+        <label class="small">Leader Pool<select id="leaderpool" style="margin-top:4px">
+          <option value="civ6" selected>Civ 6 Leaders</option>
+          <option value="expanded">Expanded</option>
+        </select></label>
         <label class="small">Game mode<select id="gamemode" style="margin-top:4px">
           <option value="ai_sim" selected>AI-only simulation</option>
           <option value="single">Single player</option>
           <option disabled>Multiplayer · later</option>
         </select></label>
-        <label class="small">Start era<select id="startera" style="margin-top:4px">
-          <option value="stone_age" disabled>Stone Age · later</option>
-          <option value="ancient" selected>Ancient</option>
-        </select></label>
-        <label class="small">Leader Pool<select id="leaderpool" style="margin-top:4px">
-          <option value="civ6" selected>Civ 6 Leaders</option>
-          <option value="expanded">Expanded</option>
+        <label class="small">Teams<select id="teams" style="margin-top:4px"
+          title="Permanent pre-game teams. Teammates share sight, pass each other the Eureka for a technology they have not researched, fight the same wars and win together.">
+          <option value="ffa" selected>Free-for-all</option>
+          <option value="2">2 teams</option>
+          <option value="3">3 teams</option>
+          <option value="4">4 teams</option>
+          <option value="pairs">Pairs</option>
         </select></label>
         <label class="small human-setting">Leader<select id="leader" style="margin-top:4px">
           <option value="">Random</option>
@@ -3379,6 +3383,10 @@
           <option value="8">Standard · 8 civs · 12 city-states · 84×54</option>
           <option value="10">Large · 10 civs · 15 city-states · 96×60</option>
           <option value="12">Huge · 12 civs · 18 city-states · 106×66</option>
+        </select></label>
+        <label class="small">Start era<select id="startera" style="margin-top:4px">
+          <option value="stone_age" disabled>Stone Age · later</option>
+          <option value="ancient" selected>Ancient</option>
         </select></label>
         <label class="small">Game speed<select id="gamespeed" style="margin-top:4px">
           <option value="online" selected>Online · 250 turns</option>
@@ -7328,6 +7336,8 @@ async function boot() {
       document.getElementById("np").innerHTML = RULES.map_sizes.map(size =>
         `<option value="${size.default_players}">${size.name} · ${size.default_players} civs · ${size.default_city_states} city-states · ${size.width}×${size.height}</option>`
       ).join("");
+      // The sizes this build offers decide which team splits it can seat.
+      syncTeams();
     }
     if (Array.isArray(RULES.map_scripts)) {
       document.getElementById("maptype").innerHTML = RULES.map_scripts.map(script =>
@@ -8662,6 +8672,11 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
     const playerSelect = document.getElementById("np");
     if ([...playerSelect.options].some(o => +o.value === majors))
       playerSelect.value = String(majors);
+    // Teams belong to this world as much as its map does, so a page that
+    // reloads over a running team game reads that game back rather than
+    // offering to restart it as a free-for-all.
+    syncTeams();
+    document.getElementById("teams").value = teamRuleFromArray(st.teams);
     document.getElementById("maptype").value = st.map.script || "pangaea";
     document.getElementById("mapshape").value = st.map.shape || "flat";
     document.getElementById("mappoles").value = st.map.poles || "poles";
@@ -9790,6 +9805,28 @@ function drawAtlasFeatureCell(atlas, columns, rows, cell, t, x, y, options = {})
   cx.imageSmoothingEnabled = true;
   cx.imageSmoothingQuality = "high";
   cx.globalAlpha = options.alpha === undefined ? 0.95 : options.alpha;
+  // A bridging stamp standing on every seam this tile shares with its own
+  // kind. One stamp per seam, laid by the tile that owns the edge: the art has
+  // an alpha edge, so doing it from both sides would double the boundary into
+  // a visible ring. Without it the footprint clip lets neighbouring cover
+  // interlock but nothing actually spans the join, so a pack of ice or a wood
+  // still reads as one stamp per hex with the tile boundary between them.
+  if (options.seams) {
+    for (const [worldDX, worldDY, edgeSeed, owns] of terrainRidge(t, options.seams)) {
+      if (!owns) continue;
+      const eh = hash2(edgeSeed & 1023, (edgeSeed >>> 11) & 1023);
+      const eh2 = hash2((edgeSeed >>> 5) & 1023, (edgeSeed >>> 17) & 1023);
+      cx.save();
+      cx.translate(x + (COSR * worldDX - SINR * worldDY) / 2,
+                   y + (SINR * worldDX + COSR * worldDY) * YS / 2);
+      if (options.rotate !== false) cx.rotate(eh * Math.PI * 2);
+      if (options.flip !== false && eh2 > 0.5) cx.scale(-1, 1);
+      const sc = 0.66 + eh2 * 0.14;
+      cx.drawImage(atlas, sx, sy, sw, sh,
+                   -width * sc / 2, -height * sc / 2, width * sc, height * sc);
+      cx.restore();
+    }
+  }
   const drift = options.drift || 0;
   const driftX = (hash2(t.pos[0] * 47 + 5, t.pos[1] * 53 + 3) - 0.5) * S * drift * 2;
   const driftY = (hash2(t.pos[0] * 59 + 7, t.pos[1] * 61 + 11) - 0.5) * S * drift * 1.2;
@@ -9835,6 +9872,7 @@ function drawFeatureSprite(t, x, y) {
     drawAtlasFeatureCell(FEATURE_ATLAS, 4, 1, [baseCol, 0], t, x, y,
       {scale: knit, width:2.12, height:2.04, cropY:0.5, footprint,
        drift: woodland ? 0 : 0.13,
+       seams: neighbor => featureBlendKind(neighbor.feature) === baseFeature,
        rotate: !woodland, flip: !woodland, vary: !woodland,
        alpha: burnt ? 0.48 : (baseFeature === "forest" || baseFeature === "jungle" ? 0.96 : 0.94)});
     return true;
@@ -9856,6 +9894,10 @@ function drawFeatureSprite(t, x, y) {
     lift: volcano ? 0.34 : 0.02,
     scale: volcano ? 1 : 1 + connected * 0.022,
     alpha: t.feature === "ice" ? 0.98 : 0.95,
+    // A volcano is a single mountain, not cover that spreads; everything else
+    // in this atlas is ground that ought to run on into the next hex.
+    seams: volcano ? null
+      : neighbor => featureBlendKind(neighbor.feature) === baseFeature,
     rotate: !volcano,
     flip: !volcano,
     upright: volcano,
@@ -10170,6 +10212,45 @@ function paintNaturalWonder(feature, x, y, footprint) {
   return true;
 }
 
+// The edges this tile shares with terrain of its own kind, as the offset to
+// each neighbouring centre in the map's unrotated world plane — the model
+// renderer applies the camera itself — plus a seed belonging to the *edge*
+// rather than to either tile, and which of the pair builds what stands on it.
+// Both neighbours hash the same unordered pair and agree on the same owner, so
+// the seam carries exactly one saddle and the two tiles meet as one landform
+// instead of as two models that happen to touch. Every edge is reported even
+// when this tile does not own it, because the direction a range runs is a
+// property of all of them.
+function terrainRidge(t, accepts) {
+  const ridge = [];
+  for (const direction of DIRS) {
+    const neighbor = nbrTile(t.pos, direction);
+    if (!neighbor || !accepts(neighbor)) continue;
+    const owns = t.pos[1] < neighbor.pos[1] ||
+      (t.pos[1] === neighbor.pos[1] && t.pos[0] < neighbor.pos[0]);
+    ridge.push([S * SQ3 * (direction[0] + direction[1] / 2), S * 1.5 * direction[1],
+                Math.imul(t.pos[0] + neighbor.pos[0] + 8192, 374761393) ^
+                Math.imul(t.pos[1] + neighbor.pos[1] + 8192, 668265263),
+                owns ? 1 : 0]);
+  }
+  return ridge;
+}
+const isMountainTile = t => t.terrain === "mountain";
+const isHillTile = t => !!t.hills && t.terrain !== "mountain";
+function environmentRidge(kind, t) {
+  if (kind === "mountain" || kind === "mount_everest")
+    return terrainRidge(t, isMountainTile);
+  if (kind === "hills") return terrainRidge(t, isHillTile);
+  // Cover that spreads: which way a wood or a sheet of ice carries on. Woods
+  // and rainforest knit into each other deliberately — where they meet it is
+  // still unbroken tree cover — so both answer to WOODLAND rather than to
+  // their own kind alone.
+  if (WOODLAND.has(kind))
+    return terrainRidge(t, neighbor => WOODLAND.has(neighbor.feature));
+  if (kind === "ice") return terrainRidge(t, neighbor => neighbor.feature === "ice");
+  return null;
+}
+
 // Cinematic environment art is projected from real mesh vertices in world
 // space. Passing the map camera through to the model renderer is what makes a
 // tree reveal a different side, a mountain turn its ridgeline, and every cast
@@ -10184,6 +10265,13 @@ function drawEnvironment3D(kind, t, x, y, span = 1) {
   const drawn = Cinematic3D.drawEnvironment({
     ctx:cx,
     kind,
+    ridge:environmentRidge(kind, t),
+    // Where this tile sits in the map's own unrotated plane. A model that
+    // wants texture crossing its tile boundaries has to place it on a lattice
+    // that knows nothing about tiles, and this is the only thing it needs to
+    // do that. Unwrapped on purpose: the lattice should not shift under a
+    // camera that has folded the world round.
+    origin:[S * SQ3 * (t.pos[0] + t.pos[1] / 2), S * 1.5 * t.pos[1]],
     terrain:t.terrain,
     seed:Math.imul(t.pos[0] + 4096, 73856093) ^ Math.imul(t.pos[1] + 4096, 19349663),
     hills:!!t.hills && t.terrain !== "mountain",
@@ -10843,18 +10931,51 @@ function drawTileYields(t, x, y, worked) {
   cx.restore();
 }
 
+// Rock is chosen per REGION, not per tile. Rolling it independently for each
+// hex stood grey and sandstone massifs shoulder to shoulder inside a single
+// ridge, which broke the range back into its tiles even though the sprites
+// overlap generously enough to hide the seams. A range is one geology; only
+// the height jitter varies hex to hex. Six hexes to a region rather than
+// three: a range is nine or ten tiles long, so the finer grain still cut a
+// typical one in half and put a sandstone massif against a granite one.
+function mountainRockColumn(t) {
+  const polar = state &&
+    (t.pos[1] < state.map.height * 0.2 || t.pos[1] > state.map.height * 0.8);
+  const hv = hash2(Math.floor(t.pos[0] / 6) * 31, Math.floor(t.pos[1] / 6) * 37);
+  return polar ? (hv > 0.3 ? 1 : 0) : (hv > 0.62 ? 2 : 0);
+}
+
+// One massif per hex, plus a lower one standing on every edge shared with
+// another mountain. The saddle is a property of the edge — its cell, its
+// mirroring and its size all come from the unordered pair of tiles — so the
+// neighbour paints the identical rock in the identical place and the seam ends
+// up buried inside a col rather than showing as the gap between two scoops.
+function drawMountainSaddles(t, x, y, cw, ch) {
+  for (const [worldDX, worldDY, edgeSeed, owns] of terrainRidge(t, isMountainTile)) {
+    // Raised once per seam, by the tile that owns it. The art carries an alpha
+    // edge, so stamping the same col from both sides would double it.
+    if (!owns) continue;
+    const mx = x + (COSR * worldDX - SINR * worldDY) / 2;
+    const my = y + (SINR * worldDX + COSR * worldDY) * YS / 2;
+    const eh = hash2(edgeSeed & 1023, (edgeSeed >>> 11) & 1023);
+    const eh2 = hash2((edgeSeed >>> 5) & 1023, (edgeSeed >>> 17) & 1023);
+    const sw = S * (1.62 + eh * 0.2), sh = S * (1.24 + eh2 * 0.22);
+    cx.save();
+    cx.translate(mx, my);
+    if (eh > 0.5) cx.scale(-1, 1);
+    // The owner also lends the col its geology, so a saddle can never be the
+    // one sandstone block standing in a granite range.
+    cx.drawImage(MOUNTAIN_ATLAS, mountainRockColumn(t) * cw, 0, cw, ch,
+                 -sw / 2, -sh + S * 0.3, sw, sh);
+    cx.restore();
+  }
+}
+
 function drawMountainSprite(t, x, y) {
   if (!MOUNTAIN_ATLAS_READY) return false;
   const cw = MOUNTAIN_ATLAS.naturalWidth / 3;
   const ch = MOUNTAIN_ATLAS.naturalHeight;
-  const polar = state && (t.pos[1] < state.map.height * 0.2 || t.pos[1] > state.map.height * 0.8);
-  // Rock is chosen per REGION, not per tile. Rolling it independently for each
-  // hex stood grey and sandstone massifs shoulder to shoulder inside a single
-  // ridge, which broke the range back into its tiles even though the sprites
-  // overlap generously enough to hide the seams. A range is one geology; only
-  // the height jitter below still varies hex to hex.
-  const hv = hash2(Math.floor(t.pos[0] / 3) * 31, Math.floor(t.pos[1] / 3) * 37);
-  const col = polar ? (hv > 0.3 ? 1 : 0) : (hv > 0.62 ? 2 : 0);
+  const col = mountainRockColumn(t);
   // Geology stays regional, but silhouette does not. Mirroring and independent
   // width/height variation break the telltale row of identical peaks without
   // mixing snow, granite, and sandstone inside one connected massif.
@@ -10864,6 +10985,7 @@ function drawMountainSprite(t, x, y) {
   const flip = hash2(t.pos[0] * 29 + 1, t.pos[1] * 31 + 9) > 0.5;
   const footprint = blendedTileFootprint(t, x, y, neighbor =>
     neighbor.terrain === "mountain");
+  cx.save();
   cx.save();
   tileArtPath([{x, y}], true, 3.0); cx.clip();
   // The massif throws its shadow away from the world sun, so a range's shadow
@@ -10876,17 +10998,44 @@ function drawMountainSprite(t, x, y) {
   cx.ellipse(x + SHX * w * 0.30 * rk, y + S * 0.22 + SHY * S * 0.30 * rk,
              w * (0.4 + 0.1 * rk), S * 0.18, 0, 0, 7);
   cx.fill();
+  cx.restore();
+  // A second clip only ever narrows the first, so the blended footprint this
+  // function has always computed did nothing while it followed the single-hex
+  // clip the shadow needs: the art was cut off at the tile boundary and a
+  // range came out as a row of hexagonal stamps. The shadow keeps its own
+  // clip, released above, and the rock now spreads across the whole massif.
   tileArtPath(footprint, true, 3.0); cx.clip();
   cx.fillStyle = "#00000042";
   cx.beginPath(); cx.ellipse(x + 2, y + S * 0.22, w * 0.4, S * 0.18, 0, 0, 7); cx.fill();
   cx.imageSmoothingEnabled = true;
   cx.imageSmoothingQuality = "high";
+  drawMountainSaddles(t, x, y, cw, ch);
   cx.translate(x, y);
   if (flip) cx.scale(-1, 1);
   cx.drawImage(MOUNTAIN_ATLAS, col * cw, 0, cw, ch,
                -w / 2, -h + S * 0.34, w, h);
   cx.restore();
   return true;
+}
+
+// One swell of ground: shadow under it, sunlit flank over the texture, a crest
+// that catches the light and the line where it breaks. Relief, not repaint —
+// it is laid over the photographic material rather than filling in the terrain
+// colour, so a grassland hill keeps its grass and a desert hill its sand.
+function drawHillSwell(px, py, hw2, hh2) {
+  cx.fillStyle = "rgba(22,15,6,.28)";                 // cast shadow
+  cx.beginPath(); cx.ellipse(px, py + 2.6, hw2, hh2, 0, Math.PI, 0);
+  cx.fill();
+  cx.fillStyle = "rgba(255,246,216,.15)";             // lit flank
+  cx.beginPath(); cx.ellipse(px, py, hw2, hh2, 0, Math.PI, 0);
+  cx.fill();
+  cx.fillStyle = "rgba(255,250,230,.22)";             // crest catches the sun
+  cx.beginPath(); cx.ellipse(px - 2 * LITF, py - 1,
+                             hw2 * 0.55, hh2 * 0.5, 0, Math.PI, 0);
+  cx.fill();
+  cx.strokeStyle = "rgba(0,0,0,.32)"; cx.lineWidth = 1.3;   // crest line
+  cx.beginPath(); cx.ellipse(px, py, hw2, hh2, 0, Math.PI, 0);
+  cx.stroke();
 }
 
 function tri(ax, ay, bx, by, ccx, ccy) {
@@ -18010,7 +18159,37 @@ function draw() {
   strokeRivers("#429bca", 4.6, 0.98);
   strokeRivers("#c3eff8", 1.15, 0.58);
   cx.globalAlpha = 1; cx.lineCap = "butt"; cx.lineJoin = "miter";
+  // The figures this frame will actually put on the board. Settled before the
+  // decorations so a massif can know whether anything is standing behind it;
+  // the units pass draws exactly this list, so the two can never disagree.
+  const drawnUnits = cinematicSurveyUnits(mapLens === "empire" ? [] : state.units);
   // --- decorations
+  // A cinematic massif is a solid object, and until now it was not: every
+  // figure on the map was painted in a later pass and therefore appeared
+  // *through* the mountain standing in front of it. Mountains with somebody
+  // behind them are held back here and drawn during the units pass at their
+  // real place in the depth order, which is what makes the range block the
+  // view. Only those few tiles wait, so nothing else changes layer.
+  const heldMassifs = [];
+  const massifHeld = new Set();
+  if (beau && MODE.relief && VIEW === "cinematic" && globalThis.Cinematic3D) {
+    const figures = drawnUnits.map(u => hexXY(u.pos[0], u.pos[1]));
+    for (const t of tiles) {
+      if (t.terrain !== "mountain" || NATURAL_WONDER_CELL[t.feature]) continue;
+      // A held massif is drawn after the fog wash, so only ever hold one the
+      // player can currently see. A tile with a figure beside it is visible in
+      // every case that matters, so this costs nothing real.
+      if (!visSet.has(key(t.pos))) continue;
+      const [mx, my] = hexXY(t.pos[0], t.pos[1]);
+      // The band is the massif's own silhouette in world-plane pixels: it
+      // stands about 50 above its base and 14 below it, and a figure rises 40
+      // off ground that sits 16 lower, so anything further back than ~80 is
+      // already above the skyline and nothing in front is ever hidden.
+      if (figures.some(([ux, uy]) => Math.abs(ux - mx) < 58 &&
+                       uy < my - 0.5 && uy > my - 82))
+        massifHeld.add(key(t.pos));
+    }
+  }
   cx.textAlign = "center"; cx.textBaseline = "middle";
   for (const t of tiles) {
     const [x, yy] = hexXY(t.pos[0], t.pos[1]);
@@ -18054,7 +18233,8 @@ function draw() {
     }
     if (t.terrain === "mountain") {
       if (beau) {
-        if (!drawEnvironment3D("mountain", t, x, y) && !drawMountainSprite(t, x, y))
+        if (massifHeld.has(k)) heldMassifs.push({t, x, y, row:yy});
+        else if (!drawEnvironment3D("mountain", t, x, y) && !drawMountainSprite(t, x, y))
           drawMountainRange(t, x, y);
       } else {
         cx.fillStyle = "#6f747c";
@@ -18081,20 +18261,17 @@ function draw() {
       // Two fifths as tall as they were, and the same width: relief the tile
       // wears rather than domes standing on it.
       for (const [hx, hy, hw2, hh2] of [
-        [-8, 2, 12, 3], [7, -5, 11, 2.7], [1, 5, 13.5, 3.3]]) {
-        cx.fillStyle = "rgba(22,15,6,.28)";               // cast shadow
-        cx.beginPath(); cx.ellipse(x + hx, y + hy + 2.6, hw2, hh2, 0, Math.PI, 0);
-        cx.fill();
-        cx.fillStyle = "rgba(255,246,216,.15)";           // lit flank
-        cx.beginPath(); cx.ellipse(x + hx, y + hy, hw2, hh2, 0, Math.PI, 0);
-        cx.fill();
-        cx.fillStyle = "rgba(255,250,230,.22)";           // crest catches the sun
-        cx.beginPath(); cx.ellipse(x + hx - 2 * LITF, y + hy - 1,
-                                   hw2 * 0.55, hh2 * 0.5, 0, Math.PI, 0);
-        cx.fill();
-        cx.strokeStyle = "rgba(0,0,0,.32)"; cx.lineWidth = 1.3;  // crest line
-        cx.beginPath(); cx.ellipse(x + hx, y + hy, hw2, hh2, 0, Math.PI, 0);
-        cx.stroke();
+        [-8, 2, 12, 3], [7, -5, 11, 2.7], [1, 5, 13.5, 3.3]])
+        drawHillSwell(x + hx, y + hy, hw2, hh2);
+      // Hill country rolls across its tiles. A swell standing on every seam
+      // this tile owns carries the ground into the next hex instead of letting
+      // it drop flat at the boundary and rise again on the other side.
+      for (const [worldDX, worldDY, edgeSeed, owns] of terrainRidge(t, isHillTile)) {
+        if (!owns) continue;
+        const eh = hash2(edgeSeed & 1023, (edgeSeed >>> 13) & 1023);
+        drawHillSwell(x + (COSR * worldDX - SINR * worldDY) / 2,
+                      y + (SINR * worldDX + COSR * worldDY) * YS / 2,
+                      11 + eh * 3, 2.6 + eh * 0.8);
       }
     } else if (t.hills && !beau) {
       // Centred, and low: two half-circles stood up like croquet hoops and
@@ -18627,11 +18804,25 @@ function draw() {
   for (let i = anim.battles.length - 1; i >= 0; i--)
     if (now0 >= anim.battles[i].endsAt) anim.battles.splice(i, 1);
   const cinemaSurvey = cinemaActive() && cam.scale < 1.08;
-  const sorted = [...cinematicSurveyUnits(mapLens === "empire" ? [] : state.units)].sort((a, b) =>
+  const sorted = [...drawnUnits].sort((a, b) =>
     (hexXY(a.pos[0], a.pos[1])[1] - hexXY(b.pos[0], b.pos[1])[1]) ||
     (CIVILIAN_UNITS.has(a.type) ? -1 : 1));
+  // The massifs held back by the decorations pass, released as the figures
+  // reach them: everything standing further back is already on the board, so
+  // the mountain paints over exactly what it should be hiding and over nothing
+  // that is nearer the camera. Each is still drawn exactly once — held, not
+  // repeated — so no outline is laid down twice and no shadow doubles.
+  let nextMassif = 0;
+  const releaseMassifs = untilRow => {
+    while (nextMassif < heldMassifs.length &&
+           heldMassifs[nextMassif].row <= untilRow) {
+      const m = heldMassifs[nextMassif++];
+      drawEnvironment3D("mountain", m.t, m.x, m.y);
+    }
+  };
   const now = performance.now();
   for (const u of sorted) {
+    releaseMassifs(hexXY(u.pos[0], u.pos[1])[1]);
     let [x, y] = worldXY(u.pos);
     let moving = false;
     let moveSample = null, trailPoints = null;
@@ -18816,6 +19007,8 @@ function draw() {
       cx.setLineDash([]);
     }
   }
+  // Whatever the figures never reached: a massif is never simply dropped.
+  releaseMassifs(Infinity);
   // The deposits the figures were standing on. Held back above so a badge is
   // not a third hidden behind the unit occupying its tile; drawn here, in the
   // same seat and at the same weight, only after the figures are down.
@@ -25604,6 +25797,9 @@ document.getElementById("tradebtn").onclick = () => openTrade();
 document.getElementById("gamemode").addEventListener("change", syncSetupMode);
 document.getElementById("leaderpool").addEventListener("change", syncLeaderPool);
 document.getElementById("maptype").addEventListener("change", syncEarthShape);
+// Bound on the select itself, so it has re-fitted the splits to the new size
+// before the panel's own delegated listener stages what is now selected.
+document.getElementById("np").addEventListener("change", syncTeams);
 document.getElementById("savebtn").onclick = () => writeSave();
 syncSetupMode();
 syncEarthShape();
@@ -25678,6 +25874,9 @@ function selectedSimulationSettings() {
           map_poles: mapPoles, game_speed: gameSpeed,
           leader_pool: leaderPool,
           base_ruleset: baseRuleset, start_era: startEra,
+          // The control holds the rule; the server is handed the seat-by-seat
+          // assignment that rule makes of this many civilizations.
+          teams: teamAssignment(np, readSetting("teams")),
           victory_conditions: victoryConditions,
           spectate: gameMode === "ai_sim",
           // A spectated world has nobody to hand a leader or a handicap to.
@@ -25714,7 +25913,15 @@ function selectedSimulationSummary(settings = null) {
   const stockEra = [...(eras?.options || [])]
     .find(option => option.value && !option.disabled)?.value;
   const era = startEra && startEra !== stockEra ? chosenText("startera", startEra) : "";
-  return [mode, size, map, speed, era].filter(Boolean).join(" · ");
+  // Free-for-all is what you get by choosing nothing, so only a real division
+  // is worth a clause — and it is named by its split, which is the part that
+  // depends on a size this line has already reported.
+  const players = settings ? settings.num_players : +document.getElementById("np").value;
+  const teamRule = settings
+    ? teamRuleFromArray(settings.teams)
+    : document.getElementById("teams")?.value;
+  const teams = teamRule && teamRule !== "ffa" ? teamPhrase(players, teamRule) : "";
+  return [mode, size, map, speed, era, teams].filter(Boolean).join(" · ");
 }
 function simulationSettingsKey(settings) {
   return JSON.stringify(settings);
@@ -25727,6 +25934,10 @@ function applyQueuedSimulationSettings(settings) {
   if (SPEC) document.getElementById("gamemode").value = "ai_sim";
   syncSetupMode();
   document.getElementById("np").value = String(settings.players);
+  // The staged size decides which splits exist, so it is in place first and
+  // the queued assignment is read back as the rule that would produce it.
+  syncTeams();
+  document.getElementById("teams").value = teamRuleFromArray(settings.teams);
   document.getElementById("maptype").value = settings.map;
   if (settings.shape) document.getElementById("mapshape").value = settings.shape;
   if (settings.poles) document.getElementById("mappoles").value = settings.poles;
@@ -25840,6 +26051,84 @@ function syncLeaderPool() {
     `<option value="${entry.civ}" title="${escapeAttr(entry.note)}">` +
     `${entry.leader} of ${entry.civ}</option>`).join("");
   if (leaders.some(entry => entry.civ === selected)) select.value = selected;
+}
+
+// Teams are permanent and decided before the world exists, so the lobby is
+// where they are chosen. The control carries the *rule* — two teams, pairs —
+// rather than the assignment it makes, because which assignment that is
+// depends on a world size chosen two rows further down.
+const TEAM_RULES = ["2", "3", "4", "pairs"];
+// A team of one is not a team, so a split is only on offer while every team it
+// makes can seat at least two civilizations.
+function teamCount(players, rule) {
+  if (!Number.isFinite(players) || players < 4) return 0;
+  const most = Math.floor(players / 2);
+  if (rule === "pairs") return most;
+  const teams = Number(rule);
+  return Number.isFinite(teams) && teams >= 2 && teams <= most ? teams : 0;
+}
+// The seats are dealt out in blocks, largest team first, so a division that
+// does not come out even puts its spare civ at the top rather than scattering
+// odd teams through the middle. Seat 0 is the person at the keyboard, so a
+// human always leads the first team.
+function teamAssignment(players, rule) {
+  const teams = teamCount(players, rule);
+  if (!teams) return [];
+  const smallest = Math.floor(players / teams);
+  const larger = players % teams;
+  const assignment = [];
+  for (let team = 0; team < teams; team++)
+    for (let seat = smallest + (team < larger ? 1 : 0); seat > 0; seat--)
+      assignment.push(team);
+  return assignment;
+}
+function teamSizes(players, rule) {
+  const sizes = [];
+  for (const team of teamAssignment(players, rule)) sizes[team] = (sizes[team] || 0) + 1;
+  return sizes;
+}
+// "4v4", or "4v3v3" where the seats do not divide evenly — until there are so
+// many teams that the list stops being readable and the shape is described
+// instead: a hundred civilizations in pairs is "50 teams of 2".
+function teamSplit(players, rule) {
+  const sizes = teamSizes(players, rule);
+  if (sizes.length <= 6) return sizes.join("v");
+  const smallest = Math.min(...sizes), largest = Math.max(...sizes);
+  return `${sizes.length} teams of ` +
+    (smallest === largest ? smallest : `${smallest}–${largest}`);
+}
+// How a division is said inside a sentence rather than inside its own option.
+function teamPhrase(players, rule) {
+  const split = teamSplit(players, rule);
+  return !split || split.includes("teams") ? split : `${split} teams`;
+}
+// The world on screen and the staged world both arrive as an assignment, which
+// is read back here as the rule that would produce it.
+function teamRuleFromArray(teams) {
+  if (!Array.isArray(teams)) return "ffa";
+  const distinct = new Set(teams.filter(team => team !== null && team !== undefined));
+  if (distinct.size < 2) return "ffa";
+  const count = String(distinct.size);
+  return TEAM_RULES.includes(count) ? count : "pairs";
+}
+// Which splits this world size can actually seat, said in the option itself:
+// "2 teams · 4v4" is the whole answer, and a split this size cannot seat is
+// disabled where it can be seen rather than quietly dropped from the list.
+function syncTeams() {
+  const select = document.getElementById("teams");
+  const size = document.getElementById("np");
+  if (!select || !size) return;
+  const players = +size.value;
+  for (const option of select.options) {
+    if (!TEAM_RULES.includes(option.value)) continue;
+    const name = option.value === "pairs" ? "Pairs" : `${option.value} teams`;
+    const split = teamSplit(players, option.value);
+    option.disabled = !split;
+    option.textContent = split ? `${name} · ${split}` : name;
+  }
+  // A size that cannot seat the chosen split leaves the lobby free-for-all
+  // rather than starting a game with a division nobody asked for.
+  if (select.selectedOptions[0]?.disabled) select.value = "ffa";
 }
 
 // Fixed geography chooses the coastline, not the projection. Keep the shape
