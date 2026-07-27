@@ -595,7 +595,7 @@
   .diplomacy-ribbon { min-width: max-content; display: flex; align-items: stretch; gap: 4px; padding-bottom: 1px; }
   .diplomacy-card {
     flex: 0 0 clamp(350px, 24vw, 390px); display: grid;
-    grid-template-columns: 58px 56px minmax(74px, .75fr) minmax(148px, 1.35fr);
+    grid-template-columns: 66px minmax(74px, .75fr) minmax(148px, 1.35fr);
     align-items: center; gap: 5px; height: 78px; margin: 0; padding: 4px 5px;
     overflow: hidden; border-radius: 8px; color: var(--text);
     background: linear-gradient(105deg, #0b1714f5, #142720ee);
@@ -607,14 +607,10 @@
   .diplomacy-card.friend { border-color: #708d62; box-shadow: inset 3px 0 #9dbb7d, inset 0 1px #fff1; }
   .diplomacy-card.at-war { border-color: #a65450; box-shadow: inset 3px 0 var(--danger), inset 0 1px #fff1; }
   .diplomacy-card.dead { opacity: .42; filter: grayscale(.75); }
-  /* Empire is the literal capital-map link. Watching through a civilization's
-     fog is a separate action beside the player whose perspective it selects.
-     Both controls stay quiet enough to read as row tools, while the identity
-     remains the primary route into the dossier. */
-  .player-map-links {
-    min-width: 0; display: flex; align-items: center; justify-content: center; gap: 4px;
-  }
-  .empire-link, .watch-as-link {
+  /* The civilization name itself is the empire/capital map link. Watching
+     through that civilization's fog remains a separate action beside the
+     player whose perspective it selects. */
+  .watch-as-link {
     flex: 0 0 auto; display: flex; align-items: center; justify-content: center; gap: 3px;
     margin: 0; padding: 0 5px; height: 26px;
     border: 1px solid color-mix(in srgb, var(--civ-border) 42%, #52665e);
@@ -626,29 +622,20 @@
     transition: color .12s ease, border-color .12s ease, background .12s ease,
                 box-shadow .12s ease;
   }
-  .empire-link::before, .watch-as-link::before {
+  .watch-as-link::before {
     color: var(--civ-border); font-size: .82em; line-height: 1;
     text-shadow: 0 0 7px color-mix(in srgb, var(--civ) 55%, transparent);
   }
-  .empire-link::before { content: "◆"; }
   .watch-as-link::before { content: "●"; }
-  .empire-link { width: 56px; }
-  .watch-as-link { width: 56px; }
-  .empire-link:hover, .empire-link:focus-visible,
+  .watch-as-link { width: 64px; }
   .watch-as-link:hover, .watch-as-link:focus-visible {
     color: #fff; border-color: var(--civ-border);
     background: linear-gradient(180deg, #21312bf5, #0d1916f5);
     box-shadow: inset 0 1px #ffffff16, 0 3px 8px #0008;
     filter: none; transform: none;
   }
-  .empire-link:focus-visible, .watch-as-link:focus-visible {
+  .watch-as-link:focus-visible {
     outline: 2px solid var(--gold-bright); outline-offset: 1px;
-  }
-  .empire-link:disabled { opacity: .28; cursor: default; filter: none; }
-  .empire-link:disabled:hover {
-    color: #dce6e1; border-color: color-mix(in srgb, var(--civ-border) 42%, #52665e);
-    background: linear-gradient(180deg, #18241ff2, #0a1311f2);
-    box-shadow: inset 0 1px #ffffff0c, 0 2px 6px #0006; transform: none;
   }
   .diplomacy-identity, .diplomacy-stats {
     margin: 0; padding: 0; border: 0; background: none; color: inherit; font: inherit;
@@ -657,6 +644,7 @@
   }
   .diplomacy-identity { min-width: 0; }
   .diplomacy-identity:hover .diplomacy-civ, .diplomacy-identity:focus-visible .diplomacy-civ { color: #fff; }
+  .diplomacy-civ-link:disabled { opacity: .38; cursor: default; }
   .detail-caret { flex: 0 0 auto; margin-left: 2px; color: #93aca1; font-size: var(--type-small); vertical-align: 1px; }
   .diplomacy-civ, .diplomacy-player {
     min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
@@ -2010,8 +1998,8 @@
   /* A wide desktop can show more civilizations without changing the HUD's
      hierarchy or pushing it farther down the map. */
   @media (min-width: 2200px) {
-    .diplomacy-card { flex-basis: 410px; grid-template-columns: 62px 60px minmax(88px, .75fr) minmax(164px, 1.35fr); }
-    .empire-link, .watch-as-link { width: 60px; height: 30px; font-size: var(--type-caption); }
+    .diplomacy-card { flex-basis: 410px; grid-template-columns: 70px minmax(88px, .75fr) minmax(164px, 1.35fr); }
+    .watch-as-link { width: 66px; height: 30px; font-size: var(--type-caption); }
     .ribbon-stat b { font-size: var(--type-control); }
     .ribbon-stat em { font-size: var(--type-caption); }
     /* Four dossier columns need about 480px to stay readable; below that they
@@ -2058,8 +2046,8 @@
   }
   @media (max-width: 430px) {
     .hud-region { padding-inline: 2px; }
-    .diplomacy-card { flex-basis: 350px; grid-template-columns: 54px 52px minmax(76px, .7fr) minmax(155px, 1.45fr); gap: 4px; padding: 4px; }
-    .empire-link, .watch-as-link { width: 52px; height: 24px; }
+    .diplomacy-card { flex-basis: 350px; grid-template-columns: 60px minmax(76px, .7fr) minmax(155px, 1.45fr); gap: 4px; padding: 4px; }
+    .watch-as-link { width: 58px; height: 24px; }
     .ribbon-stat { padding-inline: 0; }
     .ribbon-stat b { font-size: var(--type-label); }
     .ribbon-stat em { font-size: var(--type-micro); letter-spacing: 0; }
@@ -2086,7 +2074,7 @@
     width: min(var(--player-hud-width, 100%),
       calc(100% - var(--victory-hud-width) - 20px));
     height: min(var(--player-hud-height, 200px), var(--player-hud-max-height));
-    --hud-map-links-column: 58px; --hud-watch-column: 56px;
+    --hud-watch-column: 68px;
     /* The ten value columns claim their width first and the identity block is
        the flexible one, because a clipped name still reads and a clipped number
        lies. The old arrangement was the other way round — identity held
@@ -2098,8 +2086,8 @@
     /* Every data column is a *share* of the panel, never a pixel count, so the
        table refills whatever width it is given and a window resize simply
        re-divides the same shares among the same columns. What follows are the
-       defaults; once the page has booted, syncPlayerHudColumns() rewrites all
-       five of these properties from the viewer's own column model, which is why
+       defaults; once the page has booted, syncPlayerHudColumns() rewrites these
+       properties from the viewer's own column model, which is why
        the flex values here are that model's numbers rather than round ones.
        Two invariants make a dragged bar behave: every column carries its floor
        as a custom property, so the width breakpoints below can still lower it
@@ -2130,7 +2118,8 @@
        minimum at all they collapsed on a 1440px screen and rendered "1792" as
        "179" and "11%" as "1" — a truncated number that reads as a different,
        smaller number. Watch-as keeps its fixed track between Leader and
-       Player, which is why the bar for that seam is drawn on Leader's edge. */
+       Player, which is why the bar for that seam is drawn on Leader's edge.
+       Its extra four-pixel tail is the visual gutter before Player. */
     --hud-identity-tracks:
       minmax(var(--hud-ident-min), 2.035fr) minmax(var(--hud-ident-min), 1.85fr)
       var(--hud-watch-column) minmax(var(--hud-ident-min), 1.85fr)
@@ -2171,12 +2160,12 @@
   /* The heading is the positioning context for the column bars laid over it. */
   .ribbon-stat-heading {
     position: relative; min-height: 12px; display: grid;
-    grid-template-columns: var(--hud-lock-column, 0px) var(--hud-map-links-column)
+    grid-template-columns: var(--hud-lock-column, 0px)
       var(--hud-watch-column) var(--hud-identity-column) var(--hud-stats-column);
     align-items: stretch; gap: var(--hud-column-gap); padding: 0 4px 0 3px;
   }
   .diplomacy-identity-head {
-    min-width: 0; display: grid; grid-column: 3 / 5;
+    min-width: 0; display: grid; grid-column: 2 / 4;
     grid-template-columns: var(--hud-identity-tracks); overflow: hidden;
     color: #a9bbb4; font-size: var(--type-micro); font-weight: 950; letter-spacing: .025em;
   }
@@ -2220,7 +2209,7 @@
     box-shadow: inset 0 1px #fff5;
   }
   .diplomacy-stat-head {
-    min-width: 0; display: grid; grid-column: 5;
+    min-width: 0; display: grid; grid-column: 4;
     grid-template-columns: var(--hud-stat-tracks);
     column-gap: var(--hud-stat-gap, 0px);
     color: #a9bbb4; font-size: var(--type-caption); font-weight: 950; letter-spacing: .015em;
@@ -2280,27 +2269,26 @@
   }
   #playerhud .diplomacy-ribbon::-webkit-scrollbar { width: 3px; }
   #playerhud .diplomacy-ribbon::-webkit-scrollbar-thumb { background: #476057; border-radius: 4px; }
-  /* One line, five regions: the lock, the Empire/capital link, identity and
-     its adjacent Watch-as action, then the ten values. The parent template is
-     kept stable while the identity region places Watch as directly before the
-     player name it affects. */
+  /* One line, four regions: the lock, identity with its adjacent Watch-as
+     action, then the ten values. Civilization itself now carries the former
+     Empire/capital action. */
   #playerhud .diplomacy-card {
     width: auto; height: auto; min-height: 0; display: grid;
-    grid-template-columns: var(--hud-lock-column, 0px) var(--hud-map-links-column)
+    grid-template-columns: var(--hud-lock-column, 0px)
       var(--hud-watch-column) var(--hud-identity-column) var(--hud-stats-column);
     grid-template-rows: minmax(0, 1fr);
     align-items: center; gap: var(--hud-column-gap); margin: 0; padding: 1px 4px 1px 3px;
     overflow: hidden; border-radius: 7px;
   }
-  #playerhud .player-map-links { grid-column: 2; grid-row: 1; }
   #playerhud .diplomacy-identity-grid {
-    min-width: 0; display: grid; grid-column: 3 / 5; grid-row: 1;
+    min-width: 0; display: grid; grid-column: 2 / 4; grid-row: 1;
     grid-template-columns: var(--hud-identity-tracks); align-items: stretch; overflow: hidden;
   }
-  #playerhud .watch-as-link { grid-column: 3; grid-row: 1; align-self: center; justify-self: center; }
-  #playerhud .diplomacy-identity-primary { grid-column: 1 / 3; grid-row: 1; }
+  #playerhud .watch-as-link { grid-column: 3; grid-row: 1; align-self: center; justify-self: start; }
+  #playerhud .diplomacy-civ-link { grid-column: 1; grid-row: 1; }
+  #playerhud .diplomacy-leader-link { grid-column: 2; grid-row: 1; }
   #playerhud .diplomacy-identity-secondary { grid-column: 4 / 8; grid-row: 1; }
-  #playerhud .diplomacy-stats { grid-column: 5; grid-row: 1; }
+  #playerhud .diplomacy-stats { grid-column: 4; grid-row: 1; }
 
   /* Locking a seat keeps its row in view while the rest of the table scrolls
      past it — one row, even when the table seats two of that civilization. The
@@ -2325,14 +2313,8 @@
                 0 var(--hud-row-gap) 0 #0b1714, 0 5px 14px #0009;
   }
   #playerhud .diplomacy-card:hover { transform: none; }
-  #playerhud .player-map-links { justify-content: center; gap: 0; }
-  #playerhud .empire-link {
-    width: 56px; height: 22px;
-    border-width: 1px; box-shadow: inset 0 1px #ffffff0c, 0 2px 5px #0006;
-    font-size: var(--type-micro);
-  }
   #playerhud .watch-as-link {
-    width: 54px; height: 22px; font-size: var(--type-micro);
+    width: calc(100% - 6px); height: 22px; font-size: var(--type-micro);
   }
   /* Every identity fact uses the same six tracks as the heading above it.
      Variable-length names can ellipsize inside their own cell without moving
@@ -2340,9 +2322,6 @@
   #playerhud .diplomacy-identity {
     position: relative; min-width: 0; display: grid;
     align-items: stretch; gap: 0; overflow: hidden; padding-block: 0;
-  }
-  #playerhud .diplomacy-identity-primary {
-    grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
   }
   #playerhud .diplomacy-identity-secondary {
     grid-template-columns: minmax(0, 1fr) minmax(0, .55fr) minmax(0, .55fr) minmax(0, 1.1fr);
@@ -2352,7 +2331,7 @@
     overflow: hidden; padding-inline: 3px; border-left: 1px solid #ffffff0b;
     font-size: var(--type-label); line-height: 1.1; white-space: nowrap;
   }
-  #playerhud .diplomacy-identity-primary .diplomacy-identity-field:first-child {
+  #playerhud .diplomacy-civ-link .diplomacy-identity-field {
     border-left-color: transparent;
   }
   #playerhud .diplomacy-rank { flex: 0 0 auto; margin-right: 0; font-size: var(--type-label); }
@@ -2612,10 +2591,10 @@
     #playerhud {
       grid-template-columns: 132px minmax(0, 1fr);
       --hud-ident-min: 27.5px; --hud-column-gap: 3px;
-      --hud-map-links-column: 52px; --hud-watch-column: 52px;
+      --hud-watch-column: 64px;
       --hud-stat-min: 32px; --hud-stat-gap: 2px;
     }
-    #playerhud .empire-link, #playerhud .watch-as-link { width: 50px; }
+    #playerhud .watch-as-link { width: calc(100% - 5px); }
     /* The masthead can take the value columns under 19px here. Keep a
        four-digit figure whole: a clipped number is a wrong number. */
     #playerhud .ribbon-stat b { font-size: clamp(10px, .8vw, 14px); }
@@ -2624,7 +2603,7 @@
     #side { inset-block-start: 132px; }
     #maparea { --hud-rail-width: 182px; --minimap-height: 138px; }
     #playerhud {
-      --hud-map-links-column: 50px; --hud-watch-column: 50px;
+      --hud-watch-column: 62px;
       --hud-stat-min: 30px; --hud-stat-gap: 2px;
     }
   }
@@ -2637,7 +2616,7 @@
     #playerhud, body.overlay-victory-hidden #playerhud {
       top: 8px; left: 8px; right: 8px; width: auto; padding: 4px;
       --hud-lock-column: 11px;
-      --hud-map-links-column: 52px; --hud-watch-column: 52px;
+      --hud-watch-column: 64px;
       --hud-ident-min: 31px;
     }
     #victoryhud, body.overlay-minimap-hidden #victoryhud {
@@ -2680,7 +2659,7 @@
     .launch-badge { min-width: 15px; height: 15px; font-size: var(--type-label); }
   }
   @media (max-height: 650px) {
-    #playerhud .empire-link, #playerhud .watch-as-link { height: 18px; }
+    #playerhud .watch-as-link { height: 18px; }
   }
 
   /* Viewport breakpoints choose where the instruments start, but every one of
@@ -2707,10 +2686,10 @@
   /* Ten complete numeric columns have a real minimum width. When a custom or
      phone-sized box cannot supply it, keep a readable type floor and scroll the
      table inside its own panel instead of crushing or spilling its cells.
-     740px is what the floors above actually add up to: 176px of identity, ten
-     32px values with 2px gutters, and 150px of lock, links, watch and padding. */
+     680px keeps 176px of identity, ten 32px values with 2px gutters, and the
+     lock, widened watch action and padding comfortably separated. */
   #playerhud[data-type-size="compact"] .ribbon-stat-heading,
-  #playerhud[data-type-size="compact"] .diplomacy-ribbon { min-width: 740px; }
+  #playerhud[data-type-size="compact"] .diplomacy-ribbon { min-width: 680px; }
   #playerhud[data-type-size="roomy"] {
     grid-template-columns: 148px minmax(0, 1fr);
     --hud-ident-min: 61px; --hud-column-gap: 7px;
@@ -5839,7 +5818,7 @@ const RESPONSIVE_TEXT_RULES = [
   // every number kept the full 15px and spilled over its neighbours instead of
   // shrinking. This is the rule that made "666 1187 658" render as "6661187658".
   {selector:"#playerhud .ribbon-stat b", min:10, max:15, parentWidth:true},
-  {selector:"#playerhud .player-map-links button, #playerhud .watch-as-link", min:9, max:12},
+  {selector:"#playerhud .watch-as-link", min:9, max:12},
   {selector:"#playerhud .turn-era", min:12, max:17},
   {selector:"#playerhud .turn-label", min:11, max:14},
   {selector:"#playerhud .victory-turn strong", min:24, max:34},
@@ -18410,7 +18389,7 @@ function drawPlayerHud() {
       // A seat somebody is playing is a player of its own: this game
       // registered a new one for it rather than lending it an agent's name,
       // so the row says who you are and what you are defending.
-      const playerName = p.player_username || p.ai_username || "AI player";
+      const playerName = p.player_username || p.ai_username || p.ai_name || "AI player";
       const playedGames = +p.player_games || 0;
       // A new player has no record to show yet, and 1500 is the number every
       // unrated player would wear. Say unrated until they have finished one.
@@ -18431,7 +18410,7 @@ function drawPlayerHud() {
         ? `League player ${p.ai_username} (${p.ai_strat_label || "unrated"})` +
           ` · ${p.ai_elo_civ ? `${p.civ}-specific` : "overall"} ELO ${p.ai_elo} ±${p.ai_elo_rd}` +
           `${expectPct === null ? "" : ` · expected win chance vs this table ${expectPct}%`}`
-        : `Unrated AI player · ${strategy ? `${titleCase(strategy)} active strategy` : "no active strategy"}`;
+        : `Unrated ${p.ai_name || "AI player"} · ${strategy ? `${titleCase(strategy)} active strategy` : "no active strategy"}`;
       const relationClass = alliance ? "allied" : p.friend ? "friend" : "";
       const stateClass = `${relationClass} ${p.at_war_with_me ? "at-war" : ""} ${p.alive ? "" : "dead"}`;
       const stats = statsByPlayer.get(p.id);
@@ -18450,16 +18429,14 @@ function drawPlayerHud() {
       return `<div class="diplomacy-card ${stateClass} ${expanded ? "expanded" : ""}${locked ? " locked" : ""}" style="--civ:${color};--civ-border:${pcol2(p.id)}" role="listitem">` +
         `<button class="lock-toggle" data-hud-action="lock" data-hud-civ="${p.id}" aria-pressed="${locked}" ` +
         `title="${lockTitle}" aria-label="${lockTitle}">${locked ? "◉" : "○"}</button>` +
-        `<span class="player-map-links" role="group" aria-label="${escapeAttr(p.civ)} capital view">` +
-        `<button class="empire-link" data-hud-action="capital" data-hud-civ="${p.id}" ` +
-        `title="${escapeAttr(empireTitle)}" aria-label="Empire: ${escapeAttr(empireTitle)}"${capital ? "" : " disabled"}>Empire</button>` +
-        `</span>` +
         `<span class="diplomacy-identity-grid">` +
-        `<button class="diplomacy-identity diplomacy-identity-primary" data-hud-action="dossier" data-hud-civ="${p.id}" aria-expanded="${expanded}" ` +
+        `<button class="diplomacy-identity diplomacy-civ-link" data-hud-action="capital" data-hud-civ="${p.id}" ` +
+        `title="${escapeAttr(empireTitle)}" aria-label="${escapeAttr(empireTitle)}"${capital ? "" : " disabled"}>` +
+        `<span class="diplomacy-identity-field"><span class="diplomacy-rank">#${rank}</span>` +
+        `<span class="diplomacy-civ">${p.id === acting && highlightActing ? "◉ " : ""}${p.civ}</span></span></button>` +
+        `<button class="diplomacy-identity diplomacy-leader-link" data-hud-action="dossier" data-hud-civ="${p.id}" aria-expanded="${expanded}" ` +
         `title="${expanded ? "Close" : "Open"} the ${p.civ} dossier · ${relationSummary}${agendaText}" ` +
         `aria-label="${expanded ? "Close" : "Open"} dossier for ${p.civ}, rank ${rank}, ${relationSummary}">` +
-        `<span class="diplomacy-identity-field"><span class="diplomacy-rank">#${rank}</span>` +
-        `<span class="diplomacy-civ">${p.id === acting && highlightActing ? "◉ " : ""}${p.civ}</span></span>` +
         `<span class="diplomacy-identity-field"><span class="diplomacy-leader-name">${leader}</span>${agendaGlyph}</span>` +
         `</button>` +
         `<button class="watch-as-link" data-hud-action="watch" data-hud-civ="${p.id}" ` +
@@ -18750,6 +18727,9 @@ function civDossier(p, rank, relation) {
         ? row("Expected wins", `${Math.round(p.ai_expected * 100)}% vs this table`,
             "Elo-implied mean win probability against the other rated majors — compare with actual results over time")
         : "")
+    : p.ai_name
+    ? row("AI player", p.ai_name,
+        strategy ? `Generated from this AI's ${titleCase(strategy)} strategy` : "Generated for this AI seat")
     : "";
   const strategyBody = leagueRows + (plan
     ? row("Doctrine", `<span class="ai-plan ${plan.strategy}">${titleCase(plan.strategy)}</span>`,
@@ -21991,9 +21971,9 @@ function setDirector(on) {
   if (on && (!SPEC || VIEW !== "cinematic")) return;
   setCinemaMode(!!on);
 }
-// The Empire button is the stable way into a civilization's capital view. It
-// moves the map without also changing whose fog of war is being viewed; that
-// distinct transition belongs to the adjacent Watch-as button.
+// A civilization's own cell is the stable way into its capital view. It moves
+// the map without changing whose fog of war is being viewed; that distinct
+// transition belongs to Watch as.
 function focusCapital(pid) {
   if (!state) return;
   const capital = state.cities.find(city => city.owner === pid && city.is_capital);

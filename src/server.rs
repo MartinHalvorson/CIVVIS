@@ -1049,6 +1049,47 @@ fn final_countdown_ms(requested: u64) -> u64 {
     requested.clamp(MIN_RESTART_MS, MAX_RESTART_MS)
 }
 
+/// Give an unrated AI seat a compact, deterministic handle. The first half of
+/// the handle follows its published grand strategy; the second distinguishes
+/// seats pursuing the same plan. A strategy reassessment may therefore rename
+/// an unrated agent, which makes the player column describe what is actually
+/// running now instead of preserving a stale opening label.
+fn generated_ai_name(seed: u64, pid: usize, strategy: Option<&str>) -> String {
+    const ROLES: [&str; 12] = [
+        "Architect",
+        "Pathfinder",
+        "Steward",
+        "Visionary",
+        "Tactician",
+        "Builder",
+        "Navigator",
+        "Marshal",
+        "Sage",
+        "Keeper",
+        "Pioneer",
+        "Planner",
+    ];
+    let prefixes = match strategy {
+        Some("expansion") => ["Frontier", "Horizon", "Homestead", "Border"],
+        Some("science") => ["Quantum", "Stellar", "Orbital", "Theory"],
+        Some("culture") => ["Mosaic", "Lyric", "Gallery", "Festival"],
+        Some("religion" | "religious") => ["Pilgrim", "Sacred", "Temple", "Oracle"],
+        Some("diplomacy" | "diplomatic") => ["Concord", "Treaty", "Envoy", "Summit"],
+        Some("conquest" | "domination") => ["Vanguard", "Iron", "Siege", "Legion"],
+        Some("recovery") => ["Phoenix", "Bastion", "Rally", "Reserve"],
+        _ => ["Adaptive", "Strategic", "Resolute", "Calculated"],
+    };
+    let seed_mix = (seed ^ (seed >> 32)) as usize;
+    let prefix = prefixes[(pid + seed_mix) % prefixes.len()];
+    let role = ROLES[(pid / prefixes.len() + seed_mix / prefixes.len()) % ROLES.len()];
+    let cycle = pid / (prefixes.len() * ROLES.len());
+    if cycle == 0 {
+        format!("{prefix}{role}")
+    } else {
+        format!("{prefix}{role}{}", cycle + 1)
+    }
+}
+
 /// One seat's slice of the turn budget. Seats divide it in proportion to the
 /// beat they are given, so a whole turn costs `pace_ms` whether it is two
 /// empires or eight with a dozen city-states between them. The counts are of
@@ -1721,6 +1762,32 @@ impl Session {
         }
     }
 
+    /// Name every major AI visible in this observation, including opponents
+    /// in an interactive game. Human identity is written afterward and wins
+    /// in the browser, while a seat handed over through Watch as naturally
+    /// falls back to this agent name.
+    fn name_ai_players(&self, o: &mut Value) {
+        let Some(players) = o["players"].as_array_mut() else {
+            return;
+        };
+        for player in players {
+            let Some(id) = player["id"].as_u64().map(|id| id as usize) else {
+                continue;
+            };
+            if player["met"] == json!(false)
+                || !self
+                    .game
+                    .players
+                    .get(id)
+                    .is_some_and(|seat| !seat.is_minor && !seat.is_barbarian)
+            {
+                continue;
+            }
+            let strategy = self.ais.get(id).and_then(|ai| ai.strategy_label());
+            player["ai_name"] = json!(generated_ai_name(self.game.seed, id, strategy));
+        }
+    }
+
     pub fn state(&self) -> Value {
         if self.params.spectate {
             let g = &self.game;
@@ -1783,7 +1850,8 @@ impl Session {
                     if player["met"] == json!(false) {
                         continue;
                     }
-                    if let Some(strategy) = self.ais.get(id).and_then(|ai| ai.strategy_label()) {
+                    let strategy = self.ais.get(id).and_then(|ai| ai.strategy_label());
+                    if let Some(strategy) = strategy {
                         player["ai_strategy"] = json!(strategy);
                     }
                     // The expanded HUD card explains a civilization's whole
@@ -1814,6 +1882,7 @@ impl Session {
                     }
                 }
             }
+            self.name_ai_players(&mut o);
             o["spectate"] = json!(true);
             o["supervised"] = json!(self.params.supervised);
             o["spectator_paused"] = json!(self.spectator_paused);
@@ -1834,6 +1903,7 @@ impl Session {
             return o;
         }
         let mut o = observation(&self.game, 0);
+        self.name_ai_players(&mut o);
         self.name_human_players(&mut o);
         o["spectate"] = json!(false);
         o["supervised"] = json!(self.params.supervised);
@@ -3561,7 +3631,7 @@ mod tests {
     use crate::game::{
         Action, Game, LeaderPool, PlayOnMode, VictoryConditions, CIV6_LEADER_POOL,
     };
-    use crate::server::simulation_settings;
+    use crate::server::{generated_ai_name, simulation_settings};
     use crate::setup::{BaseRuleset, GameSpeed, MapPoles, MapScript, MapTopology, StartEon};
     use serde_json::{json, Value};
     use std::io::{Read, Write};
@@ -3600,6 +3670,24 @@ mod tests {
         assert_eq!(final_countdown_ms(9_999), 10_000);
         assert_eq!(final_countdown_ms(10_000), 10_000);
         assert_eq!(final_countdown_ms(12_500), 12_500);
+    }
+
+    #[test]
+    fn generated_ai_names_are_unique_and_follow_their_strategy() {
+        let science: Vec<String> = (0..12)
+            .map(|pid| generated_ai_name(42, pid, Some("science")))
+            .collect();
+        let unique: std::collections::BTreeSet<&str> =
+            science.iter().map(String::as_str).collect();
+        assert_eq!(unique.len(), science.len());
+        assert!(science.iter().all(|name| ["Quantum", "Stellar", "Orbital", "Theory"]
+            .iter()
+            .any(|prefix| name.starts_with(prefix))));
+        assert_ne!(
+            generated_ai_name(42, 0, Some("science")),
+            generated_ai_name(42, 0, Some("conquest"))
+        );
+        assert!(generated_ai_name(42, 0, None).starts_with("Resolute"));
     }
 
     /// The number on the result screen is the number this function returns, so
@@ -4696,7 +4784,17 @@ mod tests {
         // A seat somebody is playing is named after the player this game
         // registered for them, and it is preferred over any agent handle: a
         // person is never one of the entrants on the leaderboard.
-        assert!(player_hud.contains("p.player_username || p.ai_username || \"AI player\""));
+        assert!(player_hud
+            .contains("p.player_username || p.ai_username || p.ai_name || \"AI player\""));
+        // Civilization has absorbed the old Empire action. Watch as remains a
+        // distinct, wider perspective control with breathing room before the
+        // player identity it changes.
+        assert!(player_hud.contains(
+            "class=\"diplomacy-identity diplomacy-civ-link\" data-hud-action=\"capital\""
+        ));
+        assert!(!player_hud.contains("class=\"empire-link\""));
+        assert!(EMBEDDED_INDEX.contains("--hud-watch-column: 68px"));
+        assert!(EMBEDDED_INDEX.contains("width: calc(100% - 6px); height: 22px"));
         // And a player with nothing behind them reads unrated rather than
         // wearing the 1500 every unrated player would have.
         assert!(player_hud.contains("(playedGames ? `${p.player_elo} ELO` : \"Unrated\")"));
@@ -5756,11 +5854,12 @@ mod tests {
         ));
         assert!(EMBEDDED_INDEX.contains("data-victory-focus=\"${isFocus}\""));
         assert!(EMBEDDED_INDEX.contains("grid-auto-rows: var(--hud-row-height);"));
-        // A masthead row is one line: its capital link, explicit watch action,
-        // identity and ten values sit side by side. Watch-as deliberately has
-        // no column heading; the button carries its own visible label.
+        // A masthead row is one line: civilization carries the capital action,
+        // followed by the explicit watch action, identity and ten values.
+        // Watch-as deliberately has no column heading; the button carries its
+        // own visible label.
         assert!(EMBEDDED_INDEX.contains(
-            "grid-template-columns: var(--hud-lock-column, 0px) var(--hud-map-links-column)\n      \
+            "grid-template-columns: var(--hud-lock-column, 0px)\n      \
              var(--hud-watch-column) var(--hud-identity-column) var(--hud-stats-column);"
         ));
         // The values claim their width first and the identity block flexes, so a
@@ -5844,9 +5943,10 @@ mod tests {
         // No coloured bloom behind eighty figures at once.
         assert!(!EMBEDDED_INDEX.contains("text-shadow: 0 1px 2px #000, 0 0 8px currentColor;"));
         assert!(EMBEDDED_INDEX.contains(
-            "class=\"empire-link\" data-hud-action=\"capital\""
+            "class=\"diplomacy-identity diplomacy-civ-link\" data-hud-action=\"capital\""
         ));
-        assert!(EMBEDDED_INDEX.contains(">Empire</button>"));
+        assert!(!EMBEDDED_INDEX.contains("class=\"empire-link\""));
+        assert!(!EMBEDDED_INDEX.contains(">Empire</button>"));
         assert!(!EMBEDDED_INDEX.contains("class=\"capital-link\""));
         assert!(!EMBEDDED_INDEX.contains("data-hud-action=\"empire\""));
         assert!(EMBEDDED_INDEX.contains("function focusCapital(pid)"));
@@ -6924,9 +7024,17 @@ mod tests {
             .all(|unit| unit.get("reachable").is_none()));
         assert!(state["players"][0]["ai_strategy"].is_null());
         assert!(state["players"][0]["ai_plan"].is_null());
+        assert!(state["players"][0]["ai_name"]
+            .as_str()
+            .is_some_and(|name| name != "AI player"));
         session.step();
         let stepped = session.state();
         assert_eq!(stepped["players"][0]["ai_strategy"], "expansion");
+        assert!(["Frontier", "Horizon", "Homestead", "Border"]
+            .iter()
+            .any(|prefix| stepped["players"][0]["ai_name"]
+                .as_str()
+                .is_some_and(|name| name.starts_with(prefix))));
         // The expanded HUD card reads the whole plan, not just its label.
         let plan = &stepped["players"][0]["ai_plan"];
         assert_eq!(plan["strategy"], "expansion");
