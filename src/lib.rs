@@ -24,6 +24,7 @@ pub mod decision_features;
 pub mod policy;
 pub mod production;
 pub mod rating;
+pub mod reasoning;
 pub mod rng;
 pub mod rules;
 pub mod selfplay;
