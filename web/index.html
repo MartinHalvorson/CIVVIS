@@ -9715,6 +9715,28 @@ function drawAtlasFeatureCell(atlas, columns, rows, cell, t, x, y, options = {})
   cx.imageSmoothingEnabled = true;
   cx.imageSmoothingQuality = "high";
   cx.globalAlpha = options.alpha === undefined ? 0.95 : options.alpha;
+  // A bridging stamp standing on every seam this tile shares with its own
+  // kind. One stamp per seam, laid by the tile that owns the edge: the art has
+  // an alpha edge, so doing it from both sides would double the boundary into
+  // a visible ring. Without it the footprint clip lets neighbouring cover
+  // interlock but nothing actually spans the join, so a pack of ice or a wood
+  // still reads as one stamp per hex with the tile boundary between them.
+  if (options.seams) {
+    for (const [worldDX, worldDY, edgeSeed, owns] of terrainRidge(t, options.seams)) {
+      if (!owns) continue;
+      const eh = hash2(edgeSeed & 1023, (edgeSeed >>> 11) & 1023);
+      const eh2 = hash2((edgeSeed >>> 5) & 1023, (edgeSeed >>> 17) & 1023);
+      cx.save();
+      cx.translate(x + (COSR * worldDX - SINR * worldDY) / 2,
+                   y + (SINR * worldDX + COSR * worldDY) * YS / 2);
+      if (options.rotate !== false) cx.rotate(eh * Math.PI * 2);
+      if (options.flip !== false && eh2 > 0.5) cx.scale(-1, 1);
+      const sc = 0.66 + eh2 * 0.14;
+      cx.drawImage(atlas, sx, sy, sw, sh,
+                   -width * sc / 2, -height * sc / 2, width * sc, height * sc);
+      cx.restore();
+    }
+  }
   const drift = options.drift || 0;
   const driftX = (hash2(t.pos[0] * 47 + 5, t.pos[1] * 53 + 3) - 0.5) * S * drift * 2;
   const driftY = (hash2(t.pos[0] * 59 + 7, t.pos[1] * 61 + 11) - 0.5) * S * drift * 1.2;
@@ -9760,6 +9782,7 @@ function drawFeatureSprite(t, x, y) {
     drawAtlasFeatureCell(FEATURE_ATLAS, 4, 1, [baseCol, 0], t, x, y,
       {scale: knit, width:2.12, height:2.04, cropY:0.5, footprint,
        drift: woodland ? 0 : 0.13,
+       seams: neighbor => featureBlendKind(neighbor.feature) === baseFeature,
        rotate: !woodland, flip: !woodland, vary: !woodland,
        alpha: burnt ? 0.48 : (baseFeature === "forest" || baseFeature === "jungle" ? 0.96 : 0.94)});
     return true;
@@ -9781,6 +9804,10 @@ function drawFeatureSprite(t, x, y) {
     lift: volcano ? 0.34 : 0.02,
     scale: volcano ? 1 : 1 + connected * 0.022,
     alpha: t.feature === "ice" ? 0.98 : 0.95,
+    // A volcano is a single mountain, not cover that spreads; everything else
+    // in this atlas is ground that ought to run on into the next hex.
+    seams: volcano ? null
+      : neighbor => featureBlendKind(neighbor.feature) === baseFeature,
     rotate: !volcano,
     flip: !volcano,
     upright: volcano,
@@ -9846,6 +9873,13 @@ function environmentRidge(kind, t) {
   if (kind === "mountain" || kind === "mount_everest")
     return terrainRidge(t, isMountainTile);
   if (kind === "hills") return terrainRidge(t, isHillTile);
+  // Cover that spreads: which way a wood or a sheet of ice carries on. Woods
+  // and rainforest knit into each other deliberately — where they meet it is
+  // still unbroken tree cover — so both answer to WOODLAND rather than to
+  // their own kind alone.
+  if (WOODLAND.has(kind))
+    return terrainRidge(t, neighbor => WOODLAND.has(neighbor.feature));
+  if (kind === "ice") return terrainRidge(t, neighbor => neighbor.feature === "ice");
   return null;
 }
 
@@ -9864,6 +9898,12 @@ function drawEnvironment3D(kind, t, x, y, span = 1) {
     ctx:cx,
     kind,
     ridge:environmentRidge(kind, t),
+    // Where this tile sits in the map's own unrotated plane. A model that
+    // wants texture crossing its tile boundaries has to place it on a lattice
+    // that knows nothing about tiles, and this is the only thing it needs to
+    // do that. Unwrapped on purpose: the lattice should not shift under a
+    // camera that has folded the world round.
+    origin:[S * SQ3 * (t.pos[0] + t.pos[1] / 2), S * 1.5 * t.pos[1]],
     terrain:t.terrain,
     seed:Math.imul(t.pos[0] + 4096, 73856093) ^ Math.imul(t.pos[1] + 4096, 19349663),
     hills:!!t.hills && t.terrain !== "mountain",
