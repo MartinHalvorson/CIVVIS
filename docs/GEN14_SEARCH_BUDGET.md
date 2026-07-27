@@ -159,3 +159,13 @@ compute work should preserve the 20-turn review cadence. Horizon reduction is
 the only surviving efficiency hypothesis, but it needs a purpose-built
 non-inferiority design or a genuinely positive strength gate before it can
 replace 80-round search.
+
+## Upstream reconciliation
+
+`603d4f1` landed after the gate and was merged before this audit became ready.
+It adds policy-deck and genome instrumentation, but its new deck stays off by
+default, the committed 40-gene champion retains the legacy deck, and the live
+`AdvancedAi` behavior is unchanged. Its own paired evaluation and PR
+validation explicitly record no shipped behavior change. The search results
+therefore remain current after the merge; a duplicate gameplay run would test
+the same two policies.
