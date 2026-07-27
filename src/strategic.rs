@@ -267,6 +267,25 @@ pub struct StrategicAi {
     /// piece of retained state does it -- the force groups, the peace
     /// cooldown, or simply the plan surviving.
     pub continue_from_plan: bool,
+    /// Let the irreversible-Prophet prior answer a review before the
+    /// rollouts run. True reproduces the shipped behaviour exactly.
+    ///
+    /// **This prior answers about half of all reviews, and the search
+    /// disagrees with it 85% of the time.** Audited over 200 four-player
+    /// positions at turn ~60 (`search_probe --priors`): 99 were answered by
+    /// a prior rather than the rollouts, **92 of them by this one**, and on
+    /// 85 of the 99 the projection would have chosen differently — always
+    /// the same way, the prior taking Religion where the search would stay
+    /// adaptive.
+    ///
+    /// That is not evidence the prior is wrong. Its argument is sound and
+    /// the search cannot check it: a Prophet slot is an irreversible global
+    /// race, and a forty-round projection scored by score share cannot see
+    /// the value of an option that pays out beyond it. It is evidence that
+    /// this one predicate, not the evaluator and not the horizon, is what
+    /// decides the lane in half of this agent's reviews — and that had never
+    /// been measured.
+    pub trust_religious_prior: bool,
     /// Search the doctrine axis as well as the lane. Off by default so
     /// `strategic` is bit-identical to its published behaviour; the
     /// `strategic_doctrine` entrant turns it on, which makes the two an
@@ -348,6 +367,7 @@ impl StrategicAi {
             census: ReviewCensus::default(),
             continue_from_plan: true,
             adaptive_horizon: false,
+            trust_religious_prior: true,
             doctrine_search: false,
             defer_periodic_on_interrupt: true,
             rotate_lanes: false,
@@ -1074,7 +1094,7 @@ impl StrategicAi {
         if let Some(counter) = self.urgent_counter_target(g, pid) {
             return (Some(counter), ReviewPath::UrgentCounter);
         }
-        if Self::viable_religious_commitment(g, pid) {
+        if self.trust_religious_prior && Self::viable_religious_commitment(g, pid) {
             return (
                 Some(VictoryTarget::Religion),
                 ReviewPath::IrreversibleReligion,
