@@ -104,8 +104,35 @@ pub fn load_champion(dir: &str) -> Option<Weights> {
 /// overrides the snapshot, so an in-progress evolution is not shadowed by the
 /// committed one. This is the arrangement `data/league` already uses.
 fn load_champion_record(dir: &Path) -> Option<Champion> {
-    read_champion(dir).or_else(|| read_champion(&Path::new("data").join(dir)))
+    read_champion(dir)
+        .or_else(|| read_champion(&Path::new("data").join(dir)))
+        .or_else(|| embedded_champion(dir))
 }
+
+/// The shipped champion, compiled into the binary the way every ruleset file
+/// already is.
+///
+/// A path-based fallback resolves against the **current working directory**,
+/// and the one place that matters most does not have the tree: the spectator
+/// supervisor builds from `origin/main` in a private worktree, promotes only
+/// the binary, and runs it with the *deployment* checkout as its cwd — which
+/// was 548 commits behind when this was written. So the exhibition, the
+/// fleet, and any binary copied anywhere would still have loaded
+/// `Weights::default()` while the repository contained a champion.
+///
+/// This is the same failure the league hit, which needed a `--league auto`
+/// flag to resolve the canonical source at spawn time. Embedding needs no
+/// flag and cannot go stale relative to the binary that carries it.
+///
+/// Only for the canonical `evolved` directory: an explicit `--artifact-dir`
+/// naming somewhere else is asking a question about *that* directory, and
+/// answering it with the built-in would be a lie.
+fn embedded_champion(dir: &Path) -> Option<Champion> {
+    (dir == Path::new("evolved")).then(|| ())?;
+    serde_json::from_str(EMBEDDED_CHAMPION).ok()
+}
+
+const EMBEDDED_CHAMPION: &str = include_str!("../data/evolved/best.json");
 
 fn read_champion(dir: &Path) -> Option<Champion> {
     let raw = fs::read_to_string(dir.join("best.json")).ok()?;
@@ -729,6 +756,24 @@ mod champion_snapshot_tests {
     /// `evolved/` directory — which is every fresh clone, the exhibition and
     /// the fleet. Before this snapshot existed the loader returned `None`
     /// there and every agent silently played `Weights::default()`.
+    /// The binary must carry the champion, because the path fallback resolves
+    /// against the working directory and the deployment checkout is not it.
+    #[test]
+    fn the_binary_carries_the_champion_without_any_tree() {
+        let champion: super::Champion = serde_json::from_str(super::EMBEDDED_CHAMPION)
+            .expect("the embedded champion must parse");
+        let genes = champion.weights.to_vec();
+        assert_eq!(genes.len(), 40);
+        assert!(genes.iter().all(|gene| gene.is_finite()));
+        assert!(
+            genes != crate::ai::Weights::default().to_vec(),
+            "the embedded champion is the defaults, so carrying it changes nothing"
+        );
+        // An explicit artifact directory must not be answered with the
+        // built-in: that question is about that directory.
+        assert!(super::embedded_champion(std::path::Path::new("somewhere-else")).is_none());
+    }
+
     #[test]
     fn a_bare_checkout_resolves_the_committed_champion() {
         let champion = load_champion("evolved")
