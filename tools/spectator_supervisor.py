@@ -61,6 +61,46 @@ MAP_TYPES = (
 MAP_SHAPES = ("flat", "planet")
 MAP_POLES = ("poles", "randomized")
 
+# Every world the exhibition simulates is the same *kind* of game: Online
+# speed, an Ancient start, and no teams. Two axes vary between worlds -- how
+# many seats are at the table and what the map is -- and nothing else does.
+#
+# Speed and start era are pinned at the launch boundary in `server_command`
+# rather than in the generator below, because the generator is not the only
+# way a world gets started: a staged lobby handoff arrives through
+# `normalized_simulation_settings`, and a resume arrives with the settings the
+# checkpoint was written under. Pinning where the argument list is built is
+# the one place all three paths pass through.
+SIMULATION_SPEED = "online"
+SIMULATION_START_ERA = "ancient"
+# Four seats is the floor at which the war log, diplomacy and the victory race
+# all have something to show; a duel has no diplomacy to watch. Ten is the
+# ceiling this box finishes in an evening -- a 20-major world was measured
+# taking 27 hours at load 45, which is a world nobody ever sees the end of.
+SIMULATION_PLAYER_COUNTS = (4, 5, 6, 7, 8, 9, 10)
+# Teams are never passed. `civvis play` reads `--teams` as one entry per major
+# seat and treats an absent flag as a free-for-all, so the guarantee here is
+# the absence of the argument, and `test_no_world_is_started_with_teams` is
+# what keeps it absent.
+
+
+def rolled_simulation_settings(settings: dict[str, Any]) -> dict[str, Any]:
+    """Redraw the two axes that vary between exhibition worlds.
+
+    Width, height and city-state counts are *dropped* rather than rolled or
+    carried: all three are functions of the seat count, and `civvis play`
+    derives them from `--players` through `MapSize::for_players`, which is the
+    shipped Civilization VI size table. Computing them here would put a second
+    copy of that table in Python to keep in step, and carrying the finished
+    world's 74x46 forward would crowd ten seats onto a board built for six.
+    """
+    rolled = dict(settings)
+    rolled["players"] = random.choice(SIMULATION_PLAYER_COUNTS)
+    rolled["map"] = random.choice(MAP_TYPES)
+    for derived in ("width", "height", "city_states"):
+        rolled.pop(derived, None)
+    return rolled
+
 
 def final_countdown_seconds(requested: float) -> float:
     """Ten seconds, whatever `--cooldown` asked for.
@@ -842,11 +882,16 @@ def session_settings(state: dict[str, Any], defaults: dict[str, Any]) -> dict[st
     players = state.get("players") or []
     game_map = state.get("map") or {}
     settings = {
-        # Seat counts stay with the operator's flags; see the note above.
-        "players": defaults["players"],
-        "width": int(game_map.get("width") or defaults["width"]),
-        "height": int(game_map.get("height") or defaults["height"]),
-        "city_states": defaults["city_states"],
+        # Seat count and map script are redrawn for every world -- they are the
+        # two axes the exhibition varies -- so neither the operator's flags nor
+        # the finished game decides them. The flags still seat the *first*
+        # world of a supervisor's life, because nothing has finished yet for
+        # this branch to run on.
+        #
+        # The fog-of-war note above is why the finished game is not consulted
+        # for a seat count even now: a redraw is a fresh number, but reading
+        # one off `/state` would still be reading a trimmed observation.
+        "players": random.choice(SIMULATION_PLAYER_COUNTS),
         # Turns borrowed by "one more turn" are not a setting. A played-on
         # world carries a raised `max_turns`, and feeding that back as the next
         # `--turns` would ratchet the exhibition longer with every press, the
@@ -854,8 +899,8 @@ def session_settings(state: dict[str, Any], defaults: dict[str, Any]) -> dict[st
         "turns": defaults["turns"]
         if state.get("decided") is not None
         else int(state.get("max_turns") or defaults["turns"]),
-        "map": game_map.get("script") or defaults["map"],
-        "speed": state.get("game_speed") or defaults["speed"],
+        "map": random.choice(MAP_TYPES),
+        "speed": SIMULATION_SPEED,
         "leader_pool": state.get("leader_pool") or defaults.get("leader_pool", "civ6"),
     }
     # Shape and climate are independent of the map script. They used to be
@@ -1026,6 +1071,16 @@ def server_command(
     resume: Path | None = None,
     initially_paused: bool = False,
 ) -> list[str]:
+    # Every exhibition world is Online speed and an Ancient start, whatever
+    # asked for it. Say so when something asked for otherwise: a staged lobby
+    # handoff that names Epic is a real operator action, and silently starting
+    # a different game than the panel promised is worse than refusing to.
+    requested_speed = str(settings.get("speed", SIMULATION_SPEED))
+    if requested_speed != SIMULATION_SPEED:
+        log(
+            f"settings asked for {requested_speed} speed; the exhibition "
+            f"simulates {SIMULATION_SPEED} only, starting {SIMULATION_SPEED}"
+        )
     args = [
         str(
             RUNTIME_BINARY
@@ -1035,18 +1090,14 @@ def server_command(
         "play",
         "--players",
         str(settings["players"]),
-        "--width",
-        str(settings["width"]),
-        "--height",
-        str(settings["height"]),
-        "--city-states",
-        str(settings["city_states"]),
         "--turns",
         str(settings["turns"]),
         "--map",
         str(settings["map"]),
         "--speed",
-        str(settings["speed"]),
+        SIMULATION_SPEED,
+        "--start-era",
+        SIMULATION_START_ERA,
         "--leader-pool",
         str(settings.get("leader_pool", "civ6")),
         "--seed",
@@ -1056,6 +1107,14 @@ def server_command(
         "--spectate",
         "--supervised",
     ]
+    # A board size is only passed when something explicitly chose one -- the
+    # operator's flags on the first world, or a resumed checkpoint. A rolled
+    # world omits all three so `civvis play` sizes the map for the seat count
+    # it actually drew, off the shipped Civilization VI table.
+    for flag, key in (("--width", "width"), ("--height", "height"),
+                      ("--city-states", "city_states")):
+        if settings.get(key) is not None:
+            args.extend((flag, str(settings[key])))
     if "shape" in settings:
         args.extend(("--shape", str(settings["shape"])))
     if "poles" in settings:
