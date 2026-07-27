@@ -428,19 +428,62 @@ blind, which is the defect that killed `PolicyAi` on 96% of its candidates.
 
 ### The criterion that generalises all of this
 
-> **Search pays on a decision whose effect exceeds the outcome noise floor.**
+> **Search pays on a decision whose effect exceeds the outcome noise floor
+> _at the sample size the search can afford_.**
 >
-> A lane branch reaches a decided game 22% of the time at horizon 40 and 56% at
-> 80, returning exactly 1.0 or 0.0 — effect 1.0 against a floor near zero, and
-> the lane search is the one component that has ever won. A build choice moves
-> the win rate by ~0.20 against a floor of 0.224 at affordable replica counts,
-> and the production search loses to a scripted governor.
+> The italicised clause is the whole of it, and it took a measurement to find.
+> A rollout search deciding one build can afford a handful of samples per
+> candidate; a genetic algorithm tuning a policy parameter averages over
+> hundreds of games. They face the same noise and resolve completely different
+> effect sizes.
 >
-> This is measurable **in advance**, for any decision, by
-> `search_probe --outcome --replicas K`. Do that before building search for a
-> new decision type. It is the same discipline that retired the sealed-rollout
-> family and the commitment-margin hypothesis, applied one level up: not "does
-> the treatment fire" but "is there anything here to find".
+> | mechanism | effect | samples it can afford | resolves? |
+> |---|---|---|---|
+> | lane search | **1.0** (branch reaches a decided game, returns 1.0/0.0) | 1 | **yes** — the one component that has ever won |
+> | production search | 0.20 win rate | ~5 | no — floor is 0.224 |
+> | policy genome (GA) | 0.08 win rate | hundreds | **yes** — floor at n=120 is 0.046 |
+>
+> Measured for the genome axis (`search_probe --genome`, 24 positions, the four
+> `Doctrine` perturbations, 5 opponent replicas each): mean win rates
+> **0.375 / 0.367 / 0.325 / 0.292** for consolidate / incumbent / expand /
+> militarize — an **0.083 spread, about 65 Elo**, at 1.8 standard errors on
+> 120 games apiece. Per *position* that is under the noise floor (median
+> spread 0.200 against an SE of 0.224); in *aggregate* it is not, and a GA only
+> ever needs the aggregate.
+>
+> **So the same number that closes per-decision search opens policy-level
+> optimisation.** That is not a contradiction — it is the sample-size clause
+> doing its work, and it is why sections 0–2 kept finding null after null while
+> the untouched 40-scalar genome sat there.
+>
+This is measurable **in advance**, for any decision, by
+> `search_probe --outcome --replicas K`, and for the policy axis by
+> `search_probe --genome`. Do that before building search for a new decision
+> type. It is the same discipline that retired the sealed-rollout family and
+> the commitment-margin hypothesis, applied one level up: not "does the
+> treatment fire" but "is there anything here to find".
+>
+> **⚠ Do not extend this arithmetic to the GA — I did, and it is wrong.** The
+> Bernoulli standard error `sqrt(0.25/games)` describes a *win rate*. `evolve`
+> does not select on wins: since #457 its selection statistic is
+> `50·P·score_share + 12·P·combat_share`, a continuous quantity, and every
+> genome in a generation is scored on the **same map seeds and seats**, so the
+> comparison available to it is *paired*. A binomial SE describes neither. The
+> shipped eight-game budget was retained on a measured 16-game control showing
+> no agreement gain, and `src/bin/evolve_probe.rs` measures the real noise floor
+> of the real statistic — use it rather than the table I originally put here.
+>
+> The clause still holds where the outcome genuinely is a Bernoulli draw, which
+> is every per-decision search in section 2: those label branches by win or
+> loss and cannot pair across candidates.
+>
+> **The standing implication.** `elo::builtin_ai` resolves every strategic
+> agent through `load_champion("evolved").unwrap_or_default()`; `evolved/` is
+> gitignored and **no `best.json` exists on this machine or in a fresh clone**.
+> So the 40 evolved weights have never been evolved, and every result in this
+> document was measured on top of an untuned policy. Shipping a champion
+> genome is the one lever this repository built machinery for — a GA with an
+> anchor, a holdout and a promotion gate — and never pulled.
 
 **Refuted by.** Separation that exists but does not survive contact with the
 empire — a city optimised in isolation starving the empire of settlers or
