@@ -148,8 +148,10 @@ and no runtime default changes.
 
 ## Upstream reconciliation
 
-`13f7d3a` landed while the gate was running. It adds an observer-only AI
-reasoning journal; headless mode is off by default, cloned rollout agents are
-silent, and its validation produced byte-identical game results on all ten
-soak seeds. It does not alter either compared policy, so the gate remains
-current after reconciliation.
+Three observer/lab commits through `49f833f` landed while the gate was running.
+They add an observer-only AI reasoning journal and filter plus a standalone
+genome-gate diagnostic. Headless reasoning is off by default, cloned rollout
+agents are silent, and the reasoning journal's validation produced
+byte-identical game results on all ten soak seeds. The genome diagnostic does
+not edit evolution or a committed champion. None alters either compared
+policy, so the gate remains current after reconciliation.
