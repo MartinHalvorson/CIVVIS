@@ -110,6 +110,17 @@ struct Seat {
     known_civics: BTreeSet<String>,
     second_city_turn: Option<u32>,
     cities_at_window: usize,
+    /// Survival, tracked over the whole game rather than the window, because
+    /// "recorded a short opening" is a proxy for early death and a proxy is
+    /// not allowed to stand in for the thing once the thing is the headline.
+    founded: bool,
+    max_cities: usize,
+    /// First turn the seat held no city after having held one.
+    death_turn: Option<u32>,
+    /// Ever lost the capital, whether or not the seat itself died.
+    capital_lost: bool,
+    had_capital: bool,
+    cities_at_end: usize,
     won: bool,
     score: i64,
     score_share: f64,
@@ -293,10 +304,14 @@ fn main() {
     let jobs = number(&args, "--jobs", parallel::default_jobs());
     let depth = number(&args, "--depth", 6);
     let window = number(&args, "--window", 60) as u32;
+    // Half the majors lose every city by turn ~29. Turning the barbarians off
+    // is the one-flag experiment that says whether that is the barbarians or
+    // the rivals, so it is a flag rather than a separate tool.
+    let barbarians = number(&args, "--barbarians", 1) != 0;
 
     println!(
         "opening_census: {maps} maps x {players} players, {width}x{height}, {turns} turns, \
-         window {window}, depth {depth}, seed {seed0}"
+         window {window}, depth {depth}, seed {seed0}, barbarians {barbarians}"
     );
 
     let games = parallel::map(maps, jobs, move |index| {
@@ -308,6 +323,7 @@ fn main() {
         // whatever terrain preference Civilization VI gives it.
         let mut game = Game::new_with(GameOptions {
             randomize_civs: true,
+            barbarians,
             ..GameOptions::new(players, width, height, seed, turns, 0)
         });
         let mut fleet: Vec<AdvancedAi> = AdvancedAi::fleet(&game);
@@ -339,11 +355,36 @@ fn main() {
                 if game.winner.is_none() && game.current == pid {
                     let _ = game.apply(pid, &Action::EndTurn);
                 }
+                if !seats.contains_key(&pid) {
+                    continue;
+                }
+                // Survival is tracked for the whole game, not the window.
+                let live = game.cities.values().filter(|c| c.owner == pid).count();
+                let holds_capital = game
+                    .cities
+                    .values()
+                    .any(|city| city.owner == pid && city.is_capital);
+                {
+                    let seat = seats.get_mut(&pid).expect("major seat recorded at setup");
+                    if live > 0 {
+                        seat.founded = true;
+                    }
+                    if holds_capital {
+                        seat.had_capital = true;
+                    } else if seat.had_capital {
+                        seat.capital_lost = true;
+                    }
+                    seat.max_cities = seat.max_cities.max(live);
+                    if live == 0 && seat.founded && seat.death_turn.is_none() {
+                        seat.death_turn = Some(turn + 1);
+                    }
+                    seat.cities_at_end = live;
+                }
                 // Sample the capital right after this seat acted, which is
                 // when the planner had its say. A city that completes two
                 // items inside one turn shows only the second; in the opening
                 // window nothing is that cheap.
-                if turn >= window || !seats.contains_key(&pid) {
+                if turn >= window {
                     continue;
                 }
                 let head = game
@@ -352,7 +393,7 @@ fn main() {
                     .find(|city| city.owner == pid && city.is_capital)
                     .and_then(|city| city.queue.first())
                     .map(label);
-                let cities = game.cities.values().filter(|c| c.owner == pid).count();
+                let cities = live;
                 let techs = game.players[pid].techs.clone();
                 let civics = game.players[pid].civics.clone();
                 let seat = seats.get_mut(&pid).expect("major seat recorded at setup");
@@ -525,6 +566,105 @@ fn main() {
         by_length.len(),
         short.len()
     );
+
+    // ---- 3a. what "short" actually means -------------------------------
+    // The claim "half the seats die early" rested on the proxy above. A short
+    // sequence could equally be a slow capital that lived to turn 500, so the
+    // proxy is checked against measured survival rather than trusted.
+    println!("\nwhat a short opening actually is (survival measured, not inferred)");
+    println!(
+        "{:<24} {:>6} {:>9} {:>10} {:>11} {:>12}",
+        "group", "seats", "died", "cap lost", "alive@end", "score share"
+    );
+    for (name, group) in [
+        (
+            "full-depth opening",
+            seats
+                .iter()
+                .filter(|s| s.builds.len() == depth)
+                .collect::<Vec<_>>(),
+        ),
+        (
+            "short opening",
+            seats
+                .iter()
+                .filter(|s| s.builds.len() < depth)
+                .collect::<Vec<_>>(),
+        ),
+    ] {
+        let count = group.len().max(1);
+        let died = group.iter().filter(|s| s.death_turn.is_some()).count();
+        let cap = group.iter().filter(|s| s.capital_lost).count();
+        let alive = group.iter().filter(|s| s.cities_at_end > 0).count();
+        let shares: Vec<f64> = group.iter().map(|s| s.score_share).collect();
+        let (share, _) = mean_se(&shares);
+        println!(
+            "{:<24} {:>6} {:>8.0}% {:>9.0}% {:>10.0}% {:>12.4}",
+            name,
+            group.len(),
+            100.0 * died as f64 / count as f64,
+            100.0 * cap as f64 / count as f64,
+            100.0 * alive as f64 / count as f64,
+            share
+        );
+    }
+    let deaths: Vec<f64> = seats
+        .iter()
+        .filter_map(|s| s.death_turn.map(|t| t as f64))
+        .collect();
+    let (death_mean, death_se) = mean_se(&deaths);
+    let never_founded = seats.iter().filter(|s| !s.founded).count();
+    let early = deaths.iter().filter(|t| **t <= 100.0).count();
+    println!(
+        "\n{} of {n} seats lost every city; mean death turn {death_mean:.0} +/- {death_se:.0}, \
+         {early} of them by turn 100. {never_founded} never founded at all.",
+        deaths.len()
+    );
+    let peak: Vec<f64> = seats.iter().map(|s| s.max_cities as f64).collect();
+    let (peak_mean, peak_se) = mean_se(&peak);
+    let window_cities: Vec<f64> = seats.iter().map(|s| s.cities_at_window as f64).collect();
+    let (window_mean, window_se) = mean_se(&window_cities);
+    println!(
+        "cities at turn {window}: {window_mean:.2} +/- {window_se:.2}   peak cities ever: \
+         {peak_mean:.2} +/- {peak_se:.2}"
+    );
+
+    // ---- 3b. settlers in the opening -----------------------------------
+    // `AdvancedAi` wants `(3 + turn/90).min(map_capacity).min(6)` cities, so
+    // the opening's whole job is three cities by turn 90 — which takes two
+    // settlers out of the capital. Count how many it actually queues.
+    let settlers: Vec<f64> = seats
+        .iter()
+        .filter(|s| s.builds.len() == depth)
+        .map(|s| s.builds.iter().filter(|b| *b == "settler").count() as f64)
+        .collect();
+    let (settler_mean, settler_se) = mean_se(&settlers);
+    println!(
+        "\nsettlers among the first {depth} capital builds: {settler_mean:.2} +/- {settler_se:.2} \
+         over {} full-depth seats",
+        settlers.len()
+    );
+    for wanted in 0..=2usize {
+        let group: Vec<&Seat> = seats
+            .iter()
+            .filter(|s| s.builds.len() == depth)
+            .filter(|s| s.builds.iter().filter(|b| *b == "settler").count() == wanted)
+            .collect();
+        if group.is_empty() {
+            continue;
+        }
+        let shares: Vec<f64> = group.iter().map(|s| s.score_share).collect();
+        let (share, se) = mean_se(&shares);
+        let wins = group.iter().filter(|s| s.won).count();
+        let peak: Vec<f64> = group.iter().map(|s| s.max_cities as f64).collect();
+        let (peak_mean, _) = mean_se(&peak);
+        println!(
+            "  {wanted} settler(s): {:>4} seats, score {share:.4} +/- {se:.4}, {wins} wins \
+             ({:.1}%), peak cities {peak_mean:.2}",
+            group.len(),
+            100.0 * wins as f64 / group.len() as f64
+        );
+    }
 
     let min_seats = number(&args, "--min-seats", 8);
     println!(

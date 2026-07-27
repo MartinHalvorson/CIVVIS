@@ -114,26 +114,97 @@ Measured directly:
 > recording fewer score **0.0222 ± 0.0062** (170 seats).
 
 A 13× gap, far larger than any difference *between* openings (0.16–0.35). The
-outcome table is now restricted to full-depth sequences.
+outcome table is now restricted to full-depth sequences, and §4 checks the
+proxy against measured survival rather than leaving it to stand.
 
-The confound is itself the biggest number in this document: **47.6% of major
-seats are effectively out of the game before they finish six capital builds**,
-and the average survivor holds **1.4 cities at turn 50** with its second city
-arriving around turn 25. Whatever the opening does or does not choose well, the
-population it is choosing for is half-eliminated early and expanding at roughly
-a third of competent Civilization VI tempo.
+## 4. ⚠ The elimination rate is my map, not the agent — retracted
+
+The first version of this document led with "47.6% of major seats are out
+before six capital builds", measured at 6 players on 24×16. Survival is now
+tracked directly rather than inferred, and the death rate turns out to be a
+function of how crowded I made the map:
+
+| players × map | land tiles per seat | lost every city | mean death turn | cities @50 | peak cities |
+|---|---|---|---|---|---|
+| 6 × 24×16 | 64 | **50.1%** | 29 | 1.38 | 2.43 |
+| 4 × 24×16 (the `ai_eval` convention) | 96 | 30.7% | 72 | 1.78 | 3.17 |
+| 4 × 32×22 | 176 | 12.9% | 205 | 1.95 | 4.42 |
+
+**Barbarians are not the cause**: with `--barbarians 0` at 6 players the rate is
+51.8% at the same mean death turn 29. It is rivals, and it is density. Every
+seat founds its capital — `0 never founded at all` in all six runs — so nothing
+is losing its opening settler either.
+
+**Read the 6-player row as a property of the configuration.** The repository's
+own evaluation geometry is 4 players on 24×16, and any claim about elimination
+should be made there or roomier.
+
+## 5. What survives every configuration: the opening does not expand
+
+`cities at turn 50` is **1.38 / 1.78 / 1.95** across the three rows above. Even
+with 176 land tiles per seat and 87% of seats alive at the end, the agent holds
+**fewer than two cities at turn 50** and peaks at **4.42 ever**.
+
+That is not an accident of tuning, it is written down. `AdvancedAi::plan`
+(`src/ai/advanced.rs:1431`):
+
+```rust
+let map_capacity = (2 + land / 55).clamp(3, 9);
+let city_cadence = g.standard_duration(90).max(1) as usize;
+let desired_cities = (3 + g.turn as usize / city_cadence)
+    .min(map_capacity)
+    .min(6);
+```
+
+So the target is **3 cities for the first 90 turns** and **6 for the rest of
+the game, forever, on any map**. On 32×22 `map_capacity` is not even binding —
+the `.min(6)` and the 90-turn cadence are. Two things follow, and they are
+different problems:
+
+1. **The target is low.** Competent Civilization VI play on a standard map is
+   4–6 cities by turn 50 and well past 6 by the midgame. The `.min(6)` is a
+   hard ceiling nothing can lift.
+2. **The agent does not even reach its own target.** 1.95 cities at turn 50
+   against a `desired_cities` of 3. That is a failure to execute the opening,
+   not a policy choice, and it is the more interesting of the two.
+
+### The mechanism for (2): one settler
+
+Three cities takes two settlers out of the capital. Over 112 full-depth seats
+at depth 8 on 32×22, the capital queues **1.72 ± 0.05** settlers in its first
+eight builds, and the split matters:
+
+| settlers in first 8 builds | seats | score share | wins | peak cities |
+|---|---|---|---|---|
+| 1 | 36 | 0.2320 ± 0.0223 | 5 (13.9%) | 4.31 |
+| 2 | 71 | 0.2661 ± 0.0162 | **22 (31.0%)** | 4.70 |
+
+The same signal appears in the six-slot table in §2: of the six openings that
+reached six seats, exactly one contains a second settler
+(`… > galley > settler`), and it holds 3 wins in 7 seats where the other five
+hold 0–1 in 7–13.
+
+⚠ **Correlational, and the obvious confound is the strong one.** A seat that
+builds two settlers is a seat with room and safety, so the start is inside both
+columns. This is a hypothesis with a mechanism attached, not a result.
 
 ## What to measure next, in order
 
-1. **Bound the civilization-aware channels by ablation, on wins.** Strip the
-   unique-unit tech bonus and unique-district preference and play it paired
-   against stock. `docs/GENOME.md`'s rule is that a null on selection is
-   uninterpretable without the ceiling beside it — the 8.88-way divergence says
-   the channel *fires*, and reachability is not leverage.
-2. **Ask why half the seats die.** This is a larger effect than anything in the
-   opening tables and nothing in `docs/AI_GAPS.md` names it. Separate "died to
-   a rival", "died to barbarians" and "never expanded" before proposing a fix.
-3. **Only then, per-civilization openings.** If (1) returns null the way the
-   opening book did, a `leader_trait`-aware opening is very likely null too,
-   and the honest conclusion is that the opening is not where this agent's
-   strength is.
+1. **The second settler, causally.** Force the treated seat to queue a second
+   settler inside the opening window and run a paired, seat-mirrored `ai_eval`
+   on wins at the promotion gate's population. This is the first hypothesis in
+   this line of work that has both a measured gap (1.95 cities against a target
+   of 3) and a named mechanism, and it is cheap to falsify.
+2. **Lift `.min(6)`, separately.** Do not bundle it with (1): they are
+   independent, and `docs/GENOME.md`'s rule about candidate-set changes moving
+   effective thresholds applies to expansion targets too.
+3. **Bound the civilization-aware channels by ablation, on wins.** Strip the
+   unique-unit tech bonus and the unique-district preference and play it paired
+   against stock. The 8.88-way divergence in §1 says the channel *fires*;
+   reachability is not leverage.
+4. **Only then, per-civilization openings.** If (3) returns null the way the
+   opening book did, a `leader_trait`-aware opening is very likely null too.
+
+Note the ordering has changed since the first draft: (1) and (2) are about
+tempo and outranked the per-civilization work once the expansion numbers came
+in. Openings do set the tempo here — just not by *which* six things get built.
