@@ -34,6 +34,10 @@ thread_local! {
     /// instance's memory outlives the trap, so [`civvis_last_panic`] can still
     /// read it afterwards.
     static LAST_PANIC: RefCell<String> = const { RefCell::new(String::new()) };
+    /// Setup chosen for the next world. On a server this lives on `Shared`,
+    /// off the simulation lock; here there is no lock and no second thread, so
+    /// it is simply the module's own cell.
+    static NEXT_GAME_PARAMS: RefCell<Option<Params>> = const { RefCell::new(None) };
     static HOOKED: Cell<bool> = const { Cell::new(false) };
     /// What the socket build keeps in atomics on `Shared`. Nothing in this
     /// build reads them but the page that set them.
@@ -146,6 +150,17 @@ fn advance_one_frame(session: &mut Session, held: SpectatorFrame) {
 fn decorate_browser(o: &mut Value) {
     o["pace"] = json!(PACE.with(Cell::get));
     o["paused"] = json!(PAUSED.with(Cell::get));
+    // The setup panel reads its own staged choices back out of `/state`, and
+    // the queue no longer lives in the session, so it is attached here for the
+    // same reason the server's `decorate` attaches it.
+    o["next_game_settings"] = NEXT_GAME_PARAMS.with(|cell| {
+        cell.borrow()
+            .as_ref()
+            .map(simulation_settings)
+            .unwrap_or(Value::Null)
+    });
+    // No supervisor exists in a page that is the whole runtime.
+    o["supervisor_request"] = Value::Null;
 }
 
 /// Answer one request, exactly as the socket handler's `match` arm would.
@@ -192,7 +207,8 @@ fn route(method: &str, target: &str, body: &str) -> Value {
         // has no clock of its own worth trusting; the shim runs it and calls
         // here when it reaches zero.
         ("POST", "/next-game") => with_session(|session| {
-            session.start_automatic_next_game();
+            let queued = NEXT_GAME_PARAMS.with(|cell| cell.borrow_mut().take());
+            session.start_automatic_next_game(queued);
             let mut o = session.state();
             o["error"] = Value::Null;
             decorate_browser(&mut o);
@@ -445,15 +461,10 @@ fn route(method: &str, target: &str, body: &str) -> Value {
         }),
 
         ("POST", "/next-game-settings") => with_session(|session| {
-            session.stage_next_game_settings(&parsed);
-            json!({
-                "ok": true,
-                "next_game_settings": session
-                    .next_game_params
-                    .as_ref()
-                    .map(simulation_settings)
-                    .unwrap_or(Value::Null),
-            })
+            let staged = staged_next_game_params(&session.params, &parsed);
+            let settings = simulation_settings(&staged);
+            NEXT_GAME_PARAMS.with(|cell| *cell.borrow_mut() = Some(staged));
+            json!({"ok": true, "next_game_settings": settings})
         }),
 
         // A page in this build is the whole runtime, so there is no successor

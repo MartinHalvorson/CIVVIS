@@ -1376,9 +1376,7 @@ impl Shared {
     /// Queue setup controls for the next world without changing this one.
     fn stage_next_game_settings(&self, request: &Value) {
         let base = self.live_params.lock().unwrap().clone();
-        let mut params = new_game_params(&base, request);
-        params.spectate = base.spectate;
-        *self.next_game_params.lock().unwrap() = Some(params);
+        *self.next_game_params.lock().unwrap() = Some(staged_next_game_params(&base, request));
     }
 
     /// What the next world will be started from, as the setup panel reads it.
@@ -3217,6 +3215,16 @@ fn auto_step_loop(sh: Arc<Shared>) {
 }
 
 /// Attach exhibition metadata (restart countdown, pace, paused) to a state.
+/// The world the setup panel is describing, normalized against the live one.
+///
+/// A free function because the queue has two homes: `Shared` on a server, and
+/// a thread local in the wasm build, which has no threads to share between.
+fn staged_next_game_params(base: &Params, request: &Value) -> Params {
+    let mut params = new_game_params(base, request);
+    params.spectate = base.spectate;
+    params
+}
+
 fn decorate(o: &mut Value, sh: &Shared) {
     let r = sh.restart_in.load(Ordering::Relaxed);
     if r != u64::MAX {
