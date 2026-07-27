@@ -100,6 +100,48 @@ It bought nothing, three independent ways:
 card layer offers.** Do not reopen without a new mechanism — card
 interactions, or lane-aware decks, not another appetite vector.
 
+### The opening book — live, and worth nothing
+
+The book is four capital builds indexed into a six-entry menu. `gene_probe`
+put it at the top of the bite table: `open0` diverges **12/12** with mean first
+divergence at **turn 8**, harder and earlier than any other gene. So it looked
+like the best place in the genome for a search to work.
+
+`src/bin/opening_sweep.rs` swept it — coordinate descent over 4 slots x 7
+options, every cell with an interval. Each slot's winner looked ahead on the
+maps that chose it:
+
+| slot | winner | edge on its own maps |
+|---|---|---|
+| 0 | slinger | +0.0303 |
+| 1 | monument | +0.0034 |
+| 2 | builder (shipped) | +0.0435 |
+| 3 | scout | +0.0410 |
+
+Assembled, that predicts roughly +0.05 to +0.10. On **48 disjoint maps** the
+assembled book `slinger -> monument -> builder -> scout` scored
+**-0.0019 +/- 0.0148 (-0.1 SE)**. Pure selection bias; four maxima drawn from
+28 cells whose SE is 0.03.
+
+Then the ablation that should have run *first*: setting all four slots past the
+menu, so nothing is scripted and every build is evaluated normally, scores
+**0.4972 +/- 0.0164, -0.2 SE**. **Deleting the opening book entirely costs
+nothing measurable.**
+
+### ⚠ Reachability is not leverage
+
+That result corrects the reasoning that chose the book in the first place.
+`gene_probe` measures whether a gene **changes the game**. It does not measure
+whether the gene changes the **outcome**. The opening book is the most
+reachable block in the genome and is worth zero, so:
+
+> A gene can diverge 12/12 at turn 8 and still be worthless. Divergence is a
+> necessary condition for a gene to matter, never a sufficient one.
+
+Use `gene_probe` to *exclude* — a gene that cannot act certainly cannot help.
+Never use it to rank what to work on. Rank by an **ablation**: what does this
+subsystem cost when removed?
+
 ### War timing — hypothesis refuted
 
 `src/bin/war_census.rs`, 53 wars over 24 maps at 6p/500 turns: **98% of wars
@@ -117,8 +159,34 @@ threshold is not necessarily its binding one.** The real target is
 
 ---
 
+## The conclusion this all points at
+
+Every measured attempt to make this agent stronger by **tuning parameters** has
+returned null: the policy appetites three ways, the opening book two ways, the
+war-declaration threshold, and about a thousand rounds of whole-genome
+evolution. Meanwhile every promoted gain in the repository has come from
+**giving the search more counterfactual rollout** — `strategic_deep` at +45
+Elo, warm branches at +37.
+
+Taken with `docs/SUPERHUMAN.md` §0, which reaches the same verdict about
+learned state-value components, the pattern is hard to miss:
+
+> **Rollouts win. Regression on outcomes does not, and neither does parameter
+> tuning.** The `Weights` genome is not where superhuman strength is going to
+> come from, and a search over it should not be the main line of work.
+
+The remaining headroom identified but not taken: `campaign_staged_for_war`,
+the binding conjunct on war declaration, which is force coordination and the
+reason this agent fights only 11.5x walkovers.
+
 ## Method rules these runs paid for
 
+0. **Bound a subsystem by ablation before optimising inside it, and rank work
+   by ablation rather than by reachability.** Both closed threads followed the
+   same arc — a promising-looking gap, a mechanism, a null — and in both cases
+   the ablation was the number that made the null interpretable. For policy
+   cards it said the layer is worth a great deal and the incumbent already
+   captures it; for the opening book it said the block is worth nothing at all.
 1. **Compute the standard error of a fitness before spending compute on it.**
    A win rate over 24 games has SE 0.102, while the largest effects this
    repository has measured are +0.053 and +0.065. A breeder built on it

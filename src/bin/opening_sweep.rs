@@ -150,6 +150,47 @@ fn main() {
     );
     println!("  fitness 0.8*score share + 0.2*win rate against that book; parity 0.500\n");
 
+    // Score one named book against the shipped one and stop.
+    //
+    // `--book 6,6,6,6` is the ablation that should have been run BEFORE the
+    // sweep: every slot set past the menu means "no scripted pick, evaluate
+    // normally", so it measures what the opening book is worth **at all**. A
+    // null on choosing a better book is uninterpretable without it -- exactly
+    // the lesson the policy-card layer taught, where selection measured null
+    // while the layer itself was worth p=0.0023.
+    if let Some(spec) = args
+        .iter()
+        .position(|arg| arg == "--book")
+        .and_then(|index| args.get(index + 1))
+    {
+        let parsed: Vec<usize> = spec
+            .split(',')
+            .filter_map(|piece| piece.trim().parse().ok())
+            .collect();
+        if parsed.len() != 4 {
+            eprintln!("opening_sweep: --book needs 4 comma-separated indices");
+            std::process::exit(2);
+        }
+        let mut book = [0usize; 4];
+        book.copy_from_slice(&parsed);
+        let holdout_seed = seed0 + 500_000;
+        let (mean, se) = score(
+            &book, players, width, height, holdout_maps, holdout_seed, turns, jobs,
+        );
+        println!(
+            "book {} vs shipped {}",
+            book.iter().map(|v| option_name(*v)).collect::<Vec<_>>().join(" -> "),
+            shipped.iter().map(|v| option_name(*v)).collect::<Vec<_>>().join(" -> ")
+        );
+        let edge = mean - 0.5;
+        println!("  {mean:.4} +/- {se:.4}   edge {edge:+.4} ({:.1} SE) over {holdout_maps} maps, seed {holdout_seed}",
+            if se > 0.0 { edge / se } else { 0.0 });
+        if se > 0.0 && edge.abs() < 2.0 * se {
+            println!("  => inside the interval: indistinguishable from the shipped book.");
+        }
+        return;
+    }
+
     let mut best = shipped;
     // What the book carried into this slot scored when it was selected, so the
     // next slot's sweep -- which runs on fresh maps -- doubles as a replication
