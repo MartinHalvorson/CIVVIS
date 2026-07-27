@@ -7383,8 +7383,21 @@ function waitForSupervisedSuccessor(finishedInstance, finishedSeed) {
           // this already-loaded page too: one full successor snapshot is all
           // it needs, while reloading HTML, rules, and then that same snapshot
           // added another visible half-second to every start.
+          //
+          // Wait for it exactly as patiently as boot does. This is a *first
+          // frame* request: it takes the successor's simulation frame gate,
+          // which the stepper holds for a whole AI turn, so on a loaded box it
+          // routinely needs seconds. Abandoning it after 1.5s did not fail
+          // over to anything — it retried, and each retry seated this viewer
+          // as one the stepper owes a frame to and then walked away before
+          // painting it. The successor then held its gate waiting for a page
+          // that could not get in, the page timed out waiting for the gate,
+          // and the restart livelocked: measured at 0 turns in 25 seconds with
+          // the veil stuck on "Server handoff · reconnecting". One patient
+          // request cannot do that.
+          setWorldTransitionStage("Drawing the first turn");
           const first = await fetchJSON(
-            `/state?painted=&viewer=${VIEWER_ID}`, {cache: "no-store"}, 1500);
+            `/state?painted=&viewer=${VIEWER_ID}`, {cache: "no-store"});
           if (!supervisedSuccessorChanged(first, finishedInstance, finishedSeed))
             throw new Error("successor identity changed before its first frame");
           supervisorReconnectWanted = false;
