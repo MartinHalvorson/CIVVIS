@@ -344,6 +344,26 @@ pub struct StrategicAi {
     /// Whether a prior-driven interrupt postpones the next periodic review.
     /// True reproduces the shipped behaviour exactly.
     pub defer_periodic_on_interrupt: bool,
+    /// Preserve the exact win objective when terminal branches tie, while
+    /// retaining the information in *when* they ended.
+    ///
+    /// The ordinary evaluator maps every projected win to `1.0` and every
+    /// projected loss to `0.0`. That is correct but needlessly blind once a
+    /// deep review resolves several branches to the same result: at horizon
+    /// 80, more than half of reviews have every branch terminal. With this
+    /// treatment enabled, terminal and unresolved results occupy disjoint
+    /// lexicographic bands:
+    ///
+    /// - own win: `3 - turn_fraction` (a faster conversion is better),
+    /// - unresolved: `1 + position_value`,
+    /// - loss: `turn_fraction` (a line that survives longer is better).
+    ///
+    /// Therefore every projected win still beats every unresolved branch,
+    /// and every unresolved branch still beats every projected loss. Tempo
+    /// can only break ties inside the exact outcome class; it can never trade
+    /// a win away for prettier development. Off by default; the evaluator-only
+    /// `strategic_deep_tempo` entrant measures it against `strategic_deep`.
+    pub terminal_tempo: bool,
     /// Project a rotating subset of lanes instead of all of them: the
     /// adaptive baseline, the lane in force, and one challenger that
     /// advances each review. Cuts a review from seven branches to about
@@ -389,6 +409,7 @@ impl StrategicAi {
             trust_religious_prior: true,
             doctrine_search: false,
             defer_periodic_on_interrupt: true,
+            terminal_tempo: false,
             rotate_lanes: false,
             rotation: 0,
             doctrine: Doctrine::Incumbent,
@@ -912,11 +933,7 @@ impl StrategicAi {
         weights: &Weights,
     ) -> f64 {
         let (sim, _) = self.rollout_state_weighted(g, pid, target, weights);
-        match sim.winner {
-            Some(w) if w == pid => 1.0,
-            Some(_) => 0.0,
-            None => self.position_value(&sim, pid),
-        }
+        self.branch_value(&sim, pid)
     }
 
     /// Second axis of the same search: with the lane fixed, project each
@@ -1186,6 +1203,14 @@ impl StrategicAi {
     }
 
     fn branch_value(&self, sim: &Game, pid: usize) -> f64 {
+        if self.terminal_tempo {
+            let turn_fraction = sim.turn.min(sim.max_turns) as f64 / sim.max_turns.max(1) as f64;
+            return match sim.winner {
+                Some(winner) if winner == pid => 3.0 - turn_fraction,
+                Some(_) => turn_fraction,
+                None => 1.0 + self.position_value(sim, pid),
+            };
+        }
         match sim.winner {
             Some(winner) if winner == pid => 1.0,
             Some(_) => 0.0,
@@ -1374,6 +1399,39 @@ mod tests {
                 .unwrap();
         }
         game.current = 0;
+    }
+
+    #[test]
+    fn terminal_tempo_is_lexicographic_and_default_play_is_unchanged() {
+        let mut game = Game::new_full(3, 20, 14, 27, 100, 0, false);
+        game.turn = 25;
+
+        let stock = StrategicAi::new();
+        game.winner = Some(0);
+        assert_eq!(stock.branch_value(&game, 0), 1.0);
+        game.winner = Some(1);
+        assert_eq!(stock.branch_value(&game, 0), 0.0);
+
+        let mut tempo = StrategicAi::new();
+        tempo.terminal_tempo = true;
+        game.winner = Some(0);
+        let win = tempo.branch_value(&game, 0);
+        assert!((win - 2.75).abs() < 1e-12);
+        game.winner = None;
+        let unresolved = tempo.branch_value(&game, 0);
+        game.winner = Some(1);
+        let loss = tempo.branch_value(&game, 0);
+        assert!((loss - 0.25).abs() < 1e-12);
+        assert!(win > unresolved && unresolved > loss);
+
+        game.turn = 60;
+        game.winner = Some(0);
+        assert!(win > tempo.branch_value(&game, 0), "faster wins rank first");
+        game.winner = Some(1);
+        assert!(
+            tempo.branch_value(&game, 0) > loss,
+            "later losses rank first"
+        );
     }
 
     #[test]
