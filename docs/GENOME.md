@@ -356,6 +356,66 @@ to convert. That breeder's null is therefore uninformative about the policy
 appetites — it was selecting on the wrong thing, which is a fourth distinct
 way to breed on noise.
 
+## ★★★ Score is a CORRELATE of victory, not a cause — measured
+
+The `settler_min_pop` null suggested score share does not convert to wins. Two
+further experiments pinned down why, and the second refuted my own hypothesis.
+
+**First, score is an excellent classifier.** Over 240 seat-games with a random
+genome per seat, ranking seats by end-of-game share:
+
+| proxy | AUC |
+|---|---|
+| **score share** | **0.949** |
+| civic share | 0.890 |
+| population share | 0.887 |
+| tech share | 0.860 |
+| city share | 0.854 |
+| military power | 0.755 |
+| gold | 0.714 |
+| faith | 0.611 |
+
+Score share is very nearly a perfect predictor of who won, and the best of the
+eight. So "score is a bad proxy" was never the right description.
+
+**Second, the convexity hypothesis — and its refutation.** I proposed that the
+defect was the *mean*: winning is a threshold (be first), and the mean of a
+threshold quantity rewards padding games already won or lost. The prediction
+was that an increasingly convex statistic would report parity for
+`settler_min_pop = 5`, whose wins answer is known to be parity. Measured over
+60 mirrored maps:
+
+| statistic | edge |
+|---|---|
+| mean share | +0.0107 ± 0.0086 |
+| share² | +0.0155 ± 0.0134 |
+| share⁴ | +0.0164 ± 0.0188 |
+| **top of table** | **+0.0167 ± 0.0290** |
+
+**Refuted.** The edge does not shrink; it grows slightly. Even top-of-table —
+the strictest be-first statistic there is — reports +0.0167 where wins report
+parity. So score is invalid as a selection signal at **every** convexity, and
+the functional was never the problem.
+
+**What actually reconciles AUC 0.949 with parity on wins.** The AUC is
+**observational**: strong empires both score well and win, so score ranks them
+correctly. The A/B is an **intervention**: it moves score without moving wins.
+The gap between the two is exactly the correlation-versus-causation
+distinction, measured on this engine.
+
+That is `docs/SUPERHUMAN.md` §0 one level up. A state-value net encodes
+correlation, and an argmax over actions optimises whichever correlate is
+cheapest to move — `policy_wide` found the contact terms and went to −313 Elo.
+Here a **selection statistic** encodes correlation, and a GA optimises
+whichever correlate is cheapest to move. Score share is that correlate. The
+mechanism is identical; only the layer differs.
+
+**Consequence.** No functional of terminal score is a valid fitness. Selection
+has to read wins, or something causally upstream of a victory condition —
+lane progress, not economy — and wins cost about 865 games per genome. That is
+why breeding does not work here, stated as a mechanism rather than as a
+tally of nulls.
+
 ## The conclusion this all points at
 
 Every measured attempt to make this agent stronger by **tuning parameters** has
