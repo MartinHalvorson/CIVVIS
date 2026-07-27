@@ -491,23 +491,32 @@
     color: #8fa29a; font-size: var(--type-control); font-weight: 800; font-variant-numeric: tabular-nums;
     line-height: 1; white-space: nowrap;
   }
+  /* One label-and-value row per setting. The single track is never narrower
+     than its widest row, so when the plate cannot hold that row the track
+     overflows the block instead of squeezing it — and that overflow is the
+     signal the responsive type fitter scales the *whole* block by. Sizing each
+     cell on its own is what used to render "Watch pace: Lightni…": the two
+     halves of a row shrank against each other, the value ellipsized, and
+     neighbouring rows settled at four different type sizes. */
   .turn-settings {
-    align-self: stretch; min-width: 0; display: grid; align-content: start; gap: 2px;
-    padding-top: 4px; color: #9fb0a9; border-top: 1px solid #d7b66a24;
-    font-size: var(--type-small); font-weight: 700; letter-spacing: -.015em; line-height: 1.18;
+    align-self: stretch; min-width: 0; display: grid;
+    grid-template-columns: minmax(max-content, 1fr); align-content: start; gap: 3px;
+    padding-top: 5px; color: #9fb0a9; border-top: 1px solid #d7b66a24;
+    font-size: var(--type-small); font-weight: 700; letter-spacing: -.015em; line-height: 1.2;
   }
+  /* The gutter is in em deliberately. The fitter scales a block by the ratio
+     its own overflow gives it, which is only exact if every part of the row
+     scales with the type — a fixed 8px gutter left the widest row one to three
+     pixels over at the small end, and one to three pixels over is a letter
+     gone. */
   .turn-setting {
     min-width: 0; display: flex; align-items: baseline; justify-content: space-between;
-    gap: 3px; white-space: nowrap;
+    gap: .7em; white-space: nowrap;
   }
-  .turn-setting span, .turn-setting b { min-width: 0; }
-  .turn-setting b {
-    overflow: hidden; color: #dce6e1; font-weight: 900; text-overflow: ellipsis;
-  }
-  .turn-settings-secondary {
-    display: grid; gap: 2px; margin-top: 2px; padding-top: 4px;
-    border-top: 1px solid #d7b66a1c;
-  }
+  /* Neither half of a row gives up width, and nothing here ellipsizes: a
+     setting is shown whole or the block is drawn a quarter-point smaller. */
+  .turn-setting > span, .turn-setting > b { flex: 0 0 auto; }
+  .turn-setting b { color: #dce6e1; font-weight: 900; }
   /* Borrowed turns. It sits under the turn cap because that cap is the thing
      it explains: the number went up because somebody asked it to. */
   .turn-playon {
@@ -652,9 +661,27 @@
   .diplomacy-civ { color: #f1f4ed; }
   .diplomacy-rank { margin-right: 4px; color: var(--gold-bright); font: 700 var(--type-secondary)/1.1 var(--font-display); }
   .diplomacy-elo { flex: 0 0 auto; color: var(--gold-bright); font-weight: 850; }
+  /* A rating nothing has been finished behind is still the real starting
+     number, so it is the same figure in the same cell — only unfilled, the
+     way an unearned thing should look. Opacity and nothing else: a marker
+     character would widen the narrowest column in the table, and italics
+     would push a four-digit rating into the ellipsis this cell already
+     carries. */
+  .diplomacy-elo-value.provisional { opacity: 0.62; }
   .diplomacy-expected { flex: 0 0 auto; color: #8fd6a4; font-weight: 850; }
   .diplomacy-player { flex: 1 1 auto; color: #d9e1dc; font-weight: 750; }
-  .agenda-mark { margin-left: 3px; font-size: var(--type-label); vertical-align: 1px; }
+  /* The mark leads the CIV cell from a gutter of its own. It is emitted on
+     every row, empty where there is no stance to report, so that the rank
+     numbers behind it still start at one x down the whole column.
+
+     The gutter gives back the 3px flex gap that the cell puts after every one
+     of its items, so it costs the civilization's name 10px rather than 13 —
+     that name is the first thing the standings give up when the masthead is
+     narrow, and the `#` beside it carries its own left bearing anyway. */
+  .agenda-mark {
+    flex: 0 0 auto; display: inline-block; width: 10px; margin-right: -3px;
+    font-size: var(--type-label); line-height: 1; text-align: center; vertical-align: 1px;
+  }
   .agenda-mark.up { color: #8fd6a4; }
   .agenda-mark.down { color: #f2a09b; }
   .ai-plan { font-weight: 850; }
@@ -1712,6 +1739,16 @@
     color: #e0f7ec; border-color: #8bbca7; background: linear-gradient(180deg, #365b4d, #223c33);
   }
   .war-card.ended .war-period { background: linear-gradient(90deg, #1c2924, #14211c); border-bottom-color: #435e54; }
+  /* A watched war is held still while the rest of the chronicle slides past it,
+     and a still card in a moving list is only honest if it says it is the one
+     being held. These rules follow `.ended` deliberately: they share its
+     specificity, so a concluded war that is being watched still reads as held. */
+  .war-card.watched { border-color: #d8ad5e; box-shadow: inset 0 0 0 1px #0007, 0 0 0 1px #d8ad5e55, 0 6px 18px #0004; }
+  .war-card.watched .war-period { background: linear-gradient(90deg, #4a3417, #2c2418 50%, #1c2a20); border-bottom-color: #a5813f; }
+  .war-map-action.watching, .war-map-action.aftermath.watching {
+    color: #fff6d8; border-color: #f0cf82; background: linear-gradient(180deg, #7a5f2e, #4a381c);
+    box-shadow: inset 0 1px #fff3, 0 0 0 1px #d8ad5e44;
+  }
   .war-infobox-row { border-top: 1px solid #ffffff0d; }
   .war-infobox-row:first-of-type { border-top: 0; }
   .war-row-label { padding: 3px 7px; background: #ffffff06; color: #8fa098; font-size: var(--type-caption); font-weight: 850; letter-spacing: .10em; text-align: center; text-transform: uppercase; }
@@ -1737,16 +1774,29 @@
   /* A bar grows out of the centre axis, never in from the rim, so its inner end
      is squared off flush against the axis while the outer end is rounded — the
      shape alone says which end is the origin.  A 3px stub keeps that foot on
-     the axis visible even for a belligerent whose units never saw action. */
-  .war-belligerent-bar { display: block; width: var(--war-effort, 0%); min-width: 3px; height: 4px; margin-bottom: 4px; box-shadow: 0 0 4px #0008; }
+     the axis visible even for a belligerent whose units never saw action.
+     It rules the line under the name it measures: above it, a bar sat between
+     the previous belligerent's numbers and this one's name and read as either
+     party's. It is a sibling of the name rather than a child of it so that its
+     percentage width is still a share of the whole column — nesting it inside
+     the indented name box would have made every city-state's bar shorter than
+     a major's for the same effort. */
+  .war-belligerent-bar { display: block; width: var(--war-effort, 0%); min-width: 3px; height: 4px; margin: 1px 0 3px; box-shadow: 0 0 4px #0008; }
   .war-side.aggressor .war-belligerent-bar { margin-left: auto; border-radius: 2px 0 0 2px; }
   .war-side.defender .war-belligerent-bar { margin-right: auto; border-radius: 0 2px 2px 0; }
-  .war-party { min-width: 0; margin: 2px 7px; color: #e7ece7; font-size: var(--type-small); font-weight: 750; }
+  .war-party { min-width: 0; margin: 2px 7px 0; color: #e7ece7; font-size: var(--type-small); font-weight: 750; }
   .war-belligerent.city-state .war-party { color: #b9c8c1; font-size: var(--type-label); font-weight: 650; }
-  .war-side.aggressor .war-belligerent.city-state .war-party { margin-left: 14px; padding-left: 5px; border-left: 1px solid #62756d66; }
-  .war-side.defender .war-belligerent.city-state .war-party { margin-right: 14px; padding-right: 5px; border-right: 1px solid #62756d66; }
-  .war-party-copy { min-width: 0; }
+  .war-side.aggressor .war-belligerent.city-state .war-party,
+  .war-side.aggressor .war-belligerent.city-state .war-party-note { margin-left: 14px; padding-left: 5px; }
+  .war-side.defender .war-belligerent.city-state .war-party,
+  .war-side.defender .war-belligerent.city-state .war-party-note { margin-right: 14px; padding-right: 5px; }
+  /* The subordination bracket marks the name it belongs to and stops there: it
+     cannot be carried past the effort bar, which stands on the centre axis
+     rather than in the indent. */
+  .war-side.aggressor .war-belligerent.city-state .war-party { border-left: 1px solid #62756d66; }
+  .war-side.defender .war-belligerent.city-state .war-party { border-right: 1px solid #62756d66; }
   .war-party-name { display: block; overflow-wrap: break-word; word-break: normal; hyphens: auto; line-height: 1.25; }
+  .war-party-role { color: #d9b48c; font-size: var(--type-caption); font-style: italic; font-weight: 650; }
   .war-card .war-party-name,
   .war-card .war-entity-link {
     text-shadow: -1px -1px 0 #000, 0 -1px 0 #000, 1px -1px 0 #000,
@@ -1764,7 +1814,7 @@
     transform: none; text-decoration-color: currentColor;
   }
   .war-entity-link:active { transform: none; }
-  .war-party-note { display: block; color: #a8948c; font-size: var(--type-caption); font-style: italic; font-weight: 600; }
+  .war-party-note { display: block; min-width: 0; margin: 0 7px; color: #a8948c; font-size: var(--type-caption); font-style: italic; font-weight: 600; line-height: 1.3; overflow-wrap: break-word; }
   .war-strength-values { margin-top: 3px; color: #f1d9ad; font-size: var(--type-secondary); font-variant-numeric: tabular-nums; }
   .war-strength-values b { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
   .war-loss-ledger { font-size: var(--type-label); }
@@ -1775,8 +1825,15 @@
   .war-loss-side-head .war-entity-link { display: block; width: 100%; overflow-wrap: anywhere; font-size: var(--type-label); font-weight: 750; }
   .war-loss-side-head:last-child .war-entity-link { text-align: right; }
   .war-loss-side-head .city-state { color: #b9c8c1; font-size: var(--type-caption); }
-  .war-loss-cities { display: block; margin-top: 3px; color: #c6aaa4; line-height: 1.35; }
-  .war-loss-category { padding: 3px 7px; border-top: 1px solid #ffffff0d; border-bottom: 1px solid #ffffff08; background: #ffffff05; color: #8fa098; font-size: var(--type-micro); font-weight: 850; letter-spacing: .08em; text-align: center; text-transform: uppercase; }
+  .war-loss-party + .war-loss-party { margin-top: 4px; }
+  /* Indented under the name that lost them, because a capital is picked out in
+     the same gold the panel uses for a heading and would otherwise read as one. */
+  .war-loss-cities { margin: 1px 0 0; padding: 0; color: #c6aaa4; line-height: 1.35; list-style: none; }
+  .war-loss-side-head:first-child .war-loss-cities { margin-left: 8px; }
+  .war-loss-side-head:last-child .war-loss-cities { margin-right: 8px; }
+  .war-loss-city { overflow-wrap: anywhere; }
+  .war-loss-city em { color: #93a49c; font-style: italic; }
+  .war-loss-city.capital .war-loss-city-name { color: #f1d38c; font-weight: 800; }
   .war-loss-unit-row { min-height: 21px; }
   .war-loss-unit-row + .war-loss-unit-row { border-top: 1px solid #ffffff08; }
   .war-loss-unit-cell { display: flex; align-items: center; color: #c6aaa4; line-height: 1.3; }
@@ -2129,7 +2186,7 @@
     --hud-stat-tracks: repeat(10, minmax(var(--hud-stat-min), 1fr));
     --hud-lock-column: 13px; --hud-row-height: 26px; --hud-row-gap: 2px;
     --hud-row-pitch: calc(var(--hud-row-height) + var(--hud-row-gap));
-    display: grid; grid-template-columns: 140px minmax(0, 1fr); grid-template-rows: minmax(0, 1fr);
+    display: grid; grid-template-columns: 164px minmax(0, 1fr); grid-template-rows: minmax(0, 1fr);
     align-items: stretch; gap: 5px; min-width: 0; padding: 5px;
     overflow: visible; transform: none;
     border: 1px solid #526a618f; border-radius: 12px;
@@ -2566,13 +2623,13 @@
      window resize. */
   @media (min-width: 2200px) {
     #playerhud {
-      grid-template-columns: 140px minmax(0, 1fr);
+      grid-template-columns: 168px minmax(0, 1fr);
       --hud-ident-min: 66px; --hud-identity-bias: 1.3; --hud-stat-min: 44px;
     }
   }
   @media (max-width: 1580px) {
     #playerhud {
-      grid-template-columns: 132px minmax(0, 1fr);
+      grid-template-columns: 144px minmax(0, 1fr);
       --hud-ident-min: 41px; --hud-stat-min: 36px;
     }
     #maparea { --hud-rail-width: clamp(240px, 20vw, 300px); }
@@ -2581,7 +2638,7 @@
      side around here. */
   @media (max-width: 1300px) {
     #playerhud {
-      grid-template-columns: 132px minmax(0, 1fr);
+      grid-template-columns: 144px minmax(0, 1fr);
       --hud-ident-min: 33.5px; --hud-column-gap: 4px; --hud-stat-min: 34px;
     }
     #maparea { --hud-rail-width: 224px; }
@@ -2589,7 +2646,7 @@
   @media (max-width: 1180px) {
     #maparea { --hud-rail-width: 200px; --minimap-height: 158px; }
     #playerhud {
-      grid-template-columns: 132px minmax(0, 1fr);
+      grid-template-columns: 140px minmax(0, 1fr);
       --hud-ident-min: 27.5px; --hud-column-gap: 3px;
       --hud-watch-column: 64px;
       --hud-stat-min: 32px; --hud-stat-gap: 2px;
@@ -2668,7 +2725,7 @@
      layout follows the space it actually has instead of the screen it happens
      to be floating over. */
   #playerhud[data-type-size="compact"] {
-    grid-template-columns: clamp(132px, 32%, 148px) minmax(0, 1fr);
+    grid-template-columns: clamp(140px, 33%, 164px) minmax(0, 1fr);
     --hud-ident-min: 25px; --hud-column-gap: 4px;
     --hud-stat-min: 32px; --hud-stat-gap: 2px;
   }
@@ -2691,7 +2748,7 @@
   #playerhud[data-type-size="compact"] .ribbon-stat-heading,
   #playerhud[data-type-size="compact"] .diplomacy-ribbon { min-width: 680px; }
   #playerhud[data-type-size="roomy"] {
-    grid-template-columns: 148px minmax(0, 1fr);
+    grid-template-columns: 168px minmax(0, 1fr);
     --hud-ident-min: 61px; --hud-column-gap: 7px;
     --hud-identity-bias: 1.25; --hud-stat-min: 42px;
     --hud-row-height: 30px;
@@ -3335,18 +3392,22 @@
         <label class="small">Base game ruleset<select id="baseruleset" style="margin-top:4px">
           <option value="civ6" selected>Civ 6</option>
         </select></label>
+        <label class="small">Leader Pool<select id="leaderpool" style="margin-top:4px">
+          <option value="civ6" selected>Civ 6 Leaders</option>
+          <option value="expanded">Expanded</option>
+        </select></label>
         <label class="small">Game mode<select id="gamemode" style="margin-top:4px">
           <option value="ai_sim" selected>AI-only simulation</option>
           <option value="single">Single player</option>
           <option disabled>Multiplayer · later</option>
         </select></label>
-        <label class="small">Start era<select id="startera" style="margin-top:4px">
-          <option value="stone_age" disabled>Stone Age · later</option>
-          <option value="ancient" selected>Ancient</option>
-        </select></label>
-        <label class="small">Leader Pool<select id="leaderpool" style="margin-top:4px">
-          <option value="civ6" selected>Civ 6 Leaders</option>
-          <option value="expanded">Expanded</option>
+        <label class="small">Teams<select id="teams" style="margin-top:4px"
+          title="Permanent pre-game teams. Teammates share sight, pass each other the Eureka for a technology they have not researched, fight the same wars and win together.">
+          <option value="ffa" selected>Free-for-all</option>
+          <option value="2">2 teams</option>
+          <option value="3">3 teams</option>
+          <option value="4">4 teams</option>
+          <option value="pairs">Pairs</option>
         </select></label>
         <label class="small human-setting">Leader<select id="leader" style="margin-top:4px">
           <option value="">Random</option>
@@ -3379,6 +3440,10 @@
           <option value="8">Standard · 8 civs · 12 city-states · 84×54</option>
           <option value="10">Large · 10 civs · 15 city-states · 96×60</option>
           <option value="12">Huge · 12 civs · 18 city-states · 106×66</option>
+        </select></label>
+        <label class="small">Start era<select id="startera" style="margin-top:4px">
+          <option value="stone_age" disabled>Stone Age · later</option>
+          <option value="ancient" selected>Ancient</option>
         </select></label>
         <label class="small">Game speed<select id="gamespeed" style="margin-top:4px">
           <option value="online" selected>Online · 250 turns</option>
@@ -3618,10 +3683,70 @@ const ENVIRONMENT_FEATURE_ATLAS = new Image();
 let ENVIRONMENT_FEATURE_ATLAS_READY = false;
 ENVIRONMENT_FEATURE_ATLAS.onload = () => { ENVIRONMENT_FEATURE_ATLAS_READY = true; if (state) draw(); };
 ENVIRONMENT_FEATURE_ATLAS.src = "/assets/environment-feature-atlas.png";
-const NATURAL_WONDER_CELL = {
-  great_barrier_reef:[0,0], crater_lake:[1,0], pantanal:[2,0], uluru:[3,0],
-  yosemite:[0,1], dead_sea:[1,1], mount_everest:[2,1], pamukkale:[3,1]
+// Eight of the thirty-four Natural Wonders have photography in the atlas.
+// `NATURAL_WONDER_ART` is the roster: every wonder names the shape that stands
+// for it and the colour that shape is made of, and the eight with a cell name
+// that too. Nothing else keys off the atlas, which is the bug this replaced —
+// the whole decoration pass was gated on having a photograph, so the other
+// twenty-six drew *nothing at all* in every view. A wonder the map cannot
+// show is content the player can only find by clicking bare ground.
+const NATURAL_WONDER_ART = {
+  // --- the photographed eight
+  great_barrier_reef:{cell:[0,0], form:"reef",     tint:"#2f9fae"},
+  crater_lake:       {cell:[1,0], form:"basin",    tint:"#2f7fa6", rim:"#6d6455"},
+  pantanal:          {cell:[2,0], form:"wetland",  tint:"#4f8f6a"},
+  uluru:             {cell:[3,0], form:"monolith", tint:"#b85e35"},
+  yosemite:          {cell:[0,1], form:"cliffs",   tint:"#8b8780"},
+  dead_sea:          {cell:[1,1], form:"basin",    tint:"#4d90a1", rim:"#ddd6bd"},
+  mount_everest:     {cell:[2,1], form:"peak",     tint:"#77726a", snow:.52},
+  pamukkale:         {cell:[3,1], form:"terrace",  tint:"#e6ece4"},
+  // --- the twenty-six the viewer could not draw
+  torres_del_paine:  {form:"towers",   tint:"#8e8880", cap:"#e7ecef", count:3},
+  eye_of_the_sahara: {form:"rings",    tint:"#bb9660"},
+  zhangye_danxia:    {form:"bands",    tint:"#b4533c",
+                      palette:["#b4533c", "#d9924a", "#e6c06a", "#9a5f6d"]},
+  ha_long_bay:       {form:"islets",   tint:"#2b8296", rim:"#5e6f52"},
+  cliffs_of_dover:   {form:"seawall",  tint:"#eff0ea"},
+  giants_causeway:   {form:"columns",  tint:"#4c5551"},
+  galapagos_islands: {form:"islets",   tint:"#1f7f95", rim:"#6b5f4e", cones:true},
+  matterhorn:        {form:"peak",     tint:"#6f6a63", snow:.46, horn:true},
+  kilimanjaro:       {form:"peak",     tint:"#6b6152", snow:.7,  broad:true},
+  piopiotahi:        {form:"seawall",  tint:"#5d6b52", water:"#1f5468", inlet:true},
+  ik_kil:            {form:"basin",    tint:"#1f6f7a", rim:"#5f6c48", narrow:true},
+  gobustan:          {form:"bands",    tint:"#8d8272",
+                      palette:["#8d8272", "#a2957f", "#6f6759"]},
+  ubsunur_hollow:    {form:"wetland",  tint:"#7d8a5a"},
+  mato_tipila:       {form:"towers",   tint:"#9c7550", count:1, fluted:true},
+  delicate_arch:     {form:"arch",     tint:"#b9713f"},
+  chocolate_hills:   {form:"domes",    tint:"#8a6a44",
+                      palette:["#8a6a44", "#9c7a4e", "#7a5c3b"]},
+  vesuvius:          {form:"volcano",  tint:"#5c5148"},
+  lake_retba:        {form:"basin",    tint:"#d4708f", rim:"#c3b291"},
+  bermuda_triangle:  {form:"vortex",   tint:"#123f5c"},
+  eyjafjallajokull:  {form:"volcano",  tint:"#5f5a55", ice:true},
+  fountain_of_youth: {form:"basin",    tint:"#63c6c0", rim:"#8d8a6e",
+                      narrow:true, aura:"#c8fff4"},
+  lysefjord:         {form:"seawall",  tint:"#77736a", water:"#27596c", inlet:true},
+  paititi:           {form:"ruins",    tint:"#b0a077"},
+  mount_roraima:     {form:"towers",   tint:"#6d6455", cap:"#5c7248", count:2},
+  tsingy_de_bemaraha:{form:"towers",   tint:"#a9a08c", count:5, fluted:true},
+  sahara_el_beyda:   {form:"domes",    tint:"#eee7d5",
+                      palette:["#eee7d5", "#f5f1e3", "#ded4bc"]},
 };
+const NATURAL_WONDER_CELL = Object.fromEntries(
+  Object.entries(NATURAL_WONDER_ART)
+    .filter(([, art]) => art.cell)
+    .map(([wonder, art]) => [wonder, art.cell])
+);
+// A feature is a Natural Wonder if the roster above says so, or — for anything
+// a later ruleset adds — if the served rules say so. The art table is checked
+// first because it is available on the very first frame, before /rules lands.
+function isNaturalWonder(feature) {
+  if (!feature) return false;
+  if (NATURAL_WONDER_ART[feature]) return true;
+  return !!(RULES && RULES.features && RULES.features[feature]
+            && RULES.features[feature].natural_wonder);
+}
 const NATURAL_WONDER_ATLAS = new Image();
 let NATURAL_WONDER_ATLAS_READY = false;
 NATURAL_WONDER_ATLAS.onload = () => { NATURAL_WONDER_ATLAS_READY = true; if (state) draw(); };
@@ -3678,9 +3803,24 @@ const FEATURE_LABEL = {
   volcanic_soil:"Volcanic Soil", impact_zone:"Impact Zone",
   burning_forest:"Burning Woods", burnt_forest:"Burnt Woods",
   burning_jungle:"Burning Rainforest", burnt_jungle:"Burnt Rainforest",
+  // Every Natural Wonder, under the name Civilization VI gives it. The tile
+  // panel used to fall back to the raw id for twenty-six of them, so the map
+  // called Tsingy de Bemaraha "tsingy_de_bemaraha".
   great_barrier_reef:"Great Barrier Reef", crater_lake:"Crater Lake",
   pantanal:"Pantanal", uluru:"Uluru", yosemite:"Yosemite",
-  dead_sea:"Dead Sea", mount_everest:"Mount Everest", pamukkale:"Pamukkale"
+  dead_sea:"Dead Sea", mount_everest:"Mount Everest", pamukkale:"Pamukkale",
+  torres_del_paine:"Torres del Paine", eye_of_the_sahara:"Eye of the Sahara",
+  zhangye_danxia:"Zhangye Danxia", ha_long_bay:"Hạ Long Bay",
+  cliffs_of_dover:"Cliffs of Dover", giants_causeway:"Giant's Causeway",
+  galapagos_islands:"Galápagos Islands", matterhorn:"Matterhorn",
+  kilimanjaro:"Mount Kilimanjaro", piopiotahi:"Piopiotahi", ik_kil:"Ik-Kil",
+  gobustan:"Gobustan", ubsunur_hollow:"Ubsunur Hollow",
+  mato_tipila:"Mato Tipila", delicate_arch:"Delicate Arch",
+  chocolate_hills:"Chocolate Hills", vesuvius:"Mount Vesuvius",
+  lake_retba:"Lake Retba", bermuda_triangle:"Bermuda Triangle",
+  eyjafjallajokull:"Eyjafjallajökull", fountain_of_youth:"Fountain of Youth",
+  lysefjord:"Lysefjord", paititi:"Païtiti", mount_roraima:"Mount Roraima",
+  tsingy_de_bemaraha:"Tsingy de Bemaraha", sahara_el_beyda:"Sahara el Beyda"
 };
 // Every resource has a code-native pictogram. These names describe what grows,
 // grazes or lies in the ground — not the modern product somebody eventually
@@ -5831,7 +5971,11 @@ const RESPONSIVE_TEXT_RULES = [
   {selector:"#playerhud .turn-label", min:11, max:14},
   {selector:"#playerhud .victory-turn strong", min:24, max:34},
   {selector:"#playerhud .turn-total", min:10, max:14},
-  {selector:"#playerhud .turn-setting > span, #playerhud .turn-setting > b", min:9, max:13},
+  // The settings block is fitted as one piece, not cell by cell. Its single
+  // grid track holds the widest whole row, so the block's own overflow is the
+  // exact amount it is too big by — and one size for every row is what keeps
+  // four adjacent settings looking like one instrument.
+  {selector:"#playerhud .turn-settings", min:8.5, max:12, slack:4},
   {selector:"#victoryhud > .hud-section-heading > span", min:9, max:14, parentWidth:true},
   {selector:"#victoryhud .victory-heading b", min:10, max:14},
   {selector:"#victoryhud .victory-subheading span", min:9, max:11},
@@ -5942,11 +6086,18 @@ function fitResponsiveType() {
           - (parseFloat(parentStyle.paddingRight) || 0))
       : width;
     const availableHeight = Math.max(height, element.parentElement?.clientHeight || 0);
+    // A run of text is not proportional to its type size: every glyph advance
+    // rounds up, so the same words measured at the ceiling come out a few
+    // pixels wider than the ratio to a smaller size predicts — 151px of
+    // settings at 12px is 118px at 9px, not the 114px the ratio promises. A
+    // cell that ellipsizes absorbs that quietly; a rule that has none asks for
+    // those pixels back before the ratio is taken.
+    const room = Math.max(1, availableWidth - (rule.slack || 0));
     // Inline line boxes commonly report one extra device-rounded pixel even
     // when every glyph is visible. Treat only a larger difference as real
     // overflow so that harmless rounding cannot ratchet text below its ceiling.
-    const widthFit = element.scrollWidth > availableWidth + 1
-      ? availableWidth / element.scrollWidth * .985 : 1;
+    const widthFit = element.scrollWidth > room + 1
+      ? room / element.scrollWidth * .985 : 1;
     const heightFit = element.scrollHeight > availableHeight + 1
       ? availableHeight / element.scrollHeight * .985 : 1;
     const ideal = rule.max * Math.min(1, widthFit, heightFit);
@@ -7253,6 +7404,8 @@ async function boot() {
       document.getElementById("np").innerHTML = RULES.map_sizes.map(size =>
         `<option value="${size.default_players}">${size.name} · ${size.default_players} civs · ${size.default_city_states} city-states · ${size.width}×${size.height}</option>`
       ).join("");
+      // The sizes this build offers decide which team splits it can seat.
+      syncTeams();
     }
     if (Array.isArray(RULES.map_scripts)) {
       document.getElementById("maptype").innerHTML = RULES.map_scripts.map(script =>
@@ -8587,6 +8740,11 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
     const playerSelect = document.getElementById("np");
     if ([...playerSelect.options].some(o => +o.value === majors))
       playerSelect.value = String(majors);
+    // Teams belong to this world as much as its map does, so a page that
+    // reloads over a running team game reads that game back rather than
+    // offering to restart it as a free-for-all.
+    syncTeams();
+    document.getElementById("teams").value = teamRuleFromArray(st.teams);
     document.getElementById("maptype").value = st.map.script || "pangaea";
     document.getElementById("mapshape").value = st.map.shape || "flat";
     document.getElementById("mappoles").value = st.map.poles || "poles";
@@ -9715,6 +9873,28 @@ function drawAtlasFeatureCell(atlas, columns, rows, cell, t, x, y, options = {})
   cx.imageSmoothingEnabled = true;
   cx.imageSmoothingQuality = "high";
   cx.globalAlpha = options.alpha === undefined ? 0.95 : options.alpha;
+  // A bridging stamp standing on every seam this tile shares with its own
+  // kind. One stamp per seam, laid by the tile that owns the edge: the art has
+  // an alpha edge, so doing it from both sides would double the boundary into
+  // a visible ring. Without it the footprint clip lets neighbouring cover
+  // interlock but nothing actually spans the join, so a pack of ice or a wood
+  // still reads as one stamp per hex with the tile boundary between them.
+  if (options.seams) {
+    for (const [worldDX, worldDY, edgeSeed, owns] of terrainRidge(t, options.seams)) {
+      if (!owns) continue;
+      const eh = hash2(edgeSeed & 1023, (edgeSeed >>> 11) & 1023);
+      const eh2 = hash2((edgeSeed >>> 5) & 1023, (edgeSeed >>> 17) & 1023);
+      cx.save();
+      cx.translate(x + (COSR * worldDX - SINR * worldDY) / 2,
+                   y + (SINR * worldDX + COSR * worldDY) * YS / 2);
+      if (options.rotate !== false) cx.rotate(eh * Math.PI * 2);
+      if (options.flip !== false && eh2 > 0.5) cx.scale(-1, 1);
+      const sc = 0.66 + eh2 * 0.14;
+      cx.drawImage(atlas, sx, sy, sw, sh,
+                   -width * sc / 2, -height * sc / 2, width * sc, height * sc);
+      cx.restore();
+    }
+  }
   const drift = options.drift || 0;
   const driftX = (hash2(t.pos[0] * 47 + 5, t.pos[1] * 53 + 3) - 0.5) * S * drift * 2;
   const driftY = (hash2(t.pos[0] * 59 + 7, t.pos[1] * 61 + 11) - 0.5) * S * drift * 1.2;
@@ -9760,6 +9940,7 @@ function drawFeatureSprite(t, x, y) {
     drawAtlasFeatureCell(FEATURE_ATLAS, 4, 1, [baseCol, 0], t, x, y,
       {scale: knit, width:2.12, height:2.04, cropY:0.5, footprint,
        drift: woodland ? 0 : 0.13,
+       seams: neighbor => featureBlendKind(neighbor.feature) === baseFeature,
        rotate: !woodland, flip: !woodland, vary: !woodland,
        alpha: burnt ? 0.48 : (baseFeature === "forest" || baseFeature === "jungle" ? 0.96 : 0.94)});
     return true;
@@ -9781,6 +9962,10 @@ function drawFeatureSprite(t, x, y) {
     lift: volcano ? 0.34 : 0.02,
     scale: volcano ? 1 : 1 + connected * 0.022,
     alpha: t.feature === "ice" ? 0.98 : 0.95,
+    // A volcano is a single mountain, not cover that spreads; everything else
+    // in this atlas is ground that ought to run on into the next hex.
+    seams: volcano ? null
+      : neighbor => featureBlendKind(neighbor.feature) === baseFeature,
     rotate: !volcano,
     flip: !volcano,
     upright: volcano,
@@ -9817,6 +10002,323 @@ function drawNaturalWonderSprite(feature, t, x, y, footprint) {
   return true;
 }
 
+// --- painted Natural Wonders ---------------------------------------------
+//
+// The atlas photographs eight of the thirty-four. The rest are painted here,
+// out of the same vocabulary the mountains and the woods are painted with: a
+// contact shadow, a lit face and a shadow face of one material, split on the
+// world-fixed sun so a wonder relights with everything else when the board
+// turns. Seventeen shapes cover the roster, because what makes the Matterhorn
+// the Matterhorn is its proportion — one horn, no range — not a private
+// drawing routine. The same shapes carry the strategic view, drawn flat and
+// small over a gold ring: strategic is this board's unpainted style, not its
+// blank one.
+function wonderFace(x, y, k, color, top, halfWidth, lift = 0) {
+  // One prism: a lit flank and a shadow flank meeting at the crest.
+  const base = y + lift;
+  cx.fillStyle = shade(color, 1.34);
+  tri(x - halfWidth * LITF, base, x, base - top, x, base);
+  cx.fillStyle = shade(color, 0.68);
+  tri(x, base - top, x + halfWidth * 0.86 * LITF, base, x, base);
+}
+function wonderShadow(x, y, rx, alpha = 0.24) {
+  cx.fillStyle = `rgba(0,0,0,${alpha})`;
+  cx.beginPath(); cx.ellipse(x, y + rx * 0.2, rx, rx * 0.3, 0, 0, 7); cx.fill();
+}
+function wonderWater(x, y, k, color, rx, ry) {
+  cx.fillStyle = color;
+  cx.beginPath(); cx.ellipse(x, y, rx, ry, 0, 0, 7); cx.fill();
+  cx.strokeStyle = shade(color, 1.5); cx.lineWidth = Math.max(0.7, k * 0.8);
+  cx.beginPath(); cx.ellipse(x, y - ry * 0.22, rx * 0.62, ry * 0.4, 0, 0, 7);
+  cx.stroke();
+}
+const WONDER_PAINTER = {
+  peak(x, y, k, art) {
+    const height = (art.broad ? 26 : art.horn ? 34 : 30) * k;
+    const half = (art.broad ? 20 : 13) * k;
+    wonderShadow(x, y, half * 1.1);
+    wonderFace(x, y, k, art.tint, height, half);
+    const snow = art.snow || 0;
+    if (snow > 0) {
+      const cap = height * snow;
+      cx.fillStyle = "#eef2f6";
+      tri(x - half * (cap / height) * LITF, y - height + cap, x, y - height,
+          x + half * 0.86 * (cap / height) * LITF, y - height + cap);
+    }
+  },
+  towers(x, y, k, art) {
+    const count = art.count || 3;
+    wonderShadow(x, y, 15 * k);
+    for (let i = 0; i < count; i++) {
+      const spread = count === 1 ? 0 : (i / (count - 1) - 0.5) * 22 * k;
+      const height = (count === 1 ? 30 : 18 + (i % 2) * 9) * k;
+      const half = (count > 3 ? 2.6 : 4.2) * k;
+      cx.fillStyle = shade(art.tint, 1.28);
+      cx.fillRect(x + spread - half, y - height, half, height);
+      cx.fillStyle = shade(art.tint, 0.7);
+      cx.fillRect(x + spread, y - height, half, height);
+      if (art.fluted) {
+        cx.strokeStyle = shade(art.tint, 0.5); cx.lineWidth = 0.6;
+        cx.beginPath();
+        cx.moveTo(x + spread, y - height); cx.lineTo(x + spread, y);
+        cx.stroke();
+      }
+      if (art.cap) {
+        cx.fillStyle = art.cap;
+        cx.beginPath();
+        cx.ellipse(x + spread, y - height, half * 1.2, half * 0.55, 0, 0, 7);
+        cx.fill();
+      }
+    }
+  },
+  columns(x, y, k, art) {
+    wonderShadow(x, y, 15 * k);
+    for (let i = 0; i < 7; i++) {
+      const cxp = x + (i - 3) * 4.4 * k;
+      const height = (6 + (i % 3) * 4) * k;
+      cx.fillStyle = shade(art.tint, 1.3);
+      cx.fillRect(cxp - 2 * k, y - height, 2 * k, height);
+      cx.fillStyle = shade(art.tint, 0.66);
+      cx.fillRect(cxp, y - height, 2 * k, height);
+    }
+  },
+  domes(x, y, k, art) {
+    const palette = art.palette || [art.tint];
+    wonderShadow(x, y, 16 * k, 0.18);
+    const spots = [[-12, 3, 6], [-2, -3, 7], [8, 2, 6], [14, -2, 4.5], [2, 7, 5]];
+    spots.forEach(([dx, dy, r], i) => {
+      const color = palette[i % palette.length];
+      cx.fillStyle = shade(color, 0.72);
+      cx.beginPath();
+      cx.ellipse(x + dx * k, y + dy * k, r * k, r * 0.78 * k, 0, 0, 7); cx.fill();
+      cx.fillStyle = shade(color, 1.28);
+      cx.beginPath();
+      cx.ellipse(x + dx * k - r * 0.22 * k * LITF, y + dy * k - r * 0.2 * k,
+                 r * 0.66 * k, r * 0.5 * k, 0, 0, 7); cx.fill();
+    });
+  },
+  bands(x, y, k, art) {
+    const palette = art.palette || [art.tint];
+    wonderShadow(x, y, 16 * k, 0.18);
+    for (let i = palette.length - 1; i >= 0; i--) {
+      cx.fillStyle = palette[i];
+      cx.beginPath();
+      cx.moveTo(x - 16 * k, y + (2 - i * 1.4) * k);
+      cx.lineTo(x - 5 * k, y - (5 + i * 3.4) * k);
+      cx.lineTo(x + 7 * k, y - (3 + i * 3.1) * k);
+      cx.lineTo(x + 16 * k, y + (2 - i * 1.4) * k);
+      cx.closePath(); cx.fill();
+    }
+  },
+  basin(x, y, k, art) {
+    const rx = (art.narrow ? 9 : 14) * k;
+    wonderShadow(x, y, rx * 1.1, 0.2);
+    cx.fillStyle = shade(art.rim || "#7b7263", 1.05);
+    cx.beginPath(); cx.ellipse(x, y, rx * 1.25, rx * 0.5, 0, 0, 7); cx.fill();
+    wonderWater(x, y, k, art.tint, rx, rx * 0.36);
+    if (art.aura) {
+      cx.fillStyle = art.aura; cx.globalAlpha = 0.3;
+      cx.beginPath(); cx.ellipse(x, y - rx * 0.5, rx * 0.5, rx * 0.5, 0, 0, 7);
+      cx.fill(); cx.globalAlpha = 1;
+    }
+  },
+  wetland(x, y, k, art) {
+    wonderWater(x, y, k, shade(art.tint, 0.8), 16 * k, 6.5 * k);
+    // Reed clumps, not single strokes: one hair per position disappeared at
+    // map zoom and the wetland read as an empty puddle.
+    cx.strokeStyle = shade(art.tint, 1.45); cx.lineWidth = Math.max(1, 1.3 * k);
+    for (let i = 0; i < 7; i++) {
+      const rx = x + (i - 3) * 4.6 * k, ry = y + ((i % 3) - 1) * 2.2 * k;
+      for (const lean of [-1.6, 0.2, 1.8]) {
+        cx.beginPath();
+        cx.moveTo(rx, ry);
+        cx.lineTo(rx + lean * k, ry - (7 + (i % 2) * 2.5) * k);
+        cx.stroke();
+      }
+    }
+  },
+  reef(x, y, k, art) {
+    wonderWater(x, y, k, art.tint, 16 * k, 6.5 * k);
+    const colors = ["#dc765d", "#e7b45c", "#6dc2a6", "#9b6ab3"];
+    for (let i = 0; i < 8; i++) {
+      cx.fillStyle = colors[i % colors.length];
+      cx.beginPath();
+      cx.ellipse(x + (i - 3.5) * 4 * k, y + ((i % 3) - 1) * 2.6 * k,
+                 2.1 * k, 1.5 * k, 0, 0, 7);
+      cx.fill();
+    }
+  },
+  islets(x, y, k, art) {
+    wonderWater(x, y, k, art.tint, 17 * k, 7 * k);
+    for (const [dx, dy, h] of [[-10, 2, 13], [-1, -3, 17], [7, 3, 11], [13, -1, 8]]) {
+      const half = (art.cones ? h * 0.55 : h * 0.32) * k;
+      wonderFace(x + dx * k, y + dy * k, k, art.rim || "#5e6f52", h * k, half);
+    }
+  },
+  seawall(x, y, k, art) {
+    wonderWater(x, y + 6 * k, k, art.water || "#2f7d9c", 17 * k, 5 * k);
+    const walls = art.inlet ? [[-11, 20], [11, 18]] : [[-7, 17], [6, 14]];
+    for (const [dx, h] of walls) {
+      cx.fillStyle = shade(art.tint, 1.2);
+      cx.fillRect(x + dx * k - 5 * k, y - h * k, 5 * k, h * k);
+      cx.fillStyle = shade(art.tint, 0.72);
+      cx.fillRect(x + dx * k, y - h * k, 5 * k, h * k);
+    }
+  },
+  monolith(x, y, k, art) {
+    wonderShadow(x, y, 17 * k);
+    cx.fillStyle = shade(art.tint, 0.7);
+    cx.beginPath();
+    cx.moveTo(x - 16 * k, y + 2 * k);
+    cx.quadraticCurveTo(x - 9 * k, y - 15 * k, x + 6 * k, y - 13 * k);
+    cx.quadraticCurveTo(x + 15 * k, y - 11 * k, x + 16 * k, y + 2 * k);
+    cx.closePath(); cx.fill();
+    cx.fillStyle = shade(art.tint, 1.3);
+    cx.beginPath();
+    cx.moveTo(x - 16 * k, y + 2 * k);
+    cx.quadraticCurveTo(x - 9 * k, y - 15 * k, x + 1 * k, y - 13.6 * k);
+    cx.lineTo(x, y + 2 * k);
+    cx.closePath(); cx.fill();
+  },
+  cliffs(x, y, k, art) {
+    wonderShadow(x, y, 16 * k);
+    for (const [dx, h, w] of [[-8, 26, 9], [7, 20, 8]]) {
+      cx.fillStyle = shade(art.tint, 1.26);
+      cx.fillRect(x + dx * k - w * k / 2, y - h * k, w * k / 2, h * k);
+      cx.fillStyle = shade(art.tint, 0.68);
+      cx.fillRect(x + dx * k, y - h * k, w * k / 2, h * k);
+    }
+  },
+  terrace(x, y, k, art) {
+    wonderShadow(x, y, 15 * k, 0.16);
+    for (let i = 4; i >= 0; i--) {
+      cx.fillStyle = i & 1 ? shade(art.tint, 0.92) : art.tint;
+      cx.beginPath();
+      cx.ellipse(x, y - i * 3.4 * k, (14 - i * 2) * k, (5 - i * 0.7) * k, 0, 0, 7);
+      cx.fill();
+    }
+    cx.fillStyle = "rgba(121,199,207,.7)";
+    cx.beginPath(); cx.ellipse(x, y - 13 * k, 5 * k, 1.8 * k, 0, 0, 7); cx.fill();
+  },
+  arch(x, y, k, art) {
+    wonderShadow(x, y, 13 * k);
+    cx.strokeStyle = shade(art.tint, 1.1);
+    cx.lineWidth = 4.2 * k; cx.lineCap = "butt";
+    cx.beginPath();
+    cx.moveTo(x - 8 * k, y);
+    cx.quadraticCurveTo(x, y - 26 * k, x + 8 * k, y);
+    cx.stroke();
+    cx.strokeStyle = shade(art.tint, 0.62); cx.lineWidth = 1.6 * k;
+    cx.beginPath();
+    cx.moveTo(x + 2 * k, y - 18 * k); cx.lineTo(x + 8 * k, y); cx.stroke();
+  },
+  rings(x, y, k, art) {
+    wonderShadow(x, y, 17 * k, 0.16);
+    for (let ring = 3; ring >= 1; ring--) {
+      cx.fillStyle = ring % 2 ? shade(art.tint, 0.86) : shade(art.tint, 1.16);
+      cx.beginPath();
+      cx.ellipse(x, y, ring * 5.6 * k, ring * 2.2 * k, 0, 0, 7); cx.fill();
+    }
+  },
+  volcano(x, y, k, art) {
+    wonderShadow(x, y, 15 * k);
+    wonderFace(x, y, k, art.tint, 24 * k, 13 * k);
+    if (art.ice) {
+      cx.fillStyle = "#dce8ed";
+      tri(x - 6 * k * LITF, y - 16 * k, x, y - 24 * k, x + 5 * k * LITF, y - 16 * k);
+    } else {
+      cx.fillStyle = "#ef5b25";
+      cx.beginPath(); cx.ellipse(x, y - 23 * k, 3.4 * k, 1.4 * k, 0, 0, 7); cx.fill();
+    }
+    cx.fillStyle = "rgba(150,150,148,.42)";
+    cx.beginPath(); cx.ellipse(x + 2 * k, y - 31 * k, 6 * k, 4 * k, 0, 0, 7); cx.fill();
+  },
+  ruins(x, y, k, art) {
+    wonderShadow(x, y, 15 * k);
+    for (let step = 0; step < 4; step++) {
+      const w = (14 - step * 3) * k, h = 4 * k;
+      cx.fillStyle = step & 1 ? shade(art.tint, 0.86) : shade(art.tint, 1.14);
+      cx.fillRect(x - w, y - (step + 1) * h, w * 2, h);
+    }
+    cx.fillStyle = "#3f6b3a";
+    for (const dx of [-15, -9, 10, 16]) {
+      cx.beginPath();
+      cx.ellipse(x + dx * k, y - 2 * k, 3.2 * k, 2.4 * k, 0, 0, 7); cx.fill();
+    }
+  },
+  vortex(x, y, k, art) {
+    wonderWater(x, y, k, art.tint, 17 * k, 7 * k);
+    cx.fillStyle = "rgba(13,44,70,.72)";
+    tri(x, y - 9 * k, x + 12 * k, y + 6 * k, x - 12 * k, y + 6 * k);
+    cx.strokeStyle = "rgba(127,216,239,.55)"; cx.lineWidth = 1.4 * k;
+    for (let ring = 1; ring <= 3; ring++) {
+      cx.beginPath();
+      cx.ellipse(x, y, ring * 4.4 * k, ring * 1.7 * k, 0, 0, 7); cx.stroke();
+    }
+  },
+};
+
+// Draw a wonder that has no photograph, at whatever size its footprint gives
+// it. Returns false only for a feature the roster does not name, which is the
+// signal to fall back to the generic mark.
+function paintNaturalWonder(feature, x, y, footprint) {
+  const art = NATURAL_WONDER_ART[feature];
+  const painter = art && WONDER_PAINTER[art.form];
+  if (!painter) return false;
+  const span = footprint ? Math.max(1, Math.sqrt(footprint.length) * 0.92) : 1;
+  const k = (S / 31) * span * (MODE.painted ? 1 : 0.66);
+  cx.save();
+  if (!MODE.painted) {
+    // Strategic keeps the gold ring: the shape says which wonder, the ring
+    // says that it is one, and both survive being three millimetres tall.
+    cx.fillStyle = "rgba(240,206,98,.9)";
+    cx.beginPath(); cx.arc(x, y, 12, 0, Math.PI * 2); cx.fill();
+    cx.strokeStyle = "#6b551a"; cx.lineWidth = 1.2; cx.stroke();
+  }
+  painter(x, y + (MODE.painted ? S * 0.24 : 5), k, art);
+  cx.restore();
+  return true;
+}
+
+// The edges this tile shares with terrain of its own kind, as the offset to
+// each neighbouring centre in the map's unrotated world plane — the model
+// renderer applies the camera itself — plus a seed belonging to the *edge*
+// rather than to either tile, and which of the pair builds what stands on it.
+// Both neighbours hash the same unordered pair and agree on the same owner, so
+// the seam carries exactly one saddle and the two tiles meet as one landform
+// instead of as two models that happen to touch. Every edge is reported even
+// when this tile does not own it, because the direction a range runs is a
+// property of all of them.
+function terrainRidge(t, accepts) {
+  const ridge = [];
+  for (const direction of DIRS) {
+    const neighbor = nbrTile(t.pos, direction);
+    if (!neighbor || !accepts(neighbor)) continue;
+    const owns = t.pos[1] < neighbor.pos[1] ||
+      (t.pos[1] === neighbor.pos[1] && t.pos[0] < neighbor.pos[0]);
+    ridge.push([S * SQ3 * (direction[0] + direction[1] / 2), S * 1.5 * direction[1],
+                Math.imul(t.pos[0] + neighbor.pos[0] + 8192, 374761393) ^
+                Math.imul(t.pos[1] + neighbor.pos[1] + 8192, 668265263),
+                owns ? 1 : 0]);
+  }
+  return ridge;
+}
+const isMountainTile = t => t.terrain === "mountain";
+const isHillTile = t => !!t.hills && t.terrain !== "mountain";
+function environmentRidge(kind, t) {
+  if (kind === "mountain" || kind === "mount_everest")
+    return terrainRidge(t, isMountainTile);
+  if (kind === "hills") return terrainRidge(t, isHillTile);
+  // Cover that spreads: which way a wood or a sheet of ice carries on. Woods
+  // and rainforest knit into each other deliberately — where they meet it is
+  // still unbroken tree cover — so both answer to WOODLAND rather than to
+  // their own kind alone.
+  if (WOODLAND.has(kind))
+    return terrainRidge(t, neighbor => WOODLAND.has(neighbor.feature));
+  if (kind === "ice") return terrainRidge(t, neighbor => neighbor.feature === "ice");
+  return null;
+}
+
 // Cinematic environment art is projected from real mesh vertices in world
 // space. Passing the map camera through to the model renderer is what makes a
 // tree reveal a different side, a mountain turn its ridgeline, and every cast
@@ -9831,6 +10333,13 @@ function drawEnvironment3D(kind, t, x, y, span = 1) {
   const drawn = Cinematic3D.drawEnvironment({
     ctx:cx,
     kind,
+    ridge:environmentRidge(kind, t),
+    // Where this tile sits in the map's own unrotated plane. A model that
+    // wants texture crossing its tile boundaries has to place it on a lattice
+    // that knows nothing about tiles, and this is the only thing it needs to
+    // do that. Unwrapped on purpose: the lattice should not shift under a
+    // camera that has folded the world round.
+    origin:[S * SQ3 * (t.pos[0] + t.pos[1] / 2), S * 1.5 * t.pos[1]],
     terrain:t.terrain,
     seed:Math.imul(t.pos[0] + 4096, 73856093) ^ Math.imul(t.pos[1] + 4096, 19349663),
     hills:!!t.hills && t.terrain !== "mountain",
@@ -10182,7 +10691,7 @@ function drawCinematicDisasterField(sceneTime) {
 function buildNaturalWonderPlacements(tiles) {
   const placements = new Map(), visited = new Set();
   for (const tile of tiles) {
-    if (!NATURAL_WONDER_CELL[tile.feature] || visited.has(key(tile.pos))) continue;
+    if (!isNaturalWonder(tile.feature) || visited.has(key(tile.pos))) continue;
     const cluster = [], stack = [tile];
     visited.add(key(tile.pos));
     while (stack.length) {
@@ -10490,18 +10999,51 @@ function drawTileYields(t, x, y, worked) {
   cx.restore();
 }
 
+// Rock is chosen per REGION, not per tile. Rolling it independently for each
+// hex stood grey and sandstone massifs shoulder to shoulder inside a single
+// ridge, which broke the range back into its tiles even though the sprites
+// overlap generously enough to hide the seams. A range is one geology; only
+// the height jitter varies hex to hex. Six hexes to a region rather than
+// three: a range is nine or ten tiles long, so the finer grain still cut a
+// typical one in half and put a sandstone massif against a granite one.
+function mountainRockColumn(t) {
+  const polar = state &&
+    (t.pos[1] < state.map.height * 0.2 || t.pos[1] > state.map.height * 0.8);
+  const hv = hash2(Math.floor(t.pos[0] / 6) * 31, Math.floor(t.pos[1] / 6) * 37);
+  return polar ? (hv > 0.3 ? 1 : 0) : (hv > 0.62 ? 2 : 0);
+}
+
+// One massif per hex, plus a lower one standing on every edge shared with
+// another mountain. The saddle is a property of the edge — its cell, its
+// mirroring and its size all come from the unordered pair of tiles — so the
+// neighbour paints the identical rock in the identical place and the seam ends
+// up buried inside a col rather than showing as the gap between two scoops.
+function drawMountainSaddles(t, x, y, cw, ch) {
+  for (const [worldDX, worldDY, edgeSeed, owns] of terrainRidge(t, isMountainTile)) {
+    // Raised once per seam, by the tile that owns it. The art carries an alpha
+    // edge, so stamping the same col from both sides would double it.
+    if (!owns) continue;
+    const mx = x + (COSR * worldDX - SINR * worldDY) / 2;
+    const my = y + (SINR * worldDX + COSR * worldDY) * YS / 2;
+    const eh = hash2(edgeSeed & 1023, (edgeSeed >>> 11) & 1023);
+    const eh2 = hash2((edgeSeed >>> 5) & 1023, (edgeSeed >>> 17) & 1023);
+    const sw = S * (1.62 + eh * 0.2), sh = S * (1.24 + eh2 * 0.22);
+    cx.save();
+    cx.translate(mx, my);
+    if (eh > 0.5) cx.scale(-1, 1);
+    // The owner also lends the col its geology, so a saddle can never be the
+    // one sandstone block standing in a granite range.
+    cx.drawImage(MOUNTAIN_ATLAS, mountainRockColumn(t) * cw, 0, cw, ch,
+                 -sw / 2, -sh + S * 0.3, sw, sh);
+    cx.restore();
+  }
+}
+
 function drawMountainSprite(t, x, y) {
   if (!MOUNTAIN_ATLAS_READY) return false;
   const cw = MOUNTAIN_ATLAS.naturalWidth / 3;
   const ch = MOUNTAIN_ATLAS.naturalHeight;
-  const polar = state && (t.pos[1] < state.map.height * 0.2 || t.pos[1] > state.map.height * 0.8);
-  // Rock is chosen per REGION, not per tile. Rolling it independently for each
-  // hex stood grey and sandstone massifs shoulder to shoulder inside a single
-  // ridge, which broke the range back into its tiles even though the sprites
-  // overlap generously enough to hide the seams. A range is one geology; only
-  // the height jitter below still varies hex to hex.
-  const hv = hash2(Math.floor(t.pos[0] / 3) * 31, Math.floor(t.pos[1] / 3) * 37);
-  const col = polar ? (hv > 0.3 ? 1 : 0) : (hv > 0.62 ? 2 : 0);
+  const col = mountainRockColumn(t);
   // Geology stays regional, but silhouette does not. Mirroring and independent
   // width/height variation break the telltale row of identical peaks without
   // mixing snow, granite, and sandstone inside one connected massif.
@@ -10511,6 +11053,7 @@ function drawMountainSprite(t, x, y) {
   const flip = hash2(t.pos[0] * 29 + 1, t.pos[1] * 31 + 9) > 0.5;
   const footprint = blendedTileFootprint(t, x, y, neighbor =>
     neighbor.terrain === "mountain");
+  cx.save();
   cx.save();
   tileArtPath([{x, y}], true, 3.0); cx.clip();
   // The massif throws its shadow away from the world sun, so a range's shadow
@@ -10523,17 +11066,44 @@ function drawMountainSprite(t, x, y) {
   cx.ellipse(x + SHX * w * 0.30 * rk, y + S * 0.22 + SHY * S * 0.30 * rk,
              w * (0.4 + 0.1 * rk), S * 0.18, 0, 0, 7);
   cx.fill();
+  cx.restore();
+  // A second clip only ever narrows the first, so the blended footprint this
+  // function has always computed did nothing while it followed the single-hex
+  // clip the shadow needs: the art was cut off at the tile boundary and a
+  // range came out as a row of hexagonal stamps. The shadow keeps its own
+  // clip, released above, and the rock now spreads across the whole massif.
   tileArtPath(footprint, true, 3.0); cx.clip();
   cx.fillStyle = "#00000042";
   cx.beginPath(); cx.ellipse(x + 2, y + S * 0.22, w * 0.4, S * 0.18, 0, 0, 7); cx.fill();
   cx.imageSmoothingEnabled = true;
   cx.imageSmoothingQuality = "high";
+  drawMountainSaddles(t, x, y, cw, ch);
   cx.translate(x, y);
   if (flip) cx.scale(-1, 1);
   cx.drawImage(MOUNTAIN_ATLAS, col * cw, 0, cw, ch,
                -w / 2, -h + S * 0.34, w, h);
   cx.restore();
   return true;
+}
+
+// One swell of ground: shadow under it, sunlit flank over the texture, a crest
+// that catches the light and the line where it breaks. Relief, not repaint —
+// it is laid over the photographic material rather than filling in the terrain
+// colour, so a grassland hill keeps its grass and a desert hill its sand.
+function drawHillSwell(px, py, hw2, hh2) {
+  cx.fillStyle = "rgba(22,15,6,.28)";                 // cast shadow
+  cx.beginPath(); cx.ellipse(px, py + 2.6, hw2, hh2, 0, Math.PI, 0);
+  cx.fill();
+  cx.fillStyle = "rgba(255,246,216,.15)";             // lit flank
+  cx.beginPath(); cx.ellipse(px, py, hw2, hh2, 0, Math.PI, 0);
+  cx.fill();
+  cx.fillStyle = "rgba(255,250,230,.22)";             // crest catches the sun
+  cx.beginPath(); cx.ellipse(px - 2 * LITF, py - 1,
+                             hw2 * 0.55, hh2 * 0.5, 0, Math.PI, 0);
+  cx.fill();
+  cx.strokeStyle = "rgba(0,0,0,.32)"; cx.lineWidth = 1.3;   // crest line
+  cx.beginPath(); cx.ellipse(px, py, hw2, hh2, 0, Math.PI, 0);
+  cx.stroke();
 }
 
 function tri(ax, ay, bx, by, ccx, ccy) {
@@ -12265,6 +12835,557 @@ function drawWorldWonderSprite(wonder, x, y) {
                cell[0] * cw + inset, cell[1] * ch + inset,
                cw - inset * 2, ch - inset * 2,
                x - size / 2, y - size + S * .42, size, size);
+  cx.restore();
+  return true;
+}
+
+// --- painted World Wonders ------------------------------------------------
+//
+// The cinematic atlas photographs all fifty-three. The other two views drew
+// one gold obelisk for every one of them, so a city holding the Pyramids and
+// a city holding the Golden Gate Bridge were the same picture — the map could
+// tell you a wonder was there and never which. These are the silhouettes,
+// built from twenty shapes: what separates a pyramid from a lighthouse at
+// twenty pixels is outline, so each entry names a shape, its proportions and
+// the stone it is made of, and the shape does the rest.
+const WORLD_WONDER_ART = {
+  great_bath:        {form:"ziggurat", tint:"#c9b28f", sunken:true},
+  etemenanki:        {form:"ziggurat", tint:"#b98a54"},
+  hanging_gardens:   {form:"terraces", tint:"#8a7c5c", green:true},
+  pyramids:          {form:"pyramid",  tint:"#d8c088", count:3},
+  stonehenge:        {form:"trilithon", tint:"#9a9184"},
+  temple_artemis:    {form:"colonnade", tint:"#e6ddc6"},
+  apadana:           {form:"colonnade", tint:"#c8a86d", tall:true},
+  colosseum:         {form:"arena",    tint:"#cdb896"},
+  colossus:          {form:"statue",   tint:"#c08a43", pose:"stand"},
+  great_library:     {form:"colonnade", tint:"#d9cba7", wide:true},
+  great_lighthouse:  {form:"tower",    tint:"#e2d6b8", flame:true},
+  jebel_barkal:      {form:"pyramid",  tint:"#c58e5a", count:4, small:true},
+  machu_picchu:      {form:"terraces", tint:"#8e9a76", peak:true},
+  mahabodhi_temple:  {form:"tower",    tint:"#c9a06a", spire:true},
+  mausoleum_at_halicarnassus: {form:"pyramid", tint:"#dbd2b8", stepped:true},
+  oracle:            {form:"dome",     tint:"#e3dcc4", tholos:true},
+  petra:             {form:"rockface", tint:"#c4744a"},
+  statue_of_zeus:    {form:"statue",   tint:"#d9c98f", pose:"seat"},
+  terracotta_army:   {form:"ranks",    tint:"#a9713f"},
+  alhambra:          {form:"fortress", tint:"#cfa87a"},
+  angkor_wat:        {form:"towers5",  tint:"#9c9276"},
+  chichen_itza:      {form:"pyramid",  tint:"#b5a887", stepped:true},
+  hagia_sophia:      {form:"dome",     tint:"#d5b98a"},
+  huey_teocalli:     {form:"pyramid",  tint:"#b98e5e", stepped:true, twin:true},
+  kilwa_kisiwani:    {form:"dome",     tint:"#cbbfa2", low:true},
+  kotoku_in:         {form:"statue",   tint:"#7d8f80", pose:"seat"},
+  meenakshi_temple:  {form:"tower",    tint:"#c86a6a", gopuram:true},
+  mont_st_michel:    {form:"fortress", tint:"#a8a49a", island:true},
+  university_of_sankore: {form:"tower", tint:"#c69a5f", mud:true},
+  casa_de_contratacion: {form:"colonnade", tint:"#d8c9a5", wide:true},
+  forbidden_city:    {form:"palace",   tint:"#b5442f", roof:"#e0b13c"},
+  great_zimbabwe:    {form:"rockface", tint:"#9e8d70", wall:true},
+  orszaghaz:         {form:"palace",   tint:"#c3ba9f", gothic:true},
+  oxford_university: {form:"colonnade", tint:"#c7bfa2"},
+  potala_palace:     {form:"fortress", tint:"#e2dccb", tiered:true},
+  st_basils_cathedral: {form:"dome",   tint:"#c4553f", onion:true},
+  taj_mahal:         {form:"dome",     tint:"#f0ece0", minarets:true},
+  torre_de_belem:    {form:"tower",    tint:"#ddd3b6", water:true},
+  venetian_arsenal:  {form:"shipyard", tint:"#a8987a"},
+  big_ben:           {form:"tower",    tint:"#c9b184", clock:true},
+  bolshoi_theatre:   {form:"colonnade", tint:"#dcd0ae", pediment:true},
+  hermitage:         {form:"palace",   tint:"#7fa8b8", long:true},
+  ruhr_valley:       {form:"chimneys", tint:"#8c8478"},
+  statue_of_liberty: {form:"statue",   tint:"#7fb8a4", pose:"torch"},
+  biosphere:         {form:"geodesic", tint:"#9fc6d4"},
+  broadway:          {form:"marquee",  tint:"#d9a03c"},
+  cristo_redentor:   {form:"statue",   tint:"#cfcac0", pose:"arms"},
+  eiffel_tower:      {form:"tower",    tint:"#9a8b6f", lattice:true},
+  estadio_do_maracana: {form:"arena",  tint:"#b9c2c6", modern:true},
+  golden_gate_bridge: {form:"bridge",  tint:"#c1502f"},
+  amundsen_scott_research_station: {form:"station", tint:"#c3d3da"},
+  sydney_opera_house: {form:"shells",  tint:"#eae7dd"},
+  panama_canal:      {form:"bridge",   tint:"#7f95a0", locks:true},
+};
+// A block with a lit face and a shadow face, which is most of what a building
+// is at this size. `w` is half the width.
+function wonderBlock(x, y, w, h, color) {
+  cx.fillStyle = shade(color, 1.26);
+  cx.fillRect(x - w, y - h, w, h);
+  cx.fillStyle = shade(color, 0.7);
+  cx.fillRect(x, y - h, w, h);
+  cx.strokeStyle = "rgba(28,22,10,.55)"; cx.lineWidth = 0.9;
+  cx.strokeRect(x - w, y - h, w * 2, h);
+}
+const BUILT_WONDER_PAINTER = {
+  pyramid(x, y, k, art) {
+    const count = art.count || 1;
+    for (let i = 0; i < count; i++) {
+      const dx = count === 1 ? 0 : (i / (count - 1) - 0.5) * 17 * k;
+      const w = (art.small ? 5 : count > 1 ? 7 : 11) * k * (i === 1 ? 1.2 : 1);
+      const h = (art.small ? 8 : count > 1 ? 12 : 18) * k * (i === 1 ? 1.2 : 1);
+      if (art.stepped) {
+        for (let step = 0; step < 4; step++) {
+          const sw = w * (1 - step * 0.2), sh = h / 4;
+          cx.fillStyle = shade(art.tint, step % 2 ? 1.2 : 0.86);
+          cx.fillRect(x + dx - sw, y - sh * (step + 1), sw * 2, sh);
+        }
+        if (art.twin) {
+          cx.fillStyle = shade(art.tint, 1.3);
+          cx.fillRect(x + dx - w * 0.5, y - h - 5 * k, w * 0.42, 5 * k);
+          cx.fillStyle = shade(art.tint, 0.72);
+          cx.fillRect(x + dx + w * 0.1, y - h - 5 * k, w * 0.42, 5 * k);
+        }
+      } else {
+        cx.fillStyle = shade(art.tint, 1.3);
+        tri(x + dx - w * LITF, y, x + dx, y - h, x + dx, y);
+        cx.fillStyle = shade(art.tint, 0.68);
+        tri(x + dx, y - h, x + dx + w * LITF, y, x + dx, y);
+      }
+    }
+  },
+  ziggurat(x, y, k, art) {
+    if (art.sunken) {
+      // The Great Bath is a tank, not a tower: steps descending on both sides
+      // into water. Drawn as a ziggurat it came out as a "T".
+      for (let step = 0; step < 3; step++) {
+        const w = (13 - step * 2.2) * k;
+        cx.fillStyle = shade(art.tint, step % 2 ? 1.24 : 0.9);
+        cx.fillRect(x - w, y - (3 - step) * 3.2 * k, w * 2, 3.2 * k);
+      }
+      cx.fillStyle = "#3f95ad";
+      cx.beginPath();
+      cx.ellipse(x, y - 1.4 * k, 7 * k, 2.6 * k, 0, 0, 7); cx.fill();
+      cx.strokeStyle = "rgba(220,246,250,.66)"; cx.lineWidth = 0.9;
+      cx.beginPath();
+      cx.ellipse(x, y - 2.2 * k, 4.4 * k, 1.5 * k, 0, 0, 7); cx.stroke();
+      return;
+    }
+    for (let step = 0; step < 4; step++) {
+      const w = (12 - step * 2.4) * k, h = 4 * k;
+      cx.fillStyle = shade(art.tint, step % 2 ? 1.22 : 0.88);
+      cx.fillRect(x - w, y - (step + 1) * h, w * 2, h);
+    }
+  },
+  colonnade(x, y, k, art) {
+    const w = (art.wide ? 15 : 12) * k, h = (art.tall ? 18 : 13) * k;
+    cx.fillStyle = shade(art.tint, 0.9);
+    cx.fillRect(x - w, y - 2 * k, w * 2, 2 * k);
+    for (let i = 0; i < 6; i++) {
+      const cxp = x - w + 2 * k + i * (w * 2 - 4 * k) / 5;
+      cx.fillStyle = shade(art.tint, 1.3);
+      cx.fillRect(cxp - 1.4 * k, y - h, 1.4 * k, h - 2 * k);
+      cx.fillStyle = shade(art.tint, 0.72);
+      cx.fillRect(cxp, y - h, 1.4 * k, h - 2 * k);
+    }
+    cx.fillStyle = shade(art.tint, 1.1);
+    cx.fillRect(x - w, y - h - 3 * k, w * 2, 3 * k);
+    if (art.pediment) {
+      cx.fillStyle = shade(art.tint, 1.22);
+      tri(x - w, y - h - 3 * k, x, y - h - 9 * k, x + w, y - h - 3 * k);
+    }
+  },
+  dome(x, y, k, art) {
+    const r = (art.low ? 8 : art.tholos ? 7 : 10) * k;
+    if (art.tholos) {
+      // A tholos is a ring of columns under a shallow roof; the dome alone
+      // was an unreadable pebble.
+      for (let i = 0; i < 5; i++) {
+        const cxp = x + (i - 2) * 3.2 * k;
+        cx.fillStyle = shade(art.tint, i < 2 ? 1.28 : 0.76);
+        cx.fillRect(cxp - 1.1 * k, y - r * 1.5, 2.2 * k, r * 1.5);
+      }
+      cx.fillStyle = shade(art.tint, 1.1);
+      cx.fillRect(x - r * 1.2, y - r * 1.5 - 2 * k, r * 2.4, 2 * k);
+    } else {
+      wonderBlock(x, y, r * 1.15, r * 0.9, art.tint);
+    }
+    if (art.onion) {
+      for (const [dx, s, col] of [[-8, 0.7, "#3f7fa8"], [0, 1, "#d9c04a"],
+        [8, 0.7, "#4f9a5e"]]) {
+        cx.fillStyle = col;
+        cx.beginPath();
+        cx.moveTo(x + dx * k - r * 0.42 * s, y - r * 0.9);
+        cx.quadraticCurveTo(x + dx * k - r * 0.7 * s, y - r * 2.1 * s,
+                            x + dx * k, y - r * 2.5 * s);
+        cx.quadraticCurveTo(x + dx * k + r * 0.7 * s, y - r * 2.1 * s,
+                            x + dx * k + r * 0.42 * s, y - r * 0.9);
+        cx.closePath(); cx.fill();
+      }
+      return;
+    }
+    const springs = art.tholos ? y - r * 1.5 - 2 * k : y - r * 0.9;
+    cx.fillStyle = shade(art.tint, 1.16);
+    cx.beginPath();
+    cx.ellipse(x, springs, r, r * 0.92, 0, Math.PI, 0); cx.fill();
+    cx.fillStyle = shade(art.tint, 0.74);
+    cx.beginPath();
+    cx.ellipse(x + r * 0.28 * LITF, springs, r * 0.72, r * 0.88, 0, Math.PI, 0);
+    cx.fill();
+    if (art.minarets) {
+      for (const dx of [-r * 1.5, r * 1.5]) {
+        cx.fillStyle = shade(art.tint, 1.1);
+        cx.fillRect(x + dx - 1.2 * k, y - r * 2.1, 2.4 * k, r * 2.1);
+      }
+    }
+  },
+  tower(x, y, k, art) {
+    const h = (art.lattice ? 30 : art.spire ? 26 : 24) * k;
+    const w = (art.mud ? 5 : 4) * k;
+    if (art.water) {
+      cx.fillStyle = "rgba(60,130,160,.7)";
+      cx.beginPath(); cx.ellipse(x, y + 2 * k, 15 * k, 4 * k, 0, 0, 7); cx.fill();
+    }
+    if (art.lattice) {
+      // Filled, not wireframe. Two hairlines on grass read as a stepladder;
+      // what makes the Eiffel Tower recognisable is the flared skirt and the
+      // arch between the legs, both of which need a silhouette to cut into.
+      const leg = t => 8 * Math.pow(1 - t, 2.1) + 0.9;
+      cx.fillStyle = shade(art.tint, 1.16);
+      cx.beginPath();
+      for (let s = 0; s <= 10; s++) cx.lineTo(x - leg(s / 10) * k, y - h * s / 10);
+      for (let s = 10; s >= 0; s--) cx.lineTo(x + leg(s / 10) * k, y - h * s / 10);
+      cx.closePath(); cx.fill();
+      cx.globalCompositeOperation = "destination-out";
+      cx.beginPath();
+      cx.moveTo(x - 6.6 * k, y);
+      cx.quadraticCurveTo(x, y - h * 0.34, x + 6.6 * k, y);
+      cx.closePath(); cx.fill();
+      cx.globalCompositeOperation = "source-over";
+      cx.strokeStyle = shade(art.tint, 0.5); cx.lineWidth = 0.9;
+      for (const t of [0.34, 0.62]) {
+        cx.beginPath();
+        cx.moveTo(x - leg(t) * k, y - h * t); cx.lineTo(x + leg(t) * k, y - h * t);
+        cx.stroke();
+      }
+      return;
+    }
+    if (art.gopuram) {
+      for (let step = 0; step < 5; step++) {
+        const sw = (9 - step * 1.4) * k;
+        cx.fillStyle = shade(art.tint, step % 2 ? 1.2 : 0.84);
+        cx.fillRect(x - sw, y - (step + 1) * h / 5, sw * 2, h / 5);
+      }
+      return;
+    }
+    wonderBlock(x, y, w, h, art.tint);
+    if (art.spire) {
+      cx.fillStyle = shade(art.tint, 1.15);
+      tri(x - w, y - h, x, y - h - 8 * k, x + w, y - h);
+    }
+    if (art.clock) {
+      cx.fillStyle = "#f2e6bd";
+      cx.beginPath(); cx.arc(x, y - h * 0.82, 2.6 * k, 0, 7); cx.fill();
+      cx.fillStyle = shade(art.tint, 1.2);
+      tri(x - w, y - h, x, y - h - 6 * k, x + w, y - h);
+    }
+    if (art.flame) {
+      cx.fillStyle = "#ffb545";
+      cx.beginPath(); cx.ellipse(x, y - h - 2 * k, 2.4 * k, 3.4 * k, 0, 0, 7);
+      cx.fill();
+    }
+  },
+  statue(x, y, k, art) {
+    const h = art.pose === "seat" ? 15 * k : 22 * k;
+    cx.fillStyle = shade(art.tint, 0.86);
+    cx.fillRect(x - 6 * k, y - 4 * k, 12 * k, 4 * k);          // plinth
+    cx.fillStyle = shade(art.tint, 1.2);
+    if (art.pose === "seat") {
+      // Seated: knees forward, folded arms, head clear of the shoulders. A
+      // plain box on a plinth read as a crate.
+      cx.fillRect(x - 4.6 * k, y - 4 * k - h * 0.52, 9.2 * k, h * 0.52);
+      cx.fillStyle = shade(art.tint, 0.74);
+      cx.fillRect(x - 6.4 * k, y - 4 * k - h * 0.3, 12.8 * k, h * 0.3);
+      cx.fillStyle = shade(art.tint, 1.3);
+      cx.beginPath();
+      cx.arc(x, y - 4 * k - h * 0.52 - 3 * k, 3.2 * k, 0, 7); cx.fill();
+      cx.fillStyle = shade(art.tint, 0.6);
+      cx.fillRect(x - 4.6 * k, y - 4 * k - h * 0.34, 9.2 * k, 1.2 * k);
+    } else {
+      cx.fillRect(x - 2.4 * k, y - 4 * k - h, 4.8 * k, h);
+      cx.beginPath(); cx.arc(x, y - 4 * k - h - 2.4 * k, 2.6 * k, 0, 7); cx.fill();
+      cx.lineWidth = 2.2 * k; cx.strokeStyle = shade(art.tint, 1.2);
+      cx.beginPath();
+      if (art.pose === "arms") {
+        cx.moveTo(x - 9 * k, y - 4 * k - h * 0.82);
+        cx.lineTo(x + 9 * k, y - 4 * k - h * 0.82);
+      } else if (art.pose === "torch") {
+        cx.moveTo(x + 1 * k, y - 4 * k - h * 0.7);
+        cx.lineTo(x + 5 * k, y - 4 * k - h - 4 * k);
+      } else {
+        cx.moveTo(x - 4 * k, y - 4 * k - h * 0.5);
+        cx.lineTo(x + 4 * k, y - 4 * k - h * 0.5);
+      }
+      cx.stroke();
+      if (art.pose === "torch") {
+        cx.fillStyle = "#ffc247";
+        cx.beginPath(); cx.arc(x + 5.6 * k, y - 4 * k - h - 5 * k, 2 * k, 0, 7);
+        cx.fill();
+      }
+    }
+  },
+  arena(x, y, k, art) {
+    const rx = 13 * k, ry = 6 * k, h = art.modern ? 9 * k : 11 * k;
+    cx.fillStyle = shade(art.tint, 0.72);
+    cx.beginPath(); cx.ellipse(x, y - ry, rx, ry, 0, 0, 7); cx.fill();
+    cx.fillStyle = shade(art.tint, 1.24);
+    cx.beginPath();
+    cx.ellipse(x, y - ry - h, rx, ry, 0, Math.PI, 0);
+    cx.lineTo(x + rx, y - ry); cx.ellipse(x, y - ry, rx, ry, 0, 0, Math.PI);
+    cx.closePath(); cx.fill();
+    // The pitch inside. Without it a modern bowl is a white pebble.
+    cx.fillStyle = art.modern ? "#5f8f4e" : shade(art.tint, 0.5);
+    cx.beginPath();
+    cx.ellipse(x, y - ry - h, rx * 0.66, ry * 0.6, 0, 0, 7); cx.fill();
+    if (!art.modern) {
+      cx.strokeStyle = shade(art.tint, 0.6); cx.lineWidth = 0.8;
+      for (let i = -2; i <= 2; i++) {
+        cx.beginPath();
+        cx.moveTo(x + i * rx * 0.38, y - ry - h);
+        cx.lineTo(x + i * rx * 0.38, y - ry);
+        cx.stroke();
+      }
+    }
+  },
+  terraces(x, y, k, art) {
+    if (art.peak) {
+      cx.fillStyle = shade(art.tint, 0.62);
+      tri(x - 14 * k, y, x + 2 * k, y - 22 * k, x + 15 * k, y);
+    }
+    for (let step = 0; step < 4; step++) {
+      const w = (13 - step * 2.2) * k;
+      cx.fillStyle = art.green
+        ? shade("#5f8b4a", step % 2 ? 1.2 : 0.86)
+        : shade(art.tint, step % 2 ? 1.2 : 0.86);
+      cx.fillRect(x - w, y - (step + 1) * 3.6 * k, w * 2, 3.6 * k);
+    }
+  },
+  rockface(x, y, k, art) {
+    if (art.wall) {
+      // The Great Enclosure: a tall curved dry-stone wall seen from outside,
+      // with its courses showing. A single thin arc read as a scratch.
+      cx.lineWidth = 7 * k; cx.strokeStyle = shade(art.tint, 0.72);
+      cx.beginPath();
+      cx.ellipse(x, y - 5 * k, 13 * k, 8 * k, 0, Math.PI * 0.98, Math.PI * 2.02);
+      cx.stroke();
+      cx.lineWidth = 3.4 * k; cx.strokeStyle = shade(art.tint, 1.26);
+      cx.beginPath();
+      cx.ellipse(x, y - 6.6 * k, 13 * k, 8 * k, 0, Math.PI * 0.98, Math.PI * 2.02);
+      cx.stroke();
+      cx.strokeStyle = shade(art.tint, 0.55); cx.lineWidth = 0.7;
+      for (let i = -3; i <= 3; i++) {
+        cx.beginPath();
+        cx.moveTo(x + i * 4 * k, y - 9 * k - Math.abs(i) * -0.6 * k);
+        cx.lineTo(x + i * 4 * k, y - 3 * k);
+        cx.stroke();
+      }
+      // The conical tower that stands inside it.
+      wonderBlock(x + 6 * k, y - 2 * k, 2.4 * k, 13 * k, art.tint);
+      return;
+    }
+    cx.fillStyle = shade(art.tint, 0.72);
+    cx.fillRect(x - 13 * k, y - 22 * k, 26 * k, 22 * k);
+    cx.fillStyle = shade(art.tint, 1.24);
+    cx.fillRect(x - 13 * k, y - 22 * k, 5 * k, 22 * k);
+    cx.fillStyle = "rgba(40,26,16,.8)";
+    cx.fillRect(x - 3 * k, y - 11 * k, 6 * k, 11 * k);
+    for (const dx of [-9, -5, 5, 9]) {
+      cx.fillStyle = shade(art.tint, 1.05);
+      cx.fillRect(x + dx * k - 1.2 * k, y - 20 * k, 2.4 * k, 9 * k);
+    }
+  },
+  ranks(x, y, k, art) {
+    for (let row = 0; row < 3; row++) {
+      for (let i = 0; i < 5; i++) {
+        const fx = x + (i - 2) * 5 * k + row * 1.6 * k;
+        const fy = y - row * 3.4 * k;
+        cx.fillStyle = shade(art.tint, 1.24 - row * 0.16);
+        cx.fillRect(fx - 1.3 * k, fy - 9 * k, 2.6 * k, 9 * k);
+        cx.beginPath(); cx.arc(fx, fy - 10.4 * k, 1.5 * k, 0, 7); cx.fill();
+      }
+    }
+  },
+  fortress(x, y, k, art) {
+    if (art.island) {
+      cx.fillStyle = "rgba(60,130,160,.66)";
+      cx.beginPath(); cx.ellipse(x, y + 2 * k, 17 * k, 5 * k, 0, 0, 7); cx.fill();
+      cx.fillStyle = shade(art.tint, 0.66);
+      tri(x - 13 * k, y + 1 * k, x, y - 10 * k, x + 13 * k, y + 1 * k);
+    }
+    const tiers = art.tiered ? 3 : 1;
+    for (let tier = 0; tier < tiers; tier++) {
+      const w = (13 - tier * 3.4) * k, h = 8 * k;
+      wonderBlock(x, y - tier * h * 0.86, w, h, art.tint);
+    }
+    if (!art.tiered) {
+      for (const dx of [-11, 0, 11]) {
+        wonderBlock(x + dx * k, y - 8 * k, 2.2 * k, art.island ? 12 * k : 8 * k,
+                    art.tint);
+      }
+    }
+  },
+  towers5(x, y, k, art) {
+    for (const [dx, h] of [[-11, 12], [11, 12], [-5, 16], [5, 16], [0, 24]]) {
+      cx.fillStyle = shade(art.tint, dx < 0 ? 1.24 : 0.8);
+      cx.beginPath();
+      cx.moveTo(x + dx * k - 3.2 * k, y);
+      cx.quadraticCurveTo(x + dx * k, y - h * k * 1.28, x + dx * k + 3.2 * k, y);
+      cx.closePath(); cx.fill();
+    }
+  },
+  palace(x, y, k, art) {
+    const w = (art.long ? 17 : 13) * k, h = (art.gothic ? 12 : 10) * k;
+    wonderBlock(x, y, w, h, art.tint);
+    if (art.roof) {
+      cx.fillStyle = art.roof;
+      cx.beginPath();
+      cx.moveTo(x - w - 2 * k, y - h);
+      cx.lineTo(x - w * 0.6, y - h - 5 * k);
+      cx.lineTo(x + w * 0.6, y - h - 5 * k);
+      cx.lineTo(x + w + 2 * k, y - h);
+      cx.closePath(); cx.fill();
+    }
+    if (art.gothic) {
+      for (const dx of [-9, 0, 9]) {
+        cx.fillStyle = shade(art.tint, 1.24);
+        tri(x + dx * k - 3 * k, y - h, x + dx * k, y - h - (dx ? 8 : 14) * k,
+            x + dx * k + 3 * k, y - h);
+      }
+    }
+    if (art.long) {
+      cx.strokeStyle = shade(art.tint, 0.55); cx.lineWidth = 0.8;
+      for (let i = -4; i <= 4; i++) {
+        cx.beginPath();
+        cx.moveTo(x + i * w * 0.2, y - h + 1.5 * k);
+        cx.lineTo(x + i * w * 0.2, y - 1.5 * k);
+        cx.stroke();
+      }
+    }
+  },
+  chimneys(x, y, k, art) {
+    wonderBlock(x, y, 13 * k, 8 * k, art.tint);
+    for (const [dx, h] of [[-8, 20], [-1, 26], [7, 22]]) {
+      cx.fillStyle = shade(art.tint, 1.1);
+      cx.fillRect(x + dx * k - 1.6 * k, y - h * k, 3.2 * k, h * k - 8 * k);
+      cx.fillStyle = "rgba(150,150,148,.4)";
+      cx.beginPath();
+      cx.ellipse(x + dx * k + 2 * k, y - h * k - 3 * k, 4 * k, 2.6 * k, 0, 0, 7);
+      cx.fill();
+    }
+  },
+  geodesic(x, y, k, art) {
+    const r = 12 * k;
+    cx.fillStyle = shade(art.tint, 1.1);
+    cx.beginPath(); cx.arc(x, y - r * 0.7, r, Math.PI, 0); cx.fill();
+    cx.strokeStyle = shade(art.tint, 0.5); cx.lineWidth = 0.85;
+    for (let i = 1; i < 4; i++) {
+      cx.beginPath();
+      cx.ellipse(x, y - r * 0.7, r * i / 4, r, 0, Math.PI, 0); cx.stroke();
+    }
+    cx.beginPath();
+    cx.ellipse(x, y - r * 0.7, r, r * 0.5, 0, Math.PI, 0); cx.stroke();
+  },
+  marquee(x, y, k, art) {
+    wonderBlock(x, y, 12 * k, 16 * k, "#6d5a44");
+    cx.fillStyle = art.tint;
+    cx.fillRect(x - 13 * k, y - 9 * k, 26 * k, 5 * k);
+    cx.fillStyle = "#fff3c4";
+    for (let i = 0; i < 7; i++) {
+      cx.beginPath();
+      cx.arc(x - 11 * k + i * 3.7 * k, y - 10.5 * k, 1 * k, 0, 7); cx.fill();
+    }
+  },
+  bridge(x, y, k, art) {
+    cx.fillStyle = "rgba(60,130,160,.66)";
+    cx.beginPath(); cx.ellipse(x, y + 2 * k, 18 * k, 5 * k, 0, 0, 7); cx.fill();
+    if (art.locks) {
+      for (const dx of [-9, 0, 9]) {
+        wonderBlock(x + dx * k, y - 1 * k, 2.4 * k, 9 * k, art.tint);
+      }
+      cx.strokeStyle = shade(art.tint, 1.2); cx.lineWidth = 2 * k;
+      cx.beginPath();
+      cx.moveTo(x - 16 * k, y - 3 * k); cx.lineTo(x + 16 * k, y - 3 * k);
+      cx.stroke();
+      return;
+    }
+    for (const dx of [-9, 9]) {
+      cx.fillStyle = shade(art.tint, 1.2);
+      cx.fillRect(x + dx * k - 1.5 * k, y - 22 * k, 3 * k, 22 * k);
+    }
+    cx.strokeStyle = shade(art.tint, 1.1); cx.lineWidth = 1.5 * k;
+    cx.beginPath();
+    cx.moveTo(x - 17 * k, y - 6 * k);
+    cx.quadraticCurveTo(x, y - 26 * k, x + 17 * k, y - 6 * k);
+    cx.moveTo(x - 17 * k, y - 5 * k); cx.lineTo(x + 17 * k, y - 5 * k);
+    cx.stroke();
+  },
+  station(x, y, k, art) {
+    cx.fillStyle = "#e8eef1";
+    cx.beginPath(); cx.ellipse(x, y + 1 * k, 17 * k, 4.5 * k, 0, 0, 7); cx.fill();
+    for (const dx of [-8, -3, 3, 8]) {
+      cx.fillStyle = shade(art.tint, 0.7);
+      cx.fillRect(x + dx * k - 0.8 * k, y - 7 * k, 1.6 * k, 7 * k);
+    }
+    wonderBlock(x, y - 7 * k, 12 * k, 8 * k, art.tint);
+    cx.fillStyle = "#5d7f92";
+    cx.fillRect(x - 9 * k, y - 12 * k, 18 * k, 2 * k);
+  },
+  shells(x, y, k, art) {
+    cx.fillStyle = "rgba(60,130,160,.6)";
+    cx.beginPath(); cx.ellipse(x, y + 2 * k, 17 * k, 4.5 * k, 0, 0, 7); cx.fill();
+    for (const [dx, s] of [[-8, 0.7], [-1, 1], [7, 0.85], [13, 0.55]]) {
+      cx.fillStyle = shade(art.tint, dx < 0 ? 1.18 : 0.84);
+      cx.beginPath();
+      cx.moveTo(x + dx * k - 6 * k * s, y);
+      cx.quadraticCurveTo(x + dx * k - 5 * k * s, y - 18 * k * s,
+                          x + dx * k + 5 * k * s, y);
+      cx.closePath(); cx.fill();
+    }
+  },
+  shipyard(x, y, k, art) {
+    cx.fillStyle = "rgba(60,130,160,.66)";
+    cx.beginPath(); cx.ellipse(x, y + 2 * k, 16 * k, 4.5 * k, 0, 0, 7); cx.fill();
+    for (const dx of [-12, 12]) {
+      wonderBlock(x + dx * k, y, 3 * k, 13 * k, art.tint);
+    }
+    cx.fillStyle = shade(art.tint, 1.15);
+    cx.fillRect(x - 13 * k, y - 16 * k, 26 * k, 3 * k);
+    cx.fillStyle = "#6d5636";
+    cx.beginPath();
+    cx.moveTo(x - 7 * k, y - 1 * k); cx.lineTo(x + 7 * k, y - 1 * k);
+    cx.lineTo(x + 4 * k, y + 3 * k); cx.lineTo(x - 4 * k, y + 3 * k);
+    cx.closePath(); cx.fill();
+    cx.fillStyle = "#efe6cf";
+    tri(x, y - 12 * k, x + 5 * k, y - 2 * k, x - 5 * k, y - 2 * k);
+  },
+  trilithon(x, y, k, art) {
+    for (const dx of [-10, -2, 6]) {
+      cx.fillStyle = shade(art.tint, 1.22);
+      cx.fillRect(x + dx * k, y - 15 * k, 2.6 * k, 15 * k);
+      cx.fillStyle = shade(art.tint, 0.72);
+      cx.fillRect(x + dx * k + 2.6 * k, y - 15 * k, 2.6 * k, 15 * k);
+    }
+    cx.fillStyle = shade(art.tint, 1.05);
+    cx.fillRect(x - 11 * k, y - 18.5 * k, 23 * k, 3.5 * k);
+  },
+};
+
+// Paint the wonder standing in this city, at whatever scale the hex gives it.
+// Returns false for an id the roster does not name, which keeps the generic
+// monument as a fallback rather than leaving the tile blank.
+function drawWorldWonderPainted(wonder, x, y) {
+  const art = WORLD_WONDER_ART[wonder];
+  const painter = art && BUILT_WONDER_PAINTER[art.form];
+  if (!painter) return false;
+  const k = (S / 31) * (MODE.painted ? 1 : 0.72);
+  cx.save();
+  cx.lineJoin = "round";
+  // The glow is the "a wonder is here" cue the compact monument carried, and
+  // it has to survive the silhouette changing per wonder.
+  const glow = cx.createRadialGradient(x, y - 3, 1, x, y - 3, 23);
+  glow.addColorStop(0, "rgba(255,222,120,.4)");
+  glow.addColorStop(1, "rgba(255,222,120,0)");
+  cx.fillStyle = glow;
+  cx.beginPath(); cx.arc(x, y - 3, 23, 0, 7); cx.fill();
+  cx.fillStyle = "rgba(0,0,0,.3)";
+  cx.beginPath(); cx.ellipse(x, y + 7 * k, 12 * k, 4 * k, 0, 0, 7); cx.fill();
+  painter(x, y + 6 * k, k, art);
   cx.restore();
   return true;
 }
@@ -17106,23 +18227,58 @@ function draw() {
   strokeRivers("#429bca", 4.6, 0.98);
   strokeRivers("#c3eff8", 1.15, 0.58);
   cx.globalAlpha = 1; cx.lineCap = "butt"; cx.lineJoin = "miter";
+  // The figures this frame will actually put on the board. Settled before the
+  // decorations so a massif can know whether anything is standing behind it;
+  // the units pass draws exactly this list, so the two can never disagree.
+  const drawnUnits = cinematicSurveyUnits(mapLens === "empire" ? [] : state.units);
   // --- decorations
+  // A cinematic massif is a solid object, and until now it was not: every
+  // figure on the map was painted in a later pass and therefore appeared
+  // *through* the mountain standing in front of it. Mountains with somebody
+  // behind them are held back here and drawn during the units pass at their
+  // real place in the depth order, which is what makes the range block the
+  // view. Only those few tiles wait, so nothing else changes layer.
+  const heldMassifs = [];
+  const massifHeld = new Set();
+  if (beau && MODE.relief && VIEW === "cinematic" && globalThis.Cinematic3D) {
+    const figures = drawnUnits.map(u => hexXY(u.pos[0], u.pos[1]));
+    for (const t of tiles) {
+      if (t.terrain !== "mountain" || NATURAL_WONDER_CELL[t.feature]) continue;
+      // A held massif is drawn after the fog wash, so only ever hold one the
+      // player can currently see. A tile with a figure beside it is visible in
+      // every case that matters, so this costs nothing real.
+      if (!visSet.has(key(t.pos))) continue;
+      const [mx, my] = hexXY(t.pos[0], t.pos[1]);
+      // The band is the massif's own silhouette in world-plane pixels: it
+      // stands about 50 above its base and 14 below it, and a figure rises 40
+      // off ground that sits 16 lower, so anything further back than ~80 is
+      // already above the skyline and nothing in front is ever hidden.
+      if (figures.some(([ux, uy]) => Math.abs(ux - mx) < 58 &&
+                       uy < my - 0.5 && uy > my - 82))
+        massifHeld.add(key(t.pos));
+    }
+  }
   cx.textAlign = "center"; cx.textBaseline = "middle";
   for (const t of tiles) {
     const [x, yy] = hexXY(t.pos[0], t.pos[1]);
     const y = yy - elev(t);
     const k = key(t.pos);
-    if (NATURAL_WONDER_CELL[t.feature]) {
+    if (isNaturalWonder(t.feature)) {
       const placement = naturalWonderPlacements.get(k);
       if (placement) {
-        if (beau) {
-          const span = Math.max(1, Math.sqrt(placement.footprint.length) * .92);
-          if (!drawEnvironment3D(placement.feature, placement.tile,
-                                 placement.x, placement.y, span)) {
-            drawNaturalWonderSprite(placement.feature, placement.tile,
-                                    placement.x, placement.y, placement.footprint);
-          }
-        } else {
+        // Cinematic asks for the model, balanced for the photograph, and both
+        // fall through to the painted shape. Strategic goes straight to it,
+        // which is where its gold ring lives. The generic star is the last
+        // resort, for a wonder a later ruleset adds before the art does.
+        const span = Math.max(1, Math.sqrt(placement.footprint.length) * .92);
+        const drawn = (beau && drawEnvironment3D(placement.feature, placement.tile,
+                                                 placement.x, placement.y, span))
+          || (beau && drawNaturalWonderSprite(placement.feature, placement.tile,
+                                              placement.x, placement.y,
+                                              placement.footprint))
+          || paintNaturalWonder(placement.feature, placement.x, placement.y,
+                                placement.footprint);
+        if (!drawn) {
           cx.fillStyle = "#f0ce62";
           cx.beginPath(); cx.arc(placement.x, placement.y, 10, 0, Math.PI * 2); cx.fill();
           cx.fillStyle = "#382b08"; cx.font = "bold 13px serif";
@@ -17145,7 +18301,8 @@ function draw() {
     }
     if (t.terrain === "mountain") {
       if (beau) {
-        if (!drawEnvironment3D("mountain", t, x, y) && !drawMountainSprite(t, x, y))
+        if (massifHeld.has(k)) heldMassifs.push({t, x, y, row:yy});
+        else if (!drawEnvironment3D("mountain", t, x, y) && !drawMountainSprite(t, x, y))
           drawMountainRange(t, x, y);
       } else {
         cx.fillStyle = "#6f747c";
@@ -17172,20 +18329,17 @@ function draw() {
       // Two fifths as tall as they were, and the same width: relief the tile
       // wears rather than domes standing on it.
       for (const [hx, hy, hw2, hh2] of [
-        [-8, 2, 12, 3], [7, -5, 11, 2.7], [1, 5, 13.5, 3.3]]) {
-        cx.fillStyle = "rgba(22,15,6,.28)";               // cast shadow
-        cx.beginPath(); cx.ellipse(x + hx, y + hy + 2.6, hw2, hh2, 0, Math.PI, 0);
-        cx.fill();
-        cx.fillStyle = "rgba(255,246,216,.15)";           // lit flank
-        cx.beginPath(); cx.ellipse(x + hx, y + hy, hw2, hh2, 0, Math.PI, 0);
-        cx.fill();
-        cx.fillStyle = "rgba(255,250,230,.22)";           // crest catches the sun
-        cx.beginPath(); cx.ellipse(x + hx - 2 * LITF, y + hy - 1,
-                                   hw2 * 0.55, hh2 * 0.5, 0, Math.PI, 0);
-        cx.fill();
-        cx.strokeStyle = "rgba(0,0,0,.32)"; cx.lineWidth = 1.3;  // crest line
-        cx.beginPath(); cx.ellipse(x + hx, y + hy, hw2, hh2, 0, Math.PI, 0);
-        cx.stroke();
+        [-8, 2, 12, 3], [7, -5, 11, 2.7], [1, 5, 13.5, 3.3]])
+        drawHillSwell(x + hx, y + hy, hw2, hh2);
+      // Hill country rolls across its tiles. A swell standing on every seam
+      // this tile owns carries the ground into the next hex instead of letting
+      // it drop flat at the boundary and rise again on the other side.
+      for (const [worldDX, worldDY, edgeSeed, owns] of terrainRidge(t, isHillTile)) {
+        if (!owns) continue;
+        const eh = hash2(edgeSeed & 1023, (edgeSeed >>> 13) & 1023);
+        drawHillSwell(x + (COSR * worldDX - SINR * worldDY) / 2,
+                      y + (SINR * worldDX + COSR * worldDY) * YS / 2,
+                      11 + eh * 3, 2.6 + eh * 0.8);
       }
     } else if (t.hills && !beau) {
       // Centred, and low: two half-circles stood up like croquet hoops and
@@ -17303,7 +18457,8 @@ function draw() {
       else drawResourceBadge(t, x, y);
     }
     if (t.district) drawDistrict(t, x, y);
-    if (t.wonder && !drawWorldWonderSprite(t.wonder, x, y)) drawWonder(x, y);
+    if (t.wonder && !drawWorldWonderSprite(t.wonder, x, y)
+        && !drawWorldWonderPainted(t.wonder, x, y)) drawWonder(x, y);
     if (SHOW_YIELDS && !t.district && !t.wonder) drawTileYields(t, x, y, workedSet.has(k));
   }
   // Lens passes replace or grade the finished ground while leaving the map's
@@ -17717,11 +18872,25 @@ function draw() {
   for (let i = anim.battles.length - 1; i >= 0; i--)
     if (now0 >= anim.battles[i].endsAt) anim.battles.splice(i, 1);
   const cinemaSurvey = cinemaActive() && cam.scale < 1.08;
-  const sorted = [...cinematicSurveyUnits(mapLens === "empire" ? [] : state.units)].sort((a, b) =>
+  const sorted = [...drawnUnits].sort((a, b) =>
     (hexXY(a.pos[0], a.pos[1])[1] - hexXY(b.pos[0], b.pos[1])[1]) ||
     (CIVILIAN_UNITS.has(a.type) ? -1 : 1));
+  // The massifs held back by the decorations pass, released as the figures
+  // reach them: everything standing further back is already on the board, so
+  // the mountain paints over exactly what it should be hiding and over nothing
+  // that is nearer the camera. Each is still drawn exactly once — held, not
+  // repeated — so no outline is laid down twice and no shadow doubles.
+  let nextMassif = 0;
+  const releaseMassifs = untilRow => {
+    while (nextMassif < heldMassifs.length &&
+           heldMassifs[nextMassif].row <= untilRow) {
+      const m = heldMassifs[nextMassif++];
+      drawEnvironment3D("mountain", m.t, m.x, m.y);
+    }
+  };
   const now = performance.now();
   for (const u of sorted) {
+    releaseMassifs(hexXY(u.pos[0], u.pos[1])[1]);
     let [x, y] = worldXY(u.pos);
     let moving = false;
     let moveSample = null, trailPoints = null;
@@ -17906,6 +19075,8 @@ function draw() {
       cx.setLineDash([]);
     }
   }
+  // Whatever the figures never reached: a massif is never simply dropped.
+  releaseMassifs(Infinity);
   // The deposits the figures were standing on. Held back above so a badge is
   // not a third hidden behind the unit occupying its tile; drawn here, in the
   // same seat and at the same weight, only after the figures are down.
@@ -18941,9 +20112,12 @@ function hudTurnPlate() {
   const speedName = titleCase(state.game_speed || "standard");
   const paceOption = document.getElementById("specspeed")?.selectedOptions[0];
   const watchPace = SPEC ? paceOption?.textContent.trim() || "Blitz" : "Manual";
-  const currentView = VIEW === "balanced" ? "Painted" : titleCase(VIEW);
-  const civCount = state.players.filter(p => !p.is_minor && !p.is_barbarian).length;
-  const cityStateCount = state.players.filter(p => p.is_minor && !p.is_barbarian).length;
+  // "Remaining" is a count of who is still playing, so a civilization that has
+  // been wiped off the map no longer appears in it.
+  const civCount = state.players
+    .filter(p => p.alive && !p.is_minor && !p.is_barbarian).length;
+  const cityStateCount = state.players
+    .filter(p => p.alive && p.is_minor && !p.is_barbarian).length;
   // The world's shape and its poles are only worth a word when they are not
   // the ones a world arrives with by default.
   const shapeNote = planetMap() ? " · Planet" : "";
@@ -18972,22 +20146,20 @@ function hudTurnPlate() {
     : "";
   const context = identityContext + (playOnLabel ? ` · ${playOnLabel}` : "");
   const plateLabel = `${context}; ${ageLabel}; turn ${state.turn} of ${turnCapLabel()}; ` +
-    `${civCount} civilizations; ${cityStateCount} city states; game speed ${speedName}; ` +
-    `current view ${currentView}; watch pace ${watchPace}`;
+    `game speed ${speedName}; ${civCount} civilizations remaining; ` +
+    `${cityStateCount} city states remaining; watch pace ${watchPace}`;
   return `<section class="victory-turn" title="${escapeAttr(context)}" aria-label="${escapeAttr(plateLabel)}">` +
     `<span class="turn-era">${ageLabel}</span>` +
     `<div class="turn-count"><div class="turn-heading"><span class="turn-label">Turn</span>` +
     (decided ? `<small class="turn-playon">Playing on</small>` : ``) +
     `</div><div class="turn-progress"><strong>${state.turn}</strong>` +
     `<small class="turn-total">/ ${turnCapLabel()}</small></div></div>` +
-    `<div class="turn-settings" aria-label="Game and display settings">` +
-    `<div class="turn-setting"><span>Civs: <b>${civCount}</b></span>` +
-    `<span>City states: <b>${cityStateCount}</b></span></div>` +
+    `<div class="turn-settings" aria-label="Game settings">` +
     `<div class="turn-setting"><span>Game speed:</span><b>${speedName}</b></div>` +
-    `<div class="turn-settings-secondary">` +
-    `<div class="turn-setting"><span>Current view:</span><b>${currentView}</b></div>` +
+    `<div class="turn-setting"><span>Civs remaining:</span><b>${civCount}</b></div>` +
+    `<div class="turn-setting"><span>City states remaining:</span><b>${cityStateCount}</b></div>` +
     `<div class="turn-setting"><span>Watch pace:</span><b>${watchPace}</b></div>` +
-    `</div></div></section>`;
+    `</div></section>`;
 }
 
 function playerHudOverview() {
@@ -19267,13 +20439,20 @@ function drawPlayerHud() {
       // says which agenda is doing the judging.
       const opinion = +p.opinion_of_me || 0;
       const stance = opinion >= 15 ? "approves" : opinion <= -15 ? "disapproves" : "";
-      const agendaGlyph = p.id === acting && !SPEC ? ""
-        : stance === "approves" ? `<span class="agenda-mark up" title="Approves of you">▲</span>`
-        : stance === "disapproves" ? `<span class="agenda-mark down" title="Disapproves of you">▼</span>`
-        : "";
+      // Nobody reports how they feel about themselves, so the seat you are
+      // playing wears no mark of its own.
+      const shownStance = p.id === acting && !SPEC ? "" : stance;
+      // The glyph rides in the CIV cell ahead of the rank, and the empty span
+      // holds that gutter open on the rows that have nothing to say — without
+      // it every marked row would push its own `#3` a glyph's width right.
+      const agendaGlyph =
+        shownStance === "approves" ? `<span class="agenda-mark up" title="Approves of you">▲</span>`
+        : shownStance === "disapproves" ? `<span class="agenda-mark down" title="Disapproves of you">▼</span>`
+        : `<span class="agenda-mark" aria-hidden="true"></span>`;
       const agendaText = p.agenda
         ? ` · ${p.agenda.name}${stance ? ` (${stance} of you)` : ""}: ${p.agenda.description}`
         : "";
+      const civTitle = `${empireTitle}${shownStance ? ` · ${leader} ${shownStance} of you` : ""}`;
       const activeStrategy = strategy
         ? `<span class="ai-plan ${strategy}">${titleCase(strategy)}</span>`
         : `<span class="ai-plan">No active strategy</span>`;
@@ -19285,26 +20464,42 @@ function drawPlayerHud() {
       // so the row says who you are and what you are defending.
       const playerName = p.player_username || p.ai_username || p.ai_name || "AI player";
       const playedGames = +p.player_games || 0;
-      // A new player has no record to show yet, and 1500 is the number every
-      // unrated player would wear. Say unrated until they have finished one.
-      const playerEloLabel = p.player_username
-        ? (playedGames ? `${p.player_elo} ELO` : "Unrated")
-        : Number.isFinite(+p.ai_elo) ? `${p.ai_elo} ELO` : "Unrated";
+      // Everybody has a rating. Somebody who has finished nothing holds the
+      // 1500 every player starts from, and their first result moves it — so
+      // the column carries that number, dimmed, rather than a dash that read
+      // as "this seat cannot be rated at all". The seat is the source of its
+      // own figure: a person's is their registration, an agent's is the
+      // league row playing it.
+      const isPerson = Boolean(p.player_username);
+      const eloValue = +(isPerson ? p.player_elo : p.ai_elo);
+      const eloRd = +(isPerson ? p.player_elo_rd : p.ai_elo_rd);
+      const eloCiv = isPerson ? p.player_elo_civ : p.ai_elo_civ;
+      const eloKnown = Number.isFinite(eloValue);
+      const eloProvisional = isPerson
+        ? Boolean(p.player_elo_provisional) : Boolean(p.ai_elo_provisional);
+      const provisionalNote = "provisional — the starting rating, unmoved until a first rated result";
+      const playerEloLabel = eloKnown
+        ? `${eloValue} ELO${eloProvisional ? ` (${provisionalNote})` : ""}`
+        : "Unrated";
       // The column heading already supplies the unit, so keep its cells to the
-      // rating itself. This makes a four-digit ELO fit without truncation.
-      const playerElo = p.player_username
-        ? (playedGames ? `${p.player_elo}` : "—")
-        : Number.isFinite(+p.ai_elo) ? `${p.ai_elo}` : "—";
+      // rating itself. This makes a four-digit ELO fit without truncation, so
+      // a provisional one is marked by its class rather than by a character
+      // that would push the value over the column's width.
+      const playerElo = eloKnown ? `${eloValue}` : "—";
       const humanTitle = `You · new league player ${p.player_username}` +
         ` · ${playedGames ? `${p.player_elo} ±${p.player_elo_rd} over ${playedGames} rated ` +
-          `${playedGames === 1 ? "game" : "games"}` : "unrated until this game is decided"}` +
+          `${playedGames === 1 ? "game" : "games"}`
+          : `${p.player_elo} ±${p.player_elo_rd} to start, ${provisionalNote}`}` +
         `${p.player_rated ? "" : " · this game is not being rated"}`;
-      const leagueTitle = p.player_username ? humanTitle
+      const leagueTitle = isPerson ? humanTitle
         : p.ai_username
         ? `League player ${p.ai_username} (${p.ai_strat_label || "unrated"})` +
-          ` · ${p.ai_elo_civ ? `${p.civ}-specific` : "overall"} ELO ${p.ai_elo} ±${p.ai_elo_rd}` +
+          ` · ${eloCiv ? `${p.civ}-specific` : "overall"} ELO ${p.ai_elo} ±${p.ai_elo_rd}` +
+          `${eloProvisional ? ` (${provisionalNote})` : ""}` +
           `${expectPct === null ? "" : ` · expected win chance vs this table ${expectPct}%`}`
-        : `Unrated ${p.ai_name || "AI player"} · ${strategy ? `${titleCase(strategy)} active strategy` : "no active strategy"}`;
+        : `${p.ai_name || "AI player"} · ${eloKnown
+            ? `${eloProvisional ? "provisional " : ""}ELO ${eloValue} ±${eloRd}` : "unrated"}` +
+          ` · ${strategy ? `${titleCase(strategy)} active strategy` : "no active strategy"}`;
       const relationClass = alliance ? "allied" : p.friend ? "friend" : "";
       const stateClass = `${relationClass} ${p.at_war_with_me ? "at-war" : ""} ${p.alive ? "" : "dead"}`;
       const stats = statsByPlayer.get(p.id);
@@ -19324,14 +20519,18 @@ function drawPlayerHud() {
         `<button class="lock-toggle" data-hud-action="lock" data-hud-civ="${p.id}" aria-pressed="${locked}" ` +
         `title="${lockTitle}" aria-label="${lockTitle}">${locked ? "◉" : "○"}</button>` +
         `<span class="diplomacy-identity-grid">` +
+        // A civilization with no capital leaves this button disabled, and a
+        // disabled control answers no hover — so the cell that now carries the
+        // agenda mark says the stance in words too, rather than resting on a
+        // tooltip that half the rows cannot show.
         `<button class="diplomacy-identity diplomacy-civ-link" data-hud-action="capital" data-hud-civ="${p.id}" ` +
-        `title="${escapeAttr(empireTitle)}" aria-label="${escapeAttr(empireTitle)}"${capital ? "" : " disabled"}>` +
-        `<span class="diplomacy-identity-field"><span class="diplomacy-rank">#${rank}</span>` +
+        `title="${escapeAttr(civTitle)}" aria-label="${escapeAttr(civTitle)}"${capital ? "" : " disabled"}>` +
+        `<span class="diplomacy-identity-field">${agendaGlyph}<span class="diplomacy-rank">#${rank}</span>` +
         `<span class="diplomacy-civ">${p.id === acting && highlightActing ? "◉ " : ""}${p.civ}</span></span></button>` +
         `<button class="diplomacy-identity diplomacy-leader-link" data-hud-action="dossier" data-hud-civ="${p.id}" aria-expanded="${expanded}" ` +
         `title="${expanded ? "Close" : "Open"} the ${p.civ} dossier · ${relationSummary}${agendaText}" ` +
         `aria-label="${expanded ? "Close" : "Open"} dossier for ${p.civ}, rank ${rank}, ${relationSummary}">` +
-        `<span class="diplomacy-identity-field"><span class="diplomacy-leader-name">${leader}</span>${agendaGlyph}</span>` +
+        `<span class="diplomacy-identity-field"><span class="diplomacy-leader-name">${leader}</span></span>` +
         `</button>` +
         `<button class="watch-as-link" data-hud-action="watch" data-hud-civ="${p.id}" ` +
         `title="${escapeAttr(watchTitle)}" aria-label="Watch as ${escapeAttr(p.civ)}">Watch as</button>` +
@@ -19340,7 +20539,7 @@ function drawPlayerHud() {
         `aria-label="${expanded ? "Close" : "Open"} dossier for ${p.civ}, rank ${rank}, ${relationSummary}">` +
         `<span class="diplomacy-identity-field" title="${leagueTitle}"><span class="diplomacy-player">${playerName}</span></span>` +
         `<span class="diplomacy-identity-field diplomacy-elo" title="${playerEloLabel} · ${leagueTitle}">` +
-        `<span class="diplomacy-elo-value">${playerElo}</span></span>` +
+        `<span class="diplomacy-elo-value${eloProvisional ? " provisional" : ""}">${playerElo}</span></span>` +
         // The per-cent sign lives in the WIN% column head, not in eight or
         // twelve repetitions of the value. It cost about seven pixels a row, and
         // because the value ellipsizes rather than shrinks, going one pixel over
@@ -19601,29 +20800,44 @@ function civDossier(p, rank, relation) {
   // Rated-league identity: strategy handle and the elo it defends here. A
   // seat a person plays carries their own registration instead — a new player
   // every game, never one of the agents already on the leaderboard.
-  const leagueRows = p.player_username
+  //
+  // Every seat gets an Elo row. One with no finished game behind it says so
+  // and still shows the number: 1500 is where a player stands before their
+  // first result, not the absence of a standing.
+  const isPerson = Boolean(p.player_username);
+  const dossierElo = +(isPerson ? p.player_elo : p.ai_elo);
+  const dossierEloRd = +(isPerson ? p.player_elo_rd : p.ai_elo_rd);
+  const dossierEloCiv = isPerson ? p.player_elo_civ : p.ai_elo_civ;
+  const dossierProvisional = isPerson
+    ? Boolean(p.player_elo_provisional) : Boolean(p.ai_elo_provisional);
+  const dossierEloValue = Number.isFinite(dossierElo)
+    ? `${dossierElo} ±${dossierEloRd} · ` +
+      `${dossierProvisional ? "provisional" : dossierEloCiv ? `${p.civ} table` : "overall"}`
+    : "Unrated";
+  const dossierEloWhy = dossierProvisional
+    ? "The rating every player starts from. It has not moved yet: the first rated result takes it up or down"
+    : dossierEloCiv
+    ? `This player's rating specifically when playing ${p.civ}; each civ keeps its own table`
+    : `Overall league rating — not enough rated ${p.civ} games yet for a civ-specific number`;
+  const eloRow = row("Elo", dossierEloValue, dossierEloWhy);
+  const expectedRow = Number.isFinite(+p.ai_expected)
+    ? row("Expected wins", `${Math.round(p.ai_expected * 100)}% vs this table`,
+        "Elo-implied mean win probability against the other majors — compare with actual results over time")
+    : "";
+  const leagueRows = isPerson
     ? row("League player", `${p.player_username} (you)`,
         p.player_rated
           ? "Registered in the rated roster when this game began — the result is filed under this name"
           : "Registered for this game only: nothing is being rated, so the handle goes no further") +
-      row("Elo", +p.player_games
-        ? `${p.player_elo} ±${p.player_elo_rd} · ${p.player_elo_civ ? `${p.civ} table` : "overall"}`
-        : "Unrated · no finished games",
-        "A new player is provisional until they finish a rated game")
+      eloRow
     : p.ai_username
     ? row("League player", `${p.ai_username} (${p.ai_strat_label || "unrated"})`,
         "Which league strategy is playing this civilization") +
-      row("Elo", `${p.ai_elo} ±${p.ai_elo_rd} · ${p.ai_elo_civ ? `${p.civ} table` : "overall"}`,
-        p.ai_elo_civ
-          ? `This strategy's rating specifically when playing ${p.civ}; each civ keeps its own table`
-          : `Overall league rating — not enough rated ${p.civ} games yet for a civ-specific number`) +
-      (Number.isFinite(+p.ai_expected)
-        ? row("Expected wins", `${Math.round(p.ai_expected * 100)}% vs this table`,
-            "Elo-implied mean win probability against the other rated majors — compare with actual results over time")
-        : "")
+      eloRow + expectedRow
     : p.ai_name
     ? row("AI player", p.ai_name,
-        strategy ? `Generated from this AI's ${titleCase(strategy)} strategy` : "Generated for this AI seat")
+        strategy ? `Generated from this AI's ${titleCase(strategy)} strategy` : "Generated for this AI seat") +
+      eloRow + expectedRow
     : "";
   const strategyBody = leagueRows + (plan
     ? row("Doctrine", `<span class="ai-plan ${plan.strategy}">${titleCase(plan.strategy)}</span>`,
@@ -21050,14 +22264,70 @@ function warPartyIsCityState(party) {
   return player ? Boolean(player.is_minor && !player.is_barbarian) :
     (party.suzerain !== null && party.suzerain !== undefined);
 }
+// Every stretch a belligerent spent in this war. The observation now merges a
+// participant's fronts and re-entries into one entry carrying its intervals;
+// an older payload has one row per interval and no list, so read that row's own
+// turns rather than showing nothing.
+function warPartyIntervals(party) {
+  const raw = Array.isArray(party.intervals) && party.intervals.length
+    ? party.intervals : [{entered: party.entered, exited: party.exited}];
+  return raw.map(interval => ({
+    entered: Number(interval.entered),
+    exited: interval.exited === null || interval.exited === undefined
+      ? null : Number(interval.exited),
+  })).filter(interval => Number.isFinite(interval.entered))
+    .sort((a, b) => a.entered - b.entered);
+}
+// One entity, one line of history. A city-state that leaves a war and is
+// dragged back into it by a new Suzerain used to occupy a fresh section of the
+// belligerent column each time, so the same name could appear three times with
+// no way to read the sequence off the panel.
 function warParticipationNote(party, war) {
+  const ended = war.ended === null || war.ended === undefined ? null : war.ended;
   const notes = [];
-  if ((party.entered || 0) > war.started) notes.push(`entered Turn ${party.entered}`);
-  if (party.exited !== null && party.exited !== undefined &&
-      (war.ended === null || war.ended === undefined || party.exited < war.ended)) {
-    notes.push(`peaced out Turn ${party.exited}`);
-  }
+  warPartyIntervals(party).forEach((interval, index) => {
+    // The column is narrow and a belligerent dragged in three times spends five
+    // clauses in it, so "Turn" is named once and the rest are bare numbers on
+    // the same scale.
+    const turn = notes.length ? "" : "Turn ";
+    if (index === 0) {
+      if (interval.entered > war.started) notes.push(`entered ${turn}${interval.entered}`);
+    } else {
+      notes.push(`re-entered ${turn}${interval.entered}`);
+    }
+    // The last turn of the war is the war ending, not this party leaving it.
+    if (interval.exited !== null && (ended === null || interval.exited < ended)) {
+      notes.push(`peaced out ${notes.length ? "" : "Turn "}${interval.exited}`);
+    }
+  });
   return notes.join(" · ");
+}
+// Fold whatever the observation sent into one entry per civilization. The
+// engine already does this, but a page talking to an older binary — or reading
+// a payload built before the merge existed — must still never give one
+// civilization two sections of the same side, and the loss ledger must not
+// count a toll once per interval that civilization fought.
+function warMergeParties(parties) {
+  const merged = new Map();
+  for (const party of parties) {
+    const known = merged.get(party.player);
+    if (!known) {
+      merged.set(party.player, {...party, intervals: warPartyIntervals(party)});
+      continue;
+    }
+    known.intervals = [...known.intervals, ...warPartyIntervals(party)]
+      .sort((a, b) => a.entered - b.entered);
+    known.entered = known.intervals[0].entered;
+    known.exited = known.intervals[known.intervals.length - 1].exited;
+    known.suzerain = known.suzerain ?? party.suzerain;
+    known.strength_peak = Math.max(Number(known.strength_peak ?? known.strength ?? 0),
+      Number(party.strength_peak ?? party.strength ?? 0));
+    // Per-unit effort is only deduplicable where the unit ids are, which is in
+    // the engine. Adding the intervals up is the honest reading of an older
+    // payload that has already thrown those ids away.
+    known.strength_saw_action = warSawAction(known) + warSawAction(party);
+  }
+  return [...merged.values()];
 }
 function warParties(war, declarerSide) {
   let parties = (war.parties || []).filter(p => Boolean(p.declarer_side) === declarerSide);
@@ -21065,8 +22335,9 @@ function warParties(war, declarerSide) {
     const player = declarerSide ? war.aggressor : war.defender;
     parties = [{player, declarer_side: declarerSide, suzerain: null,
       entered: war.started, exited: war.ended, strength: 0,
-      unit_kinds: {}, city_names: [], units_lost: 0, cities_lost: 0}];
+      unit_kinds: {}, city_names: [], city_losses: [], units_lost: 0, cities_lost: 0}];
   }
+  parties = warMergeParties(parties);
   const majors = parties.filter(p => p.suzerain === null || p.suzerain === undefined)
     .sort((a, b) => a.entered - b.entered || a.player - b.player);
   const ordered = [];
@@ -21079,6 +22350,32 @@ function warParties(war, declarerSide) {
     !majors.some(major => major.player === p.suzerain))
     .sort((a, b) => a.entered - b.entered || a.player - b.player));
   return ordered;
+}
+// The cities this belligerent lost, ranked most significant first: its own
+// capital, then by the population that changed hands. Neither fact survives the
+// event — a razed city has no population left to read and a captured one keeps
+// growing under its new owner — so both are recorded as the city falls. Whether
+// it was kept or razed is not in the loss ledger at all: razing is a separate
+// decision the conqueror makes afterwards, and the chronology is what records
+// it.
+function warCityLosses(party, war) {
+  const highlights = war.highlights || [];
+  const razed = new Set(highlights.filter(moment => moment.kind === "city_razed" &&
+    moment.subject === party.player && moment.city).map(moment => moment.city));
+  const detailed = Array.isArray(party.city_losses) ? party.city_losses : [];
+  const losses = detailed.length
+    ? detailed.map(loss => ({name: String(loss.name ?? ""), pop: Number(loss.pop) || 0,
+        capital: Boolean(loss.capital), turn: Number(loss.turn) || 0}))
+    // An older observation names the cities without ranking them. The capital
+    // is still knowable from the chronology; the population is not.
+    : (party.city_names || []).map(name => ({
+        name: String(name), pop: 0, turn: 0,
+        capital: highlights.some(moment => moment.kind === "capital_captured" &&
+          moment.subject === party.player && moment.city === name),
+      }));
+  return losses.map(loss => ({...loss, razed: razed.has(loss.name)}))
+    .sort((a, b) => Number(b.capital) - Number(a.capital) || b.pop - a.pop ||
+      a.turn - b.turn || a.name.localeCompare(b.name));
 }
 // The loss ledger follows the land-unit order used by the production tree.
 // Classes outside the requested core sequence come afterwards so an air or
@@ -21153,7 +22450,7 @@ function compareWarLossUnits(firstKind, secondKind) {
 
 function warLossSide(war, declarerSide) {
   const parties = warParties(war, declarerSide);
-  const units = new Map(), cities = [];
+  const units = new Map();
   for (const party of parties) {
     let itemized = 0;
     for (const [kind, rawCount] of Object.entries(party.unit_kinds || {})) {
@@ -21175,9 +22472,8 @@ function warLossSide(war, declarerSide) {
       loss.total += unitemized;
       loss.owners.push([party.player, unitemized]);
     }
-    for (const city of party.city_names || []) cities.push([party.player, city]);
   }
-  return {parties, units, cities};
+  return {parties, units};
 }
 
 function warLossUnitCell(loss, info) {
@@ -21186,43 +22482,49 @@ function warLossUnitCell(loss, info) {
   const uniqueTitle = info.unique
     ? `${info.rule.unique_to} unique unit${info.rule.replaces ? ` · replaces ${titleCase(info.rule.replaces)}` : ""}`
     : "";
-  const title = [owners, uniqueTitle].filter(Boolean).join(" · ");
-  return `<div class="war-loss-unit-cell${info.unique ? " specialty" : ""}" title="${title}">` +
+  // The class is what the ledger is ordered by, so it stays reachable on the
+  // row it orders rather than as a banner every reader has to step over.
+  const category = WAR_LOSS_CATEGORIES.find(([kind]) => kind === info.category)?.[1] || "";
+  const title = [owners, category, uniqueTitle].filter(Boolean).join(" · ");
+  return `<div class="war-loss-unit-cell${info.unique ? " specialty" : ""}" title="${escapeAttr(title)}">` +
     `${info.unique ? `<span class="war-loss-specialty-mark" aria-label="Unique unit">★</span>` : ""}` +
     `<span>${loss.total} x ${titleCase(info.kind)}</span></div>`;
 }
 
-function warLossSideHead(side) {
-  const parties = side.parties.map(party =>
-    warEntityLink(party.player, warPartyIsCityState(party) ? " ⌂" : "")
-  ).join("");
-  const groupedCities = new Map();
-  for (const [, city] of side.cities) groupedCities.set(city, (groupedCities.get(city) || 0) + 1);
-  const cities = [...groupedCities].map(([city, count]) => `${count} x ${city}`).join(", ");
-  return `<div class="war-loss-side-head">${parties}` +
-    `${cities ? `<span class="war-loss-cities">Cities: ${cities}</span>` : ""}</div>`;
+// Cities go under the civilization or city-state that lost them, not in one
+// pooled line for the side: a coalition of four loses cities to four different
+// accounts, and only the owner's own column can say whose capital fell.
+function warLossSideHead(side, war) {
+  const parties = side.parties.map(party => {
+    const minor = warPartyIsCityState(party);
+    const cities = warCityLosses(party, war).map(loss =>
+      `<li class="war-loss-city${loss.capital ? " capital" : ""}">` +
+      `<span class="war-loss-city-name"${loss.capital ? ` title="Capital"` : ""}>` +
+      `${escapeAttr(loss.name)}</span> ` +
+      `<em>(${loss.razed ? "razed" : "conquered"})</em></li>`).join("");
+    return `<div class="war-loss-party">` +
+      warEntityLink(party.player, minor ? " ⌂" : "") +
+      `${cities ? `<ul class="war-loss-cities">${cities}</ul>` : ""}</div>`;
+  }).join("");
+  return `<div class="war-loss-side-head">${parties}</div>`;
 }
 
 function warLossLedger(war) {
   const sides = [warLossSide(war, true), warLossSide(war, false)];
   const kinds = [...new Set(sides.flatMap(side => [...side.units.keys()]))].sort(compareWarLossUnits);
-  let rows = "", lastCategory = null;
+  let rows = "";
   for (const kind of kinds) {
     const info = warLossUnitInfo(kind);
-    if (info.category !== lastCategory) {
-      const label = WAR_LOSS_CATEGORIES.find(([category]) => category === info.category)?.[1] || "Other";
-      rows += `<div class="war-loss-category">${label}</div>`;
-      lastCategory = info.category;
-    }
     rows += `<div class="war-loss-unit-row" data-loss-unit="${kind}">` +
       warLossUnitCell(sides[0].units.get(kind), info) +
       warLossUnitCell(sides[1].units.get(kind), info) + `</div>`;
   }
-  const hasCities = sides.some(side => side.cities.length);
+  const hasCities = sides.some(side =>
+    side.parties.some(party => warCityLosses(party, war).length));
   const none = !kinds.length && !hasCities
     ? `<div class="war-loss-none" style="padding:6px 8px;text-align:center">No recorded losses</div>` : "";
   return `<div class="war-loss-ledger"><div class="war-loss-sides">` +
-    warLossSideHead(sides[0]) + warLossSideHead(sides[1]) + `</div>${rows}${none}</div>`;
+    warLossSideHead(sides[0], war) + warLossSideHead(sides[1], war) + `</div>${rows}${none}</div>`;
 }
 
 function warStrengthValue(value) {
@@ -21249,17 +22551,22 @@ function warBelligerentRows(war, declarerSide, role, maxSawAction) {
     const effort = WAR_EFFORT_MAX_PERCENT * share;
     const barTitle = `Units that saw action: ${warStrengthValue(sawAction)} — ` +
       `${Math.round(100 * share)}% of the busiest army in this war, measured out from the centre`;
+    // Somebody opened this war, and that is the first thing a reader wants from
+    // the belligerent column. Every other name on this side joined a war
+    // somebody else started.
+    const opener = party.player === war.aggressor
+      ? ` <span class="war-party-role">(initial aggressor)</span>` : "";
     const values = declarerSide
       ? [[start, "Military strength on entry"], [peak, "Peak unit-only military strength"],
           [sawAction, "Military value of distinct units that saw action"]]
       : [[sawAction, "Military value of distinct units that saw action"],
           [peak, "Peak unit-only military strength"], [start, "Military strength on entry"]];
     return `<div class="war-belligerent${minor ? " city-state" : ""}">` +
+      `<div class="war-party"><span class="war-party-name">` +
+      `${warEntityLink(party.player, minor ? " ⌂" : "")}${opener}</span></div>` +
       `<i class="war-belligerent-bar" title="${escapeAttr(barTitle)}" ` +
       `style="--war-effort:${effort}%;background:${cityBannerColor(party.player)}"></i>` +
-      `<div class="war-party"><span class="war-party-copy"><span class="war-party-name">` +
-      `${warEntityLink(party.player, minor ? " ⌂" : "")}</span>` +
-      `${note ? `<span class="war-party-note">${note}</span>` : ""}</span></div>` +
+      `${note ? `<div class="war-party-note">${note}</div>` : ""}` +
       `<div class="war-strength-values">${values.map(([value, title]) =>
         `<b title="${title}">${warStrengthValue(value)}</b>`).join("")}</div></div>`;
   }).join("");
@@ -21388,6 +22695,67 @@ function focusWarOnMap(warKey) {
   wakeCinema();
 }
 
+// Watching a war is a reading position, not only a camera move. This log
+// re-sorts itself every turn — an ongoing conflict grows another chronology
+// line, a rival war ends and drops out of the ongoing block into the concluded
+// one below — so the card a viewer is deliberately reading slides out from
+// under them. A watched war is therefore held at the exact offset it had inside
+// the list's own viewport, and the scroll is moved by however much the rest of
+// the chronicle shifted above it. The order is never touched: this panel is a
+// chronicle, and a concluded war must not sit among the ongoing ones merely
+// because somebody is watching it. Everything above and below keeps updating.
+let watchedWar = null;
+
+function warCardFor(el, warKey) {
+  for (const card of el.children)
+    if (card.dataset && card.dataset.warKey === warKey) return card;
+  return null;
+}
+
+// Where the held card sits below the top edge of the list's own viewport. This
+// is read before every repaint, which is what makes the hold follow the viewer:
+// wherever they scroll the card to is where it is held next.
+function measureWatchedWar(el) {
+  if (!watchedWar || !el.clientHeight) return;
+  const card = warCardFor(el, watchedWar.key);
+  if (card) watchedWar.offset = card.getBoundingClientRect().top - el.getBoundingClientRect().top;
+}
+
+// Put the held card back on that offset by paying for the shift with the
+// scroll. A list too short to place it there keeps the target rather than
+// adopting the clamped position, so the card returns to its own place as soon
+// as the chronicle grows enough to allow it again.
+function holdWatchedWar(el) {
+  if (!watchedWar || !el.clientHeight) return;
+  const card = warCardFor(el, watchedWar.key);
+  if (!card) return;
+  const within = card.getBoundingClientRect().top - el.getBoundingClientRect().top + el.scrollTop;
+  const reach = Math.max(0, el.scrollHeight - el.clientHeight);
+  const target = Math.max(0, Math.min(reach, within - watchedWar.offset));
+  if (Math.abs(el.scrollTop - target) > 0.5) el.scrollTop = target;
+}
+
+function watchWar(warKey) {
+  const el = document.getElementById("wars");
+  if (!el || !state) return;
+  const key = String(warKey);
+  // Lock it exactly where the viewer clicked it: starting to watch a war must
+  // not itself move the card.
+  const card = warCardFor(el, key);
+  const offset = card
+    ? card.getBoundingClientRect().top - el.getBoundingClientRect().top
+    : (watchedWar ? watchedWar.offset : 0);
+  watchedWar = {key, seed: state.seed, offset};
+  drawWarLog();
+  focusWarOnMap(key);
+}
+
+function releaseWatchedWar() {
+  if (!watchedWar) return;
+  watchedWar = null;
+  if (state) drawWarLog();
+}
+
 function drawWarLog() {
   const el = document.getElementById("wars");
   const scope = document.getElementById("warscope");
@@ -21398,14 +22766,23 @@ function drawWarLog() {
   scope.textContent = ongoing.length
     ? `${ongoing.length} ongoing`
     : (wars.length ? "At peace" : "");
-  const signature = JSON.stringify(wars) + `|${state.turn}`;
+  // Conflict numbering restarts with the world, so a watch cannot outlive the
+  // game it was placed in — it would hold a stranger's card.
+  if (watchedWar && watchedWar.seed !== state.seed) watchedWar = null;
+  const signature = JSON.stringify(wars) + `|${state.turn}|${watchedWar ? watchedWar.key : ""}`;
   if (el.dataset.signature === signature) return;
+  // Read where the held card is sitting right now — including wherever the
+  // viewer has scrolled it to since the last repaint — before the list is
+  // rebuilt underneath it.
+  measureWatchedWar(el);
   el.dataset.signature = signature;
   if (!wars.length) {
     el.innerHTML = `<div class="empty-state">No war has been declared.</div>`;
+    watchedWar = null;
     return;
   }
   el.innerHTML = wars.map(war => {
+    const watched = watchedWar !== null && watchedWar.key === warLogKey(war);
     const over = war.ended !== null && war.ended !== undefined;
     const conquest = war.outcome === "conquest";
     const length = Math.max(0, (over ? war.ended : state.turn) - war.started);
@@ -21424,7 +22801,11 @@ function drawWarLog() {
           ? `${warEntityLink(war.victor)} won by conquest — no peace deal`
           : (war.outcome === "coalition" ? "Emergency coalition ceasefire" : "No recorded peace terms")
         }</b></div>`);
-    const maxSawAction = Math.max(0, ...(war.parties || []).map(warSawAction));
+    // Measured over the belligerents as the panel shows them, so a party whose
+    // several stints were folded into one entry is compared at its combined
+    // effort rather than at the largest single stint's.
+    const maxSawAction = Math.max(0, ...[true, false]
+      .flatMap(side => warParties(war, side)).map(warSawAction));
     // Whether the atom was used is the largest single fact about a war, and it
     // was previously buried in a chronology line a reader had to scroll to.
     const detonations = (war.highlights || [])
@@ -21433,16 +22814,20 @@ function drawWarLog() {
       ? `<span class="war-nuclear-badge" title="Nuclear devices detonated in this war">` +
         `☢ ${detonations} nuclear</span>`
       : "";
-    const mapAction = over ? "View aftermath" : "Watch";
-    const mapActionTitle = over
-      ? "View what became of this war's final battlefield"
-      : "Focus the map on this war's active theater";
+    const mapAction = watched ? "Watching" : (over ? "View aftermath" : "Watch");
+    const mapActionTitle = watched
+      ? "Held in place while the rest of the log moves around it — click to release"
+      : (over
+        ? "View what became of this war's final battlefield, and hold this entry in place"
+        : "Focus the map on this war's active theater, and hold this entry in place");
     return `<div class="war-card${over ? " ended" : ""}${conquest ? " conquest" : ""}` +
-      `${detonations ? " nuclear" : ""}">` +
+      `${detonations ? " nuclear" : ""}${watched ? " watched" : ""}" ` +
+      `data-war-key="${escapeAttr(warLogKey(war))}">` +
       `<div class="war-period"><span>Started<b>Turn ${war.started}</b></span>` +
       `<span>${over ? "Ended" : "Status"}<b>${over ? `Turn ${war.ended}` : `Ongoing · ${length} turn${length === 1 ? "" : "s"}`}</b>${nuclearBadge}</span>` +
-      `<button type="button" class="war-map-action${over ? " aftermath" : ""}" ` +
-      `data-war-key="${escapeAttr(warLogKey(war))}" title="${escapeAttr(mapActionTitle)}" ` +
+      `<button type="button" class="war-map-action${over ? " aftermath" : ""}${watched ? " watching" : ""}" ` +
+      `data-war-key="${escapeAttr(warLogKey(war))}" aria-pressed="${watched ? "true" : "false"}" ` +
+      `title="${escapeAttr(mapActionTitle)}" ` +
       `aria-label="${escapeAttr(mapActionTitle)}">${mapAction}</button></div>` +
       `<div class="war-infobox-row"><div class="war-row-label">Belligerents</div>` +
       `<div class="war-columns">${warBelligerentRows(war, true, "aggressor", maxSawAction)}` +
@@ -21454,11 +22839,21 @@ function drawWarLog() {
       `<div class="war-infobox-row"><div class="war-row-label">Chronology</div>` +
       `<div class="war-moments">${moments || `<span class="war-loss-none">No recorded events</span>`}</div></div></div>`;
   }).join("");
+  // A conflict that has aged off the tail of the log, or a world that ended,
+  // cannot be held: drop the watch rather than keep an offset against a card
+  // that no longer exists.
+  if (watchedWar && !warCardFor(el, watchedWar.key)) watchedWar = null;
+  holdWatchedWar(el);
 }
 
 document.getElementById("wars")?.addEventListener("click", event => {
   const button = event.target.closest(".war-map-action");
-  if (button) focusWarOnMap(button.dataset.warKey);
+  if (!button) return;
+  const key = String(button.dataset.warKey);
+  // The same control releases the hold, so watching is never a trap: a viewer
+  // who wants the log to flow again presses the button that stopped it.
+  if (watchedWar && watchedWar.key === key) releaseWatchedWar();
+  else watchWar(key);
 });
 
 function drawSide(force = true) {
@@ -24694,6 +26089,9 @@ document.getElementById("tradebtn").onclick = () => openTrade();
 document.getElementById("gamemode").addEventListener("change", syncSetupMode);
 document.getElementById("leaderpool").addEventListener("change", syncLeaderPool);
 document.getElementById("maptype").addEventListener("change", syncEarthShape);
+// Bound on the select itself, so it has re-fitted the splits to the new size
+// before the panel's own delegated listener stages what is now selected.
+document.getElementById("np").addEventListener("change", syncTeams);
 document.getElementById("savebtn").onclick = () => writeSave();
 syncSetupMode();
 syncEarthShape();
@@ -24768,6 +26166,9 @@ function selectedSimulationSettings() {
           map_poles: mapPoles, game_speed: gameSpeed,
           leader_pool: leaderPool,
           base_ruleset: baseRuleset, start_era: startEra,
+          // The control holds the rule; the server is handed the seat-by-seat
+          // assignment that rule makes of this many civilizations.
+          teams: teamAssignment(np, readSetting("teams")),
           victory_conditions: victoryConditions,
           spectate: gameMode === "ai_sim",
           // A spectated world has nobody to hand a leader or a handicap to.
@@ -24804,7 +26205,15 @@ function selectedSimulationSummary(settings = null) {
   const stockEra = [...(eras?.options || [])]
     .find(option => option.value && !option.disabled)?.value;
   const era = startEra && startEra !== stockEra ? chosenText("startera", startEra) : "";
-  return [mode, size, map, speed, era].filter(Boolean).join(" · ");
+  // Free-for-all is what you get by choosing nothing, so only a real division
+  // is worth a clause — and it is named by its split, which is the part that
+  // depends on a size this line has already reported.
+  const players = settings ? settings.num_players : +document.getElementById("np").value;
+  const teamRule = settings
+    ? teamRuleFromArray(settings.teams)
+    : document.getElementById("teams")?.value;
+  const teams = teamRule && teamRule !== "ffa" ? teamPhrase(players, teamRule) : "";
+  return [mode, size, map, speed, era, teams].filter(Boolean).join(" · ");
 }
 function simulationSettingsKey(settings) {
   return JSON.stringify(settings);
@@ -24817,6 +26226,10 @@ function applyQueuedSimulationSettings(settings) {
   if (SPEC) document.getElementById("gamemode").value = "ai_sim";
   syncSetupMode();
   document.getElementById("np").value = String(settings.players);
+  // The staged size decides which splits exist, so it is in place first and
+  // the queued assignment is read back as the rule that would produce it.
+  syncTeams();
+  document.getElementById("teams").value = teamRuleFromArray(settings.teams);
   document.getElementById("maptype").value = settings.map;
   if (settings.shape) document.getElementById("mapshape").value = settings.shape;
   if (settings.poles) document.getElementById("mappoles").value = settings.poles;
@@ -24930,6 +26343,84 @@ function syncLeaderPool() {
     `<option value="${entry.civ}" title="${escapeAttr(entry.note)}">` +
     `${entry.leader} of ${entry.civ}</option>`).join("");
   if (leaders.some(entry => entry.civ === selected)) select.value = selected;
+}
+
+// Teams are permanent and decided before the world exists, so the lobby is
+// where they are chosen. The control carries the *rule* — two teams, pairs —
+// rather than the assignment it makes, because which assignment that is
+// depends on a world size chosen two rows further down.
+const TEAM_RULES = ["2", "3", "4", "pairs"];
+// A team of one is not a team, so a split is only on offer while every team it
+// makes can seat at least two civilizations.
+function teamCount(players, rule) {
+  if (!Number.isFinite(players) || players < 4) return 0;
+  const most = Math.floor(players / 2);
+  if (rule === "pairs") return most;
+  const teams = Number(rule);
+  return Number.isFinite(teams) && teams >= 2 && teams <= most ? teams : 0;
+}
+// The seats are dealt out in blocks, largest team first, so a division that
+// does not come out even puts its spare civ at the top rather than scattering
+// odd teams through the middle. Seat 0 is the person at the keyboard, so a
+// human always leads the first team.
+function teamAssignment(players, rule) {
+  const teams = teamCount(players, rule);
+  if (!teams) return [];
+  const smallest = Math.floor(players / teams);
+  const larger = players % teams;
+  const assignment = [];
+  for (let team = 0; team < teams; team++)
+    for (let seat = smallest + (team < larger ? 1 : 0); seat > 0; seat--)
+      assignment.push(team);
+  return assignment;
+}
+function teamSizes(players, rule) {
+  const sizes = [];
+  for (const team of teamAssignment(players, rule)) sizes[team] = (sizes[team] || 0) + 1;
+  return sizes;
+}
+// "4v4", or "4v3v3" where the seats do not divide evenly — until there are so
+// many teams that the list stops being readable and the shape is described
+// instead: a hundred civilizations in pairs is "50 teams of 2".
+function teamSplit(players, rule) {
+  const sizes = teamSizes(players, rule);
+  if (sizes.length <= 6) return sizes.join("v");
+  const smallest = Math.min(...sizes), largest = Math.max(...sizes);
+  return `${sizes.length} teams of ` +
+    (smallest === largest ? smallest : `${smallest}–${largest}`);
+}
+// How a division is said inside a sentence rather than inside its own option.
+function teamPhrase(players, rule) {
+  const split = teamSplit(players, rule);
+  return !split || split.includes("teams") ? split : `${split} teams`;
+}
+// The world on screen and the staged world both arrive as an assignment, which
+// is read back here as the rule that would produce it.
+function teamRuleFromArray(teams) {
+  if (!Array.isArray(teams)) return "ffa";
+  const distinct = new Set(teams.filter(team => team !== null && team !== undefined));
+  if (distinct.size < 2) return "ffa";
+  const count = String(distinct.size);
+  return TEAM_RULES.includes(count) ? count : "pairs";
+}
+// Which splits this world size can actually seat, said in the option itself:
+// "2 teams · 4v4" is the whole answer, and a split this size cannot seat is
+// disabled where it can be seen rather than quietly dropped from the list.
+function syncTeams() {
+  const select = document.getElementById("teams");
+  const size = document.getElementById("np");
+  if (!select || !size) return;
+  const players = +size.value;
+  for (const option of select.options) {
+    if (!TEAM_RULES.includes(option.value)) continue;
+    const name = option.value === "pairs" ? "Pairs" : `${option.value} teams`;
+    const split = teamSplit(players, option.value);
+    option.disabled = !split;
+    option.textContent = split ? `${name} · ${split}` : name;
+  }
+  // A size that cannot seat the chosen split leaves the lobby free-for-all
+  // rather than starting a game with a division nobody asked for.
+  if (select.selectedOptions[0]?.disabled) select.value = "ffa";
 }
 
 // Fixed geography chooses the coastline, not the projection. Keep the shape

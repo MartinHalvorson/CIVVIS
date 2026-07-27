@@ -150,6 +150,12 @@ pub struct Session {
     league: Option<crate::league::League>,
     /// Per-seat index into `league.strategies` for rated major seats.
     seat_strategy: Vec<Option<usize>>,
+    /// Whether the roster above actually *chose* who plays each civ. Without
+    /// `--league` it did not: every major runs the default hierarchical agent
+    /// and each seat points at the entrant the league rates that agent as, so
+    /// the rating is the seat's own but the handle is one name repeated down
+    /// the table. Such a seat keeps its generated per-seat name instead.
+    seat_from_roster: bool,
     /// The strategies auto-play can hand the human seat to. `league` above is
     /// the roster this game is *rated* against and is often absent; every
     /// build ships the committed snapshot under `data/league`, so the choice
@@ -1383,12 +1389,20 @@ impl Session {
         }
     }
 
-    /// The roster named by `--league`, else a best-effort `league/` load
-    /// purely for elo labels.
+    /// The roster named by `--league`, else a best-effort load purely for
+    /// elo labels: the runtime `league/` this checkout records into, then the
+    /// snapshot every build ships. Only the named roster is ever written to,
+    /// so a labelled game still rates nothing — but it does say what the
+    /// league already knows about the agent in each seat, which used to
+    /// require passing `--league` to see at all.
     fn load_params_league(params: &Params) -> (Option<crate::league::League>, bool) {
         match &params.league_dir {
             Some(dir) => (crate::league::load_league(dir), true),
-            None => (crate::league::load_league("league"), false),
+            None => (
+                crate::league::load_league("league")
+                    .or_else(|| crate::league::load_league("data/league")),
+                false,
+            ),
         }
     }
 
@@ -1508,6 +1522,7 @@ impl Session {
             next_game_params: None,
             league,
             seat_strategy,
+            seat_from_roster,
             roster,
             autoplay_strategy: None,
             last_autoplay_request: None,
@@ -1586,6 +1601,7 @@ impl Session {
             next_game_params,
             league,
             seat_strategy,
+            seat_from_roster,
             roster,
             autoplay_strategy: None,
             last_autoplay_request: None,
@@ -1748,10 +1764,10 @@ impl Session {
     }
 
     /// Say who is playing each human seat: the handle this game registered
-    /// for them, and — once a rated roster is holding it — the rating they
-    /// are defending. A player with no finished game is `player_rated` with
-    /// zero games rather than an authoritative 1500, the same way the
-    /// leaderboards mark a provisional entrant.
+    /// for them and the rating they are defending. Somebody who has finished
+    /// nothing still has a rating — the base every player starts from — so
+    /// the seat carries 1500 marked `player_elo_provisional` rather than a
+    /// blank, and their first result moves it up or down from there.
     fn name_human_players(&self, o: &mut Value) {
         if self.human_players.is_empty() {
             return;
@@ -1769,18 +1785,102 @@ impl Session {
             player["player_name"] = json!(seat.name);
             player["player_username"] = json!(seat.username);
             player["player_rated"] = json!(seat.rated);
-            let rating = self
+            // Their own row, found by the name they were registered under —
+            // not `seat_entry`, which follows whichever agent is holding the
+            // seat. Handing it to auto-play does not hand over your rating.
+            let entry = self
                 .league
                 .as_ref()
-                .zip(self.seat_strategy.get(id).copied().flatten())
-                .map(|(league, index)| &league.strategies[index]);
-            if let Some(entry) = rating {
-                let civ = &self.game.players[id].civ;
-                let (elo, rd, civ_specific) = crate::league::display_elo(entry, civ);
-                player["player_elo"] = json!(elo.round() as i64);
-                player["player_elo_rd"] = json!(rd.round() as i64);
-                player["player_elo_civ"] = json!(civ_specific);
-                player["player_games"] = json!(entry.games);
+                .and_then(|league| league.strategies.iter().find(|s| s.name == seat.name));
+            let civ = &self.game.players[id].civ;
+            let shown = crate::league::display_rating(entry, civ);
+            player["player_elo"] = json!(shown.rating.round() as i64);
+            player["player_elo_rd"] = json!(shown.rd.round() as i64);
+            player["player_elo_civ"] = json!(shown.civ_specific);
+            player["player_elo_provisional"] = json!(shown.provisional);
+            player["player_games"] = json!(entry.map_or(0, |entry| entry.games));
+        }
+    }
+
+    /// The league row backing a seat, if the league has one. `None` is the
+    /// ordinary case for a game running without a roster, and is a seat the
+    /// league has never heard of rather than a seat that cannot be rated:
+    /// `league::display_rating` gives it the provisional base.
+    fn seat_entry(&self, seat: usize) -> Option<&crate::league::Strategy> {
+        let index = self.seat_strategy.get(seat).copied().flatten()?;
+        self.league.as_ref()?.strategies.get(index)
+    }
+
+    /// Give every met major the rating it is defending and its share of the
+    /// table's single win.
+    ///
+    /// Every major carries a rating, roster or no roster. Most games run
+    /// without `--league`, and a column of dashes read as "this build cannot
+    /// rate anyone" when the truth was only that nobody at this table has
+    /// finished a rated game yet. An unknown player is a provisional 1500
+    /// that the first result moves. A standing is public the way a chess
+    /// opponent's is, so an *opponent* in an interactive game carries one
+    /// too — subject to the same fog as everything else here: a civ you have
+    /// not met is not annotated at all.
+    fn name_seat_ratings(&self, o: &mut Value) {
+        let g = &self.game;
+        let rating_of = |pid: usize| {
+            crate::league::display_rating(self.seat_entry(pid), &g.players[pid].civ)
+        };
+        // Gathered up front, because a seat's expected win share is a
+        // question about the whole table. A seat the league has no row for is
+        // in here too: leaving it out would make the remaining shares add to
+        // one between themselves and quietly claim the unrated seat cannot
+        // win.
+        let seat_elo: std::collections::BTreeMap<usize, f64> = g
+            .players
+            .iter()
+            .filter(|p| p.alive && !p.is_minor && !p.is_barbarian)
+            .map(|p| (p.id, rating_of(p.id).rating))
+            .collect();
+        // One table, one winner: the seats share out a single win rather than
+        // each answering a separate two-player question.
+        let seat_expected: std::collections::BTreeMap<usize, f64> = if seat_elo.len() > 1 {
+            let ratings: Vec<f64> = seat_elo.values().copied().collect();
+            seat_elo
+                .keys()
+                .copied()
+                .zip(crate::elo::win_shares(&ratings))
+                .collect()
+        } else {
+            std::collections::BTreeMap::new()
+        };
+        let Some(players) = o["players"].as_array_mut() else {
+            return;
+        };
+        for player in players {
+            let Some(id) = player["id"].as_u64().map(|id| id as usize) else {
+                continue;
+            };
+            if player["met"] == json!(false)
+                || !g
+                    .players
+                    .get(id)
+                    .is_some_and(|p| !p.is_minor && !p.is_barbarian)
+            {
+                continue;
+            }
+            let shown = rating_of(id);
+            // A handle names a seat only when the roster picked that seat.
+            // Otherwise the whole table is the same entrant and repeating its
+            // name down every row would hide who is who; the generated
+            // per-seat name from `name_ai_players` reads better and is just
+            // as true.
+            if let (true, Some(s)) = (self.seat_from_roster, self.seat_entry(id)) {
+                player["ai_username"] = json!(s.username);
+                player["ai_strat_label"] = json!(s.label());
+            }
+            player["ai_elo"] = json!(shown.rating.round() as i64);
+            player["ai_elo_rd"] = json!(shown.rd.round() as i64);
+            player["ai_elo_civ"] = json!(shown.civ_specific);
+            player["ai_elo_provisional"] = json!(shown.provisional);
+            if let Some(share) = seat_expected.get(&id) {
+                player["ai_expected"] = json!((share * 100.0).round() / 100.0);
             }
         }
     }
@@ -1831,45 +1931,14 @@ impl Session {
                 Some(pid) => observation_player_view(g, pid),
                 None => observation_spectator(g, summary_pid),
             };
-            // Each rated seat's display elo (civ table when settled, else
-            // global), gathered up front so a seat's expected win share can
-            // be computed against the rest of the table.
-            let seat_elo: std::collections::BTreeMap<usize, f64> = self
-                .seat_strategy
-                .iter()
-                .enumerate()
-                .filter_map(|(pid, si)| {
-                    let (si, league) = ((*si)?, self.league.as_ref()?);
-                    let p = &g.players[pid];
-                    if !p.alive || p.is_minor || p.is_barbarian {
-                        return None;
-                    }
-                    Some((
-                        pid,
-                        crate::league::display_elo(&league.strategies[si], &p.civ).0,
-                    ))
-                })
-                .collect();
-            // One table, one winner: the seats share out a single win rather
-            // than each answering a separate two-player question.
-            let seat_expected: std::collections::BTreeMap<usize, f64> = if seat_elo.len() > 1 {
-                let ratings: Vec<f64> = seat_elo.values().copied().collect();
-                seat_elo
-                    .keys()
-                    .copied()
-                    .zip(crate::elo::win_shares(&ratings))
-                    .collect()
-            } else {
-                std::collections::BTreeMap::new()
-            };
             if let Some(players) = o["players"].as_array_mut() {
                 for player in players {
                     let Some(id) = player["id"].as_u64().map(|id| id as usize) else {
                         continue;
                     };
                     // A perspective the observation has already withheld does
-                    // not get its plan, its handle or its rating pinned back
-                    // on here. Only the omniscient view annotates everyone.
+                    // not get its plan pinned back on here. Only the
+                    // omniscient view annotates everyone.
                     if player["met"] == json!(false) {
                         continue;
                     }
@@ -1883,34 +1952,18 @@ impl Session {
                     if let Some(plan) = self.ais.get(id).and_then(|ai| ai.plan_report()) {
                         player["ai_plan"] = self.plan_json(&plan);
                     }
-                    // League identity: who is playing this seat and how
-                    // strong the league currently believes they are on this
-                    // civ. `ai_expected` is the elo-implied chance of winning
-                    // this table outright, so the seats sum to 1 and the
-                    // number can be checked against winners over time.
-                    if let (Some(league), Some(Some(si))) =
-                        (self.league.as_ref(), self.seat_strategy.get(id))
-                    {
-                        let s = &league.strategies[*si];
-                        let civ = &g.players[id].civ;
-                        let (elo, rd, civ_specific) = crate::league::display_elo(s, civ);
-                        player["ai_username"] = json!(s.username);
-                        player["ai_strat_label"] = json!(s.label());
-                        player["ai_elo"] = json!(elo.round() as i64);
-                        player["ai_elo_rd"] = json!(rd.round() as i64);
-                        player["ai_elo_civ"] = json!(civ_specific);
-                        if let Some(share) = seat_expected.get(&id) {
-                            player["ai_expected"] = json!((share * 100.0).round() / 100.0);
-                        }
-                    }
                 }
             }
+            // League identity: who is playing each seat and how strong the
+            // league currently believes they are on this civ.
+            self.name_seat_ratings(&mut o);
             self.name_ai_players(&mut o);
             o["spectate"] = json!(true);
             o["supervised"] = json!(self.params.supervised);
             o["spectator_paused"] = json!(self.spectator_paused);
             o["view_player"] = json!(self.view_player);
             o["leader_pool"] = json!(self.game.leader_pool.id());
+            o["teams"] = json!(major_teams(&self.game));
             o["victory_conditions"] = json!(self.game.victory_conditions);
             o["supervisor_request"] = json!(self.supervisor_request);
             o["next_game_settings"] = self
@@ -1926,12 +1979,18 @@ impl Session {
             return o;
         }
         let mut o = observation(&self.game, 0);
+        // A rival you have met has a standing, the same way a chess opponent
+        // does, and the HUD has always had a column for it. It used to be
+        // empty in every interactive game because only the spectator wrote
+        // one. Their plan is still theirs; only the rating is public.
+        self.name_seat_ratings(&mut o);
         self.name_ai_players(&mut o);
         self.name_human_players(&mut o);
         o["spectate"] = json!(false);
         o["supervised"] = json!(self.params.supervised);
         o["view_player"] = json!(0);
         o["leader_pool"] = json!(self.game.leader_pool.id());
+        o["teams"] = json!(major_teams(&self.game));
         o["victory_conditions"] = json!(self.game.victory_conditions);
         o["supervisor_request"] = json!(self.supervisor_request);
         o["next_game_settings"] = self
@@ -2501,6 +2560,20 @@ fn held_frame(token: &str) -> Option<SpectatorFrame> {
     })
 }
 
+/// The pre-game teams of a world, one entry per major seat in seat order;
+/// `null` is a seat playing for itself.
+///
+/// The lobby reads its own Teams control back out of this, so a page that
+/// reloads over a team game offers to restart *that* game rather than a
+/// free-for-all with the same map.
+fn major_teams(game: &Game) -> Vec<Option<usize>> {
+    game.players
+        .iter()
+        .filter(|player| !player.is_minor && !player.is_barbarian)
+        .map(|player| player.team)
+        .collect()
+}
+
 fn simulation_settings(params: &Params) -> Value {
     let victories = [
         (params.victory_conditions.science, "science"),
@@ -2526,6 +2599,7 @@ fn simulation_settings(params: &Params) -> Value {
         "poles": params.map_poles.id(),
         "speed": params.game_speed.id(),
         "leader_pool": params.leader_pool.id(),
+        "teams": params.teams,
         "victories": victories,
     })
 }
@@ -4810,9 +4884,12 @@ mod tests {
         assert!(!player_hud.contains("class=\"empire-link\""));
         assert!(EMBEDDED_INDEX.contains("--hud-watch-column: 68px"));
         assert!(EMBEDDED_INDEX.contains("width: calc(100% - 6px); height: 22px"));
-        // And a player with nothing behind them reads unrated rather than
-        // wearing the 1500 every unrated player would have.
-        assert!(player_hud.contains("(playedGames ? `${p.player_elo} ELO` : \"Unrated\")"));
+        // And a player with nothing behind them still wears a rating: the
+        // 1500 every player starts from, marked provisional rather than
+        // replaced by a dash that would read as "cannot be rated".
+        assert!(player_hud.contains("const playerElo = eloKnown ? `${eloValue}` : \"—\";"));
+        assert!(player_hud.contains("${eloProvisional ? \" provisional\" : \"\"}"));
+        assert!(EMBEDDED_INDEX.contains(".diplomacy-elo-value.provisional {"));
 
         // The side panel is the one part of a frame that is allowed to skip a
         // repaint, because below a second per turn it changes faster than
@@ -5253,6 +5330,7 @@ mod tests {
             "maptype",
             "mappoles",
             "np",
+            "teams",
             "gamespeed",
         ] {
             let select = format!("id=\"{setting}\"");
@@ -5295,6 +5373,31 @@ mod tests {
                 "the client still carries the settings-left-to-chance machinery: {gone}"
             );
         }
+    }
+
+    /// Teams are chosen in the lobby and are permanent once the world exists,
+    /// so the division the browser asked for has to be readable back out of
+    /// `/state`: a page that reloads over a team game offers to restart *that*
+    /// game rather than a free-for-all with the same map.
+    #[test]
+    fn a_team_division_reaches_the_world_and_comes_back_in_the_state() {
+        let stock = current();
+        let small = json!({"num_players": 4, "width": 20, "height": 14, "num_city_states": 1});
+        let mut request = small.clone();
+        request["teams"] = json!([0, 0, 1, 1]);
+        let params = new_game_params(&stock, &request);
+        assert_eq!(params.teams, vec![Some(0), Some(0), Some(1), Some(1)]);
+        let session = Session::new(params);
+        assert_eq!(session.state()["teams"], json!([0, 0, 1, 1]));
+        // A free-for-all is every seat playing for itself, said out loud, so
+        // the lobby can tell it from a world that never mentioned teams.
+        let alone = Session::new(new_game_params(&stock, &small));
+        assert_eq!(alone.state()["teams"], json!([null, null, null, null]));
+        // The staged world carries the same division, or the exhibition's next
+        // game would quietly drop it between staging and starting.
+        let mut staged = Session::new(current());
+        staged.stage_next_game_settings(&request);
+        assert_eq!(staged.state()["next_game_settings"]["teams"], json!([0, 0, 1, 1]));
     }
 
     /// Planet is drawn from geometry the client cannot derive, so the
@@ -5654,33 +5757,57 @@ mod tests {
 
         // The lobby's reading order. `#newgame-options` is a two-column grid
         // filled row by row, so document order *is* left-then-right,
-        // top-to-bottom on screen. A world is described from the outside in:
-        // what shape it is, then what is drawn on that shape, then how heat is
-        // laid out across it, then how big it is and how fast it runs.
-        let mode_setting = EMBEDDED_INDEX
-            .find("id=\"gamemode\"")
-            .expect("game mode setting");
-        let shape_setting = EMBEDDED_INDEX
-            .find("id=\"mapshape\"")
-            .expect("world shape setting");
-        let map_setting = EMBEDDED_INDEX.find("id=\"maptype\"").expect("map setting");
-        let thermal_setting = EMBEDDED_INDEX
-            .find("id=\"mappoles\"")
-            .expect("thermal distribution setting");
-        let world_setting = EMBEDDED_INDEX
-            .find("id=\"np\"")
-            .expect("world size setting");
-        let speed_setting = EMBEDDED_INDEX
-            .find("id=\"gamespeed\"")
-            .expect("game speed setting");
+        // top-to-bottom on screen, and each row is a pair that belongs
+        // together: the rules and who plays under them, then who is at the
+        // table and how they are divided, then the world from the outside in —
+        // what shape it is, what is drawn on that shape, how heat is laid out
+        // across it and how big it is — and last the clock, where history
+        // starts and how fast it runs.
+        //
+        // The two seat settings sit between the second and third rows and are
+        // hidden while nobody is at the keyboard, so they take a row of their
+        // own rather than splitting a pair.
+        let order = [
+            "baseruleset",
+            "leaderpool",
+            "gamemode",
+            "teams",
+            "leader",
+            "difficulty",
+            "mapshape",
+            "maptype",
+            "mappoles",
+            "np",
+            "startera",
+            "gamespeed",
+        ]
+        .map(|setting| {
+            EMBEDDED_INDEX
+                .find(&format!("id=\"{setting}\""))
+                .unwrap_or_else(|| panic!("browser setup is missing the {setting} select"))
+        });
         assert!(
-            mode_setting < shape_setting
-                && shape_setting < map_setting
-                && map_setting < thermal_setting
-                && thermal_setting < world_setting
-                && world_setting < speed_setting,
-            "lobby order must read mode, world shape, map, thermal distribution, size, speed"
+            order.windows(2).all(|pair| pair[0] < pair[1]),
+            "lobby order must read ruleset/pool, mode/teams, seat, shape/map, thermal/size, era/speed"
         );
+        let thermal_setting = order[8];
+        // Teams are a division of the table, so they sit beside the setting
+        // that says who is at it. A world opens free-for-all, and the splits a
+        // size can seat are named in the option rather than left to be found
+        // by trying one.
+        assert!(EMBEDDED_INDEX.contains("Teams<select id=\"teams\""));
+        assert!(EMBEDDED_INDEX.contains("<option value=\"ffa\" selected>Free-for-all</option>"));
+        assert!(EMBEDDED_INDEX.contains("const TEAM_RULES = [\"2\", \"3\", \"4\", \"pairs\"];"));
+        assert!(EMBEDDED_INDEX.contains("option.disabled = !split;"));
+        // The world size decides which splits exist, so it re-fits them before
+        // the panel's own delegated listener stages what is now selected.
+        assert!(EMBEDDED_INDEX
+            .contains("document.getElementById(\"np\").addEventListener(\"change\", syncTeams);"));
+        // The server is handed the seat-by-seat assignment, never the rule
+        // that produced it; a world on screen is read back the other way.
+        assert!(EMBEDDED_INDEX.contains("teams: teamAssignment(np, readSetting(\"teams\")),"));
+        assert!(EMBEDDED_INDEX.contains("teamRuleFromArray(st.teams)"));
+        assert!(EMBEDDED_INDEX.contains("teamRuleFromArray(settings.teams)"));
         // Heat is a setting about climate, not about whether two ice caps
         // exist, so it is named for what it decides.
         assert!(EMBEDDED_INDEX.contains("Thermal distribution<select id=\"mappoles\""));
@@ -6311,7 +6438,61 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("for (const site of war.theater || []) add(site?.pos);"));
         assert!(EMBEDDED_INDEX.contains("data-war-key=\"${escapeAttr(warLogKey(war))}\""));
         assert!(EMBEDDED_INDEX.contains(">${mapAction}</button></div>"));
-        assert!(EMBEDDED_INDEX.contains("const mapAction = over ? \"View aftermath\" : \"Watch\";"));
+        // Watching is a held reading position as well as a camera move: the
+        // control is a toggle, it names the state it is in, and it reports that
+        // state to assistive technology.
+        assert!(EMBEDDED_INDEX.contains(
+            "const mapAction = watched ? \"Watching\" : (over ? \"View aftermath\" : \"Watch\");"
+        ));
+        assert!(EMBEDDED_INDEX.contains("aria-pressed=\"${watched ? \"true\" : \"false\"}\""));
+        assert!(EMBEDDED_INDEX.contains("${watched ? \" watched\" : \"\"}"));
+        assert!(EMBEDDED_INDEX.contains("${watched ? \" watching\" : \"\"}"));
+        assert!(EMBEDDED_INDEX.contains("function watchWar(warKey)"));
+        assert!(EMBEDDED_INDEX.contains("function releaseWatchedWar()"));
+        // The whole point of the hold: the watched card keeps the offset it had
+        // inside the list's viewport while the rest of the chronicle re-sorts
+        // around it, and the scroll pays for the difference.
+        assert!(EMBEDDED_INDEX.contains("function measureWatchedWar(el)"));
+        assert!(EMBEDDED_INDEX.contains("function holdWatchedWar(el)"));
+        assert!(EMBEDDED_INDEX.contains("function warCardFor(el, warKey)"));
+        let war_hold = EMBEDDED_INDEX
+            .split("function holdWatchedWar(el)")
+            .nth(1)
+            .unwrap()
+            .split("function watchWar(warKey)")
+            .next()
+            .unwrap();
+        assert!(war_hold.contains(
+            "const within = card.getBoundingClientRect().top - el.getBoundingClientRect().top + el.scrollTop;"
+        ));
+        assert!(war_hold.contains("const target = Math.max(0, Math.min(reach, within - watchedWar.offset));"));
+        assert!(war_hold.contains("el.scrollTop = target;"));
+        // Re-measured before every rebuild, so a viewer who scrolls the log
+        // moves the lock rather than fighting it, and the sort order itself is
+        // never rewritten to keep the card still.
+        let war_draw = EMBEDDED_INDEX
+            .split("function drawWarLog()")
+            .nth(1)
+            .unwrap()
+            .split("function drawSide(")
+            .next()
+            .unwrap();
+        assert!(war_draw.contains("measureWatchedWar(el);"));
+        assert!(war_draw.contains("holdWatchedWar(el);"));
+        assert!(war_draw.contains("if (watchedWar && watchedWar.seed !== state.seed) watchedWar = null;"));
+        assert!(war_draw.contains("if (watchedWar && !warCardFor(el, watchedWar.key)) watchedWar = null;"));
+        assert!(
+            !war_draw.contains("wars.sort("),
+            "the war log must stay the engine's chronicle; a hold moves the scroll, not the order"
+        );
+        assert!(EMBEDDED_INDEX
+            .contains("if (watchedWar && watchedWar.key === key) releaseWatchedWar();"));
+        assert!(EMBEDDED_INDEX.contains(".war-card.watched { border-color: #d8ad5e;"));
+        assert!(
+            EMBEDDED_INDEX.find(".war-card.ended .war-period").unwrap()
+                < EMBEDDED_INDEX.find(".war-card.watched .war-period").unwrap(),
+            "the watched rules share `.ended`'s specificity and must follow it to win"
+        );
         let war_focus = EMBEDDED_INDEX
             .split("function focusWarOnMap(warKey)")
             .nth(1)
@@ -6362,8 +6543,42 @@ mod tests {
         let losses = EMBEDDED_INDEX.find("war-row-label\">Losses").unwrap();
         let chronology = EMBEDDED_INDEX.find("war-row-label\">Chronology").unwrap();
         assert!(belligerents < losses && losses < chronology);
-        assert!(EMBEDDED_INDEX.contains("entered Turn ${party.entered}"));
-        assert!(EMBEDDED_INDEX.contains("peaced out Turn ${party.exited}"));
+        // A belligerent gets one section carrying its whole involvement, so the
+        // note is built from that belligerent's intervals rather than from one
+        // row per interval, and a second entry reads as a re-entry.
+        assert!(EMBEDDED_INDEX.contains("entered ${turn}${interval.entered}"));
+        assert!(EMBEDDED_INDEX.contains("re-entered ${turn}${interval.entered}"));
+        assert!(EMBEDDED_INDEX
+            .contains("peaced out ${notes.length ? \"\" : \"Turn \"}${interval.exited}"));
+        assert!(EMBEDDED_INDEX.contains("function warMergeParties(parties)"));
+        assert!(EMBEDDED_INDEX.contains("function warPartyIntervals(party)"));
+        // The bar rules the line under the name it measures, so the name comes
+        // first in the row and the bar follows it.
+        let belligerent_row = EMBEDDED_INDEX
+            .split("function warBelligerentRows(")
+            .nth(1)
+            .unwrap()
+            .split("function nuclearStrikeFor(")
+            .next()
+            .unwrap();
+        let party_name = belligerent_row.find("class=\"war-party-name\"").unwrap();
+        let bar = belligerent_row.find("class=\"war-belligerent-bar\"").unwrap();
+        let note = belligerent_row.find("class=\"war-party-note\"").unwrap();
+        assert!(
+            party_name < bar && bar < note,
+            "the effort bar belongs below the belligerent's name, above its notes"
+        );
+        assert!(belligerent_row.contains("(initial aggressor)"));
+        assert!(belligerent_row.contains("party.player === war.aggressor"));
+        // Cities are listed under the belligerent that lost them, said plainly,
+        // and ranked capital first then by the population that changed hands.
+        assert!(EMBEDDED_INDEX.contains("function warCityLosses(party, war)"));
+        assert!(EMBEDDED_INDEX.contains("loss.razed ? \"razed\" : \"conquered\""));
+        assert!(EMBEDDED_INDEX
+            .contains("Number(b.capital) - Number(a.capital) || b.pop - a.pop"));
+        // The class the ledger is ordered by is reachable on the row, never a
+        // banner across it.
+        assert!(!EMBEDDED_INDEX.contains("war-loss-category"));
         assert!(EMBEDDED_INDEX.contains("sort((a, b) => a.turn - b.turn)"));
         assert!(EMBEDDED_INDEX.contains("built the world's first"));
         assert!(EMBEDDED_INDEX.contains("changed government from"));
@@ -6862,6 +7077,7 @@ mod tests {
                 "poles": "poles",
                 "speed": "quick",
                 "leader_pool": "expanded",
+                "teams": [],
                 "victories": ["science", "religious", "diplomatic", "domination"],
             })
         );
@@ -6922,6 +7138,7 @@ mod tests {
                 "poles": "poles",
                 "speed": "quick",
                 "leader_pool": "expanded",
+                "teams": [],
                 "victories": ["science", "religious", "diplomatic", "domination"],
             })
         );
@@ -7867,6 +8084,89 @@ mod tests {
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
+    /// Every major on screen carries a rating, whether or not this game is
+    /// being rated into anything.
+    ///
+    /// The elo column used to be empty for every seat in every game that was
+    /// not launched with `--league`, which is almost all of them — a table of
+    /// dashes that reads as "this build cannot rate anyone". Two things fix
+    /// it: the snapshot every build ships is loaded for labels, and a seat
+    /// the league has no row for shows the provisional base rather than
+    /// nothing.
+    #[test]
+    fn every_major_carries_a_rating_without_a_named_roster() {
+        let mut params = current();
+        params.spectate = true;
+        params.num_players = 4;
+        let session = Session::new(params);
+        assert!(
+            session.league.is_some(),
+            "the shipped snapshot labels a game that names no roster"
+        );
+        assert!(!session.seat_from_roster, "and it seats nobody");
+
+        let state = session.state();
+        let majors: Vec<&Value> = state["players"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|p| p["is_minor"] != json!(true) && p["is_barbarian"] != json!(true))
+            .collect();
+        assert_eq!(majors.len(), 4);
+        let mut shares = 0.0;
+        for player in &majors {
+            let elo = player["ai_elo"].as_i64().expect("every major has a rating");
+            assert!((800..=2600).contains(&elo), "{elo} is not a rating");
+            assert!(player["ai_elo_rd"].as_i64().is_some());
+            shares += player["ai_expected"].as_f64().expect("and a win share");
+            // Nobody chose these seats, so the one entrant behind all of them
+            // does not get to put its handle on four different civilizations.
+            assert!(
+                player["ai_username"].is_null(),
+                "an unseated table keeps its per-seat names"
+            );
+            assert!(player["ai_name"].as_str().is_some_and(|n| !n.is_empty()));
+        }
+        assert!(
+            (shares - 1.0).abs() < 0.02,
+            "one table, one winner: shares summed to {shares}"
+        );
+    }
+
+    /// An interactive game rates its rivals on screen too — but only the
+    /// ones you have met, and never their plan.
+    ///
+    /// Only the spectator used to annotate ratings, so the HUD's ELO column
+    /// was empty for every opponent in every game somebody was actually
+    /// playing.
+    #[test]
+    fn an_interactive_game_rates_the_rivals_you_have_met() {
+        let mut params = current();
+        params.num_players = 3;
+        let session = Session::new(params);
+        let state = session.state();
+        assert_eq!(state["spectate"], json!(false));
+        let players = state["players"].as_array().unwrap();
+        let mut met = 0;
+        for player in players {
+            let unmet = player["met"] == json!(false);
+            let minor = player["is_minor"] == json!(true) || player["is_barbarian"] == json!(true);
+            if unmet || minor {
+                assert!(
+                    player["ai_elo"].is_null(),
+                    "an unmet or minor seat is not annotated"
+                );
+                continue;
+            }
+            met += 1;
+            assert!(player["ai_elo"].as_i64().is_some(), "a met major is rated");
+            // Their standing is public; what they intend to do with it is not.
+            assert!(player["ai_plan"].is_null());
+            assert!(player["ai_strategy"].is_null());
+        }
+        assert!(met > 0, "the player's own seat is met at the very least");
+    }
+
     /// Most games are rated against nothing at all. The person is still not
     /// an existing player: they get a handle for this game, and it goes no
     /// further than this game.
@@ -7878,7 +8178,12 @@ mod tests {
         let state = session.state();
         assert_eq!(state["players"][0]["player_username"], json!("Player"));
         assert_eq!(state["players"][0]["player_rated"], json!(false));
-        assert!(state["players"][0]["player_elo"].is_null());
+        // Nothing is being rated, and they have still never finished a game,
+        // so the seat wears the rating everybody starts from and says so.
+        assert_eq!(state["players"][0]["player_elo"], json!(1500));
+        assert_eq!(state["players"][0]["player_elo_rd"], json!(350));
+        assert_eq!(state["players"][0]["player_elo_provisional"], json!(true));
+        assert_eq!(state["players"][0]["player_games"], json!(0));
 
         // A spectated world has nobody at a keyboard and registers nobody.
         let mut params = current();
