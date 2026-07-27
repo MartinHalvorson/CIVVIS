@@ -241,7 +241,8 @@ Two things the client does deliberately:
   and reads "An agent is playing", and both selects lock. A lit control that
   quietly does nothing is worse than a disabled one that explains itself.
 
-The roster is the committed league snapshot under `data/league` unless this
+The roster is the committed league snapshot under `data/league`, compiled into
+the binary so it is found wherever the program was started from, unless this
 game is already being rated against another one, in which case it is that one
 and the ratings shown are the ratings in play. Reading it is a labelling
 concern only: nothing about auto-play seats a rival differently.

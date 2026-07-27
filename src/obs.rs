@@ -1011,6 +1011,12 @@ fn recent_events(g: &Game, pid: usize, omniscient: bool) -> Vec<Value> {
         .map(|event| {
             json!({
                 "turn": event.turn,
+                // Whose event this is. The omniscient feed rotates through the
+                // seats, so "the civilization being observed" is a different
+                // answer on the next frame and the browser cannot infer this
+                // from the frame it arrived on — which is what the event log's
+                // civ filter needs, and the text only spells out in prose.
+                "player": event.player,
                 "category": event.category,
                 "text": event.text,
                 "pos": event.pos.map(|pos| [pos.0, pos.1]),
@@ -1934,6 +1940,27 @@ mod tests {
         let personal = categories(&observation(&game, 0));
         assert!(personal.iter().any(|category| category == "Science"));
         assert!(personal.iter().any(|category| category == "Culture"));
+    }
+
+    /// Every entry says whose it is.
+    ///
+    /// The omniscient feed rotates through the seats, so the combined log a
+    /// spectator reads is fed from all of them and "the civilization being
+    /// observed" is a different answer on the next frame. Without this the
+    /// browser's event log can show an entry it cannot attribute, and its civ
+    /// filter hides an entry that plainly names the civilization in its text.
+    #[test]
+    fn an_event_on_the_wire_names_the_civilization_it_belongs_to() {
+        let mut game = Game::new(3, 18, 12, 7, 25, 0);
+        game.note(1, "War", "declared war on somebody", None);
+        for observed in [observation(&game, 1), observation_spectator(&game, 1)] {
+            let events = observed["events"].as_array().unwrap();
+            let mine = events
+                .iter()
+                .find(|event| event["category"] == "War")
+                .expect("the war note");
+            assert_eq!(mine["player"], 1);
+        }
     }
 
     /// The browser draws its blast, writes its log entry and marks its war card

@@ -191,9 +191,12 @@ the new account exists, change that line and republish.
 - **Saved games live in `localStorage`**, which is a few megabytes per origin.
   A large late-game world can exceed it; the shim drops the autosave to make
   room and reports the failure rather than silently losing a game.
-- **The league roster is not in the bundle.** `data/league` is read from disk,
-  which does not exist here, so seats are labelled without elo. Nothing else
-  depends on it.
+- **The league roster is in the bundle**, compiled in like every other file
+  under `data/`, so seats carry the same ratings they do on the desktop build.
+  It was read from disk until then, and there is no disk here, so every seat
+  showed the provisional 1500 that means "never heard of this player". What is
+  still missing is the other direction: nothing is recorded, so a game played
+  here moves no rating.
 - **Every poll carries the whole world.** The socket build sends a tile *patch*
   — about 157 KB against 1.36 MB — because it keeps a per-viewer fingerprint of
   the map. Here the page is told the world whole every turn, which is the
