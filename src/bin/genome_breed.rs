@@ -313,6 +313,109 @@ fn main() {
         pop.push(genes);
     }
 
+    // --climb: a (1+1) paired hill climb, which spends games far better than a
+    // population does at this cost.
+    //
+    // The population version has two leaks. It scores every genome against the
+    // SHIPPED agent and then compares those estimates to each other, so any two
+    // candidates are compared through two independent noisy numbers rather than
+    // head to head. And it takes the maximum of pop*gens draws, which is worth
+    // about +2 SE by construction — the last run's selection score was 0.5875
+    // against a 0.5167 holdout, a +0.0708 gap that was essentially all of that.
+    //
+    // A hill climb removes both. Each step plays ONE mutant directly against
+    // the incumbent on the same maps, mirrored, and accepts only on a
+    // significant margin. There is one comparison per step, so there is no
+    // maximum-of-many inflation, and the comparison is paired at the map level.
+    if args.iter().any(|arg| arg == "--climb") {
+        let steps = number(&args, "--steps", 12);
+        let mut incumbent = shipped.clone();
+        let mut accepted = 0usize;
+        println!("  (1+1) paired hill climb: {steps} steps, mutant vs incumbent head to head\n");
+        for step in 0..steps {
+            let mut mutant = incumbent.clone();
+            for (index, (lo, hi)) in bounds.iter().enumerate() {
+                if rng.chance(0.20) {
+                    mutant[index] =
+                        (mutant[index] + rng.uniform(-0.20, 0.20) * (hi - lo)).clamp(*lo, *hi);
+                }
+            }
+            let step_seed = seed0 + 10_000 * (step as u64 + 1);
+            let (mutant_w, incumbent_w) =
+                (Weights::from_vec(&mutant), Weights::from_vec(&incumbent));
+            // Head to head on the same maps: the incumbent is the opponent, not
+            // a separately-estimated reference.
+            let shares = parallel::map(maps, jobs, move |index| {
+                let seed = step_seed + index as u64;
+                let mut got = 0.0;
+                for treated in 0..2usize {
+                    let mut game = Game::new(players, width, height, seed, turns, 0);
+                    let mut a: Vec<AdvancedAi> = AdvancedAi::fleet_weighted(&game, &mutant_w);
+                    let mut b: Vec<AdvancedAi> = AdvancedAi::fleet_weighted(&game, &incumbent_w);
+                    let is_treated = |pid: usize| pid % 2 == treated;
+                    for _ in 0..turns {
+                        if game.winner.is_some() {
+                            break;
+                        }
+                        for pid in 0..game.players.len() {
+                            if game.winner.is_some() {
+                                break;
+                            }
+                            if is_treated(pid) {
+                                a[pid].take_turn(&mut game, pid);
+                            } else {
+                                b[pid].take_turn(&mut game, pid);
+                            }
+                            if game.winner.is_none() && game.current == pid {
+                                let _ = game.apply(pid, &Action::EndTurn);
+                            }
+                        }
+                    }
+                    got += match game.winner.map(is_treated) {
+                        Some(true) => 1.0,
+                        Some(false) => 0.0,
+                        None => 0.5,
+                    };
+                }
+                got / 2.0
+            });
+            let n = shares.len().max(1) as f64;
+            let mean = shares.iter().sum::<f64>() / n;
+            let var = if shares.len() > 1 {
+                shares.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / (n - 1.0)
+            } else {
+                0.0
+            };
+            let se = (var / n).sqrt();
+            // Accept only on a margin. Accepting on mean > 0.5 alone would let
+            // the climb ratchet upward on noise, which is the same
+            // maximum-of-many failure in slower motion.
+            let take = se > 0.0 && (mean - 0.5) > 2.0 * se;
+            println!(
+                "  step {step:2}  mutant {mean:.4} +/- {se:.4}  ({:+.1} SE)  {}",
+                if se > 0.0 { (mean - 0.5) / se } else { 0.0 },
+                if take { "ACCEPT" } else { "reject" }
+            );
+            if take {
+                incumbent = mutant;
+                accepted += 1;
+            }
+        }
+        println!("\n  {accepted} of {steps} steps accepted");
+        if accepted == 0 {
+            println!(
+                "  The incumbent survived every challenge at a 2 SE bar. On {maps} maps a step\n                   resolves about {:.3}, so effects smaller than roughly {:.2} are invisible here.",
+                (0.25f64 / (maps as f64 * 2.0)).sqrt(),
+                2.0 * (0.25f64 / (maps as f64 * 2.0)).sqrt()
+            );
+        } else {
+            println!("  genome: {}", incumbent.iter().map(|g| format!("{g:.3}")).collect::<Vec<_>>().join(","));
+            println!("  Re-measure this against the SHIPPED genome on fresh maps before believing it:");
+            println!("  a chain of accepted steps is still a chain of comparisons against a moving target.");
+        }
+        return;
+    }
+
     let mut best = (0.0f64, shipped.clone());
     for generation in 0..gens {
         let map_seed = seed0 + 1_000 * (generation as u64 + 1);
