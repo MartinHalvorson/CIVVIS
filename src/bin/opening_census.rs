@@ -109,6 +109,15 @@ struct Seat {
     known_techs: BTreeSet<String>,
     known_civics: BTreeSet<String>,
     second_city_turn: Option<u32>,
+    /// Turn the seat first held 2, 3, 4 … cities. `AdvancedAi` allows exactly
+    /// one settler in existence empire-wide (`counts.settlers == 0` at
+    /// `src/ai/advanced.rs:6700`), so if that clause is binding these arrive
+    /// spaced by one build plus one walk rather than overlapping.
+    founding_turns: Vec<u32>,
+    /// Turns spent holding a settler while still short of the city target.
+    settler_in_flight_turns: u32,
+    /// Turns short of the city target with no settler anywhere.
+    short_without_settler_turns: u32,
     cities_at_window: usize,
     /// Survival, tracked over the whole game rather than the window, because
     /// "recorded a short opening" is a proxy for early death and a proxy is
@@ -364,10 +373,39 @@ fn main() {
                     .cities
                     .values()
                     .any(|city| city.owner == pid && city.is_capital);
+                // `desired_cities` as `AdvancedAi::plan` computes it, so the
+                // "short of target" columns below mean the same thing the
+                // agent means by it.
+                let land = game
+                    .map
+                    .tiles
+                    .values()
+                    .filter(|t| game.rules.is_passable(t) && !game.rules.is_water(t))
+                    .count();
+                let map_capacity = (2 + land / 55).clamp(3, 9);
+                let cadence = game.standard_duration(90).max(1) as usize;
+                let desired = (3 + game.turn as usize / cadence).min(map_capacity).min(6);
+                let in_flight = game
+                    .units
+                    .values()
+                    .filter(|u| u.owner == pid && u.kind == "settler")
+                    .count();
                 {
                     let seat = seats.get_mut(&pid).expect("major seat recorded at setup");
                     if live > 0 {
                         seat.founded = true;
+                    }
+                    while seat.founding_turns.len() + 1 < live {
+                        seat.founding_turns.push(turn + 1);
+                    }
+                    if live + in_flight < desired {
+                        if in_flight > 0 {
+                            seat.settler_in_flight_turns += 1;
+                        } else {
+                            seat.short_without_settler_turns += 1;
+                        }
+                    } else if in_flight > 0 && live < desired {
+                        seat.settler_in_flight_turns += 1;
                     }
                     if holds_capital {
                         seat.had_capital = true;
@@ -665,6 +703,51 @@ fn main() {
             100.0 * wins as f64 / group.len() as f64
         );
     }
+
+    // ---- 3c. is expansion serialized? ----------------------------------
+    // `AdvancedAi` permits exactly one settler in existence empire-wide. If
+    // that clause binds, cities arrive spaced by a build plus a walk however
+    // many cities are already producing, and a seat spends most of its
+    // shortfall watching a settler walk rather than building another.
+    println!("\ncity founding cadence (turn the seat first held N cities)");
+    println!("{:>3}  {:>7} {:>16}  {}", "N", "seats", "mean turn", "gap");
+    let mut previous: Option<f64> = None;
+    for step in 0..5usize {
+        let turns_at: Vec<f64> = seats
+            .iter()
+            .filter_map(|s| s.founding_turns.get(step).map(|t| *t as f64))
+            .collect();
+        if turns_at.len() < 5 {
+            break;
+        }
+        let (mean, se) = mean_se(&turns_at);
+        let gap = previous.map(|p| mean - p);
+        println!(
+            "{:>3}  {:>7} {:>9.1} +/- {:<4.1}  {}",
+            step + 2,
+            turns_at.len(),
+            mean,
+            se,
+            gap.map(|g| format!("+{g:.1}")).unwrap_or_default()
+        );
+        previous = Some(mean);
+    }
+    let flight: Vec<f64> = seats
+        .iter()
+        .map(|s| s.settler_in_flight_turns as f64)
+        .collect();
+    let idle: Vec<f64> = seats
+        .iter()
+        .map(|s| s.short_without_settler_turns as f64)
+        .collect();
+    let (flight_mean, flight_se) = mean_se(&flight);
+    let (idle_mean, idle_se) = mean_se(&idle);
+    println!(
+        "\nturns short of the city target: {flight_mean:.1} +/- {flight_se:.1} with a settler \
+         already walking, {idle_mean:.1} +/- {idle_se:.1} with none.\n\
+         The first column is time the empire-wide `counts.settlers == 0` clause forbids a second \
+         settler; the second is time it does not explain."
+    );
 
     let min_seats = number(&args, "--min-seats", 8);
     println!(

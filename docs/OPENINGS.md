@@ -188,13 +188,65 @@ hold 0–1 in 7–13.
 builds two settlers is a seat with room and safety, so the start is inside both
 columns. This is a hypothesis with a mechanism attached, not a result.
 
+## 6. Why the second settler is missing: expansion is serialized empire-wide
+
+The production gate for a settler (`src/ai/advanced.rs:6699`):
+
+```rust
+if city_count + counts.settlers < plan.desired_cities
+    && counts.settlers == 0
+    && city.pop >= 2
+    && expansion_open
+    && site.is_some()
+```
+
+`counts` is an `EmpireCounts`, so `counts.settlers == 0` means **at most one
+settler may exist in the whole empire at a time**. The first clause already
+caps cities-plus-settlers at the target, so this one adds no cap — it is purely
+a serialization constraint. A four-city empire expands no faster than a
+one-city empire: build a settler, walk it, found, and only then may the next
+one start.
+
+**Fires-check — the founding cadence, 60 maps, 4 players, 32×22:**
+
+| N cities | seats | mean turn first held | gap |
+|---|---|---|---|
+| 2 | 232 | 37.0 ± 1.3 | |
+| 3 | 195 | 71.0 ± 2.2 | +34.0 |
+| 4 | 157 | 89.5 ± 2.5 | +18.5 |
+| 5 | 87 | 118.7 ± 4.5 | +29.2 |
+| 6 | 50 | 150.2 ± 7.3 | +31.5 |
+
+**The gaps do not shrink.** A five-city empire adds its sixth as slowly as a
+two-city empire added its third, which is what serialization looks like and is
+not what a compounding expansion looks like. Expansion is supposed to be the
+one thing in the game that accelerates.
+
+And the blocked time is measured directly: a seat spends **60.8 ± 3.8 turns**
+short of its city target *with a settler already walking* — time in which
+`counts.settlers == 0` forbids starting another — against **68.5 ± 4.2 turns**
+short with no settler anywhere, which that clause does not explain (site
+availability, `pop >= 2`, the expansion window, or simply losing the production
+argmax to something else).
+
+So roughly **half** of all time-below-target is attributable to this one
+clause, and the other half needs its own diagnosis.
+
 ## What to measure next, in order
 
-1. **The second settler, causally.** Force the treated seat to queue a second
-   settler inside the opening window and run a paired, seat-mirrored `ai_eval`
-   on wins at the promotion gate's population. This is the first hypothesis in
-   this line of work that has both a measured gap (1.95 cities against a target
-   of 3) and a named mechanism, and it is cheap to falsify.
+1. **Relax `counts.settlers == 0`, causally.** Allow settlers in flight up to
+   the shortfall (the outer clause already caps the total), and run a paired,
+   seat-mirrored `ai_eval` on wins at the promotion gate's population. This is
+   the first hypothesis in this line of work with a measured gap (1.95 cities
+   against a target of 3), a named mechanism (§6), a passing fires-check (flat
+   founding gaps) and a quantified ceiling (60.8 turns per seat). It touches
+   `src/ai/advanced.rs`, which the version-control policy names a conflict
+   hotspot — extend the ownership claim and check open PRs before editing.
+
+   **What would refute it:** settlers cost population, so two in flight from a
+   young empire may stall the cities producing them. If terminal score falls
+   while city count rises, the extra cities are not paying for themselves and
+   the clause was load-bearing.
 2. **Lift `.min(6)`, separately.** Do not bundle it with (1): they are
    independent, and `docs/GENOME.md`'s rule about candidate-set changes moving
    effective thresholds applies to expansion targets too.
