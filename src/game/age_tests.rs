@@ -193,6 +193,9 @@ fn a_heroic_age_still_grants_three_dedications() {
     game.players[0].era_score = game.players[0].golden_age_threshold;
     game.players[1].era_score = 0;
     game.players[0].techs.insert("horseback_riding".to_string());
+    // An era is held open for its shipped 40-turn minimum, so a fixture that
+    // wants the next one has to stand far enough into this one.
+    game.turn = 40;
     game.process_eras();
     assert_eq!(game.players[0].age, "heroic");
     assert_eq!(game.players[0].dedication_choices, 3);
@@ -209,6 +212,9 @@ fn an_age_transition_clears_last_age_dedications() {
         .dedications
         .insert("monumentality".to_string());
     game.players[0].techs.insert("horseback_riding".to_string());
+    // An era is held open for its shipped 40-turn minimum, so a fixture that
+    // wants the next one has to stand far enough into this one.
+    game.turn = 40;
     game.process_eras();
     assert!(
         game.players[0].dedications.is_empty(),
@@ -285,6 +291,9 @@ fn leaving_a_dark_age_takes_the_card_back_out_of_its_slot() {
     game.players[0].era_score = game.players[0].golden_age_threshold;
     game.players[0].techs.insert("horseback_riding".to_string());
     game.world_era = 0;
+    // An era is held open for its shipped 40-turn minimum, so a fixture that
+    // wants the next one has to stand far enough into this one.
+    game.turn = 40;
 
     game.process_eras();
 
@@ -553,6 +562,9 @@ fn a_dedication_is_projected_from_the_era_that_just_ended() {
     );
 
     game.players[0].techs.insert("horseback_riding".to_string());
+    // An era is held open for its shipped 40-turn minimum, so a fixture that
+    // wants the next one has to stand far enough into this one.
+    game.turn = 40;
     game.process_eras();
 
     // Free Inquiry pays 1 per Eureka and 1 per Science building: 5 + 2.

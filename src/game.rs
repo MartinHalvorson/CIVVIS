@@ -58030,6 +58030,8 @@ mod district_mechanics {
         game.players[0].age = "dark".to_string();
         game.players[0].era_score = game.players[0].golden_age_threshold;
         game.players[0].techs.insert("horseback_riding".to_string());
+        // An era is held open for its shipped 40-turn minimum.
+        game.turn = 40;
         game.process_eras();
         assert_eq!(game.players[0].age, "heroic");
         assert_eq!(game.players[0].dedication_choices, 3);
