@@ -195,6 +195,29 @@ single-gene effect here is +0.0035, a tenth of it, at 0.8 SE. **So
 — `settler_min_pop` or `min_city_dist` carries it. Stopping at the block
 ablation would have produced a confident and wrong write-up.
 
+### …and neither expansion gene carries the block either
+
+`min_city_dist` swept at 20 mirrored maps a point: 3 → −0.0119, **4 (shipped)
+→ best**, 5 → −0.0042, 6 → −0.0160, 7 → −0.0176. Every alternative is worse.
+The shipped value is already the optimum of its own range.
+
+`settler_min_pop`: 1 → −0.0030, **2 (shipped)**, 3 → +0.0051, 4 → **−0.0256**,
+5 → **+0.0283**. That swings 0.054 between two *adjacent* values of what is
+essentially a monotone threshold. A real response surface does not do that;
+noise does.
+
+So the expansion block's +0.0305 is carried by no single gene: `city_target`
+saturates and is worth a tenth of it, `min_city_dist` says shipped is optimal,
+and `settler_min_pop` is erratic. The block reading was itself 1.8 SE on three
+draws. **The most economical explanation is that the block-level effect was
+noise**, which the decomposition is what revealed.
+
+That is the third time in this sequence that a block- or sweep-level signal
+dissolved under decomposition or resampling. The pattern is stable enough to
+state as a property of this evaluator: **at 16–20 mirrored maps, effects below
+about 0.03 cannot be distinguished from noise, and the only defence is
+replication on disjoint maps.**
+
 ### War timing — hypothesis refuted
 
 `src/bin/war_census.rs`, 53 wars over 24 maps at 6p/500 turns: **98% of wars
