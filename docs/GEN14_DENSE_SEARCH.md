@@ -146,7 +146,9 @@ seeing a favorable result.
 
 ## Upstream reconciliation
 
-`528cb11` landed while the gate was running. It adds a genome-selection probe
-and documentation but does not change any agent, entrant, default, champion,
-or evolution behavior. Both compared policies are consequently identical on
-current main, so repeating the 420-map audit would test the same contrast.
+Three lab-only commits through `3de6688` landed while the gate was running.
+They add genome-selection, breeding, and order-ablation binaries plus
+documentation, but do not change any agent, entrant, default, committed
+champion, or evolution behavior. Both compared policies are consequently
+identical on current main, so repeating the 420-map audit would test the same
+contrast.
