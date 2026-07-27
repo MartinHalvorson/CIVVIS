@@ -7400,9 +7400,13 @@ function supervisedSuccessorChanged(successor, finishedInstance, finishedSeed) {
   return processChanged || worldChanged;
 }
 
+// How long a process handoff may take before the veil stops calling it normal.
+const HANDOFF_QUIET_MS = 2500;
+
 function waitForSupervisedSuccessor(finishedInstance, finishedSeed) {
   if (supervisorReconnectBusy || supervisorReconnectTimer) return;
   supervisorReconnectWanted = true;
+  const watchStartedAt = Date.now();
   const poll = async () => {
     supervisorReconnectTimer = null;
     supervisorReconnectBusy = true;
@@ -7451,9 +7455,15 @@ function waitForSupervisedSuccessor(finishedInstance, finishedSeed) {
         return;
       }
     } catch (e) {
-      // A short connection failure is expected while the listening socket is
-      // handed from the completed process to its successor.
-      setWorldTransitionStage("Server handoff · reconnecting");
+      // A short connection failure is not a fault: it is what handing the
+      // listening socket from one process to its successor looks like, and it
+      // happens on every single restart. Saying "reconnecting" for it made the
+      // ordinary case read as a problem — measured against a stand-in
+      // supervisor, the gap is about half a second and the whole restart is
+      // under two. Only a handoff that has genuinely dragged says so.
+      setWorldTransitionStage(Date.now() - watchStartedAt < HANDOFF_QUIET_MS
+        ? "Starting the new world"
+        : "Server handoff · reconnecting");
     } finally {
       supervisorReconnectBusy = false;
     }
@@ -17725,6 +17735,16 @@ function skyScaleChoice(radius, want) {
 function skySceneCaption(radius) {
   const span = skyStageSpan();
   const across = span / Math.max(1e-30, radius);   // Earth radii across the stage
+  // Standing over the destination, the caption is the destination: its name,
+  // how far the trip was, and the thing that is wrong with it. That last part
+  // is the whole payoff of the survey — a civilization that looked harder is
+  // standing over a better world, and it should be able to read why.
+  const target = skyTarget();
+  if (across < 40 * target.size && skyRungAtLeast("space")) {
+    const [exoX, exoY] = skyBodyPos(skyExoBody());
+    if (Math.hypot(exoX - SKY_PAN.x, exoY - SKY_PAN.y) < across)
+      return [target.name, `${target.ly.toFixed(2)} light-years. ${target.note}`];
+  }
   if (across > 30000 * LIGHT_YEAR)
     return ["The Milky Way",
             `${(GALAXY_DISC_LY * 2 / 1000).toFixed(0)},000 light-years across, and the Sun ` +
