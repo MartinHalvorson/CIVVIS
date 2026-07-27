@@ -63,7 +63,7 @@ fn number(args: &[String], flag: &str, default: usize) -> usize {
 /// evolution respects, so every draw is a play style rather than a broken
 /// agent. Seeded from the candidate index alone, so a run is reproducible and
 /// two runs at the same budget draw the same candidates.
-fn draw(base: &Weights, index: usize) -> Weights {
+fn draw(base: &Weights, index: usize, gene_frac: f64, step: f64) -> Weights {
     let mut state = 0x9E3779B97F4A7C15u64 ^ (index as u64).wrapping_mul(0x2545F4914F6CDD1D);
     let mut next = || {
         state ^= state << 13;
@@ -73,8 +73,10 @@ fn draw(base: &Weights, index: usize) -> Weights {
     };
     let mut genes = base.to_vec();
     for (gene, (low, high)) in genes.iter_mut().zip(Weights::bounds()) {
-        if next() < 0.34 {
-            *gene *= 0.75 + 0.5 * next();
+        if next() < gene_frac {
+            // Multiplicative step of +-`step`, so 0.25 reproduces the original
+            // +-25% and larger values search further from the incumbent.
+            *gene *= (1.0 - step) + 2.0 * step * next();
         }
         *gene = gene.clamp(low, high);
     }
@@ -199,13 +201,23 @@ fn main() {
     // rather than "is this better than a table average that no equal candidate
     // achieves".
     let margin = number(&args, "--margin-pct", 10) as f64 / 100.0;
+    // Mutation scale. The default reproduces the first run: +-25% on about a
+    // third of genes. 121 draws at that scale produced no candidate worth
+    // +72 Elo, which is either an exhausted neighbourhood or too small a step
+    // -- one parameter separates them.
+    let step = number(&args, "--step-pct", 25) as f64 / 100.0;
+    let gene_frac = number(&args, "--gene-pct", 34) as f64 / 100.0;
 
     println!(
         "genome_gate: budget {budget} games · {players}p {width}x{height} {turns}t · \
          SPRT H0={parity:.3} (measured) H1={:.3} bound 2.94, max {max_games} games/candidate",
         parity + margin
     );
-    println!("  every game is a gate game; no games are spent ranking candidates");
+    println!(
+        "  mutation: +-{:.0}% on {:.0}% of genes · every game is a gate game, none spent ranking",
+        100.0 * step,
+        100.0 * gene_frac
+    );
     println!();
 
     // Gate a BATCH of candidates concurrently against the current champion.
@@ -224,7 +236,7 @@ fn main() {
         let contenders: Vec<(usize, Weights)> = (0..batch)
             .map(|_| {
                 candidate += 1;
-                (candidate, draw(&champion, candidate))
+                (candidate, draw(&champion, candidate, gene_frac, step))
             })
             .collect();
         let champ = champion.clone();
