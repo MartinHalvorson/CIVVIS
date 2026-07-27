@@ -346,72 +346,111 @@ fn earth_tile(wm: &WorldMap, pos: Pos) -> EarthTile {
 }
 
 /// Islands a tile-wide vote would lose, and that a map of Earth should not be
-/// without: every one of them is smaller than a tile at most map sizes, so
-/// the cells that carry them are outvoted by the sea around them.
+/// without, each with its area in thousands of square kilometres.
 ///
-/// Each is seated on the single tile nearest it. Most of the list is
-/// consequential in play — a civilization begins on Britain, Japan, Java,
-/// Luzon, Sri Lanka, Madagascar and New Zealand — and the rest are the
-/// stepping stones that decide whether an ocean can be crossed at all.
-const EARTH_ISLANDS: &[(f64, f64)] = &[
-    (-4.0, 54.0),     // Britain
-    (-8.0, 53.3),     // Ireland
-    (-19.0, 64.9),    // Iceland
-    (-7.0, 62.0),     // Faroes
-    (-25.7, 37.8),    // Azores
-    (-15.6, 28.1),    // Canaries
-    (-23.6, 15.1),    // Cape Verde
-    (14.3, 40.7),     // Sicily and the Italian south
-    (9.0, 40.1),      // Sardinia
-    (25.0, 35.3),     // Crete
-    (33.3, 35.1),     // Cyprus
-    (28.2, 36.4),     // Rhodes
-    (-77.0, 21.5),    // Cuba
-    (-71.0, 19.0),    // Hispaniola
-    (-66.5, 18.2),    // Puerto Rico
-    (-61.0, 13.5),    // the Lesser Antilles
-    (-59.5, 13.2),    // Barbados
-    (-90.4, -0.6),    // Galapagos
-    (-109.4, -27.1),  // Rapa Nui
-    (-149.5, -17.6),  // Tahiti
-    (-171.8, -13.8),  // Samoa
-    (178.4, -17.8),   // Fiji
-    (166.5, -21.5),   // New Caledonia
-    (168.0, -16.5),   // Vanuatu
-    (159.9, -9.4),    // the Solomons
-    (150.0, -6.0),    // the Bismarcks
-    (-157.9, 21.3),   // Hawaii
-    (145.7, 15.2),    // the Marianas
-    (134.5, 7.5),     // Palau
-    (168.7, 7.1),     // the Marshalls
-    (172.9, 1.4),     // Kiribati
-    (121.0, 23.7),    // Taiwan
-    (127.8, 26.3),    // Okinawa
-    (140.0, 37.5),    // Japan
-    (142.0, 45.0),    // Hokkaido and the Kurils
-    (124.0, 11.0),    // the Visayas
-    (121.0, 14.5),    // Luzon
-    (110.0, -7.3),    // Java
-    (115.2, -8.4),    // Bali
-    (98.9, 3.6),      // Sumatra
-    (80.7, 7.9),      // Sri Lanka
-    (73.0, 4.2),      // the Maldives
-    (55.5, -4.6),     // the Seychelles
-    (57.5, -20.3),    // Mauritius
-    (47.5, -19.0),    // Madagascar
-    (43.3, -11.7),    // the Comoros
-    (39.3, -6.1),     // Zanzibar
-    (54.0, 24.5),     // Bahrain and the Gulf
-    (174.8, -41.0),   // New Zealand, north
-    (170.5, -45.0),   // New Zealand, south
-    (147.0, -42.0),   // Tasmania
-    (-59.5, -51.7),   // the Falklands
-    (-73.5, -42.5),   // Chiloe
-    (-53.0, 47.5),    // Newfoundland
-    (-63.0, 45.0),    // Nova Scotia
-    (-45.0, 61.0),    // Greenland's south cape
-    (-133.0, 54.0),   // Haida Gwaii
-    (-135.5, 57.5),   // the Alexander Archipelago
+/// Every one of them is smaller than a tile at some map size, so the cells
+/// carrying them are outvoted by the sea around them. Each is seated on the
+/// single tile nearest it, provided the map is fine enough to be worth a tile
+/// of — see [`earth_tile_area`]. Most of the list is consequential in play: a
+/// civilization begins on Britain, Japan, Java, Luzon, Sri Lanka, Madagascar
+/// and New Zealand, and the rest are the stepping stones that decide whether
+/// an ocean can be crossed at all.
+const EARTH_ISLANDS: &[(f64, f64, f64)] = &[
+    (-4.0, 54.0, 209.3),      // Britain
+    (-8.0, 53.3, 84.4),       // Ireland
+    (-19.0, 64.9, 103.0),     // Iceland
+    (-7.0, 62.0, 1.4),        // the Faroes
+    (-25.7, 37.8, 2.3),       // the Azores
+    (-15.6, 28.1, 7.5),       // the Canaries
+    (-23.6, 15.1, 4.0),       // Cape Verde
+    (14.3, 37.6, 25.7),       // Sicily
+    (9.0, 40.1, 24.1),        // Sardinia
+    (25.0, 35.3, 8.3),        // Crete
+    (33.3, 35.1, 9.3),        // Cyprus
+    (28.2, 36.4, 1.4),        // Rhodes
+    (-77.0, 21.5, 105.8),     // Cuba
+    (-71.0, 19.0, 76.2),      // Hispaniola
+    (-66.5, 18.2, 8.9),       // Puerto Rico
+    (-61.0, 13.5, 14.0),      // the Lesser Antilles
+    (-90.4, -0.6, 7.9),       // the Galapagos
+    (-109.4, -27.1, 0.2),     // Rapa Nui
+    (-149.5, -17.6, 1.0),     // Tahiti
+    (-171.8, -13.8, 2.8),     // Samoa
+    (178.4, -17.8, 18.3),     // Fiji
+    (166.5, -21.5, 18.6),     // New Caledonia
+    (168.0, -16.5, 12.2),     // Vanuatu
+    (159.9, -9.4, 28.4),      // the Solomons
+    (150.5, -5.5, 49.7),      // the Bismarcks
+    (-157.9, 21.3, 28.3),     // Hawaii
+    (145.7, 15.2, 1.0),       // the Marianas
+    (134.5, 7.5, 0.5),        // Palau
+    (168.7, 7.1, 0.2),        // the Marshalls
+    (172.9, 1.4, 0.8),        // Kiribati
+    (121.0, 23.7, 36.2),      // Taiwan
+    (127.8, 26.3, 2.3),       // Okinawa
+    (139.5, 36.5, 228.0),     // Japan
+    (142.5, 43.5, 83.4),      // Hokkaido
+    (124.0, 11.0, 56.0),      // the Visayas
+    (121.0, 15.5, 110.0),     // Luzon
+    (110.0, -7.3, 138.8),     // Java
+    (115.2, -8.4, 5.8),       // Bali
+    (101.5, 0.0, 473.5),      // Sumatra
+    (80.7, 7.9, 65.6),        // Sri Lanka
+    (73.0, 4.2, 0.3),         // the Maldives
+    (55.5, -4.6, 0.5),        // the Seychelles
+    (57.5, -20.3, 2.0),       // Mauritius
+    (46.5, -19.0, 587.0),     // Madagascar
+    (43.3, -11.7, 1.9),       // the Comoros
+    (39.3, -6.1, 2.5),        // Zanzibar
+    (50.6, 26.0, 0.8),        // Bahrain
+    (175.5, -38.5, 113.7),    // New Zealand, north
+    (170.5, -44.0, 150.4),    // New Zealand, south
+    (146.8, -42.0, 68.4),     // Tasmania
+    (-59.0, -51.7, 12.2),     // the Falklands
+    (-73.8, -42.6, 8.4),      // Chiloe
+    (-55.5, 48.5, 108.9),     // Newfoundland
+    (-63.0, 45.0, 55.3),      // Nova Scotia
+    (-132.3, 53.2, 10.2),     // Haida Gwaii
+    (-134.5, 57.0, 36.3),     // the Alexander Archipelago
+];
+
+/// The inland waters a tile-wide vote would drain, each with its area in
+/// thousands of square kilometres.
+///
+/// These are the bodies that decide something: fresh water for the cities on
+/// them, a Harbor a landlocked civilization would otherwise never build, and a
+/// barrier armies have to go around. The Caspian is given two points because
+/// it is long enough that one would seat only half of it, and Chad and the
+/// Aral are given the extent they had before the twentieth century drained
+/// them, which is the Earth this map is of.
+///
+/// The area gate matters more here than it does for an island, and is set
+/// twice as tight. Seating Hawaii is the coarsest true thing a map at this
+/// resolution can say about that tile — there really is land in it. Draining
+/// the tile that holds Lake Erie on a Duel world is not: that tile is
+/// overwhelmingly Ontario, and calling it water would be a plain error rather
+/// than a rounding of one.
+const EARTH_LAKES: &[(f64, f64, f64)] = &[
+    (51.0, 41.5, 371.0),      // the Caspian, southern basin
+    (50.5, 45.5, 371.0),      // the Caspian, northern basin
+    (59.5, 45.0, 68.0),       // the Aral, at its 1960 extent
+    (108.0, 53.5, 31.7),      // Baikal
+    (74.5, 46.3, 16.4),       // Balkhash
+    (31.5, 61.0, 17.7),       // Ladoga
+    (-87.5, 47.7, 82.1),      // Superior
+    (-87.0, 44.0, 58.0),      // Michigan
+    (-82.2, 44.8, 59.6),      // Huron
+    (-79.5, 43.0, 25.7),      // Erie and Ontario
+    (-97.5, 52.5, 24.5),      // Winnipeg
+    (-110.0, 59.3, 7.9),      // Athabasca
+    (-114.0, 61.5, 27.2),     // Great Slave
+    (-121.0, 66.0, 31.0),     // Great Bear
+    (33.0, -1.0, 68.8),       // Victoria
+    (29.6, -6.0, 32.9),       // Tanganyika
+    (34.5, -12.0, 29.6),      // Malawi
+    (14.3, 13.2, 25.0),       // Chad, at the extent it held into the 1960s
+    (-69.3, -15.8, 8.4),      // Titicaca
+    (-71.5, 9.8, 13.2),       // Maracaibo
 ];
 
 /// Where each civilization actually began, in `(longitude, latitude)` degrees.
@@ -585,13 +624,48 @@ fn earth_land(wm: &WorldMap) -> BTreeSet<Pos> {
         .copied()
         .filter(|pos| !earth_tile(wm, *pos).water)
         .collect();
-    for (longitude, latitude) in EARTH_ISLANDS {
+    let tile_area = earth_tile_area(wm);
+    let mut islands: BTreeSet<Pos> = BTreeSet::new();
+    for (longitude, latitude, area) in EARTH_ISLANDS {
+        if area * ISLAND_TILE_SHARE < tile_area {
+            continue;
+        }
         if let Some(pos) = nearest_tile(wm, *longitude, *latitude) {
             land.insert(pos);
+            islands.insert(pos);
+        }
+    }
+    // And the same guarantee in reverse. A lake narrower than a tile is
+    // outvoted by the land around it exactly as an island is outvoted by the
+    // sea, and the Caspian is one tile wide on a Standard globe. An island
+    // already seated keeps its tile: nothing on this list is worth drowning a
+    // landmass for.
+    for (longitude, latitude, area) in EARTH_LAKES {
+        if area * LAKE_TILE_SHARE < tile_area {
+            continue;
+        }
+        if let Some(pos) = nearest_tile(wm, *longitude, *latitude) {
+            if !islands.contains(&pos) {
+                land.remove(&pos);
+            }
         }
     }
     land
 }
+
+/// Earth's surface in thousands of square kilometres, and what one tile of a
+/// given world is worth of it.
+const EARTH_AREA: f64 = 510_072.0;
+
+fn earth_tile_area(wm: &WorldMap) -> f64 {
+    EARTH_AREA / wm.tiles.len().max(1) as f64
+}
+
+/// How much of a tile a guaranteed island or lake has to be worth before the
+/// map is fine enough to draw it. An island earns its tile at an eighth of
+/// one and a lake only at a half, for the reason [`EARTH_LAKES`] gives.
+const ISLAND_TILE_SHARE: f64 = 8.0;
+const LAKE_TILE_SHARE: f64 = 2.0;
 
 /// Earth under a tile the world has already decided is land.
 ///
@@ -728,28 +802,25 @@ fn nearest_tile(wm: &WorldMap, longitude: f64, latitude: f64) -> Option<Pos> {
         })
 }
 
-/// Elbow room a true start asks for between two capitals before it starts
-/// giving ground, and it gives ground readily. A rolled map spreads its seats
-/// because nothing says where they belong; a true-start map has an answer for
-/// every seat and the spacing is only there to stop two civilizations landing
-/// on the same hex.
-const TRUE_START_SEPARATION: i32 = 3;
-
 /// Seat each civilization on the viable tile closest to its homeland.
 ///
 /// Closeness is measured on the globe, not in the storage rectangle: the tile
 /// whose centre points nearest the homeland's direction wins. Sites are handed
 /// out in `CIV_NAMES` order.
 ///
-/// Spacing is a preference and being home is the requirement, which is the
+/// Spacing is a floor and being home is what is maximised, which is the
 /// opposite of how a rolled map is laid out and the whole difference between a
-/// true start and a balanced one. Each seat asks for [`TRUE_START_SEPARATION`]
-/// hexes of clearance and accepts less the moment holding out would push it
-/// further from home than the clearance is worth — down to a plain refusal to
-/// share a hex, which is the one rule that never bends. Europe therefore comes
-/// out crowded, because Europe *is* crowded: Rome, Greece and Macedon stand
-/// where they stood rather than being fanned out across the Mediterranean to
-/// satisfy a spacing rule none of them ever obeyed.
+/// true start and a balanced one. The floor is [`MIN_START_SEPARATION`],
+/// because that is the radius `Game::can_found_city` refuses to build inside:
+/// a capital seated closer than that to its neighbour is a Settler that cannot
+/// found where it stands. Above the floor nothing is bought by standing
+/// further off, so every seat takes the tile nearest its own homeland and
+/// Europe comes out crowded — because Europe *is* crowded. Rome, Greece and
+/// Macedon stand a founding radius apart rather than being fanned across the
+/// Mediterranean to satisfy a spacing rule none of them ever obeyed.
+///
+/// The floor gives way rather than leaving a seat unfilled, one ring at a
+/// time, down to a plain refusal to share a hex.
 fn historic_major_spawns(wm: &WorldMap, candidates: &[Pos], count: usize) -> Vec<Pos> {
     let mut available: Vec<Pos> = candidates.to_vec();
     let mut starts: Vec<Pos> = Vec::new();
@@ -759,38 +830,25 @@ fn historic_major_spawns(wm: &WorldMap, candidates: &[Pos], count: usize) -> Vec
         }
         let (longitude, latitude) = EARTH_HOMELANDS[index % EARTH_HOMELANDS.len()];
         let target = earth_direction(longitude, latitude);
-        let toward = |pos: &Pos| dot(wm.direction(*pos), target);
         let closest = |pool: &mut dyn Iterator<Item = (usize, &Pos)>| {
             pool.max_by(|(_, a), (_, b)| {
-                toward(a)
-                    .partial_cmp(&toward(b))
+                dot(wm.direction(**a), target)
+                    .partial_cmp(&dot(wm.direction(**b), target))
                     .unwrap_or(std::cmp::Ordering::Equal)
             })
             .map(|(candidate_index, _)| candidate_index)
         };
-        // Where this civilization would sit if nobody else were on the map,
-        // and then the best seat each width of clearance still allows. The one
-        // that moves it least off home wins, and clearance only breaks a tie —
-        // which is the whole difference between a true start and a balanced
-        // one. Clearance of one is a plain refusal to share a hex, and that is
-        // the floor: it is always available, so a seat is always found.
-        let home = closest(&mut available.iter().enumerate()).unwrap_or(0);
-        let mut selected = home;
-        let mut best: Option<(i32, i32)> = None;
-        for separation in 1..=TRUE_START_SEPARATION {
+        let mut selected = 0;
+        for separation in (1..=MIN_START_SEPARATION).rev() {
             let taken = taken_within(wm, &starts, separation - 1);
-            let Some(candidate) = closest(
+            if let Some(candidate) = closest(
                 &mut available
                     .iter()
                     .enumerate()
                     .filter(|(_, candidate)| !taken.contains(candidate)),
-            ) else {
-                continue;
-            };
-            let cost = (wm.distance(available[candidate], available[home]), -separation);
-            if best.is_none_or(|previous| cost < previous) {
-                best = Some(cost);
+            ) {
                 selected = candidate;
+                break;
             }
         }
         starts.push(available.swap_remove(selected));
@@ -800,8 +858,8 @@ fn historic_major_spawns(wm: &WorldMap, candidates: &[Pos], count: usize) -> Vec
     // take the hex a later one wanted and leave it walking. Nothing about the
     // list says Rome should outrank Venice for Italian ground, so trade any
     // pair of seats that both civilizations would rather have the other way.
-    // The occupied hexes never change, only who is on which, so every spacing
-    // the pass above bought survives untouched.
+    // The occupied hexes never change, only who is on which, so every hex of
+    // clearance the pass above bought survives untouched.
     let homes: Vec<[f64; 3]> = (0..starts.len())
         .map(|index| {
             let (longitude, latitude) = EARTH_HOMELANDS[index % EARTH_HOMELANDS.len()];
@@ -2319,6 +2377,14 @@ pub fn generate_with_script(
     let passable: BTreeSet<Pos> = land
         .iter()
         .filter(|pos| rules.is_passable(&wm.tiles[pos]))
+        // Nobody has ever founded a city on an ice cap. A true-start world
+        // carries a real Antarctica and a real Greenland, which between them
+        // are a tenth of its land; left in the ground the regions are cut from
+        // they take a tenth of the city-states with them and seat them where
+        // no city has stood — and a region with no other ground to offer seats
+        // one there whatever the candidate pool says. A rolled world's snow is
+        // a thin polar fringe rather than a continent, and is left alone.
+        .filter(|pos| !script.is_fixed_geography() || wm.tiles[pos].terrain != "snow")
         .cloned()
         .collect();
     let total_spawns = num_major_spawns + num_minor_spawns;
@@ -5912,9 +5978,14 @@ mod river_tests {
     #[test]
     fn every_civilization_opens_on_its_own_homeland() {
         let rules = Rules::embedded();
+        // The whole roster needs a world with room for it. Every capital holds
+        // a founding radius nothing else may enter, which is 37 hexes apiece;
+        // 105 of those do not fit inside Huge's 2,700 tiles of land however
+        // they are arranged, and a map that cannot seat them legally is not
+        // the thing under test here.
         let size = CIV6_MAP_SIZES
             .iter()
-            .find(|size| size.id == "huge")
+            .find(|size| size.id == "ludicrous")
             .unwrap();
         assert_eq!(
             EARTH_HOMELANDS.len(),
@@ -5972,15 +6043,29 @@ mod river_tests {
         drift.sort();
         let (worst, exile) = *drift.last().unwrap();
         assert!(
-            worst <= 2,
+            worst <= 5,
             "{exile} opened {worst} tiles from its homeland; \
              the full spread was {drift:?}"
         );
         let home_exactly = drift.iter().filter(|(steps, _)| *steps == 0).count();
         assert!(
-            home_exactly * 5 >= seats * 4,
+            home_exactly * 10 >= seats * 7,
             "only {home_exactly} of {seats} civilizations opened on their own hex"
         );
+
+        // And every one of them can actually found where it stands. This is
+        // what the drift above is paid for: `Game::can_found_city` refuses a
+        // site inside `MIN_START_SEPARATION` of a city that already exists, so
+        // two capitals any closer would leave the second Settler walking.
+        for (index, start) in spawns.iter().enumerate() {
+            for other in &spawns[index + 1..] {
+                let gap = world.distance(*start, *other);
+                assert!(
+                    gap >= MIN_START_SEPARATION,
+                    "two capitals {gap} apart, inside the founding radius"
+                );
+            }
+        }
     }
 
     /// Every natural wonder a true-start world draws stands where it stands.
@@ -6078,6 +6163,18 @@ mod river_tests {
                 );
                 let where_ = format!("{} on {}", size.id, shape.id());
                 assert_eq!(spawns.len(), 15, "{where_}: not every seat was filled");
+                for (index, start) in spawns.iter().enumerate() {
+                    let tile = &world.tiles[start];
+                    assert!(!rules.is_water(tile), "{where_}: a seat opened at sea");
+                    assert_ne!(tile.terrain, "snow", "{where_}: a seat opened on the ice");
+                    for other in &spawns[index + 1..] {
+                        let gap = world.distance(*start, *other);
+                        assert!(
+                            gap >= MIN_START_SEPARATION,
+                            "{where_}: two starts {gap} apart, inside the founding radius"
+                        );
+                    }
+                }
 
                 let land = world
                     .tiles
