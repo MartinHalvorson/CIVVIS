@@ -303,7 +303,7 @@
     letter-spacing: .12em; text-transform: uppercase;
   }
   .sidebar-section { flex: 0 0 auto; margin: 0 0 10px; }
-  #eventsec[open], #warsec[open] { display: flex; flex-direction: column; min-height: 0; }
+  #eventsec[open], #warsec[open], #reasonsec[open] { display: flex; flex-direction: column; min-height: 0; }
   /* Share the spare height three to two, and never shrink — a shrunk section
      would push its own content past its box and over the panel below instead
      of scrolling. The basis is zero rather than auto so that a long log
@@ -316,16 +316,23 @@
      keeps its own min-height and `.sec` does not clip, so the log paints
      straight over the panels below it. Header 39px + the body's 13px padding
      and 1px border either side + the list's floor. */
-  #eventsec[open] { flex: 3 0 0; min-height: 234px; }
+  /* Three logs now share the spare height. The reasoning log gets the largest
+     share because it is the only one whose entries are sentences rather than
+     labels — three of its rows is one of the event log's — and because it is
+     the panel this column is read for. Its floor also has to cover the filter
+     bar above the list, which the other two do not have. */
+  #reasonsec[open] { flex: 3 0 0; min-height: 288px; }
+  #eventsec[open] { flex: 2 0 0; min-height: 198px; }
   #warsec[open] { flex: 2 0 0; min-height: 198px; }
   /* A <details> hands its children to an internal content box, so the panel
      inside it only inherits the extra height if that box is told to grow
      too. Browsers without ::details-content simply keep the log at its
      min-height, which is the old fixed-box behaviour. */
-  #eventsec[open]::details-content, #warsec[open]::details-content {
+  #eventsec[open]::details-content, #warsec[open]::details-content,
+  #reasonsec[open]::details-content {
     flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column;
   }
-  #eventsec[open] > .sec, #warsec[open] > .sec { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+  #eventsec[open] > .sec, #warsec[open] > .sec, #reasonsec[open] > .sec { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
   .section-label {
     min-height: 43px; display: flex; align-items: center; gap: 9px; padding: 8px 9px;
     color: #bac8c2; background: linear-gradient(135deg, #162622, #101c19);
@@ -1713,6 +1720,41 @@
   .event-text { color: #cad5cf; font-size: var(--type-secondary); }
   .event-turn { color: var(--faint); font-size: var(--type-label); letter-spacing: .07em; text-transform: uppercase; }
   .empty-state { padding: 10px 0 2px; color: var(--faint); font-size: var(--type-secondary); text-align: center; }
+
+  /* AI reasoning log — what each civilization decided this turn, and why.
+     The three filters sit above the list and never scroll with it: a reader
+     narrowing to one civilization or to policy cards must not have to scroll
+     back up to change their mind. */
+  .reason-filters { flex: 0 0 auto; display: grid; grid-template-columns: 1fr; gap: 5px; margin-bottom: 9px; }
+  .reason-filter { display: grid; grid-template-columns: 42px 1fr; align-items: center; gap: 7px; }
+  .reason-filter > span { color: var(--faint); font-size: var(--type-label); font-weight: 800; letter-spacing: .09em; text-transform: uppercase; }
+  .reason-filter select { width: 100%; min-width: 0; }
+  .reason-list { flex: 1 1 auto; min-height: 150px; display: flex; flex-direction: column; gap: 6px; overflow-y: auto; overflow-anchor: none; scrollbar-gutter: stable; }
+  .reason-list > * { flex: 0 0 auto; }
+  /* One thought. The civilization's own jersey colour runs down the left edge,
+     which is what lets a reader follow a single empire through the combined
+     log without reading a name on every line. */
+  .reason-item {
+    padding: 7px 8px 7px 9px; border-left: 3px solid var(--reason-tint, #49645a);
+    border-radius: 4px 9px 9px 4px; background: #0b1613;
+  }
+  .reason-item.level-strategy { background: linear-gradient(90deg, #2b2413, #0b1613 78%); box-shadow: inset 0 0 0 1px #d7b66a1f; }
+  .reason-item.level-detail { background: #091210; opacity: .92; }
+  .reason-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+  .reason-civ { min-width: 0; color: var(--reason-tint, #9fb3aa); font-size: var(--type-label); font-weight: 850; letter-spacing: .07em; text-transform: uppercase; overflow: hidden; text-overflow: clip; white-space: nowrap; }
+  .reason-turn { flex: 0 0 auto; color: var(--faint); font-size: var(--type-label); letter-spacing: .06em; text-transform: uppercase; }
+  .reason-headline { margin-top: 2px; color: #d3ded8; font-size: var(--type-secondary); }
+  .reason-item.level-strategy .reason-headline { color: #f0e2c2; font-weight: 650; }
+  .reason-detail { margin-top: 3px; color: var(--faint); font-size: var(--type-label); line-height: 1.45; }
+  .reason-topic {
+    display: inline-block; margin-right: 5px; padding: 1px 5px; border-radius: 4px;
+    background: #ffffff0a; border: 1px solid #ffffff12; color: #9fb3aa;
+    font-size: var(--type-label); font-weight: 800; letter-spacing: .06em; text-transform: uppercase;
+  }
+  .reason-locate { margin-left: 5px; }
+  /* The log says when it is not the whole story rather than reading as a
+     civilization that went quiet. */
+  .reason-gap { padding: 5px 8px; border-radius: 5px; background: #1a1410; border: 1px dashed #6b563a; color: #cbb188; font-size: var(--type-label); text-align: center; }
 
   /* War log — compact conflict infoboxes, one per declaration */
   .war-list { flex: 1 1 auto; min-height: 132px; display: flex; flex-direction: column; gap: 7px; overflow-y: auto; overflow-anchor: none; scrollbar-gutter: stable; }
@@ -3538,12 +3580,37 @@
       </div>
     </details>
 
-    <details class="sidebar-section" id="eventsec" data-section="event-log" open>
+    <!-- The three logs run deepest-cause first: why a civilization acted, then
+         the wars that reasoning started, then the world's own record of what
+         happened. An observer reading downward reads a turn in the order it
+         was decided. -->
+    <details class="sidebar-section" id="reasonsec" data-section="ai-reasoning" open>
       <summary class="section-label">
-        <span class="section-title"><span class="section-icon" aria-hidden="true">☷</span><span>Game event log</span></span>
-        <span class="section-meta"><span class="event-scope" id="eventscope"></span><span class="section-chevron" aria-hidden="true"></span></span>
+        <span class="section-title"><span class="section-icon" aria-hidden="true">◉</span><span>AI reasoning log</span></span>
+        <span class="section-meta"><span class="event-scope" id="reasonscope"></span><span class="section-chevron" aria-hidden="true"></span></span>
       </summary>
-      <div class="sec"><div id="events" class="event-list"><div class="empty-state">The world is quiet—for now.</div></div></div>
+      <div class="sec">
+        <div class="reason-filters">
+          <label class="reason-filter"><span>Civ</span>
+            <select id="reasonplayer" aria-label="Whose reasoning to show">
+              <option value="all">All civilizations</option>
+            </select>
+          </label>
+          <label class="reason-filter"><span>Depth</span>
+            <select id="reasonlevel" aria-label="How deep into the reasoning to go">
+              <option value="strategy">Grand strategy only</option>
+              <option value="decision" selected>Decisions</option>
+              <option value="detail">Everything</option>
+            </select>
+          </label>
+          <label class="reason-filter"><span>Topic</span>
+            <select id="reasontopic" aria-label="Which part of the reasoning to show">
+              <option value="all">All topics</option>
+            </select>
+          </label>
+        </div>
+        <div id="reasoning" class="reason-list"><div class="empty-state">No civilization has thought out loud yet.</div></div>
+      </div>
     </details>
 
     <details class="sidebar-section" id="warsec" data-section="war-log" open>
@@ -3552,6 +3619,14 @@
         <span class="section-meta"><span class="event-scope" id="warscope"></span><span class="section-chevron" aria-hidden="true"></span></span>
       </summary>
       <div class="sec"><div id="wars" class="war-list"><div class="empty-state">No war has been declared.</div></div></div>
+    </details>
+
+    <details class="sidebar-section" id="eventsec" data-section="event-log" open>
+      <summary class="section-label">
+        <span class="section-title"><span class="section-icon" aria-hidden="true">☷</span><span>Game event log</span></span>
+        <span class="section-meta"><span class="event-scope" id="eventscope"></span><span class="section-chevron" aria-hidden="true"></span></span>
+      </summary>
+      <div class="sec"><div id="events" class="event-list"><div class="empty-state">The world is quiet—for now.</div></div></div>
     </details>
 
     <details class="sidebar-section" id="strategysec" data-section="active-strategy" open>
@@ -8281,6 +8356,19 @@ function adoptTiles(st) {
 // `have` is a different question from `painted`, and the tile patch below
 // turns on the difference: a state can arrive, patch the tiles and still fail
 // to draw. What a patch is built against is what this page *holds*.
+// The AI reasoning log's own state, declared here rather than beside the rest
+// of that panel further down the file. `paintedQuery` below reads the cursor,
+// and the spectator's first fetch happens while this script is still running:
+// a `let` declared after that point would be in its temporal dead zone and the
+// throw would take the whole client with it.
+const REASON_FILTER_KEY = "civvis-reasoning-filters-v1";
+let reasoningLog = {cursor: 0, world: null, thoughts: [], dropped: 0, truncatedTurns: 0};
+let reasonFilters = {player: "all", level: "decision", topic: "all"};
+try {
+  const saved = JSON.parse(localStorage.getItem(REASON_FILTER_KEY) || "null");
+  if (saved && typeof saved === "object") reasonFilters = {...reasonFilters, ...saved};
+} catch (e) { /* a corrupt preference is not worth a dead page */ }
+
 function paintedQuery() {
   // Only the watching loop says what it holds. Saying so is also what asks the
   // server to hold the answer back until there is a next turn, and the human
@@ -8288,9 +8376,13 @@ function paintedQuery() {
   const held = SPEC && tileStore
     ? `&have=${tileStore.seed}:${tileStore.turn}:${tileStore.finished ? 1 : 0}` : "";
   const who = `&viewer=${VIEWER_ID}`;
+  // The last thought this page holds. Naming it is what asks for the AI
+  // reasoning delta and what keeps it to the handful of lines recorded since,
+  // rather than the whole ring on every turn.
+  const thinking = `&think=${reasoningLog.cursor}`;
   return (paintedFrame === null ? "?painted="
     : `?painted=${paintedFrame.turn}&world=${paintedFrame.seed}` +
-      `&finished=${paintedFrame.finished ? 1 : 0}`) + who + held;
+      `&finished=${paintedFrame.finished ? 1 : 0}`) + who + held + thinking;
 }
 // One turn, one frame on the glass.
 //
@@ -22198,6 +22290,218 @@ function drawResearchSlot(el, kind, name, progress, total, perTurn, boosted) {
   card.querySelector(".research-eta").textContent = eta;
   card.querySelector(".research-turn-label").textContent = `turn${eta === 1 ? "" : "s"}`;
 }
+// ---------------------------------------------------------------- reasoning
+//
+// The AI reasoning log. The event log says what happened and the war log keeps
+// the account; this says why any of it was decided, in the agents' own terms.
+//
+// It arrives as a *delta*, not as part of the world observation: `/state` is
+// close to a megabyte on a standard map and this page fetches one per turn, so
+// the page tells the server the last thought it holds (`&think=`) and is sent
+// only what came after it. The history the filters run over is therefore this
+// page's, kept here.
+const REASON_TOPICS = [
+  ["strategy", "Grand strategy"],
+  ["research", "Research & civics"],
+  ["government", "Government"],
+  ["policies", "Policy cards"],
+  ["cities", "City production"],
+  ["expansion", "Expansion & land"],
+  ["military", "War & units"],
+  ["diplomacy", "Diplomacy"],
+  ["economy", "Gold & trade"],
+  ["faith", "Religion"],
+];
+const REASON_TOPIC_LABEL = new Map(REASON_TOPICS);
+// Depth is a floor, not an equality: choosing "Decisions" shows the grand
+// strategy above it too, because a decision read without the plan it serves is
+// the half of the reasoning that explains nothing.
+const REASON_LEVEL_RANK = {strategy: 0, decision: 1, detail: 2};
+// How much of the log this page keeps. The server's ring is larger; this is
+// what one browser holds so that narrowing to a single civilization still has
+// history to show.
+const REASON_KEEP = 2000;
+// How many rows are put in the DOM at once. A filter of "everything, all
+// civilizations" over a long game is thousands of entries and rebuilding that
+// list every turn costs more than the map does.
+const REASON_RENDER_LIMIT = 240;
+function reasonEscape(text) {
+  return String(text ?? "").replace(/[&<>"]/g, c =>
+    ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"})[c]);
+}
+
+// Take a delta into this page's copy of the log.
+//
+// Two things reset it: the server saying the cursor named a log it does not
+// have (`reset`), and a new world arriving under a tab that was watching the
+// last one. Without the second, a page that survives the exhibition's handoff
+// shows the previous game's reasoning above the new one's.
+function absorbReasoning(st) {
+  if (!st) return;
+  const world = st.seed ?? null;
+  if (reasoningLog.world !== world) {
+    reasoningLog = {cursor: 0, world, thoughts: [], dropped: 0, truncatedTurns: 0};
+  }
+  const delta = st.ai_reasoning;
+  if (!delta || !Array.isArray(delta.thoughts)) return;
+  // The same state can be rendered more than once — a resize, a redraw — and
+  // an already-absorbed delta must not be appended a second time.
+  if (delta.cursor <= reasoningLog.cursor && !delta.reset) return;
+  if (delta.reset) reasoningLog.thoughts = [];
+  reasoningLog.cursor = delta.cursor;
+  reasoningLog.dropped = delta.dropped || 0;
+  reasoningLog.truncatedTurns = delta.truncated_turns || 0;
+  for (const thought of delta.thoughts) reasoningLog.thoughts.push(thought);
+  if (reasoningLog.thoughts.length > REASON_KEEP) {
+    reasoningLog.thoughts.splice(0, reasoningLog.thoughts.length - REASON_KEEP);
+  }
+}
+
+function reasonPlayerName(id) {
+  const player = (state.players || [])[id];
+  return player ? player.civ : `Player ${id}`;
+}
+function reasonTint(id) {
+  const player = (state.players || [])[id];
+  if (!player) return "#49645a";
+  // The lighter of the civilization's two jersey colours: the darker one is
+  // legible as a band but not as text on this panel's ground.
+  return jerseyLanes(id)[1];
+}
+
+// Keep the two option lists in step with the world without rebuilding them on
+// every frame — a <select> being replaced under an open dropdown closes it.
+function syncReasonOptions() {
+  const playerSelect = document.getElementById("reasonplayer");
+  const topicSelect = document.getElementById("reasontopic");
+  if (!playerSelect || !topicSelect) return;
+  const seats = (state.players || [])
+    .filter(player => player && !player.is_barbarian && player.met !== false)
+    .map(player => player.id);
+  const signature = `${state.seed}|${seats.join(",")}`;
+  if (playerSelect.dataset.signature !== signature) {
+    playerSelect.dataset.signature = signature;
+    playerSelect.innerHTML = `<option value="all">All civilizations</option>` +
+      seats.map(id => `<option value="${id}">${reasonEscape(reasonPlayerName(id))}` +
+        `${state.players[id].is_minor ? " (city-state)" : ""}</option>`).join("");
+  }
+  if (!topicSelect.dataset.built) {
+    topicSelect.dataset.built = "1";
+    topicSelect.innerHTML = `<option value="all">All topics</option>` +
+      REASON_TOPICS.map(([id, label]) => `<option value="${id}">${label}</option>`).join("");
+  }
+  // A selection that no longer exists — the civilization was watching died, or
+  // the world changed — falls back to everyone rather than showing nothing.
+  if (reasonFilters.player !== "all" && !seats.includes(Number(reasonFilters.player))) {
+    reasonFilters.player = "all";
+  }
+  playerSelect.value = String(reasonFilters.player);
+  topicSelect.value = reasonFilters.topic;
+  const levelSelect = document.getElementById("reasonlevel");
+  if (levelSelect) levelSelect.value = reasonFilters.level;
+}
+
+function reasonFilteredThoughts() {
+  const depth = REASON_LEVEL_RANK[reasonFilters.level] ?? 1;
+  const player = reasonFilters.player === "all" ? null : Number(reasonFilters.player);
+  const topic = reasonFilters.topic === "all" ? null : reasonFilters.topic;
+  const kept = [];
+  // Newest first, and stop as soon as the DOM budget is full: an unfiltered
+  // log of thousands must not be walked to its end to show its first screen.
+  for (let i = reasoningLog.thoughts.length - 1; i >= 0; i--) {
+    const thought = reasoningLog.thoughts[i];
+    if ((REASON_LEVEL_RANK[thought.level] ?? 2) > depth) continue;
+    if (player !== null && thought.player !== player) continue;
+    if (topic !== null && thought.topic !== topic) continue;
+    kept.push(thought);
+    if (kept.length >= REASON_RENDER_LIMIT) break;
+  }
+  return kept;
+}
+
+function reasonItemHtml(thought) {
+  const tint = reasonTint(thought.player);
+  const topic = REASON_TOPIC_LABEL.get(thought.topic) || thought.topic;
+  const locate = Array.isArray(thought.pos)
+    ? `<button type="button" class="mini reason-locate" ` +
+      `onclick='centerOn(${JSON.stringify(thought.pos)});draw()' ` +
+      `title="Show this on the map" aria-label="Show this on the map">⌖</button>`
+    : "";
+  const detail = thought.detail
+    ? `<div class="reason-detail"><span class="reason-topic">${reasonEscape(topic)}</span>` +
+      `${reasonEscape(thought.detail)}</div>`
+    : `<div class="reason-detail"><span class="reason-topic">${reasonEscape(topic)}</span></div>`;
+  return `<div class="reason-item level-${thought.level}" style="--reason-tint:${tint}" ` +
+    `data-thought-id="${thought.id}">` +
+    `<div class="reason-head"><span class="reason-civ">${reasonEscape(reasonPlayerName(thought.player))}</span>` +
+    `<span class="reason-turn">Turn ${thought.turn}${locate}</span></div>` +
+    `<div class="reason-headline">${reasonEscape(thought.headline)}</div>${detail}</div>`;
+}
+
+function drawReasoning() {
+  const el = document.getElementById("reasoning");
+  const scope = document.getElementById("reasonscope");
+  if (!el) return;
+  absorbReasoning(state);
+  syncReasonOptions();
+  const thoughts = reasonFilteredThoughts();
+  const newest = thoughts.length ? thoughts[0] : null;
+  // Say what cadence this is arriving at, which is the whole question when the
+  // log is quiet: a civilization that decided nothing this turn and a log that
+  // is not being fed look the same otherwise.
+  scope.textContent = newest
+    ? `${thoughts.length} shown · latest Turn ${newest.turn}`
+    : (reasoningLog.thoughts.length ? "nothing matches this filter" : "");
+  const signature = `${reasoningLog.cursor}|${reasonFilters.player}|${reasonFilters.level}|` +
+    `${reasonFilters.topic}|${thoughts.length}|${reasoningLog.dropped}`;
+  if (el.dataset.signature === signature) return;
+  el.dataset.signature = signature;
+  if (!thoughts.length) {
+    el.innerHTML = `<div class="empty-state">${reasoningLog.thoughts.length
+      ? "No reasoning matches this filter yet."
+      : (state.spectate
+        ? "No civilization has thought out loud yet."
+        : "The reasoning log follows a spectated game.")}</div>`;
+    return;
+  }
+  // Anchor on the newest row the same way the event log does, so a reader who
+  // has scrolled back into the history is not dragged to the top every turn.
+  const keepViewport = el.scrollTop > 1;
+  const elTop = el.getBoundingClientRect().top;
+  const anchor = keepViewport
+    ? [...el.querySelectorAll("[data-thought-id]")]
+        .filter(item => item.getBoundingClientRect().bottom > elTop)
+        .map(item => ({
+          id: item.dataset.thoughtId,
+          offset: item.getBoundingClientRect().top - elTop,
+        }))[0]
+    : null;
+  const truncated = reasoningLog.dropped || reasoningLog.truncatedTurns
+    ? `<div class="reason-gap">Earlier reasoning has been discarded` +
+      `${reasoningLog.truncatedTurns
+        ? ` — and ${reasoningLog.truncatedTurns} busy turn` +
+          `${reasoningLog.truncatedTurns === 1 ? " was" : "s were"} cut short`
+        : ""}.</div>`
+    : "";
+  el.innerHTML = thoughts.map(reasonItemHtml).join("") + truncated;
+  if (anchor) {
+    const item = el.querySelector(`[data-thought-id="${anchor.id}"]`);
+    if (item) {
+      el.scrollTop += item.getBoundingClientRect().top -
+        el.getBoundingClientRect().top - anchor.offset;
+    }
+  }
+}
+
+function setReasonFilter(field, value) {
+  reasonFilters[field] = value;
+  try { localStorage.setItem(REASON_FILTER_KEY, JSON.stringify(reasonFilters)); }
+  catch (e) { /* a browser refusing storage still gets a working filter */ }
+  const el = document.getElementById("reasoning");
+  if (el) delete el.dataset.signature; // this frame must repaint under the new filter
+  if (state) drawReasoning();
+}
+
 function drawEvents() {
   const el = document.getElementById("events");
   const scope = document.getElementById("eventscope");
@@ -22955,8 +23259,9 @@ function drawSide(force = true) {
     document.getElementById("gov").innerHTML = politics;
   } else gs.style.display = "none";
   drawCityPanel();
-  drawEvents();
+  drawReasoning();
   drawWarLog();
+  drawEvents();
   if (scroller) scroller.scrollTop = Math.min(priorScroll, Math.max(0, scroller.scrollHeight - scroller.clientHeight));
 }
 
@@ -26585,6 +26890,18 @@ document.getElementById("newgame-options").addEventListener("change", stageSelec
   const vs = document.getElementById("viewsel");
   vs.value = VIEW;
   vs.onchange = () => setView(vs.value);
+}
+// The reasoning log's three filters. They are read back from storage before
+// the first frame, so a reader who narrowed to one civilization's policy cards
+// last night is still there this morning.
+{
+  const player = document.getElementById("reasonplayer");
+  const level = document.getElementById("reasonlevel");
+  const topic = document.getElementById("reasontopic");
+  level.value = reasonFilters.level;
+  player.onchange = () => setReasonFilter("player", player.value);
+  level.onchange = () => setReasonFilter("level", level.value);
+  topic.onchange = () => setReasonFilter("topic", topic.value);
 }
 {
   const cinema = document.getElementById("cinemachk");

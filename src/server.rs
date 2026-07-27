@@ -177,6 +177,15 @@ pub struct Session {
     /// Who is playing each human seat: a player registered when this game
     /// began, never one of the agents already in the roster.
     human_players: BTreeMap<usize, SeatPlayer>,
+    /// What every agent at this table decided, and why.
+    ///
+    /// One journal for the whole session, handed to each seat, so a turn is
+    /// one ordered account rather than one log per civilization. It is live
+    /// only in spectate mode: nobody is watching a headless tournament, and a
+    /// silent journal costs a branch. A restored save keeps the record it
+    /// accumulates from the turn it resumes — the reasoning behind a decision
+    /// is not part of the game state and cannot be recovered from one.
+    journal: crate::reasoning::Journal,
 }
 
 /// The identity of a person playing a seat.
@@ -1506,7 +1515,17 @@ impl Session {
         // strongest built-in default. Minors/barbarians retain the cheaper
         // baseline because they do not need empire-level planning.
         let (mut league, seat_from_roster) = Self::load_params_league(&params);
-        let (ais, mut seat_strategy) = Self::ai_fleet(&game, league.as_ref(), seat_from_roster);
+        let (mut ais, mut seat_strategy) = Self::ai_fleet(&game, league.as_ref(), seat_from_roster);
+        // Only a watched table records its reasoning. Everywhere else the
+        // journal is off and every `think!` is one `Option` test.
+        let journal = if params.spectate {
+            crate::reasoning::Journal::recording()
+        } else {
+            crate::reasoning::Journal::default()
+        };
+        for ai in &mut ais {
+            ai.attach_journal(journal.handle());
+        }
         let human_players =
             Self::register_human_players(&params, &game, &mut league, &mut seat_strategy);
         let chronicle = ChronicleState::from_game(&game);
@@ -1528,6 +1547,7 @@ impl Session {
             last_autoplay_request: None,
             league_recorded: false,
             human_players,
+            journal,
         }
     }
 
@@ -1576,7 +1596,19 @@ impl Session {
             != simulation_settings(&params))
         .then_some(requested_next);
         let (mut league, seat_from_roster) = Self::load_params_league(&params);
-        let (ais, mut seat_strategy) = Self::ai_fleet(&game, league.as_ref(), seat_from_roster);
+        let (mut ais, mut seat_strategy) =
+            Self::ai_fleet(&game, league.as_ref(), seat_from_roster);
+        // A save carries the world, not what anyone was thinking while they
+        // played it. The restored table starts a fresh record from the turn it
+        // resumes.
+        let journal = if params.spectate {
+            crate::reasoning::Journal::recording()
+        } else {
+            crate::reasoning::Journal::default()
+        };
+        for ai in &mut ais {
+            ai.attach_journal(journal.handle());
+        }
         let chronicle = ChronicleState::from_game(&game);
         // A match restored with its winner already decided was rated when it
         // finished; rating it again on the next step would count it twice.
@@ -1607,6 +1639,7 @@ impl Session {
             last_autoplay_request: None,
             league_recorded,
             human_players,
+            journal,
         }
     }
 
@@ -1728,6 +1761,61 @@ impl Session {
     /// An agent's plan as the spectator sees it. City ids mean nothing to a
     /// browser, so each one is resolved here into the name and owner the HUD
     /// can actually print.
+    /// The reasoning recorded since the observer's `cursor`.
+    ///
+    /// This is a *delta*, and it has to be. `/state` is close to a megabyte on
+    /// a standard map and the watching page fetches one per turn; sending the
+    /// whole reasoning ring alongside it every time would add a fixed six
+    /// thousand entries to a document that is already the bottleneck. A page
+    /// asks with the last id it holds and is answered with what came after it,
+    /// which on a normal turn is a few dozen lines.
+    ///
+    /// A page that names a cursor this log has never issued — a tab that
+    /// survived into the next world — is answered with the whole window and
+    /// told to discard what it holds.
+    pub fn reasoning_json(&self, cursor: u64) -> Value {
+        let delta = self.journal.since(cursor);
+        // Watching *as* a civilization means seeing what that civilization can
+        // see, and nobody can read a rival's mind. The redaction is done here,
+        // on the wire, rather than by hiding rows in the browser — the same
+        // rule the observation itself follows for an unmet civ.
+        let seat = self.view_player;
+        let thoughts: Vec<&crate::reasoning::Thought> = delta
+            .thoughts
+            .iter()
+            .filter(|thought| seat.is_none_or(|pid| thought.player == pid))
+            .collect();
+        json!({
+            "cursor": delta.cursor,
+            "reset": delta.reset,
+            // Reasoning the ring has already evicted, and civilization-turns
+            // cut short by the per-turn budget. A log that is not the whole
+            // story has to say so rather than read as a quiet game.
+            "dropped": delta.dropped,
+            "truncated_turns": delta.truncated_turns,
+            "thoughts": thoughts.iter().map(|thought| {
+                let mut value = json!({
+                    "id": thought.id,
+                    "turn": thought.turn,
+                    "player": thought.player,
+                    "topic": thought.topic.as_str(),
+                    "level": thought.level.as_str(),
+                    "headline": thought.headline,
+                });
+                // Two fields most thoughts do not carry. Omitting them rather
+                // than sending empty ones is worth real bytes over a delta of
+                // a few hundred lines a turn.
+                if !thought.detail.is_empty() {
+                    value["detail"] = json!(thought.detail);
+                }
+                if let Some((q, r)) = thought.focus {
+                    value["pos"] = json!([q, r]);
+                }
+                value
+            }).collect::<Vec<_>>(),
+        })
+    }
+
     fn plan_json(&self, plan: &crate::ai::PlanReport) -> Value {
         let city = |id: Option<u32>| {
             id.and_then(|id| self.game.cities.get(&id)).map(|city| {
@@ -2152,6 +2240,9 @@ impl Session {
             })
             .ok_or_else(|| format!("no strategy named {name}"))?;
         self.ais[seat] = crate::league::make_send_ai(&kind, seed);
+        // A newly seated agent joins the same record as the rest of the table;
+        // without this the seat a player just handed over goes quiet.
+        self.ais[seat].attach_journal(self.journal.handle());
         // The rated roster and the offered roster can be different rosters, so
         // only claim a rated identity for the seat when this name is in the
         // rated one; the name below is what the browser is told either way.
@@ -3150,6 +3241,12 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
             // this one again, so it waits here instead of spinning on a clock
             // of its own. A reader that names nothing is answered at once.
             sh.wait_for_next_turn(have);
+            // A page watching the AI reason says which thought it last holds,
+            // and gets what has been recorded since. Absent, nothing is sent:
+            // the keeper's refresh probe and any curl read `/state` too, and
+            // none of them are reading the reasoning log.
+            let wants_reasoning = query_value(&request_target, "think")
+                .map(|cursor| cursor.parse::<u64>().unwrap_or(0));
             let (mut o, frame) = {
                 let session = sh.session.lock().unwrap();
                 let frame = SpectatorFrame {
@@ -3162,6 +3259,9 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
                     if let Some(geometry) = crate::obs::planet_geometry(&session.game) {
                         observed["map"]["planet"] = geometry;
                     }
+                }
+                if let Some(cursor) = wants_reasoning {
+                    observed["ai_reasoning"] = session.reasoning_json(cursor);
                 }
                 (observed, frame)
             };
@@ -4968,6 +5068,195 @@ mod tests {
         assert!(fetching.contains("generation === specFetchGeneration"));
     }
 
+    #[test]
+    fn browser_lets_an_observer_narrow_the_reasoning_log() {
+        // The panel is only useful if a reader can ask a narrower question
+        // than "everything every civilization thought": whose reasoning, how
+        // deep into it, and about what.
+        assert!(EMBEDDED_INDEX.contains("<span>AI reasoning log</span>"));
+        assert!(EMBEDDED_INDEX.contains("id=\"reasonplayer\""));
+        assert!(EMBEDDED_INDEX.contains("id=\"reasonlevel\""));
+        assert!(EMBEDDED_INDEX.contains("id=\"reasontopic\""));
+        assert!(EMBEDDED_INDEX.contains("<option value=\"all\">All civilizations</option>"));
+        assert!(EMBEDDED_INDEX.contains("<option value=\"all\">All topics</option>"));
+        // Depth is a floor, not an equality — a decision read without the plan
+        // it serves explains nothing — and the three rungs are the ones the
+        // engine records at.
+        assert!(EMBEDDED_INDEX.contains("const REASON_LEVEL_RANK = {strategy: 0, decision: 1, detail: 2};"));
+        for level in ["strategy", "decision", "detail"] {
+            assert!(
+                EMBEDDED_INDEX.contains(&format!("<option value=\"{level}\"")),
+                "the depth filter is missing {level}"
+            );
+        }
+        // Every topic the engine can record is offered, under the same name.
+        for topic in crate::reasoning::Topic::ALL {
+            assert!(
+                EMBEDDED_INDEX
+                    .contains(&format!("[\"{}\", \"{}\"]", topic.as_str(), topic.label())),
+                "the topic filter is missing {}",
+                topic.as_str()
+            );
+        }
+        // The log arrives as a delta on the turn's own fetch, not as part of
+        // the multi-megabyte world observation.
+        assert!(EMBEDDED_INDEX.contains("const thinking = `&think=${reasoningLog.cursor}`;"));
+        assert!(EMBEDDED_INDEX.contains("function absorbReasoning(st)"));
+        // A log that is not the whole story says so.
+        assert!(EMBEDDED_INDEX.contains("Earlier reasoning has been discarded"));
+        // The three logs share the sidebar's spare height; the reasoning log
+        // takes the largest share and carries the floor its filter bar needs.
+        assert!(EMBEDDED_INDEX.contains("#reasonsec[open] { flex: 3 0 0; min-height: 288px; }"));
+    }
+
+    /// A spectated table, which is the only kind that records its reasoning.
+    fn watched_table() -> Params {
+        let mut params = current();
+        params.spectate = true;
+        params.num_players = 3;
+        params.seed = 20_260_727;
+        params
+    }
+
+    #[test]
+    fn a_watched_table_records_why_it_did_what_it_did() {
+        let mut session = Session::new(watched_table());
+        for _ in 0..24 {
+            session.step();
+        }
+        let delta = session.reasoning_json(0);
+        let thoughts = delta["thoughts"].as_array().expect("a reasoning delta");
+        assert!(
+            !thoughts.is_empty(),
+            "twenty-four turns of a watched table produced no reasoning at all"
+        );
+        // Every thought says who thought it, when, and at what depth, because
+        // those three are exactly what the observer's filters run on.
+        for thought in thoughts {
+            assert!(thought["turn"].is_u64());
+            assert!(thought["player"].is_u64());
+            assert!(!thought["headline"].as_str().unwrap_or("").is_empty());
+            assert!(matches!(
+                thought["level"].as_str(),
+                Some("strategy" | "decision" | "detail")
+            ));
+            assert!(crate::reasoning::Topic::ALL
+                .iter()
+                .any(|topic| topic.as_str() == thought["topic"].as_str().unwrap_or("")));
+        }
+        // More than one civilization is thinking, and the record is one
+        // ordered account rather than one log per seat.
+        let seats: std::collections::BTreeSet<u64> = thoughts
+            .iter()
+            .filter_map(|thought| thought["player"].as_u64())
+            .collect();
+        assert!(seats.len() > 1, "only one seat was recorded: {seats:?}");
+        let ids: Vec<u64> = thoughts
+            .iter()
+            .filter_map(|thought| thought["id"].as_u64())
+            .collect();
+        assert!(ids.windows(2).all(|pair| pair[0] < pair[1]), "ids are not ordered");
+        // The plan itself has to be in there — it is what every other line is
+        // an instance of.
+        assert!(
+            thoughts.iter().any(|thought| {
+                thought["level"] == json!("strategy")
+                    && thought["headline"]
+                        .as_str()
+                        .is_some_and(|line| line.starts_with("Grand strategy: "))
+            }),
+            "no civilization reported its grand strategy"
+        );
+    }
+
+    #[test]
+    fn a_reasoning_cursor_is_answered_with_only_the_new_thoughts() {
+        let mut session = Session::new(watched_table());
+        for _ in 0..12 {
+            session.step();
+        }
+        let first = session.reasoning_json(0);
+        let cursor = first["cursor"].as_u64().expect("a cursor");
+        assert!(cursor > 0);
+        assert_eq!(first["reset"], json!(false));
+        // Nothing has happened since, so nothing comes back. This is the
+        // property that keeps the delta off the per-turn `/state` budget.
+        let idle = session.reasoning_json(cursor);
+        assert!(idle["thoughts"].as_array().unwrap().is_empty());
+        for _ in 0..6 {
+            session.step();
+        }
+        let next = session.reasoning_json(cursor);
+        let fresh = next["thoughts"].as_array().unwrap();
+        assert!(!fresh.is_empty());
+        assert!(
+            fresh.iter().all(|thought| thought["id"].as_u64().unwrap() > cursor),
+            "a cursor was answered with thoughts it already held"
+        );
+        // A cursor from a world this log is not — a tab that outlived the
+        // previous game — is told to discard what it holds.
+        let stale = session.reasoning_json(u64::MAX);
+        assert_eq!(stale["reset"], json!(true));
+        assert!(!stale["thoughts"].as_array().unwrap().is_empty());
+    }
+
+    #[test]
+    fn watching_as_one_civilization_shows_only_that_civilizations_reasoning() {
+        let mut session = Session::new(watched_table());
+        for _ in 0..18 {
+            session.step();
+        }
+        let everyone = session.reasoning_json(0);
+        let seats: std::collections::BTreeSet<u64> = everyone["thoughts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|thought| thought["player"].as_u64())
+            .collect();
+        assert!(seats.len() > 1);
+        // Sitting behind one civilization's fog means seeing what it can see,
+        // and nobody can read a rival's mind. The redaction is on the wire.
+        session.set_view_player(Some(1)).expect("a major seat");
+        let seated = session.reasoning_json(0);
+        let thoughts = seated["thoughts"].as_array().unwrap();
+        assert!(!thoughts.is_empty());
+        assert!(
+            thoughts.iter().all(|thought| thought["player"] == json!(1)),
+            "another civilization's reasoning reached a fogged view"
+        );
+    }
+
+    #[test]
+    fn an_unwatched_game_records_nothing() {
+        // A headless game has nobody reading the log, and the cost of building
+        // one is the cost of every `format!` in the agent. Off is the default
+        // and this is what pins it.
+        let mut session = Session::new(current());
+        for _ in 0..8 {
+            session.step();
+        }
+        let delta = session.reasoning_json(0);
+        assert!(delta["thoughts"].as_array().unwrap().is_empty());
+        assert_eq!(delta["cursor"], json!(0));
+    }
+
+    #[test]
+    fn the_state_document_carries_reasoning_only_when_a_page_asks_for_it() {
+        // `/state` is close to a megabyte on a standard map and a watching
+        // page fetches one per turn. The reasoning rides along only for a
+        // client that named a cursor.
+        let mut session = Session::new(watched_table());
+        for _ in 0..6 {
+            session.step();
+        }
+        assert!(session.state().get("ai_reasoning").is_none());
+        let mut with_reasoning = session.state();
+        with_reasoning["ai_reasoning"] = session.reasoning_json(0);
+        assert!(with_reasoning["ai_reasoning"]["thoughts"]
+            .as_array()
+            .is_some_and(|thoughts| !thoughts.is_empty()));
+    }
+
     fn current() -> Params {
         Params {
             map_topology: MapTopology::Flat,
@@ -5849,15 +6138,23 @@ mod tests {
         let war_log = EMBEDDED_INDEX
             .find("<span>War log</span>")
             .expect("war log");
+        let reasoning_log = EMBEDDED_INDEX
+            .find("<span>AI reasoning log</span>")
+            .expect("AI reasoning log");
         let strategy = EMBEDDED_INDEX
             .find("<span>Active strategy</span>")
             .expect("active strategy section");
+        // The three logs run deepest-cause first — why a civilization acted,
+        // the wars that reasoning started, then the world's record of what
+        // happened — so reading the column downward reads a turn in the order
+        // it was decided.
         assert!(
             game_settings < display_settings
-                && display_settings < event_log
-                && event_log < war_log
-                && war_log < strategy,
-            "left panel should show game settings, display settings, and the two logs first"
+                && display_settings < reasoning_log
+                && reasoning_log < war_log
+                && war_log < event_log
+                && event_log < strategy,
+            "left panel should show game settings, display settings, and the three logs first"
         );
         assert!(EMBEDDED_INDEX.contains("<span>Display settings</span>"));
         for overlay in ["players", "victory", "minimap", "controls", "lenses"] {
@@ -6111,7 +6408,7 @@ mod tests {
             EMBEDDED_INDEX
                 .matches("class=\"sidebar-section\"")
                 .count(),
-            7,
+            8,
             "every top-level left-panel section should be collapsible"
         );
         assert!(EMBEDDED_INDEX.contains("function initSidebarSections()"));
