@@ -113,7 +113,11 @@
       };
     }
 
-    mesh(points, faces, color, alpha = 1) {
+    // `depthBias` exists for a face that is the *ground* of its own model —
+    // one broad plane the rest of the model stands on. Depth is dominated by
+    // world y, so without it anything placed toward the back of that plane
+    // sorts in front of it and the plane paints over its own furniture.
+    mesh(points, faces, color, alpha = 1, depthBias = 0) {
       const world = points.map(p => this.world(p));
       const projected = points.map(p => this.project(p));
       for (const face of faces) {
@@ -125,7 +129,8 @@
         const rim = Math.max(0, normal[2]) * .08;
         this.items.push({
           kind: "face", vertices,
-          depth: vertices.reduce((sum, p) => sum + p.depth, 0) / vertices.length,
+          depth: depthBias +
+            vertices.reduce((sum, p) => sum + p.depth, 0) / vertices.length,
           fill: tint(color, .42 + direct * .72 + rim, alpha),
           shine: direct > .72 ? direct : 0,
         });
@@ -749,14 +754,51 @@
   ];
   const RAINFOREST_GREENS = ["#17613b", "#237447", "#145433"];
 
+  // Where a wood's trees actually stand. The stand tables above fixed the
+  // arrangement so that a wood stopped being a fresh arrangement of trees at
+  // every hex — but a *fixed* arrangement inset into every face is the same
+  // grid stated the other way round: identical clumps in the middle of each
+  // hex with a bare lane along every boundary, which is what a forest looked
+  // like from any distance. Trees are placed on a lattice in WORLD space
+  // instead and kept by whichever tile contains them, so a canopy runs across
+  // a tile boundary without repeating and without a seam. A tree may lean out
+  // over an edge the wood continues across and is pulled well back from one it
+  // does not, which is what gives a wood a soft edge against open ground and a
+  // closed middle. See `ice`, which fills a sheet the same way.
+  function standPoints(o, step, random) {
+    const frozen = frozenEdges(o.ridge);
+    const limit = [];
+    for (let k = 0; k < 6; k++) limit.push(frozen.has(k) ? INRADIUS + 4 : INRADIUS - 10);
+    const ox = o.origin ? o.origin[0] : 0, oy = o.origin ? o.origin[1] : 0;
+    const out = [];
+    for (let i = Math.floor((ox - 42) / step); i <= Math.ceil((ox + 42) / step); i++)
+      for (let j = Math.floor((oy - 42) / step); j <= Math.ceil((oy + 42) / step); j++) {
+        const cell = seeded(Math.imul(i + 8192, 374761393) ^
+          Math.imul(j + 8192, 668265263));
+        const px = i * step + (cell() - .5) * step * .9 - ox;
+        const py = j * step + (cell() - .5) * step * .9 - oy;
+        let keep = true;
+        for (let k = 0; k < 6 && keep; k++) {
+          const a = k * Math.PI / 3;
+          if (px * Math.cos(a) + py * Math.sin(a) > limit[k]) keep = false;
+        }
+        if (keep) out.push([px, py, cell(), cell()]);
+      }
+    // Nothing at all is worse than a lattice: a tile whose lattice cells all
+    // fell outside it would be a hole in the wood.
+    if (!out.length) out.push([0, 0, random(), random()]);
+    return out;
+  }
+
   function woodland(scene, o, jungle) {
     const burnt = o.kind.startsWith("burnt_");
     const burning = o.kind.startsWith("burning_");
-    const stand = jungle ? RAINFOREST : CONIFERS;
     const greens = jungle ? RAINFOREST_GREENS : CONIFER_GREENS;
-    // Zoomed out, thin the stand by dropping every other tree rather than the
-    // tail of the list, so what remains still covers the whole face.
-    const trees = o.detail ? stand : stand.filter((_, i) => !(i % 2));
+    const random = seeded(o.seed + 131);
+    const step = (jungle ? 21 : 18) * (o.detail ? 1 : 1.45);
+    const spread = jungle ? RAINFOREST : CONIFERS;   // heights, kept for scale
+    const low = Math.min(...spread.map(s => s[2])), high = Math.max(...spread.map(s => s[2]));
+    const trees = standPoints(o, step, random);
     const sides = o.detail ? 8 : 6;
     // A wood on a hill grows on the hill, not through it. Standing the trunks
     // on the mound and setting the stand further back puts the trees in the
@@ -764,8 +806,13 @@
     // relief that is drawn after them.
     const crest = o.hills ? 3.8 : 0;
     const back = o.hills ? -6 : 0;
-    groundShadow(scene, 20, burnt ? .28 : .2);
-    trees.forEach(([x, ty, height, tone], i) => {
+    // The shade a wood casts is the wood's, so it answers to how much of the
+    // face this one actually covers. A fixed disc under a corner tile holding
+    // three trees is a grey plate with a copse standing on it.
+    groundShadow(scene, Math.min(20, 7 + trees.length * 1.5), burnt ? .28 : .2);
+    trees.forEach(([x, ty, sizeRoll, toneRoll], i) => {
+      const height = low + sizeRoll * (high - low);
+      const tone = Math.min(2, Math.floor(toneRoll * 3));
       const y = ty + back;
       const trunkTop = crest + height * (jungle ? .74 : .3);
       scene.tube([x, y, crest], [x, y, trunkTop], jungle ? .85 : .7,
@@ -895,16 +942,146 @@
     }
   }
 
+  // Which of the six edges this tile shares with its own kind, as an index
+  // 0..5 where edge k faces k * 60 degrees in the map's world plane. Segment k
+  // of a hex outline runs from corner k to corner k+1 and spans edge k, so a
+  // corner is flanked by edges k-1 and k.
+  function frozenEdges(ridge) {
+    const set = new Set();
+    for (const [dx, dy] of (Array.isArray(ridge) ? ridge : []))
+      set.add((Math.round(Math.atan2(dy, dx) * 3 / Math.PI) % 6 + 6) % 6);
+    return set;
+  }
+
+  // A polar cap is one sheet, not a raft of identical floes on a hex lattice.
+  // How far the slab reaches at a corner is a property of the CORNER rather
+  // than of the tile: all three hexes meeting there weigh the same two edges
+  // and so agree on the same answer, which makes neighbouring slabs share a
+  // boundary exactly instead of leaving a lane of open water between them.
+  // Walls are raised only on the segments facing the sea, so the inside of a
+  // sheet has no cliffs running through it and only its outer edge reads as
+  // floe. For the same reason the ice scene is drawn without an outline: a
+  // stroke along a shared boundary would be laid down by both tiles and put
+  // the hex grid straight back.
   function ice(scene, o) {
     const random = seeded(o.seed + 367);
-    const points = [];
-    for (let i = 0; i < 9; i++) {
-      const a = i * Math.PI * 2 / 9, r = 13 + random() * 5;
-      points.push([Math.cos(a) * r, Math.sin(a) * r, .8]);
+    const frozen = frozenEdges(o.ridge);
+    const TOP = 1.9, FLOOR = -.4;
+    const reach = [];
+    for (let i = 0; i < 6; i++) {
+      const joined = (frozen.has((i + 5) % 6) ? 1 : 0) + (frozen.has(i) ? 1 : 0);
+      // Both edges frozen: the corner is inside the sheet and takes the whole
+      // hex. One: it reaches most of the way, and the neighbour sharing that
+      // edge computes the same number. Neither: open water, so it is a floe
+      // corner and free to be ragged.
+      reach.push(joined === 2 ? 36 : joined === 1 ? 30 : 18 + random() * 6);
     }
-    scene.polygon(points, "#cfe1e5", 2.2, .94);
-    crag(scene, -4, 1, 7, 12, "#b9d4dc", true, random);
-    crag(scene, 7, 4, 4.8, 7, "#d7e8ea", false, random);
+    const outline = [], seaward = [];
+    for (let i = 0; i < 6; i++) {
+      const a = (60 * i - 30) * Math.PI / 180;
+      outline.push([Math.cos(a) * reach[i], Math.sin(a) * reach[i]]);
+      seaward.push(!frozen.has(i));
+      const mid = (60 * i) * Math.PI / 180;
+      if (frozen.has(i)) {
+        // Just past the shared edge, so the two slabs overlap by a hair rather
+        // than meeting on it. Sharing a boundary exactly is not enough: both
+        // sides antialias against the water and the seam comes back as a
+        // hairline. They are opaque and the same colour, so the overlap is
+        // invisible and the hex grid is gone.
+        outline.push([Math.cos(mid) * (INRADIUS + .9),
+          Math.sin(mid) * (INRADIUS + .9)]);
+        seaward.push(false);
+        continue;
+      }
+      // A scallop halfway along every open edge, so the sea side breaks up
+      // instead of running straight from corner to corner.
+      const r = Math.min(reach[i], reach[(i + 1) % 6]) * (.86 + random() * .17);
+      outline.push([Math.cos(mid) * r, Math.sin(mid) * r]);
+      seaward.push(true);
+    }
+    const n = outline.length;
+    const points = outline.map(p => [p[0], p[1], TOP])
+      .concat(outline.map(p => [p[0], p[1], FLOOR]));
+    // `mesh` reads a face's normal off its first three vertices, which is the
+    // turn at the *second* one — and a floe edge is not convex everywhere, so
+    // starting anywhere would sometimes hand it a reflex corner and light the
+    // whole slab as if it faced away. Starting one before the vertex that
+    // reaches furthest puts a guaranteed hull corner in that seat.
+    let far = 0;
+    for (let i = 1; i < n; i++)
+      if (Math.hypot(...outline[i]) > Math.hypot(...outline[far])) far = i;
+    const top = [];
+    for (let i = 0; i < n; i++) top.push((far - 1 + n + i) % n);
+    // The slab is the ground of this model, and everything else stands on it.
+    scene.mesh(points, [top], "#cfe1e5", 1, -2e4);
+    const walls = [];
+    for (let i = 0; i < n; i++) {
+      if (!seaward[i]) continue;
+      const j = (i + 1) % n;
+      walls.push([i, j, n + j, n + i]);
+    }
+    if (walls.length) scene.mesh(points, walls, "#cfe1e5");
+    // Drifts and pressure ridges, placed on a lattice in WORLD space and kept
+    // by whichever tile happens to contain them. Anything hashed from the tile
+    // instead puts a feature at the same place in every hex, which is how the
+    // old floes ended up wearing an identical pair of pinnacles; anything
+    // hashed from an edge draws a line along the seam, which is the hex grid
+    // by another name. A lattice that knows nothing about tiles is the only
+    // arrangement that can cross one.
+    const step = o.detail ? 38 : 52;
+    const ox = o.origin ? o.origin[0] : 0, oy = o.origin ? o.origin[1] : 0;
+    for (let i = Math.floor((ox - 36) / step); i <= Math.ceil((ox + 36) / step); i++)
+      for (let j = Math.floor((oy - 36) / step); j <= Math.ceil((oy + 36) / step); j++) {
+        const cell = seeded(Math.imul(i + 8192, 374761393) ^
+          Math.imul(j + 8192, 668265263));
+        const px = i * step + (cell() - .5) * step * .95 - ox;
+        const py = j * step + (cell() - .5) * step * .95 - oy;
+        if (!inHex(px, py) || !inOutline(outline, px, py)) continue;
+        if (cell() > .88) {
+          // Light: a ridge block on a white sheet spends most of its area in
+          // its own shade, and at the sheet's own colour that comes out as a
+          // near-black stud rather than as ice.
+          crag(scene, px, py, 4 + cell() * 3, 7 + cell() * 6,
+            "#e9f4f6", true, cell, o.detail);
+          continue;
+        }
+        // Drift and bare ice are painted, not modelled. Anything with a body
+        // — a low cone, a squashed ellipsoid — puts a rim and a shaded far
+        // side on a surface that is flat, and a field of them reads as coins
+        // laid on the sheet. These are coplanar patches lying in the slab's
+        // own plane, so they take exactly the slab's light and differ only in
+        // colour. They can be drawn at all because the bias orders them after
+        // the slab; on real depth the ones toward the back sort behind it.
+        const patch = [], sides = o.detail ? 7 : 5;
+        const rx = 12 + cell() * 9;
+        for (let k = 0; k < sides; k++) {
+          const a = k * Math.PI * 2 / sides;
+          const r = rx * (.72 + cell() * .45);
+          patch.push([px + Math.cos(a) * r, py + Math.sin(a) * r * .78, TOP]);
+        }
+        scene.mesh(patch, [[...Array(sides).keys()]],
+          cell() > .5 ? "#dff0f2" : "#bfd6dd", 1, -1e4);
+      }
+  }
+
+  const INRADIUS = 36 * Math.sqrt(3) / 2;
+  // Inside this tile's own hexagon: three edge normals, each tested both ways.
+  function inHex(x, y) {
+    for (let k = 0; k < 3; k++) {
+      const a = k * Math.PI / 3;
+      if (Math.abs(x * Math.cos(a) + y * Math.sin(a)) > INRADIUS - 3) return false;
+    }
+    return true;
+  }
+
+  function inOutline(outline, x, y) {
+    let inside = false;
+    for (let i = 0, j = outline.length - 1; i < outline.length; j = i++) {
+      const [xi, yi] = outline[i], [xj, yj] = outline[j];
+      if ((yi > y) !== (yj > y) &&
+          x < (xj - xi) * (y - yi) / (yj - yi) + xi) inside = !inside;
+    }
+    return inside;
   }
 
   function crater(scene, o, lake = false) {
@@ -984,7 +1161,10 @@
     const scene = new Scene(o.ctx, {scale:o.scale || 1, orthographic:true,
       yaw:Number(o.yaw || 0), tilt:clamp(Number(o.tilt || .64), .28, 1),
       sunAngle:Number.isFinite(o.sunAngle) ? o.sunAngle : Math.PI * 1.25,
-      stroke:o.detail ? "rgba(10,15,13,.38)" : null});
+      // Ice alone goes unoutlined: its slabs share a boundary with the next
+      // tile's exactly, so a stroke there would be drawn twice and redraw the
+      // hex grid over a sheet built to hide it. See `ice`.
+      stroke:o.detail && o.kind !== "ice" ? "rgba(10,15,13,.38)" : null});
     if (o.kind === "hills") hills(scene, o);
     else if (o.kind === "mountain") mountains(scene, o);
     else if (o.kind === "mount_everest") mountains(scene, o, true);
