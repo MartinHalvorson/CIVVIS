@@ -6,9 +6,9 @@
 //! VI's own generator targets, so a change can be judged by eye and by number.
 //!
 //! Usage: mapdump [--seed N] [--width N] [--height N]
-//!                 [--script land_only|lakes|inland_sea|grand_canals|pangaea|
-//!                  continents|small_continents|islands|water_world|
-//!                  true_start_earth]
+//!                 [--script land_only|lakes|inland_sea|grand_canals|
+//!                  grand_canals_2|pangaea|continents|small_continents|
+//!                  islands|water_world|true_start_earth]
 //!                 [--shape flat|planet] [--poles poles|randomized]
 //!                 [--maps N] [--quiet]
 //!
