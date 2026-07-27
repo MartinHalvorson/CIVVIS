@@ -1763,7 +1763,7 @@
   .event-turn { color: var(--faint); font-size: var(--type-label); letter-spacing: .07em; text-transform: uppercase; }
   .empty-state { padding: 10px 0 2px; color: var(--faint); font-size: var(--type-secondary); text-align: center; }
 
-  /* A panel's filter bar. The three logs and the Active strategy card above
+  /* A panel's filter bar. The three logs and the Active AI strategy card above
      them all wear the same one, in the same place, so narrowing the war log is
      the gesture a reader already learned one panel up. In a log the filters
      sit above the list and never scroll with it: a reader narrowed to one
@@ -3489,7 +3489,7 @@
     </div>
     <details class="sidebar-section" id="setupsec" data-section="game-settings">
       <summary class="section-label">
-        <span class="section-title"><span class="section-icon" aria-hidden="true">⚙</span><span>Game settings</span></span>
+        <span class="section-title"><span class="section-icon" aria-hidden="true">⚙</span><span>Game setup</span></span>
         <span class="section-meta"><span class="rule"></span><span class="section-chevron" aria-hidden="true"></span></span>
       </summary>
       <div class="sec settings-sec" id="game-settings">
@@ -3648,20 +3648,20 @@
          the world's own record of what happened. An observer reading downward
          reads a turn in the order it was decided.
 
-         Active strategy leads because it is the standing plan every entry below
-         it is an instance of: the reasoning log is an account over turns, and
-         this is the current answer. It names one civilization at a time — the
-         standings table already carries every seat's doctrine in its PLAN
+         Active AI strategy leads because it is the standing plan every entry
+         below it is an instance of: the reasoning log is an account over turns,
+         and this is the current answer. It names one civilization at a time —
+         the standings table already carries every seat's doctrine in its PLAN
          column, and twenty research cards would bury the logs. -->
     <details class="sidebar-section" id="strategysec" data-section="active-strategy" open>
       <summary class="section-label">
-        <span class="section-title"><span class="section-icon" aria-hidden="true">◆</span><span>Active strategy</span></span>
+        <span class="section-title"><span class="section-icon" aria-hidden="true">◆</span><span>Active AI strategy</span></span>
         <span class="section-meta"><span class="event-scope" id="strategyscope"></span><span class="section-chevron" aria-hidden="true"></span></span>
       </summary>
       <div class="sec strategy-sec">
         <div class="strategy-track strategy-pick">
           <label class="log-filter"><span>Civ</span>
-            <select id="strategyplayer" aria-label="Whose active strategy to show"></select>
+            <select id="strategyplayer" aria-label="Whose active AI strategy to show"></select>
           </label>
         </div>
         <div class="strategy-track strategy-plan-track" id="strategyplantrack">
@@ -3761,13 +3761,6 @@
       </summary>
       <div class="sec"><div id="gov"></div></div>
     </details>
-    <details class="sidebar-section" id="citysec" data-section="city-command" style="display:none" open>
-      <summary class="section-label">
-        <span class="section-title"><span class="section-icon" aria-hidden="true">⌂</span><span>City command</span></span>
-        <span class="section-meta"><span class="rule"></span><span class="section-chevron" aria-hidden="true"></span></span>
-      </summary>
-      <div class="sec"><div id="citypanel"></div></div>
-    </details>
   </div>
   <details class="shortcut-panel">
     <summary>Keyboard shortcuts</summary>
@@ -3788,7 +3781,7 @@
       <span><kbd>F4</kbd>Trade routes</span><span><kbd>F9</kbd>Civilopedia</span>
       <span><kbd>^ ,</kbd>Pedia back</span><span><kbd>^ .</kbd>Pedia forward</span>
       <span><kbd>[</kbd>Previous city</span><span><kbd>]</kbd>Next city</span>
-      <span><kbd>\</kbd>Go to the capital</span><span><kbd>Home</kbd>Game settings</span>
+      <span><kbd>\</kbd>Go to the capital</span><span><kbd>Home</kbd>Game setup</span>
       <span><kbd>F5</kbd>Quicksave</span><span><kbd>F6</kbd>Quickload</span>
       <span class="shortcut-head">The map</span>
       <span><kbd>Arrows</kbd>Pan · <kbd>⇧</kbd> for faster</span><span><kbd>Num + / −</kbd>Zoom</span>
@@ -8542,7 +8535,7 @@ function restoreLogFilters(key, defaults) {
 reasonFilters = restoreLogFilters(REASON_FILTER_KEY, reasonFilters);
 warFilters = restoreLogFilters(WAR_FILTER_KEY, warFilters);
 eventFilters = restoreLogFilters(EVENT_FILTER_KEY, eventFilters);
-// Which seat the Active strategy panel is speaking for, and the world that
+// Which seat the Active AI strategy panel is speaking for, and the world that
 // choice belongs to.
 //
 // It is deliberately *not* part of `reasonFilters`: the log answers "what has
@@ -9088,10 +9081,11 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
   document.getElementById("specbar").style.display = "block";
   document.body.classList.toggle("watching-sim", SPEC);
   document.getElementById("observer-settings").style.display = SPEC ? "block" : "none";
-  // Active strategy used to be withheld from the omniscient spectator because
-  // the panel could only ever speak for `state.me`, and above the world there
-  // is no single "me". It now names the civilization it is speaking for, so
-  // the one view that can read every plan is the last one that should hide it.
+  // Active AI strategy used to be withheld from the omniscient spectator
+  // because the panel could only ever speak for `state.me`, and above the
+  // world there is no single "me". It now names the civilization it is
+  // speaking for, so the one view that can read every plan is the last one
+  // that should hide it.
   document.getElementById("strategysec").style.display = "block";
   if (SPEC) closeTrade();
   syncViewPlayer();
@@ -20571,7 +20565,7 @@ function hudTurnPlate() {
     (decided ? `<small class="turn-playon">Playing on</small>` : ``) +
     `</div><div class="turn-progress"><strong>${state.turn}</strong>` +
     `<small class="turn-total">/ ${turnCapLabel()}</small></div></div>` +
-    `<div class="turn-settings" aria-label="Game settings">` +
+    `<div class="turn-settings" aria-label="Game setup">` +
     `<div class="turn-setting"><span>Game speed:</span><b>${speedName}</b></div>` +
     `<div class="turn-setting"><span>Watch pace:</span><b>${watchPace}</b></div>` +
     rosterRow("Civs:", civCount, civsLost) +
@@ -20628,7 +20622,7 @@ function playerHudOverview() {
   const victoryBody = victoryTracks ||
     `<section class="victory-track victory-none" aria-label="No victory conditions">` +
     `<div class="victory-heading"><span>◌</span><b>No victory conditions</b></div>` +
-    `<p class="victory-none-note">Every path is switched off in Game settings, so this ` +
+    `<p class="victory-none-note">Every path is switched off in Game setup, so this ` +
     `world plays to turn ${turnCapLabel()} and ends without a winner.</p></section>`;
   const victoryCount = Math.max(1, enabledVictoryTracks.length);
   // Two floors for two orientations: one band per row down the rail, and one
@@ -22840,7 +22834,7 @@ function reasonEscape(text) {
 // thoughts the moment Watch as is entered, but the page is still holding
 // everything it absorbed while it was above the world, so without this the
 // redaction is defeated by having watched first: the log names every
-// civilization while the Active strategy panel above it names one. Only the
+// civilization while the Active AI strategy panel above it names one. Only the
 // held thoughts go — the cursor survives, because the world has not changed
 // and asking from zero would have the server resend the whole ring.
 function absorbReasoning(st) {
@@ -23918,77 +23912,10 @@ function drawSide(force = true) {
     }
     document.getElementById("gov").innerHTML = politics;
   } else gs.style.display = "none";
-  drawCityPanel();
   drawReasoning();
   drawWarLog();
   drawEvents();
   if (scroller) scroller.scrollTop = Math.min(priorScroll, Math.max(0, scroller.scrollHeight - scroller.clientHeight));
-}
-
-function drawCityPanel() {
-  const secEl = document.getElementById("citysec");
-  if (!selCity) { secEl.style.display = "none"; return; }
-  const c = state.cities.find(x => x.id === selCity.id && (SPEC || x.owner === 0));
-  if (!c) { selCity = null; secEl.style.display = "none"; return; }
-  const striking = selCity._striking;
-  const encampmentStriking = selCity._encampmentStriking;
-  selCity = c; selCity._striking = striking; selCity._encampmentStriking = encampmentStriking;
-  secEl.style.display = "block";
-  const owner = state.players[c.owner];
-  const governor = cityGovernor(c);
-  let h = `<div class="city-hero"><div><div class="city-name">${c.name}${c.is_capital ? " ♛" : ""}</div>` +
-    `<div class="small" style="margin-top:4px">${owner.civ}${c.religion ? ` · ${titleCase(c.religion)}` : ""}` +
-    `${governor ? ` · ⚑ ${governor.name}` : ""}</div></div>` +
-    `<div class="city-pop" title="Population">${c.pop}</div></div>` +
-    `<div class="city-stats"><div class="metric"><b>${c.hp} / 200</b><span>Health</span></div>` +
-    `<div class="metric"><b>${c.wall_hp || 0} / ${c.wall_max || 0}</b><span>Walls</span></div>` +
-    `<div class="metric"><b>${c.housing === undefined ? "—" : c.housing}</b><span>Housing</span></div></div>`;
-  if (governor) {
-    h += `<div class="row"><span class="small">Governor</span>` +
-      `<b>${governor.title} · ${governorStatus(governor)}</b></div>`;
-  }
-  if (c.districts && c.districts.encampment) {
-    h += `<div class="row"><span class="small">Encampment defenses</span><b>${c.encampment_pillaged ? "Pillaged" : `${c.encampment_hp} HP · ${Math.max(0, c.encampment_wall_hp)} walls`}</b></div>`;
-  }
-  if (c.food === undefined) {
-    h += `<div class="empty-state">Observer intelligence is limited to public city information.</div>`;
-    document.getElementById("citypanel").innerHTML = h;
-    return;
-  }
-  h += `<div class="row"><span class="small">Growth</span><span class="small">${c.amenity_surplus >= 0 ? "+" : ""}${c.amenity_surplus} amenities</span></div>` +
-    prog(c.food, c.growth_need, "#76c893");
-  if (c.citizens) {
-    const specialists = c.citizens.specialists || [];
-    const assigned = c.citizens.worked_tiles.length + specialists.length;
-    const jobs = specialists.length ? ` · ${specialists.map(titleCase).join(", ")}` : "";
-    h += `<div class="row" style="margin-top:8px"><span class="small">Citizen focus</span>` +
-      `<b title="${c.citizens.worked_tiles.length} worked tiles · ${specialists.length} specialists${jobs}">${titleCase(c.citizens.focus)} · ${assigned}/${c.pop}</b></div>`;
-  }
-  if (c.queue && c.queue.length) {
-    h += `<div class="row" style="margin-top:8px"><span class="small">Producing</span><b>${titleCase(itemName(c.queue[0]))}</b></div>` +
-      prog(c.production, c.queue_cost, "#d7b66a");
-  } else {
-    h += `<div class="empty-state">Production is idle · ${Math.round(c.production)} ⚙ banked</div>`;
-  }
-  if (SPEC) { document.getElementById("citypanel").innerHTML = h; return; }
-  h += `<button class="primary" style="margin-top:9px" onclick='openCityScreen(${c.id})'>` +
-    `⌂ Manage ${c.name}</button>`;
-  const prods = state.legal_actions.filter(a => a.type === "produce" && a.city === c.id);
-  h += `<div class="small" style="margin:10px 0 4px">CHOOSE PRODUCTION</div><select id="prodsel"><option value="">Select a project…</option>` +
-    prods.map((a, i) => `<option value="${i}">${titleCase(itemName(a.item))} · ${itemCost(a.item)} ⚙</option>`).join("") +
-    `</select>`;
-  const buys = state.legal_actions.filter(a => a.type === "buy" && a.city === c.id);
-  if (buys.length) h += `<div style="margin-top:7px">` + buys.map(a =>
-    `<button onclick='send(${JSON.stringify(a)})'>Buy ${titleCase(itemName({unit: a.unit, formation: a.formation || 0}))} · ${titleCase(a.currency)}</button>`).join("") + `</div>`;
-  if (state.legal_actions.some(a => a.type === "city_strike" && a.city === c.id)) {
-    h += `<button class="danger" onclick='selCity._striking=true'>🏹 Choose ranged target</button>`;
-  }
-  if (state.legal_actions.some(a => a.type === "encampment_strike" && a.city === c.id)) {
-    h += `<button class="danger" onclick='selCity._encampmentStriking=true'>🏰 Choose Encampment target</button>`;
-  }
-  document.getElementById("citypanel").innerHTML = h;
-  const ps = document.getElementById("prodsel");
-  if (ps) ps.onchange = () => { if (ps.value !== "") send(prods[+ps.value]); };
 }
 
 // ---------------------------------------------------------------- trees
@@ -26417,8 +26344,8 @@ function drawTurnLoop() {
       ? `Your civilization has fallen<span class="endturn-hint">Start another below</span>`
       : `The game is over<span class="endturn-hint">Start another below</span>`;
     button.title = eliminated && !won
-      ? "Your last city is gone. Start a new game from Game settings."
-      : "This world has its victor. Start a new game from Game settings.";
+      ? "Your last city is gone. Start a new game from Game setup."
+      : "This world has its victor. Start a new game from Game setup.";
     return;
   }
   // The capture modal disables the button outright; leave that alone.
@@ -27659,7 +27586,7 @@ document.getElementById("newgame-options").addEventListener("change", stageSelec
   level.onchange = () => setReasonFilter("level", level.value);
   topic.onchange = () => setReasonFilter("topic", topic.value);
 }
-// Whose plan the Active strategy panel above the log is showing. Its options
+// Whose plan the Active AI strategy panel above the log is showing. Its options
 // are filled from the world on every frame; only the omniscient spectator ever
 // has more than one to offer.
 {
