@@ -17090,8 +17090,9 @@ function skyZoomLadder() {
 // Moon, Mars, and the world the expedition is aimed at — the three destinations
 // of the space programme and the one board they are launched from. Arriving at
 // one of them is the part of the journey worth having, and a ladder geared for
-// fourteen orders of magnitude crosses the whole of the Moon's approach in two
-// notches, which is how a zoom flies past the one thing it was aimed at.
+// fourteen orders of magnitude crosses the whole of the Moon's approach in three
+// presses of the zoom button — which is how a zoom flies past the one thing it
+// was aimed at. It takes nine now, and the Earth's own approach fifteen.
 //
 // Home is in this list for the same reason as the other three and for one more:
 // standing on the board, the arrival is complete, so the gearing is fully handed
@@ -27168,7 +27169,15 @@ cv.addEventListener("pointermove", ev => {
         // runs far below the flat map's floor, so it goes through the same path
         // the wheel does and reaches the rest of the system the same way.
         const base = cameraZoom?.kind === "planet" ? cameraZoom.scale : cam.scale;
-        zoomAt(want / Math.max(1e-4, base), mx, my, touchGesture.skyAnchor);
+        // That floor is a guard against dividing by nothing, and it has to sit
+        // below every scale that can really be standing here. At `1e-4` it sat
+        // *above* most of them: past Jupiter the whole sky is a smaller number
+        // than that, so the divisor stopped tracking the camera, and a pinch
+        // opening the fingers anywhere out there answered by slamming the
+        // camera to the far stop — the wrong way, in one move, from Saturn to
+        // the galaxy. Everything past the inner system was unreachable by
+        // pinch, which is to say by touch at all.
+        zoomAt(want / Math.max(1e-30, base), mx, my, touchGesture.skyAnchor);
       } else {
         applyCameraAnchor(touchGesture.wx, touchGesture.wy, mx, my,
                           Math.max(.25, Math.min(3.2, want)));

@@ -6414,6 +6414,14 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("zoomAt(skyZoomStep(1 / 1.35))"));
         assert!(EMBEDDED_INDEX
             .contains("const want = touchGesture.scale * Math.pow(spread, touchGesture.pace || 1);"));
+        // And the divisor under it has to sit below every scale that can really
+        // be standing there. At `1e-4` it sat above most of the sky, so past
+        // Jupiter a pinch opening the fingers slammed the camera to the far
+        // stop, the wrong way, in one move — everything out there was
+        // unreachable by touch.
+        assert!(EMBEDDED_INDEX
+            .contains("zoomAt(want / Math.max(1e-30, base), mx, my, touchGesture.skyAnchor);"));
+        assert!(!EMBEDDED_INDEX.contains("want / Math.max(1e-4, base)"));
         // A flat board never sees any of it, and a people who have not proved
         // their world round have no ladder to gear: `skyZoomStep` hands the
         // factor straight back, and the pace floors at one.
