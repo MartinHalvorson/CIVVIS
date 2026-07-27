@@ -115,3 +115,47 @@ cargo run --profile ci --locked --bin ai_eval -- \
 
 The development screen does not contribute to the decision. Only this
 disjoint run's formal `promotion gate: PASS` can replace the 20x80 incumbent.
+
+## Reversal-gate result
+
+Across 300 fresh mirrored maps (600 games), the half-horizon challenger won
+308-292:
+
+- paired score 51.3%, 95% Wilson interval 45.7%-56.9%, and +9 Elo point
+  estimate;
+- map directions 33 challenger-favorable, 242 neutral, and 25 deep-favorable
+  (`p = 0.3581`);
+- no anytime-valid crossing in either direction; challenger peak `e = 1.087`;
+- terminal score 50.6% for the challenger, with directions 156-16-128
+  (`p = 0.1090`);
+- the formal promotion gate was **INCONCLUSIVE**.
+
+The terminal profiles were exceptionally close. R20 averaged 140.9 score to
+139.3, 2.52 cities to 2.50, and 146.5 military to 148.5. It won 221 religious
+games to deep's 211 and 70 score games to 68, while deep took five culture
+wins to three. The shared 20-turn cadence produced nearly identical rollout
+exposure: 3,579 reviews reached rollouts for r20 and 3,555 for deep.
+
+Across the development screen and disjoint gate, r20 finished 429-411 games
+and 48-39 map directions over 420 maps. That pooled descriptive direction is
+useful context but is not the decision statistic; the development maps
+selected the challenger and therefore do not belong in its independent gate.
+
+## Decision
+
+Generation 14 makes review cadence load-bearing: removing half the reviews
+lost 105-135 games and 1-16 decisive maps despite retaining the full horizon.
+The second half of horizon is much less clearly valuable: removing it leaned
+ahead in both fresh samples and left economy, search exposure, and victory mix
+near parity.
+
+That is not a promotion. The pre-registered rule required the cheaper agent to
+PASS on its independent gate, and it did not. A null result cannot establish
+non-inferiority, so `strategic_deep` remains the evidence-backed top rung and
+no runtime behavior changes.
+
+The actionable design result is narrower and stronger than a guess: future
+compute work should preserve the 20-turn review cadence. Horizon reduction is
+the only surviving efficiency hypothesis, but it needs a purpose-built
+non-inferiority design or a genuinely positive strength gate before it can
+replace 80-round search.
