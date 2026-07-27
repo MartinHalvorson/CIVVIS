@@ -3369,7 +3369,6 @@
         </select></label>
         <label class="small">Thermal distribution<select id="mappoles" style="margin-top:4px">
           <option value="poles">Hot equator, cold poles</option>
-          <option value="no_poles">No cold ends</option>
           <option value="randomized">Randomized</option>
         </select></label>
         <label class="small">World size<select id="np" style="margin-top:4px">
@@ -7249,8 +7248,9 @@ async function boot() {
         `<option value="${script.id}" title="${escapeAttr(script.description)}">${script.name}</option>`
       ).join("");
     }
-    // The world's shape and its poles are settings of their own: any map type
-    // can be laid out either way, and with or without cold ends.
+    // The world's shape and how its heat is laid out are settings of their own:
+    // any map type can be laid out either way, with heat following latitude or
+    // scattered across it.
     for (const [id, list] of [["mapshape", RULES.map_topologies], ["mappoles", RULES.map_poles]]) {
       if (!Array.isArray(list)) continue;
       document.getElementById(id).innerHTML = list.map(entry =>
@@ -18054,7 +18054,7 @@ function hudTurnPlate() {
   // The world's shape and its poles are only worth a word when they are not
   // the ones a world arrives with by default.
   const shapeNote = planetMap() ? " · Planet" : "";
-  const polesNote = state.map.poles === "no_poles" ? " · No poles" : "";
+  const polesNote = state.map.poles === "randomized" ? " · Scattered heat" : "";
   // How far round a world goes is something a people find out by going round
   // it, so its dimensions are not part of the identity line until they have.
   const extent = wentAround()

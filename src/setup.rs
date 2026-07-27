@@ -360,20 +360,29 @@ pub const MAP_TOPOLOGIES: [MapTopologySpec; 2] = [
 
 /// How heat is laid out across the world.
 ///
-/// With poles, latitude runs the climate: the middle of the world is its
+/// Two arrangements, and both of them carry the whole range from jungle to
+/// snow. With poles, latitude runs the climate: the middle of the world is its
 /// hottest ground and every step towards an extreme is colder, ending in
-/// tundra, snow and sea ice. Without them the world has no cold end at all —
-/// no ice, no snow, no tundra — and what terrain a tile gets is decided by
-/// rainfall alone, so jungle and desert reach the top and bottom rows.
-/// Randomized keeps both ends of the range but unhitches them from latitude:
-/// a tile is as cold as its own patch of noise says, so snow and jungle are
-/// neighbours as readily as antipodes.
+/// tundra, snow and sea ice. Randomized keeps both ends of that range but
+/// unhitches them from latitude: a tile is as cold as its own patch of noise
+/// says, so snow and jungle are neighbours as readily as antipodes.
+///
+/// A third setting, `no_poles`, once offered a world with no cold end at all —
+/// no ice, no snow, no tundra anywhere. It is retired: a world that cannot grow
+/// a third of the terrain table is a narrower game rather than a different one,
+/// and the two that remain are the real choice, whether heat follows latitude
+/// or ignores it.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum MapPoles {
+    /// The alias is for saves, not for lobbies: a checkpoint written while
+    /// `no_poles` was still on offer holds a whole generated world, and
+    /// refusing to read it back would lose that game rather than merely
+    /// mislabel it. Its ground is already painted, so all this decides is the
+    /// name the resumed game reports.
     #[default]
+    #[serde(alias = "no_poles")]
     Poles,
-    NoPoles,
     Randomized,
 }
 
@@ -381,7 +390,6 @@ impl MapPoles {
     pub const fn id(self) -> &'static str {
         match self {
             Self::Poles => "poles",
-            Self::NoPoles => "no_poles",
             Self::Randomized => "randomized",
         }
     }
@@ -393,10 +401,13 @@ impl MapPoles {
         matches!(self, Self::Poles)
     }
 
+    /// The retired `no_poles` spellings — including the `off`/`false` of the
+    /// era when this setting was a boolean — name nothing now, so a caller
+    /// still asking for that world is left with the default rather than handed
+    /// a silent substitute for a world it did not ask for.
     pub fn from_id(id: &str) -> Option<Self> {
         match id {
             "poles" | "on" | "true" => Some(Self::Poles),
-            "no_poles" | "none" | "off" | "false" => Some(Self::NoPoles),
             "randomized" | "random" | "scattered" => Some(Self::Randomized),
             _ => None,
         }
@@ -412,18 +423,12 @@ pub struct MapPolesSpec {
     pub poles: MapPoles,
 }
 
-pub const MAP_POLES: [MapPolesSpec; 3] = [
+pub const MAP_POLES: [MapPolesSpec; 2] = [
     MapPolesSpec {
         id: "poles",
         name: "Hot equator, cold poles",
         description: "Hottest across the middle of the world, colder towards each extreme, ending in tundra, snow and sea ice.",
         poles: MapPoles::Poles,
-    },
-    MapPolesSpec {
-        id: "no_poles",
-        name: "No cold ends",
-        description: "One warm climate from edge to edge, with no snow, tundra or ice anywhere.",
-        poles: MapPoles::NoPoles,
     },
     MapPolesSpec {
         id: "randomized",
@@ -1112,16 +1117,30 @@ mod tests {
         assert!(MapTopology::Planet.is_globe());
         assert!(!MapTopology::Flat.is_globe());
         assert!(MapPoles::Poles.has_poles());
-        assert!(!MapPoles::NoPoles.has_poles());
         // Randomized heat has cold ground but no cold *ends*, so it does not
         // get the polar sea-ice band or the polar cap on start placement.
         assert!(!MapPoles::Randomized.has_poles());
-        // The old boolean spellings still name the two settings that used to
-        // be a boolean, and nothing spells its way into Randomized by accident.
+        // Heat is laid out two ways and no more: either latitude decides it or
+        // noise does. A world with no cold end at all is not on offer, and the
+        // spellings that used to ask for one — including the `off` of the era
+        // when this was a boolean — name nothing rather than quietly landing on
+        // a world nobody asked for.
+        assert_eq!(MAP_POLES.len(), 2);
+        assert_eq!(MAP_POLES[0].poles, MapPoles::Poles);
+        assert_eq!(MAP_POLES[1].poles, MapPoles::Randomized);
         assert_eq!(MapPoles::from_id("on"), Some(MapPoles::Poles));
-        assert_eq!(MapPoles::from_id("off"), Some(MapPoles::NoPoles));
         assert_eq!(MapPoles::from_id("randomized"), Some(MapPoles::Randomized));
+        for retired in ["no_poles", "none", "off", "false"] {
+            assert_eq!(MapPoles::from_id(retired), None, "{retired} still names a world");
+        }
         assert_eq!(MapPoles::from_id("hot_and_cold"), None);
+        // A save is not a lobby. A checkpoint written while that world was on
+        // offer still holds a whole game, so it reads back as the default
+        // rather than failing to load at all.
+        assert_eq!(
+            serde_json::from_str::<MapPoles>("\"no_poles\"").unwrap(),
+            MapPoles::Poles
+        );
         // A flat world is what a lobby gets if it says nothing, and a world
         // with poles is: both are what CIVVIS shipped before either was a
         // choice, so a client that has not been taught about them is unmoved.

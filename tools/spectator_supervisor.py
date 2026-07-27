@@ -59,7 +59,7 @@ MAP_TYPES = (
     "true_start_earth",
 )
 MAP_SHAPES = ("flat", "planet")
-MAP_POLES = ("poles", "no_poles")
+MAP_POLES = ("poles", "randomized")
 
 
 def final_countdown_seconds(requested: float) -> float:
