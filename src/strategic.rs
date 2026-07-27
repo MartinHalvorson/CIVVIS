@@ -363,6 +363,13 @@ pub struct StrategicAi {
     /// can only break ties inside the exact outcome class; it can never trade
     /// a win away for prettier development. Off by default; the evaluator-only
     /// `strategic_deep_tempo` entrant measures it against `strategic_deep`.
+    ///
+    /// **Measured, not promoted.** On 30 fresh mirrored maps the treatment
+    /// scored 28-32 games, with one favorable map direction to three adverse
+    /// and terminal score exactly 50.0%. It clearly changed routing --
+    /// religion-dominant seats rose from 20 to 42 -- but religious conversion
+    /// barely moved (26.2% versus 25.0%). No disjoint gate was earned; see
+    /// `docs/TERMINAL_TEMPO_SEARCH.md`.
     pub terminal_tempo: bool,
     /// Project a rotating subset of lanes instead of all of them: the
     /// adaptive baseline, the lane in force, and one challenger that

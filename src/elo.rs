@@ -613,7 +613,8 @@ pub fn builtin_ai(name: &str, seed: u64) -> Box<dyn Ai> {
         // signal when several deep branches all win or all lose. Outcome
         // classes remain lexicographic, so this cannot prefer an unresolved
         // score proxy over a projected win or prefer a projected loss over an
-        // unresolved branch.
+        // unresolved branch. Measured 28-32 games on 30 fresh mirrored maps;
+        // retained evaluator-only because it did not earn a disjoint gate.
         "strategic_deep_tempo" => {
             let mut ai = crate::strategic::StrategicAi::with_weights(
                 crate::evolve::load_champion("evolved").unwrap_or_default(),
@@ -978,7 +979,10 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         // and the net is non-definitional because the search runs without
         // one. There is no separate published netless name to degrade to.
         "strategic_deep" => (vec![genome, value(false)], "strategic_deep"),
-        "strategic_deep_tempo" => (vec![genome, value(false)], "strategic_deep_tempo"),
+        "strategic_deep_tempo" => (
+            vec![genome, value(false)],
+            "strategic_deep_tempo",
+        ),
         "strategic_deep_expand" => (vec![genome, value(false)], "strategic_deep_expand"),
         "strategic_deep_consolidate" => (vec![genome, value(false)], "strategic_deep_consolidate"),
         "strategic_deep_militarize" => (vec![genome, value(false)], "strategic_deep_militarize"),

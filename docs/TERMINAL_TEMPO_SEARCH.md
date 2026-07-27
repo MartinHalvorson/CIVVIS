@@ -46,4 +46,32 @@ agent; terminal score and tempo are diagnostics, never promotion inputs.
 
 ## Result
 
-Pending.
+The 30-map screen completed exactly as registered:
+
+| Metric | `strategic_deep_tempo` | `strategic_deep` |
+|---|---:|---:|
+| Game wins | 28 | 32 |
+| Paired-map score | 46.7% | 53.3% |
+| Map directions | 1 favorable | 3 favorable |
+| Terminal score share | 50.0% | 50.0% |
+| Religious victories | 23 | 25 |
+| Religious-dominant seats | 42 | 20 |
+| Adaptive plan exposure | 43.7% | 53.1% |
+
+The paired point estimate was -23 Elo with a 95% interval of -145 to +99;
+the exact direction test was `p=0.6250`. The result was inconclusive and its
+direction was adverse, so the pre-registered disjoint gate was not run.
+
+The fires-check is unambiguous. Tempo changed routing substantially: switches
+rose from 2.64 to 2.92 per game, religion exposure rose from 28.0% to 33.2%,
+and religion-dominant seats more than doubled. It also produced somewhat more
+cities, population, military, gold, and faith. None of that improved terminal
+score or the exact win objective. Religious-dominant seat conversion was
+26.2% for the treatment and 25.0% for the control.
+
+This closes the mechanism rather than the premise. Saturated branches do retain
+terminal-time information, and the treatment successfully uses it. The missing
+step is causal: preferring a lane because its model converts faster against the
+projected opponents does not make that lane convert more reliably in the real
+paired game. `strategic_deep_tempo` remains evaluator-only as a reproducible
+negative control; production behavior is unchanged.
