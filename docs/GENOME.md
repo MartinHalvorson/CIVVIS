@@ -142,6 +142,59 @@ Use `gene_probe` to *exclude* — a gene that cannot act certainly cannot help.
 Never use it to rank what to work on. Rank by an **ablation**: what does this
 subsystem cost when removed?
 
+### The leverage ranking — one block of eight is load-bearing
+
+`src/bin/gene_leverage.rs` replaces each block of related genes with uniform
+draws from its own bounds and plays it against the shipped agent, paired and
+seat-mirrored, over three draws. Cost is `0.5 − scrambled score`:
+
+| block | genes | cost | verdict |
+|---|---|---|---|
+| **economy** | 7 | **+0.0193 ± 0.0060** | **3.2 SE — load-bearing** |
+| combat_value | 3 | +0.0158 ± 0.0233 | settled |
+| opening | 4 | +0.0091 ± 0.0078 | settled |
+| war_decl | 5 | +0.0040 ± 0.0040 | settled |
+| policy | 8 | +0.0037 ± 0.0145 | settled |
+| doctrine | 11 | +0.0019 ± 0.0165 | settled |
+| movement | 2 | +0.0015 ± 0.0140 | settled |
+| **expansion** | 4 | **−0.0305 ± 0.0166** | 1.8 SE — scrambling *helped* |
+
+**Only `economy` carries anything.** Everything else can be replaced with
+uniform noise for free.
+
+The eleven combat-**doctrine** genes deserve their own line. That is the
+largest block in the genome and the one this repository has spent the most
+design effort on, and scrambling all eleven costs **−0.0019**. It agrees with
+the standing finding that this agent's wars resolve nothing: the doctrine is
+well-built machinery bolted to a subsystem that never converts.
+
+### `city_target` saturates above six
+
+The expansion block was the only one where randomising *beat* the shipped
+values, so the obvious suspect was `city_target = 4` against a 2..12 range
+whose random mean is 7 — the AI under-expanding. Swept at 20 mirrored maps a
+point:
+
+| value | score | edge |
+|---|---|---|
+| 2 | 0.4899 ± 0.0152 | −0.0101 |
+| 4 (shipped) | 0.5000 ± 0.0000 | — |
+| 6 | 0.5034 ± 0.0043 | +0.0034 |
+| 8 | 0.5035 ± 0.0043 | +0.0035 |
+| 10 | 0.5035 ± 0.0043 | +0.0035 |
+| 12 | 0.5035 ± 0.0043 | +0.0035 |
+
+Six, eight, ten and twelve are **identical to four decimal places**, which
+says the cap stops binding at about six: the agent never gets that many cities
+anyway, so raising the ceiling changes nothing. Something other than the
+target limits expansion.
+
+And the magnitudes do not work. The block effect is +0.0305; the largest
+single-gene effect here is +0.0035, a tenth of it, at 0.8 SE. **So
+`city_target` is not what makes randomised expansion beat the shipped values**
+— `settler_min_pop` or `min_city_dist` carries it. Stopping at the block
+ablation would have produced a confident and wrong write-up.
+
 ### War timing — hypothesis refuted
 
 `src/bin/war_census.rs`, 53 wars over 24 maps at 6p/500 turns: **98% of wars
