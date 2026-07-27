@@ -4,9 +4,16 @@
 //! `elo::builtin_ai`, so an A/B between two configurations of the same agent
 //! needs a registered entrant, and `src/elo.rs` belongs to another open PR.
 //! The switch this harness needs already travels on `Weights`
-//! (`legacy_policy_deck`, deliberately not a gene), so both arms can be built
-//! here from `AdvancedAi::fleet_weighted` and nothing outside `src/ai.rs` has
-//! to move.
+//! (`policy_deck`, deliberately not a gene), so both arms can be built here
+//! from `AdvancedAi::fleet_weighted` and nothing outside `src/ai.rs` has to
+//! move.
+//!
+//! Three arms, and the third is the important one. `--treatment legacy
+//! --control empty` slots no cards at all on one side, which measures what the
+//! entire policy layer is worth and therefore **bounds what any card policy
+//! can win**. Run that before optimising within a subsystem, not after: `live`
+//! against `legacy` came back a clean null (18 for / 15 against, p=0.7283 over
+//! 120 maps) and that number is uninterpretable without the ceiling beside it.
 //!
 //! The design is the paired one the repository decides on. Each map is played
 //! twice: once with the treatment on the even seats, once on the odd seats. A
@@ -16,15 +23,36 @@
 //! ground from both sides.
 //!
 //! ```text
-//! policy_eval --players 4 --maps 120 --turns 250
+//! policy_eval --players 4 --maps 120
+//! policy_eval --players 4 --maps 120 --treatment legacy --control empty
 //! ```
 //!
 //! Read the map-direction line and the sign test, not the raw game count:
 //! `docs/EVAL.md` records two conclusions from this evaluator that inverted at
 //! 120 maps in opposite directions, and 20-map runs on it are anti-evidence.
-use civvis::ai::{AdvancedAi, Ai, Weights};
+use civvis::ai::{AdvancedAi, Ai, PolicyDeck, Weights};
 use civvis::game::{Action, Game};
 use civvis::parallel;
+
+fn text(args: &[String], flag: &str, default: &str) -> String {
+    args.iter()
+        .position(|arg| arg == flag)
+        .and_then(|index| args.get(index + 1))
+        .cloned()
+        .unwrap_or_else(|| default.to_string())
+}
+
+fn deck(name: &str) -> PolicyDeck {
+    match name {
+        "live" => PolicyDeck::Live,
+        "legacy" => PolicyDeck::Legacy,
+        "empty" => PolicyDeck::Empty,
+        other => {
+            eprintln!("policy_eval: unknown arm {other:?}; use live, legacy or empty");
+            std::process::exit(2);
+        }
+    }
+}
 
 fn number(args: &[String], flag: &str, default: usize) -> usize {
     args.iter()
@@ -65,15 +93,19 @@ fn play(
     seed: u64,
     turns: u32,
     treated: usize,
+    arms: (PolicyDeck, PolicyDeck),
 ) -> (Option<bool>, f64, f64) {
     let mut game = Game::new(players, width, height, seed, turns, 0);
-    let live = Weights::default();
-    let legacy = Weights {
-        legacy_policy_deck: true,
+    let treat_w = Weights {
+        policy_deck: arms.0,
         ..Weights::default()
     };
-    let mut treatment: Vec<AdvancedAi> = AdvancedAi::fleet_weighted(&game, &live);
-    let mut control: Vec<AdvancedAi> = AdvancedAi::fleet_weighted(&game, &legacy);
+    let control_w = Weights {
+        policy_deck: arms.1,
+        ..Weights::default()
+    };
+    let mut treatment: Vec<AdvancedAi> = AdvancedAi::fleet_weighted(&game, &treat_w);
+    let mut control: Vec<AdvancedAi> = AdvancedAi::fleet_weighted(&game, &control_w);
     let is_treated = |pid: usize| pid % 2 == treated;
 
     for _ in 0..turns {
@@ -121,15 +153,18 @@ fn main() {
     let seed0 = number(&args, "--seed", 300_000) as u64;
     let jobs = number(&args, "--jobs", parallel::default_jobs());
 
+    let treat_name = text(&args, "--treatment", "live");
+    let control_name = text(&args, "--control", "legacy");
+    let arms = (deck(&treat_name), deck(&control_name));
     println!(
-        "policy_eval: live deck vs legacy POLICY_PRIORITY, {maps} maps x 2 directions, \
+        "policy_eval: {treat_name} vs {control_name}, {maps} maps x 2 directions, \
          {players}p {width}x{height}, {turns} turns, seed {seed0}"
     );
 
     let results = parallel::map(maps, jobs, move |index| {
         let seed = seed0 + index as u64;
-        let a = play(players, width, height, seed, turns, 0);
-        let b = play(players, width, height, seed, turns, 1);
+        let a = play(players, width, height, seed, turns, 0, arms);
+        let b = play(players, width, height, seed, turns, 1, arms);
         (a, b)
     });
 

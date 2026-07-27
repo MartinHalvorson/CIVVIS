@@ -255,8 +255,18 @@ fn empire_reading(g: &Game, pid: usize, w: &Weights) -> f64 {
     let mut value = 0.0;
     for cid in g.player_city_ids(pid) {
         let y = g.city_yields(cid);
+        // Production is read as production *toward what this city is actually
+        // building*. `city_yields` carries flat adders -- Urban Planning's
+        // `city_production` -- but the whole `*_production_pct` family reaches
+        // the game only through `item_prod_mult`, so without this factor Agoge,
+        // Colonization, Ilkum, Maritime Industries, Conscription, Limes and
+        // Maneuver all score exactly 0.0 and lose every tie to a card worth a
+        // rounding error of gold. That is the failure `PolicyAi` was retired
+        // for, one layer up.
+        let queued = g.cities.get(&cid).and_then(|city| city.queue.first());
+        let toward_item = g.item_prod_mult(pid, cid, queued);
         value += w.pol_food * y.food
-            + w.pol_production * y.production
+            + w.pol_production * y.production * toward_item
             + w.pol_gold * y.gold
             + w.pol_science * y.science
             + w.pol_culture * y.culture
@@ -291,7 +301,10 @@ fn revise_policy_deck(g: &mut Game, pid: usize, w: &Weights) {
     if total <= 0 {
         return;
     }
-    if w.legacy_policy_deck {
+    if w.policy_deck == PolicyDeck::Empty {
+        return;
+    }
+    if w.policy_deck == PolicyDeck::Legacy {
         if (g.players[pid].policies.len() as i64) < total {
             for card in POLICY_PRIORITY {
                 let _ = g.apply(
@@ -472,17 +485,34 @@ pub struct Weights {
     /// Fraction by which a challenger must beat the incumbent to take its
     /// slot. Zero re-shuffles the deck on noise; one never swaps at all.
     pub pol_swap_margin: f64,
-    /// Hold the pre-2026-07-27 deck: the twenty cards of `POLICY_PRIORITY`, in
-    /// order, and only while a slot stands empty.
+    /// Which deck this strategy holds.
     ///
-    /// **Not a gene.** It is deliberately absent from `to_vec`/`from_vec`/
-    /// `bounds`, so the GA can neither read nor breed it and the genome stays
-    /// 48 wide. It rides on `Weights` for one reason: `AdvancedAi::with_weights`
-    /// already carries a genome into the inner `BasicAi`, so a paired control
-    /// arm costs no change to `src/ai/advanced.rs` or `src/elo.rs`. Set it in
-    /// an eval harness; leave it alone in play.
+    /// **Not a gene.** Deliberately absent from `to_vec`/`from_vec`/`bounds`,
+    /// so the GA can neither read nor breed it and the genome stays 48 wide.
+    /// It rides on `Weights` for one reason: `AdvancedAi::with_weights` already
+    /// carries a genome into the inner `BasicAi`, so an eval arm costs no
+    /// change to `src/ai/advanced.rs` or `src/elo.rs`. Set it in a harness;
+    /// leave it alone in play.
     #[serde(default)]
-    pub legacy_policy_deck: bool,
+    pub policy_deck: PolicyDeck,
+}
+
+/// The three arms a policy-deck experiment needs.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum PolicyDeck {
+    /// Cards valued by slotting them and reading the empire either side.
+    #[default]
+    Live,
+    /// The pre-2026-07-27 behaviour: the twenty cards of `POLICY_PRIORITY`, in
+    /// order, and only while a slot stands empty.
+    Legacy,
+    /// Slot nothing, ever.
+    ///
+    /// Not a strategy — an ablation. `Legacy` against `Empty` measures what the
+    /// entire card layer is worth, which bounds what *any* card policy can win
+    /// and therefore whether choosing well within it deserves more effort. Run
+    /// this before optimising a subsystem, not after.
+    Empty,
 }
 
 pub const OPENING_MENU: [&str; 6] = [
@@ -540,7 +570,7 @@ impl Default for Weights {
             pol_faith: 0.7,
             pol_military: 0.05,
             pol_swap_margin: 0.15,
-            legacy_policy_deck: false,
+            policy_deck: PolicyDeck::Live,
         }
     }
 }
@@ -653,7 +683,7 @@ impl Weights {
             // that round-trips through `to_vec` comes back playing the live
             // deck. That is the intended semantics: evolution breeds appetites,
             // never the decision to stop using them.
-            legacy_policy_deck: false,
+            policy_deck: PolicyDeck::Live,
         }
     }
 
