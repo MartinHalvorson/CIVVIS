@@ -38,7 +38,8 @@ pub const BUILTIN_AIS: [&str; 10] = [
 /// tournament ratings. Keeping them out of `BUILTIN_AIS` prevents a control
 /// factory from being pooled into the same player/leader rating key as
 /// its treatment.
-pub const EVAL_ONLY_AIS: [&str; 31] = [
+pub const EVAL_ONLY_AIS: [&str; 32] = [
+    "advanced_banking_dedication",
     "advanced_measured_dedication",
     "advanced_lane_reachable",
     "advanced_relief_scoped",
@@ -503,6 +504,14 @@ pub fn builtin_ai(name: &str, seed: u64) -> Box<dyn Ai> {
         "advanced_measured_dedication" => {
             let mut w = crate::evolve::load_champion("evolved").unwrap_or_default();
             w.dedication_choice = crate::ai::DedicationChoice::Measured;
+            Box::new(AdvancedAi::with_weights(w))
+        }
+        // The repair for that loss: rank on the projection only in a Normal or
+        // Dark Age, where Era Score is the literal objective, and leave the
+        // Golden and Heroic choice exactly as the default makes it.
+        "advanced_banking_dedication" => {
+            let mut w = crate::evolve::load_champion("evolved").unwrap_or_default();
+            w.dedication_choice = crate::ai::DedicationChoice::Banking;
             Box::new(AdvancedAi::with_weights(w))
         }
         "advanced_v1" => Box::new(AdvancedAi::legacy()),
@@ -1078,6 +1087,7 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         ),
         "advanced" => (Vec::new(), "advanced"),
         "advanced_lane_reachable" => (Vec::new(), "advanced_lane_reachable"),
+        "advanced_banking_dedication" => (Vec::new(), "advanced_banking_dedication"),
         "advanced_measured_dedication" => (Vec::new(), "advanced_measured_dedication"),
         "advanced_v1" => (Vec::new(), "advanced_v1"),
         "advanced_relief_scoped" => (Vec::new(), "advanced_relief_scoped"),
@@ -1565,8 +1575,9 @@ mod tests {
             // Anything else reaching that state fell through to the
             // catch-all and is claiming to need nothing while quietly
             // needing a net.
-            const SCRIPTED: [&str; 7] = [
+            const SCRIPTED: [&str; 8] = [
                 "advanced",
+                "advanced_banking_dedication",
                 "advanced_lane_reachable",
                 "advanced_measured_dedication",
                 "advanced_relief_scoped",

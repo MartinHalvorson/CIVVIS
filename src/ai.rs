@@ -329,7 +329,17 @@ pub(crate) fn choose_dedications(g: &mut Game, pid: usize, choice: DedicationCho
         if offered.is_empty() {
             return;
         }
-        if choice == DedicationChoice::Measured {
+        // A Golden or Heroic Age banks no Era Score, so there the projection is
+        // only a correlate of what the Golden half is worth — and ranking on it
+        // is what lost the first gate. `Banking` keeps the measured number
+        // where it is the literal objective and leaves the rest alone.
+        let banking = !matches!(g.players[pid].age.as_str(), "golden" | "heroic");
+        let rank = match choice {
+            DedicationChoice::Alphabetical => false,
+            DedicationChoice::Measured => true,
+            DedicationChoice::Banking => banking,
+        };
+        if rank {
             offered.sort_by(|left, right| {
                 g.projected_dedication_score(pid, right)
                     .cmp(&g.projected_dedication_score(pid, left))
@@ -594,6 +604,16 @@ pub enum DedicationChoice {
     /// a *correlate* of what the Golden half is worth, and an argmax over a
     /// correlate is the failure mode this repository keeps rediscovering.
     Measured,
+    /// `Measured` restricted to the ages where the number it ranks on is the
+    /// literal objective: a Normal or Dark Age banks Era Score, so the
+    /// Dedication that would have paid most is the one that buys the next age
+    /// soonest. A Golden or Heroic Age banks nothing, so that choice is left
+    /// exactly as `Alphabetical` makes it.
+    ///
+    /// This is the repair for `Measured`'s loss, and it is the whole of the
+    /// repair — no new signal, just the same signal withdrawn from the half of
+    /// the decision where it was never causal.
+    Banking,
 }
 
 /// The three arms a policy-deck experiment needs.

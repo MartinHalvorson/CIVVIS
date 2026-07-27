@@ -674,3 +674,51 @@ fn every_dark_age_card_spans_the_eras_the_shipped_game_offers_it_in() {
         );
     }
 }
+
+#[test]
+fn the_banking_arm_ranks_only_where_era_score_is_the_objective() {
+    use crate::ai::{choose_dedications, DedicationChoice};
+
+    // A Normal or Dark Age banks Era Score, so the projection is the literal
+    // objective and Banking ranks on it exactly as Measured does.
+    for age in ["normal", "dark"] {
+        let mut game = two_player_game();
+        game.world_era = 1;
+        game.players[0].age = age.to_string();
+        game.players[0].dedication_choices = 1;
+        game.players[0]
+            .last_era_triggers
+            .insert("eureka".to_string(), 6);
+
+        choose_dedications(&mut game, 0, DedicationChoice::Banking);
+        assert!(
+            game.players[0].dedications.contains("free_inquiry"),
+            "a {age} age banks, so six Eurekas name Free Inquiry"
+        );
+    }
+
+    // A Golden or Heroic Age banks nothing, so the projection is only a
+    // correlate there and Banking leaves that choice where the default puts it.
+    // Ranking on a correlate is what lost the first gate.
+    for age in ["golden", "heroic"] {
+        let mut game = two_player_game();
+        game.world_era = 1;
+        game.players[0].age = age.to_string();
+        game.players[0].dedication_choices = 1;
+        game.players[0]
+            .last_era_triggers
+            .insert("eureka".to_string(), 6);
+
+        let mut ranked = game.clone();
+        choose_dedications(&mut ranked, 0, DedicationChoice::Measured);
+        assert!(ranked.players[0].dedications.contains("free_inquiry"));
+
+        choose_dedications(&mut game, 0, DedicationChoice::Banking);
+        assert!(
+            game.players[0]
+                .dedications
+                .contains("exodus_of_the_evangelists"),
+            "a {age} age keeps the default choice, which is the one that wins"
+        );
+    }
+}
