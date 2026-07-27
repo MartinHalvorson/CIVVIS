@@ -15290,6 +15290,20 @@ impl Game {
             .is_some_and(|player| !player.is_minor && !player.is_barbarian)
     }
 
+    /// Whether this seat may take a new tile with its own Culture or Gold.
+    ///
+    /// `CivilizationLevels` grants both to `CIVILIZATION_LEVEL_FULL_CIV`
+    /// alone: `CanAnnexTilesWithCulture` and `CanAnnexTilesWithGold` are 0 for
+    /// `CITY_STATE`, `FREE_CITIES` and `TRIBE`. A city-state's territory grows
+    /// only through `CanAnnexTilesWithReceivedInfluence` — one tile per Envoy
+    /// it receives from its Suzerain — which `do_send_envoy` and liberation
+    /// already pay. Barbarian camps and Free Cities never annex at all.
+    pub(crate) fn annexes_tiles_with_own_yields(&self, pid: usize) -> bool {
+        self.players
+            .get(pid)
+            .is_some_and(|player| !player.is_minor && !player.is_barbarian)
+    }
+
     /// Flat Combat Strength this seat receives from the difficulty setting.
     pub fn handicap_combat_strength(&self, pid: usize) -> f64 {
         if !self.takes_handicap(pid) {
@@ -17541,6 +17555,8 @@ impl Game {
         let city = self.cities.get(&cid)?;
         let tile = self.map.get(pos)?;
         if city.owner != pid
+            // `CanAnnexTilesWithGold` is a full-civilization privilege.
+            || !self.annexes_tiles_with_own_yields(pid)
             || tile.owner_city.is_some()
             || !self.players.get(pid)?.explored.contains(&pos)
             || !self
@@ -36263,8 +36279,28 @@ impl Game {
             center.feature = None;
             center.improvement = None;
         }
+        // `CivilizationLevels.StartingTilesForCity` is 6 for a full
+        // civilization — the whole first ring — and 5 for a city-state, which
+        // therefore opens one tile short of a normal city and makes the rest
+        // up from Envoys. Which of the six a city-state gives up is not in the
+        // database, so the shipped plot-influence picker chooses: the ring
+        // neighbour it rates least attractive is the one left neutral.
+        let mut ring: Vec<Pos> = self.nbrs(pos).into_iter().collect();
+        if is_minor {
+            ring.retain(|position| {
+                self.map
+                    .get(*position)
+                    .is_some_and(|tile| tile.owner_city.is_none())
+            });
+            ring.sort_by(|left, right| {
+                self.border_influence_cost(pos, *left)
+                    .total_cmp(&self.border_influence_cost(pos, *right))
+                    .then(left.cmp(right))
+            });
+            ring.truncate(5);
+        }
         let mut claim = vec![pos];
-        claim.extend(self.nbrs(pos));
+        claim.extend(ring);
         for tpos in claim {
             if let Some(t) = self.map.tiles.get_mut(&tpos) {
                 if t.owner_city.is_none() {
@@ -45627,7 +45663,9 @@ impl Game {
                 }
             }
         }
-        if !self.congress_effect_active("border_control_treaty", "B", &pid.to_string()) {
+        if self.annexes_tiles_with_own_yields(pid)
+            && !self.congress_effect_active("border_control_treaty", "B", &pid.to_string())
+        {
             let owned = self.cities[&cid].owned_tiles.len() as i32;
             let border_mult = 1.0
                 + (self.pantheon_effect(pid, "border_growth_pct")
@@ -46567,7 +46605,7 @@ impl Game {
         }
         let mut scored: Vec<(Pos, f64)> = candidates
             .into_iter()
-            .map(|position| (position, self.border_influence_cost(cid, position)))
+            .map(|position| (position, self.border_influence_cost(city_pos, position)))
             .collect();
         let best_score = scored
             .iter()
@@ -46597,8 +46635,7 @@ impl Game {
     /// The -105 is calibrated against the 100 ring cost on purpose: one
     /// Resource is worth slightly more than one extra ring of distance, so a
     /// city reaches past a barren adjacent plot to take it.
-    fn border_influence_cost(&self, cid: u32, position: Pos) -> f64 {
-        let city_pos = self.cities[&cid].pos;
+    fn border_influence_cost(&self, city_pos: Pos, position: Pos) -> f64 {
         let tile = &self.map.tiles[&position];
         let mut cost = 100.0 * self.wdist(position, city_pos) as f64;
         cost += match tile.terrain.as_str() {
