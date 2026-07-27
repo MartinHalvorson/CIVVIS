@@ -1727,9 +1727,15 @@
   .war-infobox-row { border-top: 1px solid #ffffff0d; }
   .war-infobox-row:first-of-type { border-top: 0; }
   .war-row-label { padding: 3px 7px; background: #ffffff06; color: #8fa098; font-size: var(--type-caption); font-weight: 850; letter-spacing: .10em; text-align: center; text-transform: uppercase; }
-  .war-columns { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
-  .war-side { min-width: 0; padding: 5px 0 6px; border-right: 1px solid #ffffff10; }
-  .war-side:last-child { border-right: 0; text-align: right; }
+  .war-columns { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  /* Every effort bar is measured outward from the seam between the two sides,
+     so the seam is drawn as an axis both bars visibly stand on rather than the
+     hairline that merely told the columns apart.  It is painted over the bars,
+     and the dark shoulders of that 1px spine are what keep two sides of one row
+     from fusing into a single two-tone bar across the middle. */
+  .war-columns::before { content: ""; position: absolute; top: 0; bottom: 0; left: 50%; z-index: 1; width: 1px; margin-left: -.5px; background: #ffffff40; box-shadow: 0 0 0 1px #0c110f; pointer-events: none; }
+  .war-side { min-width: 0; padding: 5px 0 6px; }
+  .war-side:last-child { text-align: right; }
   .war-strength-head, .war-strength-values { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 2px; padding: 0 7px; text-align: center; }
   /* These headings wrap rather than run on. The columns are three equal
      `minmax(0, 1fr)` tracks about 41px wide in the sidebar, "Saw action" needs
@@ -1740,9 +1746,13 @@
   .war-strength-head span { min-width: 0; overflow-wrap: break-word; }
   .war-belligerent { min-width: 0; padding: 4px 0; }
   .war-belligerent + .war-belligerent { border-top: 1px solid #ffffff0a; }
-  .war-belligerent-bar { display: block; width: var(--war-effort, 0%); height: 4px; margin-bottom: 4px; border-radius: 2px; box-shadow: 0 0 4px #0008; }
-  .war-side.aggressor .war-belligerent-bar { margin-left: auto; }
-  .war-side.defender .war-belligerent-bar { margin-right: auto; }
+  /* A bar grows out of the centre axis, never in from the rim, so its inner end
+     is squared off flush against the axis while the outer end is rounded — the
+     shape alone says which end is the origin.  A 3px stub keeps that foot on
+     the axis visible even for a belligerent whose units never saw action. */
+  .war-belligerent-bar { display: block; width: var(--war-effort, 0%); min-width: 3px; height: 4px; margin-bottom: 4px; box-shadow: 0 0 4px #0008; }
+  .war-side.aggressor .war-belligerent-bar { margin-left: auto; border-radius: 2px 0 0 2px; }
+  .war-side.defender .war-belligerent-bar { margin-right: auto; border-radius: 0 2px 2px 0; }
   .war-party { min-width: 0; margin: 2px 7px; color: #e7ece7; font-size: var(--type-small); font-weight: 750; }
   .war-belligerent.city-state .war-party { color: #b9c8c1; font-size: var(--type-label); font-weight: 650; }
   .war-side.aggressor .war-belligerent.city-state .war-party { margin-left: 14px; padding-left: 5px; border-left: 1px solid #62756d66; }
@@ -20436,6 +20446,11 @@ function warSawAction(party) {
   const value = Number(party.strength_saw_action ?? 0);
   return Number.isFinite(value) ? Math.max(0, value) : 0;
 }
+// Effort bars run outward from the centre axis, and the war's busiest army
+// stops at 80% of its column.  A bar that filled its column ran flush into the
+// rim of the panel, where a full bar and an all-but-full one looked alike and
+// nothing said the two sides were being measured from a shared middle.
+const WAR_EFFORT_MAX_PERCENT = 80;
 function warBelligerentRows(war, declarerSide, role, maxSawAction) {
   const rows = warParties(war, declarerSide).map(party => {
     const minor = warPartyIsCityState(party);
@@ -20443,14 +20458,18 @@ function warBelligerentRows(war, declarerSide, role, maxSawAction) {
     const start = party.strength_start ?? party.strength;
     const peak = party.strength_peak ?? start;
     const sawAction = warSawAction(party);
-    const effort = maxSawAction > 0 ? 100 * sawAction / maxSawAction : 0;
+    const share = maxSawAction > 0 ? sawAction / maxSawAction : 0;
+    const effort = WAR_EFFORT_MAX_PERCENT * share;
+    const barTitle = `Units that saw action: ${warStrengthValue(sawAction)} — ` +
+      `${Math.round(100 * share)}% of the busiest army in this war, measured out from the centre`;
     const values = declarerSide
       ? [[start, "Military strength on entry"], [peak, "Peak unit-only military strength"],
           [sawAction, "Military value of distinct units that saw action"]]
       : [[sawAction, "Military value of distinct units that saw action"],
           [peak, "Peak unit-only military strength"], [start, "Military strength on entry"]];
     return `<div class="war-belligerent${minor ? " city-state" : ""}">` +
-      `<i class="war-belligerent-bar" style="--war-effort:${effort}%;background:${cityBannerColor(party.player)}"></i>` +
+      `<i class="war-belligerent-bar" title="${escapeAttr(barTitle)}" ` +
+      `style="--war-effort:${effort}%;background:${cityBannerColor(party.player)}"></i>` +
       `<div class="war-party"><span class="war-party-copy"><span class="war-party-name">` +
       `${warEntityLink(party.player, minor ? " ⌂" : "")}</span>` +
       `${note ? `<span class="war-party-note">${note}</span>` : ""}</span></div>` +
