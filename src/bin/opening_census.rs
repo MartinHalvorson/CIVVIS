@@ -385,6 +385,7 @@ fn main() {
     let barbarians = number(&args, "--barbarians", 1) != 0;
     let parallel_settlers = args.iter().any(|arg| arg == "--parallel-settlers");
     let census_civ_blind = args.iter().any(|arg| arg == "--civ-blind");
+    let settler_commit = args.iter().any(|arg| arg == "--settler-commit");
     let food_first = args
         .iter()
         .position(|arg| arg == "--food-bias")
@@ -417,6 +418,7 @@ fn main() {
             agent.parallel_settlers = parallel_settlers;
             agent.civ_blind = census_civ_blind;
             agent.food_first = food_first;
+            agent.settler_commit = settler_commit;
         }
         let majors: Vec<usize> = (0..game.players.len())
             .filter(|pid| !game.players[*pid].is_minor)

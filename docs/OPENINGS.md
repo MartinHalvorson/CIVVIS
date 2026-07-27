@@ -795,3 +795,81 @@ against nothing and was never counted as a change. It read **1.9% changes and
 10.6% drops**; retaining the aim across a drop gives **3.5% and 27.1%**. Both
 published numbers would have understated the instability by roughly half, in
 the direction that made the agent look better.
+
+## 16. ⚠ The instability was the cure, not the disease — §15's fix refuted
+
+§15 named a candidate repair: hold the settler's site across a turn it could
+not move. `advanced_settler_commit` does exactly that, bounded at three
+consecutive stalled turns so it cannot re-create #492's livelock.
+
+It works. It is also worse at everything it was meant to improve.
+
+| | control | `settler_commit` |
+|---|---|---|
+| ended aimed somewhere else than the turn before | 3.5% | **2.5%** |
+| ended holding no destination | 27.1% | **11.9%** |
+| settler-turns spent moving | 81% | **73%** |
+| settler-turns standing still | 19% | **27%** |
+| turns alive per journey | 15.0 ± 0.7 | **16.5 ± 0.8** |
+| tiles stepped | 12.1 ± 0.6 | **13.2 ± 0.7** |
+| straight-line hexes covered | 5.2 ± 0.2 | 5.1 ± 0.2 |
+| **detour ratio** | **2.32** | **2.56** |
+| walking turns per seat, below target | 57.1 ± 3.1 | **74.4 ± 4.6** |
+
+**The commitment target is hit squarely — instability more than halves — and
+every transit measure moves the wrong way.** Settlers live longer, stand still
+half again as often, walk further, and end up no closer to home.
+
+### What that means, and what it retracts
+
+`if !moved { self.settler_targets.remove(&uid); }` **is not a bug.** It is what
+lets a blocked settler go somewhere it can actually reach. Holding the site
+makes the unit *wait* for a path instead of taking an available one, which is
+why standing still rises from 19% to 27%.
+
+So §15's framing was wrong in its causal direction, and this is the third time
+this document has made that error: **the destination instability is the
+adaptive response to being blocked, not the cause of the detour.** Measuring it
+as a defect and repairing it directly produced a stubborner, slower settler.
+
+This also survives the obvious objection about tuning. The stall limit is 3;
+any *larger* limit waits longer and any *smaller* one converges on the shipped
+behaviour, so the direction is not a bad constant — a settler that waits is
+worse than a settler that re-routes, and that is the whole result.
+
+**Not taken to an `ai_eval`**, for the third time in this document, and for the
+same reason: a treatment that is worse on its own target metric over 900+
+journeys does not need forty minutes of paired evaluation to establish that it
+is also worse on wins. The entrant ships off by default with the result
+recorded.
+
+### Where the movement thread actually stands
+
+What remains unexplained is the thing underneath both results: in the *control*,
+a settler stands still on 19% of its turns and averages 0.81 tiles per turn
+against a shipped `moves` of 2. Neither commitment nor re-targeting explains
+that — a blocked settler is blocked by something, and this document has not
+identified what. Congestion against the empire's own units, zones of control,
+and terrain cost are the candidates, and separating them is a movement-layer
+question rather than an opening one.
+
+## Closing summary: ten levers, and what the opening actually is
+
+| lever | verdict |
+|---|---|
+| opening book, swept | −0.0019 ± 0.0148 |
+| opening book, deleted entirely | −0.003 |
+| technology order, randomised | below 0.09 resolution |
+| civic order, randomised | below 0.09 resolution |
+| civilization-aware decisions, deleted | −0.8%, p = 0.83 |
+| being a particular civilization | η² = 0.064 on score, nothing on wins |
+| one-settler-at-a-time clause, lifted | inert |
+| capital food appetite, raised | wrong direction, monotone in the dose |
+| settler destination commitment | wrong direction on every transit measure |
+| **what does bind** | **settler transit: 44% of all time below the city target** |
+
+The opening in this engine is not a build order. Every build-order and
+per-civilization lever is bounded at or near zero, and the two economy levers
+with real headroom both reversed when pushed. What sets the tempo is how long a
+settler takes to turn into a city — fifteen turns to cover five hexes — and
+that is a movement problem this document has localised but not solved.

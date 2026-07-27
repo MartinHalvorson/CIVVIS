@@ -370,6 +370,12 @@ impl EmpireCounts {
     }
 }
 
+/// Consecutive turns a committed settler may fail to move before its site is
+/// released. Three is long enough to walk around a unit standing in the way
+/// and short enough that a genuinely unreachable site cannot hold a settler
+/// hostage — the failure mode #492 was merged to remove.
+const SETTLER_STALL_LIMIT: u32 = 3;
+
 #[derive(Clone)]
 pub struct AdvancedAi {
     base: BasicAi,
@@ -437,6 +443,26 @@ pub struct AdvancedAi {
     /// **withdrawn once the empire reaches its city target**, so it buys
     /// expansion tempo rather than permanently detuning the economy.
     pub food_first: f64,
+    /// Hold a settler's chosen site across a turn it could not move, instead
+    /// of forgetting it.
+    ///
+    /// `docs/OPENINGS.md` §15: over 17,701 settler-turns the agent ends 27.1%
+    /// of them holding no destination at all, and 3.5% holding a different one
+    /// than the turn before. The cause is not a re-plan — `settler_step`
+    /// discards the target on any turn the unit fails to move, and filters it
+    /// out whenever `route_step` is momentarily `None` (a friendly unit in the
+    /// way, a zone of control, an unrevealed tile). None of those mean the
+    /// site got worse.
+    ///
+    /// The commitment is **bounded**, which is the whole design: an unbounded
+    /// hold would re-create exactly the livelock #492 was merged to fix, a
+    /// settler retrying an unreachable site forever. After
+    /// `SETTLER_STALL_LIMIT` consecutive turns without moving, the target is
+    /// released and the ordinary search runs again.
+    pub settler_commit: bool,
+    /// Consecutive turns each settler has failed to move, when `settler_commit`
+    /// is on. Reset on any successful step.
+    settler_stalls: BTreeMap<u32, u32>,
     /// Let more than one settler exist at a time, up to the shortfall against
     /// the city target.
     ///
@@ -566,6 +592,8 @@ impl AdvancedAi {
             scoped_relief_hold: false,
             refuse_unreachable_lanes: false,
             food_first: 0.0,
+            settler_commit: false,
+            settler_stalls: BTreeMap::new(),
             parallel_settlers: false,
             civ_blind: false,
         }
@@ -7856,7 +7884,12 @@ impl AdvancedAi {
                 && tile
                     .owner_city
                     .is_none_or(|cid| g.cities[&cid].owner == pid)
-                && (*target == current || g.route_step(uid, *target, 0).is_some())
+                // A momentarily unavailable route is not a bad site. Under
+                // `settler_commit` the stall counter decides when to give up,
+                // not a single blocked turn.
+                && (*target == current
+                    || g.route_step(uid, *target, 0).is_some()
+                    || self.settler_commit)
         });
         let target = valid_target.or_else(|| {
             let local = self.best_reachable_settle_site(g, pid, uid, 8);
@@ -7902,7 +7935,16 @@ impl AdvancedAi {
                "{} tiles away, the site is worth {:.1}",
                g.wdist(current, target), self.settle_value(g, pid, target); target);
         let moved = self.base.settler_step_toward(g, pid, uid, target);
-        if !moved {
+        if moved {
+            self.settler_stalls.remove(&uid);
+        } else if self.settler_commit {
+            let stalls = self.settler_stalls.entry(uid).or_insert(0);
+            *stalls += 1;
+            if *stalls >= SETTLER_STALL_LIMIT {
+                self.settler_targets.remove(&uid);
+                self.settler_stalls.remove(&uid);
+            }
+        } else {
             self.settler_targets.remove(&uid);
         }
         moved
