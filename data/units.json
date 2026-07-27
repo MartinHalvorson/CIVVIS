@@ -598,7 +598,7 @@
     "obsolete_tech": "guidance_systems"
   },
   "pike_and_shot": {
-    "class": "military", "cost": 250, "maintenance": 4, "moves": 2, "strength": 55,
+    "class": "military", "cost": 250, "maintenance": 3, "moves": 2, "strength": 55,
     "tech": "metal_casting", "promotion_class": "anti_cavalry", "zone_of_control": true,
     "upgrade_to": "at_crew",
     "obsolete_tech": "combined_arms"
