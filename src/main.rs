@@ -1031,10 +1031,6 @@ fn main() {
                     leader_pool: play_options.leader_pool,
                     civs: play_options.civs,
                     supervised: args.iter().any(|a| a == "--supervised"),
-                    // Ten seconds of result screen. The server bounds this
-                    // either way; the floor here is what keeps a negative or
-                    // missing value from becoming an enormous `u64`.
-                    restart_ms: arg(&args, "--restart-ms", 10_000).max(10_000) as u64,
                     league_dir: {
                         let dir = arg_text(&args, "--league", "");
                         (!dir.is_empty()).then_some(dir)
@@ -1181,7 +1177,7 @@ fn main() {
                       [--leader-pool civ6|expanded] \
                       [--human-seats 0,1] [--teams 0,0,1,1] [--mods path/to/mod,path/to/other] \
                       [--victories science,culture,religious,diplomatic,domination,score] \
-                      [--spectate] [--supervised] [--restart-ms N] [--resume checkpoint.json] [--strict] \
+                      [--spectate] [--supervised] [--resume checkpoint.json] [--strict] \
                       [--league dir] [--league-record] [--standings [--civ Rome | --civs]] [--rounds N] \
                       [--evolve-every N] [--pop N] [--worker ID] [--lease-seconds N] \
                       [rating: --dir league/ --backtest|--sweep|--stages --burn-in F --stage-decay F --anchors a,b]"
