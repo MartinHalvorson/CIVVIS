@@ -1967,6 +1967,40 @@ because a cold branch's first act is to re-plan, which partially washes out
 the very difference the branch exists to measure. That is a mechanism for +37
 Elo that does not require any claim about which lane benefits.
 
+> ### ⚠ RETRACTED the same day — the measurement above is unpaired
+>
+> The table compares two arms that **played different games**. A warm agent
+> and a cold agent diverge from their first review, so they arrive at
+> different positions, and the comparison confounds the treatment with the
+> positions the treatment steers into. Re-measured properly by
+> `search_probe`, which flips the flag on **one agent at one position** and so
+> is paired:
+>
+> ```
+> 57 of 120 positions reached the rollouts (4p 24x16, warmup 60)
+>                       median      p90      max  >margin  decided  would commit
+>   warm (stock)        0.0550   0.5838   0.7205      61%      43%          28%
+>   cold (treatment)    0.0405   0.6077   0.7223      60%      46%          21%
+> paired: cold spread higher on 17, lower on 20, identical on 20; sign p=0.7428
+> ```
+>
+> **The spread difference is a coin flip.** The medians still differ in the
+> same direction, which is exactly how an unpaired comparison misleads: a real
+> per-position effect of zero can show a large difference in marginal medians.
+>
+> **What replaces it.** The two configurations **decide differently on 14 of
+> 57 positions — one review in four** — while the dispersion distribution is
+> unchanged. Fidelity does not sharpen the search's resolution; it moves its
+> answer. The honest mechanism for +37 Elo is that a faithful counterfactual
+> picks a different lane about a quarter of the time and those picks are
+> better. No dispersion claim survives, and neither does the force-group story
+> this entry was written to replace.
+>
+> The flip direction is 5 toward a lane against 9 toward adaptive (p=0.4240),
+> so not even the *sign* of the routing change is resolved at this sample.
+> Which lane benefits remains unexplained; only that the promotion is real
+> (860 maps, sign p=5.2e-09) and that it works by changing decisions.
+
 ### Population correction: 0.0045 and 0.031 are both right
 
 The horizon-saturation entry records a median branch spread of **0.00451** at
@@ -1993,3 +2027,45 @@ The gate binds on a minority of reviews and moving it does a minority-sized
 thing. Not promoted, not pursued further. **When quoting a spread, say which
 population it is over** — the two differ by an order of magnitude and they
 support opposite conclusions.
+
+## 2026-07-26 — `search_probe`, and what screening three known knobs says
+
+`search_probe` flips one flag on one agent at one position and reports the
+branch values a review would compare and the lane it would choose. Paired by
+construction, 48 seconds for 120 maps against about forty minutes for the
+`ai_eval` run it triages for. It is a screen: a flat reading refutes, a moved
+reading earns a pre-registered run and nothing more.
+
+Calibrating it against three knobs whose evaluation outcomes are already
+known, all at 57 paired positions, 4p 24×16, warmup 60, seeds 900..:
+
+| knob | known eval outcome | spread, paired | would-commit | flip direction |
+|---|---|---|---|---|
+| `--horizon 80` | **won** 21–5, p=0.0025 | 26 up, 11 down, p=0.0201 | 28% → 12% | 3 lane / 12 adaptive |
+| `--rotate` | **null** | 0 up, 32 down — *not comparable* | 28% → 7% | 0 lane / 12 adaptive |
+| `--cold` | **lost** 34–87 | 17 up, 20 down, p=0.7428 | 28% → 21% | 5 lane / 9 adaptive |
+
+Three things follow, and two of them retract earlier readings.
+
+**Commitment rate does not predict strength, in either direction.** The knob
+that won cuts it hardest but one (28% → 12%); the knob that measured null cuts
+it hardest (28% → 7%); the knob that lost cuts it least (28% → 21%). Two losing
+treatments happened to reduce it and that coincidence was written up as if it
+were a law. It is a diagnostic that a treatment is doing *something*, not
+evidence about what.
+
+**Spread is only comparable between arms that project the same number of
+branches.** Spread is `max − min` over the projected branches, so a treatment
+that shrinks the candidate set lowers it mechanically. `--rotate` cuts seven
+branches to about 2.7 — 224 projected branches against 85 — and duly reports
+spread lower on 32 of 32 positions with no bearing on quality. This is the same
+confound that makes the commitment margin a function of the candidate set. The
+probe now detects it and prints `[NOT COMPARABLE]`.
+
+**What the screen can honestly claim today is the negative half.** A treatment
+that leaves every branch value identical cannot change a decision, and that has
+happened here often enough to be worth two minutes (`INERT`, exit 3). Three
+calibration points cannot establish that any positive reading predicts a win,
+and this table should not be read as if they had: the winner raises spread and
+the loser is flat, but a single null sits outside that ordering because its
+spread reading is invalid. **Screen for inertness; decide with `ai_eval`.**
