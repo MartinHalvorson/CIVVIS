@@ -119,6 +119,52 @@ fn main() {
     println!("  each draw replaces a block with uniform samples from its own bounds");
     println!("  parity 0.500; a block that matters scores BELOW parity when scrambled\n");
 
+    // Sweep one named gene across its own bounds, with an interval on each
+    // point. This is the follow-up a load-bearing (or a scrambling-helped)
+    // block earns: the block ablation says *whether* values matter, and only a
+    // sweep says *which* value. Kept in the same binary because it shares the
+    // paired duel and the same fitness.
+    if let Some(target) = args
+        .iter()
+        .position(|arg| arg == "--sweep")
+        .and_then(|index| args.get(index + 1))
+    {
+        let Some(gene) = names.iter().position(|name| name == target) else {
+            eprintln!("gene_leverage: no gene named {target:?}");
+            std::process::exit(2);
+        };
+        let (lo, hi) = bounds[gene];
+        let points = number(&args, "--points", 7).max(2);
+        println!("sweeping {target} over [{lo}, {hi}], shipped {:.3}\n", shipped[gene]);
+        for step in 0..points {
+            let value = lo + (hi - lo) * step as f64 / (points - 1) as f64;
+            let mut v = shipped.clone();
+            v[gene] = value;
+            let genome = Weights::from_vec(&v);
+            let shares = parallel::map(maps, jobs, move |index| {
+                duel(&genome, players, width, height, seed0 + index as u64, turns)
+            });
+            let n = shares.len().max(1) as f64;
+            let mean = shares.iter().sum::<f64>() / n;
+            let variance = if shares.len() > 1 {
+                shares.iter().map(|s| (s - mean).powi(2)).sum::<f64>() / (n - 1.0)
+            } else {
+                0.0
+            };
+            let se = (variance / n).sqrt();
+            let edge = mean - 0.5;
+            let flag = if se > 0.0 && edge.abs() > 2.0 * se { "  <-- outside the interval" } else { "" };
+            println!("  {value:>8.3}   {mean:.4} +/- {se:.4}   {edge:+.4}{flag}");
+        }
+        println!(
+            "\nA point outside its interval nominates a value; it does not promote one.\n\
+             Sweeping N points and taking the max is the same selection bias that made the\n\
+             opening book look +0.05 before a disjoint holdout put it at -0.002. Re-measure\n\
+             any winner on fresh maps, then decide it on WINS."
+        );
+        return;
+    }
+
     let mut rows: Vec<(f64, f64, &str, usize)> = Vec::new();
     for (block_index, (block, genes)) in BLOCKS.iter().enumerate() {
         let mut per_draw: Vec<f64> = Vec::new();
