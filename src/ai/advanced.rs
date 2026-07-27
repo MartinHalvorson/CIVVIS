@@ -9388,6 +9388,41 @@ impl AdvancedAi {
                     } else {
                         0.0
                     };
+                // A shot that spends a city's garrison and leaves nobody able
+                // to walk in has bought a window that closes before it can be
+                // used. The census behind this: 73 depletions, only 33% with a
+                // melee taker adjacent and unspent, 18 captures. Given a ready
+                // taker the agent converts 75% -- it does not decline captures,
+                // it opens cities alone.
+                //
+                // The test is COUNTERFACTUAL, not a heuristic about intent:
+                // `after` is the real post-action state, so this asks whether
+                // *this* shot is the one that empties the city, and whether a
+                // friendly melee unit is standing next to it when it does.
+                //
+                // Scored down rather than forbidden. `advanced_city_strikes`
+                // and the tactical loop pick a maximum, so removing the action
+                // could leave a unit idle when the shot is still the best thing
+                // available; and a city heals +20 a turn toward 200, so a hard
+                // veto could hold fire forever and waste the siege entirely.
+                // The penalty is sized just under the 35.0 target-city bonus so
+                // it discourages the premature shot without overriding a
+                // deliberate campaign focus.
+                let emptied_now = before.hp > 0 && after_city.hp <= 0;
+                if emptied_now {
+                    let taker_ready = after.units.values().any(|other| {
+                        other.owner == pid
+                            && after
+                                .rules
+                                .units
+                                .get(other.kind.as_str())
+                                .is_some_and(|spec| spec.is_melee_capable())
+                            && after.wdist(other.pos, after_city.pos) <= 1
+                    });
+                    if !taker_ready {
+                        value -= 30.0;
+                    }
+                }
             }
         } else if let Some(city) = target_encampment {
             let before = &g.cities[&city];
