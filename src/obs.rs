@@ -5,6 +5,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::game::{
     City, Game, Item, RememberedCity, DIPLOMATIC_VICTORY_POINTS, EXOPLANET_DESTINATION,
+    EXOPLANET_TARGETS,
 };
 use crate::world::Tile;
 use crate::Pos;
@@ -553,6 +554,16 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
             "science_projects": p.science_projects,
             "exoplanet_distance": round1(p.exoplanet_distance),
             "exoplanet_speed": round1(g.exoplanet_speed(pid)),
+            // Which world this expedition is aimed at, and how much of the
+            // neighbourhood this civilization has found. Before the launch the
+            // target is what it *would* set out for, which is what makes the
+            // survey legible while there is still time to deepen it.
+            "exoplanet_target": g.exoplanet_target(pid).id,
+            "exoplanet_target_name": g.exoplanet_target(pid).name,
+            "exoplanet_target_ly": g.exoplanet_target(pid).light_years,
+            "exoplanet_launched": p.exoplanet_target.is_some(),
+            "exoplanet_surveyed": g.exoplanet_survey(pid).len(),
+            "exoplanet_roster": EXOPLANET_TARGETS.len(),
             "pantheon": p.pantheon,
             "religion": p.religion,
             "religion_beliefs": p.religion_beliefs,
