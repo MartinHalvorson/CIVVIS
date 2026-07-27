@@ -65,13 +65,13 @@ below fires.
 
 **Stand the unit down.** After `LIVELOCK_STAND_DOWN_AFTER` (two windows) the
 tabu has had every chance and the unit is still going in circles, which means
-whatever it wants is unreachable. It holds ground for
-`LIVELOCK_STAND_DOWN_TURNS`, fortified — strictly better than another lap, and
-it stops paying for a route search that keeps returning the same answer. The
-record is wiped as it starts, so the retry afterwards is unencumbered and the
-world it re-plans against has moved on. A stand-down suppresses a unit's own
-plans and never its part in a fight: a unit with an enemy within two tiles has
-something concrete to do, and takes its ordinary turn.
+whatever it wants is unreachable. The record is wiped, which is the part that
+does the work: the tabu lifts and the unit re-plans for
+`LIVELOCK_STAND_DOWN_TURNS` against a world that has moved on. It still takes
+its whole turn every one of those turns; only if a turn produces nothing at all
+does it dig in and fortify, which is strictly better than standing in the open
+and is time it was going to spend standing there anyway. It must never run
+*instead* of the unit's step — see below for what that cost when it did.
 
 ## Keeping the measurement honest
 
@@ -91,30 +91,50 @@ The same six games, re-run with all three responses in place:
 
 | | before | after | |
 |---|---|---|---|
-| livelock | 5.15% | **1.77%** | −3.38 pts |
-| idle-field | 22.55% | 16.60% | −5.95 pts |
-| picket | 33.43% | 38.50% | +5.07 pts |
-| unit-turns | 156 201 | 162 729 | |
+| livelock | 5.15% | **1.71%** | −3.44 pts |
+| idle-field | 22.55% | 16.08% | −6.47 pts |
+| picket | 33.43% | 37.25% | +3.81 pts |
+| **all three** | **61.13%** | **55.04%** | **−6.10 pts** |
+| unit-turns | 156 201 | 162 254 | |
 
-A **66% reduction** in the share of the game spent going in circles, and the
-`picket` column says where the rest of it went. Adding the three: 9.33 points of
-unit-turns left circling and field-idling, 5.07 of them into fortified holding —
-which is a real improvement on both (a picket has its fortification bonus and
-heals) but not a unit doing something — and the remaining 4.26 into ordinary
-productive turns. Empires also field about 4% more units over the same 200
-turns, which is what less waste looks like from the outside.
+A **67% reduction** in the share of the game spent going in circles. The bottom
+row is the one that matters, because the first three trade against each other:
+six points of unit-turns stopped being spent on nothing at all. Empires also
+field about 4% more units over the same 200 turns, which is what less waste
+looks like from the outside.
 
-Episodes fell only from 432 to 382, while the turns each one spends *past* the
-ten-turn reporting threshold fell from 18.6 to 7.5. That is the intended shape:
-nothing here stops a loop from *starting* — a loop only exists once a unit has
-been in one for a window — so what the three responses buy is breaking one about
-two and a half times faster once it exists.
+Episodes fell from 432 to 318, and the turns each one spends *past* the ten-turn
+reporting threshold fell from 18.6 to 8.7. Nothing here stops a loop from
+*starting* — a loop only exists once a unit has been in one for a window — so
+most of what the three responses buy is breaking one about twice as fast once it
+exists.
 
 Neither run produced a rule violation, every game reached its turn limit, and
-total symptoms per game fell from 130–144 to 93–129.
+total symptoms per game fell from 130–144 to 93–122.
 
 None of it costs anything measurable. The per-turn record is one six-entry deque
 per unit, and the tactical scorers — which ask about every candidate tile of
 every unit — read a verdict settled once when the window closed rather than
 re-deriving it. Two paired `audit --games 2 --turns 120` runs came out at 7.6s
 before and 7.5s after.
+
+### What the picket column caught
+
+The third response originally ran *instead of* a stood-down unit's step, holding
+the unit and guessing — from an enemy-in-reach test and a foundable-ground test
+— at what it might otherwise have wanted. Measured, that version moved `picket`
+up 7.30 points while `idle-field` fell only 6.58: it was absorbing turns units
+would have spent doing something, and the aggregate got **worse** than leaving
+the stand-down out entirely.
+
+| | livelock | idle-field | picket | all three |
+|---|---|---|---|---|
+| baseline | 5.15% | 22.55% | 33.43% | 61.13% |
+| pre-empting the turn | 1.90% | 15.97% | 40.73% | 58.60% |
+| digging in after it | 1.71% | 16.08% | 37.25% | 55.04% |
+
+So it now runs after the unit's own step and only when that step produced
+nothing — time the unit would have spent standing in the open regardless. The
+record-wipe stays, because that was always the part doing the work. This is the
+column's whole purpose: without it, the first version's 1.90% livelock share
+would have read as a win.
