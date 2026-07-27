@@ -118,6 +118,11 @@ struct Seat {
     settler_in_flight_turns: u32,
     /// Turns short of the city target with no settler anywhere.
     short_without_settler_turns: u32,
+    /// Capital population, housing and food at fixed checkpoints. A settler
+    /// costs a population and 80/110/140 production, so "why is expansion
+    /// slow" reduces to "how fast does the capital grow" — and whether pop
+    /// sits at the housing cap separates a housing constraint from a food one.
+    checkpoints: Vec<(u32, i32, f64, f64)>,
     cities_at_window: usize,
     /// Survival, tracked over the whole game rather than the window, because
     /// "recorded a short opening" is a proxy for early death and a proxy is
@@ -420,6 +425,17 @@ fn main() {
                         seat.capital_lost = true;
                     }
                     seat.max_cities = seat.max_cities.max(live);
+                    if matches!(turn + 1, 25 | 50 | 75 | 100) {
+                        if let Some(cap) = game
+                            .cities
+                            .values()
+                            .find(|c| c.owner == pid && c.is_capital)
+                        {
+                            let housing = game.city_housing(cap);
+                            let food = game.city_yields(cap.id).food;
+                            seat.checkpoints.push((turn + 1, cap.pop, housing, food));
+                        }
+                    }
                     if live == 0 && seat.founded && seat.death_turn.is_none() {
                         seat.death_turn = Some(turn + 1);
                     }
@@ -545,11 +561,13 @@ fn main() {
     }
 
     // ---- 2. per-civilization -------------------------------------------
-    println!("\nper civilization (modal capital opening)");
+    println!("\nper civilization, ranked by terminal score share");
     println!(
-        "{:<14} {:>5} {:>7} {:>6}  {:>7} {:>6}  {}",
-        "civ", "seats", "distinct", "modal", "2ndcity", "cities", "opening"
+        "{:<14} {:>5} {:>8} {:>6} {:>17} {:>6} {:>7} {:>6}  {}",
+        "civ", "seats", "distinct", "modal", "score share", "win%", "2ndcity", "cities", "opening"
     );
+    // Collect first so the table can be ranked by outcome rather than by name.
+    let mut civ_rows: Vec<(f64, String)> = Vec::new();
     for civ in &civs {
         let rows: Vec<&Seat> = seats.iter().filter(|s| s.civ == *civ).collect();
         let own = tally(
@@ -578,16 +596,29 @@ fn main() {
         };
         let cities: Vec<f64> = rows.iter().map(|s| s.cities_at_window as f64).collect();
         let (cities_mean, _) = mean_se(&cities);
-        println!(
-            "{:<14} {:>5} {:>8} {:>5.0}%  {:>7} {:>6.2}  {}",
-            civ,
-            rows.len(),
-            own.len(),
-            100.0 * share,
-            second_col,
-            cities_mean,
-            top
-        );
+        let shares: Vec<f64> = rows.iter().map(|s| s.score_share).collect();
+        let (share_mean, share_se) = mean_se(&shares);
+        let wins = rows.iter().filter(|s| s.won).count();
+        civ_rows.push((
+            share_mean,
+            format!(
+                "{:<14} {:>5} {:>8} {:>5.0}% {:>9.4} +/- {:<5.4} {:>5.1}% {:>7} {:>6.2}  {}",
+                civ,
+                rows.len(),
+                own.len(),
+                100.0 * share,
+                share_mean,
+                share_se,
+                100.0 * wins as f64 / rows.len().max(1) as f64,
+                second_col,
+                cities_mean,
+                top
+            ),
+        ));
+    }
+    civ_rows.sort_by(|a, b| b.0.partial_cmp(&a.0).expect("finite score shares"));
+    for (_, line) in &civ_rows {
+        println!("{line}");
     }
 
     // ---- 3. opening against outcome ------------------------------------
@@ -739,6 +770,47 @@ fn main() {
         );
         previous = Some(mean);
     }
+    // Capital growth, which is what a settler is actually paid for.
+    println!("\ncapital growth (a settler costs one population and 80/110/140 production)");
+    println!(
+        "{:>5} {:>7} {:>16} {:>16} {:>16} {:>10}",
+        "turn", "seats", "population", "housing", "food yield", "at cap"
+    );
+    for mark in [25u32, 50, 75, 100] {
+        let rows: Vec<&(u32, i32, f64, f64)> = seats
+            .iter()
+            .flat_map(|s| s.checkpoints.iter())
+            .filter(|(turn, ..)| *turn == mark)
+            .collect();
+        if rows.is_empty() {
+            continue;
+        }
+        let pops: Vec<f64> = rows.iter().map(|(_, pop, ..)| *pop as f64).collect();
+        let house: Vec<f64> = rows.iter().map(|(_, _, h, _)| *h).collect();
+        let food: Vec<f64> = rows.iter().map(|(.., f)| *f).collect();
+        // "At cap" means the housing headroom is under one population, i.e.
+        // growth is housing-bound rather than food-bound.
+        let capped = rows
+            .iter()
+            .filter(|(_, pop, h, _)| (*pop as f64) >= *h - 1.0)
+            .count();
+        let (pop_mean, pop_se) = mean_se(&pops);
+        let (house_mean, house_se) = mean_se(&house);
+        let (food_mean, food_se) = mean_se(&food);
+        println!(
+            "{:>5} {:>7} {:>9.2} +/- {:<4.2} {:>9.2} +/- {:<4.2} {:>9.2} +/- {:<4.2} {:>9.0}%",
+            mark,
+            rows.len(),
+            pop_mean,
+            pop_se,
+            house_mean,
+            house_se,
+            food_mean,
+            food_se,
+            100.0 * capped as f64 / rows.len() as f64
+        );
+    }
+
     let flight: Vec<f64> = seats
         .iter()
         .map(|s| s.settler_in_flight_turns as f64)

@@ -295,16 +295,87 @@ And `city_target` is only consulted by `AdvancedAi` as a *fallback* when no
 plan exists (`src/ai/advanced.rs:2602`); with a plan in force the hard-coded
 `desired_cities` is what binds.
 
+## 8. What the capital can afford, which closes §7's question
+
+60 maps, 4 players, 32×22. Capital population, housing and food at fixed
+checkpoints:
+
+| turn | population | housing | food yield | at housing cap |
+|---|---|---|---|---|
+| 25 | 2.36 ± 0.04 | 5.29 ± 0.08 | 7.15 ± 0.13 | 14% |
+| 50 | 3.46 ± 0.05 | 6.58 ± 0.11 | 9.75 ± 0.17 | 8% |
+| 75 | 4.68 ± 0.06 | 8.43 ± 0.13 | 12.55 ± 0.21 | 7% |
+| 100 | 5.96 ± 0.09 | 9.95 ± 0.15 | 16.08 ± 0.34 | 5% |
+
+**Housing is not the constraint.** Only 5–14% of capitals sit within one
+population of their housing cap, and the headroom *widens* over time — 9.95
+housing against 5.96 population by turn 100. Whatever is slowing growth, it is
+not the Civilization VI housing ceiling.
+
+**The numbers close the loop on §7.** The capital gains roughly **one
+population per 23 turns** (2.36 → 3.46 over turns 25–50). A settler requires
+`pop >= 2` and consumes one on completion. So a capital sitting at 2.36
+population on turn 25 can afford exactly one settler, drops to ~1.4, and cannot
+afford another until it has regrown — about 23 turns, plus the build.
+
+Compare that against the founding cadence in §6: **+34.0 / +18.5 / +29.2 /
++31.5 turns.** The population regrowth interval and the city founding interval
+are the same number. The cadence was never an AI scheduling decision; it is the
+capital's growth rate, and the `counts.settlers == 0` clause was sitting on top
+of a constraint that already bound — which is precisely why removing it
+measured inert.
+
+**The lever, if there is one, is food** — not housing, not build order, and not
+the settler permission.
+
+## 9. Which civilization does best in the end — mostly noise
+
+300 maps, 4 players, 32×22, 500 turns, `randomize_civs`: **1191 major seats
+over 50 civilizations**, roughly 24 seats each. Ranked by terminal score share
+the table runs from Maya at 0.3460 ± 0.0328 (50.0% wins) down to Persia at
+0.1873 ± 0.0223 (11.5% wins) — a range of 0.159 that looks decisive and mostly
+is not.
+
+| test | result |
+|---|---|
+| score share, one-way across 50 civilizations | F(49, 1141) = **1.585**, **p = 0.0069**, **η² = 0.064** |
+| observed range of civilization means | 0.1587 |
+| range expected from noise alone (50 groups, mean SE 0.0280) | ~0.126 |
+| win rate, pooled 25.2% | χ²(49) = **52.9** against an expected 49 ± 9.9 |
+
+**So: the civilization has a small but real effect on terminal score — 6.4% of
+the variance — and no effect on wins that this population can detect.** The
+eye-catching top-to-bottom spread is only slightly wider than 50 groups of 24
+produce by chance, and the win-rate spread is exactly chance.
+
+⚠ **One caveat that cuts against the F-test.** Score share is compositional —
+the four majors on a map share out ~1.0 between them — so seats within a map
+are negatively correlated and are not the independent samples the test assumes.
+Read p = 0.0069 as optimistic. The win-rate χ², which does not have this
+problem, finds nothing.
+
+⚠ **And this bounds the wrong quantity for the operator's question.** It
+measures what *being* a civilization is worth under near-civilization-blind
+play — mostly the mechanical value of its unique unit, district and ability. It
+does **not** bound what better per-civilization *decisions* could be worth,
+which is untested. The two are different, and only the first is measured here.
+
+One incidental finding worth recording: at depth 8 the modal opening takes only
+**5–22%** of a civilization's seats, and most civilizations have nearly as many
+distinct openings as seats. Openings barely repeat once you look eight builds
+deep — §2's "one stem" result is a property of the first four builds, not of
+the opening as a whole.
+
 ## What to measure next, in order
 
 1. ~~Relax `counts.settlers == 0`.~~ **Done, and null — see §7.** Kept as an
    entrant with the null recorded.
-2. **Ask why the capital cannot afford a settler.** This is where §7 leaves
-   the tempo question. A settler costs a population and 80/110/140 production;
-   the binding constraint is capital growth, so the diagnostic is food yield,
-   tile improvement timing and how early the first builder's charges land —
-   not which unit sits in the queue. Measure before proposing: instrument
-   capital population against turn, and the share of worked tiles improved.
+2. ~~Ask why the capital cannot afford a settler.~~ **Done — see §8.** It is
+   growth, not housing: the capital gains one population per ~23 turns and that
+   interval *is* the founding cadence. The remaining lever is **food** — which
+   tiles the capital works, when the first builder's charges land, and whether
+   a granary arrives before or after the second settler. That is the next
+   thing to instrument, and it is an economy question, not a build-order one.
 3. **Lift `.min(6)`, separately.** Independent of the above, and
    `docs/GENOME.md`'s rule about candidate-set changes moving effective
    thresholds applies to expansion targets too.
