@@ -3335,18 +3335,22 @@
         <label class="small">Base game ruleset<select id="baseruleset" style="margin-top:4px">
           <option value="civ6" selected>Civ 6</option>
         </select></label>
+        <label class="small">Leader Pool<select id="leaderpool" style="margin-top:4px">
+          <option value="civ6" selected>Civ 6 Leaders</option>
+          <option value="expanded">Expanded</option>
+        </select></label>
         <label class="small">Game mode<select id="gamemode" style="margin-top:4px">
           <option value="ai_sim" selected>AI-only simulation</option>
           <option value="single">Single player</option>
           <option disabled>Multiplayer · later</option>
         </select></label>
-        <label class="small">Start era<select id="startera" style="margin-top:4px">
-          <option value="stone_age" disabled>Stone Age · later</option>
-          <option value="ancient" selected>Ancient</option>
-        </select></label>
-        <label class="small">Leader Pool<select id="leaderpool" style="margin-top:4px">
-          <option value="civ6" selected>Civ 6 Leaders</option>
-          <option value="expanded">Expanded</option>
+        <label class="small">Teams<select id="teams" style="margin-top:4px"
+          title="Permanent pre-game teams. Teammates share sight, pass each other the Eureka for a technology they have not researched, fight the same wars and win together.">
+          <option value="ffa" selected>Free-for-all</option>
+          <option value="2">2 teams</option>
+          <option value="3">3 teams</option>
+          <option value="4">4 teams</option>
+          <option value="pairs">Pairs</option>
         </select></label>
         <label class="small human-setting">Leader<select id="leader" style="margin-top:4px">
           <option value="">Random</option>
@@ -3379,6 +3383,10 @@
           <option value="8">Standard · 8 civs · 12 city-states · 84×54</option>
           <option value="10">Large · 10 civs · 15 city-states · 96×60</option>
           <option value="12">Huge · 12 civs · 18 city-states · 106×66</option>
+        </select></label>
+        <label class="small">Start era<select id="startera" style="margin-top:4px">
+          <option value="stone_age" disabled>Stone Age · later</option>
+          <option value="ancient" selected>Ancient</option>
         </select></label>
         <label class="small">Game speed<select id="gamespeed" style="margin-top:4px">
           <option value="online" selected>Online · 250 turns</option>
@@ -7253,6 +7261,8 @@ async function boot() {
       document.getElementById("np").innerHTML = RULES.map_sizes.map(size =>
         `<option value="${size.default_players}">${size.name} · ${size.default_players} civs · ${size.default_city_states} city-states · ${size.width}×${size.height}</option>`
       ).join("");
+      // The sizes this build offers decide which team splits it can seat.
+      syncTeams();
     }
     if (Array.isArray(RULES.map_scripts)) {
       document.getElementById("maptype").innerHTML = RULES.map_scripts.map(script =>
@@ -8587,6 +8597,11 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
     const playerSelect = document.getElementById("np");
     if ([...playerSelect.options].some(o => +o.value === majors))
       playerSelect.value = String(majors);
+    // Teams belong to this world as much as its map does, so a page that
+    // reloads over a running team game reads that game back rather than
+    // offering to restart it as a free-for-all.
+    syncTeams();
+    document.getElementById("teams").value = teamRuleFromArray(st.teams);
     document.getElementById("maptype").value = st.map.script || "pangaea";
     document.getElementById("mapshape").value = st.map.shape || "flat";
     document.getElementById("mappoles").value = st.map.poles || "poles";
@@ -24872,6 +24887,9 @@ document.getElementById("tradebtn").onclick = () => openTrade();
 document.getElementById("gamemode").addEventListener("change", syncSetupMode);
 document.getElementById("leaderpool").addEventListener("change", syncLeaderPool);
 document.getElementById("maptype").addEventListener("change", syncEarthShape);
+// Bound on the select itself, so it has re-fitted the splits to the new size
+// before the panel's own delegated listener stages what is now selected.
+document.getElementById("np").addEventListener("change", syncTeams);
 document.getElementById("savebtn").onclick = () => writeSave();
 syncSetupMode();
 syncEarthShape();
@@ -24946,6 +24964,9 @@ function selectedSimulationSettings() {
           map_poles: mapPoles, game_speed: gameSpeed,
           leader_pool: leaderPool,
           base_ruleset: baseRuleset, start_era: startEra,
+          // The control holds the rule; the server is handed the seat-by-seat
+          // assignment that rule makes of this many civilizations.
+          teams: teamAssignment(np, readSetting("teams")),
           victory_conditions: victoryConditions,
           spectate: gameMode === "ai_sim",
           // A spectated world has nobody to hand a leader or a handicap to.
@@ -24982,7 +25003,15 @@ function selectedSimulationSummary(settings = null) {
   const stockEra = [...(eras?.options || [])]
     .find(option => option.value && !option.disabled)?.value;
   const era = startEra && startEra !== stockEra ? chosenText("startera", startEra) : "";
-  return [mode, size, map, speed, era].filter(Boolean).join(" · ");
+  // Free-for-all is what you get by choosing nothing, so only a real division
+  // is worth a clause — and it is named by its split, which is the part that
+  // depends on a size this line has already reported.
+  const players = settings ? settings.num_players : +document.getElementById("np").value;
+  const teamRule = settings
+    ? teamRuleFromArray(settings.teams)
+    : document.getElementById("teams")?.value;
+  const teams = teamRule && teamRule !== "ffa" ? teamPhrase(players, teamRule) : "";
+  return [mode, size, map, speed, era, teams].filter(Boolean).join(" · ");
 }
 function simulationSettingsKey(settings) {
   return JSON.stringify(settings);
@@ -24995,6 +25024,10 @@ function applyQueuedSimulationSettings(settings) {
   if (SPEC) document.getElementById("gamemode").value = "ai_sim";
   syncSetupMode();
   document.getElementById("np").value = String(settings.players);
+  // The staged size decides which splits exist, so it is in place first and
+  // the queued assignment is read back as the rule that would produce it.
+  syncTeams();
+  document.getElementById("teams").value = teamRuleFromArray(settings.teams);
   document.getElementById("maptype").value = settings.map;
   if (settings.shape) document.getElementById("mapshape").value = settings.shape;
   if (settings.poles) document.getElementById("mappoles").value = settings.poles;
@@ -25108,6 +25141,84 @@ function syncLeaderPool() {
     `<option value="${entry.civ}" title="${escapeAttr(entry.note)}">` +
     `${entry.leader} of ${entry.civ}</option>`).join("");
   if (leaders.some(entry => entry.civ === selected)) select.value = selected;
+}
+
+// Teams are permanent and decided before the world exists, so the lobby is
+// where they are chosen. The control carries the *rule* — two teams, pairs —
+// rather than the assignment it makes, because which assignment that is
+// depends on a world size chosen two rows further down.
+const TEAM_RULES = ["2", "3", "4", "pairs"];
+// A team of one is not a team, so a split is only on offer while every team it
+// makes can seat at least two civilizations.
+function teamCount(players, rule) {
+  if (!Number.isFinite(players) || players < 4) return 0;
+  const most = Math.floor(players / 2);
+  if (rule === "pairs") return most;
+  const teams = Number(rule);
+  return Number.isFinite(teams) && teams >= 2 && teams <= most ? teams : 0;
+}
+// The seats are dealt out in blocks, largest team first, so a division that
+// does not come out even puts its spare civ at the top rather than scattering
+// odd teams through the middle. Seat 0 is the person at the keyboard, so a
+// human always leads the first team.
+function teamAssignment(players, rule) {
+  const teams = teamCount(players, rule);
+  if (!teams) return [];
+  const smallest = Math.floor(players / teams);
+  const larger = players % teams;
+  const assignment = [];
+  for (let team = 0; team < teams; team++)
+    for (let seat = smallest + (team < larger ? 1 : 0); seat > 0; seat--)
+      assignment.push(team);
+  return assignment;
+}
+function teamSizes(players, rule) {
+  const sizes = [];
+  for (const team of teamAssignment(players, rule)) sizes[team] = (sizes[team] || 0) + 1;
+  return sizes;
+}
+// "4v4", or "4v3v3" where the seats do not divide evenly — until there are so
+// many teams that the list stops being readable and the shape is described
+// instead: a hundred civilizations in pairs is "50 teams of 2".
+function teamSplit(players, rule) {
+  const sizes = teamSizes(players, rule);
+  if (sizes.length <= 6) return sizes.join("v");
+  const smallest = Math.min(...sizes), largest = Math.max(...sizes);
+  return `${sizes.length} teams of ` +
+    (smallest === largest ? smallest : `${smallest}–${largest}`);
+}
+// How a division is said inside a sentence rather than inside its own option.
+function teamPhrase(players, rule) {
+  const split = teamSplit(players, rule);
+  return !split || split.includes("teams") ? split : `${split} teams`;
+}
+// The world on screen and the staged world both arrive as an assignment, which
+// is read back here as the rule that would produce it.
+function teamRuleFromArray(teams) {
+  if (!Array.isArray(teams)) return "ffa";
+  const distinct = new Set(teams.filter(team => team !== null && team !== undefined));
+  if (distinct.size < 2) return "ffa";
+  const count = String(distinct.size);
+  return TEAM_RULES.includes(count) ? count : "pairs";
+}
+// Which splits this world size can actually seat, said in the option itself:
+// "2 teams · 4v4" is the whole answer, and a split this size cannot seat is
+// disabled where it can be seen rather than quietly dropped from the list.
+function syncTeams() {
+  const select = document.getElementById("teams");
+  const size = document.getElementById("np");
+  if (!select || !size) return;
+  const players = +size.value;
+  for (const option of select.options) {
+    if (!TEAM_RULES.includes(option.value)) continue;
+    const name = option.value === "pairs" ? "Pairs" : `${option.value} teams`;
+    const split = teamSplit(players, option.value);
+    option.disabled = !split;
+    option.textContent = split ? `${name} · ${split}` : name;
+  }
+  // A size that cannot seat the chosen split leaves the lobby free-for-all
+  // rather than starting a game with a division nobody asked for.
+  if (select.selectedOptions[0]?.disabled) select.value = "ffa";
 }
 
 // Fixed geography chooses the coastline, not the projection. Keep the shape
