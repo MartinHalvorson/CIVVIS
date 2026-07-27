@@ -5078,6 +5078,12 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("id=\"reasonlevel\""));
         assert!(EMBEDDED_INDEX.contains("id=\"reasontopic\""));
         assert!(EMBEDDED_INDEX.contains("<option value=\"all\">All civilizations</option>"));
+        // Anything the combined log can show, the civ filter can isolate. A
+        // Free City keeps developing the cities it inherited and so keeps
+        // making production decisions; without this it appeared under "All
+        // civilizations" with no way to select it.
+        assert!(EMBEDDED_INDEX.contains("for (const thought of reasoningLog.thoughts) listed.add(thought.player);"));
+        assert!(EMBEDDED_INDEX.contains("function reasonSeatNote(id)"));
         assert!(EMBEDDED_INDEX.contains("<option value=\"all\">All topics</option>"));
         // Depth is a floor, not an equality — a decision read without the plan
         // it serves explains nothing — and the three rungs are the ones the
