@@ -3647,10 +3647,70 @@ const ENVIRONMENT_FEATURE_ATLAS = new Image();
 let ENVIRONMENT_FEATURE_ATLAS_READY = false;
 ENVIRONMENT_FEATURE_ATLAS.onload = () => { ENVIRONMENT_FEATURE_ATLAS_READY = true; if (state) draw(); };
 ENVIRONMENT_FEATURE_ATLAS.src = "/assets/environment-feature-atlas.png";
-const NATURAL_WONDER_CELL = {
-  great_barrier_reef:[0,0], crater_lake:[1,0], pantanal:[2,0], uluru:[3,0],
-  yosemite:[0,1], dead_sea:[1,1], mount_everest:[2,1], pamukkale:[3,1]
+// Eight of the thirty-four Natural Wonders have photography in the atlas.
+// `NATURAL_WONDER_ART` is the roster: every wonder names the shape that stands
+// for it and the colour that shape is made of, and the eight with a cell name
+// that too. Nothing else keys off the atlas, which is the bug this replaced —
+// the whole decoration pass was gated on having a photograph, so the other
+// twenty-six drew *nothing at all* in every view. A wonder the map cannot
+// show is content the player can only find by clicking bare ground.
+const NATURAL_WONDER_ART = {
+  // --- the photographed eight
+  great_barrier_reef:{cell:[0,0], form:"reef",     tint:"#2f9fae"},
+  crater_lake:       {cell:[1,0], form:"basin",    tint:"#2f7fa6", rim:"#6d6455"},
+  pantanal:          {cell:[2,0], form:"wetland",  tint:"#4f8f6a"},
+  uluru:             {cell:[3,0], form:"monolith", tint:"#b85e35"},
+  yosemite:          {cell:[0,1], form:"cliffs",   tint:"#8b8780"},
+  dead_sea:          {cell:[1,1], form:"basin",    tint:"#4d90a1", rim:"#ddd6bd"},
+  mount_everest:     {cell:[2,1], form:"peak",     tint:"#77726a", snow:.52},
+  pamukkale:         {cell:[3,1], form:"terrace",  tint:"#e6ece4"},
+  // --- the twenty-six the viewer could not draw
+  torres_del_paine:  {form:"towers",   tint:"#8e8880", cap:"#e7ecef", count:3},
+  eye_of_the_sahara: {form:"rings",    tint:"#bb9660"},
+  zhangye_danxia:    {form:"bands",    tint:"#b4533c",
+                      palette:["#b4533c", "#d9924a", "#e6c06a", "#9a5f6d"]},
+  ha_long_bay:       {form:"islets",   tint:"#2b8296", rim:"#5e6f52"},
+  cliffs_of_dover:   {form:"seawall",  tint:"#eff0ea"},
+  giants_causeway:   {form:"columns",  tint:"#4c5551"},
+  galapagos_islands: {form:"islets",   tint:"#1f7f95", rim:"#6b5f4e", cones:true},
+  matterhorn:        {form:"peak",     tint:"#6f6a63", snow:.46, horn:true},
+  kilimanjaro:       {form:"peak",     tint:"#6b6152", snow:.7,  broad:true},
+  piopiotahi:        {form:"seawall",  tint:"#5d6b52", water:"#1f5468", inlet:true},
+  ik_kil:            {form:"basin",    tint:"#1f6f7a", rim:"#5f6c48", narrow:true},
+  gobustan:          {form:"bands",    tint:"#8d8272",
+                      palette:["#8d8272", "#a2957f", "#6f6759"]},
+  ubsunur_hollow:    {form:"wetland",  tint:"#7d8a5a"},
+  mato_tipila:       {form:"towers",   tint:"#9c7550", count:1, fluted:true},
+  delicate_arch:     {form:"arch",     tint:"#b9713f"},
+  chocolate_hills:   {form:"domes",    tint:"#8a6a44",
+                      palette:["#8a6a44", "#9c7a4e", "#7a5c3b"]},
+  vesuvius:          {form:"volcano",  tint:"#5c5148"},
+  lake_retba:        {form:"basin",    tint:"#d4708f", rim:"#c3b291"},
+  bermuda_triangle:  {form:"vortex",   tint:"#123f5c"},
+  eyjafjallajokull:  {form:"volcano",  tint:"#5f5a55", ice:true},
+  fountain_of_youth: {form:"basin",    tint:"#63c6c0", rim:"#8d8a6e",
+                      narrow:true, aura:"#c8fff4"},
+  lysefjord:         {form:"seawall",  tint:"#77736a", water:"#27596c", inlet:true},
+  paititi:           {form:"ruins",    tint:"#b0a077"},
+  mount_roraima:     {form:"towers",   tint:"#6d6455", cap:"#5c7248", count:2},
+  tsingy_de_bemaraha:{form:"towers",   tint:"#a9a08c", count:5, fluted:true},
+  sahara_el_beyda:   {form:"domes",    tint:"#eee7d5",
+                      palette:["#eee7d5", "#f5f1e3", "#ded4bc"]},
 };
+const NATURAL_WONDER_CELL = Object.fromEntries(
+  Object.entries(NATURAL_WONDER_ART)
+    .filter(([, art]) => art.cell)
+    .map(([wonder, art]) => [wonder, art.cell])
+);
+// A feature is a Natural Wonder if the roster above says so, or — for anything
+// a later ruleset adds — if the served rules say so. The art table is checked
+// first because it is available on the very first frame, before /rules lands.
+function isNaturalWonder(feature) {
+  if (!feature) return false;
+  if (NATURAL_WONDER_ART[feature]) return true;
+  return !!(RULES && RULES.features && RULES.features[feature]
+            && RULES.features[feature].natural_wonder);
+}
 const NATURAL_WONDER_ATLAS = new Image();
 let NATURAL_WONDER_ATLAS_READY = false;
 NATURAL_WONDER_ATLAS.onload = () => { NATURAL_WONDER_ATLAS_READY = true; if (state) draw(); };
@@ -3707,9 +3767,24 @@ const FEATURE_LABEL = {
   volcanic_soil:"Volcanic Soil", impact_zone:"Impact Zone",
   burning_forest:"Burning Woods", burnt_forest:"Burnt Woods",
   burning_jungle:"Burning Rainforest", burnt_jungle:"Burnt Rainforest",
+  // Every Natural Wonder, under the name Civilization VI gives it. The tile
+  // panel used to fall back to the raw id for twenty-six of them, so the map
+  // called Tsingy de Bemaraha "tsingy_de_bemaraha".
   great_barrier_reef:"Great Barrier Reef", crater_lake:"Crater Lake",
   pantanal:"Pantanal", uluru:"Uluru", yosemite:"Yosemite",
-  dead_sea:"Dead Sea", mount_everest:"Mount Everest", pamukkale:"Pamukkale"
+  dead_sea:"Dead Sea", mount_everest:"Mount Everest", pamukkale:"Pamukkale",
+  torres_del_paine:"Torres del Paine", eye_of_the_sahara:"Eye of the Sahara",
+  zhangye_danxia:"Zhangye Danxia", ha_long_bay:"Hạ Long Bay",
+  cliffs_of_dover:"Cliffs of Dover", giants_causeway:"Giant's Causeway",
+  galapagos_islands:"Galápagos Islands", matterhorn:"Matterhorn",
+  kilimanjaro:"Mount Kilimanjaro", piopiotahi:"Piopiotahi", ik_kil:"Ik-Kil",
+  gobustan:"Gobustan", ubsunur_hollow:"Ubsunur Hollow",
+  mato_tipila:"Mato Tipila", delicate_arch:"Delicate Arch",
+  chocolate_hills:"Chocolate Hills", vesuvius:"Mount Vesuvius",
+  lake_retba:"Lake Retba", bermuda_triangle:"Bermuda Triangle",
+  eyjafjallajokull:"Eyjafjallajökull", fountain_of_youth:"Fountain of Youth",
+  lysefjord:"Lysefjord", paititi:"Païtiti", mount_roraima:"Mount Roraima",
+  tsingy_de_bemaraha:"Tsingy de Bemaraha", sahara_el_beyda:"Sahara el Beyda"
 };
 // Every resource has a code-native pictogram. These names describe what grows,
 // grazes or lies in the ground — not the modern product somebody eventually
@@ -9880,6 +9955,284 @@ function drawNaturalWonderSprite(feature, t, x, y, footprint) {
   return true;
 }
 
+// --- painted Natural Wonders ---------------------------------------------
+//
+// The atlas photographs eight of the thirty-four. The rest are painted here,
+// out of the same vocabulary the mountains and the woods are painted with: a
+// contact shadow, a lit face and a shadow face of one material, split on the
+// world-fixed sun so a wonder relights with everything else when the board
+// turns. Seventeen shapes cover the roster, because what makes the Matterhorn
+// the Matterhorn is its proportion — one horn, no range — not a private
+// drawing routine. The same shapes carry the strategic view, drawn flat and
+// small over a gold ring: strategic is this board's unpainted style, not its
+// blank one.
+function wonderFace(x, y, k, color, top, halfWidth, lift = 0) {
+  // One prism: a lit flank and a shadow flank meeting at the crest.
+  const base = y + lift;
+  cx.fillStyle = shade(color, 1.34);
+  tri(x - halfWidth * LITF, base, x, base - top, x, base);
+  cx.fillStyle = shade(color, 0.68);
+  tri(x, base - top, x + halfWidth * 0.86 * LITF, base, x, base);
+}
+function wonderShadow(x, y, rx, alpha = 0.24) {
+  cx.fillStyle = `rgba(0,0,0,${alpha})`;
+  cx.beginPath(); cx.ellipse(x, y + rx * 0.2, rx, rx * 0.3, 0, 0, 7); cx.fill();
+}
+function wonderWater(x, y, k, color, rx, ry) {
+  cx.fillStyle = color;
+  cx.beginPath(); cx.ellipse(x, y, rx, ry, 0, 0, 7); cx.fill();
+  cx.strokeStyle = shade(color, 1.5); cx.lineWidth = Math.max(0.7, k * 0.8);
+  cx.beginPath(); cx.ellipse(x, y - ry * 0.22, rx * 0.62, ry * 0.4, 0, 0, 7);
+  cx.stroke();
+}
+const WONDER_PAINTER = {
+  peak(x, y, k, art) {
+    const height = (art.broad ? 26 : art.horn ? 34 : 30) * k;
+    const half = (art.broad ? 20 : 13) * k;
+    wonderShadow(x, y, half * 1.1);
+    wonderFace(x, y, k, art.tint, height, half);
+    const snow = art.snow || 0;
+    if (snow > 0) {
+      const cap = height * snow;
+      cx.fillStyle = "#eef2f6";
+      tri(x - half * (cap / height) * LITF, y - height + cap, x, y - height,
+          x + half * 0.86 * (cap / height) * LITF, y - height + cap);
+    }
+  },
+  towers(x, y, k, art) {
+    const count = art.count || 3;
+    wonderShadow(x, y, 15 * k);
+    for (let i = 0; i < count; i++) {
+      const spread = count === 1 ? 0 : (i / (count - 1) - 0.5) * 22 * k;
+      const height = (count === 1 ? 30 : 18 + (i % 2) * 9) * k;
+      const half = (count > 3 ? 2.6 : 4.2) * k;
+      cx.fillStyle = shade(art.tint, 1.28);
+      cx.fillRect(x + spread - half, y - height, half, height);
+      cx.fillStyle = shade(art.tint, 0.7);
+      cx.fillRect(x + spread, y - height, half, height);
+      if (art.fluted) {
+        cx.strokeStyle = shade(art.tint, 0.5); cx.lineWidth = 0.6;
+        cx.beginPath();
+        cx.moveTo(x + spread, y - height); cx.lineTo(x + spread, y);
+        cx.stroke();
+      }
+      if (art.cap) {
+        cx.fillStyle = art.cap;
+        cx.beginPath();
+        cx.ellipse(x + spread, y - height, half * 1.2, half * 0.55, 0, 0, 7);
+        cx.fill();
+      }
+    }
+  },
+  columns(x, y, k, art) {
+    wonderShadow(x, y, 15 * k);
+    for (let i = 0; i < 7; i++) {
+      const cxp = x + (i - 3) * 4.4 * k;
+      const height = (6 + (i % 3) * 4) * k;
+      cx.fillStyle = shade(art.tint, 1.3);
+      cx.fillRect(cxp - 2 * k, y - height, 2 * k, height);
+      cx.fillStyle = shade(art.tint, 0.66);
+      cx.fillRect(cxp, y - height, 2 * k, height);
+    }
+  },
+  domes(x, y, k, art) {
+    const palette = art.palette || [art.tint];
+    wonderShadow(x, y, 16 * k, 0.18);
+    const spots = [[-12, 3, 6], [-2, -3, 7], [8, 2, 6], [14, -2, 4.5], [2, 7, 5]];
+    spots.forEach(([dx, dy, r], i) => {
+      const color = palette[i % palette.length];
+      cx.fillStyle = shade(color, 0.72);
+      cx.beginPath();
+      cx.ellipse(x + dx * k, y + dy * k, r * k, r * 0.78 * k, 0, 0, 7); cx.fill();
+      cx.fillStyle = shade(color, 1.28);
+      cx.beginPath();
+      cx.ellipse(x + dx * k - r * 0.22 * k * LITF, y + dy * k - r * 0.2 * k,
+                 r * 0.66 * k, r * 0.5 * k, 0, 0, 7); cx.fill();
+    });
+  },
+  bands(x, y, k, art) {
+    const palette = art.palette || [art.tint];
+    wonderShadow(x, y, 16 * k, 0.18);
+    for (let i = palette.length - 1; i >= 0; i--) {
+      cx.fillStyle = palette[i];
+      cx.beginPath();
+      cx.moveTo(x - 16 * k, y + (2 - i * 1.4) * k);
+      cx.lineTo(x - 5 * k, y - (5 + i * 3.4) * k);
+      cx.lineTo(x + 7 * k, y - (3 + i * 3.1) * k);
+      cx.lineTo(x + 16 * k, y + (2 - i * 1.4) * k);
+      cx.closePath(); cx.fill();
+    }
+  },
+  basin(x, y, k, art) {
+    const rx = (art.narrow ? 9 : 14) * k;
+    wonderShadow(x, y, rx * 1.1, 0.2);
+    cx.fillStyle = shade(art.rim || "#7b7263", 1.05);
+    cx.beginPath(); cx.ellipse(x, y, rx * 1.25, rx * 0.5, 0, 0, 7); cx.fill();
+    wonderWater(x, y, k, art.tint, rx, rx * 0.36);
+    if (art.aura) {
+      cx.fillStyle = art.aura; cx.globalAlpha = 0.3;
+      cx.beginPath(); cx.ellipse(x, y - rx * 0.5, rx * 0.5, rx * 0.5, 0, 0, 7);
+      cx.fill(); cx.globalAlpha = 1;
+    }
+  },
+  wetland(x, y, k, art) {
+    wonderWater(x, y, k, shade(art.tint, 0.8), 16 * k, 6.5 * k);
+    // Reed clumps, not single strokes: one hair per position disappeared at
+    // map zoom and the wetland read as an empty puddle.
+    cx.strokeStyle = shade(art.tint, 1.45); cx.lineWidth = Math.max(1, 1.3 * k);
+    for (let i = 0; i < 7; i++) {
+      const rx = x + (i - 3) * 4.6 * k, ry = y + ((i % 3) - 1) * 2.2 * k;
+      for (const lean of [-1.6, 0.2, 1.8]) {
+        cx.beginPath();
+        cx.moveTo(rx, ry);
+        cx.lineTo(rx + lean * k, ry - (7 + (i % 2) * 2.5) * k);
+        cx.stroke();
+      }
+    }
+  },
+  reef(x, y, k, art) {
+    wonderWater(x, y, k, art.tint, 16 * k, 6.5 * k);
+    const colors = ["#dc765d", "#e7b45c", "#6dc2a6", "#9b6ab3"];
+    for (let i = 0; i < 8; i++) {
+      cx.fillStyle = colors[i % colors.length];
+      cx.beginPath();
+      cx.ellipse(x + (i - 3.5) * 4 * k, y + ((i % 3) - 1) * 2.6 * k,
+                 2.1 * k, 1.5 * k, 0, 0, 7);
+      cx.fill();
+    }
+  },
+  islets(x, y, k, art) {
+    wonderWater(x, y, k, art.tint, 17 * k, 7 * k);
+    for (const [dx, dy, h] of [[-10, 2, 13], [-1, -3, 17], [7, 3, 11], [13, -1, 8]]) {
+      const half = (art.cones ? h * 0.55 : h * 0.32) * k;
+      wonderFace(x + dx * k, y + dy * k, k, art.rim || "#5e6f52", h * k, half);
+    }
+  },
+  seawall(x, y, k, art) {
+    wonderWater(x, y + 6 * k, k, art.water || "#2f7d9c", 17 * k, 5 * k);
+    const walls = art.inlet ? [[-11, 20], [11, 18]] : [[-7, 17], [6, 14]];
+    for (const [dx, h] of walls) {
+      cx.fillStyle = shade(art.tint, 1.2);
+      cx.fillRect(x + dx * k - 5 * k, y - h * k, 5 * k, h * k);
+      cx.fillStyle = shade(art.tint, 0.72);
+      cx.fillRect(x + dx * k, y - h * k, 5 * k, h * k);
+    }
+  },
+  monolith(x, y, k, art) {
+    wonderShadow(x, y, 17 * k);
+    cx.fillStyle = shade(art.tint, 0.7);
+    cx.beginPath();
+    cx.moveTo(x - 16 * k, y + 2 * k);
+    cx.quadraticCurveTo(x - 9 * k, y - 15 * k, x + 6 * k, y - 13 * k);
+    cx.quadraticCurveTo(x + 15 * k, y - 11 * k, x + 16 * k, y + 2 * k);
+    cx.closePath(); cx.fill();
+    cx.fillStyle = shade(art.tint, 1.3);
+    cx.beginPath();
+    cx.moveTo(x - 16 * k, y + 2 * k);
+    cx.quadraticCurveTo(x - 9 * k, y - 15 * k, x + 1 * k, y - 13.6 * k);
+    cx.lineTo(x, y + 2 * k);
+    cx.closePath(); cx.fill();
+  },
+  cliffs(x, y, k, art) {
+    wonderShadow(x, y, 16 * k);
+    for (const [dx, h, w] of [[-8, 26, 9], [7, 20, 8]]) {
+      cx.fillStyle = shade(art.tint, 1.26);
+      cx.fillRect(x + dx * k - w * k / 2, y - h * k, w * k / 2, h * k);
+      cx.fillStyle = shade(art.tint, 0.68);
+      cx.fillRect(x + dx * k, y - h * k, w * k / 2, h * k);
+    }
+  },
+  terrace(x, y, k, art) {
+    wonderShadow(x, y, 15 * k, 0.16);
+    for (let i = 4; i >= 0; i--) {
+      cx.fillStyle = i & 1 ? shade(art.tint, 0.92) : art.tint;
+      cx.beginPath();
+      cx.ellipse(x, y - i * 3.4 * k, (14 - i * 2) * k, (5 - i * 0.7) * k, 0, 0, 7);
+      cx.fill();
+    }
+    cx.fillStyle = "rgba(121,199,207,.7)";
+    cx.beginPath(); cx.ellipse(x, y - 13 * k, 5 * k, 1.8 * k, 0, 0, 7); cx.fill();
+  },
+  arch(x, y, k, art) {
+    wonderShadow(x, y, 13 * k);
+    cx.strokeStyle = shade(art.tint, 1.1);
+    cx.lineWidth = 4.2 * k; cx.lineCap = "butt";
+    cx.beginPath();
+    cx.moveTo(x - 8 * k, y);
+    cx.quadraticCurveTo(x, y - 26 * k, x + 8 * k, y);
+    cx.stroke();
+    cx.strokeStyle = shade(art.tint, 0.62); cx.lineWidth = 1.6 * k;
+    cx.beginPath();
+    cx.moveTo(x + 2 * k, y - 18 * k); cx.lineTo(x + 8 * k, y); cx.stroke();
+  },
+  rings(x, y, k, art) {
+    wonderShadow(x, y, 17 * k, 0.16);
+    for (let ring = 3; ring >= 1; ring--) {
+      cx.fillStyle = ring % 2 ? shade(art.tint, 0.86) : shade(art.tint, 1.16);
+      cx.beginPath();
+      cx.ellipse(x, y, ring * 5.6 * k, ring * 2.2 * k, 0, 0, 7); cx.fill();
+    }
+  },
+  volcano(x, y, k, art) {
+    wonderShadow(x, y, 15 * k);
+    wonderFace(x, y, k, art.tint, 24 * k, 13 * k);
+    if (art.ice) {
+      cx.fillStyle = "#dce8ed";
+      tri(x - 6 * k * LITF, y - 16 * k, x, y - 24 * k, x + 5 * k * LITF, y - 16 * k);
+    } else {
+      cx.fillStyle = "#ef5b25";
+      cx.beginPath(); cx.ellipse(x, y - 23 * k, 3.4 * k, 1.4 * k, 0, 0, 7); cx.fill();
+    }
+    cx.fillStyle = "rgba(150,150,148,.42)";
+    cx.beginPath(); cx.ellipse(x + 2 * k, y - 31 * k, 6 * k, 4 * k, 0, 0, 7); cx.fill();
+  },
+  ruins(x, y, k, art) {
+    wonderShadow(x, y, 15 * k);
+    for (let step = 0; step < 4; step++) {
+      const w = (14 - step * 3) * k, h = 4 * k;
+      cx.fillStyle = step & 1 ? shade(art.tint, 0.86) : shade(art.tint, 1.14);
+      cx.fillRect(x - w, y - (step + 1) * h, w * 2, h);
+    }
+    cx.fillStyle = "#3f6b3a";
+    for (const dx of [-15, -9, 10, 16]) {
+      cx.beginPath();
+      cx.ellipse(x + dx * k, y - 2 * k, 3.2 * k, 2.4 * k, 0, 0, 7); cx.fill();
+    }
+  },
+  vortex(x, y, k, art) {
+    wonderWater(x, y, k, art.tint, 17 * k, 7 * k);
+    cx.fillStyle = "rgba(13,44,70,.72)";
+    tri(x, y - 9 * k, x + 12 * k, y + 6 * k, x - 12 * k, y + 6 * k);
+    cx.strokeStyle = "rgba(127,216,239,.55)"; cx.lineWidth = 1.4 * k;
+    for (let ring = 1; ring <= 3; ring++) {
+      cx.beginPath();
+      cx.ellipse(x, y, ring * 4.4 * k, ring * 1.7 * k, 0, 0, 7); cx.stroke();
+    }
+  },
+};
+
+// Draw a wonder that has no photograph, at whatever size its footprint gives
+// it. Returns false only for a feature the roster does not name, which is the
+// signal to fall back to the generic mark.
+function paintNaturalWonder(feature, x, y, footprint) {
+  const art = NATURAL_WONDER_ART[feature];
+  const painter = art && WONDER_PAINTER[art.form];
+  if (!painter) return false;
+  const span = footprint ? Math.max(1, Math.sqrt(footprint.length) * 0.92) : 1;
+  const k = (S / 31) * span * (MODE.painted ? 1 : 0.66);
+  cx.save();
+  if (!MODE.painted) {
+    // Strategic keeps the gold ring: the shape says which wonder, the ring
+    // says that it is one, and both survive being three millimetres tall.
+    cx.fillStyle = "rgba(240,206,98,.9)";
+    cx.beginPath(); cx.arc(x, y, 12, 0, Math.PI * 2); cx.fill();
+    cx.strokeStyle = "#6b551a"; cx.lineWidth = 1.2; cx.stroke();
+  }
+  painter(x, y + (MODE.painted ? S * 0.24 : 5), k, art);
+  cx.restore();
+  return true;
+}
+
 // The edges this tile shares with terrain of its own kind, as the offset to
 // each neighbouring centre in the map's unrotated world plane — the model
 // renderer applies the camera itself — plus a seed belonging to the *edge*
@@ -10291,7 +10644,7 @@ function drawCinematicDisasterField(sceneTime) {
 function buildNaturalWonderPlacements(tiles) {
   const placements = new Map(), visited = new Set();
   for (const tile of tiles) {
-    if (!NATURAL_WONDER_CELL[tile.feature] || visited.has(key(tile.pos))) continue;
+    if (!isNaturalWonder(tile.feature) || visited.has(key(tile.pos))) continue;
     const cluster = [], stack = [tile];
     visited.add(key(tile.pos));
     while (stack.length) {
@@ -12435,6 +12788,557 @@ function drawWorldWonderSprite(wonder, x, y) {
                cell[0] * cw + inset, cell[1] * ch + inset,
                cw - inset * 2, ch - inset * 2,
                x - size / 2, y - size + S * .42, size, size);
+  cx.restore();
+  return true;
+}
+
+// --- painted World Wonders ------------------------------------------------
+//
+// The cinematic atlas photographs all fifty-three. The other two views drew
+// one gold obelisk for every one of them, so a city holding the Pyramids and
+// a city holding the Golden Gate Bridge were the same picture — the map could
+// tell you a wonder was there and never which. These are the silhouettes,
+// built from twenty shapes: what separates a pyramid from a lighthouse at
+// twenty pixels is outline, so each entry names a shape, its proportions and
+// the stone it is made of, and the shape does the rest.
+const WORLD_WONDER_ART = {
+  great_bath:        {form:"ziggurat", tint:"#c9b28f", sunken:true},
+  etemenanki:        {form:"ziggurat", tint:"#b98a54"},
+  hanging_gardens:   {form:"terraces", tint:"#8a7c5c", green:true},
+  pyramids:          {form:"pyramid",  tint:"#d8c088", count:3},
+  stonehenge:        {form:"trilithon", tint:"#9a9184"},
+  temple_artemis:    {form:"colonnade", tint:"#e6ddc6"},
+  apadana:           {form:"colonnade", tint:"#c8a86d", tall:true},
+  colosseum:         {form:"arena",    tint:"#cdb896"},
+  colossus:          {form:"statue",   tint:"#c08a43", pose:"stand"},
+  great_library:     {form:"colonnade", tint:"#d9cba7", wide:true},
+  great_lighthouse:  {form:"tower",    tint:"#e2d6b8", flame:true},
+  jebel_barkal:      {form:"pyramid",  tint:"#c58e5a", count:4, small:true},
+  machu_picchu:      {form:"terraces", tint:"#8e9a76", peak:true},
+  mahabodhi_temple:  {form:"tower",    tint:"#c9a06a", spire:true},
+  mausoleum_at_halicarnassus: {form:"pyramid", tint:"#dbd2b8", stepped:true},
+  oracle:            {form:"dome",     tint:"#e3dcc4", tholos:true},
+  petra:             {form:"rockface", tint:"#c4744a"},
+  statue_of_zeus:    {form:"statue",   tint:"#d9c98f", pose:"seat"},
+  terracotta_army:   {form:"ranks",    tint:"#a9713f"},
+  alhambra:          {form:"fortress", tint:"#cfa87a"},
+  angkor_wat:        {form:"towers5",  tint:"#9c9276"},
+  chichen_itza:      {form:"pyramid",  tint:"#b5a887", stepped:true},
+  hagia_sophia:      {form:"dome",     tint:"#d5b98a"},
+  huey_teocalli:     {form:"pyramid",  tint:"#b98e5e", stepped:true, twin:true},
+  kilwa_kisiwani:    {form:"dome",     tint:"#cbbfa2", low:true},
+  kotoku_in:         {form:"statue",   tint:"#7d8f80", pose:"seat"},
+  meenakshi_temple:  {form:"tower",    tint:"#c86a6a", gopuram:true},
+  mont_st_michel:    {form:"fortress", tint:"#a8a49a", island:true},
+  university_of_sankore: {form:"tower", tint:"#c69a5f", mud:true},
+  casa_de_contratacion: {form:"colonnade", tint:"#d8c9a5", wide:true},
+  forbidden_city:    {form:"palace",   tint:"#b5442f", roof:"#e0b13c"},
+  great_zimbabwe:    {form:"rockface", tint:"#9e8d70", wall:true},
+  orszaghaz:         {form:"palace",   tint:"#c3ba9f", gothic:true},
+  oxford_university: {form:"colonnade", tint:"#c7bfa2"},
+  potala_palace:     {form:"fortress", tint:"#e2dccb", tiered:true},
+  st_basils_cathedral: {form:"dome",   tint:"#c4553f", onion:true},
+  taj_mahal:         {form:"dome",     tint:"#f0ece0", minarets:true},
+  torre_de_belem:    {form:"tower",    tint:"#ddd3b6", water:true},
+  venetian_arsenal:  {form:"shipyard", tint:"#a8987a"},
+  big_ben:           {form:"tower",    tint:"#c9b184", clock:true},
+  bolshoi_theatre:   {form:"colonnade", tint:"#dcd0ae", pediment:true},
+  hermitage:         {form:"palace",   tint:"#7fa8b8", long:true},
+  ruhr_valley:       {form:"chimneys", tint:"#8c8478"},
+  statue_of_liberty: {form:"statue",   tint:"#7fb8a4", pose:"torch"},
+  biosphere:         {form:"geodesic", tint:"#9fc6d4"},
+  broadway:          {form:"marquee",  tint:"#d9a03c"},
+  cristo_redentor:   {form:"statue",   tint:"#cfcac0", pose:"arms"},
+  eiffel_tower:      {form:"tower",    tint:"#9a8b6f", lattice:true},
+  estadio_do_maracana: {form:"arena",  tint:"#b9c2c6", modern:true},
+  golden_gate_bridge: {form:"bridge",  tint:"#c1502f"},
+  amundsen_scott_research_station: {form:"station", tint:"#c3d3da"},
+  sydney_opera_house: {form:"shells",  tint:"#eae7dd"},
+  panama_canal:      {form:"bridge",   tint:"#7f95a0", locks:true},
+};
+// A block with a lit face and a shadow face, which is most of what a building
+// is at this size. `w` is half the width.
+function wonderBlock(x, y, w, h, color) {
+  cx.fillStyle = shade(color, 1.26);
+  cx.fillRect(x - w, y - h, w, h);
+  cx.fillStyle = shade(color, 0.7);
+  cx.fillRect(x, y - h, w, h);
+  cx.strokeStyle = "rgba(28,22,10,.55)"; cx.lineWidth = 0.9;
+  cx.strokeRect(x - w, y - h, w * 2, h);
+}
+const BUILT_WONDER_PAINTER = {
+  pyramid(x, y, k, art) {
+    const count = art.count || 1;
+    for (let i = 0; i < count; i++) {
+      const dx = count === 1 ? 0 : (i / (count - 1) - 0.5) * 17 * k;
+      const w = (art.small ? 5 : count > 1 ? 7 : 11) * k * (i === 1 ? 1.2 : 1);
+      const h = (art.small ? 8 : count > 1 ? 12 : 18) * k * (i === 1 ? 1.2 : 1);
+      if (art.stepped) {
+        for (let step = 0; step < 4; step++) {
+          const sw = w * (1 - step * 0.2), sh = h / 4;
+          cx.fillStyle = shade(art.tint, step % 2 ? 1.2 : 0.86);
+          cx.fillRect(x + dx - sw, y - sh * (step + 1), sw * 2, sh);
+        }
+        if (art.twin) {
+          cx.fillStyle = shade(art.tint, 1.3);
+          cx.fillRect(x + dx - w * 0.5, y - h - 5 * k, w * 0.42, 5 * k);
+          cx.fillStyle = shade(art.tint, 0.72);
+          cx.fillRect(x + dx + w * 0.1, y - h - 5 * k, w * 0.42, 5 * k);
+        }
+      } else {
+        cx.fillStyle = shade(art.tint, 1.3);
+        tri(x + dx - w * LITF, y, x + dx, y - h, x + dx, y);
+        cx.fillStyle = shade(art.tint, 0.68);
+        tri(x + dx, y - h, x + dx + w * LITF, y, x + dx, y);
+      }
+    }
+  },
+  ziggurat(x, y, k, art) {
+    if (art.sunken) {
+      // The Great Bath is a tank, not a tower: steps descending on both sides
+      // into water. Drawn as a ziggurat it came out as a "T".
+      for (let step = 0; step < 3; step++) {
+        const w = (13 - step * 2.2) * k;
+        cx.fillStyle = shade(art.tint, step % 2 ? 1.24 : 0.9);
+        cx.fillRect(x - w, y - (3 - step) * 3.2 * k, w * 2, 3.2 * k);
+      }
+      cx.fillStyle = "#3f95ad";
+      cx.beginPath();
+      cx.ellipse(x, y - 1.4 * k, 7 * k, 2.6 * k, 0, 0, 7); cx.fill();
+      cx.strokeStyle = "rgba(220,246,250,.66)"; cx.lineWidth = 0.9;
+      cx.beginPath();
+      cx.ellipse(x, y - 2.2 * k, 4.4 * k, 1.5 * k, 0, 0, 7); cx.stroke();
+      return;
+    }
+    for (let step = 0; step < 4; step++) {
+      const w = (12 - step * 2.4) * k, h = 4 * k;
+      cx.fillStyle = shade(art.tint, step % 2 ? 1.22 : 0.88);
+      cx.fillRect(x - w, y - (step + 1) * h, w * 2, h);
+    }
+  },
+  colonnade(x, y, k, art) {
+    const w = (art.wide ? 15 : 12) * k, h = (art.tall ? 18 : 13) * k;
+    cx.fillStyle = shade(art.tint, 0.9);
+    cx.fillRect(x - w, y - 2 * k, w * 2, 2 * k);
+    for (let i = 0; i < 6; i++) {
+      const cxp = x - w + 2 * k + i * (w * 2 - 4 * k) / 5;
+      cx.fillStyle = shade(art.tint, 1.3);
+      cx.fillRect(cxp - 1.4 * k, y - h, 1.4 * k, h - 2 * k);
+      cx.fillStyle = shade(art.tint, 0.72);
+      cx.fillRect(cxp, y - h, 1.4 * k, h - 2 * k);
+    }
+    cx.fillStyle = shade(art.tint, 1.1);
+    cx.fillRect(x - w, y - h - 3 * k, w * 2, 3 * k);
+    if (art.pediment) {
+      cx.fillStyle = shade(art.tint, 1.22);
+      tri(x - w, y - h - 3 * k, x, y - h - 9 * k, x + w, y - h - 3 * k);
+    }
+  },
+  dome(x, y, k, art) {
+    const r = (art.low ? 8 : art.tholos ? 7 : 10) * k;
+    if (art.tholos) {
+      // A tholos is a ring of columns under a shallow roof; the dome alone
+      // was an unreadable pebble.
+      for (let i = 0; i < 5; i++) {
+        const cxp = x + (i - 2) * 3.2 * k;
+        cx.fillStyle = shade(art.tint, i < 2 ? 1.28 : 0.76);
+        cx.fillRect(cxp - 1.1 * k, y - r * 1.5, 2.2 * k, r * 1.5);
+      }
+      cx.fillStyle = shade(art.tint, 1.1);
+      cx.fillRect(x - r * 1.2, y - r * 1.5 - 2 * k, r * 2.4, 2 * k);
+    } else {
+      wonderBlock(x, y, r * 1.15, r * 0.9, art.tint);
+    }
+    if (art.onion) {
+      for (const [dx, s, col] of [[-8, 0.7, "#3f7fa8"], [0, 1, "#d9c04a"],
+        [8, 0.7, "#4f9a5e"]]) {
+        cx.fillStyle = col;
+        cx.beginPath();
+        cx.moveTo(x + dx * k - r * 0.42 * s, y - r * 0.9);
+        cx.quadraticCurveTo(x + dx * k - r * 0.7 * s, y - r * 2.1 * s,
+                            x + dx * k, y - r * 2.5 * s);
+        cx.quadraticCurveTo(x + dx * k + r * 0.7 * s, y - r * 2.1 * s,
+                            x + dx * k + r * 0.42 * s, y - r * 0.9);
+        cx.closePath(); cx.fill();
+      }
+      return;
+    }
+    const springs = art.tholos ? y - r * 1.5 - 2 * k : y - r * 0.9;
+    cx.fillStyle = shade(art.tint, 1.16);
+    cx.beginPath();
+    cx.ellipse(x, springs, r, r * 0.92, 0, Math.PI, 0); cx.fill();
+    cx.fillStyle = shade(art.tint, 0.74);
+    cx.beginPath();
+    cx.ellipse(x + r * 0.28 * LITF, springs, r * 0.72, r * 0.88, 0, Math.PI, 0);
+    cx.fill();
+    if (art.minarets) {
+      for (const dx of [-r * 1.5, r * 1.5]) {
+        cx.fillStyle = shade(art.tint, 1.1);
+        cx.fillRect(x + dx - 1.2 * k, y - r * 2.1, 2.4 * k, r * 2.1);
+      }
+    }
+  },
+  tower(x, y, k, art) {
+    const h = (art.lattice ? 30 : art.spire ? 26 : 24) * k;
+    const w = (art.mud ? 5 : 4) * k;
+    if (art.water) {
+      cx.fillStyle = "rgba(60,130,160,.7)";
+      cx.beginPath(); cx.ellipse(x, y + 2 * k, 15 * k, 4 * k, 0, 0, 7); cx.fill();
+    }
+    if (art.lattice) {
+      // Filled, not wireframe. Two hairlines on grass read as a stepladder;
+      // what makes the Eiffel Tower recognisable is the flared skirt and the
+      // arch between the legs, both of which need a silhouette to cut into.
+      const leg = t => 8 * Math.pow(1 - t, 2.1) + 0.9;
+      cx.fillStyle = shade(art.tint, 1.16);
+      cx.beginPath();
+      for (let s = 0; s <= 10; s++) cx.lineTo(x - leg(s / 10) * k, y - h * s / 10);
+      for (let s = 10; s >= 0; s--) cx.lineTo(x + leg(s / 10) * k, y - h * s / 10);
+      cx.closePath(); cx.fill();
+      cx.globalCompositeOperation = "destination-out";
+      cx.beginPath();
+      cx.moveTo(x - 6.6 * k, y);
+      cx.quadraticCurveTo(x, y - h * 0.34, x + 6.6 * k, y);
+      cx.closePath(); cx.fill();
+      cx.globalCompositeOperation = "source-over";
+      cx.strokeStyle = shade(art.tint, 0.5); cx.lineWidth = 0.9;
+      for (const t of [0.34, 0.62]) {
+        cx.beginPath();
+        cx.moveTo(x - leg(t) * k, y - h * t); cx.lineTo(x + leg(t) * k, y - h * t);
+        cx.stroke();
+      }
+      return;
+    }
+    if (art.gopuram) {
+      for (let step = 0; step < 5; step++) {
+        const sw = (9 - step * 1.4) * k;
+        cx.fillStyle = shade(art.tint, step % 2 ? 1.2 : 0.84);
+        cx.fillRect(x - sw, y - (step + 1) * h / 5, sw * 2, h / 5);
+      }
+      return;
+    }
+    wonderBlock(x, y, w, h, art.tint);
+    if (art.spire) {
+      cx.fillStyle = shade(art.tint, 1.15);
+      tri(x - w, y - h, x, y - h - 8 * k, x + w, y - h);
+    }
+    if (art.clock) {
+      cx.fillStyle = "#f2e6bd";
+      cx.beginPath(); cx.arc(x, y - h * 0.82, 2.6 * k, 0, 7); cx.fill();
+      cx.fillStyle = shade(art.tint, 1.2);
+      tri(x - w, y - h, x, y - h - 6 * k, x + w, y - h);
+    }
+    if (art.flame) {
+      cx.fillStyle = "#ffb545";
+      cx.beginPath(); cx.ellipse(x, y - h - 2 * k, 2.4 * k, 3.4 * k, 0, 0, 7);
+      cx.fill();
+    }
+  },
+  statue(x, y, k, art) {
+    const h = art.pose === "seat" ? 15 * k : 22 * k;
+    cx.fillStyle = shade(art.tint, 0.86);
+    cx.fillRect(x - 6 * k, y - 4 * k, 12 * k, 4 * k);          // plinth
+    cx.fillStyle = shade(art.tint, 1.2);
+    if (art.pose === "seat") {
+      // Seated: knees forward, folded arms, head clear of the shoulders. A
+      // plain box on a plinth read as a crate.
+      cx.fillRect(x - 4.6 * k, y - 4 * k - h * 0.52, 9.2 * k, h * 0.52);
+      cx.fillStyle = shade(art.tint, 0.74);
+      cx.fillRect(x - 6.4 * k, y - 4 * k - h * 0.3, 12.8 * k, h * 0.3);
+      cx.fillStyle = shade(art.tint, 1.3);
+      cx.beginPath();
+      cx.arc(x, y - 4 * k - h * 0.52 - 3 * k, 3.2 * k, 0, 7); cx.fill();
+      cx.fillStyle = shade(art.tint, 0.6);
+      cx.fillRect(x - 4.6 * k, y - 4 * k - h * 0.34, 9.2 * k, 1.2 * k);
+    } else {
+      cx.fillRect(x - 2.4 * k, y - 4 * k - h, 4.8 * k, h);
+      cx.beginPath(); cx.arc(x, y - 4 * k - h - 2.4 * k, 2.6 * k, 0, 7); cx.fill();
+      cx.lineWidth = 2.2 * k; cx.strokeStyle = shade(art.tint, 1.2);
+      cx.beginPath();
+      if (art.pose === "arms") {
+        cx.moveTo(x - 9 * k, y - 4 * k - h * 0.82);
+        cx.lineTo(x + 9 * k, y - 4 * k - h * 0.82);
+      } else if (art.pose === "torch") {
+        cx.moveTo(x + 1 * k, y - 4 * k - h * 0.7);
+        cx.lineTo(x + 5 * k, y - 4 * k - h - 4 * k);
+      } else {
+        cx.moveTo(x - 4 * k, y - 4 * k - h * 0.5);
+        cx.lineTo(x + 4 * k, y - 4 * k - h * 0.5);
+      }
+      cx.stroke();
+      if (art.pose === "torch") {
+        cx.fillStyle = "#ffc247";
+        cx.beginPath(); cx.arc(x + 5.6 * k, y - 4 * k - h - 5 * k, 2 * k, 0, 7);
+        cx.fill();
+      }
+    }
+  },
+  arena(x, y, k, art) {
+    const rx = 13 * k, ry = 6 * k, h = art.modern ? 9 * k : 11 * k;
+    cx.fillStyle = shade(art.tint, 0.72);
+    cx.beginPath(); cx.ellipse(x, y - ry, rx, ry, 0, 0, 7); cx.fill();
+    cx.fillStyle = shade(art.tint, 1.24);
+    cx.beginPath();
+    cx.ellipse(x, y - ry - h, rx, ry, 0, Math.PI, 0);
+    cx.lineTo(x + rx, y - ry); cx.ellipse(x, y - ry, rx, ry, 0, 0, Math.PI);
+    cx.closePath(); cx.fill();
+    // The pitch inside. Without it a modern bowl is a white pebble.
+    cx.fillStyle = art.modern ? "#5f8f4e" : shade(art.tint, 0.5);
+    cx.beginPath();
+    cx.ellipse(x, y - ry - h, rx * 0.66, ry * 0.6, 0, 0, 7); cx.fill();
+    if (!art.modern) {
+      cx.strokeStyle = shade(art.tint, 0.6); cx.lineWidth = 0.8;
+      for (let i = -2; i <= 2; i++) {
+        cx.beginPath();
+        cx.moveTo(x + i * rx * 0.38, y - ry - h);
+        cx.lineTo(x + i * rx * 0.38, y - ry);
+        cx.stroke();
+      }
+    }
+  },
+  terraces(x, y, k, art) {
+    if (art.peak) {
+      cx.fillStyle = shade(art.tint, 0.62);
+      tri(x - 14 * k, y, x + 2 * k, y - 22 * k, x + 15 * k, y);
+    }
+    for (let step = 0; step < 4; step++) {
+      const w = (13 - step * 2.2) * k;
+      cx.fillStyle = art.green
+        ? shade("#5f8b4a", step % 2 ? 1.2 : 0.86)
+        : shade(art.tint, step % 2 ? 1.2 : 0.86);
+      cx.fillRect(x - w, y - (step + 1) * 3.6 * k, w * 2, 3.6 * k);
+    }
+  },
+  rockface(x, y, k, art) {
+    if (art.wall) {
+      // The Great Enclosure: a tall curved dry-stone wall seen from outside,
+      // with its courses showing. A single thin arc read as a scratch.
+      cx.lineWidth = 7 * k; cx.strokeStyle = shade(art.tint, 0.72);
+      cx.beginPath();
+      cx.ellipse(x, y - 5 * k, 13 * k, 8 * k, 0, Math.PI * 0.98, Math.PI * 2.02);
+      cx.stroke();
+      cx.lineWidth = 3.4 * k; cx.strokeStyle = shade(art.tint, 1.26);
+      cx.beginPath();
+      cx.ellipse(x, y - 6.6 * k, 13 * k, 8 * k, 0, Math.PI * 0.98, Math.PI * 2.02);
+      cx.stroke();
+      cx.strokeStyle = shade(art.tint, 0.55); cx.lineWidth = 0.7;
+      for (let i = -3; i <= 3; i++) {
+        cx.beginPath();
+        cx.moveTo(x + i * 4 * k, y - 9 * k - Math.abs(i) * -0.6 * k);
+        cx.lineTo(x + i * 4 * k, y - 3 * k);
+        cx.stroke();
+      }
+      // The conical tower that stands inside it.
+      wonderBlock(x + 6 * k, y - 2 * k, 2.4 * k, 13 * k, art.tint);
+      return;
+    }
+    cx.fillStyle = shade(art.tint, 0.72);
+    cx.fillRect(x - 13 * k, y - 22 * k, 26 * k, 22 * k);
+    cx.fillStyle = shade(art.tint, 1.24);
+    cx.fillRect(x - 13 * k, y - 22 * k, 5 * k, 22 * k);
+    cx.fillStyle = "rgba(40,26,16,.8)";
+    cx.fillRect(x - 3 * k, y - 11 * k, 6 * k, 11 * k);
+    for (const dx of [-9, -5, 5, 9]) {
+      cx.fillStyle = shade(art.tint, 1.05);
+      cx.fillRect(x + dx * k - 1.2 * k, y - 20 * k, 2.4 * k, 9 * k);
+    }
+  },
+  ranks(x, y, k, art) {
+    for (let row = 0; row < 3; row++) {
+      for (let i = 0; i < 5; i++) {
+        const fx = x + (i - 2) * 5 * k + row * 1.6 * k;
+        const fy = y - row * 3.4 * k;
+        cx.fillStyle = shade(art.tint, 1.24 - row * 0.16);
+        cx.fillRect(fx - 1.3 * k, fy - 9 * k, 2.6 * k, 9 * k);
+        cx.beginPath(); cx.arc(fx, fy - 10.4 * k, 1.5 * k, 0, 7); cx.fill();
+      }
+    }
+  },
+  fortress(x, y, k, art) {
+    if (art.island) {
+      cx.fillStyle = "rgba(60,130,160,.66)";
+      cx.beginPath(); cx.ellipse(x, y + 2 * k, 17 * k, 5 * k, 0, 0, 7); cx.fill();
+      cx.fillStyle = shade(art.tint, 0.66);
+      tri(x - 13 * k, y + 1 * k, x, y - 10 * k, x + 13 * k, y + 1 * k);
+    }
+    const tiers = art.tiered ? 3 : 1;
+    for (let tier = 0; tier < tiers; tier++) {
+      const w = (13 - tier * 3.4) * k, h = 8 * k;
+      wonderBlock(x, y - tier * h * 0.86, w, h, art.tint);
+    }
+    if (!art.tiered) {
+      for (const dx of [-11, 0, 11]) {
+        wonderBlock(x + dx * k, y - 8 * k, 2.2 * k, art.island ? 12 * k : 8 * k,
+                    art.tint);
+      }
+    }
+  },
+  towers5(x, y, k, art) {
+    for (const [dx, h] of [[-11, 12], [11, 12], [-5, 16], [5, 16], [0, 24]]) {
+      cx.fillStyle = shade(art.tint, dx < 0 ? 1.24 : 0.8);
+      cx.beginPath();
+      cx.moveTo(x + dx * k - 3.2 * k, y);
+      cx.quadraticCurveTo(x + dx * k, y - h * k * 1.28, x + dx * k + 3.2 * k, y);
+      cx.closePath(); cx.fill();
+    }
+  },
+  palace(x, y, k, art) {
+    const w = (art.long ? 17 : 13) * k, h = (art.gothic ? 12 : 10) * k;
+    wonderBlock(x, y, w, h, art.tint);
+    if (art.roof) {
+      cx.fillStyle = art.roof;
+      cx.beginPath();
+      cx.moveTo(x - w - 2 * k, y - h);
+      cx.lineTo(x - w * 0.6, y - h - 5 * k);
+      cx.lineTo(x + w * 0.6, y - h - 5 * k);
+      cx.lineTo(x + w + 2 * k, y - h);
+      cx.closePath(); cx.fill();
+    }
+    if (art.gothic) {
+      for (const dx of [-9, 0, 9]) {
+        cx.fillStyle = shade(art.tint, 1.24);
+        tri(x + dx * k - 3 * k, y - h, x + dx * k, y - h - (dx ? 8 : 14) * k,
+            x + dx * k + 3 * k, y - h);
+      }
+    }
+    if (art.long) {
+      cx.strokeStyle = shade(art.tint, 0.55); cx.lineWidth = 0.8;
+      for (let i = -4; i <= 4; i++) {
+        cx.beginPath();
+        cx.moveTo(x + i * w * 0.2, y - h + 1.5 * k);
+        cx.lineTo(x + i * w * 0.2, y - 1.5 * k);
+        cx.stroke();
+      }
+    }
+  },
+  chimneys(x, y, k, art) {
+    wonderBlock(x, y, 13 * k, 8 * k, art.tint);
+    for (const [dx, h] of [[-8, 20], [-1, 26], [7, 22]]) {
+      cx.fillStyle = shade(art.tint, 1.1);
+      cx.fillRect(x + dx * k - 1.6 * k, y - h * k, 3.2 * k, h * k - 8 * k);
+      cx.fillStyle = "rgba(150,150,148,.4)";
+      cx.beginPath();
+      cx.ellipse(x + dx * k + 2 * k, y - h * k - 3 * k, 4 * k, 2.6 * k, 0, 0, 7);
+      cx.fill();
+    }
+  },
+  geodesic(x, y, k, art) {
+    const r = 12 * k;
+    cx.fillStyle = shade(art.tint, 1.1);
+    cx.beginPath(); cx.arc(x, y - r * 0.7, r, Math.PI, 0); cx.fill();
+    cx.strokeStyle = shade(art.tint, 0.5); cx.lineWidth = 0.85;
+    for (let i = 1; i < 4; i++) {
+      cx.beginPath();
+      cx.ellipse(x, y - r * 0.7, r * i / 4, r, 0, Math.PI, 0); cx.stroke();
+    }
+    cx.beginPath();
+    cx.ellipse(x, y - r * 0.7, r, r * 0.5, 0, Math.PI, 0); cx.stroke();
+  },
+  marquee(x, y, k, art) {
+    wonderBlock(x, y, 12 * k, 16 * k, "#6d5a44");
+    cx.fillStyle = art.tint;
+    cx.fillRect(x - 13 * k, y - 9 * k, 26 * k, 5 * k);
+    cx.fillStyle = "#fff3c4";
+    for (let i = 0; i < 7; i++) {
+      cx.beginPath();
+      cx.arc(x - 11 * k + i * 3.7 * k, y - 10.5 * k, 1 * k, 0, 7); cx.fill();
+    }
+  },
+  bridge(x, y, k, art) {
+    cx.fillStyle = "rgba(60,130,160,.66)";
+    cx.beginPath(); cx.ellipse(x, y + 2 * k, 18 * k, 5 * k, 0, 0, 7); cx.fill();
+    if (art.locks) {
+      for (const dx of [-9, 0, 9]) {
+        wonderBlock(x + dx * k, y - 1 * k, 2.4 * k, 9 * k, art.tint);
+      }
+      cx.strokeStyle = shade(art.tint, 1.2); cx.lineWidth = 2 * k;
+      cx.beginPath();
+      cx.moveTo(x - 16 * k, y - 3 * k); cx.lineTo(x + 16 * k, y - 3 * k);
+      cx.stroke();
+      return;
+    }
+    for (const dx of [-9, 9]) {
+      cx.fillStyle = shade(art.tint, 1.2);
+      cx.fillRect(x + dx * k - 1.5 * k, y - 22 * k, 3 * k, 22 * k);
+    }
+    cx.strokeStyle = shade(art.tint, 1.1); cx.lineWidth = 1.5 * k;
+    cx.beginPath();
+    cx.moveTo(x - 17 * k, y - 6 * k);
+    cx.quadraticCurveTo(x, y - 26 * k, x + 17 * k, y - 6 * k);
+    cx.moveTo(x - 17 * k, y - 5 * k); cx.lineTo(x + 17 * k, y - 5 * k);
+    cx.stroke();
+  },
+  station(x, y, k, art) {
+    cx.fillStyle = "#e8eef1";
+    cx.beginPath(); cx.ellipse(x, y + 1 * k, 17 * k, 4.5 * k, 0, 0, 7); cx.fill();
+    for (const dx of [-8, -3, 3, 8]) {
+      cx.fillStyle = shade(art.tint, 0.7);
+      cx.fillRect(x + dx * k - 0.8 * k, y - 7 * k, 1.6 * k, 7 * k);
+    }
+    wonderBlock(x, y - 7 * k, 12 * k, 8 * k, art.tint);
+    cx.fillStyle = "#5d7f92";
+    cx.fillRect(x - 9 * k, y - 12 * k, 18 * k, 2 * k);
+  },
+  shells(x, y, k, art) {
+    cx.fillStyle = "rgba(60,130,160,.6)";
+    cx.beginPath(); cx.ellipse(x, y + 2 * k, 17 * k, 4.5 * k, 0, 0, 7); cx.fill();
+    for (const [dx, s] of [[-8, 0.7], [-1, 1], [7, 0.85], [13, 0.55]]) {
+      cx.fillStyle = shade(art.tint, dx < 0 ? 1.18 : 0.84);
+      cx.beginPath();
+      cx.moveTo(x + dx * k - 6 * k * s, y);
+      cx.quadraticCurveTo(x + dx * k - 5 * k * s, y - 18 * k * s,
+                          x + dx * k + 5 * k * s, y);
+      cx.closePath(); cx.fill();
+    }
+  },
+  shipyard(x, y, k, art) {
+    cx.fillStyle = "rgba(60,130,160,.66)";
+    cx.beginPath(); cx.ellipse(x, y + 2 * k, 16 * k, 4.5 * k, 0, 0, 7); cx.fill();
+    for (const dx of [-12, 12]) {
+      wonderBlock(x + dx * k, y, 3 * k, 13 * k, art.tint);
+    }
+    cx.fillStyle = shade(art.tint, 1.15);
+    cx.fillRect(x - 13 * k, y - 16 * k, 26 * k, 3 * k);
+    cx.fillStyle = "#6d5636";
+    cx.beginPath();
+    cx.moveTo(x - 7 * k, y - 1 * k); cx.lineTo(x + 7 * k, y - 1 * k);
+    cx.lineTo(x + 4 * k, y + 3 * k); cx.lineTo(x - 4 * k, y + 3 * k);
+    cx.closePath(); cx.fill();
+    cx.fillStyle = "#efe6cf";
+    tri(x, y - 12 * k, x + 5 * k, y - 2 * k, x - 5 * k, y - 2 * k);
+  },
+  trilithon(x, y, k, art) {
+    for (const dx of [-10, -2, 6]) {
+      cx.fillStyle = shade(art.tint, 1.22);
+      cx.fillRect(x + dx * k, y - 15 * k, 2.6 * k, 15 * k);
+      cx.fillStyle = shade(art.tint, 0.72);
+      cx.fillRect(x + dx * k + 2.6 * k, y - 15 * k, 2.6 * k, 15 * k);
+    }
+    cx.fillStyle = shade(art.tint, 1.05);
+    cx.fillRect(x - 11 * k, y - 18.5 * k, 23 * k, 3.5 * k);
+  },
+};
+
+// Paint the wonder standing in this city, at whatever scale the hex gives it.
+// Returns false for an id the roster does not name, which keeps the generic
+// monument as a fallback rather than leaving the tile blank.
+function drawWorldWonderPainted(wonder, x, y) {
+  const art = WORLD_WONDER_ART[wonder];
+  const painter = art && BUILT_WONDER_PAINTER[art.form];
+  if (!painter) return false;
+  const k = (S / 31) * (MODE.painted ? 1 : 0.72);
+  cx.save();
+  cx.lineJoin = "round";
+  // The glow is the "a wonder is here" cue the compact monument carried, and
+  // it has to survive the silhouette changing per wonder.
+  const glow = cx.createRadialGradient(x, y - 3, 1, x, y - 3, 23);
+  glow.addColorStop(0, "rgba(255,222,120,.4)");
+  glow.addColorStop(1, "rgba(255,222,120,0)");
+  cx.fillStyle = glow;
+  cx.beginPath(); cx.arc(x, y - 3, 23, 0, 7); cx.fill();
+  cx.fillStyle = "rgba(0,0,0,.3)";
+  cx.beginPath(); cx.ellipse(x, y + 7 * k, 12 * k, 4 * k, 0, 0, 7); cx.fill();
+  painter(x, y + 6 * k, k, art);
   cx.restore();
   return true;
 }
@@ -17312,17 +18216,22 @@ function draw() {
     const [x, yy] = hexXY(t.pos[0], t.pos[1]);
     const y = yy - elev(t);
     const k = key(t.pos);
-    if (NATURAL_WONDER_CELL[t.feature]) {
+    if (isNaturalWonder(t.feature)) {
       const placement = naturalWonderPlacements.get(k);
       if (placement) {
-        if (beau) {
-          const span = Math.max(1, Math.sqrt(placement.footprint.length) * .92);
-          if (!drawEnvironment3D(placement.feature, placement.tile,
-                                 placement.x, placement.y, span)) {
-            drawNaturalWonderSprite(placement.feature, placement.tile,
-                                    placement.x, placement.y, placement.footprint);
-          }
-        } else {
+        // Cinematic asks for the model, balanced for the photograph, and both
+        // fall through to the painted shape. Strategic goes straight to it,
+        // which is where its gold ring lives. The generic star is the last
+        // resort, for a wonder a later ruleset adds before the art does.
+        const span = Math.max(1, Math.sqrt(placement.footprint.length) * .92);
+        const drawn = (beau && drawEnvironment3D(placement.feature, placement.tile,
+                                                 placement.x, placement.y, span))
+          || (beau && drawNaturalWonderSprite(placement.feature, placement.tile,
+                                              placement.x, placement.y,
+                                              placement.footprint))
+          || paintNaturalWonder(placement.feature, placement.x, placement.y,
+                                placement.footprint);
+        if (!drawn) {
           cx.fillStyle = "#f0ce62";
           cx.beginPath(); cx.arc(placement.x, placement.y, 10, 0, Math.PI * 2); cx.fill();
           cx.fillStyle = "#382b08"; cx.font = "bold 13px serif";
@@ -17501,7 +18410,8 @@ function draw() {
       else drawResourceBadge(t, x, y);
     }
     if (t.district) drawDistrict(t, x, y);
-    if (t.wonder && !drawWorldWonderSprite(t.wonder, x, y)) drawWonder(x, y);
+    if (t.wonder && !drawWorldWonderSprite(t.wonder, x, y)
+        && !drawWorldWonderPainted(t.wonder, x, y)) drawWonder(x, y);
     if (SHOW_YIELDS && !t.district && !t.wonder) drawTileYields(t, x, y, workedSet.has(k));
   }
   // Lens passes replace or grade the finished ground while leaving the map's
