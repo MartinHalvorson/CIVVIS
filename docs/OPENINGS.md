@@ -873,3 +873,58 @@ per-civilization lever is bounded at or near zero, and the two economy levers
 with real headroom both reversed when pushed. What sets the tempo is how long a
 settler takes to turn into a city — fifteen turns to cover five hexes — and
 that is a movement problem this document has localised but not solved.
+
+## 17. Why the settler stands still: it has nowhere to go
+
+§16 left one unexplained fact — in the control a settler stands still on
+roughly a fifth of its turns, and neither commitment nor re-targeting accounts
+for it. Classifying every such turn, 60 maps, 4 players, 32×22:
+
+| why a settler stood still | turns | share |
+|---|---|---|
+| **held no destination at all** | 2,889 | **70%** |
+| every neighbouring tile was occupied | 927 | 22% |
+| unexplained | 311 | 8% |
+| had spent its movement | 19 | **0%** |
+
+**It is not congestion and it is not terrain.** Movement exhaustion accounts
+for 19 turns out of 4,146. The settler is standing there because the site
+search returned nothing it could use.
+
+### The asymmetry that would produce exactly this
+
+The gate that *authorises* a settler and the search that *places* one are not
+the same search:
+
+| | call | reachability |
+|---|---|---|
+| production gate (`production_value`, settler arm) | `best_settle_site(g, pid, city.pos, 11)` | **not checked** |
+| settler placement (`advanced_settler_step`) | `best_reachable_settle_site(g, pid, uid, …)` | `first_reachable_settle_site` **filters on it** |
+
+`best_settle_site` returns the highest-valued candidate from `settle_sites`,
+which screens tiles on terrain, ownership and the four-hex spacing rule but
+never asks whether the unit could get there. So a city can be told "there is a
+site worth building a settler for" and the settler it produces can then find
+nothing it is able to reach — and stand still holding no destination, which is
+exactly the 70% row.
+
+### ⚠ Stated as a mechanism, not a proven cause — deliberately
+
+This document has now attributed a measured effect to an adjacent mechanism
+three times and been wrong three times: the settler-serialization clause (§7),
+capital growth (§12), and destination commitment (§16). Each was a real
+correlation with a plausible mechanism, and each reversed under a treatment.
+
+So: the 70% is measured, the asymmetry is real and is in the code, and the
+second would produce the first. **That is not the same as the second causing
+the first**, and the population of "no destination" turns certainly also
+contains settlers whose sites were legitimately consumed — a rival founding
+inside the four-hex spacing rule invalidates a target through no fault of
+either search.
+
+**The test is cheap and specific:** make the production gate ask the reachable
+question, and see whether the 70% row falls. If it does not, the sites are
+being invalidated rather than never reachable, and the fix is elsewhere. That
+is a fires-check on a number this document already has a control value for,
+which is the cheapest kind of experiment available here — and on this
+document's record, it is more likely to refute the story than confirm it.
