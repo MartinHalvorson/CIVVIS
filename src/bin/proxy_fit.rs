@@ -140,6 +140,56 @@ fn share(values: &[f64], index: usize) -> f64 {
     values[index] / total
 }
 
+/// Candidate selection statistics, computed on the same games.
+///
+/// AUC cannot separate these: it is rank-based, so every monotone transform of
+/// score share scores identically. That is correct and it is why a second
+/// experiment is needed — the defect is not how score ranks seats *within* a
+/// game but how a statistic **aggregates across** games.
+///
+/// The decisive test is a change whose truth is already known.
+/// `settler_min_pop = 5` gained +0.0187 ± 0.0062 of mean score share over four
+/// seeds and returned 12 map directions to 15 on wins (p=0.7011). So the wins
+/// answer is *parity*. A better selection statistic is one that also reports
+/// parity for this change, where the mean reported a 3.0 SE gain.
+fn shapes(shares: &[f64], treated: &[bool]) -> Vec<f64> {
+    let mine: Vec<f64> = shares
+        .iter()
+        .zip(treated)
+        .filter(|(_, t)| **t)
+        .map(|(s, _)| *s)
+        .collect();
+    let mean = mine.iter().sum::<f64>() / mine.len().max(1) as f64;
+
+    // Convex in share: p=2 and p=4 reward being near the top far more than
+    // being slightly above average, renormalised so parity stays 0.5.
+    let power = |p: f64| {
+        let total: f64 = shares.iter().map(|s| s.powf(p)).sum();
+        if total <= 0.0 {
+            return 0.5;
+        }
+        shares
+            .iter()
+            .zip(treated)
+            .filter(|(_, t)| **t)
+            .map(|(s, _)| s.powf(p))
+            .sum::<f64>()
+            / total
+    };
+
+    // The limit of that family: did a treated seat finish top of the table?
+    let top = shares
+        .iter()
+        .enumerate()
+        .max_by(|a, b| a.1.partial_cmp(b.1).unwrap_or(std::cmp::Ordering::Equal))
+        .map(|(index, _)| if treated[index] { 1.0 } else { 0.0 })
+        .unwrap_or(0.5);
+
+    vec![mean * shares.len() as f64 / 2.0, power(2.0), power(4.0), top]
+}
+
+const SHAPE_NAMES: [&str; 4] = ["mean share", "share^2", "share^4", "top of table"];
+
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     let players = number(&args, "--players", 4);
@@ -155,6 +205,88 @@ fn main() {
     );
     println!("  every seat carries a genome drawn at random, so the proxies see real spread");
     println!("  AUC = P(a winner outranks a non-winner); 0.500 is a coin flip\n");
+
+    // --shape: score one gene change under every candidate statistic at once.
+    if let (Some(name), Some(value)) = (
+        args.iter()
+            .position(|arg| arg == "--shape")
+            .and_then(|index| args.get(index + 1)),
+        args.iter()
+            .position(|arg| arg == "--value")
+            .and_then(|index| args.get(index + 1))
+            .and_then(|v| v.parse::<f64>().ok()),
+    ) {
+        let Some(gene) = Weights::gene_names().iter().position(|g| g == name) else {
+            eprintln!("proxy_fit: no gene named {name:?}");
+            std::process::exit(2);
+        };
+        let mut treat = Weights::default().to_vec();
+        treat[gene] = value;
+        let treat_w = Weights::from_vec(&treat);
+        println!("scoring {name} = {value} under each candidate statistic\n");
+        let rows: Vec<Vec<f64>> = parallel::map(maps, jobs, move |index| {
+            let mut out = vec![0.0; SHAPE_NAMES.len()];
+            for direction in 0..2usize {
+                let seed = seed0 + index as u64;
+                let mut game = Game::new(players, width, height, seed, turns, 0);
+                let control = Weights::default();
+                let mut a: Vec<AdvancedAi> = AdvancedAi::fleet_weighted(&game, &treat_w);
+                let mut b: Vec<AdvancedAi> = AdvancedAi::fleet_weighted(&game, &control);
+                let is_treated = |pid: usize| pid % 2 == direction;
+                for _ in 0..turns {
+                    if game.winner.is_some() {
+                        break;
+                    }
+                    for pid in 0..game.players.len() {
+                        if game.winner.is_some() {
+                            break;
+                        }
+                        if is_treated(pid) {
+                            a[pid].take_turn(&mut game, pid);
+                        } else {
+                            b[pid].take_turn(&mut game, pid);
+                        }
+                        if game.winner.is_none() && game.current == pid {
+                            let _ = game.apply(pid, &Action::EndTurn);
+                        }
+                    }
+                }
+                let majors: Vec<usize> = (0..game.players.len())
+                    .filter(|pid| !game.players[*pid].is_minor)
+                    .collect();
+                let scores: Vec<f64> = majors.iter().map(|pid| game.score(*pid) as f64).collect();
+                let total: f64 = scores.iter().sum::<f64>().max(1.0);
+                let normalised: Vec<f64> = scores.iter().map(|s| s / total).collect();
+                let flags: Vec<bool> = majors.iter().map(|pid| is_treated(*pid)).collect();
+                for (slot, value) in shapes(&normalised, &flags).into_iter().enumerate() {
+                    out[slot] += value / 2.0;
+                }
+            }
+            out
+        });
+        for (slot, label) in SHAPE_NAMES.iter().enumerate() {
+            let column: Vec<f64> = rows.iter().map(|r| r[slot]).collect();
+            let n = column.len().max(1) as f64;
+            let mean = column.iter().sum::<f64>() / n;
+            let variance = if column.len() > 1 {
+                column.iter().map(|v| (v - mean).powi(2)).sum::<f64>() / (n - 1.0)
+            } else {
+                0.0
+            };
+            let se = (variance / n).sqrt();
+            let edge = mean - 0.5;
+            println!(
+                "  {label:<14} {mean:.4} +/- {se:.4}   edge {edge:+.4}  ({:.1} SE)",
+                if se > 0.0 { edge / se } else { 0.0 }
+            );
+        }
+        println!(
+            "\nThe wins answer for this change is PARITY (12 map directions to 15, p=0.7011).\n\
+             A statistic that reports a large positive edge here is measuring something wins\n\
+             do not reward; one that reports parity is tracking the thing that matters."
+        );
+        return;
+    }
 
     let bounds = Weights::bounds();
     let seats: Vec<Vec<Seat>> = parallel::map(maps, jobs, move |index| {
