@@ -5149,6 +5149,15 @@ mod tests {
         // the multi-megabyte world observation.
         assert!(EMBEDDED_INDEX.contains("const thinking = `&think=${reasoningLog.cursor}`;"));
         assert!(EMBEDDED_INDEX.contains("function absorbReasoning(st)"));
+        // A change of observed seat discards what the page holds, the same way
+        // a change of world does. `reasoning_json` stops sending a rival's
+        // thoughts the moment Watch as is entered, but the page had absorbed
+        // them while it was above the world — so without this the redaction is
+        // defeated by having watched first, and the log under the Active
+        // strategy panel names every civilization while the panel names one.
+        assert!(EMBEDDED_INDEX.contains("const viewer = st.view_player ?? null;"));
+        assert!(EMBEDDED_INDEX
+            .contains("if (newWorld || reasoningLog.viewer !== viewer) {"));
         // A log that is not the whole story says so.
         assert!(EMBEDDED_INDEX.contains("Earlier reasoning has been discarded"));
         // The three logs share the sidebar's spare height. Each floor is
@@ -7012,7 +7021,16 @@ mod tests {
         assert!(!EMBEDDED_INDEX
             .contains("civilization${summaries.length === 1 ? \"\" : \"s\"} completed"));
         assert!(EMBEDDED_INDEX.contains("id=\"strategysec\""));
-        assert!(EMBEDDED_INDEX
+        // Active strategy is no longer withheld from the omniscient spectator.
+        // It was, for as long as the panel could only ever speak for `state.me`
+        // and above the world there is no single "me"; it now names the
+        // civilization it is speaking for, so the one view that can read every
+        // plan is the last one that should hide it.
+        assert!(
+            EMBEDDED_INDEX.contains("document.getElementById(\"strategysec\").style.display = \"block\";"),
+            "the active strategy panel is shown in every view"
+        );
+        assert!(!EMBEDDED_INDEX
             .contains("document.getElementById(\"strategysec\").style.display = fullMapSpectator"));
         assert!(EMBEDDED_INDEX.contains("if (!fullMapSpectator && (SPEC || govs.length"));
         assert!(EMBEDDED_INDEX.contains(".sort((a, b) => b.score - a.score || a.id - b.id)"));

@@ -8398,7 +8398,7 @@ function adoptTiles(st) {
 // a `let` declared after that point would be in its temporal dead zone and the
 // throw would take the whole client with it.
 const REASON_FILTER_KEY = "civvis-reasoning-filters-v1";
-let reasoningLog = {cursor: 0, world: null, thoughts: [], dropped: 0, truncatedTurns: 0};
+let reasoningLog = {cursor: 0, world: null, viewer: null, thoughts: [], dropped: 0, truncatedTurns: 0};
 let reasonFilters = {player: "all", level: "decision", topic: "all"};
 try {
   const saved = JSON.parse(localStorage.getItem(REASON_FILTER_KEY) || "null");
@@ -22557,15 +22557,27 @@ function reasonEscape(text) {
 
 // Take a delta into this page's copy of the log.
 //
-// Two things reset it: the server saying the cursor named a log it does not
-// have (`reset`), and a new world arriving under a tab that was watching the
-// last one. Without the second, a page that survives the exhibition's handoff
-// shows the previous game's reasoning above the new one's.
+// Three things reset it. The server saying the cursor named a log it does not
+// have (`reset`); a new world arriving under a tab that was watching the last
+// one — without which a page that survives the exhibition's handoff shows the
+// previous game's reasoning above the new one's; and a change of observed
+// seat.
+//
+// That last one is a fog rule. `reasoning_json` stops *sending* a rival's
+// thoughts the moment Watch as is entered, but the page is still holding
+// everything it absorbed while it was above the world, so without this the
+// redaction is defeated by having watched first: the log names every
+// civilization while the Active strategy panel above it names one. Only the
+// held thoughts go — the cursor survives, because the world has not changed
+// and asking from zero would have the server resend the whole ring.
 function absorbReasoning(st) {
   if (!st) return;
   const world = st.seed ?? null;
-  if (reasoningLog.world !== world) {
-    reasoningLog = {cursor: 0, world, thoughts: [], dropped: 0, truncatedTurns: 0};
+  const viewer = st.view_player ?? null;
+  const newWorld = reasoningLog.world !== world;
+  if (newWorld || reasoningLog.viewer !== viewer) {
+    reasoningLog = {cursor: newWorld ? 0 : reasoningLog.cursor, world, viewer,
+                    thoughts: [], dropped: 0, truncatedTurns: 0};
   }
   const delta = st.ai_reasoning;
   if (!delta || !Array.isArray(delta.thoughts)) return;
