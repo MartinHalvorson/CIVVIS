@@ -119,6 +119,19 @@
 //! opts in. A promotion that two independent measurements fail to reproduce,
 //! while its cost is certain, is one whose burden of proof has moved.
 //!
+//! ### The entrant-name comparison agrees, but proves less
+//!
+//! `ai_eval strategic_deep strategic --pairs 100`: 52.0% (Wilson 42.3–61.5),
+//! Elo-equivalent **+14 (CI −54..+82)**, sign p=0.5413, gate INCONCLUSIVE.
+//! Also null — but that interval **includes +45**, so it cannot exclude the
+//! promoted effect. `ai_eval` decides on map *directions* and discards
+//! neutrals; 76 of its 100 maps carried no weight.
+//!
+//! This harness uses every map, so at SE 0.0188 a 0.065 effect would appear at
+//! **3.5 SE**. That is why the isolated run above is the one to lead with: it
+//! is cleaner *and* better powered, and it is the only one of the three with
+//! the resolution to have seen the promotion.
+//!
 //! ## Cross-checked against #477, which landed mid-run
 //!
 //! `docs/GEN14_DENSE_SEARCH.md` tests the same axis and **corroborates the
