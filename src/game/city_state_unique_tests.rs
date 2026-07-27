@@ -960,12 +960,37 @@ fn mitla_grows_campus_cities_and_taruga_counts_resource_kinds_not_tiles() {
         .take(3)
         .collect();
     assert!(plain.len() >= 3, "the capital needs three workable land tiles");
-    for pos in &plain {
-        let tile = game.map.tiles.get_mut(pos).unwrap();
+    // Level the city's whole workable ring, not just the three tiles about to
+    // carry the resources. Taruga's bonus is a *percentage* of the city's
+    // Science, and `city_yields` re-picks which tiles the Citizens work every
+    // time it is called: improving one tile can move a Citizen off a lake or a
+    // rainforest and swamp the 5% step this case is measuring. With every ring
+    // tile paying the same, an assignment that reshuffles cannot move Science
+    // and only the percentage is left.
+    let ring: Vec<Pos> = game.cities[&city]
+        .owned_tiles
+        .iter()
+        .copied()
+        .filter(|pos| *pos != game.cities[&city].pos)
+        .collect();
+    for pos in &ring {
+        let Some(tile) = game.map.tiles.get_mut(pos) else {
+            continue;
+        };
+        tile.terrain = "grassland".to_string();
+        tile.hills = false;
+        tile.feature = None;
         tile.resource = None;
         tile.improvement = None;
         tile.pillaged = false;
     }
+    // And take its Citizens off the ring entirely. This case is about the
+    // *percentage*: Taruga pays 5% per distinct improved Strategic the city
+    // owns, whether or not anybody is standing on it. A city with Citizens to
+    // place re-picks where they stand every time `city_yields` runs, and a
+    // fresh Mine is enough to move one — off the Campus, onto the ore — which
+    // changes the Science being multiplied and swamps the step.
+    game.cities.get_mut(&city).unwrap().pop = 0;
     let base = game.city_yields(city).science;
 
     // Two mined Iron is one kind, so one 5% step.
@@ -982,7 +1007,6 @@ fn mitla_grows_campus_cities_and_taruga_counts_resource_kinds_not_tiles() {
     tile.resource = Some("niter".to_string());
     tile.improvement = Some(game.rules.resources["niter"].improvement.clone());
     let two_kinds = game.city_yields(city).science;
-
     assert!(
         two_kinds > one_kind && one_kind > base,
         "Taruga did not scale: base {base}, one kind {one_kind}, two kinds {two_kinds}"
