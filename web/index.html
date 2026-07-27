@@ -321,8 +321,12 @@
      labels — three of its rows is one of the event log's — and because it is
      the panel this column is read for. Its floor also has to cover the filter
      bar above the list, which the other two do not have. */
-  #reasonsec[open] { flex: 3 0 0; min-height: 288px; }
-  #eventsec[open] { flex: 2 0 0; min-height: 198px; }
+  /* Each floor is header 39px + the body's 13px padding and 1px border either
+     side + whatever the panel holds. The reasoning log's floor also has to
+     cover the 100px filter bar above its list, which is why it is not simply
+     the tallest of the three by preference. */
+  #reasonsec[open] { flex: 3 0 0; min-height: 300px; }
+  #eventsec[open] { flex: 2 0 0; min-height: 234px; }
   #warsec[open] { flex: 2 0 0; min-height: 198px; }
   /* A <details> hands its children to an internal content box, so the panel
      inside it only inherits the extra height if that box is told to grow
@@ -1725,11 +1729,14 @@
      The three filters sit above the list and never scroll with it: a reader
      narrowing to one civilization or to policy cards must not have to scroll
      back up to change their mind. */
-  .reason-filters { flex: 0 0 auto; display: grid; grid-template-columns: 1fr; gap: 5px; margin-bottom: 9px; }
+  .reason-filters { flex: 0 0 auto; display: grid; grid-template-columns: 1fr; gap: 4px; margin-bottom: 8px; }
   .reason-filter { display: grid; grid-template-columns: 42px 1fr; align-items: center; gap: 7px; }
   .reason-filter > span { color: var(--faint); font-size: var(--type-label); font-weight: 800; letter-spacing: .09em; text-transform: uppercase; }
-  .reason-filter select { width: 100%; min-width: 0; }
-  .reason-list { flex: 1 1 auto; min-height: 150px; display: flex; flex-direction: column; gap: 6px; overflow-y: auto; overflow-anchor: none; scrollbar-gutter: stable; }
+  /* Three of the page's standard 38px selects would take a third of this
+     panel before a single thought was shown. These are the same control at
+     the density the sidebar can afford. */
+  .reason-filter select { width: 100%; min-width: 0; padding: 4px 24px 4px 8px; font-size: var(--type-secondary); }
+  .reason-list { flex: 1 1 auto; min-height: 132px; display: flex; flex-direction: column; gap: 6px; overflow-y: auto; overflow-anchor: none; scrollbar-gutter: stable; }
   .reason-list > * { flex: 0 0 auto; }
   /* One thought. The civilization's own jersey colour runs down the left edge,
      which is what lets a reader follow a single empire through the combined
@@ -22416,7 +22423,21 @@ function reasonFilteredThoughts() {
     kept.push(thought);
     if (kept.length >= REASON_RENDER_LIMIT) break;
   }
-  return kept;
+  // The latest turn belongs at the top — but *within* one civilization's turn
+  // the order is the order it thought in, because the grand strategy is what
+  // every decision under it is an instance of and reading it last explains
+  // nothing. Walking backwards leaves each civilization-turn reversed; a
+  // civilization's thoughts in one turn are one contiguous run, so putting the
+  // runs back the right way round is all it takes.
+  const ordered = [];
+  for (let i = 0; i < kept.length; ) {
+    let j = i;
+    while (j < kept.length && kept[j].turn === kept[i].turn &&
+           kept[j].player === kept[i].player) j++;
+    for (let k = j - 1; k >= i; k--) ordered.push(kept[k]);
+    i = j;
+  }
+  return ordered;
 }
 
 function reasonItemHtml(thought) {
@@ -22448,10 +22469,19 @@ function drawReasoning() {
   const newest = thoughts.length ? thoughts[0] : null;
   // Say what cadence this is arriving at, which is the whole question when the
   // log is quiet: a civilization that decided nothing this turn and a log that
-  // is not being fed look the same otherwise.
+  // is not being fed look the same otherwise. The header strip is ~110px, so
+  // the count and the turn go there and the rest goes in the tooltip.
   scope.textContent = newest
-    ? `${thoughts.length} shown · latest Turn ${newest.turn}`
-    : (reasoningLog.thoughts.length ? "nothing matches this filter" : "");
+    ? `${thoughts.length} · Turn ${newest.turn}`
+    : (reasoningLog.thoughts.length ? "no matches" : "");
+  if (newest) {
+    const onLatest = thoughts.filter(t => t.turn === newest.turn).length;
+    scope.title = `${thoughts.length} thoughts shown of ${reasoningLog.thoughts.length} ` +
+      `held; ${onLatest} of them from turn ${newest.turn}`;
+  } else {
+    scope.title = reasoningLog.thoughts.length
+      ? `${reasoningLog.thoughts.length} thoughts held, none matching this filter` : "";
+  }
   const signature = `${reasoningLog.cursor}|${reasonFilters.player}|${reasonFilters.level}|` +
     `${reasonFilters.topic}|${thoughts.length}|${reasoningLog.dropped}`;
   if (el.dataset.signature === signature) return;

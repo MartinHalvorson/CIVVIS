@@ -2999,11 +2999,14 @@ impl BasicAi {
                                "{} starts {}", city.name, Self::item_label(&item);
                                "{cost:.0} production, about {turns:.0} turn{} at \
                                 {per_turn:.1} a turn; the empire holds {military} military \
-                                for {n_cities} {} against a target of {:.1} each, \
-                                {settlers} settlers, {builders} builders, {traders} traders",
+                                for {n_cities} {} against a target of {:.1} each, and \
+                                {settlers} settler{}, {builders} builder{}, {traders} trader{}",
                                if turns == 1.0 { "" } else { "s" },
                                if n_cities == 1 { "city" } else { "cities" },
-                               self.w.mil_per_city;
+                               self.w.mil_per_city,
+                               if settlers == 1 { "" } else { "s" },
+                               if builders == 1 { "" } else { "s" },
+                               if traders == 1 { "" } else { "s" };
                                Self::item_focus(&item, city.pos));
                     }
                     match &item {

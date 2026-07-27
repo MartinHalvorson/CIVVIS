@@ -5104,9 +5104,15 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("function absorbReasoning(st)"));
         // A log that is not the whole story says so.
         assert!(EMBEDDED_INDEX.contains("Earlier reasoning has been discarded"));
-        // The three logs share the sidebar's spare height; the reasoning log
-        // takes the largest share and carries the floor its filter bar needs.
-        assert!(EMBEDDED_INDEX.contains("#reasonsec[open] { flex: 3 0 0; min-height: 288px; }"));
+        // The three logs share the sidebar's spare height. Each floor is
+        // header + padding + border + what the panel holds, and the reasoning
+        // log's has to cover its filter bar as well as its list — measured in
+        // the page, because a section squeezed under its floor does not clip:
+        // its list paints straight over the panel below it.
+        assert!(EMBEDDED_INDEX.contains("#reasonsec[open] { flex: 3 0 0; min-height: 300px; }"));
+        assert!(EMBEDDED_INDEX.contains("#eventsec[open] { flex: 2 0 0; min-height: 234px; }"));
+        assert!(EMBEDDED_INDEX.contains("#warsec[open] { flex: 2 0 0; min-height: 198px; }"));
+        assert!(EMBEDDED_INDEX.contains(".reason-list { flex: 1 1 auto; min-height: 132px;"));
     }
 
     /// Every topic the reasoning log offers is one a game actually reaches.
