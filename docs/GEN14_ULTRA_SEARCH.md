@@ -71,3 +71,32 @@ This entrant costs twice as much macro-search compute as deep. It therefore
 gets no non-inferiority concession: parity is a failure to justify the extra
 budget. The claim is positive and falsifiable — complete 10x80 search must
 beat complete 20x80 search on fresh games.
+
+## Development screen
+
+The pre-registered 120-map screen completed on the committed generation-14
+genome and leaned toward ultra without resolving the strength question:
+
+```text
+mirrored head-to-head: 120 maps, 240 games, 4 players, average 140.5 turns
+game-win share: strategic_ultra 125/240 (52.1%) strategic_deep 115/240 (47.9%)
+paired-map score for strategic_ultra: 52.1% (95% Wilson CI 43.2%..60.8%), Elo-equivalent +14 (CI -47..+76)
+paired outcomes: strategic_ultra sweeps 12, neutral splits/draws 101, strategic_deep sweeps 7, draw-mixed 0
+paired direction: strategic_ultra-favored 12, neutral 101, strategic_deep-favored 7; exact two-sided sign p=0.3593 (INCONCLUSIVE DIRECTION)
+anytime-valid betting evidence (2.5% per direction after 20 maps): strategic_ultra peak e=1.575e0, p<=0.6350 (not crossed); strategic_deep peak e=1.000e0, p<=1.0000 (not crossed)
+promotion gate: INCONCLUSIVE — effect size or anytime-valid evidence has not cleared parity after 120 maps
+paired terminal-score diagnostic for strategic_ultra: 49.8% (not a promotion input)
+terminal-score direction: strategic_ultra-favored 60, neutral 4, strategic_deep-favored 56; exact two-sided sign p=0.7807
+```
+
+The budget treatment fired cleanly. Ultra reached 2,685 of 4,871 reviews while
+deep reached 1,516 of 2,716, with nearly identical rollout exposure rates of
+55% and 56%. Ultra switched plans 3.80 times per game versus 2.81 and converted
+92 religious wins to deep's 79, but deep led terminal score 145.0 to 142.9,
+military 159.6 to 149.5, and domination wins nine to three. The point estimate
+therefore supports a gate, not a claim that extra search improved the terminal
+empire.
+
+The pre-registered paired-map rule is mechanical: 12 ultra-favorable maps to
+seven deep-favorable maps earns the already fixed independent run at seed
+122000. The development block remains excluded from that decision.
