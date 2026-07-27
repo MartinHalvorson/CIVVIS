@@ -41,6 +41,50 @@ use civvis::game::{Action, Game};
 use civvis::parallel;
 use civvis::strategic::{ReviewPath, StrategicAi};
 
+/// What the rollouts would have answered at a position a prior answered
+/// instead, and which prior it was.
+struct PriorAudit {
+    path: ReviewPath,
+    prior: Option<VictoryTarget>,
+    searched: Option<VictoryTarget>,
+    spread: f64,
+    decided: usize,
+    branches: usize,
+}
+
+/// `choose_rollout_target`'s rule, reproduced from the values so the audit
+/// does not need the private method.
+fn searched_target(values: &[(f64, Option<VictoryTarget>)]) -> Option<VictoryTarget> {
+    let adaptive = values
+        .iter()
+        .find_map(|(value, target)| target.is_none().then_some(*value))?;
+    let mut best: Option<(f64, VictoryTarget)> = None;
+    for (value, target) in values {
+        let Some(target) = target else { continue };
+        if best.is_none_or(|(top, _)| *value > top) {
+            best = Some((*value, *target));
+        }
+    }
+    best.filter(|(value, _)| *value > adaptive + 0.01)
+        .map(|(_, target)| target)
+}
+
+fn path_name(path: ReviewPath) -> &'static str {
+    match path {
+        ReviewPath::DuelReligion => "duel-religion",
+        ReviewPath::UrgentCounter => "urgent-counter",
+        ReviewPath::IrreversibleReligion => "irreversible-religion",
+        ReviewPath::Rollouts => "rollouts",
+    }
+}
+
+fn lane_name(target: Option<VictoryTarget>) -> String {
+    match target {
+        None => "adaptive".to_string(),
+        Some(target) => format!("{target:?}").to_lowercase(),
+    }
+}
+
 fn number(args: &[String], flag: &str, default: usize) -> usize {
     args.iter()
         .position(|arg| arg == flag)
@@ -146,6 +190,22 @@ fn main() {
     let width = number(&args, "--width", 24) as i32;
     let height = number(&args, "--height", 16) as i32;
     let turns = number(&args, "--turns", 200) as u32;
+
+    // Audit mode: sample the positions a prior answers instead of the search,
+    // and ask what the search would have said there.
+    //
+    // Half of all reviews never reach the rollouts -- `urgent_counter` alone
+    // takes about a third -- and in a duel the religious prior takes all of
+    // them. That is the single largest documented restriction on this search,
+    // and nobody has checked what it costs. Widening or deepening a search
+    // that answers one review in two is worth less than finding out whether
+    // the other one should have been answered by it.
+    if flag(&args, "--priors") {
+        audit_priors(
+            players, maps, warmup, seed0, jobs, width, height, turns,
+        );
+        return;
+    }
 
     let cold = flag(&args, "--cold");
     let rotate = flag(&args, "--rotate");
@@ -298,5 +358,176 @@ fn main() {
     println!(
         "\nScreening only. A moved spread earns a pre-registered ai_eval run; it is not \
          evidence of strength — noise separates branches as readily as signal does."
+    );
+}
+
+
+fn audit_priors(
+    players: usize,
+    maps: usize,
+    warmup: u32,
+    seed0: u64,
+    jobs: usize,
+    width: i32,
+    height: i32,
+    turns: u32,
+) {
+    let results = parallel::map(maps, jobs, move |index| {
+        let seed = seed0 + index as u64;
+        let mut game = Game::new(players, width, height, seed, turns, 0);
+        let mut agent = StrategicAi::with_weights(Default::default());
+        let mut rivals: Vec<AdvancedAi> = AdvancedAi::fleet(&game);
+        for _ in 0..warmup {
+            if game.winner.is_some() {
+                break;
+            }
+            for pid in 0..game.players.len() {
+                if game.winner.is_some() {
+                    break;
+                }
+                if pid == 0 {
+                    agent.take_turn(&mut game, pid);
+                } else {
+                    rivals[pid].take_turn(&mut game, pid);
+                }
+                if game.winner.is_none() && game.current == pid {
+                    let _ = game.apply(pid, &Action::EndTurn);
+                }
+            }
+        }
+        if game.winner.is_some() {
+            return None;
+        }
+        let (prior, path) = agent.review_detailed(&game, 0);
+        // Keep the rollout-answered reviews too. The question the audit is
+        // really asking is who decides this agent's lanes, and that needs
+        // both populations counted the same way.
+        let values = agent.lane_values(&game, 0);
+        let reading = read(&values);
+        Some(PriorAudit {
+            path,
+            prior,
+            searched: searched_target(&values),
+            spread: reading.spread,
+            decided: reading.decided,
+            branches: reading.branches,
+        })
+    });
+
+    let all: Vec<PriorAudit> = results.into_iter().flatten().collect();
+    let searched_reviews: Vec<&PriorAudit> = all
+        .iter()
+        .filter(|a| a.path == ReviewPath::Rollouts)
+        .collect();
+    let audits: Vec<&PriorAudit> = all
+        .iter()
+        .filter(|a| a.path != ReviewPath::Rollouts)
+        .collect();
+    if audits.is_empty() {
+        println!("no position was answered by a prior in {maps} maps");
+        std::process::exit(1);
+    }
+
+    println!(
+        "prior audit: {} of {maps} positions were answered by a prior instead of the \
+         rollouts ({players}p {width}x{height}, warmup {warmup}, seeds {seed0}..)",
+        audits.len()
+    );
+    println!();
+    println!(
+        "  {:<24} {:>5} {:>10} {:>10} {:>10}",
+        "prior", "n", "agrees", "median spread", "decided"
+    );
+    for path in [
+        ReviewPath::DuelReligion,
+        ReviewPath::UrgentCounter,
+        ReviewPath::IrreversibleReligion,
+    ] {
+        let group: Vec<&&PriorAudit> = audits.iter().filter(|a| a.path == path).collect();
+        if group.is_empty() {
+            continue;
+        }
+        let agrees = group.iter().filter(|a| a.prior == a.searched).count();
+        let mut spreads: Vec<f64> = group.iter().map(|a| a.spread).collect();
+        spreads.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        let decided: usize = group.iter().map(|a| a.decided).sum();
+        let branches: usize = group.iter().map(|a| a.branches).sum();
+        println!(
+            "  {:<24} {:>5} {:>9.0}% {:>13.4} {:>9.0}%",
+            path_name(path),
+            group.len(),
+            100.0 * agrees as f64 / group.len() as f64,
+            percentile(&spreads, 0.5),
+            100.0 * decided as f64 / branches.max(1) as f64,
+        );
+    }
+
+    let disagreements: Vec<&&PriorAudit> =
+        audits.iter().filter(|a| a.prior != a.searched).collect();
+    println!();
+    println!(
+        "the prior and the search disagree on {} of {} positions ({:.0}%)",
+        disagreements.len(),
+        audits.len(),
+        100.0 * disagreements.len() as f64 / audits.len() as f64
+    );
+    let mut shown = 0;
+    for audit in &disagreements {
+        if shown >= 8 {
+            break;
+        }
+        println!(
+            "    {:<22} prior chose {:<11} search would choose {}",
+            path_name(audit.path),
+            lane_name(audit.prior),
+            lane_name(audit.searched)
+        );
+        shown += 1;
+    }
+
+    // Who actually decides this agent's lanes. A prior always names one; the
+    // rollouts name one only when a lane clears the adaptive baseline by the
+    // commitment margin, and most of the time none does. Counting both the
+    // same way is the point of the audit.
+    let prior_decisions = audits.iter().filter(|a| a.prior.is_some()).count();
+    let search_decisions = searched_reviews
+        .iter()
+        .filter(|a| a.searched.is_some())
+        .count();
+    println!();
+    println!(
+        "who decides the lane, over {} sampled reviews:",
+        all.len()
+    );
+    println!(
+        "  priors    answered {:>4} reviews and named a lane in {:>4} ({:.0}%)",
+        audits.len(),
+        prior_decisions,
+        100.0 * prior_decisions as f64 / audits.len().max(1) as f64
+    );
+    println!(
+        "  rollouts  answered {:>4} reviews and named a lane in {:>4} ({:.0}%)",
+        searched_reviews.len(),
+        search_decisions,
+        100.0 * search_decisions as f64 / searched_reviews.len().max(1) as f64
+    );
+    if search_decisions > 0 {
+        println!(
+            "  -> the priors make {:.1}x as many lane decisions as the search does",
+            prior_decisions as f64 / search_decisions as f64
+        );
+    }
+
+    println!(
+        "\nAgreement is not correctness -- neither answer is known to be right here.\n\
+         \n\
+         ⚠ A disagreement rate is an upper bound on behavioural impact, and a loose \
+         one. `adaptive` is not a lane: it hands the turn back to AdvancedAi's own \
+         victory planner, which frequently picks the same lane the prior named. \
+         Removing the irreversible-Prophet prior flipped 85% of its reviews from \
+         religion to adaptive and moved religious commitment only 30.3% to 26.8%, \
+         religious victories 171 to 164, and paired score not at all (49.6%, 240 maps, \
+         p=0.8450). Read this column as `the label changed`, never as `the play \
+         changed`."
     );
 }
