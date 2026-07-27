@@ -386,6 +386,35 @@ blind, which is the defect that killed `PolicyAi` on 96% of its candidates.
 > branches to a real result offline, label them with the outcome, and distil.
 > A full continuation per candidate is roughly seventy times the cost of a
 > game, which is affordable as a labelling job and not as an agent.
+>
+> **Measured too, and it is thinner than it sounds.** `search_probe --outcome`
+> continues *every* candidate of a city decision to a real result at the stock
+> 500-turn budget — the label M6 would produce — over 51 decisions:
+>
+> ```
+> candidates continued per decision              5.0
+> decisions where the label DISCRIMINATES        14 of 51 (27%)
+> ...of those, proxy pick == outcome pick         3 of 14 (21%)
+> ...of those, the proxy's pick WON its game      6 of 14 (43%)
+> ```
+>
+> On **73% of decisions every candidate leads to the same outcome**, so the
+> label carries no signal at all and the seventy-fold cost buys nothing. Where
+> it does discriminate the proxy is near chance (43%), so there is real
+> headroom — but it exists on about a quarter of decisions.
+>
+> **And 27% is an upper bound, not an estimate.** The engine is deterministic,
+> so each continuation is a *single sample*, and a build that "wins" may win
+> for reasons entirely unrelated to it. Chaotic divergence and causal effect
+> are indistinguishable in this design, and determinism means the label cannot
+> be denoised by repeating it.
+>
+> **What would make M6 viable is therefore replication across opponents, not
+> more decisions.** Continue each candidate against several distinct rival
+> policies and label with the *win rate* rather than one outcome. The league
+> already maintains a rated pool of distinct strategies for exactly this kind
+> of sampling. Until that is in place, an outcome-labelled corpus over single
+> continuations would train on noise for three quarters of its rows.
 
 **Refuted by.** Separation that exists but does not survive contact with the
 empire — a city optimised in isolation starving the empire of settlers or

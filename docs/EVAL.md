@@ -2198,3 +2198,42 @@ The surviving route is the one the module already named: branches continued to
 a **real result**. A full continuation per candidate is roughly seventy times
 the cost of a game, so it is an offline labeller feeding a distilled policy —
 `docs/SUPERHUMAN.md` M6 then M5 — not an online agent.
+
+## 2026-07-26 — what an outcome label would actually be worth
+
+Two closed lines both ended at the same sentence — score share is not win
+probability — and both pointed at the same repair: continue each candidate to
+a **real result** and label it with the outcome. Before building that,
+`search_probe --outcome` measures the label it would produce. Every candidate
+of a city decision is continued to a natural end at the stock 500-turn budget.
+
+```
+outcome audit: 51 city decisions, every candidate continued to a real result
+               (4p 24x16, warmup 60, 500-turn budget)
+
+  candidates continued per decision              5.0
+  decisions where the label DISCRIMINATES        14 of 51 (27%)
+  ...of those, proxy pick == outcome pick         3 of 14 (21%)
+  ...of those, the proxy's pick WON its game      6 of 14 (43%)
+```
+
+**On 73% of decisions every candidate leads to the same outcome.** The label
+carries no signal there, whatever it costs to produce — and it costs about
+seventy times a game per decision. Where it does discriminate, score share
+picks the winning candidate 43% of the time, near chance, so the headroom is
+real; it just exists on about a quarter of decisions.
+
+**27% is an upper bound, not an estimate.** The engine is deterministic, so
+each continuation is a single sample and a build that "wins" may win for
+reasons unrelated to it. Chaotic divergence and causal effect are
+indistinguishable in this design, and — because the same position and the same
+agents always produce the same game — the label cannot be denoised by
+repeating it.
+
+**What that implies for the design.** An outcome-labelled corpus built from
+single continuations would train on noise for three quarters of its rows. The
+fix is replication across *opponents*, not more decisions: continue each
+candidate against several distinct rival policies and label with the resulting
+win rate. `data/league` already maintains a rated pool of distinct strategies,
+which is the natural source. That is a larger job than the labeller as
+originally scoped, and it is the honest version of it.
