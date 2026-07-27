@@ -4187,13 +4187,7 @@ impl AdvancedAi {
     }
 
     fn advanced_diplomacy(&mut self, g: &mut Game, pid: usize, plan: &StrategicPlan) {
-        while let Some(dedication) = g.available_dedications(pid).into_iter().next() {
-            if g.apply(pid, &Action::ChooseDedication { dedication })
-                .is_err()
-            {
-                break;
-            }
-        }
+        crate::ai::choose_dedications(g, pid, self.base.w.dedication_choice);
         let incoming: Vec<u32> = g
             .pending_deals
             .iter()

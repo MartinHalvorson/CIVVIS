@@ -38,10 +38,12 @@ pub const BUILTIN_AIS: [&str; 10] = [
 /// tournament ratings. Keeping them out of `BUILTIN_AIS` prevents a control
 /// factory from being pooled into the same player/leader rating key as
 /// its treatment.
-pub const EVAL_ONLY_AIS: [&str; 35] = [
+pub const EVAL_ONLY_AIS: [&str; 37] = [
+    "advanced_banking_dedication",
     "advanced_civ_blind",
     "advanced_settler_commit",
     "advanced_food_first",
+    "advanced_measured_dedication",
     "advanced_lane_reachable",
     "advanced_parallel_settlers",
     "advanced_relief_scoped",
@@ -538,6 +540,25 @@ pub fn builtin_ai(name: &str, seed: u64) -> Box<dyn Ai> {
                 .map(AdvancedAi::with_weights)
                 .unwrap_or_else(AdvancedAi::new),
         ),
+        // The Dedication chooser that ranks the offer by what each Dedication
+        // would have paid over the era just ended. **A recorded negative
+        // result**, kept as an evaluator arm: over 120 mirrored maps against
+        // the shipped alphabetical default it took 41.2% of games, 10 map
+        // directions to 31, sign p=0.0015, e-process crossing against it at
+        // map 51, and terminal score 46.3% (p=0.0000). See `docs/AGES.md`.
+        "advanced_measured_dedication" => {
+            let mut w = crate::evolve::load_champion("evolved").unwrap_or_default();
+            w.dedication_choice = crate::ai::DedicationChoice::Measured;
+            Box::new(AdvancedAi::with_weights(w))
+        }
+        // The repair for that loss: rank on the projection only in a Normal or
+        // Dark Age, where Era Score is the literal objective, and leave the
+        // Golden and Heroic choice exactly as the default makes it.
+        "advanced_banking_dedication" => {
+            let mut w = crate::evolve::load_champion("evolved").unwrap_or_default();
+            w.dedication_choice = crate::ai::DedicationChoice::Banking;
+            Box::new(AdvancedAi::with_weights(w))
+        }
         "advanced_v1" => Box::new(AdvancedAi::legacy()),
         "random" => Box::new(RandomAi::new(seed)),
         "evolved" => Box::new(
@@ -1125,6 +1146,8 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         ),
         "advanced" => (Vec::new(), "advanced"),
         "advanced_lane_reachable" => (Vec::new(), "advanced_lane_reachable"),
+        "advanced_banking_dedication" => (Vec::new(), "advanced_banking_dedication"),
+        "advanced_measured_dedication" => (Vec::new(), "advanced_measured_dedication"),
         "advanced_parallel_settlers" => (Vec::new(), "advanced_parallel_settlers"),
         "advanced_civ_blind" => (Vec::new(), "advanced_civ_blind"),
         "advanced_settler_commit" => (Vec::new(), "advanced_settler_commit"),
@@ -1615,12 +1638,14 @@ mod tests {
             // Anything else reaching that state fell through to the
             // catch-all and is claiming to need nothing while quietly
             // needing a net.
-            const SCRIPTED: [&str; 10] = [
+            const SCRIPTED: [&str; 12] = [
                 "advanced",
                 "advanced_settler_commit",
+                "advanced_banking_dedication",
                 "advanced_civ_blind",
                 "advanced_food_first",
                 "advanced_lane_reachable",
+                "advanced_measured_dedication",
                 "advanced_parallel_settlers",
                 "advanced_relief_scoped",
                 "advanced_v1",

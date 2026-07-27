@@ -11785,6 +11785,10 @@ pub const GOVERNMENT_BASE_ANARCHY_TURNS: u32 = 2;
 /// Shipped `DIPLOMACY_PEACE_MIN_TURNS`: a peace treaty holds for ten turns on
 /// standard speed before either signatory may declare war again.
 const PEACE_TREATY_TURNS: u32 = 10;
+/// Shipped `Eras_XP1.GameEraMinimumTurns`: every era is held open this many
+/// standard turns before the next one may begin, whatever the leader has
+/// researched. It is the same 40 for every era in the table.
+const ERA_MINIMUM_TURNS: u32 = 40;
 /// Shipped `DIPLOMACY_WAR_MIN_TURNS`: a war runs ten turns before either side
 /// may sue for peace. Declaring is a commitment, not a gesture.
 const WAR_MIN_TURNS: u32 = 10;
@@ -13396,6 +13400,16 @@ pub struct Player {
     pub dedications: BTreeSet<String>,
     #[serde(default)]
     pub dedication_choices: usize,
+    /// How often each Dedication trigger has fired for this civilization since
+    /// the current age began, counted whether or not it was dedicated. A
+    /// Dedication is a bet on your own behaviour, so the only honest estimate
+    /// of what one would pay is what the behaviour it names actually did.
+    #[serde(default)]
+    pub era_triggers: BTreeMap<String, i64>,
+    /// `era_triggers` as it stood when the last age ended — the evidence a
+    /// civilization has in hand at the moment it must dedicate the next one.
+    #[serde(default)]
+    pub last_era_triggers: BTreeMap<String, i64>,
     /// Cities this civilization's religion has taken at least once, so
     /// Exodus of the Evangelists pays only for the first conversion of each.
     #[serde(default)]
@@ -13540,6 +13554,8 @@ impl Player {
             golden_age_threshold: 24,
             dedications: BTreeSet::new(),
             dedication_choices: 0,
+            era_triggers: BTreeMap::new(),
+            last_era_triggers: BTreeMap::new(),
             converted_cities: BTreeSet::new(),
             discovered_natural_wonders: BTreeSet::new(),
             governors: Vec::new(),
@@ -14470,6 +14486,9 @@ pub struct Game {
     pub barb_alerted_until: BTreeMap<Pos, u32>,
     pub routes: Vec<TradeRoute>,
     pub world_era: usize,
+    /// Turn `world_era` last changed. Shipped `Eras_XP1.GameEraMinimumTurns`
+    /// holds an era open for 40 standard turns before the next one may start.
+    pub world_era_since: u32,
     /// Irreversible Gathering Storm climate phase, from 0 (pre-warming) to 7.
     pub climate_phase: u8,
     /// Meteor showers landed so far - the Apocalypse pack budgets a fixed
@@ -14652,6 +14671,8 @@ struct GameSer {
     #[serde(default)]
     world_era: usize,
     #[serde(default)]
+    world_era_since: u32,
+    #[serde(default)]
     climate_phase: u8,
     #[serde(default)]
     meteor_strikes: u32,
@@ -14752,6 +14773,7 @@ impl From<GameSer> for Game {
             barb_alerted_until: s.barb_alerted_until.into_iter().collect(),
             routes: s.routes,
             world_era: s.world_era,
+            world_era_since: s.world_era_since,
             climate_phase: s.climate_phase,
             meteor_strikes: s.meteor_strikes,
             disaster_intensity: s.disaster_intensity,
@@ -14901,6 +14923,7 @@ impl From<Game> for GameSer {
             barb_alerted_until: g.barb_alerted_until.into_iter().collect(),
             routes: g.routes,
             world_era: g.world_era,
+            world_era_since: g.world_era_since,
             climate_phase: g.climate_phase,
             meteor_strikes: g.meteor_strikes,
             disaster_intensity: g.disaster_intensity,
@@ -15085,6 +15108,7 @@ impl Game {
             barb_alerted_until: BTreeMap::new(),
             routes: Vec::new(),
             world_era: start_era,
+            world_era_since: 0,
             climate_phase: 0,
             meteor_strikes: 0,
             disaster_intensity,
@@ -16164,6 +16188,11 @@ impl Game {
             Some("goody_hut") => {
                 self.map.tiles.get_mut(&pos).unwrap().improvement = None;
                 self.roll_goody_reward(owner, uid, pos);
+                // MOMENT_GOODY_HUT_TRIGGERED, +1, from the Ancient era on and
+                // never obsolete. Only a major banks Era Score.
+                if !self.players[owner].is_minor {
+                    self.add_era_score(owner, 1);
+                }
             }
             Some("meteor_goody") => {
                 // The crashed meteor is its own goody type with its own
@@ -16550,12 +16579,51 @@ impl Game {
             return;
         }
         // Reaching for a seat mutably copies it, so ask before taking.
-        if !self.players[first].met.contains(&second) {
-            self.players[first].met.insert(second);
+        // MOMENT_PLAYER_MET_MAJOR is +1 to each side, and completing the table
+        // is MOMENT_PLAYER_MET_ALL_MAJORS at +3, or +5 first in the world.
+        let major = |pid: usize| {
+            self.players
+                .get(pid)
+                .is_some_and(|player| !player.is_minor && !player.is_barbarian)
+        };
+        let between_majors = major(first) && major(second);
+        for (observer, subject) in [(first, second), (second, first)] {
+            if self.players[observer].met.contains(&subject) {
+                continue;
+            }
+            self.players[observer].met.insert(subject);
+            if between_majors {
+                self.add_era_score(observer, 1);
+                self.note_met_all_majors(observer);
+            }
         }
-        if !self.players[second].met.contains(&first) {
-            self.players[second].met.insert(first);
+    }
+
+    /// `MOMENT_PLAYER_MET_ALL_MAJORS`, +3, or +5 as
+    /// `MOMENT_PLAYER_MET_ALL_MAJORS_FIRST_IN_WORLD`.
+    fn note_met_all_majors(&mut self, pid: usize) {
+        if self.players[pid].counters.contains_key("met_all_majors") {
+            return;
         }
+        let outstanding = self
+            .players
+            .iter()
+            .any(|other| {
+                other.id != pid
+                    && other.alive
+                    && !other.is_minor
+                    && !other.is_barbarian
+                    && !self.players[pid].met.contains(&other.id)
+            });
+        if outstanding {
+            return;
+        }
+        self.players[pid].counters.insert("met_all_majors".to_string(), 1);
+        let first_in_world = !self
+            .players
+            .iter()
+            .any(|other| other.id != pid && other.counters.contains_key("met_all_majors"));
+        self.add_era_score(pid, if first_in_world { 5 } else { 3 });
     }
 
     /// Pre-game teams are permanent. `None` means an ordinary free-for-all
@@ -36591,7 +36659,78 @@ impl Game {
         self.cities.insert(cid, city);
         self.reveal(pid, pos, 3);
         self.note(pid, "Cities", format!("founded {founded}"), Some(pos));
+        if !is_minor {
+            self.note_city_founding_moments(pid, pos);
+        }
         cid
+    }
+
+    /// The `MOMENT_CITY_BUILT_*` family, all +1 and all stackable — the shipped
+    /// game pays a city for every unusual thing about where it stands, and a
+    /// well-sited city commonly earns two or three at once.
+    ///
+    /// Modelled here: on Desert, on Snow, on Tundra, next to a floodable river,
+    /// next to a volcano, next to a natural wonder, and next to another
+    /// civilization's city. `MOMENT_CITY_BUILT_NEW_CONTINENT` is +2 and
+    /// `MOMENT_CITY_BUILT_BECAME_LARGEST_CIV_BY_MARGIN` +3; the first is here,
+    /// the second needs a population comparison this call site cannot see.
+    fn note_city_founding_moments(&mut self, pid: usize, pos: Pos) {
+        let Some(tile) = self.map.get(pos) else {
+            return;
+        };
+        let terrain = tile.terrain.clone();
+        let mut earned = 0;
+        if terrain.starts_with("desert") {
+            earned += 1;
+        }
+        if terrain.starts_with("snow") {
+            earned += 1;
+        }
+        if terrain.starts_with("tundra") {
+            earned += 1;
+        }
+        if tile.has_river() {
+            earned += 1;
+        }
+        // A neighbourhood is read once, so the three adjacency moments share a
+        // single walk of the surrounding tiles.
+        let mut volcano = false;
+        let mut natural_wonder = false;
+        for neighbour in hex::neighbors(pos) {
+            let Some(near) = self.map.get(neighbour) else {
+                continue;
+            };
+            if near.feature.as_deref() == Some("volcano") {
+                volcano = true;
+            }
+            if near
+                .feature
+                .as_deref()
+                .is_some_and(|feature| self.rules.features.get(feature).is_some_and(|spec| spec.natural_wonder))
+            {
+                natural_wonder = true;
+            }
+        }
+        if volcano {
+            earned += 1;
+        }
+        if natural_wonder {
+            earned += 1;
+        }
+        if self
+            .cities
+            .values()
+            .any(|other| other.owner != pid && self.wdist(other.pos, pos) <= 5)
+        {
+            earned += 1;
+        }
+        if self.on_foreign_continent(pid, pos) {
+            // MOMENT_CITY_BUILT_NEW_CONTINENT is worth 2.
+            earned += 2;
+        }
+        if earned > 0 {
+            self.add_era_score(pid, earned);
+        }
     }
 
     fn feature_removal_unlocked(&self, pid: usize, feature: &str) -> bool {
@@ -39197,6 +39336,7 @@ impl Game {
     fn install_government(&mut self, pid: usize, g: &str) {
         self.players[pid].government = Some(g.to_string());
         self.players[pid].past_governments.insert(g.to_string());
+        self.note_government_tier_moment(pid, g);
         self.players[pid].pending_government = None;
         self.players[pid].anarchy_turns = 0;
         // new slot layout: drop slotted cards until they fit again
@@ -43558,6 +43698,123 @@ impl Game {
             .collect()
     }
 
+    /// The `MOMENT_CITY_SIZE_*_FIRST` ladder: the first time any city of this
+    /// civilization reaches 10, 15, 20 and 25 Population, +1 each, or +2 as the
+    /// `_FIRST_IN_WORLD` variant. The four thresholds are the ones the shipped
+    /// moment descriptions name.
+    fn note_city_size_moment(&mut self, pid: usize, pop: i64) {
+        if self.players[pid].is_minor || self.players[pid].is_barbarian {
+            return;
+        }
+        let Some(size) = [(10, "small"), (15, "medium"), (20, "large"), (25, "extra_large")]
+            .into_iter()
+            .find(|(threshold, _)| *threshold == pop)
+            .map(|(_, name)| name)
+        else {
+            return;
+        };
+        let key = format!("city_size:{size}");
+        if self.players[pid].counters.contains_key(&key) {
+            return;
+        }
+        self.players[pid].counters.insert(key.clone(), 1);
+        let first_in_world = !self
+            .players
+            .iter()
+            .any(|other| other.id != pid && other.counters.contains_key(&key));
+        self.add_era_score(pid, if first_in_world { 2 } else { 1 });
+    }
+
+    /// `MOMENT_GOVERNMENT_ENACTED_TIER_N_FIRST`, +2, or +3 as
+    /// `_FIRST_IN_WORLD`. Tiers follow the shipped unlock civics: Political
+    /// Philosophy opens tier 1, Divine Right / Exploration / Reformed Church
+    /// tier 2, the Modern trio tier 3, and the Information trio tier 4.
+    fn note_government_tier_moment(&mut self, pid: usize, government: &str) {
+        if self.players[pid].is_minor || self.players[pid].is_barbarian {
+            return;
+        }
+        let tier = match government {
+            "autocracy" | "oligarchy" | "classical_republic" => 1,
+            "monarchy" | "merchant_republic" | "theocracy" => 2,
+            "communism" | "democracy" | "fascism" => 3,
+            "corporate_libertarianism" | "digital_democracy" | "synthetic_technocracy" => 4,
+            // Chiefdom is the starting government and names no moment.
+            _ => return,
+        };
+        let key = format!("government_tier:{tier}");
+        if self.players[pid].counters.contains_key(&key) {
+            return;
+        }
+        self.players[pid].counters.insert(key.clone(), 1);
+        let first_in_world = !self
+            .players
+            .iter()
+            .any(|other| other.id != pid && other.counters.contains_key(&key));
+        self.add_era_score(pid, if first_in_world { 3 } else { 2 });
+    }
+
+    /// `MOMENT_TECH_RESEARCHED_IN_ERA_FIRST` (+1) and
+    /// `MOMENT_CIVIC_CULTURVATED_IN_ERA_FIRST` (+1), each doubled to +2 by their
+    /// `_IN_WORLD` variant: the first node a civilization finishes from each era
+    /// of each tree, once per era per tree.
+    ///
+    /// These two are among the highest-frequency Historic Moments in the
+    /// shipped game — every civilization earns up to eight of each over a full
+    /// game — and CIVVIS awarded neither, which is a large part of why 79% of
+    /// its age transitions were Dark.
+    fn note_era_first_tree_node(&mut self, pid: usize, technology: bool, node: &str) {
+        // Only a major banks Era Score, and only a major may hold the
+        // first-in-world claim — otherwise a city-state researching ahead
+        // silently downgrades every major's moment from +2 to +1.
+        if self.players[pid].is_minor || self.players[pid].is_barbarian {
+            return;
+        }
+        let era = if technology {
+            self.rules.techs.get(node).map(|spec| spec.era)
+        } else {
+            self.rules.civics.get(node).map(|spec| spec.era)
+        };
+        let Some(era) = era else {
+            return;
+        };
+        let tree = if technology { "tech" } else { "civic" };
+        let key = format!("era_first:{tree}:{era}");
+        if self.players[pid].counters.contains_key(&key) {
+            return;
+        }
+        self.players[pid].counters.insert(key.clone(), 1);
+        let first_in_world = !self
+            .players
+            .iter()
+            .any(|other| other.id != pid && other.counters.contains_key(&key));
+        self.add_era_score(pid, if first_in_world { 2 } else { 1 });
+    }
+
+    /// What a Dedication would have paid over the era that just ended, in Era
+    /// Score, given what this civilization actually did in it.
+    ///
+    /// This is a *measured* projection, not a prior: the count of every trigger
+    /// firing is kept whether or not the trigger was dedicated, so the answer
+    /// to "which Dedication should I take" is the same shape as "which one
+    /// would have paid me most last era". A civilization's behaviour is the
+    /// most autocorrelated thing about it, which is why last era's tally beats
+    /// any static ranking — a warmonger has been killing Corps, a builder has
+    /// been laying Districts, and the tally already says which one you are.
+    pub fn projected_dedication_score(&self, pid: usize, dedication: &str) -> i64 {
+        let Some(spec) = self.rules.dedications.get(dedication) else {
+            return 0;
+        };
+        let Some(player) = self.players.get(pid) else {
+            return 0;
+        };
+        spec.triggers
+            .iter()
+            .map(|(trigger, amount)| {
+                amount * player.last_era_triggers.get(trigger).copied().unwrap_or(0)
+            })
+            .sum()
+    }
+
     /// A Dedication's Golden-Age half, which only a Golden or Heroic Age turns
     /// on.
     fn dedication_active(&self, pid: usize, dedication: &str) -> bool {
@@ -43598,15 +43855,32 @@ impl Game {
         let _ = building;
     }
 
-    /// A Dedication's Normal-Age half. Every Dedication pays Era Score for the
-    /// behaviour it names whatever age chose it — which is the whole point of
-    /// dedicating a Normal or Dark Age, since that score is what buys the next
-    /// Golden one.
+    /// A Dedication's Normal-Age half: Era Score for the behaviour it names,
+    /// which is the whole point of dedicating a Normal or Dark Age, since that
+    /// score is what buys the next Golden one.
+    ///
+    /// **A Golden Age pays no Era Score.** Every quest modifier hangs off
+    /// `PLAYER_ELIGIBLE_FOR_COMMEMORATION_QUEST`, a `TEST_ANY` set whose only
+    /// two members are an inverted `REQUIREMENT_PLAYER_HAS_GOLDEN_AGE` and a
+    /// `REQUIREMENT_PLAYER_ALWAYS_ALLOWED_COMMEMORATION_QUEST` that nothing in
+    /// the shipped data grants. So the two halves are exclusive, and that is
+    /// what stops a Golden Age from financing its own successor: it hands out
+    /// its bonus and banks nothing, while a Dark or Normal Age banks the score
+    /// that buys the next one.
     ///
     /// `count` is how many times the trigger just happened, so a kill that
     /// resolves several units at once pays for all of them.
     fn dedication_trigger(&mut self, pid: usize, trigger: &str, count: i64) {
         if count <= 0 || pid >= self.players.len() {
+            return;
+        }
+        // Counted before either gate, so the tally is the behaviour itself and
+        // not the subset a past choice happened to be paid for.
+        *self.players[pid]
+            .era_triggers
+            .entry(trigger.to_string())
+            .or_insert(0) += count;
+        if matches!(self.players[pid].age.as_str(), "golden" | "heroic") {
             return;
         }
         let earned: i64 = self.players[pid]
@@ -43656,6 +43930,22 @@ impl Game {
         if progress_era <= self.world_era {
             return;
         }
+        // Shipped `Eras_XP1.GameEraMinimumTurns` is 40 for every era, scaled by
+        // speed. Without that floor the world era tracks the single most
+        // advanced civilization with nothing holding it back, and a leader who
+        // opens two eras in consecutive turns gives the whole table an age it
+        // had no turns to bank Era Score in. Measured before this: the 10th
+        // percentile of the gap between age transitions was **one turn**, and
+        // 79% of all transitions were Dark.
+        //
+        // Only the floor is modelled. `GameEraMaximumTurns` (60) would force
+        // the world era forward past what anybody has researched, which reaches
+        // much further into wonder eligibility, Dark Age card windows and
+        // unit obsolescence than the evidence here justifies.
+        let minimum = self.game_speed.scale_turns(ERA_MINIMUM_TURNS);
+        if self.turn.saturating_sub(self.world_era_since) < minimum {
+            return;
+        }
         // A late unlock can put the leader several columns ahead of the
         // world's current age (for example after restoring an older save or
         // receiving a rules-driven research grant). Each intervening era is
@@ -43663,6 +43953,7 @@ impl Game {
         // never collapse all of those transitions into one.
         let era = self.world_era.saturating_add(1).min(progress_era);
         self.world_era = era;
+        self.world_era_since = self.turn;
         let majors: Vec<usize> = self
             .players
             .iter()
@@ -43712,6 +44003,9 @@ impl Game {
             player.dedication_choices = if player.age == "heroic" { 3 } else { 1 };
             player.era_score = 0;
             player.era_score_baseline = 0;
+            // The era that just ended becomes the evidence for the dedication
+            // about to be chosen, and the new one starts its own tally.
+            player.last_era_triggers = std::mem::take(&mut player.era_triggers);
             // The age just entered counts toward the next threshold: shipped
             // THRESHOLD_SHIFT_PER_PAST_DARK_AGE -10 and
             // _PER_PAST_GOLDEN_AGE +5 make ages self-correcting, so a
@@ -45167,6 +45461,9 @@ impl Game {
             self.reconcile_closed_border_units(None);
         }
         if first {
+            self.note_era_first_tree_node(pid, technology, node);
+        }
+        if first {
             self.players[pid].envoys_free +=
                 effects.get("free_envoys").copied().unwrap_or(0.0) as i64;
             *self.players[pid]
@@ -45908,6 +46205,7 @@ impl Game {
             growth_bonus -= 20.0;
         }
         let mut grew = false;
+        let mut grew_to: Option<i64> = None;
         {
             let city = self.cities.get_mut(&cid).unwrap();
             let mut surplus = ys.food - 2.0 * city.pop as f64;
@@ -45924,6 +46222,7 @@ impl Game {
                 city.pop += 1;
                 city.food -= need;
                 grew = true;
+                grew_to = Some(city.pop as i64);
             } else if city.food < 0.0 {
                 city.pop = (city.pop - 1).max(1);
                 city.food = 0.0;
@@ -45954,6 +46253,9 @@ impl Game {
         }
         if grew {
             self.apply_growth_pressure(cid);
+        }
+        if let Some(pop) = grew_to {
+            self.note_city_size_moment(pid, pop);
         }
         let queue_head = self.cities[&cid].queue.first().cloned();
         if let Some(item) = queue_head {
@@ -47927,11 +48229,15 @@ mod dedication_era_tests {
     #[test]
     fn every_dedication_opens_in_the_eras_its_commemoration_ships_for() {
         // CommemorationTypes carries MinimumGameEra/MaximumGameEra per
-        // category, and Policies_XP1 carries the same window again for each
-        // Golden Age card. The two agree wherever both exist -- Free Enquiry
-        // and SCIENTIFIC both Classical-Medieval, To Arms and MILITARY both
-        // Industrial-Atomic, and four more -- which is what makes these
-        // windows trustworthy rather than inferred.
+        // category, and Policies_XP1 carries a window again for each
+        // same-named Golden Age card. They agree almost everywhere -- Free
+        // Enquiry and SCIENTIFIC both Classical-Medieval, To Arms and MILITARY
+        // both Industrial-Atomic, and four more -- which is what makes these
+        // windows trustworthy rather than inferred. Sky and Stars is the one
+        // exception; see the note on its row.
+        //
+        // Eras.ChronologyIndex is ONE-based (ERA_ANCIENT is 1), so every index
+        // here is that column minus one.
         let expected: &[(&str, usize, usize)] = &[
             ("free_inquiry", 1, 2),          // SCIENTIFIC / POLICY_FREE_ENQUIRY
             ("pen_brush_and_voice", 1, 2),   // CULTURAL
@@ -47943,7 +48249,14 @@ mod dedication_era_tests {
             ("to_arms", 4, 6),               // MILITARY / POLICY_TO_ARMS
             ("wish_you_were_here", 6, 8),    // TOURISM / same-named card
             ("bodyguard_of_lies", 6, 8),     // ESPIONAGE
-            ("sky_and_stars", 6, 8),         // POLICY_SKY_AND_STARS
+            // The ONE place the two sources disagree, and the only one where it
+            // matters which is authoritative. COMMEMORATION_AERONAUTICAL opens
+            // at ERA_INFORMATION; the leftover POLICY_SKY_AND_STARS card says
+            // ERA_ATOMIC. The Commemoration governs -- it is the table the age
+            // transition reads, and CommemorationModifiers already carries the
+            // Golden-Age half directly, which is what makes the same-named
+            // RequiresGoldenAge cards dead data rather than a second opinion.
+            ("sky_and_stars", 7, 8),         // COMMEMORATION_AERONAUTICAL
             ("automaton_warfare", 7, 8),     // AUTOMATON
         ];
         let mut game = Game::new_full(1, 24, 16, 22_508, 120, 0, false);
@@ -53599,6 +53912,9 @@ mod victory_conditions {
         g.world_era = 3;
         g.players[0].civics.clear();
         g.players[0].techs.insert("smart_materials".to_string());
+        // An era is held open for its shipped 40-turn minimum before the next
+        // one may start, so stand far enough into this one to leave it.
+        g.turn = 40;
         g.process_eras();
         assert_eq!(
             g.world_era, 4,
@@ -57802,6 +58118,8 @@ mod district_mechanics {
         game.players[0].age = "dark".to_string();
         game.players[0].era_score = game.players[0].golden_age_threshold;
         game.players[0].techs.insert("horseback_riding".to_string());
+        // An era is held open for its shipped 40-turn minimum.
+        game.turn = 40;
         game.process_eras();
         assert_eq!(game.players[0].age, "heroic");
         assert_eq!(game.players[0].dedication_choices, 3);
