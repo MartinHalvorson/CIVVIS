@@ -243,14 +243,43 @@ and an argmax over a correlate optimises the correlate. Unifying both halves
 under one number was the error; it is the same shape as the state-value net that
 went to −313 Elo.
 
-**The obvious next hypothesis, unmeasured:** rank by projection only in a Normal
-or Dark Age, and leave the Golden and Heroic choice alone. That keeps the
-measured number where it is causal and drops it where it is not. It needs its own
-gate before it goes anywhere near the default.
+### The repair, and it passed: `Banking`
 
-`Weights::dedication_choice` selects the arm. `Alphabetical` is the shipped
-default because it won; `Measured` is retained as the evaluator-only entrant
-`advanced_measured_dedication`.
+The diagnosis named its own fix. Rank by the projection **only in a Normal or
+Dark Age**, where Era Score is the literal objective, and leave the Golden and
+Heroic choice exactly where `Alphabetical` puts it. No new signal — the same
+signal withdrawn from the half of the decision it never governed.
+
+| | seed 960000, 120 maps | **seed 970000, 300 maps (pre-registered)** |
+|---|---|---|
+| game-win share | 56.2% | **57.7%** |
+| map directions | 26 to 11 | **67 to 21** |
+| sign p | 0.0201 | **0.0000** |
+| Elo | +44 (CI −19..+106) | **+54 (CI +14..+93)** |
+| Wilson | 47.3%–64.8% | **52.0%–63.1%** |
+| e-process | 9.87, not crossed | **5.72e4, crossed at map 112** |
+| gate | INCONCLUSIVE | **PASS** |
+
+**Pooled over both disjoint seeds: 420 maps, 93 map directions to 32.**
+`Measured` had scored 41.2% on a third disjoint seed, so the same signal is worth
+−61 Elo applied to both halves and +54 applied to one.
+
+The mechanism is legible in the diagnostics. Banking keeps Exodus of the
+Evangelists in the Golden Age — faith 285.9 vs 230.9 on the confirmation run,
+414.6 vs 188.3 on the first — so the religion engine that made the arbitrary
+default strong survives, while ranking where the number is causal builds a better
+empire underneath it: cities 2.57 vs 2.22, population 16.1 vs 13.8, science 19.3
+vs 16.4, culture 25.4 vs 21.1.
+
+**The transferable rule.** Before ranking on a number, ask which decisions it is
+the objective for and which it merely correlates with, and *withdraw it from the
+second set*. A signal that is causal for half a decision and correlational for
+the other half will lose if you apply it to both — and win if you don't.
+
+`Weights::dedication_choice` selects the arm. `Banking` is the default because it
+passed its gate. `Alphabetical` remains the frozen control for reproducing any
+age number published before 2026-07-27, and `Measured` is retained as
+`advanced_measured_dedication` so the negative result stays reproducible too.
 
 ## Measuring
 

@@ -580,17 +580,18 @@ fn a_dedication_is_projected_from_the_era_that_just_ended() {
 }
 
 #[test]
-fn the_two_dedication_arms_choose_differently_and_the_default_is_alphabetical() {
+fn the_dedication_arms_choose_differently_and_the_default_banks() {
     use crate::ai::{choose_dedications, DedicationChoice, Weights};
 
     // Alphabetically the Classical era offers exodus_of_the_evangelists first,
-    // and that is what both AI tiers have always taken. It measured 58.8% of
-    // games against the ranked arm over 120 mirrored maps, so it is still what
-    // ships -- see the DedicationChoice docs.
+    // and that is what both AI tiers took for the whole history of the repo.
+    // Ranking BOTH halves on projected Era Score lost to it 41.2% to 58.8%;
+    // ranking only the half where Era Score is the objective beat it 57.7% to
+    // 42.3% over a pre-registered 300 maps. See the DedicationChoice docs.
     assert_eq!(
         Weights::default().dedication_choice,
-        DedicationChoice::Alphabetical,
-        "the shipped agent is the one that won its gate"
+        DedicationChoice::Banking,
+        "the shipped agent is the one that passed its gate"
     );
     let mut game = two_player_game();
     game.world_era = 1;

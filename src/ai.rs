@@ -592,8 +592,9 @@ pub enum DedicationChoice {
     /// converts in this engine. Measured against `Measured` over 120 mirrored
     /// maps it took **58.8%** of games, 31 map directions to 10, sign
     /// p=0.0015, with the anytime-valid e-process crossing at map 51. See
-    /// `docs/AGES.md`.
-    #[default]
+    /// `docs/AGES.md`. It is no longer the default — `Banking` beat it — but it
+    /// remains the frozen control for every age number published before
+    /// 2026-07-27.
     Alphabetical,
     /// Ranked by what each Dedication would have paid over the era that just
     /// ended, measured from the civilization's own trigger tally.
@@ -613,6 +614,14 @@ pub enum DedicationChoice {
     /// This is the repair for `Measured`'s loss, and it is the whole of the
     /// repair — no new signal, just the same signal withdrawn from the half of
     /// the decision where it was never causal.
+    ///
+    /// **PROMOTED.** Pre-registered at seed 970000, 300 mirrored maps, 600
+    /// games: **57.7%**, 67 map directions to 21, sign p=0.0000, Elo **+54**
+    /// (CI +14..+93), Wilson **52.0%–63.1%**, e-process 5.72e4 crossing at map
+    /// 112 — `promotion gate: PASS` under the unmodified gate. The earlier
+    /// disjoint seed 960000 agreed at 56.2%; pooled that is **420 maps, 93 map
+    /// directions to 32**.
+    #[default]
     Banking,
 }
 
@@ -698,7 +707,7 @@ impl Default for Weights {
             // still work -- but the agent that plays is the one that always
             // played.
             policy_deck: PolicyDeck::Legacy,
-            dedication_choice: DedicationChoice::Alphabetical,
+            dedication_choice: DedicationChoice::Banking,
         }
     }
 }
