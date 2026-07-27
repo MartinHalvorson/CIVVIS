@@ -373,8 +373,21 @@
   .split { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
   .split .sec { min-width: 0; }
   .strategy-sec { padding: 0; overflow: hidden; }
-  .strategy-track { min-height: 84px; padding: 10px 13px 11px; }
-  .strategy-track + .strategy-track { border-top: 1px solid var(--line-soft); }
+  /* The separator is each track's own bottom edge rather than the next one's
+     top. Two of these tracks are conditional — the seat picker is not offered
+     when there is only one seat, and a seat with no published plan has no plan
+     track — and `+` still matches a hidden sibling, so a top border would leave
+     a hairline under the header with nothing above it. */
+  .strategy-track { min-height: 84px; padding: 10px 13px 11px; border-bottom: 1px solid var(--line-soft); }
+  .strategy-track:last-child { border-bottom: 0; }
+  /* The seat picker is a bar, not a track: it holds one control and must not
+     reserve a track's worth of height above the plan it selects. */
+  .strategy-track.strategy-pick { min-height: 0; padding: 9px 13px; }
+  /* The plan is rows of label and value, so it takes the height its content
+     needs rather than a card slot's fixed 55px. */
+  .strategy-track.strategy-plan-track { min-height: 0; }
+  .strategy-track.strategy-plan-track .strategy-heading span::before { background: var(--gold); box-shadow: 0 0 9px #d7b66a77; }
+  .strategy-plan { display: flex; flex-direction: column; gap: 1px; }
   .strategy-heading {
     display: flex; align-items: center; justify-content: space-between; min-height: 23px; margin-bottom: 4px;
     color: var(--muted); font-size: var(--type-label); font-weight: 850; letter-spacing: .11em; text-transform: uppercase;
@@ -522,12 +535,33 @@
      gone. */
   .turn-setting {
     min-width: 0; display: flex; align-items: baseline; justify-content: space-between;
-    gap: .7em; white-space: nowrap;
+    gap: .55em; white-space: nowrap;
   }
   /* Neither half of a row gives up width, and nothing here ellipsizes: a
      setting is shown whole or the block is drawn a quarter-point smaller. */
   .turn-setting > span, .turn-setting > b { flex: 0 0 auto; }
-  .turn-setting b { color: #dce6e1; font-weight: 900; }
+  /* Tabular figures so a count changing from 10 to 9 moves the row by exactly
+     one digit's width instead of an arbitrary one — the block is refitted on
+     that width, and a proportional 1 would re-size all four rows mid-game. */
+  .turn-setting b {
+    color: #dce6e1; font-weight: 900; font-variant-numeric: tabular-nums;
+  }
+  /* A roster row carries what is left and what it was taken out of. The toll
+     rides *inside* the value so the row is still two flex items — one label,
+     one reading — rather than three fighting over the same width, and it is
+     sized in em so it scales with whatever size the fitter settles the block
+     at. It keeps the label's quieter ink: the living count is the number being
+     read, the toll is its footnote.
+
+     .7em is measured, not chosen by eye: the widest roster line the shipped map
+     sizes can produce is "City states: 100 (50 eliminated)" — the largest world
+     seats 150 of them — and at the block's 8.5px floor that line needs 123.2px
+     against the 128px a 144px plate gives it. .75em leaves 1.4px, which is
+     inside the rounding the fitter works in; this leaves 4.8px. */
+  .turn-setting .turn-toll {
+    margin-left: .32em; color: #90a29b; font-size: .7em; font-weight: 700;
+    font-variant-numeric: tabular-nums; letter-spacing: -.01em; white-space: nowrap;
+  }
   /* Borrowed turns. It sits under the turn cap because that cap is the thing
      it explains: the number went up because somebody asked it to. */
   .turn-playon {
@@ -2676,6 +2710,12 @@
       --hud-ident-min: 66px; --hud-identity-bias: 1.3; --hud-stat-min: 44px;
     }
   }
+  /* This step stays at 144px. Adding the toll to a roster row made it tempting
+     to take four more pixels here, and measuring said no: at 1440x900 a 148px
+     plate pushes LEADER 2px past its cell at the head fitter's own 8.5px floor
+     and costs every already-truncated identity cell another pixel. A head that
+     clips is a corrupted word, so the roster row is fitted into 128px instead —
+     see the toll's own type size. */
   @media (max-width: 1580px) {
     #playerhud {
       grid-template-columns: 144px minmax(0, 1fr);
@@ -2694,6 +2734,10 @@
   }
   @media (max-width: 1180px) {
     #maparea { --hud-rail-width: 200px; --minimap-height: 158px; }
+    /* This 140px is not the plate width anyone sees below 1180: the masthead is
+       already in its compact band here, and that band's own clamp() outranks
+       this rule. The floor that matters for a roster row is the one on
+       #playerhud[data-type-size="compact"]. */
     #playerhud {
       grid-template-columns: 140px minmax(0, 1fr);
       --hud-ident-min: 27.5px; --hud-column-gap: 3px;
@@ -2773,8 +2817,13 @@
      are written from each box's live ResizeObserver measurement, so its inner
      layout follows the space it actually has instead of the screen it happens
      to be floating over. */
+  /* The floor is 148px, not 140: a compact masthead is exactly where a roster
+     row runs out of room, and 140px could not hold "City states: 100 (50
+     eliminated)" at the fitter's own floor. It costs the standings nothing —
+     they have already passed their 680px minimum in this band and scroll
+     inside the panel, so their heads overflow by the same 3px either way. */
   #playerhud[data-type-size="compact"] {
-    grid-template-columns: clamp(140px, 33%, 164px) minmax(0, 1fr);
+    grid-template-columns: clamp(148px, 33%, 164px) minmax(0, 1fr);
     --hud-ident-min: 25px; --hud-column-gap: 4px;
     --hud-stat-min: 32px; --hud-stat-gap: 2px;
   }
@@ -3587,10 +3636,42 @@
       </div>
     </details>
 
-    <!-- The three logs run deepest-cause first: why a civilization acted, then
-         the wars that reasoning started, then the world's own record of what
-         happened. An observer reading downward reads a turn in the order it
-         was decided. -->
+    <!-- The column runs deepest-cause first: what a civilization is trying to
+         do *now*, then why it acted, then the wars that reasoning started, then
+         the world's own record of what happened. An observer reading downward
+         reads a turn in the order it was decided.
+
+         Active strategy leads because it is the standing plan every entry below
+         it is an instance of: the reasoning log is an account over turns, and
+         this is the current answer. It names one civilization at a time — the
+         standings table already carries every seat's doctrine in its PLAN
+         column, and twenty research cards would bury the logs. -->
+    <details class="sidebar-section" id="strategysec" data-section="active-strategy" open>
+      <summary class="section-label">
+        <span class="section-title"><span class="section-icon" aria-hidden="true">◆</span><span>Active strategy</span></span>
+        <span class="section-meta"><span class="event-scope" id="strategyscope"></span><span class="section-chevron" aria-hidden="true"></span></span>
+      </summary>
+      <div class="sec strategy-sec">
+        <div class="strategy-track strategy-pick">
+          <label class="reason-filter"><span>Civ</span>
+            <select id="strategyplayer" aria-label="Whose active strategy to show"></select>
+          </label>
+        </div>
+        <div class="strategy-track strategy-plan-track" id="strategyplantrack">
+          <div class="strategy-heading"><span>Grand strategy</span></div>
+          <div id="strategyplan"></div>
+        </div>
+        <div class="strategy-track">
+          <div class="strategy-heading"><span>Research</span><span><button class="mini" onclick='openPedia()'>Pedia</button> <button class="mini" onclick='openTree("techs")'>Tree</button></span></div>
+          <div id="research" class="progress-slot"></div>
+        </div>
+        <div class="strategy-track culture">
+          <div class="strategy-heading"><span>Civic development</span><button class="mini" onclick='openTree("civics")'>Tree</button></div>
+          <div id="civics" class="progress-slot"></div>
+        </div>
+      </div>
+    </details>
+
     <details class="sidebar-section" id="reasonsec" data-section="ai-reasoning" open>
       <summary class="section-label">
         <span class="section-title"><span class="section-icon" aria-hidden="true">◉</span><span>AI reasoning log</span></span>
@@ -3636,22 +3717,6 @@
       <div class="sec"><div id="events" class="event-list"><div class="empty-state">The world is quiet—for now.</div></div></div>
     </details>
 
-    <details class="sidebar-section" id="strategysec" data-section="active-strategy" open>
-      <summary class="section-label">
-        <span class="section-title"><span class="section-icon" aria-hidden="true">◆</span><span>Active strategy</span></span>
-        <span class="section-meta"><span class="rule"></span><span class="section-chevron" aria-hidden="true"></span></span>
-      </summary>
-      <div class="sec strategy-sec">
-        <div class="strategy-track">
-          <div class="strategy-heading"><span>Research</span><span><button class="mini" onclick='openPedia()'>Pedia</button> <button class="mini" onclick='openTree("techs")'>Tree</button></span></div>
-          <div id="research" class="progress-slot"></div>
-        </div>
-        <div class="strategy-track culture">
-          <div class="strategy-heading"><span>Civic development</span><button class="mini" onclick='openTree("civics")'>Tree</button></div>
-          <div id="civics" class="progress-slot"></div>
-        </div>
-      </div>
-    </details>
     <details class="sidebar-section" id="govsec" data-section="government" style="display:none" open>
       <summary class="section-label">
         <span class="section-title"><span class="section-icon" aria-hidden="true">♜</span><span>Government</span></span>
@@ -7024,6 +7089,58 @@ function chartDrawsGroundAt(q, r) {
   const canon = worldCanonPos([q, r]);
   return TMAP.has(canon[0] + "," + canon[1]);
 }
+// ------------------------------------------------ the edge of the known world
+// A stored map has a first row and a last one, and fog of war used to hand both
+// of them over on turn one. Undiscovered ground was drawn as parchment only
+// *inside* the storage rectangle, so the sheet stopped dead exactly where the
+// world did, the camera refused to travel a step past it, and the thumbnail
+// framed the whole thing. A civilization that had seen eighteen tiles could
+// read its world's height off the screen without sending anybody to look.
+//
+// So until a people have measured their world the chart simply carries on past
+// its real edge, and the camera is held by a soft bound some way out there
+// instead — three to fifteen tiles, drawn per world and separately per side, so
+// the give is never the same twice and never the same on two sides of one map.
+// The true edge is somewhere inside that margin and the only way to find out
+// where is to walk to it: ground that never appears is the answer, arrived at
+// the way the rest of this world's shape is. The lap that settles the extent —
+// `wentAround` — lifts the veil for good, which is the same rung that puts the
+// world's dimensions on the identity line.
+const MAP_VEIL_MIN = 3, MAP_VEIL_MAX = 15;
+let MAP_VEIL = null, MAP_VEIL_WORLD = null;
+// A spectator is not a civilization and has nothing to find out, so
+// `wentAround` answering true for one keeps the whole veil off the exhibition.
+function mapEdgeVeiled() {
+  return !!state && !planetMap() && !wentAround();
+}
+function mapEdgeVeil() {
+  const world = state?.seed ?? null;
+  if (!MAP_VEIL || world !== MAP_VEIL_WORLD) {
+    MAP_VEIL_WORLD = world;
+    const [seedA, seedB] = hiddenMapSeedWords();
+    const reach = side => MAP_VEIL_MIN +
+      Math.floor(hash2(seedA + side * 101 + 13, seedB + side * 57 + 29) *
+                 (MAP_VEIL_MAX - MAP_VEIL_MIN + 1));
+    MAP_VEIL = {left:reach(0), right:reach(1), top:reach(2), bottom:reach(3)};
+  }
+  return MAP_VEIL;
+}
+// Where the veiled camera is held, in world coordinates. An axis that wraps has
+// no edge to hide and so no bound; an open chart already has its own account of
+// how far west and east the sheet goes, and this must not argue with it.
+function mapVeilPanBounds() {
+  if (!mapEdgeVeiled()) return null;
+  const veil = mapEdgeVeil(), column = S * SQ3, row = S * 1.5;
+  const x = mapWrapsX() || chartIsOpen() ? null : {
+    min:-veil.left * column,
+    max:(state.map.width - 1 + veil.right) * column,
+  };
+  const y = mapWrapsY() ? null : {
+    min:-veil.top * row,
+    max:(state.map.height - 1 + veil.bottom) * row,
+  };
+  return x || y ? {x, y} : null;
+}
 // The offset columns and rows the frame can reach. World coordinates are an
 // affine function of column and row, so the corners of the frame bound it.
 function framedHexBounds(margin = 2) {
@@ -8369,12 +8486,24 @@ function adoptTiles(st) {
 // a `let` declared after that point would be in its temporal dead zone and the
 // throw would take the whole client with it.
 const REASON_FILTER_KEY = "civvis-reasoning-filters-v1";
-let reasoningLog = {cursor: 0, world: null, thoughts: [], dropped: 0, truncatedTurns: 0};
+let reasoningLog = {cursor: 0, world: null, viewer: null, thoughts: [], dropped: 0, truncatedTurns: 0};
 let reasonFilters = {player: "all", level: "decision", topic: "all"};
 try {
   const saved = JSON.parse(localStorage.getItem(REASON_FILTER_KEY) || "null");
   if (saved && typeof saved === "object") reasonFilters = {...reasonFilters, ...saved};
 } catch (e) { /* a corrupt preference is not worth a dead page */ }
+// Which seat the Active strategy panel is speaking for, and the world that
+// choice belongs to.
+//
+// It is deliberately *not* part of `reasonFilters`: the log answers "what has
+// every civilization been thinking", the plan answers "what is this one doing
+// now", and a reader routinely wants those two set differently. It is also
+// deliberately not remembered across games the way the reasoning filters are —
+// a new world reseats every civilization, so the player 5 stored last night is
+// not the player 5 on screen this morning. A new world reopens on whoever is
+// leading it.
+let strategySeat = null;
+let strategySeatWorld = null;
 
 function paintedQuery() {
   // Only the watching loop says what it holds. Saying so is also what asks the
@@ -8824,14 +8953,17 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
   }
   updateSpecPauseButtons();
   if (SPEC) updatePaceControl(st);
-  const fullMapSpectator = SPEC && (st.view_player === null || st.view_player === undefined);
   document.getElementById("humanfooter").style.display = SPEC ? "none" : "grid";
   // Keep the same restart node through simulation and human games. Its label,
   // glyph and emphasis change with the selected next world below.
   document.getElementById("specbar").style.display = "block";
   document.body.classList.toggle("watching-sim", SPEC);
   document.getElementById("observer-settings").style.display = SPEC ? "block" : "none";
-  document.getElementById("strategysec").style.display = fullMapSpectator ? "none" : "block";
+  // Active strategy used to be withheld from the omniscient spectator because
+  // the panel could only ever speak for `state.me`, and above the world there
+  // is no single "me". It now names the civilization it is speaking for, so
+  // the one view that can read every plan is the last one that should hide it.
+  document.getElementById("strategysec").style.display = "block";
   if (SPEC) closeTrade();
   syncViewPlayer();
   if (newWorld && st.seed !== undefined) { lastSeed = st.seed; loadTacks(); }
@@ -9060,35 +9192,62 @@ function positiveMod(value, period) {
 // Whether a coordinate belongs to blank chart rather than known ground. An
 // open chart deliberately treats everything beyond its surveyed copy as
 // parchment too: outlining the storage rectangle would reveal the world's
-// width before anybody had sailed it. Once the chart closes, physical map
-// edges stop being mistaken for undiscovered territory.
+// width before anybody had sailed it. A veiled one says the same thing about
+// the ground past its last row and column — unsurveyed, like everything else
+// nobody has walked to. Only a world whose extent has been established draws
+// its own rectangle, and there the map's physical edges stop being mistaken
+// for undiscovered territory.
 function hiddenMapCellAt(q, r, open = chartIsOpen()) {
   if (!state) return false;
   if (open) return !chartDrawsGroundAt(q, r);
   const pos = mapWrapsX() || mapWrapsY() ? canonPos([q, r]) : [q, r];
   const col = offsetColumn(pos);
   if (pos[1] < 0 || pos[1] >= state.map.height ||
-      col < 0 || col >= state.map.width) return false;
+      col < 0 || col >= state.map.width) return mapEdgeVeiled();
   return !TMAP.has(key(pos));
 }
 
+// Whether the tile loop paints ground at this exact copy of the plane. Only
+// one copy of a wrapping world is ever drawn — the one nearest the camera —
+// so every other copy is a stretch of plain background that happens to sit
+// where the world does in fact continue. Under the veil that is parchment
+// like anything else nobody has been to, which is also what stops a viewer
+// reading the world's width off the end of the drawn copy at full zoom-out.
+// The open chart says exactly the same thing through `chartDrawsGroundAt`.
+function veilDrawsGroundAt(q, r) {
+  const worldX = S * SQ3 * (q + r / 2), worldY = S * 1.5 * r;
+  if (Math.abs(wrapX(worldX) - worldX) > 1e-6) return false;
+  if (Math.abs(wrapY(worldY) - worldY) > 1e-6) return false;
+  const pos = canonPos([q, r]);
+  const col = offsetColumn(pos);
+  if (pos[1] < 0 || pos[1] >= state.map.height ||
+      col < 0 || col >= state.map.width) return false;
+  return TMAP.has(key(pos));
+}
+
 function hiddenMapViewport(halfWidth, top, bottom) {
-  if (!state) return {open:false, cells:[]};
+  if (!state) return {open:false, solid:false, cells:[], test:hiddenMapCellAt};
   const open = chartIsOpen();
-  const span = open
-    ? framedHexBounds(3)
+  // A veiled sheet is covered out to the frame on every side, not out to a
+  // fixed margin: a margin has an end and the end can be zoomed out to.
+  const veiled = !open && mapEdgeVeiled();
+  const span = open || veiled ? framedHexBounds(3)
     : {left:0, right:state.map.width - 1, top:0, bottom:state.map.height - 1};
+  const test = veiled ? (q, r) => !veilDrawsGroundAt(q, r)
+                      : (q, r) => hiddenMapCellAt(q, r, open);
   const cells = [];
   for (let row = span.top; row <= span.bottom; row++) {
     for (let col = span.left; col <= span.right; col++) {
       const q = col - ((row - (row & 1)) >> 1);
-      if (!hiddenMapCellAt(q, row, open)) continue;
-      const [x, y] = open ? hexXYRaw(q, row) : hexXY(q, row);
+      if (!test(q, row)) continue;
+      const [x, y] = open || veiled ? hexXYRaw(q, row) : hexXY(q, row);
       if (x < -halfWidth || x > halfWidth || y < top || y > bottom) continue;
       cells.push({q, r:row, col, x, y});
     }
   }
-  return {open, cells};
+  // Everything in the frame is then either this sheet or ground painted over
+  // the top of it, which is what lets the sheet be drawn as one rectangle.
+  return {open, solid:veiled, cells, test};
 }
 
 function hiddenMapSeedWords() {
@@ -9096,12 +9255,12 @@ function hiddenMapSeedWords() {
   return [seed | 0, Math.floor(seed / 4294967296) | 0];
 }
 
-function hiddenMapIsDeep(q, r, open, radius = 3) {
+function hiddenMapIsDeep(q, r, test, radius = 3) {
   for (let dq = -radius; dq <= radius; dq++) {
     const from = Math.max(-radius, -dq - radius);
     const to = Math.min(radius, -dq + radius);
     for (let dr = from; dr <= to; dr++)
-      if (!hiddenMapCellAt(q + dq, r + dr, open)) return false;
+      if (!test(q + dq, r + dr)) return false;
   }
   return true;
 }
@@ -9132,8 +9291,17 @@ function drawHiddenMapParchment(layer) {
   // One compound fill, with overlapping faces, is the important difference
   // from the former pale honeycomb. The sheet is continuous; hexes begin only
   // where a player has actual terrain to count.
+  //
+  // A veiled sheet reaches past every side of the frame, and known ground is
+  // painted over the top of it a moment later, so the union of its faces is
+  // exactly the rectangle they cover and the rectangle is what gets drawn.
+  // That is not a shortcut worth taking for its own sake — it is the only way
+  // the sheet can cover a whole frame at all. A canvas compound path costs
+  // quadratic time in its own size: 250 faces take 0.2ms, 4,000 take 49ms, and
+  // a zoomed-out veiled frame wants four and a half thousand of them.
   cx.beginPath();
-  for (const cell of layer.cells) appendHexPath(cell.x, cell.y, S + 1.15);
+  if (layer.solid) cx.rect(minX, minY, maxX - minX, maxY - minY);
+  else for (const cell of layer.cells) appendHexPath(cell.x, cell.y, S + 1.15);
   cx.fillStyle = PARCH; cx.fill();
   const age = cx.createLinearGradient(minX, minY, maxX, maxY);
   age.addColorStop(0, "rgba(245,231,191,.20)");
@@ -9170,7 +9338,7 @@ function drawHiddenMapMonsters(layer) {
   for (const cell of layer.cells) {
     if (positiveMod(cell.col - phaseColumn, strideColumns) ||
         positiveMod(cell.r - phaseRow, strideRows)) continue;
-    if (!hiddenMapIsDeep(cell.q, cell.r, layer.open)) continue;
+    if (!hiddenMapIsDeep(cell.q, cell.r, layer.test)) continue;
     // At an atlas-scale zoom, thin the fixed seats rather than shrinking every
     // engraving into visual grit. Close views keep the fuller old-chart read.
     const lod = hash2(cell.col + seedA * 3, cell.r + seedB * 5);
@@ -19838,7 +20006,11 @@ function chartUnrolledU(u) {
 function miniBounds() {
   const mapWidth = Math.max(1, state.map.width), mapHeight = Math.max(1, state.map.height);
   const tiles = state.map?.tiles;
-  if (!chartIsOpen() || !tiles?.length) {
+  // The same applies to a chart that closes north and south rather than east
+  // and west: a thumbnail drawn around the storage rectangle is the boundary
+  // the map itself has just stopped drawing, handed over in the corner of the
+  // screen instead.
+  if ((!chartIsOpen() && !mapEdgeVeiled()) || !tiles?.length) {
     // u = q + r/2 runs from 0 to mapWidth - 1 + half a column, the half coming
     // from the odd rows' offset.
     return {
@@ -20027,7 +20199,7 @@ mini.addEventListener("click", ev => {
   let x = wrapX(S * (clickX - layout.originX) / layout.size);
   let y = wrapY(S * (clickY - layout.originY) / layout.size);
   [x, y] = cameraCenterForWorld(x, y);
-  y = clampCameraY(y);
+  x = clampCameraX(x); y = clampCameraY(y);
   if (REDUCED_MOTION_QUERY.matches) {
     cam.x = x; cam.y = y; draw(); drawMini();
   } else cameraFlight = {x, y, scale:cam.scale};
@@ -20213,11 +20385,17 @@ function hudTurnPlate() {
   const paceOption = document.getElementById("specspeed")?.selectedOptions[0];
   const watchPace = SPEC ? paceOption?.textContent.trim() || "Blitz" : "Manual";
   // "Remaining" is a count of who is still playing, so a civilization that has
-  // been wiped off the map no longer appears in it.
-  const civCount = state.players
-    .filter(p => p.alive && !p.is_minor && !p.is_barbarian).length;
-  const cityStateCount = state.players
-    .filter(p => p.alive && p.is_minor && !p.is_barbarian).length;
+  // been wiped off the map no longer appears in it. The count it was taken out
+  // of is worth as much as the count itself — eight remaining reads very
+  // differently when nobody has fallen than when six have — so each row carries
+  // its own toll beside it. Both halves come off the same seats, so they always
+  // add up to the roster the world was dealt.
+  const isCiv = p => !p.is_minor && !p.is_barbarian;
+  const isCityState = p => p.is_minor && !p.is_barbarian;
+  const civCount = state.players.filter(p => p.alive && isCiv(p)).length;
+  const civsLost = state.players.filter(p => !p.alive && isCiv(p)).length;
+  const cityStateCount = state.players.filter(p => p.alive && isCityState(p)).length;
+  const cityStatesLost = state.players.filter(p => !p.alive && isCityState(p)).length;
   // The world's shape and its poles are only worth a word when they are not
   // the ones a world arrives with by default.
   const shapeNote = planetMap() ? " · Planet" : "";
@@ -20246,8 +20424,18 @@ function hudTurnPlate() {
     : "";
   const context = identityContext + (playOnLabel ? ` · ${playOnLabel}` : "");
   const plateLabel = `${context}; ${ageLabel}; turn ${state.turn} of ${turnCapLabel()}; ` +
-    `game speed ${speedName}; ${civCount} civilizations remaining; ` +
-    `${cityStateCount} city states remaining; watch pace ${watchPace}`;
+    `game speed ${speedName}; watch pace ${watchPace}; ` +
+    `${civCount} civilizations remaining, ${civsLost} eliminated; ` +
+    `${cityStateCount} city states remaining, ${cityStatesLost} eliminated`;
+  // A count and the toll it was taken out of are one reading, so they share a
+  // row: the survivors keep the value's weight and colour, the fallen follow in
+  // the label's own ink so the eye lands on the living number first.
+  // The label drops "remaining" because the toll beside the number now says
+  // what the number is: "Civs: 8 (4 eliminated)" cannot be read any other way,
+  // and the word cost more width than the whole plate has to spare.
+  const rosterRow = (label, alive, lost) =>
+    `<div class="turn-setting"><span>${label}</span>` +
+    `<b>${alive}<small class="turn-toll">(${lost} eliminated)</small></b></div>`;
   return `<section class="victory-turn" title="${escapeAttr(context)}" aria-label="${escapeAttr(plateLabel)}">` +
     `<span class="turn-era">${ageLabel}</span>` +
     `<div class="turn-count"><div class="turn-heading"><span class="turn-label">Turn</span>` +
@@ -20256,9 +20444,9 @@ function hudTurnPlate() {
     `<small class="turn-total">/ ${turnCapLabel()}</small></div></div>` +
     `<div class="turn-settings" aria-label="Game settings">` +
     `<div class="turn-setting"><span>Game speed:</span><b>${speedName}</b></div>` +
-    `<div class="turn-setting"><span>Civs remaining:</span><b>${civCount}</b></div>` +
-    `<div class="turn-setting"><span>City states remaining:</span><b>${cityStateCount}</b></div>` +
     `<div class="turn-setting"><span>Watch pace:</span><b>${watchPace}</b></div>` +
+    rosterRow("Civs:", civCount, civsLost) +
+    rosterRow("City states:", cityStateCount, cityStatesLost) +
     `</div></section>`;
 }
 
@@ -22297,6 +22485,180 @@ function drawResearchSlot(el, kind, name, progress, total, perTurn, boosted) {
   card.querySelector(".research-eta").textContent = eta;
   card.querySelector(".research-turn-label").textContent = `turn${eta === 1 ? "" : "s"}`;
 }
+// -------------------------------------------------------- active strategy
+//
+// One civilization's current answer, sitting above the log of how it got
+// there. The reasoning log is an account over turns; this is what its agent
+// believes right now — the doctrine every entry below is an instance of, and
+// the two tracks the empire is actually spending on.
+//
+// Which seats it may speak for is a fog question, not a layout one, and it is
+// already settled by the observation:
+//   * a game you are playing, and Watch as — `view_player` names one seat, and
+//     that is the only seat whose laboratory and war plan this page has been
+//     sent. The picker collapses to the header label.
+//   * the omniscient spectator — `view_player` is null, every living major's
+//     plan is on the wire, and the picker chooses between them.
+// Nobody reads a rival's mind: the same rule `reasoning_json` applies to a
+// rival's thoughts, applied here to a rival's plan.
+function strategySeats() {
+  const players = (state && state.players) || [];
+  const viewer = state ? state.view_player : null;
+  if (viewer !== null && viewer !== undefined) return players[viewer] ? [viewer] : [];
+  return players
+    .filter(p => p && !p.is_minor && !p.is_barbarian && p.met !== false && p.alive)
+    .map(p => p.id);
+}
+
+// The seat on show, settling the default when there is no live choice.
+function strategyViewSeat() {
+  const seats = strategySeats();
+  const world = state ? state.seed ?? null : null;
+  if (strategySeatWorld !== world) {
+    strategySeatWorld = world;
+    strategySeat = null;
+  }
+  if (!seats.length) return null;
+  if (seats.includes(strategySeat)) return strategySeat;
+  // Open on whoever is leading rather than on seat 0: in an exhibition the
+  // plan worth reading first is the one that is working. It is pinned as soon
+  // as it is picked, so the panel does not hop to another civilization every
+  // time the standings change underneath it.
+  const players = state.players || [];
+  strategySeat = seats.slice().sort((a, b) =>
+    (players[b]?.score || 0) - (players[a]?.score || 0) || a - b)[0];
+  return strategySeat;
+}
+
+function setStrategySeat(value) {
+  const seat = Number(value);
+  strategySeat = Number.isInteger(seat) ? seat : null;
+  if (state) drawStrategyPanel();
+}
+
+// Keep the picker in step with the world without rebuilding it every frame — a
+// <select> replaced under an open dropdown closes it.
+function syncStrategyOptions(seats, seat) {
+  const select = document.getElementById("strategyplayer");
+  const pick = document.querySelector(".strategy-pick");
+  if (!select || !pick) return;
+  // One seat is not a choice. Say whose plan this is in the header instead of
+  // offering a dropdown that can only be set to what it already says.
+  pick.style.display = seats.length > 1 ? "block" : "none";
+  const signature = `${state.seed}|${seats.join(",")}`;
+  if (select.dataset.signature !== signature) {
+    select.dataset.signature = signature;
+    select.innerHTML = seats.map(id =>
+      `<option value="${id}">${reasonEscape(reasonPlayerName(id))}</option>`).join("");
+  }
+  if (seat !== null) select.value = String(seat);
+}
+
+// What the agent is trying to do, in the rows the dossier uses. Only the parts
+// that are true: a civilization with nothing under threat and no campaign does
+// not need two rows saying so in a sidebar this narrow.
+function strategyPlanHtml(p) {
+  const plan = p.ai_plan || null;
+  const strategy = plan?.strategy || p.ai_strategy || "";
+  if (!plan && !strategy) return "";
+  const row = (label, value, title) => value === null || value === undefined || value === ""
+    ? ""
+    : `<div class="dossier-row"${title ? ` title="${reasonEscape(title)}"` : ""}>` +
+      `<span>${label}</span><b>${value}</b></div>`;
+  const planAge = plan ? Math.max(0, (state.turn || 0) - (plan.assessed_turn || 0)) : null;
+  const forces = plan?.forces || [];
+  const chips = forces.slice(0, 4).map(force =>
+    `<span class="force-chip ${force.posture}" title="${reasonEscape(`${titleCase(force.posture)} · ` +
+      `${force.units} ${force.domain === "sea" ? "naval" : "land"} units · objective ` +
+      `${force.objective?.[0]},${force.objective?.[1]} · local strength ` +
+      `${Math.round((force.strength_ratio || 0) * 100)}% of the defenders · readiness ` +
+      `${Math.round((force.readiness || 0) * 100)}%`)}">` +
+    `${force.domain === "sea" ? "⚓" : "⚔"} ${titleCase(force.posture)} ×${force.units}</span>`).join("");
+  const target = plan?.target_city
+    ? `${reasonEscape(plan.target_city.name)}${plan.target_civ ? ` (${reasonEscape(plan.target_civ)})` : ""}`
+    : plan?.target_civ ? reasonEscape(plan.target_civ) : "";
+  return `<div class="strategy-plan">` +
+    row("Doctrine", strategy
+      ? `<span class="ai-plan ${reasonEscape(strategy)}">${titleCase(strategy)}</span>` : "",
+      "The medium-term plan every department of this AI is currently serving") +
+    (plan ? row("Victory lane", plan.victory_target ? titleCase(plan.victory_target) : "Opportunistic",
+      plan.victory_target
+        ? "A committed game-ending objective"
+        : "No committed objective — the plan follows whichever lane is going best") +
+      row("Reassessed", planAge === 0 ? "This turn" : `Turn ${plan.assessed_turn} · ${planAge} ago`,
+        "When this plan was last reconsidered") +
+      row("Cities", `${p.cities} of ${plan.desired_cities}`,
+        "Cities held against the cities this plan wants") +
+      row("Campaign", target, target ? "The city or civilization this plan is measured against" : "") +
+      row("Defending", plan.threatened_city ? reasonEscape(plan.threatened_city.name) : "",
+        plan.threatened_city ? "The city this plan expects to lose first" : "") +
+      (chips
+        ? `<div class="dossier-note">${chips}${forces.length > 4
+            ? ` <span class="dossier-empty">+${forces.length - 4} more</span>` : ""}</div>`
+        : "")
+      : "") +
+    `</div>`;
+}
+
+// Where this seat's research and civics are to be read from. The observed
+// seat's own ride in `me`; every major's ride in `players[]`, but only on the
+// omniscient view — the one view entitled to look inside a rival's laboratory.
+function strategyStudy(p) {
+  const source = state.view_player === p.id ? (state.me || {}) : p;
+  const list = (all, one, boosted) => Array.isArray(all) ? all : (boosted && one ? [one] : []);
+  return {
+    research: source.research,
+    researchProgress: source.research_progress || 0,
+    boostedTechs: list(source.boosted_techs, source.research, source.research_boosted),
+    civic: source.civic,
+    civicProgress: source.civic_progress || 0,
+    boostedCivics: list(source.boosted_civics, source.civic, source.civic_boosted),
+    science: source.yields?.science ?? p.yields?.science ?? 0,
+    culture: source.yields?.culture ?? p.yields?.culture ?? 0,
+  };
+}
+
+function drawStrategyPanel() {
+  const scope = document.getElementById("strategyscope");
+  const track = document.getElementById("strategyplantrack");
+  const planEl = document.getElementById("strategyplan");
+  const rdiv = document.getElementById("research");
+  const cdiv = document.getElementById("civics");
+  if (!scope || !track || !planEl || !rdiv || !cdiv) return;
+  const seats = strategySeats();
+  const seat = strategyViewSeat();
+  syncStrategyOptions(seats, seat);
+  const p = seat === null ? null : (state.players || [])[seat];
+  if (!p) {
+    scope.textContent = "";
+    scope.title = "";
+    track.style.display = "none";
+    rdiv.dataset.researchKey = ""; cdiv.dataset.researchKey = "";
+    rdiv.innerHTML = cdiv.innerHTML =
+      `<div class="empty-state">No civilization is standing.</div>`;
+    return;
+  }
+  scope.textContent = p.civ;
+  scope.title = seats.length > 1
+    ? `${p.civ}'s current plan — pick another civilization to read theirs`
+    : `${p.civ}'s current plan`;
+  const plan = strategyPlanHtml(p);
+  // A seat with no published plan — a human's own, or a baseline agent that
+  // reports none — keeps the two tracks and drops the empty heading rather
+  // than printing a row that says nothing.
+  // Compared as a property rather than a data attribute: this is a few hundred
+  // characters of markup and it has no business being in the DOM twice.
+  track.style.display = plan ? "block" : "none";
+  if (plan && track.strategyHtml !== plan) {
+    track.strategyHtml = plan;
+    planEl.innerHTML = plan;
+  }
+  const study = strategyStudy(p);
+  drawResearchSlot(rdiv, "science", study.research, study.researchProgress,
+    study.research ? techCost(study.research) : 0, study.science, study.boostedTechs);
+  drawResearchSlot(cdiv, "culture", study.civic, study.civicProgress,
+    study.civic ? civicCost(study.civic) : 0, study.culture, study.boostedCivics);
+}
 // ---------------------------------------------------------------- reasoning
 //
 // The AI reasoning log. The event log says what happened and the war log keeps
@@ -22339,15 +22701,27 @@ function reasonEscape(text) {
 
 // Take a delta into this page's copy of the log.
 //
-// Two things reset it: the server saying the cursor named a log it does not
-// have (`reset`), and a new world arriving under a tab that was watching the
-// last one. Without the second, a page that survives the exhibition's handoff
-// shows the previous game's reasoning above the new one's.
+// Three things reset it. The server saying the cursor named a log it does not
+// have (`reset`); a new world arriving under a tab that was watching the last
+// one — without which a page that survives the exhibition's handoff shows the
+// previous game's reasoning above the new one's; and a change of observed
+// seat.
+//
+// That last one is a fog rule. `reasoning_json` stops *sending* a rival's
+// thoughts the moment Watch as is entered, but the page is still holding
+// everything it absorbed while it was above the world, so without this the
+// redaction is defeated by having watched first: the log names every
+// civilization while the Active strategy panel above it names one. Only the
+// held thoughts go — the cursor survives, because the world has not changed
+// and asking from zero would have the server resend the whole ring.
 function absorbReasoning(st) {
   if (!st) return;
   const world = st.seed ?? null;
-  if (reasoningLog.world !== world) {
-    reasoningLog = {cursor: 0, world, thoughts: [], dropped: 0, truncatedTurns: 0};
+  const viewer = st.view_player ?? null;
+  const newWorld = reasoningLog.world !== world;
+  if (newWorld || reasoningLog.viewer !== viewer) {
+    reasoningLog = {cursor: newWorld ? 0 : reasoningLog.cursor, world, viewer,
+                    thoughts: [], dropped: 0, truncatedTurns: 0};
   }
   const delta = st.ai_reasoning;
   if (!delta || !Array.isArray(delta.thoughts)) return;
@@ -23227,12 +23601,7 @@ function drawSide(force = true) {
   const scroller = document.querySelector(".side-scroll");
   const priorScroll = scroller ? scroller.scrollTop : 0;
   const me = state.me;
-  const rdiv = document.getElementById("research");
-  drawResearchSlot(rdiv, "science", me.research, me.research_progress,
-    me.research ? techCost(me.research) : 0, me.yields.science, me.boosted_techs);
-  const cdiv = document.getElementById("civics");
-  drawResearchSlot(cdiv, "culture", me.civic, me.civic_progress,
-    me.civic ? civicCost(me.civic) : 0, me.yields.culture, me.boosted_civics);
+  drawStrategyPanel();
   const govs = legalFor("government");
   const dedications = legalFor("choose_dedication");
   const societies = legalFor("choose_secret_society");
@@ -23714,6 +24083,13 @@ function cameraYBounds(scale = cam.scale) {
     return {min:0, max:S * 1.5 * Math.max(1, state.map.height - 1)};
   }
   if (mapWrapsY()) return null;
+  // While the extent is unmeasured the veil owns this axis instead. Framing
+  // against the map's own last row is the one thing that must not happen here:
+  // a camera that stops dead the moment the final row reaches the bottom of
+  // the frame announces where the world ends as loudly as a drawn border, and
+  // it does it whether or not anybody has been there.
+  const veil = mapVeilPanBounds();
+  if (veil?.y) return veil.y;
   if (Math.abs(SINR) > 0.001) return null;
   const actualScale = Math.max(.01, scale);
   const focusBounds = mapFocusBounds();
@@ -23733,8 +24109,87 @@ function clampCameraY(y, scale = cam.scale) {
   const bounds = cameraYBounds(scale);
   return bounds ? Math.max(bounds.min, Math.min(bounds.max, y)) : y;
 }
+// East and west had no bound at all on a flat board that does not wrap: the
+// camera walked off into the background and kept going. Under the veil there
+// is now something to hold it, at a distance that is not the world's own edge.
+function clampCameraX(x) {
+  const bounds = mapVeilPanBounds()?.x;
+  return bounds ? Math.max(bounds.min, Math.min(bounds.max, x)) : x;
+}
+// How the soft bound behaves when it is pushed. A drag past it is resisted and
+// resisted harder the further it goes, so the chart can be pulled a little way
+// off the edge of the table but never off it: `CAMERA_GIVE` is the most that
+// stretch can ever amount to, whatever the pointer does. Letting go — or
+// coasting into the bound rather than dragging into it — hands the axis to a
+// spring that pulls it home. That is the whole point of a soft bound over a
+// hard one here: a camera that stops dead is a camera that hit something, and
+// there is nothing out there to hit.
+const CAMERA_GIVE = () => S * 5.5;
+const CAMERA_SPRING = 0.00024;   // world px per ms² per world px out
+const CAMERA_SPRING_DRAG = 0.021; // velocity decay per ms, just under critical
+let cameraBounce = {vx:0, vy:0};
+function cameraStretch(distance, give) {
+  return give * (1 - 1 / (distance / give + 1));
+}
+function cameraRubberBand(value, bounds, give = CAMERA_GIVE()) {
+  if (!bounds) return value;
+  if (value < bounds.min) return bounds.min - cameraStretch(bounds.min - value, give);
+  if (value > bounds.max) return bounds.max + cameraStretch(value - bounds.max, give);
+  return value;
+}
+// The drag itself, rubber-banded on both axes at once. A drag is computed from
+// where it started every time it moves, so the stretch is applied to a raw
+// position rather than to an already-stretched one and cannot accumulate.
+function holdCameraInBounds(x, y) {
+  const bounds = mapVeilPanBounds();
+  if (!bounds) return [x, y];
+  return [cameraRubberBand(x, bounds.x), cameraRubberBand(y, bounds.y)];
+}
+function cameraOutOfBounds(value, bounds) {
+  if (!bounds) return 0;
+  if (value < bounds.min) return value - bounds.min;
+  if (value > bounds.max) return value - bounds.max;
+  return 0;
+}
+// A coast that runs past the bound is not stopped at it — it stretches, and the
+// spring below is what it is handed to. Taking the velocity across rather than
+// discarding it is what makes the two feel like one motion.
+function handOffCameraBounce() {
+  const bounds = mapVeilPanBounds();
+  if (!bounds) return;
+  if (cameraOutOfBounds(cam.x, bounds.x)) {
+    cameraBounce.vx = cameraInertia.vx; cameraInertia.vx = 0;
+  }
+  if (cameraOutOfBounds(cam.y, bounds.y)) {
+    cameraBounce.vy = cameraInertia.vy; cameraInertia.vy = 0;
+  }
+}
+function settleCameraBounce(dt) {
+  const bounds = mapVeilPanBounds();
+  if (!bounds) { cameraBounce.vx = cameraBounce.vy = 0; return false; }
+  let moving = false;
+  for (const [axis, speed] of [["x", "vx"], ["y", "vy"]]) {
+    const out = cameraOutOfBounds(cam[axis], bounds[axis]);
+    if (!out && !cameraBounce[speed]) continue;
+    let velocity = cameraBounce[speed] - out * CAMERA_SPRING * dt;
+    velocity *= Math.exp(-CAMERA_SPRING_DRAG * dt);
+    let next = cam[axis] + velocity * dt;
+    // Home is the bound, not the middle of the map: once the spring has pulled
+    // the axis back inside there is nothing left pulling, so it stops there
+    // instead of sailing on across ground the viewer never asked to leave.
+    const home = cam[axis] - out;
+    if (out && (out > 0) !== (next > home)) { next = home; velocity = 0; }
+    if (Math.abs(velocity) < .0004 && Math.abs(next - home) < .35) {
+      next = home; velocity = 0;
+    }
+    cam[axis] = next; cameraBounce[speed] = velocity;
+    if (velocity) moving = true;
+  }
+  return moving;
+}
 function clearCameraInertia() {
   cameraInertia = stoppedCameraInertia();
+  cameraBounce.vx = cameraBounce.vy = 0;
 }
 function updateCameraFollowChip() {
   const chip = document.getElementById("cinema-follow");
@@ -23890,7 +24345,7 @@ function applyCameraAnchor(wx, wy, sx, sy, scale = cam.scale) {
                           : Math.max(.25, Math.min(3.2, scale));
   const vx = (sx - MAPW / 2) / cam.scale;
   const vy = (sy - MAPH / 2) / cam.scale / YS;
-  cam.x = wx - (COSR * vx + SINR * vy);
+  cam.x = clampCameraX(wx - (COSR * vx + SINR * vy));
   cam.y = clampCameraY(wy - (-SINR * vx + COSR * vy));
 }
 function flyCameraTo(pos, scale = cam.scale) {
@@ -23930,7 +24385,8 @@ function nudgeCamera(screenX, screenY) {
   }
   const vx = screenX / cam.scale, vy = screenY / cam.scale / YS;
   const dx = COSR * vx + SINR * vy, dy = -SINR * vx + COSR * vy;
-  cameraFlight = {x:cam.x + dx, y:clampCameraY(cam.y + dy), scale:cam.scale};
+  cameraFlight = {x:clampCameraX(cam.x + dx), y:clampCameraY(cam.y + dy),
+                  scale:cam.scale};
 }
 function zoomAt(f, sx, sy, skyAnchor = null) {
   if (planetMap()) {
@@ -24016,7 +24472,7 @@ function advanceUserCameraMotion(now = performance.now()) {
     cameraFlight = null;
     const step = EDGE_PAN_SPEED * dt / 1000 / Math.max(.25, cam.scale);
     const vx = edgePanVector.x * step, vy = edgePanVector.y * step / YS;
-    cam.x += COSR * vx + SINR * vy;
+    cam.x = clampCameraX(cam.x + COSR * vx + SINR * vy);
     cam.y = clampCameraY(cam.y - SINR * vx + COSR * vy);
     active = true;
   }
@@ -24105,7 +24561,11 @@ function advanceUserCameraMotion(now = performance.now()) {
       cam.x += cameraInertia.vx * dt; cam.y += cameraInertia.vy * dt;
       if (Math.abs(cameraInertia.vrot) > .00001) setRot(cam.rot + cameraInertia.vrot * dt);
       if (Math.abs(cameraInertia.vtilt) > .00001) setTilt(cinematicYS + cameraInertia.vtilt * dt);
-      cam.y = clampCameraY(cam.y);
+      // A coast that runs past a veiled bound is handed to the spring rather
+      // than stopped at it, carrying the speed it arrived with, so a throw and
+      // its rebound read as one motion instead of a collision.
+      if (mapVeilPanBounds()) handOffCameraBounce();
+      else cam.y = clampCameraY(cam.y);
       const decay = Math.pow(.003, dt / 1000);
       cameraInertia.vx *= decay; cameraInertia.vy *= decay;
       cameraInertia.vrot *= decay; cameraInertia.vtilt *= decay;
@@ -24115,7 +24575,10 @@ function advanceUserCameraMotion(now = performance.now()) {
         skyTurn.vlongitude *= decay; skyTurn.vlatitude *= decay;
       }
       active = true;
-    } else clearCameraInertia();
+    } else cameraInertia = stoppedCameraInertia();
+    // Not inside the speed test above: a chart let go while it is stretched has
+    // no throw left in it at all, and that is precisely when it must spring.
+    if (settleCameraBounce(dt)) active = true;
   }
   return active;
 }
@@ -24764,8 +25227,9 @@ window.addEventListener("pointermove", ev => {
       draw(); drawMini();
     } else if (dragMoved) {
       const dvx = dx / cam.scale, dvy = dy / cam.scale / YS;
-      cam.x = dragState.cx - (COSR * dvx + SINR * dvy);
-      cam.y = dragState.cy - (-SINR * dvx + COSR * dvy);
+      [cam.x, cam.y] = holdCameraInBounds(
+        dragState.cx - (COSR * dvx + SINR * dvy),
+        dragState.cy - (-SINR * dvx + COSR * dvy));
       const now = performance.now(), dt = Math.max(1, now - dragState.lastT);
       const vx = (cam.x - dragState.lastX) / dt, vy = (cam.y - dragState.lastY) / dt;
       dragState.vx = dragState.vx * .55 + vx * .45;
@@ -24925,8 +25389,9 @@ cv.addEventListener("pointermove", ev => {
       draw(); drawMini();
     } else if (touchGesture.controlled) {
       const dvx = dx / cam.scale, dvy = dy / cam.scale / YS;
-      cam.x = touchGesture.cx - (COSR * dvx + SINR * dvy);
-      cam.y = touchGesture.cy - (-SINR * dvx + COSR * dvy);
+      [cam.x, cam.y] = holdCameraInBounds(
+        touchGesture.cx - (COSR * dvx + SINR * dvy),
+        touchGesture.cy - (-SINR * dvx + COSR * dvy));
       const now = performance.now(), dt = Math.max(1, now - touchGesture.lastT);
       const vx = (cam.x - touchGesture.lastX) / dt, vy = (cam.y - touchGesture.lastY) / dt;
       touchGesture.vx = touchGesture.vx * .55 + vx * .45;
@@ -26950,6 +27415,13 @@ document.getElementById("newgame-options").addEventListener("change", stageSelec
   player.onchange = () => setReasonFilter("player", player.value);
   level.onchange = () => setReasonFilter("level", level.value);
   topic.onchange = () => setReasonFilter("topic", topic.value);
+}
+// Whose plan the Active strategy panel above the log is showing. Its options
+// are filled from the world on every frame; only the omniscient spectator ever
+// has more than one to offer.
+{
+  const seat = document.getElementById("strategyplayer");
+  seat.onchange = () => setStrategySeat(seat.value);
 }
 {
   const cinema = document.getElementById("cinemachk");
