@@ -112,3 +112,9 @@ two and a half times faster once it exists.
 
 Neither run produced a rule violation, every game reached its turn limit, and
 total symptoms per game fell from 130–144 to 93–129.
+
+None of it costs anything measurable. The per-turn record is one six-entry deque
+per unit, and the tactical scorers — which ask about every candidate tile of
+every unit — read a verdict settled once when the window closed rather than
+re-deriving it. Two paired `audit --games 2 --turns 120` runs came out at 7.6s
+before and 7.5s after.
