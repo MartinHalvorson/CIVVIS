@@ -123,7 +123,15 @@ const CONTROL: (&str, u32, u32) = ("deep 20/80 (shipped)", 20, 80);
 /// nothing in an hour. These three answer the question and include a control
 /// that should come back NEGATIVE, which is what tells you the ladder can see
 /// anything at all.
-const DOSES: [(&str, u32, u32); 3] = [
+const DOSES: [(&str, u32, u32); 4] = [
+    // The promotion itself, isolated. `ai_eval strategic_deep strategic` cannot
+    // answer this cleanly: with no `valuenet.json` on the machine, `strategic`
+    // silently degrades to `strategic_score` while `strategic_deep` blends an
+    // untrained-default net, so those two arms differ in value-net handling as
+    // well as in budget. Constructing both `StrategicAi` values here gives
+    // identical genome and identical net status, so the ONLY difference is the
+    // budget -- which is the whole question.
+    ("40/40   STOCK vs promoted deep", 40, 40),
     ("20/120  deeper", 20, 120),
     ("10/80   2x reviews", 10, 80),
     ("40/80   HALF reviews (expected negative)", 40, 80),
