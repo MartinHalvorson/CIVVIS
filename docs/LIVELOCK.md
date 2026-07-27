@@ -84,3 +84,30 @@ motion    unit-turns=25112 livelock=1361 (5.42%) idle-field=5333 (21.24%) picket
 `picket` — stood still, fortified, outside its own city — is there so that a
 "fix" that merely converts circling into fortified stillness shows up as a
 transfer rather than as a win. Read the three columns together.
+
+## What it bought
+
+The same six games, re-run with all three responses in place:
+
+| | before | after | |
+|---|---|---|---|
+| livelock | 5.15% | **1.77%** | −3.38 pts |
+| idle-field | 22.55% | 16.60% | −5.95 pts |
+| picket | 33.43% | 38.50% | +5.07 pts |
+| unit-turns | 156 201 | 162 729 | |
+
+A **66% reduction** in the share of the game spent going in circles, and the
+`picket` column says where the rest of it went. Adding the three: 9.33 points of
+unit-turns left circling and field-idling, 5.07 of them into fortified holding —
+which is a real improvement on both (a picket has its fortification bonus and
+heals) but not a unit doing something — and the remaining 4.26 into ordinary
+productive turns. Empires also field about 4% more units over the same 200
+turns, which is what less waste looks like from the outside.
+
+Episodes fell only from 432 to 382, while the turns inside them fell from 18.6
+each to 7.5. That is the intended shape: nothing here stops a loop from
+*starting* — a loop only exists once a unit has been in it for a window — so
+what the three responses buy is breaking one about two and a half times faster.
+
+Neither run produced a rule violation, every game reached its turn limit, and
+total symptoms per game fell from 130–144 to 93–129.

@@ -1868,9 +1868,10 @@ impl BasicAi {
                 motion.tiles.pop_front();
             }
             motion.looping = motion.circling();
+            let looping = motion.looping;
             let fruitless = motion.fruitless;
             let footprint = motion.footprint();
-            let stand_down = motion.looping && fruitless >= LIVELOCK_STAND_DOWN_AFTER;
+            let stand_down = looping && fruitless >= LIVELOCK_STAND_DOWN_AFTER;
             if stand_down {
                 // The tabu has had a full second window to redirect this unit
                 // and has not. Stop paying for the same fruitless search, hold
@@ -1882,10 +1883,8 @@ impl BasicAi {
                     ..UnitMotion::default()
                 };
             }
-            let looping = !stand_down && self.unit_motion[&uid].looping;
-            if !stand_down && !(looping && !was_looping) {
-                continue;
-            }
+            // Say it once when the loop is first recognized, and once more if
+            // it outlasts every attempt to steer out of it.
             let kind = g.units[&uid].kind.as_str();
             if stand_down {
                 think!(self.journal, Military, Decision,
@@ -1894,7 +1893,7 @@ impl BasicAi {
                         them, and steering it out did not work; holding for \
                         {LIVELOCK_STAND_DOWN_TURNS} turns";
                        pos);
-            } else {
+            } else if looping && !was_looping {
                 think!(self.journal, Military, Detail,
                        "{kind} {uid} is walking in circles";
                        "{fruitless} turns inside {footprint} tiles with nothing to show for \
