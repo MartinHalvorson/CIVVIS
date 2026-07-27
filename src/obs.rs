@@ -1817,6 +1817,70 @@ mod tests {
         assert_eq!(observation(&game, 0)["me"]["sees_exoplanet"], json!(true));
     }
 
+    /// A launch is a fact about the world, not about the shape the world is
+    /// drawn in, so the same craft belongs over a flat board as over the globe.
+    /// A sheet of paper has no limb for it to pass behind, so what a flat map
+    /// draws is the ground track: the line directly under the craft, laid a
+    /// little further west on every pass because the world turned underneath
+    /// while the craft went round. That westward term is the whole difference
+    /// between an orbit and a wave scrolling across a chart, so it is the part
+    /// worth pinning.
+    #[test]
+    fn a_launched_satellite_crosses_a_flat_board_as_a_ground_track() {
+        let mut game = Game::new(2, 18, 12, 4_412, 25, 0);
+        assert!(
+            game.rules.projects.contains_key(EXOPLANET_EYE),
+            "{EXOPLANET_EYE} must name a shipped project",
+        );
+        for player in game.players.iter_mut() {
+            player.science_projects.clear();
+        }
+        game.record_contact(0, 1);
+        let projects = |observed: &Value, pid: usize| -> Vec<String> {
+            observed["players"][pid]["science_projects"]
+                .as_array()
+                .expect("a met civilization reports what it has finished")
+                .iter()
+                .map(|project| project.as_str().unwrap().to_string())
+                .collect::<Vec<_>>()
+        };
+        assert!(projects(&observation(&game, 1), 0).is_empty());
+        game.players[0]
+            .science_projects
+            .insert(EXOPLANET_EYE.to_string());
+        // The neighbour sees whose satellite it is, which is what colours the
+        // track. An unmet civilization reports nothing at all and so has no
+        // craft drawn for it; that contract has its own test.
+        assert_eq!(
+            projects(&observation(&game, 1), 0),
+            vec![EXOPLANET_EYE.to_string()],
+        );
+
+        const INDEX: &str = include_str!("../web/index.html");
+        assert!(INDEX.contains("satellite:\"launch_earth_satellite\","));
+        // One orbit per civilization, in the world's own frame, so the globe
+        // and the flat board draw the same launch rather than two of them.
+        assert!(INDEX.contains("function skyOrbit(player) {"));
+        assert!(INDEX.contains("const {inclination, node, phase, pace} = skyOrbit(player);"));
+        assert!(INDEX.contains("const orbit = skyOrbit(player);"));
+        // The ground track itself: the orbit's own latitude and longitude, less
+        // the turn the world made under it.
+        assert!(INDEX.contains("const FLAT_SAT_DRIFT = .1;"));
+        assert!(INDEX.contains("function flatSatelliteGround(orbit, theta) {"));
+        assert!(
+            INDEX.contains("- FLAT_SAT_DRIFT * theta;"),
+            "a ground track without the world's own turn under it is a sine wave",
+        );
+        // Overhead is only in the picture once the camera is off the ground,
+        // and the board keeps painting while a craft is up there — a strategic
+        // map is otherwise perfectly still between turns.
+        assert!(INDEX.contains("if (!state || planetMap()) return 0;"));
+        assert!(INDEX.contains("return Math.max(0, Math.min(1, (.86 - cam.scale) / .34));"));
+        assert!(INDEX.contains("return flatSkyShown() > .02 && skyCrews().satellite.length > 0;"));
+        assert!(INDEX.contains("|| planetSkyAnimating() || flatSkyAnimating();"));
+        assert!(INDEX.contains("  drawFlatSatellites(now0);\n  drawNuclearBlasts(now0);"));
+    }
+
     #[test]
     fn the_spectator_feed_trades_per_item_research_for_era_firsts() {
         let mut game = Game::new(2, 18, 12, 7, 25, 0);
