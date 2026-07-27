@@ -40,6 +40,19 @@ seed 109000. Exact ties mean the treatment is too rare or redundant and stop
 the experiment. Terminal score and plan labels are diagnostics only. Only the
 existing win-based promotion gate may change the incumbent.
 
+### Upstream champion confirmation
+
+After that screen completed but before this branch was ready, `ff083ea` shipped
+the repository's first evolved genome and changed both `strategic_deep` arms
+from fallback weights to the new incumbent. The original screen remains final
+for its population, but cannot decide a treatment on the newly shipped agent.
+
+Before observing any games with that genome, a second 30-map development
+screen is registered on fresh seed 109000 with otherwise identical settings.
+Only a favorable win direction earns a disjoint 120-map gate at seed 110000;
+exact ties stop again. This is a confirmation against a changed incumbent, not
+an extension of the fallback-weight sample.
+
 ## Result
 
 Across 30 fresh mirrored maps (60 games), the candidate and control split wins
