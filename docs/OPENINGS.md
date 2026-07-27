@@ -497,3 +497,62 @@ has come back at or near zero.
 Note the ordering has changed since the first draft: (1) and (2) are about
 tempo and outranked the per-civilization work once the expansion numbers came
 in. Openings do set the tempo here — just not by *which* six things get built.
+
+## 11. The food ceiling — the first lever in this document that is not zero
+
+§8 left one live question: the capital's growth gates every settler, and
+`Game::citizen_strategy` weights **production 1.55 against food 1.25**. How
+much food is the capital giving up?
+
+Measured without changing any behaviour. `city_yields_weighted` and
+`city_citizen_plan_weighted` are additive: passing `None` is exactly what the
+engine already does, and neither is on the cached path. They let the census ask
+what a capital *would* work under different appetites while the engine keeps
+running its own. The comparison arm is deliberately extreme — food 10.0 against
+production 1.0 — because this is a **ceiling**, not a proposal.
+
+60 maps, 4 players, 32×22, capital only:
+
+| turn | population | food yield → greedy | food **surplus** → greedy | production → greedy |
+|---|---|---|---|---|
+| 25 | 2.36 | 7.15 → 8.23 | **2.43 → 3.51** (+44%) | 9.41 → 7.68 (−18%) |
+| 50 | 3.46 | 9.75 → 11.80 | **2.83 → 4.88** (+72%) | 12.66 → 9.44 (−25%) |
+| 75 | 4.68 | 12.55 → 15.31 | **3.19 → 5.95** (+87%) | 14.71 → 10.79 (−27%) |
+| 100 | 5.96 | 16.08 → 19.20 | **4.16 → 7.28** (+75%) | 18.10 → 14.07 (−22%) |
+
+**Read the surplus column, not the yield column.** Food consumption is two per
+population, and growth runs on what is left over — so a 15–22% gain in gross
+food is a **44–87% gain in the surplus that actually grows the city**. That is
+the largest headroom anything in this document has found, by an order of
+magnitude.
+
+**And read the production column beside it.** The same reassignment costs
+18–27% of capital production. That is not a footnote: a settler costs 80, then
+110, then 140 production, so the food-greedy capital reaches the population
+threshold sooner and then takes longer to build the thing it unlocked. Growth
+gates the settler; production pays for it. Which wins is not derivable from
+these numbers and is exactly what a paired eval is for.
+
+**Why this is worth doing when six other levers were not.** Every earlier lever
+here was bounded at or near zero *before* any eval — the opening book at
+−0.003, tech and civic order below resolution, the civilization-aware layer at
+p = 0.83. This one has a measured ceiling of +44–87% on the quantity that
+§7–§8 showed to be binding. It is the first candidate in this line of work with
+real headroom rather than a hypothesis.
+
+⚠ **Three cautions before anyone builds it.**
+
+1. The extreme weighting is the ceiling, not the proposal. The treatment worth
+   evaluating is a modest shift — swapping the two constants, or a food bonus
+   that decays once the empire is at its city target — not food 10.0.
+2. `citizen_strategy` is **engine-side and applies to every player**, including
+   a human seat's auto-managed cities. This is not an `AdvancedAi` flag, and
+   the change is correspondingly heavier. It belongs behind a treatment arm for
+   evaluation, and its promotion is a game-balance decision as well as a
+   strength one.
+3. The trade is against production in a repository where `docs/GENOME.md`'s
+   `gene_leverage` found **economy** to be the one load-bearing gene block.
+   Moving the food/production exchange rate is moving exactly that block, so
+   the prior that it is already near a local optimum deserves weight — and the
+   expansion sub-block was also the one where *scrambling helped*, which cuts
+   the other way. The measurement will settle it; argument will not.

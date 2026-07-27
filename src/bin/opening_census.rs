@@ -64,6 +64,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use civvis::ai::{AdvancedAi, Ai};
 use civvis::game::{Action, Game, GameOptions, Item};
+use civvis::rules::Yields;
 use civvis::parallel;
 
 fn number(args: &[String], flag: &str, default: usize) -> usize {
@@ -122,7 +123,7 @@ struct Seat {
     /// costs a population and 80/110/140 production, so "why is expansion
     /// slow" reduces to "how fast does the capital grow" — and whether pop
     /// sits at the housing cap separates a housing constraint from a food one.
-    checkpoints: Vec<(u32, i32, f64, f64)>,
+    checkpoints: Vec<(u32, i32, f64, f64, f64, f64, f64)>,
     cities_at_window: usize,
     /// Survival, tracked over the whole game rather than the window, because
     /// "recorded a short opening" is a proxy for early death and a proxy is
@@ -452,7 +453,31 @@ fn main() {
                         {
                             let housing = game.city_housing(cap);
                             let food = game.city_yields(cap.id).food;
-                            seat.checkpoints.push((turn + 1, cap.pop, housing, food));
+                            // The ceiling: what this same capital, on these
+                            // same tiles, would work under appetites that
+                            // want food. Nothing is adopted -- the engine
+                            // still runs its own weights.
+                            let now = game.city_yields(cap.id);
+                            let greedy = game.city_yields_weighted(
+                                cap.id,
+                                Yields {
+                                    food: 10.0,
+                                    production: 1.0,
+                                    gold: 0.1,
+                                    science: 0.1,
+                                    culture: 0.1,
+                                    faith: 0.1,
+                                },
+                            );
+                            seat.checkpoints.push((
+                                turn + 1,
+                                cap.pop,
+                                housing,
+                                food,
+                                greedy.food,
+                                now.production,
+                                greedy.production,
+                            ));
                         }
                     }
                     if live == 0 && seat.founded && seat.death_turn.is_none() {
@@ -792,11 +817,11 @@ fn main() {
     // Capital growth, which is what a settler is actually paid for.
     println!("\ncapital growth (a settler costs one population and 80/110/140 production)");
     println!(
-        "{:>5} {:>7} {:>16} {:>16} {:>16} {:>10}",
-        "turn", "seats", "population", "housing", "food yield", "at cap"
+        "{:>5} {:>7} {:>16} {:>16} {:>16} {:>16} {:>8} {:>7}",
+        "turn", "seats", "population", "housing", "food yield", "food if greedy", "surplus", "prod"
     );
     for mark in [25u32, 50, 75, 100] {
-        let rows: Vec<&(u32, i32, f64, f64)> = seats
+        let rows: Vec<&(u32, i32, f64, f64, f64, f64, f64)> = seats
             .iter()
             .flat_map(|s| s.checkpoints.iter())
             .filter(|(turn, ..)| *turn == mark)
@@ -805,19 +830,29 @@ fn main() {
             continue;
         }
         let pops: Vec<f64> = rows.iter().map(|(_, pop, ..)| *pop as f64).collect();
-        let house: Vec<f64> = rows.iter().map(|(_, _, h, _)| *h).collect();
-        let food: Vec<f64> = rows.iter().map(|(.., f)| *f).collect();
+        let house: Vec<f64> = rows.iter().map(|(_, _, h, ..)| *h).collect();
+        let food: Vec<f64> = rows.iter().map(|(_, _, _, f, ..)| *f).collect();
+        let greedy: Vec<f64> = rows.iter().map(|(_, _, _, _, g, _, _)| *g).collect();
+        let (greedy_mean, greedy_se) = mean_se(&greedy);
+        let prod: Vec<f64> = rows.iter().map(|(_, _, _, _, _, p, _)| *p).collect();
+        let gprod: Vec<f64> = rows.iter().map(|(.., gp)| *gp).collect();
+        let (prod_mean, _) = mean_se(&prod);
+        let (gprod_mean, _) = mean_se(&gprod);
+        // Food consumption is two per population in Civilization VI, so the
+        // surplus -- not the gross yield -- is what actually grows the city.
+        let eaten = 2.0 * pops.iter().sum::<f64>() / pops.len().max(1) as f64;
         // "At cap" means the housing headroom is under one population, i.e.
         // growth is housing-bound rather than food-bound.
         let capped = rows
             .iter()
-            .filter(|(_, pop, h, _)| (*pop as f64) >= *h - 1.0)
+            .filter(|(_, pop, h, ..)| (*pop as f64) >= *h - 1.0)
             .count();
         let (pop_mean, pop_se) = mean_se(&pops);
         let (house_mean, house_se) = mean_se(&house);
         let (food_mean, food_se) = mean_se(&food);
         println!(
-            "{:>5} {:>7} {:>9.2} +/- {:<4.2} {:>9.2} +/- {:<4.2} {:>9.2} +/- {:<4.2} {:>9.0}%",
+            "{:>5} {:>7} {:>9.2} +/- {:<4.2} {:>9.2} +/- {:<4.2} {:>9.2} +/- {:<4.2} \
+             {:>9.2} +/- {:<4.2} {:>7} {:>13}",
             mark,
             rows.len(),
             pop_mean,
@@ -826,7 +861,14 @@ fn main() {
             house_se,
             food_mean,
             food_se,
-            100.0 * capped as f64 / rows.len() as f64
+            greedy_mean,
+            greedy_se,
+            format!(
+                "{:.2}->{:.2}",
+                food_mean - eaten,
+                greedy_mean - eaten
+            ),
+            format!("{prod_mean:.2}->{gprod_mean:.2}")
         );
     }
 
