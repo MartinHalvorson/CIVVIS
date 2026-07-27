@@ -191,6 +191,7 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
             *tourism_by_tile.entry(position).or_default() += amount;
         }
     }
+    let revealed = revealed_resources(g, pid, omniscient);
     let tiles: Vec<Value> = explored
         .iter()
         .filter_map(|pos| {
@@ -218,10 +219,9 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
             };
             Some(tile_json(
                 g,
-                pid,
                 tile,
                 owner,
-                omniscient,
+                &revealed,
                 live,
                 &tourism_by_tile,
                 planned.get(pos).copied().filter(|_| live),
@@ -1066,20 +1066,51 @@ fn victory_progress_json(g: &Game, pid: usize, leading_score: i64) -> Value {
     })
 }
 
+/// The resources a tile view may name. A seated player is shown what its own
+/// research has uncovered; the omniscient spectator is shown what the *first*
+/// civilization to get there has uncovered, so an Iron deposit is nowhere on
+/// the world map until somebody researches Bronze Working. Tournament Civ VI
+/// hands its spectator every deposit at once, but a map that fills in as the
+/// world learns to read it is the more honest picture of what the players are
+/// actually deciding on.
+///
+/// Only majors count: a city-state never leads anyone to a resource. Whether
+/// the discoverer is still alive does not matter — knowledge does not leave
+/// the world with the civilization that found it, and a deposit that vanished
+/// when its finder was conquered would be a very odd map.
+///
+/// Computed once per observation because it is read for every tile on the map.
+fn revealed_resources(g: &Game, pid: usize, omniscient: bool) -> BTreeSet<&str> {
+    g.rules
+        .resources
+        .keys()
+        .filter(|resource| {
+            if omniscient {
+                g.players
+                    .iter()
+                    .filter(|player| !player.is_minor && !player.is_barbarian)
+                    .any(|player| g.resource_visible_to(player.id, resource))
+            } else {
+                g.resource_visible_to(pid, resource)
+            }
+        })
+        .map(String::as_str)
+        .collect()
+}
+
 fn tile_json(
     g: &Game,
-    pid: usize,
     tile: &Tile,
     owner: Option<usize>,
-    omniscient: bool,
+    revealed: &BTreeSet<&str>,
     live: bool,
     tourism_by_tile: &BTreeMap<Pos, f64>,
     planned: Option<&str>,
 ) -> Value {
     let resource = tile
         .resource
-        .as_ref()
-        .filter(|resource| omniscient || g.resource_visible_to(pid, resource));
+        .as_deref()
+        .filter(|resource| revealed.contains(resource));
     // Adjacency is read off the *current* neighbors, so it may only be sent
     // for a tile being looked at right now. A remembered district would
     // otherwise report yields from tiles the player cannot see.
@@ -1382,12 +1413,14 @@ mod tests {
         let city = &game.cities[&city_id];
         let tile = &game.map.tiles[&city.pos];
         let tourism = game.tourism_by_tile(0);
-        let live = tile_json(&game, 0, tile, Some(0), true, true, &tourism, None);
+        let spectator = revealed_resources(&game, 0, true);
+        let seated = revealed_resources(&game, 0, false);
+        let live = tile_json(&game, tile, Some(0), &spectator, true, &tourism, None);
         assert_eq!(live["owner_city"], json!(city_id));
         assert_eq!(live["owner_city_name"], json!(city.name));
         assert!(live["tourism"].is_number());
 
-        let remembered = tile_json(&game, 0, tile, Some(0), false, false, &tourism, None);
+        let remembered = tile_json(&game, tile, Some(0), &seated, false, &tourism, None);
         assert_eq!(remembered["owner_city"], json!(city_id));
         assert!(remembered["tourism"].is_null());
         assert!(
@@ -2127,5 +2160,76 @@ mod tests {
             .filter_map(|player| player["victories"]["score"]["progress"].as_f64())
             .fold(0.0_f64, f64::max);
         assert_eq!(best, 100.0);
+    }
+
+    /// Nobody in an Ancient world knows what Iron is. The omniscient
+    /// spectator watches that world rather than a survey of it, so the
+    /// deposit reaches the wire only once the first civilization has the
+    /// technology to recognise it — and a seat that has not researched it
+    /// still sees bare ground.
+    #[test]
+    fn a_strategic_deposit_reaches_the_spectator_when_the_first_civ_discovers_it() {
+        let mut game = Game::new_full(2, 20, 14, 19_067, 120, 1, false);
+        let deposit = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find_map(|unit| {
+                let unit = &game.units[&unit];
+                (unit.kind == "settler").then_some(unit.pos)
+            })
+            .expect("the player starts with a settler");
+        game.map.tiles.get_mut(&deposit).unwrap().resource = Some("iron".to_string());
+        for player in game.players.iter_mut() {
+            player.techs.remove("bronze_working");
+        }
+
+        let spectated = |game: &Game| {
+            observed_tile(&observation_spectator(game, 0), deposit)["resource"].clone()
+        };
+        assert!(
+            spectated(&game).is_null(),
+            "no civilization has Bronze Working, so the Iron is on nobody's map"
+        );
+
+        let city_state = game
+            .players
+            .iter()
+            .position(|player| player.is_minor)
+            .expect("the world has a city-state");
+        game.players[city_state]
+            .techs
+            .insert("bronze_working".to_string());
+        assert!(
+            spectated(&game).is_null(),
+            "a city-state is not one of the civilizations the spectator follows"
+        );
+
+        game.players[1].techs.insert("bronze_working".to_string());
+        assert_eq!(
+            spectated(&game),
+            json!("iron"),
+            "one civilization's discovery puts the deposit on the world map"
+        );
+
+        // The seat itself is unmoved by a rival's research: its own view is
+        // still gated on its own technology.
+        assert!(
+            observed_tile(&observation(&game, 0), deposit)["resource"].is_null(),
+            "seat 0 has not researched Bronze Working and must still see bare ground"
+        );
+        game.players[0].techs.insert("bronze_working".to_string());
+        assert_eq!(
+            observed_tile(&observation(&game, 0), deposit)["resource"],
+            json!("iron")
+        );
+    }
+
+    fn observed_tile(observation: &Value, position: Pos) -> &Value {
+        observation["map"]["tiles"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|tile| tile["pos"] == json!([position.0, position.1]))
+            .expect("tile is in the observation")
     }
 }
