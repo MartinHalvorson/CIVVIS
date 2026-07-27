@@ -396,10 +396,11 @@ pub struct StrategicAi {
     /// consume a unit action unless the game ends. Off by default; the
     /// evaluator-only `strategic_deep_checkmate` entrant measures it.
     ///
-    /// **Measured, not promoted.** On 30 fresh mirrored maps it split games
-    /// 30-30 with all 30 map directions neutral, identical victory types, and
-    /// identical plan traces. Removing the proxy removed both the prior harm
-    /// and measurable headroom; see `docs/RELIGIOUS_CHECKMATE_SEARCH.md`.
+    /// **Measured, not promoted.** Two disjoint 30-map screens -- one on the
+    /// fallback weights and one on the first shipped evolved genome -- each
+    /// split games 30-30 with every map direction neutral and identical
+    /// victory types. Removing the proxy removed both the prior harm and
+    /// measurable headroom; see `docs/RELIGIOUS_CHECKMATE_SEARCH.md`.
     pub religious_checkmate_search: bool,
     /// Project a rotating subset of lanes instead of all of them: the
     /// adaptive baseline, the lane in force, and one challenger that

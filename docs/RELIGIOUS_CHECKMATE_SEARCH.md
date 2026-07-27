@@ -75,3 +75,18 @@ one- or two-action checkmate, or the ordinary controller closed the same game
 on its remaining turn. Per the pre-registration, exact win ties do not earn a
 disjoint gate. The entrant remains an evaluator-only negative control, its
 flag stays off, and `strategic_deep` is unchanged.
+
+### Evolved-genome confirmation
+
+The fresh seed-109000 screen on the newly shipped genome repeated the exact
+win null: 30-30 games, with all 30 map directions neutral, paired score 50.0%,
+and +0 Elo point estimate. Victory types were again identical within the pair:
+one culture, three domination, 19 religious, and seven score victories per
+arm. Final plan targets and dominant-plan outcomes were identical. Terminal
+score was 50.0%, with one favorable direction, 26 neutral, and three adverse
+(`p = 0.6250`).
+
+Across the fallback and evolved policy populations, all **60 of 60** disjoint
+map directions were neutral. The changed incumbent did not create checkmate
+headroom. No gate was earned; the outcome-only treatment remains evaluator-
+only and off by default.
