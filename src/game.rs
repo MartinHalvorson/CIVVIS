@@ -2681,6 +2681,8 @@ fn install_test_district(game: &mut Game, city: u32, district: &str) -> Pos {
     position
 }
 
+pub mod quests;
+
 #[cfg(test)]
 mod city_state_unique_tests;
 
@@ -13422,6 +13424,10 @@ pub struct Player {
     /// in lockstep with the ``great_work:*`` counters. Theming reads these.
     #[serde(default)]
     pub great_work_pieces: Vec<GreatWorkPiece>,
+    /// The quest each met city-state is currently asking this civilization
+    /// for, keyed by the city-state's seat. Per pair, not per city-state.
+    #[serde(default)]
+    pub quests: BTreeMap<usize, crate::game::quests::CityStateQuest>,
     #[serde(default)]
     pub boosted_techs: BTreeSet<String>,
     #[serde(default)]
@@ -13510,6 +13516,7 @@ impl Player {
             envoys: Vec::new(),
             counters: BTreeMap::new(),
             great_work_pieces: Vec::new(),
+            quests: BTreeMap::new(),
             boosted_techs: BTreeSet::new(),
             boosted_civics: BTreeSet::new(),
         }
@@ -44648,6 +44655,7 @@ impl Game {
         self.process_loyalty(pid);
         self.record_emergency_presence(pid);
         self.process_influence(pid);
+        self.check_city_state_quests(pid);
         self.irradiate_units(pid);
         let turn_unit_ids = self.player_unit_ids(pid);
         for uid in turn_unit_ids.iter().copied() {
