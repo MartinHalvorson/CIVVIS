@@ -2404,3 +2404,64 @@ one context read as true in another. The genome was present in the repository
 and absent in the process; the fallback was correct in a checkout and wrong in
 deployment. Ship-and-verify means verifying where the code runs, not where it
 was written.
+
+## 2026-07-27 — PRE-REGISTRATION: the shipped genome may be tuned for the wrong map
+
+Written before the runs report, so the prediction is on record rather than
+fitted to the outcome.
+
+`data/evolved/best.json` was evolved and validated entirely at **4 players on
+24×16**. The exhibition runs **6 players on 74×46 with 9 city-states**
+(`tools/spectator_supervisor.py`'s own command line).
+
+```
+validation : 24x16 =  384 tiles / 4 players =  96 tiles per player
+deployment : 74x46 = 3404 tiles / 6 players = 567 tiles per player
+             -> 5.9x more room per player where it actually runs
+```
+
+The champion's expansion genes moved sharply toward building tall:
+
+| gene | default | champion | change |
+|---|---|---|---|
+| `city_target` | 4.000 | 2.408 | **−40%** |
+| `settler_min_pop` | 2.000 | 4.457 | **+123%** |
+| `settle_dist` | 0.400 | 0.692 | +73% |
+| `min_city_dist` | 4.000 | 3.638 | −9% |
+| `settler_stop_turn` | 150.0 | 143.2 | −5% |
+
+It targets 40% fewer cities and demands a city more than twice as populous
+before producing a settler. On 96 tiles per player that is correct — there is
+nowhere to put more cities. On 567 tiles per player, land is nearly free and
+under-expansion is a severe error.
+
+**Prediction: the shipped genome under-expands at the deployment configuration
+and may be weaker than `Weights::default()` there.** The eval prints city
+counts, so the mechanism is checkable independently of the win rate.
+
+**Runs in flight**, both pre-registered, fresh disjoint seeds, stock budget:
+
+```
+ai_eval advanced_evolved advanced --players 6 --width 74 --height 46 \
+        --city-states 9 --pairs 200 --seed 190000 --turns 500
+ai_eval strategic_deep strategic_deep_default --players 4 --pairs 500 \
+        --seed 180000 --turns 500
+```
+
+**If the prediction holds**, the artifact needs scoping to small four-player
+maps or re-evolving at the deployment configuration, and this file will say so.
+**If it is refuted**, the genome transfers and the mechanism above is wrong.
+
+### The process failure this exposes, which is not statistical
+
+The genome carries a 1300-map validation, a 500-map confirmation and a 240-map
+pilot. **All three used the configuration it was evolved on.** Three
+independent seed sets cannot detect a mismatch between where a thing is
+measured and where it is deployed — that is not a power problem, it is a
+different error, and adding maps would never have found it.
+
+It is the second instance of that error in two days. The first was the working
+directory: `data/evolved/best.json` resolved in a checkout and not in the
+process that serves games, until the genome was compiled into the binary.
+**Both were invisible to every statistic and visible immediately on reading
+what the deployment actually does.**
