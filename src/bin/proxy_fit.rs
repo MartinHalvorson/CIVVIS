@@ -60,7 +60,7 @@
 //! rewarding being at the top far more than being two points above average,
 //! which keeps most of the 0.949 discrimination while using more of each game
 //! than a binary win does.
-use civvis::ai::{AdvancedAi, Ai, Weights};
+use civvis::ai::{AdvancedAi, Ai, PolicyDeck, Weights};
 use civvis::game::{Action, Game};
 use civvis::parallel;
 use civvis::rng::Rng;
@@ -230,6 +230,103 @@ fn main() {
     );
     println!("  every seat carries a genome drawn at random, so the proxies see real spread");
     println!("  AUC = P(a winner outranks a non-winner); 0.500 is a coin flip\n");
+
+    // --shape-deck: the same shape test, but on the policy-deck arms.
+    //
+    // This is the discriminating half of the fitness validation, and it is the
+    // one that cannot be passed vacuously. `settler_min_pop = 5` has a wins
+    // answer of PARITY, so a statistic that measures nothing at all passes it
+    // for free. `legacy` against `empty` has a wins answer that is strongly
+    // POSITIVE — 23 map directions to 6, p=0.0023 — so an inert statistic
+    // fails it. A fitness has to report parity on the first AND a large
+    // positive on the second to be tracking wins rather than merely being
+    // quiet.
+    if let Some(pair) = args
+        .iter()
+        .position(|arg| arg == "--shape-deck")
+        .and_then(|index| args.get(index + 1))
+    {
+        let arms: Vec<&str> = pair.split(':').collect();
+        if arms.len() != 2 {
+            eprintln!("proxy_fit: --shape-deck wants treatment:control, e.g. legacy:empty");
+            std::process::exit(2);
+        }
+        let pick = |name: &str| match name {
+            "live" => PolicyDeck::Live,
+            "legacy" => PolicyDeck::Legacy,
+            "empty" => PolicyDeck::Empty,
+            other => {
+                eprintln!("proxy_fit: unknown deck {other:?}");
+                std::process::exit(2);
+            }
+        };
+        let (treat_deck, control_deck) = (pick(arms[0]), pick(arms[1]));
+        println!("scoring deck {} vs {} under each candidate statistic\n", arms[0], arms[1]);
+        let rows: Vec<Vec<f64>> = parallel::map(maps, jobs, move |index| {
+            let mut out = vec![0.0; SHAPE_NAMES.len()];
+            for direction in 0..2usize {
+                let seed = seed0 + index as u64;
+                let mut game = Game::new(players, width, height, seed, turns, 0);
+                let treat_w = Weights { policy_deck: treat_deck, ..Weights::default() };
+                let control_w = Weights { policy_deck: control_deck, ..Weights::default() };
+                let mut a: Vec<AdvancedAi> = AdvancedAi::fleet_weighted(&game, &treat_w);
+                let mut b: Vec<AdvancedAi> = AdvancedAi::fleet_weighted(&game, &control_w);
+                let is_treated = |pid: usize| pid % 2 == direction;
+                for _ in 0..turns {
+                    if game.winner.is_some() {
+                        break;
+                    }
+                    for pid in 0..game.players.len() {
+                        if game.winner.is_some() {
+                            break;
+                        }
+                        if is_treated(pid) {
+                            a[pid].take_turn(&mut game, pid);
+                        } else {
+                            b[pid].take_turn(&mut game, pid);
+                        }
+                        if game.winner.is_none() && game.current == pid {
+                            let _ = game.apply(pid, &Action::EndTurn);
+                        }
+                    }
+                }
+                let majors: Vec<usize> = (0..game.players.len())
+                    .filter(|pid| !game.players[*pid].is_minor)
+                    .collect();
+                let scores: Vec<f64> = majors.iter().map(|pid| game.score(*pid) as f64).collect();
+                let total: f64 = scores.iter().sum::<f64>().max(1.0);
+                let normalised: Vec<f64> = scores.iter().map(|s| s / total).collect();
+                let flags: Vec<bool> = majors.iter().map(|pid| is_treated(*pid)).collect();
+                let lanes: Vec<f64> = majors.iter().map(|pid| game.victory_threat(*pid)).collect();
+                for (slot, value) in shapes(&normalised, &flags, &lanes).into_iter().enumerate() {
+                    out[slot] += value / 2.0;
+                }
+            }
+            out
+        });
+        for (slot, label) in SHAPE_NAMES.iter().enumerate() {
+            let column: Vec<f64> = rows.iter().map(|r| r[slot]).collect();
+            let n = column.len().max(1) as f64;
+            let mean = column.iter().sum::<f64>() / n;
+            let variance = if column.len() > 1 {
+                column.iter().map(|v| (v - mean).powi(2)).sum::<f64>() / (n - 1.0)
+            } else {
+                0.0
+            };
+            let se = (variance / n).sqrt();
+            let edge = mean - 0.5;
+            println!(
+                "  {label:<14} {mean:.4} +/- {se:.4}   edge {edge:+.4}  ({:.1} SE)",
+                if se > 0.0 { edge / se } else { 0.0 }
+            );
+        }
+        println!(
+            "\nlegacy vs empty has a WINS answer of 23 map directions to 6, p=0.0023 -- strongly\n\
+             positive. A fitness that reported parity on settler_min_pop only because it is\n\
+             inert will report parity here too, and fail. A valid one reports a clear positive."
+        );
+        return;
+    }
 
     // --shape: score one gene change under every candidate statistic at once.
     if let (Some(name), Some(value)) = (
