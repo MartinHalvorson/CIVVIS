@@ -191,6 +191,7 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
             *tourism_by_tile.entry(position).or_default() += amount;
         }
     }
+    let revealed = revealed_resources(g, pid, omniscient);
     let tiles: Vec<Value> = explored
         .iter()
         .filter_map(|pos| {
@@ -218,10 +219,9 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
             };
             Some(tile_json(
                 g,
-                pid,
                 tile,
                 owner,
-                omniscient,
+                &revealed,
                 live,
                 &tourism_by_tile,
                 planned.get(pos).copied().filter(|_| live),
@@ -443,6 +443,18 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
             "influence": round1(p.influence),
             "envoys_free": p.envoys_free,
             "envoys": p.envoys,
+            // What each met city-state is asking this civilization for, and
+            // the Envoy it pays. Per pair: a rival's quest from the same
+            // city-state is its own business.
+            "city_state_quests": p.quests.iter().map(|(minor, quest)| {
+                serde_json::json!({
+                    "city_state": minor,
+                    "kind": quest.kind,
+                    "target": quest.target,
+                    "name": Game::quest_name(&quest.kind),
+                    "description": g.quest_description(quest),
+                })
+            }).collect::<Vec<_>>(),
             "diplomatic_favor": round1(p.diplomatic_favor),
             "power_fuel_consumed": p.power_fuel_consumed,
             "co2_emissions": round1(p.co2_emissions),
@@ -605,7 +617,7 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
                 "is_barbarian": o.is_barbarian,
                 "is_free_city": o.is_free_city,
                 "cs_type": if o.is_minor && !o.is_barbarian {
-                    Some(Game::cs_type(&o.civ))
+                    Some(g.cs_type(&o.civ))
                 } else {
                     None
                 },
@@ -1054,20 +1066,51 @@ fn victory_progress_json(g: &Game, pid: usize, leading_score: i64) -> Value {
     })
 }
 
+/// The resources a tile view may name. A seated player is shown what its own
+/// research has uncovered; the omniscient spectator is shown what the *first*
+/// civilization to get there has uncovered, so an Iron deposit is nowhere on
+/// the world map until somebody researches Bronze Working. Tournament Civ VI
+/// hands its spectator every deposit at once, but a map that fills in as the
+/// world learns to read it is the more honest picture of what the players are
+/// actually deciding on.
+///
+/// Only majors count: a city-state never leads anyone to a resource. Whether
+/// the discoverer is still alive does not matter — knowledge does not leave
+/// the world with the civilization that found it, and a deposit that vanished
+/// when its finder was conquered would be a very odd map.
+///
+/// Computed once per observation because it is read for every tile on the map.
+fn revealed_resources(g: &Game, pid: usize, omniscient: bool) -> BTreeSet<&str> {
+    g.rules
+        .resources
+        .keys()
+        .filter(|resource| {
+            if omniscient {
+                g.players
+                    .iter()
+                    .filter(|player| !player.is_minor && !player.is_barbarian)
+                    .any(|player| g.resource_visible_to(player.id, resource))
+            } else {
+                g.resource_visible_to(pid, resource)
+            }
+        })
+        .map(String::as_str)
+        .collect()
+}
+
 fn tile_json(
     g: &Game,
-    pid: usize,
     tile: &Tile,
     owner: Option<usize>,
-    omniscient: bool,
+    revealed: &BTreeSet<&str>,
     live: bool,
     tourism_by_tile: &BTreeMap<Pos, f64>,
     planned: Option<&str>,
 ) -> Value {
     let resource = tile
         .resource
-        .as_ref()
-        .filter(|resource| omniscient || g.resource_visible_to(pid, resource));
+        .as_deref()
+        .filter(|resource| revealed.contains(resource));
     // Adjacency is read off the *current* neighbors, so it may only be sent
     // for a tile being looked at right now. A remembered district would
     // otherwise report yields from tiles the player cannot see.
@@ -1370,12 +1413,14 @@ mod tests {
         let city = &game.cities[&city_id];
         let tile = &game.map.tiles[&city.pos];
         let tourism = game.tourism_by_tile(0);
-        let live = tile_json(&game, 0, tile, Some(0), true, true, &tourism, None);
+        let spectator = revealed_resources(&game, 0, true);
+        let seated = revealed_resources(&game, 0, false);
+        let live = tile_json(&game, tile, Some(0), &spectator, true, &tourism, None);
         assert_eq!(live["owner_city"], json!(city_id));
         assert_eq!(live["owner_city_name"], json!(city.name));
         assert!(live["tourism"].is_number());
 
-        let remembered = tile_json(&game, 0, tile, Some(0), false, false, &tourism, None);
+        let remembered = tile_json(&game, tile, Some(0), &seated, false, &tourism, None);
         assert_eq!(remembered["owner_city"], json!(city_id));
         assert!(remembered["tourism"].is_null());
         assert!(
@@ -1772,6 +1817,70 @@ mod tests {
         assert_eq!(observation(&game, 0)["me"]["sees_exoplanet"], json!(true));
     }
 
+    /// A launch is a fact about the world, not about the shape the world is
+    /// drawn in, so the same craft belongs over a flat board as over the globe.
+    /// A sheet of paper has no limb for it to pass behind, so what a flat map
+    /// draws is the ground track: the line directly under the craft, laid a
+    /// little further west on every pass because the world turned underneath
+    /// while the craft went round. That westward term is the whole difference
+    /// between an orbit and a wave scrolling across a chart, so it is the part
+    /// worth pinning.
+    #[test]
+    fn a_launched_satellite_crosses_a_flat_board_as_a_ground_track() {
+        let mut game = Game::new(2, 18, 12, 4_412, 25, 0);
+        assert!(
+            game.rules.projects.contains_key(EXOPLANET_EYE),
+            "{EXOPLANET_EYE} must name a shipped project",
+        );
+        for player in game.players.iter_mut() {
+            player.science_projects.clear();
+        }
+        game.record_contact(0, 1);
+        let projects = |observed: &Value, pid: usize| -> Vec<String> {
+            observed["players"][pid]["science_projects"]
+                .as_array()
+                .expect("a met civilization reports what it has finished")
+                .iter()
+                .map(|project| project.as_str().unwrap().to_string())
+                .collect::<Vec<_>>()
+        };
+        assert!(projects(&observation(&game, 1), 0).is_empty());
+        game.players[0]
+            .science_projects
+            .insert(EXOPLANET_EYE.to_string());
+        // The neighbour sees whose satellite it is, which is what colours the
+        // track. An unmet civilization reports nothing at all and so has no
+        // craft drawn for it; that contract has its own test.
+        assert_eq!(
+            projects(&observation(&game, 1), 0),
+            vec![EXOPLANET_EYE.to_string()],
+        );
+
+        const INDEX: &str = include_str!("../web/index.html");
+        assert!(INDEX.contains("satellite:\"launch_earth_satellite\","));
+        // One orbit per civilization, in the world's own frame, so the globe
+        // and the flat board draw the same launch rather than two of them.
+        assert!(INDEX.contains("function skyOrbit(player) {"));
+        assert!(INDEX.contains("const {inclination, node, phase, pace} = skyOrbit(player);"));
+        assert!(INDEX.contains("const orbit = skyOrbit(player);"));
+        // The ground track itself: the orbit's own latitude and longitude, less
+        // the turn the world made under it.
+        assert!(INDEX.contains("const FLAT_SAT_DRIFT = .1;"));
+        assert!(INDEX.contains("function flatSatelliteGround(orbit, theta) {"));
+        assert!(
+            INDEX.contains("- FLAT_SAT_DRIFT * theta;"),
+            "a ground track without the world's own turn under it is a sine wave",
+        );
+        // Overhead is only in the picture once the camera is off the ground,
+        // and the board keeps painting while a craft is up there — a strategic
+        // map is otherwise perfectly still between turns.
+        assert!(INDEX.contains("if (!state || planetMap()) return 0;"));
+        assert!(INDEX.contains("return Math.max(0, Math.min(1, (.86 - cam.scale) / .34));"));
+        assert!(INDEX.contains("return flatSkyShown() > .02 && skyCrews().satellite.length > 0;"));
+        assert!(INDEX.contains("|| planetSkyAnimating() || flatSkyAnimating();"));
+        assert!(INDEX.contains("  drawFlatSatellites(now0);\n  drawNuclearBlasts(now0);"));
+    }
+
     #[test]
     fn the_spectator_feed_trades_per_item_research_for_era_firsts() {
         let mut game = Game::new(2, 18, 12, 7, 25, 0);
@@ -2115,5 +2224,76 @@ mod tests {
             .filter_map(|player| player["victories"]["score"]["progress"].as_f64())
             .fold(0.0_f64, f64::max);
         assert_eq!(best, 100.0);
+    }
+
+    /// Nobody in an Ancient world knows what Iron is. The omniscient
+    /// spectator watches that world rather than a survey of it, so the
+    /// deposit reaches the wire only once the first civilization has the
+    /// technology to recognise it — and a seat that has not researched it
+    /// still sees bare ground.
+    #[test]
+    fn a_strategic_deposit_reaches_the_spectator_when_the_first_civ_discovers_it() {
+        let mut game = Game::new_full(2, 20, 14, 19_067, 120, 1, false);
+        let deposit = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find_map(|unit| {
+                let unit = &game.units[&unit];
+                (unit.kind == "settler").then_some(unit.pos)
+            })
+            .expect("the player starts with a settler");
+        game.map.tiles.get_mut(&deposit).unwrap().resource = Some("iron".to_string());
+        for player in game.players.iter_mut() {
+            player.techs.remove("bronze_working");
+        }
+
+        let spectated = |game: &Game| {
+            observed_tile(&observation_spectator(game, 0), deposit)["resource"].clone()
+        };
+        assert!(
+            spectated(&game).is_null(),
+            "no civilization has Bronze Working, so the Iron is on nobody's map"
+        );
+
+        let city_state = game
+            .players
+            .iter()
+            .position(|player| player.is_minor)
+            .expect("the world has a city-state");
+        game.players[city_state]
+            .techs
+            .insert("bronze_working".to_string());
+        assert!(
+            spectated(&game).is_null(),
+            "a city-state is not one of the civilizations the spectator follows"
+        );
+
+        game.players[1].techs.insert("bronze_working".to_string());
+        assert_eq!(
+            spectated(&game),
+            json!("iron"),
+            "one civilization's discovery puts the deposit on the world map"
+        );
+
+        // The seat itself is unmoved by a rival's research: its own view is
+        // still gated on its own technology.
+        assert!(
+            observed_tile(&observation(&game, 0), deposit)["resource"].is_null(),
+            "seat 0 has not researched Bronze Working and must still see bare ground"
+        );
+        game.players[0].techs.insert("bronze_working".to_string());
+        assert_eq!(
+            observed_tile(&observation(&game, 0), deposit)["resource"],
+            json!("iron")
+        );
+    }
+
+    fn observed_tile(observation: &Value, position: Pos) -> &Value {
+        observation["map"]["tiles"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|tile| tile["pos"] == json!([position.0, position.1]))
+            .expect("tile is in the observation")
     }
 }

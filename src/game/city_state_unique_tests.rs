@@ -111,7 +111,7 @@ fn carthage_mohenjo_daro_and_auckland_modify_their_native_systems() {
     let base_capacity = game.trade_capacity(0);
     make_suzerain(&mut game, 0, carthage);
     assert_eq!(game.trade_capacity(0), base_capacity + 1);
-    assert_eq!(Game::cs_type("Carthage"), "militaristic");
+    assert_eq!(game.cs_type("Carthage"), "militaristic");
 
     let center = game.cities[&city].pos;
     game.map.tiles.get_mut(&center).unwrap().river_edges = [false; 6];
@@ -402,11 +402,14 @@ fn suzerains_improve_repair_and_accumulate_city_state_resources() {
 }
 
 #[test]
-fn every_roster_city_state_has_the_expected_type() {
+fn every_shipped_city_state_has_its_shipped_type() {
+    // Civilization VI's own forty-eight city-states and the
+    // `MinorCivBonuses` type each one pays its 1/3/6 Envoy thresholds in,
+    // read out of the shipped `Leaders_XP2.MinorCivBonusType` rows. Eight per
+    // type, which is the balance the real roster ships.
     let expected = [
         ("Kabul", "militaristic"),
         ("Geneva", "scientific"),
-        ("Carthage", "militaristic"),
         ("Hattusa", "scientific"),
         ("Mohenjo-Daro", "cultural"),
         ("Yerevan", "religious"),
@@ -414,11 +417,120 @@ fn every_roster_city_state_has_the_expected_type() {
         ("Auckland", "industrial"),
         ("Valletta", "militaristic"),
         ("Vilnius", "cultural"),
-        ("Stockholm", "scientific"),
         ("Kandy", "religious"),
+        ("Jerusalem", "religious"),
+        ("Brussels", "industrial"),
+        ("Preslav", "militaristic"),
+        ("Antananarivo", "cultural"),
+        ("Mogadishu", "trade"),
+        ("Cahokia", "trade"),
+        ("Akkad", "militaristic"),
+        ("Anshan", "scientific"),
+        ("Armagh", "religious"),
+        ("Ayutthaya", "cultural"),
+        ("Bandar Brunei", "trade"),
+        ("Bologna", "scientific"),
+        ("Buenos Aires", "industrial"),
+        ("Caguana", "cultural"),
+        ("Cardiff", "industrial"),
+        ("Chinguetti", "religious"),
+        ("Fez", "scientific"),
+        ("Granada", "militaristic"),
+        ("Hong Kong", "industrial"),
+        ("Hunza", "trade"),
+        ("Johannesburg", "industrial"),
+        ("Kumasi", "cultural"),
+        ("La Venta", "religious"),
+        ("Lahore", "militaristic"),
+        ("Mexico City", "industrial"),
+        ("Mitla", "scientific"),
+        ("Muscat", "trade"),
+        ("Nalanda", "scientific"),
+        ("Nan Madol", "cultural"),
+        ("Nazca", "religious"),
+        ("Ngazargamu", "militaristic"),
+        ("Rapa Nui", "cultural"),
+        ("Samarkand", "trade"),
+        ("Singapore", "industrial"),
+        ("Taruga", "scientific"),
+        ("Vatican City", "religious"),
+        ("Venice", "trade"),
+        ("Wolin", "militaristic"),
     ];
+    let game = Game::new_full(2, 24, 16, 77_001, 300, 0, false);
     for (city_state, kind) in expected {
-        assert_eq!(Game::cs_type(city_state), kind);
+        assert_eq!(game.cs_type(city_state), kind, "{city_state}");
+    }
+    for kind in [
+        "scientific",
+        "cultural",
+        "religious",
+        "militaristic",
+        "industrial",
+        "trade",
+    ] {
+        assert_eq!(
+            expected.iter().filter(|(_, have)| *have == kind).count(),
+            8,
+            "{kind}"
+        );
+    }
+    assert_eq!(expected.len(), 48);
+}
+
+#[test]
+fn the_roster_seats_the_shipped_forty_eight_before_any_other_name() {
+    // Seating order is what decides which city-states an ordinary game meets.
+    // The shipped forty-eight come first, so only the largest maps ever reach
+    // the extra identities.
+    let rules = crate::rules::Rules::shipped();
+    let roster = &rules.city_states.roster;
+    let shipped = roster.iter().filter(|seat| seat.shipped).count();
+    assert_eq!(shipped, 48);
+    assert!(
+        roster[..48].iter().all(|seat| seat.shipped),
+        "a name the game never seats was placed inside the first forty-eight"
+    );
+    assert!(
+        roster[48..].iter().all(|seat| !seat.shipped),
+        "a shipped city-state was pushed past the first forty-eight"
+    );
+    // Identity is the name, and two seats sharing one would share a Suzerain
+    // bonus.
+    let mut names: Vec<&str> = roster.iter().map(|seat| seat.name.as_str()).collect();
+    names.sort_unstable();
+    let unique = names.len();
+    names.dedup();
+    assert_eq!(names.len(), unique, "two city-state seats share a name");
+    // Every roster name must be a known identity, and every identity seatable.
+    for seat in roster {
+        assert!(
+            crate::game::CITY_STATE_NAMES.contains(&seat.name.as_str()),
+            "{} is not a city-state identity",
+            seat.name
+        );
+    }
+    assert_eq!(roster.len(), crate::game::CITY_STATE_NAMES.len());
+}
+
+#[test]
+fn no_city_state_seat_claims_a_suzerain_bonus_the_engine_does_not_have() {
+    // `implemented` is what `cs_bonus` gates on. A seat that declares a bonus
+    // it does not have would otherwise read as a working bonus that silently
+    // does nothing.
+    let rules = crate::rules::Rules::shipped();
+    let game = Game::new_full(2, 24, 16, 77_002, 300, 0, false);
+    for seat in &rules.city_states.roster {
+        if seat.implemented {
+            assert!(
+                seat.bonus.is_some(),
+                "{} is marked implemented with no bonus key",
+                seat.name
+            );
+            assert_eq!(game.cs_bonus(&seat.name), seat.bonus.as_deref(), "{}", seat.name);
+        } else {
+            assert_eq!(game.cs_bonus(&seat.name), None, "{}", seat.name);
+        }
     }
 }
 
@@ -723,4 +835,158 @@ fn leading_sent_envoys_expand_borders_and_strengthen_the_city_state() {
             - levied_without_envoys.unit_strength(&levied_without_envoys.units[&warrior], true),
         3.0,
     );
+}
+
+#[test]
+fn brussels_hong_kong_and_muscat_pay_wonders_projects_and_amenities() {
+    let (mut game, cities) = game_with_capitals(2, 89_010);
+    let city = cities[0];
+    let brussels = add_city_state(&mut game, "Brussels");
+
+    // +15% Production towards wonders.
+    let wonder = Item::Wonder {
+        wonder: "pyramids".to_string(),
+        pos: game.cities[&city].pos,
+    };
+    let before = game.item_prod_mult(0, city, Some(&wonder));
+    make_suzerain(&mut game, 0, brussels);
+    assert_close(
+        game.item_prod_mult(0, city, Some(&wonder)),
+        before + 0.15,
+    );
+
+    // +20% Production towards city projects, and not towards wonders.
+    game.players[brussels].civ = "Hong Kong".to_string();
+    let project = Item::Project {
+        project: "campus_research_grants".to_string(),
+    };
+    let base = {
+        game.players[0].envoys.clear();
+        game.item_prod_mult(0, city, Some(&project))
+    };
+    make_suzerain(&mut game, 0, brussels);
+    assert_close(
+        game.item_prod_mult(0, city, Some(&project)),
+        base + 0.20,
+    );
+    assert_close(game.item_prod_mult(0, city, Some(&wonder)), before);
+
+    // +1 Amenity in cities with a Commercial Hub, and nothing without one.
+    game.players[brussels].civ = "Muscat".to_string();
+    let without = game.city_local_amenities(&game.cities[&city]);
+    install_district(&mut game, city, "commercial_hub");
+    let with_hub = game.city_local_amenities(&game.cities[&city]);
+    game.players[0].envoys.clear();
+    let unsuzerained = game.city_local_amenities(&game.cities[&city]);
+    assert_eq!(
+        with_hub,
+        unsuzerained + 1,
+        "Muscat paid nothing for the Commercial Hub"
+    );
+    assert!(with_hub > without || unsuzerained > without);
+}
+
+#[test]
+fn preslav_arms_only_cavalry_and_only_on_the_high_ground() {
+    let (mut game, cities) = game_with_capitals(2, 89_011);
+    let preslav = add_city_state(&mut game, "Preslav");
+    let centre = game.cities[&cities[0]].pos;
+    let hill = game
+        .nbrs(centre)
+        .into_iter()
+        .find(|pos| {
+            game.map
+                .get(*pos)
+                .is_some_and(|tile| !game.rules.is_water(tile))
+        })
+        .unwrap();
+    game.map.tiles.get_mut(&hill).unwrap().hills = true;
+    game.map.tiles.get_mut(&centre).unwrap().hills = false;
+
+    let horseman = game.spawn_unit("horseman", 0, hill);
+    let warrior = game.spawn_unit("warrior", 0, centre);
+    let cavalry_flat = {
+        let unit = game.units[&horseman].clone();
+        game.unit_unembarked_strength(&unit)
+    };
+    let footman = {
+        let unit = game.units[&warrior].clone();
+        game.unit_unembarked_strength(&unit)
+    };
+    make_suzerain(&mut game, 0, preslav);
+    let cavalry_hill = {
+        let unit = game.units[&horseman].clone();
+        game.unit_unembarked_strength(&unit)
+    };
+    assert_close(cavalry_hill, cavalry_flat + 5.0);
+    // A melee unit gets nothing, hill or not.
+    let footman_after = {
+        let unit = game.units[&warrior].clone();
+        game.unit_unembarked_strength(&unit)
+    };
+    assert_close(footman_after, footman);
+    // And the cavalry loses it the moment it steps off the hill.
+    game.map.tiles.get_mut(&hill).unwrap().hills = false;
+    let cavalry_off = {
+        let unit = game.units[&horseman].clone();
+        game.unit_unembarked_strength(&unit)
+    };
+    assert_close(cavalry_off, cavalry_flat);
+}
+
+#[test]
+fn mitla_grows_campus_cities_and_taruga_counts_resource_kinds_not_tiles() {
+    let (mut game, cities) = game_with_capitals(2, 89_012);
+    let city = cities[0];
+    let minor = add_city_state(&mut game, "Mitla");
+    make_suzerain(&mut game, 0, minor);
+
+    // Mitla pays nothing until the city actually has a Campus.
+    assert!(!game.city_has_active_district_family(&game.cities[&city], "campus"));
+    install_district(&mut game, city, "campus");
+    assert!(game.city_has_active_district_family(&game.cities[&city], "campus"));
+
+    // Taruga scales on distinct improved Strategic resources.
+    game.players[minor].civ = "Taruga".to_string();
+    let owned: Vec<Pos> = game.cities[&city].owned_tiles.iter().copied().collect();
+    let plain: Vec<Pos> = owned
+        .into_iter()
+        .filter(|pos| *pos != game.cities[&city].pos)
+        .filter(|pos| {
+            game.map
+                .get(*pos)
+                .is_some_and(|tile| !game.rules.is_water(tile) && tile.district.is_none())
+        })
+        .take(3)
+        .collect();
+    assert!(plain.len() >= 3, "the capital needs three workable land tiles");
+    for pos in &plain {
+        let tile = game.map.tiles.get_mut(pos).unwrap();
+        tile.resource = None;
+        tile.improvement = None;
+        tile.pillaged = false;
+    }
+    let base = game.city_yields(city).science;
+
+    // Two mined Iron is one kind, so one 5% step.
+    for pos in &plain[..2] {
+        let tile = game.map.tiles.get_mut(pos).unwrap();
+        tile.resource = Some("iron".to_string());
+        tile.improvement = Some(game.rules.resources["iron"].improvement.clone());
+    }
+    let one_kind = game.city_yields(city).science;
+
+    // A second kind is a second step.
+    let third = plain[2];
+    let tile = game.map.tiles.get_mut(&third).unwrap();
+    tile.resource = Some("niter".to_string());
+    tile.improvement = Some(game.rules.resources["niter"].improvement.clone());
+    let two_kinds = game.city_yields(city).science;
+
+    assert!(
+        two_kinds > one_kind && one_kind > base,
+        "Taruga did not scale: base {base}, one kind {one_kind}, two kinds {two_kinds}"
+    );
+    // The second step is the same size as the first: 5% of the pre-bonus total.
+    assert_close(two_kinds - one_kind, one_kind - base);
 }
