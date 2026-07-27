@@ -414,6 +414,13 @@ fn completed_buildings(game: &Game) -> BTreeSet<String> {
         .collect()
 }
 
+/// One decimal place, the precision every accumulating figure in the
+/// observation is reported at. A progress bar cannot show more, and the extra
+/// digits are pure bytes on a document that is already the bottleneck.
+fn round_tenth(v: f64) -> f64 {
+    (v * 10.0).round() / 10.0
+}
+
 fn population_milestone(population: i32) -> i32 {
     if population < 4 {
         0
@@ -1394,22 +1401,27 @@ impl Session {
     fn load_roster(league: Option<&crate::league::League>) -> Option<crate::league::League> {
         match league {
             Some(l) => Some(l.clone()),
-            None => crate::league::load_league("data/league"),
+            None => crate::league::shipped_league(),
         }
     }
 
     /// The roster named by `--league`, else a best-effort load purely for
     /// elo labels: the runtime `league/` this checkout records into, then the
-    /// snapshot every build ships. Only the named roster is ever written to,
-    /// so a labelled game still rates nothing — but it does say what the
-    /// league already knows about the agent in each seat, which used to
-    /// require passing `--league` to see at all.
+    /// snapshot compiled into every build. Only the named roster is ever
+    /// written to, so a labelled game still rates nothing — but it does say
+    /// what the league already knows about the agent in each seat, which used
+    /// to require passing `--league` to see at all.
+    ///
+    /// The last step is `league::shipped_league` rather than a read of
+    /// `data/league`, because a directory is resolved against the working
+    /// directory and a rating must not depend on where the binary was started
+    /// from. Reading that path is what left every seat at a provisional 1500
+    /// anywhere but a checkout root.
     fn load_params_league(params: &Params) -> (Option<crate::league::League>, bool) {
         match &params.league_dir {
             Some(dir) => (crate::league::load_league(dir), true),
             None => (
-                crate::league::load_league("league")
-                    .or_else(|| crate::league::load_league("data/league")),
+                crate::league::load_league("league").or_else(crate::league::shipped_league),
                 false,
             ),
         }
@@ -2039,6 +2051,40 @@ impl Session {
                     // spectator frame carries the agent's own read-out.
                     if let Some(plan) = self.ais.get(id).and_then(|ai| ai.plan_report()) {
                         player["ai_plan"] = self.plan_json(&plan);
+                    }
+                    // What this civilization is actually spending its science
+                    // and culture on, for the Active AI strategy panel. The
+                    // observation only ever carries the *observed* seat's, in
+                    // `me`, and above the world there is no observed seat.
+                    //
+                    // Omniscient view only. Watching as one civilization means
+                    // seeing what that civilization sees, and a rival's
+                    // laboratory is not on that list — the same rule
+                    // `reasoning_json` applies to a rival's thoughts. That seat
+                    // reads its own out of `me` as it always has.
+                    if self.view_player.is_none() {
+                        if let Some(seat) = g.players.get(id) {
+                            if !seat.is_minor && !seat.is_barbarian {
+                                player["research"] = json!(seat.research);
+                                player["research_progress"] =
+                                    json!(round_tenth(seat.research_progress));
+                                player["civic"] = json!(seat.civic);
+                                player["civic_progress"] = json!(round_tenth(seat.civic_progress));
+                                // Only whether the *current* study is boosted.
+                                // A late-game empire's whole boosted set is
+                                // dozens of strings per seat on a document that
+                                // is already the bottleneck, and the card asks
+                                // one question of it.
+                                player["research_boosted"] = json!(seat
+                                    .research
+                                    .as_ref()
+                                    .is_some_and(|tech| seat.boosted_techs.contains(tech)));
+                                player["civic_boosted"] = json!(seat
+                                    .civic
+                                    .as_ref()
+                                    .is_some_and(|civic| seat.boosted_civics.contains(civic)));
+                            }
+                        }
                     }
                 }
             }
@@ -5083,7 +5129,7 @@ mod tests {
         // making production decisions; without this it appeared under "All
         // civilizations" with no way to select it.
         assert!(EMBEDDED_INDEX.contains("for (const thought of reasoningLog.thoughts) listed.add(thought.player);"));
-        assert!(EMBEDDED_INDEX.contains("function reasonSeatNote(id)"));
+        assert!(EMBEDDED_INDEX.contains("function logSeatNote(id)"));
         assert!(EMBEDDED_INDEX.contains("<option value=\"all\">All topics</option>"));
         // Depth is a floor, not an equality — a decision read without the plan
         // it serves explains nothing — and the three rungs are the ones the
@@ -5108,17 +5154,140 @@ mod tests {
         // the multi-megabyte world observation.
         assert!(EMBEDDED_INDEX.contains("const thinking = `&think=${reasoningLog.cursor}`;"));
         assert!(EMBEDDED_INDEX.contains("function absorbReasoning(st)"));
+        // A change of observed seat discards what the page holds, the same way
+        // a change of world does. `reasoning_json` stops sending a rival's
+        // thoughts the moment Watch as is entered, but the page had absorbed
+        // them while it was above the world — so without this the redaction is
+        // defeated by having watched first, and the log under the Active
+        // strategy panel names every civilization while the panel names one.
+        assert!(EMBEDDED_INDEX.contains("const viewer = st.view_player ?? null;"));
+        assert!(EMBEDDED_INDEX
+            .contains("if (newWorld || reasoningLog.viewer !== viewer) {"));
         // A log that is not the whole story says so.
         assert!(EMBEDDED_INDEX.contains("Earlier reasoning has been discarded"));
         // The three logs share the sidebar's spare height. Each floor is
-        // header + padding + border + what the panel holds, and the reasoning
-        // log's has to cover its filter bar as well as its list — measured in
+        // header + padding + border + what the panel holds, and every one of
+        // them now has to cover a filter bar as well as its list — measured in
         // the page, because a section squeezed under its floor does not clip:
-        // its list paints straight over the panel below it.
+        // its list paints straight over the panel below it. The reasoning
+        // log's bar is three rows (97px); the war and event logs' are two
+        // (66px), and that bar is the whole difference between these numbers
+        // and the ones that were here before the filters — each list keeps the
+        // height it had.
         assert!(EMBEDDED_INDEX.contains("#reasonsec[open] { flex: 3 0 0; min-height: 300px; }"));
-        assert!(EMBEDDED_INDEX.contains("#eventsec[open] { flex: 2 0 0; min-height: 234px; }"));
-        assert!(EMBEDDED_INDEX.contains("#warsec[open] { flex: 2 0 0; min-height: 198px; }"));
+        assert!(EMBEDDED_INDEX.contains("#eventsec[open] { flex: 2 0 0; min-height: 302px; }"));
+        assert!(EMBEDDED_INDEX.contains("#warsec[open] { flex: 2 0 0; min-height: 266px; }"));
         assert!(EMBEDDED_INDEX.contains(".reason-list { flex: 1 1 auto; min-height: 132px;"));
+        // One filter bar, worn in the same place by every panel that narrows
+        // by civilization — the three logs and the Active AI strategy card above
+        // them. A second copy of this chrome under another name is how four
+        // pickers drift into four shapes.
+        assert!(EMBEDDED_INDEX.contains(".log-filters { flex: 0 0 auto;"));
+        assert!(!EMBEDDED_INDEX.contains(".reason-filter"));
+        assert!(EMBEDDED_INDEX.contains(
+            "<label class=\"log-filter\"><span>Civ</span>\n            <select id=\"strategyplayer\""
+        ));
+    }
+
+    /// The war log and the game event log are narrowed the same way.
+    ///
+    /// Both panels are chronicles of a whole world, and by the industrial era
+    /// a spectator is reading thirty conflicts and sixty notices looking for
+    /// one empire's story. The civ filter is the question actually being
+    /// asked; each log carries exactly one more, the one its own shape needs.
+    #[test]
+    fn browser_lets_an_observer_narrow_the_two_chronicles() {
+        for control in ["warplayer", "warstatus", "eventplayer", "eventkind"] {
+            assert!(
+                EMBEDDED_INDEX.contains(&format!("id=\"{control}\"")),
+                "the log filters are missing {control}"
+            );
+        }
+        // All three logs name a seat with one vocabulary and correct a
+        // selection that has left the list the same way, so a filter can never
+        // strand a reader on an empty panel with no way back out of it.
+        assert!(EMBEDDED_INDEX.contains("function syncCivFilterOptions(select, seats, allLabel, chosen)"));
+        assert!(EMBEDDED_INDEX
+            .contains("const kept = chosen !== \"all\" && !seats.includes(Number(chosen)) ? \"all\" : chosen;"));
+        assert!(EMBEDDED_INDEX.contains("function syncWarOptions(wars)"));
+        assert!(EMBEDDED_INDEX.contains("function syncEventOptions()"));
+        // A war is filtered on the belligerents the panel itself would name,
+        // city-states dragged in by a Suzerain included — not on the two
+        // civilizations in the declaration.
+        assert!(EMBEDDED_INDEX.contains("function warBelligerents(war)"));
+        assert!(EMBEDDED_INDEX.contains("for (const party of (war.parties || [])) seats.add(party.player);"));
+        // The war log's own filtering happens in the hook the panel already
+        // reads through, so the chronicle's order is still never rewritten.
+        let war_filter = EMBEDDED_INDEX
+            .split("function warsForLog(wars)")
+            .nth(1)
+            .expect("the war log's filter")
+            .split("function warLogSeats(wars)")
+            .next()
+            .unwrap();
+        for status in ["ongoing", "ended"] {
+            assert!(
+                war_filter.contains(&format!("warFilters.status === \"{status}\"")),
+                "the war status filter is missing {status}"
+            );
+            assert!(
+                EMBEDDED_INDEX.contains(&format!("<option value=\"{status}\">")),
+                "the war status filter offers no {status} option"
+            );
+        }
+        assert!(!war_filter.contains("sort("));
+        // Every category the engine can stamp on an event is gathered by one
+        // of the kinds the filter offers. A category no kind claims would be
+        // an entry the combined log shows and no narrower question can reach.
+        let kinds = EMBEDDED_INDEX
+            .split("const EVENT_KINDS = [")
+            .nth(1)
+            .expect("the event log's kinds")
+            .split("];")
+            .next()
+            .unwrap();
+        for category in crate::game::EVENT_CATEGORIES {
+            assert!(
+                kinds.contains(&format!("\"{category}\"")),
+                "no event-log kind gathers the {category} category"
+            );
+            assert!(
+                EMBEDDED_INDEX.contains(&format!("{category}: \"")),
+                "the {category} category reaches the log with no icon of its own"
+            );
+        }
+        // An entry is filtered on the civilizations it is *about*, recorded as
+        // the log is written. Matching on the text would make "Rome" in
+        // "Rome captured Antium from Egypt" hide the entry from Egypt.
+        assert!(EMBEDDED_INDEX.contains("function eventSubjects(event)"));
+        assert!(EMBEDDED_INDEX.contains(
+            "!eventSubjects(event).includes(Number(eventFilters.player))"
+        ));
+        assert!(EMBEDDED_INDEX.contains("\"War\", [event.player, event.former]"));
+        assert!(EMBEDDED_INDEX.contains("\"War\", [event.aggressor, event.defender]"));
+        // An engine entry is attributed by the id the engine sends, not by
+        // whichever seat the frame happened to be observed from: the
+        // spectator's feed rotates through the seats between frames, so the
+        // combined log's entries come from all of them.
+        assert!(EMBEDDED_INDEX.contains("event.category, [event.player ?? eventViewPlayer(next)]"));
+        // A choice is answered on the frame it is made on, and survives the
+        // tab being closed.
+        assert!(EMBEDDED_INDEX
+            .contains("function applyLogFilter(filters, storageKey, field, value, listId, redraw)"));
+        for key in [
+            "civvis-reasoning-filters-v1",
+            "civvis-war-filters-v1",
+            "civvis-event-filters-v1",
+        ] {
+            assert!(EMBEDDED_INDEX.contains(key), "no stored preference for {key}");
+        }
+        // A narrowed panel says so rather than reading as a quiet world: "At
+        // peace" under a filter would be a claim about the world made by a
+        // panel that is only showing part of it.
+        assert!(EMBEDDED_INDEX.contains("No conflict matches that filter."));
+        assert!(EMBEDDED_INDEX.contains("Nothing in this log matches that filter."));
+        assert!(EMBEDDED_INDEX.contains("`${wars.length} of ${rawWars.length}`"));
+        assert!(EMBEDDED_INDEX.contains("`${events.length} of ${held.length}`"));
     }
 
     /// Every topic the reasoning log offers is one a game actually reaches.
@@ -6214,19 +6383,23 @@ mod tests {
             .find("<span>AI reasoning log</span>")
             .expect("AI reasoning log");
         let strategy = EMBEDDED_INDEX
-            .find("<span>Active strategy</span>")
+            .find("<span>Active AI strategy</span>")
             .expect("active strategy section");
-        // The three logs run deepest-cause first — why a civilization acted,
-        // the wars that reasoning started, then the world's record of what
-        // happened — so reading the column downward reads a turn in the order
-        // it was decided.
+        // The column runs deepest-cause first — what a civilization is trying
+        // to do now, why it acted, the wars that reasoning started, then the
+        // world's record of what happened — so reading the column downward
+        // reads a turn in the order it was decided. Active AI strategy leads
+        // because it is the standing plan every entry below it is an instance
+        // of: the reasoning log is an account over turns, and this is the
+        // current answer.
         assert!(
             game_settings < display_settings
-                && display_settings < reasoning_log
+                && display_settings < strategy
+                && strategy < reasoning_log
                 && reasoning_log < war_log
-                && war_log < event_log
-                && event_log < strategy,
-            "left panel should show game settings, display settings, and the three logs first"
+                && war_log < event_log,
+            "left panel should show game setup, display settings, \
+             the active AI strategy and then the three logs"
         );
         assert!(EMBEDDED_INDEX.contains("<span>Display settings</span>"));
         for overlay in ["players", "victory", "minimap", "controls", "lenses"] {
@@ -6480,7 +6653,7 @@ mod tests {
             EMBEDDED_INDEX
                 .matches("class=\"sidebar-section\"")
                 .count(),
-            8,
+            7,
             "every top-level left-panel section should be collapsible"
         );
         assert!(EMBEDDED_INDEX.contains("function initSidebarSections()"));
@@ -6552,6 +6725,18 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("p.ai_plan"));
         assert!(EMBEDDED_INDEX.contains(".civ-dossier {"));
         assert!(EMBEDDED_INDEX.contains("changed its grand strategy from"));
+        // Active AI strategy speaks for one civilization at a time, and which
+        // civilizations it may speak for is the observation's answer, not the
+        // panel's: `view_player` names a seat in a played game and in Watch as,
+        // and is null only for the view entitled to read every plan.
+        assert!(EMBEDDED_INDEX.contains("function strategySeats()"));
+        assert!(EMBEDDED_INDEX.contains("if (viewer !== null && viewer !== undefined) \
+             return players[viewer] ? [viewer] : [];"));
+        assert!(EMBEDDED_INDEX.contains("pick.style.display = seats.length > 1 ? \"block\" : \"none\";"));
+        // The observed seat's study rides in `me`; a rival's rides in
+        // `players[]`, and only the omniscient view is sent it.
+        assert!(EMBEDDED_INDEX
+            .contains("const source = state.view_player === p.id ? (state.me || {}) : p;"));
         // The log never reorders: an overflowing log retires its least
         // valuable entry instead of holding important ones frozen at the top.
         assert!(!EMBEDDED_INDEX.contains("e.important && now - e.at < 6000"));
@@ -6955,7 +7140,16 @@ mod tests {
         assert!(!EMBEDDED_INDEX
             .contains("civilization${summaries.length === 1 ? \"\" : \"s\"} completed"));
         assert!(EMBEDDED_INDEX.contains("id=\"strategysec\""));
-        assert!(EMBEDDED_INDEX
+        // Active AI strategy is no longer withheld from the omniscient spectator.
+        // It was, for as long as the panel could only ever speak for `state.me`
+        // and above the world there is no single "me"; it now names the
+        // civilization it is speaking for, so the one view that can read every
+        // plan is the last one that should hide it.
+        assert!(
+            EMBEDDED_INDEX.contains("document.getElementById(\"strategysec\").style.display = \"block\";"),
+            "the active strategy panel is shown in every view"
+        );
+        assert!(!EMBEDDED_INDEX
             .contains("document.getElementById(\"strategysec\").style.display = fullMapSpectator"));
         assert!(EMBEDDED_INDEX.contains("if (!fullMapSpectator && (SPEC || govs.length"));
         assert!(EMBEDDED_INDEX.contains(".sort((a, b) => b.score - a.score || a.id - b.id)"));
@@ -7225,6 +7419,90 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("drawHiddenMapParchment(hiddenMap);\n  drawHiddenMapMonsters(hiddenMap);"));
         assert!(EMBEDDED_INDEX.contains("drawHiddenMapFrontier(tiles);"));
         assert!(EMBEDDED_INDEX.contains("if (camera.chart && !spectator)"));
+    }
+
+    /// Fog of war must not report where the stored map stops. A civilization
+    /// that has seen eighteen tiles knows eighteen tiles, and the shape of the
+    /// rectangle they are stored in is not one of the things it knows.
+    #[test]
+    fn the_map_edge_is_veiled_until_a_world_has_been_measured() {
+        // The veil is the observed civilization's, not the viewer's: a
+        // spectator is not exploring anything, and `wentAround` already
+        // answers true for one, so the exhibition keeps the whole rectangle.
+        assert!(EMBEDDED_INDEX.contains("function mapEdgeVeiled()"));
+        assert!(EMBEDDED_INDEX
+            .contains("return !!state && !planetMap() && !wentAround();"));
+        // Three to fifteen tiles, per world and per side, so the give is never
+        // the same twice and the two sides of one map never agree.
+        assert!(EMBEDDED_INDEX.contains("const MAP_VEIL_MIN = 3, MAP_VEIL_MAX = 15;"));
+        assert!(EMBEDDED_INDEX.contains("function mapEdgeVeil()"));
+        assert!(EMBEDDED_INDEX.contains(
+            "MAP_VEIL = {left:reach(0), right:reach(1), top:reach(2), bottom:reach(3)};"
+        ));
+
+        // The parchment runs past the stored rectangle rather than stopping on
+        // it, and it is drawn out to the frame on every side rather than out to
+        // the veil, so no zoom and no bearing can find the end of the sheet.
+        let hidden = EMBEDDED_INDEX
+            .split("function hiddenMapCellAt")
+            .nth(1)
+            .and_then(|tail| tail.split("function hiddenMapSeedWords").next())
+            .expect("hidden-map cell test and viewport");
+        assert!(
+            hidden.contains("col < 0 || col >= state.map.width) return mapEdgeVeiled();"),
+            "ground past the stored rectangle must read as unsurveyed, not as nothing"
+        );
+        assert!(hidden.contains("const veiled = !open && mapEdgeVeiled();"));
+        assert!(
+            hidden.contains("const span = open || veiled ? framedHexBounds(3)"),
+            "a veiled sheet is spanned by the frame, not by the map's rectangle"
+        );
+        assert!(hidden.contains("const [x, y] = open || veiled ? hexXYRaw(q, row) : hexXY(q, row);"));
+        // Only one copy of a wrapping world is drawn, so the background either
+        // side of it is somewhere nobody has been rather than somewhere that
+        // does not exist — which is what closes the same leak at full zoom-out.
+        assert!(EMBEDDED_INDEX.contains("function veilDrawsGroundAt(q, r)"));
+        assert!(hidden.contains("const test = veiled ? (q, r) => !veilDrawsGroundAt(q, r)"));
+        // A canvas compound path costs quadratic time in its own size, so a
+        // sheet that covers a whole frame has to be drawn as its rectangle.
+        assert!(hidden.contains("return {open, solid:veiled, cells, test};"));
+        assert!(EMBEDDED_INDEX
+            .contains("if (layer.solid) cx.rect(minX, minY, maxX - minX, maxY - minY);"));
+
+        // A camera that stops dead on the last row says the same thing the
+        // parchment no longer does, so the veil owns that axis while it lasts.
+        assert!(EMBEDDED_INDEX.contains("function mapVeilPanBounds()"));
+        let bounds = EMBEDDED_INDEX
+            .split("function cameraYBounds")
+            .nth(1)
+            .and_then(|tail| tail.split("function clampCameraY").next())
+            .expect("vertical camera bounds");
+        assert!(
+            bounds.contains("const veil = mapVeilPanBounds();\n  if (veil?.y) return veil.y;"),
+            "the veil must be consulted before the map's own rows frame the camera"
+        );
+        assert!(EMBEDDED_INDEX.contains("function clampCameraX(x)"));
+
+        // Soft, and bouncy: a drag past the bound is resisted rather than
+        // refused, a coast into it stretches and is handed to a spring, and
+        // both come home to the bound instead of sailing back over the world.
+        assert!(EMBEDDED_INDEX.contains("function cameraRubberBand(value, bounds, give = CAMERA_GIVE())"));
+        assert!(EMBEDDED_INDEX.contains("function holdCameraInBounds(x, y)"));
+        assert!(EMBEDDED_INDEX.contains("function handOffCameraBounce()"));
+        assert!(EMBEDDED_INDEX.contains("function settleCameraBounce(dt)"));
+        assert!(EMBEDDED_INDEX.contains("if (settleCameraBounce(dt)) active = true;"));
+        assert!(
+            EMBEDDED_INDEX.contains("[cam.x, cam.y] = holdCameraInBounds("),
+            "the drag paths must go through the rubber band"
+        );
+
+        // And the thumbnail, which is the loudest statement of extent there is.
+        let mini = EMBEDDED_INDEX
+            .split("function miniBounds()")
+            .nth(1)
+            .and_then(|tail| tail.split("function miniLayout").next())
+            .expect("minimap bounds");
+        assert!(mini.contains("if ((!chartIsOpen() && !mapEdgeVeiled()) || !tiles?.length) {"));
     }
 
     #[test]
@@ -7650,6 +7928,76 @@ mod tests {
         assert!(plan["desired_cities"].as_u64().is_some());
         assert!(plan["assessed_turn"].as_u64().is_some());
         assert!(plan["forces"].is_array());
+    }
+
+    /// The Active AI strategy panel reads one civilization's plan beside what it
+    /// is actually spending its science and culture on. The observation only
+    /// ever carries the *observed* seat's study, in `me`, and above the world
+    /// there is no observed seat — so the omniscient view names every major's.
+    ///
+    /// Only that view. Watching as one civilization means seeing what it can
+    /// see, and a rival's laboratory is not on that list; the panel's picker
+    /// collapses to the one seat precisely because the wire gives it one.
+    #[test]
+    fn only_the_omniscient_view_reads_a_rivals_laboratory() {
+        let mut params = current();
+        params.spectate = true;
+        let mut session = Session::new(params);
+        // A world at turn 0 has chosen nothing yet.
+        for _ in 0..8 {
+            session.step();
+        }
+        let omniscient = session.state();
+        let majors = || {
+            omniscient["players"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter(|p| p["is_minor"] == json!(false) && p["is_barbarian"] == json!(false))
+        };
+        assert!(majors().count() > 1, "a table needs rivals to withhold");
+        assert!(
+            majors().any(|p| p["research"].is_string()),
+            "somebody has picked a technology by turn 8"
+        );
+        for player in majors() {
+            for field in [
+                "research",
+                "research_progress",
+                "research_boosted",
+                "civic",
+                "civic_progress",
+                "civic_boosted",
+            ] {
+                assert!(
+                    player.get(field).is_some(),
+                    "the omniscient view owes {} its {field}",
+                    player["civ"]
+                );
+            }
+            assert!(player["research_boosted"].is_boolean());
+            assert!(player["civic_boosted"].is_boolean());
+            assert!(player["research_progress"].is_number());
+        }
+        // A city-state has no research panel to fill and is not annotated.
+        for player in omniscient["players"].as_array().unwrap() {
+            if player["is_minor"] == json!(true) || player["is_barbarian"] == json!(true) {
+                assert!(player.get("research").is_none());
+            }
+        }
+
+        session.set_view_player(Some(1)).unwrap();
+        let watched = session.state();
+        for player in watched["players"].as_array().unwrap() {
+            assert!(
+                player.get("research").is_none() && player.get("civic").is_none(),
+                "watching as one civilization must not read {}'s laboratory",
+                player["civ"]
+            );
+        }
+        // The watched seat still reads its own out of `me`, as it always has.
+        assert!(watched["me"].get("research").is_some());
+        assert!(watched["me"]["boosted_techs"].is_array());
     }
 
     #[test]
@@ -8500,6 +8848,48 @@ mod tests {
             (shares - 1.0).abs() < 0.02,
             "one table, one winner: shares summed to {shares}"
         );
+        // An earned rating, not the base everybody starts from. The check
+        // above passes on a provisional 1500 too, which is exactly what the
+        // whole table showed while the roster was read from a relative path.
+        for player in &majors {
+            assert_eq!(
+                player["ai_elo_provisional"],
+                json!(false),
+                "the shipped roster has games behind it"
+            );
+        }
+    }
+
+    /// The roster that labels an ordinary game is compiled in, so the ratings
+    /// on screen are the same wherever the binary was started from.
+    ///
+    /// The label roster ended at a read of `data/league`, a directory resolved
+    /// against the working directory. `cargo test` runs at the crate root and
+    /// a developer is usually standing in a checkout, so the read succeeded
+    /// exactly where anyone would look and failed everywhere the program
+    /// actually ships: the installed binary run from a home directory, a
+    /// launcher that starts it from `/`, and the WASM build, which has no
+    /// filesystem at all. Every seat in those games showed a provisional 1500.
+    #[test]
+    fn the_label_roster_is_compiled_in_rather_than_read_from_the_working_directory() {
+        let shipped = crate::league::shipped_league().expect("the snapshot is compiled in");
+        let mut params = current();
+        params.league_dir = None;
+        let (league, seats) = Session::load_params_league(&params);
+        let league = league.expect("a game that names no roster is still labelled");
+        assert!(!seats, "a label roster seats nobody and rates nothing");
+        // A checkout that has been recording locally answers from its own
+        // runtime `league/` first, which is the point of that step. With no
+        // such directory — a fresh checkout, and every shipped build — the
+        // chain has to reach the compiled-in snapshot rather than stop at a
+        // path that is not there.
+        if crate::league::load_league("league").is_none() {
+            assert_eq!(
+                league.strategies.len(),
+                shipped.strategies.len(),
+                "the labels come from the shipped roster"
+            );
+        }
     }
 
     /// An interactive game rates its rivals on screen too — but only the

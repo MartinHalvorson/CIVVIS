@@ -13923,10 +13923,9 @@ pub struct Event {
     pub turn: u32,
     /// The civilization this happened to. Events are visible only to them.
     pub player: usize,
-    /// General, Cities, War, Nuclear, Science, Culture, Faith, People,
-    /// Diplomacy. `Nuclear` is deliberately its own category rather than a
-    /// flavour of `War`: it is the only one a client is expected to give a
-    /// distinct icon and a place at the top of the log.
+    /// One of [`EVENT_CATEGORIES`]. `Nuclear` is deliberately its own category
+    /// rather than a flavour of `War`: it is the only one a client is expected
+    /// to give a distinct icon and a place at the top of the log.
     pub category: String,
     pub text: String,
     /// Where to look, when there is somewhere to look.
@@ -13938,6 +13937,34 @@ pub struct Event {
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub important: bool,
 }
+
+/// Every category [`Event`] can carry.
+///
+/// This is a vocabulary, not a hint: the browser's event log offers a filter
+/// per kind, and a kind gathers categories, so a category nothing on the
+/// client claims is an entry a reader can see in the combined log and never
+/// reach by asking a narrower question. `browser_lets_an_observer_narrow_the_
+/// two_chronicles` in `server.rs` checks this list against the client's
+/// grouping, so adding one here without grouping it there fails the build.
+/// `Game::note` asserts membership in debug builds, which is what catches a
+/// category invented at a call site and declared nowhere.
+///
+/// `Faith` is currently written only by the browser, which files a religion
+/// being founded under it. It stays declared because the classification is
+/// shared: the log the reader sees is fed from both sides.
+pub const EVENT_CATEGORIES: [&str; 11] = [
+    "General",
+    "World",
+    "Cities",
+    "War",
+    "Nuclear",
+    "Science",
+    "Culture",
+    "Faith",
+    "People",
+    "Diplomacy",
+    "CityState",
+];
 
 /// Ruleset identifiers are snake_case; event text is for people.
 fn pretty(id: &str) -> String {
@@ -15752,6 +15779,10 @@ impl Game {
         text: impl Into<String>,
         pos: Option<Pos>,
     ) {
+        debug_assert!(
+            EVENT_CATEGORIES.contains(&category),
+            "{category} is not one of the event categories the browser's log filter groups"
+        );
         if self
             .players
             .get(pid)
