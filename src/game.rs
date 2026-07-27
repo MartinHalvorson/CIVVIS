@@ -17283,10 +17283,22 @@ impl Game {
     }
 
     /// Sum a reusable modifier bundle attached directly to one player.
+    /// Whether a seat carries no runtime modifier bundle.
+    ///
+    /// [`crate::rules::EffectIndex`] speaks for the ruleset, and the ruleset
+    /// is fixed once a game begins — but `Rules::modifiers` is swapped in
+    /// wholesale when a resolution installs a bundle, so an indexed answer
+    /// about it could be stale. Every collection path that consults the index
+    /// pairs it with this, and a seat carrying an attachment simply takes the
+    /// unoptimized route. The overwhelming majority of seats carry none.
+    #[inline]
+    fn has_no_attachments(&self, pid: usize) -> bool {
+        self.players
+            .get(pid)
+            .is_none_or(|player| player.attached_modifiers.is_empty())
+    }
+
     pub fn player_modifier_effect(&self, pid: usize, effect: &str) -> f64 {
-        if !self.rules.effect_index.modifiers(effect) {
-            return 0.0;
-        }
         self.players
             .get(pid)
             .into_iter()
@@ -17396,7 +17408,10 @@ impl Game {
     /// callers provide the game context (unit class, district family, city
     /// state, and so on). Anarchy suppresses cards but not external modifiers.
     pub fn policy_effect(&self, pid: usize, effect: &str) -> f64 {
-        if !self.rules.effect_index.policies(effect) && !self.rules.effect_index.modifiers(effect) {
+        // A runtime attachment can carry any key at all, and the table it
+        // comes from is swapped in after the ruleset is indexed, so the
+        // index only settles this for a seat carrying no attachments.
+        if !self.rules.effect_index.policies(effect) && self.has_no_attachments(pid) {
             return 0.0;
         }
         let attached = self.player_modifier_effect(pid, effect);
@@ -17419,8 +17434,10 @@ impl Game {
         // Nine sweeps follow, over the player's policies, trees, traits,
         // buildings, districts, wonders, beliefs, pantheon and Governors.
         // Every one of them ends in `spec.effects.get(effect)`, so if nothing
-        // in the ruleset grants this key they all add up to the same nothing.
-        if !self.rules.effect_index.any(effect) {
+        // in the ruleset grants this key they all add up to the same nothing
+        // — unless the owner carries a runtime attachment, which the index
+        // cannot speak for.
+        if !self.rules.effect_index.any(effect) && self.has_no_attachments(city.owner) {
             return 0.0;
         }
         let pid = city.owner;
@@ -17442,10 +17459,14 @@ impl Game {
         }
         // Each surviving selector costs six assembled keys and six collection
         // sweeps. A selector no modifier anywhere names contributes zero to
-        // all six, so it is dropped before a key is built for it.
-        selectors.retain(|selector| self.rules.effect_index.modifies_building_yields(selector));
-        if selectors.is_empty() {
-            return Yields::default();
+        // all six, so it is dropped before a key is built for it — but only
+        // where the index speaks for every source, which excludes a seat
+        // carrying runtime attachments.
+        if self.has_no_attachments(city.owner) {
+            selectors.retain(|selector| self.rules.effect_index.modifies_building_yields(selector));
+            if selectors.is_empty() {
+                return Yields::default();
+            }
         }
         let effect = |yield_type: &str| {
             selectors
@@ -17473,7 +17494,9 @@ impl Game {
         if let Some(replaced) = self.rules.units[unit].replaces.as_deref() {
             selectors.push(replaced);
         }
-        selectors.retain(|selector| self.rules.effect_index.discounts_unit_purchase(selector));
+        if self.has_no_attachments(city.owner) {
+            selectors.retain(|selector| self.rules.effect_index.discounts_unit_purchase(selector));
+        }
         selectors
             .into_iter()
             .map(|selector| {
@@ -17485,7 +17508,7 @@ impl Game {
     fn modifier_grants_ability(&self, pid: usize, ability: &str) -> bool {
         // Assembling the key allocates, and this is asked behind every
         // `has_ability` call, so rule the question out on the borrowed name.
-        if !self.rules.effect_index.grants_ability(ability) {
+        if !self.rules.effect_index.grants_ability(ability) && self.has_no_attachments(pid) {
             return false;
         }
         let effect = grant_ability_effect_key(ability);

@@ -1242,17 +1242,23 @@ pub struct EffectIndex {
     pub wonders: SpecMap<()>,
     pub beliefs: SpecMap<()>,
     pub governors: SpecMap<()>,
-    pub modifiers: SpecMap<()>,
     /// The union of every family above, including the trees.
     ///
     /// This is what `Game::city_modifier_effect` and `modifier_grants_ability`
-    /// are ruled out on, so it has to cover every source those two collect
-    /// from — policies and runtime attachments, the trees, civilization
-    /// traits, buildings, districts, wonders, beliefs, pantheons and
-    /// Governors. It deliberately does *not* cover families nothing collects
-    /// this way (unit promotions, improvements, projects, Great People): a
-    /// narrower union skips more. Add a family here the moment a collection
-    /// path starts reading it, or that path will read a zero that is wrong.
+    /// are ruled out on, so it has to cover every *ruleset* source those two
+    /// collect from — policies, the trees, civilization traits, buildings,
+    /// districts, wonders, beliefs, pantheons and Governors. It deliberately
+    /// does not cover families nothing collects this way (unit promotions,
+    /// improvements, projects, Great People): a narrower union skips more.
+    /// Add a family here the moment a collection path starts reading it, or
+    /// that path will read a zero that is wrong.
+    ///
+    /// Runtime attachments are deliberately **absent**. `Rules::modifiers` is
+    /// the one table swapped in after a ruleset is built — that is how a
+    /// World Congress resolution installs an arbitrary bundle — so an index
+    /// of it would go stale the moment it mattered. The collection paths
+    /// instead fall through whenever the seat has any attachment at all,
+    /// which needs no index and cannot be stale.
     pub any: SpecMap<()>,
     /// The selectors named by the three namespaced effect families.
     ///
@@ -1294,10 +1300,6 @@ impl EffectIndex {
     #[inline]
     pub fn governors(&self, effect: &str) -> bool {
         self.governors.contains_key(effect)
-    }
-    #[inline]
-    pub fn modifiers(&self, effect: &str) -> bool {
-        self.modifiers.contains_key(effect)
     }
     /// Whether anything at all in the ruleset grants this effect.
     #[inline]
@@ -2174,7 +2176,6 @@ impl Rules {
                         .flat_map(|promotion| promotion.effects.keys()),
                 )
             })),
-            modifiers: effect_key_set(self.modifiers.values().flat_map(|spec| spec.effects.keys())),
             any: SpecMap::new(),
             building_yield_selectors: SpecMap::new(),
             unit_purchase_selectors: SpecMap::new(),
@@ -2191,7 +2192,6 @@ impl Rules {
             &index.wonders,
             &index.beliefs,
             &index.governors,
-            &index.modifiers,
         ] {
             for key in family.keys() {
                 any.insert(key.clone(), ());
@@ -3359,12 +3359,9 @@ mod tests {
                 checked += 1;
             }
         }
-        for spec in rules.modifiers.values() {
-            for key in spec.effects.keys() {
-                check("modifiers", index.modifiers(key), index.any(key), key);
-                checked += 1;
-            }
-        }
+        // `modifiers` is deliberately absent: it is swapped in at runtime, so
+        // the collection paths fall through on the seat's own attachment list
+        // rather than trusting an index of it.
         for table in [
             &rules.beliefs.pantheon,
             &rules.beliefs.founder,
