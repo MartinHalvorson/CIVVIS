@@ -2112,6 +2112,19 @@
      strategy. Diplomacy and Quick Deals moved to the launch bar on the map,
      where the rest of the screens you open already live. */
   .footer-actions { display: grid; grid-template-columns: minmax(0, 1fr); gap: 7px; }
+  /* Until an observation arrives, this page does not know whether anybody is
+     at the keyboard, and the markup's own default is the human one. So every
+     load that is not behind the restart veil — a tab the keeper just opened, a
+     handoff too old to trust, a boot still retrying against a server that is
+     not listening yet — opened on the End turn bar and the autoplay selectors
+     over a black map: a single-player game, in the middle of an AI
+     exhibition. Say nothing about the seat until the seat is known. `render`
+     adds the class on the first snapshot, so a real human game loses nothing
+     but the time its own first frame takes. The whole control group goes,
+     rather than the human bar alone: its only other child is `#specbar`, which
+     is hidden until that same first snapshot, so hiding just the bar left an
+     empty bordered box where the controls belong. */
+  html:not(.seat-known) .side-actions { display: none !important; }
   .footer-actions button { margin: 0; }
   /* Auto-play: who plays your seat, and for how long. Both are decisions, so
      both sit beside the button rather than behind a modifier key. */
@@ -3217,8 +3230,15 @@
 <script>
   if (window.CIVVIS_RESTART_HANDOFF) {
     document.body.setAttribute("aria-busy", "true");
+    // The card above is markup, so it describes the commonest handoff. Let the
+    // one actually in progress correct it before this document paints.
+    const said = window.CIVVIS_RESTART_HANDOFF;
+    if (said.kicker)
+      document.getElementById("world-transition-kicker").textContent = said.kicker;
+    if (said.title)
+      document.getElementById("world-transition-title").textContent = said.title;
     document.getElementById("world-transition-summary").textContent =
-      window.CIVVIS_RESTART_HANDOFF.summary || "Applying the selected settings";
+      said.summary || "Applying the selected settings";
   }
 </script>
 <div id="maparea">
@@ -7378,9 +7398,35 @@ let supervisorReconnectBusy = false;
 let supervisorReconnectWanted = false;
 let supervisorReloading = false;
 
-function reloadForSupervisedWorld(instance, seed) {
+// `handoff` describes the world being left, for the replacement document. A
+// caller that already raised the veil (the Restart button) keeps its own.
+function reloadForSupervisedWorld(instance, seed, handoff = {}) {
   if (supervisorReloading) return;
   supervisorReloading = true;
+  // Every route to here replaces the document, and the replacement starts
+  // behind the veil only if a handoff is in sessionStorage when its head is
+  // parsed. Clicking Restart wrote one; none of the automatic routes did — not
+  // the successor of a finished game, not a mid-game promoted build — so the
+  // exhibition's own game boundary, the one nobody clicks, was the one that
+  // dropped the veil. Measured against a stand-in supervisor: the veil was up
+  // for 0 of 2121 samples across five boundaries, and each new document painted
+  // the static single-player shell for the ~0.3s until its first frame. Raise
+  // it for the automatic routes too, so the successor is hidden by the same
+  // card that a clicked restart gets.
+  if (!worldTransitionPending())
+    showWorldTransition({
+      requestedAt: Date.now(),
+      // Today's un-veiled reload starts the successor unpaused, because it has
+      // no stored pause to read. Keep exactly that; the first snapshot syncs
+      // this page to whatever the new process is actually doing.
+      paused: false,
+      supervised: true,
+      // The page is being replaced, so there is no page to reuse.
+      reusePage: false,
+      finishedInstance: handoff.finishedInstance ?? serverInstance,
+      finishedSeed: handoff.finishedSeed ?? state?.seed ?? null,
+      summary: handoff.summary || "Opening the next world",
+    });
   setWorldTransitionStage("Opening the new world");
   clearTimeout(supervisorReconnectTimer);
   supervisorReconnectTimer = null;
@@ -7454,7 +7500,10 @@ function waitForSupervisedSuccessor(finishedInstance, finishedSeed) {
           return;
         }
         supervisorReconnectWanted = false;
-        reloadForSupervisedWorld(successor.server_instance, successor.seed);
+        reloadForSupervisedWorld(successor.server_instance, successor.seed, {
+          finishedInstance, finishedSeed,
+          summary: "The exhibition is starting its next world",
+        });
         return;
       }
     } catch (e) {
@@ -7564,8 +7613,13 @@ function showWorldTransition(handoff) {
   document.documentElement.classList.remove("world-transition-ready");
   document.documentElement.classList.add("world-loading", "world-restarting");
   document.body.setAttribute("aria-busy", "true");
-  document.getElementById("world-transition-kicker").textContent = "Starting simulation";
-  document.getElementById("world-transition-title").textContent = "Building a new world";
+  // A handoff may describe itself. Not every one is a new world: the
+  // supervisor also replaces the server mid-game with a freshly built binary
+  // and resumes the same map, and "Building a new world" is a lie about that.
+  document.getElementById("world-transition-kicker").textContent =
+    handoff.kicker || "Starting simulation";
+  document.getElementById("world-transition-title").textContent =
+    handoff.title || "Building a new world";
   document.getElementById("world-transition-summary").textContent =
     handoff.summary || "Applying the selected settings";
   setWorldTransitionStage("Saving selected settings");
@@ -7650,12 +7704,19 @@ function syncViewPlayer() {
 // underneath the page), so the point of saying so is to make the waiting
 // visible rather than to fix it: a black map is then never the only evidence.
 function showBootRetrying(attempt) {
+  const message = attempt > 1
+    ? `Connecting to the server — retrying (attempt ${attempt})`
+    : "Connecting to the server…";
+  // A page that came through a handoff is behind the veil, which covers `#err`
+  // entirely. Retrying is exactly what its stage line is for, so say it there
+  // as well; otherwise the one load that most needs to explain itself — the
+  // successor of a server that is not listening yet — is the one that sits on
+  // a card with nothing moving on it.
+  if (worldTransitionPending()) setWorldTransitionStage(message);
   const el = document.getElementById("err");
   if (!el) return;
   el.dataset.boot = "1";
-  el.textContent = attempt > 1
-    ? `Connecting to the server — retrying (attempt ${attempt})`
-    : "Connecting to the server…";
+  el.textContent = message;
   el.style.display = "block";
 }
 function clearBootRetrying() {
@@ -9079,7 +9140,20 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
   // binary. Reload once so this tab also picks up the new HTML/JavaScript.
   if (!acceptingSupervisedSuccessor && serverInstance !== null && st.server_instance !== undefined &&
       st.server_instance !== serverInstance) {
-    reloadForSupervisedWorld(st.server_instance, st.seed);
+    // Two different events arrive here. Mid-game the supervisor has promoted a
+    // freshly built binary and resumed this same map, so nothing is being
+    // rebuilt and the card must not say so; at a game boundary the ordinary
+    // poll can beat the successor watcher to it, and that one is a new world.
+    // The arriving seed is what tells them apart.
+    const resumed = !!state && state.seed !== undefined && st.seed === state.seed;
+    reloadForSupervisedWorld(st.server_instance, st.seed, {
+      finishedInstance: serverInstance, finishedSeed: state?.seed ?? null,
+      ...(resumed ? {
+        kicker: "The exhibition continues",
+        title: "Reconnecting to the new server",
+        summary: "The same world, on a freshly built server",
+      } : {summary: "The exhibition is starting its next world"}),
+    });
     return;
   }
   // The server can also begin its successor in-process. Treat its seed as
@@ -9087,7 +9161,10 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
   // leave the completed map painted until a person refreshes the page.
   if (!acceptingSupervisedSuccessor && state && st.supervised && st.seed !== undefined &&
       state.seed !== undefined && st.seed !== state.seed) {
-    reloadForSupervisedWorld(st.server_instance, st.seed);
+    reloadForSupervisedWorld(st.server_instance, st.seed, {
+      finishedInstance: serverInstance, finishedSeed: state.seed,
+      summary: "The exhibition is starting its next world",
+    });
     return;
   }
   if (st.server_instance !== undefined) serverInstance = st.server_instance;
@@ -9140,6 +9217,9 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
   }
   updateSpecPauseButtons();
   if (SPEC) updatePaceControl(st);
+  // An observation has arrived, so the seat is no longer a guess and the
+  // human action bar may take its real state. See `html:not(.seat-known)`.
+  document.documentElement.classList.add("seat-known");
   document.getElementById("humanfooter").style.display = SPEC ? "none" : "grid";
   // Keep the same restart node through simulation and human games. Its label,
   // glyph and emphasis change with the selected next world below.
