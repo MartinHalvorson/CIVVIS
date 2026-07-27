@@ -506,6 +506,12 @@ fn generate_land(
         // both. See [`canal_world`].
         return canal_world(wm, poles, rng);
     }
+    if script == MapScript::GrandCanalsTwo {
+        // The same again for the world of blocks: what cuts it is a question
+        // about tiles rather than about a rectangle or a sphere, so it is
+        // answered once for both shapes. See [`canal_blocks`].
+        return canal_blocks(wm, poles, rng).land;
+    }
     if wm.sphere().is_some() {
         return globe_land(wm, script, poles, num_major_spawns, num_minor_spawns, rng);
     }
@@ -702,6 +708,9 @@ fn flat_land(
         // is a question neither shape answers differently. [`generate_land`]
         // sends it to [`canal_world`] before it reaches here.
         MapScript::GrandCanals => canal_world(wm, poles, rng),
+        // And likewise for the blocks of Grand Canals II, which are measured
+        // in tiles and so are the same construction on either shape.
+        MapScript::GrandCanalsTwo => canal_blocks(wm, poles, rng).land,
     }
 }
 
@@ -1118,6 +1127,518 @@ fn canal_world(wm: &WorldMap, poles: MapPoles, rng: &mut Rng) -> BTreeSet<Pos> {
         .collect()
 }
 
+/// How much dry ground one block of a Grand Canals II world is meant to be
+/// left holding, once the canals around its rim have taken their share.
+///
+/// A block is somewhere a civilization lives rather than a tile it steps over:
+/// this is a few cities' worth of ground, so a seat that opens alone on one
+/// has room to grow into it and a seat that shares one has a neighbour it can
+/// see. It is a count of tiles rather than a share of the world, which is what
+/// makes a block on a Duel map the same place as a block on a Ludicrous one —
+/// the larger world has more of them, not bigger ones.
+const CANAL_BLOCK_LAND_TILES: f64 = 80.0;
+
+/// The rim a block pays towards the canals around it, per tile of their width,
+/// as a multiple of the square root of the block's own area.
+///
+/// A hexagon of area `A` has a perimeter of `3.72·√A`, and every canal is
+/// shared with the block on its far side, so half of that is what any one
+/// block gives up. Blocks cut by a spread of seeds are not regular hexagons,
+/// so this is the figure the size of a block is *aimed* with; what it actually
+/// comes out at is measured in the tests.
+const CANAL_BLOCK_RIM: f64 = 1.86;
+
+/// The fewest blocks a Grand Canals II world is cut into, however small it is.
+/// Below about this the canals stop being a network a fleet moves around and
+/// become a couple of straits.
+const CANAL_MIN_BLOCKS: usize = 5;
+
+/// How many rounds the blocks are settled for after their seeds are spread.
+/// See [`canal_blocks`]: spreading gets them apart, settling gets them even.
+const CANAL_BLOCK_SETTLING_ROUNDS: usize = 6;
+
+/// How much of the ground a block is over or under its share it gives up or
+/// takes in one settling round. A whole share at once overshoots and the
+/// blocks trade places round after round; half of it converges.
+const CANAL_BLOCK_SETTLING_RATE: f64 = 0.5;
+
+/// The furthest a block's boundary may be pushed out or pulled in by the
+/// settling, as a fraction of how far across a block is. Past about this a
+/// block that has been squeezed by all of its neighbours at once disappears
+/// between them.
+const CANAL_BLOCK_SETTLING_LIMIT: f64 = 0.35;
+
+/// How far apart two rows of a flat hex map stand, when two neighbouring tiles
+/// in the same row stand one apart. Every one of a tile's six neighbours is
+/// then exactly one away, which is what lets a distance in this frame be read
+/// as a count of tiles.
+const HEX_ROW_SPACING: f64 = 0.866_025_403_784_438_6;
+
+/// The three layers of a canal, in tiles: a shelf of shallow water off either
+/// bank, and a channel of deep ocean between them.
+///
+/// The two layers are what a canal is *for*. The shelf is water a galley can
+/// work from the first turn, and it runs the whole way round a block, so every
+/// block has a coast and a use for a harbour before anyone has a ship that can
+/// leave. The channel is Ocean, which `Game::class_can_traverse` refuses to
+/// anything without Cartography, so it is also a wall: a block is its own
+/// world until the open sea is understood, and the age the map opens into is
+/// one of neighbours nobody has met.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct CanalProfile {
+    shelf: usize,
+    channel: usize,
+}
+
+impl CanalProfile {
+    /// How wide the canal runs, bank to bank.
+    fn width(self) -> f64 {
+        (2 * self.shelf + self.channel) as f64
+    }
+}
+
+/// The profiles a canal may be dug to, one drawn for each pair of blocks that
+/// share a canal. Every layer is between one and three tiles; the four
+/// together average four and a quarter tiles bank to bank, which is the width
+/// [`canal_block_count`] sizes a block against.
+const CANAL_PROFILES: [CanalProfile; 4] = [
+    CanalProfile { shelf: 1, channel: 1 },
+    CanalProfile { shelf: 1, channel: 2 },
+    CanalProfile { shelf: 1, channel: 3 },
+    CanalProfile { shelf: 2, channel: 1 },
+];
+
+/// The canal two blocks share.
+///
+/// Which profile it is dug to is settled by the pair of blocks rather than by
+/// the tile, so one canal is the same width for the whole of its run and the
+/// world reads as dug rather than as eroded. The world's own salt goes into
+/// the mix as well, so two worlds that happened on the same blocks would still
+/// not dig the same canals between them.
+fn canal_profile(one: usize, other: usize, salt: u64) -> CanalProfile {
+    let (low, high) = (one.min(other) as u64, one.max(other) as u64);
+    let mut mixed = salt
+        ^ low.wrapping_mul(0x9E37_79B9_7F4A_7C15)
+        ^ high.wrapping_mul(0xC2B2_AE3D_27D4_EB4F);
+    mixed ^= mixed >> 29;
+    mixed = mixed.wrapping_mul(0xBF58_476D_1CE4_E5B9);
+    mixed ^= mixed >> 32;
+    CANAL_PROFILES[(mixed % CANAL_PROFILES.len() as u64) as usize]
+}
+
+/// Whether a tile standing this far from its two nearest blocks has been dug
+/// out as canal, and if so to which profile.
+///
+/// Half the difference of the two spans is how far the tile stands off the
+/// line between the blocks, because a step across that line takes one tile off
+/// one span and adds it to the other. A canal is dug along the line and half
+/// its width to either side of it, so that distance against half the width is
+/// the whole question.
+fn canal_at(own: (usize, f64), rival: (usize, f64), salt: u64) -> Option<CanalProfile> {
+    if rival.0 == usize::MAX {
+        return None;
+    }
+    let profile = canal_profile(own.0, rival.0, salt);
+    ((rival.1 - own.1) / 2.0 <= profile.width() / 2.0).then_some(profile)
+}
+
+/// How wide a canal runs on average, which is what a block's rim costs it.
+fn canal_mean_width() -> f64 {
+    CANAL_PROFILES.iter().map(|profile| profile.width()).sum::<f64>()
+        / CANAL_PROFILES.len() as f64
+}
+
+/// How many blocks a world with this much open ground is cut into.
+///
+/// A block of `block` land tiles sits in a cell of `cell` tiles, of which the
+/// rim goes to the canals: `block = cell − rim·√cell`. Solve that for the cell
+/// and the count is how many of them the world holds.
+fn canal_block_count(open: usize) -> usize {
+    let rim = CANAL_BLOCK_RIM * canal_mean_width();
+    let side = (rim + (rim * rim + 4.0 * CANAL_BLOCK_LAND_TILES).sqrt()) / 2.0;
+    ((open as f64 / (side * side)).round() as usize).max(CANAL_MIN_BLOCKS)
+}
+
+/// Where the tiles of a world stand, in a frame whose unit is one tile.
+///
+/// Everything a Grand Canals II world is built from — how big a block is, how
+/// wide a canal — is counted in tiles, so the geometry has to be asked in a
+/// frame that answers in tiles. A globe measures the angle between two tiles
+/// and divides it by the angle one tile subtends, which works because a
+/// geodesic's cells are equal-area. A flat map is a hex grid on a cylinder,
+/// where the six neighbours of a tile are all exactly one away and the world
+/// comes back to itself going east.
+///
+/// This is the one place the two shapes are told apart, and it is not the
+/// [`grand_canals`] reading of the same problem: those six lanes are cut at an
+/// angle to an axis of the world, which is a question about degrees, and
+/// degrees are the same on both shapes. A block is a question about tiles, and
+/// a degree of longitude on a flat map is a tile near the equator and a
+/// fraction of one near the pole. Asking this one in degrees would leave the
+/// polar blocks many times the size of the equatorial ones on a flat map.
+struct TileFrame {
+    tiles: Vec<Pos>,
+    points: Vec<[f64; 3]>,
+    /// The angle one tile subtends at the centre of a globe. A flat map's
+    /// points are already counted in tiles, so it has none.
+    arc: Option<f64>,
+    /// How far east a flat world runs before it comes back, in tiles.
+    wrap: f64,
+}
+
+impl TileFrame {
+    fn of(wm: &WorldMap) -> Self {
+        let tiles: Vec<Pos> = wm.tiles.keys().copied().collect();
+        let globe = wm.sphere().is_some();
+        let points = tiles
+            .iter()
+            .map(|pos| {
+                if globe {
+                    return wm.direction(*pos);
+                }
+                let (col, row) = hex::axial_to_offset(pos.0, pos.1);
+                [
+                    col as f64 + 0.5 * (row & 1) as f64,
+                    row as f64 * HEX_ROW_SPACING,
+                    0.0,
+                ]
+            })
+            .collect();
+        Self {
+            tiles,
+            points,
+            arc: globe.then(|| tile_arc(wm)),
+            wrap: wm.width.max(1) as f64,
+        }
+    }
+
+    /// How many tiles apart two points of the frame stand.
+    fn span(&self, from: [f64; 3], to: [f64; 3]) -> f64 {
+        match self.arc {
+            Some(arc) => dot(from, to).clamp(-1.0, 1.0).acos() / arc,
+            None => {
+                let east = (from[0] - to[0]).abs();
+                let east = east.min(self.wrap - east);
+                let north = from[1] - to[1];
+                (east * east + north * north).sqrt()
+            }
+        }
+    }
+
+    /// The two blocks a point stands nearest, and how far each one is once its
+    /// reach is allowed for.
+    ///
+    /// The nearer names the block the point belongs to; half the difference of
+    /// the two is how far the point stands off the line between them, because
+    /// a step across that line takes one away from one span and adds it to the
+    /// other. `reach` is what the settling has given each block over a plain
+    /// span — a block short of ground reaches further for it — and it moves
+    /// that line without bending it, so the difference still measures tiles.
+    fn nearest_two(
+        &self,
+        seeds: &[[f64; 3]],
+        reach: &[f64],
+        point: [f64; 3],
+    ) -> ((usize, f64), (usize, f64)) {
+        let (mut own, mut rival) = ((usize::MAX, f64::MAX), (usize::MAX, f64::MAX));
+        for (block, seed) in seeds.iter().enumerate() {
+            let span = self.span(point, *seed) - reach[block];
+            if span < own.1 {
+                rival = own;
+                own = (block, span);
+            } else if span < rival.1 {
+                rival = (block, span);
+            }
+        }
+        (own, rival)
+    }
+
+    /// What one point contributes towards the middle of the block it is in.
+    /// A flat map is a cylinder, so its east-west coordinate is an angle and
+    /// has to be summed as one — otherwise a block sitting across the seam
+    /// would average out on the far side of the world.
+    fn toward_middle(&self, point: [f64; 3]) -> [f64; 3] {
+        match self.arc {
+            Some(_) => point,
+            None => {
+                let turn = std::f64::consts::TAU * point[0] / self.wrap;
+                [turn.cos(), turn.sin(), point[1]]
+            }
+        }
+    }
+
+    /// The middle of the points those contributions came from.
+    fn middle(&self, sum: [f64; 3], count: usize) -> Option<[f64; 3]> {
+        if count == 0 {
+            return None;
+        }
+        match self.arc {
+            Some(_) => {
+                let length = dot(sum, sum).sqrt();
+                (length > 1e-9).then(|| [sum[0] / length, sum[1] / length, sum[2] / length])
+            }
+            None => {
+                let turn = sum[1].atan2(sum[0]).rem_euclid(std::f64::consts::TAU);
+                Some([
+                    turn / std::f64::consts::TAU * self.wrap,
+                    sum[2] / count as f64,
+                    0.0,
+                ])
+            }
+        }
+    }
+}
+
+/// A Grand Canals II world, as the three things it is made of.
+#[derive(Default)]
+struct CanalBlocks {
+    /// The dry ground: every block of it.
+    land: BTreeSet<Pos>,
+    /// The shelf off either bank of every canal, which is shallow water.
+    shelf: BTreeSet<Pos>,
+    /// The channel down the middle of every canal, which is deep ocean.
+    channel: BTreeSet<Pos>,
+}
+
+/// The tiles a canal world holds out of its ground whatever else it does: a
+/// globe's twelve pentagons and, when the world has poles, its caps; a flat
+/// map's top and bottom rows, which are its edge rather than its climate.
+fn canal_reserved(wm: &WorldMap, poles: MapPoles) -> BTreeSet<Pos> {
+    let globe = wm.sphere().is_some();
+    let cap = if globe && poles.has_poles() {
+        0.93
+    } else {
+        f64::MAX
+    };
+    let pentagons: BTreeSet<Pos> = wm
+        .sphere()
+        .map(|sphere| sphere.pentagons().into_iter().collect())
+        .unwrap_or_default();
+    wm.tiles
+        .keys()
+        .copied()
+        .filter(|pos| {
+            if pentagons.contains(pos) || wm.polar_fraction(*pos) >= cap {
+                return true;
+            }
+            let (_, row) = hex::axial_to_offset(pos.0, pos.1);
+            !globe && (row == 0 || row == wm.height - 1)
+        })
+        .collect()
+}
+
+/// The world of Grand Canals II: ground cut into blocks of about
+/// [`CANAL_BLOCK_LAND_TILES`] tiles each, and a canal around every one of
+/// them.
+///
+/// **The blocks come first, and the canals are what is left between them.**
+/// A block is grown from a seed, and a tile belongs to whichever seed is
+/// fewest tiles away; a tile whose two nearest seeds are near enough to level
+/// is on the line between two blocks, and that line is a canal. Because every
+/// tile has a nearest seed and every block has a neighbour, the canals arrive
+/// as one network rather than as a set of separate ditches — a fleet can leave
+/// any block and reach any other.
+///
+/// **The seeds are spread, and then the blocks are settled.** Spreading takes
+/// each new seed as far from the placed ones as the world allows, which gets
+/// them apart but not even: the ground one seed happens to be given can be two
+/// and a half times another's, and a world read by the size of its blocks
+/// cannot afford that. Settling then moves each seed to the middle of its own
+/// ground and lengthens the reach of any block left short of its share — which
+/// is what evens out the blocks the world runs out under, against a pole or
+/// against the edge of a flat map. Both steps ask nothing of the world's shape
+/// beyond [`TileFrame`], so the same construction cuts a globe and a flat map,
+/// and the blocks come out the same size on either.
+///
+/// **A canal has three layers**, and they are read off how far into the water
+/// a tile is rather than off the geometry that cut it: the first
+/// [`CanalProfile::shelf`] tiles in from either bank are shallow, and whatever
+/// is left in the middle is deep ocean. Taken that way the shelf is there by
+/// construction — no width of canal and no crossing of two of them can leave
+/// deep water against a beach — and a junction where several canals meet opens
+/// out into a small deep sea, which is what a junction of real canals does.
+fn canal_blocks(wm: &WorldMap, poles: MapPoles, rng: &mut Rng) -> CanalBlocks {
+    let frame = TileFrame::of(wm);
+    let reserved = canal_reserved(wm, poles);
+    let open: Vec<usize> = (0..frame.tiles.len())
+        .filter(|index| !reserved.contains(&frame.tiles[*index]))
+        .collect();
+    if open.len() < CANAL_MIN_BLOCKS {
+        return CanalBlocks::default();
+    }
+
+    // The seeds, each one placed as far as it can be from every seed already
+    // down. The first is rolled, so a world's blocks are its own.
+    let count = canal_block_count(open.len()).min(open.len());
+    let mut seeds: Vec<[f64; 3]> = Vec::with_capacity(count);
+    seeds.push(frame.points[open[rng.below(open.len())]]);
+    let mut nearest = vec![f64::MAX; open.len()];
+    while seeds.len() < count {
+        let placed = seeds[seeds.len() - 1];
+        let mut farthest = 0usize;
+        for (slot, index) in open.iter().enumerate() {
+            let span = frame.span(frame.points[*index], placed);
+            if span < nearest[slot] {
+                nearest[slot] = span;
+            }
+            if nearest[slot] > nearest[farthest] {
+                farthest = slot;
+            }
+        }
+        seeds.push(frame.points[open[farthest]]);
+    }
+
+    // Spreading alone leaves the blocks uneven: the ground one seed happens to
+    // be given can be two and a half times another's, and a world read by the
+    // size of its blocks cannot afford that. Each round here does two things
+    // to every seed — moves it to the middle of the ground that came to it,
+    // which settles a block's shape, and then lengthens or shortens its reach
+    // by what it is under or over its share, which settles the size. The
+    // second is what the first cannot do: an even spread of seeds still gives
+    // an uneven spread of ground wherever the world runs out, against a pole
+    // or against the edge of a flat map.
+    let salt = rng.next_u64();
+    let cell = open.len() as f64 / count as f64;
+    let limit = CANAL_BLOCK_SETTLING_LIMIT * cell.sqrt();
+    let rim = 2.0 * CANAL_BLOCK_RIM * cell.sqrt();
+    let mut reach = vec![0.0f64; count];
+    for _ in 0..CANAL_BLOCK_SETTLING_ROUNDS {
+        let mut middles = vec![([0.0f64; 3], 0usize); count];
+        let mut ground = vec![0usize; count];
+        for index in &open {
+            let point = frame.points[*index];
+            let (own, rival) = frame.nearest_two(&seeds, &reach, point);
+            let toward = frame.toward_middle(point);
+            let slot = &mut middles[own.0];
+            for axis in 0..3 {
+                slot.0[axis] += toward[axis];
+            }
+            slot.1 += 1;
+            if canal_at(own, rival, salt).is_none() {
+                ground[own.0] += 1;
+            }
+        }
+        // What is settled is the *ground* a block is left holding, not the
+        // room it takes up. Those are not the same number: a block against the
+        // edge of a flat map has water there already and pays no canal for it,
+        // and a block whose canals happened to be dug wide pays more than one
+        // whose canals are narrow. Aiming at the room would leave both of
+        // those where they were.
+        let held: usize = ground.iter().sum();
+        let target = held as f64 / count as f64;
+        for (block, (sum, room)) in middles.into_iter().enumerate() {
+            if room == 0 {
+                // Squeezed out from every side at once. Give it its plain
+                // reach back and let the next round find it some ground.
+                reach[block] = 0.0;
+                continue;
+            }
+            if let Some(middle) = frame.middle(sum, room) {
+                seeds[block] = middle;
+            }
+            // A block of `cell` tiles has a rim of that many tiles around it,
+            // so pushing the rim out by one tile is that much more ground: the
+            // reach a shortfall is worth is the shortfall divided by the rim.
+            reach[block] = (reach[block]
+                + CANAL_BLOCK_SETTLING_RATE * (target - ground[block] as f64) / rim)
+                .clamp(-limit, limit);
+        }
+    }
+
+    // Where the canals ended up, now that the blocks have settled.
+    let mut canals: BTreeMap<Pos, CanalProfile> = BTreeMap::new();
+    for (index, pos) in frame.tiles.iter().enumerate() {
+        if reserved.contains(pos) {
+            continue;
+        }
+        let (own, rival) = frame.nearest_two(&seeds, &reach, frame.points[index]);
+        if let Some(profile) = canal_at(own, rival, salt) {
+            canals.insert(*pos, profile);
+        }
+    }
+
+    // The layers. How deep into the water a canal tile lies is one walk in
+    // from every bank at once, so a tile knows which layer it is in without
+    // anything having to know which way its canal happens to run.
+    let mut inward: BTreeMap<Pos, usize> = BTreeMap::new();
+    let mut frontier: Vec<Pos> = canals
+        .keys()
+        .copied()
+        .filter(|pos| {
+            wm.neighbors(*pos)
+                .into_iter()
+                .any(|neighbor| !canals.contains_key(&neighbor))
+        })
+        .collect();
+    for pos in &frontier {
+        inward.insert(*pos, 1);
+    }
+    let mut depth = 1usize;
+    while !frontier.is_empty() {
+        depth += 1;
+        let mut next = Vec::new();
+        for pos in frontier {
+            for neighbor in wm.neighbors(pos) {
+                if canals.contains_key(&neighbor) && !inward.contains_key(&neighbor) {
+                    inward.insert(neighbor, depth);
+                    next.push(neighbor);
+                }
+            }
+        }
+        frontier = next;
+    }
+
+    let mut plan = CanalBlocks::default();
+    for (pos, profile) in &canals {
+        if inward.get(pos).copied().unwrap_or(1) <= profile.shelf {
+            plan.shelf.insert(*pos);
+        } else {
+            plan.channel.insert(*pos);
+        }
+    }
+
+    // What the canals took is counted against the world's water rather than
+    // added on top of it, exactly as [`canal_world`] counts its six lanes. A
+    // world whose canals have already spent the share gets no natural sea.
+    let mut field: BTreeSet<Pos> = frame
+        .tiles
+        .iter()
+        .copied()
+        .filter(|pos| !canals.contains_key(pos) && !reserved.contains(pos))
+        .collect();
+    let tiles = wm.tiles.len();
+    let wanted_water = tiles * (100 - MapScript::GrandCanalsTwo.land_percent() as usize) / 100;
+    let sea = match wanted_water.checked_sub(tiles - field.len()) {
+        Some(remaining) if remaining > 0 => {
+            let seas = (tiles / 900).clamp(2, 12);
+            scatter_bodies(wm, &mut field, seas, remaining, rng)
+        }
+        _ => BTreeSet::new(),
+    };
+    plan.land = frame
+        .tiles
+        .iter()
+        .copied()
+        .filter(|pos| {
+            !canals.contains_key(pos) && !sea.contains(pos) && !reserved.contains(pos)
+        })
+        .collect();
+
+    // A block is somewhere a civilization lives. Where a canal has clipped a
+    // corner off one — against a pole, or where three of them meet — what is
+    // left over is a rock too small to found on, and a world read by the size
+    // of its blocks should not be littered with them. They go back to the sea
+    // they were cut out of.
+    for sliver in connected_components(wm, &plan.land) {
+        if sliver.len() < MIN_LANDMASS_FOR_A_START {
+            for pos in sliver {
+                plan.land.remove(&pos);
+            }
+        }
+    }
+    plan
+}
+
 /// How many bodies a world type may spread past a single plot.
 ///
 /// `Lakes.lua` asks for four per continent region; every other stock script
@@ -1140,9 +1661,14 @@ fn large_lake_budget(script: MapScript, num_continents: usize) -> usize {
         // enclosed, and nothing a ship arrives by.
         MapScript::Pangaea | MapScript::InlandSea | MapScript::GrandCanals => num_continents,
         MapScript::Continents | MapScript::TrueStartEarth => num_continents / 2,
+        // A block of a Grand Canals II world is a few dozen tiles of ground
+        // with a canal already around it, so its middle is never far from a
+        // bank and a spread lake would be most of what a city had to work.
+        // The one-plot ponds the same roll produces still fall.
         MapScript::LandOnly
         | MapScript::SmallContinents
         | MapScript::Islands
+        | MapScript::GrandCanalsTwo
         | MapScript::WaterWorld => 0,
     }
 }
@@ -1308,8 +1834,18 @@ pub fn generate_with_script(
         WorldMap::new(width, height)
     };
 
-    // --- landmass, from the world type asked for and the shape it landed on
-    let mut land = generate_land(&wm, script, poles, num_major_spawns, num_minor_spawns, rng);
+    // --- landmass, from the world type asked for and the shape it landed on.
+    // A Grand Canals II world is cut once and kept, rather than cut again
+    // when the coast is painted: which layer of a canal a tile is in is
+    // rolled along with the blocks, so asking a second time would not get the
+    // same answer back. Every other type, [`grand_canals`] included, is the
+    // same geometry every time it is asked.
+    let blocks = (script == MapScript::GrandCanalsTwo)
+        .then(|| canal_blocks(&wm, poles, rng));
+    let mut land = match &blocks {
+        Some(plan) => plan.land.clone(),
+        None => generate_land(&wm, script, poles, num_major_spawns, num_minor_spawns, rng),
+    };
 
     let land_list: Vec<Pos> = land.iter().cloned().collect();
 
@@ -1373,6 +1909,26 @@ pub fn generate_with_script(
                 if tile.terrain == "ocean" {
                     tile.terrain = "coast".into();
                 }
+            }
+        }
+    }
+
+    // A Grand Canals II canal is dug in three layers and the shelf pass knows
+    // about only one of them, so both are laid back over what it painted: the
+    // shelf off either bank is shallow whether or not the pass reached that
+    // far in, and the channel between them is deep whether or not the pass
+    // spilled shallow water across it. That is the whole shape of the world —
+    // a galley may sail right round its own block, and nothing may cross to
+    // the next one until the open sea is understood.
+    if let Some(plan) = &blocks {
+        for pos in &plan.shelf {
+            if let Some(tile) = wm.tiles.get_mut(pos) {
+                tile.terrain = "coast".into();
+            }
+        }
+        for pos in &plan.channel {
+            if let Some(tile) = wm.tiles.get_mut(pos) {
+                tile.terrain = "ocean".into();
             }
         }
     }
@@ -4322,11 +4878,12 @@ mod river_tests {
 
     /// Every world type but Earth, in the order the lobby lists them: most
     /// land first, most water last.
-    const ROLLED_TYPES: [MapScript; 9] = [
+    const ROLLED_TYPES: [MapScript; 10] = [
         MapScript::LandOnly,
         MapScript::Lakes,
         MapScript::InlandSea,
         MapScript::GrandCanals,
+        MapScript::GrandCanalsTwo,
         MapScript::Pangaea,
         MapScript::Continents,
         MapScript::SmallContinents,
@@ -4825,6 +5382,193 @@ mod river_tests {
         }
     }
 
+    /// The layers of a canal are what the world type promises, so they are
+    /// pinned here rather than left to the table: between one and three tiles
+    /// of shelf off either bank, and between one and three of channel down the
+    /// middle.
+    #[test]
+    fn every_canal_profile_is_three_layers_of_one_to_three_tiles() {
+        for profile in CANAL_PROFILES {
+            assert!(
+                (1..=3).contains(&profile.shelf) && (1..=3).contains(&profile.channel),
+                "{profile:?} is not a canal of three layers of one to three tiles"
+            );
+        }
+    }
+
+    /// The claim Grand Canals II is named for: the world arrives already cut
+    /// into blocks of a size somebody can live on, and every one of them has a
+    /// canal of three layers around it.
+    ///
+    /// Four things are checked, and each of them is a way the world could be
+    /// wrong while looking right:
+    ///
+    /// - **The blocks are a size.** Not "several landmasses" — a count of
+    ///   tiles, held to within a factor of the target on a Duel map and on a
+    ///   Standard one alike, because that is the difference between this type
+    ///   and every other one on the dial. A generator that spread its seeds
+    ///   and stopped there passes every share test in this file and leaves
+    ///   blocks two and a half times each other's size.
+    /// - **The shelf is always there.** No tile of deep ocean touches dry
+    ///   ground anywhere in the world. The layers are read off how far into
+    ///   the water a tile lies precisely so that this cannot fail at a pinch
+    ///   or at a crossing, and if it ever does, the middle layer has become a
+    ///   cliff edge instead of a channel.
+    /// - **A galley can sail right round its own block.** The shallow water
+    ///   against one block is one ring, not two banks that stop at a junction,
+    ///   so the sea is usable from turn one even though crossing it is not.
+    /// - **The canals are one network.** Every tile of every canal is in the
+    ///   same body of water, so a fleet that can cross deep water can reach
+    ///   every block in the world. Blocks that are cut apart but not joined up
+    ///   would be an archipelago, which the dial already sells twice.
+    ///
+    /// Both shapes, because a block is measured in tiles and neither shape
+    /// gets to answer that differently; both climates, because a poled world
+    /// freezes the ends of the canals nearest its caps; and the two ends of
+    /// the everyday size range, because Duel is where a handful of blocks have
+    /// to divide a world that barely holds them.
+    #[test]
+    fn grand_canals_2_rings_every_block_with_a_three_layered_canal() {
+        let rules = Rules::embedded();
+        let target = CANAL_BLOCK_LAND_TILES as usize;
+        for (index, size) in [&CIV6_MAP_SIZES[0], &CIV6_MAP_SIZES[3]].into_iter().enumerate() {
+            for topology in [FLAT, GLOBE] {
+                for poles in [POLED, SCATTERED] {
+                    let mut rng = Rng::new(
+                        61_000
+                            + index as u64 * 4
+                            + topology.is_globe() as u64 * 2
+                            + poles.has_poles() as u64,
+                    );
+                    let (world, _) = generate_with_script(
+                        &rules,
+                        size.width,
+                        size.height,
+                        size.default_players,
+                        size.default_city_states,
+                        size.natural_wonders,
+                        size.continents,
+                        MapScript::GrandCanalsTwo,
+                        topology,
+                        poles,
+                        &mut rng,
+                    );
+                    let where_ = format!("{} {topology:?}/{poles:?}", size.id);
+                    let land: BTreeSet<Pos> = world
+                        .tiles
+                        .iter()
+                        .filter(|(_, tile)| !rules.is_water(tile))
+                        .map(|(pos, _)| *pos)
+                        .collect();
+
+                    // The blocks, and the size they are meant to be.
+                    let blocks = connected_components(&world, &land);
+                    let sizes: Vec<usize> = blocks.iter().map(BTreeSet::len).collect();
+                    assert!(
+                        blocks.len() >= CANAL_MIN_BLOCKS,
+                        "{where_}: {} blocks is not a world of blocks: {sizes:?}",
+                        blocks.len()
+                    );
+                    let sized = sizes
+                        .iter()
+                        .filter(|held| (target / 2..=target * 7 / 4).contains(held))
+                        .count();
+                    assert!(
+                        sized * 4 >= sizes.len() * 3,
+                        "{where_}: only {sized} of {} blocks are anywhere near {target} tiles: \
+                         {sizes:?}",
+                        sizes.len()
+                    );
+                    assert!(
+                        sizes.iter().all(|held| *held <= target * 5 / 2),
+                        "{where_}: a block ran away with the world: {sizes:?}"
+                    );
+                    assert!(
+                        sizes.iter().all(|held| *held >= MIN_LANDMASS_FOR_A_START),
+                        "{where_}: a block is too small to found on: {sizes:?}"
+                    );
+
+                    // The three layers: deep water in the middle of a canal,
+                    // and never against a beach.
+                    let deep: BTreeSet<Pos> = world
+                        .tiles
+                        .iter()
+                        .filter(|(_, tile)| tile.terrain == "ocean")
+                        .map(|(pos, _)| *pos)
+                        .collect();
+                    let shallow: BTreeSet<Pos> = world
+                        .tiles
+                        .iter()
+                        .filter(|(_, tile)| tile.terrain == "coast")
+                        .map(|(pos, _)| *pos)
+                        .collect();
+                    for pos in &deep {
+                        assert!(
+                            world.neighbors(*pos).iter().all(|near| !land.contains(near)),
+                            "{where_}: deep ocean at {pos:?} runs straight into a beach, so the \
+                             canal there has lost its shelf"
+                        );
+                    }
+                    assert!(
+                        deep.len() * 4 >= (deep.len() + shallow.len()),
+                        "{where_}: {} of {} tiles of canal are deep, so the middle layer has all \
+                         but silted up",
+                        deep.len(),
+                        deep.len() + shallow.len()
+                    );
+
+                    // One network of canals around the world, and one ring of
+                    // shallow water around each block within it.
+                    let water: BTreeSet<Pos> = world
+                        .tiles
+                        .iter()
+                        .filter(|(_, tile)| rules.is_water(tile))
+                        .map(|(pos, _)| *pos)
+                        .collect();
+                    let sea = connected_components(&world, &water)
+                        .into_iter()
+                        .max_by_key(BTreeSet::len)
+                        .unwrap_or_default();
+                    // Asked the way a galley would ask it: of the water off
+                    // this block that is *the sea*, can it get from any part
+                    // to any other without crossing deep water? A lagoon the
+                    // block happens to hold in its middle is not the sea and
+                    // is not what the question is about, and neither is a bay
+                    // one tile deeper than the shelf.
+                    let coastwise = connected_components(&world, &shallow);
+                    for (block, held) in blocks.iter().zip(&sizes) {
+                        let shore: BTreeSet<Pos> = block
+                            .iter()
+                            .flat_map(|pos| world.neighbors(*pos))
+                            .filter(|pos| shallow.contains(pos) && sea.contains(pos))
+                            .collect();
+                        assert!(
+                            !shore.is_empty(),
+                            "{where_}: a block of {held} tiles has no shore on the canals at all"
+                        );
+                        assert!(
+                            coastwise
+                                .iter()
+                                .any(|body| shore.iter().all(|pos| body.contains(pos))),
+                            "{where_}: the shallow water around a block of {held} tiles is in \
+                             more than one body, so a galley cannot sail round its own coast"
+                        );
+                    }
+                    // The canals are one network and not a moat per block: the
+                    // sea every block has its shore on is the *same* sea, so
+                    // all but the odd inland lagoon is in it.
+                    assert!(
+                        sea.len() * 20 >= water.len() * 19,
+                        "{where_}: the biggest body of water holds {} of the world's {} water \
+                         tiles, so the canals are not one network",
+                        sea.len(),
+                        water.len()
+                    );
+                }
+            }
+        }
+    }
+
     /// Every world type has to arrive on either shape, seat everybody, and —
     /// on a globe — close. The shape is a separate question from the type, and
     /// this is what makes that true rather than merely offered.
@@ -5191,6 +5935,14 @@ mod river_tests {
                 MapScript::GrandCanals => assert!(
                     components.len() >= 8 && components[0].len() * 3 <= total,
                     "Grand Canals should cut the world into blocks, got {:?}",
+                    components.iter().map(|c| c.len()).collect::<Vec<_>>()
+                ),
+                // Grand Canals II cuts finer still, and to a size rather than
+                // to a count: every block is a few dozen tiles, so no one of
+                // them can be a tenth of the world's ground.
+                MapScript::GrandCanalsTwo => assert!(
+                    components.len() >= 8 && components[0].len() * 6 <= total,
+                    "Grand Canals II should cut the world into blocks of a size, got {:?}",
                     components.iter().map(|c| c.len()).collect::<Vec<_>>()
                 ),
                 MapScript::TrueStartEarth => {
