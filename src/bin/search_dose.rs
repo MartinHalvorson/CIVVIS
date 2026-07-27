@@ -48,12 +48,16 @@ use civvis::strategic::StrategicAi;
 
 /// (label, review_every, horizon). The control is the promoted configuration.
 const CONTROL: (&str, u32, u32) = ("deep 20/80 (shipped)", 20, 80);
-const DOSES: [(&str, u32, u32); 5] = [
+/// Three doses, not five. Each `StrategicAi` seat costs about four times an
+/// `AdvancedAi` one and a paired arm needs the search on both sides, so a dose
+/// is expensive; the first version of this ladder ran five and produced
+/// nothing in an hour. These three answer the question and include a control
+/// that should come back NEGATIVE, which is what tells you the ladder can see
+/// anything at all.
+const DOSES: [(&str, u32, u32); 3] = [
     ("20/120  deeper", 20, 120),
     ("10/80   2x reviews", 10, 80),
-    ("10/120  both", 10, 120),
-    ("40/80   half reviews", 40, 80),
-    ("20/40   half horizon", 20, 40),
+    ("40/80   HALF reviews (expected negative)", 40, 80),
 ];
 
 fn number(args: &[String], flag: &str, default: usize) -> usize {
@@ -113,16 +117,26 @@ fn duel(
                 }
             }
         }
-        let mut mine = 0.0;
-        let mut table = 0.0;
-        for player in game.players.iter().filter(|p| !p.is_minor) {
-            let value = game.victory_threat(player.id);
-            table += value;
-            if is_treated(player.id) {
-                mine += value;
-            }
-        }
-        share += if table > 0.0 { mine / table } else { 0.5 };
+        // WINS, not victory-lane progress.
+        //
+        // This binary shipped scoring lane progress, on the strength of that
+        // statistic passing two non-adversarial checks. It was refuted: a GA
+        // over forty genes selecting on lane progress produced a champion at
+        // +0.0886 (3.2 SE) on disjoint maps that then lost 8 map directions to
+        // 30 on wins, p=0.0005. Lane progress rewards *progress toward* a
+        // lane, and domination is the lane this engine converts worst, so a
+        // search finds and exploits it.
+        //
+        // Nothing optimises against the statistic here — this is a fixed
+        // ladder, not a search — but the number is meant to inform a promotion
+        // decision, and a correlate is not what a promotion should rest on.
+        // A capped game with no victor scores 0.5: it says nothing about
+        // either arm.
+        share += match game.winner.map(is_treated) {
+            Some(true) => 1.0,
+            Some(false) => 0.0,
+            None => 0.5,
+        };
     }
     share / 2.0
 }
@@ -142,8 +156,9 @@ fn main() {
          {turns} turns, seed {seed0}",
         DOSES.len()
     );
-    println!("  control: {} | statistic: victory-lane progress", CONTROL.0);
-    println!("  parity 0.500; above means the dose beats what already shipped\n");
+    println!("  control: {} | statistic: WINS", CONTROL.0);
+    println!("  parity 0.500; above means the dose beats what already shipped");
+    println!("  a capped game with no victor scores 0.5, not a loss\n");
 
     for (label, review_every, horizon) in DOSES {
         let shares = parallel::map(maps, jobs, move |index| {
