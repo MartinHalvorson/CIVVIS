@@ -342,6 +342,12 @@ fn main() {
     let barbarians = number(&args, "--barbarians", 1) != 0;
     let parallel_settlers = args.iter().any(|arg| arg == "--parallel-settlers");
     let census_civ_blind = args.iter().any(|arg| arg == "--civ-blind");
+    let food_first = args
+        .iter()
+        .position(|arg| arg == "--food-bias")
+        .and_then(|i| args.get(i + 1))
+        .and_then(|v| v.parse::<f64>().ok())
+        .unwrap_or(0.0);
 
     println!(
         "opening_census: {maps} maps x {players} players, {width}x{height}, {turns} turns, \
@@ -367,6 +373,7 @@ fn main() {
         for agent in fleet.iter_mut() {
             agent.parallel_settlers = parallel_settlers;
             agent.civ_blind = census_civ_blind;
+            agent.food_first = food_first;
         }
         let majors: Vec<usize> = (0..game.players.len())
             .filter(|pid| !game.players[*pid].is_minor)

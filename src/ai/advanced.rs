@@ -420,6 +420,23 @@ pub struct AdvancedAi {
     /// 120 `advanced` wins were religious, so the science lane the filter
     /// exists to refuse was rarely the one being contested.
     pub refuse_unreachable_lanes: bool,
+    /// Tell this empire's governors to want food while it is still short of
+    /// its city target.
+    ///
+    /// `docs/OPENINGS.md` §8 and §11: capital growth gates every settler — a
+    /// settler needs `pop >= 2` and consumes one — and the capital gains about
+    /// one population per 23 turns, which *is* the city founding interval.
+    /// `citizen_strategy` ships wanting production 1.55 against food 1.25, and
+    /// reassigning the same tiles toward food raises the capital's food
+    /// **surplus** 44–87% at a cost of 18–27% of its production.
+    ///
+    /// Growth gates the settler; production pays for it. Which wins is not
+    /// derivable, so this is an eval arm (`advanced_food_first`) and not a
+    /// default. The bias is +0.6 — a moderate shift that puts food just above
+    /// production, not the food-10.0 arm that measured the ceiling — and it is
+    /// **withdrawn once the empire reaches its city target**, so it buys
+    /// expansion tempo rather than permanently detuning the economy.
+    pub food_first: f64,
     /// Let more than one settler exist at a time, up to the shortfall against
     /// the city target.
     ///
@@ -538,6 +555,7 @@ impl AdvancedAi {
             force_groups_dirty: false,
             scoped_relief_hold: false,
             refuse_unreachable_lanes: false,
+            food_first: 0.0,
             parallel_settlers: false,
             civ_blind: false,
         }
@@ -11118,6 +11136,15 @@ impl AdvancedAi {
             self.plan = Some(self.assess(g, pid));
         }
         let plan = self.plan.clone().unwrap();
+        if self.food_first != 0.0 {
+            // Want food only while short of the target. Past it the extra
+            // food buys nothing this treatment is arguing for, and the
+            // production it costs is real.
+            let short = g.player_city_ids(pid).len() < plan.desired_cities;
+            if let Some(seat) = g.players.get_mut(pid) {
+                seat.citizen_food_bias = if short { self.food_first } else { 0.0 };
+            }
+        }
         self.census.count(plan.strategy);
         self.advanced_research(g, pid, &plan);
         if self.victory_planning {

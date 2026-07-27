@@ -13277,6 +13277,17 @@ pub struct Player {
     /// budget is negative: one per complete 10 Gold of deficit.
     #[serde(default)]
     pub bankruptcy_amenity_penalty: i64,
+    /// Extra weight this empire's governors put on food when assigning
+    /// citizens, added to `citizen_strategy`'s food appetite.
+    ///
+    /// Per **player**, not per game, because `ai_eval` is seat-mirrored: both
+    /// arms play the same map, so anything global cannot be a treatment arm.
+    /// Zero is the shipped behaviour and old saves default to it. Nothing in
+    /// the engine sets this — an agent does, which is the point: citizen
+    /// assignment is the one city-level decision no player, human or AI, can
+    /// currently express.
+    #[serde(default)]
+    pub citizen_food_bias: f64,
     pub faith: f64,
     /// Gathering Storm strategic-resource stockpiles. Luxuries remain copy
     /// based and are intentionally not represented here.
@@ -13490,6 +13501,7 @@ impl Player {
             gold: 0.0,
             gold_per_turn: 0.0,
             bankruptcy_amenity_penalty: 0,
+            citizen_food_bias: 0.0,
             faith: 0.0,
             strategic_resources: BTreeMap::new(),
             strategic_resource_shortages: BTreeMap::new(),
@@ -29828,6 +29840,7 @@ impl Game {
             culture: 1.20,
             faith: 0.90,
         };
+        weights.food += player.citizen_food_bias;
         let mut focus = "balanced".to_string();
 
         // Existing districts make cities lean into their established role.

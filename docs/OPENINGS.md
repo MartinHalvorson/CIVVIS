@@ -556,3 +556,75 @@ real headroom rather than a hypothesis.
    the prior that it is already near a local optimum deserves weight — and the
    expansion sub-block was also the one where *scrambling helped*, which cuts
    the other way. The measurement will settle it; argument will not.
+
+## 12. ⚠ Growing the capital does not speed expansion — §8's attribution retracted
+
+§11 found real headroom, so §12 spent it. `advanced_food_first` gives an
+empire's governors an extra food appetite while it is short of its city target,
+and withdraws it once the target is met. The bias is a number, so the response
+curve is measurable rather than a single guess.
+
+60 maps, 4 players, 32×22:
+
+| food bias | capital pop @50 | food surplus @50 | production @50 | city 2 | city 3 | city 4 |
+|---|---|---|---|---|---|---|
+| 0 (shipped) | 3.46 | 2.83 | 12.66 | **37.0** | **71.0** | **89.5** |
+| 0.6 | 3.58 | 2.89 | 12.75 | 39.1 | 74.4 | 97.4 |
+| 2 | 3.77 | 3.30 | 12.52 | 39.4 | 73.4 | 95.0 |
+| 6 | 4.08 | 3.89 | 11.84 | 38.2 | 77.5 | 100.7 |
+
+**The lever works exactly as designed and produces the opposite of what it was
+built for.** Population rises monotonically (3.46 → 4.08), food surplus rises
+monotonically (2.83 → 3.89, +37%), production falls (12.66 → 11.84) — and
+**every city after the first arrives later, monotonically in the dose.**
+
+**This retracts §8.** I wrote there that the capital's ~23-turn population
+regrowth interval "*is*" the founding cadence, because the two numbers matched.
+They do match, and the causal direction is wrong: making the capital grow
+faster does not make cities arrive sooner. It makes them arrive later.
+
+That is the same error as §6→§7, made twice in the same document — a real
+correlation, an attribution to the mechanism that happened to sit next to it,
+and a dose-response experiment that refuted it. The correlation between growth
+rate and founding rate is a *shared consequence* of the capital's total yield,
+not a causal chain from one to the other.
+
+**What is left standing:** the settler's binding cost is **production**, not
+population. `pop >= 2` is satisfied from turn ~25 onward at pop 2.36, so the
+population gate is rarely what a seat is waiting on; the 80/110/140 production
+is. Trading production for food therefore pays for a threshold that was not
+binding, with the currency that was.
+
+**What is not established:** the precise mechanism for the *size* of the delay.
+One turn of production per settler does not account for cities arriving 8–11
+turns later, so something else — the empire-wide reach of the bias, or its
+interaction with `citizen_strategy`'s existing `expansion` focus, which already
+adds +0.55 food and +1.15 production when a settler is queued — is carrying
+most of it. That is a further measurement, not a conclusion.
+
+**Not taken to an `ai_eval`.** The treatment is worse on the metric it was
+designed to move, in a clean monotone dose-response over 240 seats a point.
+Spending forty minutes of paired evaluation to discover its win rate is also
+worse is not a good use of the gate. The entrant ships at bias 0.6 with this
+result recorded, on the `advanced_lane_reachable` precedent, so the axis can be
+re-measured rather than re-derived.
+
+### Where that leaves the ledger
+
+| lever | bound |
+|---|---|
+| opening book, swept | −0.0019 ± 0.0148 |
+| opening book, deleted | −0.003 |
+| technology order, randomised | below 0.09 resolution |
+| civic order, randomised | below 0.09 resolution |
+| civilization-aware decisions, deleted | −0.8%, p = 0.83 |
+| being a particular civilization | η² = 0.064 score, nothing on wins |
+| one settler at a time, lifted | inert |
+| **capital food appetite, raised** | **wrong direction, monotone in the dose** |
+
+Eight levers. The build-order and per-civilization layers are bounded near
+zero; the two economy levers with real headroom both point the wrong way when
+pushed. **The remaining candidate this work can name is production, not food:
+what a capital could produce if its citizens were assigned for it, and whether
+the settler's 80/110/140 is what actually gates the founding cadence.** That is
+a different measurement and it inherits none of §8's assumptions.

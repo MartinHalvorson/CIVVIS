@@ -38,8 +38,9 @@ pub const BUILTIN_AIS: [&str; 10] = [
 /// tournament ratings. Keeping them out of `BUILTIN_AIS` prevents a control
 /// factory from being pooled into the same player/leader rating key as
 /// its treatment.
-pub const EVAL_ONLY_AIS: [&str; 33] = [
+pub const EVAL_ONLY_AIS: [&str; 34] = [
     "advanced_civ_blind",
+    "advanced_food_first",
     "advanced_lane_reachable",
     "advanced_parallel_settlers",
     "advanced_relief_scoped",
@@ -481,6 +482,15 @@ pub fn builtin_ai(name: &str, seed: u64) -> Box<dyn Ai> {
         // has -- that is mechanics. Paired against `advanced` this bounds what
         // the existing per-civilization code is worth, which is the ceiling
         // any better per-civilization play has to beat. See `docs/OPENINGS.md`.
+        // Treatment for the expansion-tempo axis: identical to `advanced`
+        // except that its governors want food while the empire is short of
+        // its city target. See `docs/OPENINGS.md` §11 for the ceiling that
+        // motivated it and for the production it trades away.
+        "advanced_food_first" => {
+            let mut ai = AdvancedAi::new();
+            ai.food_first = 0.6;
+            Box::new(ai)
+        }
         "advanced_civ_blind" => {
             let mut ai = AdvancedAi::new();
             ai.civ_blind = true;
@@ -1108,6 +1118,7 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "advanced_lane_reachable" => (Vec::new(), "advanced_lane_reachable"),
         "advanced_parallel_settlers" => (Vec::new(), "advanced_parallel_settlers"),
         "advanced_civ_blind" => (Vec::new(), "advanced_civ_blind"),
+        "advanced_food_first" => (Vec::new(), "advanced_food_first"),
         "advanced_v1" => (Vec::new(), "advanced_v1"),
         "advanced_relief_scoped" => (Vec::new(), "advanced_relief_scoped"),
         "random" => (Vec::new(), "random"),
@@ -1594,9 +1605,10 @@ mod tests {
             // Anything else reaching that state fell through to the
             // catch-all and is claiming to need nothing while quietly
             // needing a net.
-            const SCRIPTED: [&str; 8] = [
+            const SCRIPTED: [&str; 9] = [
                 "advanced",
                 "advanced_civ_blind",
+                "advanced_food_first",
                 "advanced_lane_reachable",
                 "advanced_parallel_settlers",
                 "advanced_relief_scoped",
