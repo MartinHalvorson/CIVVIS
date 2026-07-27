@@ -10548,9 +10548,7 @@ impl AdvancedAi {
             (order, *uid)
         });
         for uid in ids {
-            if self.base.stand_down_step(g, pid, uid) {
-                continue;
-            }
+            let mut took_a_turn = false;
             for _ in 0..8 {
                 if !g.units.contains_key(&uid) || g.units[&uid].moves_left <= 0.0 {
                     break;
@@ -10590,6 +10588,10 @@ impl AdvancedAi {
                 if !acted {
                     break;
                 }
+                took_a_turn = true;
+            }
+            if !took_a_turn {
+                self.base.hold_stood_down_unit(g, pid, uid);
             }
         }
         self.settler_targets

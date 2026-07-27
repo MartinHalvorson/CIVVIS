@@ -1904,44 +1904,20 @@ impl BasicAi {
         }
     }
 
-    /// Hold a unit that is serving out a stand-down, and report that its turn
-    /// is spent. A stand-down suppresses a unit's own plans, never a decision
-    /// already in front of it: a unit with an enemy in reach, or a Settler
-    /// standing on ground it can found on, has something concrete to do this
-    /// turn, and whatever loop it was in, that is not a loop.
-    pub(crate) fn stand_down_step(&self, g: &mut Game, pid: usize, uid: u32) -> bool {
+    /// Dig in a stood-down unit that took its whole turn and found nothing to
+    /// do. This runs *after* the unit's own step, never instead of it: an
+    /// earlier version pre-empted the turn and guessed at what the unit might
+    /// have wanted, which cost more productive turns than the loops it broke.
+    /// A unit that acted needs nothing from this; one that did not is standing
+    /// in the open regardless, and is better off fortified and healing.
+    pub(crate) fn hold_stood_down_unit(&self, g: &mut Game, pid: usize, uid: u32) {
         let standing_down = self
             .unit_motion
             .get(&uid)
             .is_some_and(|motion| g.turn < motion.resume_turn);
-        // `can_found_city` answers whether the *tile* is a legal site for this
-        // owner; it says nothing about the unit. Asking it alone exempted every
-        // unit standing on open ground, which is most of them, and the
-        // stand-down then almost never ran. Gate it the way the engine gates
-        // the action itself.
-        let can_settle_here =
-            g.units[&uid].kind == "settler" && g.can_found_city(uid);
-        if !standing_down || can_settle_here || Self::enemy_within_reach(g, pid, uid) {
-            return false;
+        if standing_down && g.units.contains_key(&uid) {
+            self.fortify_or_stop(g, pid, uid);
         }
-        self.fortify_or_stop(g, pid, uid);
-        true
-    }
-
-    /// Whether anything this unit could act against stands close enough to
-    /// reach this turn. Two tiles covers a ranged unit's envelope and a melee
-    /// unit's approach-and-strike without paying for a real threat search.
-    fn enemy_within_reach(g: &Game, pid: usize, uid: u32) -> bool {
-        let Some(unit) = g.units.get(&uid) else {
-            return false;
-        };
-        g.wdisk(unit.pos, 2).into_iter().any(|pos| {
-            g.units_at(pos)
-                .into_iter()
-                .any(|other| g.is_at_war(pid, g.units[&other].owner))
-                || g.city_at(pos)
-                    .is_some_and(|city| g.is_at_war(pid, g.cities[&city].owner))
-        })
     }
 
     /// What a candidate tile is worth against the fact that this unit has been
@@ -4596,9 +4572,7 @@ impl BasicAi {
         self.settler_targets
             .retain(|uid, _| g.units.get(uid).is_some_and(|unit| unit.owner == pid));
         for uid in g.player_unit_ids(pid) {
-            if self.stand_down_step(g, pid, uid) {
-                continue;
-            }
+            let mut took_a_turn = false;
             for _ in 0..8 {
                 if !g.units.contains_key(&uid) {
                     break;
@@ -4622,6 +4596,10 @@ impl BasicAi {
                 if !acted {
                     break;
                 }
+                took_a_turn = true;
+            }
+            if !took_a_turn {
+                self.hold_stood_down_unit(g, pid, uid);
             }
         }
     }
@@ -6541,84 +6519,54 @@ mod tests {
     }
 
     /// The tabu redirects a unit that has somewhere else to go. A unit with
-    /// nowhere else to go keeps circling anyway, and for that one the answer
-    /// is to stop: hold the ground, take the fortification, and come back to
-    /// the problem once the world has moved on.
+    /// nowhere else to go keeps circling anyway; for that one the record is
+    /// wiped so the retry re-plans against a world that has moved on, and a
+    /// unit that then still finds nothing to do digs in rather than standing
+    /// in the open.
     #[test]
-    fn a_unit_still_looping_after_a_second_window_stands_down_and_starts_over() {
+    fn a_unit_still_looping_after_a_second_window_starts_over_and_digs_in() {
         let shuttle: Vec<usize> = (0..LIVELOCK_STAND_DOWN_AFTER as usize + 1)
             .map(|turn| turn % 2)
             .collect();
         let (ai, mut g, ground, scout) = observe_walk(&shuttle, None);
 
-        assert!(
-            ai.stand_down_step(&mut g, 0, scout),
-            "the unit holds instead of taking orders"
-        );
-        assert!(g.units[&scout].fortified);
         assert_eq!(
             ai.livelock_penalty(scout, ground[0]),
             0.0,
             "the stand-down clears the record, so the retry is unencumbered"
         );
+        ai.hold_stood_down_unit(&mut g, 0, scout);
+        assert!(g.units[&scout].fortified);
 
+        // And it ends on its own: a unit past its stand-down is left alone.
         g.turn += LIVELOCK_STAND_DOWN_TURNS;
-        assert!(
-            !ai.stand_down_step(&mut g, 0, scout),
-            "and it ends on its own"
-        );
+        let (later, mut g, _ground, other) = observe_walk(&[0, 0], None);
+        later.hold_stood_down_unit(&mut g, 0, other);
+        assert!(!g.units[&other].fortified);
     }
 
-    /// `Game::can_found_city` answers whether the *tile* is a legal site for
-    /// the owner and says nothing about the unit, so asking it alone exempted
-    /// every unit standing on open ground — which is most of them — and the
-    /// stand-down went almost entirely unused. Only a Settler is spared.
+    /// Digging in must never take the place of a turn the unit could have
+    /// spent. An earlier version ran *before* the unit's own step and guessed
+    /// at what it might have wanted; measured over six games it cost more
+    /// productive turns than the loops it broke, which is exactly what the
+    /// `picket` column in `audit` exists to expose.
     #[test]
-    fn only_a_settler_is_spared_the_stand_down_by_foundable_ground() {
+    fn a_stood_down_unit_still_takes_a_turn_it_can_use() {
         let shuttle: Vec<usize> = (0..LIVELOCK_STAND_DOWN_AFTER as usize + 1)
             .map(|turn| turn % 2)
             .collect();
-        let (ai, mut g, ground, scout) = observe_walk(&shuttle, None);
+        let (mut ai, mut g, _ground, scout) = observe_walk(&shuttle, None);
         assert!(
-            g.can_found_city(scout),
-            "the case needs the unit to be standing on a legal city site"
-        );
-        assert!(
-            ai.stand_down_step(&mut g, 0, scout),
-            "a Scout on foundable ground has nothing to found"
+            ai.unit_motion[&scout].resume_turn > g.turn,
+            "the case needs a unit that is serving out a stand-down"
         );
 
-        let settler = g.spawn_test_unit("settler", 0, ground[0]);
-        let mut ai = BasicAi::new();
-        for turn in 0..=LIVELOCK_STAND_DOWN_AFTER {
-            g.units.get_mut(&settler).unwrap().pos = ground[turn as usize % 2];
-            ai.begin_movement_turn(&g, 0);
-            g.turn += 1;
-        }
-        assert!(
-            !ai.stand_down_step(&mut g, 0, settler),
-            "a Settler standing where it can found a city takes its turn"
-        );
-    }
+        let before = g.units[&scout].pos;
+        ai.units(&mut g, 0);
 
-    /// Standing down suppresses a unit's own plans, never its part in a fight.
-    #[test]
-    fn a_stood_down_unit_still_answers_an_enemy_in_reach() {
-        let shuttle: Vec<usize> = (0..LIVELOCK_STAND_DOWN_AFTER as usize + 1)
-            .map(|turn| turn % 2)
-            .collect();
-        let (ai, mut g, ground, scout) = observe_walk(&shuttle, None);
-        let barbarian = g
-            .players
-            .iter()
-            .find(|player| player.is_barbarian)
-            .map(|player| player.id)
-            .expect("every game seats the barbarians");
-        g.spawn_test_unit("warrior", barbarian, ground[1]);
-
-        assert!(
-            !ai.stand_down_step(&mut g, 0, scout),
-            "an enemy within reach is something concrete to do"
+        assert_ne!(
+            g.units[&scout].pos, before,
+            "a Scout with a whole world left to look at goes and looks at it"
         );
         assert!(!g.units[&scout].fortified);
     }
