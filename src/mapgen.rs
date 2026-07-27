@@ -4701,29 +4701,51 @@ fn assign_continents(wm: &mut WorldMap, land: &BTreeSet<Pos>, requested: usize, 
     }
     let count = requested.min(land.len());
     let land_vec: Vec<Pos> = land.iter().cloned().collect();
-    let mut centers = vec![land_vec[rng.below(land_vec.len())]];
-    while centers.len() < count {
-        let next = *land_vec
-            .iter()
-            .filter(|p| !centers.contains(p))
-            .max_by_key(|p| {
-                let nearest = centers
-                    .iter()
-                    .map(|c| wm.distance(*c, **p))
-                    .min()
-                    .unwrap_or(0);
-                (nearest, **p)
-            })
-            .unwrap();
+    // One distance field per centre, carried rather than re-derived. On a
+    // globe `wm.distance` is a graph search, not arithmetic, so asking it once
+    // per (tile, centre) pair costs a search per pair: on the largest world
+    // that is fifty centres times sixteen thousand tiles times a search over
+    // fifty-eight thousand hexes, and the pass never finishes. A field is the
+    // same search answered for every tile at once, so the whole seeding costs
+    // one per centre and the answers are identical to the pair-wise ones.
+    let mut rows: Vec<MapDistanceRow> = Vec::with_capacity(count);
+    let mut centers: Vec<Pos> = Vec::with_capacity(count);
+    let mut nearest = vec![i32::MAX; land_vec.len()];
+    let mut next = land_vec[rng.below(land_vec.len())];
+    loop {
+        let row = MapDistanceRow::new(wm, next);
+        for (index, pos) in land_vec.iter().enumerate() {
+            nearest[index] = nearest[index].min(row.distance(*pos));
+        }
+        rows.push(row);
         centers.push(next);
-    }
-    for pos in land {
-        let continent = centers
+        if centers.len() >= count {
+            break;
+        }
+        // The farthest tile from every centre so far becomes the next one,
+        // ties broken by position exactly as before.
+        let (index, _) = land_vec
             .iter()
             .enumerate()
-            .min_by_key(|(id, center)| (wm.distance(**center, *pos), *id))
-            .map(|(id, _)| id);
-        wm.tiles.get_mut(pos).unwrap().continent = continent;
+            .filter(|(_, pos)| !centers.contains(pos))
+            .max_by_key(|(index, pos)| (nearest[*index], **pos))
+            .expect("more land than centres");
+        next = land_vec[index];
+    }
+    let assigned: Vec<(Pos, Option<usize>)> = land
+        .iter()
+        .map(|pos| {
+            let continent = rows
+                .iter()
+                .enumerate()
+                .min_by_key(|(id, row)| (row.distance(*pos), *id))
+                .map(|(id, _)| id);
+            (*pos, continent)
+        })
+        .collect();
+    drop(rows);
+    for (pos, continent) in assigned {
+        wm.tiles.get_mut(&pos).unwrap().continent = continent;
     }
 }
 
