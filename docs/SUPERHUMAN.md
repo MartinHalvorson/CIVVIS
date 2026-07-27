@@ -411,10 +411,36 @@ blind, which is the defect that killed `PolicyAi` on 96% of its candidates.
 >
 > **What would make M6 viable is therefore replication across opponents, not
 > more decisions.** Continue each candidate against several distinct rival
-> policies and label with the *win rate* rather than one outcome. The league
-> already maintains a rated pool of distinct strategies for exactly this kind
-> of sampling. Until that is in place, an outcome-labelled corpus over single
-> continuations would train on noise for three quarters of its rows.
+> policies and label with the *win rate* rather than one outcome.
+>
+> **Measured, and it puts a price on M6 rather than a plan.** Replicating over
+> five distinct opponent policies (850 full games, 12 minutes): 28% of
+> candidates changed outcome when only the opponents changed — so replication
+> does denoise — and the median win-rate spread *between* candidates is
+> **0.20** against a per-candidate standard error of **0.224 at five
+> replicas**. The signal is under its own noise floor. Resolving it needs
+> about **100 replicas per candidate**, twenty times that run: four hours for
+> 34 decisions, ~1200 hours for a 10,000-decision corpus.
+>
+> M6 is therefore a **compute project, not a coding project**, and what it
+> would buy is a ~0.20 win-rate edge on the ~25% of decisions where the label
+> discriminates at all. Worth stating before anyone starts it.
+
+### The criterion that generalises all of this
+
+> **Search pays on a decision whose effect exceeds the outcome noise floor.**
+>
+> A lane branch reaches a decided game 22% of the time at horizon 40 and 56% at
+> 80, returning exactly 1.0 or 0.0 — effect 1.0 against a floor near zero, and
+> the lane search is the one component that has ever won. A build choice moves
+> the win rate by ~0.20 against a floor of 0.224 at affordable replica counts,
+> and the production search loses to a scripted governor.
+>
+> This is measurable **in advance**, for any decision, by
+> `search_probe --outcome --replicas K`. Do that before building search for a
+> new decision type. It is the same discipline that retired the sealed-rollout
+> family and the commitment-margin hypothesis, applied one level up: not "does
+> the treatment fire" but "is there anything here to find".
 
 **Refuted by.** Separation that exists but does not survive contact with the
 empire — a city optimised in isolation starving the empire of settlers or
