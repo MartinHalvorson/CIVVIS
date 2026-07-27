@@ -7400,9 +7400,13 @@ function supervisedSuccessorChanged(successor, finishedInstance, finishedSeed) {
   return processChanged || worldChanged;
 }
 
+// How long a process handoff may take before the veil stops calling it normal.
+const HANDOFF_QUIET_MS = 2500;
+
 function waitForSupervisedSuccessor(finishedInstance, finishedSeed) {
   if (supervisorReconnectBusy || supervisorReconnectTimer) return;
   supervisorReconnectWanted = true;
+  const watchStartedAt = Date.now();
   const poll = async () => {
     supervisorReconnectTimer = null;
     supervisorReconnectBusy = true;
@@ -7451,9 +7455,15 @@ function waitForSupervisedSuccessor(finishedInstance, finishedSeed) {
         return;
       }
     } catch (e) {
-      // A short connection failure is expected while the listening socket is
-      // handed from the completed process to its successor.
-      setWorldTransitionStage("Server handoff · reconnecting");
+      // A short connection failure is not a fault: it is what handing the
+      // listening socket from one process to its successor looks like, and it
+      // happens on every single restart. Saying "reconnecting" for it made the
+      // ordinary case read as a problem — measured against a stand-in
+      // supervisor, the gap is about half a second and the whole restart is
+      // under two. Only a handoff that has genuinely dragged says so.
+      setWorldTransitionStage(Date.now() - watchStartedAt < HANDOFF_QUIET_MS
+        ? "Starting the new world"
+        : "Server handoff · reconnecting");
     } finally {
       supervisorReconnectBusy = false;
     }

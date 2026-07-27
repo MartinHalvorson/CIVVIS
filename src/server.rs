@@ -143,7 +143,10 @@ pub struct Session {
     /// The current process stays available until the requested runtime is ready.
     /// Setup selected while this world is running. It is inert until the next
     /// automatic or explicitly requested simulation boundary.
-    next_game_params: Option<Params>,
+    /// Setup for the next world carried in from launch flags by a resume.
+    /// The live queue belongs to `Shared`; this only hands the resumed value
+    /// across at construction, and is taken exactly once.
+    resumed_next_game_params: Option<Params>,
     /// League roster used to label seats with player handles and elo (and,
     /// with `--league`, to choose who plays each civ).
     league: Option<crate::league::League>,
@@ -850,6 +853,12 @@ pub struct Shared {
     /// mutex here is ever held across anything but a field read.
     supervisor_request: Mutex<Option<Value>>,
     live_params: Mutex<Params>,
+    /// Setup the viewer has chosen for the next world. Here for the same
+    /// reason the request above is: it is written by a `change` on the setup
+    /// panel, and `startNewSimulation` waits for that write before it asks for
+    /// the restart — so a settings control that queued behind an AI turn put
+    /// the whole restart behind it too.
+    next_game_params: Mutex<Option<Params>>,
     pub pace_ms: AtomicU64,
     pub paused: AtomicBool,
     pub restart_in: AtomicU64, // ms until auto-restart; u64::MAX = not pending
@@ -1364,6 +1373,27 @@ impl Shared {
         Ok(())
     }
 
+    /// Queue setup controls for the next world without changing this one.
+    fn stage_next_game_settings(&self, request: &Value) {
+        let base = self.live_params.lock().unwrap().clone();
+        *self.next_game_params.lock().unwrap() = Some(staged_next_game_params(&base, request));
+    }
+
+    /// What the next world will be started from, as the setup panel reads it.
+    fn staged_next_game_settings(&self) -> Value {
+        self.next_game_params
+            .lock()
+            .unwrap()
+            .as_ref()
+            .map(simulation_settings)
+            .unwrap_or(Value::Null)
+    }
+
+    /// Hand the queue to the world that is about to consume it.
+    fn take_next_game_params(&self) -> Option<Params> {
+        self.next_game_params.lock().unwrap().take()
+    }
+
     /// The request the supervisor is being asked to act on, if any.
     fn pending_new_game_request(&self) -> Option<Value> {
         self.supervisor_request.lock().unwrap().clone()
@@ -1620,7 +1650,7 @@ impl Session {
             spectator_paused: false,
             view_player: None,
             chronicle,
-            next_game_params: None,
+            resumed_next_game_params: None,
             league,
             seat_strategy,
             seat_from_roster,
@@ -1711,7 +1741,7 @@ impl Session {
             spectator_paused: false,
             view_player: None,
             chronicle,
-            next_game_params,
+            resumed_next_game_params: next_game_params,
             league,
             seat_strategy,
             seat_from_roster,
@@ -1795,22 +1825,23 @@ impl Session {
     }
 
     /// Queue setup controls for the next world without changing this one.
-    fn stage_next_game_settings(&mut self, request: &Value) {
-        let mut params = new_game_params(&self.params, request);
-        params.spectate = self.params.spectate;
-        self.next_game_params = Some(params);
+    /// Take the setup a resume carried in, for `Shared` to hold from here on.
+    fn take_resumed_next_game_params(&mut self) -> Option<Params> {
+        self.resumed_next_game_params.take()
     }
 
-    fn start_automatic_next_game(&mut self) {
+    /// Start the next world, from whatever setup the viewer queued for it.
+    ///
+    /// The queue is passed in rather than read from here: it is written by a
+    /// setup control that must never wait on the simulation, so it lives
+    /// beside the session rather than inside it.
+    fn start_automatic_next_game(&mut self, queued: Option<Params>) {
         let next_seed = self
             .params
             .seed
             .wrapping_mul(6364136223846793005)
             .wrapping_add(1442695040888963407);
-        let mut params = self
-            .next_game_params
-            .take()
-            .unwrap_or_else(|| self.params.clone());
+        let mut params = queued.unwrap_or_else(|| self.params.clone());
         params.seed = next_seed;
         *self = Session::new(params);
     }
@@ -2144,11 +2175,6 @@ impl Session {
             o["leader_pool"] = json!(self.game.leader_pool.id());
             o["teams"] = json!(major_teams(&self.game));
             o["victory_conditions"] = json!(self.game.victory_conditions);
-            o["next_game_settings"] = self
-                .next_game_params
-                .as_ref()
-                .map(simulation_settings)
-                .unwrap_or(Value::Null);
             o["legal_actions"] = json!([]);
             // Lets a long-running spectator notice that its server was
             // rebuilt/restarted between games and reload the latest UI.
@@ -2170,11 +2196,6 @@ impl Session {
         o["leader_pool"] = json!(self.game.leader_pool.id());
         o["teams"] = json!(major_teams(&self.game));
         o["victory_conditions"] = json!(self.game.victory_conditions);
-        o["next_game_settings"] = self
-            .next_game_params
-            .as_ref()
-            .map(simulation_settings)
-            .unwrap_or(Value::Null);
         o["legal_actions"] = serde_json::to_value(self.game.legal_actions(0)).unwrap();
         o["server_instance"] = json!(process_identity());
         o["server_commit"] = json!(option_env!("CIVVIS_COMMIT").unwrap_or("unknown"));
@@ -3077,7 +3098,7 @@ fn auto_step_loop(sh: Arc<Shared>) {
                     final_countdown_ms().saturating_sub(t0.elapsed().as_millis() as u64);
                 sh.restart_in.store(left, Ordering::Relaxed);
                 if left == 0 {
-                    s.start_automatic_next_game();
+                    s.start_automatic_next_game(sh.take_next_game_params());
                     sh.current_seed.store(s.game.seed, Ordering::Relaxed);
                     sh.adopt_live_params(&s.params);
                     over_since = None;
@@ -3194,6 +3215,16 @@ fn auto_step_loop(sh: Arc<Shared>) {
 }
 
 /// Attach exhibition metadata (restart countdown, pace, paused) to a state.
+/// The world the setup panel is describing, normalized against the live one.
+///
+/// A free function because the queue has two homes: `Shared` on a server, and
+/// a thread local in the wasm build, which has no threads to share between.
+fn staged_next_game_params(base: &Params, request: &Value) -> Params {
+    let mut params = new_game_params(base, request);
+    params.spectate = base.spectate;
+    params
+}
+
 fn decorate(o: &mut Value, sh: &Shared) {
     let r = sh.restart_in.load(Ordering::Relaxed);
     if r != u64::MAX {
@@ -3221,6 +3252,7 @@ fn decorate(o: &mut Value, sh: &Shared) {
     } else {
         o["supervisor_request"] = Value::Null;
     }
+    o["next_game_settings"] = sh.staged_next_game_settings();
 }
 
 fn handle(stream: &mut TcpStream, sh: &Shared) {
@@ -3573,6 +3605,10 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
                     *session = Session::from_game(params, game);
                     sh.current_seed
                         .store(session.game.seed, Ordering::Relaxed);
+                    sh.adopt_live_params(&session.params);
+                    if let Some(queued) = session.take_resumed_next_game_params() {
+                        *sh.next_game_params.lock().unwrap() = Some(queued);
+                    }
                     let mut out = session.state();
                     out["error"] = Value::Null;
                     drop(session);
@@ -3866,18 +3902,13 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
             }
         }
         ("POST", "/next-game-settings") => {
-            let mut session = sh.session.lock().unwrap();
-            session.stage_next_game_settings(&parsed);
+            // No session lock, for the same reason `/supervisor-new` has none:
+            // every `change` on the setup panel comes through here, and the
+            // restart that follows waits for this write to land.
+            sh.stage_next_game_settings(&parsed);
             respond_json(
                 stream,
-                &json!({
-                    "ok": true,
-                    "next_game_settings": session
-                        .next_game_params
-                        .as_ref()
-                        .map(simulation_settings)
-                        .unwrap_or(Value::Null),
-                }),
+                &json!({"ok": true, "next_game_settings": sh.staged_next_game_settings()}),
             );
         }
         ("POST", "/new") => {
@@ -4047,6 +4078,7 @@ mod tests {
             current_seed: AtomicU64::new(seed),
             supervisor_request: Mutex::new(None),
             live_params: Mutex::new(session.params.clone()),
+            next_game_params: Mutex::new(session.take_resumed_next_game_params()),
             session: Mutex::new(session),
             pace_ms: AtomicU64::new(0),
             paused: AtomicBool::new(false),
@@ -6103,9 +6135,12 @@ mod tests {
         assert_eq!(alone.state()["teams"], json!([null, null, null, null]));
         // The staged world carries the same division, or the exhibition's next
         // game would quietly drop it between staging and starting.
-        let mut staged = Session::new(current());
+        let staged = shared_for(Session::new(current()));
         staged.stage_next_game_settings(&request);
-        assert_eq!(staged.state()["next_game_settings"]["teams"], json!([0, 0, 1, 1]));
+        assert_eq!(
+            decorated_state(&staged)["next_game_settings"]["teams"],
+            json!([0, 0, 1, 1])
+        );
     }
 
     /// Planet is drawn from geometry the client cannot derive, so the
@@ -6434,6 +6469,12 @@ mod tests {
             "document.documentElement.classList.add(\"world-loading\", \"world-restarting\")"
         ));
         assert!(EMBEDDED_INDEX.contains("sessionStorage.setItem(\"civvis-world-transition-v1\""));
+        // Losing the socket is what a process handoff *is*, so the veil does
+        // not call the ordinary case a reconnection.
+        assert!(EMBEDDED_INDEX.contains("const HANDOFF_QUIET_MS = 2500;"));
+        assert!(EMBEDDED_INDEX.contains(
+            "setWorldTransitionStage(Date.now() - watchStartedAt < HANDOFF_QUIET_MS"
+        ));
         assert!(EMBEDDED_INDEX.contains("await settingsStageChain.catch(() => {})"));
         assert!(EMBEDDED_INDEX.contains("specFetching || specPending || worldTransitionPending()"));
         assert!(EMBEDDED_INDEX.contains("specFetchAbort?.abort()"));
@@ -7902,12 +7943,13 @@ mod tests {
     fn selected_settings_wait_for_the_next_automatic_game() {
         let mut params = current();
         params.spectate = true;
-        let mut session = Session::new(params);
+        let session = Session::new(params);
         let original_seed = session.game.seed;
         let original_script = session.game.map_script;
         let original_speed = session.game.game_speed;
+        let shared = shared_for(session);
 
-        session.stage_next_game_settings(&json!({
+        shared.stage_next_game_settings(&json!({
             "num_players": 6,
             "map_script": "continents",
             "game_speed": "quick",
@@ -7915,11 +7957,14 @@ mod tests {
             "victory_conditions": {"culture": false, "score": false},
         }));
 
-        assert_eq!(session.game.seed, original_seed);
-        assert_eq!(session.game.map_script, original_script);
-        assert_eq!(session.game.game_speed, original_speed);
+        {
+            let live = shared.session.lock().unwrap();
+            assert_eq!(live.game.seed, original_seed);
+            assert_eq!(live.game.map_script, original_script);
+            assert_eq!(live.game.game_speed, original_speed);
+        }
         assert_eq!(
-            session.state()["next_game_settings"],
+            decorated_state(&shared)["next_game_settings"],
             json!({
                 "players": 6,
                 "width": 74,
@@ -7938,8 +7983,14 @@ mod tests {
             })
         );
 
-        session.start_automatic_next_game();
+        let queued = shared.take_next_game_params();
+        shared
+            .session
+            .lock()
+            .unwrap()
+            .start_automatic_next_game(queued);
 
+        let session = shared.session.lock().unwrap();
         assert_ne!(session.game.seed, original_seed);
         assert_eq!(session.params.num_players, 6);
         assert_eq!(session.params.map_script, MapScript::Continents);
@@ -7947,18 +7998,44 @@ mod tests {
         assert_eq!(session.params.leader_pool, LeaderPool::Expanded);
         assert!(!session.game.victory_conditions.culture);
         assert!(!session.game.victory_conditions.score);
-        assert!(session.state()["next_game_settings"].is_null());
+        drop(session);
+        // The queue is spent: the world after this one is this one's settings.
+        assert!(decorated_state(&shared)["next_game_settings"].is_null());
+    }
+
+    /// The setup panel writes on every `change`, and `startNewSimulation`
+    /// waits for that write before it asks for the restart — so a settings
+    /// control that queued behind an AI turn put the restart behind it too.
+    #[test]
+    fn settings_are_staged_while_the_simulation_lock_is_held() {
+        let mut params = current();
+        params.spectate = true;
+        let shared = shared_for(Session::new(params));
+
+        let turn_in_flight = shared.session.lock().unwrap();
+        let started = Instant::now();
+        shared.stage_next_game_settings(&json!({"num_players": 6, "map_script": "continents"}));
+        let staged = started.elapsed();
+
+        assert_eq!(shared.staged_next_game_settings()["players"], json!(6));
+        assert_eq!(shared.staged_next_game_settings()["map"], json!("continents"));
+        assert!(
+            staged < Duration::from_millis(50),
+            "choosing a setting waited {staged:?} on the turn in flight"
+        );
+        drop(turn_in_flight);
     }
 
     /// A `Shared` around one session. The new-game request deliberately lives
     /// beside the simulation rather than inside it, so a test of it needs the
     /// same wrapper the server runs behind.
-    fn shared_for(session: Session) -> Arc<Shared> {
+    fn shared_for(mut session: Session) -> Arc<Shared> {
         let seed = session.game.seed;
         Arc::new(Shared {
             current_seed: AtomicU64::new(seed),
             supervisor_request: Mutex::new(None),
             live_params: Mutex::new(session.params.clone()),
+            next_game_params: Mutex::new(session.take_resumed_next_game_params()),
             session: Mutex::new(session),
             pace_ms: AtomicU64::new(0),
             paused: AtomicBool::new(false),
@@ -9874,6 +9951,7 @@ pub fn serve_with_game(
         current_seed: AtomicU64::new(current_seed),
         supervisor_request: Mutex::new(None),
         live_params: Mutex::new(session.params.clone()),
+        next_game_params: Mutex::new(session.take_resumed_next_game_params()),
         session: Mutex::new(session),
         pace_ms: AtomicU64::new(1_000), // one second per turn by default
         paused: AtomicBool::new(initially_paused),
