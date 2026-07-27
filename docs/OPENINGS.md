@@ -873,3 +873,91 @@ per-civilization lever is bounded at or near zero, and the two economy levers
 with real headroom both reversed when pushed. What sets the tempo is how long a
 settler takes to turn into a city — fifteen turns to cover five hexes — and
 that is a movement problem this document has localised but not solved.
+
+## 17. Why the settler stands still: it has nowhere to go
+
+§16 left one unexplained fact — in the control a settler stands still on
+roughly a fifth of its turns, and neither commitment nor re-targeting accounts
+for it. Classifying every such turn, 60 maps, 4 players, 32×22:
+
+| why a settler stood still | turns | share |
+|---|---|---|
+| **held no destination at all** | 2,889 | **70%** |
+| every neighbouring tile was occupied | 927 | 22% |
+| unexplained | 311 | 8% |
+| had spent its movement | 19 | **0%** |
+
+**It is not congestion and it is not terrain.** Movement exhaustion accounts
+for 19 turns out of 4,146. The settler is standing there because the site
+search returned nothing it could use.
+
+### The asymmetry that would produce exactly this
+
+The gate that *authorises* a settler and the search that *places* one are not
+the same search:
+
+| | call | reachability |
+|---|---|---|
+| production gate (`production_value`, settler arm) | `best_settle_site(g, pid, city.pos, 11)` | **not checked** |
+| settler placement (`advanced_settler_step`) | `best_reachable_settle_site(g, pid, uid, …)` | `first_reachable_settle_site` **filters on it** |
+
+`best_settle_site` returns the highest-valued candidate from `settle_sites`,
+which screens tiles on terrain, ownership and the four-hex spacing rule but
+never asks whether the unit could get there. So a city can be told "there is a
+site worth building a settler for" and the settler it produces can then find
+nothing it is able to reach — and stand still holding no destination, which is
+exactly the 70% row.
+
+### ⚠ Stated as a mechanism, not a proven cause — deliberately
+
+This document has now attributed a measured effect to an adjacent mechanism
+three times and been wrong three times: the settler-serialization clause (§7),
+capital growth (§12), and destination commitment (§16). Each was a real
+correlation with a plausible mechanism, and each reversed under a treatment.
+
+So: the 70% is measured, the asymmetry is real and is in the code, and the
+second would produce the first. **That is not the same as the second causing
+the first**, and the population of "no destination" turns certainly also
+contains settlers whose sites were legitimately consumed — a rival founding
+inside the four-hex spacing rule invalidates a target through no fault of
+either search.
+
+**The test is cheap and specific:** make the production gate ask the reachable
+question, and see whether the 70% row falls. If it does not, the sites are
+being invalidated rather than never reachable, and the fix is elsewhere. That
+is a fires-check on a number this document already has a control value for,
+which is the cheapest kind of experiment available here — and on this
+document's record, it is more likely to refute the story than confirm it.
+
+### The fires-check refutes it — for the fourth time
+
+The gate cannot literally be made to test reachability: at production time
+there is no settler yet to test it with. So the decisive observable is whether
+the gate keeps *authorising* settlers while one already has nowhere to go.
+
+> Of the 2,889 no-destination turns, **0 (0%)** happened while the empire was
+> paying for another settler.
+
+**Zero.** The gate never over-authorises, and the reason is the clause §7
+measured as inert: `counts.settlers == 0` permits one settler in existence
+empire-wide, so an empire cannot start a second while the first is stranded.
+The asymmetry between the two searches is real, and it **cannot compound**,
+because the one-settler rule stands between them.
+
+So §17's mechanism is withdrawn. That is the fourth attribution in this
+document refuted by its own check, and the prediction that it would be was
+written down before the number came back.
+
+**What the 70% actually is, then:** a settler that genuinely has nowhere to go
+— every candidate either unreachable, below the value-12 threshold, or
+invalidated by the four-hex spacing rule after it set out. Not a gate error.
+That is site *scarcity* on a settled map, which is a mapgen and settle-value
+question, not a bug in the expansion pipeline.
+
+### Closing the transit thread
+
+Settler transit is 44% of all time below the city target, and it decomposes as:
+a settler that moves 77–81% of its turns at 0.81 tiles a turn against terrain,
+and stands still the rest of the time because there is nowhere left worth
+going. Neither half is a defect with a repair attached. **The expansion
+pipeline is working as designed; the design's ceiling is the map.**

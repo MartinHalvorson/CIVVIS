@@ -158,6 +158,20 @@ struct Seat {
     aim_changes: u32,
     aim_samples: u32,
     aim_lost: u32,
+    /// Why a settler that did not change tile did not change tile. §16 left
+    /// this as the only unexplained fact in the transit story: in the control
+    /// a settler stands still on 19% of its turns, and neither commitment nor
+    /// re-targeting accounts for it.
+    still_no_target: u32,
+    still_spent: u32,
+    still_crowded: u32,
+    still_unexplained: u32,
+    /// Standing still with no destination *while the empire is paying for
+    /// another settler*. The production gate cannot test reachability -- there
+    /// is no unit yet to test it with -- so if it keeps authorising settlers
+    /// while one already has nowhere to go, the gate is optimistic in exactly
+    /// the way §17 describes.
+    still_no_target_while_building: u32,
     /// Finished journeys: (turns alive, steps taken, straight-line distance).
     settler_trips: Vec<(u32, u32, u32)>,
     /// Turns short of the city target with no settler anywhere.
@@ -445,6 +459,27 @@ fn main() {
                     break;
                 }
                 fleet[pid].take_turn(&mut game, pid);
+                // Movement must be read before EndTurn, which refreshes it.
+                let settler_moves: Vec<(u32, f64, (i32, i32))> = game
+                    .units
+                    .values()
+                    .filter(|u| u.owner == pid && u.kind == "settler")
+                    .map(|u| (u.id, u.moves_left, (u.pos.0, u.pos.1)))
+                    .collect();
+                // A neighbouring tile holding any unit is a tile this settler
+                // cannot step onto -- Civilization VI allows one unit per tile
+                // per domain, so an empire's own escort blocks it as surely as
+                // a rival does.
+                let crowded: BTreeSet<u32> = settler_moves
+                    .iter()
+                    .filter(|(_, _, pos)| {
+                        let here: civvis::Pos = (pos.0, pos.1);
+                        game.nbrs(here)
+                            .iter()
+                            .any(|n| game.units.values().any(|u| u.pos == *n))
+                    })
+                    .map(|(id, _, _)| *id)
+                    .collect();
                 if game.winner.is_none() && game.current == pid {
                     let _ = game.apply(pid, &Action::EndTurn);
                 }
@@ -493,6 +528,11 @@ fn main() {
                         (*id, fleet[pid].settler_target(*id).map(|p| (p.0, p.1)))
                     })
                     .collect();
+                let fleet_aim_missing: BTreeSet<u32> = settlers_now
+                    .iter()
+                    .filter(|(id, _)| fleet[pid].settler_target(*id).is_none())
+                    .map(|(id, _)| *id)
+                    .collect();
                 let building = game.cities.values().any(|c| {
                     c.owner == pid
                         && matches!(
@@ -533,6 +573,24 @@ fn main() {
                         }
                     }
                     seat.last_settler_pos = settler_pos;
+                    for (id, moves, pos) in &settler_moves {
+                        // Only classify a settler that did not change tile.
+                        if seat.live_settlers.get(id).map(|e| e.2) != Some(*pos) {
+                            continue;
+                        }
+                        if fleet_aim_missing.contains(id) {
+                            seat.still_no_target += 1;
+                            if building {
+                                seat.still_no_target_while_building += 1;
+                            }
+                        } else if *moves <= 0.0 {
+                            seat.still_spent += 1;
+                        } else if crowded.contains(id) {
+                            seat.still_crowded += 1;
+                        } else {
+                            seat.still_unexplained += 1;
+                        }
+                    }
                     for (id, aim) in &aims_now {
                         seat.aim_samples += 1;
                         match (seat.settler_aim.get(id), aim) {
@@ -1072,6 +1130,33 @@ fn main() {
             100.0 * aim_lost as f64 / aim_samples as f64
         );
     }
+    let no_t: u32 = seats.iter().map(|s| s.still_no_target).sum();
+    let spent: u32 = seats.iter().map(|s| s.still_spent).sum();
+    let crowd: u32 = seats.iter().map(|s| s.still_crowded).sum();
+    let unex: u32 = seats.iter().map(|s| s.still_unexplained).sum();
+    let still_total = (no_t + spent + crowd + unex).max(1);
+    let no_t_building: u32 = seats
+        .iter()
+        .map(|s| s.still_no_target_while_building)
+        .sum();
+    println!(
+        "\nwhy a settler stood still ({still_total} such settler-turns):\n  \
+         {no_t:6} held no destination at all               ({:.0}%)\n  \
+         {spent:6} had spent its movement                   ({:.0}%)\n  \
+         {crowd:6} every neighbouring tile was occupied     ({:.0}%)\n  \
+         {unex:6} unexplained                               ({:.0}%)\n\
+         Civilization VI allows one unit per tile per domain, so an empire's own escort \
+         blocks a settler as surely as a rival does. 'Occupied' is a necessary condition \
+         for congestion, not proof the settler wanted one of those tiles.\n  \
+         of the no-destination turns, {no_t_building} ({:.0}%) happened while the empire was \
+         paying for ANOTHER settler -- the production gate cannot test reachability because \
+         there is no unit yet to test it with, so this is the asymmetry firing.",
+        100.0 * no_t as f64 / still_total as f64,
+        100.0 * spent as f64 / still_total as f64,
+        100.0 * crowd as f64 / still_total as f64,
+        100.0 * unex as f64 / still_total as f64,
+        100.0 * no_t_building as f64 / no_t.max(1) as f64
+    );
     let moved: Vec<f64> = seats.iter().map(|s| s.settler_moved_turns as f64).collect();
     let stood: Vec<f64> = seats.iter().map(|s| s.settler_idle_turns as f64).collect();
     let (moved_mean, moved_se) = mean_se(&moved);
