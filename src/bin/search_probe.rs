@@ -1271,6 +1271,44 @@ fn audit_selection(
              guards another."
         );
     }
+
+    // The design this measurement actually implies, whichever way r falls.
+    //
+    // The tension in #457 is a false choice. Ranking on the continuous
+    // statistic buys variance and risks bias; ranking on wins is unbiased and
+    // noisy. A CONTROL VARIATE gets both: estimate the win rate, and subtract
+    // the correlated statistic's deviation from its own mean,
+    //
+    //     w_hat = win_rate - beta * (selection_value - mean_selection)
+    //     beta  = cov(win, selection) / var(selection)
+    //
+    // which is unbiased for the win rate by construction — the subtracted term
+    // has expectation zero — and carries variance `(1 - r^2)` times the plain
+    // win rate's. A high correlation buys a large reduction; a correlation of
+    // zero buys nothing and costs nothing. There is no monotonicity assumption
+    // anywhere, which is exactly what a statistic of unknown monotonicity
+    // should be used for.
+    let beta = if sds > 0.0 { cov / (sds * sds) } else { 0.0 };
+    let retained = 1.0 - r * r;
+    println!();
+    println!("  as a CONTROL VARIATE for the win rate instead of a substitute for it:");
+    println!("    beta = {beta:+.5}, variance retained = {:.1}%", 100.0 * retained);
+    if retained < 0.999 {
+        println!(
+            "    -> same precision as plain win rate on {:.0} games/genome instead of {games}",
+            games as f64 * retained
+        );
+    } else {
+        println!(
+            "    -> no reduction at this correlation, and none of the bias either: the \
+             estimator stays exactly the win rate"
+        );
+    }
+    println!(
+        "    Unbiased for the win rate whatever the correlation, because the subtracted \
+         term has expectation zero. This is what a statistic of unknown monotonicity is \
+         safe to be used for."
+    );
     println!(
         "\nNo genome is selected here and both numbers come from the same games, so this \
          carries no winner's curse — unlike a comparison of generation champions."
