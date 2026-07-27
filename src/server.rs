@@ -5129,7 +5129,7 @@ mod tests {
         // making production decisions; without this it appeared under "All
         // civilizations" with no way to select it.
         assert!(EMBEDDED_INDEX.contains("for (const thought of reasoningLog.thoughts) listed.add(thought.player);"));
-        assert!(EMBEDDED_INDEX.contains("function reasonSeatNote(id)"));
+        assert!(EMBEDDED_INDEX.contains("function logSeatNote(id)"));
         assert!(EMBEDDED_INDEX.contains("<option value=\"all\">All topics</option>"));
         // Depth is a floor, not an equality — a decision read without the plan
         // it serves explains nothing — and the three rungs are the ones the
@@ -5166,14 +5166,128 @@ mod tests {
         // A log that is not the whole story says so.
         assert!(EMBEDDED_INDEX.contains("Earlier reasoning has been discarded"));
         // The three logs share the sidebar's spare height. Each floor is
-        // header + padding + border + what the panel holds, and the reasoning
-        // log's has to cover its filter bar as well as its list — measured in
+        // header + padding + border + what the panel holds, and every one of
+        // them now has to cover a filter bar as well as its list — measured in
         // the page, because a section squeezed under its floor does not clip:
-        // its list paints straight over the panel below it.
+        // its list paints straight over the panel below it. The reasoning
+        // log's bar is three rows (97px); the war and event logs' are two
+        // (66px), and that bar is the whole difference between these numbers
+        // and the ones that were here before the filters — each list keeps the
+        // height it had.
         assert!(EMBEDDED_INDEX.contains("#reasonsec[open] { flex: 3 0 0; min-height: 300px; }"));
-        assert!(EMBEDDED_INDEX.contains("#eventsec[open] { flex: 2 0 0; min-height: 234px; }"));
-        assert!(EMBEDDED_INDEX.contains("#warsec[open] { flex: 2 0 0; min-height: 198px; }"));
+        assert!(EMBEDDED_INDEX.contains("#eventsec[open] { flex: 2 0 0; min-height: 302px; }"));
+        assert!(EMBEDDED_INDEX.contains("#warsec[open] { flex: 2 0 0; min-height: 266px; }"));
         assert!(EMBEDDED_INDEX.contains(".reason-list { flex: 1 1 auto; min-height: 132px;"));
+        // One filter bar, worn in the same place by every panel that narrows
+        // by civilization — the three logs and the Active strategy card above
+        // them. A second copy of this chrome under another name is how four
+        // pickers drift into four shapes.
+        assert!(EMBEDDED_INDEX.contains(".log-filters { flex: 0 0 auto;"));
+        assert!(!EMBEDDED_INDEX.contains(".reason-filter"));
+        assert!(EMBEDDED_INDEX.contains(
+            "<label class=\"log-filter\"><span>Civ</span>\n            <select id=\"strategyplayer\""
+        ));
+    }
+
+    /// The war log and the game event log are narrowed the same way.
+    ///
+    /// Both panels are chronicles of a whole world, and by the industrial era
+    /// a spectator is reading thirty conflicts and sixty notices looking for
+    /// one empire's story. The civ filter is the question actually being
+    /// asked; each log carries exactly one more, the one its own shape needs.
+    #[test]
+    fn browser_lets_an_observer_narrow_the_two_chronicles() {
+        for control in ["warplayer", "warstatus", "eventplayer", "eventkind"] {
+            assert!(
+                EMBEDDED_INDEX.contains(&format!("id=\"{control}\"")),
+                "the log filters are missing {control}"
+            );
+        }
+        // All three logs name a seat with one vocabulary and correct a
+        // selection that has left the list the same way, so a filter can never
+        // strand a reader on an empty panel with no way back out of it.
+        assert!(EMBEDDED_INDEX.contains("function syncCivFilterOptions(select, seats, allLabel, chosen)"));
+        assert!(EMBEDDED_INDEX
+            .contains("const kept = chosen !== \"all\" && !seats.includes(Number(chosen)) ? \"all\" : chosen;"));
+        assert!(EMBEDDED_INDEX.contains("function syncWarOptions(wars)"));
+        assert!(EMBEDDED_INDEX.contains("function syncEventOptions()"));
+        // A war is filtered on the belligerents the panel itself would name,
+        // city-states dragged in by a Suzerain included — not on the two
+        // civilizations in the declaration.
+        assert!(EMBEDDED_INDEX.contains("function warBelligerents(war)"));
+        assert!(EMBEDDED_INDEX.contains("for (const party of (war.parties || [])) seats.add(party.player);"));
+        // The war log's own filtering happens in the hook the panel already
+        // reads through, so the chronicle's order is still never rewritten.
+        let war_filter = EMBEDDED_INDEX
+            .split("function warsForLog(wars)")
+            .nth(1)
+            .expect("the war log's filter")
+            .split("function warLogSeats(wars)")
+            .next()
+            .unwrap();
+        for status in ["ongoing", "ended"] {
+            assert!(
+                war_filter.contains(&format!("warFilters.status === \"{status}\"")),
+                "the war status filter is missing {status}"
+            );
+            assert!(
+                EMBEDDED_INDEX.contains(&format!("<option value=\"{status}\">")),
+                "the war status filter offers no {status} option"
+            );
+        }
+        assert!(!war_filter.contains("sort("));
+        // Every category the engine can stamp on an event is gathered by one
+        // of the kinds the filter offers. A category no kind claims would be
+        // an entry the combined log shows and no narrower question can reach.
+        let kinds = EMBEDDED_INDEX
+            .split("const EVENT_KINDS = [")
+            .nth(1)
+            .expect("the event log's kinds")
+            .split("];")
+            .next()
+            .unwrap();
+        for category in crate::game::EVENT_CATEGORIES {
+            assert!(
+                kinds.contains(&format!("\"{category}\"")),
+                "no event-log kind gathers the {category} category"
+            );
+            assert!(
+                EMBEDDED_INDEX.contains(&format!("{category}: \"")),
+                "the {category} category reaches the log with no icon of its own"
+            );
+        }
+        // An entry is filtered on the civilizations it is *about*, recorded as
+        // the log is written. Matching on the text would make "Rome" in
+        // "Rome captured Antium from Egypt" hide the entry from Egypt.
+        assert!(EMBEDDED_INDEX.contains("function eventSubjects(event)"));
+        assert!(EMBEDDED_INDEX.contains(
+            "!eventSubjects(event).includes(Number(eventFilters.player))"
+        ));
+        assert!(EMBEDDED_INDEX.contains("\"War\", [event.player, event.former]"));
+        assert!(EMBEDDED_INDEX.contains("\"War\", [event.aggressor, event.defender]"));
+        // An engine entry is attributed by the id the engine sends, not by
+        // whichever seat the frame happened to be observed from: the
+        // spectator's feed rotates through the seats between frames, so the
+        // combined log's entries come from all of them.
+        assert!(EMBEDDED_INDEX.contains("event.category, [event.player ?? eventViewPlayer(next)]"));
+        // A choice is answered on the frame it is made on, and survives the
+        // tab being closed.
+        assert!(EMBEDDED_INDEX
+            .contains("function applyLogFilter(filters, storageKey, field, value, listId, redraw)"));
+        for key in [
+            "civvis-reasoning-filters-v1",
+            "civvis-war-filters-v1",
+            "civvis-event-filters-v1",
+        ] {
+            assert!(EMBEDDED_INDEX.contains(key), "no stored preference for {key}");
+        }
+        // A narrowed panel says so rather than reading as a quiet world: "At
+        // peace" under a filter would be a claim about the world made by a
+        // panel that is only showing part of it.
+        assert!(EMBEDDED_INDEX.contains("No conflict matches that filter."));
+        assert!(EMBEDDED_INDEX.contains("Nothing in this log matches that filter."));
+        assert!(EMBEDDED_INDEX.contains("`${wars.length} of ${rawWars.length}`"));
+        assert!(EMBEDDED_INDEX.contains("`${events.length} of ${held.length}`"));
     }
 
     /// Every topic the reasoning log offers is one a game actually reaches.
