@@ -497,7 +497,9 @@ fn named_generals_promote_or_form_exactly_one_land_unit() {
 
 #[test]
 fn named_admirals_apply_exact_unit_trade_building_and_flanking_effects() {
-    let mut game = Game::new_full(2, 28, 18, 95_006, 300, 0, false);
+    let mut game = Game::new_full(
+        2, 28, 18, crate::rng::fixture_seed("ADMIRAL", 95_009), 300, 0, false,
+    );
     let mut cities = Vec::new();
     for pid in 0..2 {
         let settler = game

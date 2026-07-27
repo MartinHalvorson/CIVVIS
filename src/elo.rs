@@ -15,7 +15,7 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
-use crate::ai::{AdvancedAi, Ai, BasicAi, RandomAi};
+use crate::ai::{AdvancedAi, Ai, BasicAi, RandomAi, Weights};
 use crate::game::{Action, Game};
 use crate::rng::Rng;
 use crate::rules::Rules;
@@ -38,7 +38,7 @@ pub const BUILTIN_AIS: [&str; 10] = [
 /// tournament ratings. Keeping them out of `BUILTIN_AIS` prevents a control
 /// factory from being pooled into the same player/leader rating key as
 /// its treatment.
-pub const EVAL_ONLY_AIS: [&str; 22] = [
+pub const EVAL_ONLY_AIS: [&str; 26] = [
     "advanced_lane_reachable",
     "advanced_relief_scoped",
     "strategic_score",
@@ -51,6 +51,10 @@ pub const EVAL_ONLY_AIS: [&str; 22] = [
     "strategic_rot20",
     "strategic_rot10",
     "strategic_deep",
+    "strategic_deep_expand",
+    "strategic_deep_consolidate",
+    "strategic_deep_militarize",
+    "strategic_deep_league",
     "production",
     "production_net",
     "policy_wide",
@@ -66,6 +70,32 @@ pub const EVAL_ONLY_AIS: [&str; 22] = [
 /// On-disk schema for the shared player/leader/civilization rating ledger.
 pub const ELO_SCHEMA_VERSION: u32 = 2;
 pub const DEFAULT_RATINGS_PATH: &str = "data/elo_ratings.json";
+const LEAGUE_SNAPSHOT_DIR: &str = "data/league";
+const LEAGUE_SNAPSHOT_FILE: &str = "data/league/league.json";
+
+/// Conservatively strongest active, untargeted genome in the committed
+/// outcome-rated league. Lane specialists answer a different question; this
+/// challenger isolates whether a win-selected generalist policy transfers to
+/// the strongest macro-search budget.
+fn league_generalist() -> Option<(String, Weights)> {
+    crate::league::load_league(LEAGUE_SNAPSHOT_DIR)?
+        .strategies
+        .into_iter()
+        .filter(|strategy| !strategy.retired && !strategy.human)
+        .filter_map(|strategy| match strategy.kind {
+            crate::league::StrategyKind::Advanced {
+                weights,
+                target: None,
+            } => Some((strategy.rating - 1.96 * strategy.rd, strategy.name, weights)),
+            _ => None,
+        })
+        .max_by(|left, right| {
+            left.0
+                .partial_cmp(&right.0)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        })
+        .map(|(_, name, weights)| (name, weights))
+}
 
 /// Resolve the leader supplied by the active ruleset. Keeping this beside the
 /// ledger migration also gives old civilization-only rows an unambiguous home.
@@ -578,6 +608,48 @@ pub fn builtin_ai(name: &str, seed: u64) -> Box<dyn Ai> {
             ai.horizon = 80;
             Box::new(ai)
         }
+        // Static genome challengers for the strongest measured search
+        // budget. Unlike `strategic_doctrine`, these do not ask a noisy
+        // per-review rollout to choose a play style. Each applies one bounded
+        // Doctrine perturbation for the whole game, so a paired evaluation
+        // measures whether that policy itself is stronger.
+        "strategic_deep_expand" => {
+            let weights = crate::strategic::Doctrine::Expand
+                .apply(&crate::evolve::load_champion("evolved").unwrap_or_default());
+            let mut ai = crate::strategic::StrategicAi::with_weights(weights);
+            ai.review_every = 20;
+            ai.horizon = 80;
+            Box::new(ai)
+        }
+        "strategic_deep_consolidate" => {
+            let weights = crate::strategic::Doctrine::Consolidate
+                .apply(&crate::evolve::load_champion("evolved").unwrap_or_default());
+            let mut ai = crate::strategic::StrategicAi::with_weights(weights);
+            ai.review_every = 20;
+            ai.horizon = 80;
+            Box::new(ai)
+        }
+        "strategic_deep_militarize" => {
+            let weights = crate::strategic::Doctrine::Militarize
+                .apply(&crate::evolve::load_champion("evolved").unwrap_or_default());
+            let mut ai = crate::strategic::StrategicAi::with_weights(weights);
+            ai.review_every = 20;
+            ai.horizon = 80;
+            Box::new(ai)
+        }
+        // Transfer test for the policy-level evolutionary system: the league
+        // rates genomes on completed multiplayer outcomes. Apply its
+        // conservatively strongest settled generalist to the promoted search
+        // budget, falling back honestly when the committed snapshot is absent.
+        "strategic_deep_league" => {
+            let weights = league_generalist()
+                .map(|(_, weights)| weights)
+                .unwrap_or_default();
+            let mut ai = crate::strategic::StrategicAi::with_weights(weights);
+            ai.review_every = 20;
+            ai.horizon = 80;
+            Box::new(ai)
+        }
         // The same opponent-model treatment on the strongest measured macro
         // search, isolating whether better branch fidelity still helps when
         // each review already spends the promoted 20x80 budget.
@@ -802,6 +874,7 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         found: net,
         definitional,
     };
+    let league = league_generalist().is_some();
     let (artifacts, effective) = match name {
         // The genome *is* these two names; without it they are the stock
         // scripted agent under a name that claims otherwise.
@@ -890,6 +963,21 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         // and the net is non-definitional because the search runs without
         // one. There is no separate published netless name to degrade to.
         "strategic_deep" => (vec![genome, value(false)], "strategic_deep"),
+        "strategic_deep_expand" => (vec![genome, value(false)], "strategic_deep_expand"),
+        "strategic_deep_consolidate" => (vec![genome, value(false)], "strategic_deep_consolidate"),
+        "strategic_deep_militarize" => (vec![genome, value(false)], "strategic_deep_militarize"),
+        "strategic_deep_league" => (
+            vec![ArtifactStatus {
+                file: LEAGUE_SNAPSHOT_FILE,
+                found: league,
+                definitional: true,
+            }],
+            if league {
+                "strategic_deep_league"
+            } else {
+                "strategic_deep"
+            },
+        ),
         "strategic_deep_rivals" => (vec![genome, value(false)], "strategic_deep_rivals"),
         "strategic_rot10" => (vec![genome, value(false)], "strategic_rot10"),
         // The genome tunes both its rollout policy and its scripted
@@ -1278,9 +1366,9 @@ pub fn leaderboard(pool: &EloPool) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        builtin_provenance, collapsed_entrants, expected, scheduled_seats, seat_schedule,
-        win_shares, EloPool, RatedPlayer, RatingKey, BUILTIN_AIS, CHAMPION_FILE,
-        ELO_SCHEMA_VERSION, EVAL_ONLY_AIS, VALUENET_FILE,
+        builtin_ai, builtin_provenance, collapsed_entrants, expected, league_generalist,
+        scheduled_seats, seat_schedule, win_shares, EloPool, RatedPlayer, RatingKey, BUILTIN_AIS,
+        CHAMPION_FILE, ELO_SCHEMA_VERSION, EVAL_ONLY_AIS, VALUENET_FILE,
     };
     use crate::rng::Rng;
     use std::collections::BTreeMap;
@@ -1415,6 +1503,30 @@ mod tests {
             }
         }
         fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn static_doctrine_challengers_construct_searching_agents() {
+        for name in [
+            "strategic_deep_expand",
+            "strategic_deep_consolidate",
+            "strategic_deep_militarize",
+        ] {
+            let ai = builtin_ai(name, 1);
+            assert_eq!(ai.review_census(), Some(Default::default()), "{name}");
+        }
+    }
+
+    #[test]
+    fn league_genome_challenger_loads_a_win_selected_searching_agent() {
+        let (name, _) = league_generalist().expect("committed league has a generalist genome");
+        assert_eq!(name, "g20-21", "update the documented transfer candidate");
+        let ai = builtin_ai("strategic_deep_league", 1);
+        assert_eq!(ai.review_census(), Some(Default::default()));
+        let provenance = builtin_provenance("strategic_deep_league", "unused");
+        assert_eq!(provenance.effective, "strategic_deep_league");
+        assert!(!provenance.degraded());
+        assert!(!provenance.untrained());
     }
 
     fn player(name: &str, leader: &str, civ: &str, score: i64, won: bool) -> RatedPlayer {

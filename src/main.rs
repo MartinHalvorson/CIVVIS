@@ -935,11 +935,11 @@ fn main() {
                 players: players as usize,
                 width: auto_dimension(&args, "--width", players, true),
                 height: auto_dimension(&args, "--height", players, false),
-                // `eval_game` pays 100 for an outright win on top of a ~50
-                // average score share, but at 160 turns almost nothing reaches
-                // a victory, so the win term that is supposed to decide
-                // champion promotion almost never fired and fitness was score
-                // at an arbitrary cutoff. See `stock_turns`.
+                // Selection reads continuous score and combat shares, but the
+                // separate promotion SPRT still decides on outright wins. At
+                // 160 turns almost nothing reaches a victory, so confirmation
+                // would judge arbitrary cutoffs rather than completed games.
+                // See `stock_turns`.
                 max_turns: arg(&args, "--turns", stock_turns(&args)) as u32,
                 seed: arg(&args, "--seed", 1) as u64,
                 threads: arg(&args, "--threads", 8) as usize,
