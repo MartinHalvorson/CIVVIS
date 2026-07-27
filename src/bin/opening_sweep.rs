@@ -151,27 +151,47 @@ fn main() {
     println!("  fitness 0.8*score share + 0.2*win rate against that book; parity 0.500\n");
 
     let mut best = shipped;
+    // What the book carried into this slot scored when it was selected, so the
+    // next slot's sweep -- which runs on fresh maps -- doubles as a replication
+    // test of the previous pick. This was originally an accident of varying the
+    // seed per slot, and it caught the first winner: `slinger` scored 0.5303 on
+    // the maps that chose it and 0.4923 on the next set. Reporting it is worth
+    // more than the four cells it costs, because a coordinate descent that
+    // cannot see its own picks failing will happily stack four of them.
+    let mut carried: Option<(f64, f64, usize)> = None;
     for (slot, gene) in BOOK_GENES.iter().enumerate() {
         let _ = gene;
         println!("slot {slot}:");
+        let slot_seed = seed0 + 100 * slot as u64;
         let mut rows: Vec<(f64, f64, usize)> = Vec::new();
         for value in 0..OPTIONS {
             let mut book = best;
             book[slot] = value;
-            let (mean, se) = score(
-                &book, players, width, height, maps, seed0 + 100 * slot as u64, turns, jobs,
-            );
-            let marker = if value == shipped[slot] { " (shipped)" } else { "" };
-            println!(
-                "  {:<12} {mean:.4} +/- {se:.4}{marker}",
-                option_name(value)
-            );
+            let (mean, se) = score(&book, players, width, height, maps, slot_seed, turns, jobs);
+            let mut marker = String::new();
+            if value == shipped[slot] {
+                marker.push_str(" (shipped)");
+            }
+            // The carried book reappears here as the row that leaves this slot
+            // at its incoming value.
+            if let Some((was, was_se, from_slot)) = carried {
+                if value == best[slot] {
+                    let delta = mean - was;
+                    let delta_se = (se * se + was_se * was_se).sqrt();
+                    marker.push_str(&format!(
+                        " (carried from slot {from_slot}: scored {was:.4} there, {delta:+.4} +/- {delta_se:.4} here)"
+                    ));
+                }
+            }
+            println!("  {:<12} {mean:.4} +/- {se:.4}{marker}", option_name(value));
             rows.push((mean, se, value));
         }
         rows.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
-        best[slot] = rows[0].2;
+        let (won, won_se, value) = rows[0];
+        best[slot] = value;
+        carried = Some((won, won_se, slot));
         println!(
-            "  -> keeping {} for slot {slot}\n",
+            "  -> keeping {} for slot {slot} at {won:.4} +/- {won_se:.4}\n",
             option_name(best[slot])
         );
     }
