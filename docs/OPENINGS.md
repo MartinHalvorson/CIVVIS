@@ -683,3 +683,56 @@ Those want a settler-level trace — origin, chosen site, `wdist` between them,
 turns taken, tiles actually stepped — which the census does not currently
 record. **That is the next measurement, and it is the first one in this
 document pointing at movement rather than economy.**
+
+## 14. The settler trace: fifteen turns to travel five hexes
+
+§13's three candidates, settled. Every completed settler journey on 60 maps,
+4 players, 32×22 — **963 of them** — traced from spawn to disappearance:
+
+| | |
+|---|---|
+| turns alive | **15.0 ± 0.7** |
+| tiles actually stepped | **12.1 ± 0.6** |
+| straight-line hexes, spawn to end | **5.2 ± 0.2** |
+| detour ratio (steps ÷ straight line) | **2.32** |
+| pace (steps ÷ turns) | **0.81 tiles per turn** |
+
+A settler's shipped `moves` is **2**. So a settler takes **fifteen turns to end
+up five hexes from where it was built**, walking two and a third times further
+than the straight line, at forty percent of its movement allowance.
+Going straight at full pace it would arrive in three.
+
+**Candidate 1 is refuted.** The sites are not far. 5.2 hexes is well inside the
+radius-11 search and well inside what a 0.9-per-hex penalty is pricing. Nothing
+here says the AI settles too far away.
+
+**Candidates 2 and 3 both survive, and contribute about equally.** The 2.32
+detour and the 2.47 pace shortfall multiply to ≈5.7, which is the whole
+15-turns-for-a-3-turn-trip overhead. Neither alone accounts for it.
+
+### What these two numbers do and do not prove
+
+⚠ **The pace shortfall may be entirely legitimate.** Civilization VI charges 2
+movement for hills and forest, so a settler crossing broken ground genuinely
+makes one tile a turn. 0.81 is consistent with mostly-rough terrain and proves
+no waste on its own.
+
+⚠ **Part of the detour is legitimate too.** Straight-line hex distance ignores
+mountains, water and rival borders; a path around them is longer by necessity,
+not by error. The measurement is deliberately conservative in one respect — it
+ignores world wrap, so a journey that would be shorter the other way round the
+globe is scored as *longer*, which inflates the straight-line figure and
+therefore **understates** the detour ratio.
+
+**But 2.32 is large for detour-by-necessity**, and it is the number worth
+pursuing: a settler that walks 12 tiles to sit 5 from home either re-targeted
+partway or was routed badly. The census cannot yet distinguish those, because it
+records where a settler *ended*, not the site it was *aimed at* when it spawned.
+
+**The next measurement is the aim.** Record `best_settle_site`'s answer at spawn
+and compare it to where the settler actually founded. If they differ often, the
+settler is re-targeting and the fix is commitment, not pathing. If they agree,
+the path is bad and the fix is pathing. That is one field and it decides between
+two entirely different repairs — and, unlike everything in §§5–12, it is a
+movement question, where this repository's ledger of what works is untested
+rather than uniformly zero.

@@ -90,6 +90,21 @@ fn label(item: &Item) -> String {
     }
 }
 
+/// Straight-line hex distance on the axial coordinates the engine uses. This
+/// intentionally ignores world wrap: a settler journey that would be shorter
+/// the other way round the globe reads as *longer* here, so the steps-to-
+/// distance ratio this feeds is conservative about claiming a detour.
+fn hex_distance(a: (i32, i32), b: (i32, i32)) -> u32 {
+    let (aq, ar) = (a.0 - (a.1 - (a.1 & 1)) / 2, a.1);
+    let (bq, br) = (b.0 - (b.1 - (b.1 & 1)) / 2, b.1);
+    let (dq, dr) = (aq - bq, ar - br);
+    if (dq < 0) == (dr < 0) {
+        (dq.abs() + dr.abs()) as u32
+    } else {
+        dq.abs().max(dr.abs()) as u32
+    }
+}
+
 fn sequence(items: &[String]) -> String {
     if items.is_empty() {
         "(none)".to_string()
@@ -130,6 +145,14 @@ struct Seat {
     settler_moved_turns: u32,
     /// Last seen position of this seat's first settler, to see movement.
     last_settler_pos: Option<(i32, i32)>,
+    /// Per-settler trace, keyed by unit id while the unit lives: spawn turn,
+    /// spawn tile, last tile, tiles actually stepped. §13 showed transit is
+    /// what gates the founding cadence but could not say whether the sites
+    /// are far, the terrain slow, or the settler re-targeting; the ratio of
+    /// steps to straight-line distance separates the third from the first two.
+    live_settlers: BTreeMap<u32, (u32, (i32, i32), (i32, i32), u32)>,
+    /// Finished journeys: (turns alive, steps taken, straight-line distance).
+    settler_trips: Vec<(u32, u32, u32)>,
     /// Turns short of the city target with no settler anywhere.
     short_without_settler_turns: u32,
     /// Capital population, housing and food at fixed checkpoints. A settler
@@ -449,6 +472,12 @@ fn main() {
                     .values()
                     .find(|u| u.owner == pid && u.kind == "settler")
                     .map(|u| (u.pos.0, u.pos.1));
+                let settlers_now: Vec<(u32, (i32, i32))> = game
+                    .units
+                    .values()
+                    .filter(|u| u.owner == pid && u.kind == "settler")
+                    .map(|u| (u.id, (u.pos.0, u.pos.1)))
+                    .collect();
                 let building = game.cities.values().any(|c| {
                     c.owner == pid
                         && matches!(
@@ -489,6 +518,28 @@ fn main() {
                         }
                     }
                     seat.last_settler_pos = settler_pos;
+                    for (id, pos) in &settlers_now {
+                        let entry = seat
+                            .live_settlers
+                            .entry(*id)
+                            .or_insert((turn + 1, *pos, *pos, 0));
+                        if entry.2 != *pos {
+                            entry.3 += 1;
+                            entry.2 = *pos;
+                        }
+                    }
+                    let gone: Vec<u32> = seat
+                        .live_settlers
+                        .keys()
+                        .copied()
+                        .filter(|id| !settlers_now.iter().any(|(live, _)| live == id))
+                        .collect();
+                    for id in gone {
+                        if let Some((born, from, last, steps)) = seat.live_settlers.remove(&id) {
+                            let straight = hex_distance(from, last);
+                            seat.settler_trips.push((turn + 1 - born, steps, straight));
+                        }
+                    }
                     if matches!(turn + 1, 25 | 50 | 75 | 100) {
                         if let Some(cap) = game
                             .cities
@@ -943,6 +994,31 @@ fn main() {
         100.0 * flight_mean / total.max(0.001),
         100.0 * idle_mean / total.max(0.001)
     );
+    let trips: Vec<(u32, u32, u32)> = seats
+        .iter()
+        .flat_map(|s| s.settler_trips.iter().copied())
+        .collect();
+    if !trips.is_empty() {
+        let turns_v: Vec<f64> = trips.iter().map(|(t, ..)| *t as f64).collect();
+        let steps_v: Vec<f64> = trips.iter().map(|(_, s, _)| *s as f64).collect();
+        let dist_v: Vec<f64> = trips.iter().map(|(.., d)| *d as f64).collect();
+        let (turns_m, turns_se) = mean_se(&turns_v);
+        let (steps_m, steps_se) = mean_se(&steps_v);
+        let (dist_m, dist_se) = mean_se(&dist_v);
+        println!(
+            "\nper settler journey ({} completed):\n  \
+             {turns_m:.1} +/- {turns_se:.1} turns alive\n  \
+             {steps_m:.1} +/- {steps_se:.1} tiles stepped\n  \
+             {dist_m:.1} +/- {dist_se:.1} straight-line hexes from spawn to where it ended\n  \
+             detour ratio {:.2} (steps / straight line)   pace {:.2} tiles per turn\n\
+             A ratio near 1 means the settler goes where it was sent; well above 1 means it \
+             re-targets en route. A pace near 1 with a settler's 2 movement means terrain, \
+             not indecision.",
+            trips.len(),
+            steps_m / dist_m.max(0.01),
+            steps_m / turns_m.max(0.01)
+        );
+    }
     let moved: Vec<f64> = seats.iter().map(|s| s.settler_moved_turns as f64).collect();
     let stood: Vec<f64> = seats.iter().map(|s| s.settler_idle_turns as f64).collect();
     let (moved_mean, moved_se) = mean_se(&moved);
