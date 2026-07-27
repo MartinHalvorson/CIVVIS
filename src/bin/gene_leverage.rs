@@ -353,8 +353,13 @@ fn main() {
         };
         let se = (variance / n).sqrt();
         println!(
+            // Sign convention, stated because this line and the summary below
+            // once printed OPPOSITE quantities under the same word "cost" --
+            // `mean - 0.5` here against `0.5 - mean` there. Both are now cost
+            // in the same sense: POSITIVE means scrambling HURT, so the shipped
+            // values are carrying something.
             "  {block:<14} {mean:.4} +/- {se:.4}   cost {:+.4}   [{}]",
-            mean - 0.5,
+            0.5 - mean,
             genes
                 .iter()
                 .map(|g| names[*g])
