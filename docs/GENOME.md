@@ -218,6 +218,46 @@ state as a property of this evaluator: **at 16–20 mirrored maps, effects below
 about 0.03 cannot be distinguished from noise, and the only defence is
 replication on disjoint maps.**
 
+### Inside the load-bearing block: district *order* is settled
+
+`economy` is the only block whose randomisation costs anything, and the
+district priorities are its build-order half. All 24 orders were enumerated
+(24 mirrored maps each; the shipped order is the degenerate control at
+0.5000 ± 0.0000). Over the first fourteen, **not one order sits outside 2 SE**,
+and the spread by leading district is small:
+
+| first district | mean edge |
+|---|---|
+| holy | +0.0025 |
+| commercial | +0.0013 |
+| campus (shipped) | −0.0031 |
+| theater | −0.0117 |
+
+Leading with a Theatre Square is the only consistently bad choice, at about
+1.6 SE. Nothing beats the shipped order.
+
+**So the block's leverage is not the district ranking**, and the two probes
+together say where it is. Divergence within the block:
+
+| gene | bites |
+|---|---|
+| `builder_per_city` | **11/12** |
+| `d_holy` | 5/12 |
+| `wonder_min_bld` | 4/12 |
+| `d_campus`, `d_theater` | 3/12 |
+| `d_commercial` | 2/12 |
+| `faith_builder` | **0/12** (dead) |
+
+`builder_per_city` dominates its own block by a factor of two, and the
+orderings are measured settled, so it is almost certainly what makes `economy`
+load-bearing.
+
+**This is the legitimate use of `gene_probe`.** It cannot rank *blocks* —
+that mistake cost an iteration on the opening book — but inside a block
+already shown load-bearing by ablation, divergence narrows which gene to
+sweep. Ablation says where; divergence says which; a sweep says what value; a
+disjoint re-measurement says whether to believe it.
+
 ### War timing — hypothesis refuted
 
 `src/bin/war_census.rs`, 53 wars over 24 maps at 6p/500 turns: **98% of wars
