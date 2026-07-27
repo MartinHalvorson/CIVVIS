@@ -219,6 +219,28 @@ fn main() {
     // to a real result. Before building one, measure whether the label it
     // would produce disagrees with the proxy it would replace. If it agrees,
     // the labeller is dead too and nobody spends a week on it.
+    // Genome mode: does the 40-scalar tuning axis have headroom?
+    //
+    // `elo::builtin_ai` resolves every strategic agent through
+    // `load_champion("evolved").unwrap_or_default()`, `evolved/` is
+    // gitignored, and no `best.json` exists on this machine or in a fresh
+    // clone -- so the shipped agents play `Weights::default()` and the 40
+    // evolved weights have never been evolved. Before spending hours of GA on
+    // that, ask the same question this tool asks of everything else: is the
+    // effect bigger than the noise floor?
+    //
+    // The genomes are the four `Doctrine` perturbations, which are bounded by
+    // evolution's own per-gene clamps -- so this measures the marginal value
+    // of moving inside the space a GA would search, from a common position,
+    // paired.
+    if flag(&args, "--genome") {
+        let replicas = number(&args, "--replicas", 5);
+        audit_genome(
+            players, maps, warmup, seed0, jobs, width, height, turns, replicas,
+        );
+        return;
+    }
+
     if flag(&args, "--outcome") {
         let replicas = number(&args, "--replicas", 1);
         audit_outcome(
@@ -938,4 +960,123 @@ fn audit_outcome(
          bounds how much an outcome-labelled corpus could ever teach about this decision, \
          and the noise-floor line second: it says what that would cost."
     );
+}
+
+
+fn audit_genome(
+    players: usize,
+    maps: usize,
+    warmup: u32,
+    seed0: u64,
+    jobs: usize,
+    width: i32,
+    height: i32,
+    turns: u32,
+    replicas: usize,
+) {
+    let results = parallel::map(maps, jobs, move |index| {
+        let seed = seed0 + index as u64;
+        let mut game = Game::new(players, width, height, seed, turns, 0);
+        let mut fleet: Vec<AdvancedAi> = AdvancedAi::fleet(&game);
+        for _ in 0..warmup {
+            if game.winner.is_some() {
+                break;
+            }
+            for pid in 0..game.players.len() {
+                if game.winner.is_some() {
+                    break;
+                }
+                fleet[pid].take_turn(&mut game, pid);
+                if game.winner.is_none() && game.current == pid {
+                    let _ = game.apply(pid, &Action::EndTurn);
+                }
+            }
+        }
+        if game.winner.is_some() {
+            return None;
+        }
+        let base = Weights::default();
+        let mut rates = Vec::new();
+        for doctrine in Doctrine::ALL {
+            let genome = doctrine.apply(&base);
+            let mut wins = 0usize;
+            for replica in 0..replicas.max(1) {
+                let mut sim = game.clone();
+                let mut ais: Vec<Box<dyn Ai>> = sim
+                    .players
+                    .iter()
+                    .map(|p| {
+                        if p.id == 0 {
+                            Box::new(AdvancedAi::with_weights(genome.clone())) as Box<dyn Ai>
+                        } else {
+                            opponent_pool(replica + p.id)
+                        }
+                    })
+                    .collect();
+                run_game(&mut sim, &mut ais);
+                if sim.winner == Some(0) {
+                    wins += 1;
+                }
+            }
+            rates.push((doctrine.name(), wins as f64 / replicas.max(1) as f64));
+        }
+        Some(rates)
+    });
+
+    let sampled: Vec<Vec<(&str, f64)>> = results.into_iter().flatten().collect();
+    if sampled.is_empty() {
+        println!("no ordinary mid-game position was reached in {maps} maps");
+        std::process::exit(1);
+    }
+    let n = sampled.len();
+    let mut spreads: Vec<f64> = sampled
+        .iter()
+        .map(|rates| {
+            let low = rates.iter().map(|(_, r)| *r).fold(f64::INFINITY, f64::min);
+            let high = rates
+                .iter()
+                .map(|(_, r)| *r)
+                .fold(f64::NEG_INFINITY, f64::max);
+            high - low
+        })
+        .collect();
+    spreads.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    let se = (0.25f64 / replicas.max(1) as f64).sqrt();
+    let median = percentile(&spreads, 0.5);
+
+    println!(
+        "genome audit: {n} positions, {} bounded genomes x {replicas} opponent replicas \
+         ({players}p {width}x{height}, warmup {warmup}, {turns}-turn budget, seeds {seed0}..)",
+        Doctrine::ALL.len()
+    );
+    println!();
+    for doctrine in Doctrine::ALL {
+        let mean: f64 = sampled
+            .iter()
+            .filter_map(|rates| {
+                rates
+                    .iter()
+                    .find(|(name, _)| *name == doctrine.name())
+                    .map(|(_, rate)| *rate)
+            })
+            .sum::<f64>()
+            / n as f64;
+        println!("  {:<14} mean win rate {mean:.3}", doctrine.name());
+    }
+    println!();
+    println!("  median spread across genomes at a position   {median:.3}");
+    println!("  p90 spread                                   {:.3}", percentile(&spreads, 0.9));
+    println!("  per-candidate standard error                 {se:.3}");
+    if median > se {
+        println!(
+            "  -> ABOVE the noise floor: bounded genome moves shift the win rate by more \
+             than a {replicas}-replica measurement's error, so this axis has something to find."
+        );
+    } else {
+        let needed = (0.25 / (median.max(1e-6) / 4.0).powi(2)).ceil() as usize;
+        println!(
+            "  -> UNDER the noise floor: resolving a {median:.2} gap at 4 sigma needs about \
+             {needed} replicas per genome."
+        );
+    }
 }

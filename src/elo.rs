@@ -38,7 +38,7 @@ pub const BUILTIN_AIS: [&str; 10] = [
 /// tournament ratings. Keeping them out of `BUILTIN_AIS` prevents a control
 /// factory from being pooled into the same player/leader rating key as
 /// its treatment.
-pub const EVAL_ONLY_AIS: [&str; 28] = [
+pub const EVAL_ONLY_AIS: [&str; 30] = [
     "advanced_lane_reachable",
     "advanced_relief_scoped",
     "strategic_score",
@@ -51,8 +51,10 @@ pub const EVAL_ONLY_AIS: [&str; 28] = [
     "strategic_rot20",
     "strategic_rot10",
     "strategic_deep",
+    "strategic_deep_default",
     "strategic_deep_tempo",
     "strategic_deep_conversion",
+    "strategic_deep_checkmate",
     "strategic_deep_expand",
     "strategic_deep_consolidate",
     "strategic_deep_militarize",
@@ -610,6 +612,20 @@ pub fn builtin_ai(name: &str, seed: u64) -> Box<dyn Ai> {
             ai.horizon = 80;
             Box::new(ai)
         }
+        // Frozen control for testing whether the committed AdvancedAi
+        // champion transfers through StrategicAi's 20x80 macro search. It
+        // retains the same optional value-net path but deliberately refuses
+        // best.json, so the genome is the only policy difference. The first
+        // transfer screen favored the champion 33-27 games and 5-2 map
+        // directions; retained evaluator-only for future artifact audits.
+        "strategic_deep_default" => {
+            let mut ai = crate::strategic::StrategicAi::with_weights(
+                crate::ai::Weights::default(),
+            );
+            ai.review_every = 20;
+            ai.horizon = 80;
+            Box::new(ai)
+        }
         // Same promoted 20x80 search budget, but retain the time-to-terminal
         // signal when several deep branches all win or all lose. Outcome
         // classes remain lexicographic, so this cannot prefer an unresolved
@@ -636,6 +652,21 @@ pub fn builtin_ai(name: &str, seed: u64) -> Box<dyn Ai> {
             ai.review_every = 20;
             ai.horizon = 80;
             ai.religious_finish_search = true;
+            Box::new(ai)
+        }
+        // Outcome-only repair to the conversion treatment above. It searches
+        // the same one- and two-action religious space but acts only when the
+        // cloned result is an actual religious victory for this civilization.
+        // Retained evaluator-only after two exact 30-30 screens -- fallback
+        // and evolved genomes -- with all 60 map directions neutral and
+        // identical victory types within each pair.
+        "strategic_deep_checkmate" => {
+            let mut ai = crate::strategic::StrategicAi::with_weights(
+                crate::evolve::load_champion("evolved").unwrap_or_default(),
+            );
+            ai.review_every = 20;
+            ai.horizon = 80;
+            ai.religious_checkmate_search = true;
             Box::new(ai)
         }
         // Static genome challengers for the strongest measured search
@@ -993,6 +1024,9 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         // and the net is non-definitional because the search runs without
         // one. There is no separate published netless name to degrade to.
         "strategic_deep" => (vec![genome, value(false)], "strategic_deep"),
+        // The frozen genome is in code; only the same optional value net read
+        // by `strategic_deep` remains in its provenance.
+        "strategic_deep_default" => (vec![value(false)], "strategic_deep_default"),
         "strategic_deep_tempo" => (
             vec![genome, value(false)],
             "strategic_deep_tempo",
@@ -1000,6 +1034,10 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "strategic_deep_conversion" => (
             vec![genome, value(false)],
             "strategic_deep_conversion",
+        ),
+        "strategic_deep_checkmate" => (
+            vec![genome, value(false)],
+            "strategic_deep_checkmate",
         ),
         "strategic_deep_expand" => (vec![genome, value(false)], "strategic_deep_expand"),
         "strategic_deep_consolidate" => (vec![genome, value(false)], "strategic_deep_consolidate"),
@@ -1565,11 +1603,36 @@ mod tests {
     }
 
     #[test]
+    fn deep_default_control_refuses_the_champion_artifact() {
+        let ai = builtin_ai("strategic_deep_default", 1);
+        assert_eq!(ai.review_census(), Some(Default::default()));
+        let provenance = builtin_provenance("strategic_deep_default", "unused");
+        assert_eq!(provenance.effective, "strategic_deep_default");
+        assert!(!provenance.degraded());
+        assert!(
+            provenance
+                .artifacts
+                .iter()
+                .all(|artifact| artifact.file != CHAMPION_FILE),
+            "the control must never resolve best.json"
+        );
+    }
+
+    #[test]
     fn religious_conversion_challenger_constructs_a_searching_agent() {
         let ai = builtin_ai("strategic_deep_conversion", 1);
         assert_eq!(ai.review_census(), Some(Default::default()));
         let provenance = builtin_provenance("strategic_deep_conversion", "unused");
         assert_eq!(provenance.effective, "strategic_deep_conversion");
+        assert!(!provenance.degraded());
+    }
+
+    #[test]
+    fn religious_checkmate_challenger_constructs_a_searching_agent() {
+        let ai = builtin_ai("strategic_deep_checkmate", 1);
+        assert_eq!(ai.review_census(), Some(Default::default()));
+        let provenance = builtin_provenance("strategic_deep_checkmate", "unused");
+        assert_eq!(provenance.effective, "strategic_deep_checkmate");
         assert!(!provenance.degraded());
     }
 
