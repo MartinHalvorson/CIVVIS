@@ -647,6 +647,50 @@ independent confirmation:
 > regressions on outcomes do not; and no summary statistic of a finished game
 > is safe to breed against.
 
+## ★★★ Bias is fatal; noise is merely expensive
+
+The same search, the same budget, the same kind of disjoint holdout — with
+only the fitness changed:
+
+| bred on | holdout, on wins | verdict |
+|---|---|---|
+| lane progress (**biased**) | 8 map directions for / 30 against, p=0.0005 | **actively harmful** |
+| win rate (**unbiased**) | +0.0167 ± 0.0237 (0.7 SE) | parity — harmless |
+
+**That is the whole finding of this line of work.** A biased fitness does not
+merely fail to help; it converges successfully on the wrong objective and makes
+the agent worse. An unbiased one, under-resolved, simply finds nothing.
+
+The wins run also diagnoses its own failure. Selection score 0.5875, holdout
+0.5167, **fitted gap +0.0708** — and the maximum of 36 draws at a per-genome SE
+of 0.056 is worth about +0.11 by construction. The selection score was
+essentially all selection bias, which is what a search does when the signal is
+below its own noise.
+
+### And "unaffordable" was wrong
+
+This document earlier claimed a GA is trapped between a cheap invalid proxy and
+a valid unaffordable target. The second half was never costed:
+
+| maps/genome | per-genome SE | games | wall (9 cores) |
+|---|---|---|---|
+| 40 (the run above) | 0.056 | 2,880 | ~20 min |
+| 200 | 0.025 | 14,400 | ~1.6 h |
+| 400 | 0.018 | 28,800 | ~3.3 h |
+| 600 | 0.014 | 43,200 | ~4.9 h |
+
+The "865 games per genome" figure was the cost of resolving one 0.05 effect to
+significance — a far stricter requirement than selection needs, since selection
+only has to beat random. **An overnight GA on wins at 200–600 maps per genome
+is entirely practical on one machine.**
+
+> **The recommendation, stated plainly.** If a genetic search is to be run on
+> this engine, select on **wins**, never on a summary statistic, and buy
+> resolution with games. Every cheap proxy tested here — score share under four
+> functionals, and victory-lane progress — is a correlate that the search will
+> find and exploit. The cost of an unbiased fitness is hours; the cost of a
+> biased one is an agent that is measurably worse.
+
 ## The conclusion this all points at
 
 Every measured attempt to make this agent stronger by **tuning parameters** has
