@@ -509,10 +509,20 @@ result survives its own promotion mechanism turning out to be permissive.
 
 ### How much is left on the genome axis
 
-With the null corrected, **121 random mutations of the shipped champion
-produced no candidate worth +10 percentage points (~+72 Elo)**, at 60 games per
-candidate against a 200-game cap — the test rejects fast, so these are not
-marginal calls.
+With the null corrected, **242 random mutations of the shipped champion, across
+two mutation radii, produced no candidate worth +10 percentage points
+(~+72 Elo)**, at ~60 games per candidate against a 200-game cap — the test
+rejects fast, so these are not marginal calls.
+
+| operator | candidates | acceptances |
+|---|---|---|
+| ±25% on 34% of genes | 121 | **0** |
+| ±60% on 70% of genes | 121 | **0** |
+
+The two radii differ by more than 2× in step size and 2× in genes touched, and
+neither finds anything. That matters because a single radius finding nothing
+has two readings — exhausted neighbourhood, or a step too small to leave it —
+and the wide arm removes the second.
 
 Set beside the spread measurements (typical mutation worth ~0.013 win rate,
 needing ~5,000 games to resolve), the reading is:
