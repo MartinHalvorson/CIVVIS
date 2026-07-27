@@ -71,7 +71,15 @@ fn number(args: &[String], flag: &str, default: usize) -> usize {
 /// No win term is folded in. Mixing a binary indicator back into a continuous
 /// statistic reintroduces exactly the variance the continuous one exists to
 /// avoid, which is the flaw that made an earlier breeder a random walk.
-fn duel(candidate: &Weights, players: usize, w: i32, h: i32, seed: u64, turns: u32) -> f64 {
+fn duel(
+    candidate: &Weights,
+    players: usize,
+    w: i32,
+    h: i32,
+    seed: u64,
+    turns: u32,
+    on_wins: bool,
+) -> f64 {
     let mut share = 0.0;
     for treated in 0..2usize {
         let mut game = Game::new(players, w, h, seed, turns, 0);
@@ -97,16 +105,27 @@ fn duel(candidate: &Weights, players: usize, w: i32, h: i32, seed: u64, turns: u
                 }
             }
         }
-        let mut ours = 0.0;
-        let mut table = 0.0;
-        for player in game.players.iter().filter(|p| !p.is_minor) {
-            let lane = game.victory_threat(player.id);
-            table += lane;
-            if is_treated(player.id) {
-                ours += lane;
+        if on_wins {
+            // UNBIASED and noisy. A capped game with no victor is 0.5: it says
+            // nothing about either arm, and scoring it as a loss would be a
+            // bias of exactly the kind this mode exists to avoid.
+            share += match game.winner.map(is_treated) {
+                Some(true) => 1.0,
+                Some(false) => 0.0,
+                None => 0.5,
+            };
+        } else {
+            let mut ours = 0.0;
+            let mut table = 0.0;
+            for player in game.players.iter().filter(|p| !p.is_minor) {
+                let lane = game.victory_threat(player.id);
+                table += lane;
+                if is_treated(player.id) {
+                    ours += lane;
+                }
             }
+            share += if table > 0.0 { ours / table } else { 0.5 };
         }
-        share += if table > 0.0 { ours / table } else { 0.5 };
     }
     share / 2.0
 }
@@ -121,10 +140,11 @@ fn fitness(
     seed0: u64,
     turns: u32,
     jobs: usize,
+    on_wins: bool,
 ) -> (f64, f64) {
     let genome = candidate.clone();
     let shares = parallel::map(maps, jobs, move |index| {
-        duel(&genome, players, w, h, seed0 + index as u64, turns)
+        duel(&genome, players, w, h, seed0 + index as u64, turns, on_wins)
     });
     let n = shares.len().max(1) as f64;
     let mean = shares.iter().sum::<f64>() / n;
@@ -148,6 +168,13 @@ fn main() {
     let seed0 = number(&args, "--seed", 2_400_000) as u64;
     let holdout_maps = number(&args, "--holdout-maps", 48);
     let jobs = number(&args, "--jobs", parallel::default_jobs());
+    // Breeding on WINS is unbiased and noisy; breeding on lane progress is
+    // cheap and BIASED. That distinction is the whole finding: noise
+    // misdirects selection randomly and averages out over generations, while
+    // bias misdirects it consistently and converges harder on the wrong thing.
+    // A lane-bred champion measured 8 map directions to 30 against the shipped
+    // genome at p=0.0005.
+    let on_wins = args.iter().any(|arg| arg == "--fitness-wins");
 
     let bounds = Weights::bounds();
     let shipped = Weights::default().to_vec();
@@ -265,7 +292,10 @@ fn main() {
         "genome_breed: {pop_size} genomes x {gens} generations, fitness on {maps} mirrored maps \
          ({players}p {width}x{height}, {turns} turns) against the shipped genome, seed {seed0}"
     );
-    println!("  statistic: victory-lane progress share -- parity is 0.500");
+    println!(
+        "  statistic: {}",
+        if on_wins { "WIN RATE -- unbiased, noisy; parity 0.500" } else { "victory-lane progress -- cheap, BIASED; parity 0.500" }
+    );
     println!("  the shipped genome is member 0 of generation 0\n");
 
     // Seed the shipped genome so the search must beat what it replaces, then
@@ -298,6 +328,7 @@ fn main() {
                     map_seed,
                     turns,
                     jobs,
+                    on_wins,
                 );
                 (fit, se, genes.clone())
             })
@@ -338,7 +369,7 @@ fn main() {
     let holdout_seed = seed0 + 700_000;
     let champion = Weights::from_vec(&best.1);
     let (holdout, holdout_se) = fitness(
-        &champion, players, width, height, holdout_maps, holdout_seed, turns, jobs,
+        &champion, players, width, height, holdout_maps, holdout_seed, turns, jobs, on_wins,
     );
 
     println!("\nchampion, genes that moved from the shipped value:");
