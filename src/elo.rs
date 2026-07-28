@@ -38,9 +38,10 @@ pub const BUILTIN_AIS: [&str; 10] = [
 /// tournament ratings. Keeping them out of `BUILTIN_AIS` prevents a control
 /// factory from being pooled into the same player/leader rating key as
 /// its treatment.
-pub const EVAL_ONLY_AIS: [&str; 43] = [
+pub const EVAL_ONLY_AIS: [&str; 44] = [
     "advanced_banking_dedication",
     "advanced_blind_to_leaders",
+    "advanced_rush",
     "advanced_civ_blind",
     "advanced_counter_in_lane",
     "advanced_counter_stand_down",
@@ -520,6 +521,20 @@ pub fn builtin_ai(name: &str, seed: u64) -> Box<dyn Ai> {
         "advanced_blind_to_leaders" => {
             let mut ai = AdvancedAi::new();
             ai.deny_leaders = false;
+            Box::new(ai)
+        }
+        // Treatment for the early-aggression axis: identical to `advanced`
+        // except that it will open an ancient rush on the nearest weak
+        // neighbour before anybody can build walls. `rush_census` measures the
+        // window this plays in — 0% of capitals walled through turn 60, mean
+        // garrison 0.7, nearest rival capital a median 13 tiles — and a Monte
+        // Carlo over the engine's own combat formulas sizes the stack at four
+        // melee units. `advanced` cannot reach any of it: `assess` withholds
+        // Conquest until turn 55, and the declaration carries a turn-35 floor.
+        // Paired against `advanced` this is what early aggression is worth.
+        "advanced_rush" => {
+            let mut ai = AdvancedAi::new();
+            ai.early_rush = true;
             Box::new(ai)
         }
         // Treatment for the response-shape axis: identical to `advanced`
@@ -1239,6 +1254,7 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
             },
         ),
         "advanced_civ_blind" => (Vec::new(), "advanced_civ_blind"),
+        "advanced_rush" => (Vec::new(), "advanced_rush"),
         "advanced_settler_commit" => (Vec::new(), "advanced_settler_commit"),
         "advanced_food_first" => (Vec::new(), "advanced_food_first"),
         "advanced_v1" => (Vec::new(), "advanced_v1"),
@@ -1727,9 +1743,10 @@ mod tests {
             // Anything else reaching that state fell through to the
             // catch-all and is claiming to need nothing while quietly
             // needing a net.
-            const SCRIPTED: [&str; 17] = [
+            const SCRIPTED: [&str; 18] = [
                 "advanced",
                 "advanced_blind_to_leaders",
+                "advanced_rush",
                 "advanced_counter_in_lane",
                 "advanced_counter_stand_down",
                 "advanced_early_score_alarm",
