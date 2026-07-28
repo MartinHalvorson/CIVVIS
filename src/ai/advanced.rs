@@ -587,6 +587,20 @@ pub struct AdvancedAi {
     /// `advanced` it isolates the response's *shape* from its existence --
     /// which `advanced_blind_to_leaders` already bounds from the other side.
     pub counter_in_lane: bool,
+
+    /// Whether a Science or Expansion threat is simply not reacted to.
+    ///
+    /// `counter_in_lane` changes two things at once: it stops the empire
+    /// declaring on a science or expansion leader, *and* it puts the empire in
+    /// that leader's lane. If the first alone carries the effect then the
+    /// mechanism is "stop paying for a war that takes nothing", and the lane
+    /// is decoration; if the second is needed then it really is a race. This
+    /// repo has published four mechanism stories it had to retract, so the
+    /// decomposition is built before either story is told.
+    ///
+    /// Reachable as `advanced_counter_stand_down`. The other four races are
+    /// answered exactly as they are today.
+    pub counter_stand_down: bool,
 }
 
 impl Default for AdvancedAi {
@@ -660,6 +674,7 @@ impl AdvancedAi {
             civ_blind: false,
             deny_leaders: true,
             counter_in_lane: false,
+            counter_stand_down: false,
         }
     }
 
@@ -1547,6 +1562,17 @@ impl AdvancedAi {
         // 16.7% base rate, and the shipped response already costs terminal
         // score (44 maps to 65, p=0.055) without buying a win. Racing the
         // leader in their own lane keeps the reaction and drops the war.
+        // The decomposition arm: react to the other four races unchanged and
+        // to these two not at all, so the effect of dropping the war can be
+        // read apart from the effect of adopting the lane.
+        if self.counter_stand_down
+            && matches!(
+                pressure.strategy,
+                GrandStrategy::Science | GrandStrategy::Expansion
+            )
+        {
+            return None;
+        }
         let counter = match pressure.strategy {
             GrandStrategy::Science if self.counter_in_lane => GrandStrategy::Science,
             GrandStrategy::Science => GrandStrategy::Conquest,
@@ -13858,6 +13884,23 @@ mod tests {
         let plan = ai.assess(&game, 0);
         assert_eq!(plan.strategy, GrandStrategy::Conquest);
         assert_eq!(plan.target_player, Some(2));
+
+        // The three response shapes on one position, so the arms cannot
+        // silently converge: ship declares, `counter_in_lane` races the same
+        // rival, `counter_stand_down` lets this threat pass. All three read
+        // the identical pressure, so what separates them is the answer and
+        // never the perception.
+        let mut in_lane = AdvancedAi::new();
+        in_lane.counter_in_lane = true;
+        assert_eq!(
+            in_lane.victory_denial(&game, 0),
+            Some((2, GrandStrategy::Science))
+        );
+
+        let mut stand_down = AdvancedAi::new();
+        stand_down.counter_stand_down = true;
+        assert_eq!(stand_down.victory_denial(&game, 0), None);
+        assert_eq!(stand_down.rival_victory_pressure(&game, 2).progress, 78);
     }
 
     #[test]

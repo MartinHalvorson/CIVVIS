@@ -38,11 +38,12 @@ pub const BUILTIN_AIS: [&str; 10] = [
 /// tournament ratings. Keeping them out of `BUILTIN_AIS` prevents a control
 /// factory from being pooled into the same player/leader rating key as
 /// its treatment.
-pub const EVAL_ONLY_AIS: [&str; 39] = [
+pub const EVAL_ONLY_AIS: [&str; 40] = [
     "advanced_banking_dedication",
     "advanced_blind_to_leaders",
     "advanced_civ_blind",
     "advanced_counter_in_lane",
+    "advanced_counter_stand_down",
     "advanced_settler_commit",
     "advanced_food_first",
     "advanced_measured_dedication",
@@ -527,6 +528,15 @@ pub fn builtin_ai(name: &str, seed: u64) -> Box<dyn Ai> {
         "advanced_counter_in_lane" => {
             let mut ai = AdvancedAi::new();
             ai.counter_in_lane = true;
+            Box::new(ai)
+        }
+        // Decomposition arm for the response-shape axis: reacts to the other
+        // four races exactly as `advanced` does and to a Science or Expansion
+        // threat not at all. Read against `advanced_counter_in_lane` it says
+        // whether that treatment's effect is "stop declaring" or "race them".
+        "advanced_counter_stand_down" => {
+            let mut ai = AdvancedAi::new();
+            ai.counter_stand_down = true;
             Box::new(ai)
         }
         "advanced_civ_blind" => {
@@ -1178,6 +1188,7 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "advanced_parallel_settlers" => (Vec::new(), "advanced_parallel_settlers"),
         "advanced_blind_to_leaders" => (Vec::new(), "advanced_blind_to_leaders"),
         "advanced_counter_in_lane" => (Vec::new(), "advanced_counter_in_lane"),
+        "advanced_counter_stand_down" => (Vec::new(), "advanced_counter_stand_down"),
         "advanced_civ_blind" => (Vec::new(), "advanced_civ_blind"),
         "advanced_settler_commit" => (Vec::new(), "advanced_settler_commit"),
         "advanced_food_first" => (Vec::new(), "advanced_food_first"),
@@ -1667,10 +1678,11 @@ mod tests {
             // Anything else reaching that state fell through to the
             // catch-all and is claiming to need nothing while quietly
             // needing a net.
-            const SCRIPTED: [&str; 14] = [
+            const SCRIPTED: [&str; 15] = [
                 "advanced",
                 "advanced_blind_to_leaders",
                 "advanced_counter_in_lane",
+                "advanced_counter_stand_down",
                 "advanced_settler_commit",
                 "advanced_banking_dedication",
                 "advanced_civ_blind",
