@@ -307,32 +307,38 @@ Every measured way of stopping a leader in this engine is null or negative:
 | a coalition (not built) | — | 1–2 belligerents win 4.4% / 10.7% of seats vs a 16.7% base |
 | `advanced_counter_in_lane` | what the alarm asks for | **49.9%** over 360 confirming maps |
 | `advanced_early_score_build` | when it fires *and* what it asks for | **48.3%**, sign p=0.6271 |
-| `advanced_early_score_alarm` | when it fires | **54.6%, p=0.0989 — under confirmation** |
-| `advanced_evolved_blind` | the ablation on shipped weights | queued |
+| `advanced_early_score_alarm` | when it fires | 54.6% at 120 maps → **51.4% at 360**, p=0.3821 |
+| `advanced_evolved_blind` | the ablation on shipped weights | running |
 
-Five of six say nothing at this layer counters a leader. **The sixth is open,
-and it is the one that contradicts the rest**, so this section does not get to
-close yet.
+**Nothing available at this layer counters a leader in this engine.** The layer
+detects the winner almost perfectly, it changes behaviour substantially in
+every direction it has been pushed, and it changes no outcome in any of them.
+
+### The one arm that looked different, and did not survive
 
 `advanced_early_score_alarm` — the earlier alarm feeding the *shipped* Conquest
-counter, the arm registered as "below 50% because it adds war" — scored 54.6%
-(Elo-equivalent +32, win direction 13/83/24, sign p=0.0989) with terminal score
-dead flat at 50.5% on all 120 maps. Reasons not to believe it yet, all recorded
-before the confirmation was launched:
+counter, registered as "below 50% because it adds war" — scored **54.6%** at
+120 pairs (Elo-equivalent +32, win direction 13/83/24, sign p=0.0989). The
+registered prediction was refuted and the reading was the opposite of what the
+dogpile table implied.
 
-- p=0.0989 is weaker than the p=0.0225 this page already watched evaporate, and
-  wins rest on 37 of 120 maps;
-- the same alarm paired with `counter_in_lane` reads 48.3%, and a real +32 Elo
-  should not flip six points when only the response changes — unless the war
-  *is* the mechanism, which the ablation and the dogpile table both argue
-  against;
-- two 120-pair discovery runs here have landed near 54%, and one regressed to
-  49.9%.
+It did not survive. 360 pairs at disjoint seed 992000: **51.4%** for the
+treatment (`advanced` 48.6%, Wilson 43.5–53.8, Elo −10), win direction 48/254/58
+sign **p=0.3821**, terminal score 50.6% *favouring* `advanced` at 191 to 166 on
+357 resolving maps. The registered call for the confirmation was "regression to
+49–52%, sign p > 0.05".
 
-Registered prediction for the 360-pair confirmation at seed 992000: regression
-to 49–52%. If it instead holds at 53%+ with p < 0.05 it is the first thing in
-this investigation to survive a confirmation, the dogpile table was hiding a
-real effect rather than manufacturing one, and the paragraph below is wrong.
+**That is the second 120-pair discovery run in this investigation to read ~54%
+and regress to null on a disjoint 360.** The other was `advanced_counter_in_lane`
+at 53.8%, p=0.0225 — a *stronger* discovery p-value than this one — which came
+back 49.9%. Pooled across both its seeds this arm is 82 directions to 61,
+p=0.0941, and pooling a discovery seed with its own confirmation is not a test.
+
+The lesson is cheap to state and was expensive to learn twice: **at 120 pairs on
+this eval, wins rest on ~30 informative maps, and a sign test on 30 maps
+produces a p < 0.10 often enough that it cannot be treated as evidence.** Every
+positive reading in this branch has come from a discovery run of that size, and
+neither survived.
 
 ### What this does not license
 
