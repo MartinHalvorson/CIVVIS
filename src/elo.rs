@@ -38,7 +38,7 @@ pub const BUILTIN_AIS: [&str; 10] = [
 /// tournament ratings. Keeping them out of `BUILTIN_AIS` prevents a control
 /// factory from being pooled into the same player/leader rating key as
 /// its treatment.
-pub const EVAL_ONLY_AIS: [&str; 47] = [
+pub const EVAL_ONLY_AIS: [&str; 48] = [
     "advanced_banking_dedication",
     "advanced_blind_to_leaders",
     "advanced_civ_blind",
@@ -55,6 +55,7 @@ pub const EVAL_ONLY_AIS: [&str; 47] = [
     "advanced_settler_first",
     "advanced_prophet_first",
     "advanced_league_top",
+    "strategic_cheap",
     "advanced_relief_scoped",
     "strategic_score",
     "strategic_doctrine",
@@ -610,6 +611,31 @@ pub fn builtin_ai(name: &str, seed: u64) -> Box<dyn Ai> {
         //
         // Picks the highest-rated active genome from the SHIPPED roster, so it
         // is reproducible from the tree rather than from a local league.
+        // The cost-performance frontier of the macro search, which nothing has
+        // measured because nothing was ever cost-bound. Every registered
+        // variant moves the budget UP (`review_every` 20 and 10, `horizon` 80,
+        // the 4x `strategic_deep`); this is the first that moves it down.
+        //
+        // `strategic` measured ~1833 ms per game-turn at the exhibition's own
+        // profile against its ~250 ms budget, so the deployable question is not
+        // "is more search better" — that is settled and yes — but "how much of
+        // the gain survives a search the exhibition could actually run".
+        //
+        // Three knobs, all multiplicative on branch-rounds:
+        //   review_every 40 -> 80   half the reviews
+        //   horizon      40 -> 20   half the rollout
+        //   rotate_lanes           ~7 branches -> ~3
+        // ≈ 9x cheaper. `rotate_lanes` is a recorded NULL for strength, which
+        // is exactly what a cost-bound deployment wants from it.
+        "strategic_cheap" => {
+            let mut ai = crate::strategic::StrategicAi::with_weights(
+                crate::evolve::load_champion("evolved").unwrap_or_default(),
+            );
+            ai.review_every = 80;
+            ai.horizon = 20;
+            ai.rotate_lanes = true;
+            Box::new(ai)
+        }
         "advanced_league_top" => {
             let weights = crate::league::shipped_league()
                 .and_then(|league| {
@@ -1293,6 +1319,7 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "advanced_settler_first" => (Vec::new(), "advanced_settler_first"),
         "advanced_prophet_first" => (Vec::new(), "advanced_prophet_first"),
         "advanced_league_top" => (Vec::new(), "advanced_league_top"),
+        "strategic_cheap" => (vec![genome, value(false)], "strategic_cheap"),
         "advanced_blind_to_leaders" => (Vec::new(), "advanced_blind_to_leaders"),
         "advanced_counter_in_lane" => (Vec::new(), "advanced_counter_in_lane"),
         "advanced_counter_stand_down" => (Vec::new(), "advanced_counter_stand_down"),
