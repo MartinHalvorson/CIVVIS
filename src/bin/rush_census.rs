@@ -69,6 +69,13 @@ struct Snapshot {
     staged: f64,
     /// Melee standing on a ring tile of the nearest rival capital.
     adjacent: f64,
+    /// The largest stack any one civilization has on one rival capital's ring.
+    /// Averages hide this: only about one seat in six is rushing at a time, so
+    /// a per-civilization mean divides a real siege by the five empires not
+    /// conducting one.
+    max_adjacent: f64,
+    /// The same for the 5-tile staging ring.
+    max_staged: f64,
     /// Majors at war with another major.
     at_war: usize,
     /// Majors holding each rush technology.
@@ -88,6 +95,9 @@ struct MapResult {
     /// Tile distance from each major's capital to the nearest rival capital,
     /// measured on the turn everyone has founded.
     nearest_rival: Vec<i32>,
+    /// Turn of the first war between majors, if any. Splits the delay into
+    /// build-and-march (before) and siege (after).
+    first_war: Option<u32>,
     /// Turn of the first city capture between majors, if any.
     first_capture: Option<u32>,
     /// Turn of the first major eliminated, if any.
@@ -153,9 +163,12 @@ fn snapshot(g: &Game, majors: &[usize]) -> Snapshot {
         if majors.iter().any(|other| *other != pid && g.is_at_war(pid, *other)) {
             s.at_war += 1;
         }
-        // The nearest rival capital, and how much of our melee is already
-        // standing on it. `campaign_staging_step` stages inside 5 tiles.
-        let nearest_rival_capital = majors
+        // Measured against **every** rival major capital, not the nearest.
+        // `early_rush_victim` skips friends and walled capitals, so the city
+        // the column is actually marching on is frequently not the closest
+        // one — scoring only the nearest reports an empty staging ring for an
+        // army standing on a different capital entirely.
+        let rival_capitals: Vec<Pos> = majors
             .iter()
             .copied()
             .filter(|other| *other != pid)
@@ -166,26 +179,27 @@ fn snapshot(g: &Game, majors: &[usize]) -> Snapshot {
                     .find(|cid| g.cities[cid].is_capital)
                     .map(|cid| g.cities[&cid].pos)
             })
-            .min_by_key(|pos| {
-                g.player_city_ids(pid)
-                    .into_iter()
-                    .map(|cid| g.wdist(g.cities[&cid].pos, *pos))
-                    .min()
-                    .unwrap_or(i32::MAX)
-            });
-        if let Some(objective) = nearest_rival_capital {
-            s.staged += melee
+            .collect();
+        let nearest_capital = |pos: Pos| {
+            rival_capitals
                 .iter()
-                .filter(|pos| g.wdist(**pos, objective) <= 5)
-                .count() as f64;
-            // Adjacency is the one that matters: a melee unit on a ring tile
-            // can attack the city this turn and contributes to sealing the
-            // siege ring that stops it healing 20 HP a turn.
-            s.adjacent += melee
-                .iter()
-                .filter(|pos| g.wdist(**pos, objective) <= 1)
-                .count() as f64;
+                .map(|capital| g.wdist(pos, *capital))
+                .min()
+                .unwrap_or(i32::MAX)
+        };
+        s.staged += melee.iter().filter(|pos| nearest_capital(**pos) <= 5).count() as f64;
+        // Per-capital, so a stack split across two objectives is not credited
+        // as one siege.
+        for capital in rival_capitals.iter() {
+            let ring = melee.iter().filter(|pos| g.wdist(**pos, *capital) <= 1).count() as f64;
+            let near = melee.iter().filter(|pos| g.wdist(**pos, *capital) <= 5).count() as f64;
+            s.max_adjacent = s.max_adjacent.max(ring);
+            s.max_staged = s.max_staged.max(near);
         }
+        // Adjacency is the one that matters: a melee unit on a ring tile can
+        // attack the city this turn and contributes to sealing the siege ring
+        // that stops it healing 20 HP a turn.
+        s.adjacent += melee.iter().filter(|pos| nearest_capital(**pos) <= 1).count() as f64;
 
         let Some(cid) = g
             .player_city_ids(pid)
@@ -294,6 +308,14 @@ fn main() {
                 }
             }
 
+            if result.first_war.is_none()
+                && majors.iter().enumerate().any(|(i, a)| {
+                    majors.iter().skip(i + 1).any(|b| game.is_at_war(*a, *b))
+                })
+            {
+                result.first_war = Some(turn);
+            }
+
             // First capture between majors: a major's city count fell while
             // another's rose. Barbarians never hold cities, so a drop that is
             // matched by a rise is a capture.
@@ -381,13 +403,14 @@ fn main() {
     println!("\n=== THE DEFENDER, BY TURN ===");
     println!(
         "{:>5}{:>9}{:>10}{:>10}{:>9}{:>8}{:>9}{:>8}{:>8}{:>10}{:>8}",
-        "turn", "walled%", "cap.str", "garrison", "mil/civ", "melee", "staged", "adjac",
-        "atwar%", "masonry%", "agoge%"
+        "turn", "walled%", "cap.str", "garrison", "melee", "staged", "adjac",
+        "MAXstg", "MAXadj", "atwar%", "agoge%"
     );
     for (index, mark) in MARKS.iter().enumerate() {
         let mut caps = 0.0;
         let (mut walled, mut strength, mut garrison, mut military) = (0.0, 0.0, 0.0, 0.0);
         let (mut melee, mut staged, mut atwar, mut adjacent) = (0.0, 0.0, 0.0, 0.0);
+        let (mut maxadj, mut maxstg) = (0.0_f64, 0.0_f64);
         let (mut iron, mut mason, mut craft) = (0.0, 0.0, 0.0);
         for m in per_map.iter() {
             let s = &m.marks[index];
@@ -399,6 +422,8 @@ fn main() {
             melee += s.melee;
             staged += s.staged;
             adjacent += s.adjacent;
+            maxadj = maxadj.max(s.max_adjacent);
+            maxstg = maxstg.max(s.max_staged);
             atwar += s.at_war as f64;
             iron += s.iron as f64;
             mason += s.masonry as f64;
@@ -408,25 +433,36 @@ fn main() {
             continue;
         }
         println!(
-            "{mark:>5}{:>8.1}%{:>10.1}{:>10.1}{:>9.1}{:>8.1}{:>9.2}{:>8.2}{:>7.0}%{:>9.0}%{:>7.0}%",
+            "{mark:>5}{:>8.1}%{:>10.1}{:>10.1}{:>9.1}{:>8.2}{:>8.2}{:>8.0}{:>8.0}{:>7.0}%{:>7.0}%",
             100.0 * walled / caps,
             strength / caps,
             garrison / caps,
-            military / caps,
             melee / caps,
             staged / caps,
             adjacent / caps,
+            maxstg,
+            maxadj,
             100.0 * atwar / caps,
-            100.0 * mason / caps,
             100.0 * craft / caps,
         );
+        let _ = (military, mason);
     }
 
     // ---- what actually happens ----
+    let wars: Vec<u32> = per_map.iter().filter_map(|m| m.first_war).collect();
     let captures: Vec<u32> = per_map.iter().filter_map(|m| m.first_capture).collect();
     let elims: Vec<u32> = per_map.iter().filter_map(|m| m.first_elimination).collect();
     let majors = per_map.first().map(|m| m.majors).unwrap_or(0);
     println!("\n=== WHAT THE STOCK AGENT ACTUALLY DOES ===");
+    println!(
+        "  maps with any war between majors     : {}/{}  {}",
+        wars.len(),
+        per_map.len(),
+        if wars.is_empty() { String::new() } else {
+            let mut w = wars.clone(); w.sort_unstable();
+            format!("(first war: median turn {})", w[w.len() / 2])
+        }
+    );
     println!(
         "  maps with any capture between majors : {}/{}  {}",
         captures.len(),

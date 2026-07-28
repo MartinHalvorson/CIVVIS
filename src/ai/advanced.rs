@@ -35,7 +35,7 @@ const RUSH_REACH: i32 = 16;
 /// Melee units the stack needs before it opens. Two take the measured
 /// turn-50 capital outright and two more cover the defender pulling its field
 /// army home; the same four also seal the siege ring, which needs only two.
-const RUSH_STACK: usize = 4;
+const RUSH_STACK: usize = 2;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum GrandStrategy {
@@ -2422,6 +2422,24 @@ impl AdvancedAi {
                 {
                     Some("astrology")
                 }
+                // An ancient rush rides. `rush_census` measures **0% of
+                // empires holding `horseback_riding` at turn 50**, so the
+                // stack is warriors — and a warrior attacking the measured
+                // capital takes 28 damage a blow and dies on its fourth,
+                // having dealt 134 of the 200 needed. That is the whole
+                // reason a war declared at turn 30 does not take a city until
+                // turn 53: the stack trades itself, and the next one has to be
+                // built and marched all over again.
+                //
+                // A horseman is strength 36 for 80 production against a
+                // warrior's 20 for 40 — it takes 15 a blow instead of 28, so
+                // it survives the siege rather than paying for it — and it has
+                // **4 movement against 2**, which halves the nine-to-twelve
+                // turn march that is the lane's other binding cost. At 195
+                // science it is also cheaper to reach than iron working's 225.
+                _ if plan.rush && !g.players[pid].techs.contains("horseback_riding") => {
+                    Some("horseback_riding")
+                }
                 _ if science_commitment => [
                     "rocketry",
                     "satellites",
@@ -4368,7 +4386,22 @@ impl AdvancedAi {
     /// whole value of the lane is that it plays a window rather than a
     /// preference. See `early_rush` for where each number comes from.
     fn early_rush_victim(&self, g: &Game, pid: usize) -> Option<(usize, u32)> {
-        if !self.early_rush || g.turn >= RUSH_WINDOW_CLOSES {
+        if !self.early_rush {
+            return None;
+        }
+        // A war already running is not re-opened every turn, and dropping the
+        // lane at `RUSH_WINDOW_CLOSES` mid-siege abandons the campaign with
+        // the stack on the ring: melee adjacent to the objective fell to zero
+        // at turn 80 for exactly this reason. The window governs **opening** a
+        // rush; finishing one is governed by the war.
+        let already_committed = g.players.iter().any(|player| {
+            player.id != pid
+                && player.alive
+                && !player.is_minor
+                && !player.is_barbarian
+                && g.is_at_war(pid, player.id)
+        });
+        if g.turn >= RUSH_WINDOW_CLOSES && !already_committed {
             return None;
         }
         let mine: Vec<Pos> = g
@@ -4401,10 +4434,23 @@ impl AdvancedAi {
                     || g.military_power(player.id) <= my_power * 1.15 + 5.0
             })
             .filter_map(|player| {
+                // The capital while they have one, otherwise whatever is
+                // left. Wiping a neighbour means taking *every* city, and a
+                // rush that stops the moment the palace falls leaves a
+                // one-city rump alive — which is the difference between a
+                // capture and an elimination.
                 let capital = g
                     .player_city_ids(player.id)
                     .into_iter()
-                    .find(|cid| g.cities[cid].is_capital)?;
+                    .find(|cid| g.cities[cid].is_capital)
+                    .or_else(|| {
+                        g.player_city_ids(player.id)
+                            .into_iter()
+                            .min_by_key(|cid| {
+                                let pos = g.cities[cid].pos;
+                                (mine.iter().map(|own| g.wdist(*own, pos)).min().unwrap_or(i32::MAX), *cid)
+                            })
+                    })?;
                 let city = &g.cities[&capital];
                 // The window is defined by the walls, so test the walls rather
                 // than trusting the turn number. `rush_census` reports 0%
@@ -4444,18 +4490,48 @@ impl AdvancedAi {
     /// figure that still reads 100% when the defender pulls its entire field
     /// army home — the case this lane cannot rule out, since it declares
     /// three tiles from the victim's capital.
-    fn early_rush_stack_ready(&self, g: &Game, pid: usize, target: usize, objective: Pos) -> bool {
+    fn early_rush_stack_ready(&self, g: &Game, pid: usize, target: usize, cid: u32) -> bool {
+        let Some(city) = g.cities.get(&cid) else {
+            return false;
+        };
+        let objective = city.pos;
         let units = self.staged_campaign_units(g, pid, target, objective);
-        let takers = units
-            .iter()
+        let takers: Vec<u32> = units
+            .into_iter()
             .filter(|uid| g.rules.units[g.units[uid].kind.as_str()].is_melee_capable())
-            .count();
-        // Two of the takers exist to seal the siege ring rather than to hit
-        // the city: `district_under_siege` needs every passable neighbour
-        // occupied or in our zone of control, a ZOC unit covers its own ring
-        // tile plus both ring-neighbours, and a city that is not besieged
-        // heals 20 HP a turn. Ranged units exert no ZOC and cannot capture.
-        takers >= RUSH_STACK
+            .collect();
+        if takers.len() < RUSH_STACK {
+            return false;
+        }
+        // Counting takers is not the same as being able to finish, and the
+        // difference cost this lane twenty turns. War was declared at turn 30
+        // on two warriors and the first city did not fall until turn 54: a
+        // warrior against the measured capital takes 28 damage a blow and dies
+        // on its fourth, having dealt 134 of the 200 needed. The stack traded
+        // itself and the next one had to be built and marched all over again.
+        //
+        // So ask the engine's own combat math whether this force can take the
+        // city *before it dies*, using the same `damage` curve the fight will
+        // use. `30 * exp((att - def) / 25)` per blow each way, `100 / incoming`
+        // blows survived.
+        let defense = g.city_strength(cid);
+        let deliverable: f64 = takers
+            .iter()
+            .filter_map(|uid| g.units.get(uid))
+            .map(|unit| {
+                let attack = crate::game::effective_strength(
+                    g.unit_strength(unit, false),
+                    unit.hp,
+                );
+                let out = 30.0 * ((attack - defense) / 25.0).exp();
+                let incoming = (30.0 * ((defense - attack) / 25.0).exp()).max(1.0);
+                let blows = (unit.hp as f64 / incoming).floor().max(1.0);
+                out * blows
+            })
+            .sum();
+        // The city's pool, plus a turn of the 20 HP/turn it regenerates
+        // whenever the ring is not fully sealed.
+        deliverable >= city.hp as f64 + 20.0
     }
 
     fn campaign_staged_for_war(
@@ -4474,6 +4550,135 @@ impl AdvancedAi {
         let formation_ready = units.len() >= 3 || (units.len() >= 2 && ratio >= 1.60);
         let minimum_ratio = if committed_domination { 0.90 } else { 1.05 };
         formation_ready && has_capturer && ratio + 1e-9 >= minimum_ratio
+    }
+
+    /// Drive one melee unit of an ancient rush directly at the objective
+    /// capital, bypassing the force-group heuristics entirely.
+    ///
+    /// Four separate attempts to make those heuristics conduct a siege made
+    /// things measurably worse (see the rejected notes on `focus_target` and
+    /// on the `relieving`/`Muster` postures). They are tuned for a field
+    /// campaign between comparable armies, and a rush is not that: it is four
+    /// melee units against an unwalled capital holding a garrison of 0.7,
+    /// inside a window that shuts.
+    ///
+    /// The routine is the Monte Carlo's own recipe, in order:
+    ///
+    /// 1. **Walk into a depleted city.** An ordinary ranged attack cannot take
+    ///    a city below 1 HP, so a city at 0 was opened by a Bombard and is
+    ///    standing open for whoever steps in.
+    /// 2. **Attack from the ring** if already on it.
+    /// 3. **Take a free ring tile.** Every melee unit on the ring both adds a
+    ///    blow and helps seal the siege, and an unsealed city heals 20 HP a
+    ///    turn — which is what actually defeated this lane before: the stack
+    ///    reached the 3-5 tile staging ring at full strength (measured max 4)
+    ///    while the city's own ring never held more than two.
+    ///
+    /// Returns `None` when this unit is not part of a live rush, leaving the
+    /// ordinary wartime behaviour untouched.
+    fn rush_siege_step(
+        &mut self,
+        g: &mut Game,
+        pid: usize,
+        uid: u32,
+        plan: &StrategicPlan,
+    ) -> Option<bool> {
+        if !plan.rush {
+            return None;
+        }
+        let target = plan.target_player?;
+        if !g.is_at_war(pid, target) {
+            return None;
+        }
+        let cid = plan.target_city?;
+        let city = g.cities.get(&cid).filter(|city| city.owner == target)?;
+        let objective = city.pos;
+        let depleted = city.hp <= 0;
+        let spec = &g.rules.units[g.units.get(&uid)?.kind.as_str()];
+        if !spec.is_melee_capable() || matches!(spec.domain.as_deref(), Some("sea" | "air")) {
+            return None;
+        }
+        let here = g.units[&uid].pos;
+
+        if g.wdist(here, objective) <= 1 {
+            if depleted && g.can_move(uid, objective) {
+                // The city is open. Walking in *is* the capture.
+                return Some(g.apply(pid, &Action::Move { unit: uid, to: objective }).is_ok());
+            }
+            let attacked = g
+                .apply(
+                    pid,
+                    &Action::Attack {
+                        unit: uid,
+                        target: objective,
+                    },
+                )
+                .is_ok();
+            if attacked {
+                return Some(true);
+            }
+            // Out of moves this turn: hold the ring rather than give it up.
+            // A vacated ring tile is 20 HP a turn handed back.
+            return Some(self.base.fortify_or_stop(g, pid, uid));
+        }
+
+        // Close on a free ring tile — but *which* ring tile decides whether
+        // this is a siege or a queue.
+        //
+        // `district_under_siege` needs every passable neighbour of the city
+        // occupied or covered by our zone of control, and a city that is not
+        // besieged heals 20 HP a turn. A ZOC unit covers its own ring tile
+        // plus both ring-neighbours, three of six, so **two units placed three
+        // apart seal the ring and two units side by side do not**. Routing to
+        // the nearest free tile bunches them, which is why an unsealed capital
+        // took 23 turns to fall against a Monte Carlo estimate of three.
+        //
+        // So prefer the free tile furthest from the ones we already hold, and
+        // only then the one we can reach.
+        let held: Vec<Pos> = g
+            .player_unit_ids(pid)
+            .into_iter()
+            .filter(|other| *other != uid)
+            .filter_map(|other| g.units.get(&other))
+            .filter(|other| g.rules.units[other.kind.as_str()].is_melee_capable())
+            .map(|other| other.pos)
+            .filter(|pos| g.wdist(*pos, objective) <= 1)
+            .collect();
+        let mut ring: Vec<Pos> = g
+            .wdisk(objective, 1)
+            .into_iter()
+            .filter(|pos| {
+                *pos != objective
+                    && g.unit_can_traverse(uid, *pos)
+                    && g.units_at(*pos).iter().all(|other| {
+                        g.units.get(other).is_some_and(|other| other.owner != pid)
+                    })
+            })
+            .collect();
+        if ring.is_empty() {
+            return None;
+        }
+        // Spread first, then nearness to us, then position for determinism.
+        ring.sort_by_key(|pos| {
+            let spread = held
+                .iter()
+                .map(|other| g.wdist(*pos, *other))
+                .min()
+                .unwrap_or(i32::MAX);
+            (std::cmp::Reverse(spread), g.wdist(here, *pos), pos.0, pos.1)
+        });
+        // Walk the preference order: the best tile may be unroutable this
+        // turn, and giving up on it would leave the unit standing still.
+        for goal in ring.iter().take(3) {
+            let goals: HashSet<Pos> = std::iter::once(*goal).collect();
+            if let Some(next) = g
+                .route_step_to_any(uid, &goals)
+                .filter(|pos| g.can_move(uid, *pos))
+            {
+                return Some(g.apply(pid, &Action::Move { unit: uid, to: next }).is_ok());
+            }
+        }
+        None
     }
 
     /// Redirect an otherwise idle field unit to the active conquest front.
@@ -4755,9 +4960,7 @@ impl AdvancedAi {
             || if rushing {
                 plan.target_city
                     .and_then(|city| g.cities.get(&city))
-                    .is_some_and(|city| {
-                        self.early_rush_stack_ready(g, pid, target, city.pos)
-                    })
+                    .is_some_and(|city| self.early_rush_stack_ready(g, pid, target, city.id))
             } else if committed_domination {
                 my_power >= target_power * 0.85 && my_power >= 30.0
             } else {
@@ -9329,6 +9532,13 @@ impl AdvancedAi {
             units.sort_unstable();
             let anchor = Self::force_anchor(g, &units);
             let objective = self.domain_objective(g, pid, plan, domain, anchor, &enemies);
+            // ⚠ MEASURED AND REJECTED: pinning `focus_target` to the objective
+            // city for a rush, on the theory that the first defender met
+            // otherwise pulls the column off the capital. It made things
+            // worse — blows on cities by turn 60 fell 6.1 to 2.9, first
+            // capture slipped turn 65 to 86 — and the city's own ring still
+            // never held more than two. A rush that walks past the defenders
+            // to stand on the ring is a rush that gets killed on the ring.
             let focus_target = self.force_focus_target(g, &units, &enemies, plan);
             let muster_radius = self.base.w.muster_radius.round().max(1.0) as i32;
             let readiness = units
@@ -10595,6 +10805,14 @@ impl AdvancedAi {
         if self.victory_planning && self.force_groups_dirty {
             self.rebuild_force_groups(g, pid, plan);
             self.force_groups_dirty = false;
+        }
+        // A live rush executes its own siege. See `rush_siege_step`: the
+        // general force-group heuristics assemble the stack correctly and then
+        // will not put it on the city's ring, and four attempts to make them
+        // do so each measured worse.
+        if let Some(acted) = self.rush_siege_step(g, pid, uid, plan) {
+            self.force_groups_dirty = true;
+            return acted;
         }
         let group = self
             .force_groups
