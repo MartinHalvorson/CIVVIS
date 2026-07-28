@@ -4114,3 +4114,70 @@ expensive one is not.
 exhibition's own profile before one, because the last two estimates taken at
 4p 24×16 — every win rate, via `--speed`, and the cost table — both failed to
 transfer. That confirmation is running at 6p 74×46.
+
+
+## 2026-07-28 — ★★★ the cheap search is +16 on the evaluator's map and −63 on the deployment's
+
+The pre-registration for `strategic_cheap` required a confirmation at the
+exhibition's own profile before any deployment claim, *because the last two
+estimates taken at 4p 24×16 both failed to transfer*. It ran, and it reversed
+the result.
+
+| profile | score | Elo | direction | sign p | gate |
+|---|---|---|---|---|---|
+| 4p 24×16 Online (the evaluator's default) | 52.3% | **+16** | 54 / 40 | 0.1797 | INCONCLUSIVE |
+| **6p 74×46 Online (the exhibition)** | **41.0%** | **−63** | 22 / 49 | **0.0018** | **RETAIN `advanced`** |
+
+Terminal score agrees and is stronger: 45.4%, **23 maps for / 127 against**,
+p=0.0000, resting on all 150 maps rather than the 71 that broke on wins.
+
+**`strategic_cheap` is significantly worse than the scripted agent at the
+profile that matters, and mildly better at the one the evaluator defaults to.**
+Recommending it from the small-map number would have shipped a 63-Elo
+regression.
+
+### Why, as a hypothesis rather than a claim
+
+`strategic_cheap` cuts the rollout `horizon` from 40 to 20 and reviews half as
+often. Twenty projected rounds is a large fraction of a 4-player game on 384
+tiles and a small one of a 6-player game on 3404. The same absolute budget buys
+proportionally far less foresight as the world grows, so the configuration that
+is merely *cheaper* on a small map may be *blind* on a large one.
+
+⚠ Stated as a hypothesis deliberately. Four mechanism stories in this document
+have been refuted by the next measurement, and this one is untested — separating
+`horizon` from `review_every` from `rotate_lanes` would need three more runs.
+**The measurement stands on its own without it.**
+
+### The strategic consequence, which is uncomfortable
+
+| | 4p 24×16 | 6p 74×46 (the exhibition) |
+|---|---|---|
+| `strategic` (full search) | +28 Elo | **~200× `advanced`, 7× over the time budget** |
+| `strategic_cheap` | +16 Elo, 1.06× cost | **−63 Elo**, 223 ms/turn |
+
+At the deployment's profile the search appears to be **more necessary and less
+affordable at the same time**. The cheap configuration is the only one that fits
+the budget and it is actively harmful there; the configuration that helps cannot
+be run.
+
+⚠ "More necessary" is an inference, not a measurement — `strategic` at full
+budget has not been evaluated at 6p 74×46 because 300 games there would cost
+about 17 hours. That is the measurement that would settle it, and it is the
+obvious thing to spend an overnight run on.
+
+### The rule, now three for three
+
+| estimate taken at 4p 24×16 | at the deployment profile |
+|---|---|
+| champion genome, +58, gate PASS | +10, INCONCLUSIVE (speed alone) |
+| `strategic` cost, ~83 ms/turn | **1833 ms/turn**, 22× the estimate |
+| `strategic_cheap`, +16 | **−63, significant against** |
+
+> **`ai_eval`'s defaults are not the deployment — not for strength, not for
+> cost, and not even for the sign of an effect.** Every number in this document
+> measured at 4p 24×16 should be read as a statement about 4p 24×16 until it is
+> re-measured, and the three cases above are the reason.
+
+`strategic_cheap` stays evaluator-only with the null-and-worse recorded, per the
+pre-registered rule. No seed re-roll, no knob-tuning to rescue it.
