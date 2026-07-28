@@ -2852,3 +2852,45 @@ expanding when it commits to Religion. A branch that keeps expanding projects a
 game that will never be played, which is *less* faithful, not more. The two must
 move together, which is what `StrategicAi::set_religion_may_expand` now
 enforces and what the `strategic_religion_expand` entrant uses.
+
+
+## 2026-07-28 — where the other 82% of the expansion deficit probably is (HYPOTHESIS, not measured)
+
+⚠ **This section is code-derived and has not been measured.** It is recorded as
+a hypothesis with a named test so the next iteration does not re-derive it, and
+it must not be cited as a result.
+
+Repairing the `assess()` bypass recovered 0.44 of the 2.42-city gap between a
+Religion-targeted seat (1.68 cities) and an adaptive one (4.10). The other ~2.0
+cities are elsewhere. Reading the production path, the cap is *not* the
+constraint and there are two plausible mechanisms, both keyed on the strategy
+label rather than on any target:
+
+1. **Settlers are out-competed, not forbidden.** `production_value`
+   (`advanced.rs:7044`) gates a settler on
+   `city_count + counts.settlers < plan.desired_cities`, and `desired_cities`
+   is `(3 + turn/cadence).min(capacity).min(6)` — **strategy-independent, and
+   at least 3**. So a seat stalling at 2.12 cities is not hitting its cap; the
+   settler's flat `920.0 + site*4.0` is simply losing to something else. Under
+   `GrandStrategy::Religion` a prophet project carries a **2.8×** affinity
+   (`:2212`) while a religion is unfounded, and the Holy Site chain is the
+   preferred district (`:3822`).
+
+2. **The empire grows slower, so it qualifies later.** `yield_value` (`:2143`)
+   weights food at **1.4 under Religion against 2.0 under Expansion**, and the
+   settler gate also requires `city.pop >= 2`. Slower growth delays every
+   city's eligibility to build a settler at all, which compounds.
+
+**The test.** Add a per-condition settler-production and pop-trajectory count to
+`commit_curve` and compare a Religion-targeted seat against the adaptive
+control. Mechanism 1 predicts settlers *queued and displaced* — the gate passes
+and the item loses on value. Mechanism 2 predicts the gate itself failing on
+`city.pop >= 2`. They call for different repairs, and the counts separate them
+directly.
+
+**Why it may not be worth repairing at all.** A lane's whole point is to spend
+differently, so some expansion loss is the *intent*, not a defect. What made
+the `:1807` bypass a defect was that it skipped a test every other lane takes —
+an inconsistency, not a preference. Nothing above is inconsistent in that way.
+The reason to measure it is that the macro search projects branches through
+this same path, so whatever it is worth, the search is already paying it.
