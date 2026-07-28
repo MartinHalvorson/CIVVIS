@@ -1597,7 +1597,7 @@ fn play_job(manifest: &RoundManifest, job: &WorkJob, worker: &str) -> StoredOutc
         ranks,
         won: ranked.iter().map(|pid| game.winner == Some(*pid)).collect(),
         seed: job.seed,
-        turn: game.turn,
+        turn: game.reported_turn(),
         victory: game.victory_type.clone().unwrap_or_default(),
     }
 }

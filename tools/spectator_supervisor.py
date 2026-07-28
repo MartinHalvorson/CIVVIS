@@ -1934,8 +1934,15 @@ def main() -> int:
                 finished_key = current_finished_key
                 finished_seen_at = now
                 update_retry_at = 0.0
+                # `victory_turn` is the turn the result is dated on: a score
+                # victory is settled by a count taken on the wrap out of the
+                # final turn, so a finished 250-turn game is reported on turn
+                # 250 rather than the turn 251 nobody plays.
+                finished_turn = state.get("victory_turn")
+                if finished_turn is None:
+                    finished_turn = state.get("turn")
                 log(
-                    f"game finished on turn {state.get('turn')} "
+                    f"game finished on turn {finished_turn} "
                     f"({state.get('victory_type') or 'unknown'} victory); checking for updates"
                 )
                 standings = result_standings(state)

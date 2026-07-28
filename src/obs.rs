@@ -745,6 +745,11 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
         "winner": g.winner,
         "winners": g.winning_players(),
         "victory_type": g.victory_type,
+        // The turn a finished game is reported on, which is `turn` for every
+        // victory but the score tiebreak: that one is settled by a count taken
+        // on the wrap out of the final turn, so a 250-turn game reads turn 250
+        // and not the turn 251 nobody plays. Empty while a game is live.
+        "victory_turn": g.winner.map(|_| g.reported_turn()),
         // The result this world was already given, if it was asked for one
         // more turn. The game is live again, so `winner` is empty; this is how
         // a viewer is still told whose victory the extra turns are borrowed
@@ -2464,6 +2469,31 @@ mod tests {
         assert_eq!(
             observed_tile(&observation(&game, 0), deposit)["resource"],
             json!("iron")
+        );
+    }
+
+    /// A viewer is told the turn the result is dated on, which for the score
+    /// tiebreak is the turn limit rather than the wrap the count was taken on.
+    #[test]
+    fn a_finished_game_reports_the_turn_its_result_is_dated_on() {
+        let mut game = Game::new_full(2, 20, 14, 19_068, 250, 0, false);
+        assert!(
+            observation_spectator(&game, 0)["victory_turn"].is_null(),
+            "a live world has no result to date"
+        );
+        game.turn = 251;
+        game.winner = Some(0);
+        game.victory_type = Some("score".to_string());
+        let finished = observation_spectator(&game, 0);
+        assert_eq!(
+            finished["turn"],
+            json!(251),
+            "the engine keeps the wrap it took the count on"
+        );
+        assert_eq!(
+            finished["victory_turn"],
+            json!(250),
+            "a 250-turn game is won on turn 250"
         );
     }
 

@@ -2291,7 +2291,7 @@ impl Session {
             &dir,
             &placements,
             self.game.seed,
-            self.game.turn,
+            self.game.reported_turn(),
             &victory,
         ) else {
             eprintln!("[league] could not rate this game into {dir}");
@@ -4851,8 +4851,11 @@ mod tests {
         assert!(played_on["error"].is_null());
         assert!(played_on["winner"].is_null(), "the world is live again");
         // The verdict survives the extension, and the countdown that was
-        // running for it does not.
-        assert_eq!(played_on["decided"]["turn"], decided["turn"]);
+        // running for it does not. It keeps the turn the result was reported
+        // on: this game runs to its three-turn limit, so the score tiebreak is
+        // dated on turn three even though the count that settled it was taken
+        // on the wrap into a fourth turn nobody plays.
+        assert_eq!(played_on["decided"]["turn"], decided["victory_turn"]);
         assert_eq!(
             played_on["decided"]["victory_type"],
             decided["victory_type"]
@@ -5205,8 +5208,8 @@ mod tests {
             .split_once("\nfunction playerHudOverview()")
             .expect("end of turn plate renderer")
             .0;
-        assert!(turn_plate.contains("<strong>${state.turn}</strong>"));
-        assert!(!victory_hud.contains("<strong>${state.turn}</strong>"));
+        assert!(turn_plate.contains("<strong>${reportedTurn()}</strong>"));
+        assert!(!victory_hud.contains("<strong>${reportedTurn()}</strong>"));
 
         let player_hud = EMBEDDED_INDEX
             .split_once("function drawPlayerHud() {")
@@ -7160,6 +7163,10 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains(
             "const {x:desiredX, y:desiredY} = mapFocusPoint();"
         ));
+        // The domination column counts captured capitals, and says so. "HQs"
+        // was a word from no part of this game.
+        assert!(EMBEDDED_INDEX.contains("<span></span><span>Capitals</span>"));
+        assert!(!EMBEDDED_INDEX.contains("HQs"));
         assert!(EMBEDDED_INDEX.contains("<span>Terrain</span>"));
         assert!(EMBEDDED_INDEX.contains("<span>Watch as</span>"));
         assert_eq!(
@@ -7180,6 +7187,11 @@ mod tests {
             "class=\"watch-as-link\" data-hud-action=\"watch\""
         ));
         assert!(EMBEDDED_INDEX.contains(">Watch as</button>"));
+        // The label is centred against a border rather than ellipsized, so the
+        // fitter is asked for a few pixels back: fitted to the last pixel, its
+        // own rounding tolerance let the "s" of "Watch as" sit on the frame.
+        assert!(EMBEDDED_INDEX
+            .contains("{selector:\"#playerhud .watch-as-link\", min:9, max:12, slack:6}"));
         assert!(EMBEDDED_INDEX.contains(
             "class=\"spectator-view-link\" data-hud-action=\"spectator\""
         ));
@@ -7399,6 +7411,21 @@ mod tests {
         // The class the ledger is ordered by is reachable on the row, never a
         // banner across it.
         assert!(!EMBEDDED_INDEX.contains("war-loss-category"));
+        // Each side's casualties are one column packed from the top, never a
+        // shared row per unit kind: a side is a coalition, so a row that put
+        // one alliance's Warriors opposite another's invited a head-to-head
+        // reading of two civilizations that may never have met in the field.
+        assert!(EMBEDDED_INDEX.contains("function warLossSideColumn(side, war)"));
+        assert!(!EMBEDDED_INDEX.contains("war-loss-unit-row"));
+        assert!(!EMBEDDED_INDEX.contains("war-loss-unit-cell empty"));
+        // And a belligerent that lost neither a unit nor a city is left out of
+        // the ledger entirely. Belligerents above it is where "who fought" is
+        // answered; here the column is spent on what was actually lost.
+        assert!(EMBEDDED_INDEX.contains("function warPartyLostAnything(party, war)"));
+        assert!(EMBEDDED_INDEX
+            .contains("warParties(war, declarerSide).filter(party => warPartyLostAnything(party, war))"));
+        assert!(EMBEDDED_INDEX.contains("No losses"));
+        assert!(EMBEDDED_INDEX.contains("No recorded losses"));
         assert!(EMBEDDED_INDEX.contains("sort((a, b) => a.turn - b.turn)"));
         assert!(EMBEDDED_INDEX.contains("built the world's first"));
         assert!(EMBEDDED_INDEX.contains("changed government from"));
@@ -7428,7 +7455,7 @@ mod tests {
             .map(|(rule, _)| rule)
             .unwrap_or_default();
         assert!(side_rule.contains("order: -1"));
-        assert!(EMBEDDED_INDEX.contains("<strong>${state.turn}</strong>"));
+        assert!(EMBEDDED_INDEX.contains("<strong>${reportedTurn()}</strong>"));
         assert!(!EMBEDDED_INDEX.contains("${state.turn}/${maxTurns}"));
     }
 

@@ -15866,8 +15866,12 @@ impl Game {
             return;
         }
         let text = self.attributed(pid, text.into());
+        // The chronicle dates an entry by the turn the world is reported on,
+        // which is the turn being played for all but the victory a score
+        // tiebreak declares on the wrap out of the final turn.
+        let turn = self.reported_turn();
         self.events.push(Event {
-            turn: self.turn,
+            turn,
             player: pid,
             category: category.to_string(),
             text,
@@ -45322,6 +45326,9 @@ impl Game {
                         }
                     }
                 }
+                // The count is taken on the wrap out of the final turn;
+                // `reported_turn` dates the result on the turn the limit
+                // names rather than on that wrap.
                 self.set_winner(best_pid, "score");
             }
         }
@@ -48294,6 +48301,21 @@ impl Game {
         (!self.played_on()).then_some(self.max_turns)
     }
 
+    /// The turn this world is reported on.
+    ///
+    /// A score victory is the turn limit's own tiebreak, and the count that
+    /// settles it is taken on the wrap out of the final turn — the one place
+    /// `turn` ever passes the limit. That wrap is bookkeeping, not a turn
+    /// anybody plays: a 250-turn game is decided on turn 250, so turn 250 is
+    /// what every account of the result says. Every other reading, live game
+    /// or any other victory, is the turn being played.
+    pub fn reported_turn(&self) -> u32 {
+        match (self.victory_type.as_deref(), self.turn_limit()) {
+            (Some("score"), Some(limit)) => limit.min(self.turn),
+            _ => self.turn,
+        }
+    }
+
     /// Carry on past the result this game already reached: "one more turn".
     ///
     /// The verdict is kept in `decided` and the world becomes live again with
@@ -48307,13 +48329,16 @@ impl Game {
         let (Some(winner), Some(victory_type)) = (self.winner, self.victory_type.clone()) else {
             return false;
         };
+        // Read before `decided` is set: a played-on world has no turn limit
+        // left to date a score victory against.
+        let decided_on = self.reported_turn();
         // Replace rather than retain an older verdict: a world can reach a new
         // victory after `UntilNextVictory`, and another press must continue
         // past the result currently on its finish screen.
         self.decided = Some(Decided {
             winner,
             victory_type: victory_type.clone(),
-            turn: self.turn,
+            turn: decided_on,
             mode,
         });
         self.winner = None;
@@ -56199,6 +56224,38 @@ mod victory_conditions {
         assert_eq!(g.turn, 4);
         assert_eq!(g.winner, Some(0));
         assert_eq!(g.victory_type.as_deref(), Some("score"));
+    }
+
+    /// A three-turn game is won on turn three. The count that settles the
+    /// tiebreak is taken on the wrap into a fourth turn nobody ever plays, and
+    /// that wrap is bookkeeping the result is never dated by.
+    #[test]
+    fn a_score_victory_is_dated_on_the_turn_the_limit_names() {
+        let mut g = game_with_capitals(2, 406, 3);
+        let capital = g.player_city_ids(0)[0];
+        g.cities.get_mut(&capital).unwrap().pop = 600;
+        g.current = 1;
+        g.turn = 3;
+        g.do_end_turn();
+        assert_eq!(g.winner, Some(0));
+        assert_eq!(g.victory_type.as_deref(), Some("score"));
+        assert_eq!(g.turn, 4, "the count is taken on the wrap past the limit");
+        assert_eq!(g.reported_turn(), 3, "the game is won on the limit's turn");
+        let declared = g
+            .events
+            .iter()
+            .rev()
+            .find(|event| event.text.contains("won a score victory"))
+            .expect("the chronicle records the result");
+        assert_eq!(declared.turn, 3);
+
+        // "One more turn" borrows its turns from the result it was given, so
+        // the verdict keeps the turn it was won on while the extension itself
+        // is played past the limit the world has now left behind.
+        assert!(g.play_on(PlayOnMode::UntilNextVictory));
+        assert_eq!(g.decided.as_ref().map(|decided| decided.turn), Some(3));
+        assert_eq!(g.turn, 4);
+        assert_eq!(g.reported_turn(), 4);
     }
 
     #[test]
