@@ -573,6 +573,20 @@ pub struct AdvancedAi {
     /// was bounded; a real cost says the response works and only its timing is
     /// wrong.
     pub deny_leaders: bool,
+
+    /// Whether a Science or Expansion threat is answered by racing the leader
+    /// in that lane instead of by declaring on them.
+    ///
+    /// Four of the seven races already answer themselves. The two that answer
+    /// with an army are the two the deployment-scale census argues against:
+    /// at 60x38 an empire at war with one or two rivals wins 4.4% and 10.7%
+    /// of its seats against a 16.7% base rate, and the shipped response
+    /// already costs terminal score (44 map-directions to 65, sign p=0.055)
+    /// without buying a win. Reachable as `advanced_counter_in_lane`. It keeps
+    /// the alarm and changes only what the alarm asks for, so paired against
+    /// `advanced` it isolates the response's *shape* from its existence --
+    /// which `advanced_blind_to_leaders` already bounds from the other side.
+    pub counter_in_lane: bool,
 }
 
 impl Default for AdvancedAi {
@@ -645,6 +659,7 @@ impl AdvancedAi {
             parallel_settlers: false,
             civ_blind: false,
             deny_leaders: true,
+            counter_in_lane: false,
         }
     }
 
@@ -1524,13 +1539,23 @@ impl AdvancedAi {
         } else if pressure.progress < 78 || pressure.progress < own_progress + 15 {
             return None;
         }
+        // Four of the seven races answer themselves — a culture threat is met
+        // with culture, a religious one with religion. The two that answer with
+        // an army are Science and Expansion, and those are the two the
+        // deployment-scale census argues against: at 60x38 and 74x46 an empire
+        // fighting one or two rivals wins 4.4% and 10.7% of the time against a
+        // 16.7% base rate, and the shipped response already costs terminal
+        // score (44 maps to 65, p=0.055) without buying a win. Racing the
+        // leader in their own lane keeps the reaction and drops the war.
         let counter = match pressure.strategy {
+            GrandStrategy::Science if self.counter_in_lane => GrandStrategy::Science,
             GrandStrategy::Science => GrandStrategy::Conquest,
             GrandStrategy::Culture => GrandStrategy::Culture,
             GrandStrategy::Religion if g.players[pid].religion.is_some() => GrandStrategy::Religion,
             GrandStrategy::Religion => GrandStrategy::Conquest,
             GrandStrategy::Diplomacy => GrandStrategy::Diplomacy,
             GrandStrategy::Conquest => GrandStrategy::Recovery,
+            GrandStrategy::Expansion if self.counter_in_lane => GrandStrategy::Expansion,
             GrandStrategy::Expansion => GrandStrategy::Conquest,
             GrandStrategy::Recovery => GrandStrategy::Recovery,
         };
