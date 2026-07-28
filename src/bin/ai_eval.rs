@@ -594,6 +594,13 @@ fn main() {
     let turns = number(&args, "--turns", 180).max(1) as u32;
     let players = number(&args, "--players", 2).max(2) as usize;
     let city_states = number(&args, "--city-states", 0).max(0) as usize;
+    // Every result this evaluator has ever produced was measured at the default
+    // game speed, while the exhibition and the live league both run **Online**
+    // (`data/speeds.json`: 250 turns, cost_pct 50). A promoted gain is a gain on
+    // the game it was measured on, and nothing in this repository has ever
+    // checked that one transfers to the other. This flag is what makes that
+    // check possible; it defaults to the previous behaviour.
+    let speed = text(&args, "--speed", &civvis::game::default_speed());
     let width = number(&args, "--width", 24).max(8) as i32;
     let height = number(&args, "--height", 16).max(8) as i32;
     let seed = number(&args, "--seed", 4000).max(0) as u64;
@@ -655,6 +662,7 @@ fn main() {
             let mut game = Game::new_with(GameOptions {
                 difficulty: difficulty.clone(),
                 human_seats: challenger_seats,
+                speed: speed.clone(),
                 ..GameOptions::new(players, width, height, game_seed, turns, city_states)
             });
             let mut ais: Vec<Box<dyn Ai>> = game

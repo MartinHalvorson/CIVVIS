@@ -3526,3 +3526,93 @@ worth is a separate measurement and is running.
 runs 74×46 at six players, where rollout cost scales with map and seat count, so
 these ratios are a lower bound on what it would cost there. Do not treat the
 83 ms as a budget for the live profile without re-measuring on it.
+
+
+## 2026-07-28 — ★★★ the promotion gate has never measured the game that ships
+
+`ai_eval` had **no `--speed` flag**. Every result in this document — including
+`continue_from_plan` at +37, `strategic_deep` at +45, the gen-14 genome at +49,
+and the +58 measured earlier today — was produced at the **default** game speed.
+
+The exhibition and the live league both run **Online** (`data/speeds.json`:
+`turns 250`, `cost_pct 50`), which `docs/EXHIBITION`/#513 records as the one kind
+of game it simulates. Nothing in this repository has ever checked that a gain
+measured on one transfers to the other, because until now it could not.
+
+`--speed` added to `ai_eval`, defaulting to the previous behaviour. The first
+thing it was pointed at is the gain measured this morning:
+
+| | Standard (what the gate measures) | **Online (what ships)** |
+|---|---|---|
+| paired-map score | 58.3% | **51.5%** |
+| Wilson CI | 52.7%..63.8% | 45.9%..57.1% |
+| Elo-equivalent | **+58** (+19..+98) | **+10** (−29..+50) |
+| map directions | 80 for / 30 against | 60 for / 51 against |
+| sign p | **0.0000** | **0.4478** |
+| gate | **PASS** | **INCONCLUSIVE** |
+
+300 maps each, same size, same seat count, same agents; only the speed differs.
+Games average 152 turns at Standard and 112 at Online.
+
+**The difference is significant, not an eyeball.** Conditioning on the maps that
+broke — the only ones carrying information — the treatment's share of decisive
+maps falls from 80/110 = 0.727 to 60/111 = 0.541, a difference of 0.187 at
+**z = 2.94, two-sided p = 0.0033**.
+
+> **A promoted gain is a gain on the game it was measured on.** The genome is
+> not shown to be worthless at Online speed — the point estimate is still
+> positive and the interval still contains +50 — but it does not clear the gate
+> there, and the gate is the whole basis on which it was promoted.
+
+**What this does not say.** It does not retract the +58: that number is correct
+for Standard speed. It does not show the genome is useless where it runs. And it
+is one axis on one pair of agents — whether `continue_from_plan`,
+`strategic_deep` and the rest survive the same check is now answerable and
+unanswered. **That is the obvious next work, and it is cheap.**
+
+## 2026-07-28 — the live league rates the legacy agent above the current one, and speed does not explain it
+
+The live pool the spectator writes to
+(`/Users/martin/civvis-spectator-src/league/league.json`, round 2271, 2211
+matches) rates its three builtin entries:
+
+| entrant | rating | games |
+|---|---|---|
+| `advanced_v1` (the **frozen legacy control**) | **1712.8** | 1257 |
+| `basic` | 1694.1 | 442 |
+| `advanced` (the current hierarchical AI) | **1669.0** | 1692 |
+
+`advanced` ranks **11th of 12** active strategies, below both the agent it
+replaced and the simple scripted one.
+
+Head-to-head, **at the league's own speed and turn budget**:
+
+```
+ai_eval advanced advanced_v1 --players 4 --pairs 300 --turns 250
+  --speed online --seed 5500000
+
+paired-map score   74.2%  (95% Wilson CI 68.9%..78.8%)   Elo-equivalent +183
+paired direction   148 for / 149 neutral / 3 against    sign p = 0.0000
+anytime-valid      e = 1.801e37, crossed at map 22
+```
+
+**+183 Elo, against a rating that places it 44 Elo lower — an inversion of about
+227 Elo on entries with 1257 and 1692 games.** At Standard speed the same pair
+measures +114, so the gap is *larger* at Online, not smaller.
+
+**The speed hypothesis is refuted**, which was the obvious explanation and the
+one I expected to confirm. Whatever produces this rating, it is not that the
+league plays a faster game.
+
+What is left, none of it measured here: the league mixes seat counts (2, 4, 6, 8
+and 12 seats appear in `matches.csv`) and maps where this evaluation is 4p
+24×16; ratings are per leader/civ (`leader_elo`) and civ assignment may not be
+symmetric across entrants; and `docs/RATING.md` records an earlier era in which
+this pool carried negative information. **A 227-Elo inversion on two
+well-sampled entries is worth more attention than any AI change currently
+proposed**, because `Session::ai_fleet` seats by this number.
+
+⚠ Both of these are measurements of the artifacts, not of an idea. Neither
+required a new mechanism, and both were found by asking what the deployed
+process actually runs — which is the third and fourth time that has paid in this
+document.
