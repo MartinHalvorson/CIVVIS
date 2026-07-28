@@ -165,16 +165,20 @@ fn main() {
     let height = number(&args, "--height", 16) as i32;
     let turns = number(&args, "--turns", 400) as u32;
     let seed0 = number(&args, "--seed", 900_000) as u64;
+    // The deployed exhibition seats 9 city-states at 6 players (74x46). A
+    // census run without them is measuring a different game -- city-states
+    // carry envoys, suzerainty and a large share of the religious map.
+    let city_states = number(&args, "--city-states", 0);
     let jobs = number(&args, "--jobs", parallel::default_jobs());
 
     println!(
-        "leader_census: {maps} maps, {players}p {width}x{height}, {turns} turns, seed {seed0}, \
-         denial bar {DENIAL_BAR}"
+        "leader_census: {maps} maps, {players}p {width}x{height}, {city_states} city-states, \
+         {turns} turns, seed {seed0}, denial bar {DENIAL_BAR}"
     );
 
     let readings = parallel::map(maps, jobs, move |index| {
         let seed = seed0 + index as u64;
-        let mut game = Game::new(players, width, height, seed, turns, 0);
+        let mut game = Game::new(players, width, height, seed, turns, city_states);
         let stock = Weights::default();
         let mut fleet: Vec<AdvancedAi> = AdvancedAi::fleet_weighted(&game, &stock);
         // `rival_pressure` reads nothing from the planner it is asked of, so
