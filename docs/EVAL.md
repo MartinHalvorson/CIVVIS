@@ -4300,3 +4300,80 @@ are live; this makes the discriminating experiment possible.
 ⚠ The 21 other probes and evaluators still build through `Game::new` and remain
 Standard-only. This entry fixes the breeder and the two probe families that
 share `EvoCfg`, not the whole toolchain.
+
+
+## 2026-07-28 — ★★★★★ the champion's advantage is a property of the profile it was bred on
+
+The entry above left two live readings of the champion's shrinking edge — *the
+GA overfitted its breeding profile* against *Online compresses every difference*
+— and said both implied the same next action so the distinction could wait. It
+did not have to. **The data to separate them was already here.**
+
+The champion, audited at the deployment's own profile:
+
+```
+ai_eval advanced_evolved advanced --players 6 --width 74 --height 46
+  --city-states 6 --pairs 150 --turns 250 --speed online --seed 8700000
+
+paired-map score   48.7%  (95% Wilson CI 40.8%..56.6%)   Elo-equivalent -9
+paired direction   23 for / 100 neutral / 27 against    sign p = 0.6718
+promotion gate     INCONCLUSIVE
+```
+
+| profile | champion v `advanced` |
+|---|---|
+| 4p 24×16 **Standard** — the profile it was **bred** on | **+58**, gate PASS |
+| 4p 24×16 Online | +10, INCONCLUSIVE |
+| **6p 74×46 Online — the deployment** | **−9** (CI −65..+46), INCONCLUSIVE |
+
+**The deployment interval excludes +58.** The advantage the genome was promoted
+for does not exist where the genome runs.
+
+### Which reading that kills
+
+"Online compresses every agent difference" is **refuted**, by a measurement
+already in this document. At the *same* deployment profile:
+
+| pair | Elo at 6p 74×46 Online |
+|---|---|
+| `advanced` v `advanced_v1` | **+207**, gate PASS, p=0.0000 |
+| `advanced_evolved` v `advanced` | **−9**, INCONCLUSIVE |
+
+A profile that resolves a 207-Elo difference is not insensitive. It is
+specifically the *champion's* edge that vanishes there.
+
+> **The gen-14 genome is specialised to 4 players on 24×16 at Standard speed.**
+> That is the profile `civvis evolve` was run at, it is `ai_eval`'s default, and
+> it is not the game the exhibition plays. The GA did its job; it was pointed at
+> the wrong game.
+
+⚠ What this does **not** say. It does not say the genome is *worse* — −9 with a
+CI spanning ±55 is parity, not a regression. It does not say evolution cannot
+work here; it says this evolution optimised a different game. And it is one
+genome at one deployment profile — the honest generalisation is about the
+method, not about gen-14 specifically.
+
+### Correction to my own change, earlier today
+
+I added `advanced_evolved` to `data/league/league.json` and described it as
+worth **+58**, then revised that to **+10** after the speed check. **At the
+deployment profile it is worth nothing measurable.** The entrant is still worth
+having — it makes a genome the binary already carries *reachable*, which it was
+not, and at parity it costs nothing — but **no strength claim survives**, and
+the seeding at `advanced`'s own rating turns out to have been the right
+conservative call for reasons better than the ones I gave.
+
+### What this makes possible, and it is the whole point of the breeder fix
+
+The previous entry gave `evolve` a working `--speed`. The experiment this result
+demands is now one command:
+
+```
+civvis evolve --speed online --players 6 --width 74 --height 46 ...
+```
+
+Breed at the profile that ships, then compare against gen-14 **at that profile**.
+If the specialisation reading is right, a genome bred there should beat gen-14
+there by roughly what gen-14 beats the default by at 4p 24×16. That is the
+overnight run this loop has been building toward, and it is the first one whose
+target profile matches the deployment.
