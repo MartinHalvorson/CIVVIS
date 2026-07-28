@@ -3616,3 +3616,39 @@ proposed**, because `Session::ai_fleet` seats by this number.
 required a new mechanism, and both were found by asking what the deployed
 process actually runs — which is the third and fourth time that has paid in this
 document.
+
+
+## 2026-07-28 — what the exhibition's default seat is giving up, at Standard speed (Online check pending)
+
+`Session::ai_fleet` seats `AdvancedAi::new()` when it is not seating from the
+roster — the scripted hierarchical agent on the *fallback* genome, with no macro
+search. `strategic` is the promoted search agent on the champion genome.
+
+```
+ai_eval strategic advanced --players 4 --pairs 300 --turns 500 --seed 4500000
+
+game-win share     397/600 (66.2%)  against  203/600 (33.8%)
+paired-map score   66.2%  (95% Wilson CI 60.6%..71.3%)   Elo-equivalent +117
+paired direction   113 for / 171 neutral / 16 against    sign p = 0.0000
+anytime-valid      e = 2.308e17, crossed at map 46
+terminal score     52.4%, 185 / 2 / 113, p = 0.0000
+promotion gate     PASS
+```
+
+Read with the cost table measured earlier — `strategic` at 14.6× `advanced`, or
+about 83 ms per game-turn across four seats against the exhibition's ~250 ms
+budget — this looks like a large, affordable upgrade to the seat the exhibition
+actually plays.
+
+⚠ **Do not act on this number yet, and that caution is the point of the entry
+above.** It was produced at Standard speed. The gain measured this morning at
++58 with a gate PASS fell to +10 and INCONCLUSIVE at Online, significantly
+(p=0.0033). Whether +117 survives the same check is running at
+`--speed online --turns 250`, seed 5900000, and **this entry will be wrong to
+cite until that lands.**
+
+The general form of the rule this loop arrived at:
+
+> **Every number in this document that predates `--speed` describes Standard
+> speed. The exhibition and the live league run Online. Re-check before
+> deploying any of them.**
