@@ -178,19 +178,57 @@ count, but the census points the same way from the other side.
 - **`victory_threat` as a warning instrument.** At or below base rate at four
   of five leads. Correct for the victory screen, useless for an alarm.
 
-## What is open
+## Changing what the alarm asks for is also null
 
-Keep the alarm and change what it asks for. Four of the seven races already
-answer themselves — culture with culture, religion with religion, diplomacy
-with diplomacy. The two that answer with an army are Science and Expansion, and
-those are exactly the two the evidence above argues against.
-`advanced_counter_in_lane` answers Science with Science and Expansion with
-Expansion, leaving the alarm, its timing and its target untouched, so it
-isolates the response's shape where `advanced_blind_to_leaders` bounds its
-existence.
+Four of the seven races already answer themselves — culture with culture,
+religion with religion, diplomacy with diplomacy. The two that answer with an
+army are Science and Expansion, exactly the two the evidence above argues
+against. `advanced_counter_in_lane` answers Science with Science and Expansion
+with Expansion, leaving the alarm, its timing and its target untouched.
 
-Pre-registered in `civvis-counter-in-lane-preregistration.md`: wins null,
-terminal score ahead by roughly the margin the blind arm showed. A terminal
-score that comes back flat or against refutes the mechanism — it would mean the
-cost is in the alarm's replanning rather than in the wars it starts, and no
-rewrite of the counter can recover it.
+It fires as designed. With the whole table on it (`--arm in_lane`) the alarm
+still rings on 13.4% of player-turns against the shipped 14.0%, while
+follow-through drops 48% → 40% and the leader's post-alarm war exposure drops
+43% → 32% of turns. Same detection, different answer, fewer wars.
+
+**And it is null.**
+
+| reading | seed 960000, 120 pairs | seed 970000, 360 pairs |
+|---|---|---|
+| paired score for `advanced` | 46.2% | **49.9%** (Wilson 44.7–55.0) |
+| Elo-equivalent | −26 | **−1** |
+| win direction | 2 / 107 / 11, p=0.0225 | 15 / 329 / 16, **p=1.0000** |
+| terminal score | 23 / 58 / 39, p=0.0559 | 106 / 151 / 103, **p=0.8900** |
+| resolution | wins on 13 maps | wins on 31, score on 209 |
+
+The first run was pre-registered to be refuted by "regression to 49–51%" and
+landed on 49.9%. Pooled the direction is 27 to 17, sign p=0.1742 — and pooling
+a discovery seed with its own confirmation is not a legitimate test. **PR #411
+also read 46.2% first and also evaporated**; wins resting on 13 of 120 maps
+cannot carry a sign test whatever its p-value says.
+
+## The finding underneath all of it: the savings are never spent
+
+One thing reproduces across every arm and both seeds.
+
+| run | arm | gold | cities | pop | tech | districts | builds |
+|---|---|---|---|---|---|---|---|
+| ablation | `advanced` | 623.9 | 5.09 | 59.4 | 41.6 | 18.3 | 57.1 |
+| ablation | blind | **734.2** | 5.16 | 60.1 | 41.7 | 18.5 | 58.0 |
+| confirm | `advanced` | 633.9 | 5.22 | 60.9 | 41.9 | 18.8 | 59.3 |
+| confirm | in-lane | **750.6** | 5.20 | 60.5 | 42.1 | 18.6 | 59.3 |
+
+Every arm that declines a war ends **~18% richer** and identical on every other
+column — same cities, population, techs, districts and completed builds. Faith
+moves the same way.
+
+So the development story is half right, and the half that fails is the half
+that mattered. Declining the war does save the resources; the empire then puts
+them in a pile. **Nothing is recovered by not fighting, because the alternative
+use of the resources is not being made either.** That is why every response
+shape measures the same: the response is not what binds.
+
+The next question is gold utilisation, not victory denial.
+`advanced_counter_stand_down` exists and is tested — it would decompose
+"stop declaring" from "race them" — but it decomposes an effect that no longer
+exists, so it has not been run.
