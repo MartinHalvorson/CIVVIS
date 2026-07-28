@@ -3991,3 +3991,60 @@ progress. The correction cost nothing but the retraction; had anyone acted on it
 first it would have cost more.
 
 **Wait for the run you designed to finish before describing what it found.**
+
+
+## 2026-07-28 — ⚠ CORRECTION: the search agent is 7x over the exhibition's time budget, not "comfortably inside" it
+
+An earlier entry measured agent cost at 4p 24×16 and concluded:
+
+> *"`strategic` at ~83 ms is not [excluded] — it fits inside the existing budget
+> with room."*
+
+with the caveat that those ratios were a lower bound for the live profile and
+should not be used as a budget without re-measuring. **Re-measured, and the
+caveat was the whole story.** At the exhibition's own profile — 6 players,
+74×46, 6 city-states, Online speed:
+
+| profile | seconds per game | ms per game-turn |
+|---|---|---|
+| 4p 24×16, Standard (the earlier estimate) | ~1.0 | ~83 |
+| **6p 74×46, Online (the exhibition)** | **201.7** | **~1833** |
+
+**Twenty-two times the estimate, and about 7× the ~250 ms the live exhibition
+budgets per turn.** That measurement seats three `strategic` agents in a
+mirrored six-player game; scaling by seat share, even a *single* strategic seat
+lands near 600 ms — still ~2.4× over — and an all-strategic table would be ~15×.
+
+Rollout cost scales with map area *and* seat count because every branch
+simulates the whole world forward, so a 9× larger map with 1.5× the seats is
+roughly two orders of magnitude per review. **`strategic` is not deployable to
+the live exhibition at its current profile**, and the earlier entry should not
+be read as saying otherwise.
+
+### What that leaves, and it is smaller than it looked
+
+| agent | cost vs `advanced` | FFA win% (256 games, parity 25%) | mirrored Elo v `advanced` |
+|---|---|---|---|
+| `advanced` | 1.0× | 25.4% | — |
+| `advanced_evolved` | **1.05×** | 30.5% | +58 Standard / **+10 Online** |
+| `strategic` | 14.6× at 4p, **~200×** at the exhibition profile | **37.1%** | +117 Standard / **+28 Online** |
+
+- **`strategic` is the strongest agent measured and cannot be afforded** where it
+  would matter. Offline consumers — the league, breeding, promotion runs — have
+  no realtime budget and can use it freely; the live exhibition cannot.
+- **`advanced_evolved` is essentially free (1.05×) and directionally better.**
+  But its FFA edge over `advanced` is **5.1 points at 1.28 SE — not
+  significant** at 256 games, and its mirrored edge at the shipped speed is +10,
+  INCONCLUSIVE. The honest summary is *cheap, plausibly better, unproven at the
+  deployment profile*.
+
+**So the deployable recommendation from this loop is modest**: the roster entrant
+that lets the champion be seated at all is worth adding (it costs nothing and
+cannot be worse), and no claim of a large exhibition gain is supported. A large
+gain would need either a cheaper search configuration than `strategic` or a
+profile the current one can afford, and neither has been measured.
+
+⚠ This is the second time in this document an estimate taken at 4p 24×16 has
+failed to transfer to the deployment profile — the first was every win-rate
+number, via `--speed`. **`ai_eval`'s defaults are not the deployment, for
+strength or for cost.**
