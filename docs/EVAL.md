@@ -3722,3 +3722,80 @@ I compared a 4p 24×16 evaluation against a rating earned on a different
 distribution of games, and the league's own placement log resolves it in the
 league's favour. **Checking that took one query against data already on disk,
 and I published the accusation before running it.**
+
+
+## 2026-07-28 — ★★★★ the gate and the deployment measure different games: mirrored pairs against free-for-all
+
+Two explanations for the `advanced` / `advanced_v1` disagreement were proposed
+here and **both are now refuted by measurement**:
+
+| explanation | test | verdict |
+|---|---|---|
+| the league plays a faster speed | `--speed online` at 4p 24×16 | **refuted** — the gap *grows*, +114 → +183 |
+| the league plays bigger, fuller maps | 6p 74×46, 6 city-states, Online | **refuted** — the gap grows again, **+207** (76.7%, gate PASS) |
+
+At the exhibition's own profile the head-to-head gap is the largest measured
+anywhere. Yet in the league's own 478 games containing both, `advanced` places
+ahead 52.5% of the time. The third difference is the one that was there all
+along, and it is structural:
+
+```
+league game composition, 2211 matches (seats, distinct strategies):
+   2 seats,  2 distinct :  426
+   4 seats,  4 distinct :  605
+   6 seats,  6 distinct : 1090
+   8 seats,  8 distinct :   14
+  12 seats, 12 distinct :   75
+
+mirrored-style (2 distinct strategies over >2 seats):     0
+free-for-all (every seat a different strategy):        1784
+```
+
+**The league plays free-for-all — every seat a different strategy, and not one
+mirrored game in 2211. `ai_eval` plays mirrored pairs and nothing else**: at
+six players it fields three seats of each agent.
+
+> **These are different quantities.** Mirrored pairing asks *"if half the world
+> played A and half played B, which half wins?"* Free-for-all placement asks
+> *"dropped alone into a field of five different strategies, who finishes
+> ahead?"* Pairwise dominance does not determine free-for-all placement — a
+> multi-player game admits non-transitivity, kingmaking, and outcomes decided by
+> which neighbour a seat happens to draw. For `advanced` against `advanced_v1`
+> the two answers differ by roughly **200 Elo**.
+
+**Every promotion decision in this document is a mirrored-pair result. The
+exhibition seats by a free-for-all rating.** Nothing has ever checked that a
+gain in one is a gain in the other, and this pair is a worked example of the two
+disagreeing about as strongly as they could.
+
+### What is measured and what is inferred
+
+**Measured:** the league is 100% free-for-all or two-seat duel and 0% mirrored;
+`ai_eval` is 100% mirrored; the two disagree by ~200 Elo on this pair; speed and
+map/seat-count are both eliminated as the cause.
+
+**Not separated:** game *type* and *field composition* are confounded here. The
+league's free-for-all games seat four strong bred genomes alongside the pair,
+while a mirrored `ai_eval` contains only the pair. Whether it is being alone, or
+being alone *among strong opponents*, that closes the gap is untested — and
+`ai_eval` cannot test it, because its design fills every seat from the two
+entrants. Answering it needs a field evaluator, which `civvis league` already is.
+
+### What follows
+
+1. **Name the game type on every result.** "Stronger" is not a property of an
+   agent here; it is a property of an agent in a pairing scheme, at a speed, at
+   a seat count.
+2. **A gain intended for the exhibition should be validated free-for-all**, in
+   the league, against the field it will actually meet — not only through the
+   mirrored gate.
+3. This does **not** retract the mirrored numbers. `strategic` really is +117
+   mirrored at Standard and +28 mirrored at Online; those are correct statements
+   about mirrored play. It retracts the *unqualified* reading of them.
+
+⚠ Recorded against myself: this is the second explanation I proposed for the
+same observation and had refuted by my own next measurement, and the third
+mechanism story this loop that did not survive contact. The measurements have
+held up throughout; the stories attached to them have not. **The cheap move —
+asking what the log actually contains — resolved in one query what two
+600-game evaluations could not.**
