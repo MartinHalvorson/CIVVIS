@@ -2738,3 +2738,64 @@ loads, at the path it actually runs from.* The first instance was the champion
 never being loaded at all; the second was `evolve::sprt_confirm` testing parity
 at the wrong null. This is the third, and it is the most expensive, because the
 conclusion it produced was about to redirect the whole AI programme.
+
+
+## 2026-07-28 — a committed lane is not a routed agent, it is a crippled one
+
+Follow-up to the entry above, same probe, same 40 maps at 4p 60×38 / 6
+city-states / 500 turns / seed 420000, shipped champion genome.
+`commit_curve` now reports the focal seat's final city count:
+
+| condition | share | **mean cities** |
+|---|---|---|
+| commit at turn 0 | 15.0% | **1.68** |
+| commit at turn 60 | 30.0% | 2.48 |
+| adaptive (control) | 27.5% | **4.10** |
+
+**`retarget(Religion)` does not produce an agent that plays religion well. It
+produces an agent that never expands** — 1.68 cities against 4.10, a 59%
+smaller empire.
+
+This changes what the best-lane oracle measures. "Committed Religion wins 58%"
+is not "what the agent could get by routing correctly"; it is "what a
+1.7-city religious rush gets". The same applies to every other committed lane
+in that table, and therefore to the "best lane per cell = 76%" maximum built
+on top of them. **The oracle does not bound routing headroom.** It bounds the
+value of one particular commitment implementation.
+
+### The arm responsible, and how much of it it explains
+
+`assess()` at `advanced.rs:1807`: an assigned-Religion seat with no religion
+yet goes straight to `GrandStrategy::Religion`, skipping the "the assigned lane
+can still afford to expand first" test at `:1809` that **every other assigned
+target reaches**. `assigned_religion_may_expand` (off by default) makes that arm
+ask the same question the others ask. Same 40 maps:
+
+| condition | cities off → on | wins off → on |
+|---|---|---|
+| commit at turn 0 | 1.68 → **2.12** | 15.0% → 20.0% (4 helped / 7 hurt, p=0.5488) |
+| commit at turn 60 | 2.48 → 2.75 | 30.0% → 27.5% (7 helped / 7 hurt, p=1.0000) |
+| adaptive (control) | 4.10 | 27.5% |
+
+**The fix is real and small: it recovers 0.44 of a 2.42-city deficit — about
+18% — and is a null on wins at this power.** So the bypass is *a* cause and not
+the main one. A targeted seat still finishes 1.98 cities short of an adaptive
+one while being *allowed* to expand, and `desired_cities` is at least 3, so it
+is not reaching its own target. Whatever else suppresses it is downstream of
+the strategy label — production priorities, city dispositions, or settler
+assignment under `GrandStrategy::Religion` — and is not in this arm.
+
+Recorded, flag shipped off, because the cheap half of the diagnosis is done and
+the expensive half is now well posed: **find what stops a targeted seat
+expanding once the cascade lets it.**
+
+### Why this matters beyond targeted play
+
+`StrategicAi` projects every macro-search branch by calling `retarget`. So each
+religion branch is simulated by a seat carrying whatever this defect is worth,
+and religion is the lane this engine converts best. The macro search is the one
+component in this repository that has ever won Elo, and the largest gain it has
+had — `continue_from_plan`, +37 Elo — came from exactly this class of bug: the
+counterfactual was simulating the wrong thing. **Measuring the projected city
+count of a religion branch against the same branch played out is the obvious
+next instrument**, and it is a fidelity question, not a routing one.

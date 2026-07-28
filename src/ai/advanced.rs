@@ -449,6 +449,30 @@ pub struct AdvancedAi {
     /// arithmetically identical to `at_war || A || B` reaching Conquest first,
     /// so this ships zero behaviour change until the entrant is selected.
     pub prophet_before_opportunism: bool,
+    /// Let an assigned Religion lane expand first, like every other lane.
+    ///
+    /// **Off by default until measured.** In `assess()` an explicitly targeted
+    /// seat normally asks "can this lane still afford to expand first?" before
+    /// pursuing its target. The Religion arm is the sole exception: a targeted
+    /// seat with no religion yet goes straight to `GrandStrategy::Religion`,
+    /// skipping the expansion test entirely.
+    ///
+    /// Measured with `commit_curve` on the shipped genome, 40 maps at 4p 60×38:
+    /// a seat committed to Religion at turn 0 finishes on **1.68 cities** and
+    /// wins **15.0%**; committed at turn 60 it reaches 2.48 cities and 30.0%;
+    /// the adaptive control reaches **4.10 cities** and 27.5%. Committing to
+    /// this lane does not produce an agent that plays religion well, it
+    /// produces an agent that never expands.
+    ///
+    /// **This is not only about targeted play.** `StrategicAi` projects every
+    /// macro-search branch by calling `retarget`, so each religion branch is
+    /// simulated by a seat that stops expanding — a systematic mis-projection
+    /// of the lane this engine converts best. The macro search is the one
+    /// component here that has ever won Elo, so a fidelity defect in it is
+    /// worth more than the arm it sits in suggests. Compare
+    /// `continue_from_plan`, which was worth +37 Elo for the same class of
+    /// reason: the counterfactual was simulating the wrong thing.
+    pub assigned_religion_may_expand: bool,
     /// Weigh whether a settle site can be held, not only what it yields.
     ///
     /// **Off by default, on measurement.** `settle_value` scores yields,
@@ -709,6 +733,7 @@ impl AdvancedAi {
             scoped_relief_hold: false,
             refuse_unreachable_lanes: false,
             prophet_before_opportunism: false,
+            assigned_religion_may_expand: false,
             defensible_sites: false,
             food_first: 0.0,
             settler_commit: false,
@@ -1804,7 +1829,18 @@ impl AdvancedAi {
         } else if basil_tagma_timing {
             (GrandStrategy::Conquest, "Tagma timing is live")
         } else if let Some(target) = active_victory_target {
-            if target == VictoryTarget::Religion && g.players[pid].religion.is_none() {
+            // The assigned-Religion arm is the only one that does not first ask
+            // whether the empire can afford to expand. Measured, that costs the
+            // whole empire: a seat committed to Religion from turn 0 finishes on
+            // **1.68 cities** against the adaptive agent's **4.10**.
+            let may_expand_first = self.assigned_religion_may_expand
+                && cities.len() < desired_cities
+                && has_site
+                && g.turn < g.standard_duration(175);
+            if target == VictoryTarget::Religion
+                && g.players[pid].religion.is_none()
+                && !may_expand_first
+            {
                 (GrandStrategy::Religion, "the religion lane still needs a religion")
             } else if cities.len() < desired_cities && has_site && g.turn < g.standard_duration(175)
             {
