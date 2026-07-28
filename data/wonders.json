@@ -659,9 +659,7 @@
       "renewable_power_tourism": 1,
       "rainforest_marsh_adjacent_appeal": 1
     },
-    "yields": {
-      "science": 8
-    }
+    "yields": {}
   },
   "broadway": {
     "cost": 1620,

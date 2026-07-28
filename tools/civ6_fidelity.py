@@ -25,6 +25,8 @@ wired into CI as a ratchet once a table reaches parity.
 from __future__ import annotations
 
 import argparse
+import sqlite3
+import urllib.parse
 import json
 import os
 import re
@@ -71,10 +73,24 @@ LOAD_ORDER = [
 ] + [f"DLC/{pack}/Data" for pack in CONTENT_PACKS]
 
 # Pack files that never carry rules tables, or that belong to optional modes.
+#
+# ``RemoveData`` is *not* excluded: those files are how the later packs retire
+# content, and skipping them left the audit comparing rows the shipped game no
+# longer has. The Biosphere is the case that found it — Byzantium & Gaul
+# deletes its `+8 Science` yield when Gathering Storm is active, so the audit
+# reported CIVVIS as missing a yield it is correct not to have.
 PACK_EXCLUDE = re.compile(
-    r"_MODE|Icons|Colors|Config|Civilopedia|RemoveData|Loc_|Text|Audio|ARX",
+    r"_MODE|Icons|Colors|Config|Civilopedia|Loc_|Text|Audio|ARX",
     re.IGNORECASE,
 )
+
+# An expansion ships a compatibility overlay that only applies when the *other*
+# expansion is also installed (`Expansion1_Expansion2.xml` is the Gathering
+# Storm rebalance of Rise and Fall content). Sorted filename order applies it
+# before the rows it edits exist, so its `<Update>` elements silently match
+# nothing: the Eye of the Sahara kept Rise and Fall's 1 Production instead of
+# Gathering Storm's 2. These are applied last, after every base table is in.
+CROSS_EXPANSION = re.compile(r"_Expansion[12]\.xml$", re.IGNORECASE)
 
 INSTALL_CANDIDATES = [
     r"C:\Program Files (x86)\Steam\steamapps\common\Sid Meier's Civilization VI",
@@ -89,6 +105,10 @@ TABLE_KEYS = {
     "UnitUpgrades": ("Unit", "UpgradeUnit"),
     "Technologies": "TechnologyType",
     "Civics": "CivicType",
+    "Technologies_XP2": "TechnologyType",
+    "Civics_XP2": "CivicType",
+    "TechnologyRandomCosts": ("TechnologyType", "Cost"),
+    "CivicRandomCosts": ("CivicType", "Cost"),
     "Buildings": "BuildingType",
     "Districts": "DistrictType",
     "TechnologyPrereqs": ("Technology", "PrereqTech"),
@@ -103,6 +123,7 @@ TABLE_KEYS = {
     "Resource_ValidTerrains": ("ResourceType", "TerrainType"),
     "Resource_ValidFeatures": ("ResourceType", "FeatureType"),
     "Improvements": "ImprovementType",
+    "Improvements_MODE": "ImprovementType",
     "Improvement_YieldChanges": ("ImprovementType", "YieldType"),
     "Improvement_ValidTerrains": ("ImprovementType", "TerrainType"),
     "Improvement_ValidFeatures": ("ImprovementType", "FeatureType"),
@@ -268,8 +289,66 @@ class Database:
         return list(self.tables.get(table, {}).values())
 
 
+CACHE_DATABASE_PATHS = (
+    "~/Library/Application Support/Sid Meier's Civilization VI/Cache/DebugGameplay.sqlite",
+    "~/AppData/Local/Firaxis Games/Sid Meier's Civilization VI/Cache/DebugGameplay.sqlite",
+)
+
+
+def find_cache_database(explicit: str | None = None) -> Path | None:
+    """The compiled gameplay database a previous run of the game left behind.
+
+    This is the same ruleset ``load_database`` reconstructs from XML, already
+    resolved through the load order, and it survives uninstalling the game. It
+    is the only route to the shipped numbers on a machine without an install.
+    """
+    candidates = [explicit] if explicit else list(CACHE_DATABASE_PATHS)
+    for candidate in candidates:
+        if not candidate:
+            continue
+        path = Path(candidate).expanduser()
+        if path.is_file():
+            return path
+    return None
+
+
+def load_cache_database(path: Path) -> Database:
+    database = Database()
+    uri = f"file:{urllib.parse.quote(str(path))}?mode=ro&immutable=1"
+    connection = sqlite3.connect(uri, uri=True)
+    try:
+        connection.row_factory = sqlite3.Row
+        present = {
+            name
+            for (name,) in connection.execute(
+                "select name from sqlite_master where type = 'table'"
+            )
+        }
+        for table in TABLE_KEYS:
+            if table not in present:
+                continue
+            rows = database.tables.setdefault(table, {})
+            for record in connection.execute(f'select * from "{table}"'):
+                # A NULL column is an absent attribute, not an empty one, so
+                # the projections fall back to the same defaults they use for
+                # a row the XML simply did not spell out.
+                row = {
+                    column: str(value)
+                    for column, value in dict(record).items()
+                    if value is not None
+                }
+                key = database._key(table, row)
+                if key is None:
+                    continue
+                rows[key] = row
+    finally:
+        connection.close()
+    return database
+
+
 def load_database(install: Path) -> Database:
     database = Database()
+    deferred: list[Path] = []
     for relative in LOAD_ORDER:
         directory = install / relative
         if not directory.is_dir():
@@ -279,7 +358,9 @@ def load_database(install: Path) -> Database:
         core = relative in LOAD_ORDER[:3]
         for path in sorted(directory.rglob("*.xml")):
             if core:
-                if FILE_PATTERN.match(path.name):
+                if not FILE_PATTERN.match(path.name) and CROSS_EXPANSION.search(path.name):
+                    deferred.append(path)
+                elif FILE_PATTERN.match(path.name):
                     database.apply_file(path)
             elif not PACK_EXCLUDE.search(path.name):
                 # Content packs interleave tables freely (and ship
@@ -287,6 +368,8 @@ def load_database(install: Path) -> Database:
                 # everything that is not clearly cosmetic; apply_file skips
                 # tables the audit does not track.
                 database.apply_file(path)
+    for path in deferred:
+        database.apply_file(path)
     return database
 
 
@@ -302,6 +385,74 @@ ALIASES = {
     "halicarnassus_mausoleum": "mausoleum_at_halicarnassus",
     "statue_liberty": "statue_of_liberty",
     "university_sankore": "university_of_sankore",
+    # Unique units: the game prefixes them with their civilization, CIVVIS
+    # names them the way the Civilopedia does. Nine units compared nothing at
+    # all before these, which is the whole point of the three above.
+    "roman_legion": "legion",
+    "greek_hoplite": "hoplite",
+    "aztec_eagle_warrior": "eagle_warrior",
+    "sumerian_war_cart": "war_cart",
+    "nubian_pitati": "pitati_archer",
+    "egyptian_chariot_archer": "maryannu_chariot_archer",
+    "scythian_horse_archer": "saka_horse_archer",
+    "chinese_crouching_tiger": "crouching_tiger",
+    "antiair_gun": "anti_air_gun",
+    # Warrior Monk promotions carry a MONK_ prefix in the shipped table, and
+    # three more differ by a word. Same blind spot as the unique units.
+    "monk_shadow_strike": "shadow_strike",
+    "monk_twilight_veil": "twilight_veil",
+    "monk_exploding_palms": "exploding_palms",
+    "monk_disciples": "disciples",
+    "monk_sweeping_wind": "sweeping_wind",
+    "monk_dancing_crane": "dancing_crane",
+    "monk_cobra_strike": "cobra_strike",
+    "surf_rock": "surf_band",
+    "goes_to": "goes_to_11",
+    "pop": "pop_star",
+    "super_carrier": "supercarrier",
+    # Government Plaza buildings ship under a GOV_ theme name rather than
+    # their title. GOV_TALL/GOV_WIDE are resolved by effect, not by guess:
+    # TALL carries the Governor Amenities/Housing/Loyalty modifiers (Audience
+    # Chamber), WIDE the Settler production and free Builder (Ancestral Hall).
+    "gov_tall": "audience_chamber",
+    "gov_wide": "ancestral_hall",
+    "gov_conquest": "warlords_throne",
+    "gov_citystates": "foreign_ministry",
+    "gov_faith": "grand_masters_chapel",
+    "gov_spies": "intelligence_agency",
+    "gov_culture": "national_history_museum",
+    "gov_science": "royal_society",
+    "gov_military": "war_department",
+    "museum_art": "art_museum",
+    "museum_artifact": "archaeological_museum",
+    # Walls and power plants are named for their era's fortification and fuel.
+    "castle": "medieval_walls",
+    "star_fort": "renaissance_walls",
+    "fossil_fuel_power_plant": "oil_power_plant",  # Electricity, 360
+    "power_plant": "nuclear_power_plant",  # Nuclear Fission, 480
+    "theater": "theater_square",
+    "government": "government_plaza",
+    "water_entertainment_complex": "water_park",
+    "water_street_carnival": "copacabana",
+    "beach_resort": "seaside_resort",
+    "pyramid": "nubian_pyramid",
+    # Rows that were reported "Only in CIVVIS" — i.e. compared against nothing.
+    "byzantine_tagma": "tagma",
+    "rembrandt_van_rijn": "rembrandt",
+    "defender_of_faith": "defender_of_the_faith",
+    # District projects ship as ENHANCE_DISTRICT_<district>; the space-race and
+    # laser projects are named for the launch rather than the payload.
+    "enhance_district_campus": "campus_research_grants",
+    "enhance_district_commercial_hub": "commercial_hub_investment",
+    "enhance_district_encampment": "encampment_training",
+    "enhance_district_harbor": "harbor_shipping",
+    "enhance_district_holy_site": "holy_site_prayers",
+    "enhance_district_industrial_zone": "industrial_zone_logistics",
+    "enhance_district_theater": "theater_square_festival",
+    "launch_exoplanet_expedition": "exoplanet_expedition",
+    "launch_mars_base": "launch_mars_colony",
+    "orbital_laser": "lagrange_laser_station",
+    "terrestrial_laser": "terrestrial_laser_station",
 }
 
 
@@ -351,6 +502,16 @@ def project_units(database: Database) -> dict[str, dict]:
                 number(row.get("ReligiousHealCharges")),
             ),
             "zone_of_control": truthy(row.get("ZoneOfControl")),
+            # Theological combat: the strength an Apostle brings to it, and the
+            # share of rival pressure the unit strips when it acts. CIVVIS
+            # spends the Inquisitor's through Remove Heresy rather than Spread,
+            # so its 75 shows up as pressure retained at a quarter.
+            "religious_strength": number(row.get("ReligiousStrength")),
+            # There is no spread-strength column: RELIGION_SPREAD_STRENGTH_
+            # MULTIPLIER is 200, so a unit spreads at twice its Religious
+            # Strength. CIVVIS stores the product, which is why an Apostle
+            # carries 110 and 220.
+            "religious_spread": number(row.get("ReligiousStrength")) * 2,
             # UnitUpgrades is a separate table; MandatoryObsoleteTech is the
             # column that closes a unit's production menu for good.
             "upgrade_to": upgrades.get(slug(row["UnitType"], "UNIT_")),
@@ -369,11 +530,37 @@ def project_units(database: Database) -> dict[str, dict]:
     return projected
 
 
+# `Technologies_XP2` / `Civics_XP2` in the compiled cache carry 74 and 66 rows,
+# and *every* row has both RandomPrereqs and HiddenUntilPrereqComplete set to 1,
+# spread evenly across all nine eras (8 technologies per era). Civilization VI
+# randomizes the Future era and nothing else — an Ancient tree that shuffled
+# Archery behind Astrology would be a different game. So the column cannot mean
+# per-entry randomization here; the cache appears to store a default for every
+# row the expansion touched. Read it for the Future era only, which is both what
+# the game does and what the engine implements.
+FUTURE_ERA = "ERA_FUTURE"
+
+
 def project_techs(database: Database) -> dict[str, dict]:
     prereqs: dict[str, set[str]] = {}
     for row in database.rows("TechnologyPrereqs"):
         prereqs.setdefault(slug(row["Technology"], "TECH_"), set()).add(
             slug(row["PrereqTech"], "TECH_")
+        )
+    future = {
+        slug(row["TechnologyType"], "TECH_")
+        for row in database.rows("Technologies")
+        if row.get("EraType") == FUTURE_ERA
+    }
+    randomized = {
+        slug(row["TechnologyType"], "TECH_")
+        for row in database.rows("Technologies_XP2")
+        if truthy(row.get("RandomPrereqs"))
+    } & future
+    random_costs: dict[str, list] = {}
+    for row in database.rows("TechnologyRandomCosts"):
+        random_costs.setdefault(slug(row["TechnologyType"], "TECH_"), []).append(
+            number(row.get("Cost"))
         )
     projected = {}
     for row in database.rows("Technologies"):
@@ -382,7 +569,11 @@ def project_techs(database: Database) -> dict[str, dict]:
         projected[name] = {
             "cost": number(row.get("Cost")),
             "era": ERAS.index(era) if era in ERAS else -1,
-            "requires": prereqs.get(name, set()),
+            # See the civics projection below: a randomized entry has no
+            # static prerequisite set to compare.
+            "requires": set() if name in randomized else prereqs.get(name, set()),
+            "random_prereqs": name in randomized,
+            "random_costs": sorted(random_costs.get(name, [])) if name in future else [],
         }
     return projected
 
@@ -393,6 +584,21 @@ def project_civics(database: Database) -> dict[str, dict]:
         prereqs.setdefault(slug(row["Civic"], "CIVIC_"), set()).add(
             slug(row["PrereqCivic"], "CIVIC_")
         )
+    future = {
+        slug(row["CivicType"], "CIVIC_")
+        for row in database.rows("Civics")
+        if row.get("EraType") == FUTURE_ERA
+    }
+    randomized = {
+        slug(row["CivicType"], "CIVIC_")
+        for row in database.rows("Civics_XP2")
+        if truthy(row.get("RandomPrereqs"))
+    } & future
+    random_costs: dict[str, list] = {}
+    for row in database.rows("CivicRandomCosts"):
+        random_costs.setdefault(slug(row["CivicType"], "CIVIC_"), []).append(
+            number(row.get("Cost"))
+        )
     projected = {}
     for row in database.rows("Civics"):
         name = slug(row["CivicType"], "CIVIC_")
@@ -400,7 +606,13 @@ def project_civics(database: Database) -> dict[str, dict]:
         projected[name] = {
             "cost": number(row.get("Cost")),
             "era": ERAS.index(era) if era in ERAS else -1,
-            "requires": prereqs.get(name, set()),
+            # A randomized entry has no static prerequisite set to compare:
+            # the shipped rows are the seed the game shuffles, and the engine
+            # deliberately stores none. Comparing them would push static
+            # prereqs onto a civic whose whole point is that they move.
+            "requires": set() if name in randomized else prereqs.get(name, set()),
+            "random_prereqs": name in randomized,
+            "random_costs": sorted(random_costs.get(name, [])) if name in future else [],
         }
     return projected
 
@@ -428,6 +640,20 @@ FEATURE_ALIASES = {
     "barrier_reef": "great_barrier_reef",
     "everest": "mount_everest",
     "forest": "forest",
+    # Five more Natural Wonders whose shipped name is not their display name.
+    # Without these the Features audit compared *nothing* for them, which is
+    # exactly the blind spot the wonder and unique-unit aliases above exist to
+    # close — and it hid wrong yields on all five until they were found by hand.
+    "cliffs_dover": "cliffs_of_dover",
+    "galapagos": "galapagos_islands",
+    "ikkil": "ik_kil",
+    "chocolatehills": "chocolate_hills",
+    "devilstower": "mato_tipila",
+    # And four more of the same kind, from the packs that complete the roster.
+    "lysefjorden": "lysefjord",
+    "roraima": "mount_roraima",
+    "tsingy": "tsingy_de_bemaraha",
+    "whitedesert": "sahara_el_beyda",
 }
 
 
@@ -604,10 +830,22 @@ def project_resources(database: Database) -> dict[str, dict]:
         for row in database.rows("Improvements")
         if truthy(row.get("Coast")) or row.get("Domain") == "DOMAIN_SEA"
     }
+    # Game-mode improvements are not a resource's improvement. The Industry
+    # and Corporation of Monopolies & Corporations sit on top of a luxury that
+    # is already improved, and they are land builds, so the land-over-sea rule
+    # above would otherwise report them as the improvement for every marine
+    # luxury: Pearls, Turtles and Whales are worked by Fishing Boats.
+    # `Improvements_MODE` names them, so this stays data-driven.
+    mode_improvements = {
+        slug(row["ImprovementType"], "IMPROVEMENT_")
+        for row in database.rows("Improvements_MODE")
+    }
     improvements: dict[str, str] = {}
     for row in database.rows("Improvement_ValidResources"):
         name = slug(row["ResourceType"], "RESOURCE_")
         improvement = slug(row["ImprovementType"], "IMPROVEMENT_")
+        if improvement in mode_improvements:
+            continue
         current = improvements.get(name)
         if current is None or (current in sea_improvements and improvement not in sea_improvements):
             improvements[name] = improvement
@@ -988,12 +1226,129 @@ ENGINE_PARAMETERS = {
     "CULTURE_COST_LATER_PLOT_MULTIPLIER": 6,
     "CULTURE_COST_LATER_PLOT_EXPONENT": 1.3,
     "GOVERNMENT_BASE_ANARCHY_TURNS": 2,  # game.rs do_government / process_anarchy
+    "DIPLOMACY_ALLIANCE_TIME_LIMIT": 30,  # game.rs STANDARD_DEAL_TURNS
+    "DIPLOMACY_DENOUNCE_TIME_LIMIT": 30,  # game.rs process_diplomacy
+    "DIPLOMACY_DENOUNCE_WAR_DELAY": 5,
     "DIPLOMACY_PEACE_MIN_TURNS": 10,  # game.rs PEACE_TREATY_TURNS
     "DIPLOMACY_WAR_MIN_TURNS": 10,  # game.rs WAR_MIN_TURNS
+    "TRADE_ROUTE_BASE_RANGE": 15,  # game.rs can_establish_trade_route
+    "TRADE_ROUTE_TURN_DURATION_BASE": 20,  # game.rs trade_route_duration
     "BARBARIAN_CAMP_MINIMUM_DISTANCE_CITY": 4,  # game.rs spawn_camp
     "BARBARIAN_CAMP_MINIMUM_DISTANCE_ANOTHER_CAMP": 7,
+    # A third of the target is seated before turn one, and every turn after it
+    # the world rolls one in two for one more -- both in the fog, since a camp
+    # may not be placed where any non-Barbarian unit or city is looking.
+    "BARBARIAN_CAMP_FIRST_TURN_PERCENT_OF_TARGET_TO_ADD": 33,  # game.rs new_with
+    "BARBARIAN_CAMP_ODDS_OF_NEW_CAMP_SPAWNING": 2,  # game.rs barbarian_phase
     "BARBARIAN_TECH_PERCENT": 50,  # game.rs barbarian_phase unit pool
     "BARBARIAN_NUM_RANDOM_UNIT_CHOICES": 3,
+    # Verified against the engine during the 2026-07-26 tournament-rules sweep.
+    # Each one is a value the engine reads today; pinning them here turns a
+    # one-off audit into a standing gate, which is what the entries above are
+    # for. Several were divergent when the sweep began and are named in the
+    # commits that fixed them.
+    "RELIGION_SPREAD_ADJACENT_CITY_DISTANCE": 10,  # game.rs process_pressure
+    "RELIGION_SPREAD_ADJACENT_PER_TURN_PRESSURE": 1,
+    "RELIGION_SPREAD_HOLY_SITE_PRESSURE_MULTIPLIER": 2,
+    "RELIGION_SPREAD_HOLY_CITY_PRESSURE_MULTIPLIER": 4,
+    "RELIGION_SPREAD_ATHEISM_PRESSURE_PER_POP": 50,  # starting_atheist_pressure
+    # A Trade Route is directional: the city the Trader travels *to* takes
+    # twice the pressure it sends back.
+    "RELIGION_SPREAD_TRADE_ROUTE_PRESSURE_FOR_DESTINATION": 1.0,
+    "RELIGION_SPREAD_TRADE_ROUTE_PRESSURE_FOR_ORIGIN": 0.5,
+    "RELIGION_SPREAD_COMBAT_VICTORY": 250,  # religious_combat_pressure
+    "RELIGION_SPREAD_UNIT_CAPTURE": 125,
+    "RELIGION_SPREAD_RANGE_COMBAT_VICTORY": 6,
+    "RELIGION_SPREAD_RANGE_UNIT_CAPTURE": 6,
+    "RELIGION_PANTHEON_MIN_FAITH": 25,
+    "TRADE_ROUTE_BASE_RANGE": 15,  # validate_trade_route_destination
+    "TRADE_ROUTE_TURN_DURATION_BASE": 20,  # trade_route_duration
+    "MOVEMENT_EMBARK_COST": 2,  # unit_step_cost, on top of the terrain cost
+    "MOVEMENT_RIVER_COST": 2,
+    "MOVEMENT_WHILE_EMBARKED_BASE": 2,  # unit_base_max_moves_at
+    "UPGRADE_BASE_COST": 10,  # unit_upgrade_price: (10 + 2*(new - old)).max(15)
+    "UPGRADE_MINIMUM_COST": 15,
+    "PILLAGE_MOVEMENT_COST": 3,  # do_pillage, 1 with the promotion
+    "PILLAGE_ADVANCED_MOVEMENT_COST": 1,
+    # The two bankruptcy penalties start on different lines: an Amenity the
+    # moment the balance goes negative, a unit only ten Gold later.
+    "GOLD_NEGATIVE_BALANCE_AMENITY_LOSS_LINE": 0,  # settle_gold_budget
+    "GOLD_NEGATIVE_BALANCE_SUBSEQUENT_AMENITY_LOSS": -10,
+    "GOLD_NEGATIVE_BALANCE_DISBAND_UNIT_LINE": -10,
+    "GOLD_NEGATIVE_BALANCE_SUBSEQUENT_DISBAND_UNIT": -10,
+    "ESPIONAGE_FABRICATE_SCANDAL_BASE_ENVOYS_REMOVED": 2,  # apply_spy_mission_effect
+    "ESPIONAGE_FABRICATE_SCANDAL_LEVEL_ENVOYS_REMOVED": 1,
+    "ESPIONAGE_NEUTRALIZE_GOVERNOR_BASE_TURNS": 6,  # flat: no _LEVEL_ row ships
+    "ESPIONAGE_FOMENT_UNREST_BASE_LOYALTY_CHANGE": -15,
+    "ESPIONAGE_FOMENT_UNREST_LEVEL_LOYALTY_CHANGE": -5,
+    "ARCHAEOLOGY_SITES_PER_CIV_LAND": 6,  # mapgen.rs place_artifact_quotas
+    "ARCHAEOLOGY_SITES_PER_CIV_SEA": 2,
+    "BARBARIAN_CAMP_MAX_PER_MAJOR_CIV": 3,  # barbarian_camp_target
+    "UNIT_MAX_STR_REDUCTION_INSUFFICIENT_RESOURCES": 20,  # strategic_shortage_penalty
+    # Favor income. The two zeros matter as much as the ones: Civ VI pays
+    # nothing for a bare turn and nothing for a trade partner, so a term for
+    # either would be invention.
+    "WORLD_CONGRESS_SUZERAIN_FAVOR_PER_TURN": 1,  # process_diplomacy
+    "INFLUENCE_TOKENS_MINIMUM_FOR_SUZERAIN": 3,  # game.rs suzerain_of_uncached
+    # game.rs HealingLocation::rate and the naval branch of unit_heal_rate.
+    "COMBAT_HEAL_LAND_FRIENDLY": 15,
+    "COMBAT_HEAL_LAND_NEUTRAL": 10,
+    "COMBAT_HEAL_LAND_ENEMY": 5,
+    "COMBAT_HEAL_NAVAL_FRIENDLY": 20,
+    "COMBAT_HEAL_NAVAL_NEUTRAL": 0,
+    "COMBAT_HEAL_NAVAL_ENEMY": 0,
+    "COMBAT_HEAL_CITY_GARRISON": 20,
+    # game.rs tourism_multiplier, domestic_tourists and tourism_components.
+    "RELIGION_SPREAD_STRENGTH_MULTIPLIER": 200,  # religious_spread is 2x strength
+    "RELIGION_INITIAL_BELIEFS": 2,  # game.rs do_found_religion
+    "TOURISM_OPEN_BORDERS_BONUS": 25,
+    "TOURISM_TRADE_ROUTE_BONUS": 25,
+    "TOURISM_DIFFERENT_RELIGION_REDUCTION": 50,
+    "TOURISM_CULTURE_PER_CITIZEN": 100,  # one domestic tourist per 100 Culture
+    "TOURISM_TOURISM_TO_MOVE_CITIZEN": 200,  # game.rs TOURISM_PER_VISITOR
+    "TOURISM_BASE_FROM_WONDER": 2,
+    "TOURISM_FROM_HOLY_CITY": 8,
+    # game.rs `damage`: 30 * exp((att - def) / 25) * U(0.8, 1.2), clamped.
+    # 30 * 0.8 is the base 24 and 30 * 1.2 is 24 + the 12 of extra, and
+    # dividing the strength difference by 25 is the same as scaling it by 0.04.
+    "COMBAT_MAX_EXTRA_DAMAGE": 12,
+    "COMBAT_MINIMUM_DAMAGE": 1,
+    "COMBAT_MAX_HIT_POINTS": 100,
+    "COMBAT_POWER_SCALING": 0.04,
+    "COMBAT_FLANKING_BONUS_MODIFIER": 2,  # game.rs flanking_bonus
+    "COMBAT_SUPPORT_BONUS_MODIFIER": 2,  # game.rs support_bonus
+    # game.rs city_take_damage: the multiplier each attack puts on walls.
+    "COMBAT_DEFENSE_DAMAGE_PERCENT_MELEE": 15,
+    "COMBAT_DEFENSE_DAMAGE_PERCENT_RANGED": 50,
+    "COMBAT_DEFENSE_DAMAGE_PERCENT_BOMBARD": 100,
+    "CITY_POPULATION_LOSS_TO_CONQUEST_PERCENTAGE": 0.25,  # capture keeps 75%
+    "LOYALTY_AFTER_TRANSFERRED_BY_COMBAT": 50,  # game.rs capture_city
+    "LOYALTY_MAXIMUM": 100,
+    "LOYALTY_START": 100,
+    "DISTRICT_POPULATION_REQUIRED_PER": 3,  # one specialty per three Population
+    "WAR_WEARINESS_PER_UNIT_KILLED": 3,  # game.rs record_war_unit_loss
+    "WAR_WEARINESS_PER_COMBAT_IN_ALLIED_LANDS": 1,  # accrue_combat_weariness
+    "WAR_WEARINESS_PER_COMBAT_IN_FOREIGN_LANDS": 2,
+    "WAR_WEARINESS_PER_WMD_LAUNCHED": 10,  # game.rs Action::WmdStrike
+    "UNIT_CORPS_COST_MODIFIER": 1.5,  # game.rs base_item_cost
+    "UNIT_ARMY_COST_MODIFIER": 2.0,
+    "SCIENCE_VICTORY_POINTS_REQUIRED": 50,  # game.rs EXOPLANET_DESTINATION
+    "GRIEVANCES_FOR_DENOUNCEMENT": 25,  # game.rs do_denounce
+    # Held as a decay offset rather than an addition, which comes to the same
+    # thing: game.rs occupation_modifier in the grievance decay loop.
+    "GRIEVANCES_POSSESS_CAPITAL_PER_TURN": 3,
+    "GRIEVANCES_POSSESS_NON_CAPITAL_PER_TURN": 1,
+    "WORLD_CONGRESS_ALLIANCE_FAVOR_PER_TURN": 1,  # per alliance level
+    "WORLD_CONGRESS_BASELINE_FAVOR_PER_TURN": 0,
+    "WORLD_CONGRESS_TRADE_PARTNER_FAVOR_PER_TURN": 0,
+    "CITY_POPULATION_AQUEDUCT_BOOST": 2,  # city_housing: +2, or up to a floor of 6
+    "CITY_POPULATION_AQUEDUCT_MIN": 6,
+    # Left unpinned while buying a plot was not a modelled action at all -
+    # asserting the range would have read green on a rule nothing implemented.
+    # #246 shipped BuyPlot, and plot_purchase_cost refuses anything past ring 3,
+    # so the parameter is honoured and worth guarding now.
+    "CITY_MAX_BUY_PLOT_RANGE": 3,  # game.rs plot_purchase_cost
+    "PLOT_BUY_BASE_COST": 50,  # its ring-one and ring-two base
 }
 
 
@@ -1283,6 +1638,8 @@ def project_buildings(database: Database) -> dict[str, dict]:
             "maintenance": number(row.get("Maintenance")),
             "housing": number(row.get("Housing")),
             "amenity": number(row.get("Entertainment")),
+            # Every wall tier is 100; Georgia's Tsikhe is the one 200.
+            "outer_defense": number(row.get("OuterDefenseHitPoints")),
             "citizen_slots": number(row.get("CitizenSlots")),
             "yields": yields.get(name, {}),
             "regional_range": number(row.get("RegionalRange")),
@@ -1502,9 +1859,18 @@ def project_projects(database: Database) -> dict[str, dict]:
 def project_districts(database: Database) -> dict[str, dict]:
     projected = {}
     for row in database.rows("Districts"):
-        projected[slug(row["DistrictType"], "DISTRICT_")] = {
+        entry = {
             "cost": number(row.get("Cost")),
+            "maintenance": number(row.get("Maintenance")),
+            "appeal": number(row.get("Appeal")),
+            "air_slots": number(row.get("AirSlots")),
         }
+        # MaxPerPlayer is -1 for "as many as you like"; CIVVIS leaves the field
+        # off. Only the Government Plaza and the Diplomatic Quarter carry a 1.
+        limit = number(row.get("MaxPerPlayer"))
+        if limit > 0:
+            entry["max_per_empire"] = limit
+        projected[slug(row["DistrictType"], "DISTRICT_")] = entry
     return projected
 
 
@@ -1549,6 +1915,8 @@ def ours_tree(name: str, key: str) -> dict[str, dict]:
             "cost": entry.get("cost", 0),
             "era": entry.get("era", -1),
             "requires": set(entry.get("requires", [])),
+            "random_prereqs": entry.get("random_prereqs", False),
+            "random_costs": sorted(entry.get("random_costs", [])),
         }
     return out
 
@@ -1556,20 +1924,6 @@ def ours_tree(name: str, key: str) -> dict[str, dict]:
 # Rules CIVVIS hardcodes in the engine rather than in data. Each mirrors a
 # specific site in src/: change one side, change the other.
 ENGINE_HILLS = {"yield_delta": {"production": 1}, "move_cost": 2, "defense": 3}  # rules.rs tile_yields/move_cost, game.rs tile_defense_bonus
-ENGINE_FEATURE_DEFENSE = {  # game.rs tile_defense_bonus
-    "forest": 3,
-    "jungle": 3,
-    "reef": 3,
-    "burning_forest": 3,
-    "burning_jungle": 3,
-    "burnt_forest": 3,
-    "burnt_jungle": 3,
-    "marsh": -2,
-    "floodplains": -2,
-    "grassland_floodplains": -2,
-    "plains_floodplains": -2,
-    "pantanal": -2,
-}
 
 
 def ours_terrains() -> dict[str, dict]:
@@ -1593,7 +1947,7 @@ def ours_features() -> dict[str, dict]:
             "move_cost": entry.get("move_cost", 0),
             "impassable": entry.get("impassable", False),
             "natural_wonder": entry.get("natural_wonder", False),
-            "defense": ENGINE_FEATURE_DEFENSE.get(name, 0),
+            "defense": entry.get("defense", 0),
             "chop": entry.get("chop", {}),
         }
         if entry.get("adjacent_yields"):
@@ -1916,6 +2270,15 @@ def report(results: list[dict], install: Path) -> str:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--civ6", help="path to the Civilization VI install")
+    parser.add_argument(
+        "--cache",
+        nargs="?",
+        const="",
+        help=(
+            "read the compiled gameplay database the game leaves in its Cache "
+            "directory instead of an install; give a path or let it be found"
+        ),
+    )
     parser.add_argument("--json", help="write the full result set here")
     parser.add_argument("--out", help="write the markdown report here instead of stdout")
     parser.add_argument(
@@ -1927,8 +2290,19 @@ def main() -> int:
     parser.add_argument("--table", action="append", help="limit the audit to these tables")
     args = parser.parse_args()
 
-    install = find_install(args.civ6)
-    database = load_database(install)
+    if args.cache is not None:
+        cache = find_cache_database(args.cache or None)
+        if cache is None:
+            print(
+                "no compiled gameplay database found; pass --cache <path>",
+                file=sys.stderr,
+            )
+            return 2
+        install = cache
+        database = load_cache_database(cache)
+    else:
+        install = find_install(args.civ6)
+        database = load_database(install)
 
     audits = [
         ("Units", ours_units(), project_units(database)),

@@ -136,6 +136,46 @@ class ClaimTests(unittest.TestCase):
         self.assertFalse(collab.valid_claim_pattern("../src/game.rs"))
 
 
+class HunkTests(unittest.TestCase):
+    def test_base_side_ranges_are_read_from_hunk_headers(self):
+        patch = (
+            "@@ -10,5 +10,7 @@ fn one()\n"
+            " ctx\n-old\n+new\n"
+            "@@ -200 +202 @@ fn two()\n"
+            "-single\n+single\n"
+        )
+        self.assertEqual(collab.patch_base_ranges(patch), [(10, 14), (200, 200)])
+
+    def test_a_pure_insertion_is_a_zero_width_range_at_the_seam(self):
+        self.assertEqual(collab.patch_base_ranges("@@ -40,0 +41,3 @@\n"), [(40, 40)])
+
+    def test_nearby_edits_touch_because_git_needs_context(self):
+        self.assertTrue(collab.ranges_touch([(10, 20)], [(22, 30)]))
+        self.assertFalse(collab.ranges_touch([(10, 20)], [(40, 50)]))
+
+    def test_an_unreadable_patch_falls_back_to_whole_file(self):
+        self.assertTrue(collab.file_edits_collide(None, [(1, 2)]))
+        self.assertTrue(collab.file_edits_collide([(1, 2)], None))
+        self.assertFalse(collab.file_edits_collide([(1, 2)], [(90, 95)]))
+
+    def test_the_cli_range_reader_matches_the_api_reader(self):
+        rows = [
+            {"filename": "web/index.html", "patch": "@@ -12,4 +12,6 @@\n-a\n+b\n"},
+            {"filename": "assets/logo.png"},
+        ]
+        with patch.object(collab, "gh_json", return_value=rows):
+            ranges = collab.gh_pr_file_ranges(7)
+        # A readable patch yields ranges; a binary file stays None so the
+        # audit falls back to whole-file exactly like check-pr does.
+        self.assertEqual(ranges["web/index.html"], [(12, 15)])
+        self.assertIsNone(ranges["assets/logo.png"])
+
+    def test_only_genuinely_colliding_paths_are_reported(self):
+        mine = {"a.rs": [(1, 10)], "b.rs": [(1, 10)], "c.rs": [(1, 10)]}
+        theirs = {"a.rs": [(5, 15)], "b.rs": [(500, 510)]}
+        self.assertEqual(collab.colliding_paths(mine, theirs), ["a.rs"])
+
+
 class PolicyTests(unittest.TestCase):
     branch = "agent/render-win-02/codex-47/government-cleanup-20260723T210500Z-a31f"
 
@@ -161,7 +201,9 @@ class PolicyTests(unittest.TestCase):
             files=["web/index.html"],
             commit_subjects=[],
         )
-        self.assertIn("changed path is not claimed: web/index.html", errors)
+        self.assertTrue(
+            any("changed path is not claimed: web/index.html" in e for e in errors)
+        )
 
     def test_autosync_commits_are_forbidden(self):
         errors = collab.validate_pr(
@@ -171,21 +213,66 @@ class PolicyTests(unittest.TestCase):
         )
         self.assertTrue(any("autosync commit" in error for error in errors))
 
-    def test_file_overlap_requires_an_explicit_pr_reference(self):
+    def test_unknown_patches_collide_conservatively_on_a_ready_pr(self):
         errors = collab.validate_pr(
-            pr(self.branch, body()),
+            pr(self.branch, body(), draft=False),
             files=["src/game.rs"],
             commit_subjects=[],
             other_files={5: {"src/game.rs"}},
         )
-        self.assertTrue(any("overlap PR #5" in error for error in errors))
+        self.assertTrue(any("collide with PR #5" in error for error in errors))
         coordinated = collab.validate_pr(
-            pr(self.branch, body(coordinated="#5")),
+            pr(self.branch, body(coordinated="#5"), draft=False),
             files=["src/game.rs"],
             commit_subjects=[],
             other_files={5: {"src/game.rs"}},
         )
         self.assertEqual(coordinated, [])
+
+    def test_a_draft_reports_collisions_without_failing(self):
+        advisories = []
+        errors = collab.validate_pr(
+            pr(self.branch, body()),
+            files=["src/game.rs"],
+            commit_subjects=[],
+            other_files={5: {"src/game.rs"}},
+            advisories=advisories,
+        )
+        self.assertEqual(errors, [])
+        self.assertTrue(any("collide with PR #5" in note for note in advisories))
+
+    def test_disjoint_edits_to_one_file_never_gate_a_ready_pr(self):
+        advisories = []
+        errors = collab.validate_pr(
+            pr(self.branch, body(), draft=False),
+            files=["src/game.rs"],
+            commit_subjects=[],
+            ranges={"src/game.rs": [(10, 20)]},
+            other_ranges={5: {"src/game.rs": [(900, 910)]}},
+            advisories=advisories,
+        )
+        self.assertEqual(errors, [])
+        self.assertTrue(any("different places" in note for note in advisories))
+
+    def test_edits_to_the_same_lines_gate_a_ready_pr(self):
+        errors = collab.validate_pr(
+            pr(self.branch, body(), draft=False),
+            files=["src/game.rs"],
+            commit_subjects=[],
+            ranges={"src/game.rs": [(100, 140)]},
+            other_ranges={5: {"src/game.rs": [(130, 160)]}},
+        )
+        self.assertTrue(any("collide with PR #5" in error for error in errors))
+
+    def test_a_declared_collision_is_accepted(self):
+        errors = collab.validate_pr(
+            pr(self.branch, body(coordinated="#5"), draft=False),
+            files=["src/game.rs"],
+            commit_subjects=[],
+            ranges={"src/game.rs": [(100, 140)]},
+            other_ranges={5: {"src/game.rs": [(130, 160)]}},
+        )
+        self.assertEqual(errors, [])
 
     def test_ready_pr_must_complete_checkboxes(self):
         errors = collab.validate_pr(
@@ -193,7 +280,9 @@ class PolicyTests(unittest.TestCase):
             files=["src/game.rs"],
             commit_subjects=[],
         )
-        self.assertIn("ready PRs must complete every validation checkbox", errors)
+        self.assertTrue(
+            any("must complete every validation checkbox" in e for e in errors)
+        )
 
     def test_main_commit_requires_the_matching_merged_pr_commit(self):
         rows = [
@@ -203,6 +292,52 @@ class PolicyTests(unittest.TestCase):
         self.assertEqual(collab.commit_is_pr_backed(rows, "abc"), 12)
         self.assertIsNone(collab.commit_is_pr_backed(rows, "def"))
         self.assertIsNone(collab.commit_is_pr_backed(rows, "missing"))
+
+    def test_a_stale_merge_is_still_caught_after_the_fact(self):
+        # Staleness is only an advisory on an open PR, because GitHub blocks
+        # the merge itself. Once something *has* merged while behind main, that
+        # is a real violation and must stay a hard error.
+        views = {
+            "pr": {
+                "headRefOid": "head1234",
+                "mergedAt": "2026-07-25T03:00:00Z",
+            },
+            "compare": {"status": "diverged"},
+            "checks": {"check_runs": []},
+        }
+
+        def fake_gh_json(args, *, cwd=None):
+            joined = " ".join(args)
+            if "compare" in joined:
+                return views["compare"]
+            if "check-runs" in joined:
+                return views["checks"]
+            return views["pr"]
+
+        with patch.object(collab, "gh_json", side_effect=fake_gh_json):
+            errors = collab.merged_pr_gate_errors(42, base_sha="base5678")
+        self.assertIn("PR head did not contain current main before merge", errors)
+
+    def test_a_rejected_write_can_fall_back_instead_of_raising(self):
+        # ship updates a stale branch through GitHub, but a conflict GitHub
+        # cannot resolve must hand back to the local merge path rather than
+        # aborting the whole ship.
+        rejected = subprocess.CompletedProcess([], 1, stdout="", stderr="merge conflict")
+        with patch.object(subprocess, "run", return_value=rejected):
+            self.assertIsNone(
+                collab.gh_api_write("PUT", "/repos/x/y/pulls/1/update-branch", {}, check=False)
+            )
+        with patch.object(subprocess, "run", return_value=rejected):
+            with self.assertRaises(collab.CommandError):
+                collab.gh_api_write("PUT", "/repos/x/y/pulls/1/merge", {})
+
+    def test_a_successful_write_still_returns_its_payload(self):
+        ok = subprocess.CompletedProcess([], 0, stdout='{"merged": true}', stderr="")
+        with patch.object(subprocess, "run", return_value=ok):
+            self.assertEqual(
+                collab.gh_api_write("PUT", "/repos/x/y/pulls/1/merge", {}, check=False),
+                {"merged": True},
+            )
 
     def test_only_ahead_or_identical_heads_include_current_main(self):
         self.assertTrue(collab.compare_status_is_current("ahead"))
@@ -252,8 +387,23 @@ class PolicyTests(unittest.TestCase):
         self.assertNotIn("dismissal_restrictions", reviews)
         self.assertNotIn("required_signatures", payload)
         self.assertEqual(reviews["required_approving_review_count"], 0)
-        self.assertTrue(payload["required_status_checks"]["strict"])
         self.assertFalse(payload["allow_force_pushes"])
+
+    def test_personal_repository_protection_cannot_hard_block_main(self):
+        """The gate must fail open for admins and must not serialise the fleet.
+
+        `strict` would invalidate every other open PR each time one lands, and
+        `enforce_admins` left main unmergeable during the 2026-07-25 Actions
+        billing outage, when no job could start at all. The required contexts
+        still gate every PR; these two only decide who waits on whom.
+        """
+        payload = collab.personal_repository_protection_payload()
+        self.assertFalse(payload["required_status_checks"]["strict"])
+        self.assertFalse(payload["enforce_admins"])
+        self.assertEqual(
+            payload["required_status_checks"]["contexts"],
+            ["cargo-test", "collaboration-policy"],
+        )
 
 
 class ShipTests(unittest.TestCase):
@@ -285,6 +435,42 @@ class ShipTests(unittest.TestCase):
                 poll_seconds=0,
             )
         self.assertEqual(result["headRefOid"], "new")
+
+    def test_pr_head_wait_stops_when_auto_merge_closes_the_pr(self):
+        branch = "agent/m/a/task-20260723T210500Z-a31f"
+        merged = {
+            "number": 9,
+            "state": "MERGED",
+            "headRefOid": "old",
+            "mergeCommit": {"oid": "squash123"},
+        }
+        with (
+            patch.object(collab, "current_pr", return_value=merged),
+            patch.object(collab, "remote_heads") as remote_heads,
+        ):
+            result = collab.wait_for_pr_head(
+                Path.cwd(),
+                branch,
+                "new",
+                deadline=collab.time.monotonic() + 1,
+                poll_seconds=0,
+            )
+        self.assertEqual(result, merged)
+        remote_heads.assert_not_called()
+
+    def test_only_a_merged_pr_exposes_its_squash_commit(self):
+        self.assertEqual(
+            collab.pr_merge_sha(
+                {"state": "MERGED", "mergeCommit": {"oid": "squash123"}}
+            ),
+            "squash123",
+        )
+        self.assertEqual(
+            collab.pr_merge_sha(
+                {"state": "OPEN", "mergeCommit": {"oid": "premature"}}
+            ),
+            "",
+        )
 
     def test_ship_requires_a_finished_summary_and_every_checkbox(self):
         draft = {

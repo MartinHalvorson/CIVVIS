@@ -21,8 +21,10 @@
 //! `--counterfactual` instead exports unresolved endpoints from Strategic's
 //! adaptive and victory-lane rollouts, labels each by continuing that exact
 //! branch to the winner, and keeps all branches grouped by their source game.
-//! It requires `--scalar-only --ai strategic_score` so data generation cannot
-//! accidentally feed a learned evaluator back into its own labels.
+//! It requires `--ai strategic_score` so data generation cannot accidentally
+//! feed a learned evaluator back into its own labels. Passing `--scalar-only`
+//! keeps broad calibration inexpensive; omitting it exports the
+//! fog-honest endpoint tensors needed by contextual models.
 //!
 //! Read in Python with
 //! `np.fromfile(...).reshape(meta["planes_shape"])`.
@@ -32,9 +34,10 @@ use std::io::{BufWriter, Write};
 use std::path::Path;
 
 use crate::ai::{Ai, VictoryTarget};
+use crate::decision_features::decision_features;
 use crate::elo::builtin_ai;
-use crate::game::{Action, Game, GameOptions};
 use crate::evolve::features as scalar_features;
+use crate::game::{Action, Game, GameOptions};
 use crate::obs_tensor::{obs_tensor, PLANES};
 use crate::strategic::{StrategicAi, FIRST_REVIEW_TURN};
 
@@ -61,6 +64,9 @@ pub struct SelfPlayCfg {
     /// How many games to play at once. Samples are still written in game
     /// order; a chunk of this many games is held in memory while it plays.
     pub jobs: usize,
+    /// Record `decision_features` (34 wide) instead of `evolve::features`
+    /// (25 wide).
+    pub decision_features: bool,
 }
 
 pub struct SelfPlayStats {
@@ -137,20 +143,26 @@ fn play_one(cfg: &SelfPlayCfg, game_index: usize) -> PlayedGame {
                     let checkpoint = (g.turn - FIRST_REVIEW_TURN) / cfg.every;
                     let player = majors[(game_index + checkpoint as usize) % majors.len()];
                     counterfactual_roots += 1;
-                    pending.extend(
-                        sampler
-                            .counterfactual_value_samples(&g, player)
-                            .into_iter()
-                            .map(|sample| PendingSample {
-                                planes: Vec::new(),
-                                globals: Vec::new(),
-                                scalars: sample.features,
-                                pid: player,
-                                fraction: sample.turn_fraction,
-                                won: Some(sample.won),
-                                lane: Some(sample.target.map_or("adaptive", VictoryTarget::as_str)),
-                            }),
+                    let samples = sampler.counterfactual_value_samples_with_observation(
+                        &g,
+                        player,
+                        !cfg.scalar_only,
                     );
+                    if !cfg.scalar_only && global_names.is_empty() {
+                        if let Some(sample) = samples.first() {
+                            global_names = sample.global_names.clone();
+                            globals_len = sample.globals.len();
+                        }
+                    }
+                    pending.extend(samples.into_iter().map(|sample| PendingSample {
+                        planes: sample.planes,
+                        globals: sample.globals,
+                        scalars: sample.features,
+                        pid: player,
+                        fraction: sample.turn_fraction,
+                        won: Some(sample.won),
+                        lane: Some(sample.target.map_or("adaptive", VictoryTarget::as_str)),
+                    }));
                 }
             } else {
                 let fraction = g.turn as f32 / cfg.max_turns.max(1) as f32;
@@ -174,7 +186,7 @@ fn play_one(cfg: &SelfPlayCfg, game_index: usize) -> PlayedGame {
                     pending.push(PendingSample {
                         planes,
                         globals,
-                        scalars: scalar_features(&g, player),
+                        scalars: features_for(&cfg, &g, player),
                         pid: player,
                         fraction,
                         won: None,
@@ -201,6 +213,23 @@ fn play_one(cfg: &SelfPlayCfg, game_index: usize) -> PlayedGame {
 /// Play the configured games, exporting ordinary living-major snapshots or
 /// one rotated Strategic counterfactual root at each sampling checkpoint.
 /// Returns what was written.
+/// Which feature vector a corpus records.
+///
+/// The 25 empire aggregates are the historical default and what every
+/// trained artifact so far uses. `decision_features` is the same vector
+/// extended with nine terms that respond to unit position, unit condition,
+/// city fabric and current research — measured to take overall action
+/// visibility from 44.5% to 86.1%, and unit moves from 2.1% to 69.2%.
+/// A net trained on one cannot be evaluated with the other, which
+/// `ValueNet::load_width` enforces at load time.
+fn features_for(cfg: &SelfPlayCfg, g: &crate::game::Game, pid: usize) -> Vec<f32> {
+    if cfg.decision_features {
+        decision_features(g, pid)
+    } else {
+        scalar_features(g, pid)
+    }
+}
+
 pub fn export(cfg: &SelfPlayCfg) -> std::io::Result<SelfPlayStats> {
     if cfg.every == 0 {
         return Err(std::io::Error::new(
@@ -208,10 +237,10 @@ pub fn export(cfg: &SelfPlayCfg) -> std::io::Result<SelfPlayStats> {
             "--every must be at least 1",
         ));
     }
-    if cfg.counterfactual && (!cfg.scalar_only || cfg.ai != "strategic_score") {
+    if cfg.counterfactual && cfg.ai != "strategic_score" {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
-            "--counterfactual requires --scalar-only --ai strategic_score",
+            "--counterfactual requires --ai strategic_score",
         ));
     }
     let dir = Path::new(&cfg.out);
@@ -275,7 +304,7 @@ pub fn export(cfg: &SelfPlayCfg) -> std::io::Result<SelfPlayStats> {
                 "game {:3} seed {:<6} t{:<4} {:<10} samples={}",
                 game_index,
                 seed,
-                g.turn,
+                g.reported_turn(),
                 g.victory_type.clone().unwrap_or_else(|| "none".into()),
                 samples
             );
@@ -351,6 +380,7 @@ mod tests {
                 .to_string(),
             scalar_only: true,
             counterfactual: true,
+            decision_features: false,
             counterfactual_roots: 1,
             jobs: 1,
         };
@@ -360,6 +390,49 @@ mod tests {
         };
         assert_eq!(error.kind(), std::io::ErrorKind::InvalidInput);
         assert!(error.to_string().contains("strategic_score"));
+    }
+
+    #[test]
+    fn counterfactual_spatial_export_keeps_endpoint_shapes_honest() {
+        let dir = std::env::temp_dir().join("civvis_counterfactual_spatial_test");
+        let _ = std::fs::remove_dir_all(&dir);
+        let cfg = SelfPlayCfg {
+            // A zero-game export exercises the accepted score-only spatial
+            // mode and its schema without assuming that an opening root has
+            // unresolved rollout endpoints. Strategic's unit test covers
+            // populated endpoint tensors directly.
+            games: 0,
+            players: 3,
+            width: 20,
+            height: 14,
+            city_states: 0,
+            max_turns: 34,
+            seed: 199,
+            every: 40,
+            ai: "strategic_score".to_string(),
+            out: dir.to_string_lossy().to_string(),
+            scalar_only: false,
+            counterfactual: true,
+            decision_features: false,
+            counterfactual_roots: 0,
+            jobs: 1,
+        };
+
+        let stats = export(&cfg).expect("spatial counterfactual export");
+        assert_eq!(stats.samples, 0);
+        let meta: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(dir.join("meta.json")).unwrap()).unwrap();
+        let samples = meta["samples"].as_u64().unwrap() as usize;
+        let globals = meta["globals_shape"][1].as_u64().unwrap() as usize;
+        assert_eq!(meta["config"]["counterfactual"], true);
+        assert_eq!(meta["config"]["scalar_only"], false);
+        assert_eq!(meta["planes_shape"][1].as_u64(), Some(PLANES.len() as u64));
+        assert_eq!(std::fs::metadata(dir.join("planes.f32")).unwrap().len(), 0);
+        assert_eq!(
+            std::fs::metadata(dir.join("globals.f32")).unwrap().len() as usize,
+            samples * globals * 4
+        );
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
@@ -377,6 +450,7 @@ mod tests {
             out: String::new(),
             scalar_only: true,
             counterfactual: true,
+            decision_features: false,
             counterfactual_roots: 0,
             jobs: 1,
         };
@@ -405,6 +479,7 @@ mod tests {
             out: dir.to_string_lossy().to_string(),
             scalar_only: false,
             counterfactual: false,
+            decision_features: false,
             counterfactual_roots: 0,
             jobs: 2,
         };
@@ -442,6 +517,7 @@ mod tests {
             out: dir.to_string_lossy().to_string(),
             scalar_only: true,
             counterfactual: false,
+            decision_features: false,
             counterfactual_roots: 0,
             jobs: 2,
         };

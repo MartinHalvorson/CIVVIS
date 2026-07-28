@@ -20,13 +20,18 @@ pub mod parallel;
 
 
 pub mod obs_tensor;
+pub mod decision_features;
 pub mod policy;
+pub mod production;
+pub mod rating;
+pub mod reasoning;
 pub mod rng;
 pub mod rules;
 pub mod selfplay;
 pub mod specmap;
 pub mod server;
 pub mod setup;
+pub mod sphere;
 pub mod strategic;
 pub mod valuenet;
 pub mod mods;
@@ -93,7 +98,8 @@ mod tests {
         assert_eq!(extra_units(&prince, 1), extra_units(&prince, 0));
         assert_eq!(
             extra_units(&deity, 1),
-            extra_units(&deity, 0) + 7, // 4 warriors, 2 builders, a settler
+            // MajorStartingUnits at Deity: 4 Warriors, 2 Builders, 2 Settlers.
+            extra_units(&deity, 0) + 8,
         );
     }
 
@@ -474,6 +480,11 @@ mod tests {
                 .nth(1)
                 .unwrap(),
         );
+        // An agenda is public knowledge once you have met its leader, so the
+        // three seats this test reads across have to have met.
+        g.record_contact(a, b);
+        g.record_contact(a, tomyris);
+        g.record_contact(b, tomyris);
         g.apply(a, &Action::DeclareWar { player: b }).unwrap();
         // Run a full world turn so the upkeep pass sees the new stance.
         let world_turn = g.players.iter().filter(|player| player.alive).count() + 1;
@@ -565,6 +576,9 @@ mod tests {
         run_game(&mut g, &mut ais);
         assert!(!g.log.is_empty());
         let mut r = Game::new(3, 24, 16, 9, 80, 2);
+        // Replay under the same headless observation mode as `run_game`.
+        // Fog memory is a display cache, not an action or gameplay input.
+        r.set_fog_memory(false);
         for (i, (pid, a)) in g.log.iter().enumerate() {
             r.apply(*pid, a)
                 .unwrap_or_else(|e| panic!("logged action {i} failed on replay: {e} ({a:?})"));
@@ -635,6 +649,70 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// Planet's world is a different shape, and the rules that walk it — sight
+    /// lines, movement, city work, borders — have to survive a map with no
+    /// edges and twelve tiles that have five neighbours instead of six. A
+    /// played game is the only honest test of that.
+    #[test]
+    fn a_game_plays_out_on_the_globe() {
+        let size = crate::setup::MapSize::for_players(2);
+        let (width, height) = size.dimensions(crate::setup::MapTopology::Planet);
+        let mut g = Game::new_with(crate::game::GameOptions {
+            map_topology: crate::setup::MapTopology::Planet,
+            ..crate::game::GameOptions::new(2, width, height, 4_517, 40, 2)
+        });
+        assert_eq!(g.map.tiles.len(), crate::sphere::Sphere::tiles_for(size.globe_frequency));
+        let mut ais = BasicAi::fleet(&g);
+        run_game(&mut g, &mut ais);
+        assert!(g.turn > 30, "the globe reached turn {}", g.turn);
+        assert!(g.cities.len() >= 2);
+        // Nothing fell off the world: every city, unit and owned tile is on a
+        // real tile of the sphere, and every tile is still surrounded.
+        for city in g.cities.values() {
+            assert!(g.map.tiles.contains_key(&city.pos));
+            assert_eq!(g.nbrs(city.pos).len(), 6, "a city sits on a hexagon");
+        }
+        for unit in g.units.values() {
+            assert!(g.map.tiles.contains_key(&unit.pos));
+        }
+        for (pos, _) in g.map.tiles.iter() {
+            let neighbors = g.nbrs(*pos);
+            assert!(matches!(neighbors.len(), 5 | 6), "{pos:?} is on an edge");
+        }
+    }
+
+    /// A saved globe has to come back a globe. The sphere's geometry is not in
+    /// the save — it is a pure function of the subdivision — so what the file
+    /// carries is which globe this was, and everything else is rebuilt.
+    #[test]
+    fn a_saved_globe_reloads_as_the_same_world() {
+        let size = crate::setup::MapSize::for_players(2);
+        let (width, height) = size.dimensions(crate::setup::MapTopology::Planet);
+        let g = Game::new_with(crate::game::GameOptions {
+            map_topology: crate::setup::MapTopology::Planet,
+            ..crate::game::GameOptions::new(2, width, height, 8_812, 30, 2)
+        });
+        let restored: Game = serde_json::from_str(&serde_json::to_string(&g).unwrap()).unwrap();
+        assert_eq!(restored.map.topology, g.map.topology);
+        assert_eq!(restored.map.tiles.len(), g.map.tiles.len());
+        assert!(restored.map.sphere().is_some(), "the globe was rebuilt on load");
+        for (pos, _) in g.map.tiles.iter() {
+            assert_eq!(*restored.nbrs(*pos), *g.nbrs(*pos), "{pos:?} kept its neighbours");
+        }
+        let far = *g.map.tiles.keys().last().unwrap();
+        let near = *g.map.tiles.keys().next().unwrap();
+        assert_eq!(restored.wdist(near, far), g.wdist(near, far));
+        // A save written before Planet existed has no topology at all, and is
+        // still the cylinder it always was.
+        let flat = Game::new(2, 44, 26, 8_812, 30, 2);
+        let mut raw = serde_json::to_value(&flat).unwrap();
+        assert!(raw["map"]["topology"].is_null(), "a cylinder writes no topology");
+        raw["map"].as_object_mut().unwrap().remove("topology");
+        let legacy: Game = serde_json::from_value(raw).unwrap();
+        assert_eq!(legacy.map.topology, crate::world::Topology::Cylinder);
+        assert!(legacy.map.sphere().is_none());
     }
 
     /// A crowded spawn used to drop its city-state on the floor, so a request
@@ -1660,6 +1738,9 @@ mod tests {
         assert_eq!(g.suzerain_of(minor), None, "a tie has no Suzerain");
         g.players[0].envoys[0].1 = 4;
         assert_eq!(g.suzerain_of(minor), Some(0));
+        // A war written straight into the ledger skips the introduction that
+        // declaring one would have made.
+        g.record_contact(0, 1);
         g.at_war.insert((0, 1));
         assert!(
             g.is_at_war(minor, 1),
@@ -1895,6 +1976,9 @@ mod tests {
                 g.apply(cur, &Action::EndTurn).unwrap();
             }
         };
+        // An era is held open for its shipped 40-turn minimum (Eras_XP1
+        // GameEraMinimumTurns), so the Classical era cannot arrive on turn one.
+        g.turn = 40;
         round(&mut g);
         assert_eq!(g.world_era, 1);
         assert_eq!(g.players[0].age, "golden");
@@ -2124,8 +2208,12 @@ mod tests {
                 );
             }
         }
-        // seats map to civs in order: 0 Rome .. 7 Scythia
-        for (i, name) in crate::game::CIV_NAMES.iter().enumerate() {
+        // this game's eight majors take the head of the roster in order:
+        // 0 Rome .. 7 Scythia. The seats past them are city-states, which are
+        // not seated from the roster at all.
+        let majors = g.players.iter().filter(|p| !p.is_minor).count();
+        assert_eq!(majors, 8);
+        for (i, name) in crate::game::CIV_NAMES.iter().take(majors).enumerate() {
             assert_eq!(&g.players[i].civ, name);
         }
         // unique units: only their civ builds them; the base is blocked

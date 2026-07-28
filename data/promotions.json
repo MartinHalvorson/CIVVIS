@@ -71,9 +71,9 @@
   "proximity_fuses": {"class":"naval_ranged","tier":3,"requires":["preparatory_fire","rolling_barrage"],"effects":{"defend_air":7},"note":"+7 Combat Strength when defending against air attacks."},
   "coincidence_rangefinding": {"class":"naval_ranged","tier":4,"requires":["supply_fleet","proximity_fuses"],"effects":{"range":1},"note":"+1 attack range."},
 
-  "boarding": {"class":"naval_raider","tier":1,"effects":{"gold_from_naval_kill_pct":50},"note":"Gain Gold after defeating a naval unit."},
+  "boarding": {"class":"naval_raider","tier":1,"effects":{"gold_from_naval_kill_pct":100},"note":"Gain Gold equal to the defeated naval unit's full Combat Strength."},
   "homing_torpedoes": {"class":"naval_raider","tier":2,"effects":{"ranged_vs_naval":10},"note":"+10 Ranged Strength against naval units.","requires":["boarding","swift_keel"]},
-  "loot": {"class":"naval_raider","tier":1,"effects":{"coastal_raid_gold_pct":50},"note":"Gain additional Gold from coastal raids."},
+  "loot": {"class":"naval_raider","tier":1,"effects":{"coastal_raid_gold":50},"note":"Gain 50 Gold from coastal raids on Standard speed."},
   "silent_running": {"class":"naval_raider","tier":3,"requires":["homing_torpedoes"],"effects":{"move_after_attack":1},"note":"May move after attacking."},
   "observation": {"class":"naval_raider","tier":3,"requires":["swift_keel"],"effects":{"sight":1},"note":"+1 sight range."},
   "wolfpack": {"class":"naval_raider","tier":4,"requires":["observation","silent_running"],"effects":{"extra_attacks":1},"note":"+1 attack per turn."},
@@ -119,7 +119,7 @@
   "debater": {"class":"religious_apostle","tier":1,"effects":{"religious_strength":20},"note":"+20 Religious Strength in theological combat."},
   "orator": {"class":"religious_apostle","tier":1,"effects":{"religious_charges":2},"note":"May spread Religion 2 extra times."},
   "translator": {"class":"religious_apostle","tier":1,"effects":{"foreign_spread_pct":200},"note":"Triple strength when spreading to cities of other civilizations."},
-  "proselytizer": {"class":"religious_apostle","tier":1,"effects":{"rival_pressure_removed_pct":75},"note":"Eliminates 75% of other religions' pressure when spreading."},
+  "proselytizer": {"class":"religious_apostle","tier":1,"effects":{"rival_pressure_removed_pct":50},"note":"Eliminates 50% of other religions' pressure when spreading."},
   "pilgrim": {"class":"religious_apostle","tier":1,"effects":{"natural_wonder_charges":3},"note":"Gains 3 spreads after moving adjacent to a natural wonder."},
   "indulgence_vendor": {"class":"religious_apostle","tier":1,"effects":{"gold_per_conversion":100},"note":"Gain Gold when this unit first converts a city."},
   "martyr": {"class":"religious_apostle","tier":1,"effects":{"relic_on_death":1},"note":"Creates a Relic if defeated in theological combat."},
@@ -128,8 +128,8 @@
 
   "shadow_strike": {"class":"warrior_monk","tier":1,"effects":{"flanking_multiplier":2},"note":"Double flanking bonus."},
   "twilight_veil": {"class":"warrior_monk","tier":1,"effects":{"camouflage":1},"note":"Visible only to adjacent enemy units."},
-  "exploding_palms": {"class":"warrior_monk","tier":2,"requires":["shadow_strike"],"effects":{"combat_all":10},"note":"+10 Combat Strength."},
-  "disciples": {"class":"warrior_monk","tier":2,"requires":["twilight_veil"],"effects":{"religious_pressure_on_kill":250},"note":"Spreads its religion after defeating a unit."},
+  "exploding_palms": {"class":"warrior_monk","tier":2,"requires":["shadow_strike","twilight_veil"],"effects":{"combat_all":10},"note":"+10 Combat Strength."},
+  "disciples": {"class":"warrior_monk","tier":2,"requires":["shadow_strike","twilight_veil"],"effects":{"religious_pressure_on_kill":250},"note":"Spreads its religion after defeating a unit."},
   "sweeping_wind": {"class":"warrior_monk","tier":3,"requires":["exploding_palms","disciples"],"effects":{"extra_attacks":1},"note":"+1 attack per turn when Movement allows."},
   "dancing_crane": {"class":"warrior_monk","tier":3,"requires":["exploding_palms","disciples"],"effects":{"movement":1},"note":"+1 Movement."},
   "cobra_strike": {"class":"warrior_monk","tier":4,"requires":["sweeping_wind","dancing_crane"],"effects":{"combat_all":15},"note":"+15 Combat Strength."}

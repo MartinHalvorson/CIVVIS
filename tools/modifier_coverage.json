@@ -18,110 +18,15 @@
     "A 'verified' entry has had every shipped row drilled with --effect and matched against the CIVVIS path that covers it, or attributed to content CIVVIS does not model. Everything else is still an inspection judgement."
   ],
   "effects": {
-    "ATTACH_MODIFIER": {
-      "status": "unmodelled",
-      "note": "The interpreter primitive: attach another modifier to a collection. CIVVIS hardcodes effects per object, so it has no general way to express this. Implementing it is phase 2 itself, and it gates the long tail behind it."
-    },
-    "ATTACH_MODIFIER_TO_PLAYERTYPE": {
-      "status": "unmodelled",
-      "note": "World Congress outcomes attaching modifiers to a class of players. Congress resolutions are hardcoded per resolution instead."
-    },
-    "DIPLOMACY_SIMPLE_EFFECT": {
-      "status": "out-of-scope",
-      "note": "Bespoke leader agendas, which MECHANICS.md scopes out deliberately. Almost every row is a TraitModifier on a leader CIVVIS does not model."
-    },
-    "ADJUST_PLAYER_STRENGTH_MODIFIER": {
-      "status": "implemented",
-      "verified": true,
-      "note": "Verified row by row. All 48 promotion Combat Strength amounts CIVVIS models match the shipped values exactly, under CIVVIS' own semantic effect names. The Giant Death Robot's four tech upgrades were attached to the wrong nodes: Advanced Power Cells ships the Particle Beam Siege Cannon and Cybernetics Enhanced Mobility, while CIVVIS had the movement on Advanced Power Cells and invented a healing upgrade on Cybernetics that no shipped row grants. Now corrected. The remaining rows are unit abilities for leaders and city-states outside CIVVIS' roster."
-    },
-    "ADJUST_UNIT_MOVEMENT": {
-      "status": "implemented",
-      "verified": true,
-      "note": "Verified row by row with conditions resolved. Advanced Engines, Commando, Helmsman, Pursuit, Redeploy, Swift Keel each grant 1 and Roadies 4, all matching, and the Giant Death Robot's Enhanced Mobility grants 3 from Cybernetics. The rest are leader and city-state abilities, Commemorations, Emergencies and the Letters of Marque card, none of which CIVVIS carries."
-    },
-    "ADJUST_UNIT_EXPERIENCE_MODIFIER": {
-      "status": "implemented",
-      "verified": true,
-      "note": "Verified row by row. Barracks, Armory, Basilikoi Paides, Lighthouse and Hangar all grant 25% to the units they train, matching. Two did not: After Action Reports is +50% and CIVVIS had 25, and Airport-trained aircraft gain 50% where CIVVIS had 25. Elite Forces (+100%) is a card CIVVIS does not carry."
-    },
-    "ADJUST_UNIT_GRANT_EXPERIENCE": {
-      "status": "implemented",
-      "note": "Flat XP grants on training and from Great People."
-    },
-    "ADJUST_UNIT_HEALING_MODIFIERS": {
-      "status": "implemented",
-      "verified": true,
-      "note": "Verified row by row. Chaplain's +20 adjacent heal matches. Auxiliary Ships, Supply Fleet and Supercarrier do not let a ship heal as if it were home: each pays 5 in enemy territory and 10 in neutral. CIVVIS modelled all three as a boolean 'heal anywhere' worth the full 20, which roughly doubled naval sustain in neutral water and quadrupled it in enemy water."
-    },
-    "ADJUST_UNIT_SPY_OPERATION_CHANCE": {
-      "status": "implemented",
-      "note": "The espionage promotion tree adjusts operation odds."
-    },
-    "ENABLE_UNIT_FAITH_PURCHASE": {
-      "status": "implemented",
-      "verified": true,
-      "note": "Verified row by row. Theocracy and the Grand Master's Chapel enable Faith purchase for exactly ten land combat classes -- melee, ranged, anti-cavalry, light/heavy cavalry, light/heavy chariot, ranged cavalry, recon and siege. CIVVIS admitted every land military unit, which also let Theocracy Faith-buy a Giant Death Robot; the GDR is its own class outside the list, and is now excluded. The naval and Archaeologist rows are leader traits, and the Spy row is Wu Zetian -- content CIVVIS does not model."
-    },
-    "ADJUST_TRADE_ROUTE_CAPACITY": {
-      "status": "implemented",
-      "verified": true,
-      "note": "Verified row by row, and it found two gaps now fixed. A city earns up to two routes from its own infrastructure and each is an either/or: the Commercial Hub grants one and a Harbor grants it only where there is no Commercial Hub (REQUIRES_NO_COMMERCIAL_HUB), with England's Royal Navy Dockyard unconditional; separately a Market grants one and a Lighthouse only where there is no Market (REQUIRES_NO_MARKET). CIVVIS had only the building tier. Merchant Republic's two routes were also missing. Foreign Trade, Colossus, Great Zimbabwe, Carthage and the Great Merchants already executed. Alliance-level routes remain unmodelled."
-    },
-    "ADJUST_GREAT_PERSON_POINTS": {
-      "status": "implemented",
-      "verified": true,
-      "note": "Verified row by row, and it found three wrong policy cards. Laissez-Faire is +4 Great Merchant empire-wide plus 2 per Bank, 4 per Stock Exchange, 4 Great Admiral per Seaport and 2 per Shipyard; Nobel Prize is +4 Great Scientist plus 2 per University, 4 per Research Lab, 2 Great Engineer per Factory and 4 per Power Plant; Military Organization was missing its flat +4 Great General. CIVVIS had collapsed the first two into one flat number per building tier. Strategos, Inspiration, Revelation, Literary Tradition, Navigation, Traveling Merchants, Frescoes, Invention and Symphonies were already exact. Divine Spark and the Commemoration/Zhangye Danxia rows are pantheon and content scope."
-    },
-    "ADJUST_CITY_TOURISM": {
-      "status": "implemented",
-      "verified": true,
-      "note": "Verified row by row, all matching. Heritage Tourism doubles Artifact, Landscape, Portrait, Religious and Sculpture works and not Writing or Music, which is exactly CIVVIS' art-and-artifact grouping. Curator doubles all six object types. Cristo Redentor doubles Seaside Resort Tourism. Curator's placement looked wrong -- its id is GOVERNOR_PROMOTION_MERCHANT_CURATOR and Rise and Fall gives it to Reyna -- but Gathering Storm's override of Expansion1_Governors.xml, shipped inside the Expansion2 folder, moves it to Pingala while keeping the old id. CIVVIS has it on Pingala and is right."
-    },
-    "ADJUST_DISTRICT_TOURISM_CHANGE": {
-      "status": "implemented",
-      "verified": true,
-      "note": "Verified row by row, all matching. Ferris Wheel 2, Shopping Mall 4, Thermal Bath 3 gated on a Geothermal Fissure in the city, Stadium 2 at 10 Population and 5 at 20, Aquatics Center 2 for a coastal Wonder, and Conservation's wall Tourism at 1/2/3 for Ancient, Medieval and Renaissance Walls with the Tsikhe at 3."
-    },
-    "ADJUST_CITY_IDENTITY_PER_TURN": {
-      "status": "implemented",
-      "verified": true,
-      "note": "Verified row by row. Monument +1, Limitanei +2 with a garrison and Praetorium +2 with a Governor all match. Three did not: Martial Law pays 2 for a garrison and CIVVIS paid 4; Colonial Offices grants +3 Loyalty in cities off the Capital's continent, which CIVVIS omitted entirely while keeping the growth half; and the Colosseum's +2 Loyalty to every city within six tiles was missing, though its Culture, Amenities and range were present. Automated Workforce, Police State and the Government Plaza debuff belong to content CIVVIS does not carry."
-    },
-    "ADJUST_CITY_FREE_POWER": {
-      "status": "implemented",
-      "verified": true,
-      "note": "Verified row by row: Geothermal Plant 4, Hydroelectric Dam 6, Wind/Solar/Offshore Wind 2 each, Reyna's Renewable Subsidizer +2 on each of those five, and Aerospace Contractors' Spaceport 3 all execute with the shipped amounts. The three remaining rows are Cardiff, a city-state outside CIVVIS' modelled roster, which is content scope rather than effect scope."
-    },
-    "ADJUST_CITY_GREATWORK_YIELD": {
-      "status": "implemented",
-      "note": "Great Work yields, slots and Culture/Tourism output execute."
-    },
-    "ADJUST_PLAYER_GOVERNOR_POINTS": {
-      "status": "implemented",
-      "verified": true,
-      "note": "Verified row by row, and it found the biggest single gap yet. Fourteen civics each award a Governor title -- State Workforce, Early Empire, Defensive Tactics, Recorded History, Guilds, Medieval Faires, Civil Engineering, Nationalism, Mass Media, Mobilization, Globalization, Social Media, Near Future Governance and Future Civic. CIVVIS hardcoded three, two of which (Political Philosophy and Civil Service) award none in the shipped tree, so a full game yielded roughly a quarter of the titles it should. The grant is now a governor_title field on the civic. The Government Plaza district and its buildings award one each, and Casa de Contratacion three, all already present.",
-      "leads": [
-        "Casa de Contratacion's three titles are modelled as governor_titles 3 on the wonder; confirm they arrive once rather than per building."
-      ]
-    },
-    "ADJUST_DISTRICT_YIELD_MODIFIER": {
-      "status": "implemented",
-      "verified": true,
-      "note": "Verified row by row. Every adjacency-doubling card CIVVIS carries matches at +100%: Aesthetics and Sports Media on the Theater Square, Natural Philosophy and Five Year Plan on the Campus, Five Year Plan and Craftsmen on the Industrial Zone, Town Charters and Economic Union on the Commercial Hub, Economic Union and Naval Infrastructure on the Harbor, Scripture on the Holy Site, and Reyna's Harbormaster on both Commercial Hub and Harbor. Collectivism is a card CIVVIS does not carry."
-    },
-    "ADJUST_DISTRICT_YIELD_CHANGE": {
-      "status": "implemented",
-      "note": "Flat district yield changes."
-    },
-    "TERRAIN_ADJACENCY": {
-      "status": "implemented",
-      "note": "District adjacency is audited source by source at zero divergence."
-    },
     "ADD_RELIGIOUS_BELIEF_YIELD": {
       "status": "implemented",
       "verified": true,
       "note": "Verified, and the ambiguity is settled by the shipped text rather than the tables. Tithe, Pilgrimage and World Church each carry a base row and a Gathering Storm row with no Delete between them, but Gathering Storm also ships _EXPANSION2_DESCRIPTION wording for all three: Tithe '+3 Gold for each city following the Religion', Pilgrimage '+2 Faith for each city following this Religion', World Church '+1 Culture for every 4 followers of this Religion'. Only the Gathering Storm row is live, and 'each city following this Religion' means every such city rather than the founder's own. CIVVIS carries exactly that for all four beliefs, Church Property included. Reverting yesterday's change was correct."
+    },
+    "ADD_RELIGIOUS_BUILDING": {
+      "status": "implemented",
+      "verified": true,
+      "note": "Verified row by row against the cache: 9 rows, one per Worship belief, each granting that belief's building. CIVVIS models all nine Worship beliefs - the only belief class it carries complete - and each grants its building."
     },
     "ADJUST_BUILDING_PRODUCTION": {
       "status": "implemented",
@@ -131,20 +36,332 @@
         "Governor promotion-tree membership is settled by the grid slot, not the row list. GovernorPromotionSets is keyed on governor plus promotion and Gathering Storm never deletes the Rise and Fall rows, so the union over-counts; but every duplicate pair shares one (Level, Column), and the Gathering Storm promotion is the occupant. Reyna's L1C2 is Forestry Management over Foreign Exchange, Pingala's L3C2 is Space Initiative over Arms Race Proponent, Amani's L1C2 is Affluence over Prestige and L2C2 Foreign Investor over Promoter, Liang's L1C0 is Zoning Commissioner over Infrastructure and L2C2 Water Works over Architect. CIVVIS holds the Gathering Storm occupant of every slot."
       ]
     },
-    "ADJUST_PROJECT_PRODUCTION": {
+    "ADJUST_BUILDING_YIELD_CHANGE": {
       "status": "implemented",
       "verified": true,
-      "note": "Verified row by row. Space Initiative adds 30% to all five space-race projects, which CIVVIS carries as space_project_production_pct. The remaining rows are Arms Race Proponent's nuclear projects and the Rogue State card, neither of which CIVVIS models."
+      "note": "Verified row by row. Third Alternative, Military Research, the Electronics Factory Culture, the Tsikhe Faith, Choral Music, Feed the World and Isaac Newton's University Science all match. City-state Envoy bonuses also match, including the final-patch Ethiopia ladder rather than the superseded base rows. The former structural gap is closed: a named modifier now declares building_yields for any exact building, replacement family, or wildcard; the loader compiles those selectors through nested ATTACH_MODIFIER composition, and the city-yield consumer combines active player, policy, tree, civilization, infrastructure, belief, pantheon and Governor sources. Regression tests exercise two arbitrary buildings including a unique replacement family."
     },
-    "ADJUST_UNIT_TAG_ERA_PRODUCTION": {
+    "ADJUST_BUILDING_YIELD_MODIFIERS_FOR_DISTRICT": {
       "status": "implemented",
       "verified": true,
-      "note": "Verified row by row. The amounts and class groupings were already right, but the effect's whole point is the era window and CIVVIS ignored it: Agoge boosted a Modern Infantry as readily as a Warrior, and every one of the nine cards stacked across all nine eras. Each card now carries its shipped window -- Agoge 0-1, Feudal Contract 2-3, Grande Armee 4-5, Military First 6-7, Chivalry 0-4, Lightning Warfare 5-7, Defense of the Motherland 5-7, Strategic Air Force 6-7, International Waters 0-7 -- checked against the era of the node that unlocks the unit. Letters of Marque, Patriotic War and Finest Hour are cards CIVVIS does not carry."
+      "note": "Rationalism, Free Market, Grand Opera and Simultaneum each ship twice. The base rows double a named building's yield outright; the Gathering Storm rows replace that with two conditional halves, +50% where the city has 15 Population and +50% where the district already earns 4 of that yield from adjacency, which is what the Gathering Storm description states. CIVVIS carried the flat double -- strictly stronger than the shipped card in every city that meets neither condition, which early on is all of them."
+    },
+    "ADJUST_CITY_ALL_YIELDS_CHANGE": {
+      "status": "implemented",
+      "verified": true,
+      "note": "Verified: Autocracy's six rows are one per yield at +1, matching CIVVIS' government_building_yields of 1 across Food, Production, Gold, Science, Culture and Faith."
+    },
+    "ADJUST_CITY_FREE_POWER": {
+      "status": "implemented",
+      "verified": true,
+      "note": "Verified row by row: Geothermal Plant 4, Hydroelectric Dam 6, Wind/Solar/Offshore Wind 2 each, Reyna's Renewable Subsidizer +2 on each of those five, and Aerospace Contractors' Spaceport 3 all execute with the shipped amounts. The three remaining rows are Cardiff, a city-state outside CIVVIS' modelled roster, which is content scope rather than effect scope."
+    },
+    "ADJUST_CITY_GREATWORK_YIELD": {
+      "status": "implemented",
+      "verified": true,
+      "note": "Verified row by row against the cache: 28 rows, of which CIVVIS models exactly one and models it correctly. Kandy's MINOR_CIV_KANDY_BETTER_RELIC_BONUS is ScalingFactor 150 on Relic Faith, and city_yields raises relic_faith from 4 to 6 under grants_city_state_unique_bonus(\"Kandy\") - both halves of that suzerain bonus are present, the Relic grant on discovering a Natural Wonder and the Faith scaling. The base Great Work yields themselves (Relic 4 Faith, Writing 2 Culture, Art/Artifact 3, Music 4) are audited separately and exactly by civ6_fidelity.py's GreatWorkValues table. The other 27 rows belong to Babylon (3, a city-state outside the modelled 12), the Reliquaries belief (CIVVIS models 6 of 9 followers), Heroes & Legends relic content the CPL lobby disables with all game modes, and the Lithuania, Kongo and Nkisi traits - content scope, measured by civ6_fidelity.py."
+    },
+    "ADJUST_CITY_GROWTH": {
+      "status": "implemented",
+      "verified": true,
+      "note": "Verified: Fertility Rites +10%, Hanging Gardens +15%, Colonial Offices +15%. CIVVIS keeps them on three distinct keys because their scopes differ -- the belief is per-city, the wonder is empire-wide, and the card applies only off the Capital's continent."
+    },
+    "ADJUST_CITY_IDENTITY_PER_TURN": {
+      "status": "implemented",
+      "verified": true,
+      "note": "Verified row by row. Monument +1, Limitanei +2 with a garrison and Praetorium +2 with a Governor all match. Three did not: Martial Law pays 2 for a garrison and CIVVIS paid 4; Colonial Offices grants +3 Loyalty in cities off the Capital's continent, which CIVVIS omitted entirely while keeping the growth half; and the Colosseum's +2 Loyalty to every city within six tiles was missing, though its Culture, Amenities and range were present. Automated Workforce, Police State and the Government Plaza debuff belong to content CIVVIS does not carry."
+    },
+    "ADJUST_CITY_TOURISM": {
+      "status": "implemented",
+      "verified": true,
+      "note": "Verified row by row, all matching. Heritage Tourism doubles Artifact, Landscape, Portrait, Religious and Sculpture works and not Writing or Music, which is exactly CIVVIS' art-and-artifact grouping. Curator doubles all six object types. Cristo Redentor doubles Seaside Resort Tourism. Curator's placement looked wrong -- its id is GOVERNOR_PROMOTION_MERCHANT_CURATOR and Rise and Fall gives it to Reyna -- but Gathering Storm's override of Expansion1_Governors.xml, shipped inside the Expansion2 folder, moves it to Pingala while keeping the old id. CIVVIS has it on Pingala and is right."
+    },
+    "ADJUST_CITY_TRADE_ROUTE_YIELD_PER_DESTINATION_LUXURY_RESOURCE_FOR_INTERNATIONAL": {
+      "status": "implemented",
+      "verified": true,
+      "note": "Verified. Torre de Belem's 2 Gold per destination luxury already matched exactly. Market Economy's row did not: CIVVIS paid it as a flat trade_gold of 2, where it ships as 1 Gold PER luxury resource the destination city owns, alongside a matching STRATEGIC row at 1. The card is therefore worth nothing into a bare city and a great deal into a resource-rich one, which a flat 2 cannot express in either direction."
+    },
+    "ADJUST_CITY_TRADE_ROUTE_YIELD_PER_DESTINATION_STRATEGIC_RESOURCE_FOR_INTERNATIONAL": {
+      "status": "implemented",
+      "verified": true,
+      "note": "Verified together with its LUXURY twin -- Market Economy is the only owner CIVVIS models, at 1 Gold per strategic resource the destination owns. Bonus and artifact resources pay nothing, which the test pins."
+    },
+    "ADJUST_CITY_YIELD_CHANGE": {
+      "status": "implemented",
+      "verified": true,
+      "note": "Verified row by row against the cache. God King 1 Gold and 1 Faith in the Capital, Urban Planning 1 Production in all cities, and the Monument's 1 Culture - which CIVVIS carries as the building's own yields rather than an effect, so it reads as absent from the effects map and is not. The Old God Obelisk is Secret Societies content the CPL lobby disables."
     },
     "ADJUST_CITY_YIELD_MODIFIER": {
       "status": "implemented",
       "verified": true,
       "note": "Verified row by row for the wonders, policies and governments CIVVIS models. Amundsen-Scott, Broadway, Casa de Contratacion and Kilwa Kisiwani carry their shipped percentages; Colonial Taxes was missing the +10% Production that accompanies its +25% Gold on foreign continents, now applied. Communism and Corporate Libertarianism yields, Disinformation Campaign and the Great Work rows remain content or systems CIVVIS scopes differently; POLICY_INQUISITION belongs to a game mode outside the baseline."
+    },
+    "ADJUST_CITY_YIELD_PER_POPULATION": {
+      "status": "implemented",
+      "verified": true,
+      "note": "Verified including the requirement sets, which is where the granularity lives. Prasat 0.5 Culture is unconditional, but Theocracy 0.5 Faith and Communism 0.6 Production are both gated on CITY_HAS_GOVERNOR -- and CIVVIS names those two keys governor_faith_per_pop and governor_production_per_pop while leaving Prasat's plain, so the gate survived the translation."
+    },
+    "ADJUST_DISTRICT_GREAT_PERSON_POINTS": {
+      "status": "implemented",
+      "verified": true,
+      "note": "Verified: the Oracle's seven rows are one per Great Person class, each +2, which is what CIVVIS' single city_district_gpp 2 pays."
+    },
+    "ADJUST_DISTRICT_TOURISM_CHANGE": {
+      "status": "implemented",
+      "verified": true,
+      "note": "Verified row by row, all matching. Ferris Wheel 2, Shopping Mall 4, Thermal Bath 3 gated on a Geothermal Fissure in the city, Stadium 2 at 10 Population and 5 at 20, Aquatics Center 2 for a coastal Wonder, and Conservation's wall Tourism at 1/2/3 for Ancient, Medieval and Renaissance Walls with the Tsikhe at 3."
+    },
+    "ADJUST_DISTRICT_YIELD_BASED_ON_ADJACENCY_BONUS": {
+      "status": "implemented",
+      "verified": true,
+      "note": "Verified: the effect mirrors one district's adjacency into another yield. Work Ethic grants Production mirroring Holy Site adjacency behind its own requirement set, and Alchemical Society and Gilded Vault mirror Campus and Commercial Hub adjacency into Gold and Culture. All three match, though the latter two belong to Secret Societies and so are out of scope for the CPL ruleset."
+    },
+    "ADJUST_DISTRICT_YIELD_CHANGE": {
+      "status": "implemented",
+      "verified": true,
+      "note": "Verified row by row against the cache: 16 rows, and it found Public Transport wrong in four ways, now fixed. The shipped card is five modifiers: PUBLICTRANSPORT_NEIGHBORHOOD_GOLD +1 unconditional, the Charming pair (+3 Food, +1 Production) behind PLOT_IS_APPEAL_BETWEEN MinimumAppeal 2, and the Breathtaking pair (+1, +1) behind another at 4, all four carrying DISTRICT_TYPE_MATCHES DISTRICT_NEIGHBORHOOD so they pay per district. CIVVIS paid a flat +3/+1 once per city with any Neighborhood, at any Appeal, and no Gold - a missing yield, an ungated condition, a missing band and the wrong granularity. Praetorian Guard's Encampment Production is a Dark Age card CIVVIS does not model; the remaining ten rows are city-state suzerain district yields (including their Papal Primacy variants), Nan Madol and the Exalted Goddess leader trait - content scope."
+    },
+    "ADJUST_DISTRICT_YIELD_MODIFIER": {
+      "status": "implemented",
+      "verified": true,
+      "note": "Verified row by row. Every adjacency-doubling card CIVVIS carries matches at +100%: Aesthetics and Sports Media on the Theater Square, Natural Philosophy and Five Year Plan on the Campus, Five Year Plan and Craftsmen on the Industrial Zone, Town Charters and Economic Union on the Commercial Hub, Economic Union and Naval Infrastructure on the Harbor, Scripture on the Holy Site, and Reyna's Harbormaster on both Commercial Hub and Harbor. Collectivism is a card CIVVIS does not carry."
+    },
+    "ADJUST_FLAT_BONUS": {
+      "status": "implemented",
+      "verified": true,
+      "note": "Verified row by row against the cache: 8 government bonuses. Seven already matched - Autocracy WONDER_CONSTRUCTION 10 as wonder_production_pct, Oligarchy COMBAT_EXPERIENCE 20 in modified_xp rather than data, Classical Republic GREAT_PEOPLE 15, Monarchy ENVOYS 50 as influence_pct, Merchant Republic DISTRICT_PRODUCTION 15, Fascism UNIT_PRODUCTION 50, Democracy GOLD_PURCHASES 15. Theocracy's FAITH_PURCHASES 15 had no counterpart at all: the purchase path applied a government discount for Gold and nothing for Faith, though THEOCRACY_FAITH_PURCHASE is the exact twin of Democracy's Gold row. Added as faith_purchase_discount_pct."
+    },
+    "ADJUST_GREAT_PERSON_POINTS": {
+      "status": "implemented",
+      "verified": true,
+      "note": "Verified row by row, and it found three wrong policy cards. Laissez-Faire is +4 Great Merchant empire-wide plus 2 per Bank, 4 per Stock Exchange, 4 Great Admiral per Seaport and 2 per Shipyard; Nobel Prize is +4 Great Scientist plus 2 per University, 4 per Research Lab, 2 Great Engineer per Factory and 4 per Power Plant; Military Organization was missing its flat +4 Great General. CIVVIS had collapsed the first two into one flat number per building tier. Strategos, Inspiration, Revelation, Literary Tradition, Navigation, Traveling Merchants, Frescoes, Invention and Symphonies were already exact. Divine Spark and the Commemoration/Zhangye Danxia rows are pantheon and content scope."
+    },
+    "ADJUST_IMPROVEMENT_AMENITY": {
+      "status": "implemented",
+      "verified": true,
+      "note": "Verified row by row against the cache: 10 rows. The Camp, Pasture and Plantation rows look at first like base improvements granting an Amenity, which Civ VI does not do - they are the TEMPLE OF ARTEMIS', gated on PLOT_ADJACENT_BUILDING_TYPE_MATCHES BUILDING_TEMPLE_ARTEMIS at range 4. CIVVIS carries exactly that as improvement_amenity_range 4, counting owned unpillaged Camps, Pastures and Plantations in the disk. City Park's water Amenity (adjacent to Coast, Lake or River) and the Ski Resort's are also carried. Golf Course, Ice Hockey Rink and Mound are improvements CIVVIS does not model."
+    },
+    "ADJUST_INFLUENCE_POINTS_PER_TURN": {
+      "status": "implemented",
+      "verified": true,
+      "note": "Verified: Charismatic Leader +2, Gunboat Diplomacy +4, Consulate +2, Chancery +3."
+    },
+    "ADJUST_PLAYER_EXTRA_FAVOR_PER_TURN": {
+      "status": "implemented",
+      "verified": true,
+      "note": "Verified. The Future Civic cards at 1 and 4 and the Pagoda at 1 already matched. MONARCHY_STARFORT_FAVOR was missing outright: it is a PLAYER_CITIES modifier gated on REQUIREMENT_CITY_HAS_BUILDING BUILDING_STAR_FORT, so it pays 2 per qualifying city rather than once. Star Fort is Renaissance Walls under its Gathering Storm name -- same TECH_SIEGE_TACTICS, same 300 cost, same 100 outer defense as CIVVIS' renaissance_walls, and BUILDING_CASTLE is likewise CIVVIS' medieval_walls. Added. Separately confirmed that CIVVIS' per-government favor ladder of 0/1/2/3/4 is exactly the Governments table's Tier column."
+    },
+    "ADJUST_PLAYER_GOVERNMENT_SLOT_TYPE": {
+      "status": "implemented",
+      "verified": true,
+      "note": "Verified row by row against the cache: 4 rows and all four match. The Alhambra grants SLOT_MILITARY, Potala Palace SLOT_DIPLOMATIC, Forbidden City SLOT_WILDCARD and Big Ben SLOT_ECONOMIC, and CIVVIS carries each as the matching *_policy_slots effect."
+    },
+    "ADJUST_PLAYER_GOVERNOR_POINTS": {
+      "status": "implemented",
+      "verified": true,
+      "note": "Verified row by row, and it found the biggest single gap yet. Fourteen civics each award a Governor title -- State Workforce, Early Empire, Defensive Tactics, Recorded History, Guilds, Medieval Faires, Civil Engineering, Nationalism, Mass Media, Mobilization, Globalization, Social Media, Near Future Governance and Future Civic. CIVVIS hardcoded three, two of which (Political Philosophy and Civil Service) award none in the shipped tree, so a full game yielded roughly a quarter of the titles it should. The grant is now a governor_title field on the civic. The Government Plaza district and its buildings award one each, and Casa de Contratacion three, all already present.",
+      "leads": [
+        "Casa de Contratacion's three titles are modelled as governor_titles 3 on the wonder; confirm they arrive once rather than per building."
+      ]
+    },
+    "ADJUST_PLAYER_RESOURCE_ACCUMULATION_MODIFIER": {
+      "status": "implemented",
+      "verified": true,
+      "note": "Verified row by row against the cache: 6 rows, +1 accumulation each. They pair by era exactly as CIVVIS groups them: Equestrian Orders on Horses and Iron (early_strategic_resource_rate), Drill Manuals on Niter and Coal (industrial), Resource Management on Aluminum and Oil (modern). The era grouping is not a simplification - it reproduces the shipped pairs."
+    },
+    "ADJUST_PLAYER_RESOURCE_STOCKPILE_CAP": {
+      "status": "implemented",
+      "verified": true,
+      "note": "Verified row by row against the cache: 6 rows at +10 each, and all six match - Barracks, Stable, Armory, Military Academy, and the Ordu and Basilikoi Paides uniques, each carrying strategic_stockpile 10."
+    },
+    "ADJUST_PLAYER_STRENGTH_MODIFIER": {
+      "status": "implemented",
+      "verified": true,
+      "note": "Verified row by row. All 48 promotion Combat Strength amounts CIVVIS models match the shipped values exactly, under CIVVIS' own semantic effect names. The Giant Death Robot's four tech upgrades were attached to the wrong nodes: Advanced Power Cells ships the Particle Beam Siege Cannon and Cybernetics Enhanced Mobility, while CIVVIS had the movement on Advanced Power Cells and invented a healing upgrade on Cybernetics that no shipped row grants. Now corrected. The remaining rows are unit abilities for leaders and city-states outside CIVVIS' roster."
+    },
+    "ADJUST_PLAYER_TRADE_ROUTE_DESTINATION_YIELD_FOR_ALLY_ROUTE": {
+      "status": "implemented",
+      "verified": true,
+      "note": "Verified together with its ORIGIN and _FOR_SUZERAIN_ROUTE siblings, which only ever ship as a set of eight. Democracy pays 4 and Wisselbanken pays 2, each across both directions and both ally and suzerain routes. CIVVIS had the government half right via government_trade_partner, but Wisselbanken was on the ungated trade_food/trade_production keys and so paid every route, domestic ones included. Fixed by giving the policy the same allied_suzerain_ keys at both endpoints. Its own note field had said 'Alliance routes' all along."
+    },
+    "ADJUST_PLAYER_TRADE_ROUTE_DESTINATION_YIELD_FOR_SUZERAIN_ROUTE": {
+      "status": "implemented",
+      "verified": true,
+      "note": "Verified as part of the eight-row ally/suzerain trade set, which Democracy and Wisselbanken only ever ship complete: ORIGIN and DESTINATION halves of _FOR_ALLY_ROUTE and _FOR_SUZERAIN_ROUTE, Democracy at 4 and Wisselbanken at 2. See ADJUST_PLAYER_TRADE_ROUTE_DESTINATION_YIELD_FOR_ALLY_ROUTE for the defect this found."
+    },
+    "ADJUST_PLAYER_TRADE_ROUTE_ORIGIN_YIELD_FOR_ALLY_ROUTE": {
+      "status": "implemented",
+      "verified": true,
+      "note": "Verified as part of the eight-row ally/suzerain trade set, which Democracy and Wisselbanken only ever ship complete: ORIGIN and DESTINATION halves of _FOR_ALLY_ROUTE and _FOR_SUZERAIN_ROUTE, Democracy at 4 and Wisselbanken at 2. See ADJUST_PLAYER_TRADE_ROUTE_DESTINATION_YIELD_FOR_ALLY_ROUTE for the defect this found."
+    },
+    "ADJUST_PLAYER_TRADE_ROUTE_ORIGIN_YIELD_FOR_SUZERAIN_ROUTE": {
+      "status": "implemented",
+      "verified": true,
+      "note": "Verified as part of the eight-row ally/suzerain trade set, which Democracy and Wisselbanken only ever ship complete: ORIGIN and DESTINATION halves of _FOR_ALLY_ROUTE and _FOR_SUZERAIN_ROUTE, Democracy at 4 and Wisselbanken at 2. See ADJUST_PLAYER_TRADE_ROUTE_DESTINATION_YIELD_FOR_ALLY_ROUTE for the defect this found."
+    },
+    "ADJUST_PLAYER_YIELD_CHANGE_PER_TRIBUTARY": {
+      "status": "implemented",
+      "verified": true,
+      "note": "Verified: Raj ships exactly four rows -- Gold, Faith, Science and Culture at +2 each, with no Food or Production. CIVVIS' key is named suzerain_all_yields but the code enumerates those same four, so the loose name does not cost anything."
+    },
+    "ADJUST_PLOT_YIELD": {
+      "status": "implemented",
+      "verified": true,
+      "note": "Verified row by row against the cache: 123 rows, the largest effect. Twelve owners are content CIVVIS models and two of them were wrong, both in their conditions rather than their amounts - which is why a value sweep had missed them. The Water Mill ships three RESOURCE_TYPE_MATCHES rows for Maize, Rice and Wheat with NO improvement requirement; CIVVIS demanded a Farm and then paid any Bonus resource, wrong in both directions at once. The Aquarium ships AQUARIUM_REEF_SCIENCE and, separately, AQUARIUM_SEARESOURCE_SCIENCE whose requirement set is PLOT_RESOURCE_VISIBLE and TERRAIN_COAST together; CIVVIS paid every coast tile whether or not anything was on it. Both fixed. Verified exact and untouched: Zoo (+1 Science on Marsh and Jungle), Seaport (+2 Gold on Coast), Lighthouse (+1 Food on Coast), Shipyard, Stave Church, Marae, Palgum, City Park, Fishery and Sphinx. The other 13 owners - Chateau, Golden Gate Bridge, leader and civilization traits, and game-mode content - are outside the modelled roster."
+    },
+    "ADJUST_POLICY_AMENITY": {
+      "status": "implemented",
+      "verified": true,
+      "note": "Verified row by row against the cache, and it was absent from this file entirely, so the census counted it unmodelled. Every owner CIVVIS models is exact: Liberalism 1, New Deal 2, Retainers 1, Sports Media 1, Classical Republic 1, Civil Prestige 1, Robber Barons -2, Digital Democracy 2, Music Censorship -1. The rest belong to policies outside the modelled 125 of 157."
+    },
+    "ADJUST_POLICY_HOUSING": {
+      "status": "implemented",
+      "verified": true,
+      "note": "Verified row by row against the cache, and likewise absent from this file. Every owner CIVVIS models is exact: Monarchy 1 at each of the three wall levels, Insulae 1, Medina Quarter 2, New Deal 4, Classical Republic 1, Civil Prestige 2, and the Audience Chamber's 4 under BUILDING_GOV_TALL."
+    },
+    "ADJUST_PROJECT_PRODUCTION": {
+      "status": "implemented",
+      "verified": true,
+      "note": "Verified row by row. Space Initiative adds 30% to all five space-race projects, which CIVVIS carries as space_project_production_pct. The remaining rows are Arms Race Proponent's nuclear projects and the Rogue State card, neither of which CIVVIS models."
+    },
+    "ADJUST_TRADE_ROUTE_CAPACITY": {
+      "status": "implemented",
+      "verified": true,
+      "note": "Verified row by row, and it found two gaps now fixed. A city earns up to two routes from its own infrastructure and each is an either/or: the Commercial Hub grants one and a Harbor grants it only where there is no Commercial Hub (REQUIRES_NO_COMMERCIAL_HUB), with England's Royal Navy Dockyard unconditional; separately a Market grants one and a Lighthouse only where there is no Market (REQUIRES_NO_MARKET). CIVVIS had only the building tier. Merchant Republic's two routes were also missing. Foreign Trade, Colossus, Great Zimbabwe, Carthage and the Great Merchants already executed. Alliance-level routes remain unmodelled."
+    },
+    "ADJUST_TRADE_ROUTE_YIELD": {
+      "status": "implemented",
+      "verified": true,
+      "note": "Verified row by row against the cache, and it found E-Commerce wrong in three ways, now fixed. The shipped rows are ECOMMERCE_TRADEROUTEGOLD 5 and ECOMMERCE_TRADEROUTEPRODUCTION 2 with NO requirement set, so they pay every route; CIVVIS paid 10 Gold and 5 Production and restricted both to international. The scope error is the decisive one: the database ships ADJUST_TRADE_ROUTE_YIELD and ADJUST_TRADE_ROUTE_YIELD_FOR_INTERNATIONAL as separate effects, and E-Commerce uses the generic one where Market Economy uses the international one. Caravansaries 2 Gold and Triangular Trade 4 Gold plus 1 Faith already matched. Re-confirmed on the later sweep of the whole trade-route family: this is the genuinely ungated effect, and the family's four EffectTypes -- generic, _FOR_DOMESTIC, _FOR_INTERNATIONAL, and the ally/suzerain pair -- are the only thing that says which routes a card pays."
+    },
+    "ADJUST_TRADE_ROUTE_YIELD_FOR_DOMESTIC": {
+      "status": "implemented",
+      "verified": true,
+      "note": "Verified row by row against the cache: Collectivization 4 Food and 2 Production, Isolationism 3 Food, 3 Production and 3 Gold. Isolationism's Gold was added and its 2s raised to 3s in an earlier pass of this loop. That pass compared the AMOUNTS and called Collectivization matching, which it was -- but its 4 and 2 sat on the ungated trade_food/trade_production keys, so CIVVIS paid them on international routes too while Isolationism alone used domestic_trade_. Fixed. The lesson is that reading an effect's name is part of checking a row, not a formality: the gate lives in the EffectType here, not in a requirement set."
+    },
+    "ADJUST_TRADE_ROUTE_YIELD_FOR_INTERNATIONAL": {
+      "status": "implemented",
+      "verified": true,
+      "note": "Verified. Both policy owners were paying every route: Trade Confederation's +1 Culture and +1 Science and Market Economy's +2 of each sat on the ungated trade_culture and trade_science keys. Those two cards are the ONLY owners of either key anywhere in the policy tree, so the fix was to rename them international_ and move them inside the existing !domestic block -- nothing else could regress. Both cards' own notes already said 'international'. The remaining owners are Treasure Fleet, Mediterranean and Radio Oranje, which are civilization and leader traits outside CIVVIS' modelled roster."
+    },
+    "ADJUST_UNIT_BUILD_CHARGES": {
+      "status": "implemented",
+      "verified": true,
+      "note": "Verified: Pyramids 1, Public Works 2 and Serfdom 2, each gated on UNIT_IS_BUILDER, all matching."
+    },
+    "ADJUST_UNIT_CLEAR_TERRAIN_START_MOVEMENT": {
+      "status": "implemented",
+      "verified": true,
+      "note": "The Heavy Chariot gains 1 Movement when it begins its turn on clear terrain -- flat, no Woods, Rainforest or Hills. CIVVIS had the unit at a flat 2 Movement with no such clause. The Light Chariot carries the same rule at 2, on a unit CIVVIS does not model."
+    },
+    "ADJUST_UNIT_EXPERIENCE_MODIFIER": {
+      "status": "implemented",
+      "verified": true,
+      "note": "Verified row by row. Barracks, Armory, Basilikoi Paides, Lighthouse and Hangar all grant 25% to the units they train, matching. Two did not: After Action Reports is +50% and CIVVIS had 25, and Airport-trained aircraft gain 50% where CIVVIS had 25. Elite Forces (+100%) is a card CIVVIS does not carry."
+    },
+    "ADJUST_UNIT_GRANT_EXPERIENCE": {
+      "status": "implemented",
+      "verified": true,
+      "note": "Verified row by row against the cache: 22 rows. Only one grants a flat amount - GOODY_MILITARY_GRANT_EXPERIENCE at 20, which CIVVIS pays as goody_huts.json military/grant_experience reward experience 20. The other 21 all carry Amount -1, which is the shipped idiom for \"enough XP for a free promotion\" rather than a quantity; of those CIVVIS models Hannibal Barca, as land_unit_promotion_level 1. The rest hang off Great People, governor promotions and unique abilities CIVVIS does not model, which is content scope measured by civ6_fidelity.py rather than a gap in this effect. ALLIANCE_FREE_UNIT_UPGRADE and GREATPERSON_GENGHIS_KHAN_ACTIVE are unattached - no owner table grants them - so the shipped game never fires them either."
+    },
+    "ADJUST_UNIT_HEALING_MODIFIERS": {
+      "status": "implemented",
+      "verified": true,
+      "note": "Verified row by row. Chaplain's +20 adjacent heal matches. Auxiliary Ships, Supply Fleet and Supercarrier do not let a ship heal as if it were home: each pays 5 in enemy territory and 10 in neutral. CIVVIS modelled all three as a boolean 'heal anywhere' worth the full 20, which roughly doubled naval sustain in neutral water and quadrupled it in enemy water."
+    },
+    "ADJUST_UNIT_MAINTENANCE_DISCOUNT": {
+      "status": "implemented",
+      "verified": true,
+      "note": "Verified: Conscription 1 and Levee en Masse 2 are discounts, and Elite Forces is -1, a surcharge -- CIVVIS carries that one on a separate unit_maintenance_surcharge key of 1, which is the same thing with the sign moved into the name."
+    },
+    "ADJUST_UNIT_MOVEMENT": {
+      "status": "implemented",
+      "verified": true,
+      "note": "Verified row by row with conditions resolved. Advanced Engines, Commando, Helmsman, Pursuit, Redeploy, Swift Keel each grant 1 and Roadies 4, all matching, and the Giant Death Robot's Enhanced Mobility grants 3 from Cybernetics. The rest are leader and city-state abilities, Commemorations, Emergencies and the Letters of Marque card, none of which CIVVIS carries."
+    },
+    "ADJUST_UNIT_PILLAGE_IMPROVEMENT_MODIFIER": {
+      "status": "implemented",
+      "verified": true,
+      "note": "Raid and Total War multiply pillage yields by 2 -- the shipped Amount is a multiplier, not a percentage. CIVVIS read it as +50%."
+    },
+    "ADJUST_UNIT_PRODUCTION": {
+      "status": "implemented",
+      "verified": true,
+      "note": "Verified row by row: all six owners CIVVIS models carry the shipped Amount and UnitType. Colonization and Expropriation +50% Settler, Ilkum and Public Works +30% Builder, Machiavellianism +50% Spy, Future Victory Domination +50% Giant Death Robot."
+    },
+    "ADJUST_UNIT_PURCHASE_COST": {
+      "status": "implemented",
+      "verified": true,
+      "note": "Verified row by row against the cache: 49 rows. Holy Order's Apostles and Missionaries, Meenakshi Temple Gurus, Monumentality Builders and Settlers, and the modeled Great Person patronage paths retain their shipped discounts. The former generality gap is closed: named modifiers declare unit_purchase_discount_pct by exact unit, replacement family, or wildcard. One authoritative unit_purchase_cost quote combines those selectors with religion, district, government, dedication and Congress modifiers; both AI-visible legal action enumeration and execution use the quote, so a newly affordable purchase is no longer hidden from strategy. Rock Bands and Naturalists use the same path."
+    },
+    "ADJUST_UNIT_SPY_OPERATION_CHANCE": {
+      "status": "implemented",
+      "verified": true,
+      "note": "Verified row by row against the cache. Ten offensive rows, one per operation at Amount 2 with Offensive 1, each on its own promotion - CIVVIS' spy_mission_promotion maps all ten to the same missions and pays the same +2. Six more rows carry Offensive 0 and all six attach to a SINGLE promotion, PROMOTION_SPY_SEDUCTION, so the shipped Seduction is one promotion defending against six operations rather than six promotions; CIVVIS models it as one `seduction` giving +2 to the defending counterspy, which is exact. CIVVIS carries all 17 shipped PROMOTION_CLASS_SPY promotions. SPYING_EMERGENCY_MEMBER_ANTI_SPY_REWARD (-10 against Great Work Heist for an Emergency target) is unattached and unmodelled. Beware PROMOTION_SPYGLASS: it matches a PROMOTION_SPY% pattern and is a RECON promotion, not an eighteenth spy one."
+    },
+    "ADJUST_UNIT_TAG_ERA_PRODUCTION": {
+      "status": "implemented",
+      "verified": true,
+      "note": "Verified row by row across all twelve owners CIVVIS models, and eight were wrong. The effect ships one row per (era, promotion class) pair, and the decisive fact is that each card in a ladder REPEATS its predecessor's eras instead of starting where that one stopped: Agoge is Ancient-Classical, Feudal Contract is Ancient-Renaissance, Grande Armee is Ancient-Modern and Military First is every era. CIVVIS had read the ladder as disjoint tiers -- 0-1, 2-3, 4-5, 6-7 -- so Military First boosted nothing before the Atomic era and Grande Armee nothing before the Industrial. The naval ladder had the mirror-image fault, with Maritime Industries and Press Gangs carrying no window at all and so boosting every hull ever built. Also fixed: Lightning Warfare is all eras not 5-7, Maneuver is Ancient-Classical, and Strategic Air Force covers Information-era air but Atomic-era-or-later Carriers, which is one card spanning two different windows. Agoge, Chivalry, International Waters and Defense of the Motherland were already exact. One deliberate quirk is reproduced rather than tidied: every infantry card after Agoge omits the CLASSICAL row for PROMOTION_CLASS_RANGED, which is unobservable in the standard ladder -- Archer is Ancient and Crossbowman is Medieval -- but does reach Scythia's Classical ranged unique. That needed a new per-class unit_era_gaps field, since a single era list per card cannot express a hole in one class."
+    },
+    "ADJUST_WAR_WEARINESS": {
+      "status": "implemented",
+      "verified": true,
+      "note": "Verified row by row, and the sign is the whole story. The Amount is signed toward MORE weariness: TRAIT_TOWORLDSEND_NO_WAR_WEARINESS is -100 and TRAIT_INCREASE_ENEMY_WAR_WEARINESS is +100. Martial Law and Propaganda are -25 Overall and Defense of the Motherland is -100 Domestic, all of which CIVVIS had right. FASCISM_WAR_WEARINESS is {Amount 20, Overall 1} -- a fifth MORE weariness, the price of the +50% unit Production and +5 Combat Strength -- and CIVVIS was paying a 15% reduction instead. Fixed; war_weariness_multiplier reads -20 as 1.2 with no change to the formula. Rows for Joaquim Marques Lisboa, Trung Trac and the Backstab emergency belong to content CIVVIS does not model."
+    },
+    "ADJUST_WONDER_ERA_PRODUCTION": {
+      "status": "implemented",
+      "verified": true,
+      "note": "Verified row by row, and two of the three cards CIVVIS models are named after a window they do not have. Every shipped row starts at ERA_ANCIENT and only EndEra varies: CORVEE_ANCIENTCLASSICALWONDER ends at CLASSICAL as its name says, but GOTHICARCHITECTURE_MEDIEVALRENAISSANCEWONDER runs ANCIENT to RENAISSANCE and SKYSCRAPERS_INDUSTRIALINFORMATION runs ANCIENT to FUTURE, which is every wonder in the game. CIVVIS had all three ungated, so Corvee and Gothic Architecture paid wonders far past their windows; Skyscrapers was already right by accident. Fixed with two era-scoped keys. Trusting the ModifierId over its own arguments would have gated Skyscrapers to Industrial and Gothic Architecture to Medieval, making CIVVIS wrong in the other direction."
+    },
+    "ALLIANCE_CULTURE_SHARING": {
+      "status": "implemented",
+      "verified": true,
+      "note": "Verified: 10 percent of the ally's Culture at Level 3, which CIVVIS already had right. Its Research twin did not -- see ALLIANCE_SCIENCE_SHARING."
+    },
+    "ALLIANCE_SCIENCE_SHARING": {
+      "status": "implemented",
+      "verified": true,
+      "note": "Verified against its two siblings, which is what settled it. AllianceEffects ships three Level 3 sharing rows of identical shape -- MODIFIER_ALLIANCE_PLAYERS_SCIENCE_FROM_ALLY at 10, _CULTURE_FROM_ALLY at 10 and _TOURISM_FROM_ALLY at 20 -- none of them carrying a requirement set. CIVVIS read the Cultural pair correctly as a tenth of the ALLY's Culture and a fifth of the ally's Tourism, but read the Research one as a tenth added to the player's OWN cities, gated on researching the same technology as the ally or the ally already holding it. No such requirement ships. Replaced with the ally-share its siblings already used."
+    },
+    "ALLIANCE_TOURISM_SHARING": {
+      "status": "implemented",
+      "verified": true,
+      "note": "Verified: 20 percent of the ally's Tourism at Level 3, already exact."
+    },
+    "ATTACH_MODIFIER": {
+      "status": "implemented",
+      "verified": true,
+      "note": "Verified against the Gathering Storm data mirror pinned at Civilopedia_Java 8b63eba3706f11d85fa89b431fa7ddd21f259591: all 303 shipped rows span 13 attachment modifier types, every row supplies ModifierId, every target exists, and none attaches itself. The only three targets that are themselves attachments form valid nested Secret Societies chains. The outer rows carry 4 owner and 293 subject requirement sets, 2 Permanent flags and 2 subject stack limits; RunOnce, Repeatable, NewOnly and owner stack limits are absent. CIVVIS preserves requirements on the owning rules content and resolves reusable modifier graphs recursively before the existing object consumers are built, with validation for cycles, dangling targets, malformed lists and non-finite sums."
+    },
+    "ATTACH_MODIFIER_TO_PLAYERTYPE": {
+      "status": "implemented",
+      "verified": true,
+      "note": "Verified against the same pinned Gathering Storm mirror: all 15 shipped rows use MODIFIER_CONGRESS_ATTACH_MODIFIER_TO_PLAYERTYPE with COLLECTION_OWNER; every ModifierId target exists, and none has an owner or subject requirement, lifecycle flag or stack limit. Row by row they are the World Leader diplomatic-point pair; Trade Policy's extra route, foreign-route Gold and international-route ban; Arms Control's WMD equalization and ban; Border Control's Culture Bomb and border-growth ban; Migration Treaty's growth and Loyalty pairs; and Public Relations' grievance pair. CIVVIS implements and tests those stock outcomes directly, while the general attach/detach path covers stable player-type selectors, idempotence, engine consumers and save/load for mod-defined outcomes."
+    },
+    "CITY_GRANT_RANDOM_RESOURCE_PRODUCT": {
+      "status": "implemented",
+      "verified": true,
+      "note": "Verified row by row against the cache: 28 rows, one per map Luxury, each a Corporation Product project completion. This remains Monopolies & Corporations content and therefore does not enter a CPL tournament lobby, but the optional-mode engine is now complete rather than approximate. Resource data carries all 28 Product Great Work flat yields and each Product modifier separately from its Industry modifier. City yield percentages, growth, Housing, military-unit Production, civilian-unit Production and building Production all execute; Industries apply one bundle and Corporations the shipped doubled bundle. Wine now grants flat Food plus Culture percentage, Salt alone uses the original growth group, and the previous three-resource switch is gone."
+    },
+    "DIPLOMACY_SIMPLE_EFFECT": {
+      "status": "out-of-scope",
+      "note": "Bespoke leader agendas, which MECHANICS.md scopes out deliberately. Almost every row is a TraitModifier on a leader CIVVIS does not model."
+    },
+    "District_TradeRouteYields (table)": {
+      "status": "implemented",
+      "verified": true,
+      "note": "Not a modifier effect but a data table, recorded here because it governs every trade route in the game. All 44 rows verified against route_yields: the City Center's own row is the base (domestic 1 Food and 1 Production, international 3 Gold), Campus/Holy Site/Theater pay a domestic Food and an international Science/Faith/Culture, Commercial Hub and Harbor pay a domestic Production and 3 international Gold, Government Plaza pays 2 international Gold and the Diplomatic Quarter pays Culture, and Encampment, Industrial Zone and Entertainment Complex are the three that pay the SAME yield either way. Every unique district in the table repeats its parent's numbers exactly, and district_family resolves all sixteen of them. Now pinned by a test rather than left to inspection."
+    },
+    "ENABLE_UNIT_FAITH_PURCHASE": {
+      "status": "implemented",
+      "verified": true,
+      "note": "Verified row by row. Theocracy and the Grand Master's Chapel enable Faith purchase for exactly ten land combat classes -- melee, ranged, anti-cavalry, light/heavy cavalry, light/heavy chariot, ranged cavalry, recon and siege. CIVVIS admitted every land military unit, which also let Theocracy Faith-buy a Giant Death Robot; the GDR is its own class outside the list, and is now excluded. The naval and Archaeologist rows are leader traits, and the Spy row is Wu Zetian -- content CIVVIS does not model."
+    },
+    "GRANT_ABILITY": {
+      "status": "implemented",
+      "verified": true,
+      "note": "Verified row by row against the cache: 139 rows, the second-largest effect. Every owner whose content CIVVIS models remains checked through its real consumer: training XP buildings, governments and policies, Ordu movement/XP, Inquisition and Religious Orders. The fixed owner-list limitation is removed: a named modifier can now grant any ability identity, nested attachments compile it into the numeric effect graph, and has_ability resolves active runtime, policy, tree, civilization, building, wonder and religion sources. Unrepresented unique units, leaders, game modes and the nonexistent walking Great General unit remain content/model boundaries rather than an effect-family gap."
     },
     "GRANT_UNIT_IN_CITY": {
       "status": "implemented",
@@ -153,48 +370,13 @@
     },
     "GRANT_YIELD": {
       "status": "implemented",
-      "note": "Instant yields from Great People activation and goody huts."
-    },
-    "ADJUST_BUILDING_YIELD_CHANGE": {
-      "status": "partial",
       "verified": true,
-      "note": "Verified row by row. Third Alternative, Military Research, the Electronics Factory Culture, the Tsikhe Faith, Choral Music, Feed the World and Isaac Newton's University Science all match. City-state Envoy bonuses also match, and are the trap in this effect: the database ships TWO ladders. The base rows pay the Capital at 1 Envoy, the tier-1 building at 3 and the tier-2 building at 6, all at a flat 2. The Ethiopia-pack rows -- the final-patch structure CIVVIS implements, and the one a Gathering Storm game actually runs -- pay Capital and tier-1 at 1 Envoy, tier-2 plus the Consulate at 3, and tier-3 plus the Chancery at 6, with amounts 1/2/3 doubled for Trade. Reading the base rows and 'correcting' CIVVIS to them is wrong; the two are distinguished only by the _ETHIOPIA suffix on the attaching modifier. Still partial for the structural reason: an arbitrary modifier cannot adjust an arbitrary building's yield, only the named sources here."
+      "note": "Verified row by row against the cache: 17 rows. The six goody-hut grants match exactly - Gold 120/75/40 and Faith 100/60/20 against goody_huts.json large/medium/small. Of the eleven Great Person grants CIVVIS models one, Marcus Licinius Crassus, whose shipped pair is GREATPERSON_GOLD_TINY at 60 Gold plus GREATPERSON_GRANT_PLOT; CIVVIS carries both as gold 60 and the three-tile annex. The rest (Ching Shih 500, Ferdinand Magellan 300, the 200/350/500 Gold and 100 Faith tiers, and the two 1000-point Culture/Science grants) belong to Great People outside the modelled 27 of 212 - content scope, measured by civ6_fidelity.py. The GOODY_* rows report as unattached because the GoodyHuts table grants them rather than an owner-table row."
     },
-    "ADJUST_PLOT_YIELD": {
-      "status": "partial",
-      "verified": false,
-      "note": "Partly checked. Liang's City Park Culture and Fishery Production match. Egypt's Sphinx was missing both of its conditional yields -- +1 Culture on Floodplains and +2 Faith next to a Wonder -- now added. Still partial: arbitrary plot-yield grants have no general path.",
-      "leads": [
-        "Resolved: the Lumber Mill's river bonus is superseded. Gathering Storm's shipped text reads '+2 Production. Can only be built on Woods. Once Mercantilism is unlocked it can also be built on Rainforest', with no river clause -- the base game's +1 base and +1 on rivers were folded into the flat 2, and the river modifier is left attached as dead data. CIVVIS' flat 2 was right. The same sentence turned up a real gap: CIVVIS allowed Lumber Mills on Rainforest from Construction, with no Mercantilism gate."
-      ]
-    },
-    "GRANT_ABILITY": {
-      "status": "partial",
-      "note": "Promotions and a fixed set of named unit abilities execute, but the general UnitAbilities system that most of these rows target does not exist. Most rows here are Great Person birth abilities."
-    },
-    "CITY_GRANT_RANDOM_RESOURCE_PRODUCT": {
-      "status": "partial",
-      "note": "Products and Corporations exist and are capped and movable, but the project-completion random grant is not wired."
-    },
-    "ADJUST_TRADE_ROUTE_YIELD_FOR_INTERNATIONAL": {
+    "TERRAIN_ADJACENCY": {
       "status": "implemented",
       "verified": true,
-      "note": "E-Commerce pays 10 Gold and 5 Production on international routes; CIVVIS carried the superseded base-game rows of 5 Gold and 2 Production on every route. Trade yields can now be declared international-only."
-    },
-    "ADJUST_UNIT_PILLAGE_IMPROVEMENT_MODIFIER": {
-      "status": "implemented",
-      "verified": true,
-      "note": "Raid and Total War multiply pillage yields by 2 -- the shipped Amount is a multiplier, not a percentage. CIVVIS read it as +50%."
-    },
-    "ADJUST_BUILDING_YIELD_MODIFIERS_FOR_DISTRICT": {
-      "status": "implemented",
-      "verified": true,
-      "note": "Rationalism, Free Market, Grand Opera and Simultaneum each ship twice. The base rows double a named building's yield outright; the Gathering Storm rows replace that with two conditional halves, +50% where the city has 15 Population and +50% where the district already earns 4 of that yield from adjacency, which is what the Gathering Storm description states. CIVVIS carried the flat double -- strictly stronger than the shipped card in every city that meets neither condition, which early on is all of them."
-    },
-    "ADJUST_UNIT_CLEAR_TERRAIN_START_MOVEMENT": {
-      "status": "implemented",
-      "verified": true,
-      "note": "The Heavy Chariot gains 1 Movement when it begins its turn on clear terrain -- flat, no Woods, Rainforest or Hills. CIVVIS had the unit at a flat 2 Movement with no such clause. The Light Chariot carries the same rule at 2, on a unit CIVVIS does not model."
+      "note": "Verified row by row against the cache: 27 rows, and only one owner is content CIVVIS models. Machu Picchu accounts for 15 of them - Commercial Hub, Industrial Zone and Theater at +1 across all five *_MOUNTAIN terrains - which CIVVIS carries exactly as mountain_commercial_industrial_theater_adjacency 1. The other 12 belong to content outside the roster: 4 to Indonesia's Nusantara (Holy Site, Campus, Industrial Zone and Theater on Coast), 4 to Mali's Gold Desert (City Center Faith and Food on Desert and Desert Hills), and 4 to the Dance of the Aurora and Desert Folklore pantheons, of which CIVVIS models 6 of the shipped 23. That is content scope, measured by civ6_fidelity.py, not a gap in this effect."
     }
   }
 }

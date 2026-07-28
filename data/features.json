@@ -1,14 +1,18 @@
 {
   "forest": {
+    "appeal": 1,
     "yields": {
       "production": 1
     },
     "move_cost": 1,
     "chop": {
       "production": 20
-    }
+    },
+    "sight_through": 1,
+    "defense": 3
   },
   "jungle": {
+    "appeal": -1,
     "yields": {
       "food": 1
     },
@@ -16,33 +20,44 @@
     "chop": {
       "production": 10,
       "food": 10
-    }
+    },
+    "sight_through": 1,
+    "defense": 3
   },
   "marsh": {
+    "appeal": -1,
     "yields": {
       "food": 1
     },
     "move_cost": 1,
     "chop": {
       "food": 20
-    }
+    },
+    "defense": -2
   },
   "floodplains": {
+    "appeal": -1,
     "yields": {
       "food": 2
-    }
+    },
+    "defense": -2
   },
   "grassland_floodplains": {
-    "yields": {}
+    "appeal": -1,
+    "yields": {},
+    "defense": -2
   },
   "plains_floodplains": {
-    "yields": {}
+    "appeal": -1,
+    "yields": {},
+    "defense": -2
   },
   "reef": {
     "yields": {
       "food": 1,
       "production": 1
-    }
+    },
+    "defense": 3
   },
   "geothermal_fissure": {
     "yields": {
@@ -60,90 +75,781 @@
     "impassable": true
   },
   "burning_forest": {
+    "appeal": -1,
     "yields": {},
-    "move_cost": 1
+    "move_cost": 1,
+    "sight_through": 1,
+    "defense": 3
   },
   "burnt_forest": {
+    "appeal": -1,
     "yields": {},
-    "move_cost": 1
+    "move_cost": 1,
+    "sight_through": 1,
+    "defense": 3
   },
   "burning_jungle": {
+    "appeal": -1,
     "yields": {},
-    "move_cost": 1
+    "move_cost": 1,
+    "sight_through": 1,
+    "defense": 3
   },
   "burnt_jungle": {
+    "appeal": -1,
     "yields": {},
-    "move_cost": 1
+    "move_cost": 1,
+    "sight_through": 1,
+    "defense": 3
   },
   "oasis": {
+    "appeal": 1,
     "yields": {
       "food": 3,
       "gold": 1
     }
   },
   "great_barrier_reef": {
+    "appeal": 2,
     "yields": {
       "science": 2,
       "food": 3
     },
-    "natural_wonder": true
+    "natural_wonder": true,
+    "placement": {
+      "terrain": [
+        "coast"
+      ],
+      "tiles": 2,
+      "land_distance": [
+        1,
+        1
+      ],
+      "avoid_feature": [
+        "ice"
+      ],
+      "no_river": true
+    }
   },
   "crater_lake": {
+    "appeal": 2,
     "yields": {
       "faith": 5,
       "science": 1
     },
-    "natural_wonder": true
+    "natural_wonder": true,
+    "placement": {
+      "terrain": [
+        "plains",
+        "tundra"
+      ],
+      "hills": false,
+      "tiles": 1,
+      "not_adjacent_terrain": [
+        "coast"
+      ],
+      "no_river": true
+    }
   },
   "pantanal": {
+    "appeal": 2,
     "yields": {
       "culture": 2,
       "food": 2
     },
     "move_cost": 1,
-    "natural_wonder": true
+    "natural_wonder": true,
+    "defense": -2,
+    "placement": {
+      "terrain": [
+        "grassland",
+        "plains"
+      ],
+      "hills": false,
+      "tiles": 4,
+      "not_adjacent_terrain": [
+        "coast",
+        "snow"
+      ],
+      "no_river": true
+    }
   },
   "uluru": {
-    "yields": {},
+    "appeal": 4,
     "adjacent_yields": {
       "culture": 2,
       "faith": 2
     },
     "natural_wonder": true,
-    "impassable": true
+    "impassable": true,
+    "sight_through": 1,
+    "placement": {
+      "terrain": [
+        "desert"
+      ],
+      "tiles": 1,
+      "not_adjacent_terrain": [
+        "coast",
+        "grassland",
+        "plains",
+        "tundra",
+        "snow",
+        "mountain"
+      ],
+      "no_river": true
+    }
   },
   "yosemite": {
-    "yields": {},
+    "appeal": 2,
     "adjacent_yields": {
       "gold": 1,
       "food": 1,
       "science": 1
     },
     "natural_wonder": true,
-    "impassable": true
+    "impassable": true,
+    "sight_through": 2,
+    "placement": {
+      "terrain": [
+        "plains",
+        "tundra"
+      ],
+      "hills": false,
+      "tiles": 2,
+      "adjacent_feature": [
+        "forest"
+      ],
+      "not_adjacent_terrain": [
+        "coast",
+        "mountain"
+      ],
+      "no_river": true
+    }
   },
   "dead_sea": {
+    "appeal": 2,
     "yields": {
       "culture": 2,
       "faith": 2
     },
-    "natural_wonder": true
+    "natural_wonder": true,
+    "placement": {
+      "terrain": [
+        "grassland",
+        "desert"
+      ],
+      "hills": false,
+      "tiles": 2,
+      "not_adjacent_terrain": [
+        "coast",
+        "mountain"
+      ],
+      "no_adjacent_features": true,
+      "no_river": true
+    }
   },
   "mount_everest": {
-    "yields": {},
+    "appeal": 2,
     "adjacent_yields": {
       "faith": 1
     },
     "natural_wonder": true,
-    "impassable": true
+    "impassable": true,
+    "sight_through": 2,
+    "placement": {
+      "terrain": [
+        "mountain"
+      ],
+      "tiles": 3,
+      "adjacent_terrain": [
+        "grassland",
+        "plains",
+        "desert",
+        "snow",
+        "tundra"
+      ],
+      "not_adjacent_terrain": [
+        "coast"
+      ],
+      "no_river": true
+    }
   },
   "pamukkale": {
-    "yields": {},
+    "appeal": 2,
     "natural_wonder": true,
     "impassable": true,
     "effects": {
       "city_amenity": 1,
       "entertainment_complex_adjacent_amenity": 1
+    },
+    "sight_through": 1,
+    "placement": {
+      "terrain": [
+        "grassland",
+        "plains",
+        "desert"
+      ],
+      "tiles": 2,
+      "not_adjacent_terrain": [
+        "coast"
+      ],
+      "no_river": true
+    }
+  },
+  "torres_del_paine": {
+    "appeal": 2,
+    "adjacent_yields": {
+      "food": 1,
+      "production": 1
+    },
+    "natural_wonder": true,
+    "impassable": true,
+    "sight_through": 2,
+    "placement": {
+      "terrain": [
+        "grassland",
+        "plains",
+        "tundra"
+      ],
+      "tiles": 2,
+      "not_adjacent_terrain": [
+        "coast",
+        "desert",
+        "snow",
+        "mountain"
+      ],
+      "no_river": true
+    }
+  },
+  "eye_of_the_sahara": {
+    "appeal": 2,
+    "yields": {
+      "production": 2,
+      "science": 1
+    },
+    "natural_wonder": true,
+    "placement": {
+      "terrain": [
+        "desert"
+      ],
+      "tiles": 3,
+      "not_adjacent_terrain": [
+        "coast"
+      ],
+      "no_river": true
+    }
+  },
+  "zhangye_danxia": {
+    "appeal": 2,
+    "natural_wonder": true,
+    "impassable": true,
+    "sight_through": 2,
+    "placement": {
+      "terrain": [
+        "mountain"
+      ],
+      "tiles": 3,
+      "not_adjacent_terrain": [
+        "coast"
+      ],
+      "no_river": true
+    }
+  },
+  "ha_long_bay": {
+    "appeal": 2,
+    "yields": {
+      "food": 3,
+      "production": 1,
+      "culture": 1
+    },
+    "natural_wonder": true,
+    "defense": 15,
+    "placement": {
+      "terrain": [
+        "coast"
+      ],
+      "tiles": 2,
+      "land_distance": [
+        1,
+        1
+      ],
+      "avoid_feature": [
+        "ice"
+      ]
+    }
+  },
+  "cliffs_of_dover": {
+    "appeal": 4,
+    "yields": {
+      "food": 2,
+      "gold": 3,
+      "culture": 3
+    },
+    "natural_wonder": true,
+    "placement": {
+      "terrain": [
+        "grassland",
+        "plains"
+      ],
+      "hills": true,
+      "tiles": 2,
+      "adjacent_terrain": [
+        "coast"
+      ],
+      "no_river": true
+    }
+  },
+  "giants_causeway": {
+    "appeal": 2,
+    "adjacent_yields": {
+      "culture": 1
+    },
+    "natural_wonder": true,
+    "impassable": true,
+    "placement": {
+      "terrain": [
+        "grassland",
+        "plains"
+      ],
+      "hills": false,
+      "tiles": 2,
+      "water_tiles": 1,
+      "adjacent_terrain": [
+        "coast"
+      ],
+      "no_river": true
+    }
+  },
+  "galapagos_islands": {
+    "appeal": 2,
+    "adjacent_yields": {
+      "science": 2
+    },
+    "natural_wonder": true,
+    "impassable": true,
+    "placement": {
+      "terrain": [
+        "coast"
+      ],
+      "tiles": 2,
+      "land_distance": [
+        2,
+        3
+      ],
+      "avoid_feature": [
+        "ice"
+      ],
+      "no_river": true
+    }
+  },
+  "matterhorn": {
+    "appeal": 2,
+    "adjacent_yields": {
+      "culture": 1
+    },
+    "natural_wonder": true,
+    "impassable": true,
+    "sight_through": 2,
+    "placement": {
+      "terrain": [
+        "mountain"
+      ],
+      "tiles": 1,
+      "adjacent_terrain": [
+        "grassland",
+        "plains",
+        "desert",
+        "snow",
+        "tundra"
+      ],
+      "not_adjacent_terrain": [
+        "coast"
+      ],
+      "no_river": true
+    }
+  },
+  "kilimanjaro": {
+    "appeal": 2,
+    "adjacent_yields": {
+      "food": 2
+    },
+    "natural_wonder": true,
+    "impassable": true,
+    "sight_through": 2,
+    "placement": {
+      "terrain": [
+        "mountain"
+      ],
+      "tiles": 1,
+      "not_adjacent_terrain": [
+        "coast",
+        "mountain"
+      ],
+      "no_river": true
+    }
+  },
+  "piopiotahi": {
+    "appeal": 2,
+    "adjacent_yields": {
+      "culture": 1,
+      "gold": 1
+    },
+    "natural_wonder": true,
+    "impassable": true,
+    "sight_through": 2,
+    "placement": {
+      "terrain": [
+        "grassland",
+        "plains"
+      ],
+      "tiles": 3,
+      "adjacent_terrain": [
+        "coast"
+      ],
+      "no_river": true
+    }
+  },
+  "ik_kil": {
+    "appeal": 2,
+    "natural_wonder": true,
+    "impassable": true,
+    "placement": {
+      "terrain": [
+        "grassland",
+        "plains"
+      ],
+      "tiles": 1,
+      "adjacent_feature": [
+        "jungle"
+      ],
+      "not_adjacent_terrain": [
+        "coast"
+      ],
+      "no_river": true
+    }
+  },
+  "gobustan": {
+    "appeal": 2,
+    "yields": {
+      "production": 1,
+      "culture": 3
+    },
+    "natural_wonder": true,
+    "defense": 3,
+    "move_cost": 1,
+    "placement": {
+      "terrain": [
+        "plains",
+        "mountain"
+      ],
+      "tiles": 3,
+      "not_adjacent_terrain": [
+        "coast"
+      ],
+      "no_river": true
+    }
+  },
+  "ubsunur_hollow": {
+    "appeal": 2,
+    "yields": {
+      "food": 1,
+      "production": 1,
+      "faith": 2
+    },
+    "natural_wonder": true,
+    "defense": -2,
+    "move_cost": 1,
+    "placement": {
+      "terrain": [
+        "tundra"
+      ],
+      "tiles": 4,
+      "not_adjacent_terrain": [
+        "coast"
+      ],
+      "no_river": true
+    }
+  },
+  "mato_tipila": {
+    "appeal": 2,
+    "adjacent_yields": {
+      "production": 1,
+      "faith": 1
+    },
+    "natural_wonder": true,
+    "impassable": true,
+    "sight_through": 2,
+    "placement": {
+      "terrain": [
+        "grassland",
+        "plains",
+        "desert",
+        "tundra"
+      ],
+      "tiles": 1,
+      "not_adjacent_terrain": [
+        "coast"
+      ],
+      "no_river": true
+    }
+  },
+  "delicate_arch": {
+    "appeal": 2,
+    "adjacent_yields": {
+      "gold": 1,
+      "faith": 2
+    },
+    "natural_wonder": true,
+    "impassable": true,
+    "sight_through": 1,
+    "placement": {
+      "terrain": [
+        "desert"
+      ],
+      "tiles": 1,
+      "not_adjacent_terrain": [
+        "coast"
+      ],
+      "no_river": true
+    }
+  },
+  "chocolate_hills": {
+    "appeal": 2,
+    "yields": {
+      "food": 1,
+      "production": 2,
+      "science": 1
+    },
+    "natural_wonder": true,
+    "defense": 3,
+    "move_cost": 1,
+    "placement": {
+      "terrain": [
+        "grassland",
+        "plains",
+        "mountain"
+      ],
+      "tiles": 4,
+      "not_adjacent_terrain": [
+        "coast"
+      ],
+      "no_river": true
+    }
+  },
+  "vesuvius": {
+    "appeal": 2,
+    "adjacent_yields": {
+      "production": 1
+    },
+    "natural_wonder": true,
+    "impassable": true,
+    "sight_through": 2,
+    "placement": {
+      "terrain": [
+        "mountain"
+      ],
+      "tiles": 1,
+      "adjacent_terrain": [
+        "grassland",
+        "plains",
+        "desert",
+        "snow",
+        "tundra"
+      ],
+      "no_river": true
+    }
+  },
+  "lake_retba": {
+    "appeal": 2,
+    "yields": {
+      "production": 1,
+      "gold": 2,
+      "culture": 2
+    },
+    "natural_wonder": true,
+    "placement": {
+      "terrain": [
+        "grassland",
+        "plains"
+      ],
+      "hills": false,
+      "tiles": 2,
+      "not_adjacent_terrain": [
+        "coast"
+      ],
+      "no_river": true
+    }
+  },
+  "bermuda_triangle": {
+    "appeal": 2,
+    "adjacent_yields": {
+      "science": 5
+    },
+    "natural_wonder": true,
+    "placement": {
+      "terrain": [
+        "ocean"
+      ],
+      "tiles": 3,
+      "not_adjacent_terrain": [
+        "coast"
+      ],
+      "avoid_feature": [
+        "ice"
+      ],
+      "no_river": true
+    }
+  },
+  "eyjafjallajokull": {
+    "appeal": 2,
+    "adjacent_yields": {
+      "culture": 1,
+      "food": 2
+    },
+    "natural_wonder": true,
+    "impassable": true,
+    "sight_through": 2,
+    "placement": {
+      "terrain": [
+        "snow",
+        "tundra"
+      ],
+      "tiles": 2,
+      "adjacent_terrain": [
+        "snow",
+        "tundra"
+      ],
+      "not_adjacent_terrain": [
+        "coast"
+      ],
+      "no_river": true
+    }
+  },
+  "fountain_of_youth": {
+    "appeal": 2,
+    "yields": {
+      "science": 4,
+      "faith": 4
+    },
+    "natural_wonder": true,
+    "placement": {
+      "terrain": [
+        "grassland",
+        "plains",
+        "desert"
+      ],
+      "tiles": 1,
+      "not_adjacent_terrain": [
+        "coast"
+      ],
+      "no_river": true
+    }
+  },
+  "lysefjord": {
+    "appeal": 2,
+    "adjacent_yields": {
+      "production": 1
+    },
+    "natural_wonder": true,
+    "impassable": true,
+    "sight_through": 1,
+    "placement": {
+      "terrain": [
+        "plains",
+        "tundra"
+      ],
+      "tiles": 3,
+      "adjacent_terrain": [
+        "coast"
+      ],
+      "no_adjacent_features": true,
+      "no_river": true
+    }
+  },
+  "paititi": {
+    "appeal": 2,
+    "adjacent_yields": {
+      "gold": 3,
+      "culture": 2
+    },
+    "natural_wonder": true,
+    "impassable": true,
+    "placement": {
+      "terrain": [
+        "grassland",
+        "plains",
+        "desert"
+      ],
+      "tiles": 3,
+      "not_adjacent_terrain": [
+        "coast"
+      ],
+      "no_river": true
+    }
+  },
+  "mount_roraima": {
+    "appeal": 2,
+    "adjacent_yields": {
+      "faith": 1,
+      "science": 1
+    },
+    "natural_wonder": true,
+    "impassable": true,
+    "sight_through": 2,
+    "placement": {
+      "terrain": [
+        "grassland",
+        "plains",
+        "mountain"
+      ],
+      "tiles": 4,
+      "not_adjacent_terrain": [
+        "coast"
+      ],
+      "no_river": true
+    }
+  },
+  "tsingy_de_bemaraha": {
+    "appeal": 2,
+    "adjacent_yields": {
+      "culture": 1,
+      "science": 1
+    },
+    "natural_wonder": true,
+    "impassable": true,
+    "sight_through": 1,
+    "placement": {
+      "terrain": [
+        "grassland",
+        "plains",
+        "tundra"
+      ],
+      "tiles": 1,
+      "not_adjacent_terrain": [
+        "coast",
+        "mountain"
+      ],
+      "no_river": true
+    }
+  },
+  "sahara_el_beyda": {
+    "appeal": 2,
+    "yields": {
+      "culture": 1,
+      "gold": 4,
+      "science": 1
+    },
+    "natural_wonder": true,
+    "placement": {
+      "terrain": [
+        "desert",
+        "mountain"
+      ],
+      "tiles": 4,
+      "not_adjacent_terrain": [
+        "coast"
+      ],
+      "no_river": true
     }
   }
 }

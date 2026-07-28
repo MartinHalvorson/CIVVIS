@@ -71,3 +71,20 @@ impl Rng {
         weights.len() - 1
     }
 }
+
+/// The seed a test fixture builds its world from, overridable from the
+/// environment.
+///
+/// A fixture that needs "a map with a campus site next to the capital" gets one
+/// by naming a seed. Any change to generation re-rolls what that seed produces,
+/// so the seed has to be re-picked — and searching for one costs a full rebuild
+/// per attempt unless it can be varied from outside. `CIVVIS_FIXTURE_SEED_<KEY>`
+/// varies it. Nothing but the search uses the override; the committed default
+/// is what runs.
+#[cfg(test)]
+pub fn fixture_seed(key: &str, default: u64) -> u64 {
+    std::env::var(format!("CIVVIS_FIXTURE_SEED_{key}"))
+        .ok()
+        .and_then(|seed| seed.parse().ok())
+        .unwrap_or(default)
+}

@@ -9,6 +9,437 @@ game. A policy trained against wrong unit costs learns wrong build orders.
 This document defines what "exact" means here, how it is measured, and what is
 built next.
 
+## The prose is not the ruleset
+
+`tools/civ6_fidelity.py` needs the game's *install* directory to replay the XML
+load order, so it cannot run without Civilization VI installed. It is not the
+only route to the shipped numbers: a machine that has ever run the game leaves
+the compiled gameplay database behind at
+
+    ~/Library/Application Support/Sid Meier's Civilization VI/Cache/DebugGameplay.sqlite
+
+(`%LOCALAPPDATA%\Firaxis Games\...\Cache\` on Windows), and that file is a
+plain read-only SQLite database with the whole ruleset in it — `LoyaltyLevels`,
+`Happinesses`, `GlobalParameters`, `Units`, and 400-odd more tables. Query it
+directly before changing any number.
+
+## Running the audit without an install
+
+`tools/civ6_fidelity.py --cache` reads the compiled gameplay database directly
+instead of replaying the install's XML load order, so the ratchet runs on a
+machine where Civilization VI is no longer installed. It finds the file at the
+usual Cache path on macOS and Windows, or takes one: `--cache <path>`.
+
+The two routes are not guaranteed identical. The XML route reconstructs a
+specific content set in a specific order; the cache is whatever the game last
+compiled for itself. **Where they disagree, that disagreement is itself a
+finding** — see the Cartography note below.
+
+### Aliases decide what is audited at all
+
+`ALIASES` maps the game's spelling onto CIVVIS'. An entry the map does not cover
+is not reported as wrong — it is reported as *absent from the other side*, and
+compared against nothing. The nine unique units the game prefixes with their
+civilization (`UNIT_ROMAN_LEGION`, `UNIT_GREEK_HOPLITE`,
+`UNIT_EGYPTIAN_CHARIOT_ARCHER`, …) sat in that blind spot, so the `Units` table
+audited 73 of 82 rows and looked clean. Aliasing them surfaced four real
+divergences immediately, all now fixed:
+
+| Unit | Field | was | shipped |
+|---|---|---|---|
+| Maryannu Chariot Archer | cost | 120 | **90** |
+| Maryannu Chariot Archer | maintenance | 2 | **1** |
+| Roman Legion | build charges | 0 | **1** (its Roman Fort) |
+| Anti-Air Gun | range | 0 | **1** |
+
+Egypt's unique was a third overpriced and cost twice the upkeep, which is a
+direct distortion of that civilization's strength. **When a table reports
+"Only in CIVVIS", check the alias map before concluding anything** — a nonzero
+count there means rows are going unaudited.
+
+### First cache run: 15 divergences, 5 fixed
+
+The install-based audit last reported zero unwaived divergences. The cache run
+reported fifteen. Five are fixed here; the rest are triaged below.
+
+- **`Adjacency` / `industrial_zone` mine — FIXED here.** CIVVIS paid 1.5
+  Production per adjacent Mine. The shipped `Minel_HalfProduction` row is
+  `YieldChange` 1 with `TilesRequired` 2, i.e. **0.5 per Mine** — three times
+  too generous on a core production adjacency, in a district built beside hills
+  by every civilization that industrializes. Every other Industrial Zone source
+  matched exactly (quarry 1, lumber mill 0.5, district 0.5, aqueduct/canal/dam
+  2, government plaza 1, strategic 1), which is what makes the one outlier
+  convincing rather than a projection artifact.
+
+- **`Buildings` — three uniques carrying their base building's yield.** The
+  Prasat replaces the Temple (Faith 4, one Relic slot) and ships Faith **6** with
+  the same single slot; CIVVIS had the Temple's 4 and an invented second slot.
+  The Sukiennice replaces the Market (Gold 2) and does not raise it; CIVVIS had
+  3. The Tlachtli replaces the Arena (Culture 1) and doubles it to **2**; CIVVIS
+  had the Arena's 1. One error repeated three times, which is what identified it.
+- **`Improvements` / `sphinx` terrain.** CIVVIS allowed Snow;
+  `Improvement_ValidTerrains` lists Desert, Grassland, Plains and Tundra with
+  their Hills variants, and no Snow.
+
+- **`Improvements` placement rows.** The Nubian Pyramid ships `TERRAIN_DESERT`
+  *and* `TERRAIN_DESERT_HILLS`, so it is not flat-only, and `FEATURE_FLOODPLAINS`
+  is a valid host — CIVVIS had neither. Gathering Storm's Volcanic Soil is a
+  valid Beach Resort host; CIVVIS had no feature list at all.
+- **`Resources` / `niter`.** CIVVIS listed the generic `floodplains` alongside
+  the two typed ones. `Feature_ValidTerrains` settles what that generic feature
+  is: `FEATURE_FLOODPLAINS` is Desert-only, and `Resource_ValidFeatures` for
+  Niter names only the Grassland and Plains variants. Removed, with
+  `every_strategic_resource_reaches_a_playable_supply` standing guard — plain
+  Desert is still a valid Niter terrain, so only Desert *floodplains* are
+  excluded and supply is unaffected.
+- **`Boosts` / `near_future_governance` — waived, not a divergence.** The shipped
+  trigger is `BOOST_TRIGGER_HAVE_GOVERNMENT_TIER` at `Tier4` with no `NumItems`,
+  so the projection reads 0 against CIVVIS' ten Government slots. Those are
+  exactly equivalent: `Government_SlotCounts` totals 2/4/6/8/10 for
+  Chiefdom/Tier1/Tier2/Tier3/Tier4, so ten slots is reached by the Tier 4
+  governments and by nothing else. The 90% boost matches.
+
+Still to triage, listed so they are not lost:
+
+| Table | Entry | CIVVIS | cache DB |
+|---|---|---|---|
+| Technologies | `cartography` requires | buttress, shipbuilding | buttress |
+| Technologies | `mass_production` requires | …, shipbuilding | (no shipbuilding) |
+| Boosts | `near_future_governance` count | 10 | 0 |
+| Resources | `niter` feature | + generic floodplains | only the two typed floodplains |
+| Resources | `pearls`/`turtles`/`whales` improvement | fishing_boats | industry |
+| Improvements | `corporation`/`industry` resources | 3 luxuries | 28 luxuries |
+| Wonders | `biosphere` yields | science 8 | none |
+
+`niter` and `biosphere` are deliberately left alone. CIVVIS' generic
+`floodplains` is the Desert variant the game calls `FEATURE_FLOODPLAINS`, so
+dropping it from Niter is a map-placement change dressed as a data fix, and it
+needs checking against where Niter actually spawns rather than against the
+feature list alone. The Biosphere is settled, and my earlier reason for
+leaving it was wrong: its shipped effect is not Culture but +1 Appeal to Marsh
+and Rainforest, +100% renewable-power Tourism and +200 free Power — and CIVVIS
+already models all three, as `rainforest_marsh_adjacent_appeal`,
+`renewable_power_tourism` and `renewable_power_pct`, all live in the engine. The
+`science: 8` was invention layered on top of a correct wonder, so removing it
+costs the Biosphere nothing.
+
+**Three of the fifteen were the tool's fault, not CIVVIS'.** The
+resource-to-improvement projection prefers a land improvement over a sea one, so
+that Oil keys on Oil Wells rather than Oil Rigs — and the Industry and
+Corporation of Monopolies & Corporations are *land* improvements that sit on top
+of an already-improved luxury. That preference reported Pearls, Turtles and
+Whales as improved by `industry` instead of Fishing Boats. `Improvements_MODE`
+names the game-mode improvements, so the projection skips them and the rule stays
+data-driven; their own luxury lists are waived, because CPL's lobby disables all
+game modes. **A divergence is a claim about two sides, and the projection is one
+of them** — check what the tool did before changing what CIVVIS says.
+
+**The Cartography pair contradicts this document's own history.** The first-wave
+install audit lists "Cartography and Mass Production both require Shipbuilding"
+as a *fix it applied*, and the cache says the opposite. One of the two reads is
+wrong, and settling it needs an install — do not "correct" CIVVIS from the cache
+alone. The `pearls`/`turtles`/`whales` rows look like a projection artifact
+(harvest improvement versus Corporation improvement) rather than a CIVVIS defect,
+and should be checked before being treated as one.
+
+## Closed: civilization start bias
+
+Civilization VI ships four `StartBias*` tables — 132 rows across
+`StartBiasTerrains`, `StartBiasFeatures`, `StartBiasRivers` and
+`StartBiasResources` — that decide *which* start a civilization is given. A
+lower `Tier` is a stronger pull. **CIVVIS applies none of it**: seat `i` simply
+takes `spawns[i]`, so which civilization lands on which start is an accident of
+seat order.
+
+Five of the eight shipped civilizations have a bias, and it is most of what
+makes two of them what they are:
+
+| Civilization | Shipped bias |
+|---|---|
+| Egypt | Floodplains (Tier 2, all three variants), River (Tier 5) |
+| Greece | Hills — Grass, Plains, Desert, Tundra (Tier 3) |
+| Sumeria | River (Tier 3) |
+| Nubia | Desert and Desert Hills (Tier 2), plus ten strategic and luxury resources (Tier 5) |
+| Scythia | Horses (Tier 2), Grassland and Plains (Tier 5) |
+
+Rome, China and the Aztecs have no bias, which is correct — they have none in the
+shipped tables either.
+
+An Egypt that does not start on a river or floodplains is not the Egypt the
+tournament drafts, and a Scythia away from Horses is a different civilization.
+CPL allows duplicate civilizations, so drafting depends on each performing the
+way its bias implies.
+
+**Fixed.** The bias rows are carried in `data/civs.json`, mapped onto CIVVIS'
+own spelling — Hills are a tile flag rather than a terrain here, so Greece's four
+Hills rows become one `terrain_hills` requirement, and the floodplain variants
+take the names `features.json` uses. `start_bias_score` weighs a site by the
+biases it satisfies, each worth `6 - Tier`, across the tiles a city works rather
+than the centre alone, and `assign_starts_by_bias` permutes the major sites
+before any seat is handed one. Generation itself is untouched.
+
+Measured over ten seeds and the five biased civilizations, asking whether each
+civilization's own site beats the average of the other seven *for its bias*:
+
+| | better | worse |
+|---|---|---|
+| before | 34 | 16 |
+| after | **50** | **0** |
+
+## Closed: major start spacing
+
+`START_DISTANCE_MAJOR_CIVILIZATION` is **12** with `START_DISTANCE_RANGE_MAJOR`
+**2**, so Civilization VI aims major civilizations 10-14 tiles apart (minors use
+`START_DISTANCE_MINOR_MAJOR_CIVILIZATION` 6 and
+`START_DISTANCE_MINOR_CIVILIZATION_START` 5, and there is a
+`START_DISTANCE_FERTILITY_EXCLUSION_ZONE` of 6).
+
+CIVVIS does not target a distance at all. `balanced_major_spawns` maximizes
+spread — farthest-point layouts scored on separation, coverage, territory
+balance and site quality — which on the tournament lobby's Standard 84x54 map
+with 8 majors puts every civilization far outside the shipped band:
+
+    major-major nearest-neighbour separation, 20 maps, 160 measurements
+    min 17  max 23  mean 18.3  median 18
+    within the shipped 10..14 band:  0 / 160  (0%)
+
+Every single measurement is above the band; CIVVIS spreads civilizations about
+50% farther apart than the game does. That changes the whole early game —
+settling races, border friction, early aggression, and the Loyalty and religious
+pressure that depend on how close neighbours sit. It is measured with
+`mapdump --width 84 --height 54 --players 8 --city-states 0`, whose
+nearest-neighbour separations are major-only when no minors are requested
+(minors are appended after majors are placed, so major placement is identical
+either way).
+
+**Fixed.** `targeted_layout` now picks each start by how well its
+nearest-neighbour distance fits the shipped band rather than by how far away it
+can get, scoring the miss with `start_distance_miss` — zero inside 10..=14,
+growing outside it, and counting crowding double, because two civilizations on
+top of each other is a worse start than two a little too far apart. Measured the
+same way afterwards:
+
+    n = 160  min 10  max 15  mean 11.83  median 12
+    within the shipped 10..14 band:  153 / 160  (96%)
+    below 10: 0     above 14: 7
+
+Zero crowded starts, a median of exactly the shipped target, and the seven
+strays one tile over. `stock_map_profiles_produce_spread_and_complete_spawn_sets`
+now asserts the band per start rather than a floor of six, and was confirmed to
+bite by restoring the old maximizing rule (`Duel places a start 27 from its
+neighbour`).
+
+This changed every generated map, so layouts and league snapshots from before it
+are not comparable.
+
+**Where the Civilopedia and the database disagree, the database wins.** The
+prose goes stale across rebalances and has been observed to be flatly wrong:
+the Loyalty entry describes two penalty steps (below 75, below 25) where
+`LoyaltyLevels` ships four, one per display band, and the Happiness entry
+gives Ecstatic a +10% yield bonus where `Happinesses.NonFoodYieldModifier`
+ships +20. Both readings were used to "correct" already-correct engine code.
+Cite a table and a column, not a sentence.
+
+## Resolved: buying a tile with Gold
+
+`BuyPlot` is a complete legal action. A city may annex an explored, unowned
+plot only when it touches that city's own territory and lies through ring 3;
+`CITY_MAX_BUY_PLOT_RANGE` remains the shipped **3**. Applying the action
+revalidates the live state and price, deducts Gold, assigns both tile and city
+ownership, and immediately exposes the tile to yields, resources, Builders,
+districts and Wonders. The browser lists every affordable plot with its exact
+price and yields. Both AIs value resources, Natural Wonders and raw yields;
+the strategic AI also values the district/Wonder sites ownership unlocks.
+
+The executable-only curve was settled from real-game measurements rather than
+inferred from the unrelated Culture-border curve. A
+[measured vanilla sequence](https://www.realmsbeyond.net/forums/showthread.php?page=2&tid=8994)
+established the 1x–5x farther-tree progression, while a
+[current Gathering Storm Marathon sequence](https://www.reddit.com/r/CivVI/comments/1polncr/district_discount_and_tile_price_demo/)
+identifies the present 77-technology and 61-civic denominators and the
+rounding/discount order. CIVVIS executes:
+
+    progress = floor(100 × max(completed techs / 77, completed civics / 61)) / 100
+    price = floor_to_5(speed × ring base × (1 + 4 × progress)) × (1 - discount)
+
+The [observed ring bases and legal range](https://civilization.fandom.com/wiki/Borders_%28Civ6%29)
+are **50** Gold through ring 2 and **75** for ring 3 (ring 1 is normally
+granted at foundation, but can exceptionally become neutral). Rounding to 5
+comes after game-speed scaling but before Land Surveyors or Expropriation;
+that otherwise easy-to-miss order is why a 20% discount produces multiples of
+4 on Marathon. Regression tests reproduce the measured 8-tech/8-civic prices
+of **180/272** and 8-tech/11-civic prices of **204/308**. The forged-price test
+also posts a zero quote and proves the engine still charges its recomputed live
+price, so the browser's quote is never trusted as authority.
+
+## Closed: only a full civilization annexes tiles with its own yields
+
+`CivilizationLevels` is the table that decides who may take ground, and only
+one of its four rows may take it unaided:
+
+| level | `CanAnnexTilesWithCulture` | `CanAnnexTilesWithGold` | `CanAnnexTilesWithReceivedInfluence` | `StartingTilesForCity` |
+|---|---|---|---|---|
+| `FULL_CIV` | 1 | 1 | 0 | 6 |
+| `CITY_STATE` | 0 | 0 | 1 | 5 |
+| `FREE_CITIES` | 0 | 0 | 0 | 0 |
+| `TRIBE` | 0 | 0 | 0 | 0 |
+
+A city-state's territory therefore grows **only** by one tile per Envoy it
+receives from its Suzerain.
+CIVVIS ran the ordinary Culture border curve for every city whatever its
+owner, and `plot_purchase_cost` had no owner gate either, so a minor accreted
+ground for the whole game on top of the Envoy tiles it was already paid.
+
+Measured over four 250-turn games on the tournament lobby before the fix, a
+city-state finished **larger than the average major city** — 23.8 tiles and
+10.4 Population against 22.2 and 9.9 — on a mean of 8.6 Envoys from all
+majors combined. Territory is the mechanism and Population is the symptom:
+more owned tiles is more worked tiles is more Food.
+
+`annexes_tiles_with_own_yields` now gates both paths.
+
+### Deliberate divergence: a founding city-state takes its whole first ring
+
+`StartingTilesForCity` is the one number in that table CIVVIS does not follow.
+The column counts tiles *besides* the centre — Russia's Mother Russia is
+`MODIFIER_PLAYER_ADJUST_CITY_TILES` with `Amount` **5**, and Russian cities
+visibly open with the whole first ring plus five more, which only adds up if
+the base 6 *is* the ring. So the shipped minor really does found one plot
+short.
+
+CIVVIS grants the full ring anyway. The count is shipped but the **choice**
+is not: nothing in the database says which of the six a city-state gives up,
+so it fell to the plot-influence picker, and the result was a neutral hole
+inside a city's own first ring on every single city-state — measured at 5 of 6
+owned across 96 city-states over 8 map seeds, always exactly one, never taken
+by anybody else. On the map that reads as a rendering fault rather than a
+rule. The gate above is what keeps a city-state small; this tile is worth
+about 2 Food and costs the map its legibility.
+
+The grant is still free ground only: a ring plot a neighbouring city already
+holds stays with that neighbour, exactly as for a full civilization.
+
+## Resolved: a city-state weighed nothing for itself
+
+Every city-state in a 406-turn spectator game sat at exactly 100 Loyalty while
+the observation reported it losing **-25 a turn**. Both halves were wrong, and
+they were hiding each other.
+
+`loyalty_change_for_city` skipped every minor-owned city when it summed
+population pressure. That was meant to model the shipped rule that a minor
+projects no pressure onto its neighbours — the population tooltip really does
+drop the "also applies to other cities within 9 tiles" clause for minors:
+
+> Ranges from +20 to -20, based on the comparison of pressure coming from
+> nearby Citizens belonging to the city's owner and nearby Citizens belonging
+> to a different civilization. 1 Pressure per Citizen normally. Increased in
+> Capital.
+>
+> — `LOC_CULTURAL_IDENTITY_POPULATION_PRESSURE_TOOLTIP_MINOR_CIVS`
+
+But the skip also removed a city-state's own Citizens from its *own* domestic
+side. A pop-14 Kabul therefore compared **0** against its neighbours and pinned
+the ratio at the -20 floor forever. `process_loyalty` then returned early for
+minors, so the number was computed, published to the HUD, and never applied.
+The city survived because the second bug cancelled the first.
+
+Two shipped constants were missing beside it. `IDENTITY_PER_TURN_FROM_CITY_STATES`
+is **20** and `IDENTITY_PER_TURN_FROM_FREE_CITIES` is **10** — "Base strength as
+a City-State" and "Desire for independence" in the pressure breakdown. Only the
+Free City half was paid.
+
+CIVVIS now counts a minor's own Citizens as its domestic pressure while still
+projecting nothing outward, pays the +20, and runs city-states through the same
+`process_loyalty` as anybody else, so an overwhelmed one revolts into a Free
+City. Replaying that same 406-turn checkpoint takes the count of cities that
+claim to be bleeding Loyalty while pinned at 100 from **18 to 0**, and no
+city-state flips: the most pressured of the eighteen still clears +15 a turn,
+which is the balance the +20 base exists to produce.
+
+The occupation term went with it. Rise & Fall charged a flat penalty between
+`IDENTITY_PER_TURN_FROM_OCCUPATION_MIN` -1 and `_MAX` -5; Gathering Storm
+rescaled the range to 0..10 and added `_MULTIPLIER` **25**, which the
+Civilopedia reads as "Loyalty penalties based on the conqueror's Grievances
+caused against the city's original owner". CIVVIS charged R&F's flat -5 and
+cancelled it outright when a unit was garrisoned. It now charges 25% of those
+Grievances clamped to [0, 10] whether or not anyone is garrisoned, and a
+garrison instead pays the separate `IDENTITY_PER_TURN_FROM_MARTIAL_LAW` **+8** —
+so holding a fresh conquest down with troops raises its Loyalty rather than
+merely stopping the bleed.
+
+Verified unchanged in the same pass: the ±20 clamp is exactly
+`LOYALTY_PER_TURN_FROM_NEARBY_CITIZEN_PRESSURE_MAX_RATIO` 3.0 against
+`_NEUTRAL_RATIO` 1.0; the 10%-per-tile falloff; `CITIZEN_IDENTITY_PRESSURE_BASE`
+1 with `_CAPITAL` +1 and the Golden/Dark ±0.5 per-Citizen age terms; every
+`Governors.IdentityPressure` is **8**; the Statue of Liberty's
+`STATUELIBERTY_CITIES_ALWAYS_LOYAL` really does pin all cities within 6 tiles;
+and the `LoyaltyLevels` yield/growth bands.
+
+## Open, and needing a judgement call: resource placement frequency
+
+`Resources.Frequency` and `SeaFrequency` weight the shipped placement lottery.
+CIVVIS picks **uniformly** among the resources valid for a tile:
+
+```rust
+let pick = valid[rng.below(valid.len())].clone();
+```
+
+The shipped weights are not close to uniform. On land, Stone and Wheat are 10
+against Copper, Deer, Sheep and Bananas at 4 — two and a half times as likely.
+At sea it is starker: Fish 23, Crabs 17, Turtles 5, and Amber, Pearls and Whales
+1 apiece, so a Whale should be a twenty-third as common as a Fish and CIVVIS
+makes them equally likely. Land luxuries are the one group that really is
+uniform, all at 2, which CIVVIS gets right by accident.
+
+**Why this is not simply fixed.** The lottery runs before start selection and
+feeds it: resources are part of what scores a start, through
+`StartBias::weight(resource_tier)`. Weighting the lottery therefore moves
+starts. Implementing it made two of roughly a hundred sampled (size, seed)
+combinations miss the start-spacing tolerance in
+`stock_map_profiles_produce_spread_and_complete_spawn_sets` and
+`islands_flat_poles_spread_starts_across_the_whole_archipelago` — both
+marginally, 207% against a 200% cap and 64.7% against a 65% floor.
+
+One or two marginal misses in a hundred is consistent with ordinary variance
+around a tight threshold, and it is also consistent with a small real
+degradation. n=1 does not separate them, and even start spacing is a
+tournament-fairness property this project cares about. Loosening the tolerance
+or reseeding until the sample passes would settle the argument in the change's
+favour without evidence, so the code is not in the tree.
+
+What would settle it: run the spacing property over a few hundred seeds with and
+without the weighting and compare failure rates. If they match, the weighting is
+correct and the thresholds simply sit close to the natural spread.
+
+## Swept clean: the systematic comparisons already run
+
+These are whole-axis comparisons, not spot checks. Each was run against every
+shipped row whose owner CIVVIS models, and each came back with the divergences
+listed — so re-running them is unlikely to pay unless the shipped database or
+CIVVIS' content changes. Recorded here so the next pass starts somewhere new.
+
+| Sweep | Scope | Found |
+|---|---|---|
+| Effect arguments | every `Modifiers` row on a modelled owner | the modifier census, see [MODIFIERS.md](MODIFIERS.md) |
+| `Inverse` on effect modifiers | 809 rows, 76 inverted | Monasticism only |
+| `Inverse` on `ATTACH_MODIFIER` wrappers | 2 on modelled owners | Just War and Defender of the Faith |
+| `RequirementSetType` (`TEST_ANY` vs `TEST_ALL`) | 22 multi-requirement sets | none |
+| `OwnerRequirementSetId` | 0 on modelled owners | not a live axis here |
+| Requirements on `ATTACH` inner modifiers | 19 | none |
+| `GlobalParameters` | 115 tracked of 500 shipped | see the ratchet |
+| Ruleset fields with no consumer | 262 fields | `barb_force_scale` |
+| `effects` keys with no consumer | 640 keys, 44 flagged | none — all read via prefix match, `format!` lookup or struct field |
+
+Two lessons worth carrying forward.
+
+**Read `Inverse` first.** It has produced three separate defects — Monasticism's
+Culture penalty, and both army combat beliefs reaching Apostles. Every time,
+CIVVIS had the elaborate part of the condition right and dropped the negation.
+
+**A requirement can sit on either level of an `ATTACH_MODIFIER` pair.** Just War
+carries its unit-class exclusions on the wrapper and its yield on the inner
+modifier; a sweep that reads only the effect-bearing row sees neither.
+
 ## What exactness can mean
 
 Civilization VI's rules live in a closed DLL. Bit-identical random streams are
@@ -61,7 +492,7 @@ produces a clean-looking but false report:
   `_Major` pass applies afterwards.
 
 **Result of the first run:** 55 real divergences across units, technologies,
-civics, buildings and districts. All are now resolved — 31 by correcting
+civics, buildings and districts. All are now resolved — 45 by correcting
 CIVVIS' data, the rest by recording them as deliberate:
 
 | Fixed | Examples |
@@ -70,14 +501,16 @@ CIVVIS' data, the rest by recording them as deliberate:
 | Modern-era building costs, uniformly overstated | Factory/Stock Exchange/Military Academy 390→330, Research Lab/Seaport/Broadcast Center/Film Studio/Shopping Mall 580→440, Stadium 660→480, Airport 600→480, Zoo/Aquarium 445→360, Hangar/Food Market 465→380 |
 | Sight radii left at the default | Spy, Naturalist, Helicopter, Rocket Artillery, Giant Death Robot all see 3 tiles, not 2 |
 | Missing prerequisites | Cartography and Mass Production both require Shipbuilding |
+| Future-era research frozen into one representative layout | Technology and civic nodes now carry the shipped `RandomPrereqs` flags and 2200/2300 or 3200/3300 column costs. Each match draws one connected two-column graph from its seed, shares it across every player, and stores the concrete graph in saves. |
 
 `tools/fidelity_waivers.json` holds the accepted divergences, each with a
-reason — Future-era techs and civics draw randomized prerequisites in
-Gathering Storm, purchase-only units store a Faith price where the database
-stores an unpayable production cost, the City Center is placed rather than
-produced. **That file is the fidelity roadmap: shrinking it is the work.**
-Anything not listed there counts against the ratchet, which now stands at
-zero for these five tables.
+reason — purchase-only units store a Faith price where the database stores an
+unpayable production cost, and the City Center is placed rather than produced.
+Future-era randomization is no longer waived: the audit reads
+`Technologies_XP2`, `Civics_XP2`, `TechnologyRandomCosts`, and
+`CivicRandomCosts` directly. **That file is the fidelity roadmap: shrinking it
+is the work.** Anything not listed there counts against the ratchet, which now
+stands at zero for these five tables.
 
 **Second wave (terrain layer):** the audit now also projects `Terrains`,
 `Features`, `Resources` and `Improvements` — yields, movement, defense
@@ -104,8 +537,32 @@ resolved. The largest:
 
 The "Only in Civ VI" column measures scope rather than error — the units and
 buildings CIVVIS does not model are almost all civilization uniques from DLC
-packs, and the missing features are natural wonders plus the volcano system.
-That column is the content backlog.
+packs. That column is the content backlog. **Features is now empty**: the eight
+Natural Wonders it used to name (the Bermuda Triangle, Eyjafjallajökull, the
+Fountain of Youth, Lysefjord, Païtiti, Mount Roraima, Tsingy de Bemaraha and
+Sahara el Beyda) all exist, so CIVVIS carries the whole thirty-four-wonder
+roster with the shipped yields, appeal, impassability and sight.
+
+**The audit's own loader had two blind spots, and both of them libelled a
+wonder.** Fixed together with the roster:
+
+- An expansion ships a compatibility overlay that applies only when the *other*
+  expansion is installed. `DLC/Expansion1/Data/Expansion1_Expansion2.xml` is
+  Gathering Storm's rebalance of Rise and Fall content, and sorted filename
+  order applied it *before* the rows it edits existed — so every `<Update>` in
+  it silently matched nothing. The Eye of the Sahara kept Rise and Fall's 1
+  Production against CIVVIS' correct 2, and Pike and Shot's maintenance was
+  read as 4 when Gathering Storm sets it to 3 (that one was a real CIVVIS
+  error, now fixed). Cross-expansion overlays are applied last.
+- `RemoveData` files were excluded as cosmetic. They are how the later packs
+  retire content: Byzantium & Gaul deletes the Biosphere's `+8 Science` when
+  Gathering Storm is active, so the audit reported CIVVIS as missing a yield it
+  is correct not to have. Loading them also retires Twilight Valor and Letters
+  of Marque, which the same pack deletes and CIVVIS still carries — those two
+  now show in "Only in CIVVIS" as genuine backlog.
+
+With both fixed, **Wonders and Features compare 53 and 50 entries with zero
+divergences and nothing missing on either side.**
 
 **District adjacency (parallel session):** `District_Adjacencies` joined to
 `Adjacency_YieldChanges` against each district's per-source `adjacency` map,
