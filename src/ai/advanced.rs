@@ -449,6 +449,28 @@ pub struct AdvancedAi {
     /// arithmetically identical to `at_war || A || B` reaching Conquest first,
     /// so this ships zero behaviour change until the entrant is selected.
     pub prophet_before_opportunism: bool,
+    /// What a settler is worth against everything else the city could build.
+    ///
+    /// **1.0 by default — the shipped behaviour exactly.** The settler arm of
+    /// `production_value` scores `920.0 + site_value * 4.0`, and **920 is a
+    /// hardcoded literal**: not a gene, so no run of `evolve` has tuned it, and
+    /// not a doctrine lever, so the macro search has never perturbed it.
+    ///
+    /// `expansion_funnel` (`docs/EVAL.md`, 2026-07-28) measured what that
+    /// literal decides. Over 48 seats and 12 full games, the empire was short
+    /// of its own planned city target, permitted a settler, and had a reachable
+    /// site on **3391 seat-turns — 25.8% of all of them — and built something
+    /// else every single time.** The count of turns blocked by having nowhere
+    /// to go was **zero**. Cities end at 4.02 against a planned 5.25, so this
+    /// is not a disagreement about how many cities to want; the agent simply
+    /// never pays for them.
+    ///
+    /// ⚠ The funnel says the settler loses. It does **not** say by how much, so
+    /// any value here is unconstrained by the measurement. Pick one, register
+    /// it, run it once — do not sweep several against the same maps, which is
+    /// the selection bias that dissolved this repository's coordinate-descent
+    /// result on resampling.
+    pub settler_price: f64,
     /// Let an assigned Religion lane expand first, like every other lane.
     ///
     /// ⚠⚠ **MEASURED AND REJECTED. Leave it off.** Applied consistently to the
@@ -749,6 +771,7 @@ impl AdvancedAi {
             scoped_relief_hold: false,
             refuse_unreachable_lanes: false,
             prophet_before_opportunism: false,
+            settler_price: 1.0,
             assigned_religion_may_expand: false,
             defensible_sites: false,
             food_first: 0.0,
@@ -7111,7 +7134,7 @@ impl AdvancedAi {
                     && expansion_open
                     && site.is_some()
                 {
-                    920.0 + site.map(|(_, v)| v * 4.0).unwrap_or(0.0)
+                    (920.0 + site.map(|(_, v)| v * 4.0).unwrap_or(0.0)) * self.settler_price
                 } else {
                     -10_000.0
                 }

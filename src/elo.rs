@@ -38,7 +38,7 @@ pub const BUILTIN_AIS: [&str; 10] = [
 /// tournament ratings. Keeping them out of `BUILTIN_AIS` prevents a control
 /// factory from being pooled into the same player/leader rating key as
 /// its treatment.
-pub const EVAL_ONLY_AIS: [&str; 44] = [
+pub const EVAL_ONLY_AIS: [&str; 45] = [
     "advanced_banking_dedication",
     "advanced_blind_to_leaders",
     "advanced_civ_blind",
@@ -52,6 +52,7 @@ pub const EVAL_ONLY_AIS: [&str; 44] = [
     "advanced_measured_dedication",
     "advanced_lane_reachable",
     "advanced_parallel_settlers",
+    "advanced_settler_first",
     "advanced_relief_scoped",
     "strategic_score",
     "strategic_doctrine",
@@ -584,6 +585,17 @@ pub fn builtin_ai(name: &str, seed: u64) -> Box<dyn Ai> {
         // the finite Prophet race is tested before the opportunistic war that
         // currently preempts it on turns 55..120. See
         // `AdvancedAi::prophet_before_opportunism`.
+        // Upper bound for the expansion-valuation axis: a settler outbids every
+        // other item whenever the five gates permit one at all. This is not a
+        // shippable policy, it is the oracle-ablation question — is there ANY
+        // headroom in what a settler is worth? The gates still bind (one in
+        // flight, stop at the planned target, pop 2, window open), so it means
+        // "beeline to the city target", not "settlers forever".
+        "advanced_settler_first" => {
+            let mut ai = AdvancedAi::new();
+            ai.settler_price = 100.0;
+            Box::new(ai)
+        }
         "advanced_prophet_first" => {
             let mut ai = AdvancedAi::new();
             ai.prophet_before_opportunism = true;
@@ -1245,6 +1257,7 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "advanced_banking_dedication" => (Vec::new(), "advanced_banking_dedication"),
         "advanced_measured_dedication" => (Vec::new(), "advanced_measured_dedication"),
         "advanced_parallel_settlers" => (Vec::new(), "advanced_parallel_settlers"),
+        "advanced_settler_first" => (Vec::new(), "advanced_settler_first"),
         "advanced_blind_to_leaders" => (Vec::new(), "advanced_blind_to_leaders"),
         "advanced_counter_in_lane" => (Vec::new(), "advanced_counter_in_lane"),
         "advanced_counter_stand_down" => (Vec::new(), "advanced_counter_stand_down"),
