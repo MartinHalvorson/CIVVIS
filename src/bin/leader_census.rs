@@ -36,7 +36,7 @@
 use civvis::ai::{AdvancedAi, Ai, GrandStrategy, Weights};
 use civvis::game::{Action, Game};
 use civvis::parallel;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 fn number(args: &[String], flag: &str, default: usize) -> usize {
     args.iter()
@@ -64,6 +64,11 @@ struct Track {
     first_named: Option<u32>,
     /// Distinct rivals that ever named it.
     namers: usize,
+    /// The most majors ever at war with it at once, and the most after the
+    /// first alarm. A denial layer that works looks like a dogpile; one that
+    /// does not looks like a series of duels.
+    peak_belligerents: usize,
+    peak_belligerents_after: usize,
     /// Turns spent at war with at least one major, split at `first_named`.
     war_turns_before: u32,
     war_turns_after: u32,
@@ -107,6 +112,11 @@ struct MapReading {
     denials: u64,
     denials_on_winner: u64,
     observations: u64,
+    /// Distinct (observer, target) pairs the denial layer ever named, and how
+    /// many of those observers ever actually went to war with the empire they
+    /// named.
+    named_pairs: usize,
+    followed_pairs: usize,
     /// `signals[turn][major_index][signal]`, with `majors` naming the seats.
     signals: Vec<Vec<[f64; SIGNALS.len()]>>,
     majors: Vec<usize>,
@@ -179,6 +189,8 @@ fn main() {
         let mut denials = 0_u64;
         let mut signals: Vec<Vec<[f64; SIGNALS.len()]>> = Vec::with_capacity(turns as usize);
         let mut named_by_turn: Vec<(u32, usize)> = Vec::new();
+        let mut named_pairs: BTreeSet<(usize, usize)> = BTreeSet::new();
+        let mut followed_pairs: BTreeSet<(usize, usize)> = BTreeSet::new();
         let mut observations = 0_u64;
         let mut end_turn = turns;
 
@@ -252,8 +264,18 @@ fn main() {
                 if let Some((rival, _counter)) = fleet[observer].denial_target(&game, observer) {
                     denials += 1;
                     named_by_turn.push((turn, rival));
+                    named_pairs.insert((observer, rival));
                     let track = tracks.get_mut(&rival).expect("major tracked");
                     note(&mut track.first_named, turn);
+                }
+            }
+
+            // Naming a rival is a decision; declaring on them is the act. The
+            // gap between the two is what a response layer is actually worth
+            // before any question of whether the war converts.
+            for (observer, rival) in named_pairs.iter().copied() {
+                if game.is_at_war(observer, rival) {
+                    followed_pairs.insert((observer, rival));
                 }
             }
 
@@ -263,12 +285,17 @@ fn main() {
                 if !game.players[target].alive {
                     continue;
                 }
-                let at_war = majors
+                let belligerents = majors
                     .iter()
-                    .any(|other| *other != target && game.is_at_war(target, *other));
+                    .filter(|other| **other != target && game.is_at_war(target, **other))
+                    .count();
+                let at_war = belligerents > 0;
                 let track = tracks.get_mut(&target).expect("major tracked");
+                track.peak_belligerents = track.peak_belligerents.max(belligerents);
                 let after = track.first_named.is_some_and(|first| turn >= first);
                 if after {
+                    track.peak_belligerents_after =
+                        track.peak_belligerents_after.max(belligerents);
                     track.turns_after += 1;
                     if at_war {
                         track.war_turns_after += 1;
@@ -284,7 +311,7 @@ fn main() {
         }
 
         for target in majors.iter().copied() {
-            let namers = named_by_turn
+            let namers = named_pairs
                 .iter()
                 .filter(|(_, rival)| *rival == target)
                 .count();
@@ -307,6 +334,8 @@ fn main() {
             observations,
             signals,
             majors,
+            named_pairs: named_pairs.len(),
+            followed_pairs: followed_pairs.len(),
         }
     });
 
@@ -494,6 +523,71 @@ fn main() {
         "\ninstrument gap (AI meter − victory screen), over {gap_samples} readings: {:+.1} points",
         gap_total / gap_samples.max(1) as f64
     );
+
+    // Naming a rival is a decision; declaring on them is the act; several
+    // empires declaring at once is the only thing that looks like a coalition.
+    // Each step can lose the whole layer, so measure all three.
+    let named_pairs: usize = readings.iter().map(|r| r.named_pairs).sum();
+    let followed_pairs: usize = readings.iter().map(|r| r.followed_pairs).sum();
+    println!(
+        "\nfollow-through: {followed_pairs} of {named_pairs} (observer, target) pairs \
+         went to war with the empire they named ({:.0}%)",
+        100.0 * followed_pairs as f64 / named_pairs.max(1) as f64
+    );
+
+    let mut dogpile: BTreeMap<usize, usize> = BTreeMap::new();
+    let mut namers: BTreeMap<usize, usize> = BTreeMap::new();
+    let mut lone = 0_usize;
+    for reading in &decided {
+        let winner = reading.winner.expect("decided");
+        let Some(track) = reading.tracks.get(&winner) else {
+            continue;
+        };
+        *dogpile.entry(track.peak_belligerents_after).or_default() += 1;
+        *namers.entry(track.namers).or_default() += 1;
+        if track.peak_belligerents_after <= 1 {
+            lone += 1;
+        }
+    }
+    print!("\nmajors at war with the winner at once, after the alarm:");
+    for (count, games) in &dogpile {
+        print!(" {count}→{games}");
+    }
+    println!(
+        "\n  {lone} of {} wins ({:.0}%) never faced more than one at a time",
+        decided.len(),
+        100.0 * lone as f64 / decided.len().max(1) as f64
+    );
+    print!("distinct rivals that ever named the winner:");
+    for (count, games) in &namers {
+        print!(" {count}→{games}");
+    }
+    println!();
+
+    // Before anybody builds machinery to organise a dogpile, ask whether a
+    // dogpile does anything. Every major, bucketed by the most rivals that
+    // were ever at war with it at once, against the base rate.
+    let mut by_pile: BTreeMap<usize, (usize, usize)> = BTreeMap::new();
+    for reading in &readings {
+        for (pid, track) in &reading.tracks {
+            let bucket = track.peak_belligerents.min(3);
+            let slot = by_pile.entry(bucket).or_default();
+            slot.0 += 1;
+            slot.1 += usize::from(reading.winner == Some(*pid));
+        }
+    }
+    println!("\nwin rate by the most rivals ever at war with them at once:");
+    for (bucket, (seats, wins)) in &by_pile {
+        let label = if *bucket == 3 {
+            "3+".to_string()
+        } else {
+            bucket.to_string()
+        };
+        println!(
+            "  {label:<3} {wins:>4} of {seats:<4} → {:5.1}%",
+            100.0 * *wins as f64 / (*seats).max(1) as f64
+        );
+    }
 
     // Could anybody have known earlier? At `end - K`, does any instrument
     // already put the eventual winner on top? An alarm can be no earlier than
