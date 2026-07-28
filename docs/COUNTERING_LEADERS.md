@@ -262,6 +262,34 @@ flat development by the treatment simply not being worth anything.
 declaring" from "race them" — but it decomposes an effect that did not survive
 its confirmation, so it has not been run.
 
+## The instrument change is null too
+
+The shipped score term is a clock, not an observation: it fires only once
+`turn*4 >= max_turns*3`, so every leader trips it at turn 300 of 400 alike,
+however far ahead they are. `early_score_alarm` reads the margin instead — 78
+at 20% ahead of the next empire, 100 at 50% ahead — from
+`standard_duration(60)`.
+
+It works as an instrument, and on its own it is a war engine:
+
+| arm | denial fires | first denial → win | follow-through | conquest | expansion | gold |
+|---|---|---|---|---|---|---|
+| ship | 13.9% | median 78 turns | 43% | 25% | 31% | 322 |
+| early | 37.5% | median **284** | 63% | **35%** | 19% | 313 |
+| early_build | 35.8% | median 143 | 33% | **14%** | **52%** | 470 |
+
+Warning time nearly quadruples. Feeding the shipped Conquest counter, the
+earlier alarm takes plan mix from 25% to 35% conquest and follow-through from
+43% to 63% — the direction that costs seats. Paired with `counter_in_lane` it
+reverses to 14% conquest and 52% expansion: **21 points of plan mix**, the
+largest behavioural change of any arm here.
+
+**And the outcome does not move.** 120 pairs at the deployment profile, seed
+990000: `advanced` 51.7% (Wilson 42.8–60.4), win direction 21/82/17 sign
+p=0.6271, terminal score 49.4% with 54/0/66 and p=0.3153 on all 120 maps
+resolving. The registered prediction was 48–54%, most likely null; it landed on
+48.3%.
+
 ## Where this leaves the question
 
 Every measured way of stopping a leader in this engine is null or negative:
@@ -273,7 +301,27 @@ Every measured way of stopping a leader in this engine is null or negative:
 - and the alarm cannot be made earlier from `victory_threat`, which is at or
   below the base rate at four of five leads.
 
-The one instrument that does predict a winner at an actionable lead is score,
-and it is deliberately excluded from the victory meter. That remains the only
-opening this investigation found, and it is an *instrument* change, not a
-response change — every response change measured here came back null.
+| treatment | what it changed | result |
+|---|---|---|
+| `advanced_blind_to_leaders` | deletes the response entirely | dead heat, two map scales |
+| a coalition (not built) | — | 1–2 belligerents win 4.4% / 10.7% of seats vs a 16.7% base |
+| `advanced_counter_in_lane` | what the alarm asks for | 49.9% over 360 confirming maps |
+| `advanced_early_score_alarm` | when the alarm fires | adds war; measured separately |
+| `advanced_early_score_build` | both at once | 48.3%, sign p=0.6271 |
+
+**Nothing available at this layer counters a leader in this engine.** The layer
+detects the winner almost perfectly, it changes behaviour substantially in
+every direction it has been pushed, and it changes no outcome in any of them.
+
+### What this does not license
+
+It does not license deleting the layer. CIVVIS is a spectator product, and this
+machinery is what makes an AI *visibly* move against a runaway leader — it
+reaches the reasoning log, the war log, and the plan the HUD shows. Measured as
+play it is worth zero; measured as behaviour a viewer can read it is doing
+something none of the numbers here price, and this investigation never tried
+to.
+
+What the evidence does support without qualification: **do not spend more
+effort improving it.** Five treatments, two map scales, four seeds, every one
+null.
