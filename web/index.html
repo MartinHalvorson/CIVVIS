@@ -17098,15 +17098,32 @@ function skySystemFrame() {
 // stops on the sky's own control bar are the same arithmetic as the stop the
 // zoom already has, rather than a second opinion that could drift from it.
 function skyFrameFor(box) {
+  const inside = skyFramedBox();
+  return {
+    x:box.x, y:box.y,
+    radius:Math.min(inside.width / (2 * box.reach), inside.height / (2 * box.reach)),
+  };
+}
+// The stage with the framing margin already taken off it.
+function skyFramedBox() {
   const frame = observedFrameRect();
   const padding = Math.min(44, (frame.right - frame.left) * .07,
                            (frame.bottom - frame.top) * .09);
-  const width = Math.max(80, frame.right - frame.left - padding * 2);
-  const height = Math.max(80, frame.bottom - frame.top - padding * 2);
-  return {
-    x:box.x, y:box.y,
-    radius:Math.min(width / (2 * box.reach), height / (2 * box.reach)),
-  };
+  return {width:Math.max(80, frame.right - frame.left - padding * 2),
+          height:Math.max(80, frame.bottom - frame.top - padding * 2)};
+}
+// And the inverse: the reach that frames to exactly `width` across the stage.
+//
+// This exists so that the far stop can be *written* as the number the bar prints
+// beside it. A shot's reach is a radius inside the padded box, and the bar's
+// readout is the width of the whole unpadded stage, so the two differ by the
+// padding and by a factor of two — a stop written as a reach of twenty
+// light-years printed **45.7 ly** underneath itself, which is a view arguing
+// with its own caption. Written this way the stop is one number and the caption
+// is the same number.
+function skyReachForStageWidth(width) {
+  const inside = skyFramedBox();
+  return width * Math.min(inside.width, inside.height) / (2 * skyStageSpan());
 }
 // The horizon of each rung, centred where that picture wants to be centred.
 //
@@ -17114,52 +17131,75 @@ function skyFrameFor(box) {
 //           Saturn is the last of the five wanderers, and everything past it
 //           needed a lens. Centred on the Sun, because at this scale home is
 //           one of six dots going round it.
-//   glass   the neighbourhood the telescope put distances on: a bubble of
-//           stars twenty light-years out, centred on the Sun again because the
+//   glass   the neighbourhood the telescope put distances on: twenty
+//           light-years of it across the stage, centred on the Sun because the
 //           Sun is the middle of it by construction.
-//   space   the voyage — the Sun and the world the expedition is aimed at, both
-//           in frame, centred on the middle of the trip.
+//   space   the voyage — the Sun and the world the expedition is aimed at,
+//           centred on the middle of the trip, in the same twenty.
 function skyOutermostFrame() {
   if (seesDestination()) return skyVoyageFrame();
   const [ex, ey] = skyBodyPos(SKY_SUN);
-  if (knowsNeighbourhood())
-    return {x:ex, y:ey, reach:SKY_BUBBLE_LY * LIGHT_YEAR};
+  if (knowsNeighbourhood()) return {x:ex, y:ey, reach:skyStopReach()};
   const saturn = SKY_SYSTEM.find(body => body.id === "saturn");
   return {x:ex, y:ey, reach:(saturn ? saturn.orbitRadius : 10 * AU) * 1.16};
 }
-// The trip, framed: the Sun at one end, the destination at the other, and the
-// stars it crosses in between. **The reach is the bubble and the bubble is the
-// stop** — this shot decides where the camera leans, never how far it pulls
-// back. A stop that quietly opened to hold whatever the expedition happened to
-// be aimed at would not be a stop, and the truncation is the whole point.
+// The trip, framed: the Sun near the middle, the road out towards the
+// destination, and the stars it crosses. **This is the view the race is watched
+// from** — the expedition leaves home and crawls outward across the rest of the
+// game, and this is the one shot that holds where it started, where it is going
+// and everything it has to cross.
 //
-// It holds the whole of every trip on the roster anyway, and the reason is the
-// projection rather than luck. The sky is drawn in the plane of the galaxy with
-// a star's height out of it kept separately, so what is across the page is
-// `ly * cos(b)` — LHS 1140 is 48.9 light-years away and seventy-one degrees off
-// the plane, which is fifteen and a half across. The widest trip in the roster
-// is Gliese 12 b at thirty-four, and half of that is well inside twenty.
+// **The reach is the stop** — this shot decides where the camera leans, never
+// how far it pulls back. A stop that quietly opened to hold whatever the
+// expedition happened to be aimed at would not be a stop, and the truncation is
+// the whole point.
+//
+// How much of a trip that holds is the projection's business, not luck. The sky
+// is drawn in the plane of the galaxy with a star's height out of it kept
+// separately, so what is across the page is `ly * cos(b)`: LHS 1140 is 48.9
+// light-years away and seventy-one degrees off the plane, which is fifteen and a
+// half across. On the widest trips the far end runs off the frame, the Sun and
+// the road stay on it, and the `Exoplanet` button flies the rest.
 function skyVoyageFrame() {
   const [sx, sy] = skyBodyPos(SKY_SUN);
-  const reach = SKY_BUBBLE_LY * LIGHT_YEAR;
+  const reach = skyStopReach();
   if (!seesDestination()) return {x:sx, y:sy, reach};
   const [ex, ey] = skyBodyPos(skyExoBody());
-  const dx = (ex - sx) / 2, dy = (ey - sy) / 2;
-  // The middle of the trip, so both ends are the same distance from the frame's
-  // own middle — and no further out than the stop, because past that the Sun
-  // itself leaves the frame and a picture of a journey with neither end of it on
-  // the stage is a picture of nothing.
-  const lean = Math.min(1, reach / Math.max(1e-9, Math.hypot(dx, dy)));
+  const dx = (ex - sx) * SKY_VOYAGE_ALONG, dy = (ey - sy) * SKY_VOYAGE_ALONG;
+  // The cap is measured against the *stage*, not against `reach`, because those
+  // are different lengths — and it is four fifths of the half-stage rather than
+  // all of it, so the Sun lands inside the frame rather than exactly on its edge.
+  const room = SKY_STOP_LY * LIGHT_YEAR * .4;
+  const lean = Math.min(1, room / Math.max(1e-9, Math.hypot(dx, dy)));
   return {x:sx + dx * lean, y:sy + dy * lean, reach};
 }
-// How far out the sky goes, and the number the whole view is built to put in
-// proportion. It is a truncation and not a measurement: the roster of stars runs
-// out past fifty light-years, and the galaxy past that is four thousand times
-// further again.
-// Twenty is where the pictures stop being about anything — far enough that the
-// entire solar system is a speck and the trip is drawn across real stars, near
-// enough that every notch of the zoom below it is still somewhere to go.
-const SKY_BUBBLE_LY = 20;
+// How far along the trip that shot is centred, and it is a third rather than a
+// half because the two ends are not worth the same amount of frame.
+//
+// This is the view the race is watched from. The expedition leaves the Sun and
+// crawls outward over the rest of the game, so what is being tracked spends
+// almost all of its life in the near end of the route — and the far end is a
+// world that is not going anywhere. Centring on the midpoint spent half the
+// stage on the empty side of a dot. A third along leaves the Sun the better
+// placed of the two, with the road ahead of it opened up.
+const SKY_VOYAGE_ALONG = 1 / 3;
+// **How far out the sky goes, written as the width of the stage** — which is the
+// number the bar prints under it and the number this is meant to be read as.
+// Everything else out here is a radius; this one is not, on purpose, because a
+// stop nobody can read off the screen is a stop nobody can reason about.
+//
+// It is a truncation and not a measurement: the roster of stars runs out past
+// fifty light-years, and the galaxy past that is four thousand times further
+// again. Twenty across is where the pictures stop being about anything — wide
+// enough that the whole solar system is a speck and the trip is drawn over real
+// stars, near enough that every notch of the zoom below it is somewhere to go.
+const SKY_STOP_LY = 20;
+function skyStopReach() {
+  return skyReachForStageWidth(SKY_STOP_LY * LIGHT_YEAR);
+}
+// The shell that is actually drawn, at half the stop, so it comes out spanning
+// the stage rather than hanging somewhere off the edge of it.
+const SKY_BUBBLE_LY = SKY_STOP_LY / 2;
 // A chart pulls back to the edge of what a chart can honestly hold. Distance
 // across the sheet is angle over the ground, so the corner of the stage is at
 // `reach / radius` radians from the middle of it, and past about a hundred
@@ -17249,17 +17289,17 @@ function planetScaleClampAt(scale, pan, body = skyNearestWorld(pan)) {
 //
 // A notch of the wheel cannot mean one fixed ratio out here. On the flat board
 // the whole zoom is a factor of thirteen and fifteen notches cross all of it;
-// above a globe the same zoom runs from a hexagon underfoot to a bubble of stars
-// twenty light-years out, which is eleven orders of magnitude, and at the flat
-// board's ratio that is **eighty-seven notches** from the ground to the stop.
-// Nobody scrolls eighty-seven times. The far half of everything out there could
+// above a globe the same zoom runs from a hexagon underfoot to twenty
+// light-years of sky, which is eleven orders of magnitude, and at the flat
+// board's ratio that is **eighty-four notches** from the ground to the stop.
+// Nobody scrolls eighty-four times. The far half of everything out there could
 // be flown to by a caption and reached by nothing else.
 //
 // So a notch is a fixed fraction of the ladder in front of it instead. The step
 // is taken in log scale — the one place a zoom is linear — and divided by the
 // height of the ladder this rung actually has, so the empty part of it costs
-// about three flat-board sweeps whether it stops at Saturn's orbit or at the
-// twenty light-year bubble. A people who have only proved their world round get
+// about three flat-board sweeps whether it stops at Saturn's orbit or twenty
+// light-years out. A people who have only proved their world round get
 // a short ladder and the notch they always had; a people with an instrument
 // above the air get about the same number of notches over a span a hundred
 // million times longer.
@@ -17270,15 +17310,16 @@ function planetScaleClampAt(scale, pan, body = skyNearestWorld(pan)) {
 //   rung    span of the ladder   at a fixed ratio   here
 //   chart          1.4                   5            5
 //   eye           14.2                  48           32
-//   glass         25.9                  87           35
-//   space         25.9                  87           35
+//   glass         25.0                  84           35
+//   space         25.0                  84           35
 //
 // Which is the property that was wanted. The journey is the same length in the
 // hand at every rung; only how far it goes changes — and truncating the sky did
-// not change it either. Before the truncation the same measurement gave `space`
-// a span of 33.9 and 113 notches at a fixed ratio, and the same **36** here: the
-// gearing had already absorbed the galaxy, which is exactly why dropping it costs
-// the hand nothing and buys back three thousand times less empty sky to cross.
+// not change it either. With the galaxy still in it the same measurement gave
+// `space` a span of 33.9 and 113 notches at a fixed ratio, and the same **36**
+// here: the gearing had already absorbed the galaxy, which is exactly why
+// dropping it cost the hand nothing and bought back seven thousand times less
+// empty sky to cross.
 const SKY_ZOOM_SWEEPS = 3;
 // One sweep of the flat board's zoom, in log scale: the `.25` floor and `3.2`
 // ceiling `zoomAt` clamps a board to. That is the unit the sky's ladder is
@@ -17483,7 +17524,7 @@ function skyScaleStops() {
                 title:target
                   ? `The whole trip: the Sun, ${target.name}, and the ` +
                     `${target.ly.toFixed(2)} light-years between them`
-                  : `Every star within about ${SKY_BUBBLE_LY} light-years`});
+                  : `${SKY_STOP_LY} light-years of sky, and every star in it`});
   }
   return stops;
 }
@@ -17535,8 +17576,19 @@ function skyTravelPath(from, w0, to, w1) {
 // wrong for a control. So it is his pace for a short hop and a cap after that:
 // a button press is a button press, and nobody waits out a journey they can see
 // the end of from the start.
+//
+// Three times as long as it first shipped at, both ways. The distances out here
+// are the content, and at 240 ms a unit the trip between two of these places was
+// over before it had said anything about what lay between them — the whole
+// argument for flying a path rather than cutting is that the crossing is worth
+// watching, and it was being thrown away to save a second. Van Wijk's own answer
+// for a trip across the whole sky is twenty-five seconds; even at three times
+// the first pace this is a fifth of that, so it is still a control and not a
+// film.
+const SKY_TRAVEL_PACE = 3;
 function skyTravelDuration(S) {
-  return Math.max(420, Math.min(1700, S * 240));
+  return Math.max(420 * SKY_TRAVEL_PACE,
+                  Math.min(1700 * SKY_TRAVEL_PACE, S * 240 * SKY_TRAVEL_PACE));
 }
 function skyTravel(pan, scale) {
   if (!planetMap()) return;
@@ -17742,9 +17794,20 @@ function syncSkyNav() {
     .map(stop => `${stop.id}/${stop.label}/${stop.title}`).join(",");
   if (key !== SKY_NAV_KEY) {
     SKY_NAV_KEY = key; SKY_NAV_MARK = "";
-    skyNavWorldRow.replaceChildren(...worlds.map(stop => skyNavButton("world", stop)));
-    skyNavScaleRow.replaceChildren(...scales.map(stop => skyNavButton("scale", stop)));
-    skyNavScaleRow.hidden = !scales.length;
+    // The bar reads outward, one order, nearest first: Earth, Moon, Mars, then
+    // the solar system, the voyage and the world at the end of it. The divider
+    // is not the difference between a world and a shot any more — it falls where
+    // the sky stops being somewhere anyone has stood and becomes something
+    // looked at from here, which is the same place the space programme's own
+    // reach runs out. So the destination sits with the far pictures rather than
+    // with the Moon, which is where it belongs on any reading except the
+    // implementation's.
+    const near = worlds.filter(stop => stop.id !== "exo");
+    const far = [...scales.map(stop => ["scale", stop]),
+                 ...worlds.filter(stop => stop.id === "exo").map(stop => ["world", stop])];
+    skyNavWorldRow.replaceChildren(...near.map(stop => skyNavButton("world", stop)));
+    skyNavScaleRow.replaceChildren(...far.map(([kind, stop]) => skyNavButton(kind, stop)));
+    skyNavScaleRow.hidden = !far.length;
   }
   const here = skyNavHere();
   if (here !== SKY_NAV_MARK) {
@@ -18234,8 +18297,8 @@ function skySceneCaption(radius) {
   }
   if (across > 3 * LIGHT_YEAR)
     return ["The solar neighbourhood",
-            `About a hundred star systems within ${SKY_BUBBLE_LY} light-years, ` +
-            `and the expedition is going to one of them`];
+            `${SKY_STOP_LY} light-years across, and the expedition is going to ` +
+            `one of these stars`];
   if (across > 120 * AU)
     return ["Interstellar space",
             `The nearest star is ${SKY_STARS[0].ly.toFixed(2)} light-years away — ` +

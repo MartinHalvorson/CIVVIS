@@ -55,8 +55,8 @@ out:
 |---|---|---|---|
 | `chart` | — | nothing. A flat sheet. | the chart limit |
 | `eye` | `knows_globe` | the Sun, the Moon, and the five wandering stars | Saturn's orbit, 28 AU |
-| `glass` | `scientific_theory`, or **Isaac Newton** | the outer system, and a neighbourhood with real distances in it | the 20-light-year bubble |
-| `space` | `launch_earth_satellite` | the destination | the voyage — still 20 light-years |
+| `glass` | `scientific_theory`, or **Isaac Newton** | the outer system, and a neighbourhood with real distances in it | 20 light-years across |
+| `space` | `launch_earth_satellite` | the destination | the voyage — the same 20 across |
 
 Mercury, Venus, Mars, Jupiter and Saturn are naked-eye objects and were known to
 every civilization that ever looked up, which is why the `eye` rung is a real
@@ -173,13 +173,23 @@ crossing it.
 The stop is twenty light-years now, and the far end of the zoom is a picture of
 the voyage rather than a picture of a scale.
 
+**And twenty means twenty on the screen.** The stop is written as the *width of
+the stage* — `SKY_STOP_LY`, the number the bar prints beside the handle — and not
+as a reach. Every other shot out here is a radius inside the padded frame, which
+is a different length by a factor of two and by the padding: a stop written as a
+twenty-light-year *reach* printed **45.7 ly** underneath itself, which is a view
+arguing with its own caption. `skyFrameFor` and `skyReachForStageWidth` are the
+two directions of one conversion, so the two numbers cannot drift apart. The
+shell that is actually drawn is half the stop, so the ring spans the stage
+instead of hanging off the edge of it.
+
 ## The ladder, and how long it takes to climb
 
 Eleven orders of magnitude is a lot to ask of a wheel. The zoom used to move by
 one fixed ratio per notch — the same ratio the flat board uses, where the whole
 zoom is a factor of thirteen and fifteen notches cross all of it — and at that
-ratio the far stop is **eighty-seven notches** from the ground. Nobody scrolls
-eighty-seven times, so most of what is written above could be built and reached
+ratio the far stop is **eighty-four notches** from the ground. Nobody scrolls
+eighty-four times, so most of what is written above could be built and reached
 by nothing but a caption.
 
 So a notch is a fixed fraction of the ladder in front of it instead. The step is
@@ -192,14 +202,14 @@ ceiling down to the far stop with the pan held over home:
 |---|---|---|---|
 | `chart` | 1.4 | 5 | 5 |
 | `eye` | 14.2 | 48 | 32 |
-| `glass` | 25.9 | 87 | 35 |
-| `space` | 25.9 | 87 | 35 |
+| `glass` | 25.0 | 84 | 35 |
+| `space` | 25.0 | 84 | 35 |
 
 Truncating the sky did not change the hand. The same measurement on the version
 with the galaxy in it gave `space` a span of 33.9 and 113 notches at a fixed
 ratio — and **36** geared, one more than now. The gearing had already absorbed
-the galaxy, which is why dropping it costs nothing at the wheel and buys back
-three thousand times less empty sky to cross.
+the galaxy, which is why dropping it cost nothing at the wheel and bought back
+seven thousand times less empty sky to cross.
 
 The gearing is for crossing the dark, and crossing it is all it is for. Four
 places out there are somewhere anyone is actually going — home, the Moon, Mars
@@ -240,8 +250,15 @@ is a sky to cross. Home wholly on the stage with room around it puts it up; home
 filling the frame takes it down again. Three things on it, in the order a hand
 reaches for them:
 
-**The places.** Home, the Moon, Mars, and the world the expedition is aimed at —
-`Earth`, `Moon`, `Mars`, `Exoplanet`.
+**The bar reads outward, in one order:** `Earth`, `Moon`, `Mars`, `Solar
+system`, `Voyage`, `Exoplanet`. The divider in the middle of it is no longer the
+difference between a world you land on and a shot you frame — it falls where the
+sky stops being somewhere anyone has stood and becomes something looked at from
+here, which is also where the space programme's own reach runs out. So the
+destination sits with the far pictures rather than beside the Moon, which is
+where it belongs on every reading except the implementation's.
+
+**The places.** Home, the Moon, Mars, and the world the expedition is aimed at.
 Those four and no others, because those four are already what the sky calls an
 arrival: they are the three destinations of the space programme and the one
 board they are launched from, and the gearing has handed itself back over
@@ -268,18 +285,28 @@ the far stop are the same arithmetic rather than two opinions that could drift
 apart. At the `eye` rung `Solar system` *is* the far stop, because the naked
 eye's universe ends at Saturn.
 
-`Voyage` is the trip: the Sun at one end, the destination at the other, centred
-on the middle of the line between them. Its reach is the bubble and the bubble is
-the stop — the shot decides where the camera leans, never how far it pulls back,
-because a stop that quietly opened to hold whatever the expedition happened to be
-aimed at would not be a stop.
+`Voyage` is **the view the race is watched from**. The expedition leaves home and
+crawls outward across the rest of the game, and this is the one shot that holds
+where it started, where it is going, and everything it has to cross. Its reach
+*is* the stop — the shot decides where the camera leans, never how far it pulls
+back, because a stop that quietly opened to hold whatever the expedition happened
+to be aimed at would not be a stop.
 
-It holds the whole of every trip on the roster anyway, and that is the projection
-rather than luck: the sky is drawn in the plane of the galaxy with a star's
-height out of it kept separately, so what is across the page is `ly · cos b`. LHS
-1140 is 48.9 light-years off and seventy-one degrees out of the plane, which is
-fifteen and a half across; the widest trip in the roster is Gliese 12 b at
-thirty-four, and half of that is well inside twenty.
+It is centred **a third of the way along the trip**, not half. The two ends are
+not worth the same amount of frame: what is being tracked spends almost all of
+its life at the near end of the route, and the far end is a world that is not
+going anywhere. On the midpoint, half the stage went to the empty side of a dot.
+A third along leaves the Sun the better placed of the two with the road ahead of
+it opened up — measured, the Sun sits exactly half as far from the middle of the
+frame as the destination does.
+
+How much of a trip that holds is the projection's business. The sky is drawn in
+the plane of the galaxy with a star's height out of it kept separately, so what
+is across the page is `ly · cos b`: LHS 1140 is 48.9 light-years off and
+seventy-one degrees out of the plane, which is **15.7 across**. The Sun is on the
+stage for all ten destinations; the far end is for seven of them, and on the
+three widest — Gliese 667 Cc, TRAPPIST-1 e and Gliese 12 b, at 23 to 34 across —
+the offset caps, the road stays in frame, and `Exoplanet` flies the rest.
 
 **The ladder.** The zoom laid out end to end, with the camera's own place on it
 and how wide the stage is beside it in the unit that reads best there — twelve
@@ -369,7 +396,21 @@ subtraction cancels to zero, the logarithm is negative infinity and the whole
 flight comes out `NaN` with the camera never moving. And its own answer for how
 long the trip takes — a constant speed along the path — is twenty-five seconds
 for the whole sky, which is right for a film and wrong for a control. It keeps
-his pace for a short hop and is capped after that.
+his pace for a short hop and is capped after that — at 5,100 ms, three times as
+long as it first shipped at. The distances out here are the content, and at the
+first pace the crossing between two of these places was over before it had said
+anything about what lay between them, which throws away the whole reason for
+flying a path rather than cutting. `SKY_TRAVEL_PACE` multiplies both ends of the
+clamp, so every switch is 3× longer in both directions:
+
+| switch | first shipped | now |
+|---|---|---|
+| Earth ↔ Moon | 1,533 ms | **4,599 ms** |
+| Earth ↔ Mars, Solar system, Voyage, Exoplanet | 1,700 ms | **5,100 ms** |
+| the floor | 420 ms | **1,260 ms** |
+
+Even so it is a fifth of Van Wijk's own answer for a trip across the whole sky,
+which is twenty-five seconds — this is still a control and not a film.
 
 The zoom buttons themselves now repeat while held, which on the flat board is a
 convenience and out here is the difference between a control and an ornament.
