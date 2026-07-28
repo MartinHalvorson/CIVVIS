@@ -4181,3 +4181,69 @@ obvious thing to spend an overnight run on.
 
 `strategic_cheap` stays evaluator-only with the null-and-worse recorded, per the
 pre-registered rule. No seed re-roll, no knob-tuning to rescue it.
+
+
+## 2026-07-28 — ★★★ the blindness is not `ai_eval`'s alone: the champion was bred on the profile that does not transfer
+
+Adding `--speed` to `ai_eval` fixed one instrument. Auditing the rest shows the
+gap is systemic — **every other binary that builds a game does so through
+`Game::new`, which pins `default_speed()` = `standard`:**
+
+| layer | file | speed |
+|---|---|---|
+| the evaluator | `src/bin/ai_eval.rs` | **fixed today** (`--speed`, default unchanged) |
+| **the breeder** | `src/evolve.rs:162,342` | `Game::new` → **standard** |
+| the league | `src/league.rs:1535` | `Game::new` → **standard** |
+| 21 other probes and evaluators | `src/bin/*.rs` | `Game::new` → **standard** |
+
+Among the 21 are the instruments that *gate decisions*: `policy_eval`,
+`genome_breed`, `policy_breed`, `victory_eval`, `search_probe`, `search_dose`,
+`gene_leverage`, `gene_probe`, `order_ablate`, `proxy_fit`. **Every recorded
+null and every recorded gain in this document was measured at Standard speed**,
+and the exhibition runs Online.
+
+### The chain that closes
+
+`docs/SUPERHUMAN.md` records the recipe that produced the shipped champion:
+
+```
+civvis evolve --pop 24 --generations 25 --games 96 --players 4 \
+  --width 24 --height 16 --turns 500 --seed 7
+```
+
+**4 players, 24×16, 500 turns, Standard speed** — the exact profile this
+document has now shown three times does not transfer, once reversing an
+effect's sign. And the champion's measured worth:
+
+| profile | champion v `advanced` |
+|---|---|
+| 4p 24×16 Standard — **the profile it was bred on** | **+58, gate PASS** |
+| 4p 24×16 Online — the shipped speed | **+10, INCONCLUSIVE** |
+
+> **The genome that ships was optimised on a game the deployment does not
+> play.** Its advantage is largest exactly where it was selected and largely
+> gone where it runs.
+
+⚠ **Consistent with, not proof of, specialisation.** Demonstrating that the GA
+overfitted its profile needs a breeding run at Online speed compared against
+this one on a common holdout, which nothing has done. An alternative reading —
+that Online simply compresses *all* agent differences — fits the `strategic`
+result too (+117 → +28) and is not excluded. **Both readings imply the same
+next action**, which is why the distinction can wait.
+
+### What follows
+
+1. **Breed at the speed that ships**, or at minimum evaluate the champion there
+   before promoting the next one. The machinery is one `GameOptions` field away
+   in `evolve.rs`.
+2. **`--speed` belongs on the gating evaluators**, not just `ai_eval` —
+   `policy_eval`, `victory_eval`, `genome_breed` and the `search_probe` family
+   at least. Mechanical: `Game::new(...)` → `Game::new_with(GameOptions { speed, .. })`.
+3. Until then, **every number in this document is a statement about Standard
+   speed at 4p 24×16**, and should be written that way.
+
+⚠ One caveat on the live league, which muddies its own record: `civvis league`
+builds games at Standard, while the spectator plays Online and records into the
+same directory with `--league-record`. The live pool is therefore a **mixture of
+two game types**, which is worth knowing before any rating in it is used as
+evidence — including in the entries above where I used it as such.
