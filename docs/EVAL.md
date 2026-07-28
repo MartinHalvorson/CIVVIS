@@ -4377,3 +4377,74 @@ If the specialisation reading is right, a genome bred there should beat gen-14
 there by roughly what gen-14 beats the default by at 4p 24×16. That is the
 overnight run this loop has been building toward, and it is the first one whose
 target profile matches the deployment.
+
+
+## 2026-07-28 — ★★★★★ SYNTHESIS: every promoted gain evaporates at the deployment profile; the one unpromoted difference does not
+
+The last of the deployment-profile measurements, pre-registered at
+`/Users/martin/civvis-strategic-exhibition-preregistration.md`:
+
+```
+ai_eval strategic advanced --players 6 --width 74 --height 46 --city-states 6
+  --pairs 60 --turns 250 --speed online --seed 8300000
+
+paired-map score   43.3%  (95% Wilson CI 31.6%..55.9%)   Elo-equivalent -47
+paired direction   7 for / 38 neutral / 15 against    sign p = 0.1338
+terminal score     44.8%,  7 for / 53 against,  p = 0.0000
+promotion gate     INCONCLUSIVE
+```
+
+I predicted *inconclusive, with the point estimate closer to zero than +28*.
+Inconclusive on wins is right; the estimate went **past** zero to −47, and the
+terminal-score direction is unambiguous at 7 maps against 53.
+
+### The whole table, one profile at a time
+
+| comparison | 4p 24×16 Standard (the gate) | **6p 74×46 Online (ships)** |
+|---|---|---|
+| gen-14 genome v `advanced` | **+58**, gate PASS | **−9** (CI excludes +58) |
+| `strategic` v `advanced` | **+117**, gate PASS | **−47**, score p=0.0000 |
+| `strategic_cheap` v `advanced` | +16 (Online 4p) | **−63**, wins p=0.0018 |
+| `advanced` v `advanced_v1` — **never promoted** | +114 | **+207**, gate PASS |
+
+> **Every improvement this repository has promoted was measured at 4p 24×16 and
+> is absent — or reversed — at the profile the exhibition plays. The one large
+> difference that was never promoted, between the current agent and the legacy
+> one it replaced, holds and grows there.**
+
+That last row is what makes the rest interpretable. A profile which resolves
++207 at gate-PASS strength is not insensitive and is not compressing everything.
+It is specifically the *promoted* differences that fail to appear.
+
+### What is and is not established
+
+**Established.** The genome's edge is bred-profile-specific (its deployment
+interval excludes +58, and the same profile resolves +207). `strategic_cheap` is
+significantly worse where it ships. Three separate 4p 24×16 estimates — a
+strength, a cost, and a sign — failed to transfer.
+
+**Not established.** `strategic` at −47 is **inconclusive on wins** (p=0.1338 at
+60 maps); only its terminal score is significant, and terminal score is not a
+promotion input. The pre-registration says a result like this "warrants the full
+300-map overnight run before anything in `docs/SUPERHUMAN.md` is rewritten", and
+that remains the correct next step. **Nothing here retracts `strategic_deep`'s
+promotion**, which has not been measured at the deployment profile at all.
+
+**Not attempted.** Why the promoted gains are profile-specific. The genome has an
+account — it was bred there. `strategic` does not: its rollout budget is fixed in
+turns, so a larger, slower world gets proportionally less foresight, which is the
+same pressure that plausibly sank `strategic_cheap`. That is a hypothesis and
+this document has refuted five of mine.
+
+### The two runs that follow, in order
+
+1. **`strategic` v `advanced` at 6p 74×46 Online, 300 maps.** ~17 h. Settles
+   whether the flagship search agent is a regression where it ships.
+2. **`civvis evolve --speed online --players 6 --width 74 --height 46`**, then
+   gen-14 against the result *at that profile*. The breeder gained a working
+   `--speed` earlier today specifically to make this possible, and it is the
+   first breeding run in this repository aimed at the game that ships.
+
+⚠ Neither was launched from this session: the machine is carrying load 36 on 18
+cores with another agent's evaluation running, and a 17-hour job has no business
+joining that queue. Both are pre-registered and ready.
