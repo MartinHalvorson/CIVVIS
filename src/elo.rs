@@ -38,8 +38,9 @@ pub const BUILTIN_AIS: [&str; 10] = [
 /// tournament ratings. Keeping them out of `BUILTIN_AIS` prevents a control
 /// factory from being pooled into the same player/leader rating key as
 /// its treatment.
-pub const EVAL_ONLY_AIS: [&str; 37] = [
+pub const EVAL_ONLY_AIS: [&str; 38] = [
     "advanced_banking_dedication",
+    "advanced_blind_to_leaders",
     "advanced_civ_blind",
     "advanced_settler_commit",
     "advanced_food_first",
@@ -500,6 +501,19 @@ pub fn builtin_ai(name: &str, seed: u64) -> Box<dyn Ai> {
         "advanced_settler_commit" => {
             let mut ai = AdvancedAi::new();
             ai.settler_commit = true;
+            Box::new(ai)
+        }
+        // Ablation for the counter-leader axis: identical to `advanced`
+        // except that it never reacts to a rival closing on a victory --
+        // `victory_denial` is silent and `urgent_victory_threat` never waives
+        // the ordinary war-readiness checks. It still fights, expands and
+        // races; it just never does any of it *because* somebody else is
+        // about to win. Paired against `advanced` this is what the whole
+        // denial response is worth. See `leader_census`, which measured the
+        // layer as a near-perfect predictor of the winner and no deterrent.
+        "advanced_blind_to_leaders" => {
+            let mut ai = AdvancedAi::new();
+            ai.deny_leaders = false;
             Box::new(ai)
         }
         "advanced_civ_blind" => {
@@ -1149,6 +1163,7 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "advanced_banking_dedication" => (Vec::new(), "advanced_banking_dedication"),
         "advanced_measured_dedication" => (Vec::new(), "advanced_measured_dedication"),
         "advanced_parallel_settlers" => (Vec::new(), "advanced_parallel_settlers"),
+        "advanced_blind_to_leaders" => (Vec::new(), "advanced_blind_to_leaders"),
         "advanced_civ_blind" => (Vec::new(), "advanced_civ_blind"),
         "advanced_settler_commit" => (Vec::new(), "advanced_settler_commit"),
         "advanced_food_first" => (Vec::new(), "advanced_food_first"),
@@ -1638,8 +1653,9 @@ mod tests {
             // Anything else reaching that state fell through to the
             // catch-all and is claiming to need nothing while quietly
             // needing a net.
-            const SCRIPTED: [&str; 12] = [
+            const SCRIPTED: [&str; 13] = [
                 "advanced",
+                "advanced_blind_to_leaders",
                 "advanced_settler_commit",
                 "advanced_banking_dedication",
                 "advanced_civ_blind",

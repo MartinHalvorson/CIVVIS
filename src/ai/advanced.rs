@@ -554,6 +554,25 @@ pub struct AdvancedAi {
     /// civilization play could exist. A small cost bounds the layer, the way
     /// deleting the opening book bounded that one at −0.003.
     pub civ_blind: bool,
+
+    /// Whether this empire reacts at all to a rival closing on a victory.
+    ///
+    /// `true` — the default and the shipped behaviour — lets `victory_denial`
+    /// name the rival nearest a win and hand back a counter-strategy, and lets
+    /// `urgent_victory_threat` waive the ordinary war-readiness checks against
+    /// a terminal clock. `false` makes both silent: the empire still fights,
+    /// still expands, still races, but never because somebody else is about to
+    /// win.
+    ///
+    /// Reachable as the `advanced_blind_to_leaders` entrant. It exists because
+    /// `leader_census` measured the layer as a near-perfect *predictor* and no
+    /// deterrent at all — 83–86% of every empire it ever names goes on to win,
+    /// against a 17–25% base rate, and 79–82% even when war followed the
+    /// alarm. Paired against `advanced`, this is what the whole counter-leader
+    /// response is worth. A null bounds it at nothing, the way the goal layer
+    /// was bounded; a real cost says the response works and only its timing is
+    /// wrong.
+    pub deny_leaders: bool,
 }
 
 impl Default for AdvancedAi {
@@ -625,6 +644,7 @@ impl AdvancedAi {
             settler_stalls: BTreeMap::new(),
             parallel_settlers: false,
             civ_blind: false,
+            deny_leaders: true,
         }
     }
 
@@ -1444,7 +1464,7 @@ impl AdvancedAi {
     }
 
     fn victory_denial(&self, g: &Game, pid: usize) -> Option<(usize, GrandStrategy)> {
-        if self.active_victory_target(g).is_some() {
+        if !self.deny_leaders || self.active_victory_target(g).is_some() {
             return None;
         }
         let culture_pressures = self.rival_culture_pressures(g);
@@ -1522,6 +1542,9 @@ impl AdvancedAi {
     /// between declaration timing and campaign readiness so either response
     /// cannot silently become more permissive than the other.
     fn urgent_victory_threat(&self, g: &Game, target: usize) -> bool {
+        if !self.deny_leaders {
+            return false;
+        }
         let pressure = self.rival_victory_pressure(g, target);
         let living_majors = g
             .players
@@ -13033,6 +13056,17 @@ mod tests {
             ai.victory_denial(&game, 0),
             Some((1, GrandStrategy::Conquest))
         );
+
+        // The `advanced_blind_to_leaders` ablation is silent on the same
+        // position, and silent about its urgency, while reading the identical
+        // pressure. An ablation that changed what the empire *sees* would
+        // measure something other than the response.
+        let mut blind = AdvancedAi::new();
+        blind.deny_leaders = false;
+        assert_eq!(blind.rival_victory_pressure(&game, 1).progress, 75);
+        assert_eq!(blind.victory_denial(&game, 0), None);
+        assert!(!blind.urgent_victory_threat(&game, 1));
+        assert!(ai.urgent_victory_threat(&game, 1));
     }
 
     /// The site score is silent about barbarians and about being out of
