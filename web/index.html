@@ -15827,14 +15827,22 @@ function planetCells(camera, scale, centerX, centerY,
 }
 
 // ------------------------------------------------------------- the sky beyond
-// A Planet world hangs in a solar system, in a neighbourhood of stars, in a
-// galaxy, and the space race is the one victory whose progress happens entirely
-// off the map. Pulling the camera back past the surface leaves the Earth behind
-// and keeps going: the Moon, the Sun and the planets, the stars within reach,
-// and finally the whole galaxy with all of that inside one dot of it. Whatever
-// each civilization has already sent up is standing there on the way — a
-// satellite in orbit, a rover on the Moon, a colony on Mars, and the expedition
-// itself somewhere out in the dark on its way to another star.
+// A Planet world hangs in a solar system, in a neighbourhood of stars, and the
+// space race is the one victory whose progress happens entirely off the map.
+// Pulling the camera back past the surface leaves the Earth behind and keeps
+// going: the Moon, the Sun and the planets, and then the stars the expedition
+// is crossing to, with the whole solar system a speck in the middle of them.
+// Whatever each civilization has already sent up is standing there on the way —
+// a satellite in orbit, a rover on the Moon, a colony on Mars, and the
+// expedition itself somewhere out in the dark on its way to another star.
+//
+// **And it stops at twenty light-years.** The sky used to carry on out to the
+// whole Milky Way, a hundred thousand light-years across, in which everything
+// above is one dot on one arm. That was true and it was not a place: nothing
+// anybody does in this game happens out there, and the price of drawing it was
+// that every picture worth having sat in the first two per cent of the zoom.
+// The far stop is the voyage now — the Sun at one end, the world the expedition
+// is aimed at at the other, and the stars it passes on the way.
 //
 // **Everything out here is at true scale.** That is the change. The old sky put
 // the Moon six Earth radii away, Mars at eighteen and the exoplanet at
@@ -15844,7 +15852,7 @@ function planetCells(camera, scale, centerX, centerY,
 // six hundred times further than that, and the destination is another hundred
 // thousand times further again. A camera that has to cross those gaps is how
 // the distances get stated, and the ladder of scales it climbs on the way is
-// the only honest answer to what fifty light-years means.
+// the only honest answer to what a light-year means.
 //
 // The ruler is the Earth's own radius, because it is the one length the player
 // already has underfoot. Every distance below is written in the unit it is
@@ -15874,9 +15882,10 @@ const LIGHT_YEAR = LY_KM / EARTH_KM;// 1.485e9 Earth radii
 //           another star stopped being a guess. That is one rung: the outer
 //           system, and a neighbourhood with real distances in it.
 //   space   an instrument above the air. No planet at another star had ever
-//           been seen from the ground; the first came in 1992, and the shape of
-//           our own galaxy was not settled until the 1920s. Both wait for the
-//           satellite, which is the gate that was already there.
+//           been seen from the ground: the first came in 1992, and it took a
+//           telescope in orbit to make the rest of them ordinary. So the
+//           destination waits for the satellite, which is the gate that was
+//           already there.
 const SKY_RUNG_ORDER = {chart:0, eye:1, glass:2, space:3};
 
 // ---------------------------------------------------------------- the system
@@ -15945,11 +15954,15 @@ const SKY_SYSTEM_SPECS = [
 //
 // Every star within about fifty light-years that anybody has a name for, at its
 // real distance and in its real direction. `l` and `b` are galactic longitude
-// and latitude in degrees and `ly` is the distance, which is the coordinate
-// system the galaxy itself is defined in: `l` = 0 points at the galactic
-// centre, `b` = 0 is the plane of the disc. Storing them this way is what lets
-// the same numbers place a star in the local bubble and place the bubble in the
-// galaxy, without a second table that could disagree with the first.
+// and latitude in degrees and `ly` is the distance: `l` = 0 points at the
+// galactic centre, `b` = 0 is the plane of the disc. That is the frame these
+// distances are published in, so storing them this way is storing what was
+// measured rather than a projection of it.
+//
+// The roster runs out past the twenty light-years the zoom now stops at, and it
+// has to: a destination is a planet *around one of these stars*, and the
+// expedition can be aimed at a world forty light-years away. What the stop
+// truncates is how far out the camera goes on its own, not what is out there.
 //
 // `mag` is absolute visual magnitude, used only to decide how brightly a star
 // is drawn, and `km` is its radius where it is known. The list is dominated by
@@ -16061,47 +16074,6 @@ const SKY_TARGET_SPECS = [
    note:"The strongest candidate anywhere: a temperate super-Earth that may be an ocean."},
 ];
 
-// ---------------------------------------------------------------- the galaxy
-//
-// The Sun sits 26,700 light-years out from the centre of a barred spiral about
-// a hundred thousand light-years across, in a short spur between two of the
-// major arms. The numbers are the current best ones: the distance to Sagittarius
-// A* is 8.18 kiloparsecs (GRAVITY, 2019), the bar is about 27,000 light-years
-// end to end and leans some 27 degrees off the line from here to the centre.
-//
-// The frame is the same galactic one the stars above are in, so the Sun is at
-// the origin and the centre is 26,700 light-years towards l = 0. That is what
-// makes the last zoom step mean anything: the bubble of stars the camera has
-// just come out of is drawn in the same coordinates as the galaxy it sits in,
-// so its size against the disc is measured rather than asserted.
-const GALAXY_SUN_RADIUS_LY = 26700;   // Sun to Sagittarius A*
-const GALAXY_DISC_LY = 50000;         // stellar disc, half of the ~100,000 across
-const GALAXY_BAR_LY = 13500;          // half-length of the bar
-const GALAXY_BAR_ANGLE = 27 * Math.PI / 180;
-// The four major arms, as logarithmic spirals about the centre. An arm is
-// written by where it crosses *our* line — `atUs` is its distance from the
-// centre in the direction the Sun lies in — and by its pitch angle, because
-// that is the way the arms are actually measured: the Sagittarius-Carina arm is
-// some six thousand light-years inside us and the Perseus arm about the same
-// distance outside, and those two numbers are what put the Sun between them.
-// Writing an arm by an arbitrary starting radius instead would place it
-// correctly nowhere in particular and here by luck.
-//
-// r(theta) = atUs * exp(tan(pitch) * (theta - PI)), with theta measured from
-// the centre and PI pointing back at us. A spiral arm is a density wave and not
-// an object, so these are traces of where the star-forming gas is rather than a
-// fit to anything.
-const GALAXY_ARMS = [
-  {id:"norma",       name:"Norma",             atUs:10000, pitch:16.0, width:1500},
-  {id:"scutum",      name:"Scutum-Centaurus",  atUs:15500, pitch:14.1, width:2200},
-  {id:"sagittarius", name:"Sagittarius-Carina",atUs:21000, pitch:17.1, width:2000},
-  {id:"perseus",     name:"Perseus",           atUs:33000, pitch:10.4, width:2300},
-];
-// The Orion Spur is not one of the four. It is a bridge between Sagittarius and
-// Perseus, about 3,500 light-years across and 20,000 long, and every star in
-// the roster above — every star anybody has ever named — is inside it.
-const GALAXY_SPUR = {name:"Orion Spur", length:20000, width:3500, lean:-0.33};
-
 // --------------------------------------------------------- building the sky
 //
 // One conversion, in one place. A spec carries published units; a body carries
@@ -16116,9 +16088,9 @@ function skyMakeBody(spec) {
           orbitRadius, separation:orbitRadius || Infinity};
 }
 // Galactic longitude and latitude, in degrees, to the plane the neighbourhood
-// and the galaxy are both drawn in: x towards the centre, y round the disc, and
-// the height out of the plane kept so a star off it can be shown standing off
-// it rather than quietly flattened into it.
+// is drawn in: x towards the galactic centre, y round the disc, and the height
+// out of the plane kept so a star off it can be shown standing off it rather
+// than quietly flattened into it.
 function skyGalacticPoint(l, b, ly) {
   const lon = l * Math.PI / 180, lat = b * Math.PI / 180;
   const flat = ly * Math.cos(lat);
@@ -16249,12 +16221,12 @@ function skyBodyPos(body) {
 function skyBodyLift(body) {
   return body.galactic ? body.galactic.z * LIGHT_YEAR : 0;
 }
-// The far end of the zoom is the shot that holds everything this civilization
-// knows is out there, and there is no floor under the Earth in it any more.
-// There cannot be: the old stop kept home at least three and a half pixels
-// across, and at three and a half pixels for an Earth the galaxy is eleven
-// thousand million pixels wide. Home being a dot too small to see is not a
-// failure of the picture out here, it is the picture.
+// The far end of the zoom is the shot that holds the voyage, and there is no
+// floor under the Earth in it any more. There cannot be: the old stop kept home
+// at least three and a half pixels across, and at three and a half pixels for
+// an Earth the twenty light-year bubble is four million pixels wide. Home being
+// a dot too small to see is not a failure of the picture out here, it is the
+// picture.
 //
 // Above this the globe is a place; below it, a marble. Space fades in across
 // that line.
@@ -16365,7 +16337,9 @@ function skyKnownWorlds(st = state) { return [SKY_EARTH, ...visibleSkyBodies(st)
 // the same question as whether a star has a distance rather than just a place
 // in a constellation.
 function knowsNeighbourhood(st = state) { return skyRungAtLeast("glass", st); }
-function knowsGalaxy(st = state) { return skyRungAtLeast("space", st); }
+// And whether there is anywhere to be going: the expedition's destination is
+// the top rung's own object, and the far stop is a picture of the trip to it.
+function seesDestination(st = state) { return skyRungAtLeast("space", st); }
 function globeDiscoveryLabel() {
   const techs = state?.me?.globe_techs;
   return Array.isArray(techs) && techs.length
@@ -17141,26 +17115,51 @@ function skyFrameFor(box) {
 //           needed a lens. Centred on the Sun, because at this scale home is
 //           one of six dots going round it.
 //   glass   the neighbourhood the telescope put distances on: a bubble of
-//           stars about fifty light-years across, centred on the Sun again
-//           because the Sun is the middle of it by construction.
-//   space   the galaxy, centred between here and the middle of it so that both
-//           the far rim and the Sun are in frame at the stop.
+//           stars twenty light-years out, centred on the Sun again because the
+//           Sun is the middle of it by construction.
+//   space   the voyage — the Sun and the world the expedition is aimed at, both
+//           in frame, centred on the middle of the trip.
 function skyOutermostFrame() {
+  if (seesDestination()) return skyVoyageFrame();
   const [ex, ey] = skyBodyPos(SKY_SUN);
-  if (knowsGalaxy()) {
-    const centre = GALAXY_SUN_RADIUS_LY * LIGHT_YEAR;
-    return {x:ex + centre / 2, y:ey,
-            reach:(GALAXY_DISC_LY + GALAXY_SUN_RADIUS_LY / 2) * LIGHT_YEAR};
-  }
   if (knowsNeighbourhood())
     return {x:ex, y:ey, reach:SKY_BUBBLE_LY * LIGHT_YEAR};
   const saturn = SKY_SYSTEM.find(body => body.id === "saturn");
   return {x:ex, y:ey, reach:(saturn ? saturn.orbitRadius : 10 * AU) * 1.16};
 }
-// The radius of the neighbourhood, and the number the whole view is built to
-// put in proportion. Fifty light-years is the reach of the roster above and of
-// the expedition the engine has always sent out.
-const SKY_BUBBLE_LY = 52;
+// The trip, framed: the Sun at one end, the destination at the other, and the
+// stars it crosses in between. **The reach is the bubble and the bubble is the
+// stop** — this shot decides where the camera leans, never how far it pulls
+// back. A stop that quietly opened to hold whatever the expedition happened to
+// be aimed at would not be a stop, and the truncation is the whole point.
+//
+// It holds the whole of every trip on the roster anyway, and the reason is the
+// projection rather than luck. The sky is drawn in the plane of the galaxy with
+// a star's height out of it kept separately, so what is across the page is
+// `ly * cos(b)` — LHS 1140 is 48.9 light-years away and seventy-one degrees off
+// the plane, which is fifteen and a half across. The widest trip in the roster
+// is Gliese 12 b at thirty-four, and half of that is well inside twenty.
+function skyVoyageFrame() {
+  const [sx, sy] = skyBodyPos(SKY_SUN);
+  const reach = SKY_BUBBLE_LY * LIGHT_YEAR;
+  if (!seesDestination()) return {x:sx, y:sy, reach};
+  const [ex, ey] = skyBodyPos(skyExoBody());
+  const dx = (ex - sx) / 2, dy = (ey - sy) / 2;
+  // The middle of the trip, so both ends are the same distance from the frame's
+  // own middle — and no further out than the stop, because past that the Sun
+  // itself leaves the frame and a picture of a journey with neither end of it on
+  // the stage is a picture of nothing.
+  const lean = Math.min(1, reach / Math.max(1e-9, Math.hypot(dx, dy)));
+  return {x:sx + dx * lean, y:sy + dy * lean, reach};
+}
+// How far out the sky goes, and the number the whole view is built to put in
+// proportion. It is a truncation and not a measurement: the roster of stars runs
+// out past fifty light-years, and the galaxy past that is four thousand times
+// further again.
+// Twenty is where the pictures stop being about anything — far enough that the
+// entire solar system is a speck and the trip is drawn across real stars, near
+// enough that every notch of the zoom below it is still somewhere to go.
+const SKY_BUBBLE_LY = 20;
 // A chart pulls back to the edge of what a chart can honestly hold. Distance
 // across the sheet is angle over the ground, so the corner of the stage is at
 // `reach / radius` radians from the middle of it, and past about a hundred
@@ -17250,32 +17249,36 @@ function planetScaleClampAt(scale, pan, body = skyNearestWorld(pan)) {
 //
 // A notch of the wheel cannot mean one fixed ratio out here. On the flat board
 // the whole zoom is a factor of thirteen and fifteen notches cross all of it;
-// above a globe the same zoom runs from a hexagon underfoot to a galaxy a
-// hundred thousand light-years across, which is fourteen orders of magnitude,
-// and at the flat board's ratio that is **two hundred notches** from the ground
-// to the stop. Nobody scrolls two hundred times. The far half of everything out
-// there could be flown to by a caption and reached by nothing else.
+// above a globe the same zoom runs from a hexagon underfoot to a bubble of stars
+// twenty light-years out, which is eleven orders of magnitude, and at the flat
+// board's ratio that is **eighty-seven notches** from the ground to the stop.
+// Nobody scrolls eighty-seven times. The far half of everything out there could
+// be flown to by a caption and reached by nothing else.
 //
 // So a notch is a fixed fraction of the ladder in front of it instead. The step
 // is taken in log scale — the one place a zoom is linear — and divided by the
 // height of the ladder this rung actually has, so the empty part of it costs
-// about three flat-board sweeps whether it stops at Saturn's orbit, at the fifty
-// light-year bubble or at the galaxy. A people who have only proved their world
-// round get a short ladder and the notch they always had; a people with an
-// instrument above the air get the same number of notches over a span four
-// hundred million times longer.
+// about three flat-board sweeps whether it stops at Saturn's orbit or at the
+// twenty light-year bubble. A people who have only proved their world round get
+// a short ladder and the notch they always had; a people with an instrument
+// above the air get about the same number of notches over a span a hundred
+// million times longer.
 //
-// Measured on a 1600x1000 stage, from a tile to the far stop and by the wheel:
+// Measured on a 1600x1000 stage, from a tile's own ceiling down to the far stop
+// with the pan held over home:
 //
-//   rung    span of the ladder   before   after
-//   chart          1.9              12      12
-//   eye           14.7              87      58
-//   glass         27.3             161      64
-//   space         34.4             203      65
+//   rung    span of the ladder   at a fixed ratio   here
+//   chart          1.4                   5            5
+//   eye           14.2                  48           32
+//   glass         25.9                  87           35
+//   space         25.9                  87           35
 //
 // Which is the property that was wanted. The journey is the same length in the
-// hand at every rung; only how far it goes changes. The arrivals below are what
-// makes 65 of those rather than the 45 the gearing alone would spend.
+// hand at every rung; only how far it goes changes — and truncating the sky did
+// not change it either. Before the truncation the same measurement gave `space`
+// a span of 33.9 and 113 notches at a fixed ratio, and the same **36** here: the
+// gearing had already absorbed the galaxy, which is exactly why dropping it costs
+// the hand nothing and buys back three thousand times less empty sky to cross.
 const SKY_ZOOM_SWEEPS = 3;
 // One sweep of the flat board's zoom, in log scale: the `.25` floor and `3.2`
 // ceiling `zoomAt` clamps a board to. That is the unit the sky's ladder is
@@ -17385,8 +17388,8 @@ const SKY_PINCH_PACE = 4;
 // navigable, and those are different problems: sixty-five notches is a
 // reachable distance and an unusable one, and every one of those notches has to
 // be aimed, because a zoom in the sky goes where the pointer says and the
-// pointer is over empty space most of the way. Zooming out of the galaxy and
-// back to a city is a minute of scrolling that can be lost at any point in it.
+// pointer is over empty space most of the way. Zooming out to the far stop and
+// back to a city is a long scroll that can be lost at any point in it.
 //
 // So the sky carries its own way about. Three things, in the order a hand
 // reaches for them:
@@ -17396,10 +17399,10 @@ const SKY_PINCH_PACE = 4;
 //                the sky calls an arrival — the three destinations of the
 //                space programme and the one board they leave from — so the
 //                bar is naming what the gearing has always known.
-//   the shots    the whole system, the neighbourhood, the galaxy. Each is a
-//                rung's own horizon, the same frame the zoom already stops at,
-//                available one press at a time rather than only as the far end
-//                of a scroll.
+//   the shots    the solar system, and the voyage. Each is a rung's own
+//                horizon, the same frame the zoom already stops at, available
+//                one press at a time rather than only as the far end of a
+//                scroll.
 //   the ladder   the zoom laid out end to end, with the camera's place on it,
 //                and how wide the stage is in the unit that reads best there.
 //
@@ -17431,7 +17434,16 @@ function skyWorldStopScale(body) {
 // The four places. A world is only offered once this civilization can see it,
 // by the same roster everything else out here is drawn from, so the bar can
 // never point at something the sky is withholding.
+//
+// The destination is labelled **Exoplanet** rather than by its catalogue name.
+// Which world it is depends on what that civilization surveyed, so the same
+// button reads `Teegarden's Star b` in one game and `82 Eridani d` in the next
+// — and a control whose name changes between games is one nobody ever learns
+// the position of. The real name is a fact and it is kept in all three places a
+// fact belongs: the button's own tooltip, the caption under the world, and the
+// scene caption that comes up on arrival with the distance and the catch.
 const SKY_STOP_MARKS = {earth:"◉", moon:"☾", mars:"♂", exo:"✧"};
+const SKY_STOP_LABELS = {earth:"Earth", exo:"Exoplanet"};
 function skyWorldStops() {
   const known = new Set(skyKnownWorlds().map(body => body.id));
   const stops = [];
@@ -17440,17 +17452,21 @@ function skyWorldStops() {
     const body = skyBody(id);
     if (!body) continue;
     stops.push({id, body, mark:SKY_STOP_MARKS[id] || "◉",
-                label:id === "earth" ? "Earth" : body.name.replace(/^The /, ""),
+                label:SKY_STOP_LABELS[id] || body.name.replace(/^The /, ""),
                 title:id === "earth" ? "Home — the whole globe, and the board on it"
                                      : `Fly to ${body.name}`});
   }
   return stops;
 }
-// The three shots, each centred where that picture wants to be centred. They
-// are the frames `skyOutermostFrame` already stops the zoom at, so pressing one
-// asks for exactly the picture that rung is for and nothing new is invented
-// here: `system` is a rung short of the far stop at `glass` and `space`, and at
-// `eye` it *is* the far stop, because the naked eye's universe ends at Saturn.
+// The two shots, each centred where that picture wants to be centred. They are
+// the frames `skyOutermostFrame` already stops the zoom at, so pressing one asks
+// for exactly the picture that rung is for and nothing new is invented here:
+// `system` is a rung short of the far stop at `glass` and `space`, and at `eye`
+// it *is* the far stop, because the naked eye's universe ends at Saturn.
+//
+// There were three, and the third was the galaxy. It is gone with the picture it
+// framed, and `voyage` is not its replacement: the galaxy shot was the far end
+// of a scale, this one is the far end of a journey.
 function skyScaleStops() {
   if (!knowsGlobe()) return [];
   const [sx, sy] = skyBodyPos(SKY_SUN);
@@ -17458,18 +17474,16 @@ function skyScaleStops() {
   const edge = SKY_SYSTEM.find(body =>
     body.id === (seesOuterSystem() ? "neptune" : "saturn"));
   if (edge)
-    stops.push({id:"system", label:"System", mark:"☉", x:sx, y:sy,
+    stops.push({id:"system", label:"Solar system", mark:"☉", x:sx, y:sy,
                 reach:edge.orbitRadius * 1.16,
                 title:`The solar system, out past ${edge.name}`});
-  if (knowsNeighbourhood())
-    stops.push({id:"stars", label:"Stars", mark:"✦", x:sx, y:sy,
-                reach:SKY_BUBBLE_LY * LIGHT_YEAR,
-                title:`Every star within about ${SKY_BUBBLE_LY} light-years`});
-  if (knowsGalaxy()) {
-    const centre = GALAXY_SUN_RADIUS_LY * LIGHT_YEAR;
-    stops.push({id:"galaxy", label:"Galaxy", mark:"◍", x:sx + centre / 2, y:sy,
-                reach:(GALAXY_DISC_LY + GALAXY_SUN_RADIUS_LY / 2) * LIGHT_YEAR,
-                title:"The Milky Way, with the Sun out on the Orion Spur"});
+  if (knowsNeighbourhood()) {
+    const target = seesDestination() ? skyTarget() : null;
+    stops.push({id:"voyage", label:"Voyage", mark:"⇢", ...skyVoyageFrame(),
+                title:target
+                  ? `The whole trip: the Sun, ${target.name}, and the ` +
+                    `${target.ly.toFixed(2)} light-years between them`
+                  : `Every star within about ${SKY_BUBBLE_LY} light-years`});
   }
   return stops;
 }
@@ -17593,8 +17607,8 @@ function skyLadderPan(scale, subject) {
 // fraction of the ladder would square it — and it does not go through `zoomAt`
 // either, which is the part that had to be found out by dragging it. `zoomAt`
 // stops a zoom in at the ceiling of the world *nearest the camera*, which is
-// right for a notch and catastrophic for a whole ladder in one move: from the
-// galaxy the nearest world is some red dwarf, its ceiling is a hundredth, and
+// right for a notch and catastrophic for a whole ladder in one move: at the far
+// stop the nearest world is some red dwarf, its ceiling is a hundredth, and
 // dragging the handle to the ground put the camera there and left it. The
 // ladder's own top is the ceiling of the world the road leads to.
 //
@@ -17843,9 +17857,9 @@ function skyLabelRank(body) {
 // the ground a star is a fixed point of light at no particular distance, which
 // is exactly what a field painted onto the screen is; once the camera is far
 // enough out that the *real* stars are on the stage at their real distances,
-// the painted ones are a second sky over the first, and out at the galaxy they
-// are a handful of specks stuck to the lens in front of a hundred billion. So
-// they fade out over the same span the neighbourhood fades in.
+// the painted ones are a second sky over the first — a hundred and thirty specks
+// stuck to the lens in front of the real ones. So they fade out over the same
+// span the neighbourhood fades in.
 function drawSkyStars(depth, radius) {
   const bubble = SKY_BUBBLE_LY * LIGHT_YEAR * radius;
   const real = knowsNeighbourhood() ? skyFade(bubble, 22, 120) : 0;
@@ -18108,11 +18122,9 @@ function drawSkyBall(place, alpha, light) {
 
 // ------------------------------------------------------- the neighbourhood
 //
-// Fifty light-years of stars, at their real distances and in their real
-// directions, drawn in the plane of the galaxy. The plane matters: it is the
-// same frame the galaxy is drawn in a few zoom steps later, so the bubble the
-// camera has just come out of and the disc it sits in are the same coordinates
-// and the comparison between them is measured rather than asserted.
+// The stars around us, at their real distances and in their real directions,
+// drawn in the plane of the galaxy — which is the frame their distances are
+// published in, so this is the measurement laid out rather than a picture of it.
 //
 // A star off the plane gets a line down to it. That is the oldest trick in a
 // star chart and it is the only way a flat picture can say a third dimension is
@@ -18124,8 +18136,8 @@ function drawSkyNeighbourhood(radius, centerX, centerY, alpha) {
   const sunX = centerX + sx * radius, sunY = centerY + sy * radius;
   const bubble = SKY_BUBBLE_LY * LIGHT_YEAR * radius;
   cx.save();
-  // The boundary of the roster: a shell fifty light-years out, which is the
-  // reach of the expedition and the edge of what is drawn star by star.
+  // The boundary: a shell twenty light-years out, which is where the zoom stops
+  // and what everything else out here is put in proportion against.
   if (bubble > 40 && bubble < skyStageSpan() * 8) {
     cx.globalAlpha = alpha * .16;
     cx.strokeStyle = "#7fd0c4";
@@ -18169,255 +18181,10 @@ function drawSkyStar(body, place, radius, centerX, centerY, alpha) {
   drawSkyStarBall({...place, y:place.y - lift}, alpha);
 }
 
-// ---------------------------------------------------------------- the galaxy
-//
-// And this is the answer to the question the whole view exists to ask. The
-// expedition crosses fifty light-years, which is the longest journey anybody in
-// the game ever makes and sounds like the edge of everything. The galaxy is a
-// hundred thousand light-years across and the Sun is twenty-six thousand seven
-// hundred out from the middle of it. So fifty light-years is one two-thousandth
-// of the way across, and about one five-hundredth of the way to the centre: on
-// a picture of the galaxy the size of a dinner plate, the entire neighbourhood
-// the last screen was full of is half a millimetre wide.
-//
-// Nothing states that. It is drawn: the bubble is the same fifty light-years it
-// was one zoom step ago, in the same coordinates, and it comes out the size it
-// comes out.
-function galaxyArmPoint(arm, theta) {
-  const k = Math.tan(arm.pitch * Math.PI / 180);
-  const r = arm.atUs * Math.exp(k * (theta - Math.PI));
-  return [Math.cos(theta) * r, Math.sin(theta) * r, r];
-}
-// The speckle that makes a spiral arm read as stars rather than as a painted
-// stripe. Built once in the arms' own coordinates and reused at every scale.
-let GALAXY_SPECKLE = null;
-function galaxySpeckle() {
-  if (GALAXY_SPECKLE) return GALAXY_SPECKLE;
-  const out = [];
-  GALAXY_ARMS.forEach((arm, index) => {
-    for (let i = 0; i < 620; i++) {
-      const seed = index * 9377 + i;
-      const along = hash2(seed, 19);
-      const theta = Math.PI - 3.1 + 6.2 * along;
-      const [ax, ay, r] = galaxyArmPoint(arm, theta);
-      if (r > GALAXY_DISC_LY || r < GALAXY_BAR_LY * .7) continue;
-      // Scattered across the arm, and further across it further out, which is
-      // what a disc that flares does. Two draws from the hash squared toward
-      // the middle: a spiral arm is a ridge with a falloff either side, not a
-      // stripe of even density, and a flat scatter reads as a painted band.
-      const spread = arm.width * (.55 + 1.1 * r / GALAXY_DISC_LY);
-      const across = (hash2(seed, 31) + hash2(seed, 37) - 1);
-      const jx = across * spread, jy = (hash2(seed, 43) + hash2(seed, 47) - 1) * spread;
-      out.push({x:ax + jx, y:ay + jy, r,
-                // Dimmer toward the ends of the trace, so an arm frays out
-                // rather than stopping at a cut edge.
-                bright:(.25 + .75 * hash2(seed, 57)) *
-                       Math.min(1, 3.4 * Math.min(along, 1 - along) + .12) *
-                       (1 - .55 * Math.abs(across))});
-    }
-  });
-  // Plus the disc between the arms, which is not empty — most of the galaxy's
-  // stars are not in an arm at all. Without it the picture is four ribbons on
-  // black and reads as a diagram of a galaxy rather than as one.
-  for (let i = 0; i < 900; i++) {
-    const angle = 6.283185 * hash2(i, 61);
-    // Square-rooted so the scatter is even per unit area rather than piling up
-    // in the middle, then pulled inward, because the disc really does thin out.
-    const r = GALAXY_DISC_LY * Math.sqrt(hash2(i, 67)) * (.35 + .65 * hash2(i, 71));
-    if (r < GALAXY_BAR_LY * .9) continue;
-    out.push({x:Math.cos(angle) * r, y:Math.sin(angle) * r, r, field:true,
-              bright:(.10 + .30 * hash2(i, 73)) * (1 - r / GALAXY_DISC_LY * .8)});
-  }
-  GALAXY_SPECKLE = out;
-  return out;
-}
-function drawSkyGalaxy(radius, centerX, centerY, alpha) {
-  if (alpha <= .01) return;
-  const [sx, sy] = skyBodyPos(SKY_SUN);
-  const sunX = centerX + sx * radius, sunY = centerY + sy * radius;
-  const ly = LIGHT_YEAR * radius;
-  // The centre is 26,700 light-years from here towards galactic longitude zero,
-  // which in this frame is straight along +x.
-  const coreX = sunX + GALAXY_SUN_RADIUS_LY * ly, coreY = sunY;
-  const disc = GALAXY_DISC_LY * ly;
-  cx.save();
-  cx.globalAlpha = alpha;
-  // The disc: a smooth fall-off from the bulge, which is most of the light and
-  // all of the mass that is not dark.
-  const glow = cx.createRadialGradient(coreX, coreY, disc * .02, coreX, coreY, disc);
-  glow.addColorStop(0, "rgba(255,244,214,.95)");
-  glow.addColorStop(.06, "rgba(255,231,178,.55)");
-  glow.addColorStop(.22, "rgba(196,206,240,.20)");
-  glow.addColorStop(.60, "rgba(150,172,225,.09)");
-  glow.addColorStop(1, "rgba(120,148,210,0)");
-  cx.fillStyle = glow;
-  cx.beginPath(); cx.arc(coreX, coreY, disc, 0, 7); cx.fill();
-
-  // The arms. Stroked twice — once wide and faint for the gas, once narrow and
-  // bright for the star-forming ridge down the middle of it — with the stroke
-  // colour a gradient about the core so an arm dims as it runs outward.
-  const armInk = cx.createRadialGradient(coreX, coreY, disc * .05, coreX, coreY, disc);
-  armInk.addColorStop(0, "rgba(226,232,255,.55)");
-  armInk.addColorStop(.45, "rgba(188,206,255,.34)");
-  armInk.addColorStop(1, "rgba(150,180,240,.05)");
-  cx.strokeStyle = armInk;
-  cx.lineCap = "butt";
-  cx.lineJoin = "round";
-  for (const arm of GALAXY_ARMS) {
-    const trace = [];
-    for (let step = 0; step <= 96; step++) {
-      const theta = Math.PI - 3.1 + step / 96 * 6.2;
-      const [ax, ay, r] = galaxyArmPoint(arm, theta);
-      if (r > GALAXY_DISC_LY || r < GALAXY_BAR_LY * .8) continue;
-      trace.push([coreX + ax * ly, coreY + ay * ly]);
-    }
-    if (trace.length < 2) continue;
-    // In chunks rather than in one stroke, so an arm can taper: full width and
-    // brightness where it leaves the bar, frayed to nothing at the rim. One
-    // stroke end to end gives every arm a flat cut edge in the middle of open
-    // sky, which is the tell that these are drawn curves.
-    //
-    // Chunks of several points, not one segment each. Stroking segment by
-    // segment with a round cap lays a disc at every joint, and where two of
-    // them overlap the alpha compounds — the first attempt came out as a chain
-    // of beads down each arm, which reads as a string of pearls and not as a
-    // hundred million stars. Butt caps inside a chunk, and the chunk boundaries
-    // land where the taper is already changing slowly.
-    const chunk = Math.max(2, Math.round(trace.length / 12));
-    for (const [width, fade] of [[arm.width * 1.6, .30], [arm.width * .5, .7]]) {
-      cx.lineWidth = Math.max(.8, width * ly);
-      for (let start = 0; start + 1 < trace.length; start += chunk) {
-        const stop = Math.min(trace.length - 1, start + chunk);
-        const along = (start + stop) / 2 / (trace.length - 1);
-        cx.globalAlpha = alpha * fade * Math.min(1, 3.2 * Math.min(along, 1 - along) + .10);
-        cx.beginPath();
-        for (let i = start; i <= stop; i++)
-          i === start ? cx.moveTo(trace[i][0], trace[i][1])
-                      : cx.lineTo(trace[i][0], trace[i][1]);
-        cx.stroke();
-      }
-    }
-  }
-  // The stars, which is what makes it granular instead of painted — in the arms
-  // where the young bright ones are, and between them where most of the galaxy
-  // actually lives.
-  if (disc > 120) {
-    for (const spot of galaxySpeckle()) {
-      cx.globalAlpha = alpha * spot.bright * (spot.field ? .55 : .75);
-      cx.fillStyle = spot.field ? "#c2cfe8"
-                   : spot.r < GALAXY_DISC_LY * .35 ? "#fff0cd" : "#dbe6ff";
-      const size = spot.field ? 1 : 1.3;
-      cx.fillRect(coreX + spot.x * ly, coreY + spot.y * ly, size, size);
-    }
-  }
-  // The bar: twenty-seven thousand light-years end to end, leaning some
-  // twenty-seven degrees off the line from here to the centre, and the reason
-  // this is a barred spiral rather than a plain one. Kept translucent and given
-  // its own stars — filled at the brightness a bulge deserves it came out a
-  // smooth lens sitting on the picture like a flare on the lens rather than a
-  // crowd of very old stars.
-  const barLength = GALAXY_BAR_LY * ly;
-  // Drawn in the bar's own frame — translated to the centre, turned to its
-  // lean, and squashed across — so that a *round* gradient in that frame is an
-  // elongated one on the stage. A radial gradient in stage coordinates clipped
-  // to an ellipse is brightest in a circle and dims at the ends of the long
-  // axis first, which draws a lens: the fill has to be stretched with the shape
-  // or the shape is a window and not a body.
-  cx.save();
-  cx.translate(coreX, coreY);
-  cx.rotate(GALAXY_BAR_ANGLE);
-  cx.scale(1, .34);
-  cx.globalAlpha = alpha * .62;
-  const bar = cx.createRadialGradient(0, 0, 0, 0, 0, barLength);
-  bar.addColorStop(0, "rgba(255,246,220,.92)");
-  bar.addColorStop(.35, "rgba(255,232,172,.44)");
-  bar.addColorStop(.75, "rgba(255,222,152,.14)");
-  bar.addColorStop(1, "rgba(255,214,140,0)");
-  cx.fillStyle = bar;
-  cx.beginPath(); cx.arc(0, 0, barLength, 0, 7); cx.fill();
-  cx.restore();
-  if (barLength > 26) {
-    const cos = Math.cos(GALAXY_BAR_ANGLE), sin = Math.sin(GALAXY_BAR_ANGLE);
-    cx.fillStyle = "#ffeec4";
-    for (let i = 0; i < 260; i++) {
-      const along = (hash2(i, 83) + hash2(i, 89) - 1);
-      const across = (hash2(i, 97) + hash2(i, 101) - 1) * .34;
-      cx.globalAlpha = alpha * (.18 + .5 * hash2(i, 103)) * (1 - Math.abs(along));
-      cx.fillRect(coreX + (along * cos - across * sin) * barLength,
-                  coreY + (along * sin + across * cos) * barLength, 1, 1);
-    }
-  }
-  // Sagittarius A*, four million suns in something smaller than Mercury's orbit.
-  cx.globalAlpha = alpha;
-  cx.fillStyle = "#fffdf2";
-  cx.beginPath(); cx.arc(coreX, coreY, Math.max(1.4, disc * .008), 0, 7); cx.fill();
-  cx.restore();
-}
-
-// Where we are in it, and how big the last screen was. This is drawn after the
-// galaxy and separately from it, because it is not part of the galaxy — it is
-// the measurement being made against it.
-function drawSkyHere(radius, centerX, centerY, alpha) {
-  if (alpha <= .01) return;
-  const [sx, sy] = skyBodyPos(SKY_SUN);
-  const sunX = centerX + sx * radius, sunY = centerY + sy * radius;
-  if (!skyOnStage(sunX, sunY, 90)) return;
-  const bubble = SKY_BUBBLE_LY * LIGHT_YEAR * radius;
-  const spur = GALAXY_SPUR;
-  cx.save();
-  // The Orion Spur, the piece of the galaxy every star in the roster is in.
-  cx.globalAlpha = alpha * .28;
-  cx.fillStyle = "rgba(190,214,255,.30)";
-  cx.beginPath();
-  cx.ellipse(sunX, sunY, spur.length / 2 * LIGHT_YEAR * radius,
-             spur.width / 2 * LIGHT_YEAR * radius, spur.lean, 0, 7);
-  cx.fill();
-  // The bubble at true size, and a ring at the smallest size an eye can find,
-  // so that the gap between the two is itself the statement. If the drawn ring
-  // is twenty times the real one, the real one is a twentieth of the smallest
-  // thing on the screen.
-  const shown = Math.max(3.2, bubble);
-  cx.globalAlpha = alpha * .85;
-  cx.strokeStyle = "#7fe0cf";
-  cx.lineWidth = 1.2;
-  cx.beginPath(); cx.arc(sunX, sunY, shown, 0, 7); cx.stroke();
-  if (bubble > 2) {
-    cx.globalAlpha = alpha * .5;
-    cx.beginPath(); cx.arc(sunX, sunY, bubble, 0, 7); cx.stroke();
-  }
-  cx.globalAlpha = alpha;
-  cx.fillStyle = "#ffffff";
-  cx.beginPath(); cx.arc(sunX, sunY, 1.6, 0, 7); cx.fill();
-  // The label, on a leader, out of the disc's light.
-  const leadX = sunX - shown - 8, leadY = sunY - shown - 10;
-  cx.globalAlpha = alpha * .8;
-  cx.strokeStyle = "#7fe0cf"; cx.lineWidth = .9;
-  cx.beginPath();
-  cx.moveTo(sunX - shown * .7, sunY - shown * .7);
-  cx.lineTo(leadX, leadY); cx.lineTo(leadX - 26, leadY);
-  cx.stroke();
-  cx.globalAlpha = alpha;
-  cx.textAlign = "right";
-  cx.fillStyle = "#c9f3ea";
-  cx.font = "600 11px system-ui, sans-serif";
-  // Two lines of text ending at `leadX - 30`, and the Sun's own caption is
-  // about to be offered the same patch of sky.
-  skyLabelClaim(leadX - 110, leadY + 2, 84, 16);
-  cx.fillText("here", leadX - 30, leadY - 5);
-  cx.fillStyle = "rgba(201,243,234,.72)";
-  cx.font = "10px system-ui, sans-serif";
-  // Worked out from the same constants the picture is drawn from, so the
-  // caption cannot drift away from what is on the screen next to it.
-  const share = Math.round(GALAXY_DISC_LY / SKY_BUBBLE_LY / 10) * 10;
-  cx.fillText(`${SKY_BUBBLE_LY} ly out — 1/${share.toLocaleString()} of the disc`,
-              leadX - 34, leadY + 14);
-  cx.restore();
-}
-
 // ------------------------------------------------------------- saying so
 //
-// A picture of a scale is not a statement of it. Twelve orders of magnitude go
-// past between a hexagon on the ground and the far side of the galaxy, and
+// A picture of a scale is not a statement of it. Eleven orders of magnitude go
+// past between a hexagon on the ground and the far end of the voyage, and
 // every one of them looks like a black rectangle with some dots on it, so the
 // view has to be able to answer *how far across is this* at any point on the
 // way. A bar with a distance on it does that, in whatever unit stops the number
@@ -18427,7 +18194,7 @@ const SKY_UNITS = [
   {at:1 / EARTH_KM,  name:"km",         step:[1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 50000, 100000]},
   {at:1,             name:"Earth radii",step:[1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 5000]},
   {at:AU,            name:"AU",         step:[.1, .2, .5, 1, 2, 5, 10, 20, 50, 100, 500, 1000]},
-  {at:LIGHT_YEAR,    name:"light-years",step:[.1, .5, 1, 2, 5, 10, 20, 50, 100, 500, 1000, 5000, 20000, 100000]},
+  {at:LIGHT_YEAR,    name:"light-years",step:[.1, .5, 1, 2, 5, 10, 20, 50]},
 ];
 // The nicest round distance that draws a bar of about the length asked for.
 function skyScaleChoice(radius, want) {
@@ -18442,9 +18209,8 @@ function skyScaleChoice(radius, want) {
 }
 // What this picture is a picture of, in three words, and the one number that
 // makes it mean something. This is where the view answers the question it is
-// built around: at the far end it says out loud that the fifty light-years the
-// expedition crosses is a five-hundredth of the way to the middle of our own
-// galaxy, and the picture behind the words is showing exactly that.
+// built around: at the far end it says out loud how far the expedition is
+// going, and the picture behind the words is showing exactly that.
 function skySceneCaption(radius) {
   const span = skyStageSpan();
   const across = span / Math.max(1e-30, radius);   // Earth radii across the stage
@@ -18458,17 +18224,10 @@ function skySceneCaption(radius) {
     if (Math.hypot(exoX - SKY_PAN.x, exoY - SKY_PAN.y) < across)
       return [target.name, `${target.ly.toFixed(2)} light-years. ${target.note}`];
   }
-  if (across > 30000 * LIGHT_YEAR)
-    return ["The Milky Way",
-            `${(GALAXY_DISC_LY * 2 / 1000).toFixed(0)},000 light-years across, and the Sun ` +
-            `${GALAXY_SUN_RADIUS_LY.toLocaleString()} out from the middle`];
-  if (across > 400 * LIGHT_YEAR)
-    return ["The Orion Spur",
-            `A bridge between two arms. Every star anybody has named is in it`];
   if (across > 3 * LIGHT_YEAR)
     return ["The solar neighbourhood",
-            `About 2,000 stars within ${SKY_BUBBLE_LY} light-years, and the ` +
-            `expedition is going to one of them`];
+            `About a hundred star systems within ${SKY_BUBBLE_LY} light-years, ` +
+            `and the expedition is going to one of them`];
   if (across > 120 * AU)
     return ["Interstellar space",
             `The nearest star is ${SKY_STARS[0].ly.toFixed(2)} light-years away — ` +
@@ -18962,7 +18721,6 @@ function drawSkyCaption(place, crew, alpha, note, above) {
 // of space has to be built in: the furthest thing first and the nearest thing
 // last, because out here the furthest thing is the biggest.
 //
-//   the galaxy      only once its disc will fit on the stage at all
 //   the bubble      the neighbourhood boundary and its stars
 //   the orbits      the rings that make a handful of dots a solar system
 //   the belt        so the gap between Mars and Jupiter has something in it
@@ -18980,22 +18738,14 @@ function drawPlanetSky(camera, radius, centerX, centerY) {
   const crews = skyCrews();
   const now = performance.now();
   const span = skyStageSpan();
-  // Which of the three pictures is on the stage. They are widths, not rungs:
-  // the rung says what a civilization is allowed to know, this says what is
-  // currently big enough to be worth drawing and small enough to fit.
-  const discPx = GALAXY_DISC_LY * LIGHT_YEAR * radius;
+  // Which of the pictures is on the stage. It is a width, not a rung: the rung
+  // says what a civilization is allowed to know, this says what is currently
+  // big enough to be worth drawing and small enough to fit.
   const bubblePx = SKY_BUBBLE_LY * LIGHT_YEAR * radius;
-  const galaxyShown = knowsGalaxy()
-    ? 1 - skyFade(discPx, span * 2.2, span * 7) : 0;
-  const starsShown = knowsNeighbourhood()
-    ? skyFade(bubblePx, 26, 95) * (1 - skyFade(bubblePx, span * 6, span * 26)) : 0;
+  const starsShown = knowsNeighbourhood() ? skyFade(bubblePx, 26, 95) : 0;
 
-  // Before anything is drawn, because `here` puts a name on the stage too and
-  // the Sun's own caption must not be allowed to land on top of it.
   skyLabelReset();
-  drawSkyGalaxy(radius, centerX, centerY, galaxyShown);
-  drawSkyHere(radius, centerX, centerY, galaxyShown);
-  drawSkyNeighbourhood(radius, centerX, centerY, starsShown * (1 - galaxyShown * .55));
+  drawSkyNeighbourhood(radius, centerX, centerY, starsShown);
   drawSkyOrbits(radius, centerX, centerY, 1);
   drawSkyBelt(radius, centerX, centerY, 1);
 
@@ -19025,10 +18775,9 @@ function drawPlanetSky(camera, radius, centerX, centerY) {
     // is a lie: at the whole-system shot the Moon is four thousandths of a
     // pixel from the Earth and Io is a fifth of one from Jupiter, so drawing
     // them there puts a moon on top of its planet and calls the pair a binary.
-    // Out at the galaxy the same thing happens to every star in the roster and
-    // to the destination — fifty light-years is a third of a pixel from there —
-    // and the first pass had the target's label sitting on top of `here`,
-    // claiming a planet was visible from outside the galaxy.
+    // Out at the far stop the same thing happens to the destination and to every
+    // star behind it, which would otherwise pile a column of names onto one
+    // patch of sky and claim each of them was a place you could see.
     //
     // One rule covers all of it, because it is one situation: a body fades in
     // when it has somewhere to be. `separation` is its distance from whatever
@@ -19073,11 +18822,7 @@ function drawPlanetSky(camera, radius, centerX, centerY) {
     if (ground > 0) drawSkyGlobe(place, alpha * ground);
     if (ringed) drawSkyRingHalf(place, alpha, 1);
     drawSkyLandings(place, crew, alpha);
-    // On the galaxy shot `here` already names the Sun, and with a leader on it;
-    // a second caption underneath saying the same thing twice is the picture
-    // arguing with itself.
-    const named = body.id === "sun" && galaxyShown > .4;
-    if (alpha > .5 && !named) wantLabel.push({body, place, alpha, crew});
+    if (alpha > .5) wantLabel.push({body, place, alpha, crew});
   }
   // Home first, before any of the rest can take its room. Far enough out it is
   // a dot among dots and needs saying so; the names out here are the engine's
@@ -27854,7 +27599,7 @@ cv.addEventListener("pointermove", ev => {
         // than that, so the divisor stopped tracking the camera, and a pinch
         // opening the fingers anywhere out there answered by slamming the
         // camera to the far stop — the wrong way, in one move, from Saturn to
-        // the galaxy. Everything past the inner system was unreachable by
+        // the edge of everything. Everything past the inner system was unreachable by
         // pinch, which is to say by touch at all.
         zoomAt(want / Math.max(1e-30, base), mx, my, touchGesture.skyAnchor);
       } else {

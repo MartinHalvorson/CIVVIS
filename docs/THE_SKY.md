@@ -1,9 +1,16 @@
 # The sky beyond
 
-A Planet world hangs in a solar system, in a neighbourhood of stars, in a
-galaxy. Pulling the camera back past the surface leaves the Earth behind and
-keeps going, and the space race — the one victory whose progress happens
-entirely off the map — happens out there in front of you.
+A Planet world hangs in a solar system, in a neighbourhood of stars. Pulling the
+camera back past the surface leaves the Earth behind and keeps going, and the
+space race — the one victory whose progress happens entirely off the map —
+happens out there in front of you.
+
+**It stops at twenty light-years.** The sky used to carry on out to the whole
+Milky Way, and that was true and it was not a place: nothing anybody does in
+this game happens out there, and the price of drawing it was that every picture
+worth having sat in the first two per cent of the zoom. The far stop is the
+**voyage** now — the Sun at one end, the world the expedition is aimed at at the
+other, and the stars it crosses in between.
 
 **Everything out here is at true scale.** That is the change this document
 exists to record. The sky before it put the Moon six Earth radii away, Mars at
@@ -23,14 +30,15 @@ converted in exactly one place, in `web/index.html`:
 | 1 AU | 149,597,870.7 km = **23,481 Earth radii** |
 | 1 light-year | 9.4607×10¹² km = **1.485×10⁹ Earth radii** |
 
-So the camera spans about **fourteen orders of magnitude** between a hexagon on
-the ground and the far rim of the galaxy. Two consequences run through the whole
+So the camera spans about **eleven orders of magnitude** between a hexagon on
+the ground and the far end of the voyage. Two consequences run through the whole
 implementation:
 
 - **Positions are one linear space in Earth radii**, not a stack of separate
-  scenes. `float64` carries fifteen significant figures, which leaves 25 km of
-  precision at the galactic centre and sixty metres on the surface of a planet
-  fifty light-years away. Nothing needs a change of frame.
+  scenes. `float64` carries fifteen significant figures, which leaves sixty
+  metres of precision on the surface of a planet fifty light-years away — and it
+  had enough left at the galactic centre, back when there was one. Nothing needs
+  a change of frame.
 - **A body's drawn size needs a floor** (`floor` in the tables). At true scale a
   planet is a fraction of a pixel across the moment its own orbit fits on the
   stage, and a solar system of nothing is not a picture of a solar system.
@@ -47,8 +55,8 @@ out:
 |---|---|---|---|
 | `chart` | — | nothing. A flat sheet. | the chart limit |
 | `eye` | `knows_globe` | the Sun, the Moon, and the five wandering stars | Saturn's orbit, 28 AU |
-| `glass` | `scientific_theory`, or **Isaac Newton** | the outer system, and a neighbourhood with real distances in it | the 52-light-year bubble |
-| `space` | `launch_earth_satellite` | the destination, and the galaxy | the galaxy, 160,000 ly |
+| `glass` | `scientific_theory`, or **Isaac Newton** | the outer system, and a neighbourhood with real distances in it | the 20-light-year bubble |
+| `space` | `launch_earth_satellite` | the destination | the voyage — still 20 light-years |
 
 Mercury, Venus, Mars, Jupiter and Saturn are naked-eye objects and were known to
 every civilization that ever looked up, which is why the `eye` rung is a real
@@ -60,9 +68,9 @@ Uranus in 1781, Ceres in 1801, Neptune in 1846 by being predicted before it was
 looked for, and in 1838 the first measured distance to another star. So the
 outer system and a neighbourhood with distances on it arrive together.
 
-No planet at another star had ever been seen from the ground; the first came in
-1992, and the shape of our own galaxy was not settled until the 1920s. Both wait
-for the satellite, which was already the gate for the exoplanet.
+No planet at another star had ever been seen from the ground: the first came in
+1992, and it took a telescope above the air to make the rest of them ordinary.
+So the destination waits for the satellite, which was already its gate.
 
 ## What is in it
 
@@ -75,12 +83,15 @@ every end of turn and read as a fault rather than as an orbit.
 
 **The neighbourhood** — 57 real stars, every system within about fifty
 light-years that anybody has a name for, stored as galactic longitude, latitude
-and distance. That is the coordinate system the galaxy itself is defined in, so
-the same numbers place a star in the bubble and place the bubble in the galaxy
-with no second table that could disagree with the first. A star's drawn size and
-brightness are its apparent magnitude, so the picture is dominated by dim red
-dwarfs with a handful of conspicuous A and F stars in it — which is what the
-real neighbourhood is.
+and distance, which is the frame those distances are published in. A star's
+drawn size and brightness are its apparent magnitude, so the picture is
+dominated by dim red dwarfs with a handful of conspicuous A and F stars in it —
+which is what the real neighbourhood is.
+
+The roster deliberately runs out past the twenty light-years the zoom stops at.
+A destination is a planet *around one of these stars* and the expedition can be
+aimed at a world forty out; what the stop truncates is how far the camera goes
+on its own, not what is there to be flown to.
 
 **The destination** — ten real candidate worlds, from Proxima Centauri b at 4.24
 light-years to **LHS 1140 b at 48.9**, which is the strongest habitable-zone
@@ -88,11 +99,6 @@ candidate anybody actually has and very nearly the fifty light-years the engine
 has always quoted. The list carries the real trade-off: the nearest worlds are
 around flare stars and tidally locked, and the calmest star with a temperate
 planet is nearly five times further away.
-
-**The galaxy** — a barred spiral, the Sun 26,700 light-years out from
-Sagittarius A* (GRAVITY, 2019), four major arms written by where they cross our
-own line so that the Sagittarius-Carina arm falls inside us and Perseus outside,
-which is what puts the Sun between them.
 
 ## Still tiled
 
@@ -149,40 +155,51 @@ measured over whole 500-turn games before it ships, not asserted. The wiring for
 it is `Game::exoplanet_target(pid).light_years`, already reported to the client
 as `exoplanet_target_ly`; the measurement is the work, not the code.
 
-## Fifty light-years, in galactic terms
+## Why it stops where it does
 
-This is what the last zoom step is for, and it is drawn rather than asserted:
-the bubble at the far end is the same fifty light-years it was one step earlier,
-in the same coordinates, and it comes out the size it comes out.
+There used to be one more rung out here: the whole Milky Way, a hundred thousand
+light-years across, with the entire neighbourhood one dot on one arm of it. It
+was drawn from real numbers and it made the point it was built to make — the
+longest journey anybody in the game ever makes does not leave the doorstep.
 
-- **1/2,000th** of the way across the disc.
-- **1/534th** of the way to the galactic centre.
-- About **2,000 stars**, against a hundred billion or more in the galaxy.
-- On a picture of the Milky Way the size of a dinner plate, the entire
-  neighbourhood the previous screen was full of is **half a millimetre** wide.
+It is gone, and what it cost is the argument for dropping it. That last picture
+was **three thousand times** wider than the one below it, so the far stop sat at
+144,741 light-years across while every shot anybody would ever want — the
+system, the neighbourhood, the trip — lived in the first fraction of a per cent
+of the ladder. Two thirds of the sky's whole depth was a scale nothing in the
+game happens at, and every wheel notch and every drag out there was spent
+crossing it.
 
-The longest journey anybody in the game ever makes does not leave the doorstep.
+The stop is twenty light-years now, and the far end of the zoom is a picture of
+the voyage rather than a picture of a scale.
 
 ## The ladder, and how long it takes to climb
 
-Fourteen orders of magnitude is a lot to ask of a wheel. The zoom used to move
-by one fixed ratio per notch — the same ratio the flat board uses, where the
-whole zoom is a factor of thirteen and fifteen notches cross all of it — and at
-that ratio the galaxy is **two hundred notches** from the ground. Nobody scrolls
-two hundred times, so most of what is written above could be built and reached
+Eleven orders of magnitude is a lot to ask of a wheel. The zoom used to move by
+one fixed ratio per notch — the same ratio the flat board uses, where the whole
+zoom is a factor of thirteen and fifteen notches cross all of it — and at that
+ratio the far stop is **eighty-seven notches** from the ground. Nobody scrolls
+eighty-seven times, so most of what is written above could be built and reached
 by nothing but a caption.
 
 So a notch is a fixed fraction of the ladder in front of it instead. The step is
 taken in log scale and divided by the height of the ladder that rung actually
 has, which makes the trip the same length in the hand at every rung and only
-changes how far it goes:
+changes how far it goes. Measured on a 1600×1000 stage, from a tile's own
+ceiling down to the far stop with the pan held over home:
 
-| rung | span of the ladder, in log scale | wheel notches before | after |
+| rung | span of the ladder, in log scale | notches at a fixed ratio | notches here |
 |---|---|---|---|
-| `chart` | 1.9 | 12 | 12 |
-| `eye` | 14.7 | 87 | 58 |
-| `glass` | 27.3 | 161 | 64 |
-| `space` | 34.4 | 203 | 65 |
+| `chart` | 1.4 | 5 | 5 |
+| `eye` | 14.2 | 48 | 32 |
+| `glass` | 25.9 | 87 | 35 |
+| `space` | 25.9 | 87 | 35 |
+
+Truncating the sky did not change the hand. The same measurement on the version
+with the galaxy in it gave `space` a span of 33.9 and 113 notches at a fixed
+ratio — and **36** geared, one more than now. The gearing had already absorbed
+the galaxy, which is why dropping it costs nothing at the wheel and buys back
+three thousand times less empty sky to cross.
 
 The gearing is for crossing the dark, and crossing it is all it is for. Four
 places out there are somewhere anyone is actually going — home, the Moon, Mars
@@ -211,11 +228,11 @@ five to the fourth is already most of the solar system.
 ## The way about
 
 Gearing made the whole ladder *reachable*. It did not make it navigable, and
-those are different problems. Sixty-five notches is a reachable distance and an
-unusable one; worse, every one of those notches has to be aimed, because a zoom
+those are different problems. Thirty-five notches is a reachable distance and a
+tiring one; worse, every one of those notches has to be aimed, because a zoom
 out here goes where the pointer says and the pointer is over empty space for
-most of the way. Coming back from the galaxy to a city was a minute of
-scrolling that could be lost at any point in it.
+most of the way. Coming back from the far stop to a city was a long scroll that
+could be lost at any point in it.
 
 So the sky carries its own way about, on a bar that stands over the zoom
 buttons — the same control, in the same place — and is only there while there
@@ -223,7 +240,8 @@ is a sky to cross. Home wholly on the stage with room around it puts it up; home
 filling the frame takes it down again. Three things on it, in the order a hand
 reaches for them:
 
-**The places.** Home, the Moon, Mars, and the world the expedition is aimed at.
+**The places.** Home, the Moon, Mars, and the world the expedition is aimed at —
+`Earth`, `Moon`, `Mars`, `Exoplanet`.
 Those four and no others, because those four are already what the sky calls an
 arrival: they are the three destinations of the space programme and the one
 board they are launched from, and the gearing has handed itself back over
@@ -232,15 +250,36 @@ already knew. Each is offered only once this civilization can see it, off the
 same roster everything else out here is drawn from, so the bar can never point
 at something the sky is withholding.
 
+The destination's button says **Exoplanet** and not the world's catalogue name.
+Which world it is depends on what that civilization surveyed, so the same button
+would read `Teegarden's Star b` in one game and `82 Eridani d` in the next, and
+a control that renames itself between games is one nobody learns the position
+of. The real name is a fact and it is kept in the three places a fact belongs:
+the button's tooltip, the caption under the world, and the scene caption that
+comes up on arrival with the distance and the catch.
+
 A press lands with that world four fifths of the frame across — short of the
 ceiling the zoom itself has for it, deliberately, because a jump that lands
 exactly on the stop leaves the zoom-in button dead in the hand on arrival.
 
-**The shots.** The whole system, the neighbourhood, the galaxy: one press each.
-They are the frames the zoom already stops at, taken out of `skySystemFrame` so
-that a named shot and the far stop are the same arithmetic rather than two
-opinions that could drift apart. At the `eye` rung `System` *is* the far stop,
-because the naked eye's universe ends at Saturn.
+**The shots.** `Solar system` and `Voyage`: one press each. They are the frames
+the zoom already stops at, taken out of `skySystemFrame` so that a named shot and
+the far stop are the same arithmetic rather than two opinions that could drift
+apart. At the `eye` rung `Solar system` *is* the far stop, because the naked
+eye's universe ends at Saturn.
+
+`Voyage` is the trip: the Sun at one end, the destination at the other, centred
+on the middle of the line between them. Its reach is the bubble and the bubble is
+the stop — the shot decides where the camera leans, never how far it pulls back,
+because a stop that quietly opened to hold whatever the expedition happened to be
+aimed at would not be a stop.
+
+It holds the whole of every trip on the roster anyway, and that is the projection
+rather than luck: the sky is drawn in the plane of the galaxy with a star's
+height out of it kept separately, so what is across the page is `ly · cos b`. LHS
+1140 is 48.9 light-years off and seventy-one degrees out of the plane, which is
+fifteen and a half across; the widest trip in the roster is Gliese 12 b at
+thirty-four, and half of that is well inside twenty.
 
 **The ladder.** The zoom laid out end to end, with the camera's own place on it
 and how wide the stage is beside it in the unit that reads best there — twelve
@@ -260,7 +299,7 @@ anything.
 What it must *not* do is go through the ordinary zoom, and that had to be found
 out by dragging it. A zoom in stops at the ceiling of the world nearest the
 camera, which is right for one notch and catastrophic for a whole ladder in one
-move: from the galaxy the nearest world is some red dwarf, its ceiling is a
+move: at the far stop the nearest world is some red dwarf, its ceiling is a
 hundredth of the way up, and dragging the handle to the ground put the camera
 there and left it.
 
@@ -290,7 +329,7 @@ come to rest exactly on the stop.
 ### A jump is a path, not an ease
 
 Easing a zoom and a pan toward the same target together is the obvious thing and
-it is unwatchable across fourteen orders of magnitude: the trip from a tile to
+it is unwatchable across eleven orders of magnitude: the trip from a tile to
 the destination spends its entire middle at a tile's zoom over empty space with
 nothing on the stage at all. Doing the pan first and the zoom after is a smear.
 
@@ -302,7 +341,7 @@ down. It is written entirely in `w`, how wide the stage is in Earth radii,
 because that is the one number a zoom and a pan both change.
 
 Two things it had to be told. Its `ln(-b + sqrt(b² + 1))` has to be written as
-`-asinh(b)`: a camera crossing fourteen orders of magnitude makes `b` as large
+`-asinh(b)`: a camera crossing this many orders of magnitude makes `b` as large
 as 10¹⁵, at which point `sqrt(b² + 1)` is exactly `b` in float64, the
 subtraction cancels to zero, the logarithm is negative infinity and the whole
 flight comes out `NaN` with the camera never moving. And its own answer for how
@@ -321,7 +360,7 @@ sky`. The camera, its stops and what a drag means are unchanged from the
 real arrangement and `planetMinScale` frames the outermost thing the current
 rung knows about rather than a bounding box over three bodies.
 
-Measured on a 1600×1000 stage: the whole-galaxy shot draws in **8 ms**, the
-neighbourhood and the system in about **2.5 ms**, and a tiled world close up in
-**0.8 ms** — against roughly 55 ms for the surface map, so nothing out here is
-near a frame budget.
+Measured on a 1600×1000 stage: the neighbourhood and the system draw in about
+**2.5 ms** each and a tiled world close up in **0.8 ms** — against roughly 55 ms
+for the surface map, so nothing out here is near a frame budget. The shot that
+cost the most, the whole galaxy at 8 ms, is gone.

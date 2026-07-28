@@ -6403,9 +6403,9 @@ mod tests {
         assert!(!EMBEDDED_INDEX.contains("const pointerX = skyAnchor?.x ??"));
         assert!(!EMBEDDED_INDEX.contains("const scale = planetScaleClampAt(base * f, {x:0, y:0});"));
         // A notch of zoom is a fraction of the ladder in front of it, not a
-        // fixed ratio: with a fixed ratio the galaxy is two hundred wheel
-        // notches from the ground and the far half of the sky can be built and
-        // never reached. Every zoom that arrives as a step of intent goes
+        // fixed ratio: with a fixed ratio the far stop is a hundred and sixty
+        // wheel notches from the ground and the far half of the sky can be
+        // built and never reached. Every zoom that arrives as a step of intent goes
         // through the gearing; a pinch is absolute and is geared at its own
         // site, against the spread the fingers started from.
         assert!(EMBEDDED_INDEX.contains("function skyZoomPace(scale = cam.scale, pan = SKY_PAN)"));
@@ -9948,7 +9948,54 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("function skyFrameFor(box)"));
         assert!(EMBEDDED_INDEX.contains("function skyStopScale(stop)"));
         assert!(EMBEDDED_INDEX.contains("  if (knowsNeighbourhood())"));
-        assert!(EMBEDDED_INDEX.contains("  if (knowsGalaxy()) {"));
+        // The sky stops at twenty light-years, and the top rung's stop is the
+        // voyage rather than a scale: the Sun at one end and the route out
+        // towards the destination. The reach *is* the bubble — this shot decides
+        // where the camera leans, never how far it pulls back — because a stop
+        // that quietly opens to two and a half times its depth whenever the
+        // expedition is aimed a long way off is not a stop.
+        assert!(EMBEDDED_INDEX.contains("const SKY_BUBBLE_LY = 20;"));
+        assert!(EMBEDDED_INDEX.contains("  if (seesDestination()) return skyVoyageFrame();"));
+        assert!(EMBEDDED_INDEX.contains("function skyVoyageFrame()"));
+        assert!(EMBEDDED_INDEX.contains(
+            "  const lean = Math.min(1, reach / Math.max(1e-9, Math.hypot(dx, dy)));"
+        ));
+        assert!(EMBEDDED_INDEX.contains("  return {x:sx + dx * lean, y:sy + dy * lean, reach};"));
+        // Two shots, named as the places they are: the solar system, and the
+        // voyage. The third was the galaxy and it is gone with the picture it
+        // framed — every constant, every trace and the caption that read off
+        // them, so nothing is left drawing a hundred thousand light-years that
+        // no zoom can now reach.
+        assert!(EMBEDDED_INDEX.contains("label:\"Solar system\", mark:\"☉\""));
+        assert!(EMBEDDED_INDEX.contains("stops.push({id:\"voyage\", label:\"Voyage\""));
+        for gone in [
+            "GALAXY_DISC_LY",
+            "GALAXY_SUN_RADIUS_LY",
+            "GALAXY_ARMS",
+            "GALAXY_SPUR",
+            "function drawSkyGalaxy",
+            "function galaxySpeckle",
+            "function drawSkyHere",
+            "The Milky Way",
+            "The Orion Spur",
+            "label:\"Galaxy\"",
+        ] {
+            assert!(
+                !EMBEDDED_INDEX.contains(gone),
+                "the galaxy view is dropped, but {gone} is still in the client"
+            );
+        }
+        // The destination is a button called Exoplanet, not one called whatever
+        // that game's survey happened to turn up: the same control reads
+        // `Teegarden's Star b` in one game and `82 Eridani d` in the next, and
+        // a control that renames itself between games is one nobody learns.
+        // The real name stays on the tooltip and on the world's own captions.
+        assert!(EMBEDDED_INDEX
+            .contains("const SKY_STOP_LABELS = {earth:\"Earth\", exo:\"Exoplanet\"};"));
+        assert!(EMBEDDED_INDEX.contains(
+            "                label:SKY_STOP_LABELS[id] || body.name.replace(/^The /, \"\"),"
+        ));
+        assert!(EMBEDDED_INDEX.contains("                                     : `Fly to ${body.name}`});"));
         // Short of the ceiling on purpose: a jump that lands exactly on the
         // stop leaves the zoom-in button dead in the hand on arrival.
         assert!(EMBEDDED_INDEX.contains("const SKY_STOP_FILL = .8;"));
@@ -9971,7 +10018,7 @@ mod tests {
         // not geared again — and it does not go through `zoomAt`, which stops
         // a zoom in at the ceiling of the world nearest the *camera*. That is
         // right for one notch and catastrophic for a whole ladder in one move:
-        // from the galaxy the nearest world is some red dwarf, its ceiling is
+        // at the far stop the nearest world is some red dwarf, its ceiling is
         // a hundredth, and dragging the handle to the ground put the camera
         // there and left it. The ladder's own top is the world it leads to.
         assert!(EMBEDDED_INDEX.contains("function skyLadderSubject()"));
