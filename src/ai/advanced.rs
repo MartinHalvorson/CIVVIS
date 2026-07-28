@@ -426,6 +426,29 @@ pub struct AdvancedAi {
     /// 120 `advanced` wins were religious, so the science lane the filter
     /// exists to refuse was rarely the one being contested.
     pub refuse_unreachable_lanes: bool,
+    /// Test the finite Prophet race before the opportunistic war, not after.
+    ///
+    /// **Off by default until measured.** `assess()` reaches
+    /// `religious_opening_viable` only after an arm that fires on a bare power
+    /// ratio — `turn >= 55 && cities >= 2 && my_power > weakest_rival * 1.80 +
+    /// 20.0`. `war_census` records this agent opening its wars at a mean
+    /// **11.5×** advantage, so that test is satisfied many times over whenever
+    /// it is asked, and `religious_opening_viable` hard-stops at turn 120 (180
+    /// once a religion exists). Those two windows overlap on turns 55..120,
+    /// which is the whole of the prophet race.
+    ///
+    /// The arm below already argues its own case: a Prophet is a *finite
+    /// global* slot, and pursuing it occupies one city's production while the
+    /// rest of the empire carries on. An opportunity to attack a weak
+    /// neighbour is not finite in the same way — it is still there ten turns
+    /// later, and this engine converts it into a domination victory in 0 of
+    /// every 48 games measured.
+    ///
+    /// `at_war` keeps its priority either way: a war already running is not an
+    /// opportunity, it is a fact. With the flag off the cascade is
+    /// arithmetically identical to `at_war || A || B` reaching Conquest first,
+    /// so this ships zero behaviour change until the entrant is selected.
+    pub prophet_before_opportunism: bool,
     /// Weigh whether a settle site can be held, not only what it yields.
     ///
     /// **Off by default, on measurement.** `settle_value` scores yields,
@@ -685,6 +708,7 @@ impl AdvancedAi {
             force_groups_dirty: false,
             scoped_relief_hold: false,
             refuse_unreachable_lanes: false,
+            prophet_before_opportunism: false,
             defensible_sites: false,
             food_first: 0.0,
             settler_commit: false,
@@ -1790,8 +1814,13 @@ impl AdvancedAi {
             }
         } else if let Some((_, counter)) = denial {
             (counter, "countering a rival close to winning")
-        } else if at_war
-            || (g.turn >= 55 && cities.len() >= 2 && my_power > weakest_rival * 1.80 + 20.0)
+        } else if at_war {
+            (GrandStrategy::Conquest, "already at war")
+        } else if self.prophet_before_opportunism && self.religious_opening_viable(g, pid) {
+            // Same arm as the one below, tested one step earlier. See
+            // `prophet_before_opportunism` for why the order is contested.
+            (GrandStrategy::Religion, "a Prophet is a finite race worth entering now")
+        } else if (g.turn >= 55 && cities.len() >= 2 && my_power > weakest_rival * 1.80 + 20.0)
             || (military_civ
                 && g.turn >= 35
                 && cities.len() >= 2
@@ -13357,6 +13386,69 @@ mod tests {
             "the filter fired on {refused} turns but the adaptive planner still \
              chose Science as often as before ({science_turns_with} against \
              {science_turns_without}), so refusing the lane changed no decision"
+        );
+    }
+
+    /// The same check for the routing reorder: does the opportunistic war arm
+    /// actually preempt the finite Prophet race in ordinary games?
+    ///
+    /// The whole argument for `prophet_before_opportunism` is that the two
+    /// windows overlap — the power-ratio arm opens at turn 55, and
+    /// `religious_opening_viable` closes at 120. If they never actually
+    /// collide, the reorder is a no-op and evaluating it would measure the
+    /// stock agent under another name, which is exactly the failure the
+    /// expansion-ceiling run paid 240 games to discover.
+    #[test]
+    fn the_prophet_reorder_fires_in_ordinary_games() {
+        let mut preempted = 0usize;
+        let mut differed = 0usize;
+        let mut sampled = 0usize;
+
+        for seed in 0..3u64 {
+            let mut game = Game::new(4, 60, 38, 42_000 + seed, 500, 6);
+            let mut ais = AdvancedAi::fleet(&game);
+            let mut reordered = AdvancedAi::new();
+            reordered.prophet_before_opportunism = true;
+            let stock = AdvancedAi::new();
+            assert!(
+                !stock.prophet_before_opportunism,
+                "the default keeps the shipped order, so this ships no behaviour change"
+            );
+
+            // Only the window where the two arms can collide is informative.
+            while game.winner.is_none() && game.turn <= 130 {
+                let pid = game.current;
+                if pid == 0 && game.turn >= 40 {
+                    sampled += 1;
+                    let with = reordered.assess(&game, 0).strategy;
+                    let without = stock.assess(&game, 0).strategy;
+                    if with != without {
+                        differed += 1;
+                    }
+                    if without == GrandStrategy::Conquest && with == GrandStrategy::Religion {
+                        preempted += 1;
+                    }
+                }
+                ais[pid].take_turn(&mut game, pid);
+                if game.winner.is_none() && game.current == pid {
+                    let _ = game.apply(pid, &Action::EndTurn);
+                }
+            }
+        }
+        assert!(sampled > 100, "only {sampled} turns sampled");
+        assert!(
+            preempted > 0,
+            "across {sampled} sampled turns in the 40..130 window the stock \
+             cascade never chose Conquest where the reorder chooses Religion, \
+             so the two arms do not actually collide and the treatment is a \
+             no-op"
+        );
+        assert_eq!(
+            differed, preempted,
+            "the reorder is supposed to change exactly one thing — an \
+             opportunistic war giving way to the Prophet race. It differed on \
+             {differed} turns but only {preempted} of those were that swap, so \
+             it is moving something else as well"
         );
     }
 

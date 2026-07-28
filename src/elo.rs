@@ -579,6 +579,15 @@ pub fn builtin_ai(name: &str, seed: u64) -> Box<dyn Ai> {
             ai.refuse_unreachable_lanes = true;
             Box::new(ai)
         }
+        // Treatment for the routing axis: identical to `advanced` except that
+        // the finite Prophet race is tested before the opportunistic war that
+        // currently preempts it on turns 55..120. See
+        // `AdvancedAi::prophet_before_opportunism`.
+        "advanced_prophet_first" => {
+            let mut ai = AdvancedAi::new();
+            ai.prophet_before_opportunism = true;
+            Box::new(ai)
+        }
         // Treatment for the relief-radius axis: identical to `advanced` in
         // every other respect, holding only the force groups that could
         // reach a threatened city instead of every group in the empire.
