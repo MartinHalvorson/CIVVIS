@@ -3385,3 +3385,78 @@ best-rated of those, `g20-21` at 1790.8, measured **−98 Elo** when transferred
 into `strategic_deep` (`docs/LEAGUE_GENOME_CHALLENGER.md`). Whether the top of
 this roster is genuinely stronger than the champion is an open question this run
 does not answer, and it is the more valuable one.
+
+
+## 2026-07-28 — ★★★ the roster's top-rated genome is 108 Elo weaker than the champion it outranks by 121
+
+The entry above added an entrant that can play the champion and left the more
+valuable question open: *when the exhibition seats from the roster it takes the
+best-rated strategy — is the top of that roster actually strong, or only
+well-rated?* This answers it.
+
+`advanced_league_top` builds `AdvancedAi::with_weights(w)` from the
+highest-rated **active** `Advanced { weights }` entry in the *shipped* roster,
+so it is reproducible from the tree. That is **`g56-50`, rating 1823.3**
+(rd 50.3, 21 games) — the strategy `Session::ai_fleet` would prefer.
+
+```
+ai_eval advanced_league_top advanced_evolved --players 4 --pairs 300
+  --turns 500 --seed 4100000
+
+game-win share     210/600 (35.0%)  against  390/600 (65.0%)
+paired-map score   35.0%  (95% Wilson CI 29.8%..40.6%)   Elo-equivalent -108
+paired direction   18 for / 174 neutral / 108 against    sign p = 0.0000
+anytime-valid      advanced_evolved e = 1.233e15, crossed at map 32
+terminal score     48.0%, 118 / 182, p = 0.0003
+promotion gate     RETAIN advanced_evolved
+```
+
+**The roster ranks these two backwards by about 230 Elo.** g56-50 is rated 121
+points *above* `advanced` (1823.3 against 1702.7); the champion, which this
+document just measured at +58 over `advanced`, beats g56-50 by 108.
+
+This is a stronger form of an already-recorded result.
+`docs/LEAGUE_GENOME_CHALLENGER.md` found the second-ranked genome, `g20-21`
+(1790.8, 216 games), losing 98 Elo when transferred into `strategic_deep` — but
+that involved a transfer into a different search, which leaves room for the
+transfer to be the problem. **This has no transfer.** Two `AdvancedAi`s, one
+genome apart, is precisely the comparison the roster's numbers claim to rank,
+and they get it backwards.
+
+### Why, and what it does not mean
+
+Both halves of the pipeline that produced these ratings select on proxies.
+`evolve` breeds on `50·players·score_share + 12·players·combat_share` — a
+continuous statistic with a 24% weight on combat, which this engine converts
+almost never — and the league then rates the survivors under a Glicko-2 pool
+whose confounded era is on record in `docs/RATING.md`. A genome bred on a proxy
+and ranked by a rating fitted over proxy-bred peers is not measured against
+winning at any point in that chain.
+
+**It does not mean Glicko-2 is broken now.** `#282` re-measured the corrected
+pool at +0.4743 nats/game and 42.2% accuracy on 6502 games; the rating machinery
+works. What is stale is **this snapshot**, whose entries were bred and rated
+before those fixes, and which no run has re-rated since.
+
+**Two caveats that are part of the result.** g56-50 carries only 21 games at
+rd 50.3, so its rating is unresolved as well as wrong — but it is the entry the
+seating rule prefers, and the far better-established g20-21 (216 games, rd 31.0)
+independently measured −98. And `seat_by_civ_seeded` actually ranks on
+per-leader/civ `leader_elo`, not the global rating this entrant reads, so the
+seated strategy for a given civ may differ; the global top is representative,
+not identical.
+
+### What follows
+
+The entrant added in the previous entry is seeded at `advanced`'s 1702.7 with a
+new entrant's rd of 350, and that seed is now **known to be too low** — two
+gate-quality runs place the champion above both `advanced` and the roster's top.
+It is deliberately left there. Importing a head-to-head margin into a Glicko
+pool as a starting rating is not a rating, and rd 350 is the mechanism that
+exists for exactly this: the league will move it faster than any number chosen
+by hand, and it will do so on games rather than on assertion.
+
+The real repair is to **re-rate the shipped snapshot**, which is a league run and
+not a data edit, and is the owner's call. What this run supplies is the reason
+to spend it: the exhibition currently prefers, by rating, an agent measured 108
+Elo weaker than one the binary already carries.

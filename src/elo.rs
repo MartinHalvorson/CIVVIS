@@ -38,7 +38,7 @@ pub const BUILTIN_AIS: [&str; 10] = [
 /// tournament ratings. Keeping them out of `BUILTIN_AIS` prevents a control
 /// factory from being pooled into the same player/leader rating key as
 /// its treatment.
-pub const EVAL_ONLY_AIS: [&str; 46] = [
+pub const EVAL_ONLY_AIS: [&str; 47] = [
     "advanced_banking_dedication",
     "advanced_blind_to_leaders",
     "advanced_civ_blind",
@@ -54,6 +54,7 @@ pub const EVAL_ONLY_AIS: [&str; 46] = [
     "advanced_parallel_settlers",
     "advanced_settler_first",
     "advanced_prophet_first",
+    "advanced_league_top",
     "advanced_relief_scoped",
     "strategic_score",
     "strategic_doctrine",
@@ -596,6 +597,37 @@ pub fn builtin_ai(name: &str, seed: u64) -> Box<dyn Ai> {
             let mut ai = AdvancedAi::new();
             ai.settler_price = 100.0;
             Box::new(ai)
+        }
+        // The genome the exhibition actually seats, against the genome the
+        // repository actually evolved. `Session::ai_fleet` seats each civ's
+        // best-rated available strategy from the shipped roster, and the top of
+        // that roster is league-bred `Advanced { weights }` entries — not the
+        // gen-14 champion, which until PR #519 had no entrant at all. Whether a
+        // 1790-rated league genome is genuinely stronger than the champion or
+        // merely better-rated is the question this entrant exists to answer;
+        // `docs/LEAGUE_GENOME_CHALLENGER.md` records the best-rated one losing
+        // 98 Elo when transferred into `strategic_deep`.
+        //
+        // Picks the highest-rated active genome from the SHIPPED roster, so it
+        // is reproducible from the tree rather than from a local league.
+        "advanced_league_top" => {
+            let weights = crate::league::shipped_league()
+                .and_then(|league| {
+                    let mut best: Option<(f64, Weights)> = None;
+                    for index in league.active() {
+                        let strategy = &league.strategies[index];
+                        if let crate::league::StrategyKind::Advanced { weights, .. } =
+                            &strategy.kind
+                        {
+                            if best.as_ref().map(|(r, _)| strategy.rating > *r).unwrap_or(true) {
+                                best = Some((strategy.rating, weights.clone()));
+                            }
+                        }
+                    }
+                    best.map(|(_, weights)| weights)
+                })
+                .unwrap_or_default();
+            Box::new(AdvancedAi::with_weights(weights))
         }
         "advanced_prophet_first" => {
             let mut ai = AdvancedAi::new();
@@ -1260,6 +1292,7 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "advanced_parallel_settlers" => (Vec::new(), "advanced_parallel_settlers"),
         "advanced_settler_first" => (Vec::new(), "advanced_settler_first"),
         "advanced_prophet_first" => (Vec::new(), "advanced_prophet_first"),
+        "advanced_league_top" => (Vec::new(), "advanced_league_top"),
         "advanced_blind_to_leaders" => (Vec::new(), "advanced_blind_to_leaders"),
         "advanced_counter_in_lane" => (Vec::new(), "advanced_counter_in_lane"),
         "advanced_counter_stand_down" => (Vec::new(), "advanced_counter_stand_down"),
