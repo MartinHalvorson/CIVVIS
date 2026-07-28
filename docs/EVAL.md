@@ -4048,3 +4048,69 @@ profile the current one can afford, and neither has been measured.
 failed to transfer to the deployment profile — the first was every win-rate
 number, via `--speed`. **`ai_eval`'s defaults are not the deployment, for
 strength or for cost.**
+
+
+## 2026-07-28 — ★ the cost-performance frontier of the macro search, which nothing had measured
+
+Every registered search variant moves the budget **up** — `review_every` 20 and
+10, `horizon` 80, the 4× `strategic_deep`. Nothing has ever asked the opposite
+question, because nothing was cost-bound until the entry above measured
+`strategic` at **7× the exhibition's time budget**.
+
+`strategic_cheap` cuts all three multiplicative knobs at once:
+
+| knob | `strategic` | `strategic_cheap` |
+|---|---|---|
+| `review_every` | 40 | **80** (half the reviews) |
+| `horizon` | 40 | **20** (half the rollout) |
+| `rotate_lanes` | off (~7 branches) | **on** (~3 branches) |
+
+`rotate_lanes` is a **recorded null for strength**, which is exactly what a
+cost-bound deployment wants from a knob.
+
+### Cost
+
+| agent | 8 games, 4p 24×16 Online | vs `advanced` | ms/game-turn at the **exhibition profile** |
+|---|---|---|---|
+| `advanced` | 6.5 s | 1.0× | — |
+| `strategic` | 73.3 s | 11.3× | **1833** |
+| **`strategic_cheap`** | **6.9 s** | **1.06×** | **223** |
+
+Against a **~250 ms** budget. `strategic_cheap` is 6× cheaper in situ than
+`strategic` and lands just inside it with **three** of six seats searching; a
+single searching seat would be nearer 75 ms.
+
+### Strength, pre-registered (`/Users/martin/civvis-strategic-cheap-preregistration.md`)
+
+```
+ai_eval strategic_cheap advanced --players 4 --pairs 300 --turns 250
+  --speed online --seed 6700000
+
+paired-map score   52.3%  (95% Wilson CI 46.7%..57.9%)   Elo-equivalent +16
+paired direction   54 for / 206 neutral / 40 against    sign p = 0.1797
+promotion gate     INCONCLUSIVE
+```
+
+Reference on the identical profile: `strategic` measured **+28** (54.0%,
+p=0.0184, also INCONCLUSIVE at the gate).
+
+| agent | search cost | Online Elo v `advanced` |
+|---|---|---|
+| `advanced` | — | 0 |
+| **`strategic_cheap`** | **~6% of `strategic`'s** | **+16** (−23..+55) |
+| `strategic` | 1× | +28 (−12..+67) |
+
+**I predicted a null and most of the +28 lost.** The point estimate retained
+more than that. ⚠ But at 300 maps this resolves about ±40 Elo, so **+16 and +28
+are not distinguishable**, and neither is distinguishable from zero. The honest
+reading is *a search at 6% of the cost is not measurably worse than the full
+one*, not *the frontier is flat*.
+
+That is still the useful shape for a deployment: the expensive configuration
+buys nothing this evaluation can see, and the cheap one is affordable where the
+expensive one is not.
+
+⚠ **No deployment claim yet.** The pre-registration requires confirmation at the
+exhibition's own profile before one, because the last two estimates taken at
+4p 24×16 — every win rate, via `--speed`, and the cost table — both failed to
+transfer. That confirmation is running at 6p 74×46.
