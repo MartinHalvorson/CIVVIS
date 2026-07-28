@@ -303,6 +303,28 @@ move: at the far stop the nearest world is some red dwarf, its ceiling is a
 hundredth of the way up, and dragging the handle to the ground put the camera
 there and left it.
 
+### Known, and not fixed here: the middle of the road is empty
+
+`skyLadderPan` anchors the pan at `skyOutermostFrame()`'s centre and only starts
+moving toward the subject once that subject is 2% of the stage across. Every rung
+below that is therefore centred wherever the far stop is centred, which is a long
+way from anything — so most of the handle's travel draws almost nothing. Walking
+it in tenths and counting lit pixels on the canvas, from the far stop to the
+ground: **0.2–0.4%** of the canvas at every step between 0.1 and 0.8, then 100%
+at 0.9.
+
+It is not new and it is not the truncation: the same walk on the version with the
+galaxy in it gives the same 0.2–0.4%, and one rung — 0.9, at 76,452 km across —
+that draws **nothing at all**. Twenty light-years is an improvement by accident
+rather than by design, because the far stop's centre moved from 13,350
+light-years off the Sun to 7.8.
+
+The fix is to stop keying the pan on the subject's drawn size, which says nothing
+about whether the subject is *on screen*, and cap the camera's distance from the
+subject at a fraction of the stage instead — `t = max(ease, 1 - span·0.35/away)`,
+which converges as fast as the stage shrinks. That changes `skyLadderPan`'s
+contract and belongs in its own change.
+
 ### The far half of the sky was never coming back
 
 Dragging the handle to the far stop also found a bug that had been in the sky
