@@ -3460,3 +3460,69 @@ The real repair is to **re-rate the shipped snapshot**, which is a league run an
 not a data edit, and is the owner's call. What this run supplies is the reason
 to spend it: the exhibition currently prefers, by rating, an agent measured 108
 Elo weaker than one the binary already carries.
+
+
+## 2026-07-28 — the exhibition and the league build their agents from different factories, and one of them downgrades silently
+
+Continuing the artifact audit. There are **two** factories turning a roster
+entry into a playing agent, and they do not agree:
+
+| caller | factory | `Builtin { ai }` resolution |
+|---|---|---|
+| the **league** (`league.rs:1554`) | `make_ai` | delegates to `elo::builtin_ai` — knows every name in `BUILTIN_AIS` |
+| the **exhibition** (`server.rs`) | `make_send_ai` | its own match: `basic`, `advanced_v1`, `random`, `advanced_evolved`/`evolved`, then **`_ => AdvancedAi::new()`** |
+
+`StrategyKind::Builtin`'s own doc comment says the field is *"One of
+`elo::BUILTIN_AIS`"*, and that list contains **`strategic`, `strategic_deep`,
+`policy`, `neural`**. None of them is handled by `make_send_ai`.
+
+**So a roster entry naming a search agent would be rated by the league as that
+agent and seated by the exhibition as a default-genome `AdvancedAi`** — the
+ratings and the games would describe different players, with nothing reporting
+the substitution. This is the same silent-fallback shape as
+`load_champion(…).unwrap_or_default()`, which cost this repository its largest
+single measured gain before anyone noticed.
+
+⚠ **It is latent, not live.** The shipped roster contains only `advanced`,
+`advanced_v1` and `basic`, all of which the two factories resolve identically,
+and the `advanced_evolved` entry added earlier today is handled by both. Nothing
+is currently mis-seated. The defect is that the roster is *documented* as
+accepting names the exhibition cannot honour, and the failure mode is silent.
+
+The minimal repair is for `make_send_ai` to stop swallowing unknown names —
+either delegate to one shared factory or panic on a name it does not implement.
+`src/league.rs` is claimed by **#273**, so this is written up rather than
+applied, and raised there.
+
+### `Send` is not the reason
+
+The obvious excuse for the duplication is that `make_send_ai` needs
+`Box<dyn Ai + Send>` and the search agents might not be `Send`. **They are.**
+A probe arm constructing `StrategicAi::with_weights(load_champion(…))` inside
+`make_send_ai` compiles clean under `cargo check --lib`. Whatever the second
+factory exists for, the trait bound is not it.
+
+### Cost is a real reason, and it does not exclude everything
+
+Measured on this machine, 8 games at 4p 24×16, 300-turn cap, single job:
+
+| agent | 8 games | relative | implied per game-turn, 4 seats |
+|---|---|---|---|
+| `advanced` | 8.1 s | 1.0× | ~6 ms |
+| `advanced_evolved` | 8.5 s | 1.05× | ~6 ms |
+| **`strategic`** | **118.6 s** | **14.6×** | **~83 ms** |
+| `strategic_deep` | 358.2 s | 44.2× | ~250 ms |
+
+The live exhibition budgets about a quarter-second per turn. `strategic_deep` at
+~250 ms would consume all of it and is fairly excluded. **`strategic` at ~83 ms
+is not** — it fits inside the existing budget with room, and it carries both the
+champion genome and `continue_from_plan`, the +37 Elo fidelity fix.
+
+So "the exhibition runs the scripted agent because search is too slow" is true
+of the deep configuration and **not** of the promoted one. What that upgrade is
+worth is a separate measurement and is running.
+
+⚠ The 14.6× and 44.2× are wall-clock on 24×16 four-player games. The exhibition
+runs 74×46 at six players, where rollout cost scales with map and seat count, so
+these ratios are a lower bound on what it would cost there. Do not treat the
+83 ms as a budget for the live profile without re-measuring on it.
