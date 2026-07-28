@@ -78,6 +78,12 @@ struct Cell {
     /// fires-check rather than trusting that `retarget` was reached.
     committed: bool,
     end_turn: u32,
+    /// Cities the focal seat finished with. `assess()` sends a Religion-targeted
+    /// seat that has no religion yet straight to `GrandStrategy::Religion`,
+    /// bypassing the "the assigned lane can still afford to expand first" arm
+    /// that every other target reaches. If that is what an early commitment
+    /// costs, it shows up here and nowhere else.
+    cities: usize,
 }
 
 /// Play one map with `focal` committed to `lane` at `commit`, or left adaptive
@@ -131,6 +137,7 @@ fn play(
         won: game.winner == Some(focal),
         committed: committed && held,
         end_turn,
+        cities: game.player_city_ids(focal).len(),
     }
 }
 
@@ -211,8 +218,8 @@ fn main() {
     });
 
     let n = rows.len();
-    println!("| condition | wins | share | fired | mean end turn |");
-    println!("|---|---|---|---|---|");
+    println!("| condition | wins | share | fired | mean end turn | mean cities |");
+    println!("|---|---|---|---|---|---|");
     let mut wins_by_condition: Vec<Vec<bool>> = vec![Vec::new(); conditions];
     for row in &rows {
         for (slot, cell) in row.iter().enumerate() {
@@ -234,8 +241,10 @@ fn main() {
         } else {
             format!("{fired}/{n}")
         };
+        let cities: f64 =
+            rows.iter().map(|row| row[slot].cities as f64).sum::<f64>() / n.max(1) as f64;
         println!(
-            "| {label} | {wins}/{n} | {:.1}% | {fired_text} | {end:.0} |",
+            "| {label} | {wins}/{n} | {:.1}% | {fired_text} | {end:.0} | {cities:.2} |",
             wins as f64 * 100.0 / n.max(1) as f64
         );
     }

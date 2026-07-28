@@ -2654,3 +2654,87 @@ correctly reacting to shocks — 20.5% of turns in Recovery says shocks are
 real. The next measurement is whether a switch is predicted by anything that
 should predict it; the intervention worth testing is a viability filter on the
 lane candidate set, not stickiness for its own sake.
+
+
+## 2026-07-28 — the routing headroom is a property of the fallback genome, not of the agent
+
+`src/bin/commit_curve.rs`, pre-registered at
+`/Users/martin/civvis-commit-curve-preregistration.md` with a calibration gate
+fixed before the run: *if committing at turn 0 is not at least 10 points above
+the adaptive control, the oracle result does not reproduce on this harness and
+nothing may be built on it.* **The gate fired.**
+
+One focal seat is committed to Religion via `AdvancedAi::retarget` at turn T,
+every other seat plays stock, and the same map is replayed for each T plus an
+adaptive control. 40 maps, 4p 60×38, 6 city-states, 500 turns, seed 420000 —
+the oracle's own profile and seed. The focal seat rotates with the map index.
+
+**On the embedded gen-14 champion, the genome every deployed agent plays:**
+
+| condition | wins | share | fired | mean end turn |
+|---|---|---|---|---|
+| commit at turn 0 | 6/40 | **15.0%** | 40/40 | 308 |
+| commit at turn 60 | 12/40 | 30.0% | 40/40 | 303 |
+| commit at turn 120 | 13/40 | 32.5% | 40/40 | 288 |
+| commit at turn 180 | 12/40 | 30.0% | 35/40 | 304 |
+| adaptive (control) | 11/40 | 27.5% | n/a | 294 |
+
+McNemar against the control: turn 0 is **2 helped / 7 hurt, p=0.1797**. The
+oracle reports the same nominal condition at 58% against a 28% control. The
+control reproduces (27.5% against 28.0%); the *treatment* does not.
+
+**Then the same run with only the genome changed:**
+
+| genome | commit at turn 0 | adaptive control | paired | McNemar |
+|---|---|---|---|---|
+| `Weights::default()` — the fallback | **37.5%** | 15.0% | 12 helped / 3 hurt | **p=0.0352** |
+| evolved champion — what ships | 15.0% | 27.5% | 2 helped / 7 hurt | p=0.1797 |
+
+`ablate::play_lane` builds its field with `AdvancedAi::fleet(&game)`, which is
+`AdvancedAi::new()`, which is `BasicAi::new()`, which is **`Weights::default()`**.
+That is the value `load_champion("evolved").unwrap_or_default()` returns when
+no artifact is present — the fallback, not the agent.
+
+**So the largest claimed gap in this repository — "the agent picks the wrong
+thing to play for, by 30 points" — is a measurement of the fallback.** On the
+fallback the direction reproduces here and is significant. On the shipped
+genome it is gone, and if anything inverted. Whatever the gen-14 GA found, part
+of it was routing that a fixed religious commitment can no longer beat.
+
+**What this does and does not establish.**
+
+- It **does** establish that the oracle's routing headroom does not reproduce on
+  the shipped genome. Reaching +30 points needs something like 15 helped against
+  a handful hurt; this run measured 2 against 7.
+- It **does not** establish that early commitment *hurts*. p=0.1797 is not a
+  result, and 40 cells resolves only large effects.
+- The two controls (15.0% and 27.5%) are **not** significantly different from
+  each other or from the 25% parity this design implies — every seat plays the
+  same genome, so the focal seat's expectation is 1-in-4 by construction. Do not
+  read the control difference as the champion being twice as good; the clean
+  comparison is the *paired* one within each genome.
+- Harness differences remain and are not fully reconciled: `ablate` samples
+  seats `[0, players-1]` over 25 maps and drives its loop from `game.current`,
+  where this samples a rotating seat over 40 maps and iterates seats directly.
+  The default-genome numbers here (37.5/15.0) do not match theirs (58/28)
+  exactly. **The within-harness contrast — everything held constant except the
+  genome — is the load-bearing comparison, not the cross-harness one.**
+
+**A mechanism worth checking separately.** `assess()` sends a Religion-targeted
+seat that has no religion yet straight to `GrandStrategy::Religion`
+(`advanced.rs:1807`), bypassing the "the assigned lane can still afford to
+expand first" arm at `:1809` that every *other* assigned target reaches. So
+commitment at turn 0 plausibly suppresses the opening expansion entirely, which
+would explain why turn 0 is the worst cell on the champion and why turns
+60/120/180 — which expand first and commit after — all land near the control.
+This has a consequence beyond the probe: `StrategicAi` projects its branches by
+calling `retarget`, so a religion branch inherits the same expansion bypass and
+the macro search may be systematically mis-projecting the lane that converts
+best. `commit_curve` now reports mean cities per condition to settle it.
+
+**The standing rule this is the third instance of.** `docs/SUPERHUMAN.md` §4:
+*measure the artifact before the algorithm — ask what the process actually
+loads, at the path it actually runs from.* The first instance was the champion
+never being loaded at all; the second was `evolve::sprt_confirm` testing parity
+at the wrong null. This is the third, and it is the most expensive, because the
+conclusion it produced was about to redirect the whole AI programme.
