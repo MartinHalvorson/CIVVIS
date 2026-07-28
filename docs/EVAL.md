@@ -2894,3 +2894,89 @@ the `:1807` bypass a defect was that it skipped a test every other lane takes �
 an inconsistency, not a preference. Nothing above is inconsistent in that way.
 The reason to measure it is that the macro search projects branches through
 this same path, so whatever it is worth, the search is already paying it.
+
+
+## 2026-07-28 — ★ the expansion "bypass" is load-bearing: repairing it costs 53 Elo
+
+Pre-registered at `/Users/martin/civvis-religion-expand-preregistration.md`,
+prediction recorded as **NULL**, decision rule fixed in advance: anything short
+of a gate PASS ships the flag off with the result recorded and no seed re-rolls.
+
+```
+ai_eval strategic_religion_expand strategic --players 4 --pairs 120 \
+  --turns 500 --seed 2600000 --jobs 8
+```
+
+**120 maps, 240 games, average 162.9 turns:**
+
+```
+game-win share     102/240 (42.5%)  against  138/240 (57.5%)
+paired-map score   42.5%   (95% Wilson CI 34.0%..51.4%)   Elo-equivalent -53
+paired outcomes    6 sweeps / 90 neutral / 24 sweeps against
+paired direction   exact two-sided sign p = 0.0014   SIGNIFICANT for the control
+anytime-valid      control e = 2.169e2, crossed at map 63; treatment never crossed
+promotion gate     INCONCLUSIVE (it has not cleared parity — it is below it)
+terminal score     49.9%, direction 53/7/60, p = 0.5727 — a dead heat
+```
+
+**The prediction was wrong in the safe direction: I said null, and it is
+significantly negative.**
+
+### The repair worked mechanically, and that is why it lost
+
+| diagnostic | treatment | control |
+|---|---|---|
+| **cities** | **2.59** | 2.50 |
+| pop / tech / military | 16.3 / 14.5 / 175.6 | 15.5 / 13.9 / 162.3 |
+| **faith** | **436.4** | **578.8** |
+| religions founded | 0.45 | 0.61 |
+| missionaries | 0.36 | 0.49 |
+| **religious victories** | **79** | **117** |
+| domination victories | 14 | 8 |
+| turns planning religious | **29.3%** | **36.1%** |
+| turns planning domination | **13.8%** | 10.1% |
+| dominant-plan religious seats | 123, winning 22.8% | 164, winning **27.4%** |
+
+The treatment expanded more, grew more, teched more and fielded more military —
+**every empire aggregate moved in its favour, and it lost 53 Elo.** Terminal
+score was a dead heat while wins moved significantly, which is this document's
+oldest result restated: no functional of a finished empire is win probability.
+
+### The mechanism, and why it inverts the intuition
+
+Expansion costs value *inside the rollout horizon* — a settler is production
+spent now for yields that arrive after the branch has already been scored. So
+letting a religion branch expand **lowers that branch's projected value**
+(`lane_projection` measured mean −0.0037), the search commits to religion less
+(36.1% → 29.3% of turns, 164 → 123 dominant seats), and the freed reviews route
+to domination (10.1% → 13.8%), which converts far worse.
+
+> **The bypass is not a defect from the search's point of view. It is an
+> accidental correctness.** Crippling a religion branch's expansion makes
+> religion *look* better in projection, and religion is the lane this engine
+> actually converts — so a bug that biases the projection toward the best lane
+> was paying 53 Elo of rent.
+
+**What this retires.** The `assigned_religion_may_expand` /
+`branch_religion_may_expand` family, in both scopes. Both flags stay **off**,
+so the repository ships zero behaviour change from this line. Do not re-open it
+by proposing to apply the repair "only to the actor" or "only to the branches" —
+the actor-only version was already measured null end-to-end (4 helped / 7 hurt,
+p=0.5488), and the branch-only version is the incoherent one (it ranks a game
+the agent will not play).
+
+**What it establishes that is worth keeping.** A change that moves the branch
+values by a *mean of 0.0037*, and flips the lane on one review in four, is worth
+**53 Elo**. Victory routing in this engine is extremely sensitive — far more
+than the null results on `refuse_unreachable_lanes` and lane rotation suggested.
+That is a reason to keep working on routing, and a warning that the sign of any
+routing change is not predictable from its mechanism. Both directions of this
+axis have now cost real Elo: `focused_deepening` and `adaptive_horizon` by
+pruning the candidate set, this by re-valuing one branch.
+
+**A caution on the horizon interaction.** The finding depends on expansion being
+under-valued at the rollout horizon, so it is a statement about the search's
+*window*, not only about routing. An agent whose rollouts ran long enough for a
+settler to pay back might well prefer the repaired branch. `strategic_deep`
+(4× budget) is the natural place to check that, and it is a different
+experiment, not a re-run of this one.
