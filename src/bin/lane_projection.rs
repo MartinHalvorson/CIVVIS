@@ -92,10 +92,16 @@ fn main() {
     let sample_turn = number(&args, "--sample-turn", 60) as u32;
     let seed0 = number(&args, "--seed", 1_900_000) as u64;
     let jobs = number(&args, "--jobs", parallel::default_jobs());
+    // The 120-map eval said permitting expansion in a religion branch costs 53
+    // Elo, and attributed it to a settler not paying back before the branch is
+    // scored. That is a claim about the *window*: at a long enough horizon the
+    // settler pays inside it and the sign should move. This is how to check
+    // that in minutes instead of the four hours a `strategic_deep` eval costs.
+    let horizon = number(&args, "--horizon", 40) as u32;
 
     println!(
         "lane_projection: {maps} maps, {players}p {width}x{height}, {city_states} city-states, \
-         sampling at turn {sample_turn}, seed {seed0}"
+         sampling at turn {sample_turn}, horizon {horizon}, seed {seed0}"
     );
     println!("paired: one agent, one position, one boolean apart\n");
 
@@ -106,6 +112,7 @@ fn main() {
         // The focal seat runs the real search; the rest play the stock fleet
         // agent, exactly as a league game does.
         let mut probe = StrategicAi::with_weights(genome.clone());
+        probe.horizon = horizon;
         let mut fleet = civvis::ai::AdvancedAi::fleet_weighted(&game, &genome);
 
         let focal = index % players;

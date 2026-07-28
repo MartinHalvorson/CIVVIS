@@ -2980,3 +2980,62 @@ under-valued at the rollout horizon, so it is a statement about the search's
 settler to pay back might well prefer the repaired branch. `strategic_deep`
 (4× budget) is the natural place to check that, and it is a different
 experiment, not a re-run of this one.
+
+
+## 2026-07-28 — ⚠ CORRECTION: the horizon explanation for the −53 Elo result is refuted
+
+The entry above attributed the loss to the rollout window: *"expansion costs
+value inside the rollout horizon — a settler is production spent now for yields
+that arrive after the branch has already been scored"*, and it closed by
+proposing a `strategic_deep` re-run on the grounds that *"an agent whose
+rollouts ran long enough for a settler to pay back might well prefer the
+repaired branch."*
+
+**That is wrong.** `lane_projection --horizon`, same 24 positions at turn 40,
+seed 2100000, shipped genome — the only thing varying is the rollout window:
+
+| horizon | mean change in the religion branch's value | lane changed |
+|---|---|---|
+| 40 | −0.0037 | 6 of 24 |
+| 80 | −0.0053 | 4 of 24 |
+| **160** | **−0.0428** | 3 of 24 |
+
+The penalty **grows by an order of magnitude** as the window lengthens. If the
+settler-payback story were right the sign would move the other way. It does not,
+so the horizon is not what is doing this, and **the proposed `strategic_deep`
+re-run is retired before it was run** — it would have cost about four hours to
+confirm a mechanism a two-minute screen refutes.
+
+### The reading that survives
+
+A longer projection does not reveal the settler paying back; it reveals the lane
+*failing*. Religion is gated on a **finite global race** — `max_religions()`
+prophet slots, claimed first-come — and `religious_opening_viable` closes at
+turn 120. Production diverted to settlers delays the Holy Site and the Prophet,
+and a lost race is not recoverable later at any price. The longer the rollout
+runs, the more of that failure it actually simulates.
+
+So the `:1807` bypass is **not an accidental correctness and not a bug.** It
+encodes a real constraint of the lane, and its own comment says so in as many
+words: *"A Prophet is a finite global race, not an economic goal that can wait
+until the generic city target is complete."* The code was right and the reading
+that called it an inconsistency — mine — was wrong. What made it *look* like a
+defect was that it is the only assigned lane skipping that test; the reason it
+is the only one is that it is the only lane with a finite, first-come gate.
+
+**Standing lesson, and this is the second time this loop.** Both of my mechanism
+stories for this result were wrong, and the first was published here before it
+was screened. The measurement (−53 Elo) was never in doubt; the *explanation*
+was, twice. Attaching a plausible mechanism to a real number is not free — it
+directs the next experiment, and here it was about to direct four hours at the
+wrong one. **Screen the mechanism as hard as the result.**
+
+### A caveat on this instrument, found while using it
+
+`lane_projection`'s closing READING branches on the *count* of lane changes by
+direction, and at 24 positions those counts are 3-versus-1 and 1-versus-2 — far
+too noisy to carry a verdict. At horizon 80 it printed "the search was
+under-selecting Religion" on a 3/1 split while the mean change was **negative**.
+Read the mean change, which is stable across all three windows and monotone; do
+not read the branch text at this sample size. The instrument overstates its
+confidence and should be fixed or its verdict line dropped.
