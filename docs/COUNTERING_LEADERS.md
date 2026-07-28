@@ -305,13 +305,34 @@ Every measured way of stopping a leader in this engine is null or negative:
 |---|---|---|
 | `advanced_blind_to_leaders` | deletes the response entirely | dead heat, two map scales |
 | a coalition (not built) | — | 1–2 belligerents win 4.4% / 10.7% of seats vs a 16.7% base |
-| `advanced_counter_in_lane` | what the alarm asks for | 49.9% over 360 confirming maps |
-| `advanced_early_score_alarm` | when the alarm fires | adds war; measured separately |
-| `advanced_early_score_build` | both at once | 48.3%, sign p=0.6271 |
+| `advanced_counter_in_lane` | what the alarm asks for | **49.9%** over 360 confirming maps |
+| `advanced_early_score_build` | when it fires *and* what it asks for | **48.3%**, sign p=0.6271 |
+| `advanced_early_score_alarm` | when it fires | **54.6%, p=0.0989 — under confirmation** |
+| `advanced_evolved_blind` | the ablation on shipped weights | queued |
 
-**Nothing available at this layer counters a leader in this engine.** The layer
-detects the winner almost perfectly, it changes behaviour substantially in
-every direction it has been pushed, and it changes no outcome in any of them.
+Five of six say nothing at this layer counters a leader. **The sixth is open,
+and it is the one that contradicts the rest**, so this section does not get to
+close yet.
+
+`advanced_early_score_alarm` — the earlier alarm feeding the *shipped* Conquest
+counter, the arm registered as "below 50% because it adds war" — scored 54.6%
+(Elo-equivalent +32, win direction 13/83/24, sign p=0.0989) with terminal score
+dead flat at 50.5% on all 120 maps. Reasons not to believe it yet, all recorded
+before the confirmation was launched:
+
+- p=0.0989 is weaker than the p=0.0225 this page already watched evaporate, and
+  wins rest on 37 of 120 maps;
+- the same alarm paired with `counter_in_lane` reads 48.3%, and a real +32 Elo
+  should not flip six points when only the response changes — unless the war
+  *is* the mechanism, which the ablation and the dogpile table both argue
+  against;
+- two 120-pair discovery runs here have landed near 54%, and one regressed to
+  49.9%.
+
+Registered prediction for the 360-pair confirmation at seed 992000: regression
+to 49–52%. If it instead holds at 53%+ with p < 0.05 it is the first thing in
+this investigation to survive a confirmation, the dogpile table was hiding a
+real effect rather than manufacturing one, and the paragraph below is wrong.
 
 ### What this does not license
 
@@ -322,6 +343,15 @@ play it is worth zero; measured as behaviour a viewer can read it is doing
 something none of the numbers here price, and this investigation never tried
 to.
 
-What the evidence does support without qualification: **do not spend more
-effort improving it.** Five treatments, two map scales, four seeds, every one
-null.
+And it does not yet license the opposite either. An earlier commit of this page
+said "do not spend more effort improving it — five treatments, two map scales,
+four seeds, every one null", written before the sixth treatment came back at
+54.6%. That sentence is suspended, not withdrawn: five of six still say the
+layer cannot be improved, and the sixth is one 120-pair discovery run of
+exactly the size that has already produced a false positive here.
+
+**The recommendation waits on seed 992000.** If it regresses, the sentence
+stands as written. If it holds, then the thing that counters a leader in this
+engine is an *earlier* alarm answered by a *war* — the combination this
+investigation spent most of its length arguing against — and the page will need
+rewriting from the dogpile table down.
