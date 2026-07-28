@@ -91,17 +91,34 @@ fn main() {
     // agent declines diplomacy.
     let city_states = number(&args, "--city-states", 0);
     let jobs = number(&args, "--jobs", parallel::default_jobs());
+    // `Weights::default()` is the *fallback* the champion loader returns when
+    // no artifact is present, not the genome the deployed agents play. A
+    // routing measurement on the fallback is a measurement of a different
+    // agent, so default to what ships.
+    let genome = match args
+        .iter()
+        .position(|arg| arg == "--genome")
+        .and_then(|index| args.get(index + 1))
+        .map(String::as_str)
+    {
+        Some("default") => Weights::default(),
+        _ => civvis::evolve::load_champion("evolved").unwrap_or_default(),
+    };
+    let on_champion = genome != Weights::default();
 
     println!(
         "plan_churn: {maps} maps, {players}p {width}x{height}, {turns} turns, \
          {city_states} city-states, seed {seed0}, short run < {SHORT_RUN} turns"
     );
+    println!(
+        "genome: {}",
+        if on_champion { "evolved champion (as shipped)" } else { "Weights::default() (the fallback)" }
+    );
 
     let per_map = parallel::map(maps, jobs, move |index| {
         let seed = seed0 + index as u64;
         let mut game = Game::new(players, width, height, seed, turns, city_states);
-        let stock = Weights::default();
-        let mut fleet: Vec<AdvancedAi> = AdvancedAi::fleet_weighted(&game, &stock);
+        let mut fleet: Vec<AdvancedAi> = AdvancedAi::fleet_weighted(&game, &genome);
         let majors: Vec<usize> = (0..game.players.len())
             .filter(|pid| !game.players[*pid].is_minor && !game.players[*pid].is_barbarian)
             .collect();
