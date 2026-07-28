@@ -510,8 +510,9 @@ pub fn builtin_ai(name: &str, seed: u64) -> Box<dyn Ai> {
         // the ordinary war-readiness checks. It still fights, expands and
         // races; it just never does any of it *because* somebody else is
         // about to win. Paired against `advanced` this is what the whole
-        // denial response is worth. See `leader_census`, which measured the
-        // layer as a near-perfect predictor of the winner and no deterrent.
+        // denial response is worth. See `docs/COUNTERING_LEADERS.md`, which
+        // measures the layer as a near-perfect predictor of the winner, no
+        // deterrent, and a real cost in development at deployment scale.
         "advanced_blind_to_leaders" => {
             let mut ai = AdvancedAi::new();
             ai.deny_leaders = false;
@@ -520,9 +521,9 @@ pub fn builtin_ai(name: &str, seed: u64) -> Box<dyn Ai> {
         // Treatment for the response-shape axis: identical to `advanced`
         // except that a Science or Expansion threat is answered by racing the
         // leader in that lane rather than by declaring on them. The alarm is
-        // unchanged; only what it asks for changes. See `leader_census` at
-        // deployment scale, where one or two belligerents wins 4.4% and 10.7%
-        // of seats against a 16.7% base.
+        // unchanged; only what it asks for changes. See
+        // `docs/COUNTERING_LEADERS.md`: at deployment scale one or two
+        // belligerents wins 4.4% and 10.7% of seats against a 16.7% base.
         "advanced_counter_in_lane" => {
             let mut ai = AdvancedAi::new();
             ai.counter_in_lane = true;

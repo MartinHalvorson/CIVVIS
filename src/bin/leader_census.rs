@@ -32,6 +32,10 @@
 //! leader_census --players 4 --maps 24 --turns 400 --seed 900000
 //! ```
 //!
+//! `docs/COUNTERING_LEADERS.md` carries what it has measured, including which
+//! of these readings reversed once the census was run at the map size the
+//! exhibition actually deploys.
+//!
 //! Diagnostic only: it never changes a decision, and no agent can name it.
 use civvis::ai::{AdvancedAi, Ai, GrandStrategy, Weights};
 use civvis::game::{Action, Game};
