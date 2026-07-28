@@ -3652,3 +3652,73 @@ The general form of the rule this loop arrived at:
 > **Every number in this document that predates `--speed` describes Standard
 > speed. The exhibition and the live league run Online. Re-check before
 > deploying any of them.**
+
+
+## 2026-07-28 — ★★★★ two promoted gains, both measured on the wrong game; and why the league was right
+
+The `--speed` check has now been run on the two largest gains this document
+carries, and both collapse on the speed the deployment plays.
+
+| gain | Standard (the gate) | **Online (ships)** | difference |
+|---|---|---|---|
+| gen-14 genome (`advanced_evolved` v `advanced`) | 58.3%, **+58**, gate PASS | 51.5%, **+10**, INCONCLUSIVE | z=2.94, **p=0.0033** |
+| macro search (`strategic` v `advanced`) | 66.2%, **+117**, gate PASS | 54.0%, **+28**, INCONCLUSIVE | z=4.38, **p=0.00001** |
+
+300 maps per cell, same size, same seat count, same agents. The z-tests
+condition on decisive maps, which are the only ones carrying information.
+
+**Neither gain is refuted.** Both point estimates stay positive, and the search
+still wins on direction at Online (60 for / 36 against, p=0.0184). What fails is
+the *gate*: neither clears parity on the game that ships, and both were promoted
+on the game that does not.
+
+> **Agent strength in this engine is strongly speed-dependent, and every number
+> in this document that predates `--speed` was measured at Standard.**
+
+### The same lesson, arrived at from the league — which turns out not to be broken
+
+The previous entry recorded the live pool rating `advanced_v1` (1712.8, 1257
+games) above `advanced` (1669.0, 1692 games), against a head-to-head of +183
+Elo for `advanced`, and called it an inversion worth more attention than any AI
+change proposed. **That reading was wrong, and the league's own match log says
+so.** Over its 2211 recorded matches:
+
+| | |
+|---|---|
+| games containing both `advanced` and `advanced_v1` | 478 |
+| `advanced` placed ahead | **251 — 52.5%** |
+| outright win rate, `advanced` | 21.2% |
+| outright win rate, `advanced_v1` | **23.8%** |
+
+**In the games the league actually plays, the two are at parity**, and the
+rating is a faithful summary of them. There is no rating bug. The disagreement
+is entirely between *my* evaluation profile and the league's: `ai_eval` defaults
+to **4 players on 24×16 with no city-states**, while the league mixes 2, 4, 6, 8
+and 12 seats on large maps, and the live exhibition runs 74×46 at six to ten.
+
+So the general statement is broader than speed:
+
+> **Measured strength ordering in this engine is a function of the
+> configuration — speed, seat count and map size all move it, and two agents
+> 183 Elo apart at 4p/24×16 can be at parity at the league's mix.** `ai_eval`'s
+> defaults are not the deployment, and no result should be described as "this
+> agent is stronger" without naming the profile it was measured on.
+
+### What follows, in order
+
+1. **Re-check the remaining promoted gains at `--speed online`** —
+   `continue_from_plan` (+37) and `strategic_deep` (+45) are untested there.
+2. **Re-check at the deployment's seat count and map**, not only its speed. A
+   confirmation running at 6p 74×46 is the first of these.
+3. **Consider whether the gate's defaults should be the deployment profile.**
+   That is a policy question for the repository, not a change to make quietly:
+   it would reinterpret every historical number in this document, which is
+   exactly the kind of silent redefinition that is refused elsewhere here.
+
+⚠ Retraction, recorded plainly: the previous entry's claim of "a 227-Elo
+inversion ... worth more attention than any AI change currently proposed" is
+withdrawn. The measurement behind it was sound and the interpretation was not —
+I compared a 4p 24×16 evaluation against a rating earned on a different
+distribution of games, and the league's own placement log resolves it in the
+league's favour. **Checking that took one query against data already on disk,
+and I published the accusation before running it.**
