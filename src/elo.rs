@@ -38,7 +38,7 @@ pub const BUILTIN_AIS: [&str; 10] = [
 /// tournament ratings. Keeping them out of `BUILTIN_AIS` prevents a control
 /// factory from being pooled into the same player/leader rating key as
 /// its treatment.
-pub const EVAL_ONLY_AIS: [&str; 45] = [
+pub const EVAL_ONLY_AIS: [&str; 46] = [
     "advanced_banking_dedication",
     "advanced_blind_to_leaders",
     "advanced_civ_blind",
@@ -53,6 +53,7 @@ pub const EVAL_ONLY_AIS: [&str; 45] = [
     "advanced_lane_reachable",
     "advanced_parallel_settlers",
     "advanced_settler_first",
+    "advanced_prophet_first",
     "advanced_relief_scoped",
     "strategic_score",
     "strategic_doctrine",
@@ -1258,6 +1259,7 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "advanced_measured_dedication" => (Vec::new(), "advanced_measured_dedication"),
         "advanced_parallel_settlers" => (Vec::new(), "advanced_parallel_settlers"),
         "advanced_settler_first" => (Vec::new(), "advanced_settler_first"),
+        "advanced_prophet_first" => (Vec::new(), "advanced_prophet_first"),
         "advanced_blind_to_leaders" => (Vec::new(), "advanced_blind_to_leaders"),
         "advanced_counter_in_lane" => (Vec::new(), "advanced_counter_in_lane"),
         "advanced_counter_stand_down" => (Vec::new(), "advanced_counter_stand_down"),
