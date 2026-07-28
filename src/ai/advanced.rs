@@ -601,6 +601,25 @@ pub struct AdvancedAi {
     /// Reachable as `advanced_counter_stand_down`. The other four races are
     /// answered exactly as they are today.
     pub counter_stand_down: bool,
+
+    /// Whether the score race is read as a margin over the field instead of as
+    /// a clock.
+    ///
+    /// The shipped term fires only in the last quarter of the game, so at the
+    /// deployment map size — where most games are decided on score at the turn
+    /// limit — every leader trips it at the same turn regardless of how far
+    /// ahead they are. `docs/COUNTERING_LEADERS.md` measures score as the only
+    /// instrument that predicts a winner at an actionable lead, so this reads
+    /// the margin: 78 at 20% ahead of the next empire, 100 at 50% ahead, from
+    /// the first turn an early game has enough history to mean anything.
+    ///
+    /// Reachable as `advanced_early_score_alarm`, and as
+    /// `advanced_early_score_build` paired with [`Self::counter_in_lane`] so
+    /// the earlier alarm asks for a build rather than a war. Every
+    /// response-side change in that document measured null, so this is the
+    /// instrument change those nulls point at — and it is entirely possible
+    /// that an earlier alarm feeding a response worth zero is also worth zero.
+    pub early_score_alarm: bool,
 }
 
 impl Default for AdvancedAi {
@@ -675,6 +694,7 @@ impl AdvancedAi {
             deny_leaders: true,
             counter_in_lane: false,
             counter_stand_down: false,
+            early_score_alarm: false,
         }
     }
 
@@ -1409,7 +1429,38 @@ impl AdvancedAi {
             .checked_div(foreign_capitals)
             .unwrap_or(0) as i32;
 
-        let score = if g.max_turns > 0
+        // The shipped score term is a clock, not an observation: it fires only
+        // in the last quarter of the game, so at the deployment map size --
+        // where most games are decided on score at the turn limit -- the alarm
+        // it raises arrives at turn 300 of 400 for every leader alike,
+        // regardless of how far ahead they are.
+        //
+        // The census says score is the one instrument that predicts: at the
+        // deployment profile the score leader is the eventual winner 62% of
+        // the time **200 turns out** against a 16.7% base rate, and settles on
+        // them a median 135 turns before the end, while `victory_threat` sits
+        // at or below the base rate at four of five leads. `early_score_alarm`
+        // reads the margin instead of the clock -- 78 at 20% ahead of the next
+        // empire, 100 at 50% ahead -- from the moment an early game has
+        // enough history to mean anything.
+        let score = if self.early_score_alarm && g.turn >= g.standard_duration(60) {
+            let mine = g.score(pid);
+            let best_rival = living_majors
+                .iter()
+                .filter(|candidate| **candidate != pid)
+                .map(|candidate| g.score(*candidate))
+                .max()
+                .unwrap_or(0)
+                .max(1);
+            let margin = mine as f64 / best_rival as f64 - 1.0;
+            if margin <= 0.0 {
+                0
+            } else if margin < 0.20 {
+                (78.0 * margin / 0.20) as i32
+            } else {
+                (78.0 + 22.0 * ((margin - 0.20) / 0.30).clamp(0.0, 1.0)) as i32
+            }
+        } else if g.max_turns > 0
             && g.turn.saturating_mul(4) >= g.max_turns.saturating_mul(3)
             && living_majors
                 .iter()

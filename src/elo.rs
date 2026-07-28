@@ -38,12 +38,14 @@ pub const BUILTIN_AIS: [&str; 10] = [
 /// tournament ratings. Keeping them out of `BUILTIN_AIS` prevents a control
 /// factory from being pooled into the same player/leader rating key as
 /// its treatment.
-pub const EVAL_ONLY_AIS: [&str; 40] = [
+pub const EVAL_ONLY_AIS: [&str; 42] = [
     "advanced_banking_dedication",
     "advanced_blind_to_leaders",
     "advanced_civ_blind",
     "advanced_counter_in_lane",
     "advanced_counter_stand_down",
+    "advanced_early_score_alarm",
+    "advanced_early_score_build",
     "advanced_settler_commit",
     "advanced_food_first",
     "advanced_measured_dedication",
@@ -537,6 +539,22 @@ pub fn builtin_ai(name: &str, seed: u64) -> Box<dyn Ai> {
         "advanced_counter_stand_down" => {
             let mut ai = AdvancedAi::new();
             ai.counter_stand_down = true;
+            Box::new(ai)
+        }
+        // Instrument treatment: reads the score race as a margin over the
+        // field instead of as a last-quarter clock. The response is unchanged.
+        "advanced_early_score_alarm" => {
+            let mut ai = AdvancedAi::new();
+            ai.early_score_alarm = true;
+            Box::new(ai)
+        }
+        // The earlier alarm asking for a build instead of a war -- the only
+        // combination `docs/COUNTERING_LEADERS.md` leaves untested, since every
+        // response-side change measured null on the shipped instrument.
+        "advanced_early_score_build" => {
+            let mut ai = AdvancedAi::new();
+            ai.early_score_alarm = true;
+            ai.counter_in_lane = true;
             Box::new(ai)
         }
         "advanced_civ_blind" => {
@@ -1189,6 +1207,8 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "advanced_blind_to_leaders" => (Vec::new(), "advanced_blind_to_leaders"),
         "advanced_counter_in_lane" => (Vec::new(), "advanced_counter_in_lane"),
         "advanced_counter_stand_down" => (Vec::new(), "advanced_counter_stand_down"),
+        "advanced_early_score_alarm" => (Vec::new(), "advanced_early_score_alarm"),
+        "advanced_early_score_build" => (Vec::new(), "advanced_early_score_build"),
         "advanced_civ_blind" => (Vec::new(), "advanced_civ_blind"),
         "advanced_settler_commit" => (Vec::new(), "advanced_settler_commit"),
         "advanced_food_first" => (Vec::new(), "advanced_food_first"),
@@ -1678,11 +1698,13 @@ mod tests {
             // Anything else reaching that state fell through to the
             // catch-all and is claiming to need nothing while quietly
             // needing a net.
-            const SCRIPTED: [&str; 15] = [
+            const SCRIPTED: [&str; 17] = [
                 "advanced",
                 "advanced_blind_to_leaders",
                 "advanced_counter_in_lane",
                 "advanced_counter_stand_down",
+                "advanced_early_score_alarm",
+                "advanced_early_score_build",
                 "advanced_settler_commit",
                 "advanced_banking_dedication",
                 "advanced_civ_blind",

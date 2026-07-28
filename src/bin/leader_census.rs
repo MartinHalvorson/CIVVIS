@@ -192,8 +192,11 @@ fn main() {
         .map(String::as_str)
         .unwrap_or("ship")
         .to_string();
-    if !matches!(arm.as_str(), "ship" | "in_lane" | "stand_down") {
-        eprintln!("--arm must be ship, in_lane or stand_down");
+    if !matches!(
+        arm.as_str(),
+        "ship" | "in_lane" | "stand_down" | "early" | "early_build"
+    ) {
+        eprintln!("--arm must be ship, in_lane, stand_down, early or early_build");
         std::process::exit(2);
     }
     let jobs = number(&args, "--jobs", parallel::default_jobs());
@@ -211,8 +214,9 @@ fn main() {
         let stock = Weights::default();
         let mut fleet: Vec<AdvancedAi> = AdvancedAi::fleet_weighted(&game, &stock);
         for planner in fleet.iter_mut() {
-            planner.counter_in_lane = arm == "in_lane";
+            planner.counter_in_lane = arm == "in_lane" || arm == "early_build";
             planner.counter_stand_down = arm == "stand_down";
+            planner.early_score_alarm = arm == "early" || arm == "early_build";
         }
         // `rival_pressure` reads nothing from the planner it is asked of, so
         // one probe answers for every seat and the reading cannot drift with
