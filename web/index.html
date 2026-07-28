@@ -685,7 +685,7 @@
     text-shadow: 0 0 7px color-mix(in srgb, var(--civ) 55%, transparent);
   }
   .watch-as-link::before { content: "●"; }
-  .watch-as-link { width: 64px; }
+  .watch-as-link { width: 70px; }
   .watch-as-link:hover, .watch-as-link:focus-visible {
     color: #fff; border-color: var(--civ-border);
     background: linear-gradient(180deg, #21312bf5, #0d1916f5);
@@ -1911,31 +1911,34 @@
   .war-strength-values { margin-top: 3px; color: #f1d9ad; font-size: var(--type-secondary); font-variant-numeric: tabular-nums; }
   .war-strength-values b { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
   .war-loss-ledger { font-size: var(--type-label); }
-  .war-loss-sides, .war-loss-unit-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
-  .war-loss-side-head, .war-loss-unit-cell { min-width: 0; padding: 5px 7px; border-right: 1px solid #ffffff10; }
-  .war-loss-side-head:last-child, .war-loss-unit-cell:last-child { border-right: 0; text-align: right; }
+  /* Each side is one column that packs its own casualties from the top. The
+     two columns are never row-matched: a side is a coalition, so the Warriors
+     opposite each other belonged to different civilizations and lining them up
+     invited a comparison that was never being made. */
+  .war-loss-sides { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .war-loss-side { min-width: 0; border-right: 1px solid #ffffff10; }
+  .war-loss-side:last-child { border-right: 0; text-align: right; }
+  .war-loss-side-head, .war-loss-unit-cell { min-width: 0; padding: 5px 7px; }
   .war-loss-side-head { color: #c7d1cc; }
   .war-loss-side-head .war-entity-link { display: block; width: 100%; overflow-wrap: anywhere; font-size: var(--type-label); font-weight: 750; }
-  .war-loss-side-head:last-child .war-entity-link { text-align: right; }
+  .war-loss-side:last-child .war-entity-link { text-align: right; }
   .war-loss-side-head .city-state { color: #b9c8c1; font-size: var(--type-caption); }
   .war-loss-party + .war-loss-party { margin-top: 4px; }
   /* Indented under the name that lost them, because a capital is picked out in
      the same gold the panel uses for a heading and would otherwise read as one. */
   .war-loss-cities { margin: 1px 0 0; padding: 0; color: #c6aaa4; line-height: 1.35; list-style: none; }
-  .war-loss-side-head:first-child .war-loss-cities { margin-left: 8px; }
-  .war-loss-side-head:last-child .war-loss-cities { margin-right: 8px; }
+  .war-loss-side:first-child .war-loss-cities { margin-left: 8px; }
+  .war-loss-side:last-child .war-loss-cities { margin-right: 8px; }
   .war-loss-city { overflow-wrap: anywhere; }
   .war-loss-city em { color: #93a49c; font-style: italic; }
   .war-loss-city.capital .war-loss-city-name { color: #f1d38c; font-weight: 800; }
-  .war-loss-unit-row { min-height: 21px; }
-  .war-loss-unit-row + .war-loss-unit-row { border-top: 1px solid #ffffff08; }
-  .war-loss-unit-cell { display: flex; align-items: center; color: #c6aaa4; line-height: 1.3; }
-  .war-loss-unit-cell:last-child { justify-content: flex-end; }
-  .war-loss-unit-cell.empty { color: transparent; user-select: none; }
+  .war-loss-unit-cell { min-height: 21px; display: flex; align-items: center; color: #c6aaa4; line-height: 1.3; }
+  .war-loss-unit-cell + .war-loss-unit-cell { border-top: 1px solid #ffffff08; }
+  .war-loss-side:last-child .war-loss-unit-cell { justify-content: flex-end; }
   .war-loss-unit-cell.specialty { color: #f1d38c; background: linear-gradient(90deg, #d7b66a17, transparent); font-weight: 800; }
-  .war-loss-unit-cell.specialty:last-child { background: linear-gradient(270deg, #d7b66a17, transparent); }
+  .war-loss-side:last-child .war-loss-unit-cell.specialty { background: linear-gradient(270deg, #d7b66a17, transparent); }
   .war-loss-specialty-mark { margin-right: 3px; color: var(--gold-bright); text-shadow: 0 0 6px #d7b66a88; }
-  .war-loss-unit-cell:last-child .war-loss-specialty-mark { order: 2; margin-right: 0; margin-left: 3px; }
+  .war-loss-side:last-child .war-loss-specialty-mark { order: 2; margin-right: 0; margin-left: 3px; }
   .war-loss-none { color: var(--faint); font-style: italic; }
   .war-moments { padding: 6px 8px 7px; display: flex; flex-direction: column; gap: 3px; }
   .war-moment { display: grid; grid-template-columns: 34px 1fr; gap: 6px; color: #cad5cf; font-size: var(--type-label); }
@@ -2149,7 +2152,7 @@
      hierarchy or pushing it farther down the map. */
   @media (min-width: 2200px) {
     .diplomacy-card { flex-basis: 410px; grid-template-columns: 70px minmax(88px, .75fr) minmax(164px, 1.35fr); }
-    .watch-as-link { width: 66px; height: 30px; font-size: var(--type-caption); }
+    .watch-as-link { width: 74px; height: 30px; font-size: var(--type-caption); }
     .ribbon-stat b { font-size: var(--type-control); }
     .ribbon-stat em { font-size: var(--type-caption); }
     /* Four dossier columns need about 480px to stay readable; below that they
@@ -2197,7 +2200,7 @@
   @media (max-width: 430px) {
     .hud-region { padding-inline: 2px; }
     .diplomacy-card { flex-basis: 350px; grid-template-columns: 60px minmax(76px, .7fr) minmax(155px, 1.45fr); gap: 4px; padding: 4px; }
-    .watch-as-link { width: 58px; height: 24px; }
+    .watch-as-link { width: 64px; height: 24px; }
     .ribbon-stat { padding-inline: 0; }
     .ribbon-stat b { font-size: var(--type-label); }
     .ribbon-stat em { font-size: var(--type-micro); letter-spacing: 0; }
@@ -2224,7 +2227,10 @@
     width: min(var(--player-hud-width, 100%),
       calc(100% - var(--victory-hud-width) - 20px));
     height: min(var(--player-hud-height, 200px), var(--player-hud-max-height));
-    --hud-watch-column: 68px;
+    /* Wide enough for the whole of "Watch as" at the fitter's own type size.
+       At 68px the button's own text overflowed its content box by a pixel and
+       Chrome clipped the final "s" — a control labelled "Watch a". */
+    --hud-watch-column: 74px;
     /* The ten value columns claim their width first and the identity block is
        the flexible one, because a clipped name still reads and a clipped number
        lies. The old arrangement was the other way round — identity held
@@ -2782,7 +2788,7 @@
     #playerhud {
       grid-template-columns: 140px minmax(0, 1fr);
       --hud-ident-min: 27.5px; --hud-column-gap: 3px;
-      --hud-watch-column: 64px;
+      --hud-watch-column: 70px;
       --hud-stat-min: 32px; --hud-stat-gap: 2px;
     }
     /* Watch-as takes no width override here. The All button above it does not
@@ -2798,7 +2804,7 @@
     #side { inset-block-start: 132px; }
     #maparea { --hud-rail-width: 182px; --minimap-height: 138px; }
     #playerhud {
-      --hud-watch-column: 62px;
+      --hud-watch-column: 68px;
       --hud-stat-min: 30px; --hud-stat-gap: 2px;
     }
   }
@@ -2811,7 +2817,7 @@
     #playerhud, body.overlay-victory-hidden #playerhud {
       top: 8px; left: 8px; right: 8px; width: auto; padding: 4px;
       --hud-lock-column: 11px;
-      --hud-watch-column: 64px;
+      --hud-watch-column: 70px;
       --hud-ident-min: 31px;
     }
     #victoryhud, body.overlay-minimap-hidden #victoryhud {
@@ -6186,7 +6192,12 @@ const RESPONSIVE_TEXT_RULES = [
   // every number kept the full 15px and spilled over its neighbours instead of
   // shrinking. This is the rule that made "666 1187 658" render as "6661187658".
   {selector:"#playerhud .ribbon-stat b", min:10, max:15, parentWidth:true},
-  {selector:"#playerhud .watch-as-link", min:9, max:12},
+  // The label is centred between a border and a status dot rather than
+  // ellipsized, so fitting it to the last pixel puts the "s" of "Watch as"
+  // hard against the frame — and the fitter's own one-pixel rounding tolerance
+  // lets it overhang by that much. Ask for a few pixels back so the word ends
+  // inside the button at every width.
+  {selector:"#playerhud .watch-as-link", min:9, max:12, slack:6},
   {selector:"#playerhud .turn-era", min:12, max:17},
   {selector:"#playerhud .turn-label", min:11, max:14},
   {selector:"#playerhud .victory-turn strong", min:24, max:34},
@@ -22013,7 +22024,7 @@ function victoryTrackerSubheading(victory) {
   if (victory === "culture") return `<span>Civics</span><span>Tourism</span>`;
   if (victory === "religious") return `<span></span><span>Civs</span>`;
   if (victory === "diplomatic") return `<span></span><span>Score</span>`;
-  if (victory === "domination") return `<span></span><span>HQs</span>`;
+  if (victory === "domination") return `<span></span><span>Capitals</span>`;
   return `Turns: ${state.turn}/${turnCapLabel()}`;
 }
 
@@ -24982,8 +24993,19 @@ function compareWarLossUnits(firstKind, secondKind) {
   return a.kind.localeCompare(b.kind);
 }
 
+// A belligerent that came out of a war without losing a unit or a city has
+// nothing to say in this ledger, and naming it there spends the column on a
+// blank. It is still listed in full under Belligerents, which is where the
+// question "who fought" is answered.
+function warPartyLostAnything(party, war) {
+  const itemized = Object.values(party.unit_kinds || {})
+    .reduce((sum, count) => sum + Math.max(0, Number(count) || 0), 0);
+  return itemized > 0 || (Number(party.units_lost) || 0) > 0 ||
+    warCityLosses(party, war).length > 0;
+}
+
 function warLossSide(war, declarerSide) {
-  const parties = warParties(war, declarerSide);
+  const parties = warParties(war, declarerSide).filter(party => warPartyLostAnything(party, war));
   const units = new Map();
   for (const party of parties) {
     let itemized = 0;
@@ -25011,7 +25033,6 @@ function warLossSide(war, declarerSide) {
 }
 
 function warLossUnitCell(loss, info) {
-  if (!loss) return `<div class="war-loss-unit-cell empty" aria-hidden="true">&nbsp;</div>`;
   const owners = loss.owners.map(([player, count]) => `${warPartyName(player)}: ${count}`).join(" · ");
   const uniqueTitle = info.unique
     ? `${info.rule.unique_to} unique unit${info.rule.replaces ? ` · replaces ${titleCase(info.rule.replaces)}` : ""}`
@@ -25020,7 +25041,8 @@ function warLossUnitCell(loss, info) {
   // row it orders rather than as a banner every reader has to step over.
   const category = WAR_LOSS_CATEGORIES.find(([kind]) => kind === info.category)?.[1] || "";
   const title = [owners, category, uniqueTitle].filter(Boolean).join(" · ");
-  return `<div class="war-loss-unit-cell${info.unique ? " specialty" : ""}" title="${escapeAttr(title)}">` +
+  return `<div class="war-loss-unit-cell${info.unique ? " specialty" : ""}" ` +
+    `data-loss-unit="${escapeAttr(info.kind)}" title="${escapeAttr(title)}">` +
     `${info.unique ? `<span class="war-loss-specialty-mark" aria-label="Unique unit">★</span>` : ""}` +
     `<span>${loss.total} x ${titleCase(info.kind)}</span></div>`;
 }
@@ -25040,25 +25062,31 @@ function warLossSideHead(side, war) {
       warEntityLink(party.player, minor ? " ⌂" : "") +
       `${cities ? `<ul class="war-loss-cities">${cities}</ul>` : ""}</div>`;
   }).join("");
-  return `<div class="war-loss-side-head">${parties}</div>`;
+  return `<div class="war-loss-side-head">${parties ||
+    `<span class="war-loss-none">No losses</span>`}</div>`;
+}
+
+// One column per side, each packed from the top in the ledger's own class
+// order. The columns are deliberately not row-matched: with several
+// civilizations and city-states to a side, a row that put one coalition's
+// Warriors opposite another's read as a head-to-head exchange between two
+// civilizations that may never have met in the field.
+function warLossSideColumn(side, war) {
+  const cells = [...side.units.keys()].sort(compareWarLossUnits)
+    .map(kind => warLossUnitCell(side.units.get(kind), warLossUnitInfo(kind))).join("");
+  return `<div class="war-loss-side">${warLossSideHead(side, war)}${cells}</div>`;
 }
 
 function warLossLedger(war) {
   const sides = [warLossSide(war, true), warLossSide(war, false)];
-  const kinds = [...new Set(sides.flatMap(side => [...side.units.keys()]))].sort(compareWarLossUnits);
-  let rows = "";
-  for (const kind of kinds) {
-    const info = warLossUnitInfo(kind);
-    rows += `<div class="war-loss-unit-row" data-loss-unit="${kind}">` +
-      warLossUnitCell(sides[0].units.get(kind), info) +
-      warLossUnitCell(sides[1].units.get(kind), info) + `</div>`;
+  // Every party with nothing to lose has already been dropped, so a side with
+  // no parties left is a side that came through the war whole.
+  if (!sides.some(side => side.parties.length)) {
+    return `<div class="war-loss-ledger"><div class="war-loss-none" ` +
+      `style="padding:6px 8px;text-align:center">No recorded losses</div></div>`;
   }
-  const hasCities = sides.some(side =>
-    side.parties.some(party => warCityLosses(party, war).length));
-  const none = !kinds.length && !hasCities
-    ? `<div class="war-loss-none" style="padding:6px 8px;text-align:center">No recorded losses</div>` : "";
   return `<div class="war-loss-ledger"><div class="war-loss-sides">` +
-    warLossSideHead(sides[0], war) + warLossSideHead(sides[1], war) + `</div>${rows}${none}</div>`;
+    warLossSideColumn(sides[0], war) + warLossSideColumn(sides[1], war) + `</div></div>`;
 }
 
 function warStrengthValue(value) {
