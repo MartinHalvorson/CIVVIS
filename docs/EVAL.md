@@ -3248,3 +3248,63 @@ has produced two retractions in this document already.
 
 Left in the tree at `preempt_margin = 1.0`, which is exactly the shipped
 behaviour, with the fires-check recorded and no evaluation spent.
+
+
+## 2026-07-28 — routing the opportunistic war behind the Prophet race: mechanism fires, wins do not move
+
+Pre-registered at `/Users/martin/civvis-prophet-first-preregistration.md`.
+`advanced_prophet_first` tests `religious_opening_viable` **before** the arm that
+fires Conquest on a bare power ratio, instead of after. `at_war` keeps its
+priority, so only the *opportunity* to start a war is deferred, never a war
+already running.
+
+```
+ai_eval advanced_prophet_first advanced --players 4 --pairs 120
+  --turns 500 --seed 3100000
+
+paired-map score   50.8%  (95% Wilson CI 42.0%..59.6%)   Elo-equivalent +6
+paired direction   9 for / 104 neutral / 7 against    sign p=0.8036
+promotion gate     INCONCLUSIVE
+terminal score     49.4%, direction 29/49/42, p=0.1539
+```
+
+**The mechanism fired, cleanly and in the direction specified:**
+
+| diagnostic | treatment | control |
+|---|---|---|
+| faith | **246.5** | 209.5 |
+| religions founded | **0.53** | 0.47 |
+| religious victories | **108** | 102 |
+| domination victories | **5** | 9 |
+| military | 188.3 | 190.9 |
+| gold | 428.1 | **557.2** |
+
+So the reorder does what it says — the empire enters the prophet race more
+often, founds more religions, and converts more of them, while starting fewer
+wars. **None of it reaches the win rate**, and the evaluator's own note is the
+right summary: wins favour the treatment while terminal score favours the
+control, which separates victory routing from development rather than
+contradicting itself.
+
+**Recorded as a null and the flag ships off**, on the `advanced_lane_reachable`
+precedent and on the pre-registered rule. No seed re-roll.
+
+### What this does and does not license
+
+The point estimate is +6 Elo with a 95% interval of −56..+68. **At 120 maps this
+run cannot see anything smaller than about ±60 Elo**, so it excludes a large
+gain and says nothing at all about a small one. It is not evidence that the
+reorder is worthless; it is evidence that it is not large.
+
+**What it does settle** is a question the `strategic_religion_expand` result
+raised. That run measured moving commitment *away* from religion at −53 Elo, and
+the natural inference — that moving it *toward* religion should be worth
+something comparable — is now tested and **does not hold at that magnitude.**
+The relationship is not symmetric: the shipped agent is at or near the point
+where more religion stops paying, even though moving away from it is expensive.
+
+That asymmetry is worth more than the null. It means the −53 Elo was **not**
+"religion good, conquest bad" — it was the search being moved off a local
+optimum it is already sitting on, in a direction that happens to be steeply
+downhill. Any future routing treatment should be read that way: the question is
+not which lane is best, it is which direction off the current point is less bad.
