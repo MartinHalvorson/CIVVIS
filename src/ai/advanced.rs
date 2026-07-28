@@ -32,9 +32,20 @@ const RUSH_WINDOW_CLOSES: u32 = 60;
 /// median 13 and a p90 17, so 16 covers roughly nine seats in ten while
 /// refusing the marches that cannot arrive before the window shuts.
 const RUSH_REACH: i32 = 16;
-/// Melee units the stack needs before it opens. Two take the measured
-/// turn-50 capital outright and two more cover the defender pulling its field
-/// army home; the same four also seal the siege ring, which needs only two.
+/// Melee units the stack needs before it opens, and the floor the standing
+/// army is raised to while a rush is planned.
+///
+/// Two is what the siege actually needs: two melee units placed three apart
+/// seal a six-neighbour ring, and the readiness gate
+/// (`early_rush_stack_ready`) separately asks the engine's own damage curve
+/// whether the staged force can finish the city before it dies — so the count
+/// does not have to carry that job. Measured against 3 and 4 on 12 maps, 2
+/// took the most cities (12/12) and killed the most empires.
+///
+/// ⚠ `RUSH_REACH` was swept to 11 and measured clearly worse — first war
+/// slipped turn 34 to 51 and blows by turn 60 fell 17.9 to 4.9 — because the
+/// median capital separation is 13, so a shorter reach leaves most seats with
+/// no legal victim at all. Do not tighten it.
 const RUSH_STACK: usize = 2;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
