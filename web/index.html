@@ -17731,7 +17731,15 @@ function syncSkyNav() {
   if (showing !== SKY_NAV_UP) { SKY_NAV_UP = showing; skyNavBar.hidden = !showing; }
   if (!showing) return;
   const worlds = skyWorldStops(), scales = skyScaleStops();
-  const key = [...worlds, ...scales].map(stop => `${stop.id}/${stop.label}`).join(",");
+  // The title is in the key and it has to be, now that the labels are fixed
+  // words. `Exoplanet` and `Voyage` read the same whichever world the expedition
+  // settled on, and the world's name lives on their tooltips — so keyed on the
+  // labels alone the bar would never rebuild when the destination was chosen and
+  // both tooltips would go on naming the pre-launch default for the rest of the
+  // game. It used to be keyed on the label safely because the label *was* the
+  // catalogue name.
+  const key = [...worlds, ...scales]
+    .map(stop => `${stop.id}/${stop.label}/${stop.title}`).join(",");
   if (key !== SKY_NAV_KEY) {
     SKY_NAV_KEY = key; SKY_NAV_MARK = "";
     skyNavWorldRow.replaceChildren(...worlds.map(stop => skyNavButton("world", stop)));

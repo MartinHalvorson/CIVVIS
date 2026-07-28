@@ -9996,6 +9996,13 @@ mod tests {
             "                label:SKY_STOP_LABELS[id] || body.name.replace(/^The /, \"\"),"
         ));
         assert!(EMBEDDED_INDEX.contains("                                     : `Fly to ${body.name}`});"));
+        // And the bar's rebuild key carries the title, because the labels no
+        // longer move: `Exoplanet` and `Voyage` read the same whichever world
+        // the expedition settled on, so keyed on the labels alone the bar would
+        // never rebuild when the destination was chosen and both tooltips would
+        // name the pre-launch default for the rest of the game.
+        assert!(EMBEDDED_INDEX
+            .contains(".map(stop => `${stop.id}/${stop.label}/${stop.title}`).join(\",\");"));
         // Short of the ceiling on purpose: a jump that lands exactly on the
         // stop leaves the zoom-in button dead in the hand on arrival.
         assert!(EMBEDDED_INDEX.contains("const SKY_STOP_FILL = .8;"));
