@@ -3217,6 +3217,22 @@
       sessionStorage.removeItem("civvis-world-transition-v1");
       sessionStorage.removeItem("civvis-restart-paused-v1");
     }
+    // A handoff can only be staged by the page being replaced, and not every
+    // arrival here has one. `civvis-refresh.sh` re-points the exhibition tab
+    // from outside the browser whenever the tab stops following the live
+    // server — eight times in thirty-five minutes on 2026-07-27, which is
+    // several times per game — and an operator can paste or bookmark the same
+    // address. Nothing in that path can write sessionStorage first.
+    //
+    // But the address itself says what this is: only a supervised successor
+    // ever carries `instance`, so a load naming one is a page that is about to
+    // adopt a running world, not somebody opening the lobby. Veil it on that
+    // alone. With no handoff to match, the first complete frame lifts this
+    // unconditionally, which is exactly the intent.
+    if (!fresh && new URLSearchParams(location.search).has("instance")) {
+      window.CIVVIS_ADOPTING_LIVE_WORLD = true;
+      document.documentElement.classList.add("world-loading", "world-restarting");
+    }
   } catch (e) {
     try { sessionStorage.removeItem("civvis-world-transition-v1"); } catch (_) {}
   }
@@ -3245,6 +3261,14 @@
       document.getElementById("world-transition-title").textContent = said.title;
     document.getElementById("world-transition-summary").textContent =
       said.summary || "Applying the selected settings";
+  } else if (window.CIVVIS_ADOPTING_LIVE_WORLD) {
+    // Nothing is being built here: a world is already running and this page is
+    // catching up with it. The stock card would announce the opposite.
+    document.body.setAttribute("aria-busy", "true");
+    document.getElementById("world-transition-kicker").textContent = "The exhibition continues";
+    document.getElementById("world-transition-title").textContent = "Joining the live world";
+    document.getElementById("world-transition-summary").textContent =
+      "Catching up with the game in progress";
   }
 </script>
 <div id="maparea">
