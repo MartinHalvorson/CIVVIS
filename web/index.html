@@ -17565,24 +17565,52 @@ function skyLadderScale(along) {
   const floor = Math.max(1e-30, planetMinScale());
   return floor * Math.exp(skyZoomLadder() * Math.max(0, Math.min(1, along)));
 }
-// The slider is already in ladder units, so it does not go through
-// `skyZoomStep`: gearing a step that is a fraction of the ladder by another
-// fraction of the ladder would square it. Everything else about the move is the
-// wheel's — the aim, the settling, the stops — because a drag of the ladder has
-// to be able to end anywhere a scroll could have.
+// A ladder is a road, and a road has to go somewhere. This one goes to
+// whatever the camera is standing on, and home when it is standing on nothing —
+// which is the journey out here that everybody makes and the one the wheel is
+// worst at.
+function skyLadderSubject() {
+  const here = skyNavHere();
+  const stop = here.startsWith("world:")
+    ? skyWorldStops().find(candidate => `world:${candidate.id}` === here) : null;
+  return stop ? stop.body : SKY_EARTH;
+}
+// Where the camera stands at a given rung of that road. At the bottom it is the
+// shot this rung's own horizon wants; by the top it is over the world the road
+// leads to; and it crosses from one to the other exactly as that world's drawn
+// size crosses the stage, so the pan is a function of the scale and the handle
+// never has to remember anything.
+function skyLadderPan(scale, subject) {
+  const frame = skyOutermostFrame();
+  const [bx, by] = skyBodyPos(subject);
+  const over = Math.max(0, Math.min(1,
+    (2 * skyDrawnRadius(subject, planetEarthRadius(scale)) / skyStageSpan() - .02) / .28));
+  const ease = over * over * (3 - 2 * over);
+  return {x:frame.x + (bx - frame.x) * ease, y:frame.y + (by - frame.y) * ease};
+}
+// The handle is already in ladder units, so it does not go through
+// `skyZoomStep` — gearing a step that is a fraction of the ladder by another
+// fraction of the ladder would square it — and it does not go through `zoomAt`
+// either, which is the part that had to be found out by dragging it. `zoomAt`
+// stops a zoom in at the ceiling of the world *nearest the camera*, which is
+// right for a notch and catastrophic for a whole ladder in one move: from the
+// galaxy the nearest world is some red dwarf, its ceiling is a hundredth, and
+// dragging the handle to the ground put the camera there and left it. The
+// ladder's own top is the ceiling of the world the road leads to.
+//
+// It sets a target rather than flying a path, because a slider under a finger
+// is a target that keeps moving and the ease is already a spring.
 function skyLadderTo(along) {
   if (!planetMap()) return;
-  // A hand on the ladder overrules a jump already in flight, and the jump's
-  // destination is not the base for the move that overrules it: leave it
-  // standing and every drag of the handle is measured from where the camera was
-  // going rather than from where it is.
-  if (cameraZoom?.path) cameraZoom = null;
-  const pending = cameraZoom?.kind === "planet" ? cameraZoom : null;
-  const base = Math.max(1e-30, pending?.scale || cam.scale);
-  const want = skyLadderScale(along);
-  if (Math.abs(Math.log(want / base)) < 1e-4) return;
-  takeCameraControl(true);
-  zoomAt(want / base);
+  takeCameraControl();
+  const subject = skyLadderSubject();
+  const want = Math.max(planetMinScale(),
+                        Math.min(planetMaxScale(SKY_PAN, subject), skyLadderScale(along)));
+  const pan = skyLadderPan(want, subject);
+  if (REDUCED_MOTION_QUERY.matches) {
+    cam.scale = want; SKY_PAN = pan; draw(); drawMini(); return;
+  }
+  cameraZoom = {kind:"planet", scale:want, pan, lean:null};
 }
 
 // How wide the stage is, in the unit that reads best at that width. It is the
@@ -17618,9 +17646,21 @@ let SKY_NAV_UP = false, SKY_NAV_KEY = "", SKY_NAV_MARK = "", SKY_NAV_SPAN = "";
 let skyNavLadderHeld = false;
 function skyNavShowing() {
   if (!planetMap() || !knowsGlobe() || !mapOverlayVisible("controls")) return false;
+  // Only home takes it down, and only while home fills the frame. Home is the
+  // one world with a board on it and the one place the bar would be standing
+  // over the game; every other world out here is somewhere to look at and
+  // somewhere to get back off, so the way about stays up on all of them.
+  //
+  // It has to be the world under the camera and never home's *nominal* size: a
+  // drawn size is a property of the zoom alone, so standing on Mars the Earth
+  // is drawn two stages wide while being a hundred million kilometres away and
+  // not on the screen at all. That is the arrival test's own trap, and keyed to
+  // home's size the bar vanished at exactly the moment somebody standing on
+  // Mars wants a way back.
+  const focus = skyFocusBody();
+  if (!focus || focus.body.id !== "earth") return true;
   const stage = Math.max(160, Math.min(MAPW, MAPH));
-  const across = 2 * skyDrawnRadius(SKY_EARTH);
-  return across < stage * (SKY_NAV_UP ? 1.05 : .9);
+  return 2 * focus.drawn < stage * (SKY_NAV_UP ? 1.05 : .9);
 }
 // Its box, in canvas coordinates, so a caption out there dodges the bar the
 // same way it dodges the standings and the world map.
@@ -18449,7 +18489,14 @@ function drawSkyScale(radius, alpha) {
   const choice = skyScaleChoice(radius, want);
   const caption = skySceneCaption(radius);
   if (!choice && !caption) return;
-  const x = frame.left + 18, y = frame.bottom - 20;
+  const x = frame.left + 18;
+  // Both this block and the sky's own control bar are measured off the bottom
+  // of the map, so the block moves up by exactly what the bar takes. It is the
+  // caption that says what the picture is a picture of; hiding half of it
+  // behind the buttons that got you there is the worst trade in the view.
+  const nav = skyNavBox(cv.getBoundingClientRect());
+  const overlaps = nav && nav.right > x && nav.left < x + 320;
+  const y = overlaps ? Math.min(frame.bottom - 20, nav.top - 12) : frame.bottom - 20;
   cx.save();
   cx.globalAlpha = alpha;
   cx.textAlign = "left";
@@ -26863,14 +26910,23 @@ function advanceUserCameraMotion(now = performance.now()) {
       // from a tile to the full system keeps one visual pace instead of racing
       // through the small worlds and crawling over the last large one. Pan and
       // scale share the same ease, which keeps the chosen world on one path.
-      cam.scale *= Math.exp(Math.log(cameraZoom.scale / Math.max(1e-6, cam.scale)) * ease);
+      //
+      // The divisor has to sit below every scale that can really be standing
+      // there, and `1e-6` did not: the sky past about a hundred AU is a smaller
+      // number than that, so out there the ratio stopped tracking the camera
+      // and became a constant. Every frame multiplied the scale by the same
+      // number below one and the ease could not converge — a zoom out past
+      // Neptune ran away to nothing and never stopped, and `scaleLeft` below
+      // was measured against the same lie so nothing ever noticed. It is the
+      // pinch's `1e-4` again, one guard along. See `getting about the sky`.
+      cam.scale *= Math.exp(Math.log(cameraZoom.scale / Math.max(1e-30, cam.scale)) * ease);
       SKY_PAN = {x:SKY_PAN.x + (cameraZoom.pan.x - SKY_PAN.x) * ease,
                  y:SKY_PAN.y + (cameraZoom.pan.y - SKY_PAN.y) * ease};
       // The lean turns on the same ease, and is re-measured against where the
       // scale and pan have actually got to, so the ground it is holding arrives
       // under the pointer rather than near it.
       const leanLeft = cameraZoom.lean ? skyLean(cameraZoom.lean, ease) : 0;
-      const scaleLeft = Math.abs(Math.log(cameraZoom.scale / Math.max(1e-6, cam.scale)));
+      const scaleLeft = Math.abs(Math.log(cameraZoom.scale / Math.max(1e-30, cam.scale)));
       const panLeft = Math.hypot(cameraZoom.pan.x - SKY_PAN.x,
                                  cameraZoom.pan.y - SKY_PAN.y) * planetEarthRadius();
       active = true;

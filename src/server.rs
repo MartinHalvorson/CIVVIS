@@ -9872,6 +9872,150 @@ mod tests {
         );
     }
 
+    /// Gearing the wheel made fourteen orders of magnitude *reachable*; it did
+    /// not make them navigable. Sixty-five notches is a distance nobody
+    /// scrolls, and every one of them has to be aimed over empty space. So the
+    /// sky carries its own way about: the four places the gearing already
+    /// calls arrivals, the shots that hold a whole scale, and the zoom laid
+    /// out end to end as a ladder — one bar, standing over the zoom buttons,
+    /// up only while there is a sky to cross.
+    #[test]
+    fn the_sky_carries_its_own_way_about() {
+        // It is part of the map controls: the same dock, the same dismissal.
+        // It stands *above* the zoom buttons rather than in the dock's flow,
+        // because the dock's height is ground the framing already reserves and
+        // a second row in the flow would move the world every time the camera
+        // left the globe.
+        let dock = EMBEDDED_INDEX
+            .split_once("<div id=\"map-controls-dock\">")
+            .expect("the map control dock")
+            .1;
+        let bar = dock.find("id=\"skynav\"").expect("the sky navigator");
+        let zoom = dock.find("<div id=\"zoomctl\">").expect("the zoom controls");
+        assert!(
+            bar < zoom,
+            "the sky navigator reads before the zoom buttons it stands over"
+        );
+        assert!(EMBEDDED_INDEX.contains("body.overlay-controls-hidden #skynav"));
+        assert!(EMBEDDED_INDEX.contains("#skynav[hidden] { display: none; }"));
+        assert!(EMBEDDED_INDEX.contains("bottom: calc(100% + 6px)"));
+        for part in [
+            "id=\"skynav-worlds\"",
+            "id=\"skynav-scales\"",
+            "id=\"skyladder\"",
+            "id=\"skyspan\"",
+        ] {
+            assert!(
+                EMBEDDED_INDEX.contains(part),
+                "the sky navigator is missing {part}"
+            );
+        }
+        // Only home takes the bar down, and only while home fills the frame:
+        // home is the one world with a board on it. Every other world is
+        // somewhere to get back off, and two readings of that rule cost a pass
+        // each. Keyed to home's *nominal* size the bar vanished the moment a
+        // jump arrived anywhere but home — on Mars the Earth is drawn two
+        // stages wide and is also a hundred million kilometres away and not on
+        // the screen at all — and keyed to whatever the camera focused on it
+        // vanished at the destination, because the star there is twelve times
+        // its own planet, sits at the same catalogue point, and is not even
+        // painted at that zoom.
+        assert!(EMBEDDED_INDEX.contains("if (!focus || focus.body.id !== \"earth\") return true;"));
+        assert!(EMBEDDED_INDEX
+            .contains("return 2 * focus.drawn < stage * (SKY_NAV_UP ? 1.05 : .9);"));
+        assert!(!EMBEDDED_INDEX.contains("const across = 2 * skyDrawnRadius(SKY_EARTH);"));
+        // And it is synced before the branch, so it comes down when the world
+        // under it is a flat board as surely as it goes up above a globe.
+        let sync = EMBEDDED_INDEX
+            .find("  syncSkyNav();")
+            .expect("the sky navigator is synced from the renderer");
+        let branch = EMBEDDED_INDEX
+            .find("if (drawPlanetMap()) return;")
+            .expect("the planet branch");
+        assert!(sync < branch, "the sky navigator syncs before the renderer branches");
+
+        // The places are the arrivals and nothing else — one list, so the bar
+        // can never name somewhere the gearing does not treat as a landing —
+        // and only what this civilization may look at.
+        assert!(EMBEDDED_INDEX.contains("  for (const id of SKY_ARRIVALS) {"));
+        assert!(EMBEDDED_INDEX
+            .contains("const known = new Set(skyKnownWorlds().map(body => body.id));"));
+        assert!(EMBEDDED_INDEX
+            .contains("const SKY_STOP_MARKS = {earth:\"◉\", moon:\"☾\", mars:\"♂\", exo:\"✧\"};"));
+        // A named shot is the same arithmetic as the stop the zoom already
+        // stops at, taken out of `skySystemFrame` rather than written twice.
+        assert!(EMBEDDED_INDEX.contains("return skyFrameFor(skyOutermostFrame());"));
+        assert!(EMBEDDED_INDEX.contains("function skyFrameFor(box)"));
+        assert!(EMBEDDED_INDEX.contains("function skyStopScale(stop)"));
+        assert!(EMBEDDED_INDEX.contains("  if (knowsNeighbourhood())"));
+        assert!(EMBEDDED_INDEX.contains("  if (knowsGalaxy()) {"));
+        // Short of the ceiling on purpose: a jump that lands exactly on the
+        // stop leaves the zoom-in button dead in the hand on arrival.
+        assert!(EMBEDDED_INDEX.contains("const SKY_STOP_FILL = .8;"));
+
+        // A jump is a path with a shape, not an ease toward a target. Easing a
+        // zoom and a pan together across fourteen orders of magnitude spends
+        // the whole middle of the trip over empty space with nothing on the
+        // stage; Van Wijk and Nuij's path pulls back until both ends are in
+        // view, crosses, and comes back down.
+        assert!(EMBEDDED_INDEX.contains("function skyTravelPath(from, w0, to, w1)"));
+        assert!(EMBEDDED_INDEX.contains("const SKY_TRAVEL_RHO = 1.42;"));
+        assert!(EMBEDDED_INDEX.contains("cameraZoom = {kind:\"planet\", scale:want, pan:to, lean:null,"));
+        // `ln(-b + sqrt(b*b + 1))` has to be written as `-asinh(b)`: out here
+        // `b` reaches 1e15, `sqrt(b*b + 1)` is exactly `b` in float64, the
+        // subtraction cancels to zero and the whole flight comes out NaN.
+        assert!(EMBEDDED_INDEX.contains("const r0 = -Math.asinh(b0), r1 = -Math.asinh(b1);"));
+        assert!(!EMBEDDED_INDEX.contains("Math.log(-b0 + Math.sqrt"));
+
+        // The ladder is the gearing's own ruler with a grip on it, so it is
+        // not geared again — and it does not go through `zoomAt`, which stops
+        // a zoom in at the ceiling of the world nearest the *camera*. That is
+        // right for one notch and catastrophic for a whole ladder in one move:
+        // from the galaxy the nearest world is some red dwarf, its ceiling is
+        // a hundredth, and dragging the handle to the ground put the camera
+        // there and left it. The ladder's own top is the world it leads to.
+        assert!(EMBEDDED_INDEX.contains("function skyLadderSubject()"));
+        assert!(EMBEDDED_INDEX.contains("function skyLadderPan(scale, subject)"));
+        assert!(EMBEDDED_INDEX.contains(
+            "                        Math.min(planetMaxScale(SKY_PAN, subject), skyLadderScale(along)));"
+        ));
+        assert!(!EMBEDDED_INDEX.contains("zoomAt(want / base);"));
+        assert!(EMBEDDED_INDEX.contains("Math.log(Math.max(floor, scale) / floor) / ladder"));
+
+        // The zoom buttons repeat while held. On the flat board that is a
+        // convenience; out here it is the difference between a control and an
+        // ornament.
+        assert!(EMBEDDED_INDEX.contains("function bindHeldZoom(id, step)"));
+        assert!(EMBEDDED_INDEX.contains(
+            "bindHeldZoom(\"zin\", () => { takeCameraControl(true); zoomAt(skyZoomStep(1.35)); });"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "bindHeldZoom(\"zout\", () => { takeCameraControl(true); zoomAt(skyZoomStep(1 / 1.35)); });"
+        ));
+
+        // The eased planet zoom's divisor has to sit below every scale that can
+        // really be standing there, and `1e-6` did not: the sky past about a
+        // hundred AU is a smaller number than that, so out there the ratio
+        // stopped tracking the camera and became a constant. Measured on
+        // unmodified `main`, seventy wheel notches out from a tile came to rest
+        // at 2.2e-155 against a far stop of 3.7e-15 — a hundred and forty
+        // orders of magnitude past the end of the sky, still zooming, and it
+        // never stops. It is the pinch's `1e-4` again, one guard along.
+        assert!(EMBEDDED_INDEX.contains(
+            "cam.scale *= Math.exp(Math.log(cameraZoom.scale / Math.max(1e-30, cam.scale)) * ease);"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "const scaleLeft = Math.abs(Math.log(cameraZoom.scale / Math.max(1e-30, cam.scale)));"
+        ));
+        assert!(!EMBEDDED_INDEX.contains("Math.max(1e-6, cam.scale)"));
+
+        // The sky keeps its captions clear of the bar the way it does of every
+        // other widget, and the block that says what the picture is a picture
+        // of is measured off the same edge the bar is.
+        assert!(EMBEDDED_INDEX.contains("  const nav = skyNavBox(viewRect);"));
+        assert!(EMBEDDED_INDEX.contains("const nav = skyNavBox(cv.getBoundingClientRect());"));
+    }
+
     /// The world is drawn into a rectangle of the map area rather than into
     /// all of it, so a viewer moves the map out from under the panels instead
     /// of dragging the world around underneath them. The canvas, the
