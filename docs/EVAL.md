@@ -3188,3 +3188,63 @@ cost of a 240-game expansion-ceiling run — is exactly the rule I broke, and it
 cost another 240 games. **A probe's bucket labels are hypotheses about the code,
 not observations.** The fix that caught it took four minutes: re-run the census
 with the treatment on and check the bucket moves.
+
+
+## 2026-07-28 — production preemption fires, changes the games, and does not buy a single city
+
+The entry above named production preemption as the treatment the expansion
+funnel licensed, and wrote down its fires-check: *"the `every city mid-build`
+bucket must collapse."* Both halves of that turned out to be wrong, and the
+fires-check caught it before an evaluation this time.
+
+`preempt_margin` (1.0 = off, the shipped behaviour) lets a city abandon a
+part-built item when a candidate scores more than `margin ×` the current item's
+present value. Switching is close to free here: `City::production_progress`
+banks a paused build by item key, which is the Civ 6 rule.
+
+Same census, 48 seats, 4p 24×16, 500 turns, seed 2400000:
+
+| | margin 1.0 (off) | margin 1.5 |
+|---|---|---|
+| **cities at end** | **2.21** | **2.21** |
+| settlers started | 2.46 | 2.42 |
+| every city mid-build | 1826 seat-turns | 1856 |
+| no reachable site | 91 | 143 |
+
+**The treatment fires** — the games visibly diverge, and the site bucket nearly
+doubles because the empires end up somewhere different. **It buys no
+expansion at all.**
+
+### Two errors in the fires-check itself, both mine
+
+1. **The named bucket could not have collapsed.** "Every city mid-build" counts
+   turns where every queue is *non-empty*. Preemption changes what is *in* a
+   queue, never whether one exists. The criterion was unfalsifiable in the
+   helpful direction — it could only ever stay flat or rise. The bucket that
+   actually answers the question is the outcome: cities at end, and settlers
+   started. Both are flat.
+2. **The diagnosis it came from was too quick.** A city being mid-build is not
+   what stops the settler, because when that queue does empty the settler is
+   scored then — and the genuine free-city valuation loss is only 2.6%. The
+   large blocking bucket is **"no city at pop 2" at 23.8%**: the cities are too
+   small to make settlers, which is a *growth* constraint and untouched by
+   anything in the production ranking. #496 already went at the food ceiling
+   that gates the first settler.
+
+**So the expansion axis does not close on preemption, and preemption does not
+open on expansion.** They are separate questions and this measurement separates
+them for four minutes of compute.
+
+### What survives about preemption
+
+The structural observation is still true and still unusual: **the plan layer
+re-assesses every 5 turns and the production queue re-assesses never.** That is
+a real asymmetry, preemption is the mechanism that removes it, it demonstrably
+changes play, and switching costs almost nothing in this engine. What it is
+*not* is a fix for expansion, and it must not be evaluated under that banner —
+the motivation an evaluation is run under is what its result gets recorded
+against, and a treatment that wins for reasons unrelated to its stated mechanism
+has produced two retractions in this document already.
+
+Left in the tree at `preempt_margin = 1.0`, which is exactly the shipped
+behaviour, with the fires-check recorded and no evaluation spent.

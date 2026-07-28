@@ -97,12 +97,18 @@ fn main() {
         .and_then(|i| args.get(i + 1))
         .and_then(|v| v.parse::<f64>().ok())
         .unwrap_or(1.0);
+    let preempt_margin = args
+        .iter()
+        .position(|arg| arg == "--preempt-margin")
+        .and_then(|i| args.get(i + 1))
+        .and_then(|v| v.parse::<f64>().ok())
+        .unwrap_or(1.0);
 
     println!(
         "expansion_funnel: {maps} maps, {players}p {width}x{height}, {city_states} city-states, \
          {turns} turns, seed {seed0}"
     );
-    println!("settler_price {settler_price}");
+    println!("settler_price {settler_price}, preempt_margin {preempt_margin}");
     println!("every major seat sampled every turn; attribution is first-failing-gate\n");
 
     let per_map = parallel::map(maps, jobs, move |index| {
@@ -112,6 +118,7 @@ fn main() {
         let mut fleet: Vec<AdvancedAi> = AdvancedAi::fleet_weighted(&game, &genome);
         for agent in fleet.iter_mut() {
             agent.settler_price = settler_price;
+            agent.preempt_margin = preempt_margin;
         }
         let majors: Vec<usize> = (0..game.players.len())
             .filter(|pid| !game.players[*pid].is_minor && !game.players[*pid].is_barbarian)

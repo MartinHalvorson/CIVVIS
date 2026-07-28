@@ -471,6 +471,29 @@ pub struct AdvancedAi {
     /// the selection bias that dissolved this repository's coordinate-descent
     /// result on resampling.
     pub settler_price: f64,
+    /// How much better a candidate must be before a city abandons what it is
+    /// already building. **1.0 by default, which disables preemption entirely
+    /// and reproduces the shipped behaviour exactly.**
+    ///
+    /// `advanced_production` skips any city whose queue is non-empty, so
+    /// `production_value` is consulted only on an idle city — this agent never
+    /// reconsiders a build once started. `expansion_funnel` measured what that
+    /// costs: over 48 seats, on **25.8% of all seat-turns** the empire was
+    /// short of its own planned city target, permitted a settler, had a
+    /// reachable site, and every city was mid-build. The genuine valuation
+    /// loss — a free city choosing something else — is only **2.6%**.
+    ///
+    /// The plan above this re-assesses every 5 turns (`plan_stale`); the queue
+    /// underneath re-assesses never. Switching is close to free here because
+    /// `City::production_progress` banks a paused build by item key, which is
+    /// the Civ 6 rule and the reason a strong human switches to a settler
+    /// routinely.
+    ///
+    /// ⚠ A margin at or below 1.0 means "switch on any improvement", which
+    /// invites oscillation between two nearly equal candidates re-scored every
+    /// turn. That is why the disabled value is 1.0 rather than 0.0: the flag is
+    /// a *ratio*, and the off state is the identity.
+    pub preempt_margin: f64,
     /// Let an assigned Religion lane expand first, like every other lane.
     ///
     /// ⚠⚠ **MEASURED AND REJECTED. Leave it off.** Applied consistently to the
@@ -772,6 +795,7 @@ impl AdvancedAi {
             refuse_unreachable_lanes: false,
             prophet_before_opportunism: false,
             settler_price: 1.0,
+            preempt_margin: 1.0,
             assigned_religion_may_expand: false,
             defensible_sites: false,
             food_first: 0.0,
@@ -6920,7 +6944,14 @@ impl AdvancedAi {
         let mut counts = self.counts(g, pid);
         let city_ids = g.player_city_ids(pid);
         for cid in city_ids {
-            if !g.cities[&cid].queue.is_empty() {
+            // What this city is already committed to, and what that is worth
+            // *now*. Without preemption a non-empty queue is skipped outright,
+            // so `production_value` is only ever consulted on an idle city.
+            let committed: Option<(f64, Item)> = g.cities[&cid].queue.first().cloned().map(|item| {
+                let value = self.production_value(g, pid, cid, &item, plan, &counts);
+                (value, item)
+            });
+            if committed.is_some() && self.preempt_margin <= 1.0 {
                 continue;
             }
             let best: Option<(f64, String, Item)> = {
@@ -6958,7 +6989,18 @@ impl AdvancedAi {
                 best
             };
             if let Some((score, _, item)) = best {
-                if score > -1_000.0
+                // Switching is close to free in this engine: `City::production_progress`
+                // banks a paused build's progress by item key, so an abandoned
+                // item resumes where it stopped. The margin is what stops a
+                // city oscillating between two nearly equal candidates.
+                let displaces_commitment = match &committed {
+                    Some((current, current_item)) => {
+                        *current_item != item && score > *current * self.preempt_margin
+                    }
+                    None => true,
+                };
+                if displaces_commitment
+                    && score > -1_000.0
                     && g.apply(
                         pid,
                         &Action::Produce {
