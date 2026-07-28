@@ -3942,3 +3942,52 @@ the match log — the placement histogram — that nothing had printed.
    free-for-all mean placement.
 3. The cheapest next measurement is a league run whose parent selection is by
    win rate rather than `lower_confidence`, against this one as control.
+
+
+## 2026-07-28 — ⚠ CORRECTION to the entry above: the inversion was a mid-run snapshot; the compression is the real result
+
+The previous entry was written from **round 15 of 16** and led with
+*"`advanced_v1` is rated above `advanced` while winning 3.5× less often."* The
+run finished one round later and **that ordering resolved.** Final, 256 games
+each:
+
+| entrant | Glicko | wins | win% | mean place | 1st | 2nd | 3rd | 4th |
+|---|---|---|---|---|---|---|---|---|
+| `advanced_evolved` | **1508.5** | 78 | 30.5% | 2.430 | 78 | 57 | 54 | 67 |
+| `strategic` | 1506.3 | **95** | **37.1%** | **2.387** | 95 | 37 | 54 | 70 |
+| `advanced` | **1489.1** | 65 | 25.4% | 2.578 | 65 | 52 | 65 | 74 |
+| `advanced_v1` | 1481.9 | 18 | **7.0%** | 2.605 | 18 | **110** | 83 | 45 |
+
+`advanced` now sits above `advanced_v1`, correctly. **The headline claim of the
+previous entry does not survive to the end of its own run, and is withdrawn.**
+
+**What survives, and it is the stronger statement:**
+
+| pair | win-rate ratio | Glicko gap | mean-place gap |
+|---|---|---|---|
+| `advanced` vs `advanced_v1` | **3.6×** (25.4% vs 7.0%) | **7.2 points** | 0.027 |
+| `strategic` vs `advanced_v1` | **5.3×** (37.1% vs 7.0%) | 24.4 points | 0.218 |
+
+> **Glicko placement compresses a 3.6× difference in winning into 7.2 rating
+> points** — about half a percent of the scale, and well inside the rd of 30 the
+> pool carries. A selection process reading this number is very nearly blind to
+> a difference that dominates the objective.
+
+That is a weaker claim than "the ordering is inverted" and a more robust one: it
+does not depend on which side of a coin-flip the last round lands, and it holds
+across all three pairs. The phenotype behind it is unchanged and stark —
+`advanced_v1` finishes **second 110 times and first 18**.
+
+⚠ Also note `advanced_evolved` rates 2.2 points above `strategic` while winning
+17 fewer games *and* placing worse on average (2.430 against 2.387). At rd 30.1
+that gap is noise, not an inversion, and it should not be reported as one.
+
+### The process failure, recorded
+
+I published a headline from a **mid-run snapshot of my own experiment** rather
+than waiting for it to finish, and the headline did not survive the next round.
+Nothing forced that — the run had a fixed, known length and was already in
+progress. The correction cost nothing but the retraction; had anyone acted on it
+first it would have cost more.
+
+**Wait for the run you designed to finish before describing what it found.**
