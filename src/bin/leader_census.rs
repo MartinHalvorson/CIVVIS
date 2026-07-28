@@ -81,6 +81,22 @@ struct Track {
     gap_samples: u32,
 }
 
+/// Candidate early-warning instruments, read on every major every turn. The
+/// question they answer together: at turn `end - K`, does any of them already
+/// put the eventual winner on top? An alarm can only ever be as early as the
+/// earliest signal that ranks correctly.
+const SIGNALS: [&str; 9] = [
+    "victory_threat",
+    "AI meter",
+    "score",
+    "cities",
+    "techs",
+    "military",
+    "faith",
+    "tourists",
+    "religion race",
+];
+
 struct MapReading {
     winner: Option<usize>,
     victory_type: String,
@@ -91,6 +107,29 @@ struct MapReading {
     denials: u64,
     denials_on_winner: u64,
     observations: u64,
+    /// `signals[turn][major_index][signal]`, with `majors` naming the seats.
+    signals: Vec<Vec<[f64; SIGNALS.len()]>>,
+    majors: Vec<usize>,
+}
+
+/// Which seat leads on `signal` at `turn`, or `None` when the table is empty
+/// or every reading is identical (a tie carries no information).
+fn leader_on(reading: &MapReading, turn: usize, signal: usize) -> Option<usize> {
+    let row = reading.signals.get(turn)?;
+    let mut best = f64::NEG_INFINITY;
+    let mut who = None;
+    let mut ties = 0;
+    for (index, values) in row.iter().enumerate() {
+        let value = values[signal];
+        if value > best {
+            best = value;
+            who = Some(reading.majors[index]);
+            ties = 1;
+        } else if value == best {
+            ties += 1;
+        }
+    }
+    (ties == 1).then_some(who).flatten()
 }
 
 fn note(slot: &mut Option<u32>, turn: u32) {
@@ -138,6 +177,7 @@ fn main() {
         let mut tracks: BTreeMap<usize, Track> =
             majors.iter().map(|pid| (*pid, Track::default())).collect();
         let mut denials = 0_u64;
+        let mut signals: Vec<Vec<[f64; SIGNALS.len()]>> = Vec::with_capacity(turns as usize);
         let mut named_by_turn: Vec<(u32, usize)> = Vec::new();
         let mut observations = 0_u64;
         let mut end_turn = turns;
@@ -158,13 +198,32 @@ fn main() {
             }
             end_turn = turn;
 
+            let leading_score = majors
+                .iter()
+                .map(|pid| game.score(*pid))
+                .max()
+                .unwrap_or(0);
+            let mut row = vec![[0.0_f64; SIGNALS.len()]; majors.len()];
+
             // Who is close, on each instrument.
-            for target in majors.iter().copied() {
+            for (slot, target) in majors.iter().copied().enumerate() {
                 if !game.players[target].alive {
                     continue;
                 }
                 let (lane, seen) = probe.rival_pressure(&game, target);
                 let honest = game.victory_threat(target);
+                let player = &game.players[target];
+                row[slot] = [
+                    honest,
+                    seen as f64,
+                    game.score(target) as f64,
+                    game.player_city_ids(target).len() as f64,
+                    player.techs.len() as f64,
+                    game.military_power(target),
+                    player.faith,
+                    game.domestic_tourists(target) as f64,
+                    game.victory_races(target, leading_score).religious,
+                ];
                 let track = tracks.get_mut(&target).expect("major tracked");
                 track.last_lane = Some(lane);
                 track.peak_seen = track.peak_seen.max(seen);
@@ -221,6 +280,7 @@ fn main() {
                     }
                 }
             }
+            signals.push(row);
         }
 
         for target in majors.iter().copied() {
@@ -245,6 +305,8 @@ fn main() {
             denials,
             denials_on_winner,
             observations,
+            signals,
+            majors,
         }
     });
 
@@ -431,5 +493,67 @@ fn main() {
     println!(
         "\ninstrument gap (AI meter − victory screen), over {gap_samples} readings: {:+.1} points",
         gap_total / gap_samples.max(1) as f64
+    );
+
+    // Could anybody have known earlier? At `end - K`, does any instrument
+    // already put the eventual winner on top? An alarm can be no earlier than
+    // the earliest signal that ranks correctly, so this bounds what any
+    // response mechanism could possibly be given to work with.
+    let leads = [25_usize, 50, 100, 150, 200];
+    println!("\nwho leads at end − K, and is it the eventual winner?");
+    print!("  {:<16}", "signal");
+    for lead in leads {
+        print!(" K={lead:<7}");
+    }
+    println!("   settles at");
+    for (signal, name) in SIGNALS.iter().enumerate() {
+        print!("  {name:<16}");
+        for lead in leads {
+            let mut hits = 0_usize;
+            let mut total = 0_usize;
+            for reading in &decided {
+                let winner = reading.winner.expect("decided");
+                let Some(turn) = (reading.end_turn as usize).checked_sub(lead) else {
+                    continue;
+                };
+                total += 1;
+                if leader_on(reading, turn, signal) == Some(winner) {
+                    hits += 1;
+                }
+            }
+            if total == 0 {
+                print!(" {:<9}", "  n/a");
+            } else {
+                print!(" {:>4.0}% n={total:<3}", 100.0 * hits as f64 / total as f64);
+            }
+        }
+        // The turn from which the winner leads on this signal and never gives
+        // the lead back: the point the game was decided, if anybody was
+        // reading this instrument.
+        let mut settles: Vec<i64> = Vec::new();
+        for reading in &decided {
+            let winner = reading.winner.expect("decided");
+            let end = reading.signals.len();
+            let mut settled = end;
+            for turn in (0..end).rev() {
+                match leader_on(reading, turn, signal) {
+                    Some(leader) if leader == winner => settled = turn,
+                    Some(_) => break,
+                    None => break,
+                }
+            }
+            if settled < end {
+                settles.push((end - settled) as i64);
+            }
+        }
+        match median(&mut settles) {
+            Some(mid) => println!("   {mid:>4} before the end (n={})", settles.len()),
+            None => println!("   never"),
+        }
+    }
+    println!(
+        "  base rate for a {players}-seat table is {:.0}%; the denial layer's own \
+         alarm arrives with a median 16-turn lead.",
+        100.0 / players.max(1) as f64
     );
 }
