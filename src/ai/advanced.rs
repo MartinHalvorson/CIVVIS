@@ -843,6 +843,30 @@ impl AdvancedAi {
         self.plan.as_ref()
     }
 
+    /// Does any city of `pid` currently see somewhere to send a settler?
+    ///
+    /// This mirrors, exactly, the site test inside `production_value`'s settler
+    /// arm — the near ring first, then the whole map once Shipbuilding is in.
+    /// It exists because that arm refuses a settler for five different reasons
+    /// and then, having passed all five, can still lose the production
+    /// argument; "no site" and "out-competed" are different defects with
+    /// different repairs and no external probe can tell them apart.
+    /// `expansion_funnel` uses it for precisely that split.
+    ///
+    /// Diagnostic only: nothing in the agent's own decision path calls it.
+    pub fn any_settle_site(&self, g: &Game, pid: usize) -> bool {
+        g.player_city_ids(pid).into_iter().any(|cid| {
+            let Some(city) = g.cities.get(&cid) else {
+                return false;
+            };
+            self.best_settle_site(g, pid, city.pos, 11).is_some()
+                || (g.players[pid].techs.contains("shipbuilding")
+                    && self
+                        .best_settle_site(g, pid, city.pos, g.map.width + g.map.height)
+                        .is_some())
+        })
+    }
+
     pub fn victory_target(&self) -> Option<VictoryTarget> {
         self.victory_target
     }

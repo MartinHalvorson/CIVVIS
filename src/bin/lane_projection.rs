@@ -205,29 +205,39 @@ fn main() {
     println!("  toward religion       {to_religion}");
     println!("  away from religion    {from_religion}");
 
-    // Branch on what was measured.
+    // Branch on what was measured — and only on what this sample size can
+    // actually support.
+    //
+    // ⚠ An earlier version of this block read the *direction* of the lane
+    // changes and announced "the search was under-selecting Religion" off a
+    // 3-versus-1 split while the mean change was negative. At these counts that
+    // is noise wearing a verdict. The mean change is the stable statistic: it
+    // is monotone across horizons 40/80/160 where the direction counts are not.
     println!();
+    let direction_is_readable = flipped >= 20;
     if flipped == 0 {
         println!(
             "READING: the projection moves but the DECISION does not. The religion branch \
              changed on {moved} of {n} positions and the argmax lane changed on none of \
              them, so the bias is real and smaller than the gaps between lanes. An eval \
-             would be measuring nothing; find a position class where the lanes are closer \
-             before spending one."
-        );
-    } else if to_religion > from_religion {
-        println!(
-            "READING: the search was under-selecting Religion. On {flipped} of {n} positions \
-             the argmax lane changed, {to_religion} of them toward Religion against \
-             {from_religion} away. The projection defect biases the ranking against the \
-             lane this engine converts best. This is worth a pre-registered `ai_eval`."
+             would be measuring nothing."
         );
     } else {
         println!(
-            "READING: the decision moves, but not toward Religion — {flipped} lane changes, \
-             {to_religion} toward Religion and {from_religion} away. The projection defect \
-             is real and its effect on routing is not the one predicted. Do not run an eval \
-             on the predicted mechanism; work out what the flag is actually doing first."
+            "READING: not inert — {moved} of {n} branch values moved (mean {mean_delta:+.4}) \
+             and the argmax lane changed on {flipped}. That is enough to justify an eval and \
+             says NOTHING about which way it will go: three treatments on this axis have now \
+             cost Elo, each against its own predicted mechanism."
         );
+        if direction_is_readable {
+            println!(
+                "  lane-change direction: {to_religion} toward Religion / {from_religion} away."
+            );
+        } else {
+            println!(
+                "  lane-change direction NOT reported: {flipped} changes is too few to read \
+                 a direction from. Use the mean change ({mean_delta:+.4}), which is stable."
+            );
+        }
     }
 }

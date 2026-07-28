@@ -3039,3 +3039,71 @@ under-selecting Religion" on a 3/1 split while the mean change was **negative**.
 Read the mean change, which is stable across all three windows and monotone; do
 not read the branch text at this sample size. The instrument overstates its
 confidence and should be fixed or its verdict line dropped.
+
+
+## 2026-07-28 — ★ expansion is not site-limited or gate-limited: the settler loses the production argument, 100% of the time
+
+`src/bin/expansion_funnel.rs`. PR #366 measured the agent wanting six cities and
+settling 4.86, and closed with an honest unknown: *"expansion is limited by
+execution rather than by ambition. Whatever binds sits in settler production,
+site availability, or the expansion window."* Those are different defects with
+different repairs. This separates them.
+
+`production_value`'s settler arm (`advanced.rs:7044`) refuses a settler unless
+five conditions hold, and then the item still has to beat everything else in the
+queue. The probe samples every major seat every turn and attributes each turn
+the empire was short of its planned target to the **first** condition that
+failed, in the order the code tests them. Conditions 1–4 are reproduced from the
+agent's own formulas; condition 5 uses `AdvancedAi::any_settle_site`, added for
+this and used by nothing in the decision path.
+
+**12 maps, 4p 60×38, 6 city-states, 500 turns, seed 2400000, 48 seats, shipped
+genome. Cities at end 4.02 against a planned target of 5.25:**
+
+| bucket | share | seat-turns |
+|---|---|---|
+| already at target | 34.4% | 4530 |
+| settler already walking (one-at-a-time rule) | 17.3% | 2280 |
+| expansion window closed | 14.3% | 1881 |
+| no city at pop 2 | 8.2% | 1078 |
+| **no reachable site** | **0.0%** | **0** |
+| **lost the production argument** | **25.8%** | **3391** |
+
+**Zero.** Across 48 seats and 12 full games there is not one turn where the
+empire wanted a city, was permitted one, and had nowhere to put it. **The map is
+never the constraint.** Every one of those 3391 turns had a site and built
+something else.
+
+### What that indicts
+
+A settler is worth `920.0 + site_value * 4.0` — and **920 is a hardcoded
+constant.** It is not a gene, so no run of `evolve` has ever tuned it, and it is
+not a doctrine lever, so the macro search has never perturbed it. One
+un-searched literal decides a quarter of all expansion decisions in the
+subsystem the oracle ablation identified as the only one with headroom.
+
+Four independent lines now point at expansion valuation:
+
+1. this funnel — 25.8% of seat-turns, site available, settler out-competed;
+2. the agent misses **its own** target (4.02 against 5.25), so this is not a
+   disagreement about how many cities to want;
+3. `gene_leverage` measured **scrambling the expansion block as a *help*** at
+   1.8 SE — random draws beating the shipped values, which points at values
+   that are wrong rather than values that do not matter;
+4. the oracle ablation put the leverage in the economy, and city count is its
+   largest single multiplier.
+
+### What it does not establish
+
+That raising the settler's price wins. Two previous expansion results went the
+other way — `settler_min_pop = 5` produced a 3.0 SE score-share gain that
+converted to **exactly zero** win improvement, and raising the `.min(6)` ceiling
+was inert because the agent never reaches its target. This funnel explains the
+second of those (the target is not the binding gate) and is orthogonal to the
+first (that moved *when* a settler is allowed, not what it is worth).
+
+The magnitude is also unconstrained: the probe says the settler loses, not by
+how much. Nothing here names 1.6× or 2× or any other number, and picking one by
+trying several against the same maps is exactly the selection bias that cost
+this repository a recorded coordinate-descent result. One pre-registered
+magnitude, one run.
