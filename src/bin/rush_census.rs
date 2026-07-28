@@ -106,6 +106,11 @@ struct MapResult {
     alive_at_50: usize,
     alive_at_end: usize,
     majors: usize,
+    /// Per rushing campaign: (declared, first capture from this victim,
+    /// victim eliminated). Splits the delay into approach, siege and mop-up
+    /// instead of leaving it to a game-level first-war/first-capture pair that
+    /// need not even describe the same campaign.
+    campaigns: Vec<(u32, Option<u32>, Option<u32>)>,
     /// Blows landed on cities by turn 60 — whether the rush stack, having
     /// declared and stood 3-5 tiles out, ever actually attacks the capital.
     blows_by_60: u64,
@@ -268,6 +273,12 @@ fn main() {
             majors: majors.len(),
             ..Default::default()
         };
+        let mut war_seen: Vec<(usize, usize)> = Vec::new();
+        let mut prev_dead = 0usize;
+        let mut prev_owned: Vec<usize> = majors
+            .iter()
+            .map(|pid| game.player_city_ids(*pid).len())
+            .collect();
         let mut cities_owned: Vec<usize> = majors
             .iter()
             .map(|pid| game.player_city_ids(*pid).len())
@@ -305,6 +316,48 @@ fn main() {
                     if let Some(d) = nearest {
                         result.nearest_rival.push(d);
                     }
+                }
+            }
+
+            // Open a campaign record the turn a major war appears; close its
+            // stages as they happen.
+            for (ai, a) in majors.iter().enumerate() {
+                for b in majors.iter().skip(ai + 1) {
+                    if !game.is_at_war(*a, *b) {
+                        continue;
+                    }
+                    let known = war_seen.iter().any(|(x, y)| x == a && y == b);
+                    if !known {
+                        war_seen.push((*a, *b));
+                        result.campaigns.push((turn, None, None));
+                    }
+                }
+            }
+            // A city changed major hands, or a major died: attribute to the
+            // most recent open campaign, which for a rush is the only one.
+            {
+                let owners_now: Vec<usize> = majors
+                    .iter()
+                    .map(|pid| game.player_city_ids(*pid).len())
+                    .collect();
+                let lost = owners_now.iter().zip(prev_owned.iter()).any(|(a, b)| a < b);
+                let gained = owners_now.iter().zip(prev_owned.iter()).any(|(a, b)| a > b);
+                if lost && gained {
+                    if let Some(last) = result.campaigns.last_mut() {
+                        if last.1.is_none() {
+                            last.1 = Some(turn);
+                        }
+                    }
+                }
+                prev_owned = owners_now;
+                let dead = majors.iter().filter(|pid| !game.players[**pid].alive).count();
+                if dead > prev_dead {
+                    if let Some(last) = result.campaigns.last_mut() {
+                        if last.2.is_none() {
+                            last.2 = Some(turn);
+                        }
+                    }
+                    prev_dead = dead;
                 }
             }
 
@@ -498,6 +551,82 @@ fn main() {
         per_map.iter().map(|m| m.alive_at_50 as f64).sum::<f64>() / per_map.len().max(1) as f64;
     let aliveend: f64 =
         per_map.iter().map(|m| m.alive_at_end as f64).sum::<f64>() / per_map.len().max(1) as f64;
+    let camps: Vec<(u32, Option<u32>, Option<u32>)> =
+        per_map.iter().flat_map(|m| m.campaigns.iter().copied()).collect();
+    let med = |mut v: Vec<u32>| -> String {
+        if v.is_empty() {
+            return "-".to_string();
+        }
+        v.sort_unstable();
+        format!("{}", v[v.len() / 2])
+    };
+    // Split by when the war opened. A rush is an *early* war; pooling it with
+    // the late opportunistic wars that make up most of the sample describes
+    // neither.
+    for (label, lo, hi) in [("EARLY (declared < t50)", 0u32, 50u32), ("LATE (t50+)", 50, u32::MAX)] {
+        let set: Vec<_> = camps.iter().filter(|c| c.0 >= lo && c.0 < hi).copied().collect();
+        if set.is_empty() {
+            continue;
+        }
+        println!("\n=== CAMPAIGN CLOCK — {label} ===");
+        println!("  wars                                 : {}", set.len());
+        println!(
+            "  declared (median turn)               : {}",
+            med(set.iter().map(|c| c.0).collect())
+        );
+        println!(
+            "  took a city                          : {} of {}  (median turn {})",
+            set.iter().filter(|c| c.1.is_some()).count(),
+            set.len(),
+            med(set.iter().filter_map(|c| c.1).collect())
+        );
+        println!(
+            "  ...turns declaration -> first city   : {}",
+            med(set.iter().filter_map(|c| c.1.map(|t| t - c.0)).collect())
+        );
+        println!(
+            "  killed an empire                     : {} of {}  (median turn {})",
+            set.iter().filter(|c| c.2.is_some()).count(),
+            set.len(),
+            med(set.iter().filter_map(|c| c.2).collect())
+        );
+        println!(
+            "  ...turns declaration -> the kill     : {}",
+            med(set.iter().filter_map(|c| c.2.map(|t| t - c.0)).collect())
+        );
+    }
+    println!("\n=== THE CAMPAIGN CLOCK (per war, not per game) ===");
+    println!("  wars opened                          : {}", camps.len());
+    println!(
+        "  declared (median turn)               : {}",
+        med(camps.iter().map(|c| c.0).collect())
+    );
+    println!(
+        "  first city taken (median turn)       : {}   [{} of {} wars]",
+        med(camps.iter().filter_map(|c| c.1).collect()),
+        camps.iter().filter(|c| c.1.is_some()).count(),
+        camps.len()
+    );
+    println!(
+        "  ...turns from declaration to it      : {}",
+        med(camps.iter().filter_map(|c| c.1.map(|t| t - c.0)).collect())
+    );
+    println!(
+        "  an empire died (median turn)         : {}   [{} of {} wars]",
+        med(camps.iter().filter_map(|c| c.2).collect()),
+        camps.iter().filter(|c| c.2.is_some()).count(),
+        camps.len()
+    );
+    println!(
+        "  ...turns from first city to the kill : {}",
+        med(camps
+            .iter()
+            .filter_map(|c| match (c.1, c.2) {
+                (Some(a), Some(b)) if b >= a => Some(b - a),
+                _ => None,
+            })
+            .collect())
+    );
     let blows: f64 =
         per_map.iter().map(|m| m.blows_by_60 as f64).sum::<f64>() / per_map.len().max(1) as f64;
     let dmg: f64 =

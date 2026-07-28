@@ -47,6 +47,16 @@ const RUSH_REACH: i32 = 16;
 /// median capital separation is 13, so a shorter reach leaves most seats with
 /// no legal victim at all. Do not tighten it.
 const RUSH_STACK: usize = 2;
+/// Melee the empire keeps *building* while a rush is on, as distinct from the
+/// stack that opens it.
+///
+/// These two numbers want opposite things and were one constant for too long.
+/// Raising the opening stack to 3 converted better (14 of 24 games saw an
+/// empire killed, against 10) but declared twelve turns later, which is the
+/// wrong trade inside a window: the median kill slipped turn 47 to 56. Opening
+/// at 2 and continuing to build to 4 gets both — the war starts the turn it
+/// can, and the reinforcements walk into a siege already in progress.
+const RUSH_ARMY: usize = 4;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum GrandStrategy {
@@ -921,7 +931,15 @@ impl AdvancedAi {
         if unavailable_victory_plan && !useful_religious_opening {
             return true;
         }
-        if g.turn.saturating_sub(plan.assessed_turn) >= 5 {
+        // A rush is re-read every turn. The five-turn cadence is right for a
+        // plan measured in eras, but the rush's whole decision — "is the stack
+        // staged and can it finish?" — becomes true on one specific turn, and
+        // waiting up to four more to notice spends them out of a window that
+        // shuts. Measured: early campaigns declare at a median turn 36 and
+        // kill 14 turns later, so the target lands at 50 rather than 54 on
+        // this alone.
+        let cadence = if plan.rush { 1 } else { 5 };
+        if g.turn.saturating_sub(plan.assessed_turn) >= cadence {
             return true;
         }
         if let Some(target) = plan.target_player {
@@ -4440,6 +4458,14 @@ impl AdvancedAi {
             // column's objective back to the empire-global `threatened_city` —
             // which is the campaign abandoning itself at exactly the moment
             // the victim starts fighting back.
+            // ⚠ Tightened to `* 0.85` — "genuinely weaker, not merely
+            // comparable" — and measured clearly worse: early wars fell 33 to
+            // 14, the median declaration slipped turn 32 to 47, and kills
+            // slipped 47 to 70. Early empires are *all* near-parity because
+            // they all field one or two units, so a superiority test does not
+            // select weak victims, it just postpones the rush out of its own
+            // window. What makes the rush work is the staged stack against an
+            // unwalled capital, which is what the readiness gate checks.
             .filter(|player| {
                 g.is_at_war(pid, player.id)
                     || g.military_power(player.id) <= my_power * 1.15 + 5.0
@@ -7397,7 +7423,7 @@ impl AdvancedAi {
         // itself at `RUSH_WINDOW_CLOSES`, so this cannot become a standing
         // military appetite.
         let desired_military = if plan.rush {
-            desired_military.max(RUSH_STACK + 1)
+            desired_military.max(RUSH_ARMY)
         } else {
             desired_military
         };
@@ -11903,7 +11929,7 @@ impl AdvancedAi {
         // rush has to raise the standing-army floor there or it plans a war it
         // never builds an army for. Rewritten every turn, including back to
         // zero the turn the window shuts.
-        self.base.rush_military_floor = if plan.rush { RUSH_STACK } else { 0 };
+        self.base.rush_military_floor = if plan.rush { RUSH_ARMY } else { 0 };
         if self.food_first != 0.0 {
             // Want food only while short of the target. Past it the extra
             // food buys nothing this treatment is arguing for, and the

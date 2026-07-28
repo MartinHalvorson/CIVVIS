@@ -161,101 +161,169 @@ than two. Four attempts to make those heuristics besiege each measured worse
 (§6). They are tuned for a field campaign between comparable armies; a rush is
 not that.
 
-### Capability — 24 maps at the deployment shape (6p 74x46, seed 950000)
+### ★★★ Capability — it wipes a neighbour in 19 games of 24, by turn ~48
+
+**24 maps at the deployment shape (6p 74x46), replicated on three disjoint
+seed sets:**
 
 | | stock `advanced` | `advanced_rush` |
 |---|---|---|
-| first war between majors (median) | turn 92 | **turn 34** |
-| maps with any capture | 13/24 | **23/24** |
-| first capture (median) | turn 83 | **turn 56** |
-| **maps with any elimination** | **0/24** | **12/24** |
-| first elimination (median) | — | turn 64 |
-| blows on cities by turn 60 | **0.0** (0 HP) | **17.9** (619 HP) |
-| majors alive at the end | 6.00 | 5.33 |
+| **maps with any empire eliminated** | **0/24, 0/24, 0/24** | **19/24, 19/24, 19/24** |
+| first elimination (median turn) | — | **48, 48, 55** |
+| blows on cities by turn 60 | **0.0** (0 HP) | 18.8 (640 HP) |
+| majors alive at turn 50 | 6.00 | **5.54** |
+| majors alive at the end | 6.00 | 4.83 |
 
-> **The stock agent eliminates nobody in twenty-four games and lands no blow on
-> any city in the first sixty turns.** The rush kills an empire in half of them.
+> **The stock agent eliminates nobody, ever — 0 of 72 games across all three
+> seed sets — and lands no blow on any city in the first sixty turns.** The
+> rush wipes an empire in 79% of games, with the first kill landing at a median
+> turn of 48.
 
-⚠ **The literal turn-50 target is met only occasionally.** Majors alive at turn
-50 is 5.92 against 6.00 — the median first elimination is turn **64**, not 50.
-War opens at turn 34 and the first city falls around 56. The remaining cost is
-the siege, not the march.
+### The campaign clock — where the turns actually go
 
-### What the siege executor and the horse were each worth
+Game-level firsts mislead, because the first war and the first capture need not
+be the same campaign. Per campaign, split by when war opened:
 
-Cumulative, 12 maps at seed 900000, each row adding to the one above:
+| | early (declared < t50) | late (t50+) |
+|---|---|---|
+| wars | 41 | 72 |
+| declared (median) | **turn 33** | turn 99 |
+| took a city | **23 of 41** (median turn 43) | 16 of 72 |
+| ...turns declaration → first city | **6** | 3 |
+| **killed an empire** | **16 of 41** (median **turn 46**) | 12 of 72 (median turn 85) |
+| ...turns declaration → the kill | **14** | 19 |
+
+**An early rush that lands takes its first city 6 turns after declaring and
+finishes the empire 14 turns after declaring.** The siege was never the
+bottleneck; when the rush declares is.
+
+### ★★ The two numbers that want opposite things
+
+`RUSH_STACK` (what opens the war) and `RUSH_ARMY` (what the empire keeps
+building) were one constant for too long, and it capped the whole lane:
+
+| | opening stack 2 | opening stack 3 | **open at 2, build to 4** |
+|---|---|---|---|
+| declared (median) | turn 32 | turn 44 | **turn 33** |
+| early wars that killed | 6/33 | 8/29 | **16/41** |
+| early kill (median) | turn 47 | turn 56 | **turn 46** |
+| maps with an elimination | 10/24 | 14/24 | **19/24** |
+
+A bigger opening stack converts better and declares far too late; a smaller one
+opens on time and cannot finish. Splitting them gets both: **the war starts the
+turn it can, and the reinforcements walk into a siege already in progress.**
+
+### What each step was worth
+
+Cumulative, each row adding to the one above:
 
 | | blows by t60 | captures | eliminations |
 |---|---|---|---|
-| lane only, force-group siege | 6.1 (192 HP) | 6/12 | 2/12 @ t102 |
-| **+ dedicated siege executor** | **12.8** (432 HP) | **12/12** | 4/12 @ t70 |
-| + persist past the window, finish the victim | 14.1 (471 HP) | 12/12 | **6/12** @ t70 |
-| + `horseback_riding`, finish-capable gate | 15.3 (508 HP) | 12/12 @ **t45** | 4/12 @ **t49** |
-
-The executor is the single largest step, and it is the one that stopped the
-stack trading itself: a warrior against the measured capital takes 28 damage a
-blow and dies on its fourth having dealt 134 of the 200 needed.
+| lane only, force-group siege | 6.1 | 6/12 | 2/12 @ t102 |
+| **+ dedicated siege executor** | **12.8** | **12/12** | 4/12 @ t70 |
+| + persist past the window, finish the victim | 14.1 | 12/12 | 6/12 @ t70 |
+| + `horseback_riding`, finish-capable gate | 15.3 | 12/12 @ t45 | 4/12 @ t49 |
+| + per-turn plan cadence while rushing | 18.8 | 18/24 @ t46 | 10/24 @ t59 |
+| **+ open at 2, build to 4** | 18.8 | **23/41 campaigns** | **19/24 @ t48** |
 
 ---
 
-## 5a. ★★★ THE VERDICT ON WINS — early aggression is significantly harmful
+## 5a. ★★ THE VERDICT ON WINS — the cost fell to inconclusive
 
 ⚠ **Read the map size on any `ai_eval` line.** It defaults to **24x16**, which
-is not the shape this window was measured on. The first two runs below are on
-that default; the third is at the deployment shape and is the one that counts.
-See [[civvis-eval-defaults-are-not-the-deployment]] — the sign has flipped
-between these two shapes before.
+is not the shape this window was measured on, and this repository has already
+seen a sign flip between the two. Always pass `--width 74 --height 46
+--players 6`.
 
-| | 24x16 (default) | 24x16, +fixes | **74x46, 6p (deployment)** |
-|---|---|---|---|
-| `advanced_rush` seat wins | 8.6% | 9.4% | **9.2%** |
-| `advanced` seat wins | 24.7% | 23.9% | **24.2%** |
-| paired map directions | 0 / 29 | 0 / 26 | **3 for / 21 against** |
-| sign test | p=0.0000 | p=0.0000 | **p=0.0003** |
-| gate | RETAIN | RETAIN | **RETAIN `advanced`** |
+At the deployment shape, as the lane got better at actually killing, its cost
+in wins fell away:
 
-**The verdict survives the map correction.** It is not an artifact of a cramped
-evaluator.
-
-### The mechanism: it wins everything except the game
-
-At the deployment shape the rush leads on **every** development statistic and
-still loses two seats in three:
-
-| | `advanced_rush` | `advanced` |
+| | early lane (3 for / 21 against) | **finished lane** |
 |---|---|---|
-| terminal score | **506.3** | 456.8 |
-| cities / pop / tech | **5.37 / 64.5 / 41.4** | 4.40 / 53.0 / 37.5 |
-| military | **720.5** | 597.7 |
-| **religious victories** | **2** | **43** |
-| domination victories | **0** | **0** |
+| `advanced_rush` seat wins | 9.2% | **13.8%** |
+| `advanced` seat wins | 24.2% | 19.6% |
+| paired map directions | 3 / 21 | **4 for / 11 against** |
+| sign test | **p=0.0003 SIGNIFICANT** | **p=0.1185 INCONCLUSIVE** |
+| gate | RETAIN `advanced` | **INCONCLUSIVE** |
+| terminal score | 52.8% (p=1.0000) | **59.1%, 33 for / 7 against, p=0.0000** |
 
-Two facts decide it:
+**The early lane paid all of aggression's cost and collected none of its
+payoff.** It diverted the empire out of the religious lane while eliminating a
+rival in 2 games of 12. The finished lane eliminates one in 19 of 24, and the
+win cost is no longer statistically distinguishable from parity.
 
-1. **Religion is this engine's win condition**, and war destroys it — 43 → 2.
-2. **Domination converts zero at deployment scale, for both agents**, even
-   with twelve eliminations across twenty-four games. Conquest buys territory,
-   score, population and tech. It does not buy the win.
+It is still not *better*, and the direction still leans against it. What
+changed is the mechanism:
 
-> A bigger, richer, more advanced, more warlike empire that wins a third as
-> often. Terminal score is at parity-to-favourable (52.8%, p=1.0000) while wins
-> are 3-to-21 against — a clean demonstration, on a fresh axis, of this
-> repository's standing law that **score is not win probability**.
+| victory type | `advanced_rush` | `advanced` |
+|---|---|---|
+| religious | 6 | **35** |
+| diplomatic | **18** | 12 |
+| culture / science / domination | 4 / 3 / 2 | 0 / 0 / 0 |
 
-This independently reproduces `docs/GENOME.md`'s league-genome result, which
-lost 98 Elo by routing to domination while domination converted 0%. **Two
-unrelated interventions, same mechanism.**
+Conquest still does not convert directly — **domination is 2 wins out of 33.**
+What a successful rush buys is a much larger empire (score 504 vs 352, cities
+5.3 vs 3.1, population 65 vs 38, military 717 vs 441) that then wins
+*diplomatically*. Religion remains the single most reliable condition in this
+engine and war still costs most of it.
 
-**So this ships as an eval-only entrant and a document, not as a default.**
-`advanced` behaviour is unchanged: every path is behind `early_rush`.
+> **Standing caution.** Terminal score is 59.1% with 33 map directions for and
+> 7 against — overwhelming — while wins are 4-to-11 against. Anyone tempted to
+> select on score here should read that pair twice. It is the cleanest
+> demonstration in this repository that **score is not win probability**.
+
+**So this ships as an eval-only entrant, not as a default.** `advanced`
+behaviour is unchanged: every path is behind `early_rush`.
 
 ## 6. ⚠ Measured and rejected
 
-**Letting a rush ignore `relieving` and `Muster`.** The theory was that a stack
-sized against one undefended capital should never stand still. Over the same 12
-maps it made things **worse**: captures fell 9/12 → 6/12 and the median first
-capture slipped turn 79 → 96. The two standing-still postures are load-bearing
-even for a rush. Do not retry without a different mechanism.
+Five interventions were measured and are not in the shipped lane. They are
+recorded here, and in place at each call site, so they are not retried.
+
+**1. Letting a rush ignore `relieving` and `Muster`.** The theory was that a
+stack sized against one undefended capital should never stand still. Captures
+fell 9/12 → 6/12 and the median first capture slipped turn 79 → 96. Those
+standing-still postures are load-bearing even for a rush.
+
+**2. Pinning `focus_target` to the objective city.** The theory was that the
+first defender met otherwise pulls the column off the capital. Blows on cities
+by turn 60 fell 6.1 → 2.9 and first capture slipped turn 65 → 86. A rush that
+walks past the defenders to stand on the ring dies on the ring.
+
+**3. `RUSH_REACH` 16 → 11**, to shorten the march. First war slipped turn
+34 → 51, blows fell 17.9 → 4.9, eliminations 12/24 → 9/24. The median capital
+separation is 13, so a shorter reach leaves most seats with **no legal victim
+at all**.
+
+**4. Requiring a genuinely weaker victim** — `power <= mine * 0.85` instead of
+`* 1.15 + 5`. Early wars fell 33 → 14, the median declaration slipped turn
+32 → 47, and kills slipped turn 47 → 70. Early empires are *all* near-parity
+because they all field one or two units, so a superiority test does not select
+weak victims — it postpones the rush out of its own window. What makes the rush
+work is the staged stack against an unwalled capital, which is what
+`early_rush_stack_ready` checks directly.
+
+**5. Editing `production_value` to raise the army — zero effect, twice
+measured byte-identical.** `advanced_production` only runs for `Recovery` or an
+assigned victory target. Every other plan, **including `Conquest`**, takes
+production through `BasicAi::cities` in `src/ai.rs`, whose army target is
+`mil_per_city * n_cities` with `mil_per_city` defaulting to 1.0. This is the
+mirror image of the standing "read the right file" warning about
+`src/ai/advanced.rs`: for *production* on a Conquest plan, the real code is in
+`src/ai.rs`.
+
+### ⚠ A measurement trap worth more than any of them
+
+"Melee adjacent to a rival capital = **0.03 per civilization**" read as *the
+column never reaches the city*, and three interventions were aimed at that
+non-problem. It was a **mean over six seats when only about one in six is
+rushing** — it divided one real siege by the five empires not conducting one.
+The per-siege **maximum** told the truth immediately: the staging ring at 3–5
+tiles reached the full stack while the city's own ring never held more than
+two, which is a completely different fault with a completely different fix.
+
+> **For anything only a minority of seats do at a time, report the maximum or
+> the per-event figure. Never the mean.**
 
 ---
 
