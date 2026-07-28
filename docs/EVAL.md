@@ -2585,3 +2585,72 @@ prediction, the seed and the size before the run, in a commit that predates it.
 - The **harness-wide** caveat from the previous entry is untouched: 19 of 20
   recorded runs still used one density, and this is the first result checked
   across two. It came out well; that is one data point, not a general licence.
+
+
+## 2026-07-28 — the agent changes its mind fourteen times a game, and spends a third of it on lanes that never win
+
+`src/bin/plan_churn.rs`. The oracle ablation on PR #366 found that capability
+is not what limits this agent and *routing* is: committing to Religion from
+turn one won 29 of 50 matched cells where the shipped adaptive agent won 14,
+McNemar exact p=0.0000. That is a thirty-point gap against a **fixed** policy,
+so hindsight does not explain it away. A fixed policy can beat an adaptive one
+for two reasons — the adaptive agent picks the wrong lane, or it picks the
+right one and does not stay in it. This separates them.
+
+`AdvancedAi::plan_stale` re-assesses every 5 turns and `assess()` recomputes
+the strategy from scratch; **nothing in it reads the previous plan**. So a
+long game contains up to a hundred independent re-decisions with hysteresis at
+none of them. `plan_churn` records the grand strategy every turn, per major
+seat, and collapses it into runs.
+
+On the oracle's own profile — `--players 4 --width 60 --height 38
+--city-states 6 --turns 500 --seed 420000`, 24 maps, 96 seats, mean game 329
+turns:
+
+| | |
+|---|---|
+| switches per seat | **14.2** |
+| switches per 100 turns | 4.30 |
+| mean run length | **21.7 turns** |
+| longest run | 90.2 turns |
+| runs under 10 turns | **37.7%** |
+| distinct strategies visited | 4.74 of 7 |
+| winning seats holding their final strategy | **32.8% of the game** |
+
+**The allocation is the finding.** Share of all turns by strategy:
+
+| strategy | share | won in the best-lane oracle |
+|---|---|---|
+| expansion | 23.5% | not a victory lane |
+| recovery | 20.5% | not a victory lane |
+| religion | 18.9% | **29/50** |
+| conquest | 17.9% | 0/50 |
+| science | 13.0% | 0/50 |
+| culture | 4.0% | 0/50 |
+| diplomacy | 2.2% | **20/50** |
+
+**34.9% of the agent's turns go to the three lanes that won nothing, and 2.2%
+to the second-best lane it has.** Religion and Diplomacy together — the only
+two that ever convert at this player count and turn budget — take 21.1%.
+
+Read with the ablation the chain is complete and mechanical: routing is the
+constraint, the routing is myopic because it is re-derived from the board
+every five turns with no memory of what the empire has already bought, and it
+re-derives *toward* lanes that cannot finish because `victory_focus` ranks
+lanes by **progress** and `lane_reachable` tests only Science. Progress is a
+correlate, and this document's standing result is that no correlate of a
+finished game is win probability.
+
+**Map size changes the reading, which is itself part of the result.** The same
+probe at 4p 24×16 (12 maps, 160-turn games) reports 4.5 switches per seat and
+a 29.1-turn mean run, and its own branch calls that "intermediate". Longer
+games contain more re-decisions, so the churn compounds with exactly the game
+length the strength evaluations use. Do not quote the small-map numbers.
+
+**What this does not establish.** That hysteresis would help. Committing
+harder to a *badly chosen* lane is worse than churning, and 37.7% of runs
+being under 10 turns is consistent both with thrash and with an agent
+correctly reacting to shocks — 20.5% of turns in Recovery says shocks are
+real. The next measurement is whether a switch is predicted by anything that
+should predict it; the intervention worth testing is a viability filter on the
+lane candidate set, not stickiness for its own sake.
