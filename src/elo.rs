@@ -38,9 +38,15 @@ pub const BUILTIN_AIS: [&str; 10] = [
 /// tournament ratings. Keeping them out of `BUILTIN_AIS` prevents a control
 /// factory from being pooled into the same player/leader rating key as
 /// its treatment.
-pub const EVAL_ONLY_AIS: [&str; 37] = [
+pub const EVAL_ONLY_AIS: [&str; 43] = [
     "advanced_banking_dedication",
+    "advanced_blind_to_leaders",
     "advanced_civ_blind",
+    "advanced_counter_in_lane",
+    "advanced_counter_stand_down",
+    "advanced_early_score_alarm",
+    "advanced_early_score_build",
+    "advanced_evolved_blind",
     "advanced_settler_commit",
     "advanced_food_first",
     "advanced_measured_dedication",
@@ -502,6 +508,56 @@ pub fn builtin_ai(name: &str, seed: u64) -> Box<dyn Ai> {
             ai.settler_commit = true;
             Box::new(ai)
         }
+        // Ablation for the counter-leader axis: identical to `advanced`
+        // except that it never reacts to a rival closing on a victory --
+        // `victory_denial` is silent and `urgent_victory_threat` never waives
+        // the ordinary war-readiness checks. It still fights, expands and
+        // races; it just never does any of it *because* somebody else is
+        // about to win. Paired against `advanced` this is what the whole
+        // denial response is worth. See `docs/COUNTERING_LEADERS.md`, which
+        // measures the layer as a near-perfect predictor of the winner, no
+        // deterrent, and a real cost in development at deployment scale.
+        "advanced_blind_to_leaders" => {
+            let mut ai = AdvancedAi::new();
+            ai.deny_leaders = false;
+            Box::new(ai)
+        }
+        // Treatment for the response-shape axis: identical to `advanced`
+        // except that a Science or Expansion threat is answered by racing the
+        // leader in that lane rather than by declaring on them. The alarm is
+        // unchanged; only what it asks for changes. See
+        // `docs/COUNTERING_LEADERS.md`: at deployment scale one or two
+        // belligerents wins 4.4% and 10.7% of seats against a 16.7% base.
+        "advanced_counter_in_lane" => {
+            let mut ai = AdvancedAi::new();
+            ai.counter_in_lane = true;
+            Box::new(ai)
+        }
+        // Decomposition arm for the response-shape axis: reacts to the other
+        // four races exactly as `advanced` does and to a Science or Expansion
+        // threat not at all. Read against `advanced_counter_in_lane` it says
+        // whether that treatment's effect is "stop declaring" or "race them".
+        "advanced_counter_stand_down" => {
+            let mut ai = AdvancedAi::new();
+            ai.counter_stand_down = true;
+            Box::new(ai)
+        }
+        // Instrument treatment: reads the score race as a margin over the
+        // field instead of as a last-quarter clock. The response is unchanged.
+        "advanced_early_score_alarm" => {
+            let mut ai = AdvancedAi::new();
+            ai.early_score_alarm = true;
+            Box::new(ai)
+        }
+        // The earlier alarm asking for a build instead of a war -- the only
+        // combination `docs/COUNTERING_LEADERS.md` leaves untested, since every
+        // response-side change measured null on the shipped instrument.
+        "advanced_early_score_build" => {
+            let mut ai = AdvancedAi::new();
+            ai.early_score_alarm = true;
+            ai.counter_in_lane = true;
+            Box::new(ai)
+        }
         "advanced_civ_blind" => {
             let mut ai = AdvancedAi::new();
             ai.civ_blind = true;
@@ -533,6 +589,20 @@ pub fn builtin_ai(name: &str, seed: u64) -> Box<dyn Ai> {
         "advanced_relief_scoped" => {
             let mut ai = AdvancedAi::new();
             ai.scoped_relief_hold = true;
+            Box::new(ai)
+        }
+        // The denial ablation on the weights the deployment actually plays.
+        // Every other arm in `docs/COUNTERING_LEADERS.md` ran on
+        // `Weights::default()`, and a genome moves `war_ratio`, `city_target`
+        // and the rest -- so a layer that is worth nothing to the default
+        // agent is not automatically worth nothing to the shipped one. Paired
+        // against `advanced_evolved`, this is the same ablation on the seat
+        // the exhibition fills.
+        "advanced_evolved_blind" => {
+            let mut ai = crate::evolve::load_champion("evolved")
+                .map(AdvancedAi::with_weights)
+                .unwrap_or_else(AdvancedAi::new);
+            ai.deny_leaders = false;
             Box::new(ai)
         }
         "advanced_evolved" => Box::new(
@@ -1149,6 +1219,25 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "advanced_banking_dedication" => (Vec::new(), "advanced_banking_dedication"),
         "advanced_measured_dedication" => (Vec::new(), "advanced_measured_dedication"),
         "advanced_parallel_settlers" => (Vec::new(), "advanced_parallel_settlers"),
+        "advanced_blind_to_leaders" => (Vec::new(), "advanced_blind_to_leaders"),
+        "advanced_counter_in_lane" => (Vec::new(), "advanced_counter_in_lane"),
+        "advanced_counter_stand_down" => (Vec::new(), "advanced_counter_stand_down"),
+        "advanced_early_score_alarm" => (Vec::new(), "advanced_early_score_alarm"),
+        "advanced_early_score_build" => (Vec::new(), "advanced_early_score_build"),
+        // The genome is definitional here for the same reason it is for
+        // `advanced_evolved`: without it this is the stock agent with the
+        // denial layer off, which is a different measurement entirely.
+        "advanced_evolved_blind" => (
+            vec![ArtifactStatus {
+                definitional: true,
+                ..genome
+            }],
+            if champion {
+                "advanced_evolved_blind"
+            } else {
+                "advanced_blind_to_leaders"
+            },
+        ),
         "advanced_civ_blind" => (Vec::new(), "advanced_civ_blind"),
         "advanced_settler_commit" => (Vec::new(), "advanced_settler_commit"),
         "advanced_food_first" => (Vec::new(), "advanced_food_first"),
@@ -1638,8 +1727,13 @@ mod tests {
             // Anything else reaching that state fell through to the
             // catch-all and is claiming to need nothing while quietly
             // needing a net.
-            const SCRIPTED: [&str; 12] = [
+            const SCRIPTED: [&str; 17] = [
                 "advanced",
+                "advanced_blind_to_leaders",
+                "advanced_counter_in_lane",
+                "advanced_counter_stand_down",
+                "advanced_early_score_alarm",
+                "advanced_early_score_build",
                 "advanced_settler_commit",
                 "advanced_banking_dedication",
                 "advanced_civ_blind",

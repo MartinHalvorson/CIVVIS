@@ -554,6 +554,72 @@ pub struct AdvancedAi {
     /// civilization play could exist. A small cost bounds the layer, the way
     /// deleting the opening book bounded that one at −0.003.
     pub civ_blind: bool,
+
+    /// Whether this empire reacts at all to a rival closing on a victory.
+    ///
+    /// `true` — the default and the shipped behaviour — lets `victory_denial`
+    /// name the rival nearest a win and hand back a counter-strategy, and lets
+    /// `urgent_victory_threat` waive the ordinary war-readiness checks against
+    /// a terminal clock. `false` makes both silent: the empire still fights,
+    /// still expands, still races, but never because somebody else is about to
+    /// win.
+    ///
+    /// Reachable as the `advanced_blind_to_leaders` entrant. It exists because
+    /// `leader_census` measured the layer as a near-perfect *predictor* and no
+    /// deterrent at all — 83–86% of every empire it ever names goes on to win,
+    /// against a 17–25% base rate, and 79–82% even when war followed the
+    /// alarm. Paired against `advanced`, this is what the whole counter-leader
+    /// response is worth. A null bounds it at nothing, the way the goal layer
+    /// was bounded; a real cost says the response works and only its timing is
+    /// wrong.
+    pub deny_leaders: bool,
+
+    /// Whether a Science or Expansion threat is answered by racing the leader
+    /// in that lane instead of by declaring on them.
+    ///
+    /// Four of the seven races already answer themselves. The two that answer
+    /// with an army are the two the deployment-scale census argues against:
+    /// at 60x38 an empire at war with one or two rivals wins 4.4% and 10.7%
+    /// of its seats against a 16.7% base rate, and the shipped response
+    /// already costs terminal score (44 map-directions to 65, sign p=0.055)
+    /// without buying a win. Reachable as `advanced_counter_in_lane`. It keeps
+    /// the alarm and changes only what the alarm asks for, so paired against
+    /// `advanced` it isolates the response's *shape* from its existence --
+    /// which `advanced_blind_to_leaders` already bounds from the other side.
+    pub counter_in_lane: bool,
+
+    /// Whether a Science or Expansion threat is simply not reacted to.
+    ///
+    /// `counter_in_lane` changes two things at once: it stops the empire
+    /// declaring on a science or expansion leader, *and* it puts the empire in
+    /// that leader's lane. If the first alone carries the effect then the
+    /// mechanism is "stop paying for a war that takes nothing", and the lane
+    /// is decoration; if the second is needed then it really is a race. This
+    /// repo has published four mechanism stories it had to retract, so the
+    /// decomposition is built before either story is told.
+    ///
+    /// Reachable as `advanced_counter_stand_down`. The other four races are
+    /// answered exactly as they are today.
+    pub counter_stand_down: bool,
+
+    /// Whether the score race is read as a margin over the field instead of as
+    /// a clock.
+    ///
+    /// The shipped term fires only in the last quarter of the game, so at the
+    /// deployment map size — where most games are decided on score at the turn
+    /// limit — every leader trips it at the same turn regardless of how far
+    /// ahead they are. `docs/COUNTERING_LEADERS.md` measures score as the only
+    /// instrument that predicts a winner at an actionable lead, so this reads
+    /// the margin: 78 at 20% ahead of the next empire, 100 at 50% ahead, from
+    /// the first turn an early game has enough history to mean anything.
+    ///
+    /// Reachable as `advanced_early_score_alarm`, and as
+    /// `advanced_early_score_build` paired with [`Self::counter_in_lane`] so
+    /// the earlier alarm asks for a build rather than a war. Every
+    /// response-side change in that document measured null, so this is the
+    /// instrument change those nulls point at — and it is entirely possible
+    /// that an earlier alarm feeding a response worth zero is also worth zero.
+    pub early_score_alarm: bool,
 }
 
 impl Default for AdvancedAi {
@@ -625,6 +691,10 @@ impl AdvancedAi {
             settler_stalls: BTreeMap::new(),
             parallel_settlers: false,
             civ_blind: false,
+            deny_leaders: true,
+            counter_in_lane: false,
+            counter_stand_down: false,
+            early_score_alarm: false,
         }
     }
 
@@ -1359,7 +1429,38 @@ impl AdvancedAi {
             .checked_div(foreign_capitals)
             .unwrap_or(0) as i32;
 
-        let score = if g.max_turns > 0
+        // The shipped score term is a clock, not an observation: it fires only
+        // in the last quarter of the game, so at the deployment map size --
+        // where most games are decided on score at the turn limit -- the alarm
+        // it raises arrives at turn 300 of 400 for every leader alike,
+        // regardless of how far ahead they are.
+        //
+        // The census says score is the one instrument that predicts: at the
+        // deployment profile the score leader is the eventual winner 62% of
+        // the time **200 turns out** against a 16.7% base rate, and settles on
+        // them a median 135 turns before the end, while `victory_threat` sits
+        // at or below the base rate at four of five leads. `early_score_alarm`
+        // reads the margin instead of the clock -- 78 at 20% ahead of the next
+        // empire, 100 at 50% ahead -- from the moment an early game has
+        // enough history to mean anything.
+        let score = if self.early_score_alarm && g.turn >= g.standard_duration(60) {
+            let mine = g.score(pid);
+            let best_rival = living_majors
+                .iter()
+                .filter(|candidate| **candidate != pid)
+                .map(|candidate| g.score(*candidate))
+                .max()
+                .unwrap_or(0)
+                .max(1);
+            let margin = mine as f64 / best_rival as f64 - 1.0;
+            if margin <= 0.0 {
+                0
+            } else if margin < 0.20 {
+                (78.0 * margin / 0.20) as i32
+            } else {
+                (78.0 + 22.0 * ((margin - 0.20) / 0.30).clamp(0.0, 1.0)) as i32
+            }
+        } else if g.max_turns > 0
             && g.turn.saturating_mul(4) >= g.max_turns.saturating_mul(3)
             && living_majors
                 .iter()
@@ -1444,7 +1545,7 @@ impl AdvancedAi {
     }
 
     fn victory_denial(&self, g: &Game, pid: usize) -> Option<(usize, GrandStrategy)> {
-        if self.active_victory_target(g).is_some() {
+        if !self.deny_leaders || self.active_victory_target(g).is_some() {
             return None;
         }
         let culture_pressures = self.rival_culture_pressures(g);
@@ -1504,13 +1605,34 @@ impl AdvancedAi {
         } else if pressure.progress < 78 || pressure.progress < own_progress + 15 {
             return None;
         }
+        // Four of the seven races answer themselves — a culture threat is met
+        // with culture, a religious one with religion. The two that answer with
+        // an army are Science and Expansion, and those are the two the
+        // deployment-scale census argues against: at 60x38 and 74x46 an empire
+        // fighting one or two rivals wins 4.4% and 10.7% of the time against a
+        // 16.7% base rate, and the shipped response already costs terminal
+        // score (44 maps to 65, p=0.055) without buying a win. Racing the
+        // leader in their own lane keeps the reaction and drops the war.
+        // The decomposition arm: react to the other four races unchanged and
+        // to these two not at all, so the effect of dropping the war can be
+        // read apart from the effect of adopting the lane.
+        if self.counter_stand_down
+            && matches!(
+                pressure.strategy,
+                GrandStrategy::Science | GrandStrategy::Expansion
+            )
+        {
+            return None;
+        }
         let counter = match pressure.strategy {
+            GrandStrategy::Science if self.counter_in_lane => GrandStrategy::Science,
             GrandStrategy::Science => GrandStrategy::Conquest,
             GrandStrategy::Culture => GrandStrategy::Culture,
             GrandStrategy::Religion if g.players[pid].religion.is_some() => GrandStrategy::Religion,
             GrandStrategy::Religion => GrandStrategy::Conquest,
             GrandStrategy::Diplomacy => GrandStrategy::Diplomacy,
             GrandStrategy::Conquest => GrandStrategy::Recovery,
+            GrandStrategy::Expansion if self.counter_in_lane => GrandStrategy::Expansion,
             GrandStrategy::Expansion => GrandStrategy::Conquest,
             GrandStrategy::Recovery => GrandStrategy::Recovery,
         };
@@ -1522,6 +1644,9 @@ impl AdvancedAi {
     /// between declaration timing and campaign readiness so either response
     /// cannot silently become more permissive than the other.
     fn urgent_victory_threat(&self, g: &Game, target: usize) -> bool {
+        if !self.deny_leaders {
+            return false;
+        }
         let pressure = self.rival_victory_pressure(g, target);
         let living_majors = g
             .players
@@ -1534,6 +1659,30 @@ impl AdvancedAi {
             || (pressure.strategy == GrandStrategy::Science && pressure.progress >= 78)
             || (pressure.strategy == GrandStrategy::Religion
                 && pressure.progress >= religious_match_point)
+    }
+
+    /// Diagnostic seam: what this planner believes `target`'s best race is,
+    /// and how far along it reads. These are the exact numbers the denial
+    /// layer gates on, exposed so a census can compare them against
+    /// [`Game::victory_threat`] instead of re-deriving the formula — a second
+    /// implementation is how a HUD and an AI end up disagreeing about who is
+    /// about to win. Reads nothing from `self`, so any planner may ask.
+    pub fn rival_pressure(&self, g: &Game, target: usize) -> (GrandStrategy, i32) {
+        let focus = self.rival_victory_pressure(g, target);
+        (focus.strategy, focus.progress)
+    }
+
+    /// Diagnostic seam: the rival this empire would move against right now and
+    /// the counter-strategy it would adopt, or `None` when nobody clears the
+    /// bar. Same call `replan_needed` and `assess` make.
+    pub fn denial_target(&self, g: &Game, pid: usize) -> Option<(usize, GrandStrategy)> {
+        self.victory_denial(g, pid)
+    }
+
+    /// Diagnostic seam: whether `target`'s clock is short enough to skip the
+    /// ordinary war-readiness checks.
+    pub fn denial_is_urgent(&self, g: &Game, target: usize) -> bool {
+        self.urgent_victory_threat(g, target)
     }
 
     fn assess(&self, g: &Game, pid: usize) -> StrategicPlan {
@@ -13009,6 +13158,17 @@ mod tests {
             ai.victory_denial(&game, 0),
             Some((1, GrandStrategy::Conquest))
         );
+
+        // The `advanced_blind_to_leaders` ablation is silent on the same
+        // position, and silent about its urgency, while reading the identical
+        // pressure. An ablation that changed what the empire *sees* would
+        // measure something other than the response.
+        let mut blind = AdvancedAi::new();
+        blind.deny_leaders = false;
+        assert_eq!(blind.rival_victory_pressure(&game, 1).progress, 75);
+        assert_eq!(blind.victory_denial(&game, 0), None);
+        assert!(!blind.urgent_victory_threat(&game, 1));
+        assert!(ai.urgent_victory_threat(&game, 1));
     }
 
     /// The site score is silent about barbarians and about being out of
@@ -13775,6 +13935,23 @@ mod tests {
         let plan = ai.assess(&game, 0);
         assert_eq!(plan.strategy, GrandStrategy::Conquest);
         assert_eq!(plan.target_player, Some(2));
+
+        // The three response shapes on one position, so the arms cannot
+        // silently converge: ship declares, `counter_in_lane` races the same
+        // rival, `counter_stand_down` lets this threat pass. All three read
+        // the identical pressure, so what separates them is the answer and
+        // never the perception.
+        let mut in_lane = AdvancedAi::new();
+        in_lane.counter_in_lane = true;
+        assert_eq!(
+            in_lane.victory_denial(&game, 0),
+            Some((2, GrandStrategy::Science))
+        );
+
+        let mut stand_down = AdvancedAi::new();
+        stand_down.counter_stand_down = true;
+        assert_eq!(stand_down.victory_denial(&game, 0), None);
+        assert_eq!(stand_down.rival_victory_pressure(&game, 2).progress, 78);
     }
 
     #[test]
