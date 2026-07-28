@@ -163,6 +163,51 @@ in the same coordinates, and it comes out the size it comes out.
 
 The longest journey anybody in the game ever makes does not leave the doorstep.
 
+## The ladder, and how long it takes to climb
+
+Fourteen orders of magnitude is a lot to ask of a wheel. The zoom used to move
+by one fixed ratio per notch — the same ratio the flat board uses, where the
+whole zoom is a factor of thirteen and fifteen notches cross all of it — and at
+that ratio the galaxy is **two hundred notches** from the ground. Nobody scrolls
+two hundred times, so most of what is written above could be built and reached
+by nothing but a caption.
+
+So a notch is a fixed fraction of the ladder in front of it instead. The step is
+taken in log scale and divided by the height of the ladder that rung actually
+has, which makes the trip the same length in the hand at every rung and only
+changes how far it goes:
+
+| rung | span of the ladder, in log scale | wheel notches before | after |
+|---|---|---|---|
+| `chart` | 1.9 | 12 | 12 |
+| `eye` | 14.7 | 87 | 58 |
+| `glass` | 27.3 | 161 | 64 |
+| `space` | 34.4 | 203 | 65 |
+
+The gearing is for crossing the dark, and crossing it is all it is for. Four
+places out there are somewhere anyone is actually going — home, the Moon, Mars
+and the world the expedition is aimed at — and over the last sixty-fourfold of
+an approach to one of them the gearing is handed back in proportion to how far
+in the camera is, until, standing over it, one notch means exactly what one
+notch means on the flat board. Nothing in the sky is ever slower than it was
+before there was a ladder at all, and nothing on the board changed: home is one
+of the four, so a zoom over the map is the zoom it has always been.
+
+Two things this had to be told. A world's drawn size is a property of the zoom
+alone, so an arrival is a size test **and** a distance test — at a tile's zoom
+over the Atlantic the Moon is nominally four stages wide, and the size test by
+itself calls that an arrival at the Moon. And out at the destination the stop
+belongs to the **star**: LHS 1140 is twelve times its own planet and sits at
+the same point in the catalogue, so `planetMaxScale` answers with its ceiling and
+the zoom ends while the planet is still a bead. Keyed to the planet alone, the
+one arrival the whole expedition is about never got past 0.46 and ran out at
+full gearing.
+
+A pinch is not a step of intent — its scale follows the spread of the fingers
+and is absolute — so it is geared at its own site, by raising that spread to the
+pace the gesture started with, and capped: a hand opens by a factor of five, and
+five to the fourth is already most of the solar system.
+
 ## Working on it
 
 `web/index.html`, in the block between `the sky beyond` and `the flat board's
