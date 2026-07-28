@@ -3799,3 +3799,74 @@ mechanism story this loop that did not survive contact. The measurements have
 held up throughout; the stories attached to them have not. **The cheap move —
 asking what the log actually contains — resolved in one query what two
 600-game evaluations could not.**
+
+
+## 2026-07-28 — ⚠⚠ correcting the correction: the live rating IS unreliable for this pair, and one summary statistic hid why
+
+Two entries ago I claimed the live pool's rating of `advanced_v1` above
+`advanced` was a ~227 Elo inversion. One entry ago I **retracted** that on a
+single number — `advanced` places ahead in 52.5% of the 478 games containing
+both — and concluded the league was faithful and I was wrong.
+
+**That retraction was over-corrected, and the same match log says so once it is
+broken down instead of averaged.**
+
+| seats | entrant | games | win% | parity |
+|---|---|---|---|---|
+| 2 | `advanced` | 29 | 37.9% | 50.0% |
+| 2 | **`advanced_v1`** | **253** | **56.1%** | 50.0% |
+| 4 | **`advanced`** | 428 | **31.8%** | 25.0% |
+| 4 | **`advanced_v1`** | 102 | **10.8%** | 25.0% |
+| 6 | `advanced` | 820 | 16.3% | 16.7% |
+| 6 | `advanced_v1` | 484 | 12.4% | 16.7% |
+| 12 | `advanced` | 75 | 9.3% | 8.3% |
+| 12 | `advanced_v1` | 75 | 6.7% | 8.3% |
+
+**At four seats the two are not close.** `advanced` wins 31.8% against a 25%
+parity; `advanced_v1` wins 10.8% — under half its share. That is a large gap in
+the same direction as every mirrored evaluation here (+114 Standard, +183
+Online, +207 at 6p 74×46) and as the controlled free-for-all below.
+
+**Where `advanced_v1`'s rating comes from:** it played **253 two-seat duels and
+won 56.1%** of them, while `advanced` played **29**. A ninefold schedule
+imbalance on the format with the highest per-game rating swing is enough to
+carry a pool position that the four-seat games contradict.
+
+**Why the 52.5% hid it.** That statistic is dominated by the 308 six-seat games,
+where both sit near the bottom of a field containing strong bred genomes and
+"placed ahead" is nearly uninformative — at six seats they score 16.3% and 12.4%
+against a 16.7% parity, i.e. both roughly at or below their share. Averaging a
+weak-signal majority with a strong-signal minority produced a number that looked
+like parity and was not.
+
+> **A single summary over a heterogeneous schedule is not evidence about either
+> half of it.** I retracted a correct finding on one, and the disaggregation
+> that overturned the retraction was the same one query, one column further in.
+
+### The controlled free-for-all, at the stock budget
+
+Four builtin entrants, one seat each, every strategy in every game, evolution
+disabled, fresh 1500/rd 350, **stock 500-turn budget** (mean 274 turns, 2 of 128
+games at the cap). Halfway, 128 games each:
+
+| entrant | rating | wins | win% | parity |
+|---|---|---|---|---|
+| `advanced_evolved` | **1517.0** | 39 | 30.5% | 25% |
+| `strategic` | 1498.5 | **49** | **38.3%** | 25% |
+| `advanced` | 1487.0 | 32 | 25.0% | 25% |
+| `advanced_v1` | 1483.1 | 8 | **6.2%** | 25% |
+
+Free-for-all reproduces the mirrored ordering: `advanced_v1` collapses to a
+quarter of its parity share. **So the "mirrored versus free-for-all" explanation
+offered in the previous entry does not survive either** — the format is not what
+separated my evaluations from the live pool's rating; an unbalanced schedule is.
+
+⚠ Note `strategic` has the **most outright wins (49) and the second rating**.
+Glicko rates placement across the whole field, and an agent can win most often
+while placing worse when it does not. Which of those the exhibition should seat
+on is a real question and not one this run answers.
+
+⚠ A truncation caught and fixed mid-experiment: the first attempt passed
+`--turns 250` while the league plays `default_speed()` = **standard = 500**, so
+9 of 16 games hit a half-length cap. That is the failure #282/#285 exists to
+prevent. The cap-hit rate is the cheap tell — 56% there against 2 of 128 here.
