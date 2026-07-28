@@ -207,9 +207,44 @@ a discovery seed with its own confirmation is not a legitimate test. **PR #411
 also read 46.2% first and also evaporated**; wins resting on 13 of 120 maps
 cannot carry a sign test whatever its p-value says.
 
-## The finding underneath all of it: the savings are never spent
+## The gold difference is the reserve schedule, not an unspent surplus
 
-One thing reproduces across every arm and both seeds.
+**This section first claimed that an empire which declines a war banks the
+savings and never spends them. That was wrong, and the correction is kept here
+next to it.** The claim was read off aggregate columns in two eval summaries
+without checking what moves gold in this engine, which is the exact mistake
+that produced four retracted attributions in `docs/SUPERHUMAN.md`.
+
+`advanced_gold_spending` keys its treasury reserve off the plan:
+
+| plan | reserve | at 5 cities |
+|---|---|---|
+| Conquest, Recovery | 75 + 25/city | 200 |
+| Religion | 150 + 50/city | 400 |
+| Science | 250 + 50/city | 500 |
+| Expansion | 250 + 75/city | 625 |
+| Culture, Diplomacy | 300 + 75/city | 675 |
+
+A war empire spends down to 200; a builder empire holds 625. So **any**
+treatment that moves plan mix away from Conquest raises the gold held, with
+nothing saved and nothing wasted. Measured directly, 16 maps at the 4-player
+deployment profile:
+
+| arm | conquest | expansion | mean gold per major-turn |
+|---|---|---|---|
+| ship | 25% | 31% | 322 |
+| in_lane | **19%** | **37%** | **361** |
+
+The treatment moves 6 points of player-turns from Conquest to Expansion —
+exactly what answering a Science or Expansion threat in-lane instead of with an
+army should do — and 6% of the 425-gold reserve gap is ~26 gold against the 39
+observed. Same mechanism, same order of magnitude.
+
+**So there is no unspent-savings finding, and gold utilisation is not the lead
+this page previously said it was.** What is left is the reserve schedule
+itself, which nothing here has calibrated.
+
+The raw columns that prompted the wrong reading, kept because they are real:
 
 | run | arm | gold | cities | pop | tech | districts | builds |
 |---|---|---|---|---|---|---|---|
@@ -218,17 +253,27 @@ One thing reproduces across every arm and both seeds.
 | confirm | `advanced` | 633.9 | 5.22 | 60.9 | 41.9 | 18.8 | 59.3 |
 | confirm | in-lane | **750.6** | 5.20 | 60.5 | 42.1 | 18.6 | 59.3 |
 
-Every arm that declines a war ends **~18% richer** and identical on every other
-column — same cities, population, techs, districts and completed builds. Faith
-moves the same way.
+Every arm that declines a war ends ~18% richer and identical on every other
+column — same cities, population, techs, districts and completed builds. Both
+halves of that are explained above: the gold by the reserve schedule, and the
+flat development by the treatment simply not being worth anything.
 
-So the development story is half right, and the half that fails is the half
-that mattered. Declining the war does save the resources; the empire then puts
-them in a pile. **Nothing is recovered by not fighting, because the alternative
-use of the resources is not being made either.** That is why every response
-shape measures the same: the response is not what binds.
+`advanced_counter_stand_down` exists and is tested — it would decompose "stop
+declaring" from "race them" — but it decomposes an effect that did not survive
+its confirmation, so it has not been run.
 
-The next question is gold utilisation, not victory denial.
-`advanced_counter_stand_down` exists and is tested — it would decompose
-"stop declaring" from "race them" — but it decomposes an effect that no longer
-exists, so it has not been run.
+## Where this leaves the question
+
+Every measured way of stopping a leader in this engine is null or negative:
+
+- deleting the whole response is a dead heat on wins at both map scales;
+- a coalition does not help — one or two belligerents wins 4.4% and 10.7% of
+  its seats against a 16.7% base;
+- changing what the alarm asks for is null across 480 maps and two seeds;
+- and the alarm cannot be made earlier from `victory_threat`, which is at or
+  below the base rate at four of five leads.
+
+The one instrument that does predict a winner at an actionable lead is score,
+and it is deliberately excluded from the victory meter. That remains the only
+opening this investigation found, and it is an *instrument* change, not a
+response change — every response change measured here came back null.

@@ -116,6 +116,15 @@ struct MapReading {
     denials: u64,
     denials_on_winner: u64,
     observations: u64,
+    /// Mean gold held per living-major-turn, and the share of those turns
+    /// spent under each grand strategy. `advanced_gold_spending` keys its
+    /// treasury reserve off the plan -- 75+25/city under Conquest or Recovery
+    /// against 250-300+50-75/city under the builder strategies -- so a
+    /// treatment that changes the plan mix moves the gold held without
+    /// anything being saved or wasted.
+    gold_total: f64,
+    gold_samples: u64,
+    strategy_turns: BTreeMap<&'static str, u64>,
     /// Distinct (observer, target) pairs the denial layer ever named, and how
     /// many of those observers ever actually went to war with the empire they
     /// named.
@@ -218,6 +227,9 @@ fn main() {
         let mut signals: Vec<Vec<[f64; SIGNALS.len()]>> = Vec::with_capacity(turns as usize);
         let mut named_by_turn: Vec<(u32, usize)> = Vec::new();
         let mut named_pairs: BTreeSet<(usize, usize)> = BTreeSet::new();
+        let mut gold_total = 0.0_f64;
+        let mut gold_samples = 0_u64;
+        let mut strategy_turns: BTreeMap<&'static str, u64> = BTreeMap::new();
         let mut followed_pairs: BTreeSet<(usize, usize)> = BTreeSet::new();
         let mut observations = 0_u64;
         let mut end_turn = turns;
@@ -280,6 +292,18 @@ fn main() {
                 }
                 if probe.denial_is_urgent(&game, target) {
                     note(&mut track.first_urgent, turn);
+                }
+            }
+
+            // What the treasury is doing, and under which plan.
+            for observer in majors.iter().copied() {
+                if !game.players[observer].alive {
+                    continue;
+                }
+                gold_total += game.players[observer].gold;
+                gold_samples += 1;
+                if let Some(plan) = fleet[observer].current_plan() {
+                    *strategy_turns.entry(plan.strategy.as_str()).or_default() += 1;
                 }
             }
 
@@ -364,6 +388,9 @@ fn main() {
             majors,
             named_pairs: named_pairs.len(),
             followed_pairs: followed_pairs.len(),
+            gold_total,
+            gold_samples,
+            strategy_turns,
         }
     });
 
@@ -562,6 +589,28 @@ fn main() {
          went to war with the empire they named ({:.0}%)",
         100.0 * followed_pairs as f64 / named_pairs.max(1) as f64
     );
+
+    let gold_total: f64 = readings.iter().map(|r| r.gold_total).sum();
+    let gold_samples: u64 = readings.iter().map(|r| r.gold_samples).sum();
+    let mut strategy_turns: BTreeMap<&str, u64> = BTreeMap::new();
+    for reading in &readings {
+        for (name, count) in &reading.strategy_turns {
+            *strategy_turns.entry(name).or_default() += count;
+        }
+    }
+    let strategy_total: u64 = strategy_turns.values().sum();
+    println!(
+        "\ntreasury: mean {:.0} gold per living-major-turn over {gold_samples} samples",
+        gold_total / gold_samples.max(1) as f64
+    );
+    print!("plan mix:");
+    for (name, count) in &strategy_turns {
+        print!(
+            " {name}={:.0}%",
+            100.0 * *count as f64 / strategy_total.max(1) as f64
+        );
+    }
+    println!();
 
     let mut dogpile: BTreeMap<usize, usize> = BTreeMap::new();
     let mut namers: BTreeMap<usize, usize> = BTreeMap::new();
