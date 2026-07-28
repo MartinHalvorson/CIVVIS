@@ -3870,3 +3870,75 @@ on is a real question and not one this run answers.
 `--turns 250` while the league plays `default_speed()` = **standard = 500**, so
 9 of 16 games hit a half-length cap. That is the failure #282/#285 exists to
 prevent. The cap-hit rate is the cheap tell — 56% there against 2 of 128 here.
+
+
+## 2026-07-28 — ★★★★★ the league breeds and seats on PLACEMENT; the gate promotes on WINS; they disagree by 3.5x
+
+The controlled free-for-all finished: four builtin entrants, **one seat each so
+every strategy plays every game** — a perfectly balanced schedule — evolution
+disabled, fresh 1500/rd 350, stock 500-turn budget, 240 games each.
+
+| entrant | Glicko | wins | win% | **mean place** | 1st | 2nd | 3rd | 4th |
+|---|---|---|---|---|---|---|---|---|
+| `strategic` | **1510.3** | 90 | 37.5% | 2.375 | 90 | 35 | 50 | 65 |
+| `advanced_evolved` | 1506.7 | 73 | 30.4% | 2.433 | 73 | 53 | 51 | 63 |
+| **`advanced_v1`** | **1485.3** | **17** | **7.1%** | 2.600 | 17 | **104** | 77 | 42 |
+| **`advanced`** | **1483.6** | **60** | **25.0%** | 2.592 | 60 | 48 | 62 | 70 |
+
+**`advanced_v1` is rated above `advanced` while winning 3.5× less often**, on a
+balanced schedule, at the stock budget, in a controlled pool. And Glicko is
+**right**: their *mean placements* are 2.600 and 2.592 — indistinguishable.
+
+`advanced_v1` takes **second place 104 times and last only 42**. It is a
+consistent non-winner. `advanced` wins 60 and comes last 70. Averaged into a
+placement, those are the same agent. Counted in victories, one is 3.5× the other.
+
+> **Mean placement is not win probability.** An agent that almost never wins but
+> rarely finishes last is indistinguishable, by the statistic this pool rates on,
+> from one that wins three and a half times as often.
+
+### Why that matters here, in code
+
+| consumer | selects on |
+|---|---|
+| `evolve_league` → `conservative_order` → `lower_confidence` | the **rating** (placement) |
+| `Session::ai_fleet` → `seat_by_civ_seeded` | the **rating** (placement) |
+| `docs/EVAL.md` promotions → `ai_eval` | **wins** |
+
+**This repository breeds its genomes and seats its exhibition on placement, and
+promotes its agents on winning.** Nothing converts between the two, and the pair
+above shows how far apart they can be.
+
+It is also the most plausible account on the table for a result measured earlier
+today: the roster's league-bred genomes lose badly to the champion on *wins*
+(`g56-50` at **−108 Elo**) while ranking above `advanced` on *rating*. A breeder
+selecting on placement will accumulate exactly that phenotype — safe, consistent,
+rarely first. ⚠ Plausible account, not a demonstration: showing it would need a
+breeding run selected on wins as a control, which this does not provide.
+
+### Four explanations tested and discarded to get here
+
+Every one of these was proposed in this document, and each was refuted by the
+next measurement:
+
+| explanation for the `advanced` / `advanced_v1` disagreement | how it died |
+|---|---|
+| the league plays a faster speed | gap *grows* at Online, +114 → +183 |
+| the league plays bigger, fuller maps | grows again, **+207** at 6p 74×46 |
+| the league plays free-for-all, the gate mirrored | FFA **reproduces** the mirrored ordering |
+| the league's schedule is unbalanced (253 duels against 29) | a balanced schedule reproduces the inversion |
+
+The statistic was the answer the whole time, and it was visible in one column of
+the match log — the placement histogram — that nothing had printed.
+
+### What follows
+
+1. **Any selection intended to produce a winning agent must weight winning.**
+   Rating on placement is a defensible choice for a ladder people watch; it is
+   the wrong objective for breeding a maximally strong AI, and it is currently
+   used for both.
+2. **`docs/EVAL.md` and the league are not comparable instruments** and never
+   were. A gain here is a gain in mirrored win rate; a rise there is a rise in
+   free-for-all mean placement.
+3. The cheapest next measurement is a league run whose parent selection is by
+   win rate rather than `lower_confidence`, against this one as control.
