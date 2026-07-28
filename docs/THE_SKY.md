@@ -285,19 +285,28 @@ the far stop are the same arithmetic rather than two opinions that could drift
 apart. At the `eye` rung `Solar system` *is* the far stop, because the naked
 eye's universe ends at Saturn.
 
-`Voyage` is the trip: the Sun at one end, the destination out towards the other,
-centred on the middle of the line between them. Its reach *is* the stop — the
-shot decides where the camera leans, never how far it pulls back, because a stop
-that quietly opened to hold whatever the expedition happened to be aimed at would
-not be a stop.
+`Voyage` is **the view the race is watched from**. The expedition leaves home and
+crawls outward across the rest of the game, and this is the one shot that holds
+where it started, where it is going, and everything it has to cross. Its reach
+*is* the stop — the shot decides where the camera leans, never how far it pulls
+back, because a stop that quietly opened to hold whatever the expedition happened
+to be aimed at would not be a stop.
+
+It is centred **a third of the way along the trip**, not half. The two ends are
+not worth the same amount of frame: what is being tracked spends almost all of
+its life at the near end of the route, and the far end is a world that is not
+going anywhere. On the midpoint, half the stage went to the empty side of a dot.
+A third along leaves the Sun the better placed of the two with the road ahead of
+it opened up — measured, the Sun sits exactly half as far from the middle of the
+frame as the destination does.
 
 How much of a trip that holds is the projection's business. The sky is drawn in
 the plane of the galaxy with a star's height out of it kept separately, so what
 is across the page is `ly · cos b`: LHS 1140 is 48.9 light-years off and
-seventy-one degrees out of the plane, which is **15.7 across** — the whole of
-that trip is on the stage. Seven of the ten are. The three widest — Gliese 667
-Cc, TRAPPIST-1 e and Gliese 12 b, at 23 to 34 across — are not, so the shot leans
-as far as it can, keeps the Sun in frame, and leaves the rest to `Exoplanet`.
+seventy-one degrees out of the plane, which is **15.7 across**. The Sun is on the
+stage for all ten destinations; the far end is for seven of them, and on the
+three widest — Gliese 667 Cc, TRAPPIST-1 e and Gliese 12 b, at 23 to 34 across —
+the offset caps, the road stays in frame, and `Exoplanet` flies the rest.
 
 **The ladder.** The zoom laid out end to end, with the camera's own place on it
 and how wide the stage is beside it in the unit that reads best there — twelve
@@ -387,13 +396,21 @@ subtraction cancels to zero, the logarithm is negative infinity and the whole
 flight comes out `NaN` with the camera never moving. And its own answer for how
 long the trip takes — a constant speed along the path — is twenty-five seconds
 for the whole sky, which is right for a film and wrong for a control. It keeps
-his pace for a short hop and is capped after that — at 2,550 ms, half again as
+his pace for a short hop and is capped after that — at 5,100 ms, three times as
 long as it first shipped at. The distances out here are the content, and at the
 first pace the crossing between two of these places was over before it had said
 anything about what lay between them, which throws away the whole reason for
-flying a path rather than cutting. Every switch is 1.5× longer both ways:
-Earth ↔ Voyage and Earth ↔ Exoplanet 1,700 → 2,550 ms, Earth ↔ Moon 1,533 →
-2,299, the floor 420 → 630.
+flying a path rather than cutting. `SKY_TRAVEL_PACE` multiplies both ends of the
+clamp, so every switch is 3× longer in both directions:
+
+| switch | first shipped | now |
+|---|---|---|
+| Earth ↔ Moon | 1,533 ms | **4,599 ms** |
+| Earth ↔ Mars, Solar system, Voyage, Exoplanet | 1,700 ms | **5,100 ms** |
+| the floor | 420 ms | **1,260 ms** |
+
+Even so it is a fifth of Van Wijk's own answer for a trip across the whole sky,
+which is twenty-five seconds — this is still a control and not a film.
 
 The zoom buttons themselves now repeat while held, which on the flat board is a
 convenience and out here is the difference between a control and an ornament.

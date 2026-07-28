@@ -17143,27 +17143,29 @@ function skyOutermostFrame() {
   const saturn = SKY_SYSTEM.find(body => body.id === "saturn");
   return {x:ex, y:ey, reach:(saturn ? saturn.orbitRadius : 10 * AU) * 1.16};
 }
-// The trip, framed: the Sun at one end, the destination out towards the other,
-// and the stars it crosses in between. **The reach is the stop** — this shot
-// decides where the camera leans, never how far it pulls back. A stop that
-// quietly opened to hold whatever the expedition happened to be aimed at would
-// not be a stop, and the truncation is the whole point.
+// The trip, framed: the Sun near the middle, the road out towards the
+// destination, and the stars it crosses. **This is the view the race is watched
+// from** — the expedition leaves home and crawls outward across the rest of the
+// game, and this is the one shot that holds where it started, where it is going
+// and everything it has to cross.
+//
+// **The reach is the stop** — this shot decides where the camera leans, never
+// how far it pulls back. A stop that quietly opened to hold whatever the
+// expedition happened to be aimed at would not be a stop, and the truncation is
+// the whole point.
 //
 // How much of a trip that holds is the projection's business, not luck. The sky
 // is drawn in the plane of the galaxy with a star's height out of it kept
 // separately, so what is across the page is `ly * cos(b)`: LHS 1140 is 48.9
 // light-years away and seventy-one degrees off the plane, which is fifteen and a
-// half across — the whole of that trip fits. The three widest do not: Gliese 667
-// Cc, TRAPPIST-1 e and Gliese 12 b draw 23 to 34 across, so the shot leans as
-// far as it can, keeps the Sun on the stage, and lets the `Exoplanet` button fly
-// the rest.
+// half across. On the widest trips the far end runs off the frame, the Sun and
+// the road stay on it, and the `Exoplanet` button flies the rest.
 function skyVoyageFrame() {
   const [sx, sy] = skyBodyPos(SKY_SUN);
   const reach = skyStopReach();
   if (!seesDestination()) return {x:sx, y:sy, reach};
   const [ex, ey] = skyBodyPos(skyExoBody());
-  const dx = (ex - sx) / 2, dy = (ey - sy) / 2;
-  // The middle of the trip, when the middle is somewhere the shot can stand.
+  const dx = (ex - sx) * SKY_VOYAGE_ALONG, dy = (ey - sy) * SKY_VOYAGE_ALONG;
   // The cap is measured against the *stage*, not against `reach`, because those
   // are different lengths — and it is four fifths of the half-stage rather than
   // all of it, so the Sun lands inside the frame rather than exactly on its edge.
@@ -17171,6 +17173,16 @@ function skyVoyageFrame() {
   const lean = Math.min(1, room / Math.max(1e-9, Math.hypot(dx, dy)));
   return {x:sx + dx * lean, y:sy + dy * lean, reach};
 }
+// How far along the trip that shot is centred, and it is a third rather than a
+// half because the two ends are not worth the same amount of frame.
+//
+// This is the view the race is watched from. The expedition leaves the Sun and
+// crawls outward over the rest of the game, so what is being tracked spends
+// almost all of its life in the near end of the route — and the far end is a
+// world that is not going anywhere. Centring on the midpoint spent half the
+// stage on the empty side of a dot. A third along leaves the Sun the better
+// placed of the two, with the road ahead of it opened up.
+const SKY_VOYAGE_ALONG = 1 / 3;
 // **How far out the sky goes, written as the width of the stage** — which is the
 // number the bar prints under it and the number this is meant to be read as.
 // Everything else out here is a radius; this one is not, on purpose, because a
@@ -17565,12 +17577,15 @@ function skyTravelPath(from, w0, to, w1) {
 // a button press is a button press, and nobody waits out a journey they can see
 // the end of from the start.
 //
-// Half again as long as it first shipped at, both ways. The distances out here
+// Three times as long as it first shipped at, both ways. The distances out here
 // are the content, and at 240 ms a unit the trip between two of these places was
 // over before it had said anything about what lay between them — the whole
 // argument for flying a path rather than cutting is that the crossing is worth
-// watching, and it was being thrown away to save a second.
-const SKY_TRAVEL_PACE = 1.5;
+// watching, and it was being thrown away to save a second. Van Wijk's own answer
+// for a trip across the whole sky is twenty-five seconds; even at three times
+// the first pace this is a fifth of that, so it is still a control and not a
+// film.
+const SKY_TRAVEL_PACE = 3;
 function skyTravelDuration(S) {
   return Math.max(420 * SKY_TRAVEL_PACE,
                   Math.min(1700 * SKY_TRAVEL_PACE, S * 240 * SKY_TRAVEL_PACE));

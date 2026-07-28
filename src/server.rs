@@ -9974,6 +9974,16 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("  if (seesDestination()) return skyVoyageFrame();"));
         assert!(EMBEDDED_INDEX.contains("function skyVoyageFrame()"));
         assert!(EMBEDDED_INDEX.contains("  const room = SKY_STOP_LY * LIGHT_YEAR * .4;"));
+        // Centred a *third* of the way along the trip rather than half. This is
+        // the view the race is watched from: the expedition leaves the Sun and
+        // crawls outward over the rest of the game, so what is being tracked
+        // spends almost all of its life at the near end of the route, and the
+        // far end is a world that is not going anywhere. On the midpoint half
+        // the stage went to the empty side of a dot.
+        assert!(EMBEDDED_INDEX.contains("const SKY_VOYAGE_ALONG = 1 / 3;"));
+        assert!(EMBEDDED_INDEX.contains(
+            "  const dx = (ex - sx) * SKY_VOYAGE_ALONG, dy = (ey - sy) * SKY_VOYAGE_ALONG;"
+        ));
         assert!(EMBEDDED_INDEX.contains(
             "  const lean = Math.min(1, room / Math.max(1e-9, Math.hypot(dx, dy)));"
         ));
@@ -9998,10 +10008,10 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains(
             "    skyNavScaleRow.replaceChildren(...far.map(([kind, stop]) => skyNavButton(kind, stop)));"
         ));
-        // A switch takes half again as long as it first shipped at, both ways.
+        // A switch takes three times as long as it first shipped at, both ways.
         // The distances are the content, and at the old pace the crossing was
         // over before it had said anything about what lay between the two ends.
-        assert!(EMBEDDED_INDEX.contains("const SKY_TRAVEL_PACE = 1.5;"));
+        assert!(EMBEDDED_INDEX.contains("const SKY_TRAVEL_PACE = 3;"));
         assert!(EMBEDDED_INDEX.contains("  return Math.max(420 * SKY_TRAVEL_PACE,"));
         assert!(!EMBEDDED_INDEX.contains("return Math.max(420, Math.min(1700, S * 240));"));
         for gone in [
