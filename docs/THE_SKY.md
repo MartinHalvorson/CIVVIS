@@ -208,6 +208,111 @@ and is absolute — so it is geared at its own site, by raising that spread to t
 pace the gesture started with, and capped: a hand opens by a factor of five, and
 five to the fourth is already most of the solar system.
 
+## The way about
+
+Gearing made the whole ladder *reachable*. It did not make it navigable, and
+those are different problems. Sixty-five notches is a reachable distance and an
+unusable one; worse, every one of those notches has to be aimed, because a zoom
+out here goes where the pointer says and the pointer is over empty space for
+most of the way. Coming back from the galaxy to a city was a minute of
+scrolling that could be lost at any point in it.
+
+So the sky carries its own way about, on a bar that stands over the zoom
+buttons — the same control, in the same place — and is only there while there
+is a sky to cross. Home wholly on the stage with room around it puts it up; home
+filling the frame takes it down again. Three things on it, in the order a hand
+reaches for them:
+
+**The places.** Home, the Moon, Mars, and the world the expedition is aimed at.
+Those four and no others, because those four are already what the sky calls an
+arrival: they are the three destinations of the space programme and the one
+board they are launched from, and the gearing has handed itself back over
+exactly them since there was a ladder at all. The bar names what the zoom
+already knew. Each is offered only once this civilization can see it, off the
+same roster everything else out here is drawn from, so the bar can never point
+at something the sky is withholding.
+
+A press lands with that world four fifths of the frame across — short of the
+ceiling the zoom itself has for it, deliberately, because a jump that lands
+exactly on the stop leaves the zoom-in button dead in the hand on arrival.
+
+**The shots.** The whole system, the neighbourhood, the galaxy: one press each.
+They are the frames the zoom already stops at, taken out of `skySystemFrame` so
+that a named shot and the far stop are the same arithmetic rather than two
+opinions that could drift apart. At the `eye` rung `System` *is* the far stop,
+because the naked eye's universe ends at Saturn.
+
+**The ladder.** The zoom laid out end to end, with the camera's own place on it
+and how wide the stage is beside it in the unit that reads best there — twelve
+thousand kilometres is a hemisphere, an AU is the inner system, a light-year is
+the dark. It is the same ladder the gearing is measured against, so the handle
+is not a second opinion about how far out anything is; it is the gearing's own
+ruler with a grip on it.
+
+A ladder is a road, and a road has to go somewhere. This one goes to whatever
+the camera is standing on and home when it is standing on nothing, which is the
+journey out here everybody makes and the one the wheel is worst at. The pan
+falls out of the scale — at the bottom the shot this rung's horizon wants, by
+the top over the world the road leads to, crossing between them exactly as that
+world's drawn size crosses the stage — so the handle never has to remember
+anything.
+
+What it must *not* do is go through the ordinary zoom, and that had to be found
+out by dragging it. A zoom in stops at the ceiling of the world nearest the
+camera, which is right for one notch and catastrophic for a whole ladder in one
+move: from the galaxy the nearest world is some red dwarf, its ceiling is a
+hundredth of the way up, and dragging the handle to the ground put the camera
+there and left it.
+
+### The far half of the sky was never coming back
+
+Dragging the handle to the far stop also found a bug that had been in the sky
+for as long as the sky has had true distances in it, and it is the same bug as
+the pinch's, one guard along.
+
+The eased planet zoom moves by `cam.scale *= exp(log(target / max(1e-6,
+cam.scale)) * ease)`. That guard's only job is to keep a divisor off zero, and
+it was chosen when the smallest scale in the world was the flat board's. **The
+sky past about a hundred AU is a smaller number than `1e-6`**, so out there the
+divisor stopped tracking the camera and became a constant: every frame
+multiplied the scale by the same number below one, and the ease could not
+converge. `scaleLeft`, which decides when the move is over, was measured against
+the same lie, so nothing ever noticed.
+
+Measured on unmodified `main`: seventy wheel notches out from a tile come to
+rest at a scale of **2.2×10⁻¹⁵⁵** against a far stop of 3.7×10⁻¹⁵. That is a
+hundred and forty orders of magnitude past the end of the universe, the camera
+is still zooming, and it never stops. Everything out past Neptune was a blank
+screen you could not scroll back from — which is most of what the four rungs
+above were built to show. The guard is `1e-30` now, and the same seventy notches
+come to rest exactly on the stop.
+
+### A jump is a path, not an ease
+
+Easing a zoom and a pan toward the same target together is the obvious thing and
+it is unwatchable across fourteen orders of magnitude: the trip from a tile to
+the destination spends its entire middle at a tile's zoom over empty space with
+nothing on the stage at all. Doing the pan first and the zoom after is a smear.
+
+Van Wijk and Nuij's construction is the answer, and it is not a curve anybody
+drew — given both ends it is the *shortest* path under a metric that counts how
+much the picture moves in the eye, and what falls out is what anyone would do by
+hand: pull back until both ends are in view, cross at that height, come back
+down. It is written entirely in `w`, how wide the stage is in Earth radii,
+because that is the one number a zoom and a pan both change.
+
+Two things it had to be told. Its `ln(-b + sqrt(b² + 1))` has to be written as
+`-asinh(b)`: a camera crossing fourteen orders of magnitude makes `b` as large
+as 10¹⁵, at which point `sqrt(b² + 1)` is exactly `b` in float64, the
+subtraction cancels to zero, the logarithm is negative infinity and the whole
+flight comes out `NaN` with the camera never moving. And its own answer for how
+long the trip takes — a constant speed along the path — is twenty-five seconds
+for the whole sky, which is right for a film and wrong for a control. It keeps
+his pace for a short hop and is capped after that.
+
+The zoom buttons themselves now repeat while held, which on the flat board is a
+convenience and out here is the difference between a control and an ornament.
+
 ## Working on it
 
 `web/index.html`, in the block between `the sky beyond` and `the flat board's
