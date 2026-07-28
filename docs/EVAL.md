@@ -3107,3 +3107,84 @@ how much. Nothing here names 1.6× or 2× or any other number, and picking one b
 trying several against the same maps is exactly the selection bias that cost
 this repository a recorded coordinate-descent result. One pre-registered
 magnitude, one run.
+
+
+## 2026-07-28 — ⚠⚠ CORRECTION: the settler does not lose the argument, it is never asked
+
+The entry above concluded that expansion is limited by *what a settler is
+worth*, on the strength of a 25.8% residual bucket labelled "lost the production
+argument". **That label was wrong, and the conclusion drawn from it was wrong.**
+
+The treatment built on it — `settler_price`, a multiplier on the settler's
+`920.0 + site*4.0` — was run as an upper bound at `settler_price = 100.0`, a
+settler that outbids everything by two orders of magnitude:
+
+```
+ai_eval advanced_settler_first advanced --players 4 --pairs 120
+  --turns 500 --seed 2800000
+paired-map score 48.8%, Elo -9, sign p=0.4531, gate INCONCLUSIVE
+```
+
+**That null is not a result, because the treatment never fired.** The
+fires-check — the same census re-run with the treatment applied, which is what
+should have been done *before* the eval:
+
+| bucket | price 1.0 | price 100.0 |
+|---|---|---|
+| lost the production argument | 28.4% | **28.8%** |
+| cities at end | 2.21 | **2.27** |
+| settlers started | 2.46 | **2.52** |
+
+A settler worth 100× produced 0.06 more cities. The multiplier does not reach
+the decision.
+
+### Why, and what the residual actually is
+
+`advanced_production` (`advanced.rs:6923`) opens with
+
+```rust
+if !g.cities[&cid].queue.is_empty() { continue; }
+```
+
+**A city that is already building something is skipped entirely.**
+`production_value` is consulted only when a queue runs dry, so the settler is
+not out-scored — it is never scored. Splitting the residual on whether *any*
+city was free to choose:
+
+| bucket | share | seat-turns |
+|---|---|---|
+| **every city mid-build** | **25.8%** | 1826 |
+| lost on value, with a free city | **2.6%** | 186 |
+
+So the genuine valuation loss is **2.6%**, not 25.8%, and the settler-price axis
+is closed on an upper bound that was inert — which is to say, not closed at all,
+merely irrelevant at the margin it was tested.
+
+### The finding that replaces it
+
+**This agent never reconsiders what a city is building.** Across 48 seats, on
+25.8% of all seat-turns the empire was short of its own planned city target,
+permitted a settler, had a reachable site, and every city was locked into an
+existing build. The plan above it re-assesses every 5 turns
+(`plan_stale`); the production queue underneath it re-assesses **never**.
+
+That is the opposite defect to the one recorded earlier in this document for the
+grand strategy, and the two sit one layer apart: the lane churns 14 times a game
+while the build queue does not change its mind once.
+
+**The treatment this licenses** is production preemption — let a city abandon a
+part-built item when a candidate's value greatly exceeds it. Civ 6 banks
+progress per item, so switching is close to free, and a strong human switches to
+a settler routinely. **Its fires-check is already written**: the
+`every city mid-build` bucket must collapse, and `expansion_funnel` reports it.
+
+### The process failure, recorded plainly
+
+I attributed a residual bucket to a mechanism without checking that the
+mechanism could move it, wrote that attribution into this document as a finding,
+and spent a 240-game evaluation on it. The repository's own standing rule —
+*"a treatment needs a fires-check before it needs an evaluation"*, earned at the
+cost of a 240-game expansion-ceiling run — is exactly the rule I broke, and it
+cost another 240 games. **A probe's bucket labels are hypotheses about the code,
+not observations.** The fix that caught it took four minutes: re-run the census
+with the treatment on and check the bucket moves.

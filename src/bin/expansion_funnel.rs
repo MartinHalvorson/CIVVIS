@@ -61,8 +61,13 @@ struct Funnel {
     no_city_big_enough: usize,
     /// Turns the expansion window had closed.
     window_closed: usize,
-    /// Turns every gate passed, a site existed, and still no settler: the
-    /// settler lost the production argument.
+    /// Turns every gate passed and a site existed, but every city was already
+    /// mid-build. `advanced_production` skips any city whose queue is
+    /// non-empty, so the settler was never scored at all.
+    all_cities_busy: usize,
+    /// Turns every gate passed, a site existed, and at least one city was free
+    /// to choose — and still chose something else. This is the only bucket that
+    /// is genuinely a valuation loss.
     lost_on_value: usize,
     /// Turns every other gate passed but no city could see anywhere to go.
     no_site: usize,
@@ -82,11 +87,22 @@ fn main() {
     let turns = number(&args, "--turns", 500) as u32;
     let seed0 = number(&args, "--seed", 2_400_000) as u64;
     let jobs = number(&args, "--jobs", parallel::default_jobs());
+    // Fires-check lever: run the same census with the treatment applied. A
+    // treatment that does not collapse the `LOST ON VALUE` bucket is not
+    // reaching the decision, and evaluating it would measure the stock agent
+    // under another name.
+    let settler_price = args
+        .iter()
+        .position(|arg| arg == "--settler-price")
+        .and_then(|i| args.get(i + 1))
+        .and_then(|v| v.parse::<f64>().ok())
+        .unwrap_or(1.0);
 
     println!(
         "expansion_funnel: {maps} maps, {players}p {width}x{height}, {city_states} city-states, \
          {turns} turns, seed {seed0}"
     );
+    println!("settler_price {settler_price}");
     println!("every major seat sampled every turn; attribution is first-failing-gate\n");
 
     let per_map = parallel::map(maps, jobs, move |index| {
@@ -94,6 +110,9 @@ fn main() {
         let mut game = Game::new(players, width, height, seed, turns, city_states);
         let genome = civvis::evolve::load_champion("evolved").unwrap_or_default();
         let mut fleet: Vec<AdvancedAi> = AdvancedAi::fleet_weighted(&game, &genome);
+        for agent in fleet.iter_mut() {
+            agent.settler_price = settler_price;
+        }
         let majors: Vec<usize> = (0..game.players.len())
             .filter(|pid| !game.players[*pid].is_minor && !game.players[*pid].is_barbarian)
             .collect();
@@ -157,7 +176,14 @@ fn main() {
                 } else if game.turn >= game.standard_duration(175) {
                     funnel.window_closed += 1;
                 } else if fleet[*pid].any_settle_site(&game, *pid) {
-                    funnel.lost_on_value += 1;
+                    let anyone_free = city_ids
+                        .iter()
+                        .any(|cid| game.cities.get(cid).is_some_and(|c| c.queue.is_empty()));
+                    if anyone_free {
+                        funnel.lost_on_value += 1;
+                    } else {
+                        funnel.all_cities_busy += 1;
+                    }
                 } else {
                     funnel.no_site += 1;
                 }
@@ -178,9 +204,10 @@ fn main() {
     let in_flight = sum(|f| f.settler_in_flight);
     let small = sum(|f| f.no_city_big_enough);
     let closed = sum(|f| f.window_closed);
+    let busy = sum(|f| f.all_cities_busy);
     let lost = sum(|f| f.lost_on_value);
     let nosite = sum(|f| f.no_site);
-    let residual = lost + nosite;
+    let residual = lost + nosite + busy;
     let total = at_target + in_flight + small + closed + residual;
 
     println!("seats sampled            {}", seats.len());
@@ -196,7 +223,8 @@ fn main() {
     row("no city at pop 2", small);
     row("expansion window closed", closed);
     row("no reachable site", nosite);
-    row("LOST ON VALUE", lost);
+    row("every city mid-build", busy);
+    row("LOST ON VALUE (free city)", lost);
 
     // The residual is the only bucket that names a defect rather than a rule
     // working as written, so branch on it.
