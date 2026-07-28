@@ -340,6 +340,37 @@ produces a p < 0.10 often enough that it cannot be treated as evidence.** Every
 positive reading in this branch has come from a discovery run of that size, and
 neither survived.
 
+## The finding that is not about AI strength
+
+Everything above measures whether the *AI* can act on a leader, and the answer
+is no. But one reading here is not about the AI at all, and CIVVIS is a
+spectator product, so it is worth separating out.
+
+`obs.rs::victory_progress_json` publishes `Game::victory_races` — the five race
+meters — and that is what the viewer's victory screen shows. This investigation
+measured those meters as predictors of the eventual winner at the deployment
+profile:
+
+| what the screen shows | 100 turns out | 150 | 200 |
+|---|---|---|---|
+| `victory_threat` (max of the five races) | 31% | 12% | 44% |
+| religion race | 19% | 19% | 6% |
+| **score margin (not shown as a race)** | **75%** | **69%** | **62%** |
+
+Base rate 16.7%. **A viewer watching the victory screen 150 turns from the end
+is looking at meters that are at or below chance, while the thing that names
+the winner two-thirds of the time is not presented as a race at all.** Score
+appears in the standings; the *margin over the field*, which is what carries
+the signal, does not.
+
+This is an observation about presentation, and it is deliberately not backed by
+a strength claim — no eval can tell you what a spectator should be shown. It
+does have one piece of evidence behind it that the AI-side conclusions do not:
+it does not depend on any response working, so none of the six nulls above bear
+on it.
+
+`leader_census --arm ship` reproduces the table.
+
 ### What this does not license
 
 It does not license deleting the layer. CIVVIS is a spectator product, and this
