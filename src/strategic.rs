@@ -283,6 +283,22 @@ pub struct StrategicAi {
     /// engine converts best — 103 of 120 `advanced` wins in the
     /// `refuse_unreachable_lanes` eval were religious.
     ///
+    /// ⚠⚠ **MEASURED AND REJECTED — it costs 53 Elo. Leave it off.**
+    /// `strategic_religion_expand` against `strategic`, 120 mirrored maps at
+    /// seed 2600000: paired score **42.5%** (Wilson 34.0–51.4), 6 map
+    /// directions for against **24** against, sign **p=0.0014**, anytime-valid
+    /// evidence crossing *against* it at map 63. The treatment expanded more
+    /// (2.59 cities against 2.50) and won less, while terminal score was a dead
+    /// heat at 49.9%.
+    ///
+    /// The reason inverts the intuition that motivated it. Expansion costs
+    /// value *inside the rollout horizon*, so letting a religion branch expand
+    /// lowers that branch's projected value; the search then commits to
+    /// religion less (36.1% → 29.3% of turns) and routes to domination more
+    /// (10.1% → 13.8%), which converts far worse. **The bypass is an
+    /// accidental correctness — it biases the projection toward the lane this
+    /// engine actually converts.**
+    ///
     /// ⚠ **Set this through `set_religion_may_expand`, not on its own.**
     /// Fidelity means the projection matches what the agent *would actually
     /// do*. If the acting agent still stops expanding when it commits to

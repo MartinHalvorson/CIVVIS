@@ -451,7 +451,23 @@ pub struct AdvancedAi {
     pub prophet_before_opportunism: bool,
     /// Let an assigned Religion lane expand first, like every other lane.
     ///
-    /// **Off by default until measured.** In `assess()` an explicitly targeted
+    /// ⚠⚠ **MEASURED AND REJECTED. Leave it off.** Applied consistently to the
+    /// acting agent and the macro search's branches together
+    /// (`StrategicAi::set_religion_may_expand`, entrant
+    /// `strategic_religion_expand`) it measured **−53 Elo** over 120 mirrored
+    /// maps, sign p=0.0014 against it. Applied to the actor alone it was a null
+    /// end-to-end (4 helped / 7 hurt, p=0.5488). The skipped test turns out to
+    /// be load-bearing: expansion costs value inside the rollout horizon, so
+    /// permitting it makes the religion lane project *worse* and the search
+    /// routes away from the lane it actually converts. See `docs/EVAL.md`,
+    /// 2026-07-28.
+    ///
+    /// Kept reachable, on the `advanced_lane_reachable` precedent, so the axis
+    /// can be re-measured against a longer rollout horizon rather than
+    /// re-derived from scratch — the result depends on a settler not paying
+    /// back before a branch is scored, which is a statement about the window.
+    ///
+    /// **Off by default.** In `assess()` an explicitly targeted
     /// seat normally asks "can this lane still afford to expand first?" before
     /// pursuing its target. The Religion arm is the sole exception: a targeted
     /// seat with no religion yet goes straight to `GrandStrategy::Religion`,
