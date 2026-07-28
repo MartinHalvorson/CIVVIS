@@ -267,6 +267,32 @@ pub struct StrategicAi {
     /// piece of retained state does it -- the force groups, the peace
     /// cooldown, or simply the plan surviving.
     pub continue_from_plan: bool,
+    /// Project a Religion branch with an empire that is still allowed to
+    /// expand. **Off by default until measured.**
+    ///
+    /// Every branch is built by `retarget`, and `AdvancedAi::assess` sends an
+    /// assigned-Religion seat that has no religion yet straight to
+    /// `GrandStrategy::Religion`, skipping the "can this lane still afford to
+    /// expand first?" test that every other assigned target reaches. Measured
+    /// end-to-end with `commit_curve` on the shipped genome, a seat committed
+    /// to Religion finishes on **1.68 cities against an adaptive seat's 4.10**.
+    ///
+    /// So the search's religion branches are projected by an empire that stops
+    /// growing, while the adaptive branch it is compared against keeps growing.
+    /// If that biases the comparison, it biases it *against* the lane this
+    /// engine converts best — 103 of 120 `advanced` wins in the
+    /// `refuse_unreachable_lanes` eval were religious.
+    ///
+    /// ⚠ **Set this through `set_religion_may_expand`, not on its own.**
+    /// Fidelity means the projection matches what the agent *would actually
+    /// do*. If the acting agent still stops expanding when it commits to
+    /// Religion, then a branch that keeps expanding projects a game that will
+    /// never be played — which is less faithful, not more. Applied to the
+    /// branches alone this flag is a bias, not a repair.
+    ///
+    /// `continue_from_plan` was the same class of defect — the counterfactual
+    /// simulating the wrong thing — and was worth +37 Elo.
+    pub branch_religion_may_expand: bool,
     /// Let the irreversible-Prophet prior answer a review before the
     /// rollouts run. True reproduces the shipped behaviour exactly.
     ///
@@ -442,6 +468,7 @@ impl StrategicAi {
             net,
             census: ReviewCensus::default(),
             continue_from_plan: true,
+            branch_religion_may_expand: false,
             adaptive_horizon: false,
             model_rival_lanes: false,
             trust_religious_prior: true,
@@ -1108,13 +1135,18 @@ impl StrategicAi {
         if !self.continue_from_plan {
             return match target {
                 Some(target) => {
-                    Box::new(AdvancedAi::with_weights_and_target(weights.clone(), target))
-                        as Box<dyn Ai>
+                    let mut agent =
+                        AdvancedAi::with_weights_and_target(weights.clone(), target);
+                    agent.assigned_religion_may_expand = self.branch_religion_may_expand;
+                    Box::new(agent) as Box<dyn Ai>
                 }
                 None => Box::new(AdvancedAi::with_weights(weights.clone())) as Box<dyn Ai>,
             };
         }
         let mut inner = self.inner.clone();
+        // Scoped to the projection, not to play: this changes what the search
+        // *believes* a lane is worth, leaving the agent that acts untouched.
+        inner.assigned_religion_may_expand = self.branch_religion_may_expand;
         if inner.weights().to_vec() != weights.to_vec() {
             inner.reweight(weights.clone());
         }
@@ -1124,6 +1156,23 @@ impl StrategicAi {
             _ => {}
         }
         Box::new(inner) as Box<dyn Ai>
+    }
+
+    /// Repair the assigned-Religion expansion bypass consistently — on the
+    /// agent that acts *and* on every branch it projects.
+    ///
+    /// These two have to move together. Setting it on the branches alone makes
+    /// the search rank a game the agent will not play; setting it on the actor
+    /// alone leaves the search projecting the old behaviour. Screened with
+    /// `lane_projection` at turn 40 over 24 positions: the religion branch's
+    /// value moves on 20 of 24 and the argmax lane changes on **6 — one review
+    /// in four** — with no directional preference (10 up / 10 down, 3 toward
+    /// Religion and 3 away). That is the same signature `continue_from_plan`
+    /// showed before it measured +37 Elo: fidelity moves the search's answer
+    /// without sharpening its resolution.
+    pub fn set_religion_may_expand(&mut self, on: bool) {
+        self.branch_religion_may_expand = on;
+        self.inner.assigned_religion_may_expand = on;
     }
 
     /// Every branch's projected value, in the order `review` compares them.

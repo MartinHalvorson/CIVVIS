@@ -38,7 +38,7 @@ pub const BUILTIN_AIS: [&str; 10] = [
 /// tournament ratings. Keeping them out of `BUILTIN_AIS` prevents a control
 /// factory from being pooled into the same player/leader rating key as
 /// its treatment.
-pub const EVAL_ONLY_AIS: [&str; 43] = [
+pub const EVAL_ONLY_AIS: [&str; 44] = [
     "advanced_banking_dedication",
     "advanced_blind_to_leaders",
     "advanced_civ_blind",
@@ -77,6 +77,7 @@ pub const EVAL_ONLY_AIS: [&str; 43] = [
     "policy_wide",
     "policy_wide_frozen",
     "strategic_warm",
+    "strategic_religion_expand",
     "strategic_cold",
     "strategic_noprophet",
     "strategic_deep_adaptive",
@@ -678,6 +679,18 @@ pub fn builtin_ai(name: &str, seed: u64) -> Box<dyn Ai> {
         "strategic" => Box::new(crate::strategic::StrategicAi::with_weights(
             crate::evolve::load_champion("evolved").unwrap_or_default(),
         )),
+        // Treatment for the assigned-Religion expansion bypass: identical to
+        // `strategic` except that a seat committed to Religion asks the same
+        // "can this lane afford to expand first?" question every other assigned
+        // lane asks — on the acting agent and on every projected branch alike.
+        // See `StrategicAi::set_religion_may_expand`.
+        "strategic_religion_expand" => {
+            let mut ai = crate::strategic::StrategicAi::with_weights(
+                crate::evolve::load_champion("evolved").unwrap_or_default(),
+            );
+            ai.set_religion_may_expand(true);
+            Box::new(ai)
+        }
         "strategic_score" => Box::new(crate::strategic::StrategicAi::score_only_with_weights(
             crate::evolve::load_champion("evolved").unwrap_or_default(),
         )),
@@ -1175,6 +1188,10 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "strategic_h80" => (vec![genome, value(false)], "strategic_h80"),
         "strategic_rot20" => (vec![genome, value(false)], "strategic_rot20"),
         "strategic_warm" => (vec![genome, value(false)], "strategic_warm"),
+        "strategic_religion_expand" => (
+            vec![genome, value(false)],
+            "strategic_religion_expand",
+        ),
         "strategic_cold" => (vec![genome, value(false)], "strategic_cold"),
         "strategic_noprophet" => (vec![genome, value(false)], "strategic_noprophet"),
         "strategic_deep_adaptive" => (vec![genome, value(false)], "strategic_deep_adaptive"),
