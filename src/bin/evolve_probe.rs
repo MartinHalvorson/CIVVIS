@@ -210,6 +210,7 @@ fn main() {
         seed,
         threads: jobs,
         dir: String::new(),
+        speed: civvis::game::default_speed(),
     };
 
     let results = parallel::map(candidates.len(), jobs, |index| {

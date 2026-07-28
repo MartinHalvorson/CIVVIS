@@ -4247,3 +4247,56 @@ builds games at Standard, while the spectator plays Online and records into the
 same directory with `--league-record`. The live pool is therefore a **mixture of
 two game types**, which is worth knowing before any rating in it is used as
 evidence — including in the entries above where I used it as such.
+
+
+## 2026-07-28 — the breeder accepted `--speed` and ignored it, so it bred truncated games
+
+Found while auditing the toolchain for the speed blindness above. It is not
+merely that `evolve` lacked the flag — **it half-had it, which is worse.**
+
+`main.rs` resolves the breeder's turn budget through `stock_turns(&args)`, and
+`stock_turns` *does* read `--speed`:
+
+```rust
+max_turns: arg(&args, "--turns", stock_turns(&args)) as u32,
+```
+
+But both game sites in `evolve.rs` called `Game::new(...)`, which pins
+`default_speed()` = `standard`. So
+
+```
+civvis evolve --speed online ...
+```
+
+set a **250-turn budget** and then played **Standard games truncated at 250** —
+exactly the half-length cap `#282`/`#285` exist to prevent, arriving silently
+through a flag that looked supported. A short cap does not shorten a game, it
+changes the answer: at 250 turns the cap named a different winner in 13 of 24
+replays.
+
+**Fixed.** `EvoCfg` gains a `speed` field defaulting to `game::default_speed()`,
+plumbed from `--speed`, and both sites now build through
+`GameOptions { speed, .. }`. The default reproduces every genome this repository
+has bred; `--speed online` now plays Online.
+
+```
+civvis evolve --speed online --pop 4 --generations 1 --games 2 --players 4 --width 24 --height 16
+  evolve: pop 4 · 2 games/genome · 24x16 4p 250t · 2 threads
+```
+
+Four other `EvoCfg` construction sites — `evolve_probe`, `search_probe`, and two
+in `genome_gate` — were updated to the explicit default so the change is
+behaviour-preserving everywhere. Suite green at **1139**.
+
+**Why this matters beyond the bug.** `docs/EVAL.md` records the shipped champion
+at **+58 Elo on the 4p 24×16 Standard profile it was bred on** and **+10,
+inconclusive, at the Online speed the exhibition plays**. Breeding at the speed
+that ships was one struct field away and the field did not exist. It does now,
+and the run that would use it — a champion bred at Online, compared against the
+shipped one on a common holdout — is the experiment that separates *the GA
+overfitted its profile* from *Online compresses every difference*. Both readings
+are live; this makes the discriminating experiment possible.
+
+⚠ The 21 other probes and evaluators still build through `Game::new` and remain
+Standard-only. This entry fixes the breeder and the two probe families that
+share `EvoCfg`, not the whole toolchain.
