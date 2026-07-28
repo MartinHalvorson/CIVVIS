@@ -3308,3 +3308,80 @@ That asymmetry is worth more than the null. It means the −53 Elo was **not**
 optimum it is already sitting on, in a direction that happens to be steeply
 downhill. Any future routing treatment should be read that way: the question is
 not which lane is best, it is which direction off the current point is less bad.
+
+
+## 2026-07-28 — ★★★ the league roster has no entrant that plays the champion genome
+
+An artifact audit, not a mechanism. `docs/SUPERHUMAN.md` §4: *"measure the
+artifact before the algorithm — ask what the process actually loads, at the path
+it actually runs from."* Both of this repository's shipped gains came from that,
+and this is a third instance of the same defect, in a place the fix for the
+first one did not reach.
+
+### The chain
+
+- `AdvancedAi::new()` → `BasicAi::new()` → **`w: Weights::default()`**. The
+  hierarchical agent constructed with no arguments plays the *fallback* genome.
+- `league::make_send_ai` resolves `StrategyKind::Builtin { ai }` by name, and
+  loads the champion for exactly two: **`"advanced_evolved" | "evolved"`**.
+  Everything else, including `"advanced"`, falls to `_ => AdvancedAi::new()`.
+- The shipped roster `data/league/league.json` contains **three** builtin kinds:
+  `advanced` (rating 1702.7, 331 games), `advanced_v1` (1754.6), `basic`
+  (1490.2). **`advanced_evolved` is not among them.**
+- `Session::ai_fleet` (`server.rs`) seats the roster's best-rated strategy per
+  civ when it has one, and otherwise every major seat gets the entrant *named*
+  `"advanced"`.
+
+**So no seat in the exhibition, and no entrant in the league, can play the
+gen-14 champion that `#471` embedded in the binary.** The genome is loadable —
+`ai_eval` prints `advanced_evolved: loaded best.json` — but nothing in the
+roster asks for it.
+
+### What that is worth, measured
+
+```
+ai_eval advanced_evolved advanced --players 4 --pairs 300 --turns 500
+  --seed 3700000
+
+game-win share     350/600 (58.3%)  against  250/600 (41.7%)
+paired-map score   58.3%  (95% Wilson CI 52.7%..63.8%)   Elo-equivalent +58
+paired direction   80 for / 190 neutral / 30 against   sign p = 0.0000
+anytime-valid      e = 7.834e4, crossed at map 141
+terminal score     54.4%, 222 / 0 / 78, p = 0.0000
+promotion gate     PASS
+```
+
+Confirmed first at 120 maps on a disjoint seed (3400000): 54.6%, Elo +32,
+22 for / 11 against, terminal-score direction 85/35 at p=0.0000. Two disjoint
+seeds, same direction, the larger one clearing the unmodified gate.
+
+This also independently reproduces the genome's recorded worth — `#471` measured
+57.0% and +49 Elo through `evolve`'s gate on 1300 maps — **in the deployed
+`advanced` agent**, which is the thing the roster actually seats.
+
+### The fix, and what it deliberately does not do
+
+Added `advanced_evolved` to `data/league/league.json` as a **new entrant**, which
+is the only change that does not damage something:
+
+- Redefining `Builtin:advanced` to load the champion was rejected. It would
+  silently reinterpret an entrant with **331 games of rating history**, and
+  every published number naming `advanced` with it. This document exists partly
+  because that class of silent redefinition is expensive.
+- Seeded at `advanced`'s own rating (1702.7) with a **new entrant's RD of 350**,
+  *not* at 1702.7 + 58. A head-to-head against one opponent is not a Glicko
+  rating; the wide RD is how the league is told it does not yet know, and it
+  will converge in a handful of rounds.
+
+⚠ **This does not immediately make the exhibition stronger, and should not be
+described as if it does.** `seat_by_civ_seeded` picks from the best-rated
+available strategies, and a fresh 1702.7 entrant will not be in that set until
+the league has rated it. What the change does is make the strongest known agent
+*reachable* by the rating machinery at all, which it currently is not.
+
+⚠ A second caution, unmeasured: when the exhibition *does* seat from the roster
+it picks league-bred `Advanced(genome)` entries rated up to 1823 — and the
+best-rated of those, `g20-21` at 1790.8, measured **−98 Elo** when transferred
+into `strategic_deep` (`docs/LEAGUE_GENOME_CHALLENGER.md`). Whether the top of
+this roster is genuinely stronger than the champion is an open question this run
+does not answer, and it is the more valuable one.
