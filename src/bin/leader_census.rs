@@ -173,18 +173,38 @@ fn main() {
     // census run without them is measuring a different game -- city-states
     // carry envoys, suzerainty and a large share of the religious map.
     let city_states = number(&args, "--city-states", 0);
+    // Which response shape the whole table plays. The census is otherwise
+    // identical, so `--arm` reads what a treatment does to behaviour before
+    // any question of what it does to strength.
+    let arm = args
+        .iter()
+        .position(|a| a == "--arm")
+        .and_then(|i| args.get(i + 1))
+        .map(String::as_str)
+        .unwrap_or("ship")
+        .to_string();
+    if !matches!(arm.as_str(), "ship" | "in_lane" | "stand_down") {
+        eprintln!("--arm must be ship, in_lane or stand_down");
+        std::process::exit(2);
+    }
     let jobs = number(&args, "--jobs", parallel::default_jobs());
 
     println!(
         "leader_census: {maps} maps, {players}p {width}x{height}, {city_states} city-states, \
-         {turns} turns, seed {seed0}, denial bar {DENIAL_BAR}"
+         {turns} turns, seed {seed0}, arm {arm}, denial bar {DENIAL_BAR}"
     );
 
+    let arm_label = arm.clone();
     let readings = parallel::map(maps, jobs, move |index| {
+        let arm = arm_label.as_str();
         let seed = seed0 + index as u64;
         let mut game = Game::new(players, width, height, seed, turns, city_states);
         let stock = Weights::default();
         let mut fleet: Vec<AdvancedAi> = AdvancedAi::fleet_weighted(&game, &stock);
+        for planner in fleet.iter_mut() {
+            planner.counter_in_lane = arm == "in_lane";
+            planner.counter_stand_down = arm == "stand_down";
+        }
         // `rival_pressure` reads nothing from the planner it is asked of, so
         // one probe answers for every seat and the reading cannot drift with
         // whichever empire happens to be looking.
