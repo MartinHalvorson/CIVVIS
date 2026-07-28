@@ -9948,17 +9948,34 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("function skyFrameFor(box)"));
         assert!(EMBEDDED_INDEX.contains("function skyStopScale(stop)"));
         assert!(EMBEDDED_INDEX.contains("  if (knowsNeighbourhood())"));
-        // The sky stops at twenty light-years, and the top rung's stop is the
-        // voyage rather than a scale: the Sun at one end and the route out
-        // towards the destination. The reach *is* the bubble — this shot decides
-        // where the camera leans, never how far it pulls back — because a stop
-        // that quietly opens to two and a half times its depth whenever the
-        // expedition is aimed a long way off is not a stop.
-        assert!(EMBEDDED_INDEX.contains("const SKY_BUBBLE_LY = 20;"));
+        // The sky stops at twenty light-years, and the stop is written as the
+        // **width of the stage** rather than as a reach — which is the number
+        // the bar prints under it. Every other shot out here is a radius inside
+        // the padded frame, and a stop written that way printed `45.7 ly`
+        // beneath itself: a view arguing with its own caption. `skyFrameFor`
+        // and `skyReachForStageWidth` are the two directions of one conversion,
+        // so the stop and the readout cannot drift apart.
+        assert!(EMBEDDED_INDEX.contains("const SKY_STOP_LY = 20;"));
+        assert!(EMBEDDED_INDEX.contains("function skyStopReach()"));
+        assert!(EMBEDDED_INDEX.contains("function skyReachForStageWidth(width)"));
+        assert!(EMBEDDED_INDEX.contains("function skyFramedBox()"));
+        assert!(EMBEDDED_INDEX.contains(
+            "  return width * Math.min(inside.width, inside.height) / (2 * skyStageSpan());"
+        ));
+        // And the drawn shell is half of it, so the ring spans the stage rather
+        // than hanging off the edge of it.
+        assert!(EMBEDDED_INDEX.contains("const SKY_BUBBLE_LY = SKY_STOP_LY / 2;"));
+        // The top rung's stop is the voyage rather than a scale: the Sun at one
+        // end and the route out towards the destination. It decides where the
+        // camera leans, never how far it pulls back — a stop that quietly opens
+        // whenever the expedition is aimed a long way off is not a stop — and
+        // the lean is capped against the *stage*, which is not the same length
+        // as the reach.
         assert!(EMBEDDED_INDEX.contains("  if (seesDestination()) return skyVoyageFrame();"));
         assert!(EMBEDDED_INDEX.contains("function skyVoyageFrame()"));
+        assert!(EMBEDDED_INDEX.contains("  const room = SKY_STOP_LY * LIGHT_YEAR * .4;"));
         assert!(EMBEDDED_INDEX.contains(
-            "  const lean = Math.min(1, reach / Math.max(1e-9, Math.hypot(dx, dy)));"
+            "  const lean = Math.min(1, room / Math.max(1e-9, Math.hypot(dx, dy)));"
         ));
         assert!(EMBEDDED_INDEX.contains("  return {x:sx + dx * lean, y:sy + dy * lean, reach};"));
         // Two shots, named as the places they are: the solar system, and the
@@ -9968,6 +9985,25 @@ mod tests {
         // no zoom can now reach.
         assert!(EMBEDDED_INDEX.contains("label:\"Solar system\", mark:\"☉\""));
         assert!(EMBEDDED_INDEX.contains("stops.push({id:\"voyage\", label:\"Voyage\""));
+        // And the bar reads outward in one order — Earth, Moon, Mars, Solar
+        // system, Voyage, Exoplanet. The divider is no longer the difference
+        // between a world and a shot: it falls where the sky stops being
+        // somewhere anyone has stood, so the destination sits with the far
+        // pictures rather than beside the Moon.
+        assert!(EMBEDDED_INDEX
+            .contains("    const near = worlds.filter(stop => stop.id !== \"exo\");"));
+        assert!(EMBEDDED_INDEX.contains(
+            "                 ...worlds.filter(stop => stop.id === \"exo\").map(stop => [\"world\", stop])];"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "    skyNavScaleRow.replaceChildren(...far.map(([kind, stop]) => skyNavButton(kind, stop)));"
+        ));
+        // A switch takes half again as long as it first shipped at, both ways.
+        // The distances are the content, and at the old pace the crossing was
+        // over before it had said anything about what lay between the two ends.
+        assert!(EMBEDDED_INDEX.contains("const SKY_TRAVEL_PACE = 1.5;"));
+        assert!(EMBEDDED_INDEX.contains("  return Math.max(420 * SKY_TRAVEL_PACE,"));
+        assert!(!EMBEDDED_INDEX.contains("return Math.max(420, Math.min(1700, S * 240));"));
         for gone in [
             "GALAXY_DISC_LY",
             "GALAXY_SUN_RADIUS_LY",
