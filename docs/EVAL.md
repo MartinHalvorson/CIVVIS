@@ -2799,3 +2799,56 @@ had — `continue_from_plan`, +37 Elo — came from exactly this class of bug: t
 counterfactual was simulating the wrong thing. **Measuring the projected city
 count of a religion branch against the same branch played out is the obvious
 next instrument**, and it is a fidelity question, not a routing one.
+
+
+## 2026-07-28 — the search projects a religion branch that stops expanding, and it changes one review in four
+
+`src/bin/lane_projection.rs`. `StrategicAi::branch_agent` builds every branch by
+calling `retarget`, so a Religion branch inherits the `assess()` bypass measured
+in the entry above: an assigned-Religion seat with no religion yet skips the
+expansion test every other assigned lane reaches. The branch is therefore
+projected by an empire that stops growing, while the adaptive branch it is
+ranked against keeps growing.
+
+The screen flips one flag on **one agent at one position** and reads the branch
+values the review actually compares — paired by construction: same game, same
+seat, same plan in force, same budget, one boolean apart.
+
+**24 positions at turn 40, 4p 60×38, 6 city-states, shipped genome, seed 2100000:**
+
+| | |
+|---|---|
+| religion branch value moved | **20 of 24** |
+| direction | **10 up / 10 down** |
+| mean change | −0.0037 against a branch spread of 0.060 |
+| **argmax lane changed** | **6 of 24 — one review in four** |
+| toward Religion / away | **3 / 3** |
+
+**Not inert, and not the predicted bias.** The defect is real and moves the
+search's decision on a quarter of reviews, but it does not systematically favour
+or disfavour Religion — the direction is a coin flip. My prediction was that it
+would bias the ranking *against* the lane this engine converts best. It does
+not.
+
+**Sampling turn matters and nearly hid this.** The same screen at turn 60 moved
+only 2 of 8 positions and changed no decision. By turn 60 many seats already
+have a religion, so the arm no longer applies. A screen that samples after the
+window it is testing reads as null for the wrong reason.
+
+**The signature is the one `continue_from_plan` had.** That treatment changed
+the decision on 14 of 57 positions — one review in four — with the dispersion
+distribution unchanged and no directional story for which lane benefited
+(p=0.42), and it measured **+37 Elo**. This is the same shape. That justifies
+spending one evaluation; it is **not** evidence of a gain, and the resemblance
+is exactly the post-hoc pattern-matching this document has been burned by
+before.
+
+### The design error the screen caught
+
+The flag was first written to apply to the **branches only**, on the theory that
+this is a pure fidelity repair. That is backwards. Fidelity means the projection
+matches what the agent *would actually do* — and the acting agent still stops
+expanding when it commits to Religion. A branch that keeps expanding projects a
+game that will never be played, which is *less* faithful, not more. The two must
+move together, which is what `StrategicAi::set_religion_may_expand` now
+enforces and what the `strategic_religion_expand` entrant uses.
