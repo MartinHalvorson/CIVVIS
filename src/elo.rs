@@ -1364,7 +1364,7 @@ where
                 |winner| game.players[winner].civ.clone(),
             ),
             game.victory_type.clone().unwrap_or_default(),
-            game.turn,
+            game.reported_turn(),
         )
     });
 

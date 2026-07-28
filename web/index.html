@@ -8164,7 +8164,7 @@ function directorCue(prev, next) {
                    next.units.find(unit => winnerIds.includes(unit.owner));
     if (victor) offer(victor.pos, 12, {kicker:"History has a victor",
       title:`${winnerName} wins`,
-      detail:`${titleCase(next.victory_type || "score")} victory · Turn ${next.turn}`,
+      detail:`${titleCase(next.victory_type || "score")} victory · Turn ${reportedTurn(next)}`,
       zoom:1.08, opening:true});
   }
   // Keep the opening survey on the main settled landmass. Foundations,
@@ -9278,7 +9278,7 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
         <span class="winner-mark" aria-hidden="true">✦</span>
         <strong class="winner-title">${winnerName}</strong>
         <span class="winner-verdict">${verdict}</span>
-        <span class="winner-meta">Turn ${st.turn} · History remembers</span>
+        <span class="winner-meta">Turn ${reportedTurn(st)} · History remembers</span>
         ${SPEC ? `<span class="winner-countdown" id="respawn" role="timer"></span>` : ``}
         <span class="winner-actions">
           ${SPEC ? `` : `<button class="primary winner-again" onclick="startNewSimulation()" id="finale-restart"
@@ -21830,6 +21830,15 @@ function victoryMetric(player, victory) {
   return player.victories?.[victory] || { progress: 0 };
 }
 
+// The turn a world is reported on. A score victory is the turn limit's own
+// tiebreak, and the count that settles it is taken on the wrap out of the
+// final turn, so a finished 250-turn game reads turn 250 rather than the turn
+// 251 nobody plays. A live world is always on the turn it is playing.
+function reportedTurn(st) {
+  const world = st || state;
+  return world?.victory_turn ?? world?.turn;
+}
+
 function turnCapLabel() {
   if (state.turn_limit === null) return "∞";
   const cap = +(state.turn_limit ?? state.max_turns);
@@ -21891,7 +21900,7 @@ function victoryTrackerSubheading(victory) {
   if (victory === "religious") return `<span></span><span>Civs</span>`;
   if (victory === "diplomatic") return `<span></span><span>Score</span>`;
   if (victory === "domination") return `<span></span><span>Capitals</span>`;
-  return `Turns: ${state.turn}/${turnCapLabel()}`;
+  return `Turns: ${reportedTurn()}/${turnCapLabel()}`;
 }
 
 function victoryTrackerStats(victory, metric) {
@@ -22043,7 +22052,7 @@ function hudTurnPlate() {
       (decided.mode === "indefinite" ? " indefinitely" : " until the next victory")
     : "";
   const context = identityContext + (playOnLabel ? ` · ${playOnLabel}` : "");
-  const plateLabel = `${context}; ${ageLabel}; turn ${state.turn} of ${turnCapLabel()}; ` +
+  const plateLabel = `${context}; ${ageLabel}; turn ${reportedTurn()} of ${turnCapLabel()}; ` +
     `game speed ${speedName}; watch pace ${watchPace}; ` +
     `${civCount} civilizations remaining, ${civsLost} eliminated; ` +
     `${cityStateCount} city states remaining, ${cityStatesLost} eliminated`;
@@ -22060,7 +22069,7 @@ function hudTurnPlate() {
     `<span class="turn-era">${ageLabel}</span>` +
     `<div class="turn-count"><div class="turn-heading"><span class="turn-label">Turn</span>` +
     (decided ? `<small class="turn-playon">Playing on</small>` : ``) +
-    `</div><div class="turn-progress"><strong>${state.turn}</strong>` +
+    `</div><div class="turn-progress"><strong>${reportedTurn()}</strong>` +
     `<small class="turn-total">/ ${turnCapLabel()}</small></div></div>` +
     `<div class="turn-settings" aria-label="Game setup">` +
     `<div class="turn-setting"><span>Game speed:</span><b>${speedName}</b></div>` +
