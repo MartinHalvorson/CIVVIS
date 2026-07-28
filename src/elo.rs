@@ -1828,7 +1828,7 @@ mod tests {
             // Anything else reaching that state fell through to the
             // catch-all and is claiming to need nothing while quietly
             // needing a net.
-            const SCRIPTED: [&str; 17] = [
+            const SCRIPTED: [&str; 20] = [
                 "advanced",
                 "advanced_blind_to_leaders",
                 "advanced_counter_in_lane",
@@ -1840,9 +1840,12 @@ mod tests {
                 "advanced_civ_blind",
                 "advanced_food_first",
                 "advanced_lane_reachable",
+                "advanced_league_top",
                 "advanced_measured_dedication",
                 "advanced_parallel_settlers",
+                "advanced_prophet_first",
                 "advanced_relief_scoped",
+                "advanced_settler_first",
                 "advanced_v1",
                 "basic",
                 "random",
