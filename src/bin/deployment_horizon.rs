@@ -6,17 +6,21 @@
 //! `max_turns`. This runner preserves the nominal value and extends only the
 //! observer's outer loop.
 
-use civvis::ai::Ai;
-use civvis::elo::{builtin_ai, builtin_provenance};
+use civvis::ai::{Ai, BasicAi, Weights};
+use civvis::evolve::Champion;
 use civvis::game::{default_difficulty, Action, Game, GameOptions, VictoryConditions};
 use civvis::rules::Rules;
 use civvis::setup::{MapPoles, MapScript, MapSize, MapTopology};
+use civvis::strategic::StrategicAi;
 use std::collections::BTreeMap;
 
 const SCREEN_MAPS: usize = 12;
 const SCREEN_SEED: u64 = 9_986_000;
 const CONFIRM_MAPS: usize = 48;
 const CONFIRM_SEED: u64 = 9_987_000;
+const STRATEGIC_REVIEW_EVERY: u32 = 20;
+const STRATEGIC_HORIZON: u32 = 80;
+const EMBEDDED_CHAMPION: &str = include_str!("../../data/evolved/best.json");
 const DEPLOYMENT_PLAYERS: [usize; 7] = [4, 6, 8, 10, 5, 7, 9];
 const DEPLOYMENT_SCRIPTS: [MapScript; 9] = [
     MapScript::LandOnly,
@@ -38,6 +42,18 @@ const PROFILE_OVERRIDE_FLAGS: [&str; 6] = [
     "--map",
     "--shape",
 ];
+
+fn frozen_champion() -> Champion {
+    serde_json::from_str(EMBEDDED_CHAMPION)
+        .expect("the committed advanced_evolved champion must be valid JSON")
+}
+
+fn frozen_strategic_deep(weights: &Weights) -> StrategicAi {
+    let mut ai = StrategicAi::score_only_with_weights(weights.clone());
+    ai.review_every = STRATEGIC_REVIEW_EVERY;
+    ai.horizon = STRATEGIC_HORIZON;
+    ai
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct DeploymentProfile {
@@ -426,15 +442,11 @@ fn main() {
         eprintln!("unknown difficulty {difficulty:?}");
         std::process::exit(2);
     }
-    let provenance = builtin_provenance("strategic_deep", "evolved");
-    println!("agent: {}", provenance.line());
-    if provenance.degraded() {
-        eprintln!(
-            "refusing to record strategic_deep: it resolves to {:?}",
-            provenance.effective
-        );
-        std::process::exit(3);
-    }
+    let champion = frozen_champion();
+    println!(
+        "agent: strategic_deep; embedded champion generation {}; review every {STRATEGIC_REVIEW_EVERY}, horizon {STRATEGIC_HORIZON}; score-share terminal evaluator",
+        champion.gen
+    );
     println!("Deployment horizon censoring census");
     if deployment_mix {
         let player_batch = deployment_counts(maps, |profile| profile.players)
@@ -523,12 +535,11 @@ fn main() {
                 .players
                 .iter()
                 .map(|player| {
-                    let name = if player.is_minor || player.is_barbarian {
-                        "basic"
+                    if player.is_minor || player.is_barbarian {
+                        Box::new(BasicAi::new()) as Box<dyn Ai>
                     } else {
-                        "strategic_deep"
-                    };
-                    builtin_ai(name, map_seed.wrapping_add(player.id as u64))
+                        Box::new(frozen_strategic_deep(&champion.weights)) as Box<dyn Ai>
+                    }
                 })
                 .collect();
             ProfiledResult {
@@ -726,12 +737,13 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::{
-        deployment_counts, deployment_profile, has_exact_flag, has_exact_frozen_common_args,
-        has_exact_number, has_exact_value, number_value, observe_game, option_value, percentile,
-        wilson_95, HorizonResult, Snapshot, CONFIRM_MAPS, DEPLOYMENT_SCRIPTS,
-        DEPLOYMENT_TOPOLOGIES, SCREEN_MAPS,
+        deployment_counts, deployment_profile, frozen_champion, frozen_strategic_deep,
+        has_exact_flag, has_exact_frozen_common_args, has_exact_number, has_exact_value,
+        number_value, observe_game, option_value, percentile, wilson_95, HorizonResult, Snapshot,
+        CONFIRM_MAPS, DEPLOYMENT_SCRIPTS, DEPLOYMENT_TOPOLOGIES, SCREEN_MAPS, STRATEGIC_HORIZON,
+        STRATEGIC_REVIEW_EVERY,
     };
-    use civvis::ai::{Ai, BasicAi};
+    use civvis::ai::{Ai, BasicAi, Weights};
     use civvis::game::{Game, VictoryConditions};
     use civvis::setup::{MapScript, MapTopology};
 
@@ -794,6 +806,16 @@ mod tests {
             })
             .collect::<Vec<_>>();
         assert!(!has_exact_frozen_common_args(&noncanonical_turns));
+    }
+
+    #[test]
+    fn frozen_controller_uses_the_embedded_champion_and_exact_search_budget() {
+        let champion = frozen_champion();
+        assert!(champion.gen > 0);
+        assert_ne!(champion.weights, Weights::default());
+        let ai = frozen_strategic_deep(&champion.weights);
+        assert_eq!(ai.review_every, STRATEGIC_REVIEW_EVERY);
+        assert_eq!(ai.horizon, STRATEGIC_HORIZON);
     }
 
     fn no_victories() -> VictoryConditions {
