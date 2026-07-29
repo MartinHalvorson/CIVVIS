@@ -52,7 +52,7 @@
 //! needs the siblings, and they cost a `legal_actions` call per decision, so
 //! they are opt-in.
 use civvis::action_space;
-use civvis::ai::{run_game, AdvancedAi, Ai};
+use civvis::ai::{run_game, AdvancedAi};
 use civvis::decision_features::{decision_features, WIDTH as STATE_WIDTH};
 use civvis::game::{Action, Game};
 use civvis::parallel;
