@@ -4751,3 +4751,94 @@ candidates the SPRT is more likely to accept.
 | the combat term reduces agreement with the gate | **established** (p=0.0074, paired) |
 | dropping it would improve evolution's throughput | **untested** — it follows, but it is not measured |
 | dropping it would strand the war genes | **unmeasured** |
+
+## 2026-07-29 — ★★★ the geometry learned which unit acts, not where it should go
+
+The action-ranking entry above established 31.8% top-1 against 21.2% chance on
+same-kind alternatives and called that the signal a unit-action search could
+order. **That conclusion was one control short.** Two moves can have the same
+kind and belong to different units. The thirteen geometry terms include the
+acting unit's HP, strength and movement, so the head can identify *which unit*
+`AdvancedAi` activates without learning anything about *which destination* is
+best for that unit.
+
+Two changes make that distinction measurable:
+
+- `q_dataset --negatives-same-actor` restricts every negative to the chosen
+  action's kind **and** unit. It implies the same-kind filter, so the kind prior
+  cannot return through the side door.
+- `q_train --eval-data` trains on one complete corpus and evaluates on another.
+  Its per-kind uncertainty is macro-averaged by game; thousands of correlated
+  decisions from one trajectory no longer manufacture a tiny error bar.
+
+The emitter now also honors `--speed` on both the played game and its replay.
+Before this, requesting the six-player Online profile still recorded Standard
+games — the same profile mismatch that erased every promoted gain earlier in
+this file.
+
+### Pre-registered profile-transfer test
+
+Training: eight 4-player, 44×28, 200-turn Standard games, seeds 920000–920007.
+External evaluation: eight 6-player, 74×46, 250-turn Online games with six city
+states, seeds 930000–930007. Both used four negatives per decision. All sixteen
+games ended in victory; both replays had **zero rejected actions and zero score
+divergences**.
+
+With same-kind negatives, the earlier result transfers strongly to the unseen
+deployment profile:
+
+| chosen kind | decisions | unseen games | chance | top-1 | game-macro lift |
+|---|---:|---:|---:|---:|---:|
+| all | 294,027 | 8 | 21.8% | 33.3% | **+11.5 ± 0.3 pp** |
+| move | 216,313 | 8 | 20.1% | 33.5% | **+13.5 ± 0.4 pp** |
+| fortify | 13,047 | 8 | 32.0% | 64.7% | **+32.6 ± 1.6 pp** |
+| ranged | 1,516 | 8 | 38.3% | 43.1% | +4.8 ± 2.4 pp |
+| attack | 602 | 8 | 43.4% | 50.8% | +7.4 ± 3.5 pp |
+
+This reproduces the aggregate finding and rules out Standard-to-Online domain
+shift as its explanation.
+
+Then hold the actor fixed. The number of emitted negatives falls from 222,294
+to 134,846 in the Standard corpus and from 1,115,620 to 651,035 in the Online
+corpus: **39–42% of the supposedly sibling alternatives belonged to another
+unit.** On the controlled corpus the result disappears:
+
+| chosen kind | decisions | unseen games | chance | top-1 | game-macro lift |
+|---|---:|---:|---:|---:|---:|
+| all | 209,525 | 8 | 26.8% | 27.3% | **+0.5 ± 0.2 pp** |
+| move | 204,198 | 8 | 26.4% | 26.9% | **+0.5 ± 0.2 pp** |
+| improve | 3,549 | 8 | 40.2% | 40.2% | 0.0 ± 0.0 pp |
+| promote | 791 | 8 | 45.3% | 45.3% | 0.0 ± 0.0 pp |
+| ranged | 741 | 8 | 44.3% | 39.9% | −4.4 ± 2.2 pp |
+| attack | 246 | 8 | 47.2% | 44.3% | −2.8 ± 2.3 pp |
+
+The state-only control lands at exact chance for every kind, confirming that
+tie credit and the grouped evaluator are behaving as designed.
+
+### What remains open
+
+Training and holding out inside the Online corpus gives move only +1.0 points.
+Attack reads +10.0 points, but on **80 decisions from two held-out games**; that
+is a lead for a fresh disjoint corpus, not evidence. It cannot rescue the model
+that failed on all eight external games.
+
+The mechanism is visible in the encoder. Once actor and kind are fixed, HP,
+strength, moves left, treasury and Faith are constants. Adjacent move targets
+usually share the remaining ownership, enemy-presence and distance flags. The
+vector contains no destination terrain, local force field, route progress or
+plan-relative geometry, so it has almost nothing with which to choose one empty
+neighbor over another.
+
+> **Do not wire this ranker into gameplay.** It learned activation order, not
+> destination or target order, and its honest ceiling is still the expert it
+> imitates. The next representation must make a target's spatial neighborhood
+> and progress toward the active objective visible, then pass this same-actor,
+> external-profile gate before a unit-action search spends a rollout on it.
+
+| claim | status |
+|---|---|
+| the Standard-trained ranker transfers to Online games | **established**, for choosing an actor |
+| the 13 geometry terms rank moves for one unit | **refuted** (+0.5 ± 0.2 pp) |
+| they rank attacks for one unit across profiles | **refuted in this sample** |
+| an Online-trained attack head has a signal | **open** — only two held-out games |
+| integrating the current artifact would improve play | **unsupported; rejected before gameplay A/B** |
