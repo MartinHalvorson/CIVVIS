@@ -5807,7 +5807,6 @@ seeds) and this one (+0.50 cities, null).
 That is worth stating plainly for whoever picks this up: **the expansion gap is
 real and is not currently reachable by changing a decision.** Anything further
 here should either change what a settler costs, or stop and go elsewhere.
-||||||| 2dbf641
 
 ## 2026-07-29 — ★★★★ what a searching turn costs, and why the first answer was wrong
 
