@@ -2,6 +2,40 @@
 
 Status: **preregistered; no focal seed has been read**.
 
+## Prospective deployment-population amendment
+
+This amendment was frozen before either focal seed was run or read. A
+pre-execution audit of the next queued production-profile experiment found that
+this study's original fixed eight-player Continents/Planet cell was not the
+unattended deployment population. The merged supervisor redraws three axes
+independently and uniformly for every unattended world: player count from 4
+through 10, map script from its nine supported scripts, and Flat/Planet
+topology. A result from one of those 126 joint profiles cannot establish the
+prevalence of production censoring across all of them.
+
+The fixed batches therefore use the same deterministic space-filling cycle as
+the independently preregistered Spaceport study (#567). For zero-based map
+offset `i`:
+
+- players are `[4, 6, 8, 10, 5, 7, 9][i mod 7]`;
+- scripts are `[land_only, water_world, continents, true_start_earth, lakes,
+  inland_sea, pangaea, small_continents, islands][i mod 9]`; and
+- topology is Flat at even `i` and Planet at odd `i`.
+
+The three periods are pairwise coprime, so all 126 joint profiles occur once
+before repetition. `MapSize::for_players` supplies requested dimensions and
+city-state counts; the evaluator must not copy that table. The 12-map screen
+contains six maps per topology, one or two per player count, and one or two per
+script. The 48-map confirmation contains 24 maps per topology, six or seven per
+player count, and five or six per script. Each phase restarts at offset zero and
+uses its already frozen, disjoint game seeds.
+
+This changes only the prospectively sampled deployment population. The
+published `strategic_deep` controllers, nominal and external horizons, seeds,
+12/48 map counts, endpoints, thresholds, stop rule, and six-job resource cap
+are unchanged. Axis-specific summaries are descriptive only; no stratum may
+promote, extend, or rescue a failing pooled gate.
+
 ## Why `--turns 320` is not the live policy
 
 The production spectator starts Online games with `--turns 250` and enables
@@ -52,27 +86,27 @@ rating. Unit tests must prove that the nominal snapshot is taken exactly once,
 that continuation can pass turn 250 while `max_turns` remains 250, and that a
 winner before the boundary is not classified as late.
 
-## Fixed focal screen
+## Fixed deployment-population screen
 
-The untouched command is:
+The amended frozen command is:
 
 ```text
-deployment_horizon --maps 12 --players 8 --width 84 --height 54 \
-  --city-states 12 --turns 250 --observe-through 320 --speed online \
-  --map continents --shape planet --poles poles --randomize-civs \
+deployment_horizon --deployment-mix --maps 12 --turns 250 \
+  --observe-through 320 --speed online --poles poles --randomize-civs \
   --victories science,culture,domination --seed 9986000 --jobs 6
 ```
 
-Requested 84x54 Planet geometry must be printed with its realized 105x44
-storage rectangle. The screen establishes material production censoring only
-if at least 3/12 games have no winner at the nominal boundary and then resolve
-to an enabled victory by turn 320. Games still unresolved at 320 are reported
-but do not satisfy that term. A weaker result stops without a larger run.
+The runner must print every derived player/script/topology balance and each
+profile's requested and realized geometry. The screen establishes material
+production censoring only if at least 3/12 games have no winner at the nominal
+boundary and then resolve to an enabled victory by turn 320. Games still
+unresolved at 320 are reported but do not satisfy that term. A weaker result
+stops without a larger run.
 
 ## Fixed confirmation and decision
 
-A passing screen earns exactly one 48-map confirmation at seed 9987000 with
-every other argument unchanged. Confirmation requires both:
+A passing screen earns exactly one 48-map confirmation at seed 9987000, with
+`--maps 48` and every other argument unchanged. Confirmation requires both:
 
 1. at least 10/48 games resolve after the nominal boundary and by turn 320;
 2. the two-sided 95% Wilson lower bound on that late-completion share exceeds
@@ -87,5 +121,5 @@ claiming production-terminal fidelity must preserve `max_turns = 250` and use
 an external continuation/time-to-event endpoint, or explicitly call itself a
 turn-250 truncation. It does not invalidate prospectively frozen 250-turn
 tests; their estimand remains policy strength at that boundary. A failure
-retains the existing convention on this focal cell while leaving the mixed-map
-archive observation descriptive.
+retains the existing convention while leaving the archived prevalence
+observation descriptive.
