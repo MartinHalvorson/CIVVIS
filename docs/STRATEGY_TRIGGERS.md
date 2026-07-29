@@ -1,6 +1,6 @@
 # Grand-strategy assessment-trigger census
 
-Status: **preregistered; no trigger data inspected**
+Status: **implementation checkpoint frozen; no trigger data inspected**
 
 ## Why this measurement comes next
 
@@ -98,6 +98,28 @@ Tests must establish that:
 4. deterministic ranking breaks count ties by label; and
 5. adding the trace does not change winner, victory type, turn, or existing
    target/rush/strategy trace values for a fixed seeded game.
+
+## Instrumented checkpoint
+
+The exact observer implementation is committed at
+`034b1de627033f84fe2d1a8118bef8e25f9b2af2`: the live
+`assess()` cascade returns its plan and selected static reason together, the
+advanced agent retains both in the same reassessment step, and `PlanReport`
+exports that retained reason. Retargeting, reweighting, or returning to the
+adaptive planner clears both cached values. The evaluator reads only the
+report field; it contains no second implementation of the cascade.
+
+The merge through current `origin/main` did not add, remove, or reorder any of
+the fourteen frozen assessment arms above. The exact plan/report invariant
+test passed, as did all 30 `ai_eval` tests covering trace preservation,
+aggregation, deterministic ranking, and the automatic gate. No primary census
+command has started and no trigger counts have been read.
+
+Immediately before the primary run, this branch will merge the then-current
+main, pass the complete CI-profile suite, build `ai_eval` with
+`cargo build --release --locked --bin ai_eval`, and record the resulting head
+and absence of any concurrent high-core simulation. Those operational checks
+cannot be asserted prospectively.
 
 ## Frozen run
 
