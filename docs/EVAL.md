@@ -4892,4 +4892,191 @@ mean |Δ| in score-only value against |Δ| in full `selection_value`.
 | the combat term carries information distinct from score | **established** (leaders differ 47%) |
 | removing it is free | **refuted** — it is real variance |
 | what that variance is worth to the GA | **unmeasured** — needs the gene perturbation |
-||||||| ea02ec2
+
+## 2026-07-29 — ★★★★ destination context makes one unit's move learnable
+
+The same-actor control above reduced the old geometry head to +0.5 points and
+identified the missing information before a policy was allowed to use it. This
+is the pre-registered follow-up: preserve the games, seeds, profiles, candidate
+sampling, optimizer, external evaluation and game-macro uncertainty, and change
+only what the action row can say about a destination.
+
+The thirteen legacy scalars remain an exact prefix. Thirty-five appended terms
+describe:
+
+- the acting unit's role, so exposure and spacing can mean different things to
+  a scout, vanguard, ranged unit, siege train, support, religious unit or
+  civilian;
+- target movement cost, defense, water/route/development state and base yields;
+- nearby friendly support, visible hostile attack coverage and target exchange
+  margin;
+- progress toward known foreign cities, home, and unexplored frontier; and
+- distance and progress toward the spatial objectives `AdvancedAi` already
+  reports from its force groups, threatened city and campaign target.
+
+The high-level objectives are captured once per AI turn and attached to every
+candidate in that turn. They contain no chosen action, absolute coordinate,
+movement direction or rank. The encoder selects the objective nearest the
+acting unit *before* comparing destinations, so it cannot switch goals to make
+one candidate look good. This is hierarchical context, not a copy of the
+expert's final answer.
+
+### Exact external-profile rerun
+
+Training is the same eight 4-player, 44×28, 200-turn Standard games and seeds
+920000–920007. External evaluation is the same eight 6-player, 74×46, 250-turn
+Online games with six city states and seeds 930000–930007. All sixteen games
+ended in victory. The emitter reproduced the previous corpus counts exactly:
+67,032/134,846 Standard chosen/negative rows and 314,813/651,035 Online rows,
+with **zero rejected replay actions and zero score divergences**. Explicit plan
+context was present for 98.4% and 98.7% of chosen decisions respectively.
+
+Every row below is trained on Standard and evaluated only on the eight unseen
+Online games. Candidates have the same action kind and acting unit. Chance is
+the exact mean `1 / candidates` for each game, not `1 / mean(candidates)`.
+
+| visible feature block | move top-1 | chance | game-macro lift |
+|---|---:|---:|---:|
+| legacy 13 only | 26.7% | 26.4% | +0.3 ± 0.2 pp |
+| explicit plan only | 35.8% | 26.4% | **+9.4 ± 1.0 pp** |
+| destination, explicit plan blanked | 39.7% | 26.4% | **+13.3 ± 0.5 pp** |
+| destination only | 41.2% | 26.4% | **+14.8 ± 0.7 pp** |
+| legacy + destination | **41.7%** | 26.4% | **+15.2 ± 0.6 pp** |
+| all state and action terms | 41.4% | 26.4% | +14.9 ± 0.6 pp |
+
+The result is not just the explicit objective leaking through a side channel.
+Plan progress by itself transfers, and the destination block with those three
+terms blanked transfers independently. Combining them adds another 1.9 points.
+Conversely, giving the model the shared state vector does not help: every
+candidate in a decision sees the same state, and the additional nonlinear
+context slightly reduces the external top-1.
+
+This establishes movement representation, not combat or strength. The unseen
+set has 204,198 move decisions but only 741 ranged and 246 attack decisions.
+The destination-only attack lift is +2.8 ± 6.1 points and ranged is +3.9 ± 2.0;
+neither supports a claim. `improve` and `promote` remain exactly at chance
+because the action row still does not encode which improvement or promotion is
+named.
+
+> **The representation gate is now passed for one-unit movement. Do not turn
+> the imitation head into a gameplay policy.** Its target is still the action
+> the current expert took, so its ceiling is that expert and replacing the
+> expert cannot establish an improvement. The supported next experiment is a
+> counterfactual return emitter: branch the chosen move and same-actor
+> alternatives from the identical state, continue each branch, train Q or
+> advantage on those returns, then spend a gameplay A/B only if that head
+> predicts held-out branch outcomes. Destination ranking can order those
+> rollouts; outcome labels are what can make their result stronger than the
+> script it imitates.
+
+| claim | status |
+|---|---|
+| legacy geometry ranks destinations for one unit | **refuted again** (+0.3 ± 0.2 pp) |
+| explicit strategic objectives transfer across profiles | **established** (+9.4 ± 1.0 pp) |
+| target terrain/local-force geometry transfers without the explicit plan | **established** (+13.3 ± 0.5 pp) |
+| the combined representation ranks same-unit moves | **established** (+15.2 ± 0.6 pp, n=204,198) |
+| the same representation ranks attacks | **unmeasured at useful power** |
+| the imitation artifact improves gameplay | **not claimed; wrong target for that question** |
+
+## 2026-07-29 — ★★★ counterfactual moves expose real regret, but the first advantage head does not transfer
+
+The destination result above answered whether the expert's choice is
+representable. It did not answer whether another destination would have been
+better. `q_counterfactual` now asks that causal question without changing the
+trajectory it observes:
+
+1. clone a real `AdvancedAi` turn and read the successful actions it took;
+2. replay the prefix to the first `move` with another legal destination for the
+   same unit;
+3. branch the exact pre-action game into the chosen move and three evenly
+   sampled same-unit alternatives; and
+4. continue every candidate for 80 rounds with identical policy memory and four
+   matched rotations of the bounded strategic doctrines.
+
+A decided branch returns 1/0. An unresolved branch returns Civilization score
+share among living majors, the same bounded terminal value the shipped
+strategic search uses. Repeating an identical branch is not a replica—the
+engine is deterministic—so one chosen branch is repeated as an integrity test,
+while actual replicas vary opponent doctrine. The tool buffers all rows and
+refuses to write the dataset if an observed prefix or candidate is rejected or
+the repeated outcome differs in winner, turn, scores, or value.
+
+### The causal label is real and replicates across profiles
+
+The Standard corpus is 24 four-player 44×28 games, seeds 944000–944023, with
+four sampled decisions per game at turns 50, 75, 100, and 125. The disjoint
+deployment corpus is 12 six-player 74×46 Online games with six city states,
+seeds 945000–945011, sampled at turns 70, 100, 130, and 160. Both use the same
+80-round horizon, three alternatives, and four doctrine replicas.
+
+| causal-label property | Standard | unseen Online |
+|---|---:|---:|
+| decisions / candidate rows / continuations | 94 / 360 / 1,440 | 48 / 183 / 732 |
+| decisions with candidate spread > 0.005 | **50/94 (53.2%)** | **26/48 (54.2%)** |
+| mean best-minus-worst return | **0.0418** | **0.0201** |
+| expert chose a best-mean candidate | 52/94 (55.3%) | 23/48 (47.9%) |
+| mean oracle regret of expert choice | **0.0182** | **0.0094** |
+| a sibling beat the expert in every replica | 6/94 | 2/48 |
+| mean-return winner tied/won doctrine replicas | 79.3% | 66.7% |
+| branches resolved to victory | 546/1,440 | 153/732 |
+| rejected branches / repeat mismatches / observation errors | **0 / 0 / 0** | **0 / 0 / 0** |
+
+The preregistered emitter gate was 25% of decisions separating by more than
+0.005. Both profiles clear 53%. The expert is not an oracle over its own legal
+moves: it leaves measurable return on the table, and the effect survives the
+larger Online profile. That is the opportunity a stronger move policy may
+eventually capture.
+
+### Fixed Standard-to-Online model gate
+
+`q_advantage_train` fits a listwise distribution over measured returns, not an
+expert-action label. The first model is deliberately linear and low capacity:
+94 decisions do not justify a hidden net with thousands of parameters. All
+Standard decisions train for a fixed 40 epochs at return temperature 0.01.
+Online contributes no gradient or hyperparameter choice; each feature-block
+ablation uses that identical fit and is scored only as external evaluation.
+Regret and uncertainty are macro-averaged by game.
+
+| visible terms | Online model regret | return lift vs chance | return lift vs expert |
+|---|---:|---:|---:|
+| destination (primary) | 0.0122 | **−0.0016 ± 0.0022** | **−0.0028 ± 0.0037** |
+| destination, plan blanked | 0.0112 | −0.0006 ± 0.0021 | −0.0018 ± 0.0035 |
+| explicit plan only | 0.0128 | −0.0022 ± 0.0021 | −0.0034 ± 0.0036 |
+| legacy 13 only | **0.0096** | +0.0010 ± 0.0011 | −0.0002 ± 0.0018 |
+| legacy + destination | 0.0114 | −0.0008 ± 0.0018 | −0.0020 ± 0.0033 |
+
+The primary head reduces regret on its Standard training games from 0.0185 for
+the expert to 0.0125, but that gain reverses out of profile. On Online it picks
+a top-return move 43.8% of the time versus 46.9% chance and 47.9% for the
+expert. Legacy terms are the least bad external block, but they merely tie the
+expert within uncertainty; that is not a promotion.
+
+One capacity hypothesis was tested without spending another external set. The
+destination encoder explicitly says role should change how threat, cohesion,
+and objective progress are interpreted, while a linear head cannot form those
+interactions. On a Standard-only split of 14 training and 10 held-out games,
+the plain model's held-out regret was 0.0058 and its lift over the expert was
++0.0051 ± 0.0045. Appending all 8×27 role-by-destination products **worsened**
+regret to 0.0080 and reduced that lift to +0.0030 ± 0.0032. The capacity
+hypothesis fails its selection test, so no fresh external maps were spent on
+it.
+
+> **Do not integrate either head or spend a gameplay A/B on it.** The causal
+> emitter establishes that better moves exist; it does not establish that the
+> present dataset/model can identify them on deployment games. A gameplay
+> replacement would knowingly select lower-return moves in the only external
+> profile measured.
+
+The next justified learning experiment is more independent games and a target
+that retains replica structure instead of collapsing doctrine outcomes to one
+mean—e.g. a pairwise posterior over the probability that candidate A beats B,
+with a no-override region when doctrine signs disagree. Only a model that
+reduces regret on a fresh external profile earns the mirrored gameplay gate.
+
+| claim | status |
+|---|---|
+| same-unit destinations have different causal continuation returns | **established on both profiles (53% clear the spread gate)** |
+| the expert always chooses the best measured destination | **refuted (55% Standard, 48% Online)** |
+| the fixed destination advantage head transfers Standard → Online | **refuted in this sample** |
+| explicit role interactions repair the learner | **refuted on Standard holdout** |
+| the current model should control gameplay | **rejected before A/B** |
