@@ -123,6 +123,11 @@ missing values, malformed values, and every duplicate option occurrence. An
 official phase requires one canonical occurrence of every frozen argument,
 including `--ai advanced_evolved` and `--jobs 6`.
 
+The registered 84x54 Planet request resolves through the engine to 105x44 and
+4,412 map tiles. The runner prints realized geometry and asserts those exact
+values before any registered game advances; a future topology change therefore
+invalidates the phase instead of silently changing its population.
+
 The runner asserts `Game.max_turns = 250` at construction, immediately after
 every controller action, after fallback `EndTurn`, and at the terminal
 boundary. A controller that does not end its live turn receives one ordinary
