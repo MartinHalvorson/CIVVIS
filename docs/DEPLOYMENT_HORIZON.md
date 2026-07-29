@@ -169,6 +169,37 @@ static factory code. No screen or confirmation output informed it; the
 controller role, world population, horizons, seeds, map counts, endpoints,
 thresholds, stop rule, and resource cap are unchanged.
 
+## Prospective observer-integrity amendment
+
+This final pre-flight amendment was frozen before either focal seed was run or
+read. Static review found four ways the instrument could fail to enforce its
+already documented identity and observation contract. First, the option parser
+validated only the first occurrence of a supplied key, so an earlier valid
+value could hide a malformed later duplicate. Second, unknown flags and
+positional arguments were ignored. Third, the embedded champion was parsed but
+its documented generation and exact bytes were not asserted. Finally, the
+outer observer ignored an error from its fallback `EndTurn`, asserted immutable
+`Game.max_turns` only indirectly through returned snapshots, and checked its
+single nominal-boundary capture with a debug-only assertion. These defects have
+not exposed either registered seed range.
+
+The runner must reject every unsupported token and validate every occurrence
+of every supported value option before constructing a game. Duplicate valid
+options remain diagnostic-only under the existing exact-command predicate, but
+a malformed duplicate must exit 2 rather than borrowing the first value. The
+embedded controller must be generation 14 and its exact source bytes must have
+FNV-1a fingerprint `0x40b1fbb2a5b88bc6`, corresponding to the already recorded
+SHA-256. Both identifiers are printed as provenance. The external loop must
+assert that `Game.max_turns` remains equal to the construction-time nominal
+limit throughout observation, fail closed if a fallback `EndTurn` cannot be
+applied, and enforce exactly one nominal snapshot in release as well as debug
+builds.
+
+These are prospective identity and liveness checks only. They change no
+controller, sampled world, horizon, seed, map count, endpoint, threshold, stop
+rule, or resource cap. The established diagnostic seed may be replayed after
+implementation; neither focal seed may be opened by validation.
+
 ## Post-amendment validation
 
 The fail-closed invocation design was frozen at `d9b98a4` and implemented at
