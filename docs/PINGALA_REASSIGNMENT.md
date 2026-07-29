@@ -212,3 +212,27 @@ place; this task never jumps a still-live older batch.
 The implementation, latest-main merge, focused checks, and full locked CI suite
 must precede the exact null. Exact commands, source commit, wall time, and all
 results will be recorded before this evaluator leaves draft.
+
+## Implementation checkpoint
+
+The frozen controller is implemented at source commit `64e35ff` in
+`src/bin/pingala_reassignment_eval.rs`. It replays the complete successful stock
+action log except deferred `EndTurn`, retains the cloned `AdvancedAi` state,
+and inserts only the registered legal reassignment. No library, engine, or
+shipped-policy source changed.
+
+The focused contract is 8/8 green:
+
+```text
+cargo test --profile ci --locked --bin pingala_reassignment_eval
+test result: ok. 8 passed; 0 failed; 0 ignored
+```
+
+`rustfmt --edition 2021`, `git diff --check`, and a normal bin-target Clippy
+pass are clean for the new evaluator. A global Clippy invocation with
+`-D warnings` reaches the library and fails on 295 pre-existing migration
+warnings; none names `pingala_reassignment_eval.rs`.
+
+No simulation has used null seed `10029999`, screen seed `10030000`, holdout
+seed `10031000`, or a map derived from them. The exact null remains behind the
+older registered simulator queue.
