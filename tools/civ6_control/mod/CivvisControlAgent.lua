@@ -786,45 +786,47 @@ local lastActions = {};
 local function orderUnits(player, pid, turn)
 	local given, stuck = 0, 0;
 	lastActions = {};
-	-- ⚠ ONE UNCLEARABLE UNIT MUST NOT COST EVERY OTHER UNIT ITS TURN.
-	--
-	-- The previous version `break`ed out of the whole pass the moment a unit
-	-- came back ready twice. `GetFirstReadyUnit` always returns the same first
-	-- one, so a single unit that cannot be cleared ended the pass and every
-	-- other unit stood still. Measured in run settler-20260729T231239Z: turn
-	-- 173, **thirty units**, one city, 1358 unspent Gold, and the only actions
-	-- recorded for the turn were `UNIT_BUILDER:automate` twice. The army never
-	-- moved for the entire game.
-	--
-	-- So a unit that will not clear is *parked* — remembered for the rest of
-	-- this pass and skipped — and the pass keeps going for everybody else.
-	local attempts, parked, parkedCount = {}, {}, 0;
+	local ordered, attempts = {}, {};
+
+	local function give(unit, id)
+		local action = orderFor(player, pid, unit, turn) or orderIdle(unit);
+		if action == nil then return false; end
+		ordered[id] = true;
+		local key = unitTypeName(unit) .. ":" .. action;
+		lastActions[key] = (lastActions[key] or 0) + 1;
+		given = given + 1;
+		return true;
+	end
+
+	-- Pass 1: the game's own ready list. Cheap, and the same query the shipped
+	-- interface uses to decide whether units are holding up the turn.
 	for _ = 1, (cfg.MaxUnitOrders or 40) do
 		local unit = try(function() return player:GetUnits():GetFirstReadyUnit(); end);
 		if unit == nil then break; end
 		local id = try(function() return unit:GetID(); end, -1);
 		attempts[id] = (attempts[id] or 0) + 1;
-		if parked[id] then
-			-- The ready list keeps handing back a unit already given up on.
-			-- Nothing further can be ordered through this query, so end the
-			-- pass rather than spin the remaining budget on one unit.
-			break;
-		end
-		local action = orderFor(player, pid, unit, turn) or orderIdle(unit);
-		if action == nil or attempts[id] > 2 then
-			-- Out of ideas for this one. Try every idle order, then park it.
-			if orderIdle(unit) == nil then
-				parked[id] = true;
-				parkedCount = parkedCount + 1;
-				stuck = stuck + 1;
-			end
-		end
-		if action ~= nil then
-			local key = unitTypeName(unit) .. ":" .. action;
-			lastActions[key] = (lastActions[key] or 0) + 1;
-			given = given + 1;
-		end
+		-- Jammed on one unit. Leave it to pass 2 rather than surrender the
+		-- pass: GetFirstReadyUnit keeps returning this same unit forever.
+		if attempts[id] > 2 then break; end
+		give(unit, id);
 	end
+
+	-- ⚠ PASS 2 IS THE WHOLE POINT. Pass 1 alone leaves every other unit
+	-- standing still the moment one unit will not clear, because
+	-- GetFirstReadyUnit only ever offers the first ready unit and a unit that
+	-- cannot be cleared is offered forever. Measured across three runs: turn
+	-- 90 with NINETEEN units and exactly three orders given, all of them
+	-- `UNIT_BUILDER:automate`, and one city. Parking the jammed unit did not
+	-- help — the query still returned it. The only way past a blocked query is
+	-- to stop using it, so this walks the roster directly for anything pass 1
+	-- never reached.
+	eachUnit(player, function(unit)
+		local id = try(function() return unit:GetID(); end, -1);
+		if ordered[id] then return; end
+		local moves = try(function() return unit:GetMovesRemaining(); end, 0) or 0;
+		if moves <= 0 then return; end
+		if not give(unit, id) then stuck = stuck + 1; end
+	end);
 	return given, stuck;
 end
 
@@ -913,6 +915,16 @@ end
 -- request, so the "queue is empty" test fires again and again.
 local lastBuild = {};
 
+-- Items a given city asked for and never started, remembered across turns.
+--
+-- ⚠ The queue does NOT reflect a BUILD request in the same tick it is made, so
+-- a synchronous "did it start?" check reads false for everything and is worse
+-- than no check: it made the ladder re-order all six candidates every turn.
+-- The honest place to notice is the FOLLOWING turn — if the queue is still
+-- empty then, the order never took, and that item is refused for this city from
+-- now on so the ladder can fall through to something it can actually build.
+local refusedByCity = {};
+
 local function driveProduction(player, turn, force)
 	local counts = countUnits(player);
 	local cities = {};
@@ -932,6 +944,12 @@ local function driveProduction(player, turn, force)
 		-- on production the whole point is to try again: an order that was
 		-- refused once must not lock the city out for the rest of the turn.
 		local fresh = force or (remembered == nil) or (remembered.turn ~= turn);
+		if remembered ~= nil and remembered.turn < turn
+				and (current == nil or current == 0) then
+			refusedByCity[cityId] = refusedByCity[cityId] or {};
+			refusedByCity[cityId][remembered.item] = true;
+			emit("refused", { turn = turn, city = cityId, item = remembered.item });
+		end
 		if (current == nil or current == 0) and fresh then
 			-- Ask for candidates in ladder order and keep going until one
 			-- actually STARTS. `pcall` succeeding means the request did not
@@ -954,41 +972,29 @@ local function driveProduction(player, turn, force)
 			-- `autoclose` events because THIS FILE never loaded. The autoclose
 			-- context lives in a separate file and kept working, which is what
 			-- made it look like a stalled game rather than a broken script.
-			local refused = {};
-			for _ = 1, 6 do
-				local name, row, why = chooseProduction(city, counts, #cities, turn, refused);
-				if row == nil then break; end
+			local name, row, why = chooseProduction(city, counts, #cities, turn,
+				refusedByCity[cityId]);
+			if row ~= nil then
 				local params = buildParams(row);
-				local ok, started = false, false;
 				if params ~= nil then
-					ok = pcall(function()
+					local ok = pcall(function()
 						CityManager.RequestOperation(city, CityOperationTypes.BUILD, params);
 					end);
-					-- The order is only real if the queue now holds something.
-					-- `pcall` returning true means the request did not throw, not
-					-- that the game accepted it.
-					started = try(function()
-						local queue = city:GetBuildQueue();
-						local hash = queue and queue:GetCurrentProductionTypeHash() or 0;
-						return hash ~= nil and hash ~= 0;
-					end, false);
+					if ok then
+						issued = issued + 1;
+						lastBuild[cityId] = { turn = turn, item = name };
+						if name == "UNIT_SETTLER" then counts.settler = counts.settler + 1;
+						elseif name == "UNIT_BUILDER" then counts.builder = counts.builder + 1;
+						elseif name == "UNIT_SCOUT" then counts.scout = counts.scout + 1;
+						elseif row.Kind == "KIND_UNIT" then counts.military = counts.military + 1;
+						end
+					end
 					emit("build", {
 						turn = turn,
 						city = try(function() return Locale.Lookup(city:GetName()); end, "?"),
-						item = name, reason = why, applied = ok, started = started,
+						item = name, reason = why, applied = ok,
 					});
 				end
-				if ok and started then
-					issued = issued + 1;
-					lastBuild[cityId] = { turn = turn, item = name };
-					if name == "UNIT_SETTLER" then counts.settler = counts.settler + 1;
-					elseif name == "UNIT_BUILDER" then counts.builder = counts.builder + 1;
-					elseif name == "UNIT_SCOUT" then counts.scout = counts.scout + 1;
-					elseif row.Kind == "KIND_UNIT" then counts.military = counts.military + 1;
-					end
-					break;
-				end
-				refused[name] = true;
 			end
 		end
 	end

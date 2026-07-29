@@ -152,10 +152,64 @@ def game_window() -> tuple[int, int, int, int] | None:
     return (x, y, w, h) if w > 400 and h > 300 else None
 
 
-def focus_game() -> None:
+# Which half of the screen the game gets. Set from --window-side/--window-frac
+# in main; module-level so the focus helpers do not need threading through every
+# call site.
+GAME_SIDE = "left"
+GAME_FRACTION = 0.5
+
+
+def desktop_size() -> tuple[int, int] | None:
+    """Logical desktop size in points, or None if it cannot be read.
+
+    There is no supported scripting route to the screen size, so this asks
+    Finder for its desktop scroll area and treats a failure as "leave the
+    window alone" — never as a guess. `system_profiler` reports the *physical*
+    resolution (3456x2234 on this Mac) and window geometry is in points
+    (1728x1117), so mixing the two would place the game off-screen.
+    """
+    out = subprocess.run(
+        ["osascript", "-e",
+         'tell application "System Events" to get size of scroll area 1 '
+         'of process "Finder"'],
+        capture_output=True, text=True)
+    parts = [p.strip() for p in out.stdout.split(",") if p.strip()]
+    if len(parts) != 2 or not all(p.isdigit() for p in parts):
+        return None
+    width, height = (int(p) for p in parts)
+    return (width, height) if width > 800 and height > 600 else None
+
+
+def place_game(side: str = "left", fraction: float = 0.5) -> None:
+    """Park the game on one half of the screen so a terminal can own the other.
+
+    Re-applied on every focus pass rather than once at launch: each ladder
+    attempt relaunches Civ 6, and a fresh process comes up wherever the game
+    last remembered rather than where it was put.
+    """
+    if side == "none":
+        return
+    size = desktop_size()
+    if size is None:
+        return
+    screen_w, screen_h = size
+    menu = 33  # the menu bar; a window placed at y=0 hides behind it
+    width = max(640, int(screen_w * fraction))
+    x = 0 if side == "left" else screen_w - width
+    script = (
+        'tell application "System Events" to tell '
+        '(first process whose name contains "Civ6") to tell window 1\n'
+        f'  set position to {{{x}, {menu}}}\n'
+        f'  set size to {{{width}, {screen_h - menu}}}\n'
+        'end tell')
+    subprocess.run(["osascript", "-e", script], capture_output=True)
+
+
+def focus_game(side: str = "left", fraction: float = 0.5) -> None:
     script = ('tell application "System Events" to set frontmost of '
               '(first process whose name contains "Civ6") to true')
     subprocess.run(["osascript", "-e", script], capture_output=True)
+    place_game(side, fraction)
 
 
 def click_at(px: int, py: int) -> None:
@@ -254,7 +308,7 @@ def bootstrap_game(tail: watch.LogTail, on_event, run_dir: Path,
     # reason to wait, not a reason to give up: an earlier run bailed with "no
     # game window found" while the game was still showing the 2K logo.
     for attempt in range(1, BOOTSTRAP_ATTEMPTS + 1):
-        focus_game()
+        focus_game(GAME_SIDE, GAME_FRACTION)
         time.sleep(2.0)
         bounds = game_window()
         if bounds is None:
@@ -313,7 +367,7 @@ def press_escape(times: int = 2) -> bool:
     log line at all and looks exactly like a slow map. It is deliberately not
     on the normal path: Escape during play opens the pause menu.
     """
-    focus_game()
+    focus_game(GAME_SIDE, GAME_FRACTION)
     time.sleep(1.0)
     ok = True
     for _ in range(times):
@@ -442,7 +496,7 @@ def _play(args: argparse.Namespace) -> int:
         if now - last_focus[0] < args.focus_every:
             return
         last_focus[0] = now
-        focus_game()
+        focus_game(GAME_SIDE, GAME_FRACTION)
 
     reason = watch.follow(tail, args.timeout, record, stop_when=finished,
                           each_poll=keep_foreground)
@@ -509,6 +563,12 @@ def main(argv: list[str] | None = None) -> int:
     # nothing. Takes effect only when the setup context hosts the game; the
     # `seat` event reports the leader actually granted.
     ap.add_argument("--leader", default="LEADER_TRAJAN")
+    # The game must stay frontmost to get frames, which makes it unwatchable if
+    # it also owns the whole screen. Half is enough for the agent and leaves the
+    # other half for a terminal.
+    ap.add_argument("--window-side", choices=["left", "right", "none"],
+                    default="left")
+    ap.add_argument("--window-frac", type=float, default=0.5)
     ap.add_argument("--survey", action="store_true", default=True)
     ap.add_argument("--no-survey", dest="survey", action="store_false")
     ap.add_argument("--survey-enums", action="store_true",
@@ -526,6 +586,8 @@ def main(argv: list[str] | None = None) -> int:
                     help="seconds between raising the game window (0 disables)")
     ap.add_argument("--status", action="store_true")
     args = ap.parse_args(argv)
+    global GAME_SIDE, GAME_FRACTION
+    GAME_SIDE, GAME_FRACTION = args.window_side, args.window_frac
 
     if args.status:
         return status()
