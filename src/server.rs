@@ -1357,6 +1357,26 @@ impl Shared {
         if !base.supervised {
             return Err("fresh-code launches require the spectator supervisor".into());
         }
+        // Bind the request to the world the page offered to replace. A result
+        // countdown or an old tab can outlive that process, and the same port
+        // then belongs to a healthy successor. Before this check, its delayed
+        // POST was accepted by the successor and the supervisor killed a game
+        // that had only run for a few turns. Both values are lock-free so the
+        // restart control still works while an AI turn holds the session.
+        let expected = request
+            .get("replace_world")
+            .ok_or_else(|| "replace_world is required".to_string())?;
+        let expected_seed = expected["seed"]
+            .as_u64()
+            .ok_or_else(|| "replace_world.seed must be an integer".to_string())?;
+        let expected_instance = expected["server_instance"]
+            .as_u64()
+            .ok_or_else(|| "replace_world.server_instance must be an integer".to_string())?;
+        if expected_seed != self.current_seed.load(Ordering::Relaxed)
+            || expected_instance != process_identity() as u64
+        {
+            return Err("the world changed before the restart began".into());
+        }
         let mode = request["mode"]
             .as_str()
             .ok_or_else(|| "mode must be restart or fresh_code".to_string())?;
@@ -6654,6 +6674,22 @@ mod tests {
             "setWorldTransitionStage(Date.now() - watchStartedAt < HANDOFF_QUIET_MS"
         ));
         assert!(EMBEDDED_INDEX.contains("await settingsStageChain.catch(() => {})"));
+        // A result timer belongs to one exact world. Background-tab timer
+        // throttling can let it wake after the supervisor has already put a
+        // successor on the same port, so both the firing edge and the server
+        // request carry that original process/seed identity.
+        assert!(EMBEDDED_INDEX.contains("let finaleCountdownWorld = null;"));
+        assert!(EMBEDDED_INDEX.contains("if (finaleCountdownTimer === null) return;"));
+        assert!(EMBEDDED_INDEX.contains(
+            "state.server_instance !== finaleCountdownWorld.serverInstance"
+        ));
+        assert!(EMBEDDED_INDEX.contains("state.seed !== finaleCountdownWorld.seed"));
+        assert!(EMBEDDED_INDEX.contains("const finishedInstance = handoff.finishedInstance;"));
+        assert!(EMBEDDED_INDEX.contains("const finishedSeed = handoff.finishedSeed;"));
+        assert!(EMBEDDED_INDEX.contains("replace_world: {"));
+        assert!(EMBEDDED_INDEX.contains(
+            "server_instance: finishedInstance, seed: finishedSeed"
+        ));
         assert!(EMBEDDED_INDEX.contains("specFetching || specPending || worldTransitionPending()"));
         assert!(EMBEDDED_INDEX.contains("specFetchAbort?.abort()"));
         assert!(EMBEDDED_INDEX.contains("worldTransitionHandoff.supervised"));
@@ -8337,6 +8373,10 @@ mod tests {
             .request_supervised_new_game(&json!({
                 "mode": "fresh_code",
                 "paused": false,
+                "replace_world": {
+                    "server_instance": std::process::id(),
+                    "seed": original_seed,
+                },
                 "num_players": 4,
                 "map_script": "continents",
                 "game_speed": "quick",
@@ -8398,11 +8438,21 @@ mod tests {
         params.spectate = true;
         params.supervised = true;
         let shared = shared_for(Session::new(params));
+        let seed = shared
+            .current_seed
+            .load(std::sync::atomic::Ordering::Relaxed);
 
         let turn_in_flight = shared.session.lock().unwrap();
         let started = Instant::now();
         shared
-            .request_supervised_new_game(&json!({"mode": "restart", "paused": false}))
+            .request_supervised_new_game(&json!({
+                "mode": "restart",
+                "paused": false,
+                "replace_world": {
+                    "server_instance": std::process::id(),
+                    "seed": seed,
+                },
+            }))
             .expect("a restart is accepted mid-turn");
         let accepted = started.elapsed();
 
@@ -8416,6 +8466,47 @@ mod tests {
             "the restart waited {accepted:?} on a turn it exists to abandon"
         );
         drop(turn_in_flight);
+    }
+
+    /// A browser can keep a result callback queued while the supervisor swaps
+    /// the listening socket to a successor. The callback is allowed to retire
+    /// only the process and seed it was created for, never the active world it
+    /// happens to reach later on the same port.
+    #[test]
+    fn a_stale_supervised_restart_cannot_replace_the_successor_world() {
+        let mut params = current();
+        params.spectate = true;
+        params.supervised = true;
+        let shared = shared_for(Session::new(params));
+        let seed = shared
+            .current_seed
+            .load(std::sync::atomic::Ordering::Relaxed);
+        let instance = std::process::id() as u64;
+
+        for request in [
+            json!({"mode": "restart", "paused": false}),
+            json!({
+                "mode": "restart",
+                "paused": false,
+                "replace_world": {"server_instance": instance, "seed": seed + 1},
+            }),
+            json!({
+                "mode": "restart",
+                "paused": false,
+                "replace_world": {"server_instance": instance + 1, "seed": seed},
+            }),
+        ] {
+            assert!(shared.request_supervised_new_game(&request).is_err());
+        }
+
+        assert!(shared.pending_new_game_request().is_none());
+        assert!(!shared.paused.load(std::sync::atomic::Ordering::Relaxed));
+        assert_eq!(
+            shared
+                .current_seed
+                .load(std::sync::atomic::Ordering::Relaxed),
+            seed
+        );
     }
 
     #[test]
@@ -8456,8 +8547,16 @@ mod tests {
         assert_eq!(state["supervised"], json!(true));
         assert!(!state["legal_actions"].as_array().unwrap().is_empty());
 
-        assert!(shared_for(session)
-            .request_supervised_new_game(&json!({"mode": "restart", "paused": false}))
+        let shared = shared_for(session);
+        assert!(shared
+            .request_supervised_new_game(&json!({
+                "mode": "restart",
+                "paused": false,
+                "replace_world": {
+                    "server_instance": std::process::id(),
+                    "seed": 8,
+                },
+            }))
             .is_ok());
     }
 
