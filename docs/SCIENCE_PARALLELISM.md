@@ -396,6 +396,20 @@ then implemented at `a55f555d17f3ceb453ec37eac6d9165c75b60e4a`:
   embedded generation-14 champion, reproduced both direct/replay focal cells
   exactly, and emitted only the diagnostic null label. It cannot spend a gate.
 
+The replay-integrity amendment and implementation were committed and pushed at
+`e81d991` before rebuilding or reading even the diagnostic seed:
+
+- `cargo test --profile ci --locked --bin science_parallelism_eval -j 2`
+  passed all 10 focused tests, now including malformed later-duplicate and
+  unsupported-token rejection, exact champion generation/fingerprint binding,
+  and byte-exact direct/replay `Game` equality;
+- the rebuilt release binary rejected an unsupported token and
+  `--turns 250 --turns nope` with exit 2 before game construction; and
+- a one-map, one-turn replay at the pre-existing diagnostic seed 9,982,999 used
+  one job, named generation 14 and fingerprint `0x40b1fbb2a5b88bc6`, and
+  reproduced both complete serialized terminal worlds and recorded results
+  exactly. It emitted only the diagnostic null label and cannot spend a gate.
+
 Execution audit: immediately before the standalone rebuild, an intended
 conflict check invoked the stale pre-amendment release executable. That binary
 ignored `--deployment-mix`, accepted `--players 8`, and began its default null
