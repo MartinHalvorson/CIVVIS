@@ -5807,76 +5807,7 @@ seeds) and this one (+0.50 cities, null).
 That is worth stating plainly for whoever picks this up: **the expansion gap is
 real and is not currently reachable by changing a decision.** Anything further
 here should either change what a settler costs, or stop and go elsewhere.
-||||||| 2dbf641
 
-<<<<<<< HEAD
-## 2026-07-29 — ★★★★★ the self-improvement loop cannot reach the one axis measured to pay
-
-Read the deployed league roster before spending any more effort on the macro
-search, and the shape of the problem changes.
-
-```
-/Users/martin/civvis-spectator-src/league/league.json — 61 entries, 19 active
-  Builtin: 7   advanced x5, basic x1, advanced_v1 x1
-  Advanced: 54 (AdvancedAi genome variants)
-  StrategicAi: 0
-```
-
-**No searching agent has ever played a deployed game.** The live exhibition runs
-`civvis play --spectate --supervised --league …`, so its seats come from that
-roster, and every one of them is `AdvancedAi` — either the builtin or a bred
-genome. `StrategicAi` is the only agent in this repository that searches, and it
-is the one whose compute-doubling result (p=0.0023) is the single reproducible
-strength win on record. It never plays.
-
-**And breeding cannot fix that, structurally.** `StrategyKind` has two variants:
-
-```rust
-Builtin { ai: String },          // one of elo::BUILTIN_AIS — "strategic" is in it
-Advanced { weights, target },    // parameterized AdvancedAi
-```
-
-Every offspring the league produces is `Advanced`. The only non-test
-`StrategyKind::Builtin` construction in `src/league.rs` is `register_new_player`,
-which is a *human* seat's auto-play fallback and is hardcoded to `"advanced"`.
-The seven builtin entries in the roster were seeded by hand as anchors.
-
-So the self-improvement loop explores 48-gene variants of a scripted,
-non-searching agent, and no amount of running it can discover search. That is
-worth putting beside three facts already in this file: the genome is a measured
-local optimum on wins, 11 of 48 genes produce zero divergence when driven to
-their bounds, and about a thousand rounds of evolution produced no measurable
-gain. The loop is not failing to climb — it is exhausting a space that was
-already exhausted, and it cannot see the axis next door.
-
-**What this does and does not say about the macro-search work:**
-
-- It does **not** invalidate #572's measurement. The two search axes interact in
-  80% of reviews and coordinate descent misses an actionable joint optimum in
-  22.3% of them, and that is a true statement about `StrategicAi`.
-- It does mean the joint-axis change in #589 improves an agent that is **not
-  deployed**, so no strength claim from it can be a claim about shipped play.
-- It also cuts against deployability directly: `strategic` is plausibly absent
-  because search costs several times a scripted turn, and the joint axis costs
-  2.5x again. Making search better and more expensive moves it further from the
-  roster, not closer.
-
-| claim | status |
-|---|---|
-| no searching agent is seated in the deployed league | **established** (0 of 61) |
-| league breeding can only produce `AdvancedAi` genomes | **established** (`StrategyKind`) |
-| therefore the self-improvement loop cannot discover search | **established** (structural) |
-| `strategic` is *ineligible* | **refuted** — it is in `BUILTIN_AIS`, just unseated |
-| search is unseated *because* of turn cost | **unmeasured** — plausible, not established |
-
-**The next question is a cost measurement, not a strength one.** What does a
-`StrategicAi` turn cost against an `AdvancedAi` turn at 6p 74×46 Online? If the
-ratio is small enough to seat, the highest-value change available is to anchor a
-searching agent in the league so the rating system can see it at all. If it is
-not, then every hour spent making the search stronger is spent on an agent that
-cannot ship, and the honest move is to make search *cheaper* rather than better.
-||||||| 6300c2c
-=======
 ## 2026-07-29 — ★★★★ what a searching turn costs, and why the first answer was wrong
 
 The entry above established that no searching agent is seated in the deployed
@@ -5925,7 +5856,6 @@ this establishes.
 | **seating one searching entry costs ~6.4×** | **established** (n=3) |
 | search is too expensive to seat | **refuted** — that conclusion came from measuring a fleet nobody runs |
 | a searching seat would break the exhibition's frame-per-turn guarantee | **unmeasured**, and unlikely at 13 turns/sec |
->>>>>>> origin/main
 
 ## 2026-07-29 — joint lane/doctrine search: inconclusive at 40 pairs
 
@@ -5952,22 +5882,21 @@ confirmation — the convention here is ~120 — and it behaved like one.
 Two diagnostics say the comparison is clean rather than confounded:
 
 - **Search exposure is unchanged**: 546/1362 (40%) of `strategic_joint`'s reviews
-  reached the rollouts against 555/1377 (40%) for `strategic`. The change did not
-  alter how often the search runs, so this isolates the ordering rather than the
-  budget. Both agents had 408 reviews answered by the urgent-counter prior and
-  ~408 by irreversible religion.
+  reached the rollouts against 555/1377 (40%) for `strategic`, with 408 reviews
+  answered by the urgent-counter prior on each side. The change did not alter how
+  often the search runs, so this isolates the ordering rather than the budget.
 - **The mechanism bit**: `strategic_joint` reached a *domination* dominant plan in
-  4 seat-games where `strategic` reached it in 0 — which is the predicted effect,
-  a lane that loses under the incumbent's weights winning under the doctrine it
-  would actually be played with.
+  4 seat-games where `strategic` reached it in 0 — the predicted effect of a lane
+  that loses under the incumbent's weights winning under the doctrine it would
+  actually be played with.
 
-**The flag stays off**, and `strategic_joint` ships as an eval-only variant
-alongside `strategic_r20`, `strategic_h80` and the rest.
+**The flag stays off**, and `strategic_joint` ships eval-only alongside
+`strategic_r20`, `strategic_h80` and the rest.
 
 **Not spending 120 pairs on this now, and the reason is priority rather than
 doubt.** Confirming +35 Elo would cost roughly fifteen hours at this profile, on
-an agent that **no deployed game has ever seated** — and one whose evaluator
-never loads in deployment either. Both of those are wiring defects with a
+an agent that **no deployed game has ever seated**, and whose evaluator never
+loads in deployment either. Both of those are wiring defects with a
 precedent-backed fix, and both are worth more than a 2.5×-cost improvement to an
 agent nothing plays. If search is ever seated, this is the first thing to
 re-measure.
