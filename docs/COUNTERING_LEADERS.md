@@ -447,8 +447,22 @@ them took it to **1 point in 1262**. 47 of 178 sessions at 6p are Emergencies.
 | rival ballots opposing / abstaining | 231 / 0 | 326 / 0 |
 | **diplomatic victories** | **0 of 24** | **0 of 16** |
 
-Opposition is unanimous, free, and never loses. **"Counter the diplomatic
-victory harder" has no headroom available to take.**
+Opposition is unanimous, free, and wins 95–98.5% of the resolutions it
+contests.
+
+⚠ **CORRECTED — "zero diplomatic victories" was a small sample, and the
+conclusion drawn from it was too strong.** The 120-pair eval below runs the
+*same* 4p 60×38 profile over 240 games and ends **20 of them diplomatically —
+8.3%**, the third most common victory type there after religious (58.8%) and
+score (32.1%). Two census samples of 24 and 16 games happened to contain none;
+at 8.3% that has a 12% chance of happening on its own.
+
+So the veto is a heavy brake, **not an absolute bar**, and an earlier draft of
+this section claiming the engine "is running a race that cannot be finished"
+was wrong. What survives is narrower and still worth knowing: the diplomatic
+lane is the one lane whose progress is actively taken back by rivals every
+thirty turns, at no cost to them, and the AI already contests it about as hard
+as the mechanism allows.
 
 Note the leader supplies some of those B votes itself — 393 against 326 rival
 ballots over 67 resolutions is the leader opposing itself every time. That is
@@ -537,11 +551,12 @@ diplomacy race sitting at **70–80%** for empires that then win diplomatically
 **0 times in 40 games**.
 
 It is not a mis-scaled meter — 16 of 20 really is 80% of the way to a
-diplomatic victory. It is that the last four points are taken back by a veto
-that has never once failed: `world_leader` is on every ballot from the Modern
-era, it denies its target 95–98.5% of the time, and it convenes roughly every
-thirty turns. A spectator reads a race that is nearly finished; the engine is
-running a race that cannot be finished.
+diplomatic victory, and roughly one game in twelve does finish there. It is
+that the last four points are the hardest four in the game: `world_leader` is
+on every ballot from the Modern era, it denies its target 95–98.5% of the time,
+and it convenes roughly every thirty turns. A spectator reads a race that looks
+nearly finished; most of the empires shown at 70–80% are in fact stalled
+against a veto, and the meter cannot say which.
 
 As with the score-margin finding above, this is an observation about
 presentation and is deliberately **not** backed by a strength claim. It is
@@ -549,3 +564,53 @@ listed here because it is the same instrument problem in a second place, and
 because it is what a viewer sees rather than what an evaluator measures.
 
 `congress_census` reproduces both the peak table and the veto rate.
+
+### The result: null, as registered
+
+`ai_eval advanced advanced_congress_counter --players 4 --city-states 6
+--width 60 --height 38 --pairs 120 --turns 400 --seed 990000`
+(`/Users/martin/eval-congress-counter-120.log`), 570 tiles per player against
+the exhibition's 567, average 319.6 turns:
+
+| reading | value |
+|---|---|
+| game-win share | 120/240 vs 120/240 — **50.0%** |
+| paired-map score for `advanced` | **50.0%** (Wilson 41.2–58.8), Elo **+0** |
+| paired direction | 2 / 116 neutral / 2, sign **p=1.0000** |
+| terminal score | **50.0%**, 23 / 75 / 22, **p=1.0000** |
+| resolution | wins rest on 4 of 120 maps, terminal score on 45 |
+| gate | INCONCLUSIVE |
+
+An exact dead heat on both instruments. **The pre-registered prediction was
+"null, 48–52%, sign p > 0.10"; it landed at 50.0% and p=1.0000.** Cities,
+population, techs, civics, districts, builds, tourists and science are
+identical to the printed precision; gold moves +6.7% to the treatment and trade
+routes down 11% (0.95 → 0.84 traders), which is the embargo landing and
+changing nothing that matters.
+
+### And the alarm is not stolen by a phantom, which I had predicted it was
+
+Before the eval returned I proposed a second defect: `rival_victory_pressure`
+scores the diplomacy lane as `dvp * 5` and takes the **max** over lanes, and
+the veto holds peak DVP at 14–16 — which is 70–80 against a denial bar of 78.
+An empire that cannot win a diplomatic victory should therefore be able to
+outrank one about to win a real one and take the alarm, routing the responder
+into `GrandStrategy::Diplomacy`.
+
+**Measured, and refuted.** 273 sampled firings, 12 maps, 4p 60×38, 6 CS
+(`congress_census`, `/Users/martin/congress-denial-lanes.log`):
+
+| counter asked for | share of firings | the named empire won |
+|---|---|---|
+| conquest | 69.6% | 91.6% |
+| religion | 24.9% | 100% |
+| culture | 4.4% | 100% |
+| **diplomacy** | **1.1%** (3 firings) | 100% |
+
+The diplomacy lane takes the alarm 1.1% of the time, not often enough to steal
+anything, because the conquest and religion terms are simply larger by the time
+DVP is high. The reading that *does* survive is the opposite of a defect: when
+the denial layer fires at all it names the eventual winner **91.6–100%** of the
+time, well above the 85.6% this page measures elsewhere. `victory_denial` is a
+good target selector. It is the *response* that has never been worth anything —
+and now the free response is null too.
