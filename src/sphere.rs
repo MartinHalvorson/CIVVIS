@@ -908,6 +908,8 @@ pub fn sphere(frequency: i32) -> Arc<Sphere> {
 #[cfg(test)]
 mod tests {
     use std::collections::{HashSet, VecDeque};
+    use std::hint::black_box;
+    use std::time::Instant;
 
     use super::*;
 
@@ -1076,6 +1078,72 @@ mod tests {
         let globe = sphere(21);
         assert_eq!(globe.len(), 4_412);
         assert_eq!(globe.distance_row_capacity(), globe.len());
+    }
+
+    /// Frozen microbenchmark for `docs/SPHERE_PERFORMANCE.md`.
+    ///
+    /// Run in a fresh process so frequency 21 starts without admitted rows:
+    /// `cargo test --release sphere_distance_cache_order_benchmark -- \
+    ///  --ignored --nocapture --test-threads=1`.
+    #[test]
+    #[ignore = "preregistered microbenchmark; run explicitly with --nocapture"]
+    fn sphere_distance_cache_order_benchmark() {
+        const BATCHES: usize = 7;
+        const CALLS: usize = 2_000_000;
+
+        let globe = sphere(21);
+        let positions: Vec<Pos> = globe.positions().collect();
+        let source_index = globe.len() / 3;
+        let source = positions[source_index];
+        let exact = globe.search_all(source_index as u32);
+        let local: Vec<Pos> = exact
+            .iter()
+            .enumerate()
+            .filter(|(_, distance)| (1..=RING_RADIUS as u16).contains(distance))
+            .map(|(index, _)| positions[index])
+            .collect();
+        let long: Vec<Pos> = exact
+            .iter()
+            .enumerate()
+            .filter(|(_, distance)| **distance > RING_RADIUS as u16)
+            .map(|(index, _)| positions[index])
+            .collect();
+        assert!(!local.is_empty());
+        assert!(long.len() >= DISTANCE_ROW_ADMISSION_HITS as usize);
+        assert!(globe.distance_rows[source_index].get().is_none());
+
+        let measure = |targets: &[Pos]| -> u128 {
+            let started = Instant::now();
+            let mut checksum = 0i64;
+            for call in 0..CALLS {
+                let target = black_box(targets[call % targets.len()]);
+                checksum += i64::from(black_box(globe.distance(black_box(source), target)));
+            }
+            black_box(checksum);
+            started.elapsed().as_nanos()
+        };
+        let median = |mut timings: Vec<u128>| {
+            timings.sort_unstable();
+            timings[timings.len() / 2]
+        };
+        let run_phase = |label: &str, targets: &[Pos]| {
+            let elapsed = median((0..BATCHES).map(|_| measure(targets)).collect());
+            println!(
+                "{label}: median_elapsed_ns={elapsed} calls={CALLS} ns_per_call={:.6}",
+                elapsed as f64 / CALLS as f64
+            );
+        };
+
+        run_phase("cold_local", &local);
+        for target in long.iter().take(DISTANCE_ROW_ADMISSION_HITS as usize) {
+            black_box(globe.distance(source, *target));
+        }
+        assert!(
+            globe.distance_rows[source_index].get().is_some(),
+            "eight distinct long queries must admit the reused source row"
+        );
+        run_phase("admitted_local", &local);
+        run_phase("admitted_long", &long);
     }
 
     #[test]
