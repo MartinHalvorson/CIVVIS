@@ -73,20 +73,25 @@ unlock not yet researched. An unlock qualifies only if it is at least eight
 Combat Strength better than the available body, deals at least 36 expected damage
 against the harder of the city or its nearby field army, has a feasible strategic
 resource supply, and has a real land route to the neutral staging ring. The
-choice minimizes the complete remaining Science path and then the joint
-research/build/march schedule plus the existing campaign value. It is choosing
-an attack window, not assigning a bonus to a leader name or blindly chasing the
-strongest late-game unit.
+planner first takes the least-research qualifying unlock for each target. It
+then compares targets on one transparent, raw score: the existing rival/city
+campaign cost plus unscaled turns to finish research, produce the bodies and
+breach package, and march. Those components are reported rather than quietly
+normalized after results. It is choosing an attack window, not assigning a
+bonus to a leader name or blindly chasing the strongest late-game unit.
 
-That decision becomes a persistent `WarPlan`, separate from the ordinary
-five-turn strategy assessment. It locks the victim, objective, breakthrough and
-four-body assault package so routine plan churn cannot send each subsystem in a
-different direction. Cities prebuild directly upgradeable predecessors while
-research is under way; adaptive Conquest reaches the plan-aware production
-evaluator; a walled objective adds a genuinely compatible support or siege unit;
-and the treasury protects the exact live upgrade quotes from purchases, deals,
-plot annexation and Great Person patronage. On the breakthrough turn those
-upgrades happen before any discretionary spending or unit movement.
+That decision becomes a persistent, episode-keyed `WarPlan`, separate from the
+ordinary five-turn strategy assessment. It locks the victim, objective,
+breakthrough and four-body assault package so routine plan churn cannot send
+each subsystem in a different direction. The episode record follows that exact
+package through breakthrough, mobilization, declaration, capture or a named
+abort, so aborting and replanning cannot masquerade as one successful strike.
+Cities prebuild directly upgradeable predecessors while research is under way;
+adaptive Conquest reaches the plan-aware production evaluator; a walled
+objective adds a genuinely compatible support or siege unit; and the treasury
+protects the exact live upgrade quotes from purchases, deals, plot annexation,
+generic army modernization and Great Person patronage. On the breakthrough
+turn those upgrades happen before any discretionary spending or unit movement.
 
 The army then assembles outside enemy territory on the existing three-to-five
 tile ring. Formal war is withheld until four modern assault bodies and the breach
