@@ -206,6 +206,10 @@ pub struct StrategicAi {
     weights: Weights,
     net: Option<ValueNet>,
     census: ReviewCensus,
+    /// Evaluator-only production-eligibility treatment. The flag is copied to
+    /// the live actor and this seat's counterfactual branches; rivals remain
+    /// exact stock controllers.
+    recon_family_cap: bool,
     pub review_every: u32,
     /// Rounds each branch is projected before it is judged.
     ///
@@ -484,6 +488,7 @@ impl StrategicAi {
             weights,
             net,
             census: ReviewCensus::default(),
+            recon_family_cap: false,
             continue_from_plan: true,
             branch_religion_may_expand: false,
             adaptive_horizon: false,
@@ -508,6 +513,18 @@ impl StrategicAi {
 
     pub fn current_target(&self) -> Option<VictoryTarget> {
         self.inner.victory_target()
+    }
+
+    /// Enable the frozen recon-family-cap treatment without changing macro
+    /// search configuration, model loading, doctrine, or retained plan state.
+    pub fn set_recon_family_cap(&mut self, enabled: bool) {
+        self.recon_family_cap = enabled;
+        self.inner.set_recon_family_cap(enabled);
+    }
+
+    fn configure_fresh_branch(&self, mut agent: AdvancedAi) -> AdvancedAi {
+        agent.set_recon_family_cap(self.recon_family_cap);
+        agent
     }
 
     /// Religious-victory geometry after an exact action sequence.
@@ -1150,15 +1167,17 @@ impl StrategicAi {
     /// keeps its plan rather than dropping it for no reason.
     fn branch_agent(&self, target: Option<VictoryTarget>, weights: &Weights) -> Box<dyn Ai> {
         if !self.continue_from_plan {
-            return match target {
+            let agent = match target {
                 Some(target) => {
                     let mut agent =
                         AdvancedAi::with_weights_and_target(weights.clone(), target);
                     agent.assigned_religion_may_expand = self.branch_religion_may_expand;
-                    Box::new(agent) as Box<dyn Ai>
+                    agent
                 }
-                None => Box::new(AdvancedAi::with_weights(weights.clone())) as Box<dyn Ai>,
+                None => AdvancedAi::with_weights(weights.clone()),
             };
+            let agent = self.configure_fresh_branch(agent);
+            return Box::new(agent) as Box<dyn Ai>;
         }
         let mut inner = self.inner.clone();
         // Scoped to the projection, not to play: this changes what the search
@@ -1471,15 +1490,15 @@ impl StrategicAi {
             .iter()
             .map(|p| {
                 if p.id == pid {
-                    match target {
-                        Some(target) => Box::new(AdvancedAi::with_weights_and_target(
+                    let agent = match target {
+                        Some(target) => AdvancedAi::with_weights_and_target(
                             self.weights.clone(),
                             target,
-                        )) as Box<dyn Ai>,
-                        None => {
-                            Box::new(AdvancedAi::with_weights(self.weights.clone())) as Box<dyn Ai>
-                        }
-                    }
+                        ),
+                        None => AdvancedAi::with_weights(self.weights.clone()),
+                    };
+                    let agent = self.configure_fresh_branch(agent);
+                    Box::new(agent) as Box<dyn Ai>
                 } else {
                     self.rival_agent(g, p.id)
                 }
@@ -1727,6 +1746,28 @@ mod tests {
                 .unwrap();
         }
         game.current = 0;
+    }
+
+    #[test]
+    fn recon_cap_is_default_off_and_reaches_live_and_fresh_branch_agents() {
+        let mut strategic = StrategicAi::new();
+        assert!(!strategic.recon_family_cap);
+        assert!(!strategic.inner.recon_family_cap_enabled());
+        assert!(
+            !strategic
+                .configure_fresh_branch(crate::ai::AdvancedAi::new())
+                .recon_family_cap_enabled()
+        );
+
+        strategic.set_recon_family_cap(true);
+        assert!(strategic.recon_family_cap);
+        assert!(strategic.inner.recon_family_cap_enabled());
+        assert!(
+            strategic
+                .configure_fresh_branch(crate::ai::AdvancedAi::new())
+                .recon_family_cap_enabled()
+        );
+        assert!(strategic.inner.clone().recon_family_cap_enabled());
     }
 
     #[test]

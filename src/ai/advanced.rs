@@ -365,6 +365,7 @@ struct EmpireCounts {
     builders: usize,
     traders: usize,
     scouts: usize,
+    recon_family: usize,
     military: usize,
     melee: usize,
     ranged: usize,
@@ -389,6 +390,9 @@ struct VictoryFocus {
 
 impl EmpireCounts {
     fn add_unit(&mut self, g: &Game, name: &str) {
+        if BasicAi::is_recon_family_unit(g, name) {
+            self.recon_family += 1;
+        }
         match name {
             "settler" => self.settlers += 1,
             "builder" => self.builders += 1,
@@ -1044,6 +1048,23 @@ impl Default for AdvancedAi {
 impl AdvancedAi {
     pub fn new() -> AdvancedAi {
         Self::configured(BasicAi::new(), true, None)
+    }
+
+    /// Evaluator-only entrant for the frozen recon-family production cap.
+    /// All shipped constructors retain the default-off policy.
+    pub fn with_recon_family_cap() -> AdvancedAi {
+        Self::configured(BasicAi::with_recon_family_cap(), true, None)
+    }
+
+    /// Propagate an evaluator treatment through a higher-level controller
+    /// without reconstructing this agent or discarding its plan memory.
+    pub fn set_recon_family_cap(&mut self, enabled: bool) {
+        self.base.recon_family_cap = enabled;
+    }
+
+    #[cfg(test)]
+    pub(crate) fn recon_family_cap_enabled(&self) -> bool {
+        self.base.recon_family_cap
     }
 
     /// Where this agent tells an observer what it is doing.
@@ -7198,6 +7219,20 @@ impl AdvancedAi {
             if currency != "faith" || g.rules.units[unit].class != "military" {
                 continue;
             }
+            let item = if *formation == 0 {
+                Item::Unit { unit: unit.clone() }
+            } else {
+                Item::Formation {
+                    unit: unit.clone(),
+                    formation: *formation,
+                }
+            };
+            if self
+                .base
+                .recon_family_item_blocked(g, &item, counts.recon_family)
+            {
+                continue;
+            }
             let mut after = g.clone();
             if after.apply(pid, &action).is_err() || after.players[pid].faith < reserve {
                 continue;
@@ -7218,14 +7253,7 @@ impl AdvancedAi {
                     g,
                     pid,
                     *city,
-                    &if *formation == 0 {
-                        Item::Unit { unit: unit.clone() }
-                    } else {
-                        Item::Formation {
-                            unit: unit.clone(),
-                            formation: *formation,
-                        }
-                    },
+                    &item,
                     plan,
                     &counts,
                 )
@@ -8146,6 +8174,12 @@ impl AdvancedAi {
         plan: &StrategicPlan,
         counts: &EmpireCounts,
     ) -> f64 {
+        if self
+            .base
+            .recon_family_item_blocked(g, item, counts.recon_family)
+        {
+            return -10_000.0;
+        }
         let city = &g.cities[&cid];
         let city_count = g.player_city_ids(pid).len();
         let production = g.city_yields(cid).production.max(1.0);
@@ -12871,6 +12905,195 @@ mod tests {
         install_ai_test_district(game, city, "holy_site");
         game.cities.get_mut(&city).unwrap().buildings =
             vec![crate::name!("shrine"), crate::name!("temple")];
+    }
+
+    fn recon_recovery_plan(game: &Game) -> StrategicPlan {
+        StrategicPlan {
+            strategy: GrandStrategy::Recovery,
+            target_player: None,
+            target_city: None,
+            threatened_city: None,
+            desired_cities: game.player_city_ids(0).len(),
+            assessed_turn: game.turn,
+            rush: false,
+        }
+    }
+
+    fn founded_advanced_recon_game(seed: u64) -> (Game, u32) {
+        let mut game = Game::new_full(1, 24, 16, seed, 200, 0, false);
+        let settler = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+        game.current = 0;
+        let city = game.player_city_ids(0)[0];
+        let scout = std::sync::Arc::make_mut(&mut game.rules)
+            .units
+            .get_mut("scout")
+            .unwrap();
+        scout.strength = 1_000.0;
+        scout.cost = 1.0;
+        (game, city)
+    }
+
+    fn spawn_recon_test_unit(game: &mut Game, kind: &str) {
+        let position = game
+            .map
+            .tiles
+            .values()
+            .find(|tile| {
+                game.rules.is_passable(tile)
+                    && !game.rules.is_water(tile)
+                    && game.units_at(tile.pos).is_empty()
+            })
+            .unwrap()
+            .pos;
+        game.spawn_test_unit(kind, 0, position);
+    }
+
+    #[test]
+    fn recon_cap_preserves_zero_count_and_non_recon_scores_exactly() {
+        let (mut game, city) = founded_advanced_recon_game(99_724);
+        let plan = recon_recovery_plan(&game);
+        let stock = AdvancedAi::new();
+        let mut treated = AdvancedAi::with_recon_family_cap();
+        treated.base.book_pos = 4;
+        let empty = treated.counts(&game, 0);
+        let scout = Item::Unit {
+            unit: crate::name!("scout"),
+        };
+        assert_eq!(
+            stock.production_value(&game, 0, city, &scout, &plan, &empty).to_bits(),
+            treated
+                .production_value(&game, 0, city, &scout, &plan, &empty)
+                .to_bits()
+        );
+
+        spawn_recon_test_unit(&mut game, "spec_ops");
+        let occupied = treated.counts(&game, 0);
+        let warrior = Item::Unit {
+            unit: crate::name!("warrior"),
+        };
+        assert_eq!(
+            stock
+                .production_value(&game, 0, city, &warrior, &plan, &occupied)
+                .to_bits(),
+            treated
+                .production_value(&game, 0, city, &warrior, &plan, &occupied)
+                .to_bits()
+        );
+        assert_eq!(
+            treated.production_value(&game, 0, city, &scout, &plan, &occupied),
+            -10_000.0
+        );
+        let corps = Item::Formation {
+            unit: crate::name!("ranger"),
+            formation: 1,
+        };
+        assert_eq!(
+            treated.production_value(&game, 0, city, &corps, &plan, &occupied),
+            -10_000.0
+        );
+    }
+
+    #[test]
+    fn upgraded_recon_suppresses_advanced_recovery_replacement() {
+        let (mut game, city) = founded_advanced_recon_game(99_725);
+        spawn_recon_test_unit(&mut game, "ranger");
+        let plan = recon_recovery_plan(&game);
+        let mut stock_game = game.clone();
+        let mut treated_game = game;
+        let mut stock = AdvancedAi::new();
+        stock.base.book_pos = 4;
+        let mut treated = AdvancedAi::with_recon_family_cap();
+        treated.base.book_pos = 4;
+
+        stock.advanced_production(&mut stock_game, 0, &plan);
+        treated.advanced_production(&mut treated_game, 0, &plan);
+        assert!(matches!(
+            stock_game.cities[&city].queue.first(),
+            Some(Item::Unit { unit }) if unit == "scout"
+        ));
+        assert!(!matches!(
+            treated_game.cities[&city].queue.first(),
+            Some(Item::Unit { unit }) | Some(Item::Formation { unit, .. })
+                if BasicAi::is_recon_family_unit(&treated_game, unit)
+        ));
+    }
+
+    #[test]
+    fn advanced_production_cannot_queue_two_recon_replacements_in_one_turn() {
+        let (mut game, first) = founded_advanced_recon_game(99_726);
+        let second = found_test_city(&mut game, 0);
+        game.current = 0;
+        game.cities.get_mut(&first).unwrap().queue.clear();
+        game.cities.get_mut(&second).unwrap().queue.clear();
+        let plan = recon_recovery_plan(&game);
+        let mut treated = AdvancedAi::with_recon_family_cap();
+        treated.base.book_pos = 4;
+
+        treated.advanced_production(&mut game, 0, &plan);
+
+        assert_eq!(BasicAi::recon_family_count(&game, 0), 1);
+        assert_eq!(
+            [first, second]
+                .into_iter()
+                .filter(|city| {
+                    game.cities[city]
+                        .queue
+                        .first()
+                        .is_some_and(|item| BasicAi::is_recon_family_item(&game, item))
+                })
+                .count(),
+            1
+        );
+    }
+
+    #[test]
+    fn advanced_gold_and_faith_purchases_respect_an_upgraded_recon() {
+        let (mut game, city) = founded_advanced_recon_game(99_727);
+        spawn_recon_test_unit(&mut game, "skirmisher");
+        let non_recon_military: Vec<u32> = game
+            .player_unit_ids(0)
+            .into_iter()
+            .filter(|unit| {
+                let kind = &game.units[unit].kind;
+                game.rules.units[kind].class == "military"
+                    && !BasicAi::is_recon_family_unit(&game, kind)
+            })
+            .collect();
+        for unit in non_recon_military {
+            game.remove_unit(unit);
+        }
+        game.players[0].gold = 10_000.0;
+        game.players[0].faith = 10_000.0;
+        game.players[0]
+            .civics
+            .insert(crate::name!("reformed_church"));
+        game.players[0].government = Some("theocracy".to_string());
+        let mut plan = recon_recovery_plan(&game);
+        plan.threatened_city = Some(city);
+
+        let mut stock_gold_game = game.clone();
+        let mut treated_gold_game = game.clone();
+        let mut stock = AdvancedAi::new();
+        stock.base.book_pos = 4;
+        let mut treated = AdvancedAi::with_recon_family_cap();
+        treated.base.book_pos = 4;
+        let before = BasicAi::recon_family_count(&game, 0);
+        assert!(stock.advanced_gold_spending(&mut stock_gold_game, 0, &plan));
+        assert!(treated.advanced_gold_spending(&mut treated_gold_game, 0, &plan));
+        assert_eq!(BasicAi::recon_family_count(&stock_gold_game, 0), before + 1);
+        assert_eq!(BasicAi::recon_family_count(&treated_gold_game, 0), before);
+
+        let mut stock_faith_game = game.clone();
+        let mut treated_faith_game = game;
+        assert!(stock.military_faith_spending(&mut stock_faith_game, 0, &plan));
+        assert!(treated.military_faith_spending(&mut treated_faith_game, 0, &plan));
+        assert_eq!(BasicAi::recon_family_count(&stock_faith_game, 0), before + 1);
+        assert_eq!(BasicAi::recon_family_count(&treated_faith_game, 0), before);
     }
 
     fn found_nearby_test_city(game: &mut Game, owner: usize, anchor: Pos) -> u32 {

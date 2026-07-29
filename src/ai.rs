@@ -1102,6 +1102,10 @@ pub struct BasicAi {
     pursue_religion: bool,
     w: Weights,
     book_pos: usize, // opening-book progress (capital builds played so far)
+    /// Experimental production-eligibility treatment from
+    /// `docs/RECON_PRODUCTION.md`. Shipped constructors leave it off; the
+    /// evaluator-only entrant enables it after the four-build opening book.
+    recon_family_cap: bool,
     /// Units that have withdrawn from combat stay in recovery until they are
     /// healthy enough to rejoin it, instead of advancing again after one tick.
     recovering_units: HashSet<u32>,
@@ -1906,6 +1910,7 @@ impl BasicAi {
             pursue_religion: true,
             w: Weights::default(),
             book_pos: 0,
+            recon_family_cap: false,
             recovering_units: HashSet::new(),
             patrol_targets: HashMap::new(),
             patrol_posts: HashMap::new(),
@@ -1925,6 +1930,7 @@ impl BasicAi {
             pursue_religion: true,
             w,
             book_pos: 0,
+            recon_family_cap: false,
             recovering_units: HashSet::new(),
             patrol_targets: HashMap::new(),
             patrol_posts: HashMap::new(),
@@ -1934,6 +1940,68 @@ impl BasicAi {
             rush_military_floor: 0,
             journal: Journal::default(),
         }
+    }
+
+    /// Evaluator-only controller for the frozen recon-family-cap treatment.
+    /// The first four capital builds remain the exact stock opening; all later
+    /// AI-created recon-family queues and purchases share one empire slot.
+    pub fn with_recon_family_cap() -> BasicAi {
+        let mut ai = Self::new();
+        ai.recon_family_cap = true;
+        ai
+    }
+
+    /// Membership is deliberately rules-derived so upgrades remain in the
+    /// same family without a successor-name allowlist.
+    pub(crate) fn is_recon_family_unit(g: &Game, unit: &str) -> bool {
+        g.rules
+            .units
+            .get(unit)
+            .is_some_and(|spec| spec.promotion_class == "recon")
+    }
+
+    pub(crate) fn is_recon_family_item(g: &Game, item: &Item) -> bool {
+        match item {
+            Item::Unit { unit } | Item::Formation { unit, .. } => {
+                Self::is_recon_family_unit(g, unit)
+            }
+            _ => false,
+        }
+    }
+
+    /// Owned bodies and only the active (first) city-queue item are the
+    /// committed force, matching the engine's production semantics.
+    pub(crate) fn recon_family_count(g: &Game, pid: usize) -> usize {
+        g.player_unit_ids(pid)
+            .into_iter()
+            .filter(|uid| Self::is_recon_family_unit(g, &g.units[uid].kind))
+            .count()
+            + g.player_city_ids(pid)
+                .into_iter()
+                .filter(|cid| {
+                    g.cities[cid]
+                        .queue
+                        .first()
+                        .is_some_and(|item| Self::is_recon_family_item(g, item))
+                })
+                .count()
+    }
+
+    fn recon_family_candidate_blocked(&self, g: &Game, pid: usize, unit: &str) -> bool {
+        self.recon_family_item_blocked(
+            g,
+            &Item::Unit {
+                unit: Name::new(unit),
+            },
+            Self::recon_family_count(g, pid),
+        )
+    }
+
+    fn recon_family_item_blocked(&self, g: &Game, item: &Item, committed: usize) -> bool {
+        self.recon_family_cap
+            && self.book_pos >= 4
+            && committed >= 1
+            && Self::is_recon_family_item(g, item)
     }
 
     pub fn fleet(g: &Game) -> Vec<BasicAi> {
@@ -3566,6 +3634,9 @@ impl BasicAi {
             if spec.class != "military" || spec.domain.as_deref() == Some("sea") {
                 continue;
             }
+            if self.recon_family_candidate_blocked(g, pid, name) {
+                continue;
+            }
             let matches_role = match want_ranged {
                 Some(true) => spec.has_ranged_attack(),
                 Some(false) => spec.is_melee_capable(),
@@ -3803,6 +3874,7 @@ impl BasicAi {
                     if spec.class != "military"
                         || spec.domain.as_deref() == Some("sea")
                         || !matches_role
+                        || self.recon_family_candidate_blocked(g, pid, name)
                     {
                         continue;
                     }
@@ -6610,6 +6682,153 @@ impl BasicAi {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn founded_recon_test_game(seed: u64) -> (Game, u32) {
+        let mut game = Game::new_full(1, 24, 16, seed, 200, 0, false);
+        let settler = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+        game.current = 0;
+        let city = game.player_city_ids(0)[0];
+        (game, city)
+    }
+
+    fn make_scout_dominant(game: &mut Game) {
+        std::sync::Arc::make_mut(&mut game.rules)
+            .units
+            .get_mut("scout")
+            .unwrap()
+            .strength = 1_000.0;
+    }
+
+    #[test]
+    fn recon_family_membership_and_commitment_are_rules_derived() {
+        let (mut game, city) = founded_recon_test_game(99_721);
+        for unit in ["scout", "skirmisher", "ranger", "spec_ops"] {
+            assert!(BasicAi::is_recon_family_unit(&game, unit), "{unit}");
+        }
+        assert!(!BasicAi::is_recon_family_unit(&game, "warrior"));
+
+        let position = game
+            .map
+            .tiles
+            .values()
+            .find(|tile| {
+                game.rules.is_passable(tile)
+                    && !game.rules.is_water(tile)
+                    && game.units_at(tile.pos).is_empty()
+            })
+            .unwrap()
+            .pos;
+        game.spawn_test_unit("skirmisher", 0, position);
+        game.cities.get_mut(&city).unwrap().queue = vec![Item::Formation {
+            unit: crate::name!("ranger"),
+            formation: 1,
+        }];
+
+        assert_eq!(BasicAi::recon_family_count(&game, 0), 2);
+    }
+
+    #[test]
+    fn basic_fallback_and_gold_purchase_share_the_recon_family_cap() {
+        let (mut game, city) = founded_recon_test_game(99_722);
+        make_scout_dominant(&mut game);
+        let position = game
+            .map
+            .tiles
+            .values()
+            .find(|tile| {
+                game.rules.is_passable(tile)
+                    && !game.rules.is_water(tile)
+                    && game.units_at(tile.pos).is_empty()
+            })
+            .unwrap()
+            .pos;
+        game.spawn_test_unit("ranger", 0, position);
+
+        let mut stock = BasicAi::new();
+        stock.book_pos = 4;
+        assert_eq!(
+            stock.best_military(&game, 0, city, None).as_deref(),
+            Some("scout")
+        );
+
+        let mut treated = BasicAi::with_recon_family_cap();
+        treated.book_pos = 4;
+        assert_ne!(
+            treated.best_military(&game, 0, city, None).as_deref(),
+            Some("scout")
+        );
+
+        let mut stock_game = game.clone();
+        let mut treated_game = game;
+        stock_game.players[0].gold = 10_000.0;
+        treated_game.players[0].gold = 10_000.0;
+        let stock_before = BasicAi::recon_family_count(&stock_game, 0);
+        let treated_before = BasicAi::recon_family_count(&treated_game, 0);
+        assert!(stock.buy_gold_military(&mut stock_game, 0, &[city], 0.0, false));
+        assert!(treated.buy_gold_military(&mut treated_game, 0, &[city], 0.0, false));
+        assert_eq!(BasicAi::recon_family_count(&stock_game, 0), stock_before + 1);
+        assert_eq!(BasicAi::recon_family_count(&treated_game, 0), treated_before);
+    }
+
+    #[test]
+    fn cap_is_inactive_through_the_exact_four_build_opening() {
+        let (mut stock_game, stock_city) = founded_recon_test_game(99_723);
+        let (mut treated_game, treated_city) = founded_recon_test_game(99_723);
+        let stock_pos = stock_game
+            .map
+            .tiles
+            .values()
+            .find(|tile| {
+                stock_game.rules.is_passable(tile)
+                    && !stock_game.rules.is_water(tile)
+                    && stock_game.units_at(tile.pos).is_empty()
+            })
+            .unwrap()
+            .pos;
+        let treated_pos = treated_game
+            .map
+            .tiles
+            .values()
+            .find(|tile| {
+                treated_game.rules.is_passable(tile)
+                    && !treated_game.rules.is_water(tile)
+                    && treated_game.units_at(tile.pos).is_empty()
+            })
+            .unwrap()
+            .pos;
+        stock_game.spawn_test_unit("skirmisher", 0, stock_pos);
+        treated_game.spawn_test_unit("skirmisher", 0, treated_pos);
+        let mut stock = BasicAi::new();
+        let mut treated = BasicAi::with_recon_family_cap();
+        for ai in [&mut stock, &mut treated] {
+            ai.w.open0 = 0.0;
+            ai.w.open1 = 0.0;
+            ai.w.open2 = 0.0;
+            ai.w.open3 = 0.0;
+        }
+
+        for build in 1..=4 {
+            stock.cities(&mut stock_game, 0);
+            treated.cities(&mut treated_game, 0);
+            assert_eq!(stock.book_pos, build);
+            assert_eq!(treated.book_pos, build);
+            assert_eq!(
+                stock_game.cities[&stock_city].queue.first(),
+                treated_game.cities[&treated_city].queue.first()
+            );
+            assert!(matches!(
+                treated_game.cities[&treated_city].queue.first(),
+                Some(Item::Unit { unit }) if unit == "scout"
+            ));
+            stock_game.cities.get_mut(&stock_city).unwrap().queue.clear();
+            treated_game.cities.get_mut(&treated_city).unwrap().queue.clear();
+        }
+    }
 
     /// A quiet one-player world with a lone Scout, so nothing else on the map
     /// can move the unit or attack it while its whereabouts are recorded.

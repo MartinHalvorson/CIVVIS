@@ -1,7 +1,24 @@
 # Recon-family production saturation
 
-Status: **preregistered from production saves and code; no treatment exists and
-no focal seed has been run or read**.
+Status: **preregistered from production saves and code; an evaluator-only,
+default-off treatment is implemented on draft PR #606; no focal seed has been
+run or read**.
+
+## Implementation checkpoint (2026-07-29)
+
+Draft PR #606 implements the frozen treatment and evaluator without changing
+any shipped controller default or any decision threshold in this document.
+Recon identity is derived from rules metadata and carried through Basic,
+Advanced, and the focal Strategic controller's live and counterfactual agents.
+The observer reads completed production at the start-of-turn boundary by stable
+unit ID, including Formation production that the engine's `trained:*` counter
+does not record, and reads successful Gold/Faith purchases from the action log.
+Focused tests cover the family helper, active and first-queued upgraded units,
+Basic and Advanced production and purchases, zero-count score identity, the
+four-build opening, same-turn multi-city replacement, Strategic branch
+propagation, deployment scheduling, inference/gate arithmetic, and observer
+accounting. No registered screen or confirmation seed was started or inspected
+while the shared Strategic Expansion oracle owned the simulator queue.
 
 ## Production observation
 
