@@ -144,12 +144,22 @@ because they selected a leader they have not played before.
 `civvis play --spectate --league league/` seats every major civ with its
 best-rated available strategy (distinct specialists per leader/civ) and the
 spectator HUD lists, per player: **civ, league username + strategy, its
-elo** (exact leader/civ rating after game one, ±RD on hover) **and the elo-implied
-expected win chance** against the table — compare against who actually
-wins to audit the ratings over time. That last number is a share of the
-one win a table has to give (`elo::win_shares`), so the seats sum to
-100%; averaging the pairwise expectations instead would put every seat
-near 50% and could never be checked against a winner. Without
+elo** (exact leader/civ rating after game one, ±RD on hover) **and two win
+odds** — the odds this seat had before a tile was drawn, and the odds it holds
+right now. Both are shares of the one win a table has to give
+(`elo::win_shares`), so the seats sum to 100%; averaging the pairwise
+expectations instead would put every seat near 50% and could never be
+checked against a winner.
+
+The **start** figure is the pregame prediction: the ratings at this table, the
+edge the roster has measured for the civilizations they drew, and what the
+difficulty setting hands each seat. Nothing on the board moves it, which is what
+makes it auditable — compare it against who actually wins over many games. The
+**now** figure corrects that prior with the position each empire has built
+(Score, military strength, cities held, the closest victory race), weighted up
+as the clock runs down, and drops to zero for a seat that is out of the game.
+Both come from `crate::odds`, which documents every coefficient and what
+calibrates it. Without
 `--league`, a `league/` dir in the working directory still labels the
 default fleet with the "advanced" entrant's elo; the AIs themselves are
 unchanged.
