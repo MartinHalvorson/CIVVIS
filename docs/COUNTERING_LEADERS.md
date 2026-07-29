@@ -528,14 +528,19 @@ Base rate 25.0%.
 **`counter` fires**: it nearly triples both the aimed ballots and the penalties
 that actually pass, and lands them on the eventual winner 70.6% of the time.
 
-**★ The vote-weight lever is inert, and this retired it without an eval.**
-`votes` triples the bought votes against `ship` and then reproduces the aimed
-ballots, the penalty count and the landing rate *exactly* — 19/773, 7, 4/7.
-`hard` against `counter` is the same: nine times the bought votes, an identical
-17 and 12/17. **Extra votes flip no resolution in either aim**, because the
-bandwagon term makes ballots converge and winning margins are wide, so one
-voter's extra two votes cannot carry an outcome. `advanced_congress_votes` and
-`advanced_congress_counter_hard` are recorded here rather than evaluated.
+**The vote-weight lever does nothing here.** `votes` triples the bought votes
+against `ship` and then reproduces the aimed ballots, the penalty count and the
+landing rate *exactly* — 19/773, 7, 4/7. `hard` against `counter` is the same:
+nine times the bought votes, an identical 17 and 12/17. The bandwagon term
+makes ballots converge, so winning margins are wide and one voter's extra two
+votes cannot carry an outcome.
+
+⚠ **CORRECTED — I read that as "the vote lever is inert" and retired the arm.
+That was wrong, and the next section is how it was caught.** Both arms above
+run *every* seat on the same setting, which is the one configuration where
+extra votes cannot matter: the opposition already carries every vote it cares
+about. Vote-buying only pays at the margin, and the evaluator's own seating is
+exactly the margin.
 
 Pre-registration for the surviving arm:
 `/Users/martin/civvis-congress-counter-preregistration.md`, written before the
@@ -614,3 +619,43 @@ the denial layer fires at all it names the eventual winner **91.6–100%** of th
 time, well above the 85.6% this page measures elsewhere. `victory_denial` is a
 good target selector. It is the *response* that has never been worth anything —
 and now the free response is null too.
+
+### ★ The evaluator gives a collective counter half the votes
+
+The dead heat above is not a measurement of the treatment. `ai_eval` runs a
+**mirrored 2v2**: two seats treated, two shipped. So two treated empires vote
+outcome B on the leader while two control empires vote outcome A on themselves
+— A and B tie on votes, and `resolve_congress` breaks a tie toward A. A counter
+that needs a majority of the Congress is handed exactly half of it.
+
+That is a structural claim, so it was measured rather than asserted.
+`congress_census --arm mixed` treats every other seat, reproducing the
+evaluator's own seating:
+
+| arm | aimed ballots | bought votes | penalties passed | landed on the winner |
+|---|---|---|---|---|
+| `ship` | 2.5% (19/773) | 0.6% (5) | 7 — 0.58/game | 4/7 — 57.1% |
+| `counter` — all seats | 7.3% (58/794) | 0.8% (6) | 17 — 1.42/game | 12/17 — 70.6% |
+| **`mixed` — half seats** | 4.6% (36/776) | 0.4% (3) | **7 — 0.58/game** | 6/7 — 85.7% |
+| **`mixed_hard`** | 6.1% (47/776) | **3.7% (29)** | **14 — 1.17/game** | **14/14 — 100%** |
+
+**`mixed` passes exactly the control's penalty count — 7, and 0.58 per game.**
+The treated half aims (2.5% → 4.6%) and then loses every vote it casts. That is
+the signature of a mechanism that never fired, and it is why the eval was an
+exact dead heat rather than a small one.
+
+**`mixed_hard` is the arm that can fire in that seating**, and it is the same
+vote-buying this page had just called inert: at half the table it doubles the
+penalties that pass and lands **all fourteen of them on the eventual winner**.
+
+Two things follow, and the second is bigger than this treatment.
+
+1. `advanced_congress_counter_hard` is the arm to evaluate at 2v2, and the
+   pre-registration was amended before the run rather than after it.
+2. **A collective counter cannot be priced by a mirrored head-to-head at all.**
+   Any mechanism whose effect requires most of the table to agree — a
+   coalition, a congress bloc, the victory Emergency this page declines to
+   wire — is handed half the agents it needs by construction, and will return
+   a dead heat whether or not it works. That is not a fact about this
+   treatment; it is a fact about the harness, and the dogpile table earlier on
+   this page is about a mechanism of exactly that shape.
