@@ -319,7 +319,13 @@ struct PlanTrace {
     midgame_city_deficit_boundary_switches: usize,
     midgame_strategy_turns: BTreeMap<String, usize>,
     midgame_transitions: BTreeMap<String, usize>,
+    midgame_reason_turns: BTreeMap<String, usize>,
+    midgame_reason_transitions: BTreeMap<String, usize>,
+    midgame_unanchored_reason_transitions: BTreeMap<String, usize>,
+    midgame_unanchored_same_reason_transitions: BTreeMap<String, usize>,
+    midgame_unanchored_reason_families: BTreeMap<String, usize>,
     last_strategy: Option<String>,
+    last_reason: Option<String>,
     last_context: Option<StrategyContext>,
 }
 
@@ -334,9 +340,22 @@ struct StrategyContext {
 struct PlanObservation {
     target: &'static str,
     strategy: &'static str,
+    reason: &'static str,
     rush: bool,
     context: StrategyContext,
     midgame: bool,
+}
+
+fn ordered_transition(previous: &str, current: &str) -> String {
+    format!("{previous} -> {current}")
+}
+
+fn reason_family(left: &str, right: &str) -> String {
+    if left <= right {
+        format!("{left} <-> {right}")
+    } else {
+        format!("{right} <-> {left}")
+    }
 }
 
 impl PlanTrace {
@@ -344,6 +363,7 @@ impl PlanTrace {
         let PlanObservation {
             target,
             strategy,
+            reason,
             rush,
             context,
             midgame,
@@ -381,10 +401,37 @@ impl PlanTrace {
                 self.midgame_war_boundary_switches += war_changed as usize;
                 self.midgame_threat_boundary_switches += threat_changed as usize;
                 self.midgame_city_deficit_boundary_switches += city_deficit_changed as usize;
-                if war_changed || threat_changed || city_deficit_changed {
+                let boundary_accompanied = war_changed || threat_changed || city_deficit_changed;
+                if boundary_accompanied {
                     self.midgame_boundary_switches += 1;
                 } else {
                     self.midgame_unanchored_switches += 1;
+                }
+
+                let previous_reason = self.last_reason.as_deref().unwrap();
+                if previous_reason != reason {
+                    let transition = ordered_transition(previous_reason, reason);
+                    *self
+                        .midgame_reason_transitions
+                        .entry(transition.clone())
+                        .or_default() += 1;
+                    if !boundary_accompanied {
+                        *self
+                            .midgame_unanchored_reason_transitions
+                            .entry(transition)
+                            .or_default() += 1;
+                    }
+                } else if !boundary_accompanied {
+                    *self
+                        .midgame_unanchored_same_reason_transitions
+                        .entry(format!("{previous}->{strategy} under {reason}"))
+                        .or_default() += 1;
+                }
+                if !boundary_accompanied {
+                    *self
+                        .midgame_unanchored_reason_families
+                        .entry(reason_family(previous_reason, reason))
+                        .or_default() += 1;
                 }
             }
         }
@@ -395,8 +442,13 @@ impl PlanTrace {
                 .midgame_strategy_turns
                 .entry(strategy.to_string())
                 .or_default() += 1;
+            *self
+                .midgame_reason_turns
+                .entry(reason.to_string())
+                .or_default() += 1;
         }
         self.last_strategy = Some(strategy.to_string());
+        self.last_reason = Some(reason.to_string());
         self.last_context = Some(context);
     }
 
@@ -431,6 +483,7 @@ fn plan_observation(g: &Game, pid: usize, ai: &dyn Ai) -> PlanObservation {
         PlanObservation {
             target: "unreported",
             strategy: "unreported",
+            reason: "unreported",
             rush: false,
             context: StrategyContext {
                 at_major_war,
@@ -442,6 +495,9 @@ fn plan_observation(g: &Game, pid: usize, ai: &dyn Ai) -> PlanObservation {
         |plan| PlanObservation {
             target: plan.victory_target.unwrap_or("adaptive"),
             strategy: plan.strategy,
+            // Filled from the exact assessment that produced the plan once
+            // the currently claimed planner path is released.
+            reason: "unreported",
             rush: plan.rush,
             context: StrategyContext {
                 at_major_war,
@@ -534,6 +590,12 @@ struct Metrics {
     midgame_threat_boundary_switches: usize,
     midgame_city_deficit_boundary_switches: usize,
     midgame_transitions: BTreeMap<String, usize>,
+    midgame_reason_turns: BTreeMap<String, usize>,
+    midgame_reason_transitions: BTreeMap<String, usize>,
+    midgame_unanchored_reason_transitions: BTreeMap<String, usize>,
+    midgame_unanchored_same_reason_transitions: BTreeMap<String, usize>,
+    midgame_unanchored_reason_families: BTreeMap<String, usize>,
+    midgame_unanchored_reason_family_seats: BTreeMap<String, usize>,
     rush_seats: usize,
     rush_turns: usize,
     /// Reviews summed over every seat this entrant played, so a run can say
@@ -592,6 +654,7 @@ impl Metrics {
                 .entry(transition.clone())
                 .or_default() += count;
         }
+        self.record_assessment_trace(trace);
         if won {
             *self
                 .victories
@@ -663,6 +726,40 @@ impl Metrics {
             }
         }
     }
+
+    fn record_assessment_trace(&mut self, trace: &PlanTrace) {
+        for (reason, turns) in &trace.midgame_reason_turns {
+            *self.midgame_reason_turns.entry(reason.clone()).or_default() += turns;
+        }
+        for (transition, count) in &trace.midgame_reason_transitions {
+            *self
+                .midgame_reason_transitions
+                .entry(transition.clone())
+                .or_default() += count;
+        }
+        for (transition, count) in &trace.midgame_unanchored_reason_transitions {
+            *self
+                .midgame_unanchored_reason_transitions
+                .entry(transition.clone())
+                .or_default() += count;
+        }
+        for (transition, count) in &trace.midgame_unanchored_same_reason_transitions {
+            *self
+                .midgame_unanchored_same_reason_transitions
+                .entry(transition.clone())
+                .or_default() += count;
+        }
+        for (family, count) in &trace.midgame_unanchored_reason_families {
+            *self
+                .midgame_unanchored_reason_families
+                .entry(family.clone())
+                .or_default() += count;
+            *self
+                .midgame_unanchored_reason_family_seats
+                .entry(family.clone())
+                .or_default() += 1;
+        }
+    }
 }
 
 fn target_shares(metrics: &Metrics) -> String {
@@ -697,6 +794,24 @@ fn transition_counts(transitions: &BTreeMap<String, usize>) -> String {
     ranked
         .into_iter()
         .map(|(transition, count)| format!("{transition} {count}"))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+fn family_counts(families: &BTreeMap<String, usize>, seats: &BTreeMap<String, usize>) -> String {
+    let mut ranked: Vec<(&str, usize)> = families
+        .iter()
+        .map(|(family, count)| (family.as_str(), *count))
+        .collect();
+    ranked.sort_by(|left, right| right.1.cmp(&left.1).then_with(|| left.0.cmp(right.0)));
+    ranked
+        .into_iter()
+        .map(|(family, count)| {
+            format!(
+                "{family} {count} in {} seats",
+                seats.get(family).copied().unwrap_or(0)
+            )
+        })
         .collect::<Vec<_>>()
         .join(", ")
 }
@@ -1217,6 +1332,26 @@ fn main() {
             metrics.midgame_city_deficit_boundary_switches,
             transition_counts(&metrics.midgame_transitions),
         );
+        println!(
+            "  {name:<11} assessment reasons {}",
+            shares(&metrics.midgame_reason_turns, metrics.midgame_observations),
+        );
+        println!(
+            "  {name:<11} strategy-switch reason changes {}",
+            transition_counts(&metrics.midgame_reason_transitions),
+        );
+        println!(
+            "  {name:<11} unanchored reason changes {}; same-reason strategy changes {}",
+            transition_counts(&metrics.midgame_unanchored_reason_transitions),
+            transition_counts(&metrics.midgame_unanchored_same_reason_transitions),
+        );
+        println!(
+            "  {name:<11} unanchored reason families {}",
+            family_counts(
+                &metrics.midgame_unanchored_reason_families,
+                &metrics.midgame_unanchored_reason_family_seats,
+            ),
+        );
     }
     println!("\nAncient-rush treatment exposure:");
     for name in [a, b] {
@@ -1671,6 +1806,7 @@ mod tests {
             trace.observe(PlanObservation {
                 target,
                 strategy,
+                reason: "test reason",
                 rush,
                 context: StrategyContext {
                     at_major_war: false,
@@ -1703,6 +1839,7 @@ mod tests {
             trace.observe(PlanObservation {
                 target: "adaptive",
                 strategy,
+                reason: strategy,
                 rush: false,
                 context: StrategyContext {
                     at_major_war,
@@ -1724,6 +1861,92 @@ mod tests {
         assert_eq!(trace.midgame_transitions["expansion->conquest"], 1);
         assert_eq!(trace.midgame_transitions["conquest->recovery"], 1);
         assert_eq!(trace.midgame_transitions["recovery->conquest"], 1);
+    }
+
+    #[test]
+    fn assessment_trace_separates_reason_boundaries_from_same_reason_argmax_changes() {
+        let mut trace = PlanTrace::default();
+        for (strategy, reason, at_major_war) in [
+            ("science", "its best available victory lane", false),
+            ("culture", "its best available victory lane", false),
+            ("expansion", "short of cities with land still open", false),
+            ("science", "its best available victory lane", true),
+            ("culture", "its best available victory lane", true),
+        ] {
+            trace.observe(PlanObservation {
+                target: "adaptive",
+                strategy,
+                reason,
+                rush: false,
+                context: StrategyContext {
+                    at_major_war,
+                    threatened: false,
+                    city_deficit: false,
+                },
+                midgame: true,
+            });
+        }
+
+        let best_lane = "its best available victory lane";
+        let short = "short of cities with land still open";
+        assert_eq!(trace.midgame_strategy_switches, 4);
+        assert_eq!(trace.midgame_unanchored_switches, 3);
+        assert_eq!(trace.midgame_reason_turns[best_lane], 4);
+        assert_eq!(
+            trace.midgame_reason_transitions[&ordered_transition(best_lane, short)],
+            1
+        );
+        assert_eq!(
+            trace.midgame_reason_transitions[&ordered_transition(short, best_lane)],
+            1
+        );
+        assert_eq!(
+            trace.midgame_unanchored_reason_transitions[&ordered_transition(best_lane, short)],
+            1
+        );
+        assert_eq!(
+            trace.midgame_unanchored_same_reason_transitions
+                ["science->culture under its best available victory lane"],
+            2
+        );
+        assert_eq!(
+            trace.midgame_unanchored_reason_families[&reason_family(best_lane, best_lane)],
+            2
+        );
+        assert_eq!(
+            trace.midgame_unanchored_reason_families[&reason_family(best_lane, short)],
+            1
+        );
+    }
+
+    #[test]
+    fn assessment_family_coverage_counts_each_seat_once_and_ranks_ties_by_label() {
+        let family = reason_family("already at war", "at war and losing ground at home");
+        let mut first = PlanTrace::default();
+        first
+            .midgame_unanchored_reason_families
+            .insert(family.clone(), 3);
+        let mut second = PlanTrace::default();
+        second
+            .midgame_unanchored_reason_families
+            .insert(family.clone(), 1);
+        second
+            .midgame_unanchored_reason_families
+            .insert("alpha <-> zeta".to_string(), 4);
+
+        let mut metrics = Metrics::default();
+        metrics.record_assessment_trace(&first);
+        metrics.record_assessment_trace(&second);
+
+        assert_eq!(metrics.midgame_unanchored_reason_families[&family], 4);
+        assert_eq!(metrics.midgame_unanchored_reason_family_seats[&family], 2);
+        assert_eq!(
+            family_counts(
+                &metrics.midgame_unanchored_reason_families,
+                &metrics.midgame_unanchored_reason_family_seats,
+            ),
+            format!("alpha <-> zeta 4 in 1 seats, {family} 4 in 2 seats")
+        );
     }
 
     #[test]
