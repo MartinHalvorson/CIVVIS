@@ -88,6 +88,44 @@ command contract. It changes no controller, treatment, deployment profile,
 seat, seed, sample size, endpoint, threshold, stop rule, horizon, or resource
 cap.
 
+## Prospective exhaustive integrity amendment
+
+This final static audit was completed before the exact null or either
+treatment seed was run or read. The earlier fail-closed parser inspected only
+the first occurrence of each option, so a valid value could hide a malformed
+later duplicate; unsupported flags and positional tokens were ignored. The
+embedded champion was parsed but its documented generation and exact bytes
+were not asserted. The simulation loop checked the policy horizon only before
+an iteration and at the terminal boundary, and it did not fail closed if a
+controller returned without advancing the turn. In that case, a focal
+treatment iteration could repeat on the same turn. Finally, the null compared
+only summarized `GameResult` fields rather than the complete terminal world.
+No registered output exposed any of these defects.
+
+Before any registered seed, the runner must reject every unsupported token and
+validate every occurrence of every supported value option. Duplicate valid
+options remain diagnostic under the existing exact-command predicate, while a
+malformed duplicate exits 2 before constructing a game. The embedded champion
+must assert generation 14 and exact FNV-1a fingerprint
+`0x40b1fbb2a5b88bc6`, corresponding to SHA-256
+`8413d6b547c2735acebd9e67700b1c56371f9c437a4f116a1afd4ec2598d5a67`,
+and print both the generation and FNV identifier.
+
+`Game.max_turns` must remain equal to its construction-time value before and
+after the repair intervention, after every controller turn, after fallback
+turn progression, and at the terminal boundary. If the controller leaves the
+same seat active, the evaluator may apply only the ordinary public `EndTurn`;
+an error must stop the run rather than repeat treatment on the same turn. The
+null must compare both `GameResult` and the complete serialized terminal
+`Game` for every matched focal cell. World capture is null-only so treatment
+resource use and endpoints remain unchanged.
+
+These checks alter no valid controller action, repair order, world,
+population, seed, horizon, endpoint, threshold, gate, or resource rule. The
+existing one-map/one-turn non-focal diagnostic seed `79,991` may be replayed
+after implementation; registered seeds `9,995,000`, `9,996,000`, and
+`9,997,000` remain unopened.
+
 ## Observation and causal diagnosis
 
 This study began with an exploratory census of the 20 completed production
