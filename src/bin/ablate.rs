@@ -237,15 +237,20 @@ fn run(grants: &[Grant], args: &[String]) {
         "playing {} control games: {ai_name}, {speed} speed, difficulty {difficulty}...",
         cells.len()
     );
-    let control: Vec<bool> = civvis::parallel::map(cells.len(), jobs, |index| {
-        play(
-            options_for(cells[index]),
-            cells[index].seat,
-            Grant::None,
-            &ai_name,
-        )
-        .0
-    });
+    let control: Vec<bool> = civvis::parallel::map_reporting(
+        cells.len(),
+        jobs,
+        |index| {
+            play(
+                options_for(cells[index]),
+                cells[index].seat,
+                Grant::None,
+                &ai_name,
+            )
+            .0
+        },
+        |index, _| println!("  control progress {}/{}", index + 1, cells.len()),
+    );
     let control_wins = control.iter().filter(|won| **won).count();
     println!(
         "control: granted seat won {control_wins}/{} = {:.1}% (parity {:.1}%)\n",
@@ -255,14 +260,27 @@ fn run(grants: &[Grant], args: &[String]) {
     );
 
     for &grant in grants {
-        let played = civvis::parallel::map(cells.len(), jobs, |index| {
-            play(
-                options_for(cells[index]),
-                cells[index].seat,
-                grant,
-                &ai_name,
-            )
-        });
+        println!("playing {} treatment games for {}...", cells.len(), grant.name());
+        let played = civvis::parallel::map_reporting(
+            cells.len(),
+            jobs,
+            |index| {
+                play(
+                    options_for(cells[index]),
+                    cells[index].seat,
+                    grant,
+                    &ai_name,
+                )
+            },
+            |index, _| {
+                println!(
+                    "  {} progress {}/{}",
+                    grant.name(),
+                    index + 1,
+                    cells.len()
+                )
+            },
+        );
         let treated: Vec<bool> = played.iter().map(|(won, _)| *won).collect();
         let fired: u64 = played.iter().map(|(_, fired)| *fired).sum();
 
