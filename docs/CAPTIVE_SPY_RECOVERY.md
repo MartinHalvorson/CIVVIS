@@ -1,7 +1,7 @@
 # Recovering captive Spies with an executable cash quote
 
-Status: **preregistered; no evaluator implementation exists and no focal seed
-has been generated or read**.
+Status: **preregistered and implemented; the exact null and every focal seed
+remain queued and unread**.
 
 ## Exploratory production evidence
 
@@ -216,3 +216,36 @@ never jumps a still-live older batch.
 The implementation, latest-main merge, focused checks, and full locked CI suite
 must precede the exact null. Exact commands, source commit, wall time, and all
 results will be recorded before this evaluator leaves draft.
+
+## Implementation checkpoint
+
+The frozen design is implemented at source commit `e4a2bde` in
+`src/bin/captive_spy_recovery_eval.rs`. The evaluator uses the engine's
+successful action log to retain the exact stock `AdvancedAi` state and replay
+every stock action except the deferred `EndTurn`. Recovery then applies one
+ordinary lump-Gold `Trade`; no library or shipped-policy source changed.
+
+Before that source commit, the focused contract passed 9/9 tests:
+
+```text
+cargo test --profile ci --locked --bin captive_spy_recovery_eval
+test result: ok. 9 passed; 0 failed; 0 ignored
+```
+
+`rustfmt --edition 2021 --check` and `git diff --check` were clean. A normal
+bin-target Clippy pass reported no warning in the new evaluator; the current
+base library still emits its pre-existing migration warnings. Running Clippy
+with global `-D warnings` is therefore not a meaningful branch-local gate on
+this base.
+
+Two tiny nonfocal diagnostics used arbitrary development seeds and a 2-player,
+20x14, 5-turn Land Only world. At seed `100200`, stock and disabled wrapper
+matched the result, census, and serialized terminal `Game` in both focal-seat
+cells. At seed `100201`, the active wrapper completed all four games, reached
+one cadence turn, found no early-game captive opportunity, made no recovery,
+and left both arms identical. These diagnostics validate runner wiring only;
+they are not evidence for the hypothesis.
+
+No invocation has used null seed `10019999`, screen seed `10020000`, holdout
+seed `10021000`, or any map derived from them. The exact null remains behind
+the older registered simulator queue.
