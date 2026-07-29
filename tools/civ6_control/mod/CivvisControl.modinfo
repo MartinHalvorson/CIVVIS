@@ -88,6 +88,12 @@
 				<LuaReplace>CivvisControlAutoClose.lua</LuaReplace>
 			</Properties>
 		</ReplaceUIScript>
+		<ReplaceUIScript id="CivvisControlAutoCloseNaturalDisaster">
+			<Properties>
+				<LuaContext>NaturalDisasterPopup</LuaContext>
+				<LuaReplace>CivvisControlAutoClose.lua</LuaReplace>
+			</Properties>
+		</ReplaceUIScript>
 		<ReplaceUIScript id="CivvisControlAutoCloseRockBandMovie">
 			<Properties>
 				<LuaContext>RockBandMoviePopup</LuaContext>

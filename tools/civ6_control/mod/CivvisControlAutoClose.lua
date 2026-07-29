@@ -58,10 +58,30 @@ local function report(kind, fields)
 	pcall(function() Automation.Log(PREFIX .. line); end);
 end
 
+-- One screen is already replaced by a DLC, on a criterion true of every run
+-- here: GranColombia_Maya swaps NaturalDisasterPopup for fourteen lines that
+-- add a comet-strike label. Two ReplaceUIScript actions on one context is a
+-- race nobody needs to run, so this loads *their* file rather than competing
+-- with it -- and their file opens with include("NaturalDisasterPopup"), which
+-- is this same pattern, from Firaxis. Whichever action the game honours, the
+-- screen keeps everything it does; only the stopwatch is at stake.
+local CHAINED = {
+	NaturalDisasterPopup = "NaturalDisasterPopup_GranColombia_Maya",
+};
+
+-- Whether a screen is in there at all. An include that finds no file fails
+-- silently on this build, so the test has to be for what the script defines
+-- rather than for the include returning.
+local function haveScreen()
+	return type(OnClose) == "function" or type(Close) == "function"
+	       or type(OnContinue) == "function";
+end
+
 -- The shipped screen, unchanged and unread. A context's id is the name of the
 -- script the game loads into it, so asking for that name asks for exactly the
 -- file this replacement stands in front of.
-local loaded = pcall(function() include(NAME); end);
+if CHAINED[NAME] then pcall(function() include(CHAINED[NAME]); end); end
+if not haveScreen() then pcall(function() include(NAME); end); end
 
 -- What a click on this screen's own button does. Everything shipped registers
 -- OnClose; the era review is the exception explained at the top.
@@ -75,15 +95,12 @@ local function endScreen()
 	return false;
 end
 
-local armed = loaded and (type(OnClose) == "function" or type(Close) == "function"
-                          or type(OnContinue) == "function");
-
-if not armed then
+if not haveScreen() then
 	-- The failure that has to be loud. A replacement whose include did not
 	-- land leaves the context with no shipped code at all, which does not look
 	-- like a broken mod: the announcement simply never appears, and a run
 	-- reads as a quiet game rather than a game missing a screen.
-	report("autoclose_unarmed", string.format(',"included":%s', tostring(loaded)));
+	report("autoclose_unarmed");
 else
 	-- A popup context is hidden except while its popup is up, which is how the
 	-- shipped code itself tests for showing (ExclusivePopupManager checks

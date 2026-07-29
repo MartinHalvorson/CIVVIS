@@ -179,12 +179,31 @@ Three things about how it is wired are worth keeping:
   dedication choice — it is *continued* rather than closed, because its Close
   button skips the dedication and its Continue button raises it.
 
-One announcement is knowingly left out. Gathering Storm's
-`NaturalDisasterPopup` is already replaced by `GranColombia_Maya`, whose
-criterion is `RuleSetInUse RULESET_EXPANSION_2` — true of every run here — so a
-second `ReplaceUIScript` on that context is a load-order race with a DLC rather
-than a free addition. Disasters therefore still stop an unattended run, and
-closing that gap means answering which replacement wins before claiming it.
+**This is not a cosmetic problem, and it was measured rather than reasoned
+about.** Ladder run `lad-4` stopped at turn 16 on 2026-07-29 and stayed stopped
+for seventeen minutes. It did not look like a hang: the process was running at
+about a third of a core, and the machine was loaded enough that "it is only
+slow" was the obvious explanation. What ruled that out was the log directory —
+every *game* log froze at the same second while `FiraxisLive.log` kept being
+written, which is a game core that has stopped, not a game core that is
+behind. The screen on top of the map was `NaturalDisasterPopup`: **NATURAL
+DISASTER OCCURRING — MAJOR FLOOD**, waiting for a click that was never coming.
+One Escape into the window closed it and the run moved again within seconds,
+which is the whole causal claim tested end to end. The next run, `lad-5`, was
+stopped on the same screen at turn 12 twenty minutes later, so this is not a
+freak: on Gathering Storm it is the ordinary way an unattended run dies, and it
+dies looking like a slow machine.
+
+That screen also settled a question worth writing down. Gathering Storm's
+`NaturalDisasterPopup` is already replaced by `GranColombia_Maya` on the
+criterion `RuleSetInUse RULESET_EXPANSION_2`, which is true of every run here,
+so pointing a second `ReplaceUIScript` at the same context is a race. The
+replacement it declares is fourteen lines, and it opens with
+`include("NaturalDisasterPopup")` — Firaxis using exactly the pattern above,
+which is the best evidence available that the pattern is right. So this mod
+chains through that file instead of competing with it: whichever
+`ReplaceUIScript` the game honours, the screen keeps everything it does, and
+only the stopwatch is at stake.
 
 A run's `Automation.log` says which screens armed (`autoclose_armed`, one line
 per screen as the game loads) and every screen it has since closed
