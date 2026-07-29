@@ -4,7 +4,8 @@
 //! adaptive controller acts, at most one Builder is routed toward an owned
 //! remote pillaged improvement, prioritizing strategic and luxury tiles.
 //! Two focal seats are paired within every map; the map is the inference unit.
-use civvis::ai::{AdvancedAi, Ai};
+use civvis::ai::{AdvancedAi, Ai, Weights};
+use civvis::evolve::Champion;
 use civvis::game::{Action, Game, GameOptions, Item, VictoryConditions};
 use civvis::rules::Rules;
 use civvis::setup::{MapPoles, MapScript, MapSize, MapTopology};
@@ -19,6 +20,8 @@ const HOLDOUT_MAPS: usize = 63;
 const HOLDOUT_SEED: u64 = 9_997_000;
 const NOMINAL_TURNS: u32 = 250;
 const OBSERVE_THROUGH: u32 = 320;
+const FROZEN_AI: &str = "advanced_evolved";
+const EMBEDDED_CHAMPION: &str = include_str!("../../data/evolved/best.json");
 const DEPLOYMENT_PLAYERS: [usize; 7] = [4, 6, 8, 10, 5, 7, 9];
 const DEPLOYMENT_SCRIPTS: [MapScript; 9] = [
     MapScript::LandOnly,
@@ -41,6 +44,11 @@ const PROFILE_OVERRIDE_FLAGS: [&str; 7] = [
     "--shape",
     "--shapes",
 ];
+
+fn frozen_champion() -> Champion {
+    serde_json::from_str(EMBEDDED_CHAMPION)
+        .expect("the committed advanced_evolved champion must be valid JSON")
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct DeploymentProfile {
@@ -401,7 +409,13 @@ struct GameResult {
     census: TreatmentCensus,
 }
 
-fn play(options: GameOptions, focal: usize, mode: Mode, observe_through: u32) -> GameResult {
+fn play(
+    options: GameOptions,
+    focal: usize,
+    mode: Mode,
+    observe_through: u32,
+    weights: &Weights,
+) -> GameResult {
     let mut game = Game::new_with(options);
     let policy_max_turns = game.max_turns;
     assert!(
@@ -417,7 +431,7 @@ fn play(options: GameOptions, focal: usize, mode: Mode, observe_through: u32) ->
         domination: true,
         score: false,
     };
-    let mut ais = AdvancedAi::fleet(&game);
+    let mut ais = AdvancedAi::fleet_weighted(&game, weights);
     let mut census = TreatmentCensus::default();
 
     while game.winner.is_none() && game.turn <= observe_through {
@@ -718,6 +732,12 @@ fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let null = has_arg(&args, "--null");
     let deployment_mix = has_arg(&args, "--deployment-mix");
+    let ai_name = text_arg(&args, "--ai", FROZEN_AI);
+    if ai_name != FROZEN_AI {
+        eprintln!("this experiment is frozen for {FROZEN_AI}; got controller {ai_name:?}");
+        std::process::exit(2);
+    }
+    let champion = frozen_champion();
     if deployment_mix {
         let conflicts = PROFILE_OVERRIDE_FLAGS
             .iter()
@@ -817,6 +837,10 @@ fn main() {
     }
 
     println!("Deliberate Builder repair-routing evaluator");
+    println!(
+        "controller: {ai_name}; embedded champion generation {}",
+        champion.gen
+    );
     if deployment_mix {
         let player_batch = deployment_counts(maps, |profile| profile.players)
             .into_iter()
@@ -911,13 +935,37 @@ fn main() {
             };
             let seats = [0, profile.players - 1];
             let control = [
-                play(options.clone(), seats[0], Mode::Control, observe_through),
-                play(options.clone(), seats[1], Mode::Control, observe_through),
+                play(
+                    options.clone(),
+                    seats[0],
+                    Mode::Control,
+                    observe_through,
+                    &champion.weights,
+                ),
+                play(
+                    options.clone(),
+                    seats[1],
+                    Mode::Control,
+                    observe_through,
+                    &champion.weights,
+                ),
             ];
             let comparison_mode = if null { Mode::Null } else { Mode::Treatment };
             let comparison = [
-                play(options.clone(), seats[0], comparison_mode, observe_through),
-                play(options, seats[1], comparison_mode, observe_through),
+                play(
+                    options.clone(),
+                    seats[0],
+                    comparison_mode,
+                    observe_through,
+                    &champion.weights,
+                ),
+                play(
+                    options,
+                    seats[1],
+                    comparison_mode,
+                    observe_through,
+                    &champion.weights,
+                ),
             ];
             MapResult {
                 profile,
@@ -1083,6 +1131,7 @@ fn main() {
 
     let exact_profile = deployment_mix
         && [
+            "--ai",
             "--maps",
             "--seed",
             "--turns",
@@ -1094,6 +1143,7 @@ fn main() {
         ]
         .iter()
         .all(|flag| has_arg(&args, flag))
+        && ai_name == FROZEN_AI
         && nominal_turns == NOMINAL_TURNS
         && observe_through == OBSERVE_THROUGH
         && speed == "online"
@@ -1400,9 +1450,23 @@ mod tests {
     #[test]
     fn external_observation_preserves_the_policy_horizon() {
         let options = GameOptions::new(2, 20, 14, 79_505, 1, 0);
-        let result = play(options, 0, Mode::Control, 3);
+        let result = play(options, 0, Mode::Control, 3, &Weights::default());
         assert_eq!(result.policy_max_turns, 1);
         assert_eq!(result.reported_turn, 3);
+    }
+
+    #[test]
+    fn frozen_controller_uses_the_committed_champion_weights() {
+        let champion = frozen_champion();
+        let game = Game::new(2, 20, 14, 79_508, 1, 0);
+        let ais = AdvancedAi::fleet_weighted(&game, &champion.weights);
+        assert!(champion.gen > 0);
+        assert_eq!(ais[0].weights(), &champion.weights);
+        assert_ne!(
+            ais[0].weights(),
+            &Weights::default(),
+            "the frozen champion must not silently collapse to stock weights"
+        );
     }
 
     #[test]
