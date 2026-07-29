@@ -293,6 +293,11 @@ pub struct StrategicPlan {
     pub rush: bool,
 }
 
+struct PlanAssessment {
+    plan: StrategicPlan,
+    reason: &'static str,
+}
+
 /// Movement domain for a coordinated force. The same planner operates on
 /// armies, fleets, and future domains without baking land-unit assumptions
 /// into the campaign layer.
@@ -457,6 +462,7 @@ const SETTLER_STALL_LIMIT: u32 = 3;
 pub struct AdvancedAi {
     base: BasicAi,
     plan: Option<StrategicPlan>,
+    plan_reason: Option<&'static str>,
     census: StrategyCensus,
     settler_targets: BTreeMap<u32, Pos>,
     builder_targets: BTreeMap<u32, Pos>,
@@ -1084,6 +1090,7 @@ impl AdvancedAi {
         AdvancedAi {
             base,
             plan: None,
+            plan_reason: None,
             settler_targets: BTreeMap::new(),
             builder_targets: BTreeMap::new(),
             major_war_since: None,
@@ -1146,6 +1153,7 @@ impl AdvancedAi {
         self.victory_target = Some(target);
         self.forced_target_player = None;
         self.plan = None;
+        self.plan_reason = None;
     }
 
     /// Commit to a victory lane while preserving the rival that made an
@@ -1156,6 +1164,7 @@ impl AdvancedAi {
         self.victory_target = Some(target);
         self.forced_target_player = Some(rival);
         self.plan = None;
+        self.plan_reason = None;
     }
 
     /// Swap the strategy genome of a running agent without discarding
@@ -1167,6 +1176,7 @@ impl AdvancedAi {
     pub fn reweight(&mut self, weights: Weights) {
         self.base.w = weights;
         self.plan = None;
+        self.plan_reason = None;
     }
 
     /// The genome this agent is currently playing.
@@ -1181,6 +1191,7 @@ impl AdvancedAi {
         self.victory_target = None;
         self.forced_target_player = None;
         self.plan = None;
+        self.plan_reason = None;
     }
 
     pub fn fleet(g: &Game) -> Vec<AdvancedAi> {
@@ -2311,7 +2322,12 @@ impl AdvancedAi {
         self.urgent_victory_threat(g, target)
     }
 
+    #[cfg(test)]
     fn assess(&self, g: &Game, pid: usize) -> StrategicPlan {
+        self.assess_with_reason(g, pid).plan
+    }
+
+    fn assess_with_reason(&self, g: &Game, pid: usize) -> PlanAssessment {
         let cities = g.player_city_ids(pid);
         let my_power = g.military_power(pid);
         let major_rivals: Vec<usize> = g
@@ -2606,17 +2622,20 @@ impl AdvancedAi {
             }
         }
 
-        StrategicPlan {
-            strategy,
-            target_player,
-            target_city,
-            threatened_city,
-            desired_cities,
-            assessed_turn: g.turn,
-            // Only a plan that actually aims at the victim is a rush. If
-            // something later in target selection re-aimed the campaign, the
-            // production bonus must not follow it.
-            rush: rush_victim.is_some_and(|(victim, _)| target_player == Some(victim)),
+        PlanAssessment {
+            plan: StrategicPlan {
+                strategy,
+                target_player,
+                target_city,
+                threatened_city,
+                desired_cities,
+                assessed_turn: g.turn,
+                // Only a plan that actually aims at the victim is a rush. If
+                // something later in target selection re-aimed the campaign,
+                // the production bonus must not follow it.
+                rush: rush_victim.is_some_and(|(victim, _)| target_player == Some(victim)),
+            },
+            reason: because,
         }
     }
 
@@ -12585,6 +12604,7 @@ impl Ai for AdvancedAi {
         let plan = self.plan.as_ref()?;
         Some(PlanReport {
             strategy: plan.strategy.as_str(),
+            assessment_reason: self.plan_reason.unwrap_or("unreported"),
             victory_target: self.victory_target.map(VictoryTarget::as_str),
             rush: plan.rush,
             target_player: plan.target_player,
@@ -12638,7 +12658,9 @@ impl AdvancedAi {
         self.resolve_city_dispositions(g, pid, disposition_strategy);
         self.observe_campaign(g, pid);
         if rush_routes_frozen || self.plan_stale(g, pid) {
-            self.plan = Some(self.assess(g, pid));
+            let assessment = self.assess_with_reason(g, pid);
+            self.plan = Some(assessment.plan);
+            self.plan_reason = Some(assessment.reason);
         }
         let plan = self.plan.clone().unwrap();
         // Production for a Conquest plan without an assigned victory target
@@ -13751,12 +13773,20 @@ mod tests {
 
     #[test]
     fn initial_plan_coordinates_expansion() {
-        let g = Game::new(2, 24, 16, 71, 80, 0);
-        let ai = AdvancedAi::new();
-        let plan = ai.assess(&g, 0);
+        let mut g = Game::new(2, 24, 16, 71, 80, 0);
+        let mut ai = AdvancedAi::new();
+        let assessment = ai.assess_with_reason(&g, 0);
+        assert_eq!(assessment.reason, "short of cities with land still open");
+        let plan = assessment.plan;
         assert_eq!(plan.strategy, GrandStrategy::Expansion);
         assert!(plan.desired_cities >= 3);
         assert!(plan.target_player.is_some());
+
+        ai.take_turn(&mut g, 0);
+        assert_eq!(
+            ai.plan_report().unwrap().assessment_reason,
+            "short of cities with land still open"
+        );
     }
 
     #[test]

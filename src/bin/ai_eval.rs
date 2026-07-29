@@ -498,9 +498,7 @@ fn plan_observation(g: &Game, pid: usize, ai: &dyn Ai) -> PlanObservation {
         |plan| PlanObservation {
             target: plan.victory_target.unwrap_or("adaptive"),
             strategy: plan.strategy,
-            // Filled from the exact assessment that produced the plan once
-            // the currently claimed planner path is released.
-            reason: "unreported",
+            reason: plan.assessment_reason,
             rush: plan.rush,
             context: StrategyContext {
                 at_major_war,

@@ -108,6 +108,9 @@ pub struct ForceReport {
 #[derive(Clone, Debug, PartialEq)]
 pub struct PlanReport {
     pub strategy: &'static str,
+    /// Exact branch of the planner's assessment cascade that selected this
+    /// plan. Observer-only, like every other field in this report.
+    pub assessment_reason: &'static str,
     pub victory_target: Option<&'static str>,
     /// Whether the plan in force is the ancient-rush treatment. Observer-only:
     /// evaluators use this to measure treatment exposure, never to choose an
