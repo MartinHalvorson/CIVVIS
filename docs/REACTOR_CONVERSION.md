@@ -260,6 +260,34 @@ results and complete serialized terminal Games exactly, and labeled itself
 diagnostic only. Unknown, positional, duplicate, valueless, and wrong-controller
 CLI probes all exit 2 before game construction.
 
-No invocation has used null seed `9975999`, screen seed `9976000`, confirmation
-seed `9977000`, or a map derived from them. The exact null remains next in the
-registered simulator queue.
+## Registered result (2026-07-29)
+
+The exact default-off null used seed `9975999` and passed. All eight matched
+focal results and complete serialized terminal `Game` values reproduced
+exactly. Both arms recorded 0/8 wins, mean turn 294.0, mean score 598.5,
+92/79/17 coal/oil/uranium conversions, 5/8 conversion coverage, 2,304 observed
+focal turns, 27/29 powered demanding cities, 17 shortage records, and one
+nuclear plant. Every paired map and reported endpoint was neutral.
+
+That pass admitted the one fixed development screen at seed `9976000`. Its
+requested 84x54 Planet geometry again realized exactly 105x44 with 4,412
+tiles. The complete 12-map / 48-game screen produced:
+
+- 845 control conversions (414 coal, 371 oil, 60 uranium) versus 620 treatment
+  conversions (298 coal, 301 oil, 21 uranium), with coverage 18/24 versus
+  17/24 focal games;
+- conversion rates of 12.410 versus 8.975 per 100 observed focal turns, so the
+  treatment retained 72.3% of control rather than the required maximum 25%;
+- 29,900 nominal Online Production avoided, or 1,245.8 per focal game;
+- powered-city share of 75.00% versus 82.50%, shortage records of 41 versus
+  60, recommissions of 1 versus 9, and reactor accidents of 1 versus 4;
+- 3/24 control wins versus 2/24 treatment wins, all Science victories; and
+- paired map win score 47.9% (0 favorable, 11 neutral, 1 adverse; exact
+  two-sided sign-test p=1.0000) and terminal-score share 49.86% (4 favorable,
+  2 neutral, 6 adverse; p=0.7539; mean score delta -4.58).
+
+The mechanism, savings, powered-city, and terminal-score-share gates passed.
+The conversion-rate, accident, paired-win-score, total-win, and Science-win
+gates failed. Per the frozen rule this is **STOP**: retain stock `AdvancedAi`,
+do not tune or retry this treatment, and do not inspect seed `9977000`. The
+confirmation seed remains unopened.

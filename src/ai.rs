@@ -2918,7 +2918,7 @@ impl BasicAi {
         let others: Vec<usize> = g
             .players
             .iter()
-            .filter(|o| o.id != pid && o.alive && !o.is_barbarian)
+            .filter(|o| o.id != pid && o.alive && !o.is_barbarian && g.has_met(pid, o.id))
             .map(|o| o.id)
             .collect();
         for o in &others {
@@ -6717,6 +6717,26 @@ mod tests {
         assert_eq!(game.envoys_at(0, known), 1);
     }
 
+    #[test]
+    fn baseline_diplomacy_skips_an_unmet_major_and_reaches_a_known_one() {
+        let mut game = Game::new_full(3, 24, 16, 90_734, 120, 0, false);
+        for player in 0..game.players.len() {
+            game.players[player].met.clear();
+        }
+        game.record_contact(0, 2);
+        game.turn = 0;
+        game.current = 0;
+
+        // Player 1 wins the stable id tie but is unknown. A rejected proposal
+        // must not prevent the same diplomatic pass from reaching player 2.
+        BasicAi::new().diplomacy(&mut game, 0);
+
+        assert_eq!(game.pending_deals.len(), 1);
+        assert_eq!(game.pending_deals[0].from, 0);
+        assert_eq!(game.pending_deals[0].to, 2);
+        assert!(game.pending_deals[0].friendship);
+    }
+
     /// The single-turn reversal ban cannot see a round trip that takes two
     /// turns to complete, and every step of one is individually the best move
     /// available. Only the unit's own recent history gives the loop away.
@@ -6877,6 +6897,7 @@ mod tests {
             .unwrap()
             .buildings
             .push(crate::name!("walls"));
+        g.record_contact(0, 1);
         g.apply(0, &Action::DeclareWar { player: 1 }).unwrap();
         (g, home, enemy)
     }

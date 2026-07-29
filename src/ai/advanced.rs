@@ -4334,6 +4334,7 @@ impl AdvancedAi {
                     && other.alive
                     && !other.is_minor
                     && !other.is_barbarian
+                    && g.has_met(pid, other.id)
                     && Some(other.id) != denied_partner
                     && !g.is_at_war(pid, other.id)
                     && other.civics.contains(&crate::name!("civil_service"))
@@ -5616,7 +5617,7 @@ impl AdvancedAi {
         let rivals: Vec<usize> = g
             .players
             .iter()
-            .filter(|p| p.id != pid && p.alive && !p.is_barbarian)
+            .filter(|p| p.id != pid && p.alive && !p.is_barbarian && g.has_met(pid, p.id))
             .map(|p| p.id)
             .collect();
         for other in &rivals {
@@ -13737,6 +13738,7 @@ mod tests {
         }
         game.current = 0;
         game.turn = 60;
+        game.record_contact(0, 1);
         game.apply(0, &Action::DeclareWar { player: 1 })
             .unwrap();
         game.turn = game
@@ -13841,6 +13843,41 @@ mod tests {
             .unwrap();
         assert_eq!(proposal.alliance.as_deref(), Some("research"));
         assert!(proposal.friendship);
+    }
+
+    #[test]
+    fn strategic_alliance_skips_an_unmet_major_and_reaches_a_known_one() {
+        let mut game = Game::new_full(3, 24, 16, 783, 300, 0, false);
+        game.turn = 12;
+        for player in 0..game.players.len() {
+            game.players[player].met.clear();
+            game.players[player]
+                .civics
+                .insert(crate::name!("civil_service"));
+            game.players[player]
+                .techs
+                .insert(crate::name!("scientific_theory"));
+        }
+        game.record_contact(0, 2);
+        // The hidden player has the larger Science complement and would win
+        // the score if its unrevealed state were allowed into the ranking.
+        game.players[1].techs.insert(crate::name!("radio"));
+        let plan = StrategicPlan {
+            strategy: GrandStrategy::Science,
+            target_player: None,
+            target_city: None,
+            threatened_city: None,
+            desired_cities: 4,
+            assessed_turn: game.turn,
+            rush: false,
+        };
+
+        AdvancedAi::targeting(VictoryTarget::Science)
+            .propose_strategic_alliance(&mut game, 0, &plan, None);
+
+        assert_eq!(game.pending_deals.len(), 1);
+        assert_eq!(game.pending_deals[0].to, 2);
+        assert_eq!(game.pending_deals[0].alliance.as_deref(), Some("research"));
     }
 
     #[test]
