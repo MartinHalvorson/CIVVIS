@@ -692,12 +692,9 @@ enum Route {
 }
 
 fn route(summary: &Summary) -> Route {
-    let no_immediate_share =
-        summary.map_no_immediate_share_sum / summary.met_send_maps.max(1) as f64;
     let resource_limited_share =
         summary.map_resource_limited_share_sum / summary.eligible_maps.max(1) as f64;
-    let allocation = summary.allocation_gap_maps >= 10
-        || (summary.no_immediate_maps >= 10 && no_immediate_share + 1e-12 >= 0.10);
+    let allocation = summary.allocation_gap_maps >= 10;
     let acquisition = summary.eligible_maps >= 20 && resource_limited_share + 1e-12 >= 0.25;
     match (allocation, acquisition) {
         (true, true) => Route::Mixed,
@@ -1250,18 +1247,24 @@ mod tests {
     fn routing_requires_every_preregistered_prevalence_term() {
         let mut summary = Summary {
             maps: 30,
-            no_immediate_maps: 10,
-            met_send_maps: 20,
-            map_no_immediate_share_sum: 2.0,
+            allocation_gap_maps: 10,
             eligible_maps: 20,
             map_resource_limited_share_sum: 5.0,
             ..Summary::default()
         };
         assert_eq!(route(&summary), Route::Mixed);
-        summary.no_immediate_maps = 9;
+        summary.allocation_gap_maps = 9;
         assert_eq!(route(&summary), Route::Acquisition);
         summary.map_resource_limited_share_sum = 4.8;
         assert_eq!(route(&summary), Route::NoMechanism);
+        summary.no_immediate_maps = 30;
+        summary.met_send_maps = 30;
+        summary.map_no_immediate_share_sum = 30.0;
+        assert_eq!(
+            route(&summary),
+            Route::NoMechanism,
+            "setup or defensive-margin sends remain descriptive"
+        );
         summary.allocation_gap_maps = 10;
         assert_eq!(route(&summary), Route::Allocation);
     }
@@ -1332,5 +1335,24 @@ mod tests {
         );
         assert_eq!(direct_ai.plan_report(), replay_ai.plan_report());
         assert_eq!(direct_ai.strategy_census(), replay_ai.strategy_census());
+    }
+
+    #[test]
+    fn replay_matches_direct_across_the_disabled_score_rollover() {
+        let champion = frozen_champion();
+        let options = GameOptions::new(2, 20, 14, 74_004, 3, 0);
+        let direct = play(options.clone(), 0, Mode::Direct, 3, &champion.weights, true);
+        let replay = play(options, 0, Mode::ReplayNull, 3, &champion.weights, true);
+        assert_eq!(direct.terminal.reported_turn, 3);
+        assert_eq!(direct.terminal.winner, None);
+        assert_eq!(direct.terminal.victory, None);
+        let crossed: Game = serde_json::from_str(direct.serialized.as_deref().unwrap()).unwrap();
+        assert_eq!(crossed.max_turns, 3);
+        assert_eq!(crossed.turn, 4);
+        assert_eq!(crossed.winner, None);
+        assert_eq!(direct.terminal, replay.terminal);
+        assert_eq!(direct.serialized, replay.serialized);
+        assert_eq!(direct.focal_plan, replay.focal_plan);
+        assert_eq!(direct.focal_strategy_census, replay.focal_strategy_census);
     }
 }
