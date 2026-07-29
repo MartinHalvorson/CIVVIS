@@ -128,6 +128,7 @@ fn harvest(
     turns: u32,
     city_states: usize,
     negatives: usize,
+    same_kind: bool,
 ) -> Harvest {
     // Pass one: play it. Nothing is recorded here beyond the log the engine
     // keeps anyway, so the agents behave exactly as they do in any other run.
@@ -173,9 +174,21 @@ fn harvest(
             // is ordered by unit and a prefix would sample one unit's options
             // over and over.
             let legal = replay.legal_actions(seat);
+            // Siblings of the *same kind* when asked for. A head trained on
+            // mixed-kind negatives learns which kind of action the expert
+            // takes, which is real but coarse: it cannot choose between two
+            // moves. Restricting the negatives to the chosen action's own kind
+            // makes the kind one-hot constant across the group, so the only
+            // thing left to learn from is the geometry — which is the signal a
+            // search prior over sibling moves actually needs. Measured on
+            // stride-sampled data, only 103 of 531,892 decisions came out
+            // same-kind by chance, which is why this is a switch and not a
+            // filter applied afterwards.
+            let wanted = action_space::kind_name(&action);
             let others: Vec<&Action> = legal
                 .iter()
                 .filter(|candidate| **candidate != action && !matches!(candidate, Action::EndTurn))
+                .filter(|candidate| !same_kind || action_space::kind_name(candidate) == wanted)
                 .collect();
             if !others.is_empty() {
                 let stride = (others.len() / negatives.max(1)).max(1);
@@ -252,13 +265,15 @@ fn main() {
     let turns = number(&args, "--turns", 200) as u32;
     let city_states = number(&args, "--city-states", 0);
     let negatives = number(&args, "--negatives", 0);
+    let same_kind = args.iter().any(|arg| arg == "--negatives-same-kind");
     let seed = number(&args, "--seed", 90_000) as u64;
     let jobs = number(&args, "--jobs", parallel::default_jobs());
     let out = text(&args, "--out", "evolved/q_dataset.csv");
 
     println!(
         "q_dataset: {games} games, {seats} players, {width}x{height}, {turns} turns, \
-         {negatives} negatives per decision, jobs {jobs}"
+         {negatives} negatives per decision{}, jobs {jobs}",
+        if same_kind { " (same kind only)" } else { "" }
     );
     println!(
         "state {STATE_WIDTH} + action {} = {} features per row",
@@ -275,6 +290,7 @@ fn main() {
             turns,
             city_states,
             negatives,
+            same_kind,
         )
     });
 
@@ -356,7 +372,7 @@ mod tests {
     /// that the case does not arise.
     #[test]
     fn replay_reproduces_the_game_it_records() {
-        let run = harvest(4_242, 3, 24, 16, 40, 0, 0);
+        let run = harvest(4_242, 3, 24, 16, 40, 0, 0, false);
         assert_eq!(run.rejected, 0, "replay rejected an action the game applied");
         assert!(run.agrees, "replay ended on a different score line");
         assert!(run.decisions > 0, "a 40-turn game made no recordable decision");
@@ -370,7 +386,7 @@ mod tests {
     fn rows_are_as_wide_as_the_header_says() {
         let expected = 4 + STATE_WIDTH + action_space::FEATURE_WIDTH + 2;
         assert_eq!(header().trim_end().split(',').count(), expected);
-        let run = harvest(77, 3, 24, 16, 30, 0, 2);
+        let run = harvest(77, 3, 24, 16, 30, 0, 2, false);
         for line in run.rows.lines() {
             assert_eq!(line.split(',').count(), expected, "row width: {line:.60}");
         }
