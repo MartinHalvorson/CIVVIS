@@ -164,8 +164,22 @@ Add an evaluator-only `recon_family_eval`. Every independent map is replayed
 four times: focal seats 0 and the final major seat under the stock production
 fleet and under the default-off treatment entrant. The two focal seats are
 averaged inside the map, and the map is the only inference unit. Every
-non-focal major uses the exact stock `strategic_deep` deployment controller;
-city-states and barbarians retain their stock minor paths.
+major in both arms uses the committed generation-14 champion from
+`data/evolved/best.json`, byte fingerprint `fnv1a:40b1fbb2a5b88bc6`, with the
+exact `strategic_deep` review cadence 20 and horizon 80. The JSON is compiled
+into the evaluator and its generation and fingerprint are asserted before a
+game is constructed. The controller is explicitly score-share-only: the live
+deployment has no promoted `valuenet.json`, and an optional working-directory
+model may not change this experiment. Only the focal treatment arm enables
+`recon_family_cap`; every rival stays otherwise identical. City-states and
+barbarians retain their stock minor paths.
+
+This controller pin was frozen after the implementation self-audit and before
+any null, screen, or confirmation seed was run or read. The earlier factory
+construction let a working-directory `evolved/best.json` or `valuenet.json`
+silently change both arms while the default-off null still passed. The pin
+changes no treatment, outcome, threshold, seed, population, or queue order; it
+makes the intended deployed estimand reproducible.
 
 The evaluator uses the deterministic deployment-population schedule already
 frozen for the Spaceport and horizon studies. For zero-based map offset `i`:
@@ -204,17 +218,18 @@ Generated output is not committed.
 ## Frozen default-off null
 
 Before either treatment seed is opened, one four-map causal null at disjoint
-seed `9971999` compares builtin `strategic_deep` with the custom Strategic
+seed `9971999` compares the pinned controller with the same custom Strategic
 entrant carrying `recon_family_cap = false`:
 
 ```text
-recon_family_eval --null --deployment-mix --maps 4 --turns 250 \
+recon_family_eval --null --deployment-mix --ai strategic_deep \
+  --maps 4 --turns 250 \
   --observe-through 320 --speed online --poles poles --randomize-civs \
   --victories science,culture,domination --seed 9971999 --jobs 6
 ```
 
 The four maps restart the deployment schedule at offset zero. For both focal
-seats, the builtin and custom-default-off arms must match in the complete
+seats, the pinned stock and custom-default-off arms must match in the complete
 canonical serialized `Game`, including RNG and action log, as well as every
 reported result and observer census field. Any mismatch stops the study before
 the screen. The runner may print the frozen PASS label only for this exact
@@ -234,7 +249,8 @@ screen seed.
 The one allowed screen is 12 maps / 48 games:
 
 ```text
-recon_family_eval --deployment-mix --maps 12 --turns 250 \
+recon_family_eval --deployment-mix --ai strategic_deep \
+  --maps 12 --turns 250 \
   --observe-through 320 --speed online --poles poles --randomize-civs \
   --victories science,culture,domination --seed 9972000 --jobs 6
 ```
