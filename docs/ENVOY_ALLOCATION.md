@@ -11,6 +11,15 @@ independent unit. The frozen routing below instead pools the two focal seats
 within each map and gives every map equal weight. This correction was made
 from code/protocol review alone, without outcome data.
 
+Second protocol amendment, also before any registered seed is run or read:
+code review established that Civvis performs its score tiebreak on the wrap
+past `Game.max_turns`, so a 250-turn world cannot be observed to turn 320
+without changing rollover semantics. The frozen study now ends at the
+authentic turn-250 rollover. The same review also removed no-immediate sends
+from the routing gate: a 1-to-2 setup send or defensive margin can be optimal.
+That classification remains descriptive, while only a positive conserved-
+stock gap may nominate allocation work.
+
 ## Question and correction
 
 Perfect suzerainty may be valuable, but the current oracle cannot distinguish
@@ -30,10 +39,9 @@ This census asks two narrower questions without granting anything:
 
 The hypotheses are prospectively separated:
 
-- **allocation hypothesis:** stock spends a material share of Envoys on unseen
-  targets, already-secure margins, or placements with no immediate threshold
-  or control change, and a conserved-stock allocation can improve the realized
-  control or threshold count;
+- **allocation hypothesis:** a conserved-stock allocation can improve the
+  realized control or threshold count at repeated checkpoints; send-level
+  categories may explain a measured gap but cannot establish one;
 - **acquisition hypothesis:** those allocation opportunities are rare, while
   the same realized stock often cannot control even one met state.
 
@@ -62,9 +70,11 @@ map offset `i`:
 
 `MapSize::for_players` derives dimensions and city-state counts. Civilizations
 are randomized. Poles, Online speed, and Science/Culture/Domination victories
-are fixed. Every game retains `Game.max_turns = 250` while unchanged stateful
-controllers are observed externally through turn 320 or an enabled victory.
-The binary asserts that the policy-visible horizon never changes.
+are fixed. Every game retains `Game.max_turns = 250` and runs through its
+authentic final turn or an earlier enabled victory. On the wrap past turn 250,
+the shipped engine performs its score tiebreak even though score is not an
+early enabled victory lane; that terminal result is part of the unattended
+population. The binary asserts that the horizon never changes.
 
 Each map uses focal seats zero and the final major. Other seats keep the same
 committed champion controller. The map, not the two seats or repeated turns,
@@ -130,11 +140,11 @@ Before reading the census seed, four deployment-cycle maps at seed `10032999`
 compare direct champion play with the replay observer disabled. For both focal
 seats, all eight matched cells must reproduce the terminal result, serialized
 `Game`, focal plan report, and lifetime strategy census exactly or the study
-stops.
+stops. The comparison includes the turn-250-to-terminal rollover.
 
 ```text
 envoy_allocation_census --null --deployment-mix --maps 4 --turns 250 \
-  --observe-through 320 --speed online --poles poles --randomize-civs \
+  --observe-through 250 --speed online --poles poles --randomize-civs \
   --victories science,culture,domination --ai advanced_evolved \
   --seed 10032999 --jobs 6
 ```
@@ -149,7 +159,7 @@ at seed `10033000`:
 
 ```text
 envoy_allocation_census --deployment-mix --maps 30 --turns 250 \
-  --observe-through 320 --speed online --poles poles --randomize-civs \
+  --observe-through 250 --speed online --poles poles --randomize-civs \
   --victories science,culture,domination --ai advanced_evolved \
   --seed 10033000 --jobs 6
 ```
@@ -159,20 +169,23 @@ experiment-nomination rules, never gameplay promotion gates:
 
 - **ALLOCATION LEAD** when at least 10 of 30 maps contain a focal seat with a
   positive conserved-stock suzerainty or threshold gap at five or more
-  checkpoints, or when at least 10 maps contain a met-target send with no
-  immediate threshold/control change and the equal-weighted mean of each
-  sending map's no-immediate/met-send share is at least 10%;
+  checkpoints;
 - **ACQUISITION LEAD** when the allocation condition is false, at least 20 of
   30 maps have eligible checkpoints, and the equal-weighted mean of each
   eligible map's fraction of checkpoints with a conserved-stock maximum of
   zero suzerainties is at least 25%;
-- **MIXED** when both the allocation condition and the acquisition coverage
-  condition hold; and
+- **MIXED** when both complete Boolean signals above hold: the 10-map
+  allocation-gap condition and the 20-map/25% acquisition condition; and
 - **NO MECHANISM** otherwise.
 
 Any send to an unmet city-state independently prints **HIDDEN-STATE LEGALITY
 BUG** and permits only a separate rules/visibility correction with deterministic
 tests. It cannot promote an economic treatment.
+
+No-immediate sends, secure extensions, thresholds, acquisitions, and raw versus
+effective increments remain descriptive diagnostics. None can independently
+nominate a treatment because setup and defensive-margin sends may be rational
+even when they do not change control on that action.
 
 An allocation lead permits a later preregistered, fog-honest treatment that
 changes only future sends and never reallocates history. An acquisition lead
