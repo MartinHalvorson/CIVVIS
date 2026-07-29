@@ -140,6 +140,35 @@ run only under the diagnostic label and cannot receive either gate.
 This prospective integrity correction changes no controller, sampled world,
 horizon, seed, map count, endpoint, threshold, stop rule, or resource cap.
 
+## Prospective controller-artifact amendment
+
+This controller-binding amendment was frozen before either focal seed was run
+or read. The post-hardening replay of the established non-focal diagnostic seed
+9,986,999 printed the runner's artifact provenance before its one-turn world:
+the generation-14 genome loaded, while the optional `valuenet.json` did not.
+Static inspection confirmed that this is the actual published controller in
+the current checkout: `strategic_deep` uses the committed champion, reviews
+every 20 turns with an 80-round horizon, and scores projected endpoints by
+score share when no value net exists. The committed champion file has SHA-256
+`8413d6b547c2735acebd9e67700b1c56371f9c437a4f116a1afd4ec2598d5a67`.
+
+The generic factory nevertheless consults mutable cwd artifacts. A later local
+`evolved/valuenet.json` would add a learned terminal blend under the same
+formal command; a local `evolved/best.json` would override the committed
+champion. Neither variant is the controller whose horizon prevalence was
+preregistered. The runner must therefore construct every major directly from
+the exact champion JSON embedded at its source commit via
+`StrategicAi::score_only_with_weights`, then set the frozen 20/80 budget.
+City-states and barbarians remain `basic`. The runner reports the embedded
+generation and score-share terminal evaluator, and focused tests must prove
+that the genome differs from stock defaults and the budget is exact.
+
+This binds the already-observed controller behavior rather than changing it.
+It is based only on the non-focal provenance line, committed artifacts, and
+static factory code. No screen or confirmation output informed it; the
+controller role, world population, horizons, seeds, map counts, endpoints,
+thresholds, stop rule, and resource cap are unchanged.
+
 ## Fixed deployment-population screen
 
 The amended frozen command is:
