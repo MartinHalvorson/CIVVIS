@@ -326,7 +326,7 @@ pub struct ImprovementSpec {
     #[serde(default)]
     pub unique_to: Option<String>,
     #[serde(default)]
-    pub replaces: Option<String>,
+    pub replaces: Option<Name>,
     #[serde(default)]
     pub removes_feature: bool,
     #[serde(default)]
@@ -405,7 +405,7 @@ pub struct UnitSpec {
     #[serde(default)]
     pub tech: Option<Name>,
     #[serde(default)]
-    pub requires_resource: Option<String>,
+    pub requires_resource: Option<Name>,
     /// Strategic material paid once when construction or purchase starts.
     #[serde(default)]
     pub resource_cost: f64,
@@ -419,7 +419,7 @@ pub struct UnitSpec {
     #[serde(default)]
     pub unique_to: Option<String>, // civ that alone may build this unit
     #[serde(default)]
-    pub replaces: Option<String>, // base unit this unique replaces
+    pub replaces: Option<Name>, // base unit this unique replaces
     #[serde(default)]
     pub promotion_class: String,
     #[serde(default)]
@@ -435,9 +435,9 @@ pub struct UnitSpec {
     pub religious_spread: f64,
     /// Religious units are faith-purchased in a city containing this building.
     #[serde(default)]
-    pub requires_building: Option<String>,
+    pub requires_building: Option<Name>,
     #[serde(default)]
-    pub requires_district: Option<String>,
+    pub requires_district: Option<Name>,
     /// Improvements this specialist can construct (builders use the whole
     /// ordinary improvement catalog; engineers/archaeologists are explicit).
     #[serde(default)]
@@ -446,12 +446,12 @@ pub struct UnitSpec {
     /// `UnitUpgrades` table. A civilization's unique replacement stands in for
     /// the base unit whenever it owns one.
     #[serde(default, alias = "upgrades_to")]
-    pub upgrade_to: Option<String>,
+    pub upgrade_to: Option<Name>,
     /// The shipped `MandatoryObsoleteTech`. Once its owner researches this,
     /// the unit can no longer be trained or purchased; existing copies live on
     /// until they are upgraded.
     #[serde(default)]
-    pub obsolete_tech: Option<String>,
+    pub obsolete_tech: Option<Name>,
     /// Data-driven auras and special unit rules. Support units currently use
     /// `adjacent_siege_range`, `adjacent_siege_bombard`, `adjacent_heal`, and
     /// `adjacent_movement`; unknown entries remain forward-compatible.
@@ -529,7 +529,7 @@ pub struct DistrictSpec {
     #[serde(default)]
     pub unique_to: Option<String>,
     #[serde(default)]
-    pub replaces: Option<String>,
+    pub replaces: Option<Name>,
     /// IDs of district families that cannot coexist in the same city (for
     /// example Entertainment Complex and Water Park).
     #[serde(default)]
@@ -559,7 +559,7 @@ pub struct BuildingSpec {
     #[serde(default)]
     pub civic: Option<Name>,
     #[serde(default)]
-    pub district: Option<String>,
+    pub district: Option<Name>,
     #[serde(default)]
     pub yields: Yields,
     #[serde(default)]
@@ -579,7 +579,7 @@ pub struct BuildingSpec {
     #[serde(default)]
     pub unique_to: Option<String>,
     #[serde(default)]
-    pub replaces: Option<String>,
+    pub replaces: Option<Name>,
     /// Buildings that must already exist in this city.
     #[serde(default)]
     pub requires: Vec<Name>,
@@ -616,7 +616,7 @@ pub struct BuildingSpec {
     /// Worship buildings are selected by this religion belief and purchased
     /// with Faith rather than constructed with Production.
     #[serde(default)]
-    pub worship_belief: Option<String>,
+    pub worship_belief: Option<Name>,
     #[serde(default)]
     pub purchase_only: bool,
 }
@@ -654,11 +654,11 @@ pub struct WonderSpec {
     #[serde(default)]
     pub requires_any_buildings: Vec<Name>,
     #[serde(default)]
-    pub adjacent_district: Option<String>,
+    pub adjacent_district: Option<Name>,
     #[serde(default)]
-    pub adjacent_resource: Option<String>,
+    pub adjacent_resource: Option<Name>,
     #[serde(default)]
-    pub adjacent_improvement: Option<String>,
+    pub adjacent_improvement: Option<Name>,
     #[serde(default)]
     pub terrain: Vec<Name>,
     #[serde(default)]
@@ -728,7 +728,7 @@ pub struct ProjectSpec {
     #[serde(default)]
     pub civic: Option<Name>,
     #[serde(default)]
-    pub district: Option<String>,
+    pub district: Option<Name>,
     #[serde(default)]
     pub alternate_districts: Vec<Name>,
     #[serde(default)]
@@ -1001,7 +1001,7 @@ pub struct PolicySpec {
     #[serde(default)]
     pub civic: Option<Name>,
     #[serde(default)]
-    pub replaces: Option<String>, // unlocking this obsoletes the named card
+    pub replaces: Option<Name>, // unlocking this obsoletes the named card
     #[serde(default)]
     pub note: String,
     /// Numeric, data-driven policy primitives consumed by the game engine.

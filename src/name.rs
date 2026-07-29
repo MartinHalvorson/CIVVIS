@@ -272,6 +272,38 @@ impl<'de> Deserialize<'de> for Name {
     }
 }
 
+/// Anything that already *is* an interned name, by value or by reference.
+///
+/// Query helpers take `impl AsName` so a caller can hand over a `Name`, a
+/// `&Name` from an iterator, or the `&&Name` a nested closure produces without
+/// sprinkling stars through the call site. Deliberately **not** implemented for
+/// strings: interning takes a lock, and a silent one in a hot query is exactly
+/// the cost this type exists to remove.
+pub trait AsName: Copy {
+    fn as_name(self) -> Name;
+}
+
+impl AsName for Name {
+    #[inline]
+    fn as_name(self) -> Name {
+        self
+    }
+}
+
+impl AsName for &Name {
+    #[inline]
+    fn as_name(self) -> Name {
+        *self
+    }
+}
+
+impl AsName for &&Name {
+    #[inline]
+    fn as_name(self) -> Name {
+        **self
+    }
+}
+
 /// Intern a string literal once per call site.
 ///
 /// The first evaluation takes the registry lock; every later one is an atomic

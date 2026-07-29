@@ -1,6 +1,6 @@
 //! Scripted AIs (mirrors civvis/ai/). BasicAi reads full state (no fog) —
 //! sparring partner, not a fair-play agent.
-use crate::name::Name;
+use crate::name::{AsName, Name};
 use crate::game::{effective_strength, Action, ActionFamilies, Game, Item};
 use crate::reasoning::{plain, Journal};
 use crate::rng::Rng;
@@ -1149,14 +1149,12 @@ impl BasicAi {
             })
     }
 
-    fn has_building_family(g: &Game, pid: usize, family: &str) -> bool {
+    fn has_building_family(g: &Game, pid: usize, family: impl AsName) -> bool {
         g.player_city_ids(pid).into_iter().any(|cid| {
-            g.cities[&cid].buildings.iter().any(|building| {
-                building == family
-                    || g.rules.buildings.get(building).is_some_and(|spec| {
-                        spec.replaces.as_deref() == Some(family)
-                    })
-            })
+            g.cities[&cid]
+                .buildings
+                .iter()
+                .any(|building| g.building_is_family(building, family))
         })
     }
 
@@ -1169,10 +1167,10 @@ impl BasicAi {
     /// to buy. Replacement Markets and Banks count as their base families.
     fn economic_research_goal(g: &Game, pid: usize) -> Option<&'static str> {
         let player = &g.players[pid];
-        if Self::has_building_family(g, pid, "market") && !player.techs.contains(&crate::name!("banking")) {
+        if Self::has_building_family(g, pid, crate::name!("market")) && !player.techs.contains(&crate::name!("banking")) {
             return Some("banking");
         }
-        if Self::has_building_family(g, pid, "bank") && !player.techs.contains(&crate::name!("economics")) {
+        if Self::has_building_family(g, pid, crate::name!("bank")) && !player.techs.contains(&crate::name!("economics")) {
             return Some("economics");
         }
         None
@@ -1620,7 +1618,7 @@ impl BasicAi {
                 _ => 70,
             };
         }
-        let Some(district) = tile.district.as_deref() else {
+        let Some(district) = tile.district else {
             return 0;
         };
         if let Some(cost) = tile
@@ -1633,7 +1631,6 @@ impl BasicAi {
                     .filter(|building| {
                         g.rules.buildings[building]
                             .district
-                            .as_ref()
                             .is_some_and(|family| g.district_family(district) == family)
                     })
                     .map(|building| g.rules.buildings[building].cost as i32)
@@ -1643,7 +1640,7 @@ impl BasicAi {
             return 70 + cost / 5;
         }
         if !tile.pillaged {
-            return match g.district_family(district) {
+            return match g.district_family(district).as_str() {
                 "aerodrome" | "industrial_zone" | "campus" | "spaceport" => 135,
                 "commercial_hub" | "harbor" | "holy_site" | "theater_square" => 115,
                 _ => 90,
@@ -3388,7 +3385,7 @@ impl BasicAi {
                 .count();
             if missionaries < 2 {
                 for cid in &city_ids {
-                    if g.cities[cid].districts.contains_key("holy_site") {
+                    if g.cities[cid].districts.contains_key(crate::name!("holy_site")) {
                         let _ = g.apply(
                             pid,
                             &Action::Buy {
@@ -4225,7 +4222,7 @@ impl BasicAi {
 
     fn minor_district_item(g: &Game, pid: usize, cid: u32) -> Option<Item> {
         let family = Self::minor_district_family(g, pid);
-        if g.city_has_district_family(&g.cities[&cid], family) {
+        if g.city_has_district_family(&g.cities[&cid], Name::new(&family)) {
             return None;
         }
         let district = Self::civ_district(g, pid, family);
@@ -4233,7 +4230,7 @@ impl BasicAi {
             .into_iter()
             .filter_map(|pos| {
                 let item = Item::District {
-                    district: Name::new(&district),
+                    district: district,
                     pos,
                 };
                 g.can_produce(pid, cid, &item).then_some((
@@ -4361,11 +4358,11 @@ impl BasicAi {
         if !self.minor && !self.barb {
             let has_spaceport = g.cities.values().any(|city| {
                 city.owner == pid
-                    && (g.city_has_district_family(city, "spaceport")
+                    && (g.city_has_district_family(city, crate::name!("spaceport"))
                         || matches!(
                             city.queue.first(),
                             Some(Item::District { district, .. })
-                                if g.district_family(district) == "spaceport"
+                                if g.district_family(*district) == "spaceport"
                         ))
             });
             if !has_spaceport && g.players[pid].techs.contains(&crate::name!("rocketry")) {
@@ -4477,7 +4474,7 @@ impl BasicAi {
         // later naval production somewhere sensible to concentrate.
         if !self.minor
             && Self::city_is_coastal(g, cid)
-            && !g.city_has_district_family(&g.cities[&cid], "harbor")
+            && !g.city_has_district_family(&g.cities[&cid], crate::name!("harbor"))
         {
             let harbor = Self::civ_district(g, pid, "harbor");
             let sites = g.district_sites(cid, &harbor);
@@ -4519,11 +4516,11 @@ impl BasicAi {
                         && (other
                             .districts
                             .keys()
-                            .any(|district| g.district_family(district) == "holy_site")
+                            .any(|district| g.district_family(*district) == "holy_site")
                             || matches!(
                                 other.queue.first(),
                                 Some(Item::District { district, .. })
-                                    if g.district_family(district) == "holy_site"
+                                    if g.district_family(*district) == "holy_site"
                             ))
                 });
                 // One active Holy Site is enough to contest the finite
@@ -4537,7 +4534,7 @@ impl BasicAi {
                     continue;
                 }
             }
-            if g.city_has_district_family(&g.cities[&cid], family) {
+            if g.city_has_district_family(&g.cities[&cid], Name::new(&family)) {
                 continue;
             }
             // Ask for the district this civilization actually builds. Greece
@@ -4570,7 +4567,7 @@ impl BasicAi {
                     })
                     .unwrap();
                 let item = Item::District {
-                    district: Name::new(&dname),
+                    district: dname,
                     pos: best,
                 };
                 // Never hand back something the engine will reject: a refused
@@ -4692,7 +4689,7 @@ impl BasicAi {
     }
 
     fn project_matches_focus(&self, g: &Game, project: &str) -> bool {
-        !self.culture_focus || g.rules.projects[project].district.as_deref() != Some("spaceport")
+        !self.culture_focus || g.rules.projects[project].district != Some(crate::name!("spaceport"))
     }
 
     fn units(&mut self, g: &mut Game, pid: usize) {
@@ -5467,7 +5464,7 @@ impl BasicAi {
             .districts
             .iter()
             .find(|(_, spec)| {
-                spec.replaces.as_deref() == Some(family) && spec.unique_to.as_deref() == Some(civ)
+                spec.replaces == Some(Name::new(&family)) && spec.unique_to.as_deref() == Some(civ)
             })
             .map(|(name, _)| name.clone())
             .unwrap_or_else(|| Name::new(family))
@@ -5488,7 +5485,7 @@ impl BasicAi {
         g.rules
             .buildings
             .iter()
-            .filter(|(_, spec)| spec.replaces.as_deref() == Some(family))
+            .filter(|(_, spec)| spec.replaces == Some(Name::new(&family)))
             .map(|(name, _)| Item::Building {
                 building: name.clone(),
             })

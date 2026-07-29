@@ -942,9 +942,9 @@ fn mitla_grows_campus_cities_and_taruga_counts_resource_kinds_not_tiles() {
     make_suzerain(&mut game, 0, minor);
 
     // Mitla pays nothing until the city actually has a Campus.
-    assert!(!game.city_has_active_district_family(&game.cities[&city], "campus"));
+    assert!(!game.city_has_active_district_family(&game.cities[&city], crate::name!("campus")));
     install_district(&mut game, city, "campus");
-    assert!(game.city_has_active_district_family(&game.cities[&city], "campus"));
+    assert!(game.city_has_active_district_family(&game.cities[&city], crate::name!("campus")));
 
     // Taruga scales on distinct improved Strategic resources.
     game.players[minor].civ = "Taruga".to_string();

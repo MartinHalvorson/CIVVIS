@@ -265,7 +265,7 @@ impl ChronicleWar {
 }
 
 struct ChronicleState {
-    districts: BTreeSet<String>,
+    districts: BTreeSet<Name>,
     buildings: BTreeSet<Name>,
     population_milestones: Vec<i32>,
     wars: BTreeMap<(usize, usize), ChronicleWar>,
@@ -289,7 +289,7 @@ impl ChronicleSnapshot {
                     *position,
                     ChronicleDistrict {
                         city: city.id,
-                        district: district.clone(),
+                        district: district.clone().to_string(),
                         owner: city.owner,
                     },
                 );
@@ -395,7 +395,7 @@ impl ChronicleSnapshot {
     }
 }
 
-fn completed_districts(game: &Game) -> BTreeSet<String> {
+fn completed_districts(game: &Game) -> BTreeSet<Name> {
     game.cities
         .values()
         .flat_map(|city| city.districts.keys())
@@ -522,7 +522,7 @@ fn chronicle_world_events(
         .collect();
     new_districts.sort_by_key(|district| district.city);
     for district in new_districts {
-        if chronicle.districts.insert(district.district.clone()) {
+        if chronicle.districts.insert(Name::new(&district.district)) {
             let city = after
                 .cities
                 .get(&district.city)
@@ -9135,7 +9135,7 @@ mod tests {
             .iter()
             .filter_map(|entry| entry["name"].as_str())
             .collect();
-        assert!(names.contains(&"advanced"), "the default agent is offerable");
+        assert!(names.contains(&crate::name!("advanced")), "the default agent is offerable");
         assert!(
             names.len() >= 4,
             "a roster with nothing in it is not a choice: {names:?}"
@@ -9149,7 +9149,7 @@ mod tests {
 
         // Nobody is offered a person's seat: the roster on offer is agents.
         assert!(
-            !names.contains(&"player"),
+            !names.contains(&crate::name!("player")),
             "a seat cannot be handed to somebody who is not at a keyboard: {names:?}"
         );
 

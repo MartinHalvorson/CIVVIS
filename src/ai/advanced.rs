@@ -1547,7 +1547,7 @@ impl AdvancedAi {
         let city_ids = g.player_city_ids(pid);
         let has_holy_site = city_ids
             .iter()
-            .any(|cid| g.cities[cid].districts.contains_key("holy_site"));
+            .any(|cid| g.cities[cid].districts.contains_key(crate::name!("holy_site")));
         let holy_site_planned = city_ids.iter().any(|cid| {
             matches!(
                 g.cities[cid].queue.first(),
@@ -2820,19 +2820,17 @@ impl AdvancedAi {
         // indefinitely postpone the first building in the district that
         // enables it. This is the economic equivalent of a quiet-move pruning
         // guard: search the forcing race only after basic development exists.
-        if let Some(district) = spec.district.as_deref() {
+        if let Some(district) = spec.district {
             let family = g.district_family(district);
             let has_family_building = city.buildings.iter().any(|building| {
                 g.rules.buildings[building]
                     .district
-                    .as_deref()
                     .is_some_and(|built| g.district_family(built) == family)
             });
             let family_has_building = g.rules.buildings.values().any(|building| {
                 building.buildable
                     && building
                         .district
-                        .as_deref()
                         .is_some_and(|built| g.district_family(built) == family)
             });
             if family_has_building && !has_family_building {
@@ -3357,7 +3355,7 @@ impl AdvancedAi {
         // already slotted predecessor used to survive forever, which is how
         // future governments reached the archive still running Ilkum and
         // Colonization.  Retire those cards before choosing the new portfolio.
-        let obsolete: HashSet<String> = g
+        let obsolete: HashSet<Name> = g
             .rules
             .policies
             .values()
@@ -3372,7 +3370,7 @@ impl AdvancedAi {
         let obsolete_active: Vec<Name> = g.players[pid]
             .policies
             .iter()
-            .filter(|card| obsolete.contains(card.as_str()))
+            .filter(|card| obsolete.contains(&Name::new(card.as_str())))
             .cloned()
             .collect();
         for card in obsolete_active {
@@ -3545,7 +3543,7 @@ impl AdvancedAi {
             });
         let holy_site_cities = city_ids
             .iter()
-            .filter(|city| g.city_has_district_family(&g.cities[city], "holy_site"))
+            .filter(|city| g.city_has_district_family(&g.cities[city], crate::name!("holy_site")))
             .count();
 
         let mut temporary = Vec::new();
@@ -6123,7 +6121,7 @@ impl AdvancedAi {
         let city_ids = g.player_city_ids(pid);
         let has_holy_site = city_ids
             .iter()
-            .any(|cid| g.cities[cid].districts.contains_key("holy_site"));
+            .any(|cid| g.cities[cid].districts.contains_key(crate::name!("holy_site")));
         if !has_holy_site {
             let holy_site_planned = city_ids.iter().any(|cid| {
                 matches!(
@@ -6201,7 +6199,7 @@ impl AdvancedAi {
                         building: crate::name!("shrine"),
                     };
                     if g.cities[cid].queue.is_empty()
-                        && g.cities[cid].districts.contains_key("holy_site")
+                        && g.cities[cid].districts.contains_key(crate::name!("holy_site"))
                         && g.can_produce(pid, *cid, &item)
                     {
                         let _ = g.apply(pid, &Action::Produce { city: *cid, item });
@@ -6220,7 +6218,7 @@ impl AdvancedAi {
                     .iter()
                     .filter(|cid| {
                         g.cities[cid].queue.is_empty()
-                            && g.cities[cid].districts.contains_key("holy_site")
+                            && g.cities[cid].districts.contains_key(crate::name!("holy_site"))
                             && g.can_produce(pid, **cid, &prayers)
                     })
                     .max_by(|left, right| {
@@ -6249,7 +6247,7 @@ impl AdvancedAi {
                     building: Name::new(building),
                 };
                 if g.cities[cid].queue.is_empty()
-                    && g.cities[cid].districts.contains_key("holy_site")
+                    && g.cities[cid].districts.contains_key(crate::name!("holy_site"))
                     && g.can_produce(pid, *cid, &item)
                 {
                     let _ = g.apply(pid, &Action::Produce { city: *cid, item });
@@ -6755,12 +6753,12 @@ impl AdvancedAi {
                 let yields = g.city_yields(city_id);
                 let own = city.owner == pid;
                 let commercial = city.districts.keys().any(|district| {
-                    matches!(g.district_family(district), "commercial_hub" | "harbor")
+                    matches!(g.district_family(*district).as_str(), "commercial_hub" | "harbor")
                 }) as i32 as f64;
                 let holy = city
                     .districts
                     .keys()
-                    .any(|district| g.district_family(district) == "holy_site")
+                    .any(|district| g.district_family(*district) == "holy_site")
                     as i32 as f64;
                 let base = if own {
                     (100.0 - city.loyalty).max(0.0) * 2.0
@@ -7090,7 +7088,7 @@ impl AdvancedAi {
                 g.player_city_ids(pid)
                     .into_iter()
                     .filter(|cid| {
-                        g.cities[cid].districts.contains_key("spaceport")
+                        g.cities[cid].districts.contains_key(crate::name!("spaceport"))
                             && g.can_produce(pid, *cid, &project_item)
                             && !matches!(
                                 g.cities[cid].queue.first(),
@@ -7122,7 +7120,7 @@ impl AdvancedAi {
         let city_ids = g.player_city_ids(pid);
         let built_spaceports = city_ids
             .iter()
-            .filter(|cid| g.cities[cid].districts.contains_key("spaceport"))
+            .filter(|cid| g.cities[cid].districts.contains_key(crate::name!("spaceport")))
             .count();
         let queued_spaceports = city_ids
             .iter()
@@ -7154,7 +7152,7 @@ impl AdvancedAi {
         }
         let mut best: Option<(f64, u32, Pos)> = None;
         for cid in city_ids {
-            if g.cities[&cid].districts.contains_key("spaceport")
+            if g.cities[&cid].districts.contains_key(crate::name!("spaceport"))
                 || matches!(
                     g.cities[&cid].queue.first(),
                     Some(Item::District { district, .. }) if district == "spaceport"
@@ -7227,7 +7225,7 @@ impl AdvancedAi {
                     // safe way.
                     g.cities.get(&city).is_some_and(|home| {
                         home.owner == pid
-                            && (home.districts.contains_key("spaceport")
+                            && (home.districts.contains_key(crate::name!("spaceport"))
                                 || infiltrated_cities.contains(&city))
                     })
                 })
@@ -7304,7 +7302,7 @@ impl AdvancedAi {
                         .districts
                         .iter()
                         .find_map(|(district, position)| {
-                            (g.district_family(district) == "spaceport").then_some(*position)
+                            (g.district_family(*district) == "spaceport").then_some(*position)
                         })
                 });
                 if let Some(action) = legal
@@ -7411,11 +7409,11 @@ impl AdvancedAi {
                             0
                         } + match plan.strategy {
                             GrandStrategy::Science => {
-                                i32::from(target.districts.contains_key("campus")) * 90
-                                    + i32::from(target.districts.contains_key("spaceport")) * 150
+                                i32::from(target.districts.contains_key(crate::name!("campus"))) * 90
+                                    + i32::from(target.districts.contains_key(crate::name!("spaceport"))) * 150
                             }
                             GrandStrategy::Culture => {
-                                i32::from(target.districts.contains_key("theater_square")) * 140
+                                i32::from(target.districts.contains_key(crate::name!("theater_square"))) * 140
                             }
                             GrandStrategy::Diplomacy => {
                                 i32::from(g.players[target.owner].is_minor) * 180
@@ -7425,7 +7423,7 @@ impl AdvancedAi {
                                     + i32::from(g.players[target.owner].governors.contains(city))
                                         * 120
                             }
-                            _ => i32::from(target.districts.contains_key("commercial_hub")) * 70,
+                            _ => i32::from(target.districts.contains_key(crate::name!("commercial_hub"))) * 70,
                         };
                         Some((
                             strategic
@@ -7871,7 +7869,7 @@ impl AdvancedAi {
         let mut committed_tagmata = existing_tagmata + queued_tagmata;
 
         for city in city_ids {
-            let has_hippodrome = g.city_has_district_family(&g.cities[&city], "hippodrome");
+            let has_hippodrome = g.city_has_district_family(&g.cities[&city], crate::name!("hippodrome"));
             if !has_hippodrome {
                 let hippodrome = g
                     .producible_items(pid, city)
@@ -8092,7 +8090,7 @@ impl AdvancedAi {
                             candidate.queue.first(),
                             Some(Item::District { district, .. })
                                 if matches!(
-                                    g.district_family(district),
+                                    g.district_family(*district).as_str(),
                                     "aqueduct" | "canal" | "dam"
                                 )
                         )
@@ -8344,8 +8342,8 @@ impl AdvancedAi {
             }
             Item::District { district, pos } => {
                 let spec = &g.rules.districts[district];
-                let family = g.district_family(district);
-                if family == "spaceport" && city.districts.contains_key("spaceport") {
+                let family = g.district_family(*district);
+                if family == "spaceport" && city.districts.contains_key(crate::name!("spaceport")) {
                     // Multiple Spaceports are rules-legal, but one city can
                     // execute only one project at a time. Put additional
                     // launch sites in other cities for actual parallelism.
@@ -8359,11 +8357,11 @@ impl AdvancedAi {
                             && candidate
                                 .districts
                                 .keys()
-                                .any(|built| g.district_family(built) == family)
+                                .any(|built| g.district_family(*built) == family)
                     })
                     .count();
                 let balanced_core = if district_count * 2 < city_count {
-                    match family {
+                    match family.as_str() {
                         "campus" | "theater_square" | "commercial_hub" => 130.0,
                         "harbor" | "industrial_zone" => 90.0,
                         _ => 0.0,
@@ -8376,7 +8374,7 @@ impl AdvancedAi {
                 // housing rather than duplicating Aqueduct water rules or
                 // the appeal bands used by Neighborhoods and Preserves.
                 let mut developed = city.clone();
-                developed.districts.insert(district.to_string(), *pos);
+                developed.districts.insert(Name::new(&district.to_string()), *pos);
                 let housing_gain = (g.city_housing(&developed) - g.city_housing(city)).max(0.0);
                 let housing_need = (city.pop as f64 + 2.0 - g.city_housing(city)).max(0.0);
                 let amenity_gain = g.district_amenity(district, *pos);
@@ -8492,7 +8490,7 @@ impl AdvancedAi {
                         * 90.0
                     + effects.get("unlock_apprenticeship").copied().unwrap_or(0.0) * 120.0;
 
-                let strategic_family = match (plan.strategy, family) {
+                let strategic_family = match (plan.strategy, family.as_str()) {
                     (GrandStrategy::Science, "spaceport") if district_count == 0 => 3_000.0,
                     (GrandStrategy::Science, "spaceport") => 250.0,
                     (GrandStrategy::Science, "campus") => 170.0,
@@ -8516,7 +8514,7 @@ impl AdvancedAi {
                     (GrandStrategy::Expansion, "aqueduct" | "neighborhood") => 110.0,
                     _ => 0.0,
                 };
-                let first_copy = match family {
+                let first_copy = match family.as_str() {
                     "government_plaza" if district_count == 0 => 420.0,
                     "diplomatic_quarter" if district_count == 0 => 180.0,
                     "aerodrome" if district_count == 0 && counts.aircraft > 0 => 260.0,
@@ -8969,7 +8967,7 @@ impl AdvancedAi {
         } else {
             0.0
         };
-        let science_denial = if city.districts.contains_key("spaceport")
+        let science_denial = if city.districts.contains_key(crate::name!("spaceport"))
             && self.rival_victory_pressure(g, city.owner).strategy == GrandStrategy::Science
         {
             110.0
@@ -10941,9 +10939,9 @@ impl AdvancedAi {
                     _ => 85.0,
                 };
             }
-        } else if let Some(district) = before_tile.district.as_deref() {
+        } else if let Some(district) = before_tile.district {
             if !before_tile.pillaged && after_tile.pillaged {
-                value += match g.district_family(district) {
+                value += match g.district_family(district).as_str() {
                     "aerodrome" | "industrial_zone" | "campus" | "spaceport" => 175.0,
                     "commercial_hub" | "harbor" | "holy_site" | "theater_square" => 145.0,
                     _ => 115.0,
@@ -15002,7 +15000,7 @@ mod tests {
                     player.techs.contains(&crate::name!("astrology")),
                     game.player_city_ids(player.id)
                         .iter()
-                        .filter(|city| game.cities[city].districts.contains_key("holy_site"))
+                        .filter(|city| game.cities[city].districts.contains_key(crate::name!("holy_site")))
                         .count(),
                 ))
                 .collect::<Vec<_>>()
@@ -17859,7 +17857,7 @@ mod tests {
         ai.take_turn(&mut game, 0);
 
         assert!(
-            game.cities[&city].districts.contains_key("campus"),
+            game.cities[&city].districts.contains_key(crate::name!("campus")),
             "an adaptive Science plan should convert surplus Gold into its Campus immediately"
         );
         assert!(game.players[0].gold >= 300.0);

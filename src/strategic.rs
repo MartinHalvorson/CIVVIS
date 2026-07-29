@@ -856,7 +856,7 @@ impl StrategicAi {
         }
         let cities = g.player_city_ids(pid);
         let holy_site = cities.iter().any(|city| {
-            g.cities[city].districts.contains_key("holy_site")
+            g.cities[city].districts.contains_key(crate::name!("holy_site"))
                 || matches!(
                     g.cities[city].queue.first(),
                     Some(Item::District { district, .. }) if district == "holy_site"
@@ -884,7 +884,7 @@ impl StrategicAi {
         claimed < g.max_religions()
             && cities.len() >= 2
             && cities.iter().any(|city| {
-                g.cities[city].districts.contains_key("holy_site")
+                g.cities[city].districts.contains_key(crate::name!("holy_site"))
                     || matches!(
                         g.cities[city].queue.first(),
                         Some(Item::District { district, .. }) if district == "holy_site"

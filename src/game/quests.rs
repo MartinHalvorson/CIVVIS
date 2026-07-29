@@ -120,17 +120,17 @@ impl Game {
 
     /// Specialty district families `pid` has unlocked but not yet built.
     fn quest_district_candidates(&self, pid: usize) -> Vec<Name> {
-        let built: BTreeSet<&str> = self
+        let built: BTreeSet<Name> = self
             .cities
             .values()
             .filter(|city| city.owner == pid)
             .flat_map(|city| city.districts.keys())
-            .map(|district| self.district_family(district))
+            .map(|district| self.district_family(*district))
             .collect();
         self.rules
             .districts
             .iter()
-            .filter(|(name, spec)| spec.specialty && spec.buildable && self.district_family(name) == name.as_str())
+            .filter(|(name, spec)| spec.specialty && spec.buildable && self.district_family(**name) == name.as_str())
             .filter(|(_, spec)| match spec.unique_to.as_deref() {
                 Some(owner) => owner == self.players[pid].civ,
                 None => true,
@@ -144,7 +144,7 @@ impl Game {
                         .as_deref()
                         .is_none_or(|civic| self.players[pid].civics.contains(&Name::new(civic)))
             })
-            .filter(|(name, _)| !built.contains(name.as_str()))
+            .filter(|(name, _)| !built.contains(*name))
             .map(|(name, _)| name.clone())
             .collect()
     }
@@ -329,7 +329,7 @@ impl Game {
                 .values()
                 .filter(|city| city.owner == pid)
                 .flat_map(|city| city.districts.keys())
-                .any(|district| self.district_family(district) == quest.target),
+                .any(|district| self.district_family(*district) == quest.target),
             "trigger_tech_boost" => player.boosted_techs.contains(&Name::new(&quest.target)),
             "trigger_civic_boost" => player.boosted_civics.contains(&Name::new(&quest.target)),
             "recruit_great_person_class" => {

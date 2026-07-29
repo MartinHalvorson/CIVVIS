@@ -91,7 +91,7 @@ impl<'a> Check<'a> {
         &mut self,
         subject: &str,
         field: &str,
-        value: Option<&String>,
+        value: Option<&Name>,
         catalogue: &SpecMap<T>,
         catalogue_name: &str,
     ) {
@@ -113,7 +113,7 @@ impl<'a> Check<'a> {
         catalogue_name: &str,
     ) {
         for value in values {
-            self.reference(subject, field, Some(&value.to_string()), catalogue, catalogue_name);
+            self.reference(subject, field, Some(value), catalogue, catalogue_name);
         }
     }
 
@@ -514,7 +514,7 @@ fn districts_and_buildings(check: &mut Check) {
         );
         check.references(&subject, "excludes", &spec.excludes, &buildings, "building");
         if let Some(belief) = &spec.worship_belief {
-            if !check.rules.beliefs.worship.contains_key(belief) {
+            if !check.rules.beliefs.worship.contains_key(belief.as_str()) {
                 check.error(
                     &subject,
                     format!("worship_belief names {belief:?}, which is not a Worship belief"),

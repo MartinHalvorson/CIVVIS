@@ -7637,7 +7637,7 @@ mod river_tests {
             .filter(|(_, spec)| spec.class == "strategic")
             .map(|(name, _)| name.as_str())
             .collect();
-        assert!(strategics.contains(&"iron") && strategics.contains(&"horses"));
+        assert!(strategics.contains(&crate::name!("iron")) && strategics.contains(&crate::name!("horses")));
         for (index, script) in ROLLED_TYPES
             .into_iter()
             .chain([MapScript::TrueStartEarth])
