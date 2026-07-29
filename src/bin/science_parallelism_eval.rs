@@ -19,6 +19,7 @@ const HOLDOUT_MAPS: usize = 120;
 const HOLDOUT_SEED: u64 = 9_984_000;
 const NOMINAL_TURNS: u32 = 250;
 const OBSERVE_THROUGH: u32 = 320;
+const DEPLOYMENT_TOPOLOGIES: [MapTopology; 2] = [MapTopology::Flat, MapTopology::Planet];
 
 fn number(args: &[String], key: &str, default: i64) -> i64 {
     args.iter()
@@ -34,6 +35,52 @@ fn text(args: &[String], key: &str, default: &str) -> String {
         .and_then(|index| args.get(index + 1))
         .cloned()
         .unwrap_or_else(|| default.to_string())
+}
+
+fn topology_schedule(args: &[String]) -> Result<Vec<MapTopology>, String> {
+    let has_shape = args.iter().any(|arg| arg == "--shape");
+    let has_shapes = args.iter().any(|arg| arg == "--shapes");
+    if has_shape && has_shapes {
+        return Err("choose either --shape or --shapes, not both".to_string());
+    }
+    let names = if has_shapes {
+        text(args, "--shapes", "")
+    } else if has_shape {
+        text(args, "--shape", "")
+    } else {
+        DEPLOYMENT_TOPOLOGIES
+            .iter()
+            .map(|topology| topology.id())
+            .collect::<Vec<_>>()
+            .join(",")
+    };
+    let topologies: Vec<MapTopology> = names
+        .split(',')
+        .map(str::trim)
+        .filter(|name| !name.is_empty())
+        .map(|name| MapTopology::from_id(name).ok_or_else(|| format!("unknown map shape {name:?}")))
+        .collect::<Result<_, _>>()?;
+    if topologies.is_empty() {
+        return Err("--shapes must name at least one topology".to_string());
+    }
+    Ok(topologies)
+}
+
+fn topology_for(map: usize, schedule: &[MapTopology]) -> MapTopology {
+    schedule[map % schedule.len()]
+}
+
+fn topology_counts(maps: usize, schedule: &[MapTopology]) -> Vec<(MapTopology, usize)> {
+    let mut counts = Vec::new();
+    for map in 0..maps {
+        let topology = topology_for(map, schedule);
+        if let Some((_, count)) = counts.iter_mut().find(|(seen, _)| *seen == topology) {
+            *count += 1;
+        } else {
+            counts.push((topology, 1));
+        }
+    }
+    counts
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -342,6 +389,7 @@ fn play(options: GameOptions, focal: usize, mode: Mode, observe_through: u32) ->
 
 #[derive(Clone, Debug)]
 struct MapResult {
+    topology: MapTopology,
     control: [GameResult; 2],
     comparison: [GameResult; 2],
 }
@@ -536,9 +584,8 @@ fn main() {
         eprintln!("unknown map script {map_name:?}");
         std::process::exit(2);
     });
-    let shape_name = text(&args, "--shape", "planet");
-    let map_topology = MapTopology::from_id(&shape_name).unwrap_or_else(|| {
-        eprintln!("unknown map shape {shape_name:?}");
+    let map_topologies = topology_schedule(&args).unwrap_or_else(|why| {
+        eprintln!("{why}");
         std::process::exit(2);
     });
     let poles_name = text(&args, "--poles", "poles");
@@ -575,18 +622,27 @@ fn main() {
         std::process::exit(2);
     }
 
-    let stored_dimensions = MapSize::from_dimensions(width, height)
-        .map(|size| size.dimensions(map_topology))
-        .unwrap_or((width, height));
+    let topology_profile = map_topologies
+        .iter()
+        .map(|topology| {
+            let stored = MapSize::from_dimensions(width, height)
+                .map(|size| size.dimensions(*topology))
+                .unwrap_or((width, height));
+            format!("{}={}x{}", topology.id(), stored.0, stored.1)
+        })
+        .collect::<Vec<_>>()
+        .join(",");
+    let topology_batch = topology_counts(maps, &map_topologies)
+        .into_iter()
+        .map(|(topology, count)| format!("{}={count}", topology.id()))
+        .collect::<Vec<_>>()
+        .join(",");
     println!("Adaptive Science Spaceport parallelism evaluator");
     println!(
-        "profile: {players}p requested {width}x{height}, stored {}x{}, {city_states} city-states, \
+        "profile: {players}p requested {width}x{height}, stored {topology_profile}, {city_states} city-states, \
          {nominal_turns} policy-visible {speed} turns, observe through {observe_through}, map {}, \
-         shape {}, poles {}, civilizations {}, victories {}",
-        stored_dimensions.0,
-        stored_dimensions.1,
+         topology schedule {topology_batch}, poles {}, civilizations {}, victories {}",
         map_script.id(),
-        map_topology.id(),
         map_poles.id(),
         if randomize_civs {
             "randomized"
@@ -617,6 +673,7 @@ fn main() {
         maps,
         jobs,
         |map| {
+            let map_topology = topology_for(map, &map_topologies);
             let options = GameOptions {
                 speed: speed.clone(),
                 map_script,
@@ -647,6 +704,7 @@ fn main() {
                 play(options, seats[1], comparison_mode, observe_through),
             ];
             MapResult {
+                topology: map_topology,
                 control,
                 comparison,
             }
@@ -794,6 +852,70 @@ fn main() {
         100.0 * terminal_score_share
     );
 
+    println!("topology summaries (descriptive only; the decision gate is pooled):");
+    for (topology, shape_maps) in topology_counts(maps, &map_topologies) {
+        let mut shape_control = ArmSummary::default();
+        let mut shape_comparison = ArmSummary::default();
+        let mut shape_science_delta = 0.0;
+        let mut shape_favorable = 0usize;
+        let mut shape_adverse = 0usize;
+        let mut shape_win_score = 0.0;
+        let mut shape_terminal_share = 0.0;
+        for result in results.iter().filter(|result| result.topology == topology) {
+            let control_wins = result.control.iter().filter(|game| game.won).count();
+            let comparison_wins = result.comparison.iter().filter(|game| game.won).count();
+            shape_win_score += map_win_score(control_wins, comparison_wins);
+            shape_terminal_share += result
+                .control
+                .iter()
+                .zip(&result.comparison)
+                .map(|(old, new)| terminal_share(old.score, new.score))
+                .sum::<f64>()
+                / 2.0;
+            let delta = result
+                .control
+                .iter()
+                .zip(&result.comparison)
+                .map(|(old, new)| new.science_progress - old.science_progress)
+                .sum::<f64>()
+                / 2.0;
+            shape_science_delta += delta;
+            if delta > 1e-9 {
+                shape_favorable += 1;
+            } else if delta < -1e-9 {
+                shape_adverse += 1;
+            }
+            for (old, new) in result.control.iter().zip(&result.comparison) {
+                shape_control.record(old);
+                shape_comparison.record(new);
+            }
+        }
+        let shape_n = shape_maps.max(1) as f64;
+        println!(
+            "  {:<6} {shape_maps:>3} maps; fired {}/{} ({:.1}%), {} orders; spaceports {}->{}, lasers {}->{}; Science delta {:+.3} (F/N/A {}/{}/{}); wins {}->{} (Science {}->{}); map win {:.1}%, score share {:.2}%",
+            topology.id(),
+            shape_comparison.fired_games,
+            shape_comparison.games,
+            100.0 * shape_comparison.fired_games as f64
+                / shape_comparison.games.max(1) as f64,
+            shape_comparison.orders,
+            shape_control.spaceports(),
+            shape_comparison.spaceports(),
+            shape_control.lasers,
+            shape_comparison.lasers,
+            shape_science_delta / shape_n,
+            shape_favorable,
+            shape_maps - shape_favorable - shape_adverse,
+            shape_adverse,
+            shape_control.wins,
+            shape_comparison.wins,
+            shape_control.science_wins,
+            shape_comparison.science_wins,
+            100.0 * shape_win_score / shape_n,
+            100.0 * shape_terminal_share / shape_n,
+        );
+    }
+
     if null_replay {
         if exact_mismatches == 0 {
             println!(
@@ -818,7 +940,7 @@ fn main() {
         && observe_through == OBSERVE_THROUGH
         && speed == "online"
         && map_script == MapScript::Continents
-        && map_topology == MapTopology::Planet
+        && map_topologies.as_slice() == DEPLOYMENT_TOPOLOGIES.as_slice()
         && map_poles == MapPoles::Poles
         && randomize_civs;
     if exact_profile && maps == SCREEN_MAPS && seed == SCREEN_SEED {
@@ -889,6 +1011,37 @@ mod tests {
             }
         }
         game
+    }
+
+    #[test]
+    fn deployment_topologies_alternate_and_balance_every_frozen_batch() {
+        let schedule = topology_schedule(&[]).unwrap();
+        assert_eq!(schedule, DEPLOYMENT_TOPOLOGIES);
+        assert_eq!(topology_for(0, &schedule), MapTopology::Flat);
+        assert_eq!(topology_for(1, &schedule), MapTopology::Planet);
+        assert_eq!(topology_for(2, &schedule), MapTopology::Flat);
+        assert_eq!(
+            topology_counts(NULL_MAPS, &schedule),
+            vec![(MapTopology::Flat, 2), (MapTopology::Planet, 2)]
+        );
+        assert_eq!(
+            topology_counts(SCREEN_MAPS, &schedule),
+            vec![(MapTopology::Flat, 15), (MapTopology::Planet, 15)]
+        );
+        assert_eq!(
+            topology_counts(HOLDOUT_MAPS, &schedule),
+            vec![(MapTopology::Flat, 60), (MapTopology::Planet, 60)]
+        );
+
+        let single = ["--shape".to_string(), "planet".to_string()];
+        assert_eq!(topology_schedule(&single).unwrap(), [MapTopology::Planet]);
+        let conflicting = [
+            "--shape".to_string(),
+            "planet".to_string(),
+            "--shapes".to_string(),
+            "flat,planet".to_string(),
+        ];
+        assert!(topology_schedule(&conflicting).is_err());
     }
 
     #[test]
