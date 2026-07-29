@@ -21,6 +21,8 @@ const HOLDOUT_SEED: u64 = 9_984_000;
 const NOMINAL_TURNS: u32 = 250;
 const OBSERVE_THROUGH: u32 = 320;
 const FROZEN_AI: &str = "advanced_evolved";
+const FROZEN_CHAMPION_GENERATION: u32 = 14;
+const FROZEN_CHAMPION_FNV1A: u64 = 0x40b1_fbb2_a5b8_8bc6;
 const EMBEDDED_CHAMPION: &str = include_str!("../../data/evolved/best.json");
 const DEPLOYMENT_PLAYERS: [usize; 7] = [4, 6, 8, 10, 5, 7, 9];
 const DEPLOYMENT_SCRIPTS: [MapScript; 9] = [
@@ -44,10 +46,50 @@ const PROFILE_OVERRIDE_FLAGS: [&str; 7] = [
     "--shape",
     "--shapes",
 ];
+const FLAG_OPTIONS: [&str; 3] = ["--null", "--deployment-mix", "--randomize-civs"];
+const VALUE_OPTIONS: [&str; 16] = [
+    "--maps",
+    "--players",
+    "--width",
+    "--height",
+    "--city-states",
+    "--turns",
+    "--observe-through",
+    "--seed",
+    "--jobs",
+    "--speed",
+    "--map",
+    "--shape",
+    "--shapes",
+    "--poles",
+    "--victories",
+    "--ai",
+];
+
+const fn fnv1a(bytes: &[u8]) -> u64 {
+    let mut hash = 0xcbf2_9ce4_8422_2325;
+    let mut index = 0;
+    while index < bytes.len() {
+        hash ^= bytes[index] as u64;
+        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+        index += 1;
+    }
+    hash
+}
 
 fn frozen_champion() -> Champion {
-    serde_json::from_str(EMBEDDED_CHAMPION)
-        .expect("the committed advanced_evolved champion must be valid JSON")
+    assert_eq!(
+        fnv1a(EMBEDDED_CHAMPION.as_bytes()),
+        FROZEN_CHAMPION_FNV1A,
+        "data/evolved/best.json changed after the Spaceport preregistration"
+    );
+    let champion: Champion = serde_json::from_str(EMBEDDED_CHAMPION)
+        .expect("the committed advanced_evolved champion must be valid JSON");
+    assert_eq!(
+        champion.gen, FROZEN_CHAMPION_GENERATION,
+        "Spaceport evaluator champion generation changed"
+    );
+    champion
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -93,24 +135,55 @@ fn has_arg(args: &[String], key: &str) -> bool {
     args.iter().any(|arg| arg == key)
 }
 
-fn option_value<'a>(args: &'a [String], key: &str) -> Result<Option<&'a str>, String> {
-    let Some(index) = args.iter().position(|arg| arg == key) else {
-        return Ok(None);
-    };
-    match args.get(index + 1).map(String::as_str) {
-        Some(value) if !value.starts_with("--") => Ok(Some(value)),
-        _ => Err(format!("{key} requires a value")),
+fn validate_args(args: &[String]) -> Result<(), String> {
+    let mut index = 0;
+    while index < args.len() {
+        let argument = args[index].as_str();
+        if FLAG_OPTIONS.contains(&argument) {
+            index += 1;
+        } else if VALUE_OPTIONS.contains(&argument) {
+            match args.get(index + 1).map(String::as_str) {
+                Some(value) if !value.starts_with("--") => index += 2,
+                _ => return Err(format!("{argument} requires a value")),
+            }
+        } else {
+            return Err(format!("unsupported argument {argument:?}"));
+        }
     }
+    Ok(())
+}
+
+/// Validate every supplied occurrence. A malformed duplicate must not hide
+/// behind an earlier valid value and accidentally reach a diagnostic run.
+fn option_values<'a>(args: &'a [String], key: &str) -> Result<Vec<&'a str>, String> {
+    let mut values = Vec::new();
+    for (index, argument) in args.iter().enumerate() {
+        if argument != key {
+            continue;
+        }
+        match args.get(index + 1).map(String::as_str) {
+            Some(value) if !value.starts_with("--") => values.push(value),
+            _ => return Err(format!("{key} requires a value")),
+        }
+    }
+    Ok(values)
+}
+
+fn option_value<'a>(args: &'a [String], key: &str) -> Result<Option<&'a str>, String> {
+    Ok(option_values(args, key)?.into_iter().next())
 }
 
 fn number_value(args: &[String], key: &str) -> Result<Option<i64>, String> {
-    option_value(args, key)?
-        .map(|value| {
+    let values = option_values(args, key)?;
+    let mut parsed = Vec::with_capacity(values.len());
+    for value in values {
+        parsed.push(
             value
-                .parse()
-                .map_err(|_| format!("{key} requires an integer value; got {value:?}"))
-        })
-        .transpose()
+                .parse::<i64>()
+                .map_err(|_| format!("{key} requires an integer value; got {value:?}"))?,
+        );
+    }
+    Ok(parsed.into_iter().next())
 }
 
 fn number(args: &[String], key: &str, default: i64) -> i64 {
@@ -323,6 +396,11 @@ fn replay_stock_actions_without_end(
     let ended = actions
         .last()
         .is_some_and(|(owner, action)| *owner == pid && matches!(action, Action::EndTurn));
+    if !ended && observed.winner.is_none() {
+        return Err(format!(
+            "stock seat {pid} did not finish its trace with EndTurn"
+        ));
+    }
     if ended {
         actions.pop();
     }
@@ -377,6 +455,7 @@ struct GameResult {
     built_spaceports: usize,
     queued_spaceports: usize,
     census: TreatmentCensus,
+    serialized_world: Option<Vec<u8>>,
 }
 
 fn play(
@@ -385,6 +464,7 @@ fn play(
     mode: Mode,
     observe_through: u32,
     weights: &Weights,
+    capture_world: bool,
 ) -> GameResult {
     let mut game = Game::new_with(options);
     let policy_max_turns = game.max_turns;
@@ -500,6 +580,9 @@ fn play(
         built_spaceports,
         queued_spaceports,
         census,
+        serialized_world: capture_world.then(|| {
+            serde_json::to_vec(&game).expect("terminal Game must serialize for the replay null")
+        }),
     }
 }
 
@@ -752,6 +835,10 @@ fn holdout_passes(gate: GateInputs) -> bool {
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
+    if let Err(why) = validate_args(&args) {
+        eprintln!("{why}");
+        std::process::exit(2);
+    }
     let null_replay = has_arg(&args, "--null");
     let deployment_mix = has_arg(&args, "--deployment-mix");
     let explicit_frozen_ai = has_exact_value(&args, "--ai", FROZEN_AI);
@@ -870,8 +957,9 @@ fn main() {
         .join(",");
     println!("Adaptive Science Spaceport parallelism evaluator");
     println!(
-        "controller: {ai_name}; embedded champion generation {}",
-        champion.gen
+        "controller: {ai_name}; embedded champion generation {}, FNV-1a {:#018x}",
+        champion.gen,
+        fnv1a(EMBEDDED_CHAMPION.as_bytes())
     );
     if deployment_mix {
         let player_batch = deployment_counts(maps, |profile| profile.players)
@@ -984,6 +1072,7 @@ fn main() {
                     Mode::Control,
                     observe_through,
                     &champion.weights,
+                    null_replay,
                 ),
                 play(
                     options.clone(),
@@ -991,6 +1080,7 @@ fn main() {
                     Mode::Control,
                     observe_through,
                     &champion.weights,
+                    null_replay,
                 ),
             ];
             let comparison_mode = if null_replay {
@@ -1005,6 +1095,7 @@ fn main() {
                     comparison_mode,
                     observe_through,
                     &champion.weights,
+                    null_replay,
                 ),
                 play(
                     options,
@@ -1012,6 +1103,7 @@ fn main() {
                     comparison_mode,
                     observe_through,
                     &champion.weights,
+                    null_replay,
                 ),
             ];
             MapResult {
@@ -1223,12 +1315,12 @@ fn main() {
             && seed == NULL_SEED
         {
             println!(
-                "frozen null gate: PASS — all {} direct/replay matched focal cells reproduced exactly",
+                "frozen null gate: PASS — all {} direct/replay serialized worlds and results reproduced exactly",
                 control.games
             );
         } else {
             println!(
-                "diagnostic null sanity: PASS — all {} direct/replay matched focal cells reproduced exactly",
+                "diagnostic null sanity: PASS — all {} direct/replay serialized worlds and results reproduced exactly",
                 control.games
             );
         }
@@ -1274,6 +1366,10 @@ fn main() {
 mod tests {
     use super::*;
 
+    fn strings(values: &[&str]) -> Vec<String> {
+        values.iter().map(|value| (*value).to_string()).collect()
+    }
+
     #[test]
     fn supplied_values_fail_closed_and_numbers_do_not_default() {
         assert_eq!(option_value(&[], "--speed").unwrap(), None);
@@ -1288,6 +1384,26 @@ mod tests {
             "--turns"
         )
         .is_err());
+        assert!(number_value(
+            &strings(&["--turns", "250", "--turns", "not-a-number"]),
+            "--turns"
+        )
+        .is_err());
+        assert!(option_value(
+            &strings(&["--speed", "online", "--speed", "--jobs", "1"]),
+            "--speed"
+        )
+        .is_err());
+        assert!(validate_args(&strings(&["--unknown"])).is_err());
+        assert!(validate_args(&strings(&["positional"])).is_err());
+        assert!(validate_args(&strings(&["--maps"])).is_err());
+        assert!(validate_args(&strings(&[
+            "--maps",
+            "1",
+            "--deployment-mix",
+            "--randomize-civs"
+        ]))
+        .is_ok());
     }
 
     #[test]
@@ -1539,20 +1655,28 @@ mod tests {
     }
 
     #[test]
-    fn replay_defers_the_stock_end_turn() {
+    fn replay_defers_end_turn_and_reproduces_the_direct_world() {
         let mut game = Game::new(2, 20, 14, 79_201, 20, 0);
         game.set_fog_memory(false);
-        let mut ais = AdvancedAi::fleet(&game);
-        replay_stock_actions_without_end(&mut game, &mut ais[0], 0).unwrap();
+        let mut direct = game.clone();
+        let mut direct_ai = AdvancedAi::new();
+        direct_ai.take_turn(&mut direct, 0);
+
+        let mut replay_ai = AdvancedAi::new();
+        replay_stock_actions_without_end(&mut game, &mut replay_ai, 0).unwrap();
         assert_eq!(game.current, 0);
         game.apply(0, &Action::EndTurn).unwrap();
-        assert_eq!(game.current, 1);
+        assert_eq!(
+            serde_json::to_vec(&game).unwrap(),
+            serde_json::to_vec(&direct).unwrap()
+        );
+        assert_eq!(replay_ai.strategy_label(), direct_ai.strategy_label());
     }
 
     #[test]
     fn external_observation_preserves_the_policy_horizon() {
         let options = GameOptions::new(2, 20, 14, 79_202, 1, 0);
-        let result = play(options, 0, Mode::Control, 3, &Weights::default());
+        let result = play(options, 0, Mode::Control, 3, &Weights::default(), false);
         assert_eq!(result.policy_max_turns, 1);
         assert_eq!(result.reported_turn, 3);
     }
@@ -1562,7 +1686,8 @@ mod tests {
         let champion = frozen_champion();
         let game = Game::new(2, 20, 14, 79_203, 1, 0);
         let ais = AdvancedAi::fleet_weighted(&game, &champion.weights);
-        assert!(champion.gen > 0);
+        assert_eq!(champion.gen, FROZEN_CHAMPION_GENERATION);
+        assert_eq!(fnv1a(EMBEDDED_CHAMPION.as_bytes()), FROZEN_CHAMPION_FNV1A);
         assert_eq!(ais[0].weights(), &champion.weights);
         assert_ne!(
             ais[0].weights(),

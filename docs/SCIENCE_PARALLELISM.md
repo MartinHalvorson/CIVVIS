@@ -185,6 +185,39 @@ already-frozen command contract. It changes no controller, treatment, world
 profile, seat, seed, sample size, endpoint, threshold, stop rule, observation
 horizon, or resource cap.
 
+## Prospective replay-integrity amendment
+
+This sixth amendment was frozen before the formal null completed or any
+treatment seed was run or read. A second static audit found that the first
+fail-closed implementation validated only the first occurrence of an option,
+so a later malformed duplicate could remain unread, and it ignored unsupported
+tokens even though every registered command was intended to be exact. The
+formal label itself rejected duplicate frozen flags, but diagnostic execution
+did not yet satisfy the stronger promise that every supplied option is valid.
+
+The same audit found that the replay null compared every recorded terminal
+endpoint but not the complete terminal `Game`. A missing unrecorded mutation
+could therefore survive the null despite changing a later controller decision.
+The replay helper also accepted a nonwinning stock trace without proving that
+its final logged action was the deferred `EndTurn`. Finally, the binary named
+the embedded champion generation without binding the exact embedded bytes.
+
+Before the formal null, the evaluator must therefore:
+
+- reject every unsupported token and validate every occurrence of every value
+  option before constructing a game;
+- require a nonwinning stock trace to end in the focal player's `EndTurn`;
+- compare the complete serialized terminal `Game` as well as every recorded
+  endpoint in all eight direct/replay focal cells; and
+- assert generation 14 and FNV-1a fingerprint
+  `0x40b1fbb2a5b88bc6` for the compiled `data/evolved/best.json` artifact.
+
+These changes only make invocation, provenance, and the exact replay sanity
+check stricter. They do not change the controller weights, treatment, sampled
+worlds, seats, seeds, sample sizes, endpoints, thresholds, or stop rules. The
+stale-binary startup recorded below completed no map and supplied no result;
+both treatment ranges remain untouched.
+
 ## Observation and hypothesis
 
 The eight most recent production final saves available on 2026-07-29 (through
