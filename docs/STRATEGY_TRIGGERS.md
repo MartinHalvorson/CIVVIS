@@ -109,11 +109,18 @@ exports that retained reason. Retargeting, reweighting, or returning to the
 adaptive planner clears both cached values. The evaluator reads only the
 report field; it contains no second implementation of the cascade.
 
+The completed aggregation audit is committed at
+`dcb9c34c75855243ab7af730bb65348cd72e744f`. It records seat-game coverage for
+ordered unanchored reason changes as well as unordered families, and emits the
+formal nomination gate only for the first, production-champion entrant. The
+stock entrant's trace remains visible as a descriptive control but cannot
+nominate an intervention.
+
 The merge through current `origin/main` did not add, remove, or reorder any of
 the fourteen frozen assessment arms above. The exact plan/report invariant
 test passed, as did all 30 `ai_eval` tests covering trace preservation,
-aggregation, deterministic ranking, and the automatic gate. No primary census
-command has started and no trigger counts have been read.
+aggregation, deterministic ranking, seat coverage, and the automatic gate. No
+primary census command has started and no trigger counts have been read.
 
 Immediately before the primary run, this branch will merge the then-current
 main, pass the complete CI-profile suite, build `ai_eval` with
