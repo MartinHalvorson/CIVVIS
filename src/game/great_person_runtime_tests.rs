@@ -1,3 +1,4 @@
+use crate::name::Name;
 use super::*;
 
 fn scientist_game(seed: u64) -> (Game, u32, Pos) {
@@ -61,7 +62,7 @@ fn named_scientists_grant_exact_buildings_science_and_era_boosts() {
     assert_eq!(recruit_current_scientist(&mut game), "hypatia");
     assert!(game.cities[&city]
         .buildings
-        .contains(&"library".to_string()));
+        .contains(&crate::name!("library")));
     assert_eq!(game.players[0].boosted_techs, initial_boosts);
     assert!(
         (game.city_yields(city).science - initial_science
@@ -74,7 +75,7 @@ fn named_scientists_grant_exact_buildings_science_and_era_boosts() {
     assert_eq!(recruit_current_scientist(&mut game), "isaac_newton");
     assert!(game.cities[&city]
         .buildings
-        .contains(&"university".to_string()));
+        .contains(&crate::name!("university")));
     assert_eq!(game.players[0].boosted_techs, initial_boosts);
     assert!(
         (game.city_yields(city).science - before_newton
@@ -87,18 +88,18 @@ fn named_scientists_grant_exact_buildings_science_and_era_boosts() {
         .get_mut(&city)
         .unwrap()
         .buildings
-        .push("research_lab".to_string());
+        .push(crate::name!("research_lab"));
     game.cities
         .get_mut(&city)
         .unwrap()
         .building_eras
-        .insert("research_lab".to_string(), game.world_era);
+        .insert(crate::name!("research_lab"), game.world_era);
     let before_einstein = game.city_yields(city).science;
     let boosts_before_einstein = game.players[0].boosted_techs.clone();
 
     assert_eq!(recruit_current_scientist(&mut game), "albert_einstein");
     assert!((game.city_yields(city).science - before_einstein - 4.0).abs() < 1e-9);
-    let new_boosts: Vec<&String> = game.players[0]
+    let new_boosts: Vec<&Name> = game.players[0]
         .boosted_techs
         .difference(&boosts_before_einstein)
         .collect();
@@ -110,13 +111,13 @@ fn named_scientists_grant_exact_buildings_science_and_era_boosts() {
         .get_mut(&city)
         .unwrap()
         .pillaged_buildings
-        .insert("research_lab".to_string());
+        .insert(crate::name!("research_lab"));
     assert!((active_science - game.city_yields(city).science - 7.0).abs() < 1e-9);
     game.cities
         .get_mut(&city)
         .unwrap()
         .pillaged_buildings
-        .remove("research_lab");
+        .remove(&Name::new("research_lab"));
 
     let restored: Game = serde_json::from_str(&serde_json::to_string(&game).unwrap()).unwrap();
     assert_eq!(restored.city_yields(city), game.city_yields(city));
@@ -136,7 +137,7 @@ fn great_scientist_yield_bonuses_apply_to_unique_building_families() {
         .get_mut(&city)
         .unwrap()
         .buildings
-        .extend(["library".to_string(), "madrasa".to_string()]);
+        .extend([crate::name!("library"), crate::name!("madrasa")]);
     game.players[0]
         .counters
         .insert("great_person:library_science".to_string(), 1);
@@ -172,7 +173,7 @@ fn named_engineers_apply_exact_charges_wonder_gates_and_workshop_culture() {
         .get_mut(&city)
         .unwrap()
         .buildings
-        .push("workshop".to_string());
+        .push(crate::name!("workshop"));
     let wonder_site = game.cities[&city]
         .owned_tiles
         .iter()
@@ -197,7 +198,7 @@ fn named_engineers_apply_exact_charges_wonder_gates_and_workshop_culture() {
     let boosts_before = game.players[0].boosted_techs.clone();
     assert_eq!(recruit_current_engineer(&mut game), "leonardo_da_vinci");
     assert!((game.city_yields(city).culture - culture_before - 3.0).abs() < 1e-9);
-    let new_boosts: Vec<&String> = game.players[0]
+    let new_boosts: Vec<&Name> = game.players[0]
         .boosted_techs
         .difference(&boosts_before)
         .collect();
@@ -218,7 +219,7 @@ fn named_engineers_apply_exact_charges_wonder_gates_and_workshop_culture() {
         .get_mut(&city)
         .unwrap()
         .pillaged_buildings
-        .insert("workshop".to_string());
+        .insert(crate::name!("workshop"));
     assert!(active_workshop_culture - game.city_yields(city).culture >= 3.0 - 1e-9);
 }
 
@@ -301,7 +302,7 @@ fn immediate_great_people_require_stock_activation_sites_and_complete_work_capac
         .get_mut(&city)
         .unwrap()
         .buildings
-        .push("amphitheater".to_string());
+        .push(crate::name!("amphitheater"));
     assert!(culture.can_house_great_works(0, "writing", 2));
     assert!(culture.can_activate_current_great_person(0, "writer"));
     assert!(culture.legal_actions(0).contains(&writer));
@@ -345,7 +346,7 @@ fn named_merchants_annex_tiles_and_apply_exact_trade_and_oil_effects() {
     let merchant_city = cities[0];
     let foreign_city = cities[1];
     install_test_district(&mut game, merchant_city, "commercial_hub");
-    game.players[0].civics.insert("foreign_trade".to_string());
+    game.players[0].civics.insert(crate::name!("foreign_trade"));
 
     let gold_before_crassus = game.players[0].gold;
     let envoys_before_crassus = game.players[0].envoys_free;
@@ -423,8 +424,8 @@ fn named_merchants_annex_tiles_and_apply_exact_trade_and_oil_effects() {
         (resource_tiles[1], "horses", "pasture"),
     ] {
         let tile = game.map.tiles.get_mut(&position).unwrap();
-        tile.resource = Some(resource.to_string());
-        tile.improvement = Some(improvement.to_string());
+        tile.resource = Some(Name::new(resource));
+        tile.improvement = Some(Name::new(improvement));
         tile.pillaged = false;
     }
     game.routes.push(TradeRoute {
@@ -433,7 +434,7 @@ fn named_merchants_annex_tiles_and_apply_exact_trade_and_oil_effects() {
         owner: 0,
         ends: game.turn + 30,
     });
-    game.players[0].techs.insert("refining".to_string());
+    game.players[0].techs.insert(crate::name!("refining"));
     let rockefeller_route_gold = game.city_yields(merchant_city).gold;
     let capacity_before_rockefeller = game.trade_capacity(0);
     let gold_before_rockefeller = game.players[0].gold;
@@ -455,7 +456,7 @@ fn named_merchants_annex_tiles_and_apply_exact_trade_and_oil_effects() {
     game.map.tiles.get_mut(&resource_tiles[0]).unwrap().pillaged = false;
     assert_eq!(game.strategic_resource_rate(0, "oil"), 3.0);
     game.process_strategic_resources(0);
-    assert_eq!(game.strategic_stockpile(0, "oil"), 3.0);
+    assert_eq!(game.strategic_stockpile(0, crate::name!("oil")), 3.0);
 
     let restored: Game = serde_json::from_str(&serde_json::to_string(&game).unwrap()).unwrap();
     assert_eq!(
@@ -512,10 +513,10 @@ fn named_admirals_apply_exact_unit_trade_building_and_flanking_effects() {
     let admiral_city = cities[0];
     let foreign_city = cities[1];
     let harbor = install_test_district(&mut game, admiral_city, "harbor");
-    game.map.tiles.get_mut(&harbor).unwrap().terrain = "coast".to_string();
+    game.map.tiles.get_mut(&harbor).unwrap().terrain = crate::name!("coast");
     game.players[0].civics.extend([
-        "foreign_trade".to_string(),
-        "military_tradition".to_string(),
+        crate::name!("foreign_trade"),
+        crate::name!("military_tradition"),
     ]);
 
     let formation_ship = game.spawn_unit("galley", 0, harbor);
@@ -598,7 +599,7 @@ fn named_admirals_apply_exact_unit_trade_building_and_flanking_effects() {
     let ring = game.nbrs(target);
     for position in std::iter::once(target).chain(ring.iter().copied()) {
         let tile = game.map.tiles.get_mut(&position).unwrap();
-        tile.terrain = "coast".to_string();
+        tile.terrain = crate::name!("coast");
         tile.feature = None;
     }
     let attacker = game.spawn_unit("galley", 0, ring[0]);
@@ -611,10 +612,10 @@ fn named_admirals_apply_exact_unit_trade_building_and_flanking_effects() {
     );
     assert!(game.cities[&admiral_city]
         .buildings
-        .contains(&"lighthouse".to_string()));
+        .contains(&crate::name!("lighthouse")));
     assert!(game.cities[&admiral_city]
         .buildings
-        .contains(&"shipyard".to_string()));
+        .contains(&crate::name!("shipyard")));
     assert_eq!(game.flanking_bonus(attacker, target), 3.0);
 
     let restored: Game = serde_json::from_str(&serde_json::to_string(&game).unwrap()).unwrap();

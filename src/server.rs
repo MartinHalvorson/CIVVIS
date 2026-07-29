@@ -8651,22 +8651,22 @@ mod tests {
             .get_mut(&first_city)
             .unwrap()
             .districts
-            .insert("campus".to_string(), district_pos);
+            .insert(crate::name!("campus"), district_pos);
         game.cities
             .get_mut(&first_city)
             .unwrap()
             .wonders
-            .insert("pyramids".to_string(), district_pos);
+            .insert(crate::name!("pyramids"), district_pos);
         game.cities
             .get_mut(&first_city)
             .unwrap()
             .buildings
-            .push("granary".to_string());
+            .push(crate::name!("granary"));
         game.cities.get_mut(&first_city).unwrap().pop = 4;
         game.players[0].religion = Some("Test Faith".to_string());
         game.players[0].government = Some("classical_republic".to_string());
-        game.players[0].techs.insert("horseback_riding".to_string());
-        game.players[0].civics.insert("drama_poetry".to_string());
+        game.players[0].techs.insert(crate::name!("horseback_riding"));
+        game.players[0].civics.insert(crate::name!("drama_poetry"));
         let city_state = game
             .players
             .iter()
@@ -9135,7 +9135,7 @@ mod tests {
             .iter()
             .filter_map(|entry| entry["name"].as_str())
             .collect();
-        assert!(names.contains(&crate::name!("advanced")), "the default agent is offerable");
+        assert!(names.contains(&"advanced"), "the default agent is offerable");
         assert!(
             names.len() >= 4,
             "a roster with nothing in it is not a choice: {names:?}"
@@ -9149,7 +9149,7 @@ mod tests {
 
         // Nobody is offered a person's seat: the roster on offer is agents.
         assert!(
-            !names.contains(&crate::name!("player")),
+            !names.contains(&"player"),
             "a seat cannot be handed to somebody who is not at a keyboard: {names:?}"
         );
 

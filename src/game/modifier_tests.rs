@@ -38,7 +38,7 @@ fn add_product_host(game: &mut Game, city: u32) {
         .get_mut(&city)
         .unwrap()
         .buildings
-        .push("stock_exchange".to_string());
+        .push(crate::name!("stock_exchange"));
     assert_eq!(game.product_capacity(&game.cities[&city]), 3);
 }
 
@@ -51,7 +51,7 @@ fn arbitrary_building_yields_and_abilities_flow_through_runtime_attachments() {
         .get_mut(&city)
         .unwrap()
         .buildings
-        .extend(["library".to_string(), "madrasa".to_string()]);
+        .extend([crate::name!("library"), crate::name!("madrasa")]);
     let baseline = game.city_yields(city).science;
 
     assert!(!game.has_ability(0, "public_engineering"));
@@ -174,8 +174,8 @@ fn products_and_corporations_apply_all_economic_effect_families() {
         .unwrap();
     {
         let tile = game.map.tiles.get_mut(&position).unwrap();
-        tile.resource = Some("silk".to_string());
-        tile.improvement = Some("industry".to_string());
+        tile.resource = Some(crate::name!("silk"));
+        tile.improvement = Some(crate::name!("industry"));
         tile.pillaged = false;
     }
     game.cities.get_mut(&city).unwrap().products.clear();
@@ -185,7 +185,7 @@ fn products_and_corporations_apply_all_economic_effect_families() {
             .culture,
         20.0
     );
-    game.map.tiles.get_mut(&position).unwrap().improvement = Some("corporation".to_string());
+    game.map.tiles.get_mut(&position).unwrap().improvement = Some(crate::name!("corporation"));
     assert_eq!(
         game.city_resource_industry_effects(&game.cities[&city])
             .city_yield_pct

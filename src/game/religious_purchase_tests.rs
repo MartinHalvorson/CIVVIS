@@ -27,12 +27,12 @@ fn enable_faith_purchase(game: &mut Game, city: u32) {
         .find(|p| *p != pos && game.map.get(*p).is_some_and(|t| t.district.is_none()))
         .expect("open tile for holy site");
     let tile = game.map.tiles.get_mut(&site).unwrap();
-    tile.district = Some("holy_site".to_string());
+    tile.district = Some(crate::name!("holy_site"));
     tile.owner_city = Some(city);
     let c = game.cities.get_mut(&city).unwrap();
-    c.districts.insert("holy_site".to_string(), site);
-    c.buildings.push("shrine".to_string());
-    game.players[0].techs.insert("astrology".to_string());
+    c.districts.insert(crate::name!("holy_site"), site);
+    c.buildings.push(crate::name!("shrine"));
+    game.players[0].techs.insert(crate::name!("astrology"));
     game.players[0].faith = 1_000.0;
 }
 

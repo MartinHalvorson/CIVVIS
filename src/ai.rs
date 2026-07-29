@@ -6749,7 +6749,7 @@ mod tests {
             .get_mut(&enemy)
             .unwrap()
             .buildings
-            .push("walls".to_string());
+            .push(crate::name!("walls"));
         g.apply(0, &Action::DeclareWar { player: 1 }).unwrap();
         (g, home, enemy)
     }
@@ -6771,7 +6771,7 @@ mod tests {
             .expect("map has a tile");
         assert!(g.wdist(source, target) > 6);
         for tile in g.map.tiles.values_mut() {
-            tile.terrain = "coast".to_string();
+            tile.terrain = crate::name!("coast");
             tile.feature = None;
             tile.hills = false;
             tile.resource = None;
@@ -6781,8 +6781,8 @@ mod tests {
             tile.owner_city = None;
             tile.cliff_edges = [false; 6];
         }
-        g.map.tiles.get_mut(&source).unwrap().terrain = "plains".to_string();
-        g.map.tiles.get_mut(&target).unwrap().terrain = "grassland".to_string();
+        g.map.tiles.get_mut(&source).unwrap().terrain = crate::name!("plains");
+        g.map.tiles.get_mut(&target).unwrap().terrain = crate::name!("grassland");
         g.apply(
             0,
             &Action::FoundCity {
@@ -6798,7 +6798,7 @@ mod tests {
         for prerequisite in prerequisites {
             grant_tech_with_prerequisites(g, pid, &prerequisite);
         }
-        g.players[pid].techs.insert(tech.to_string());
+        g.players[pid].techs.insert(Name::new(tech));
     }
 
     /// The production picker named base districts, so for a civilization with
@@ -6889,11 +6889,11 @@ mod tests {
         // Improve everything the city owns; nothing is left for a Builder.
         for pos in g.cities[&cid].owned_tiles.clone() {
             let tile = g.map.tiles.get_mut(&pos).unwrap();
-            tile.terrain = "grassland".to_string();
+            tile.terrain = crate::name!("grassland");
             tile.feature = None;
             tile.resource = None;
             tile.hills = false;
-            tile.improvement = Some("farm".to_string());
+            tile.improvement = Some(crate::name!("farm"));
             tile.pillaged = false;
         }
         assert!(!BasicAi::has_builder_work(&g, 0));
@@ -6913,21 +6913,21 @@ mod tests {
         let pos = *g.map.tiles.keys().next().unwrap();
         {
             let tile = g.map.tiles.get_mut(&pos).unwrap();
-            tile.terrain = "grassland".to_string();
+            tile.terrain = crate::name!("grassland");
             tile.feature = None;
             tile.hills = false;
         }
 
         for (resource, expected) in [("iron", "mine"), ("stone", "quarry"), ("wine", "plantation")] {
-            g.map.tiles.get_mut(&pos).unwrap().resource = Some(resource.to_string());
+            g.map.tiles.get_mut(&pos).unwrap().resource = Some(Name::new(resource));
             let options = vec![
-                "farm".to_string(),
-                expected.to_string(),
-                "camp".to_string(),
+                crate::name!("farm"),
+                Name::new(expected),
+                crate::name!("camp"),
             ];
             assert_eq!(
-                BasicAi::best_improvement(&g, pos, &options).as_deref(),
-                Some(expected),
+                BasicAi::best_improvement(&g, pos, &options).map(|name| name.to_string()),
+                Some(expected.to_string()),
                 "{resource} should be worked, not farmed over"
             );
         }
@@ -6935,10 +6935,10 @@ mod tests {
         // With nothing on the tile the choice falls back to yield, and a
         // Lumber Mill's two Production beats a Farm's one Food.
         g.map.tiles.get_mut(&pos).unwrap().resource = None;
-        let options = vec!["farm".to_string(), "lumber_mill".to_string()];
+        let options = vec![crate::name!("farm"), crate::name!("lumber_mill")];
         assert_eq!(
-            BasicAi::best_improvement(&g, pos, &options).as_deref(),
-            Some("lumber_mill")
+            BasicAi::best_improvement(&g, pos, &options),
+            Some(crate::name!("lumber_mill"))
         );
         assert_eq!(BasicAi::best_improvement(&g, pos, &[]), None);
     }
@@ -6953,7 +6953,7 @@ mod tests {
         grant_tech_with_prerequisites(&mut g, 0, "iron_working");
         g.players[0]
             .strategic_resources
-            .insert("iron".to_string(), 400.0);
+            .insert(crate::name!("iron"), 400.0);
         g.players[0].gold = 900.0;
         let veterans: Vec<u32> = (0..3)
             .map(|_| g.spawn_test_unit("warrior", 0, source))
@@ -6999,10 +6999,10 @@ mod tests {
         grant_tech_with_prerequisites(&mut g, 0, "iron_working");
         g.players[0]
             .strategic_resources
-            .insert("iron".to_string(), 400.0);
+            .insert(crate::name!("iron"), 400.0);
         g.players[0].gold = 900.0;
         for tile in g.map.tiles.values_mut() {
-            tile.terrain = "plains".to_string();
+            tile.terrain = crate::name!("plains");
         }
         let stranded = g.spawn_test_unit("warrior", 0, target);
         assert!(g.map.tiles[&target].owner_city.is_none());
@@ -7036,7 +7036,7 @@ mod tests {
         grant_tech_with_prerequisites(&mut g, 0, "shipbuilding");
         g.players[0]
             .strategic_resources
-            .insert("iron".to_string(), 400.0);
+            .insert(crate::name!("iron"), 400.0);
         g.players[0].gold = 900.0;
         let at_sea = g
             .map
@@ -7100,7 +7100,7 @@ mod tests {
             .copied()
             .find(|position| game.units_at(*position).is_empty())
             .unwrap();
-        game.players[0].techs.insert("archery".to_string());
+        game.players[0].techs.insert(crate::name!("archery"));
         game.players[0].gold = 180.0;
         let slinger = game.spawn_test_unit("slinger", 0, home);
 
@@ -7126,12 +7126,12 @@ mod tests {
             .copied()
             .find(|position| *position != game.cities[&city].pos)
             .unwrap();
-        game.map.tiles.get_mut(&campus).unwrap().district = Some("campus".to_string());
+        game.map.tiles.get_mut(&campus).unwrap().district = Some(crate::name!("campus"));
         game.cities
             .get_mut(&city)
             .unwrap()
             .districts
-            .insert("campus".to_string(), campus);
+            .insert(crate::name!("campus"), campus);
         let cost = game.gp_cost(0, "scientist");
         game.players[0].gpp.insert("scientist".to_string(), cost);
         assert!(game.legal_actions(0).iter().any(
@@ -7194,7 +7194,7 @@ mod tests {
             .get_mut(&apostle)
             .unwrap()
             .promotions
-            .insert("heathen_conversion".to_string());
+            .insert(crate::name!("heathen_conversion"));
         let barbarian = game.barb_pid.unwrap();
         let converted = game.spawn_test_unit("warrior", barbarian, adjacent);
 
@@ -7228,11 +7228,11 @@ mod tests {
             .get_mut(&cid)
             .unwrap()
             .buildings
-            .extend(["market".to_string(), "walls".to_string()]);
+            .extend([crate::name!("market"), crate::name!("walls")]);
         grant_tech_with_prerequisites(&mut g, 0, "education");
         g.players[0]
             .techs
-            .extend(["sailing".to_string(), "currency".to_string()]);
+            .extend([crate::name!("sailing"), crate::name!("currency")]);
         g.players[0].research = None;
         let mut ai = BasicAi::new();
         ai.minor = true;
@@ -7242,7 +7242,7 @@ mod tests {
         ai.minor_research(&mut g, 0);
         assert_eq!(g.players[0].research.as_deref(), Some("stirrups"));
 
-        g.players[0].techs.insert("stirrups".to_string());
+        g.players[0].techs.insert(crate::name!("stirrups"));
         g.players[0].research = None;
         ai.minor_research(&mut g, 0);
         assert_eq!(g.players[0].research.as_deref(), Some("banking"));
@@ -7288,7 +7288,7 @@ mod tests {
     #[test]
     fn coastal_cities_build_a_melee_ship_for_exploration_and_capture() {
         let (mut g, _, _) = island_colony_game(1);
-        g.players[0].techs.insert("sailing".to_string());
+        g.players[0].techs.insert(crate::name!("sailing"));
         let cid = g.player_city_ids(0)[0];
         let ai = BasicAi::new();
         let item = ai
@@ -7302,7 +7302,7 @@ mod tests {
         let (mut g, source, _) = island_colony_game(2);
         g.players[0]
             .techs
-            .extend(["sailing".to_string(), "shipbuilding".to_string()]);
+            .extend([crate::name!("sailing"), crate::name!("shipbuilding")]);
         g.at_war.insert((0, 1));
         let water = g
             .nbrs(source)
@@ -7378,7 +7378,7 @@ mod tests {
             .unwrap();
         g.apply(0, &Action::FoundCity { unit: settler }).unwrap();
         g.players[0].is_minor = true;
-        g.players[0].techs.insert("writing".to_string());
+        g.players[0].techs.insert(crate::name!("writing"));
         let city = g.player_city_ids(0)[0];
         let center = g.cities[&city].pos;
         let campus = g.cities[&city]
@@ -7389,17 +7389,17 @@ mod tests {
             .unwrap();
         {
             let tile = g.map.tiles.get_mut(&campus).unwrap();
-            tile.district = Some("campus".to_string());
+            tile.district = Some(crate::name!("campus"));
             tile.pillaged = true;
         }
         let developed = g.cities.get_mut(&city).unwrap();
         developed
             .districts
-            .insert("campus".to_string(), campus);
-        developed.buildings.push("library".to_string());
+            .insert(crate::name!("campus"), campus);
+        developed.buildings.push(crate::name!("library"));
         developed
             .pillaged_buildings
-            .insert("library".to_string());
+            .insert(crate::name!("library"));
 
         let mut ai = BasicAi::new();
         ai.minor = true;
@@ -7430,12 +7430,12 @@ mod tests {
         ai.minor_research(&mut g, 0);
         assert_eq!(g.players[0].research.as_deref(), Some("mining"));
         g.players[0].research = None;
-        g.players[0].techs.insert("mining".to_string());
+        g.players[0].techs.insert(crate::name!("mining"));
         ai.minor_research(&mut g, 0);
         assert_eq!(g.players[0].research.as_deref(), Some("masonry"));
 
         g.players[0].research = None;
-        g.players[0].techs.insert("masonry".to_string());
+        g.players[0].techs.insert(crate::name!("masonry"));
         let item = ai.pick_item(&g, 0, city, 1, 0, 10, 0, 0, 3, 2, 1).unwrap();
         assert_eq!(
             item,
@@ -7478,10 +7478,10 @@ mod tests {
                 let state = g.cities.get_mut(&city).unwrap();
                 state.pop = 10;
                 state.buildings.extend([
-                    "walls".to_string(),
-                    "medieval_walls".to_string(),
-                    "renaissance_walls".to_string(),
-                    "monument".to_string(),
+                    crate::name!("walls"),
+                    crate::name!("medieval_walls"),
+                    crate::name!("renaissance_walls"),
+                    crate::name!("monument"),
                 ]);
                 state.wall_hp = 300;
             }
@@ -7517,24 +7517,24 @@ mod tests {
         let techs = g.rules.techs.keys().cloned().collect();
         let civics = g.rules.civics.keys().cloned().collect();
         let buildings = g.rules.buildings.keys().cloned().collect();
-        let districts: Vec<String> = g.rules.districts.keys().cloned().collect();
-        let wonders: Vec<String> = g.rules.wonders.keys().cloned().collect();
+        let districts: Vec<Name> = g.rules.districts.keys().cloned().collect();
+        let wonders: Vec<Name> = g.rules.wonders.keys().cloned().collect();
         g.players[0].is_minor = true;
         g.players[0].techs = techs;
         g.players[0].civics = civics;
         {
             let tile = g.map.tiles.get_mut(&project_pos).unwrap();
-            tile.district = Some("campus".to_string());
+            tile.district = Some(crate::name!("campus"));
             tile.pillaged = false;
         }
         {
             let developed = g.cities.get_mut(&city).unwrap();
             developed.buildings = buildings;
             for district in districts {
-                developed.districts.insert(district, project_pos);
+                developed.districts.insert(Name::new(&district), project_pos);
             }
             for wonder in wonders {
-                developed.wonders.insert(wonder, project_pos);
+                developed.wonders.insert(Name::new(&wonder), project_pos);
             }
         }
         let mut ai = BasicAi::new();
@@ -7562,7 +7562,7 @@ mod tests {
             .buildings
             .retain(|building| building != "monument");
         for position in g.nbrs(g.cities[&city].pos) {
-            g.map.tiles.get_mut(&position).unwrap().terrain = "plains".to_string();
+            g.map.tiles.get_mut(&position).unwrap().terrain = crate::name!("plains");
         }
         let campus = g.cities[&city]
             .owned_tiles
@@ -7570,12 +7570,12 @@ mod tests {
             .copied()
             .find(|position| *position != g.cities[&city].pos)
             .unwrap();
-        g.map.tiles.get_mut(&campus).unwrap().district = Some("campus".to_string());
+        g.map.tiles.get_mut(&campus).unwrap().district = Some(crate::name!("campus"));
         g.cities
             .get_mut(&city)
             .unwrap()
             .districts
-            .insert("campus".to_string(), campus);
+            .insert(crate::name!("campus"), campus);
         let grants = Item::Project {
             project: crate::name!("campus_research_grants"),
         };
@@ -7600,8 +7600,8 @@ mod tests {
             .unwrap();
         game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
         let city = game.player_city_ids(0)[0];
-        let techs: Vec<String> = game.rules.techs.keys().cloned().collect();
-        let civics: Vec<String> = game.rules.civics.keys().cloned().collect();
+        let techs: Vec<Name> = game.rules.techs.keys().cloned().collect();
+        let civics: Vec<Name> = game.rules.civics.keys().cloned().collect();
         game.players[0].techs.extend(techs);
         game.players[0].civics.extend(civics);
         for position in game.cities[&city].owned_tiles.clone() {
@@ -7609,7 +7609,7 @@ mod tests {
                 continue;
             }
             let tile = game.map.tiles.get_mut(&position).unwrap();
-            tile.terrain = "desert".to_string();
+            tile.terrain = crate::name!("desert");
             tile.feature = None;
             tile.hills = false;
             tile.resource = None;
@@ -7653,13 +7653,13 @@ mod tests {
             .find(|position| (4..=10).contains(&game.wdist(capital_pos, *position)))
             .unwrap();
         let second = game.found_city_for(0, second_pos, None);
-        game.players[0].techs.insert("astrology".to_string());
+        game.players[0].techs.insert(crate::name!("astrology"));
         for city in [capital, second] {
             game.cities
                 .get_mut(&city)
                 .unwrap()
                 .buildings
-                .push("monument".to_string());
+                .push(crate::name!("monument"));
         }
 
         let ai = BasicAi::new();
@@ -7712,12 +7712,12 @@ mod tests {
         game.apply(0, &Action::FoundCity { unit: settler })
             .unwrap();
         let city = game.player_city_ids(0)[0];
-        game.players[0].techs.insert("astrology".to_string());
+        game.players[0].techs.insert(crate::name!("astrology"));
         game.cities
             .get_mut(&city)
             .unwrap()
             .buildings
-            .push("monument".to_string());
+            .push(crate::name!("monument"));
         for player in 1..=game.max_religions() {
             game.players[player].religion = Some(format!("Claimed Faith {player}"));
         }
@@ -7762,12 +7762,12 @@ mod tests {
             .copied()
             .find(|position| *position != center)
             .unwrap();
-        game.map.tiles.get_mut(&holy_site).unwrap().district = Some("holy_site".to_string());
+        game.map.tiles.get_mut(&holy_site).unwrap().district = Some(crate::name!("holy_site"));
         game.cities
             .get_mut(&holy_city)
             .unwrap()
             .districts
-            .insert("holy_site".to_string(), holy_site);
+            .insert(crate::name!("holy_site"), holy_site);
         game.players[2].prophet_pending = true;
         game.current = 2;
 
@@ -7786,7 +7786,7 @@ mod tests {
         let (mut g, source, target) = island_colony_game(1);
         g.players[0]
             .techs
-            .extend(["sailing".to_string(), "shipbuilding".to_string()]);
+            .extend([crate::name!("sailing"), crate::name!("shipbuilding")]);
         let settler = g.spawn_test_unit("settler", 0, source);
         let mut ai = BasicAi::new();
 
@@ -7827,12 +7827,12 @@ mod tests {
             tile.resource = None;
             tile.owner_city = None;
             if position != source && position != target {
-                tile.terrain = "mountain".to_string();
-                tile.improvement = Some("mountain_tunnel".to_string());
+                tile.terrain = crate::name!("mountain");
+                tile.improvement = Some(crate::name!("mountain_tunnel"));
             }
         }
-        game.map.tiles.get_mut(&source).unwrap().terrain = "plains".to_string();
-        game.map.tiles.get_mut(&target).unwrap().terrain = "grassland".to_string();
+        game.map.tiles.get_mut(&source).unwrap().terrain = crate::name!("plains");
+        game.map.tiles.get_mut(&target).unwrap().terrain = crate::name!("grassland");
         let settler = game.spawn_test_unit("settler", 0, source);
         let mut ai = BasicAi::new();
 
@@ -7852,7 +7852,7 @@ mod tests {
             .unwrap();
         let source = game.units[&founding_settler].pos;
         for tile in game.map.tiles.values_mut() {
-            tile.terrain = "coast".to_string();
+            tile.terrain = crate::name!("coast");
             tile.feature = None;
             tile.hills = false;
             tile.resource = None;
@@ -7862,7 +7862,7 @@ mod tests {
             tile.owner_city = None;
             tile.cliff_edges = [false; 6];
         }
-        game.map.tiles.get_mut(&source).unwrap().terrain = "desert".to_string();
+        game.map.tiles.get_mut(&source).unwrap().terrain = crate::name!("desert");
         game.apply(
             0,
             &Action::FoundCity {
@@ -7889,7 +7889,7 @@ mod tests {
             corridor.push(cursor);
         }
         for position in &corridor {
-            game.map.tiles.get_mut(position).unwrap().terrain = "desert".to_string();
+            game.map.tiles.get_mut(position).unwrap().terrain = crate::name!("desert");
         }
 
         let island_center = game
@@ -7912,8 +7912,8 @@ mod tests {
         assert!(island.len() > 40);
         for position in island {
             let tile = game.map.tiles.get_mut(&position).unwrap();
-            tile.terrain = "grassland".to_string();
-            tile.feature = Some("forest".to_string());
+            tile.terrain = crate::name!("grassland");
+            tile.feature = Some(crate::name!("forest"));
             tile.hills = true;
         }
 
@@ -7954,7 +7954,7 @@ mod tests {
             game.remove_unit(unit);
         }
         for tile in game.map.tiles.values_mut() {
-            tile.terrain = "plains".to_string();
+            tile.terrain = crate::name!("plains");
             tile.feature = None;
             tile.hills = false;
             tile.resource = None;
@@ -7984,7 +7984,7 @@ mod tests {
             .expect("target has a geometrically closer neighbor");
         for position in game.nbrs(trap) {
             if position != start {
-                game.map.tiles.get_mut(&position).unwrap().terrain = "mountain".to_string();
+                game.map.tiles.get_mut(&position).unwrap().terrain = crate::name!("mountain");
             }
         }
         let settler = game.spawn_test_unit("settler", 0, start);
@@ -8011,7 +8011,7 @@ mod tests {
             game.remove_unit(unit);
         }
         for tile in game.map.tiles.values_mut() {
-            tile.terrain = "plains".to_string();
+            tile.terrain = crate::name!("plains");
             tile.feature = None;
             tile.hills = false;
             tile.resource = None;
@@ -8041,7 +8041,7 @@ mod tests {
             .expect("target has a geometrically closer neighbor");
         for position in game.nbrs(trap) {
             if position != start {
-                game.map.tiles.get_mut(&position).unwrap().terrain = "mountain".to_string();
+                game.map.tiles.get_mut(&position).unwrap().terrain = crate::name!("mountain");
             }
         }
         let unit = game.spawn_test_unit("warrior", 0, start);
@@ -8061,7 +8061,7 @@ mod tests {
         let (mut g, source, _) = island_colony_game(1);
         g.players[0]
             .techs
-            .extend(["sailing".to_string(), "shipbuilding".to_string()]);
+            .extend([crate::name!("sailing"), crate::name!("shipbuilding")]);
         let water = g
             .nbrs(source)
             .into_iter()
@@ -8079,7 +8079,7 @@ mod tests {
         let (mut g, source, target) = island_colony_game(1);
         g.players[0]
             .techs
-            .extend(["sailing".to_string(), "shipbuilding".to_string()]);
+            .extend([crate::name!("sailing"), crate::name!("shipbuilding")]);
         let settler = g.spawn_test_unit("settler", 0, source);
         let galley = g.spawn_test_unit("galley", 0, source);
         let mut ai = BasicAi::new();
@@ -8100,7 +8100,7 @@ mod tests {
         let (mut g, source, target) = island_colony_game(1);
         g.players[0]
             .techs
-            .extend(["sailing".to_string(), "shipbuilding".to_string()]);
+            .extend([crate::name!("sailing"), crate::name!("shipbuilding")]);
         let settler = g.spawn_test_unit("settler", 0, source);
         let galley = g.spawn_test_unit("galley", 0, source);
         let mut ai = BasicAi::new();
@@ -8334,7 +8334,7 @@ mod tests {
         assert_eq!(ai.nearest_enemy(&g, 0, uid, &[bp]), Some(bpos));
         // ...but a scout would decline the attack, so it must not pick the
         // raider as a pursuit target either (the chase-without-striking bug).
-        g.units.get_mut(&uid).unwrap().kind = "scout".to_string();
+        g.units.get_mut(&uid).unwrap().kind = crate::name!("scout");
         assert_ne!(ai.nearest_enemy(&g, 0, uid, &[bp]), Some(bpos));
     }
 
@@ -8641,9 +8641,9 @@ mod tests {
         let raider = g.spawn_test_unit("horseman", 0, positions[0]);
         let assault = g.spawn_test_unit("swordsman", 0, positions[1]);
         g.map.tiles.get_mut(&positions[0]).unwrap().improvement =
-            Some("barbarian_camp".to_string());
+            Some(crate::name!("barbarian_camp"));
         g.map.tiles.get_mut(&positions[1]).unwrap().improvement =
-            Some("barbarian_camp".to_string());
+            Some(crate::name!("barbarian_camp"));
         let fighter = g.spawn_test_unit("biplane", 0, positions[2]);
         let bomber = g.spawn_test_unit("bomber", 0, positions[2]);
         g.spawn_test_unit("modern_armor", 1, air_target);
@@ -8717,7 +8717,7 @@ mod tests {
         // hidden behind terrain at range two.
         for position in game.wdisk(origin, 2) {
             let tile = game.map.tiles.get_mut(&position).unwrap();
-            tile.terrain = "plains".to_string();
+            tile.terrain = crate::name!("plains");
             tile.feature = None;
             tile.hills = false;
         }
@@ -8787,9 +8787,9 @@ mod tests {
             .unwrap();
         g.apply(0, &Action::FoundCity { unit: settler }).unwrap();
         g.players[0].techs.extend([
-            "archery".to_string(),
-            "iron_working".to_string(),
-            "machinery".to_string(),
+            crate::name!("archery"),
+            crate::name!("iron_working"),
+            crate::name!("machinery"),
         ]);
         let cid = g.player_city_ids(0)[0];
         let ai = BasicAi::new();
@@ -9066,7 +9066,7 @@ mod tests {
         for position in game.wdisk(center, 3) {
             if game.map.tiles[&position].owner_city.is_none() {
                 let tile = game.map.tiles.get_mut(&position).unwrap();
-                tile.terrain = "plains".to_string();
+                tile.terrain = crate::name!("plains");
                 tile.hills = false;
                 tile.feature = None;
                 tile.resource = None;
@@ -9084,7 +9084,7 @@ mod tests {
                         .any(|neighbor| game.map.tiles[&neighbor].owner_city == Some(city))
             })
             .unwrap();
-        game.map.tiles.get_mut(&target).unwrap().resource = Some("diamonds".to_string());
+        game.map.tiles.get_mut(&target).unwrap().resource = Some(crate::name!("diamonds"));
         game.players[0]
             .explored
             .extend(game.map.tiles.keys().copied());
@@ -9109,7 +9109,7 @@ mod tests {
         game.cities.get_mut(&city).unwrap().pop = 4;
         for (position, tile) in &mut game.map.tiles {
             if position != center {
-                tile.terrain = "ocean".to_string();
+                tile.terrain = crate::name!("ocean");
                 tile.feature = None;
             }
         }
@@ -9211,7 +9211,7 @@ mod tests {
             .find(|id| g.units[id].kind == "settler")
             .unwrap();
         g.apply(0, &Action::FoundCity { unit: settler }).unwrap();
-        g.players[0].techs.insert("currency".to_string());
+        g.players[0].techs.insert(crate::name!("currency"));
         g.players[0].gold = 0.0;
         g.players[0].gold_per_turn = -9.2;
         let cid = g.player_city_ids(0)[0];
@@ -9226,7 +9226,7 @@ mod tests {
             .collect();
         for position in ring {
             let tile = g.map.tiles.get_mut(&position).unwrap();
-            tile.terrain = "plains".to_string();
+            tile.terrain = crate::name!("plains");
             tile.feature = None;
             tile.resource = None;
             tile.hills = false;
@@ -9261,7 +9261,7 @@ mod tests {
             .get_mut(&cid)
             .unwrap()
             .buildings
-            .push("market".to_string());
+            .push(crate::name!("market"));
         let second_center = g
             .map
             .tiles
@@ -9283,7 +9283,7 @@ mod tests {
             },
         )
         .unwrap();
-        g.players[0].civics.insert("foreign_trade".to_string());
+        g.players[0].civics.insert(crate::name!("foreign_trade"));
         assert_eq!(
             ai.pick_item(&g, 0, cid, 1, 0, 0, 0, 0, 4, 2, 2),
             Some(Item::Unit {
@@ -9301,7 +9301,7 @@ mod tests {
             .find(|id| g.units[id].kind == "settler")
             .unwrap();
         g.apply(0, &Action::FoundCity { unit: settler }).unwrap();
-        g.players[0].civics.insert("foreign_trade".to_string());
+        g.players[0].civics.insert(crate::name!("foreign_trade"));
         let city = g.player_city_ids(0)[0];
         let trader = Item::Unit {
             unit: crate::name!("trader"),
@@ -9332,7 +9332,7 @@ mod tests {
             .find(|id| g.units[id].kind == "settler")
             .unwrap();
         g.apply(0, &Action::FoundCity { unit: settler }).unwrap();
-        g.players[0].techs.insert("pottery".to_string());
+        g.players[0].techs.insert(crate::name!("pottery"));
         g.players[0].gold = 0.0;
         g.players[0].gold_per_turn = -4.0;
         let cid = g.player_city_ids(0)[0];
@@ -9382,12 +9382,12 @@ mod tests {
         game
             .apply(0, &Action::FoundCity { unit: second_settler })
             .unwrap();
-        game.players[0].techs.insert("rocketry".to_string());
+        game.players[0].techs.insert(crate::name!("rocketry"));
         let cities = game.player_city_ids(0);
         for city in &cities {
             game.cities.get_mut(city).unwrap().pop = 10;
             assert!(
-                !game.district_sites(*city, "spaceport").is_empty(),
+                !game.district_sites(*city, crate::name!("spaceport")).is_empty(),
                 "both cities must be able to repeat the archived overbuild"
             );
         }
@@ -9533,7 +9533,7 @@ mod tests {
         for _ in 0..6 {
             g.spawn_test_unit("warrior", 0, pos);
         }
-        g.players[0].civics.insert("nationalism".to_string());
+        g.players[0].civics.insert(crate::name!("nationalism"));
         ai.prepare_unit_formations(&mut g, 0);
         let warriors: Vec<_> = g
             .units
@@ -9552,7 +9552,7 @@ mod tests {
     fn production_adds_one_support_unit_for_walled_wars() {
         let (mut g, home, _) = walled_war_game(33);
         let ai = BasicAi::new();
-        g.players[0].techs.insert("masonry".to_string());
+        g.players[0].techs.insert(crate::name!("masonry"));
 
         let ram = ai.pick_item(&g, 0, home, 1, 0, 1, 0, 0, 2, 2, 0).unwrap();
         assert_eq!(
@@ -9588,17 +9588,17 @@ mod tests {
         g.apply(0, &Action::FoundCity { unit: settler }).unwrap();
         let cid = g.player_city_ids(0)[0];
         let theater = g.cities[&cid].owned_tiles[1];
-        g.players[0].civics.insert("drama_poetry".to_string());
+        g.players[0].civics.insert(crate::name!("drama_poetry"));
         g.cities
             .get_mut(&cid)
             .unwrap()
             .districts
-            .insert("theater_square".to_string(), theater);
+            .insert(crate::name!("theater_square"), theater);
         g.cities
             .get_mut(&cid)
             .unwrap()
             .buildings
-            .push("monument".to_string());
+            .push(crate::name!("monument"));
 
         let mut ai = BasicAi::new();
         ai.culture_focus = true;
@@ -9617,7 +9617,7 @@ mod tests {
     #[test]
     fn siege_support_catches_up_and_stacks_with_melee_escort() {
         let (mut g, home, _) = walled_war_game(34);
-        g.players[0].techs.insert("masonry".to_string());
+        g.players[0].techs.insert(crate::name!("masonry"));
         g.players[0].gold = 1_000.0;
         g.apply(
             0,
@@ -9702,19 +9702,19 @@ mod tests {
             .unwrap();
         {
             let tile = g.map.tiles.get_mut(&spaceport).unwrap();
-            tile.terrain = "mountain".to_string();
-            tile.district = Some("spaceport".to_string());
+            tile.terrain = crate::name!("mountain");
+            tile.district = Some(crate::name!("spaceport"));
         }
         g.cities
             .get_mut(&city)
             .unwrap()
             .districts
-            .insert("spaceport".to_string(), spaceport);
+            .insert(crate::name!("spaceport"), spaceport);
         g.cities
             .get_mut(&city)
             .unwrap()
             .buildings
-            .push("royal_society".to_string());
+            .push(crate::name!("royal_society"));
         g.cities.get_mut(&city).unwrap().queue = vec![Item::Project {
             project: crate::name!("launch_earth_satellite"),
         }];
@@ -9774,12 +9774,12 @@ mod tests {
             .copied()
             .find(|position| *position != g.cities[&city].pos && buildable(&g, position))
             .unwrap();
-        g.map.tiles.get_mut(&spaceport).unwrap().district = Some("spaceport".to_string());
+        g.map.tiles.get_mut(&spaceport).unwrap().district = Some(crate::name!("spaceport"));
         g.cities
             .get_mut(&city)
             .unwrap()
             .districts
-            .insert("spaceport".to_string(), spaceport);
+            .insert(crate::name!("spaceport"), spaceport);
         let government_plaza = g.cities[&city]
             .owned_tiles
             .iter()
@@ -9792,17 +9792,17 @@ mod tests {
             })
             .unwrap();
         g.map.tiles.get_mut(&government_plaza).unwrap().district =
-            Some("government_plaza".to_string());
+            Some(crate::name!("government_plaza"));
         g.cities
             .get_mut(&city)
             .unwrap()
             .districts
-            .insert("government_plaza".to_string(), government_plaza);
+            .insert(crate::name!("government_plaza"), government_plaza);
         g.cities
             .get_mut(&city)
             .unwrap()
             .buildings
-            .push("royal_society".to_string());
+            .push(crate::name!("royal_society"));
         g.cities.get_mut(&city).unwrap().queue = vec![Item::Project {
             project: crate::name!("launch_earth_satellite"),
         }];
@@ -9873,7 +9873,7 @@ mod tests {
             .collect::<std::collections::BTreeSet<_>>()
         {
             let tile = g.map.tiles.get_mut(&position).unwrap();
-            tile.terrain = "plains".to_string();
+            tile.terrain = crate::name!("plains");
             tile.feature = None;
             tile.hills = false;
             tile.resource = None;
@@ -9886,11 +9886,11 @@ mod tests {
         }
         for position in positions {
             let tile = g.map.tiles.get_mut(&position).unwrap();
-            tile.terrain = "mountain".to_string();
+            tile.terrain = crate::name!("mountain");
             tile.owner_city = Some(city);
         }
-        g.map.tiles.get_mut(&positions[0]).unwrap().terrain = "grassland".to_string();
-        g.players[0].civics.insert("conservation".to_string());
+        g.map.tiles.get_mut(&positions[0]).unwrap().terrain = crate::name!("grassland");
+        g.players[0].civics.insert(crate::name!("conservation"));
         assert_eq!(g.national_park_sites(0), vec![positions]);
 
         let start = g
@@ -9929,7 +9929,7 @@ mod tests {
         let center_edge = game.map.direction_to(site, center).unwrap();
         {
             let tile = game.map.tiles.get_mut(&site).unwrap();
-            tile.terrain = "plains".to_string();
+            tile.terrain = crate::name!("plains");
             tile.hills = false;
             tile.feature = None;
             tile.resource = None;
@@ -9937,7 +9937,7 @@ mod tests {
             tile.district = None;
             tile.river_edges[(center_edge + 1) % 6] = true;
         }
-        game.players[0].techs.insert("engineering".to_string());
+        game.players[0].techs.insert(crate::name!("engineering"));
         let aqueduct = Item::District {
             district: crate::name!("aqueduct"),
             pos: site,
@@ -9974,32 +9974,32 @@ mod tests {
         game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
         let city = game.player_city_ids(0)[0];
         let center = game.cities[&city].pos;
-        game.players[0].techs.insert("steam_power".to_string());
+        game.players[0].techs.insert(crate::name!("steam_power"));
         game.players[0]
             .strategic_resources
-            .insert("iron".to_string(), 8.0);
+            .insert(crate::name!("iron"), 8.0);
         game.players[0]
             .strategic_resources
-            .insert("coal".to_string(), 8.0);
+            .insert(crate::name!("coal"), 8.0);
         let engineer = game.spawn_test_unit("military_engineer", 0, center);
         let mut ai = BasicAi::new();
 
         assert!(ai.military_engineer_step(&mut game, 0, engineer));
         assert_eq!(game.map.tiles[&center].road, 5);
-        assert_eq!(game.strategic_stockpile(0, "iron"), 7.0);
-        assert_eq!(game.strategic_stockpile(0, "coal"), 7.0);
+        assert_eq!(game.strategic_stockpile(0, crate::name!("iron")), 7.0);
+        assert_eq!(game.strategic_stockpile(0, crate::name!("coal")), 7.0);
 
         // Once either reserve reaches the floor, the Engineer stops spending
         // and remains available for a Dam/Aqueduct/Canal contribution.
         game.map.tiles.get_mut(&center).unwrap().road = 1;
         game.players[0]
             .strategic_resources
-            .insert("coal".to_string(), RAILROAD_RESOURCE_RESERVE);
+            .insert(crate::name!("coal"), RAILROAD_RESOURCE_RESERVE);
         game.units.get_mut(&engineer).unwrap().moves_left = 2.0;
         let _ = ai.military_engineer_step(&mut game, 0, engineer);
         assert_ne!(game.map.tiles[&center].road, 5);
         assert_eq!(
-            game.strategic_stockpile(0, "coal"),
+            game.strategic_stockpile(0, crate::name!("coal")),
             RAILROAD_RESOURCE_RESERVE
         );
     }
@@ -10018,8 +10018,8 @@ mod tests {
             .get_mut(&city)
             .unwrap()
             .buildings
-            .push("archaeological_museum".to_string());
-        g.players[0].civics.insert("natural_history".to_string());
+            .push(crate::name!("archaeological_museum"));
+        g.players[0].civics.insert(crate::name!("natural_history"));
         // The generator now lays down the shipped six dig sites per
         // civilization, so this fixture has to be the only Artifact on the map
         // or the routing assertion is really asserting which site is nearest.
@@ -10044,9 +10044,9 @@ mod tests {
             })
             .unwrap();
         let tile = g.map.tiles.get_mut(&site).unwrap();
-        tile.terrain = "plains".to_string();
+        tile.terrain = crate::name!("plains");
         tile.feature = None;
-        tile.resource = Some("antiquity_site".to_string());
+        tile.resource = Some(crate::name!("antiquity_site"));
         tile.improvement = None;
         tile.district = None;
         tile.wonder = None;
@@ -10081,12 +10081,12 @@ mod tests {
             .copied()
             .find(|position| *position != game.cities[&target].pos)
             .unwrap();
-        game.map.tiles.get_mut(&commercial).unwrap().district = Some("commercial_hub".to_string());
+        game.map.tiles.get_mut(&commercial).unwrap().district = Some(crate::name!("commercial_hub"));
         game.cities
             .get_mut(&target)
             .unwrap()
             .districts
-            .insert("commercial_hub".to_string(), commercial);
+            .insert(crate::name!("commercial_hub"), commercial);
         game.players[0].explored.insert(game.cities[&target].pos);
         let spy = game.next_id;
         game.next_id += 1;

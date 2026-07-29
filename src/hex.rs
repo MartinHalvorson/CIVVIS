@@ -102,6 +102,31 @@ pub fn disk(c: Pos, radius: i32) -> Vec<Pos> {
     out
 }
 
+/// The hexes exactly `radius` steps from `c`.
+///
+/// [`disk`] is the union of every ring out to its radius, so walking outward
+/// one ring at a time costs `O(radius)` per step instead of rebuilding an
+/// `O(radius^2)` disk and throwing away everything inside it. The exploration
+/// search does exactly that walk, and it was the largest single cost in the
+/// engine's basic AI.
+pub fn ring(c: Pos, radius: i32) -> Vec<Pos> {
+    if radius <= 0 {
+        return vec![c];
+    }
+    let mut out = Vec::with_capacity(6 * radius as usize);
+    // Start on one corner of the ring and walk its six sides. Which corner
+    // does not matter to any caller: every one of them treats the result as a
+    // set.
+    let mut pos = (c.0 + DIRS[4].0 * radius, c.1 + DIRS[4].1 * radius);
+    for dir in DIRS {
+        for _ in 0..radius {
+            out.push(pos);
+            pos = (pos.0 + dir.0, pos.1 + dir.1);
+        }
+    }
+    out
+}
+
 pub fn offset_to_axial(col: i32, row: i32) -> Pos {
     (col - (row - (row & 1)) / 2, row)
 }
@@ -124,4 +149,24 @@ pub fn wdistance(a: Pos, b: Pos, width: i32) -> i32 {
 
 pub fn axial_to_offset(q: i32, r: i32) -> (i32, i32) {
     (q + (r - (r & 1)) / 2, r)
+}
+
+#[cfg(test)]
+mod ring_tests {
+    use super::*;
+    use std::collections::BTreeSet;
+
+    /// The ring walk has to produce exactly the hexes a disk gains at that
+    /// radius, or the exploration search would skip ground.
+    #[test]
+    fn a_ring_is_the_shell_a_disk_gains() {
+        for radius in 1..8 {
+            let inner: BTreeSet<Pos> = disk((3, -7), radius - 1).into_iter().collect();
+            let whole: BTreeSet<Pos> = disk((3, -7), radius).into_iter().collect();
+            let shell: BTreeSet<Pos> = whole.difference(&inner).copied().collect();
+            let walked: BTreeSet<Pos> = ring((3, -7), radius).into_iter().collect();
+            assert_eq!(walked, shell, "radius {radius}");
+            assert_eq!(ring((3, -7), radius).len(), 6 * radius as usize);
+        }
+    }
 }

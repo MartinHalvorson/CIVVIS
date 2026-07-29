@@ -943,7 +943,7 @@ mod tests {
             .units
             .get_mut("warrior")
             .unwrap()
-            .tech = Some("nonexistent_tech".to_string());
+            .tech = Some(crate::name!("nonexistent_tech"));
         let findings = validate(&rules);
         assert!(findings.iter().any(|finding| finding.severity == Severity::Error
             && finding.subject == "units/warrior"
@@ -973,7 +973,7 @@ mod tests {
     fn malformed_randomized_research_metadata_is_an_error() {
         let mut rules = Rules::embedded();
         let advanced_ai = rules.techs.get_mut("advanced_ai").unwrap();
-        advanced_ai.requires.push("robotics".to_string());
+        advanced_ai.requires.push(crate::name!("robotics"));
         advanced_ai.random_costs = vec![2300.0, 2200.0];
         rules.civics.get_mut("future_civic").unwrap().repeatable = false;
         let findings = validate(&rules);

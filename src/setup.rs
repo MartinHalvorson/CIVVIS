@@ -1026,7 +1026,7 @@ mod tests {
         let renaissance = world_opening_in(era);
         assert_eq!(renaissance.start_era, era);
         assert_eq!(renaissance.world_era, era);
-        let earlier: BTreeSet<&String> = renaissance
+        let earlier: BTreeSet<&crate::name::Name> = renaissance
             .rules
             .techs
             .iter()
@@ -1038,7 +1038,7 @@ mod tests {
         // in a Renaissance world is free conquest, not a setting.
         for player in renaissance.players.iter().filter(|player| !player.is_barbarian) {
             for tech in &earlier {
-                assert!(player.techs.contains(*tech), "{} lacks {tech}", player.civ);
+                assert!(player.techs.contains(&crate::name::Name::new(tech)), "{} lacks {tech}", player.civ);
             }
             assert!(
                 player
@@ -1060,7 +1060,7 @@ mod tests {
             assert!(player
                 .research
                 .as_ref()
-                .is_none_or(|tech| !player.techs.contains(tech)));
+                .is_none_or(|tech| !player.techs.contains(&crate::name::Name::new(tech))));
         }
         // The starting army came up its own upgrade chain with the research.
         let kinds: BTreeSet<&str> = renaissance

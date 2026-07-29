@@ -45,6 +45,7 @@ pub type Pos = (i32, i32);
 
 #[cfg(test)]
 mod tests {
+    use crate::name::Name;
     use crate::ai::{run_game, Ai, BasicAi};
     use crate::game::{Action, Game, GameOptions};
     use crate::hex;
@@ -247,17 +248,17 @@ mod tests {
             .find(|uid| g.units[uid].kind == "settler")
             .unwrap();
         g.apply(0, &Action::FoundCity { unit: settler }).unwrap();
-        g.players[0].civics.insert("code_of_laws".to_string());
+        g.players[0].civics.insert(crate::name!("code_of_laws"));
         g.players[0]
             .civics
-            .insert("political_philosophy".to_string());
+            .insert(crate::name!("political_philosophy"));
 
         // First adoptions are free: the government takes power at once.
         for government in ["chiefdom", "autocracy"] {
             g.apply(
                 0,
                 &Action::Government {
-                    government: government.to_string(),
+                    government: Name::new(government),
                 },
             )
             .unwrap();
@@ -805,7 +806,7 @@ mod tests {
         // immediately reduces hex distance. A valid route must initially go
         // sideways or backward around this wedge.
         for tile in g.map.tiles.values_mut() {
-            tile.terrain = "plains".to_string();
+            tile.terrain = crate::name!("plains");
             tile.feature = None;
         }
         let mut g = teleport(&g, uid, start);
@@ -816,7 +817,7 @@ mod tests {
             .collect();
         assert!(!direct.is_empty());
         for p in direct {
-            g.map.tiles.get_mut(&p).unwrap().terrain = "mountain".to_string();
+            g.map.tiles.get_mut(&p).unwrap().terrain = crate::name!("mountain");
         }
 
         let step = g.route_step(uid, target, 0).expect("detour should exist");
@@ -847,7 +848,7 @@ mod tests {
             .unwrap();
         g.map.clear_rivers();
         for tile in g.map.tiles.values_mut() {
-            tile.terrain = "plains".to_string();
+            tile.terrain = crate::name!("plains");
             tile.feature = None;
             tile.cliff_edges = [false; 6];
         }
@@ -855,7 +856,7 @@ mod tests {
         // adjacent to the wall's middle on opposite sides.
         for col in 0..39 {
             let pos = crate::hex::offset_to_axial(col, 10);
-            g.map.tiles.get_mut(&pos).unwrap().terrain = "mountain".to_string();
+            g.map.tiles.get_mut(&pos).unwrap().terrain = crate::name!("mountain");
         }
         let start = crate::hex::offset_to_axial(20, 11);
         let target = crate::hex::offset_to_axial(20, 9);
@@ -889,14 +890,14 @@ mod tests {
             .unwrap();
         g.map.clear_rivers();
         for tile in g.map.tiles.values_mut() {
-            tile.terrain = "coast".to_string();
+            tile.terrain = crate::name!("coast");
             tile.feature = None;
             tile.cliff_edges = [false; 6];
         }
         let home = crate::hex::offset_to_axial(3, 7);
         let abroad = crate::hex::offset_to_axial(15, 7);
-        g.map.tiles.get_mut(&home).unwrap().terrain = "plains".to_string();
-        g.map.tiles.get_mut(&abroad).unwrap().terrain = "plains".to_string();
+        g.map.tiles.get_mut(&home).unwrap().terrain = crate::name!("plains");
+        g.map.tiles.get_mut(&abroad).unwrap().terrain = crate::name!("plains");
         let mut g = teleport(&g, uid, home);
 
         assert_eq!(g.route_step(uid, abroad, 0), None);
@@ -908,7 +909,7 @@ mod tests {
         // keys on the map epoch, not on end-of-turn bookkeeping.
         for col in 4..15 {
             let pos = crate::hex::offset_to_axial(col, 7);
-            g.map.tiles.get_mut(&pos).unwrap().terrain = "plains".to_string();
+            g.map.tiles.get_mut(&pos).unwrap().terrain = crate::name!("plains");
         }
         let step = g
             .route_step(uid, abroad, 0)
@@ -952,7 +953,7 @@ mod tests {
             g2.map.tiles.get_mut(&from).unwrap().cliff_edges = [false; 6];
             g2.map.tiles.get_mut(&c).unwrap().cliff_edges = [false; 6];
             assert!(!g2.can_move(uid, c));
-            g2.players[0].techs.insert("shipbuilding".to_string());
+            g2.players[0].techs.insert(crate::name!("shipbuilding"));
             assert!(g2.can_move(uid, c));
         }
         // wonders are world-unique
@@ -971,10 +972,10 @@ mod tests {
             .get_mut(&cid)
             .unwrap()
             .wonders
-            .insert("pyramids".to_string(), wonder_pos);
-        g2.map.tiles.get_mut(&wonder_pos).unwrap().wonder = Some("pyramids".to_string());
+            .insert(crate::name!("pyramids"), wonder_pos);
+        g2.map.tiles.get_mut(&wonder_pos).unwrap().wonder = Some(crate::name!("pyramids"));
         assert!(g2.wonder_built("pyramids"));
-        g2.players[0].techs.insert("masonry".to_string());
+        g2.players[0].techs.insert(crate::name!("masonry"));
         assert!(!g2.can_produce(
             0,
             cid,
@@ -1005,7 +1006,7 @@ mod tests {
                 "sailing",
             ]
             .into_iter()
-            .map(str::to_string)
+            .map(crate::name::Name::new)
             .collect()
         );
 
@@ -1025,7 +1026,7 @@ mod tests {
             .expect("city owns a ring tile");
         {
             let tile = g.map.tiles.get_mut(&farm_pos).unwrap();
-            tile.terrain = "grassland".to_string();
+            tile.terrain = crate::name!("grassland");
             tile.feature = None;
             tile.resource = None;
             tile.improvement = None;
@@ -1103,7 +1104,7 @@ mod tests {
             })
             .expect("map has adjacent passable land tiles");
         assert!(g.map.set_river_edge(flat, river, true));
-        g.map.tiles.get_mut(&river).unwrap().feature = Some("forest".to_string());
+        g.map.tiles.get_mut(&river).unwrap().feature = Some(crate::name!("forest"));
 
         // The +2 surcharge belongs to this exact shared boundary and applies
         // in either direction, not to every move involving a 'river tile'.
@@ -1183,7 +1184,7 @@ mod tests {
         g.map.clear_rivers();
         for pos in [spot, mid] {
             let tile = g.map.tiles.get_mut(&pos).unwrap();
-            tile.terrain = "plains".to_string();
+            tile.terrain = crate::name!("plains");
             tile.feature = None;
             tile.hills = false;
         }
@@ -1218,7 +1219,7 @@ mod tests {
             .get_mut(&cid)
             .unwrap()
             .buildings
-            .push("walls".to_string());
+            .push(crate::name!("walls"));
         g.cities.get_mut(&cid).unwrap().wall_hp = 100;
         assert_eq!(g.city_max_wall_hp(&g.cities[&cid]), 100);
         assert!(g.city_can_strike(&g.cities[&cid]));
@@ -1289,7 +1290,7 @@ mod tests {
         g.apply(0, &Action::FoundCity { unit: s }).unwrap();
         let cid = g.player_city_ids(0)[0];
         // chiefdom: 1 military + 1 economic slot
-        g.players[0].civics.insert("code_of_laws".to_string());
+        g.players[0].civics.insert(crate::name!("code_of_laws"));
         g.apply(
             0,
             &Action::Government {
@@ -1327,7 +1328,7 @@ mod tests {
         // oligarchy has a wildcard slot: economic overflow fits there
         g.players[0]
             .civics
-            .insert("political_philosophy".to_string());
+            .insert(crate::name!("political_philosophy"));
         g.apply(
             0,
             &Action::Government {
@@ -1363,9 +1364,9 @@ mod tests {
         assert_eq!(g.players[0].government.as_deref(), Some("chiefdom"));
         assert!(g.players[0].policies.len() <= 2);
         // feudalism obsoletes agoge via feudal_contract
-        g.players[0].civics.insert("craftsmanship".to_string());
+        g.players[0].civics.insert(crate::name!("craftsmanship"));
         assert!(g.available_policies(0).iter().any(|c| c == "agoge"));
-        g.players[0].civics.insert("feudalism".to_string());
+        g.players[0].civics.insert(crate::name!("feudalism"));
         assert!(!g.available_policies(0).iter().any(|c| c == "agoge"));
         assert!(g
             .available_policies(0)
@@ -1397,16 +1398,16 @@ mod tests {
         g.map.clear_rivers();
         for pos in g.cities[&cid].owned_tiles.clone() {
             let tile = g.map.tiles.get_mut(&pos).unwrap();
-            tile.terrain = "desert".to_string();
+            tile.terrain = crate::name!("desert");
             tile.feature = None;
             tile.resource = None;
             tile.improvement = None;
             tile.district = None;
             tile.hills = false;
         }
-        g.map.tiles.get_mut(&ring[0]).unwrap().terrain = "grassland".to_string();
+        g.map.tiles.get_mut(&ring[0]).unwrap().terrain = crate::name!("grassland");
         g.map.tiles.get_mut(&ring[1]).unwrap().hills = true;
-        g.map.tiles.get_mut(&ring[2]).unwrap().resource = Some("silk".to_string());
+        g.map.tiles.get_mut(&ring[2]).unwrap().resource = Some(crate::name!("silk"));
         g.cities.get_mut(&cid).unwrap().pop = 2;
 
         // Every playable civilization contributes priorities through its
@@ -1498,7 +1499,7 @@ mod tests {
             .get_mut(&cid)
             .unwrap()
             .buildings
-            .push("granary".to_string());
+            .push(crate::name!("granary"));
         let fed_by_infrastructure = g.city_citizen_plan(cid);
         assert!(fed_by_infrastructure.worked_tiles.contains(&ring[0]));
         assert!(fed_by_infrastructure.worked_tiles.contains(&ring[1]));
@@ -1521,17 +1522,17 @@ mod tests {
         // the assignment in observations.
         g.map.tiles.get_mut(&ring[1]).unwrap().hills = false;
         g.map.tiles.get_mut(&ring[2]).unwrap().resource = None;
-        g.map.tiles.get_mut(&ring[3]).unwrap().district = Some("campus".to_string());
+        g.map.tiles.get_mut(&ring[3]).unwrap().district = Some(crate::name!("campus"));
         g.cities
             .get_mut(&cid)
             .unwrap()
             .districts
-            .insert("campus".to_string(), ring[3]);
+            .insert(crate::name!("campus"), ring[3]);
         g.cities
             .get_mut(&cid)
             .unwrap()
             .buildings
-            .push("library".to_string());
+            .push(crate::name!("library"));
         g.players[0].civ = "China".to_string();
         g.cities.get_mut(&cid).unwrap().queue.clear();
         let specialist_plan = g.city_citizen_plan(cid);
@@ -1602,7 +1603,7 @@ mod tests {
         g.apply(0, &Action::FoundCity { unit: s2 }).unwrap();
         let second = *g.player_city_ids(0).iter().find(|c| **c != cap).unwrap();
         // trader + foreign trade civic → capacity 1
-        g.players[0].civics.insert("foreign_trade".to_string());
+        g.players[0].civics.insert(crate::name!("foreign_trade"));
         assert_eq!(g.trade_capacity(0), 1);
         let (mut g, trader) = conjure(&g, "trader", cpos);
         let before = g.city_yields(cap);
@@ -1815,7 +1816,7 @@ mod tests {
             .get_mut(&cid)
             .unwrap()
             .districts
-            .insert("holy_site".to_string(), dpos);
+            .insert(crate::name!("holy_site"), dpos);
         g.players[0].prophet_pending = true;
         g.apply(
             0,
@@ -1837,7 +1838,7 @@ mod tests {
             .get_mut(&cid)
             .unwrap()
             .buildings
-            .push("shrine".to_string());
+            .push(crate::name!("shrine"));
         let after = g.city_yields(cid).culture;
         assert!((after - before - 2.0).abs() < 1e-9);
         // missionary spread converts a foreign city
@@ -1905,12 +1906,12 @@ mod tests {
             .get_mut(&cid)
             .unwrap()
             .districts
-            .insert("campus".to_string(), dpos);
+            .insert(crate::name!("campus"), dpos);
         g.cities
             .get_mut(&cid)
             .unwrap()
             .buildings
-            .push("library".to_string());
+            .push(crate::name!("library"));
         // campus (+1) + library (+1) scientist points per turn
         let round = |g: &mut Game| {
             g.apply(0, &Action::EndTurn).unwrap();
@@ -1967,7 +1968,7 @@ mod tests {
             "horseback_riding",
             "currency",
         ] {
-            g.players[0].techs.insert(t.to_string());
+            g.players[0].techs.insert(Name::new(t));
         }
         g.players[0].era_score = g.players[0].golden_age_threshold;
         g.players[1].era_score = 0;
@@ -2043,7 +2044,7 @@ mod tests {
             .get_mut(&cid)
             .unwrap()
             .buildings
-            .push("walls".to_string());
+            .push(crate::name!("walls"));
         g.cities.get_mut(&cid).unwrap().wall_hp = 100;
         let mine = g
             .player_unit_ids(0)
@@ -2124,7 +2125,7 @@ mod tests {
         assert_eq!(g.cities[&cid].loyalty, 100.0);
         // governor titles come from civic milestones
         assert_eq!(g.governor_titles(0), 0);
-        g.players[0].civics.insert("state_workforce".to_string());
+        g.players[0].civics.insert(crate::name!("state_workforce"));
         assert_eq!(g.governor_titles(0), 1);
         g.apply(0, &Action::AssignGovernor { city: cid }).unwrap();
         assert!(g.apply(0, &Action::AssignGovernor { city: cid }).is_err());
@@ -2158,7 +2159,7 @@ mod tests {
         g.apply(
             0,
             &Action::CongressVote {
-                resolution,
+                resolution: Name::new(&resolution),
                 choice,
                 votes: 1,
             },
@@ -2227,7 +2228,7 @@ mod tests {
             .find(|id| g.units[id].kind == "settler")
             .unwrap();
         // clear the current player gate for direct checks
-        g.players[greece].techs.insert("bronze_working".to_string());
+        g.players[greece].techs.insert(crate::name!("bronze_working"));
         while g.current != greece {
             let cur = g.current;
             g.apply(cur, &Action::EndTurn).unwrap();
@@ -2257,7 +2258,7 @@ mod tests {
             }
         ));
         // Greece: Plato's Republic grants an extra wildcard slot
-        g.players[greece].civics.insert("code_of_laws".to_string());
+        g.players[greece].civics.insert(crate::name!("code_of_laws"));
         g.apply(
             greece,
             &Action::Government {
@@ -2270,7 +2271,7 @@ mod tests {
                                        // China: Dynastic Cycle boosts give 50%, builders +1 charge
         let china = 3;
         assert!(g.has_ability(china, "dynastic_cycle"));
-        g.players[china].boosted_techs.insert("pottery".to_string());
+        g.players[china].boosted_techs.insert(crate::name!("pottery"));
         while g.current != china {
             let cur = g.current;
             g.apply(cur, &Action::EndTurn).unwrap();

@@ -1862,7 +1862,7 @@ mod tests {
         let mut science = Game::new(4, 20, 14, 201, 12, 0);
         science.turn = FIRST_REVIEW_TURN;
         let needed = science.rules.techs.len().div_ceil(6);
-        let techs: Vec<String> = science.rules.techs.keys().take(needed).cloned().collect();
+        let techs: Vec<crate::name::Name> = science.rules.techs.keys().take(needed).cloned().collect();
         science.players[1].techs.extend(techs);
         assert_eq!(
             strategic.inferred_rival_target(&science, 1),

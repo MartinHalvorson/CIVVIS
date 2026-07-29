@@ -1377,7 +1377,7 @@ mod tests {
         let baseline = terminal_score_share(&game, &seats, "challenger");
         assert!((baseline - 0.5).abs() < 1e-12);
 
-        game.players[0].techs.insert("writing".to_string());
+        game.players[0].techs.insert(civvis::name!("writing"));
         game.winner = Some(1);
         let challenger = terminal_score_share(&game, &seats, "challenger");
         let incumbent = terminal_score_share(&game, &seats, "incumbent");

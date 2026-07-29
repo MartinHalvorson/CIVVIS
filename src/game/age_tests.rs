@@ -1,5 +1,6 @@
 //! Rise & Fall Ages: the Normal-Age half of every Dedication, the era each
 //! Dedication can be chosen in, and the Dark/Normal/Golden/Heroic ladder.
+use crate::name::Name;
 use super::{Action, Game};
 
 fn two_player_game() -> Game {
@@ -12,7 +13,7 @@ fn a_late_unlock_cannot_skip_world_eras() {
     game.world_era = 2;
     game.players[0]
         .techs
-        .insert("telecommunications".to_string());
+        .insert(crate::name!("telecommunications"));
     assert_eq!(
         game.era_from_progress(),
         7,
@@ -43,7 +44,7 @@ fn an_era_is_held_open_for_its_shipped_minimum() {
     let mut game = two_player_game();
     game.world_era = 1;
     game.world_era_since = 10;
-    game.players[0].techs.insert("telecommunications".to_string());
+    game.players[0].techs.insert(crate::name!("telecommunications"));
 
     game.turn = 40;
     game.process_eras();
@@ -93,18 +94,18 @@ fn dedications_are_offered_only_in_their_own_eras() {
     // Classical: the early four are on offer and the late ones are not.
     game.world_era = 1;
     let classical = game.available_dedications(0);
-    assert!(classical.contains(&"monumentality".to_string()));
-    assert!(classical.contains(&"exodus_of_the_evangelists".to_string()));
-    assert!(!classical.contains(&"automaton_warfare".to_string()));
-    assert!(!classical.contains(&"wish_you_were_here".to_string()));
+    assert!(classical.contains(&crate::name!("monumentality")));
+    assert!(classical.contains(&crate::name!("exodus_of_the_evangelists")));
+    assert!(!classical.contains(&crate::name!("automaton_warfare")));
+    assert!(!classical.contains(&crate::name!("wish_you_were_here")));
 
     // Information: the late ones are, and the Classical-only ones are gone.
     game.world_era = 7;
     let information = game.available_dedications(0);
-    assert!(information.contains(&"automaton_warfare".to_string()));
-    assert!(information.contains(&"wish_you_were_here".to_string()));
-    assert!(!information.contains(&"exodus_of_the_evangelists".to_string()));
-    assert!(!information.contains(&"monumentality".to_string()));
+    assert!(information.contains(&crate::name!("automaton_warfare")));
+    assert!(information.contains(&crate::name!("wish_you_were_here")));
+    assert!(!information.contains(&crate::name!("exodus_of_the_evangelists")));
+    assert!(!information.contains(&crate::name!("monumentality")));
 }
 
 #[test]
@@ -116,7 +117,7 @@ fn the_two_gathering_storm_dedications_exist_and_can_be_chosen() {
         game.apply(
             0,
             &Action::ChooseDedication {
-                dedication: dedication.to_string(),
+                dedication: Name::new(dedication),
             },
         )
         .unwrap_or_else(|error| panic!("{dedication} should be choosable: {error}"));
@@ -192,7 +193,7 @@ fn a_heroic_age_still_grants_three_dedications() {
     game.players[0].age = "dark".to_string();
     game.players[0].era_score = game.players[0].golden_age_threshold;
     game.players[1].era_score = 0;
-    game.players[0].techs.insert("horseback_riding".to_string());
+    game.players[0].techs.insert(crate::name!("horseback_riding"));
     // An era is held open for its shipped 40-turn minimum, so a fixture that
     // wants the next one has to stand far enough into this one.
     game.turn = 40;
@@ -211,7 +212,7 @@ fn an_age_transition_clears_last_age_dedications() {
     game.players[0]
         .dedications
         .insert("monumentality".to_string());
-    game.players[0].techs.insert("horseback_riding".to_string());
+    game.players[0].techs.insert(crate::name!("horseback_riding"));
     // An era is held open for its shipped 40-turn minimum, so a fixture that
     // wants the next one has to stand far enough into this one.
     game.turn = 40;
@@ -226,29 +227,29 @@ fn an_age_transition_clears_last_age_dedications() {
 fn dark_age_policy_cards_are_offered_only_inside_a_dark_age() {
     let mut game = two_player_game();
     game.world_era = 2;
-    game.players[0].civics.insert("code_of_laws".to_string());
+    game.players[0].civics.insert(crate::name!("code_of_laws"));
 
     game.players[0].age = "normal".to_string();
     let normal = game.available_policies(0);
     assert!(
-        !normal.contains(&"twilight_valor".to_string()),
+        !normal.contains(&crate::name!("twilight_valor")),
         "a Normal Age never sees a Dark Age card"
     );
     assert!(
-        normal.contains(&"discipline".to_string()),
+        normal.contains(&crate::name!("discipline")),
         "but the ordinary cards it has unlocked are still there"
     );
 
     game.players[0].age = "dark".to_string();
     let dark = game.available_policies(0);
-    assert!(dark.contains(&"twilight_valor".to_string()));
-    assert!(dark.contains(&"inquisition".to_string()));
+    assert!(dark.contains(&crate::name!("twilight_valor")));
+    assert!(dark.contains(&crate::name!("inquisition")));
     assert!(
-        !dark.contains(&"robber_barons".to_string()),
+        !dark.contains(&crate::name!("robber_barons")),
         "Robber Barons is an Industrial-era card"
     );
     assert!(
-        !dark.contains(&"automated_workforce".to_string()),
+        !dark.contains(&crate::name!("automated_workforce")),
         "the Gathering Storm additions are not modelled yet"
     );
 }
@@ -285,11 +286,11 @@ fn leaving_a_dark_age_takes_the_card_back_out_of_its_slot() {
     let mut game = two_player_game();
     game.world_era = 1;
     game.players[0].age = "dark".to_string();
-    game.players[0].policies.insert("twilight_valor".to_string());
-    game.players[0].policies.insert("discipline".to_string());
+    game.players[0].policies.insert(crate::name!("twilight_valor"));
+    game.players[0].policies.insert(crate::name!("discipline"));
     // Cross into the Classical era with enough Era Score for a Heroic Age.
     game.players[0].era_score = game.players[0].golden_age_threshold;
-    game.players[0].techs.insert("horseback_riding".to_string());
+    game.players[0].techs.insert(crate::name!("horseback_riding"));
     game.world_era = 0;
     // An era is held open for its shipped 40-turn minimum, so a fixture that
     // wants the next one has to stand far enough into this one.
@@ -335,7 +336,7 @@ fn twilight_valor_pays_on_the_attack_and_charges_for_it() {
     let heal_before = game.unit_heal_rate(warrior);
     assert!(heal_before > 0, "a wounded unit normally heals somewhere");
 
-    game.players[0].policies.insert("twilight_valor".to_string());
+    game.players[0].policies.insert(crate::name!("twilight_valor"));
     assert_eq!(
         game.unit_heal_rate(warrior),
         0,
@@ -361,11 +362,11 @@ fn isolationism_closes_the_frontier_and_pays_at_home() {
     game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
     let city = game.player_city_ids(0)[0];
     game.cities.get_mut(&city).unwrap().pop = 4;
-    assert!(game.can_produce_unit(0, city, "settler", true, 0.0));
+    assert!(game.can_produce_unit(0, city, crate::name!("settler"), true, 0.0));
 
-    game.players[0].policies.insert("isolationism".to_string());
+    game.players[0].policies.insert(crate::name!("isolationism"));
     assert!(
-        !game.can_produce_unit(0, city, "settler", true, 0.0),
+        !game.can_produce_unit(0, city, crate::name!("settler"), true, 0.0),
         "Isolationism forbids training Settlers"
     );
     // The shipped card pays +3 of all three yields on a domestic route.
@@ -389,7 +390,7 @@ fn robber_barons_costs_amenities_everywhere_it_pays() {
     let city = game.player_city_ids(0)[0];
     let before = game.city_local_amenities(&game.cities[&city]);
 
-    game.players[0].policies.insert("robber_barons".to_string());
+    game.players[0].policies.insert(crate::name!("robber_barons"));
     assert_eq!(
         game.city_local_amenities(&game.cities[&city]),
         before - 2,
@@ -561,7 +562,7 @@ fn a_dedication_is_projected_from_the_era_that_just_ended() {
         "an era in progress is not yet evidence"
     );
 
-    game.players[0].techs.insert("horseback_riding".to_string());
+    game.players[0].techs.insert(crate::name!("horseback_riding"));
     // An era is held open for its shipped 40-turn minimum, so a fixture that
     // wants the next one has to stand far enough into this one.
     game.turn = 40;

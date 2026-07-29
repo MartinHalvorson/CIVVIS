@@ -7637,7 +7637,7 @@ mod river_tests {
             .filter(|(_, spec)| spec.class == "strategic")
             .map(|(name, _)| name.as_str())
             .collect();
-        assert!(strategics.contains(&crate::name!("iron")) && strategics.contains(&crate::name!("horses")));
+        assert!(strategics.contains(&"iron") && strategics.contains(&"horses"));
         for (index, script) in ROLLED_TYPES
             .into_iter()
             .chain([MapScript::TrueStartEarth])
@@ -7728,7 +7728,7 @@ mod river_tests {
         for row in 3..13 {
             for col in 5..19 {
                 let pos = hex::offset_to_axial(col, row);
-                wm.tiles.get_mut(&pos).unwrap().terrain = "plains".to_string();
+                wm.tiles.get_mut(&pos).unwrap().terrain = crate::name!("plains");
                 land.push(pos);
             }
         }
@@ -8004,7 +8004,7 @@ mod river_tests {
         for row in 2..16 {
             for col in 3..29 {
                 let pos = hex::offset_to_axial(col, row);
-                wm.tiles.get_mut(&pos).unwrap().terrain = "plains".to_string();
+                wm.tiles.get_mut(&pos).unwrap().terrain = crate::name!("plains");
                 landmass.insert(pos);
             }
         }
@@ -8724,7 +8724,7 @@ mod river_tests {
             for (wonder, tiles) in seen {
                 assert_eq!(
                     tiles.len(),
-                    rules.features[wonder].placement.tiles,
+                    rules.features[&wonder].placement.tiles,
                     "{wonder} footprint on seed {seed}"
                 );
                 let mut reached = BTreeSet::new();
@@ -8891,7 +8891,7 @@ mod river_tests {
                         if let Some(feature) = &tile.feature {
                             if rules.features[feature].natural_wonder {
                                 footprints
-                                    .entry(feature.clone())
+                                    .entry(feature.clone().to_string())
                                     .or_default()
                                     .push(*position);
                             }

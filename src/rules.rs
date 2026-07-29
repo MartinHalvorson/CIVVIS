@@ -2732,14 +2732,14 @@ mod tests {
                 .all(|parent| first.contains(parent.as_str())));
         }
 
-        let second_owned: BTreeSet<String> = second.iter().map(|name| (*name).to_string()).collect();
+        let second_owned: BTreeSet<Name> = second.iter().map(|name| Name::new(name)).collect();
         match gateway {
             Some(gateway) => {
                 assert_eq!(
                     tree[gateway].requires.iter().cloned().collect::<BTreeSet<_>>(),
                     second_owned
                 );
-                assert_eq!(tree[terminal].requires, [gateway.to_string()]);
+                assert_eq!(tree[terminal].requires, [Name::new(gateway)]);
             }
             None => assert_eq!(
                 tree[terminal]
@@ -2830,7 +2830,7 @@ mod tests {
             })
             .map(|(name, _)| name.clone())
             .unwrap();
-        layout.techs.get_mut(&first).unwrap().requires = vec!["future_tech".to_string()];
+        layout.techs.get_mut(&first).unwrap().requires = vec![crate::name!("future_tech")];
         let error = apply_tree_layout("technology", &mut rules.techs, &layout.techs).unwrap_err();
         assert!(error.contains("outside the preceding column"), "{error}");
 
@@ -2956,7 +2956,7 @@ mod tests {
         );
         assert_eq!(rules.governments.len(), 13);
 
-        let check_gate = |kind: &str, id: &str, tech: &Option<String>, civic: &Option<String>| {
+        let check_gate = |kind: &str, id: &str, tech: &Option<Name>, civic: &Option<Name>| {
             if let Some(node) = tech {
                 let spec = rules
                     .techs

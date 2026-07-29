@@ -533,7 +533,7 @@ mod tests {
         let before = game.players[0].envoys_free;
         let rival_before = game.players[1].envoys_free;
 
-        game.players[0].boosted_techs.insert("writing".to_string());
+        game.players[0].boosted_techs.insert(crate::name!("writing"));
         game.check_city_state_quests(0);
         assert_eq!(
             game.players[0].envoys_free,
@@ -557,7 +557,7 @@ mod tests {
         let (mut game, minor, city) = game_with_city_state(31_003);
         meet(&mut game, 0, city);
         // Every Eureka already earned, so no tech-boost quest can be offered.
-        let techs: Vec<String> = game
+        let techs: Vec<Name> = game
             .rules
             .techs
             .iter()
@@ -615,7 +615,7 @@ mod tests {
                         .is_some_and(|tile| !game.rules.is_water(tile))
             })
             .unwrap();
-        game.map.tiles.get_mut(&camp).unwrap().improvement = Some("barbarian_camp".to_string());
+        game.map.tiles.get_mut(&camp).unwrap().improvement = Some(crate::name!("barbarian_camp"));
         let quest = CityStateQuest {
             kind: "clear_barbarian_camp".into(),
             target: String::new(),
