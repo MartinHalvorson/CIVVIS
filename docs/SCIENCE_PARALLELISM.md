@@ -1,6 +1,6 @@
 # Adaptive Science Spaceport parallelism
 
-Status: **preregistered; no treatment result has been read**.
+Status: **development screen stopped; retain the shipped controller**.
 
 ## Prospective horizon amendment
 
@@ -417,13 +417,58 @@ at seed 9,982,000. Its exact process was terminated after 26 seconds. It printed
 only the static profile header: no map completed, no progress or result line
 appeared, and no focal outcome was read. This happened after the final design
 was frozen and did not inform any code, treatment, endpoint, threshold, or
-sample choice. The frozen four-map null has not yet completed or been read; no
-treatment seed has been touched.
+sample choice. The completed frozen run below is the first and only read of
+that null range.
+
+## Frozen results
+
+The standalone release evaluator was built and both frozen batches were run
+from source commit `3f3c6d24019cc52abe089fda5595c73cc0c9e9fd`, whose second
+parent was then-current `origin/main` at
+`ae7a75fe272bb30fd18319cdaeb574578481988f`. Before either batch,
+`cargo test --profile ci --locked --bin science_parallelism_eval -j 2`
+passed all 10 focused tests and
+`cargo build --release --locked --bin science_parallelism_eval -j 2`
+completed successfully.
+
+The exact null command was:
+
+```text
+nice -n 10 target/release/science_parallelism_eval --null --deployment-mix --ai advanced_evolved --maps 4 --turns 250 --observe-through 320 --speed online --poles poles --randomize-civs --victories science,culture,domination --seed 9982000 --jobs 6
+```
+
+It completed in 2 minutes 59.6 seconds and passed: all eight direct/replay
+serialized terminal worlds and recorded results reproduced exactly. Both arms
+had 0/8 wins, mean terminal score 556.2, mean Science progress 24.00, mean 1.12
+completed Science projects, mean exoplanet distance 1.75, mean speed 0.12, no
+lasers, and three built plus zero queued Spaceports.
+
+The exact one allowed development command was:
+
+```text
+nice -n 10 target/release/science_parallelism_eval --deployment-mix --ai advanced_evolved --maps 30 --turns 250 --observe-through 320 --speed online --poles poles --randomize-civs --victories science,culture,domination --seed 9983000 --jobs 6
+```
+
+It completed in 20 minutes 34.4 seconds and reached the preregistered **STOP**
+decision. The treatment fired in 7/60 focal games (11.7%) and made all 13 legal
+orders offered by 13 opportunities: seven after Moon and six after Mars.
+Aggregate built-plus-queued Spaceports rose from 29 to 41 and completed lasers
+from 51 to 61. Science wins rose from 7/60 to 8/60 and total wins from 9/60 to
+10/60; paired map win score was 50.8% and paired terminal-score share was
+49.94%.
+
+The primary endpoint did not clear the efficacy gate. Mean terminal Science
+progress increased only **+0.117 points/map**, below the required +0.5, with
+2 favorable, 27 neutral, and 1 adverse maps and exact two-sided sign-test
+`p = 1.0000`, above the required 0.20. Thus the mechanism, coverage, win, and
+score guards were compatible with the candidate, but the registered primary
+effect was too small and too weakly resolved. Per protocol, retain
+`AdvancedAi`; do not tune or retry this treatment. Seed 9,984,000 and the
+entire 120-map holdout range remain unopened.
 
 ## Resource rule
 
 The large-map evaluator must not begin while another simulator batch is using
-six or more cores. It will use no more than six jobs, leaving capacity for the
-production spectator, builds, and collaborators. Validation and null runs may
-use fewer jobs. The exact source commit, commands, wall time, and results will
-be recorded here before this study is shipped.
+six or more cores. It used no more than six jobs, leaving capacity for the
+production spectator, builds, and collaborators. No holdout was started after
+the development STOP.
