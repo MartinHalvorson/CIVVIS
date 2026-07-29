@@ -106,8 +106,12 @@ const PRIOR_FADE: f64 = 0.5;
 /// twenty turns left is nearly the result. Discounting early evidence is also
 /// what keeps the now odds beside the start odds through the opening, instead of
 /// swinging on the first tile either seat improves.
-const LEAD_BASE: f64 = 0.25;
-const LEAD_SHARPEN: f64 = 2.75;
+/// The base is not zero, though. A capital captured on turn 30 or a
+/// civilization wiped out is decisive whatever the clock says, and the victory
+/// races ride on this same weight — discounting them to nothing early would
+/// leave a real event unreported for a hundred turns.
+const LEAD_BASE: f64 = 0.15;
+const LEAD_SHARPEN: f64 = 2.85;
 /// The clock a world with no turn limit is judged against, so an endless game
 /// still ages instead of treating turn three as the last turn.
 const NOMINAL_HORIZON: f64 = 500.0;

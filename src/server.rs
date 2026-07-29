@@ -6960,7 +6960,7 @@ mod tests {
         //
         // Every data column is now a share rather than a pixel count, and each
         // of these two enclosing tracks is the exact *sum* of the columns
-        // inside it — 7 identity columns totalling 11.587 against 10 value
+        // inside it — 7 identity columns totalling 11.387 against 10 value
         // columns of 1. That identity is not decoration: it is what lets the
         // bar between the two blocks move width across itself, and it is the
         // ratio the table uses at every width. Changing one number here without
@@ -6971,7 +6971,7 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains(
             "--hud-identity-column: minmax(\n      \
              calc(var(--hud-ident-min) * 5 + var(--hud-ident-num-min)\n           \
-             + var(--hud-ident-odds-min)), 11.587fr);"
+             + var(--hud-ident-odds-min)), 11.387fr);"
         ));
         assert!(EMBEDDED_INDEX.contains(
             "--hud-stats-column: minmax(\n      \
