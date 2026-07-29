@@ -13,13 +13,20 @@ after that run so the existing league can measure agent families its original
 population could never produce:
 
 - `advanced_evolved`, carrying the `advanced` anchor's point rating with RD 350;
-- `strategic`, carrying the same zero-delta prior and RD 350 as a non-retiring
-  search anchor.
+- `strategic`, starting at the ordinary 1500 / RD 350 new-player prior as a
+  non-retiring search anchor.
 
 Neither row imports games, wins, leader ratings, or a head-to-head Elo claim.
-Their uncertainty is intentional: future league and recorded exhibition games
-must determine their ratings. The snapshot remains at round 60 until such games
-are actually recorded.
+Their uncertainty is intentional: future league games must determine their
+ratings, with recorded exhibition games contributing only for live-eligible
+entrants. The snapshot remains at round 60 until such games are actually
+recorded.
+
+`strategic` is `league_only`: offline rounds schedule every active entrant and
+can therefore rate it from the clean prior, while the live exhibition excludes
+it until a separate current-profile turn-cost gate establishes that one search
+seat fits the viewer-facing pace. This changes only the committed clean-start
+snapshot; it does not mutate an existing repo-root `league/` runtime directory.
 
 To refresh it, run a league (`civvis league --rounds N --dir league`) and copy
 `league/league.json` here. The repo-root `league/` directory stays gitignored

@@ -1458,7 +1458,7 @@ impl Session {
                 .filter(|p| !p.is_minor && !p.is_barbarian && !game.is_human_seat(p.id))
                 .map(|p| p.id)
                 .collect();
-            if seat_from_roster && !l.active().is_empty() {
+            if seat_from_roster && !l.exhibition_active().is_empty() {
                 let civs: Vec<String> =
                     majors.iter().map(|id| game.players[*id].civ.clone()).collect();
                 for (id, pick) in majors.iter().zip(crate::league::seat_by_civ_seeded(
@@ -2324,11 +2324,12 @@ impl Session {
     /// Hand seat 0 to a named strategy, so auto-play runs *that* agent rather
     /// than whichever one the fleet happened to build for the seat.
     ///
-    /// A name is matched against the league roster first — by entrant name or
-    /// by the handle the leaderboards show — and then against the built-in
-    /// agents, so a build with no roster on disk still has something to hand
-    /// the seat to. An unknown name is an error rather than a silent fallback:
-    /// a player who picked a strategy and got a different one has been lied to.
+    /// A name is matched against the live-eligible league roster first — by
+    /// entrant name or by the handle the leaderboards show — and then against
+    /// the built-in agents, so a build with no roster on disk still has
+    /// something to hand the seat to. An unknown or league-only name is an
+    /// error rather than a silent fallback: a player who picked a strategy and
+    /// got a different one has been lied to.
     pub fn seat_strategy_at(&mut self, seat: usize, name: &str) -> Result<(), String> {
         if name.is_empty() || self.autoplay_strategy.as_deref() == Some(name) {
             return Ok(());
@@ -2341,7 +2342,7 @@ impl Session {
                 roster
                     .strategies
                     .iter()
-                    .find(|s| s.name == name || s.username == name)
+                    .find(|s| !s.league_only && (s.name == name || s.username == name))
                     .map(|s| s.kind.clone())
             })
             .or_else(|| {
@@ -2808,12 +2809,14 @@ fn simulation_settings(params: &Params) -> Value {
 
 /// The agents a person can hand their seat to, strongest first.
 ///
-/// With a league roster on disk this is every entrant still competing, with
-/// the rating it is defending, so the choice is between *our* strategies and
-/// not between adjectives. An entrant that has not played a rated game yet is
-/// marked provisional rather than shown as an authoritative 1500. Without a
-/// roster the list falls back to the built-in agents, because a control with
-/// nothing in it is worse than one with four honest entries.
+/// With a league roster on disk this is every live-eligible entrant still
+/// competing, with the rating it is defending, so the choice is between *our*
+/// strategies and not between adjectives. Offline-only entrants stay on the
+/// rating schedule without becoming an offer this server cannot yet afford.
+/// An entrant that has not played a rated game yet is marked provisional
+/// rather than shown as an authoritative 1500. Without a roster the list falls
+/// back to the built-in agents, because a control with nothing in it is worse
+/// than one with four honest entries.
 fn strategy_roster(session: &Session) -> Value {
     let mut rows: Vec<Value> = Vec::new();
     if let Some(roster) = session.roster.as_ref() {
@@ -2822,7 +2825,7 @@ fn strategy_roster(session: &Session) -> Value {
         let mut active: Vec<&crate::league::Strategy> = roster
             .strategies
             .iter()
-            .filter(|s| !s.retired && !s.human)
+            .filter(|s| !s.retired && !s.human && !s.league_only)
             .collect();
         active.sort_by(|a, b| b.rating.total_cmp(&a.rating));
         rows.extend(active.into_iter().map(|s| {
@@ -9277,6 +9280,10 @@ mod tests {
             .collect();
         assert!(names.contains(&"advanced"), "the default agent is offerable");
         assert!(
+            !names.contains(&"strategic"),
+            "a league-only search entrant is not a live auto-play offer"
+        );
+        assert!(
             names.len() >= 4,
             "a roster with nothing in it is not a choice: {names:?}"
         );
@@ -9296,6 +9303,11 @@ mod tests {
         // The seat starts as the person's own. Nothing is seated until
         // somebody asks, and then it stays seated.
         assert_eq!(session.seated_strategy_name(0), Some("player"));
+        assert_eq!(
+            session.seat_strategy_at(0, "strategic"),
+            Err("no strategy named strategic".to_string()),
+            "a direct request must not bypass the live-eligibility boundary"
+        );
         session
             .seat_strategy_at(0, "basic")
             .expect("a built-in agent is always available");
