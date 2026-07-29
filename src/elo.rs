@@ -38,7 +38,10 @@ pub const BUILTIN_AIS: [&str; 10] = [
 /// tournament ratings. Keeping them out of `BUILTIN_AIS` prevents a control
 /// factory from being pooled into the same player/leader rating key as
 /// its treatment.
-pub const EVAL_ONLY_AIS: [&str; 58] = [
+pub const EVAL_ONLY_AIS: [&str; 61] = [
+    "advanced_congress_counter",
+    "advanced_congress_votes",
+    "advanced_congress_counter_hard",
     "advanced_banking_dedication",
     "advanced_blind_to_leaders",
     "advanced_rush",
@@ -576,6 +579,39 @@ pub fn builtin_ai(name: &str, seed: u64) -> Box<dyn Ai> {
         "advanced_early_score_alarm" => {
             let mut ai = AdvancedAi::new();
             ai.early_score_alarm = true;
+            Box::new(ai)
+        }
+        // Treatment for the free-counter axis: identical to `advanced` except
+        // that the World Congress resolutions carrying a targeted penalty --
+        // `trade_policy` B (trade embargo), `migration_treaty` B (-20% growth),
+        // `border_control_treaty` B (no border-growth annexation) -- aim at the
+        // empire `victory_denial` names instead of at the empire holding the
+        // most Diplomatic Victory Points. `congress_census` measures that
+        // shipped target as the eventual winner 24.8% of the time at 4p
+        // (base 25.0%) and 14.4% at the 6p exhibition profile (base 16.7%),
+        // against 61% for the score leader on both. Unlike every arm in
+        // `docs/COUNTERING_LEADERS.md`, this response is not paid for in
+        // development: `resolve_congress` refunds a losing vote in full.
+        "advanced_congress_counter" => {
+            let mut ai = AdvancedAi::new();
+            ai.congress_counter_leader = true;
+            Box::new(ai)
+        }
+        // Decomposition arm: aims exactly where `advanced` aims and only
+        // changes how hard it pushes, buying the second and third vote behind
+        // a ballot that opposes the empire closest to a victory. Read against
+        // `advanced_congress_counter` it separates the target from the weight.
+        "advanced_congress_votes" => {
+            let mut ai = AdvancedAi::new();
+            ai.congress_counter_votes = true;
+            Box::new(ai)
+        }
+        // Both halves at once. Only informative once the two arms above have
+        // been read separately.
+        "advanced_congress_counter_hard" => {
+            let mut ai = AdvancedAi::new();
+            ai.congress_counter_leader = true;
+            ai.congress_counter_votes = true;
             Box::new(ai)
         }
         // The earlier alarm asking for a build instead of a war -- the only

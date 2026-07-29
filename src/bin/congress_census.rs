@@ -141,6 +141,16 @@ struct Counts {
     /// denied instead, split by what the opposition could actually afford.
     flip_if_paid: u64,
     flip_if_free: u64,
+
+    /// Fires-check for the treatment arms. A ballot is "aimed" when it names
+    /// the empire that voter's own denial layer names; a vote is "bought" when
+    /// a ballot carries more than one.
+    ballots_cast: u64,
+    ballots_aimed: u64,
+    votes_bought: u64,
+    /// Resolutions carrying a targeted penalty that actually passed, and how
+    /// many landed on the empire that went on to win the game.
+    penalties_passed: u64,
 }
 
 impl Counts {
@@ -167,6 +177,10 @@ impl Counts {
         self.rivals_bought_extra += other.rivals_bought_extra;
         self.flip_if_paid += other.flip_if_paid;
         self.flip_if_free += other.flip_if_free;
+        self.ballots_cast += other.ballots_cast;
+        self.ballots_aimed += other.ballots_aimed;
+        self.votes_bought += other.votes_bought;
+        self.penalties_passed += other.penalties_passed;
     }
 }
 
@@ -182,8 +196,15 @@ struct MapReading {
     /// the score lead, and who `rival_pressure` put closest to a win. The
     /// first of those is the only one `congress_choice` can aim at.
     aim: Vec<(usize, usize, usize)>,
+    /// Every empire a targeted penalty actually landed on, so the arms can be
+    /// compared on where the Congress's teeth ended up.
+    penalised: Vec<usize>,
     counts: Counts,
 }
+
+/// The three resolutions whose outcome B costs its target real yields: a total
+/// trade embargo, -20% growth, and no tile annexation from border growth.
+const PENALTIES: [&str; 3] = ["trade_policy", "migration_treaty", "border_control_treaty"];
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
@@ -195,17 +216,37 @@ fn main() {
     let seed0 = number(&args, "--seed", 980_000) as u64;
     let city_states = number(&args, "--city-states", 0);
     let jobs = number(&args, "--jobs", parallel::default_jobs());
+    // Which congress behaviour the whole table plays. The census is otherwise
+    // identical, so `--arm` reads what a treatment does to behaviour before any
+    // question of what it does to strength.
+    let arm = args
+        .iter()
+        .position(|a| a == "--arm")
+        .and_then(|i| args.get(i + 1))
+        .map(String::as_str)
+        .unwrap_or("ship")
+        .to_string();
+    if !matches!(arm.as_str(), "ship" | "counter" | "votes" | "hard") {
+        eprintln!("--arm must be ship, counter, votes or hard");
+        std::process::exit(2);
+    }
 
     println!(
         "congress_census: {maps} maps, {players}p {width}x{height}, {city_states} city-states, \
-         {turns} turns, seed {seed0}"
+         {turns} turns, seed {seed0}, arm {arm}"
     );
 
+    let arm_label = arm.clone();
     let readings = parallel::map(maps, jobs, move |index| {
+        let arm = arm_label.as_str();
         let seed = seed0 + index as u64;
         let mut game = Game::new(players, width, height, seed, turns, city_states);
         let stock = Weights::default();
         let mut fleet: Vec<AdvancedAi> = AdvancedAi::fleet_weighted(&game, &stock);
+        for planner in fleet.iter_mut() {
+            planner.congress_counter_leader = arm == "counter" || arm == "hard";
+            planner.congress_counter_votes = arm == "votes" || arm == "hard";
+        }
         let majors: Vec<usize> = (0..game.players.len())
             .filter(|pid| !game.players[*pid].is_minor && !game.players[*pid].is_barbarian)
             .collect();
@@ -220,6 +261,7 @@ fn main() {
         let mut opening_favor: Vec<f64> = vec![0.0; game.players.len()];
         let mut dvp_prev: Vec<i64> = game.players.iter().map(|p| p.dvp).collect();
         let mut aim: Vec<(usize, usize, usize)> = Vec::new();
+        let mut penalised: Vec<usize> = Vec::new();
         // `rival_pressure` reads nothing from the planner it is asked of, so
         // one probe answers for every seat.
         let probe = AdvancedAi::new();
@@ -275,11 +317,32 @@ fn main() {
                     let Some((outcome, target, tied)) = tally(&resolution.ballots) else {
                         continue;
                     };
-                    for (voter, (choice, _)) in &resolution.ballots {
+                    for (voter, (choice, votes)) in &resolution.ballots {
                         let (cast_outcome, cast_target) = choice_parts(choice);
                         if cast_outcome == outcome && cast_target == target {
                             *attributed.entry(*voter).or_insert(0) += 1;
                             counts.from_prediction += 1;
+                        }
+                        // Fires-check: did this ballot name the empire this
+                        // voter's own denial layer names, and did it pay for
+                        // the naming?
+                        counts.ballots_cast += 1;
+                        if *votes > 1 {
+                            counts.votes_bought += 1;
+                        }
+                        if fleet[*voter]
+                            .denial_target(&game, *voter)
+                            .is_some_and(|(rival, _)| cast_target == rival.to_string())
+                        {
+                            counts.ballots_aimed += 1;
+                        }
+                    }
+                    // Where the Congress's teeth landed. Outcome B on any of
+                    // these three costs its target real yields.
+                    if PENALTIES.contains(&resolution.id.as_str()) && outcome == "B" {
+                        if let Ok(hit) = target.parse::<usize>() {
+                            counts.penalties_passed += 1;
+                            penalised.push(hit);
                         }
                     }
                     if resolution.id != "world_leader" {
@@ -460,6 +523,7 @@ fn main() {
             peak_dvp,
             final_dvp: majors.iter().map(|pid| game.players[*pid].dvp).collect(),
             aim,
+            penalised,
             counts,
         }
     });
@@ -617,5 +681,38 @@ fn main() {
     println!(
         "  dvp leader and score leader agree       {:>5.1}%",
         pct(dvp_is_score)
+    );
+
+    // The fires-check. A treatment that does not move these numbers is a
+    // silent no-op and its eval would be measuring nothing.
+    let mut penalties = 0_usize;
+    let mut penalties_on_winner = 0_usize;
+    for reading in &readings {
+        let Some(winner) = reading.winner else { continue };
+        for hit in &reading.penalised {
+            penalties += 1;
+            penalties_on_winner += usize::from(*hit == winner);
+        }
+    }
+    println!("\nfires-check (arm {arm}):");
+    println!(
+        "  ballots naming this voter's own denial target   {} of {} ({:.1}%)",
+        totals.ballots_aimed,
+        totals.ballots_cast,
+        100.0 * totals.ballots_aimed as f64 / totals.ballots_cast.max(1) as f64
+    );
+    println!(
+        "  ballots carrying a bought vote                  {} ({:.1}%)",
+        totals.votes_bought,
+        100.0 * totals.votes_bought as f64 / totals.ballots_cast.max(1) as f64
+    );
+    println!(
+        "  targeted penalties that passed                  {} ({:.2} per game)",
+        totals.penalties_passed,
+        totals.penalties_passed as f64 / maps.max(1) as f64
+    );
+    println!(
+        "  of those, landing on the eventual winner        {penalties_on_winner} of {penalties} ({:.1}%, base {base:.1}%)",
+        100.0 * penalties_on_winner as f64 / penalties.max(1) as f64
     );
 }
