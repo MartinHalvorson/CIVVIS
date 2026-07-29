@@ -40,8 +40,8 @@ def available() -> bool:
     return Image is not None
 
 
-def submenu_rows(shot: Path, bounds: tuple[int, int, int, int],
-                 scale: float = 2.0, min_gap: int = 6) -> list[float]:
+def rows_in(shot: Path, bounds: tuple[int, int, int, int], column,
+            scale: float = 2.0, min_gap: int = 6) -> list[float]:
     """Row centres of the open submenu, as fractions of the window's height.
 
     ``bounds`` is the window in points; ``scale`` converts points to the
@@ -54,10 +54,10 @@ def submenu_rows(shot: Path, bounds: tuple[int, int, int, int],
     x, y, w, h = bounds
     with Image.open(shot) as image:
         grey = image.convert("L")
-        left = int((x + w * COLUMN[0]) * scale)
-        top = int((y + h * COLUMN[1]) * scale)
-        right = int((x + w * COLUMN[2]) * scale)
-        bottom = int((y + h * COLUMN[3]) * scale)
+        left = int((x + w * column[0]) * scale)
+        top = int((y + h * column[1]) * scale)
+        right = int((x + w * column[2]) * scale)
+        bottom = int((y + h * column[3]) * scale)
         crop = grey.crop((left, top, right, bottom))
         width, height = crop.size
         if width <= 0 or height <= 0:
@@ -107,6 +107,11 @@ def submenu_rows(shot: Path, bounds: tuple[int, int, int, int],
         centre_px = top + (begin + end) / 2.0
         centres.append((centre_px / scale - y) / h)
     return centres
+
+
+def submenu_rows(shot: Path, bounds: tuple[int, int, int, int],
+                 scale: float = 2.0) -> list[float]:
+    return rows_in(shot, bounds, COLUMN, scale)
 
 
 def create_game_row(shot: Path, bounds: tuple[int, int, int, int],

@@ -28,7 +28,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent / "civ6_control"))
 import civ6_env as env  # noqa: E402
 from civ6_control import install as modinstall  # noqa: E402
-from civ6_control import launcher, vision, watch  # noqa: E402
+from civ6_control import gamelock, launcher, vision, watch  # noqa: E402
 
 RUN_ROOT = Path.home() / "civvis-civ6-runs" / "control"
 
@@ -91,23 +91,16 @@ MENU = {
     "single_player": (0.474, 0.455),
 }
 
-# "Play Now" is the last entry of the Single Player submenu, and where that
-# lands depends on how many entries there are: "Resume Game" only appears once
-# a game has been played and "Load Game" only once a save exists, so the same
-# click is right in one run and one row off in the next. Rather than predict the
-# count, the submenu is scanned from the most likely row outwards and each click
-# is checked. Rows are about 0.030 of the window's height apart.
-#
-# A wrong click here is cheap: "Scenarios", "Create Game" and "Load Game" open a
-# screen that Escape backs out of, and "Resume Game" starts a game, which is all
-# the bootstrap wants anyway.
+# Where the Single Player submenu sits horizontally. Its *rows* are read off
+# the screen by civ6_control.vision rather than assumed: which entries it has
+# depends on whether there is a save and a game to resume, so the same measured
+# fraction is right in one run and a row off in the next.
 SUBMENU_X = 0.528
-PLAY_NOW_Y = [0.614, 0.630, 0.598, 0.646, 0.582, 0.662]
 
-# "Create Game" is the third entry from the bottom of that submenu. With a save
-# on disk and a game to resume -- which is true from the first run onwards --
-# the submenu has five rows and this is where it lands.
-CREATE_GAME_Y = [0.573, 0.555, 0.540, 0.601]
+# How many times to try the click sequence before giving up. Most failures are
+# simply "the menu is not up yet" -- the logos play for minutes after the game
+# core writes its mod scan -- so this is generous.
+BOOTSTRAP_ATTEMPTS = 16
 
 # The Create Game screen. Unlike the main menu this layout is fixed: the same
 # controls in the same order every time, so these are measured once and hold.
@@ -252,13 +245,21 @@ def bootstrap_game(tail: watch.LogTail, on_event, run_dir: Path,
             time.sleep(2.0)
         return False
 
-    for attempt, create_y in enumerate(CREATE_GAME_Y, start=1):
+    # The mod scan lands in Modding.log minutes before the menu can be clicked
+    # -- the 2K and Firaxis logos play over the top of it -- so "main menu
+    # reached" is not the same as "main menu ready". Rather than guess a settle
+    # time, each attempt clicks Single Player and looks for the submenu it
+    # should have opened. No submenu means the menu was not up yet, which is a
+    # reason to wait, not a reason to give up: an earlier run bailed with "no
+    # game window found" while the game was still showing the 2K logo.
+    for attempt in range(1, BOOTSTRAP_ATTEMPTS + 1):
         focus_game()
         time.sleep(2.0)
         bounds = game_window()
         if bounds is None:
-            print("no game window found", file=sys.stderr)
-            return False
+            print("no game window yet, waiting", file=sys.stderr)
+            time.sleep(20.0)
+            continue
         x, y, w, h = bounds
         # Make the window key with a click on empty artwork, well clear of the
         # menu: the first click on a background window is consumed activating
@@ -267,17 +268,23 @@ def bootstrap_game(tail: watch.LogTail, on_event, run_dir: Path,
         time.sleep(1.5)
 
         click_menu("single_player", bounds)
-        time.sleep(2.0)
-        # Look at the submenu rather than assume its shape. Which entries it
-        # has depends on whether there is a save and a game to resume, so the
-        # position of "Create Game" moves between runs; the measured fraction
-        # is only the fallback for when the screen cannot be read.
+        time.sleep(2.5)
+        # Read the submenu rather than assume its shape. Which entries it has
+        # depends on whether there is a save and a game to resume, so where
+        # "Create Game" lands moves between runs.
         submenu = run_dir / f"submenu-attempt{attempt}.png"
         screenshot(submenu)
-        seen = vision.create_game_row(submenu, bounds) if vision.available() else None
-        target = seen if seen is not None else create_y
-        print(f"create game row: {target:.4f}"
-              f" ({'read from the screen' if seen is not None else 'measured fallback'})")
+        rows = vision.submenu_rows(submenu, bounds) if vision.available() else []
+        if len(rows) < 3:
+            print(f"attempt {attempt}: no submenu ({len(rows)} rows) -- "
+                  "the menu is not ready yet", file=sys.stderr)
+            if not env.game_pids():
+                print("the game exited while starting", file=sys.stderr)
+                return False
+            time.sleep(20.0)
+            continue
+        target = rows[-3]
+        print(f"create game row: {target:.4f} (read from {len(rows)} submenu rows)")
         click_at(int(x + w * SUBMENU_X), int(y + h * target))
         time.sleep(2.5)
         screenshot(run_dir / f"create-attempt{attempt}.png")
@@ -287,12 +294,13 @@ def bootstrap_game(tail: watch.LogTail, on_event, run_dir: Path,
         if not env.game_pids():
             print("the game exited while starting", file=sys.stderr)
             return False
-        # That row was not Create Game. Back out and try the next candidate.
+        # Back out of whatever that opened and try again.
         click_at(int(x + w * BACK[0]), int(y + h * BACK[1]))
         time.sleep(1.0)
         press_escape(1)
         time.sleep(1.5)
-        print(f"attempt {attempt}: row {create_y} was not Create Game", file=sys.stderr)
+        print(f"attempt {attempt}: no game started from row {target:.4f}",
+              file=sys.stderr)
     return False
 
 
@@ -315,6 +323,19 @@ def press_escape(times: int = 2) -> bool:
 
 
 def play(args: argparse.Namespace) -> int:
+    # One run at a time against this installation. Two harnesses share one mod
+    # directory, one log and one process; the second one's install lands in the
+    # middle of the first one's game and neither notices.
+    if not gamelock.acquire(args.tag, wait_s=args.lock_wait):
+        print(f"another run holds the game: {gamelock.describe()}", file=sys.stderr)
+        return 6
+    try:
+        return _play(args)
+    finally:
+        gamelock.release()
+
+
+def _play(args: argparse.Namespace) -> int:
     config = build_config(args)
     run_dir = RUN_ROOT / args.tag
     run_dir.mkdir(parents=True, exist_ok=True)
@@ -353,6 +374,13 @@ def play(args: argparse.Namespace) -> int:
                   f"size={event.get('size')} speed={event.get('speed')} "
                   f"max_turns={event.get('max_turns')} humans={event.get('humans')} "
                   f"configured={event.get('configured')} {event.get('error') or ''}")
+        elif kind == "turn_limit":
+            print(f"[agent] turn limit asked={event.get('asked')} "
+                  f"config={event.get('config')} game={event.get('game')}")
+        elif kind == "war":
+            print(f"[agent] war declared on player {event.get('target')} at "
+                  f"({event.get('x')},{event.get('y')}) "
+                  f"capital={event.get('capital')} army={event.get('army')}")
         elif kind == "actions" and event.get("missing"):
             print(f"[agent] unavailable actions: {event['missing']}")
         elif kind == "seat":
@@ -381,7 +409,9 @@ def play(args: argparse.Namespace) -> int:
                 summary = " ".join(f"{k}={v}" for k, v in sorted(actions.items()))
                 print(f"[turn {state['turn']:>4}] score={event.get('score')} "
                       f"cities={event.get('cities')} units={event.get('units')} "
-                      f"blocker={event.get('blocker')} | {summary}")
+                      f"blocker={event.get('blocker')} "
+                      f"ticks={event.get('ticks_taken')}/{event.get('ticks_seen')} "
+                      f"| {summary}")
         elif kind == "blocked":
             print(f"[turn {event.get('turn')}] blocked on {event.get('blocker')} "
                   f"({event.get('attempts')} attempts)")
@@ -398,7 +428,21 @@ def play(args: argparse.Namespace) -> int:
         return 5
     print("in a configured game; the agent holds the seat from here")
 
-    reason = watch.follow(tail, args.timeout, record, stop_when=finished)
+    # Hold the foreground for the whole game. Anything else taking focus --
+    # a browser, another agent's automation -- throttles the game to almost no
+    # frames, and the turn loop runs off game-core events, so the run stops
+    # without a single log line saying why.
+    last_focus = [0.0]
+
+    def keep_foreground() -> None:
+        now = time.time()
+        if now - last_focus[0] < args.focus_every:
+            return
+        last_focus[0] = now
+        focus_game()
+
+    reason = watch.follow(tail, args.timeout, record, stop_when=finished,
+                          each_poll=keep_foreground)
     events.close()
 
     outcome = state["outcome"] or {}
@@ -467,6 +511,10 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--load-wait", type=float, default=90.0)
     ap.add_argument("--timeout", type=float, default=7200.0)
     ap.add_argument("--report-every", type=int, default=5)
+    ap.add_argument("--lock-wait", type=float, default=0.0,
+                    help="seconds to wait for another run to finish")
+    ap.add_argument("--focus-every", type=float, default=15.0,
+                    help="seconds between raising the game window (0 disables)")
     ap.add_argument("--status", action="store_true")
     args = ap.parse_args(argv)
 

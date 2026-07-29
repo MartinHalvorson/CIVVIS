@@ -120,6 +120,44 @@ first turn. Three outcomes, all distinguishable: no game at all (the context
 never ran), a game marked `ok` (it ran and configured), a game carrying an
 error (it ran, failed to configure, and hosted anyway).
 
+### One run at a time, and the game must stay in front
+
+Two constraints on *running* this, both found by a run that looked broken and
+was not:
+
+- **The installation is a single writer resource, and nothing enforced it.**
+  Two sessions ran the ladder against this install at once. The second one's
+  mod install landed between the first one's turns, so the first was reading
+  events from a mod it had not installed, under a run tag it had never used;
+  its games exited without warning because the other harness stopped them. It
+  reads exactly like a flaky game. `tools/civ6_control/gamelock.py` now holds a
+  lock for the duration of a run and refuses to start rather than interleave.
+  A lock whose holder is no longer running is treated as stale and taken over.
+- **macOS throttles a background application to almost no frames.** The turn
+  loop runs off game-core events, which are tied to frames, so a browser taking
+  focus stops the game dead -- a run sat on turn 15 for ten minutes with
+  nothing wrong in any log. `civ6_play.py` raises the game window every few
+  seconds for the whole run.
+
+### The controller shares the game's frame budget
+
+Every pass this makes runs *instead of* the game advancing, and
+`Events.GameCoreEventPublishComplete` fires many times per frame. Acting on all
+of them, with a settle-site search that reads a 15x15 block of plots and a
+policy pass that walks the whole policy table per open slot, took a turn from
+about three seconds to over ten minutes. Measured at turn 20 of one game: 2,720
+event batches arrived and the controller acted on 170.
+
+So: the tick is throttled, each expensive pass has a per-turn budget, and
+settle sites are found once per settler per turn and remembered. The turn
+record carries `ticks_taken/ticks_seen` so this stays measurable rather than
+becoming folklore.
+
+Moves are checked for a route before they are issued. Ordering a unit to a plot
+it cannot reach does not fail -- the engine accepts it and prints its no-path
+sentinel, `Distance: 2147483647`, once per attempt, forever. A settler aiming
+across water and an army aiming at a capital on another continent both do it.
+
 ## How the controller plays
 
 The turn loop is built around the game's own **end-turn blockers** rather than
