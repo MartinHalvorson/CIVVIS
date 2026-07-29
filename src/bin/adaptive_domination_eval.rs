@@ -501,6 +501,22 @@ fn support_fleet(g: &Game, focal: usize, seed: u64) -> Vec<Box<dyn Ai>> {
         .collect()
 }
 
+fn require_policy_horizon(game: &Game, expected: u32, boundary: &str) -> Result<(), String> {
+    if game.max_turns != expected {
+        return Err(format!(
+            "policy horizon changed at {boundary}: expected {expected}, observed {}",
+            game.max_turns
+        ));
+    }
+    Ok(())
+}
+
+#[derive(Clone, Copy)]
+struct Horizons {
+    policy: u32,
+    observe: u32,
+}
+
 fn advance_one(
     game: &mut Game,
     focal: usize,
@@ -508,7 +524,9 @@ fn advance_one(
     support: &mut [Box<dyn Ai>],
     observer: &mut Observer,
     retarget: bool,
+    policy_turns: u32,
 ) -> Result<bool, String> {
+    require_policy_horizon(game, policy_turns, "actor entry")?;
     if game.winner.is_some() {
         return Ok(false);
     }
@@ -537,10 +555,12 @@ fn advance_one(
     if let Some((log_start, captures_before, owners_before)) = focal_context {
         observer.note_kept_captures(game, focal, log_start, captures_before, &owners_before);
     }
+    require_policy_horizon(game, policy_turns, "after actor")?;
     if game.winner.is_none() && game.current == pid {
         game.apply(pid, &Action::EndTurn).map_err(|why| {
             format!("seat {pid} did not end its turn and fallback EndTurn failed: {why}")
         })?;
+        require_policy_horizon(game, policy_turns, "after fallback EndTurn")?;
     }
     if game.winner.is_none() && game.current == pid {
         return Err(format!(
@@ -558,12 +578,20 @@ fn finish_arm(
     support: &mut [Box<dyn Ai>],
     observer: &mut Observer,
     retarget: bool,
-    observe_turns: u32,
+    horizons: Horizons,
 ) -> Result<(), String> {
-    while game.winner.is_none() && game.turn <= observe_turns {
-        advance_one(game, focal, focal_ai, support, observer, retarget)?;
+    while game.winner.is_none() && game.turn <= horizons.observe {
+        advance_one(
+            game,
+            focal,
+            focal_ai,
+            support,
+            observer,
+            retarget,
+            horizons.policy,
+        )?;
     }
-    Ok(())
+    require_policy_horizon(game, horizons.policy, "arm terminal")
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -657,6 +685,13 @@ fn play_pair(
     let mut control_game = Game::new_with(options.clone());
     control_game.victory_conditions = victories;
     let mut treatment_game = control_game.clone();
+    let policy_turns = control_game.max_turns;
+    let horizons = Horizons {
+        policy: policy_turns,
+        observe: observe_turns,
+    };
+    require_policy_horizon(&control_game, options.max_turns, "control construction")?;
+    require_policy_horizon(&treatment_game, options.max_turns, "treatment construction")?;
     let mut control_ai = pinned_advanced();
     // Start both arms from one literal controller state. Constructing two
     // equivalent agents is deterministic today, but cloning makes the causal
@@ -692,6 +727,7 @@ fn play_pair(
             &mut control_support,
             &mut control_observer,
             false,
+            policy_turns,
         )?;
         let treatment_triggered = advance_one(
             &mut treatment_game,
@@ -700,6 +736,7 @@ fn play_pair(
             &mut treatment_support,
             &mut treatment_observer,
             treatment == Treatment::PostConquestDomination,
+            policy_turns,
         )?;
         if control_triggered != treatment_triggered
             || control_observer.trigger != treatment_observer.trigger
@@ -726,7 +763,7 @@ fn play_pair(
         &mut control_support,
         &mut control_observer,
         false,
-        observe_turns,
+        horizons,
     )?;
     finish_arm(
         &mut treatment_game,
@@ -735,8 +772,10 @@ fn play_pair(
         &mut treatment_support,
         &mut treatment_observer,
         treatment == Treatment::PostConquestDomination,
-        observe_turns,
+        horizons,
     )?;
+    require_policy_horizon(&control_game, policy_turns, "control terminal")?;
+    require_policy_horizon(&treatment_game, policy_turns, "treatment terminal")?;
     let exact_terminal = serde_json::to_string(&control_game)
         .map_err(|why| format!("failed to serialize terminal control: {why}"))?
         == serde_json::to_string(&treatment_game)
@@ -1357,6 +1396,14 @@ fn main() {
 mod tests {
     use super::*;
 
+    struct HorizonMutator;
+
+    impl Ai for HorizonMutator {
+        fn take_turn(&mut self, game: &mut Game, _pid: usize) {
+            game.max_turns += 1;
+        }
+    }
+
     fn strings(command: &str) -> Vec<String> {
         command.split_whitespace().map(str::to_string).collect()
     }
@@ -1657,8 +1704,34 @@ mod tests {
         let mut support = support_fleet(&game, 0, 71_903);
         let mut observer = Observer::default();
         let error =
-            advance_one(&mut game, 0, &mut ai, &mut support, &mut observer, false).unwrap_err();
+            advance_one(&mut game, 0, &mut ai, &mut support, &mut observer, false, 2).unwrap_err();
         assert!(error.contains("remained current"), "{error}");
+    }
+
+    #[test]
+    fn a_policy_horizon_mutation_invalidates_the_arm() {
+        let mut game = Game::new_full(2, 20, 14, 71_904, 250, 0, false);
+        game.current = 1;
+        game.victory_conditions = VictoryConditions::parse("science,culture,domination").unwrap();
+        let mut ai = pinned_advanced();
+        let mut support = support_fleet(&game, 0, 71_904);
+        support[1] = Box::new(HorizonMutator);
+        let mut observer = Observer::default();
+        let error = advance_one(
+            &mut game,
+            0,
+            &mut ai,
+            &mut support,
+            &mut observer,
+            false,
+            250,
+        )
+        .unwrap_err();
+        assert!(
+            error.contains("policy horizon changed at after actor"),
+            "{error}"
+        );
+        assert!(error.contains("expected 250, observed 251"), "{error}");
     }
 
     #[test]
