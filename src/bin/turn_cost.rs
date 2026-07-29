@@ -34,7 +34,7 @@
 //! games end at different lengths, so total game time confounds "thinks longer"
 //! with "plays longer". The denominator is the turn count each run actually
 //! reached.
-use civvis::ai::{run_game, AdvancedAi};
+use civvis::ai::{run_game, AdvancedAi, BasicAi};
 use civvis::game::Game;
 use civvis::strategic::StrategicAi;
 use std::time::Instant;
@@ -51,6 +51,33 @@ fn number(args: &[String], flag: &str, default: usize) -> usize {
 struct Run {
     seconds: f64,
     turns: u32,
+}
+
+/// An all-`BasicAi` fleet, which is what a rollout's opponents *could* be.
+///
+/// Every projected round inside a rollout runs five opponent seats, so the
+/// opponent class is most of what a search costs. `rollout_state_weighted`
+/// uses `rival_agent` — an `AdvancedAi` — and the comment beside it rejects
+/// the cheap alternative on a mechanism: *"BasicAi understates victory
+/// pressure (especially religion), so a locally attractive Science rollout can
+/// be globally losing."*
+///
+/// That may well be right, and this does **not** test it: whether cheaper
+/// opponents change the *decision* needs a flag on `StrategicAi`, which is
+/// claimed by another PR. What this bounds is whether the question is worth
+/// asking at all. If `BasicAi` is barely cheaper, the mechanism argument never
+/// has to be litigated; if it is several times cheaper, then most of a
+/// searching seat's 6.4x is opponent simulation and the claim deserves a
+/// measurement rather than a comment.
+fn play_basic(seed: u64, seats: usize, width: i32, height: i32, turns: u32, cs: usize) -> Run {
+    let mut game = Game::new(seats, width, height, seed, turns, cs);
+    let mut fleet: Vec<BasicAi> = game.players.iter().map(|_| BasicAi::new()).collect();
+    let started = Instant::now();
+    run_game(&mut game, &mut fleet);
+    Run {
+        seconds: started.elapsed().as_secs_f64(),
+        turns: game.turn.max(1),
+    }
 }
 
 fn play_advanced(seed: u64, seats: usize, width: i32, height: i32, turns: u32, cs: usize) -> Run {
@@ -130,14 +157,20 @@ fn main() {
     let mut seat_ratios = Vec::new();
     let mut one_total = 0.0;
     let mut one_turns = 0u64;
+    let mut basic_total = 0.0;
+    let mut basic_turns = 0u64;
 
     for index in 0..games {
         let this = seed + index as u64;
         // Back to back on the same seed, so both meet the same neighbours.
         let a = play_advanced(this, seats, width, height, turns, city_states);
+        let b = play_basic(this, seats, width, height, turns, city_states);
         let one = play_mixed(this, seats, width, height, turns, city_states, 1);
         let s = play_mixed(this, seats, width, height, turns, city_states, seats);
         let a_per = a.seconds / a.turns as f64;
+        let b_per = b.seconds / b.turns as f64;
+        basic_total += b.seconds;
+        basic_turns += b.turns as u64;
         let one_per = one.seconds / one.turns as f64;
         let s_per = s.seconds / s.turns as f64;
         let ratio = s_per / a_per.max(1e-9);
@@ -151,8 +184,9 @@ fn main() {
         advanced_turns += a.turns as u64;
         strategic_turns += s.turns as u64;
         println!(
-            "  seed {this}: all-advanced {:.1} ms/turn | one searching seat {:.1} ms/turn \
-             ({seat_ratio:.1}x) | all searching {:.1} ms/turn ({ratio:.1}x)",
+            "  seed {this}: all-basic {:.1} | all-advanced {:.1} ms/turn | one searching seat \
+             {:.1} ms/turn ({seat_ratio:.1}x) | all searching {:.1} ms/turn ({ratio:.1}x)",
+            1000.0 * b_per,
             1000.0 * a_per,
             1000.0 * one_per,
             1000.0 * s_per,
@@ -169,7 +203,9 @@ fn main() {
     let seat_median = seat_ratios[seat_ratios.len() / 2];
     let one_per = 1000.0 * one_total / one_turns.max(1) as f64;
 
-    println!("\nadvanced:  {advanced_per:.1} ms a game-turn ({advanced_turns} turns)");
+    let basic_per = 1000.0 * basic_total / basic_turns.max(1) as f64;
+    println!("\nbasic:     {basic_per:.1} ms a game-turn ({basic_turns} turns)");
+    println!("advanced:  {advanced_per:.1} ms a game-turn ({advanced_turns} turns)");
     println!("strategic: {strategic_per:.1} ms a game-turn ({strategic_turns} turns)");
     println!("one searching seat among {}: {one_per:.1} ms a game-turn", seats - 1);
     println!("ratio, all searching: median {median:.1}x, range {low:.1}x..{high:.1}x over {games} seeds");
@@ -192,5 +228,37 @@ fn main() {
     );
     println!(
         "note: the joint axis (#589) costs about 2.5x again on top of whatever this says."
+    );
+    // The opponent class is five of six seats in every projected round, so this
+    // ratio is an upper bound on what cheaper rollout opponents could save.
+    let opponent_ratio = advanced_per / basic_per.max(1e-9);
+    // Being 5 of 6 seats is not the same as being most of the spend. A rollout
+    // round costs one branch agent plus `seats - 1` opponents; swapping only the
+    // opponents to the cheap class leaves the branch agent where it is, so the
+    // achievable saving is `seats / (1 + (seats - 1) / ratio)` and not `ratio`.
+    // Quoting the per-turn ratio as though it were the saving is the same error
+    // as quoting an all-searching fleet as the cost of seating one entry.
+    let others = (seats - 1) as f64;
+    let achievable = seats as f64 / (1.0 + others / opponent_ratio.max(1e-9));
+    println!(
+        "\nrollout opponents: an advanced turn is {opponent_ratio:.1}x a basic one, and \
+         opponents are {} of {seats} seats in every projected round",
+        seats - 1
+    );
+    println!(
+        "  so swapping them to the cheap class saves at most {achievable:.2}x of the rollout, \
+         taking a searching seat from {seat_median:.1}x to about {:.1}x",
+        1.0 + (seat_median - 1.0) / achievable
+    );
+    println!(
+        "  verdict: {}",
+        if achievable < 1.6 {
+            "not where the cost lives. The branch agent stays expensive whatever the opponents \
+             are, so this cannot pay for litigating the mechanism argument against it -- the \
+             levers are fewer branches and a shorter horizon"
+        } else {
+            "a large enough share to be worth measuring whether cheaper opponents change the \
+             decision, rather than asserting it"
+        }
     );
 }

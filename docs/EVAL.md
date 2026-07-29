@@ -5857,3 +5857,51 @@ this establishes.
 | **seating one searching entry costs ~6.4×** | **established** (n=3) |
 | search is too expensive to seat | **refuted** — that conclusion came from measuring a fleet nobody runs |
 | a searching seat would break the exhibition's frame-per-turn guarantee | **unmeasured**, and unlikely at 13 turns/sec |
+
+## 2026-07-29 — cheaper rollout opponents are not where a search's cost lives
+
+A searching seat costs 6.7× a scripted one at the deployment profile, and
+opponents are five of the six seats in every projected round, so the obvious
+lever is to run them as `BasicAi`. `rollout_state_weighted` uses `rival_agent`
+(an `AdvancedAi`) and the comment beside it rejects the cheap class on a
+mechanism: *"BasicAi understates victory pressure (especially religion), so a
+locally attractive Science rollout can be globally losing."*
+
+Before litigating that, bound the prize.
+
+| fleet | ms a game-turn |
+|---|---|
+| all `BasicAi` | 7.7 |
+| all `AdvancedAi` | 12.8 |
+| one searching seat among five | 74.0 |
+| all `StrategicAi` | 398.5 |
+
+An advanced turn is **1.7×** a basic one. Being 5 of 6 seats is not the same as
+being most of the spend: a projected round is one branch agent plus five
+opponents, and swapping only the opponents leaves the branch agent where it is.
+The achievable saving is `seats / (1 + (seats-1)/ratio)` = **1.49×**, which takes
+a searching seat from 6.7× to about 4.8×.
+
+**So the mechanism argument never has to be tested.** Even if cheaper opponents
+cost nothing in decision quality, 1.49× does not change whether search is
+seatable, and the comment's risk — a lane chosen because the rollout understated
+a rival's religion — is a bad trade for it. The comment stands unchallenged on
+grounds of prize size rather than on grounds of being right.
+
+**The levers are elsewhere**, and both are already in flight: fewer branches
+(`rotate_lanes` is a recorded null for strength at 0.71× cost) and a shorter
+horizon (#570). A searching seat's cost is dominated by the sheer volume of
+projected seat-turns — eleven branches times forty rounds — not by what class of
+agent walks them.
+
+**An instrument error worth recording**, because it is the third of this shape
+today: the first verdict read the bare 1.7× ratio and printed *"opponent
+simulation is most of what a search spends."* A ratio is not a saving until you
+account for the part that does not change — the same error as quoting an
+all-searching fleet as the cost of seating one entry.
+
+| claim | status |
+|---|---|
+| opponent class is the dominant term in a search's cost | **refuted** (1.49× achievable) |
+| cheaper rollout opponents would make search seatable | **refuted** (6.7× → 4.8×) |
+| `BasicAi` opponents degrade the decision | **untested, and deliberately so** — the prize is too small to justify the risk |
