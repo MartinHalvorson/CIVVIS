@@ -21933,4 +21933,107 @@ mod tests {
         }
         println!();
     }
+
+    /// Census, not an assertion: how much of its treasury does an empire never
+    /// spend?
+    ///
+    /// The `ablate` harness's calibration grant hands a seat 200 Gold and 100
+    /// Faith a turn and wins **89 of 100** — by a wide margin the largest
+    /// effect any grant has produced, against `ground`, `siting`, `taker`,
+    /// `modernity` and `attrition` all null and `expansion` at 52.3%. That
+    /// grant is not a subsystem and proves nothing on its own; it is the
+    /// instrument's proof that it can detect an advantage.
+    ///
+    /// But it does raise a question nothing in `docs/` has asked: the treasury
+    /// is evidently worth an enormous amount, so **does this agent use the one
+    /// it already has?** A balance sitting idle is capital earning nothing, and
+    /// unlike expansion it costs no production to deploy.
+    ///
+    /// Reported as *turns of income held*, because an absolute balance is not
+    /// interpretable on its own — 300 Gold is prudent at 5 gold per turn and
+    /// dead weight at 40.
+    ///
+    /// Run with `cargo test --release idle_treasury_census -- --ignored --nocapture`.
+    #[test]
+    #[ignore = "census, not an assertion; run explicitly with --nocapture"]
+    fn idle_treasury_census() {
+        for (label, players, width, height) in
+            [("eval 4p 24x16", 4usize, 24i32, 16i32), ("deployment 6p 74x46", 6, 74, 46)]
+        {
+            let mut gold_samples: Vec<f64> = Vec::new();
+            let mut faith_samples: Vec<f64> = Vec::new();
+            let mut gpt_samples: Vec<f64> = Vec::new();
+            let mut gold_turns_held: Vec<f64> = Vec::new();
+            let mut peak_gold = 0.0f64;
+            let maps = 6u64;
+
+            for map in 0..maps {
+                let mut game =
+                    Game::new_full(players, width, height, 480_000 + map, 200, 1, false);
+                let mut ais: Vec<AdvancedAi> =
+                    (0..game.players.len()).map(|_| AdvancedAi::new()).collect();
+                game.set_fog_memory(false);
+                while game.winner.is_none() && game.turn <= game.max_turns {
+                    let pid = game.current;
+                    ais[pid].take_turn(&mut game, pid);
+                    if game.winner.is_none() && game.current == pid {
+                        let _ = game.apply(pid, &crate::game::Action::EndTurn);
+                    }
+                    if pid != 0 {
+                        continue;
+                    }
+                    let gold = game.players[0].gold;
+                    let faith = game.players[0].faith;
+                    // Income, not balance: what the empire earns each turn is
+                    // the yardstick a balance has to be read against.
+                    let gpt = game
+                        .player_city_ids(0)
+                        .into_iter()
+                        .map(|cid| game.city_yields(cid).gold)
+                        .sum::<f64>()
+                        .max(0.1);
+                    gold_samples.push(gold);
+                    faith_samples.push(faith);
+                    gpt_samples.push(gpt);
+                    gold_turns_held.push(gold / gpt);
+                    peak_gold = peak_gold.max(gold);
+                }
+            }
+
+            let mean = |v: &Vec<f64>| v.iter().sum::<f64>() / v.len().max(1) as f64;
+            let median = |v: &Vec<f64>| {
+                let mut c = v.clone();
+                c.sort_by(f64::total_cmp);
+                c[c.len() / 2]
+            };
+            println!("\n=== idle treasury [{label}]: {} seat-turns ===", gold_samples.len());
+            println!(
+                "  Gold held      mean {:.0}   median {:.0}   peak {:.0}",
+                mean(&gold_samples),
+                median(&gold_samples),
+                peak_gold
+            );
+            println!("  Gold income    mean {:.1}/turn", mean(&gpt_samples));
+            println!(
+                "  ★ Gold held as TURNS OF INCOME   mean {:.1}   median {:.1}",
+                mean(&gold_turns_held),
+                median(&gold_turns_held)
+            );
+            println!(
+                "  Faith held     mean {:.0}   median {:.0}",
+                mean(&faith_samples),
+                median(&faith_samples)
+            );
+            // The mean sits far above the median, so the distribution has a
+            // tail and the tail is where any real waste lives. A seat holding
+            // thirty turns of income is not keeping a prudent reserve.
+            for cut in [10.0f64, 30.0, 60.0] {
+                let share = gold_turns_held.iter().filter(|t| **t > cut).count() as f64
+                    / gold_turns_held.len().max(1) as f64
+                    * 100.0;
+                println!("    seat-turns holding more than {cut:>4.0} turns of income: {share:>5.1}%");
+            }
+        }
+        println!();
+    }
 }
