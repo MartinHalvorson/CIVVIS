@@ -41,6 +41,11 @@ const CITY_WORK_RADIUS: usize = 3;
 /// the agent's own appetite rather than inventing a larger one.
 const EXPANSION_TARGET: usize = 6;
 
+/// Turns of Gold income a seat may keep under `Grant::IdleReserve`. Generous by
+/// design: the deployment map's median holding is 9.4 turns, so this leaves the
+/// typical reserve untouched and takes only what sits above it.
+const IDLE_RESERVE_TURNS: f64 = 10.0;
+
 /// A capability granted to the wrapped agent for free.
 ///
 /// Each one is chosen to bound one measured failure, so a null result closes
@@ -160,10 +165,35 @@ pub enum Grant {
     /// the value on offer — so this is a bound on expansion *rate* and not on
     /// siting.
     Expansion,
+    /// Confiscate every Gold above ten turns of income, every turn.
+    ///
+    /// **An ablation, not a grant** — the only one in this enum, and the sign
+    /// of its result reads the other way. Everything else here hands a seat a
+    /// capability and asks what perfection is worth. This takes a resource away
+    /// and asks whether it was doing anything at all.
+    ///
+    /// `idle_treasury_census` (#590) measures a median seat holding **9 to 16
+    /// turns of income** in Gold, with a real tail — a quarter of eval-scale
+    /// seat-turns above thirty turns of income, a peak of 4031 against 7.7 a
+    /// turn. The obvious question is whether spending that would help, and the
+    /// obvious experiment is the wrong one: correlating balances with outcomes
+    /// finds that hoarding seats lose and establishes nothing, which is how
+    /// three findings in this repository were retracted.
+    ///
+    /// Confiscation settles it cleanly and in the safe direction. If a seat is
+    /// **unharmed** by losing everything above a working buffer, that money was
+    /// dead capital and there is real headroom in deploying it. If it is
+    /// **hurt**, the reserve is doing a job — insurance against an emergency
+    /// purchase is correct play at Civ VI prices — and the axis closes with no
+    /// treatment built.
+    ///
+    /// A null here is therefore an *informative* null either way, which is not
+    /// true of most measurements this harness runs.
+    IdleReserve,
 }
 
 impl Grant {
-    pub const ALL: [Grant; 8] = [
+    pub const ALL: [Grant; 9] = [
         Grant::None,
         Grant::Modernity,
         Grant::Taker,
@@ -172,6 +202,7 @@ impl Grant {
         Grant::Ground,
         Grant::Siting,
         Grant::Expansion,
+        Grant::IdleReserve,
     ];
 
     pub fn name(self) -> &'static str {
@@ -184,6 +215,7 @@ impl Grant {
             Grant::Ground => "ground",
             Grant::Siting => "siting",
             Grant::Expansion => "expansion",
+            Grant::IdleReserve => "idle_reserve",
         }
     }
 
@@ -405,6 +437,31 @@ impl<A: Ai> Oracle<A> {
         self.fired += 1;
     }
 
+    /// Take every Gold above `IDLE_RESERVE_TURNS` turns of income.
+    ///
+    /// The threshold is a multiple of *income*, not an absolute balance,
+    /// because 300 Gold is a prudent buffer at 5 a turn and dead weight at 40 —
+    /// the same reason `idle_treasury_census` reports turns of income rather
+    /// than Gold. Ten turns is deliberately generous: it leaves more than the
+    /// median seat's own holding on the deployment map (9.4 turns), so
+    /// everything taken is above what this agent typically keeps.
+    fn confiscate_idle_reserve(&mut self, g: &mut Game, pid: usize) {
+        let income: f64 = g
+            .player_city_ids(pid)
+            .into_iter()
+            .map(|cid| g.city_yields(cid).gold)
+            .sum::<f64>()
+            .max(1.0);
+        let ceiling = income * IDLE_RESERVE_TURNS;
+        let Some(seat) = g.players.get_mut(pid) else {
+            return;
+        };
+        if seat.gold > ceiling {
+            seat.gold = ceiling;
+            self.fired += 1;
+        }
+    }
+
     fn grant_treasury(&mut self, g: &mut Game, pid: usize) {
         g.players[pid].gold += 200.0;
         g.players[pid].faith += 100.0;
@@ -520,6 +577,7 @@ impl<A: Ai> Ai for Oracle<A> {
                 Grant::Ground => self.grant_ground(g, pid),
                 Grant::Siting => self.grant_siting(g, pid),
                 Grant::Expansion => self.grant_expansion(g, pid),
+                Grant::IdleReserve => self.confiscate_idle_reserve(g, pid),
             }
         }
         self.inner.take_turn(g, pid);
@@ -540,7 +598,7 @@ impl<A: Ai> Ai for Oracle<A> {
 
 #[cfg(test)]
 mod tests {
-    use super::{Grant, Oracle, CITY_WORK_RADIUS, EXPANSION_TARGET};
+    use super::{Grant, Oracle, CITY_WORK_RADIUS, EXPANSION_TARGET, IDLE_RESERVE_TURNS};
     use crate::ai::{AdvancedAi, Ai};
     use crate::game::{Game, Item};
     use crate::Pos;
@@ -898,6 +956,57 @@ mod tests {
         }
         assert!(oracle.fired() > 0, "the expansion grant never handed out a settler");
         assert!(ever_granted, "no settler was ever observed being granted");
+    }
+
+
+    /// The confiscation must actually take Gold, must leave a working buffer
+    /// rather than emptying the treasury, and must take nothing else.
+    #[test]
+    fn the_idle_reserve_ablation_fires_and_leaves_a_buffer() {
+        let mut g = Game::new(4, 28, 18, 8_109, 200, 2);
+        let mut oracle = Oracle::new(AdvancedAi::new(), Grant::IdleReserve);
+        let mut others = AdvancedAi::fleet(&g);
+        let mut ever_took = false;
+        while g.winner.is_none() && g.turn <= 140 {
+            let pid = g.current;
+            if pid == 0 {
+                let mut probe = g.clone();
+                let before = probe.players[0].gold;
+                let faith = probe.players[0].faith;
+                let units = probe.player_unit_ids(0);
+                let cities = probe.player_city_ids(0);
+                let income: f64 = cities
+                    .iter()
+                    .map(|cid| probe.city_yields(*cid).gold)
+                    .sum::<f64>()
+                    .max(1.0);
+
+                oracle.confiscate_idle_reserve(&mut probe, 0);
+
+                let after = probe.players[0].gold;
+                assert!(after <= before + 1e-9, "the ablation ADDED Gold");
+                assert_eq!(faith, probe.players[0].faith, "the ablation moved Faith");
+                assert_eq!(units, probe.player_unit_ids(0), "the ablation changed the roster");
+                assert_eq!(cities, probe.player_city_ids(0), "the ablation changed the cities");
+                // Whatever it leaves must still be a working buffer.
+                assert!(
+                    after >= (income * IDLE_RESERVE_TURNS).min(before) - 1e-6,
+                    "the ablation cut into the buffer it is supposed to leave: \
+                     {after} against {income}/turn"
+                );
+                if after < before - 1e-9 {
+                    ever_took = true;
+                }
+                oracle.take_turn(&mut g, pid);
+            } else {
+                others[pid].take_turn(&mut g, pid);
+            }
+            if g.winner.is_none() && g.current == pid {
+                let _ = g.apply(pid, &crate::game::Action::EndTurn);
+            }
+        }
+        assert!(oracle.fired() > 0, "the idle-reserve ablation never took anything");
+        assert!(ever_took, "no confiscation was ever observed");
     }
 
     /// The grant must be modernization and nothing else: no Gold, no health,
