@@ -5080,3 +5080,118 @@ reduces regret on a fresh external profile earns the mirrored gameplay gate.
 | the fixed destination advantage head transfers Standard → Online | **refuted in this sample** |
 | explicit role interactions repair the learner | **refuted on Standard holdout** |
 | the current model should control gameplay | **rejected before A/B** |
+
+## 2026-07-29 — PRE-REGISTRATION: preserve matched doctrine outcomes before overriding a move
+
+The first causal move head averaged four matched doctrine continuations into
+one return before learning. That makes a 2-2 split look like a confident small
+effect, makes the target scale depend on the map profile, and forces the model
+to replace the expert even when its margin is negligible. Its Standard gain
+reversed on Online games. This experiment changes those three properties and
+nothing about gameplay.
+
+**Hypothesis.** A linear pairwise head trained on the sign of every matched
+candidate comparison, with disagreement shrunk toward indifference, will
+transfer better than the mean-return listwise head. Requiring a predicted
+probability of at least **0.70** before replacing the expert will turn weak or
+profile-specific preferences into abstentions instead of regressions.
+
+The decision rule is exact: score every candidate, identify the highest-scored
+non-expert sibling (enumeration order keeps a tie), and replace the recorded
+expert only when `sigmoid(sibling_score - expert_score) >= 0.70`. A tied score
+therefore retains the expert. The 5% gate below uses the game-macro mean
+override rate, matching the return uncertainty unit.
+
+The target for each unordered candidate pair is fixed before data collection.
+Each of the four doctrine-matched return differences contributes a win, loss,
+or half-win tie. A Jeffreys `Beta(0.5, 0.5)` posterior mean is the logistic
+target, so 4-0, 3-1, and 2-2 evidence becomes 0.90, 0.70, and 0.50. All pairs
+are kept; split evidence explicitly teaches a zero margin. The feature vector
+is the difference of the already-validated 35 destination features. Training
+uses 80 deterministic epochs, batch size 32, rate 0.05, and L2 0.0001. No
+nonlinear terms or external-profile tuning are allowed.
+
+The data and decision rule are also fixed:
+
+- development: **64** four-player 44x28 Standard games, seeds
+  946000-946063, no city-states, four observations at turns 50/75/100/125;
+- untouched external test: **32** six-player 74x46 Online games, seeds
+  947000-947031, six city-states, four observations at turns
+  70/100/130/160;
+- both: three same-unit alternatives, 80-round continuation horizon, four
+  matched doctrine rotations, and zero tolerated integrity failures;
+- the existing hash split holds out 25% of Standard games. The external run is
+  spent only if the 0.70-gated policy has positive held-out return lift over
+  the expert and overrides at least 5% of decisions;
+- after that selection gate, the same fixed model is refit on all Standard
+  games and evaluated once on Online. The existing 40-epoch, temperature-0.01
+  listwise destination head is rerun on the same corpus as the target-control;
+- external success requires positive lift over the expert with a game-macro
+  95% lower confidence bound above zero and at least 5% overrides. Anything
+  weaker is a rejection, not permission to tune the threshold on these maps.
+
+The primary metrics are oracle regret and return lift versus the recorded
+expert, macro-averaged by independent game. Override rate, the fraction of
+overrides with positive mean return, and their matched-doctrine win/loss/tie
+counts diagnose whether abstention worked. No gameplay code or model artifact
+is promoted by this experiment; a passing external result earns a separate,
+mirrored gameplay A/B.
+
+### Result: the rank signal improves, but the preregistered abstainer is inert
+
+All 64 Standard games were collected at the fixed seeds. They produced 247
+decisions, 938 candidate rows, and 3,752 doctrine continuations; four scheduled
+observations had no eligible move. There were **zero rejected branches, repeat
+mismatches, or observation errors**. Of the 247 decisions, 127 (51.4%) had a
+best-minus-worst mean-return spread above 0.005. Mean spread was 0.0339, mean
+expert oracle regret was 0.0170, and a sibling beat the expert in all four
+replicas at 16 decisions.
+
+The game-hash split assigned 44 games / 171 decisions to training and 20 games
+/ 76 decisions to the held-out selection set. The exact fixed fit produced:
+
+| game-macro metric | train | held-out Standard |
+|---|---:|---:|
+| decisions | 171 | 76 |
+| expert oracle regret | 0.0181 | 0.0133 |
+| ungated model regret | **0.0121** | **0.0082** |
+| ungated return lift vs expert | **+0.0060 ± 0.0039** | **+0.0051 ± 0.0039** |
+| 0.70-gated model regret | 0.0181 | 0.0133 |
+| 0.70-gated overrides | **0/171** | **0/76** |
+
+This is a useful ranking signal but not a usable abstaining policy. The
+held-out best-sibling probabilities had median 0.505, p90 0.517, p99 0.529,
+and maximum 0.532. None even reached 0.55. Training was similarly compressed
+(maximum 0.530), with weight L2 norm 0.1201 and largest absolute weight 0.0644.
+The posterior target itself contains substantial indifference: 541/910 train
+pairs and 260/435 held-out pairs have target 0.50. These diagnostics were
+reported without changing the fit or decision rule.
+
+The selection gate therefore **fails**: gated lift is zero only because the
+model always retains the expert, and its game-macro override rate is 0%, below
+the required 5%. The 0.70 threshold is not tuned after observing this result.
+No Online games were generated, seeds 947000-947031 remain untouched, the
+listwise external control was not run, and no gameplay A/B or integration was
+spent.
+
+> **Do not promote this head.** Replica-aware pairwise supervision preserves
+> information that mean returns discard and its ungated ranking is promising,
+> but the raw logistic margin is not a calibrated posterior suitable for a
+> conservative override gate. In this fixed linear formulation, abstention is
+> total rather than selective.
+
+A justified successor must separate ranking from confidence without using the
+untouched Online profile: cross-fit the pairwise scorer by independent game,
+calibrate its out-of-fold margins against robust matched-doctrine superiority
+on a fresh Standard calibration corpus, and preregister a risk/coverage rule
+before one external evaluation. More doctrine replicas would also give that
+calibrator a less quantized target. The fresh external set is spent only if a
+separate Standard selection set shows positive return lift at nonzero
+coverage; lowering 0.70 on this corpus is not evidence.
+
+| claim | status |
+|---|---|
+| replica-aware destination ranking improves held-out Standard regret | **supported (+0.0051 ± 0.0039 lift)** |
+| the raw pairwise sigmoid reaches a selective 0.70 override region | **refuted (maximum 0.532; 0/76 overrides)** |
+| the fixed head transfers to Online | **not tested; external spend gate failed** |
+| the current head should control gameplay | **rejected before external evaluation or A/B** |
