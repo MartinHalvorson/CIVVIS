@@ -688,3 +688,47 @@ Expected power is the limit to plan for, not the code: ~30 discordant cells
 resolves roughly a 70/30 split, so a real 60/40 effect would not be detected,
 and the honest phrasing of a null there is "worth less than this run can
 resolve".
+
+### The result with the mechanism firing: also null
+
+`ai_eval advanced advanced_congress_counter_hard --players 4 --city-states 6
+--width 60 --height 38 --pairs 120 --turns 400 --seed 991000`
+(`/Users/martin/eval-congress-counter-hard-120.log`), average 303.3 turns:
+
+| reading | value |
+|---|---|
+| game-win share | 121/240 vs 119/240 |
+| paired-map score for `advanced` | **50.4%** (Wilson 41.6–59.2), Elo **+3** |
+| paired direction | 3 / 115 neutral / 2, sign **p=1.0000** |
+| terminal score | **50.1%**, 19 / 89 / 12, **p=0.2810** |
+| resolution | wins rest on 5 of 120 maps, terminal score on 31 |
+| gate | INCONCLUSIVE |
+
+The registered prediction was again "null, 48–52%, sign p > 0.10". It landed at
+50.4%.
+
+**This is the informative one.** The first arm was null with the mechanism
+switched off by the seating; this arm was measured firing in exactly this
+configuration — 14 landed penalties over 12 games, **all fourteen on the
+eventual winner** — and the result is the same dead heat. So the null cannot be
+explained by mis-aiming, and it cannot be explained by cost, because a losing
+vote is refunded in full.
+
+**What this closes:** a free, correctly-aimed, targeted economic penalty —
+trade embargo, −20% growth, frozen borders — landed on the eventual winner
+about 1.2 times a game does not change who wins. The counter-leader axis has
+now failed with the *response* removed (`advanced_blind_to_leaders`), with the
+response's *shape* changed (`advanced_counter_in_lane`), with its *timing*
+changed (`advanced_early_score_alarm`), and now with its *price* removed
+(`advanced_congress_counter_hard`). Four independent objections, four nulls.
+
+**What it does not close.** 1.2 penalties a game is a thin intervention and
+wins rest on 5 of 120 maps; the honest phrasing is *worth less than this run
+can resolve*, not zero. Sizing it properly is the oracle experiment described
+below, which bounds the value of *all* Congress penalties at once rather than
+the value of the AI's ability to aim them.
+
+| treatment | what it removed as an objection | result |
+|---|---|---|
+| `advanced_congress_counter` | the aim (DVP leader → the empire about to win) | 50.0%, p=1.0000 — mechanism did not fire |
+| **`advanced_congress_counter_hard`** | **the aim *and* the vote margin** | **50.4%, p=1.0000 — mechanism fired, 14/14 on the winner** |
