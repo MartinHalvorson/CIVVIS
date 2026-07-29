@@ -641,6 +641,7 @@ fn main() {
         && nominal_turns == 250
         && observe_through == 320
         && speed == "online"
+        && difficulty == default_difficulty()
         && map_poles == MapPoles::Poles
         && randomize_civs
         && victory_conditions == VictoryConditions::parse("science,culture,domination").unwrap();

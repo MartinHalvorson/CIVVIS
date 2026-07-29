@@ -104,6 +104,14 @@ one-turn diagnostic at seed 9,986,999 exercised the derived 4-player Land
 Only/Flat profile, retained `Game.max_turns = 1`, and printed no focal gate. No
 map from seed 9,986,000 or 9,987,000 has been run or read.
 
+A final pre-flight audit before either focal seed found that the CLI accepted a
+diagnostic `--difficulty` override but omitted difficulty from the predicate
+that labels an invocation as the exact frozen profile. The runner now also
+requires the production-default Prince difficulty before printing either gate.
+The frozen command already omitted the flag and therefore already selected
+Prince; this is prospective validation hardening only, with no change to the
+command, population, controller, seed, endpoint, threshold, or resource rule.
+
 ## Fixed deployment-population screen
 
 The amended frozen command is:
