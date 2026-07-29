@@ -239,8 +239,11 @@ fn main() {
         .map(String::as_str)
         .unwrap_or("ship")
         .to_string();
-    if !matches!(arm.as_str(), "ship" | "counter" | "votes" | "hard") {
-        eprintln!("--arm must be ship, counter, votes or hard");
+    if !matches!(
+        arm.as_str(),
+        "ship" | "counter" | "votes" | "hard" | "mixed" | "mixed_hard"
+    ) {
+        eprintln!("--arm must be ship, counter, votes, hard, mixed or mixed_hard");
         std::process::exit(2);
     }
 
@@ -256,9 +259,21 @@ fn main() {
         let mut game = Game::new(players, width, height, seed, turns, city_states);
         let stock = Weights::default();
         let mut fleet: Vec<AdvancedAi> = AdvancedAi::fleet_weighted(&game, &stock);
-        for planner in fleet.iter_mut() {
-            planner.congress_counter_leader = arm == "counter" || arm == "hard";
-            planner.congress_counter_votes = arm == "votes" || arm == "hard";
+        for (seat, planner) in fleet.iter_mut().enumerate() {
+            // `mixed` reproduces what `ai_eval` actually runs: half the table
+            // treated, half shipped. A counter that needs a majority of the
+            // Congress to agree cannot be priced by a harness that gives it
+            // half the votes and hands the other half to the control, and this
+            // arm is how that is measured rather than asserted.
+            let half = arm == "mixed" || arm == "mixed_hard";
+            let treated = !half || seat.is_multiple_of(2);
+            planner.congress_counter_leader =
+                treated && (arm == "counter" || arm == "hard" || half);
+            // In the all-seats arm the opposition already carries every vote it
+            // cares about, so buying more is inert. In the mixed arm it is the
+            // only thing that can break the tie the control half forces.
+            planner.congress_counter_votes =
+                arm == "votes" || arm == "hard" || (treated && arm == "mixed_hard");
         }
         let majors: Vec<usize> = (0..game.players.len())
             .filter(|pid| !game.players[*pid].is_minor && !game.players[*pid].is_barbarian)
