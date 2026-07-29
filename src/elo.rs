@@ -1443,6 +1443,13 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         // missing net therefore leaves it untrained rather than renamed,
         // which the provenance line says in those words.
         "strategic_doctrine" => (vec![genome, value(false)], "strategic_doctrine"),
+        // Same shape as `strategic_doctrine`: the joint axis runs with or
+        // without a net, so a missing one leaves it untrained rather than
+        // renamed. Registered explicitly because the catch-all would call it
+        // "scripted, no artifacts required" -- which is what it said on the
+        // first deployment run, and a provenance line that understates what an
+        // agent depends on is how `policy_wide` got misread in #530.
+        "strategic_joint" => (vec![genome, value(false)], "strategic_joint"),
         "strategic_r20" => (vec![genome, value(false)], "strategic_r20"),
         "strategic_r10" => (vec![genome, value(false)], "strategic_r10"),
         "strategic_nodefer" => (vec![genome, value(false)], "strategic_nodefer"),
