@@ -781,6 +781,9 @@ pub struct AdvancedAi {
     /// Reasoning from the weights has therefore failed three times in a row on
     /// this treatment, which is the signal to stop. Each switch isolates one
     /// rung so a 2-minute paired run can answer what the arithmetic could not.
+    /// Let a Bastion halt its own growth, which is what the first three arms
+    /// did and is the single mechanism the per-rung bisect convicted. Off.
+    pub city_strategy_halt_growth: bool,
     pub city_strategy_bastion: bool,
     pub city_strategy_breadbasket: bool,
     pub city_strategy_comparative: bool,
@@ -986,6 +989,7 @@ impl AdvancedAi {
             city_strategy_emphasis: true,
             city_strategy_roles: true,
             city_strategy_expansion_first: true,
+            city_strategy_halt_growth: false,
             city_strategy_bastion: true,
             city_strategy_breadbasket: true,
             city_strategy_comparative: true,
@@ -1427,6 +1431,10 @@ impl AdvancedAi {
                     emphasis,
                     role,
                     pressure,
+                    // Measured harmful in isolation (43.8%, Elo -44,
+                    // p=0.0107). Reachable only through the frozen controls.
+                    halt_growth: self.city_strategy_halt_growth
+                        && role == CityRole::Bastion,
                 },
             );
         }
@@ -20002,6 +20010,7 @@ mod tests {
                 emphasis: science,
                 role: CityRole::Balanced,
                 pressure: 0.0,
+                halt_growth: false,
             },
         );
         let under_science = game.citizen_strategy(city);
@@ -20020,6 +20029,7 @@ mod tests {
                 emphasis: culture,
                 role: CityRole::Balanced,
                 pressure: 0.0,
+                halt_growth: false,
             },
         );
         let under_culture = game.citizen_strategy(city);
@@ -20043,6 +20053,7 @@ mod tests {
                 emphasis: Yields::default(),
                 role: CityRole::Balanced,
                 pressure: 0.6,
+                halt_growth: false,
             },
         );
         let approached = game.citizen_strategy(city);
@@ -20061,18 +20072,41 @@ mod tests {
                 emphasis: Yields::default(),
                 role: CityRole::Bastion,
                 pressure: 0.6,
+                halt_growth: false,
             },
         );
         let besieged = game.citizen_strategy(city);
         assert!(besieged.weights.production > approached.weights.production);
-        assert!(besieged.weights.food < calm.weights.food);
+        // ⚠ A Bastion wants hammers and KEEPS GROWING. The opposite -- cutting
+        // its food weight and refusing a growth surplus -- reads as obviously
+        // correct and is the single mechanism the per-rung bisect convicted:
+        // isolated over 120 paired maps it scores 43.8%, Elo -44 at p=0.0107,
+        // and costs a fifth of the empire's cities. A besieged city that stops
+        // growing does not become safer, only permanently smaller.
         assert_eq!(
-            besieged.food_target,
-            2.0 * game.cities[&city].pop as f64,
-            "a bastion feeds its population and asks for no growth surplus"
+            besieged.food_target, calm.food_target,
+            "a bastion must not trade away its own growth"
         );
-        // Nutrition is never traded away, whatever the plan says.
-        assert!(besieged.food_target >= 2.0 * game.cities[&city].pop as f64);
+        assert_eq!(besieged.weights.food, calm.weights.food);
+
+        game.players[0].city_directives.insert(
+            city,
+            CityDirective {
+                emphasis: Yields::default(),
+                role: CityRole::Bastion,
+                pressure: 0.6,
+                halt_growth: true,
+            },
+        );
+        let halted = game.citizen_strategy(city);
+        assert!(halted.weights.food < calm.weights.food);
+        assert_eq!(
+            halted.food_target,
+            2.0 * game.cities[&city].pop as f64,
+            "the frozen control still expresses the measured-worse stance"
+        );
+        // Nutrition is never traded away, even under the losing stance.
+        assert!(halted.food_target >= 2.0 * game.cities[&city].pop as f64);
     }
 
     /// `city_pressure` is the number `threatened_city` already computed and

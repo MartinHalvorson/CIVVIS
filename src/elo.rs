@@ -640,6 +640,7 @@ pub fn builtin_ai(name: &str, seed: u64) -> Box<dyn Ai> {
         "advanced_city_strategy_bastion_only" => {
             let mut ai = AdvancedAi::new();
             ai.city_strategy = true;
+            ai.city_strategy_halt_growth = true;
             ai.city_strategy_emphasis = false;
             ai.city_strategy_breadbasket = false;
             ai.city_strategy_comparative = false;
@@ -679,6 +680,7 @@ pub fn builtin_ai(name: &str, seed: u64) -> Box<dyn Ai> {
         "advanced_city_strategy_roles_raw" => {
             let mut ai = AdvancedAi::new();
             ai.city_strategy = true;
+            ai.city_strategy_halt_growth = true;
             ai.city_strategy_emphasis = false;
             ai.city_strategy_expansion_first = false;
             Box::new(ai)
@@ -686,6 +688,7 @@ pub fn builtin_ai(name: &str, seed: u64) -> Box<dyn Ai> {
         "advanced_city_strategy_raw" => {
             let mut ai = AdvancedAi::new();
             ai.city_strategy = true;
+            ai.city_strategy_halt_growth = true;
             ai.city_strategy_expansion_first = false;
             Box::new(ai)
         }

@@ -12882,6 +12882,18 @@ pub struct CityDirective {
     /// `at_war` cannot tell those apart; this is what makes the governor
     /// militarily aware of *where* the city stands.
     pub pressure: f64,
+    /// Stop asking for a growth surplus and cut the food appetite.
+    ///
+    /// ⚠ **Measured harmful, and it is the whole reason the first three
+    /// city-strategy arms lost.** It is kept as an expressible stance rather
+    /// than deleted because the engine's job is to obey a directive, not to
+    /// hold an opinion about it — but nothing should set it. Isolated over 120
+    /// paired maps it scores 43.8%, Elo-equivalent −44 at sign p=0.0107, and
+    /// it costs the empire a fifth of its cities (2.17 against 2.74). Wanting
+    /// hammers under threat is free-to-positive; *trading away growth* to get
+    /// them is not, and a besieged city that stops growing does not become
+    /// safer — it becomes permanently smaller.
+    pub halt_growth: bool,
 }
 
 /// The priorities used by a city's automatic citizen governor.  These are
@@ -30245,12 +30257,6 @@ impl Game {
                 },
                 CityRole::Bastion => {
                     weights.production += 0.90;
-                    weights.food *= 0.70;
-                    // Hold the line at the current population rather than ask
-                    // for a surplus that feeds a citizen the siege is about to
-                    // take back. The food floor below still forbids
-                    // starvation, so this caps growth and never nutrition.
-                    growth_ceiling = 0.0;
                     if city.queue.is_empty() {
                         focus = "besieged".to_string();
                     }
@@ -30265,6 +30271,10 @@ impl Game {
             // high.
             if directive.pressure > 0.0 {
                 weights.production += directive.pressure.min(2.0) * 0.80;
+            }
+            if directive.halt_growth {
+                weights.food *= 0.70;
+                growth_ceiling = 0.0;
             }
             if directive.role != CityRole::Balanced && focus == "balanced" {
                 focus = directive.role.as_str().to_string();
