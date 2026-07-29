@@ -5320,3 +5320,64 @@ while seeds 948032-948063 remain a genuinely blind Standard selection set.
 | larger frozen margins imply more reliable superiority | **refuted (monotone slope 0.0000)** |
 | independent Platt scaling creates a selective 0.70 region | **refuted (constant 0.507; zero coverage)** |
 | selection or Online evaluation is warranted | **rejected without spending either corpus** |
+
+## 2026-07-29 — PRE-REGISTRATION: predict robust overrides from decision context
+
+Two independent Standard samples now show that the frozen pairwise ranker
+orders moves usefully on average, while its score magnitude contains no
+positive confidence signal. A scalar recalibration cannot repair that. The
+next test asks a different question: can the state and the absolute expert and
+sibling destinations identify *where* the frozen ordering is reliable?
+
+**Hypothesis.** A low-capacity logistic reliability head trained directly on
+matched-doctrine superiority will identify a nonempty 0.70 region with lower
+out-of-fold Brier score than both the raw rank margin and a training-fold base
+rate, while its gated counterfactual return exceeds the expert at at least 5%
+coverage. Absolute context can distinguish, for example, a safe formation move
+from an exposed advance even when the frozen rank margins have the same size.
+
+The destination ranker remains byte-for-byte fixed at SHA-256
+`2c93f4456b72d1acf548f1994c9ce49569fe158c7b8eb18f4c903b606ce1c463`.
+For every decision it names the highest-scored non-expert sibling. The
+reliability row is fixed at 105 terms: 34 shared decision-state features, the
+35 destination terms for the expert, the same 35 terms for the named sibling,
+and their frozen raw rank margin. Kind one-hot and legacy geometry are omitted;
+every sampled candidate is already a same-unit move.
+
+The target is the Jeffreys posterior mean that the named sibling beats the
+expert under the four matched doctrine rotations, with exact return ties worth
+half a win. Each feature is standardized from training games only with a 1e-6
+standard-deviation floor. Logistic cross-entropy is optimized by deterministic
+full-batch descent for 6,000 steps at rate 0.05, L2 0.02 on non-intercept
+weights, and inverse decision-count weighting within each game. The threshold
+is fixed at 0.70; neither model capacity nor threshold is selected from an
+evaluation split.
+
+Development deliberately excludes every game that trained the ranker:
+
+- take only the existing 25% game-hash holdout from Standard seeds
+  946000-946063 (20 games / 76 decisions), then add all independent calibration
+  seeds 948000-948031 (32 games / 125 decisions);
+- assign those 52 games to five deterministic hash folds. For each fold,
+  standardization, the 105 reliability weights, and the constant base-rate
+  control are learned on the other four folds. Concatenate predictions only
+  for games omitted from that fit;
+- the out-of-fold gate passes only if reliability Brier is strictly below both
+  the raw `sigmoid(margin)` and fold-trained constant Brier, gated game-macro
+  lift over the expert is positive, and game-macro coverage is at least 5%;
+- only after an out-of-fold pass, fit the identical head on all 52 development
+  games and generate the still-blind Standard selection games at seeds
+  948032-948063 using the already-fixed 4p 44x28, turns 50/75/100/125, three
+  alternatives, four doctrines, and 80-round horizon protocol;
+- selection requires the same three conditions against the full-development
+  constant. Only a pass generates the still-untouched 32-game Online profile
+  at seeds 947000-947031. External success additionally requires the
+  game-macro 95% lower confidence bound on lift above zero.
+
+All loaders require exactly the preregistered game ranges, current 159-wide
+counterfactual schema, four distinct replicas, declared means matching replica
+means, and finite values. Report oracle regret, ungated and gated lift,
+raw/constant/reliability Brier and log loss, probability quantiles, override
+mean-return signs, and doctrine wins/ties/losses. Any development failure keeps
+both blind corpora untouched. Even external success earns a separate mirrored
+gameplay A/B; this experiment changes no game policy.
