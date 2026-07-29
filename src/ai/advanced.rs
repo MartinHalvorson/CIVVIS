@@ -4,7 +4,9 @@
 //! agent adds a shared strategic model so research, production, diplomacy,
 //! civilian work, and military movement pursue the same medium-term goal.
 use super::{Ai, BasicAi, ForceReport, PlanReport, UnitDoctrine, Weights};
-use crate::game::{Action, ActionFamilies, CongressResolution, DiplomaticDeal, Game, Item};
+use crate::game::{
+    Action, ActionFamilies, CityDirective, CityRole, CongressResolution, DiplomaticDeal, Game, Item,
+};
 use crate::reasoning::{plain, Journal};
 use crate::rules::Yields;
 use crate::think;
@@ -57,6 +59,19 @@ const RUSH_STACK: usize = 2;
 /// at 2 and continuing to build to 4 gets both — the war starts the turn it
 /// can, and the reinforcements walk into a siege already in progress.
 const RUSH_ARMY: usize = 4;
+
+/// Local hostile-over-friendly strength at which a city becomes a Bastion and
+/// stops growing. Deliberately the same 0.45 `threatened_city` treats as a
+/// locally competitive force rather than a passing scout, so the city's own
+/// governor and the empire's recovery alarm cannot disagree about what counts
+/// as a threat.
+const BASTION_PRESSURE: f64 = 0.45;
+
+/// How far above its empire's per-city mean a yield must stand before it names
+/// the city's role. At 1.0 every city would be typed by a coin flip around the
+/// average; 1.15 asks for a real lead, so an empire of interchangeable cities
+/// correctly gets no roles at all rather than arbitrary ones.
+const ROLE_MARGIN: f64 = 1.15;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum GrandStrategy {
@@ -680,6 +695,99 @@ pub struct AdvancedAi {
     /// recorded, on the `advanced_lane_reachable` precedent, so the axis can
     /// be re-measured rather than re-derived if the settler economy changes.
     pub parallel_settlers: bool,
+    /// Give every city a strategy: stamp a [`CityDirective`] on each of this
+    /// empire's cities every turn, so the citizen governor can see the plan.
+    ///
+    /// **The gap it closes is structural, not a tuning question.**
+    /// `Game::citizen_strategy` decides which tiles a city works from purely
+    /// local evidence — the districts standing there, the item in the queue,
+    /// the civilization — plus one empire-wide `at_war` boolean and the one
+    /// scalar `citizen_food_bias`. So the thousands of tile assignments that
+    /// actually produce the empire's yields are blind to the victory lane the
+    /// macro search spends its whole budget choosing, and a city on the
+    /// frontier of a war reacts exactly like one four hundred tiles behind it.
+    /// The engine says so itself beside `citizen_food_bias`: *citizen
+    /// assignment is the one city-level decision no player, human or AI, can
+    /// currently express*.
+    ///
+    /// A directive carries three things down, and keeps them on separate axes
+    /// on purpose:
+    ///
+    /// - `emphasis` — the **empire objective**, `plan.strategy` translated
+    ///   into yield appetite.
+    /// - `role` — the **local optimization**, what this particular city is
+    ///   best used for given its own terrain, districts and the empire's
+    ///   remaining need for settlers.
+    /// - `pressure` — **military awareness**, per city rather than per empire,
+    ///   reusing the hostile-over-friendly ratio `threatened_city` already
+    ///   measures within six tiles.
+    ///
+    /// It is deliberately a *scripted* policy that threads existing signals,
+    /// not a learned one and not a search: every yield weight it writes is one
+    /// a human can read and defend, which is the property that the value-net
+    /// arms in this repo lacked when an argmax found the cheapest correlate to
+    /// maximise. Off by default and reachable as the `advanced_city_strategy`
+    /// entrant, paired against `advanced`.
+    ///
+    /// ⚠ **The first screen LOST**: 42.5% paired over 120 maps at seed 411000,
+    /// Elo-equivalent −53, exact sign p=0.0014 against, terminal score 45.0%
+    /// at p=0.0000 resting on all 120 maps. Plan commitment was identical in
+    /// both arms (100% adaptive, 0.00 switches), so nothing was rerouted — the
+    /// treatment simply built a uniformly smaller empire: cities 2.18 against
+    /// 2.76, food 36.9 against 45.5, pop 13.4 against 16.7.
+    ///
+    /// `city_strategy_emphasis` and `city_strategy_roles` decompose that.
+    pub city_strategy: bool,
+    /// Ablation halves of `city_strategy`, so the loss above can be attributed
+    /// rather than guessed at. Each is meaningless unless `city_strategy` is
+    /// also on; together they are the full treatment.
+    ///
+    /// The hypothesis they test: the **emphasis** carries the whole deficit,
+    /// because it applies a lane's yield appetite from turn 1 at full strength
+    /// in every city, and `docs/OPENINGS.md` establishes that capital growth
+    /// gates every settler. Religion — the dominant lane in the screen — raises
+    /// faith 0.90 → 1.40, a +56% relative jump, applied exactly when the empire
+    /// cannot afford to look away from food. Roles and pressure, by contrast,
+    /// only ever ask for food or hammers.
+    ///
+    /// If the emphasis-only arm reproduces the loss and the roles-only arm does
+    /// not, the fix is a phase gate: the empire's objective does not get to
+    /// speak until expansion is finished. If instead roles-only carries it, the
+    /// role ladder is wrong and the emphasis is exonerated — which would refute
+    /// the paragraph above.
+    pub city_strategy_emphasis: bool,
+    pub city_strategy_roles: bool,
+    /// Forbid the two comparative rungs of the role ladder — Forge and
+    /// Specialist — while the empire is still short of its city target.
+    ///
+    /// This is the repair for the defect `role_ladder_census` found, described
+    /// on `city_strategy` above. On by default so `advanced_city_strategy`
+    /// carries it; `advanced_city_strategy_roles_raw` keeps the measured-worse
+    /// behaviour reachable so the 42.1% result stays reproducible.
+    pub city_strategy_expansion_first: bool,
+    /// Per-rung ablation switches, so the roles half can be attributed
+    /// mechanically instead of guessed at a fourth time.
+    ///
+    /// Three mechanisms have now been proposed for the roles half's 42.1% and
+    /// **all three were refuted by measurement**: the lane emphasis (the
+    /// emphasis-only arm is a clean null at both 4p/24x16 and the deployment
+    /// 6p/74x46), the comparative rungs (`expansion_first` halved Forge and
+    /// Specialist from 24.8% of city-turns to 10.3% and moved the result by
+    /// 0.4 points, inside noise), and an early Bastion blocking the `pop >= 2`
+    /// settler gate (`role_ladder_census` bands Bastion at 9.0% / 2.9% /
+    /// **20.8%** / 1.2% across turns 1-39 / 40-79 / 80-139 / 140+, so it is a
+    /// late-game phenomenon and misses the settler window entirely).
+    ///
+    /// Reasoning from the weights has therefore failed three times in a row on
+    /// this treatment, which is the signal to stop. Each switch isolates one
+    /// rung so a 2-minute paired run can answer what the arithmetic could not.
+    /// Let a Bastion halt its own growth, which is what the first three arms
+    /// did and is the single mechanism the per-rung bisect convicted. Off.
+    pub city_strategy_halt_growth: bool,
+    pub city_strategy_bastion: bool,
+    pub city_strategy_breadbasket: bool,
+    pub city_strategy_comparative: bool,
+    pub city_strategy_pressure: bool,
     /// Ignore every by-name civilization signal in the decision layer.
     ///
     /// An **ablation**, not a strategy. `docs/GENOME.md`'s rule is that a null
@@ -877,6 +985,15 @@ impl AdvancedAi {
             settler_commit: false,
             settler_stalls: BTreeMap::new(),
             parallel_settlers: false,
+            city_strategy: false,
+            city_strategy_emphasis: true,
+            city_strategy_roles: true,
+            city_strategy_expansion_first: true,
+            city_strategy_halt_growth: false,
+            city_strategy_bastion: true,
+            city_strategy_breadbasket: true,
+            city_strategy_comparative: true,
+            city_strategy_pressure: true,
             civ_blind: false,
             deny_leaders: true,
             early_rush: false,
@@ -1143,37 +1260,198 @@ impl AdvancedAi {
         false
     }
 
+    /// Local military pressure on one city: hostile military strength within
+    /// six tiles over the friendly strength answering it, city defenses
+    /// included. Zero when no hostile unit is in reach.
+    ///
+    /// This is the number `threatened_city` has always computed and then
+    /// discarded for every city but the worst one. Naming it lets the same
+    /// evidence reach the city's own decisions — what it builds and what its
+    /// citizens work — instead of only the empire-wide recovery alarm.
+    fn city_pressure(g: &Game, pid: usize, cid: u32) -> f64 {
+        let Some(city) = g.cities.get(&cid) else {
+            return 0.0;
+        };
+        let hostile: f64 = g
+            .units
+            .values()
+            .filter(|unit| unit.owner != pid && g.is_at_war(pid, unit.owner))
+            .filter(|unit| g.wdist(city.pos, unit.pos) <= 6)
+            .filter(|unit| g.rules.units[unit.kind.as_str()].class == "military")
+            .map(|unit| crate::game::effective_strength(g.unit_strength(unit, false), unit.hp))
+            .sum();
+        if hostile <= 0.0 {
+            return 0.0;
+        }
+        let friendly = g.city_strength(cid)
+            + g.units
+                .values()
+                .filter(|unit| unit.owner == pid && g.wdist(city.pos, unit.pos) <= 6)
+                .filter(|unit| g.rules.units[unit.kind.as_str()].class == "military")
+                .map(|unit| crate::game::effective_strength(g.unit_strength(unit, true), unit.hp))
+                .sum::<f64>();
+        hostile / friendly.max(1.0)
+    }
+
+    /// The empire's objective translated into the citizen governor's own
+    /// vocabulary: how much extra appetite this lane asks for, per yield.
+    ///
+    /// Every number here is a *tilt*, not a takeover. The shipped weights are
+    /// food 1.25 / production 1.55 / science 1.30 / culture 1.20 / gold 0.85 /
+    /// faith 0.90, so a lane yield gaining ~0.5 moves it up roughly a third
+    /// and never reorders the whole vector — a Science empire still builds
+    /// settlers and still feeds itself.
+    fn lane_emphasis(strategy: GrandStrategy) -> Yields {
+        let mut ys = Yields::default();
+        match strategy {
+            // Growth is the lane. Hammers still matter because a settler is
+            // paid for in production even though it is gated on food.
+            GrandStrategy::Expansion => {
+                ys.food = 0.35;
+                ys.production = 0.20;
+            }
+            GrandStrategy::Science => {
+                ys.science = 0.50;
+                ys.production = 0.15;
+            }
+            GrandStrategy::Culture => {
+                ys.culture = 0.50;
+                ys.gold = 0.10;
+            }
+            GrandStrategy::Religion => {
+                ys.faith = 0.50;
+                ys.food = 0.15;
+            }
+            // Envoys and city-state suzerainty are bought, so the diplomatic
+            // lane is a Gold lane at the tile level.
+            GrandStrategy::Diplomacy => {
+                ys.gold = 0.45;
+                ys.production = 0.15;
+            }
+            // An army is production and the population that replaces it is
+            // food; nothing else on the sheet wins a war.
+            GrandStrategy::Conquest => {
+                ys.production = 0.55;
+                ys.food = 0.15;
+            }
+            GrandStrategy::Recovery => {
+                ys.production = 0.45;
+                ys.food = 0.20;
+            }
+        }
+        ys
+    }
+
+    /// Write one [`CityDirective`] per owned city, rebuilding the map from
+    /// scratch so a captured or razed city cannot leave a stale entry behind.
+    ///
+    /// The role choice is ranked, and the order is the argument: a city being
+    /// shot at is a Bastion whatever else it is good at; an empire short of
+    /// its city target puts its best food city on settlers before it optimises
+    /// anything else, because expansion compounds and specialization does not;
+    /// only then does the local yield mix get to speak.
+    ///
+    /// ⚠ **`expansion_first` is not a refinement of that rule — it is the
+    /// repair of a defect the census found in it.** The comparative rungs are
+    /// scale-free: they type a city by whether a yield stands `ROLE_MARGIN`
+    /// above its *empire's own mean*, and with two cities the mean sits
+    /// between them, so one of them is typed whatever the terrain actually
+    /// says. `role_ladder_census` measured the result over 1668 city-turns —
+    /// 45.5% of city-turns typed, Forge alone 17.7% and Specialist 7.1% — in
+    /// empires averaging 2.14 cities. So the doc comment on `ROLE_MARGIN`
+    /// claiming an empire of interchangeable cities "correctly gets no roles
+    /// at all" was **false at exactly the empire size where the game is
+    /// decided**, and the city most often typed a Forge is the capital, which
+    /// is the settler pump whose growth `docs/OPENINGS.md` shows gates every
+    /// settler.
+    fn stamp_city_directives(&self, g: &mut Game, pid: usize, plan: &StrategicPlan) {
+        let cities = g.player_city_ids(pid);
+        if cities.is_empty() {
+            if let Some(seat) = g.players.get_mut(pid) {
+                seat.city_directives.clear();
+            }
+            return;
+        }
+        // While the empire is still short of its city target, only the two
+        // rungs that cannot cost expansion may fire: Bastion, which answers a
+        // real threat, and Breadbasket, which feeds the settler. Forge and
+        // Specialist both bid citizens away from food, and a city founded
+        // sixty turns earlier compounds for the rest of the game where a
+        // marginally better yield mix does not.
+        let expanding = self.city_strategy_expansion_first && cities.len() < plan.desired_cities;
+        let emphasis = if self.city_strategy_emphasis {
+            Self::lane_emphasis(plan.strategy)
+        } else {
+            Yields::default()
+        };
+        let short = cities.len() < plan.desired_cities;
+
+        let mut totals = Yields::default();
+        for cid in &cities {
+            totals.add(g.city_yields(*cid));
+        }
+        let count = cities.len() as f64;
+        let mean_food = totals.food / count;
+        let mean_production = totals.production / count;
+        let mean_specialty = (totals.science + totals.culture + totals.faith + totals.gold) / count;
+
+        let mut directives = BTreeMap::new();
+        for cid in cities {
+            let pressure = Self::city_pressure(g, pid, cid);
+            let ys = g.city_yields(cid);
+            let specialty = ys.science + ys.culture + ys.faith + ys.gold;
+            // `BASTION_PRESSURE` is the same 0.45 `threatened_city` treats as
+            // a locally competitive hostile force, so the city's own governor
+            // and the empire's recovery alarm agree on what a threat is.
+            let bastion = pressure >= BASTION_PRESSURE || plan.threatened_city == Some(cid);
+            let role = if !self.city_strategy_roles {
+                CityRole::Balanced
+            } else if bastion && self.city_strategy_bastion {
+                CityRole::Bastion
+            } else if short && self.city_strategy_breadbasket && ys.food >= mean_food * ROLE_MARGIN
+            {
+                CityRole::Breadbasket
+            } else if expanding || !self.city_strategy_comparative {
+                CityRole::Balanced
+            } else if ys.production >= mean_production * ROLE_MARGIN {
+                CityRole::Forge
+            } else if specialty >= mean_specialty * ROLE_MARGIN {
+                CityRole::Specialist
+            } else {
+                CityRole::Balanced
+            };
+            let pressure = if self.city_strategy_roles && self.city_strategy_pressure {
+                pressure
+            } else {
+                0.0
+            };
+            directives.insert(
+                cid,
+                CityDirective {
+                    emphasis,
+                    role,
+                    pressure,
+                    // Measured harmful in isolation (43.8%, Elo -44,
+                    // p=0.0107). Reachable only through the frozen controls.
+                    halt_growth: self.city_strategy_halt_growth
+                        && role == CityRole::Bastion,
+                },
+            );
+        }
+        if let Some(seat) = g.players.get_mut(pid) {
+            seat.city_directives = directives;
+        }
+    }
+
     fn threatened_city(&self, g: &Game, pid: usize) -> Option<u32> {
         g.player_city_ids(pid)
             .into_iter()
             .filter_map(|cid| {
                 let city = &g.cities[&cid];
-                let hostile: f64 = g
-                    .units
-                    .values()
-                    .filter(|unit| unit.owner != pid && g.is_at_war(pid, unit.owner))
-                    .filter(|unit| g.wdist(city.pos, unit.pos) <= 6)
-                    .filter(|unit| g.rules.units[unit.kind.as_str()].class == "military")
-                    .map(|unit| {
-                        crate::game::effective_strength(g.unit_strength(unit, false), unit.hp)
-                    })
-                    .sum();
-                if hostile <= 0.0 {
+                let danger = Self::city_pressure(g, pid, cid);
+                if danger <= 0.0 {
                     return None;
                 }
-                let friendly = g.city_strength(cid)
-                    + g.units
-                        .values()
-                        .filter(|unit| unit.owner == pid && g.wdist(city.pos, unit.pos) <= 6)
-                        .filter(|unit| g.rules.units[unit.kind.as_str()].class == "military")
-                        .map(|unit| {
-                            crate::game::effective_strength(
-                                g.unit_strength(unit, true),
-                                unit.hp,
-                            )
-                        })
-                        .sum::<f64>();
-                let danger = hostile / friendly.max(1.0);
                 let recently_hit =
                     city.last_attacked > 0 && g.turn.saturating_sub(city.last_attacked) <= 3;
                 let wall_max = g.city_max_wall_hp(city);
@@ -12100,6 +12378,13 @@ impl AdvancedAi {
         // never builds an army for. Rewritten every turn, including back to
         // zero the turn the window shuts.
         self.base.rush_military_floor = if plan.rush { RUSH_ARMY } else { 0 };
+        // Before anything spends this turn, tell each city what the empire
+        // wants of it. Production, governors and the citizen governor all read
+        // the same plan afterwards, so what a city builds and what its
+        // citizens work stop being two unrelated decisions.
+        if self.city_strategy {
+            self.stamp_city_directives(g, pid, &plan);
+        }
         if self.food_first != 0.0 {
             // Want food only while short of the target. Past it the extra
             // food buys nothing this treatment is arguing for, and the
@@ -19665,6 +19950,335 @@ mod tests {
         assert!(
             ai.civic_leads_to(&game, civic, "divine_right"),
             "{civic} should be on the direct Divine Right beeline"
+        );
+    }
+
+    /// Fires-check for `city_strategy`. The control must stamp nothing at all,
+    /// and the treatment must stamp exactly one directive per owned city
+    /// carrying the lane in force. A treatment that changes no state cannot
+    /// change a decision, so this is the screen that has to pass before any
+    /// eval is worth its compute.
+    #[test]
+    fn city_strategy_stamps_one_directive_per_city_and_the_control_stamps_none() {
+        let mut game = Game::new_full(2, 24, 16, 411_001, 120, 1, false);
+        found_test_city(&mut game, 0);
+        found_test_city(&mut game, 0);
+        let cities = game.player_city_ids(0);
+        assert!(cities.len() >= 2, "need a multi-city seat to type roles");
+
+        let mut control = AdvancedAi::new();
+        control.take_turn(&mut game.clone(), 0);
+        assert!(
+            game.players[0].city_directives.is_empty(),
+            "the shipped agent must not express a directive"
+        );
+
+        let mut treated = AdvancedAi::new();
+        treated.city_strategy = true;
+        treated.take_turn(&mut game, 0);
+
+        let stamped = &game.players[0].city_directives;
+        assert_eq!(
+            stamped.len(),
+            game.player_city_ids(0).len(),
+            "every owned city gets exactly one directive"
+        );
+        for cid in game.player_city_ids(0) {
+            assert!(stamped.contains_key(&cid), "city {cid} was left unstamped");
+        }
+    }
+
+    /// The whole point of the channel: the same city works different tiles
+    /// under different empire objectives. If a Science lane and a Culture lane
+    /// produce identical governor weights the directive is decorative.
+    #[test]
+    fn the_lane_reaches_the_tile_the_citizen_works() {
+        let science = AdvancedAi::lane_emphasis(GrandStrategy::Science);
+        let culture = AdvancedAi::lane_emphasis(GrandStrategy::Culture);
+        let conquest = AdvancedAi::lane_emphasis(GrandStrategy::Conquest);
+        assert!(science.science > culture.science);
+        assert!(culture.culture > science.culture);
+        assert!(conquest.production > science.production);
+
+        let mut game = Game::new_full(2, 24, 16, 411_002, 120, 1, false);
+        let city = found_test_city(&mut game, 0);
+        let shipped = game.citizen_strategy(city);
+
+        game.players[0].city_directives.insert(
+            city,
+            CityDirective {
+                emphasis: science,
+                role: CityRole::Balanced,
+                pressure: 0.0,
+                halt_growth: false,
+            },
+        );
+        let under_science = game.citizen_strategy(city);
+        assert!(
+            under_science.weights.science > shipped.weights.science,
+            "a science empire must want science tiles more than the default does"
+        );
+        // Additive, not a takeover: everything the local evidence said is
+        // still there underneath.
+        assert_eq!(under_science.weights.food, shipped.weights.food);
+        assert_eq!(under_science.weights.culture, shipped.weights.culture);
+
+        game.players[0].city_directives.insert(
+            city,
+            CityDirective {
+                emphasis: culture,
+                role: CityRole::Balanced,
+                pressure: 0.0,
+                halt_growth: false,
+            },
+        );
+        let under_culture = game.citizen_strategy(city);
+        assert!(under_culture.weights.culture > under_science.weights.culture);
+        assert!(under_culture.weights.science < under_science.weights.science);
+    }
+
+    /// Military awareness is per city, not per empire. A Bastion wants hammers
+    /// and refuses to grow into a siege; local pressure raises the hammer
+    /// appetite on its own axis, so a city being approached reacts before the
+    /// empire-wide alarm names it.
+    #[test]
+    fn a_pressed_city_wants_hammers_and_a_bastion_stops_growing() {
+        let mut game = Game::new_full(2, 24, 16, 411_003, 120, 1, false);
+        let city = found_test_city(&mut game, 0);
+        let calm = game.citizen_strategy(city);
+
+        game.players[0].city_directives.insert(
+            city,
+            CityDirective {
+                emphasis: Yields::default(),
+                role: CityRole::Balanced,
+                pressure: 0.6,
+                halt_growth: false,
+            },
+        );
+        let approached = game.citizen_strategy(city);
+        assert!(
+            approached.weights.production > calm.weights.production,
+            "a city with a hostile force in reach must want production"
+        );
+        assert_eq!(
+            approached.food_target, calm.food_target,
+            "pressure alone raises hammers; it does not halt growth"
+        );
+
+        game.players[0].city_directives.insert(
+            city,
+            CityDirective {
+                emphasis: Yields::default(),
+                role: CityRole::Bastion,
+                pressure: 0.6,
+                halt_growth: false,
+            },
+        );
+        let besieged = game.citizen_strategy(city);
+        assert!(besieged.weights.production > approached.weights.production);
+        // ⚠ A Bastion wants hammers and KEEPS GROWING. The opposite -- cutting
+        // its food weight and refusing a growth surplus -- reads as obviously
+        // correct and is the single mechanism the per-rung bisect convicted:
+        // isolated over 120 paired maps it scores 43.8%, Elo -44 at p=0.0107,
+        // and costs a fifth of the empire's cities. A besieged city that stops
+        // growing does not become safer, only permanently smaller.
+        assert_eq!(
+            besieged.food_target, calm.food_target,
+            "a bastion must not trade away its own growth"
+        );
+        assert_eq!(besieged.weights.food, calm.weights.food);
+
+        game.players[0].city_directives.insert(
+            city,
+            CityDirective {
+                emphasis: Yields::default(),
+                role: CityRole::Bastion,
+                pressure: 0.6,
+                halt_growth: true,
+            },
+        );
+        let halted = game.citizen_strategy(city);
+        assert!(halted.weights.food < calm.weights.food);
+        assert_eq!(
+            halted.food_target,
+            2.0 * game.cities[&city].pop as f64,
+            "the frozen control still expresses the measured-worse stance"
+        );
+        // Nutrition is never traded away, even under the losing stance.
+        assert!(halted.food_target >= 2.0 * game.cities[&city].pop as f64);
+    }
+
+    /// `city_pressure` is the number `threatened_city` already computed and
+    /// discarded. It must read zero in peace, so a directive stamped every
+    /// turn of a quiet game costs the governor nothing.
+    #[test]
+    fn city_pressure_is_zero_with_no_hostile_force_in_reach() {
+        let mut game = Game::new_full(2, 24, 16, 411_004, 120, 1, false);
+        found_test_city(&mut game, 0);
+        for cid in game.player_city_ids(0) {
+            assert_eq!(AdvancedAi::city_pressure(&game, 0, cid), 0.0);
+        }
+    }
+
+    /// Census, not an assertion: how often each rung of the role ladder fires
+    /// over real games, and what share of Bastion stamps are driven by
+    /// barbarians alone.
+    ///
+    /// The roles half of `city_strategy` lost 120 maps at Elo -55 while the
+    /// emphasis half was a clean null, and the empire it produced was smaller
+    /// in every column (cities 2.14 against 2.77). Two candidate mechanisms
+    /// survive that: Bastion halting growth on barbarian contact, or
+    /// Forge/Specialist pulling citizens off food in empires too small for
+    /// `ROLE_MARGIN` to type meaningfully. Guessing between them once already
+    /// cost a wrong hypothesis, so this counts instead.
+    ///
+    /// Run with `cargo test --release role_ladder_census -- --nocapture`.
+    #[test]
+    #[ignore = "census, not an assertion; run explicitly with --nocapture"]
+    fn role_ladder_census() {
+        let mut totals = BTreeMap::<&str, u64>::new();
+        let mut lanes = BTreeMap::<&str, u64>::new();
+        let mut barbarian_only_bastions = 0u64;
+        let mut pressured = 0u64;
+        let mut pressure_sum = 0.0f64;
+        let mut extra_hammers = 0.0f64;
+        // Per-turn means hide minority behaviour, and the settler window is a
+        // minority of the game. Band it.
+        let mut band_turns = [0u64; 4];
+        let mut band_bastions = [0u64; 4];
+        let mut city_turns = 0u64;
+        let mut halted_pop = 0u64;
+
+        for map in 0..8u64 {
+            let mut game = Game::new_full(4, 24, 16, 420_000 + map, 200, 1, false);
+            let mut ais: Vec<AdvancedAi> = (0..game.players.len())
+                .map(|_| {
+                    let mut ai = AdvancedAi::new();
+                    ai.city_strategy = true;
+                    ai.city_strategy_emphasis = false;
+                    ai
+                })
+                .collect();
+            game.set_fog_memory(false);
+            while game.winner.is_none() && game.turn <= game.max_turns {
+                let pid = game.current;
+                ais[pid].take_turn(&mut game, pid);
+                if game.winner.is_none() && game.current == pid {
+                    let _ = game.apply(pid, &Action::EndTurn);
+                }
+                if pid != 0 {
+                    continue;
+                }
+                if let Some(plan) = ais[0].plan.as_ref() {
+                    *lanes.entry(plan.strategy.as_str()).or_default() += 1;
+                }
+                let directives = game.players[0].city_directives.clone();
+                for (cid, directive) in &directives {
+                    let Some(city) = game.cities.get(cid) else {
+                        continue;
+                    };
+                    city_turns += 1;
+                    *totals.entry(directive.role.as_str()).or_default() += 1;
+                    let band = match game.turn {
+                        0..=39 => 0,
+                        40..=79 => 1,
+                        80..=139 => 2,
+                        _ => 3,
+                    };
+                    band_turns[band] += 1;
+                    if directive.role == CityRole::Bastion {
+                        band_bastions[band] += 1;
+                    }
+                    if directive.pressure > 0.0 {
+                        pressured += 1;
+                        pressure_sum += directive.pressure;
+                        extra_hammers += directive.pressure.min(2.0) * 0.80;
+                    }
+                    if directive.role != CityRole::Bastion {
+                        continue;
+                    }
+                    halted_pop += city.pop.max(0) as u64;
+                    // Recompute the same ratio with barbarians removed. If it
+                    // falls under the threshold, the only thing that stamped
+                    // this city a Bastion was a barbarian.
+                    let major: f64 = game
+                        .units
+                        .values()
+                        .filter(|unit| {
+                            unit.owner != 0
+                                && !game.players[unit.owner].is_barbarian
+                                && game.is_at_war(0, unit.owner)
+                        })
+                        .filter(|unit| game.wdist(city.pos, unit.pos) <= 6)
+                        .filter(|unit| game.rules.units[unit.kind.as_str()].class == "military")
+                        .map(|unit| {
+                            crate::game::effective_strength(game.unit_strength(unit, false), unit.hp)
+                        })
+                        .sum();
+                    let friendly = game.city_strength(*cid)
+                        + game
+                            .units
+                            .values()
+                            .filter(|unit| unit.owner == 0)
+                            .filter(|unit| game.wdist(city.pos, unit.pos) <= 6)
+                            .filter(|unit| game.rules.units[unit.kind.as_str()].class == "military")
+                            .map(|unit| {
+                                crate::game::effective_strength(
+                                    game.unit_strength(unit, true),
+                                    unit.hp,
+                                )
+                            })
+                            .sum::<f64>();
+                    if major / friendly.max(1.0) < BASTION_PRESSURE
+                        && ais[0].plan.as_ref().and_then(|p| p.threatened_city) != Some(*cid)
+                    {
+                        barbarian_only_bastions += 1;
+                    }
+                }
+            }
+        }
+
+        let plan_turns: u64 = lanes.values().sum();
+        println!("\n=== grand strategy in force, {plan_turns} seat-turns ===");
+        for (lane, count) in &lanes {
+            println!(
+                "  {lane:<12} {count:>6}  ({:>5.1}%)",
+                *count as f64 / plan_turns.max(1) as f64 * 100.0
+            );
+        }
+        println!("\n=== role ladder census: {city_turns} city-turns over 8 maps ===");
+        for (role, count) in &totals {
+            println!(
+                "  {role:<12} {count:>6}  ({:>5.1}%)",
+                *count as f64 / city_turns.max(1) as f64 * 100.0
+            );
+        }
+        println!(
+            "  pressure > 0 on {pressured} of {city_turns} city-turns ({:.1}%), mean {:.2} when it fires",
+            pressured as f64 / city_turns.max(1) as f64 * 100.0,
+            pressure_sum / pressured.max(1) as f64
+        );
+        println!(
+            "  mean production weight added by pressure across ALL city-turns: +{:.3} (shipped weight is 1.55)",
+            extra_hammers / city_turns.max(1) as f64
+        );
+        for (band, label) in ["t1-39", "t40-79", "t80-139", "t140+"].iter().enumerate() {
+            println!(
+                "  {label:<8} bastion on {:>4} of {:>5} city-turns ({:>5.1}%)",
+                band_bastions[band],
+                band_turns[band],
+                band_bastions[band] as f64 / band_turns[band].max(1) as f64 * 100.0
+            );
+        }
+        let bastions = totals.get("bastion").copied().unwrap_or(0);
+        println!(
+            "  of {bastions} bastion stamps, {barbarian_only_bastions} were BARBARIAN-ONLY ({:.1}%)",
+            barbarian_only_bastions as f64 / bastions.max(1) as f64 * 100.0
+        );
+        println!(
+            "  population under a growth halt: {halted_pop} citizen-turns ({:.1}% of all city-turns were halted)\n",
+            bastions as f64 / city_turns.max(1) as f64 * 100.0
         );
     }
 }
