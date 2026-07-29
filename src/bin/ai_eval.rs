@@ -776,6 +776,7 @@ fn main() {
             }
         }
         pair += chunk;
+        eprintln!("progress: {pair}/{pairs} map pairs complete");
     }
     for score in pair_scores.iter_mut() {
         *score /= 2.0;
@@ -788,16 +789,17 @@ fn main() {
     //
     // Nineteen of the twenty `ai_eval` commands recorded in docs/EVAL.md do
     // not specify a map size, so every one of them ran at the 24x16 default
-    // and a reader cannot tell without knowing that. The exhibition runs
-    // 74x46 at six players -- 567 tiles per player against 96 -- and the
-    // shipped genome moved `city_target` -40% and `settler_min_pop` +123%,
+    // and a reader cannot tell without knowing that. The live exhibition now
+    // varies dimensions with player count, while the old fixed 74x46-at-six
+    // reference was 567 tiles per player against this binary's historical 96.
+    // The shipped genome moved `city_target` -40% and `settler_min_pop` +123%,
     // which is the right answer at one density and plausibly the wrong one at
     // the other. Density belongs in the header of anything that claims a
     // strength result.
     let tiles_per_player = (width as f64 * height as f64) / players as f64;
     println!(
         "map: {width}x{height} = {} tiles, {tiles_per_player:.0} per player \
-         (the exhibition runs 74x46 at 6 players = 567 per player)",
+         (live exhibition dimensions vary with player count)",
         width * height
     );
     println!(

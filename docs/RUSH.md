@@ -402,3 +402,47 @@ If the screen fails, there is no threshold or seed retry. The next permissible
 hypothesis is a selective rush whose eligibility is fixed from pre-war state
 and whose direct treatment effect is developed and held out by map. No selector
 may be fitted to these 60 outcome maps and then evaluated on the same maps.
+
+### Result: refuted on the live cell
+
+The exact screen completed all 60 maps (120 mirrored games) at seed 9960000.
+It failed every advancement term:
+
+- paired win score was **47.1%** (95% Wilson CI 35.0%..59.5%, Elo-equivalent
+  -20, CI -107..+67), below 55%;
+- map directions were **6 rush-favoured, 42 neutral, 12 advanced-favoured**
+  (two-sided sign p=0.2379), so favourable did not outnumber adverse;
+- paired terminal-score share was **50.4%**, below 52% (31 maps favoured the
+  rush and 29 favoured advanced, p=0.8974); and
+- the unchanged promotion gate was **INCONCLUSIVE**, retaining `advanced`.
+
+The direct outcome also runs opposite the mechanism proposed above:
+`advanced_rush` won 8 games and `advanced` won 15. Every rush victory was
+Science; advanced won 12 Science and 3 Culture games. Removing Religious
+Victory therefore did not expose a hidden conversion of the rush's land into
+live-profile wins. Advanced still won more Science games itself.
+
+The economy diagnostic explains why score could not be used as a substitute
+for winning. Rush seats finished with more cities (6.05 versus 5.35),
+population (75.4 versus 68.9), military units (20.0 versus 16.3), and nominal
+score (571.7 versus 566.0), yet they had fewer civics (5.9 versus 6.8), fewer
+tourists (26.2 versus 29.0), and fewer actual victories. The rush changes the
+shape of the empire without improving victory routing. There is no disjoint
+confirmation and no seed or threshold retry.
+
+#### Evaluation throughput discovered by the screen
+
+The first attempt also exposed a non-gameplay bottleneck on Planet. A
+frequency-21 globe has 4,412 tiles, whose complete exact-distance table is
+about 39 MB, but `Sphere` stopped its shared cache at 512 rows. Once early
+games filled those rows, later recon and tactical movement repeatedly ran A*
+for the same endpoints. A read-only stack sample localized the tail to those
+exact distance calls.
+
+Removing the obsolete row-count ceiling leaves the existing 64 MB byte budget
+in charge: this stock globe may cache every row, while larger globes remain
+bounded. Distance values and AI choices are unchanged. The identical first
+six maps fell from about 77 minutes to **132 seconds** even while contending
+with the obsolete run; the full screen then completed in **1,223 seconds**.
+The evaluator now prints a deterministic progress line after each six-map
+chunk so another long run cannot look hung.
