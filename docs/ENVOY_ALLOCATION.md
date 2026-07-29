@@ -43,7 +43,9 @@ it cannot combine them or declare either policy beneficial.
 ## Frozen controller and world population
 
 Every major uses the exact committed `advanced_evolved` champion embedded at
-`data/evolved/best.json`. The binary requires the explicit flag
+`data/evolved/best.json`: generation 14, byte fingerprint
+`fnv1a:40b1fbb2a5b88bc6`. The binary refuses to run if either pin changes and
+requires the explicit flag
 `--ai advanced_evolved`, prints the embedded generation, and rejects another
 controller before simulation. This avoids both mutable live-league membership
 and default-weight `AdvancedAi`, neither of which is the reproducible champion
@@ -126,8 +128,9 @@ effective-count difference as a number of sends.
 
 Before reading the census seed, four deployment-cycle maps at seed `10032999`
 compare direct champion play with the replay observer disabled. For both focal
-seats, all eight matched cells must reproduce the terminal result and serialized
-`Game` exactly or the study stops.
+seats, all eight matched cells must reproduce the terminal result, serialized
+`Game`, focal plan report, and lifetime strategy census exactly or the study
+stops.
 
 ```text
 envoy_allocation_census --null --deployment-mix --maps 4 --turns 250 \
@@ -183,7 +186,8 @@ Before the exact null, focused tests must prove:
 - all 126 deployment profiles are unique and the registered batches have the
   frozen marginal counts;
 - official labels require the exact champion and profile;
-- action replay preserves the complete stock world and controller;
+- action replay preserves the complete stock world plus the controller's plan
+  report and lifetime strategy census;
 - met/unmet, threshold, acquisition, secure-extension, and no-immediate-effect
   classifications use true before/after states;
 - fixed-stock optimization never exceeds the supplied raw budget, accounts for
