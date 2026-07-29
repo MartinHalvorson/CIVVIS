@@ -446,3 +446,87 @@ six maps fell from about 77 minutes to **132 seconds** even while contending
 with the obsolete run; the full screen then completed in **1,223 seconds**.
 The evaluator now prints a deterministic progress line after each six-map
 chunk so another long run cannot look hung.
+
+---
+
+## 9. 2026-07-29 preregistration: only march at a capital a land army can reach
+
+The failed screen above is not used to fit a threshold or classify a map. It
+did expose a code-level mismatch between the old evidence and the live world:
+the rush was developed on Pangaea/flat, while the screen was
+Continents/Planet. `early_rush_victim` calls `wdist` and accepts a capital at
+most 16 graph steps away, but graph distance crosses water. It never proves
+that an ancient land unit can route to the victim. A nearby capital on another
+continent can therefore trigger Horseback Riding, a four-melee army, and a
+Conquest plan even though none of those units can arrive.
+
+The fixed hypothesis is:
+
+> The rush is valuable only when its initial army has a real land route to the
+> staging ring. Refusing geometrically close but route-disconnected targets
+> preserves the measured same-continent capability without paying its research
+> and production cost on an overseas war that cannot open in the ancient
+> window.
+
+The treatment is named `advanced_rush_connected`. On the first turn at which
+the agent can inspect all founded major capitals, before it has opened a war,
+it freezes the set of rivals reachable by one of its current land,
+melee-capable units. A rival is eligible when that unit is already within three
+steps of the capital or `route_step(unit, capital, 3)` returns a step. The
+three-step range is the existing staging distance, not a fitted reach
+threshold. The route uses current terrain, traversal technology, and border
+access. This set is never recomputed after the treatment can affect research,
+production, diplomacy, or movement. Once an eligible rush opens, the existing
+lane finishes it even if the route later changes.
+
+Every other rush condition remains unchanged: the 16-tile geometric ceiling,
+unwalled capital, victim-power guard, two-unit finish-capable opening stack,
+four-unit production floor, dedicated siege execution, research order, and
+window close. On a connected Pangaea fixture the new entrant must make the
+same plan as `advanced_rush`; on a split-continent fixture it must remain
+ordinary `advanced`. `ai_eval` must report both the fraction of treatment
+seat-games that ever carried a rush plan and the fraction of observed
+player-turns spent rushing, so a near-control result cannot masquerade as a
+successful selector.
+
+### Fresh development screen
+
+Implementation cannot begin while PR #544 owns the AI and evaluator paths.
+After that ownership clears, the fixed 120-map development screen is:
+
+```text
+ai_eval advanced_rush_connected advanced --players 8 --width 84 --height 54 \
+  --city-states 12 --pairs 120 --turns 250 --speed online \
+  --map continents --shape planet --poles poles --randomize-civs \
+  --victories science,culture,domination --seed 9970000 --jobs 6
+```
+
+None of seeds 9960000..9960059 may be used for implementation choices,
+thresholds, or selector labels. The development screen advances only if all
+of these predeclared conditions hold:
+
+- 10% to 80% of treatment seat-games ever carry a rush plan;
+- paired win score is at least 52%;
+- favourable map directions outnumber adverse directions;
+- paired terminal-score share is at least 50%; and
+- the unchanged promotion gate does not retain `advanced`.
+
+This is a mechanism/development gate and cannot promote the default. Coverage
+below 10% means the treatment is too close to control to evaluate; coverage
+above 80% means route connectivity did not meaningfully select.
+
+### Disjoint holdout
+
+Passing every development term earns one unchanged 240-map holdout at seed
+9971000 with the same profile and selector. The holdout must keep coverage
+inside 10%..80%, have more favourable than adverse directions, retain at least
+50% terminal-score share, and produce **PROMOTE** from the repository's
+unchanged win gate. Only then may the connected selector become the default
+for this exact cell; a separate predeclared sample across the supervisor's
+player-count, map, and topology distribution is still required for an
+exhibition-wide claim.
+
+If development or holdout fails, there is no route threshold, staging range,
+coverage band, or seed retry. The ancient-rush line is retired on this live
+cell, and the next military work returns to mid-game victory routing rather
+than fitting another selector to these outcomes.
