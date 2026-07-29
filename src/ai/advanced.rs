@@ -8144,12 +8144,29 @@ impl AdvancedAi {
         }
     }
 
+    fn power_plant_weights(resource: &str) -> Option<(f64, f64)> {
+        match resource {
+            "coal" => Some((18.0, -110.0)),
+            "oil" => Some((20.0, -55.0)),
+            "uranium" => Some((55.0, 130.0)),
+            _ => None,
+        }
+    }
+
+    /// Preserve the stock expression's exact left-to-right floating-point
+    /// evaluation order while the treatment flag is off.
+    fn stock_power_plant_value(g: &Game, pid: usize, resource: &str) -> f64 {
+        let Some((stock_value, clean_value)) = Self::power_plant_weights(resource) else {
+            return f64::NEG_INFINITY;
+        };
+        450.0
+            + g.strategic_stockpile(pid, Name::new(resource)).min(50.0) * stock_value
+            + g.climate_phase as f64 * clean_value
+    }
+
     fn power_plant_utility(g: &Game, pid: usize, resource: &str) -> f64 {
-        let (stock_value, clean_value) = match resource {
-            "coal" => (18.0, -110.0),
-            "oil" => (20.0, -55.0),
-            "uranium" => (55.0, 130.0),
-            _ => return f64::NEG_INFINITY,
+        let Some((stock_value, clean_value)) = Self::power_plant_weights(resource) else {
+            return f64::NEG_INFINITY;
         };
         g.strategic_stockpile(pid, Name::new(resource)).min(50.0) * stock_value
             + g.climate_phase as f64 * clean_value
@@ -8871,10 +8888,10 @@ impl AdvancedAi {
                                 "convert_reactor_to_oil" => "oil",
                                 _ => "uranium",
                             };
-                            let target_utility = Self::power_plant_utility(g, pid, target);
                             if !self.reactor_marginal {
-                                450.0 + target_utility
+                                Self::stock_power_plant_value(g, pid, target)
                             } else if let Some(current) = Self::current_power_plant(city) {
+                                let target_utility = Self::power_plant_utility(g, pid, target);
                                 let improvement =
                                     target_utility - Self::power_plant_utility(g, pid, current);
                                 if improvement > f64::EPSILON {
@@ -17440,6 +17457,27 @@ mod tests {
         };
         let counts = EmpireCounts::default();
         let ai = AdvancedAi::new();
+        game.climate_phase = 5;
+        game.players[0]
+            .strategic_resources
+            .insert(crate::name!("coal"), 0.1);
+        let original_stock_value =
+            450.0 + game.strategic_stockpile(0, crate::name!("coal")).min(50.0) * 18.0
+                + game.climate_phase as f64 * -110.0;
+        let regrouped_stock_value = 450.0
+            + (game.strategic_stockpile(0, crate::name!("coal")).min(50.0) * 18.0
+                + game.climate_phase as f64 * -110.0);
+        assert_ne!(
+            original_stock_value.to_bits(),
+            regrouped_stock_value.to_bits(),
+            "the regression fixture must distinguish floating-point evaluation order"
+        );
+        assert_eq!(
+            AdvancedAi::stock_power_plant_value(&game, 0, "coal").to_bits(),
+            original_stock_value.to_bits(),
+            "the default-off path must preserve the stock expression bit for bit"
+        );
+        game.climate_phase = 0;
         let recommission = Item::Project {
             project: crate::name!("recommission_reactor"),
         };
