@@ -2042,6 +2042,104 @@ class RecoveryTests(unittest.TestCase):
         # have shown up as a second start for the successor world.
         self.assertEqual(events, ["stop", "start", "stop"])
 
+    def _run_until_interrupt(self, grace, active, checkpoint, binary):
+        """Drive `main()` over a world this supervisor started itself.
+
+        Every other `main()` test here adopts a PID, and an adopted world is
+        exactly the case that is *never* waited on — so without this the hold
+        has no coverage of the loop that decides it, and a wiring regression
+        (`world_started_at` never set) would pass the whole suite.
+        """
+        started = []
+        messages = []
+        args = self.supervisor_args(adopt_pid=None, live_refresh_grace=grace)
+        with (
+            patch.object(supervisor, "parse_args", return_value=args),
+            patch.object(supervisor, "RUNTIME_BINARY", binary),
+            patch.object(supervisor, "checkpoint_path", return_value=checkpoint),
+            patch.object(supervisor, "checkpoint_marker", return_value=None),
+            patch.object(supervisor, "resumed_checkpoint", return_value=False),
+            patch.object(supervisor, "process_alive", return_value=True),
+            # Without this the test is not hermetic and does not test what it
+            # says: `adopt_pid=None` makes `main()` look for a game already on
+            # the port, and on this machine that is the LIVE exhibition — it
+            # adopted PID 80610 and took the adopted-world path, which is
+            # exactly the branch that never holds.
+            patch.object(supervisor, "pid_listening_on", return_value=None),
+            patch.object(supervisor, "promoted_runtime_id", return_value="same"),
+            patch.object(supervisor, "source_snapshot", return_value="fresh"),
+            # Stale when the loop opens, so a live refresh is scheduled; ready
+            # from then on, so only the hold can keep it from being taken.
+            patch.object(
+                supervisor, "runtime_matches", side_effect=[False] + [True] * 40
+            ),
+            patch.object(supervisor, "capture_checkpoint", return_value=True),
+            patch.object(
+                supervisor,
+                "read_state",
+                side_effect=[active] * 6 + [KeyboardInterrupt],
+            ),
+            patch.object(
+                supervisor,
+                "start_server",
+                side_effect=lambda *a, **k: started.append((a, k))
+                or SimpleNamespace(pid=654),
+            ),
+            patch.object(supervisor, "wait_for_server", return_value=active),
+            patch.object(supervisor, "stop_server"),
+            patch.object(supervisor, "start_background_prebuild", return_value=None),
+            patch.object(supervisor, "stop_background_prebuild"),
+            patch.object(supervisor, "log", side_effect=messages.append),
+            patch.object(supervisor.time, "sleep"),
+        ):
+            self.assertEqual(supervisor.main(), 0)
+        # The relaunch itself is the tell, not its `resume` argument: whether a
+        # checkpoint path is passed depends on `checkpoint_marker`, which is
+        # mocked here, so asserting on it would only be testing the mock.
+        return started, messages
+
+    def test_a_promoted_build_waits_for_the_boundary_of_a_world_it_started(self):
+        active = {"seed": 9, "turn": 42, "current": 2, "winner": None,
+                  "server_instance": 654}
+        with tempfile.TemporaryDirectory() as directory:
+            binary = Path(directory) / "civvis"
+            binary.touch()
+            started, messages = self._run_until_interrupt(
+                600.0, active, Path(directory) / "save.json", binary
+            )
+        self.assertEqual(
+            len(started), 1, f"a live match must not be replaced; started {started}"
+        )
+        self.assertFalse(
+            any("resuming the active game from checkpoint" in m for m in messages),
+            f"no mid-match swap may happen; got {messages}",
+        )
+        self.assertTrue(
+            any("holding it for the next" in m for m in messages),
+            f"the hold must be reported; got {messages}",
+        )
+
+    def test_a_zero_grace_still_replaces_the_runtime_mid_match(self):
+        # The operator escape hatch, and the behaviour every earlier release
+        # had: with no grace at all a ready build cuts in immediately.
+        active = {"seed": 9, "turn": 42, "current": 2, "winner": None,
+                  "server_instance": 654}
+        with tempfile.TemporaryDirectory() as directory:
+            binary = Path(directory) / "civvis"
+            binary.touch()
+            started, messages = self._run_until_interrupt(
+                0.0, active, Path(directory) / "save.json", binary
+            )
+        self.assertTrue(
+            any("resuming the active game from checkpoint" in m for m in messages),
+            f"a zero grace must swap mid-match; got {messages}",
+        )
+        self.assertEqual(
+            len(started), 2, f"the swap relaunches the server; started {started}"
+        )
+        self.assertFalse(any("holding it for the next" in m for m in messages))
+
+
 
 class LeagueRosterTests(unittest.TestCase):
     """The rated exhibition has to move its table without ever rewriting the
