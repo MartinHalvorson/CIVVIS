@@ -49,10 +49,15 @@ this is the flag that pins it:
 | Start Era: Ancient | default |
 | All Game Modes: DISABLED | default; `--game-modes apocalypse,secret_societies` opts back in |
 | Duplicate Civs and Leaders: ALLOWED | seats past the eighth reuse the roster |
-| Start Position: Balanced | **not ported, and not a default** — see below |
+| Start Position: Balanced (FFA) | **not ported, and not a default** — see below |
+| Teamers Start Position: Standard | default; the generator does not distinguish a teamers layout from a free-for-all one, so a teamers game gets the same balanced-ish layout an FFA does |
+| Starts clear of Natural Wonders | `START_DISTANCE_MAJOR_NATURAL_WONDER` 2 and `START_DISTANCE_MINOR_NATURAL_WONDER` 3; majors already satisfied theirs (Natural Wonder tiles are not candidates), city-states now do too |
+| City-States: placed at the shipped distance | `add_minor_spawns` aims `START_DISTANCE_MINOR_MAJOR_CIVILIZATION` 6 from the nearest major and `START_DISTANCE_MINOR_CIVILIZATION_START` 5 from another city-state, both within `START_DISTANCE_RANGE_MINOR` 3 |
+| Major civilizations 10–14 tiles apart | `targeted_layout` aims the shipped `START_DISTANCE_MAJOR_CIVILIZATION` 12 ± `START_DISTANCE_RANGE_MAJOR` 2; 96% of nearest-neighbour distances land in band on the Standard 8-player map |
 | Temperature / Rainfall / Sea Level: Standard | not exposed by the generator; these three are at their defaults, so the gap is expressiveness rather than divergence |
 | World Age: New | **not a default either**, and the setting no longer exists in current Civ VI — see below |
-| Turn Timer: MPH Dynamic · Turn Mode: Simultaneous | out of scope: sequential engine |
+| Smart Timer: Competitive · Turn Mode: Simultaneous | out of scope: sequential engine. CPL now publishes the timer as "Smart Timer: Competitive"; the older "MPH Dynamic" wording is gone |
+| Map Pins: DISABLED (MPH) | out of scope: a client annotation, not engine state |
 | No Gold or strategic-resource trading, no military alliances | referee policy, not a rule |
 
 ### The two map lines are not defaults
@@ -68,6 +73,30 @@ the reason a CIVVIS map is not a CPL map:
   start over its neighbourhood to remove outliers the sampler never offered.
   Separation and coverage are ranked ahead of quality on purpose, so quality
   balance is what gives way when they conflict.
+
+  Separation is no longer *maximized*, though. `targeted_layout` aims each start
+  at the shipped 10-14 band rather than as far away as the landmass allows, and
+  that turned out to help fairness rather than cost it — maximizing separation
+  was fighting site quality for the same tiles.
+
+  `mapdump --start-quality` measures this independently of the generator's own
+  scorer, by summing the best twelve tiles a capital can work at radius 3.
+  (Measuring with `start_quality` instead would flatter the generator, since
+  that is the number it optimizes.) Over 24 standard 8-player maps, with the old
+  maximizing rule restored and then the shipped targeting:
+
+  | | mean capital quality | best-worst spread |
+  |---|---|---|
+  | maximizing separation | 43.8 | 14.1 — **32.2%** of mean |
+  | shipped 10-14 targeting | 47.7 | 11.8 — **24.6%** of mean |
+
+  The spread falls by about a quarter *and* the average capital gets better,
+  because the generator no longer has to shove civilizations into the map's far
+  corners. The 32.2% reading also reproduces the ~30% figure measured below by a
+  different hand, which is the check that the metric is measuring the same thing.
+
+  Reproduce either column with
+  `mapdump --width 84 --height 54 --players 8 --city-states 12 --maps 24 --quiet --start-quality`.
 
   What that leaves, measured over 24 standard 8-player maps against the twelve
   tiles a capital actually works (independently of the generator's own scorer):

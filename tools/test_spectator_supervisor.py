@@ -157,6 +157,40 @@ class CanonicalSyncTests(unittest.TestCase):
 
 
 class SessionSettingsTests(unittest.TestCase):
+    def test_every_map_type_can_launch_on_either_world_shape(self):
+        for map_type in supervisor.MAP_TYPES:
+            for shape in supervisor.MAP_SHAPES:
+                with self.subTest(map=map_type, shape=shape):
+                    with patch.object(
+                        supervisor.sys,
+                        "argv",
+                        [
+                            "spectator_supervisor.py",
+                            "--map",
+                            map_type,
+                            "--shape",
+                            shape,
+                            "--poles",
+                            "randomized",
+                        ],
+                    ):
+                        parsed = supervisor.parse_args()
+                    settings = {
+                        "players": parsed.players,
+                        "width": parsed.width,
+                        "height": parsed.height,
+                        "city_states": parsed.city_states,
+                        "turns": parsed.turns,
+                        "map": parsed.map,
+                        "shape": parsed.shape,
+                        "poles": parsed.poles,
+                        "speed": parsed.speed,
+                    }
+                    command = supervisor.server_command(8766, settings, False)
+                    self.assertEqual(command[command.index("--map") + 1], map_type)
+                    self.assertEqual(command[command.index("--shape") + 1], shape)
+                    self.assertEqual(command[command.index("--poles") + 1], "randomized")
+
     def test_launch_victories_are_validated_and_keep_score_disabled(self):
         self.assertEqual(
             supervisor.parse_victories("science,culture,domination"),
@@ -173,8 +207,15 @@ class SessionSettingsTests(unittest.TestCase):
                 {"is_minor": True},
                 {"is_minor": True, "is_barbarian": True},
             ],
-            "map": {"width": 44, "height": 26, "script": "continents"},
+            "map": {
+                "width": 55,
+                "height": 24,
+                "script": "continents",
+                "shape": "planet",
+                "poles": "randomized",
+            },
             "game_speed": "online",
+            "leader_pool": "expanded",
             "max_turns": 250,
             "victory_conditions": {
                 "science": True,
@@ -192,19 +233,28 @@ class SessionSettingsTests(unittest.TestCase):
             "city_states": 6,
             "turns": 500,
             "map": "pangaea",
+            "shape": "flat",
+            "poles": "poles",
             "speed": "standard",
+            "leader_pool": "civ6",
         }
-        # Board shape, pacing and victory selection follow the live game; the
-        # seat counts stay with the operator's flags. `/state` is fog-of-war
-        # trimmed, so the majors it lists are only the ones the viewing player
-        # can see -- deriving `--players` from them ratchets the exhibition
-        # down game after game and never recovers.
+        # Board shape, pacing and victory selection follow the live game. Seat
+        # count and map script are redrawn instead of carried, and the board
+        # size is dropped with the seat count so `civvis play` can size the map
+        # for whatever was drawn. `/state` is fog-of-war trimmed, so the majors
+        # it lists are only the ones the viewing player can see -- deriving
+        # `--players` from them ratcheted the exhibition down game after game
+        # and never recovered.
+        carried = supervisor.session_settings(state, defaults)
         self.assertEqual(
-            supervisor.session_settings(state, defaults),
-            {"players": 4, "width": 44, "height": 26, "city_states": 6,
-             "turns": 250, "map": "continents", "speed": "online",
+            {key: value for key, value in carried.items()
+             if key not in ("players", "map")},
+            {"turns": 250, "shape": "planet", "poles": "randomized",
+             "speed": "online", "leader_pool": "expanded",
              "victories": ["science", "culture", "domination", "score"]},
         )
+        self.assertIn(carried["players"], supervisor.SIMULATION_PLAYER_COUNTS)
+        self.assertIn(carried["map"], supervisor.MAP_TYPES)
 
     def test_fogged_state_does_not_shrink_the_next_game(self):
         """A trimmed observation must not become the next game's seat count."""
@@ -223,9 +273,62 @@ class SessionSettingsTests(unittest.TestCase):
             "map": "pangaea",
             "speed": "online",
         }
-        carried = supervisor.session_settings(fogged, defaults)
-        self.assertEqual(carried["players"], 6)
-        self.assertEqual(carried["city_states"], 9)
+        # The seat count is redrawn from the policy, never read off the
+        # observation -- this trimmed one lists a single major, and a game
+        # started from it would be a world with nobody in it.
+        for _ in range(50):
+            carried = supervisor.session_settings(fogged, defaults)
+            self.assertIn(carried["players"], supervisor.SIMULATION_PLAYER_COUNTS)
+        # City states go with the seat count: dropping them is what lets
+        # `civvis play` seat the right number for the size it just picked.
+        self.assertNotIn("city_states", carried)
+
+    def test_borrowed_turns_do_not_ratchet_the_next_game_longer(self):
+        """"One more turn" raises `max_turns`; the next game must not inherit it."""
+        played_on = {
+            "players": [{"is_minor": False}, {"is_minor": False}],
+            "map": {"width": 74, "height": 46, "script": "pangaea"},
+            "game_speed": "online",
+            # 250 turns of game plus two presses of "one more turn".
+            "max_turns": 300,
+            "decided": {"winner": 0, "civ": "Rome", "victory_type": "science", "turn": 244},
+        }
+        defaults = {
+            "players": 6,
+            "width": 74,
+            "height": 46,
+            "city_states": 9,
+            "turns": 250,
+            "map": "pangaea",
+            "speed": "online",
+        }
+        self.assertEqual(supervisor.session_settings(played_on, defaults)["turns"], 250)
+        # A world that was never extended still carries its own limit forward.
+        untouched = {**played_on, "max_turns": 180}
+        del untouched["decided"]
+        self.assertEqual(supervisor.session_settings(untouched, defaults)["turns"], 180)
+
+    def test_playing_on_is_told_apart_from_the_next_world(self):
+        """Only the same seed, live and already decided, is an extension."""
+        self.assertTrue(
+            supervisor.playing_on(
+                {"winner": None, "seed": 77, "decided": {"winner": 1, "turn": 210}}, 77
+            )
+        )
+        # The server's own cooldown elapsed first and rolled into another
+        # world: live and unrecorded, and still owed a freshly built process.
+        self.assertFalse(
+            supervisor.playing_on({"winner": None, "seed": 78, "decided": None}, 77)
+        )
+        # A decided world whose seed moved on is that same handoff, one poll
+        # later, with the previous game's record still in view.
+        self.assertFalse(
+            supervisor.playing_on(
+                {"winner": None, "seed": 78, "decided": {"winner": 1, "turn": 210}}, 77
+            )
+        )
+        self.assertFalse(supervisor.playing_on({"winner": 0, "seed": 77}, 77))
+        self.assertFalse(supervisor.playing_on(None, 77))
 
     def test_selected_settings_override_the_live_game_at_the_next_boundary(self):
         selected = {
@@ -235,7 +338,10 @@ class SessionSettingsTests(unittest.TestCase):
             "city_states": 9,
             "turns": 330,
             "map": "continents",
+            "shape": "planet",
+            "poles": "randomized",
             "speed": "quick",
+            "leader_pool": "expanded",
             "victories": ["science", "domination"],
         }
         state = {
@@ -266,8 +372,19 @@ class SessionSettingsTests(unittest.TestCase):
             "turns": 500,
             "map": "pangaea",
             "speed": "standard",
+            "leader_pool": "civ6",
         }
-        self.assertEqual(supervisor.session_settings({}, defaults), defaults)
+        # Everything the policy does not govern still comes from the flags.
+        rolled = supervisor.session_settings({}, defaults)
+        self.assertEqual(
+            {key: value for key, value in rolled.items()
+             if key not in ("players", "map", "speed")},
+            {"turns": 500, "leader_pool": "civ6"},
+        )
+        self.assertIn(rolled["players"], supervisor.SIMULATION_PLAYER_COUNTS)
+        self.assertIn(rolled["map"], supervisor.MAP_TYPES)
+        # Standard was asked for and Online is what the exhibition simulates.
+        self.assertEqual(rolled["speed"], "online")
 
     def test_missing_live_victory_settings_keep_previous_selection(self):
         defaults = {
@@ -289,6 +406,7 @@ class SessionSettingsTests(unittest.TestCase):
         request = {
             "mode": "fresh_code",
             "server_instance": 4321,
+            "paused": False,
             "settings": {
                 "players": 4,
                 "width": 60,
@@ -296,7 +414,10 @@ class SessionSettingsTests(unittest.TestCase):
                 "city_states": 6,
                 "turns": 330,
                 "map": "continents",
+                "shape": "planet",
+                "poles": "randomized",
                 "speed": "quick",
+                "leader_pool": "expanded",
                 "victories": ["science", "culture", "domination"],
             },
         }
@@ -313,9 +434,13 @@ class SessionSettingsTests(unittest.TestCase):
                     "city_states": 6,
                     "turns": 330,
                     "map": "continents",
+                    "shape": "planet",
+                    "poles": "randomized",
                     "speed": "quick",
+                    "leader_pool": "expanded",
                     "victories": ["science", "culture", "domination"],
                 },
+                False,
             ),
         )
         self.assertIsNone(
@@ -323,6 +448,24 @@ class SessionSettingsTests(unittest.TestCase):
                 {"server_instance": 9999, "supervisor_request": request}
             )
         )
+
+    def test_invalid_shape_or_poles_rejects_a_supervisor_handoff(self):
+        settings = {
+            "players": 4,
+            "width": 60,
+            "height": 38,
+            "city_states": 6,
+            "turns": 250,
+            "map": "pangaea",
+            "shape": "cube",
+            "poles": "poles",
+            "speed": "online",
+            "victories": ["science"],
+        }
+        self.assertIsNone(supervisor.normalized_simulation_settings(settings))
+        settings["shape"] = "planet"
+        settings["poles"] = "sometimes"
+        self.assertIsNone(supervisor.normalized_simulation_settings(settings))
 
     def test_result_standings_preserves_winner_and_excludes_non_major_players(self):
         state = {
@@ -689,6 +832,9 @@ class RecoveryTests(unittest.TestCase):
         )
         instance_guard.start()
         self.addCleanup(instance_guard.stop)
+        # The countdown used to be settable, so these cases pinned it back to
+        # its floor. It is a constant now and `--cooldown` cannot move it, so
+        # there is nothing left to pin.
 
     @staticmethod
     def supervisor_args(**overrides):
@@ -756,6 +902,7 @@ class RecoveryTests(unittest.TestCase):
             "turns": 250,
             "map": "pangaea",
             "speed": "online",
+            "leader_pool": "civ6",
             "victories": ["science", "score"],
         }
         active = {
@@ -767,6 +914,7 @@ class RecoveryTests(unittest.TestCase):
             "supervisor_request": {
                 "mode": "restart",
                 "server_instance": 321,
+                "paused": True,
                 "settings": requested,
             },
         }
@@ -793,7 +941,9 @@ class RecoveryTests(unittest.TestCase):
             ):
                 self.assertEqual(supervisor.main(), 0)
 
-        start.assert_called_once_with(8766, requested, False)
+        start.assert_called_once_with(
+            8766, requested, False, initially_paused=True
+        )
         build.assert_not_called()
         self.assertFalse(checkpoint.exists())
 
@@ -806,6 +956,7 @@ class RecoveryTests(unittest.TestCase):
             "turns": 330,
             "map": "continents",
             "speed": "quick",
+            "leader_pool": "expanded",
             "victories": ["science", "culture", "domination"],
         }
         active = {
@@ -817,6 +968,7 @@ class RecoveryTests(unittest.TestCase):
             "supervisor_request": {
                 "mode": "fresh_code",
                 "server_instance": 321,
+                "paused": False,
                 "settings": requested,
             },
         }
@@ -853,7 +1005,9 @@ class RecoveryTests(unittest.TestCase):
                 self.assertEqual(supervisor.main(), 0)
 
         build.assert_called_once_with()
-        start.assert_called_once_with(8766, requested, False)
+        start.assert_called_once_with(
+            8766, requested, False, initially_paused=False
+        )
 
     def test_busy_server_detection_distinguishes_compute_from_idle(self):
         process = SimpleNamespace(pid=321)
@@ -1000,6 +1154,74 @@ class RecoveryTests(unittest.TestCase):
             )
         )
 
+    def test_a_game_played_by_hand_is_never_nudged_or_recovered(self):
+        """A single-player game stands still between turns by design.
+
+        Its stall clock says nothing about its health, and the recovery step
+        it cannot take would report the server as unavailable and restart it
+        out from under the player.
+        """
+        playing = {"spectate": False, "turn": 12, "current": 0, "winner": None}
+        self.assertTrue(supervisor.played_by_hand(playing))
+        self.assertFalse(supervisor.should_nudge(playing, stalled_for=3600, timeout=30))
+        # Only an explicit false counts: the exhibition always says so, and a
+        # state that could not be read keeps the supervision it has today.
+        for watched in ({}, {"spectate": True}, {"turn": 4}):
+            self.assertFalse(supervisor.played_by_hand(watched))
+            self.assertTrue(
+                supervisor.should_nudge(watched, stalled_for=31, timeout=30)
+            )
+
+    def test_a_finished_game_does_not_take_its_own_seat_forever(self):
+        """The exhibition must resume after the game that took it ends.
+
+        Observed live on 2026-07-25: a single-player game reached a diplomatic
+        victory on turn 243 and the supervisor parked on it, logging "a
+        single-player game took this process" and re-archiving the same 8.5 MB
+        save every six seconds — 355 identical copies, about 90 MB a minute —
+        while five merged commits waited for a promotion that never came. The
+        handoff was asking `played_by_hand`, which a finished game keeps
+        answering `false` for as long as it is reachable, so the process was
+        handed back to the game that had just released it.
+        """
+        finished_key = ("instance-40048", 171790132)
+        ended = {
+            "spectate": False,
+            "turn": 243,
+            "winner": 0,
+            "victory_type": "diplomatic",
+            "server_instance": "instance-40048",
+            "seed": 171790132,
+        }
+        self.assertTrue(supervisor.played_by_hand(ended))
+        self.assertFalse(supervisor.takes_over_the_seat(ended, finished_key))
+        # An AI-only world that ended is likewise nobody's seat.
+        self.assertFalse(
+            supervisor.takes_over_the_seat({**ended, "spectate": True}, finished_key)
+        )
+        # Somebody really taking the seat from the result screen keeps it: the
+        # process is the same, the game is not.
+        took_over = {
+            "spectate": False,
+            "turn": 1,
+            "winner": None,
+            "server_instance": "instance-40048",
+            "seed": 902_113_447,
+        }
+        self.assertTrue(supervisor.takes_over_the_seat(took_over, finished_key))
+        # A new process holding a live human game counts too.
+        self.assertTrue(
+            supervisor.takes_over_the_seat(
+                {**took_over, "server_instance": "instance-40052"}, finished_key
+            )
+        )
+        # And a game still in play but watched, or a state that could not be
+        # read at all, leaves the exhibition free to cycle.
+        self.assertFalse(
+            supervisor.takes_over_the_seat({**took_over, "spectate": True}, finished_key)
+        )
+        self.assertFalse(supervisor.takes_over_the_seat(None, finished_key))
+
     def test_server_command_can_resume_an_atomic_checkpoint(self):
         settings = {
             "players": 4,
@@ -1016,6 +1238,96 @@ class RecoveryTests(unittest.TestCase):
         self.assertIn("--supervised", command)
         self.assertIn("--no-open", command)
 
+    def test_the_countdown_is_ten_seconds_and_no_launcher_can_change_it(self):
+        """The result screen's number has no input, here or on the server.
+
+        It used to come from `--cooldown` via `--restart-ms`, and the number a
+        viewer read was whichever value had won that chain — twice in one
+        evening the exhibition counted down from something nobody had chosen.
+        """
+        self.assertEqual(supervisor.FINAL_COUNTDOWN_SECONDS, 10.0)
+        for asked in (0.0, 5.0, 9.999, 10.0, 12.5, 60.0, 110.0, float("inf")):
+            self.assertEqual(supervisor.final_countdown_seconds(asked), 10.0)
+        # And the server is never handed a duration at all.
+        command = supervisor.server_command(
+            8766,
+            {
+                "players": 4,
+                "width": 60,
+                "height": 38,
+                "city_states": 6,
+                "turns": 500,
+                "map": "pangaea",
+                "speed": "standard",
+            },
+            False,
+        )
+        self.assertNotIn("--restart-ms", command)
+
+    def test_every_world_is_online_speed_and_an_ancient_start(self):
+        """The two pins, enforced where all three launch paths meet.
+
+        A rolled world, a staged lobby handoff and a resumed checkpoint all
+        reach `civvis play` through `server_command`, so that is where the
+        exhibition's one kind of game is decided. A handoff naming Epic is a
+        real operator action and gets said out loud rather than swallowed.
+        """
+        asked_for_epic = {
+            "players": 4,
+            "width": 60,
+            "height": 38,
+            "city_states": 6,
+            "turns": 250,
+            "map": "continents",
+            "speed": "epic",
+        }
+        command = supervisor.server_command(8766, asked_for_epic, False)
+        self.assertEqual(command[command.index("--speed") + 1], "online")
+        self.assertEqual(command[command.index("--start-era") + 1], "ancient")
+        self.assertEqual(command.count("--speed"), 1)
+
+    def test_no_world_is_started_with_teams(self):
+        """`civvis play` reads an absent `--teams` as a free-for-all."""
+        for settings in (
+            {"players": 4, "turns": 250, "map": "pangaea", "speed": "online"},
+            {"players": 8, "width": 84, "height": 54, "city_states": 12,
+             "turns": 250, "map": "islands", "speed": "online",
+             "teams": [0, 0, 1, 1, 2, 2, 3, 3]},
+        ):
+            command = supervisor.server_command(8766, settings, False)
+            self.assertNotIn("--teams", command)
+
+    def test_a_rolled_world_lets_the_binary_size_its_own_board(self):
+        """Seat count varies, so the board that holds it cannot be pinned."""
+        rolled = supervisor.rolled_simulation_settings(
+            {"players": 6, "width": 74, "height": 46, "city_states": 9,
+             "turns": 250, "map": "pangaea", "speed": "online"}
+        )
+        for dropped in ("width", "height", "city_states"):
+            self.assertNotIn(dropped, rolled)
+        command = supervisor.server_command(8766, rolled, False)
+        for flag in ("--width", "--height", "--city-states"):
+            self.assertNotIn(flag, command)
+        # An explicit size still travels -- that is how a resume keeps the
+        # board its checkpoint was written on.
+        sized = supervisor.server_command(
+            8766, {**rolled, "width": 74, "height": 46, "city_states": 9}, False
+        )
+        self.assertEqual(sized[sized.index("--width") + 1], "74")
+        self.assertEqual(sized[sized.index("--city-states") + 1], "9")
+
+    def test_rolled_worlds_vary_across_both_axes(self):
+        """Variety is the point; a roll that always answers 6/pangaea is not."""
+        seen_players, seen_maps = set(), set()
+        for _ in range(400):
+            rolled = supervisor.rolled_simulation_settings(
+                {"players": 6, "turns": 250, "map": "pangaea", "speed": "online"}
+            )
+            seen_players.add(rolled["players"])
+            seen_maps.add(rolled["map"])
+        self.assertEqual(seen_players, set(supervisor.SIMULATION_PLAYER_COUNTS))
+        self.assertEqual(seen_maps, set(supervisor.MAP_TYPES))
+
     def test_server_command_carries_manual_victory_settings(self):
         settings = {
             "players": 4,
@@ -1025,6 +1337,7 @@ class RecoveryTests(unittest.TestCase):
             "turns": 330,
             "map": "continents",
             "speed": "quick",
+            "leader_pool": "expanded",
             "victories": ["science", "culture", "domination"],
         }
         command = supervisor.server_command(8766, settings, False)
@@ -1032,6 +1345,24 @@ class RecoveryTests(unittest.TestCase):
             command[command.index("--victories") + 1],
             "science,culture,domination",
         )
+        self.assertEqual(command[command.index("--leader-pool") + 1], "expanded")
+
+    def test_server_command_can_pause_before_the_stepper_starts(self):
+        settings = {
+            "players": 4,
+            "width": 60,
+            "height": 38,
+            "city_states": 6,
+            "turns": 250,
+            "map": "pangaea",
+            "speed": "online",
+        }
+        paused = supervisor.server_command(
+            8766, settings, False, initially_paused=True
+        )
+        running = supervisor.server_command(8766, settings, False)
+        self.assertIn("--paused", paused)
+        self.assertNotIn("--paused", running)
 
     def test_server_starts_beside_the_promoted_binary_not_the_shared_web_tree(self):
         settings = {
@@ -1215,6 +1546,7 @@ class RecoveryTests(unittest.TestCase):
                 "turns": 500,
                 "map": "pangaea",
                 "speed": "standard",
+                "leader_pool": "civ6",
             },
             False,
             checkpoint,
@@ -1381,7 +1713,9 @@ class RecoveryTests(unittest.TestCase):
                 patch.object(
                     supervisor,
                     "read_state",
-                    side_effect=[active, active, finished, KeyboardInterrupt],
+                    # The fourth read is the boundary's own re-check for a
+                    # player who took the seat during the result cooldown.
+                    side_effect=[active, active, finished, finished, KeyboardInterrupt],
                 ) as read,
                 patch.object(supervisor, "capture_checkpoint", return_value=False),
                 patch.object(supervisor, "archive_result"),
@@ -1397,7 +1731,7 @@ class RecoveryTests(unittest.TestCase):
                 self.assertEqual(supervisor.main(), 0)
 
         start.assert_called_once()
-        self.assertEqual(read.call_count, 4)
+        self.assertEqual(read.call_count, 5)
         stop_build.assert_called_once_with(worker)
 
     def test_finished_server_starts_successor_without_waiting_for_a_build(self):
@@ -1458,16 +1792,20 @@ class RecoveryTests(unittest.TestCase):
                 patch.object(supervisor, "parse_args", return_value=args),
                 patch.object(supervisor, "RUNTIME_BINARY", runtime),
                 patch.object(supervisor, "checkpoint_path", return_value=checkpoint),
+                patch.object(supervisor, "pid_listening_on", return_value=None),
                 patch.object(supervisor, "runtime_matches", return_value=False),
                 patch.object(supervisor, "start_server", side_effect=start),
                 patch.object(supervisor, "wait_for_server", side_effect=wait),
                 patch.object(
                     supervisor,
                     "read_state",
-                    side_effect=[finished, KeyboardInterrupt],
+                    # The second read is the boundary re-checking whether the
+                    # result screen was turned into a single-player game.
+                    side_effect=[finished, finished, KeyboardInterrupt],
                 ),
                 patch.object(supervisor, "archive_result") as archive,
                 patch.object(supervisor, "stop_server", side_effect=stop),
+                patch.object(supervisor.time, "sleep"),
             ):
                 self.assertEqual(supervisor.main(), 0)
 
@@ -1476,6 +1814,164 @@ class RecoveryTests(unittest.TestCase):
         self.assertLess(retired, launched)
         self.assertNotIn(("prepare", None), events)
         archive.assert_called_once_with(8766, finished)
+
+    def test_a_player_who_takes_the_seat_during_the_cooldown_keeps_it(self):
+        """The result screen offers a single-player game, and that game is
+        started in the process the supervisor was about to retire. Retiring it
+        anyway would take the new board away a few seconds after it appeared.
+        """
+        args = SimpleNamespace(
+            port=8766,
+            players=4,
+            width=60,
+            height=38,
+            city_states=6,
+            turns=500,
+            map="pangaea",
+            speed="standard",
+            cooldown=0.0,
+            poll=0.01,
+            build_retry=0.01,
+            source_check_interval=30.0,
+            unresponsive_timeout=20.0,
+            busy_timeout=600.0,
+            stall_timeout=30.0,
+            checkpoint_interval=5.0,
+            max_resume_attempts=2,
+            no_open=True,
+            adopt_pid=None,
+        )
+        finished = {
+            "seed": 9,
+            "turn": 70,
+            "current": 3,
+            "winner": 1,
+            "victory_type": "science",
+            "players": [],
+        }
+        playing = {"spectate": False, "seed": 11, "turn": 1, "current": 0, "winner": None}
+        server = SimpleNamespace(pid=321)
+        events = []
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            runtime = root / "civvis"
+            runtime.touch()
+            checkpoint = root / "save.json"
+            with (
+                patch.object(supervisor, "parse_args", return_value=args),
+                patch.object(supervisor, "RUNTIME_BINARY", runtime),
+                patch.object(supervisor, "checkpoint_path", return_value=checkpoint),
+                patch.object(supervisor, "pid_listening_on", return_value=None),
+                patch.object(supervisor, "runtime_matches", return_value=True),
+                patch.object(
+                    supervisor,
+                    "start_server",
+                    side_effect=lambda *a, **k: (events.append("start"), server)[1],
+                ),
+                patch.object(supervisor, "wait_for_server", return_value=finished),
+                patch.object(
+                    supervisor,
+                    "read_state",
+                    side_effect=[finished, playing, KeyboardInterrupt],
+                ),
+                patch.object(supervisor, "archive_result", return_value=None),
+                patch.object(
+                    supervisor,
+                    "stop_server",
+                    side_effect=lambda *a, **k: events.append("stop"),
+                ),
+                patch.object(supervisor.time, "sleep"),
+            ):
+                self.assertEqual(supervisor.main(), 0)
+
+        # The cold start, and nothing after it. Retiring the finished result
+        # would have added a second start for the successor; the stops around
+        # it are the cold-start orphan sweep and the shutdown.
+        self.assertEqual(events.count("start"), 1)
+        self.assertEqual(events, ["stop", "start", "stop"])
+
+    def test_a_world_asked_for_one_more_turn_is_not_retired(self):
+        """The result screen's other offer keeps the same world instead of
+        replacing it. The winner clears, the seed does not, and the supervisor
+        has to recognise that as a game still being played rather than as the
+        handoff it was a moment away from performing.
+        """
+        args = SimpleNamespace(
+            port=8766,
+            players=4,
+            width=60,
+            height=38,
+            city_states=6,
+            turns=500,
+            map="pangaea",
+            speed="standard",
+            cooldown=0.0,
+            poll=0.01,
+            build_retry=0.01,
+            source_check_interval=30.0,
+            unresponsive_timeout=20.0,
+            busy_timeout=600.0,
+            stall_timeout=30.0,
+            checkpoint_interval=5.0,
+            max_resume_attempts=2,
+            no_open=True,
+            adopt_pid=None,
+        )
+        finished = {
+            "seed": 9,
+            "turn": 70,
+            "current": 3,
+            "winner": 1,
+            "victory_type": "science",
+            "players": [],
+        }
+        played_on = {
+            **finished,
+            "winner": None,
+            "victory_type": None,
+            "turn": 71,
+            "max_turns": 95,
+            "decided": {"winner": 1, "civ": "Greece", "victory_type": "science", "turn": 70},
+        }
+        server = SimpleNamespace(pid=321)
+        events = []
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            runtime = root / "civvis"
+            runtime.touch()
+            checkpoint = root / "save.json"
+            with (
+                patch.object(supervisor, "parse_args", return_value=args),
+                patch.object(supervisor, "RUNTIME_BINARY", runtime),
+                patch.object(supervisor, "checkpoint_path", return_value=checkpoint),
+                patch.object(supervisor, "pid_listening_on", return_value=None),
+                patch.object(supervisor, "runtime_matches", return_value=True),
+                patch.object(
+                    supervisor,
+                    "start_server",
+                    side_effect=lambda *a, **k: (events.append("start"), server)[1],
+                ),
+                patch.object(supervisor, "wait_for_server", return_value=finished),
+                patch.object(
+                    supervisor,
+                    "read_state",
+                    side_effect=[finished, played_on, KeyboardInterrupt],
+                ),
+                patch.object(supervisor, "archive_result", return_value=None),
+                patch.object(
+                    supervisor,
+                    "stop_server",
+                    side_effect=lambda *a, **k: events.append("stop"),
+                ),
+                patch.object(supervisor.time, "sleep"),
+            ):
+                self.assertEqual(supervisor.main(), 0)
+
+        # As above: the cold start and nothing after it. A retirement would
+        # have shown up as a second start for the successor world.
+        self.assertEqual(events, ["stop", "start", "stop"])
 
 
 class LeagueRosterTests(unittest.TestCase):

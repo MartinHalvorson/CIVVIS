@@ -19,6 +19,7 @@ import ctypes
 from datetime import datetime, timezone
 import hashlib
 import json
+import math
 import os
 from pathlib import Path
 import random
@@ -36,6 +37,80 @@ from urllib.request import Request, urlopen
 if os.name == "nt":
     # ctypes.wintypes only imports on Windows.
     from ctypes import wintypes
+
+
+# How long a finished world stays on screen before this supervisor retires it.
+#
+# It has to be the server's `RESULT_COUNTDOWN_MS` exactly, because the server
+# is what counts the number down in front of the viewer: retire the world
+# earlier and the countdown is cut off mid-promise, later and it sits at zero.
+# So this is not configurable either — `--cooldown` is accepted and ignored.
+FINAL_COUNTDOWN_SECONDS = 10.0
+
+MAP_TYPES = (
+    "land_only",
+    "lakes",
+    "inland_sea",
+    "pangaea",
+    "continents",
+    "small_continents",
+    "islands",
+    "water_world",
+    "true_start_earth",
+)
+MAP_SHAPES = ("flat", "planet")
+MAP_POLES = ("poles", "randomized")
+
+# Every world the exhibition simulates is the same *kind* of game: Online
+# speed, an Ancient start, and no teams. Two axes vary between worlds -- how
+# many seats are at the table and what the map is -- and nothing else does.
+#
+# Speed and start era are pinned at the launch boundary in `server_command`
+# rather than in the generator below, because the generator is not the only
+# way a world gets started: a staged lobby handoff arrives through
+# `normalized_simulation_settings`, and a resume arrives with the settings the
+# checkpoint was written under. Pinning where the argument list is built is
+# the one place all three paths pass through.
+SIMULATION_SPEED = "online"
+SIMULATION_START_ERA = "ancient"
+# Four seats is the floor at which the war log, diplomacy and the victory race
+# all have something to show; a duel has no diplomacy to watch. Ten is the
+# ceiling this box finishes in an evening -- a 20-major world was measured
+# taking 27 hours at load 45, which is a world nobody ever sees the end of.
+SIMULATION_PLAYER_COUNTS = (4, 5, 6, 7, 8, 9, 10)
+# Teams are never passed. `civvis play` reads `--teams` as one entry per major
+# seat and treats an absent flag as a free-for-all, so the guarantee here is
+# the absence of the argument, and `test_no_world_is_started_with_teams` is
+# what keeps it absent.
+
+
+def rolled_simulation_settings(settings: dict[str, Any]) -> dict[str, Any]:
+    """Redraw the two axes that vary between exhibition worlds.
+
+    Width, height and city-state counts are *dropped* rather than rolled or
+    carried: all three are functions of the seat count, and `civvis play`
+    derives them from `--players` through `MapSize::for_players`, which is the
+    shipped Civilization VI size table. Computing them here would put a second
+    copy of that table in Python to keep in step, and carrying the finished
+    world's 74x46 forward would crowd ten seats onto a board built for six.
+    """
+    rolled = dict(settings)
+    rolled["players"] = random.choice(SIMULATION_PLAYER_COUNTS)
+    rolled["map"] = random.choice(MAP_TYPES)
+    for derived in ("width", "height", "city_states"):
+        rolled.pop(derived, None)
+    return rolled
+
+
+def final_countdown_seconds(requested: float) -> float:
+    """Ten seconds, whatever `--cooldown` asked for.
+
+    The argument is still taken so an existing launcher's `--cooldown` keeps
+    parsing, and still ignored so it cannot put a number on the result screen
+    that disagrees with the countdown the server is showing.
+    """
+    del requested
+    return FINAL_COUNTDOWN_SECONDS
 
 
 SCRIPT_PATH = Path(__file__).resolve()
@@ -591,8 +666,64 @@ def resumed_checkpoint(state: dict[str, Any], marker: tuple[Any, ...] | None) ->
     )
 
 
+def played_by_hand(state: dict[str, Any]) -> bool:
+    """Whether this process has been handed to a game somebody is playing.
+
+    The exhibition server answers `spectate: true` for every AI-only world, so
+    only an explicit `false` counts: an unreadable or older state keeps the
+    supervision it has always had.
+    """
+    return state.get("spectate") is False
+
+
+def takes_over_the_seat(
+    latest: dict[str, Any] | None, finished_key: tuple[Any, Any]
+) -> bool:
+    """Whether `latest` is a *new* single-player game holding this process.
+
+    The exhibition offers the seat from the result screen of the game that has
+    just ended, so the handoff has to tell "somebody took it during the
+    cooldown" from "nothing happened". `played_by_hand` alone cannot: a
+    finished game stays reachable and, if a person played it, keeps answering
+    `spectate: false` forever. Asking only that question hands the process back
+    to the game that already ended, on every poll — the loop re-detects the
+    same finish, re-archives the same save every few seconds, and no newer
+    build is ever promoted. Only a different game, and one still in play, is
+    somebody's seat to protect.
+    """
+    if latest is None or not played_by_hand(latest):
+        return False
+    if latest.get("winner") is not None:
+        return False
+    return (latest.get("server_instance"), latest.get("seed")) != finished_key
+
+
+def playing_on(state: dict[str, Any] | None, finished_seed: Any) -> bool:
+    """Whether this world was asked for more turns rather than retired.
+
+    A live world with a recorded result is one somebody pressed "one more
+    turn" on. The seed has to match as well: a server whose own cooldown
+    elapsed first has already rolled into the *next* world, which is live and
+    unrecorded but is emphatically not the same game, and must still be handed
+    over to a freshly built process.
+    """
+    return (
+        state is not None
+        and state.get("winner") is None
+        and state.get("decided") is not None
+        and state.get("seed") == finished_seed
+    )
+
+
 def should_nudge(state: dict[str, Any], stalled_for: float, timeout: float) -> bool:
-    """Distinguish a dead spectator loop from an intentional GUI pause."""
+    """Distinguish a dead spectator loop from an intentional GUI pause.
+
+    A single-player game makes no progress at all between its turns, so the
+    stall clock says nothing about its health and a recovery step it cannot
+    take would report the server as unavailable.
+    """
+    if played_by_hand(state):
+        return False
     return not state.get("spectator_paused", False) and stalled_for >= max(0.1, timeout)
 
 
@@ -751,15 +882,38 @@ def session_settings(state: dict[str, Any], defaults: dict[str, Any]) -> dict[st
     players = state.get("players") or []
     game_map = state.get("map") or {}
     settings = {
-        # Seat counts stay with the operator's flags; see the note above.
-        "players": defaults["players"],
-        "width": int(game_map.get("width") or defaults["width"]),
-        "height": int(game_map.get("height") or defaults["height"]),
-        "city_states": defaults["city_states"],
-        "turns": int(state.get("max_turns") or defaults["turns"]),
-        "map": game_map.get("script") or defaults["map"],
-        "speed": state.get("game_speed") or defaults["speed"],
+        # Seat count and map script are redrawn for every world -- they are the
+        # two axes the exhibition varies -- so neither the operator's flags nor
+        # the finished game decides them. The flags still seat the *first*
+        # world of a supervisor's life, because nothing has finished yet for
+        # this branch to run on.
+        #
+        # The fog-of-war note above is why the finished game is not consulted
+        # for a seat count even now: a redraw is a fresh number, but reading
+        # one off `/state` would still be reading a trimmed observation.
+        "players": random.choice(SIMULATION_PLAYER_COUNTS),
+        # Turns borrowed by "one more turn" are not a setting. A played-on
+        # world carries a raised `max_turns`, and feeding that back as the next
+        # `--turns` would ratchet the exhibition longer with every press, the
+        # same way counting visible majors once ratcheted the seat count down.
+        "turns": defaults["turns"]
+        if state.get("decided") is not None
+        else int(state.get("max_turns") or defaults["turns"]),
+        "map": random.choice(MAP_TYPES),
+        "speed": SIMULATION_SPEED,
+        "leader_pool": state.get("leader_pool") or defaults.get("leader_pool", "civ6"),
     }
+    # Shape and climate are independent of the map script. They used to be
+    # omitted here and in `server_command`, so a selected Planet world made it
+    # across the HTTP handoff, then silently relaunched as Flat in the fresh
+    # process. Keep them optional only for compatibility with an older server
+    # that does not report either field yet.
+    shape = game_map.get("shape") or defaults.get("shape")
+    poles = game_map.get("poles") or defaults.get("poles")
+    if shape in MAP_SHAPES:
+        settings["shape"] = shape
+    if poles in MAP_POLES:
+        settings["poles"] = poles
     victory_conditions = state.get("victory_conditions")
     if isinstance(victory_conditions, dict):
         settings["victories"] = [
@@ -784,7 +938,10 @@ def normalized_simulation_settings(values: Any) -> dict[str, Any] | None:
     if not isinstance(values, dict):
         return None
     try:
-        return {
+        leader_pool = str(values.get("leader_pool", "civ6"))
+        if leader_pool not in ("civ6", "expanded"):
+            return None
+        normalized = {
             "players": int(values["players"]),
             "width": int(values["width"]),
             "height": int(values["height"]),
@@ -792,28 +949,45 @@ def normalized_simulation_settings(values: Any) -> dict[str, Any] | None:
             "turns": int(values["turns"]),
             "map": str(values["map"]),
             "speed": str(values["speed"]),
+            "leader_pool": leader_pool,
             "victories": [str(value) for value in values["victories"]],
         }
+        # New servers always send both. Keeping them optional lets a promoted
+        # supervisor finish a handoff from the immediately preceding server
+        # version without rejecting the entire request.
+        if "shape" in values:
+            shape = str(values["shape"])
+            if shape not in MAP_SHAPES:
+                return None
+            normalized["shape"] = shape
+        if "poles" in values:
+            poles = str(values["poles"])
+            if poles not in MAP_POLES:
+                return None
+            normalized["poles"] = poles
+        return normalized
     except (KeyError, TypeError, ValueError):
         return None
 
 
 def manual_new_game_request(
     state: dict[str, Any],
-) -> tuple[str, dict[str, Any]] | None:
+) -> tuple[str, dict[str, Any], bool] | None:
     """Return a normalized manual restart request emitted by the live server."""
     request = state.get("supervisor_request")
     if not isinstance(request, dict):
         return None
     mode = request.get("mode")
     settings = normalized_simulation_settings(request.get("settings"))
+    paused = request.get("paused")
     if (
         mode not in ("restart", "fresh_code")
         or request.get("server_instance") != state.get("server_instance")
         or settings is None
+        or not isinstance(paused, bool)
     ):
         return None
-    return mode, settings
+    return mode, settings, paused
 
 
 def result_standings(state: dict[str, Any]) -> str | None:
@@ -895,7 +1069,18 @@ def server_command(
     settings: dict[str, Any],
     open_browser: bool,
     resume: Path | None = None,
+    initially_paused: bool = False,
 ) -> list[str]:
+    # Every exhibition world is Online speed and an Ancient start, whatever
+    # asked for it. Say so when something asked for otherwise: a staged lobby
+    # handoff that names Epic is a real operator action, and silently starting
+    # a different game than the panel promised is worse than refusing to.
+    requested_speed = str(settings.get("speed", SIMULATION_SPEED))
+    if requested_speed != SIMULATION_SPEED:
+        log(
+            f"settings asked for {requested_speed} speed; the exhibition "
+            f"simulates {SIMULATION_SPEED} only, starting {SIMULATION_SPEED}"
+        )
     args = [
         str(
             RUNTIME_BINARY
@@ -905,18 +1090,16 @@ def server_command(
         "play",
         "--players",
         str(settings["players"]),
-        "--width",
-        str(settings["width"]),
-        "--height",
-        str(settings["height"]),
-        "--city-states",
-        str(settings["city_states"]),
         "--turns",
         str(settings["turns"]),
         "--map",
         str(settings["map"]),
         "--speed",
-        str(settings["speed"]),
+        SIMULATION_SPEED,
+        "--start-era",
+        SIMULATION_START_ERA,
+        "--leader-pool",
+        str(settings.get("leader_pool", "civ6")),
         "--seed",
         str(random.randrange(1_000_000_000)),
         "--port",
@@ -924,8 +1107,22 @@ def server_command(
         "--spectate",
         "--supervised",
     ]
+    # A board size is only passed when something explicitly chose one -- the
+    # operator's flags on the first world, or a resumed checkpoint. A rolled
+    # world omits all three so `civvis play` sizes the map for the seat count
+    # it actually drew, off the shipped Civilization VI table.
+    for flag, key in (("--width", "width"), ("--height", "height"),
+                      ("--city-states", "city_states")):
+        if settings.get(key) is not None:
+            args.extend((flag, str(settings[key])))
+    if "shape" in settings:
+        args.extend(("--shape", str(settings["shape"])))
+    if "poles" in settings:
+        args.extend(("--poles", str(settings["poles"])))
     if resume is not None:
         args.extend(("--resume", str(resume)))
+    if initially_paused:
+        args.append("--paused")
     roster = league_dir(LEAGUE_SPEC)
     if roster is not None:
         directory, record = roster
@@ -945,13 +1142,14 @@ def start_server(
     settings: dict[str, int],
     open_browser: bool,
     resume: Path | None = None,
+    initially_paused: bool = False,
 ) -> subprocess.Popen[str]:
     # The server prefers loose web/ files in its working directory over the
     # page embedded in the executable. Starting in the shared checkout would
     # pair a canonical engine with whichever UI a development session is
     # editing, recreating the cross-machine mismatch at the presentation layer.
     process = subprocess.Popen(
-        server_command(port, settings, open_browser, resume),
+        server_command(port, settings, open_browser, resume, initially_paused),
         cwd=RUNTIME_BINARY.parent,
         text=True,
         **_NO_WINDOW,
@@ -1178,13 +1376,20 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--turns", type=int, default=250)
     parser.add_argument(
         "--map",
-        choices=("pangaea", "continents", "small_continents", "inland_sea"),
+        choices=MAP_TYPES,
         default="pangaea",
     )
+    parser.add_argument("--shape", choices=MAP_SHAPES, default="flat")
+    parser.add_argument("--poles", choices=MAP_POLES, default="poles")
     parser.add_argument(
         "--speed",
         choices=("online", "quick", "standard", "epic", "marathon"),
         default="online",
+    )
+    parser.add_argument(
+        "--leader-pool",
+        choices=("civ6", "expanded"),
+        default="civ6",
     )
     parser.add_argument(
         "--victories",
@@ -1216,8 +1421,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--cooldown",
         type=float,
-        default=5.0,
-        help="seconds to keep the rendered result visible before the immediate successor",
+        default=FINAL_COUNTDOWN_SECONDS,
+        help=(
+            "accepted and ignored. A finished result is always held for "
+            f"{FINAL_COUNTDOWN_SECONDS:g} seconds, because that is the "
+            "countdown the server shows the viewer"
+        ),
     )
     parser.add_argument("--poll", type=float, default=0.5)
     parser.add_argument("--build-retry", type=float, default=15.0)
@@ -1339,6 +1548,11 @@ def release_single_instance() -> None:
 
 def main() -> int:
     args = parse_args()
+    if args.cooldown != FINAL_COUNTDOWN_SECONDS:
+        log(
+            f"--cooldown {args.cooldown:g} ignored; a result is held for "
+            f"{FINAL_COUNTDOWN_SECONDS:g}s, the countdown the server shows"
+        )
     if getattr(args, "prepare_once", False):
         try:
             return 0 if prepare_latest_once() else 1
@@ -1359,7 +1573,14 @@ def main() -> int:
         "turns": args.turns,
         "map": args.map,
         "speed": args.speed,
+        "leader_pool": getattr(args, "leader_pool", "civ6"),
     }
+    # `getattr` keeps a self-updating supervisor able to adopt arguments from
+    # the immediately preceding version, whose Namespace had neither option.
+    if getattr(args, "shape", None) in MAP_SHAPES:
+        settings["shape"] = args.shape
+    if getattr(args, "poles", None) in MAP_POLES:
+        settings["poles"] = args.poles
     if getattr(args, "victories", None):
         settings["victories"] = list(args.victories)
     global LEAGUE_SPEC, LEAGUE_RECORD
@@ -1479,8 +1700,15 @@ def main() -> int:
             log("active runtime is behind the worktree; scheduling a safe live refresh")
 
         while True:
-            state = read_state(args.port)
-            if state is None:
+            # A restart is asked for by the person watching, and the moment it
+            # is most needed is the moment a long AI turn holds the simulation
+            # lock — which is exactly when `/state` cannot be built and this
+            # loop used to see nothing at all. `/runtime` answers from atomics
+            # beside the session, so the request is read while the turn runs.
+            manual_request = manual_new_game_request(read_json(args.port, "/runtime") or {})
+            if manual_request is None:
+                state = read_state(args.port)
+            if manual_request is None and state is None:
                 now = time.monotonic()
                 unavailable_since = unavailable_since or now
                 alive = process_alive(process, adopted_pid)
@@ -1536,9 +1764,13 @@ def main() -> int:
             busy_check_at = 0.0
             busy_until = 0.0
 
-            manual_request = manual_new_game_request(state)
+            # `/state` remains the fallback: this supervisor re-execs itself
+            # from newer source while an older promoted runtime is still live,
+            # and that runtime answers `/runtime` without the request in it.
+            if manual_request is None:
+                manual_request = manual_new_game_request(state)
             if manual_request is not None:
-                mode, requested_settings = manual_request
+                mode, requested_settings, preserve_pause = manual_request
                 if mode == "fresh_code":
                     snapshot = source_snapshot()
                     latest_ready = runtime_matches(snapshot)
@@ -1562,7 +1794,6 @@ def main() -> int:
                 else:
                     log("restart requested; starting a new simulation on existing code")
 
-                preserve_pause = bool(state.get("spectator_paused"))
                 stop_server(process, adopted_pid)
                 process = None
                 adopted_pid = None
@@ -1572,11 +1803,14 @@ def main() -> int:
                     pass
                 settings = requested_settings
                 launch_runtime_id = promoted_runtime_id()
-                process = start_server(args.port, settings, False)
+                process = start_server(
+                    args.port,
+                    settings,
+                    False,
+                    initially_paused=preserve_pause,
+                )
                 running_runtime_id = launch_runtime_id
                 state = wait_for_server(args.port, process)
-                if preserve_pause:
-                    state = set_spectator_pause(args.port, True) or state
                 unavailable_since = None
                 last_progress = progress_marker(state)
                 progress_at = time.monotonic()
@@ -1639,15 +1873,24 @@ def main() -> int:
                         # HTTP-liveness failure on the following polls.
                         unavailable_since = time.monotonic()
 
+                # A game being played by hand is not the exhibition and is not
+                # replaceable: its checkpoint would come back as a spectated
+                # world on the next launch, and a live code refresh would take
+                # the board away mid-turn. Leave it alone; the server writes
+                # the player their own save at the end of every turn, and the
+                # pending refresh lands at the next boundary.
+                playing = played_by_hand(state)
+
                 if (
-                    now - checkpoint_at >= max(0.1, args.checkpoint_interval)
+                    not playing
+                    and now - checkpoint_at >= max(0.1, args.checkpoint_interval)
                     and marker != checkpointed_progress
                     and capture_checkpoint(args.port, save_path)
                 ):
                     checkpoint_at = now
                     checkpointed_progress = marker
 
-                if refresh_pending and now >= refresh_at:
+                if refresh_pending and not playing and now >= refresh_at:
                     refresh_at = now + max(0.1, args.build_retry)
                     snapshot = source_snapshot()
                     runtime_ready = prebuild_process is None and runtime_matches(snapshot)
@@ -1691,8 +1934,15 @@ def main() -> int:
                 finished_key = current_finished_key
                 finished_seen_at = now
                 update_retry_at = 0.0
+                # `victory_turn` is the turn the result is dated on: a score
+                # victory is settled by a count taken on the wrap out of the
+                # final turn, so a finished 250-turn game is reported on turn
+                # 250 rather than the turn 251 nobody plays.
+                finished_turn = state.get("victory_turn")
+                if finished_turn is None:
+                    finished_turn = state.get("turn")
                 log(
-                    f"game finished on turn {state.get('turn')} "
+                    f"game finished on turn {finished_turn} "
                     f"({state.get('victory_type') or 'unknown'} victory); checking for updates"
                 )
                 standings = result_standings(state)
@@ -1704,13 +1954,53 @@ def main() -> int:
                 else:
                     log("could not archive the final save; continuing the handoff")
 
-            # The supervised server rejects every in-process /new request, so
-            # it is safe to leave the result reachable during the short
-            # cooldown. Builds happen during active play; the boundary itself
-            # never waits on Cargo.
-            remaining = args.cooldown - (time.monotonic() - finished_seen_at)
+            # The supervised server rejects an in-process /new for another
+            # simulation, so it is safe to leave the result reachable during
+            # the short cooldown. Builds happen during active play; the
+            # boundary itself never waits on Cargo.
+            remaining = FINAL_COUNTDOWN_SECONDS - (time.monotonic() - finished_seen_at)
             if remaining > 0:
                 time.sleep(remaining)
+            # The result screen is interactive, so the world may not be the one
+            # this branch started on. The same re-read answers both offers it
+            # makes: "one more turn" puts this world back into play, and the
+            # single-player start takes the process outright. Either way the
+            # server stays up and the exhibition resumes when that game ends.
+            #
+            # The two are told apart by the world's identity. "One more turn"
+            # is the *same* world still going; a takeover is a game whose
+            # (instance, seed) differs from the one that just finished. That
+            # second test has to be the pair, not `played_by_hand` alone,
+            # because a finished single-player game keeps answering
+            # `spectate: false` forever — asking only that question hands the
+            # process back to the game that already ended on every poll,
+            # re-archiving the same save and never promoting a newer build.
+            #
+            # The two are very nearly disjoint but not quite: a new process on
+            # the same seed — a checkpoint resume during this cooldown — that
+            # somebody is playing, with a result already recorded, satisfies
+            # both. That is why the order here is deliberate rather than
+            # incidental. It costs nothing either way: the two bodies below are
+            # identical apart from the line they log.
+            latest = read_state(args.port)
+            if playing_on(latest, finished_seed):
+                log("the finished world was asked for more turns; letting it play on")
+                state = latest
+                finished_key = None
+                last_progress = progress_marker(state)
+                progress_at = time.monotonic()
+                checkpointed_progress = None
+                time.sleep(args.poll)
+                continue
+            if takes_over_the_seat(latest, current_finished_key):
+                log("a single-player game took this process; leaving it to the player")
+                state = latest
+                finished_key = None
+                last_progress = progress_marker(state)
+                progress_at = time.monotonic()
+                checkpointed_progress = None
+                time.sleep(args.poll)
+                continue
             stop_server(process, adopted_pid)
             process = None
             adopted_pid = None

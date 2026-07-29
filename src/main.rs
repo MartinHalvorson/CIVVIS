@@ -4,13 +4,21 @@ use std::time::Instant;
 
 use civvis::ai::{run_game, AdvancedAi, Ai};
 use civvis::game::{
-    default_difficulty, default_speed, Game, GameOptions, VictoryConditions,
-    DEFAULT_DISASTER_INTENSITY, GAME_MODES,
+    default_difficulty, default_speed, Game, GameOptions, LeaderPool, VictoryConditions,
+    WarRecord, DEFAULT_DISASTER_INTENSITY, GAME_MODES,
 };
 use civvis::rules::Rules;
-use civvis::setup::{GameSpeed, MapScript, MapSize};
+use civvis::setup::{self, BaseRuleset, GameSpeed, MapPoles, MapScript, MapSize, MapTopology};
 
 fn arg(args: &[String], key: &str, default: i64) -> i64 {
+    args.iter()
+        .position(|a| a == key)
+        .and_then(|i| args.get(i + 1))
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(default)
+}
+
+fn arg_f64(args: &[String], key: &str, default: f64) -> f64 {
     args.iter()
         .position(|a| a == key)
         .and_then(|i| args.get(i + 1))
@@ -24,6 +32,24 @@ fn arg_text(args: &[String], key: &str, default: &str) -> String {
         .and_then(|index| args.get(index + 1))
         .cloned()
         .unwrap_or_else(|| default.to_string())
+}
+
+/// The turn budget the named game speed ships with, which `--turns` overrides.
+///
+/// Every path that judges which AI is stronger has to play a whole game. A
+/// short cap does not just shorten the game, it changes who won: over 9336
+/// six-seat league games capped at 250 turns, 81.8% ended on the cap, no game
+/// ever ended on a natural score victory, and domination and science never
+/// happened at all. Replaying 24 seeds at both budgets, the cap names a
+/// different winner in 13 of them.
+fn stock_turns(args: &[String]) -> i64 {
+    let rules = Rules::embedded();
+    let speed = arg_text(args, "--speed", &default_speed());
+    rules
+        .speeds
+        .get(&speed)
+        .map(|spec| i64::from(spec.turns))
+        .unwrap_or(500)
 }
 
 fn victory_conditions(args: &[String]) -> VictoryConditions {
@@ -85,11 +111,61 @@ fn auto_cs(args: &[String], players: i64) -> usize {
 
 fn auto_dimension(args: &[String], key: &str, players: i64, width: bool) -> i32 {
     let size = MapSize::for_players(players.max(1) as usize);
+    // A globe stores itself in a rectangle of its own shape, so the size's
+    // default dimensions depend on which world shape was asked for.
+    let (default_width, default_height) = size.dimensions(map_topology(args));
     arg(
         args,
         key,
-        if width { size.width } else { size.height } as i64,
+        if width { default_width } else { default_height } as i64,
     ) as i32
+}
+
+/// The world's shape, which is asked for separately from what fills it.
+/// Fixed geography changes where the land comes from, not which shape it is
+/// sampled onto: even True Start Earth can be a flat atlas or a globe.
+fn map_topology(args: &[String]) -> MapTopology {
+    // `--map planet` named a world type before the globe became a shape of its
+    // own, and still means both halves of what it meant then.
+    let default = if arg_text(args, "--map", "pangaea") == "planet" {
+        MapTopology::Planet
+    } else {
+        MapTopology::Flat
+    };
+    MapTopology::from_id(&arg_text(args, "--shape", default.id())).unwrap_or(default)
+}
+
+/// Whether the world has cold ends.
+fn map_poles(args: &[String]) -> MapPoles {
+    MapPoles::from_id(&arg_text(args, "--poles", "poles")).unwrap_or_default()
+}
+
+/// Which published game's rules the world is played by.
+fn base_ruleset(args: &[String]) -> BaseRuleset {
+    let id = arg_text(args, "--ruleset", BaseRuleset::default().id());
+    BaseRuleset::from_id(&id).unwrap_or_else(|| {
+        eprintln!("unknown ruleset {id:?}; this build models civ6");
+        std::process::exit(2);
+    })
+}
+
+/// How far into history the game opens.
+///
+/// A rung of the ladder that is declared but not built yet is refused here
+/// rather than quietly played as the Ancient era — the whole point of listing
+/// it is that it is not the same game.
+fn start_era(args: &[String]) -> usize {
+    let id = arg_text(args, "--start-era", setup::stock_start_era_id());
+    setup::start_era_from_id(&id).unwrap_or_else(|| {
+        let playable: Vec<&str> = setup::playable_start_eras().map(|spec| spec.id).collect();
+        let known = setup::START_ERAS.iter().any(|spec| spec.id == id);
+        if known {
+            eprintln!("cannot open in the {id:?} era yet; choose one of: {}", playable.join(", "));
+        } else {
+            eprintln!("unknown start era {id:?}; choose one of: {}", playable.join(", "));
+        }
+        std::process::exit(2);
+    })
 }
 
 /// Difficulty and speed are chosen the same way everywhere: by name, against
@@ -149,8 +225,12 @@ fn game_options(args: &[String], players: i64, seed: u64) -> GameOptions {
         teams
     };
     GameOptions {
+        base_ruleset: base_ruleset(args),
+        start_era: start_era(args),
         map_script: MapScript::from_id(&arg_text(args, "--map", "pangaea"))
             .unwrap_or(MapScript::Pangaea),
+        map_topology: map_topology(args),
+        map_poles: map_poles(args),
         difficulty,
         speed,
         // A headless game has nobody at the keyboard, so the difficulty only
@@ -160,6 +240,34 @@ fn game_options(args: &[String], players: i64, seed: u64) -> GameOptions {
             .filter_map(|seat| seat.trim().parse().ok())
             .collect(),
         teams,
+        leader_pool: {
+            let id = arg_text(args, "--leader-pool", LeaderPool::default().id());
+            LeaderPool::from_id(&id).unwrap_or_else(|| {
+                eprintln!("unknown leader pool {id:?}; choose civ6 or expanded");
+                std::process::exit(2);
+            })
+        },
+        // Who the player is. `--civ Egypt` seats Egypt at seat 0; `--civs
+        // Egypt,Rome` names the leading seats in order. Anything unnamed
+        // falls back to the stock roster, and a name the ruleset does not
+        // know is refused here rather than silently ignored downstream.
+        civs: {
+            let named = arg_text(args, "--civs", &arg_text(args, "--civ", ""));
+            let chosen: Vec<String> = named
+                .split(',')
+                .map(|civ| civ.trim().to_string())
+                .filter(|civ| !civ.is_empty())
+                .collect();
+            for civ in &chosen {
+                if !rules.civs.contains_key(civ) {
+                    let mut known: Vec<&str> = rules.civs.keys().map(String::as_str).collect();
+                    known.sort_unstable();
+                    eprintln!("unknown civilization {civ:?}; choose one of {known:?}");
+                    std::process::exit(2);
+                }
+            }
+            chosen
+        },
         // Gathering Storm's lobby slider: 0 turns random disasters off,
         // 4 is Hyperreal. Sea-level rise follows CO2 either way.
         disaster_intensity: {
@@ -228,7 +336,7 @@ fn standings(g: &Game) {
                 w.civ,
                 w.id,
                 g.victory_type.clone().unwrap_or_default(),
-                g.turn
+                g.reported_turn()
             );
         }
         None => println!(
@@ -351,10 +459,16 @@ fn main() {
                     let mut g = Game::new_with(game_options(&args, players, seed as u64));
                     let mut ais = AdvancedAi::fleet(&g);
                     run_game(&mut g, &mut ais);
-                    g
+                    // Every major's turns, pooled: what the empires in this game
+                    // actually spent the game doing.
+                    let mut census = civvis::ai::StrategyCensus::default();
+                    for ai in ais.iter().take(g.players.iter().filter(|p| !p.is_minor).count()) {
+                        census.absorb(&ai.strategy_census());
+                    }
+                    (g, census)
                 });
                 match result {
-                    Ok(g) => {
+                    Ok((g, census)) => {
                         let majors: Vec<_> = g.players.iter().filter(|p| !p.is_minor).collect();
                         let minors: Vec<_> = g
                             .players
@@ -414,10 +528,122 @@ fn main() {
                             " ARMY {army} obsolete={obsolete} ancient={ancient} era={}",
                             g.world_era
                         ));
+                        // A war nobody ever wins is as invisible as an army
+                        // nobody modernizes: the standings only show who was
+                        // left standing, so a game where every declaration
+                        // ended in a white peace reads exactly like a game of
+                        // uninterrupted peace. Count what the declarations
+                        // actually achieved.
+                        // `Game::wars` holds only the wars still running:
+                        // `close_war_record` removes a finished one and pushes
+                        // it to `concluded_wars`. Reading the live map alone
+                        // therefore hid every war that ended — which is every
+                        // war that was *won*, and every white peace this block
+                        // was written to make legible. Measured over eight
+                        // six-player games it saw 6 of 39 declarations, 96 of
+                        // 317 unit losses, and 0 of 13 city captures, while
+                        // `ended_in_peace` could not be anything but zero.
+                        let all_wars: Vec<&WarRecord> =
+                            g.wars.values().chain(g.concluded_wars.iter()).collect();
+                        let wars = all_wars.len();
+                        let (units_lost, cities_taken) = all_wars.iter().fold(
+                            (0u32, 0u32),
+                            |(units, cities), war| {
+                                (
+                                    units + war.losses.values().map(|side| side.units).sum::<u32>(),
+                                    cities
+                                        + war.losses.values().map(|side| side.cities).sum::<u32>(),
+                                )
+                            },
+                        );
+                        let capitals_taken = all_wars
+                            .iter()
+                            .flat_map(|war| war.highlights.iter())
+                            .filter(|highlight| highlight.kind == "capital_captured")
+                            .count();
+                        // How long the declarations lasted, because a war that
+                        // ends in a handful of turns cannot take a walled city
+                        // whatever army was pointed at it.
+                        let (turns_at_war, ended) = all_wars.iter().fold(
+                            (0u32, 0usize),
+                            |(turns, ended), war| {
+                                let stop = war.ended.unwrap_or(g.turn);
+                                (
+                                    turns + stop.saturating_sub(war.started),
+                                    ended + war.ended.is_some() as usize,
+                                )
+                            },
+                        );
+                        let mean_war = if wars > 0 {
+                            turns_at_war as f64 / wars as f64
+                        } else {
+                            0.0
+                        };
+                        // Every kind of thing the declarations produced, so a war
+                        // that only ever produces its own declaration is
+                        // legible as exactly that.
+                        let mut events: BTreeMap<&str, usize> = BTreeMap::new();
+                        for highlight in all_wars.iter().flat_map(|war| war.highlights.iter()) {
+                            *events.entry(highlight.kind.as_str()).or_default() += 1;
+                        }
+                        let events: Vec<String> = events
+                            .iter()
+                            .map(|(kind, count)| format!("{kind}:{count}"))
+                            .collect();
+                        flags.push_str(&format!(
+                            " WAR {wars} units_lost={units_lost} cities_taken={cities_taken} \
+                             capitals_taken={capitals_taken} mean_turns={mean_war:.0} \
+                             ended_in_peace={ended} events=[{}]",
+                            events.join(" ")
+                        ));
+                        // A war is only prosecuted if somebody chose to
+                        // prosecute it. Recovery is the defensive posture, so
+                        // turns spent there are turns nobody was besieging
+                        // anything.
+                        let total = census.total().max(1);
+                        let share = |turns: u32| 100 * turns / total;
+                        flags.push_str(&format!(
+                            " PLAN conquest={}% recovery={}% expansion={}% science={}% \
+                             culture={}% religion={}% diplomacy={}%",
+                            share(census.conquest),
+                            share(census.recovery),
+                            share(census.expansion),
+                            share(census.science),
+                            share(census.culture),
+                            share(census.religion),
+                            share(census.diplomacy),
+                        ));
+                        let posture_total = census.posture_total().max(1);
+                        let pshare = |turns: u32| 100 * turns / posture_total;
+                        flags.push_str(&format!(
+                            " FORCE engage={}% advance={}% hold={}% muster={}% recover={}%",
+                            pshare(census.engage),
+                            pshare(census.advance),
+                            pshare(census.hold),
+                            pshare(census.muster),
+                            pshare(census.recover),
+                        ));
+                        flags.push_str(&format!(
+                            " SIEGE blows={} damage={} walls_breached={} cities_reduced={} \
+                             left_depleted={} taker_ready={} melee_was_there={}",
+                            g.siege.blows,
+                            g.siege.damage,
+                            g.siege.walls_breached,
+                            g.siege.cities_reduced,
+                            g.siege.left_depleted,
+                            g.siege.depleted_with_a_taker_ready,
+                            g.siege.reduced_with_melee_adjacent,
+                        ));
+                        let held = (census.hold_threatened + census.hold_weak).max(1);
+                        flags.push_str(&format!(
+                            " HELD_BY threatened_city={}% locally_weak={}%",
+                            100 * census.hold_threatened / held,
+                            100 * census.hold_weak / held,
+                        ));
                         Some(format!(
                             "seed {:3}  t{:<4} {:<10} {:<8} majors_alive={}/{} cities={:<2} cs_alive={}/{} [{:.2}s]{}",
                             seed,
-                            g.turn,
+                            g.reported_turn(),
                             g.victory_type.clone().unwrap_or_default(),
                             w.map_or("-", |w| w.civ.as_str()),
                             majors.iter().filter(|p| p.alive).count(),
@@ -585,7 +811,9 @@ fn main() {
                 players_per_game: arg(&args, "--players", 4) as usize,
                 width: auto_dimension(&args, "--width", arg(&args, "--players", 4), true),
                 height: auto_dimension(&args, "--height", arg(&args, "--players", 4), false),
-                max_turns: arg(&args, "--turns", 150) as u32,
+                // A tournament writes the project's persistent Elo, so it has
+                // to rank on whole games; see `stock_turns`.
+                max_turns: arg(&args, "--turns", stock_turns(&args)) as u32,
                 num_city_states: auto_cs(&args, arg(&args, "--players", 4)),
                 seed: arg(&args, "--seed", 0) as u64,
                 k: arg(&args, "--k", 24) as f64,
@@ -636,6 +864,7 @@ fn main() {
                 scalar_only: args.iter().any(|arg| arg == "--scalar-only"),
                 counterfactual,
                 counterfactual_roots: arg(&args, "--counterfactual-roots", 0).max(0) as usize,
+                decision_features: args.iter().any(|arg| arg == "--decision-features"),
                 jobs: jobs_arg(&args),
             };
             match civvis::selfplay::export(&cfg) {
@@ -661,7 +890,7 @@ fn main() {
                 players_per_game: players as usize,
                 width: auto_dimension(&args, "--width", players, true),
                 height: auto_dimension(&args, "--height", players, false),
-                max_turns: arg(&args, "--turns", 250).max(1) as u32,
+                max_turns: arg(&args, "--turns", i64::from(defaults.max_turns)).max(1) as u32,
                 num_city_states: auto_cs(&args, players),
                 seed: arg(&args, "--seed", 1) as u64,
                 jobs: jobs_arg(&args),
@@ -706,7 +935,12 @@ fn main() {
                 players: players as usize,
                 width: auto_dimension(&args, "--width", players, true),
                 height: auto_dimension(&args, "--height", players, false),
-                max_turns: arg(&args, "--turns", 160) as u32,
+                // Selection reads continuous score and combat shares, but the
+                // separate promotion SPRT still decides on outright wins. At
+                // 160 turns almost nothing reaches a victory, so confirmation
+                // would judge arbitrary cutoffs rather than completed games.
+                // See `stock_turns`.
+                max_turns: arg(&args, "--turns", stock_turns(&args)) as u32,
                 seed: arg(&args, "--seed", 1) as u64,
                 threads: arg(&args, "--threads", 8) as usize,
                 dir: arg_text(&args, "--dir", "evolved"),
@@ -752,6 +986,8 @@ fn main() {
             };
             let play_options = game_options(&args, players, seed);
             let map_script = play_options.map_script;
+            let map_topology = play_options.map_topology;
+            let map_poles = play_options.map_poles;
             let game_speed = GameSpeed::from_id(&play_options.speed).unwrap_or(GameSpeed::Standard);
             civvis::server::serve_with_game(
                 arg(&args, "--port", 8765) as u16,
@@ -761,7 +997,11 @@ fn main() {
                     width: auto_dimension(&args, "--width", players, true),
                     height: auto_dimension(&args, "--height", players, false),
                     seed,
+                    base_ruleset: play_options.base_ruleset,
+                    start_era: play_options.start_era,
                     map_script,
+                    map_topology,
+                    map_poles,
                     game_speed,
                     max_turns: play_options.max_turns,
                     victory_conditions: victory_conditions(&args),
@@ -770,6 +1010,8 @@ fn main() {
                     difficulty: play_options.difficulty,
                     speed: play_options.speed,
                     teams: play_options.teams,
+                    leader_pool: play_options.leader_pool,
+                    civs: play_options.civs,
                     supervised: args.iter().any(|a| a == "--supervised"),
                     league_dir: {
                         let dir = arg_text(&args, "--league", "");
@@ -778,6 +1020,7 @@ fn main() {
                     league_record: args.iter().any(|a| a == "--league-record"),
                 },
                 resumed,
+                args.iter().any(|a| a == "--paused"),
             );
         }
         "pedia" => {
@@ -808,22 +1051,158 @@ fn main() {
                 std::process::exit(1);
             }
         }
+        "rating" => {
+            let dir = arg_text(
+                &args,
+                "--dir",
+                &std::env::var("CIVVIS_LEAGUE_DIR").unwrap_or_else(|_| "league".into()),
+            );
+            let mut history = match civvis::rating::load_history(&dir) {
+                Ok(history) if history.len() >= 2 => history,
+                Ok(_) => {
+                    eprintln!("{dir}/matches.csv has no finished games to rate");
+                    std::process::exit(1);
+                }
+                Err(error) => {
+                    eprintln!("cannot read {dir}/matches.csv: {error}");
+                    std::process::exit(1);
+                }
+            };
+            // A league directory can hold games of several table sizes; a
+            // single size is the cleaner slice to reason about.
+            let want_seats = arg(&args, "--seats", 0).max(0) as usize;
+            if want_seats > 0 {
+                history.retain(|m| m.seats.len() == want_seats);
+                if history.len() < 2 {
+                    eprintln!("{dir}/matches.csv has fewer than 2 games with {want_seats} seats");
+                    std::process::exit(1);
+                }
+            }
+            let seats = history.iter().map(|m| m.seats.len()).sum::<usize>() as f64
+                / history.len() as f64;
+            let burn_in = arg_f64(&args, "--burn-in", 0.3).clamp(0.0, 0.95);
+            let mut cfg = civvis::rating::RatingCfg {
+                stage_decay: arg_f64(&args, "--stage-decay", 0.5).clamp(0.0, 1.0),
+                beta: arg_f64(&args, "--beta", 0.9).max(1e-3),
+                ..civvis::rating::RatingCfg::default()
+            };
+            for anchor in arg_text(&args, "--anchors", "advanced,basic").split(',') {
+                let anchor = anchor.trim();
+                if !anchor.is_empty() {
+                    cfg.anchors.insert(anchor.to_string());
+                }
+            }
+            // Explicit per-stage credit, e.g. `--stage-credit 1,0.5,0.25,0`
+            // to keep the geometric shape but silence an anti-informative
+            // last stage. Overrides --stage-decay.
+            let credit = arg_text(&args, "--stage-credit", "");
+            if !credit.is_empty() {
+                let parsed: Vec<f64> = credit
+                    .split(',')
+                    .filter_map(|x| x.trim().parse::<f64>().ok())
+                    .collect();
+                if parsed.is_empty() {
+                    eprintln!("--stage-credit needs comma-separated numbers");
+                    std::process::exit(1);
+                }
+                cfg.stage_credit = Some(parsed);
+            }
+            println!("{} games from {dir}/matches.csv\n", history.len());
+            if args.iter().any(|a| a == "--stages") {
+                let info = civvis::rating::fit_stage_weights(&history, burn_in);
+                println!("information carried by each placement stage (nats, measured)");
+                println!("  a stage at or below zero is noise and should not move a rating\n");
+                for (k, nats) in info.iter().enumerate() {
+                    let bar = "#".repeat(((nats.max(0.0)) * 60.0) as usize);
+                    println!("  stage {:<3} {:+8.4}  {bar}", k + 1, nats);
+                }
+            } else if args.iter().any(|a| a == "--sweep") {
+                println!(
+                    "{:<14}{:>12}{:>10}{:>12}",
+                    "stage decay", "winner LL", "accuracy", "info/game"
+                );
+                for step in 0..=10 {
+                    let decay = step as f64 / 10.0;
+                    let mut model = civvis::rating::ContextualRating::new(
+                        civvis::rating::RatingCfg {
+                            stage_decay: decay,
+                            ..cfg.clone()
+                        },
+                    );
+                    let m = civvis::rating::evaluate(&mut model, &history, burn_in);
+                    println!(
+                        "{decay:<14.1}{:>12.4}{:>9.1}%{:>12.4}",
+                        m.win_log_loss,
+                        100.0 * m.win_accuracy,
+                        m.information
+                    );
+                }
+            } else if args.iter().any(|a| a == "--backtest") {
+                let rows = civvis::rating::backtest(&history, burn_in, &cfg);
+                print!("{}", civvis::rating::backtest_report(&rows, seats));
+            } else {
+                let rating = civvis::rating::rate_history(&history, &cfg);
+                print!("{}", rating.standings());
+            }
+        }
         _ => {
             println!(
-                "usage: civvis <simulate|soak|benchmark|tournament|league|play|evolve|validate|pedia> \
+                "usage: civvis <simulate|soak|benchmark|tournament|league|rating|play|evolve|validate|pedia> \
                       [--players N] [--seed N] [--turns N] [--width N] [--height N] \
                       [--city-states N] [--games N] [--ais a,b] [--ratings path] [--port N] [--no-open] \
-                      [--map pangaea|continents|small_continents|inland_sea] \
+                      [--map land_only|lakes|inland_sea|grand_canals|grand_canals_2|pangaea|continents|small_continents|islands|water_world|true_start_earth] \
+                      [--shape flat|planet] [--poles poles|randomized] \
                       [--difficulty settler|chieftain|warlord|prince|king|emperor|immortal|deity] \
                       [--speed online|quick|standard|epic|marathon] \
                       [--disasters 0|1|2|3|4] [--barbarians on|off] \
                       [--game-modes apocalypse,secret_societies] \
+                      [--leader-pool civ6|expanded] \
                       [--human-seats 0,1] [--teams 0,0,1,1] [--mods path/to/mod,path/to/other] \
                       [--victories science,culture,religious,diplomatic,domination,score] \
                       [--spectate] [--supervised] [--resume checkpoint.json] [--strict] \
                       [--league dir] [--league-record] [--standings [--civ Rome | --civs]] [--rounds N] \
-                      [--evolve-every N] [--pop N] [--worker ID] [--lease-seconds N]"
+                      [--evolve-every N] [--pop N] [--worker ID] [--lease-seconds N] \
+                      [rating: --dir league/ --backtest|--sweep|--stages --burn-in F --stage-decay F --anchors a,b]"
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use civvis::game::{Action, Game};
+
+    /// The soak's WAR block folds over the wars it can see, and
+    /// `close_war_record` moves a finished war out of `Game::wars` into
+    /// `Game::concluded_wars`. Reading the live map alone therefore hides
+    /// every war that ended — which is every war that was *won*, and every
+    /// white peace the block exists to make legible — and makes
+    /// `ended_in_peace` structurally impossible to observe.
+    #[test]
+    fn a_settled_war_leaves_the_live_map_and_must_still_be_counted() {
+        let mut game = Game::new(2, 24, 16, 5150, 400, 0);
+        game.current = 0;
+        game.apply(0, &Action::DeclareWar { player: 1 }).unwrap();
+        assert_eq!(game.wars.len(), 1, "the declaration must open a war");
+        assert!(game.concluded_wars.is_empty());
+
+        // Peace is gated behind a mandatory war duration; wait it out.
+        while let Some(until) = game.peace_available_at(0, 1) {
+            assert!(until > game.turn, "the gate must advance the clock");
+            game.turn = until;
+        }
+        game.apply(0, &Action::MakePeace { player: 1 }).unwrap();
+
+        assert!(
+            game.wars.is_empty(),
+            "a settled war must not remain in the live map"
+        );
+        assert_eq!(
+            game.concluded_wars.len(),
+            1,
+            "the settled war has to be read from concluded_wars or it is \
+             invisible to every count in the soak line"
+        );
+        assert!(game.concluded_wars[0].ended.is_some());
     }
 }

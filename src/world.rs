@@ -417,12 +417,32 @@ impl PartialEq for TileGrid {
     }
 }
 
+/// What shape the world is.
+///
+/// Every stock map script is a cylinder: a rectangle that wraps east to west
+/// and ends at a northern and a southern edge. Planet is a closed globe — the
+/// hexagons and twelve pentagons of a subdivided icosahedron — whose tiles are
+/// stored in the same rectangle but whose adjacency, distance and latitude all
+/// come from the sphere instead of from the offset coordinates.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Topology {
+    #[default]
+    Cylinder,
+    /// A geodesic globe, identified by its subdivision frequency.
+    Globe(i32),
+}
+
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(from = "WorldMapSer", into = "WorldMapSer")]
 pub struct WorldMap {
     pub width: i32,
     pub height: i32,
     pub tiles: TileGrid,
+    pub topology: Topology,
+    /// The globe this map is laid out on, when it is one. Geometry is a pure
+    /// function of the frequency, so it is shared rather than saved.
+    globe: Option<std::sync::Arc<crate::sphere::Sphere>>,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -430,6 +450,13 @@ struct WorldMapSer {
     width: i32,
     height: i32,
     tiles: Vec<Tile>,
+    /// Absent in saves written before Planet existed, which were all cylinders.
+    #[serde(default, skip_serializing_if = "is_cylinder")]
+    topology: Topology,
+}
+
+fn is_cylinder(topology: &Topology) -> bool {
+    *topology == Topology::Cylinder
 }
 
 impl From<WorldMapSer> for WorldMap {
@@ -438,6 +465,11 @@ impl From<WorldMapSer> for WorldMap {
             width: s.width,
             height: s.height,
             tiles: TileGrid::from_tiles(s.width, s.height, s.tiles),
+            topology: s.topology,
+            globe: match s.topology {
+                Topology::Cylinder => None,
+                Topology::Globe(frequency) => Some(crate::sphere::sphere(frequency)),
+            },
         }
     }
 }
@@ -447,6 +479,7 @@ impl From<WorldMap> for WorldMapSer {
         WorldMapSer {
             width: m.width,
             height: m.height,
+            topology: m.topology,
             tiles: m.tiles.into_values().collect(),
         }
     }
@@ -458,7 +491,29 @@ impl WorldMap {
             width,
             height,
             tiles: TileGrid::new(width, height),
+            topology: Topology::Cylinder,
+            globe: None,
         }
+    }
+
+    /// An all-ocean globe of the given subdivision frequency: `10n² + 2` tiles
+    /// laid out in the rectangle [`crate::sphere`] describes.
+    pub fn globe(frequency: i32) -> WorldMap {
+        let sphere = crate::sphere::sphere(frequency);
+        let tiles: Vec<Tile> = sphere.positions().map(Tile::new).collect();
+        WorldMap {
+            width: sphere.width(),
+            height: sphere.height(),
+            tiles: TileGrid::from_tiles(sphere.width(), sphere.height(), tiles),
+            topology: Topology::Globe(frequency),
+            globe: Some(sphere),
+        }
+    }
+
+    /// The globe this map is laid out on, or `None` on a cylinder.
+    #[inline]
+    pub fn sphere(&self) -> Option<&crate::sphere::Sphere> {
+        self.globe.as_deref()
     }
 
     #[inline]
@@ -466,9 +521,136 @@ impl WorldMap {
         self.tiles.get(&pos)
     }
 
+    /// The tiles that share an edge with this one, and are on the map.
+    #[inline]
+    pub fn neighbors(&self, pos: Pos) -> hex::Neighbors {
+        if let Some(sphere) = self.sphere() {
+            return sphere.neighbors(pos);
+        }
+        let mut out = hex::Neighbors::new();
+        for neighbor in hex::neighbors(pos) {
+            let neighbor = hex::canon(neighbor, self.width);
+            if self.tiles.contains_key(&neighbor) {
+                out.push(neighbor);
+            }
+        }
+        out
+    }
+
+    /// Every direction out of a tile, whether or not the world continues that
+    /// way. A cylinder has an edge at the top and the bottom, and rules that
+    /// ask "is this hex surrounded?" must see those as directions that lead
+    /// nowhere rather than as directions that do not exist. A globe has no
+    /// edge, so this is simply its neighbours.
+    pub fn around(&self, pos: Pos) -> hex::Neighbors {
+        if self.sphere().is_some() {
+            return self.neighbors(pos);
+        }
+        hex::neighbors(pos)
+            .into_iter()
+            .map(|neighbor| hex::canon(neighbor, self.width))
+            .collect()
+    }
+
+    /// Steps between two tiles along the world's own shape.
+    #[inline]
+    pub fn distance(&self, a: Pos, b: Pos) -> i32 {
+        match self.sphere() {
+            Some(sphere) => sphere.distance(a, b),
+            None => hex::wdistance(a, b, self.width),
+        }
+    }
+
+    /// Every tile within `radius` steps of `center`, sorted.
+    pub fn disk(&self, center: Pos, radius: i32) -> Vec<Pos> {
+        if let Some(sphere) = self.sphere() {
+            return sphere.disk(center, radius);
+        }
+        let mut out: Vec<Pos> = hex::disk(center, radius)
+            .into_iter()
+            .map(|pos| hex::canon(pos, self.width))
+            .filter(|pos| self.tiles.contains_key(pos))
+            .collect();
+        out.sort();
+        out.dedup();
+        out
+    }
+
+    /// How far the tile is from the equator, from 0 at the equator to 1 at a
+    /// pole. Climate bands are painted from this, so it has to follow the
+    /// world's real shape rather than its storage rectangle.
+    pub fn polar_fraction(&self, pos: Pos) -> f64 {
+        match self.sphere() {
+            Some(sphere) => sphere.latitude(pos).abs() / std::f64::consts::FRAC_PI_2,
+            None => {
+                let (_, row) = hex::axial_to_offset(pos.0, pos.1);
+                (2.0 * row as f64 / (self.height - 1).max(1) as f64 - 1.0).abs()
+            }
+        }
+    }
+
+    /// Where the tile stands on the world, in degrees of longitude
+    /// (-180..180, east positive) and latitude (-90..90, north positive).
+    ///
+    /// A globe reads both off the sphere. A cylinder has no globe to read, so
+    /// it is treated as the equirectangular projection it looks like: its
+    /// columns are meridians spread evenly around the world and its rows are
+    /// parallels from pole to pole, which is the same reading
+    /// [`Self::polar_fraction`] already takes of a row. Anything that wants to
+    /// place a real-world feature — Earth's coastlines, a civilization's
+    /// homeland — can then ask the world where it is without first asking what
+    /// shape it is.
+    pub fn lon_lat(&self, pos: Pos) -> (f64, f64) {
+        match self.sphere() {
+            Some(sphere) => (
+                sphere.longitude(pos).to_degrees(),
+                sphere.latitude(pos).to_degrees(),
+            ),
+            None => {
+                let (col, row) = hex::axial_to_offset(pos.0, pos.1);
+                let longitude = 360.0 * col as f64 / self.width.max(1) as f64 - 180.0;
+                let latitude = 90.0 - 180.0 * row as f64 / (self.height - 1).max(1) as f64;
+                (longitude, latitude)
+            }
+        }
+    }
+
+    /// The unit vector the tile's centre points along, on the unit sphere the
+    /// world's longitudes and latitudes describe. A globe has a real centre to
+    /// return; a cylinder gets the point its projection names, which is what
+    /// makes "nearest to this homeland" answerable on either shape.
+    pub fn direction(&self, pos: Pos) -> [f64; 3] {
+        if let Some(center) = self.sphere().and_then(|sphere| sphere.center(pos)) {
+            return center;
+        }
+        let (longitude, latitude) = self.lon_lat(pos);
+        let (longitude, latitude) = (longitude.to_radians(), latitude.to_radians());
+        [
+            latitude.cos() * longitude.cos(),
+            latitude.cos() * longitude.sin(),
+            latitude.sin(),
+        ]
+    }
+
+    /// The neighbour `heading` steps around the tile, used by anything that
+    /// travels in a fixed direction. A cylinder counts from due east; a globe
+    /// counts around the tile's own outline.
+    pub fn step(&self, pos: Pos, heading: usize) -> Option<Pos> {
+        if self.sphere().is_some() {
+            let neighbors = self.neighbors(pos);
+            return neighbors.get(heading % neighbors.len().max(1)).copied();
+        }
+        let step = hex::DIRS[heading % 6];
+        let next = hex::canon((pos.0 + step.0, pos.1 + step.1), self.width);
+        self.tiles.contains_key(&next).then_some(next)
+    }
+
     /// Direction index from one adjacent tile to another, accounting for the
-    /// east-west cylindrical seam.
+    /// east-west cylindrical seam or, on a globe, for the tile's own outline.
     pub fn direction_to(&self, from: Pos, to: Pos) -> Option<usize> {
+        if let Some(sphere) = self.sphere() {
+            return sphere.direction_to(from, to);
+        }
         hex::neighbors(from)
             .into_iter()
             .map(|p| hex::canon(p, self.width))
@@ -480,14 +662,14 @@ impl WorldMap {
     /// adjacent. Keeping both edge masks in sync makes saves and observations
     /// self-contained tile by tile.
     pub fn set_river_edge(&mut self, a: Pos, b: Pos, present: bool) -> bool {
-        let Some(direction) = self.direction_to(a, b) else {
+        let (Some(there), Some(back)) = (self.direction_to(a, b), self.direction_to(b, a)) else {
             return false;
         };
         if !self.tiles.contains_key(&a) || !self.tiles.contains_key(&b) {
             return false;
         }
-        self.tiles.get_mut(&a).unwrap().river_edges[direction] = present;
-        self.tiles.get_mut(&b).unwrap().river_edges[(direction + 3) % 6] = present;
+        self.tiles.get_mut(&a).unwrap().river_edges[there] = present;
+        self.tiles.get_mut(&b).unwrap().river_edges[back] = present;
         true
     }
 
@@ -500,14 +682,14 @@ impl WorldMap {
 
     /// Add or remove a coastal cliff on the shared edge between two tiles.
     pub fn set_cliff_edge(&mut self, a: Pos, b: Pos, present: bool) -> bool {
-        let Some(direction) = self.direction_to(a, b) else {
+        let (Some(there), Some(back)) = (self.direction_to(a, b), self.direction_to(b, a)) else {
             return false;
         };
         if !self.tiles.contains_key(&a) || !self.tiles.contains_key(&b) {
             return false;
         }
-        self.tiles.get_mut(&a).unwrap().cliff_edges[direction] = present;
-        self.tiles.get_mut(&b).unwrap().cliff_edges[(direction + 3) % 6] = present;
+        self.tiles.get_mut(&a).unwrap().cliff_edges[there] = present;
+        self.tiles.get_mut(&b).unwrap().cliff_edges[back] = present;
         true
     }
 

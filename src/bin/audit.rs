@@ -26,6 +26,15 @@ fn number(args: &[String], flag: &str, default: i64) -> i64 {
 const IDLE_TURNS: u32 = 25;
 const WAR_MIN_TURNS: u32 = 10;
 
+/// A unit walking in a circle looks busy from the outside and is invisible to
+/// the idle checks above, which only ever notice a unit that stops. Ten turns
+/// of movement confined to three tiles, with nothing about the unit changing
+/// in all that time, is a livelock: no errand a real unit runs — a Builder
+/// working two tiles beside a city, a garrison shuffling around a wall — takes
+/// that long without spending a charge, taking a hit, or earning experience.
+const LIVELOCK_TURNS: u32 = 10;
+const LIVELOCK_FOOTPRINT: usize = 3;
+
 /// The minimum applies to a negotiated settlement, not to eliminating the
 /// opposing civilization. A quick conquest is a decisive war, not diplomacy
 /// undoing a declaration before its commitment has run.
@@ -126,6 +135,153 @@ struct History {
     trader_ready_since: BTreeMap<u32, u32>,
     reported_unit: BTreeMap<u32, bool>,
     reported_city: BTreeMap<u32, bool>,
+    tracks: BTreeMap<u32, Track>,
+}
+
+/// Everything about a unit that changes when it accomplishes something:
+/// charges spent improving or spreading, experience from a fight, damage taken
+/// or healed, a promotion chosen, a concert played. A unit whose whole mark is
+/// unchanged has, whatever else it did, achieved nothing.
+type WorkMark = (i32, i64, i32, usize, i64);
+
+fn work_mark(g: &Game, id: u32) -> WorkMark {
+    let unit = &g.units[&id];
+    (
+        unit.charges,
+        unit.xp,
+        unit.hp,
+        unit.promotions.len(),
+        unit.album_sales,
+    )
+}
+
+/// One unmoving-or-circling episode: it starts whenever the unit's work mark
+/// changes or it leaves the footprint, so a unit that is genuinely travelling
+/// or genuinely working never accumulates one.
+struct Track {
+    since: u32,
+    last: civvis::Pos,
+    tiles: Vec<civvis::Pos>,
+    /// Turns within this episode on which the unit changed tile.
+    moves: u32,
+    work: WorkMark,
+    reported: bool,
+}
+
+/// Unit-turns by what the unit was doing with them, so a fix that only
+/// converts one failure into another is visible rather than flattering.
+#[derive(Default, Clone, Copy)]
+struct Motion {
+    unit_turns: u64,
+    /// Moved, inside a footprint of at most three tiles, achieving nothing.
+    livelock: u64,
+    /// Stood still in the open, unfortified, achieving nothing.
+    idle_field: u64,
+    /// Stood still in the open, fortified. A picket is legitimate; a
+    /// stampede into this column is a livelock fix that only hid the problem.
+    picket: u64,
+}
+
+impl Motion {
+    fn add(&mut self, other: Motion) {
+        self.unit_turns += other.unit_turns;
+        self.livelock += other.livelock;
+        self.idle_field += other.idle_field;
+        self.picket += other.picket;
+    }
+
+    fn line(&self) -> String {
+        let rate = |count: u64| {
+            if self.unit_turns == 0 {
+                0.0
+            } else {
+                100.0 * count as f64 / self.unit_turns as f64
+            }
+        };
+        format!(
+            "unit-turns={} livelock={} ({:.2}%) idle-field={} ({:.2}%) picket={} ({:.2}%)",
+            self.unit_turns,
+            self.livelock,
+            rate(self.livelock),
+            self.idle_field,
+            rate(self.idle_field),
+            self.picket,
+            rate(self.picket),
+        )
+    }
+}
+
+/// Update one unit's episode and account for this turn of its life. Returns a
+/// livelock detail exactly once per episode, when it first crosses the
+/// threshold, while every later turn of the same episode still counts toward
+/// the livelock share — so the symptom count reads as "how many units" and the
+/// share reads as "how much of the game".
+fn track_unit(g: &Game, history: &mut History, id: u32, motion: &mut Motion) -> Option<String> {
+    let unit = &g.units[&id];
+    let mark = work_mark(g, id);
+    let track = history.tracks.entry(id).or_insert_with(|| Track {
+        since: g.turn,
+        last: unit.pos,
+        tiles: vec![unit.pos],
+        moves: 0,
+        work: mark,
+        reported: false,
+    });
+    motion.unit_turns += 1;
+
+    let restart = |track: &mut Track| {
+        track.since = g.turn;
+        track.last = unit.pos;
+        track.tiles = vec![unit.pos];
+        track.moves = 0;
+        track.work = mark;
+        track.reported = false;
+    };
+
+    if track.work != mark {
+        restart(track);
+        return None;
+    }
+    if track.last != unit.pos {
+        track.moves += 1;
+        track.last = unit.pos;
+        if !track.tiles.contains(&unit.pos) {
+            track.tiles.push(unit.pos);
+        }
+        // A unit that has reached a fourth tile is going somewhere. Judge it
+        // afresh from here rather than against where it set out.
+        if track.tiles.len() > LIVELOCK_FOOTPRINT {
+            restart(track);
+            return None;
+        }
+    } else if unit.fortified {
+        motion.picket += 1;
+    } else if g
+        .city_at(unit.pos)
+        .is_none_or(|city| g.cities[&city].owner != unit.owner)
+    {
+        motion.idle_field += 1;
+    }
+
+    let elapsed = g.turn.saturating_sub(track.since);
+    // Only a unit that keeps moving is circling; one that has stopped is the
+    // separate stall the checks above already cover.
+    let circling = track.tiles.len() >= 2 && track.moves * 2 >= elapsed;
+    if elapsed < LIVELOCK_TURNS || !circling {
+        return None;
+    }
+    motion.livelock += 1;
+    if track.reported {
+        return None;
+    }
+    track.reported = true;
+    Some(format!(
+        "unit {id} ({}) of {} circled {:?} for {elapsed} turns from turn {}",
+        unit.kind,
+        g.players[unit.owner].civ,
+        track.tiles,
+        track.since,
+    ))
 }
 
 fn unit_had_idle_opportunity(
@@ -252,8 +408,15 @@ fn bounded_minor_idle(
             .all(|item| matches!(item, civvis::game::Item::Unit { .. }))
 }
 
-fn audit_turn(g: &Game, history: &mut History, found: &mut Findings) {
+fn audit_turn(g: &Game, history: &mut History, found: &mut Findings, motion: &mut Motion) {
+    history.tracks.retain(|id, _| g.units.contains_key(id));
     for (id, unit) in &g.units {
+        if let Some(detail) = track_unit(g, history, *id, motion) {
+            found.symptom(
+                format!("{} circles without progress {LIVELOCK_TURNS}+ turns", unit.kind),
+                detail,
+            );
+        }
         if unit.hp <= 0 || unit.hp > 100 {
             found.violation(
                 "unit hp out of range",
@@ -568,6 +731,7 @@ fn main() {
     let quiet = args.iter().any(|arg| arg == "--quiet");
 
     let mut totals = Findings::default();
+    let mut totals_motion = Motion::default();
     for seed in start..start + games {
         let mut g = Game::new(
             players as usize,
@@ -580,6 +744,7 @@ fn main() {
         let mut ais = AdvancedAi::fleet(&g);
         let mut history = History::default();
         let mut found = Findings::default();
+        let mut motion = Motion::default();
         let mut last_turn = g.turn;
         while g.winner.is_none() {
             let pid = g.current;
@@ -589,20 +754,22 @@ fn main() {
             }
             if g.turn != last_turn {
                 last_turn = g.turn;
-                audit_turn(&g, &mut history, &mut found);
+                audit_turn(&g, &mut history, &mut found, &mut motion);
             }
         }
         audit_result(&g, &mut found);
+        totals_motion.add(motion);
 
         if !quiet {
             println!(
                 "seed {seed:<5} t{:<4} {:<10} {:<10} violations={} symptoms={}",
-                g.turn,
+                g.reported_turn(),
                 g.victory_type.clone().unwrap_or_default(),
                 g.winner.map(|w| g.players[w].civ.clone()).unwrap_or_default(),
                 found.violations.values().map(|entry| entry.0).sum::<usize>(),
                 found.symptoms.values().map(|entry| entry.0).sum::<usize>(),
             );
+            println!("    motion    {}", motion.line());
             for (key, (count, detail)) in &found.violations {
                 println!("    VIOLATION x{count:<5} {key} - e.g. {detail}");
             }
@@ -627,6 +794,7 @@ fn main() {
     }
 
     println!("\n=== {games} games ===");
+    println!("motion    {}", totals_motion.line());
     if totals.violations.is_empty() {
         println!("no rule violations");
     }
@@ -649,8 +817,82 @@ mod tests {
 
     use super::{
         bounded_minor_idle, negotiated_war_ended_early, rapid_recapture_window,
-        redeclared_inside_peace_treaty, treasury_looks_hoarded, unit_had_idle_opportunity, History,
+        redeclared_inside_peace_treaty, track_unit, treasury_looks_hoarded,
+        unit_had_idle_opportunity, History, Motion, LIVELOCK_TURNS,
     };
+    use civvis::game::Game;
+
+    /// Walk one unit through a scripted sequence of tiles, one per turn, and
+    /// report how many livelock episodes the auditor opened.
+    fn walk(tiles: &[usize], spend_charge_on: Option<usize>) -> (usize, Motion) {
+        let mut g = Game::new(2, 24, 16, 11, 300, 0);
+        let id = *g.units.keys().next().unwrap();
+        let ground: Vec<civvis::Pos> = {
+            let mut all: Vec<civvis::Pos> = g.map.tiles.keys().copied().collect();
+            all.sort();
+            all
+        };
+        let mut history = History::default();
+        let mut motion = Motion::default();
+        let mut reports = 0;
+        for (step, tile) in tiles.iter().enumerate() {
+            g.turn += 1;
+            g.units.get_mut(&id).unwrap().pos = ground[*tile];
+            if spend_charge_on == Some(step) {
+                g.units.get_mut(&id).unwrap().charges += 1;
+            }
+            if track_unit(&g, &mut history, id, &mut motion).is_some() {
+                reports += 1;
+            }
+        }
+        (reports, motion)
+    }
+
+    #[test]
+    fn a_unit_shuttling_between_two_tiles_is_reported_once_and_keeps_counting() {
+        let shuttle: Vec<usize> = (0..30).map(|turn| turn % 2).collect();
+        let (reports, motion) = walk(&shuttle, None);
+        assert_eq!(reports, 1, "one episode, however long it runs");
+        assert!(
+            motion.livelock >= 30 - LIVELOCK_TURNS as u64 - 1,
+            "every turn past the threshold counts toward the share: {}",
+            motion.livelock
+        );
+        assert_eq!(motion.unit_turns, 30);
+    }
+
+    #[test]
+    fn a_unit_that_is_actually_travelling_is_never_reported() {
+        let march: Vec<usize> = (0..30).collect();
+        let (reports, motion) = walk(&march, None);
+        assert_eq!(reports, 0);
+        assert_eq!(motion.livelock, 0);
+    }
+
+    #[test]
+    fn a_three_tile_circuit_is_a_livelock_but_a_four_tile_one_is_a_patrol() {
+        let (circuit, _) = walk(&(0..30).map(|turn| turn % 3).collect::<Vec<_>>(), None);
+        assert_eq!(circuit, 1);
+        let (patrol, _) = walk(&(0..30).map(|turn| turn % 4).collect::<Vec<_>>(), None);
+        assert_eq!(patrol, 0);
+    }
+
+    #[test]
+    fn work_done_midway_clears_the_episode() {
+        let shuttle: Vec<usize> = (0..20).map(|turn| turn % 2).collect();
+        // Without the charge this shuttle reports; spending one at the halfway
+        // point restarts the episode and neither half is long enough.
+        assert_eq!(walk(&shuttle, None).0, 1);
+        assert_eq!(walk(&shuttle, Some(10)).0, 0);
+    }
+
+    #[test]
+    fn a_unit_standing_still_in_the_open_counts_as_idle_not_as_livelock() {
+        let (reports, motion) = walk(&vec![0; 30], None);
+        assert_eq!(reports, 0, "a unit that stopped is a stall, not a circle");
+        assert_eq!(motion.livelock, 0);
+        assert!(motion.idle_field + motion.picket >= 29);
+    }
 
     fn concluded_war(kind: &str) -> WarRecord {
         WarRecord {
@@ -680,6 +922,7 @@ mod tests {
                     city: None,
                 },
             ],
+            theater: Vec::new(),
         }
     }
 

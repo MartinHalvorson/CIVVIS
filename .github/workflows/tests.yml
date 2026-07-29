@@ -14,6 +14,11 @@ concurrency:
 
 jobs:
   cargo-test:
+    # Hosted runners are free and unmetered on a public repository, which this
+    # now is. They were briefly self-hosted because metered minutes on the
+    # private repo went unpaid and every job died in three seconds on a billing
+    # message; that is not a reason to keep running strangers' pull requests on
+    # somebody's laptop.
     runs-on: ubuntu-latest
     timeout-minutes: 45
     env:
@@ -21,4 +26,58 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      - run: cargo test --release --locked
+      # This gate has never had a cache, and a cold build of a 100k-line crate
+      # at release optimisation is what makes the merge race in
+      # docs/VERSION_CONTROL.md hurt. The key is the lockfile, NOT the commit
+      # SHA: a SHA in the key means every push writes a new entry, nothing ever
+      # hits, and the 10 GB quota evicts itself. `restore-keys` still gives a
+      # near-miss the previous build to start from when dependencies change.
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            target
+          key: cargo-ci-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            cargo-ci-${{ runner.os }}-
+      # The `ci` profile inherits `release`, so tests run at the same
+      # optimisation level; it only drops the single-codegen-unit and LTO
+      # settings that exist to buy the production spectator about four percent
+      # simulation throughput. The gate does not run rated games, and
+      # serialising the backend over a 100k-line crate is what made this the
+      # slowest step in the merge path.
+      - run: cargo test --profile ci --locked
+
+  # The published build at civvis.ai/beta compiles this same crate for the
+  # browser (`src/wasm.rs`, gated to wasm32). `cargo test` never builds that
+  # target, so a perfectly ordinary change to `Params` or to `server.rs` breaks
+  # it while every gate stays green — which is exactly what happened: three
+  # PRs merged clean and the next attempt to cut a build failed on four
+  # unresolved names. This is `check`, not a full build: it costs a fraction of
+  # the time and catches the whole class of failure, which is names and types
+  # drifting out from under a target nobody compiles by hand.
+  published-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      CARGO_INCREMENTAL: 0
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      # Its own key: this target dir holds wasm artifacts and must not be
+      # shared with the native gate's.
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            target
+          key: cargo-wasm-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            cargo-wasm-${{ runner.os }}-
+      - run: cargo check --lib --locked --target wasm32-unknown-unknown
