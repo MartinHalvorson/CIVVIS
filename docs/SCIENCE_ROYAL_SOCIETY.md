@@ -44,6 +44,42 @@ already consumes its charges for the Royal Society contribution. Engine and
 AI contract tests cover both. The unmeasured link is the mutually exclusive
 building choice that makes the existing behavior reachable.
 
+## Prospective champion-controller amendment
+
+This amendment was frozen before the exact null at seed `9987999` or either
+treatment seed was run or read. A static controller audit found that the
+evaluator constructed `AdvancedAi::fleet()`, so every major used
+`Weights::default()`. That is not the reproducible strongest controller a
+successful gameplay change is meant to improve. Eligibility for this treatment
+depends on the controller's live Science plan, exact production trace, and
+later Builder follow-through, so the effect cannot be assumed invariant to the
+genome.
+
+The unattended spectator's active league is a moving population whose roster
+and ratings change after recorded games. Copying that incidental roster would
+not define a reproducible estimand. This study therefore fixes every major in
+both arms to the committed `advanced_evolved` champion: generation 14 from
+`data/evolved/best.json`, whose SHA-256 at this amendment is
+`8413d6b547c2735acebd9e67700b1c56371f9c437a4f116a1afd4ec2598d5a67`.
+The evaluator must compile that JSON into the binary, construct both arms with
+`AdvancedAi::fleet_weighted`, print the embedded generation, reject every
+other controller name, and require an explicit `--ai advanced_evolved` before
+recognizing a formal null, screen, or holdout profile. City-states and
+barbarians retain the same controller's normal minor paths. In the original
+text below, “stock” now means the untreated behavior of this frozen champion,
+not default weights.
+
+This is a prospective target-population correction based only on static source,
+the already-public supervisor configuration, and controller provenance. No
+treatment output or focal endpoint informed it. The treatment, fixed world
+cell, seats, null, seed ranges, map counts, endpoints, thresholds, stop rules,
+turn budget, and six-job cap are unchanged. The earlier non-focal seed
+`9987998` smoke exercised default weights and remains mechanics-only; after
+implementation the same short diagnostic may be repeated on the champion, but
+the exact full-horizon null remains unopened. Immediately before measurement,
+latest `main` may be merged only if this artifact's bytes and the relevant
+controller/action semantics are unchanged.
+
 ## Preregistration: frozen before implementation or focal data
 
 ### Hypothesis
@@ -82,10 +118,13 @@ whose effect is under test.
 ### Exact null validation
 
 Before reading a focal seed, a four-map diagnostic uses seed `9987999` on the
-same profile below. Each focal seat is played once by ordinary stock and once
-through the action-log replay with substitution disabled. The terminal
+same profile below. Each focal seat is played once by the untreated champion
+and once through the action-log replay with substitution disabled. The terminal
 serialized `Game`, focal result, and census must match exactly for all eight
 seat cells. Any mismatch blocks the treatment run.
+
+The exact null invocation is the screen command below with `--maps 4`,
+`--seed 9987999`, `--null`, and the same explicit champion flag.
 
 ### Fixed development screen
 
@@ -96,13 +135,14 @@ once as stock and once as treatment: 60 matched seat cells and 120 games.
 science_royal_society_eval --maps 30 --players 8 --width 84 --height 54 \
   --city-states 12 --turns 250 --speed online --map continents \
   --shape planet --poles poles --randomize-civs \
-  --victories science,culture,domination --seed 9988000 --jobs 6
+  --victories science,culture,domination --ai advanced_evolved \
+  --seed 9988000 --jobs 6
 ```
 
-All non-focal majors use stock `AdvancedAi`; city-states and barbarians use
-that controller's normal minor paths. Focal seats are 0 and 7. The two seats
-are aggregated before inference, so the independent unit is the map, not an
-individual start. The screen must run alone in the six-core simulator slot and
+All majors use the embedded `advanced_evolved` champion; city-states and
+barbarians use that controller's normal minor paths. Focal seats are 0 and 7.
+The two seats are aggregated before inference, so the independent unit is the
+map, not an individual start. The screen must run alone in the six-core simulator slot and
 is queued behind every older registered batch, currently #561, #567, #570,
 #574, #579, #589, and #591.
 
@@ -144,8 +184,9 @@ government-plaza rewrite, seed retry, or holdout.
 ### Disjoint holdout
 
 Passing the complete screen earns one unchanged 120-map holdout at seed
-`9989000` on the same profile. It must retain at least ten substitutions, ten
-contributions across five seat-games, nonnegative score and Science-progress
+`9989000` on the same profile, including `--ai advanced_evolved`. It must
+retain at least ten substitutions, ten contributions across five seat-games,
+nonnegative score and Science-progress
 directions, at least as many Science wins, and a favorable win direction with
 a two-sided exact sign-test `p < 0.05`. Only that result permits a separate
 gameplay PR. This PR remains an evaluator and scientific record regardless of
@@ -173,3 +214,8 @@ Commit `a147e1b` implements the frozen design in the new
 The exact four-map null remains queued behind the older six-core experiments.
 It will run only after merging the then-current `origin/main`, and its result
 will be recorded before the development screen is permitted to start.
+
+The champion-controller amendment above supersedes the original default-weight
+population and the old diagnostic's controller identity. Its documentation is
+committed and pushed separately before implementation; no focal seed has been
+opened.
