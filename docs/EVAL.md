@@ -5857,3 +5857,79 @@ this establishes.
 | **seating one searching entry costs ~6.4×** | **established** (n=3) |
 | search is too expensive to seat | **refuted** — that conclusion came from measuring a fleet nobody runs |
 | a searching seat would break the exhibition's frame-per-turn guarantee | **unmeasured**, and unlikely at 13 turns/sec |
+
+## 2026-07-29 — ★★★★★ the learned evaluator has never loaded in deployment
+
+Every paired run recorded today printed the same line and nobody had asked why:
+
+```
+strategic: plays as strategic_score (missing valuenet.json)
+```
+
+`ValueNet::load(dir)` reads `<dir>/valuenet.json`, and every agent asks for
+`"evolved"` — a **relative** path. So whether the learned evaluator exists depends
+on the working directory the binary was started from.
+
+The live spectator's working directory, read off the running process:
+
+```
+pid 17172  cwd /private/tmp/claude-501/-Users-martin/abcd3e00-…/scratchpad/rig
+```
+
+An agent's scratchpad. There is no `evolved/valuenet.json` there, and none in
+`/Users/martin/CIVVIS` either. **No deployed game has ever been played with the
+learned evaluator loaded.** Every `StrategicAi` seat that would consult it has
+fallen back to score share, silently, and the provenance line said so in every
+run.
+
+Three trained nets exist on this machine, at exactly the widths the code wants:
+
+| file | `sizes` |
+|---|---|
+| `civvis-valuenet-corpus/valuenet.json` | `[25, 64, 32, 1]` — `evolve::FEATURE_WIDTH` |
+| `civvis-25-corpus-matched/valuenet.json` | `[25, 64, 32, 1]` |
+| `civvis-df-corpus/valuenet.json` | `[34, 64, 32, 1]` — `decision_features::WIDTH` |
+
+They are trained, they are the right shape, and nothing can load them.
+
+**This is the same defect #490 already fixed, in the same file.** From
+`src/league.rs`:
+
+> `load_league` reads a *directory*, so the snapshot under `data/league` was only
+> ever found when the process happened to be started with a checkout root as its
+> working directory. That is true of `cargo test` and of a developer standing in
+> a checkout, and false of everything else… A rating on screen must not depend on
+> which directory the binary was started from, so the snapshot travels with the
+> code.
+
+Every word applies to the evaluator. The roster was given `SHIPPED_LEAGUE` via
+`include_str!` with an on-disk copy still winning; the net was not, and
+`data/evolved/best.json` is already tracked, so the convention for shipping an
+evolved artifact exists too.
+
+**What this costs.** It makes a whole class of published result ambiguous.
+"`strategic` beats X" measured in a checkout is a *net-backed* agent; the same
+comparison in deployment is `strategic_score`. Worse, it quietly changes what an
+experiment is about: this session's own joint-axis run compares
+`strategic_joint` against `strategic_score`, which is the right isolation for the
+lane-ordering question and is **not** the configuration a reader would assume
+from the agent names.
+
+It also explains the standing puzzle recorded here — that the value net is
+calibrated (val BCE 0.3685 against 0.5623 constant) and yet "never changes a lane
+choice". A net that cannot load cannot change anything.
+
+**The fix has a precedent and is small**: embed a net beside the roster
+(`include_str!` from `data/evolved/`), keep an on-disk copy winning, and let the
+provenance line report which one answered. It is deliberately not made here,
+because shipping an evaluator changes what every strategic agent does and that
+needs its own paired run — the point of this entry is that the change would be
+restoring intended behaviour rather than adding a feature.
+
+| claim | status |
+|---|---|
+| no deployed game has run with a value net loaded | **established** (cwd has no `evolved/`) |
+| trained nets of the right widths exist | **established** (three, 25 and 34 wide) |
+| the roster solved this exact problem already | **established** (`SHIPPED_LEAGUE`, #490) |
+| the net is inert *because* it never loads | **plausible, unproven** — inertness was measured somewhere; whether that run had a net is not recorded |
+| embedding it would improve play | **unmeasured** — needs its own paired run |
