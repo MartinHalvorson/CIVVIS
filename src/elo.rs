@@ -38,7 +38,7 @@ pub const BUILTIN_AIS: [&str; 10] = [
 /// tournament ratings. Keeping them out of `BUILTIN_AIS` prevents a control
 /// factory from being pooled into the same player/leader rating key as
 /// its treatment.
-pub const EVAL_ONLY_AIS: [&str; 63] = [
+pub const EVAL_ONLY_AIS: [&str; 64] = [
     "advanced_congress_counter",
     "advanced_congress_votes",
     "advanced_congress_counter_hard",
@@ -62,6 +62,7 @@ pub const EVAL_ONLY_AIS: [&str; 63] = [
     "advanced_early_score_build",
     "advanced_evolved_blind",
     "advanced_settler_commit",
+    "advanced_wide_opening",
     "advanced_expansion_payback",
     "advanced_food_first",
     "advanced_measured_dedication",
@@ -746,6 +747,14 @@ pub fn builtin_ai(name: &str, seed: u64) -> Box<dyn Ai> {
         "advanced_expansion_payback" => {
             let mut ai = AdvancedAi::new();
             ai.expansion_pays_back = true;
+            Box::new(ai)
+        }
+        // Treatment for the city-target axis: identical to `advanced` except
+        // that the target ramp starts at six rather than three. See
+        // `AdvancedAi::city_target_floor`, #554 and #569.
+        "advanced_wide_opening" => {
+            let mut ai = AdvancedAi::new();
+            ai.city_target_floor = 6;
             Box::new(ai)
         }
         "advanced_lane_reachable" => {
@@ -1482,6 +1491,7 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         ),
         "advanced" => (Vec::new(), "advanced"),
         "advanced_lane_reachable" => (Vec::new(), "advanced_lane_reachable"),
+        "advanced_wide_opening" => (Vec::new(), "advanced_wide_opening"),
         "advanced_expansion_payback" => (Vec::new(), "advanced_expansion_payback"),
         "advanced_city_strategy" => (Vec::new(), "advanced_city_strategy"),
         "advanced_city_strategy_emphasis" => (Vec::new(), "advanced_city_strategy_emphasis"),
@@ -2012,7 +2022,7 @@ mod tests {
             // Anything else reaching that state fell through to the
             // catch-all and is claiming to need nothing while quietly
             // needing a net.
-            const SCRIPTED: [&str; 35] = [
+            const SCRIPTED: [&str; 36] = [
                 "advanced",
                 "advanced_blind_to_leaders",
                 "advanced_rush",
@@ -2025,6 +2035,7 @@ mod tests {
                 "advanced_early_score_alarm",
                 "advanced_early_score_build",
                 "advanced_settler_commit",
+                "advanced_wide_opening",
                 "advanced_expansion_payback",
                 "advanced_banking_dedication",
                 "advanced_city_strategy",
@@ -2068,6 +2079,17 @@ mod tests {
             }
         }
         fs::remove_dir_all(dir).unwrap();
+    }
+
+    /// The reactor experiment pins generation 14 inside its dedicated runner.
+    /// A public factory once reconstructed this name with default weights,
+    /// silently changing the controller under treatment.
+    #[test]
+    fn reactor_marginal_treatment_stays_private_to_its_pinned_runner() {
+        const NAME: &str = "advanced_reactor_marginal";
+        assert!(!BUILTIN_AIS.contains(&NAME));
+        assert!(!EVAL_ONLY_AIS.contains(&NAME));
+        assert_eq!(builtin_provenance(NAME, "unused").effective, "basic");
     }
 
     #[test]

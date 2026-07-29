@@ -198,6 +198,7 @@ mod tests {
             .unwrap();
         let pos = g.units[&settler].pos;
         g.found_city_for(0, pos, Some("Testopolis".to_string()));
+        g.record_contact(0, 1);
         g.apply(0, &Action::DeclareWar { player: 1 }).unwrap();
 
         let mine = g.events_for(0);
@@ -454,6 +455,7 @@ mod tests {
         assert_eq!(g.agenda_opinion(tomyris, honest), 0.0, "no reason to judge");
         // Declaring war piles grievances on the aggressor, which is exactly
         // the reputation her agenda punishes.
+        g.record_contact(treacherous, honest);
         g.apply(treacherous, &Action::DeclareWar { player: honest })
             .unwrap();
         assert!(
@@ -1189,6 +1191,7 @@ mod tests {
             tile.hills = false;
         }
         let mut g = teleport(&g, foe, spot);
+        g.record_contact(0, 1);
         g.apply(0, &Action::DeclareWar { player: 1 }).unwrap();
         assert!(g.in_enemy_zoc(0, mid));
         g.apply(0, &Action::Move { unit: me, to: mid }).unwrap();
@@ -1264,6 +1267,7 @@ mod tests {
             .unwrap();
         let g = teleport(&g, mine, far);
         let mut g = teleport(&g, foe, adj);
+        g.record_contact(0, 1);
         g.apply(0, &Action::DeclareWar { player: 1 }).unwrap();
         g.apply(0, &Action::EndTurn).unwrap();
         let city_hp = g.cities[&cid].hp;
@@ -1716,6 +1720,7 @@ mod tests {
             }
             _ => {}
         }
+        g.record_contact(0, minor);
         g.players[0].envoys_free = 1;
         let before = g.city_yields(cap);
         g.apply(0, &Action::SendEnvoy { player: minor }).unwrap();
@@ -2094,6 +2099,7 @@ mod tests {
             }));
             (serde_json::from_value::<Game>(v).unwrap(), id)
         };
+        g4.record_contact(0, 1);
         g4.apply(0, &Action::DeclareWar { player: 1 }).unwrap();
         g4.apply(0, &Action::EndTurn).unwrap();
         g4.apply(
@@ -2304,6 +2310,7 @@ mod tests {
     #[test]
     fn domination_victory() {
         let mut g = Game::new_full(2, 20, 14, 5, 300, 0, false);
+        g.record_contact(0, 1);
         g.apply(0, &Action::DeclareWar { player: 1 }).unwrap();
         // eliminate player 1 in open combat: seize their last settler
         let settler = g

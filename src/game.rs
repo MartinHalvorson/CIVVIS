@@ -6632,6 +6632,53 @@ mod action_family_tests {
 }
 
 #[cfg(test)]
+mod envoy_contact_tests {
+    use super::*;
+
+    #[test]
+    fn envoys_require_contact_in_both_enumeration_and_apply() {
+        let mut game = Game::new_full(1, 24, 16, 90_731, 120, 2, false);
+        let city_states: Vec<usize> = game
+            .players
+            .iter()
+            .filter(|player| player.is_minor && !player.is_barbarian)
+            .map(|player| player.id)
+            .collect();
+        assert_eq!(city_states.len(), 2);
+        let hidden = city_states[0];
+        let known = city_states[1];
+
+        for player in 0..game.players.len() {
+            game.players[player].met.clear();
+        }
+        game.record_contact(0, known);
+        game.players[0].envoys_free = 1;
+
+        assert!(!game.can_send_envoy(0, hidden));
+        assert!(game.can_send_envoy(0, known));
+        let actions = game.legal_actions_within(0, ActionFamilies::EMPIRE);
+        assert!(!actions
+            .iter()
+            .any(|action| matches!(action, Action::SendEnvoy { player } if *player == hidden)));
+        assert!(actions
+            .iter()
+            .any(|action| matches!(action, Action::SendEnvoy { player } if *player == known)));
+
+        assert_eq!(
+            game.apply(0, &Action::SendEnvoy { player: hidden }),
+            Err("invalid city-state".to_string())
+        );
+        assert_eq!(game.players[0].envoys_free, 1);
+        assert_eq!(game.raw_envoys_at(0, hidden), 0);
+
+        game.apply(0, &Action::SendEnvoy { player: known })
+            .unwrap();
+        assert_eq!(game.players[0].envoys_free, 0);
+        assert_eq!(game.raw_envoys_at(0, known), 1);
+    }
+}
+
+#[cfg(test)]
 mod agenda_cache_tests {
     use super::*;
 
@@ -7078,6 +7125,7 @@ mod strategic_resource_tests {
                 }
             }
         }
+        game.record_contact(0, 1);
         game
     }
 
@@ -7272,6 +7320,9 @@ mod strategic_resource_tests {
     #[test]
     fn strategic_trade_is_an_immediate_permanent_stockpile_transfer() {
         let mut game = strategic_game();
+        for player in 0..game.players.len() {
+            game.players[player].met.clear();
+        }
         game.players[0]
             .strategic_resources
             .insert(crate::name!("iron"), 30.0);
@@ -7282,6 +7333,10 @@ mod strategic_resource_tests {
             ..DealItems::default()
         };
 
+        assert!(game.do_trade(0, 1, &iron, &payment).is_err());
+        assert_eq!(game.strategic_stockpile(0, crate::name!("iron")), 30.0);
+        assert_eq!(game.strategic_stockpile(1, crate::name!("iron")), 0.0);
+        game.record_contact(0, 1);
         game.do_trade(0, 1, &iron, &payment).unwrap();
         assert_eq!(game.strategic_stockpile(0, crate::name!("iron")), 20.0);
         assert_eq!(game.strategic_stockpile(1, crate::name!("iron")), 10.0);
@@ -22082,16 +22137,29 @@ impl Game {
             .unwrap_or(0)
     }
 
+    /// Whether this civilization can currently send one of its Envoys to a
+    /// city-state. Contact is part of legality, not merely presentation: an
+    /// unmet city-state's identity and influence table are hidden information.
+    pub(crate) fn can_send_envoy(&self, pid: usize, minor: usize) -> bool {
+        self.players
+            .get(pid)
+            .is_some_and(|player| player.envoys_free > 0)
+            && self.players.get(minor).is_some_and(|player| {
+                player.is_minor && !player.is_barbarian && player.alive
+            })
+            && self.has_met(pid, minor)
+            && !self.is_at_war(pid, minor)
+    }
+
     fn do_send_envoy(&mut self, pid: usize, minor: usize) -> Result<(), String> {
-        if self.players[pid].envoys_free <= 0 {
+        if self
+            .players
+            .get(pid)
+            .is_none_or(|player| player.envoys_free <= 0)
+        {
             return Err("no envoys to send".into());
         }
-        let ok = self
-            .players
-            .get(minor)
-            .map(|m| m.is_minor && !m.is_barbarian && m.alive)
-            .unwrap_or(false);
-        if !ok || self.is_at_war(pid, minor) {
+        if !self.can_send_envoy(pid, minor) {
             return Err("invalid city-state".into());
         }
         // Diplomatic League reacts to the first envoy actually sent; Amani's
@@ -33564,7 +33632,7 @@ impl Game {
                     .as_ref()
                     .is_some_and(|civ| self.players[pid].civ != *civ)
                     || self.rules.buildings.values().any(|candidate| {
-                        candidate.replaces == Some(Name::new(&building.as_str()))
+                        candidate.replaces == Some(*building)
                             && (candidate.unique_to.as_deref()
                                 == Some(self.players[pid].civ.as_str())
                                 || society_for(candidate).is_some_and(|society| {
@@ -33683,7 +33751,7 @@ impl Game {
                         .as_ref()
                         .is_some_and(|civ| self.players[pid].civ != *civ)
                     || self.rules.districts.values().any(|candidate| {
-                        candidate.replaces == Some(Name::new(&district.as_str()))
+                        candidate.replaces == Some(*district)
                             && candidate.unique_to.as_deref()
                                 == Some(self.players[pid].civ.as_str())
                     })
@@ -33921,7 +33989,7 @@ impl Game {
                     .as_ref()
                     .is_some_and(|civ| self.players[pid].civ != *civ)
                 || self.rules.districts.values().any(|candidate| {
-                    candidate.replaces == Some(Name::new(&name.as_str()))
+                    candidate.replaces == Some(*name)
                         && candidate.unique_to.as_deref() == Some(self.players[pid].civ.as_str())
                 })
             {
@@ -34803,14 +34871,7 @@ impl Game {
             }
             if p.envoys_free > 0 {
                 for m in &self.players {
-                    // An envoy needs somewhere to be sent. A city-state
-                    // nobody has found yet has no court to receive one.
-                    if m.is_minor
-                        && !m.is_barbarian
-                        && m.alive
-                        && self.has_met(pid, m.id)
-                        && !self.is_at_war(pid, m.id)
-                    {
+                    if self.can_send_envoy(pid, m.id) {
                         acts.push(Action::SendEnvoy { player: m.id });
                     }
                 }
@@ -40334,6 +40395,9 @@ impl Game {
         if self.players[pid].is_minor {
             return Err("city-states do not declare war independently".into());
         }
+        if !self.has_met(pid, other) {
+            return Err("cannot declare war before contact".into());
+        }
         if self.is_at_war(pid, other) {
             return Err("already at war".into());
         }
@@ -40458,6 +40522,12 @@ impl Game {
         other: usize,
         casus_belli: &str,
     ) -> Result<(), String> {
+        // Some casus-belli predicates inspect the target before `start_war`
+        // gets a chance to validate it. Keep the action boundary both
+        // panic-free and contact-honest.
+        if other >= self.players.len() || !self.has_met(pid, other) {
+            return Err("invalid war target".into());
+        }
         let valid = match casus_belli {
             "formal_war" => self.players[pid]
                 .denounced_until
@@ -40507,6 +40577,7 @@ impl Game {
         if other == pid
             || other >= self.players.len()
             || !self.players[other].alive
+            || !self.has_met(pid, other)
             || self.players[other].is_barbarian
             || self.players[pid].is_barbarian
             || self.is_at_war(pid, other)
@@ -40543,6 +40614,7 @@ impl Game {
         if other == pid
             || other >= self.players.len()
             || !self.players[other].alive
+            || !self.has_met(pid, other)
             || self.players[other].is_minor
             || self.players[other].is_barbarian
             || self.players[pid].is_minor
@@ -41329,6 +41401,7 @@ impl Game {
             || to >= self.players.len()
             || !self.players[from].alive
             || !self.players[to].alive
+            || !self.has_met(from, to)
             || self.players[from].is_minor
             || self.players[to].is_minor
             || self.players[from].is_barbarian
@@ -48734,6 +48807,7 @@ mod team_tests {
     #[test]
     fn declaring_and_ending_war_moves_both_complete_teams() {
         let mut game = team_game(4, vec![Some(0), Some(0), Some(1), Some(1)], 88_002);
+        game.record_contact(0, 2);
         game.do_declare_war(0, 2).unwrap();
         for attacker in [0, 1] {
             for defender in [2, 3] {
@@ -49289,9 +49363,10 @@ mod visibility_tests {
     }
 
     /// Diplomacy needs somebody to conduct it with. Every act on the panel is
-    /// withheld until contact, and a war is contact by itself.
+    /// withheld until contact; only belligerents pulled into an existing war
+    /// by a team or defensive pact are introduced by that war itself.
     #[test]
-    fn diplomacy_waits_for_contact_and_a_declaration_supplies_it() {
+    fn diplomacy_waits_for_contact_before_a_declaration() {
         let (mut game, center) = controlled_game(63_102);
         game.spawn_unit("warrior", 0, center);
         game.spawn_unit("warrior", 1, along(&game, center, 9));
@@ -49316,8 +49391,54 @@ mod visibility_tests {
         assert!(game.is_at_war(0, 1));
         assert!(
             game.has_met(1, 0),
-            "nobody learns who they are fighting from the battlefield"
+            "the prewar contact remains mutual"
         );
+    }
+
+    /// `legal_actions` is a discovery aid, not the authority boundary: every
+    /// controller ultimately submits an `Action` directly to `Game::apply`.
+    /// Hidden civilizations must therefore be rejected by the handlers too,
+    /// without leaving a grievance, offer, or war behind.
+    #[test]
+    fn direct_bilateral_diplomacy_cannot_bypass_contact() {
+        let (mut game, center) = controlled_game(63_103);
+        game.spawn_unit("warrior", 0, center);
+        game.spawn_unit("warrior", 1, along(&game, center, 9));
+        game.refresh_all_visibility();
+        assert!(!game.has_met(0, 1));
+
+        let actions = [
+            Action::DeclareWar { player: 1 },
+            Action::DeclareWarWithCasusBelli {
+                player: 1,
+                casus_belli: "golden_age_war".to_string(),
+            },
+            Action::Denounce { player: 1 },
+            Action::ProposeDeal {
+                player: 1,
+                give_gold: 0.0,
+                request_gold: 0.0,
+                open_borders: false,
+                friendship: true,
+                peace: false,
+                alliance: None,
+            },
+        ];
+        for action in actions {
+            let mut attempt = game.clone();
+            assert!(
+                attempt.apply(0, &action).is_err(),
+                "hidden diplomacy was accepted: {action:?}"
+            );
+            assert!(!attempt.is_at_war(0, 1));
+            assert!(attempt.pending_deals.is_empty());
+            assert!(attempt.players[0].denounced_until.is_empty());
+            assert!(attempt.players[0].grievances.is_empty());
+            assert!(attempt.players[1].grievances.is_empty());
+        }
+
+        game.record_contact(0, 1);
+        assert!(game.apply(0, &Action::Denounce { player: 1 }).is_ok());
     }
 
     #[test]
@@ -55961,6 +56082,7 @@ mod victory_conditions {
 
         g.active_congress_effects
             .push(effect("public_relations", "A", "0"));
+        g.record_contact(0, 1);
         g.do_denounce(0, 1).unwrap();
         assert_eq!(g.players[1].grievances[&0], 50.0);
 
@@ -58706,6 +58828,7 @@ mod district_mechanics {
         routed.turn = routed.players[0].alliances[&1].ends;
         routed.players[0].civics.insert(crate::name!("civil_service"));
         routed.players[1].civics.insert(crate::name!("civil_service"));
+        routed.record_contact(0, 1);
         routed
             .do_propose_deal(0, 1, 0.0, 0.0, false, true, false, Some("economic"))
             .unwrap();
@@ -59028,6 +59151,7 @@ mod district_mechanics {
     #[test]
     fn denouncement_unlocks_formal_war_and_alliances_level_each_turn() {
         let mut game = Game::new_full(2, 24, 16, 88_103, 100, 0, false);
+        game.record_contact(0, 1);
         game.do_denounce(0, 1).unwrap();
         game.turn += 5;
         game.do_declare_war_with_casus_belli(0, 1, "formal_war")
@@ -59308,6 +59432,7 @@ mod district_mechanics {
     #[test]
     fn a_pending_offer_cannot_settle_a_war_before_its_minimum_turns() {
         let mut game = Game::new_full(2, 18, 10, 79_021, 200, 0, false);
+        game.record_contact(0, 1);
         game.do_declare_war(0, 1).unwrap();
         game.players[0].gold = 100.0;
         let earliest = game
@@ -59554,6 +59679,7 @@ mod district_mechanics {
     fn the_war_ledger_records_a_declaration_its_cost_and_its_peace() {
         let mut game = emergency_game_with_capitals(3, 5_505, 300);
         game.turn = 40;
+        game.record_contact(0, 1);
         let opening_strength = [game.military_power(0).round() as i64, game.military_power(1).round() as i64];
         game.do_declare_war(0, 1).unwrap();
 
@@ -59677,6 +59803,7 @@ mod district_mechanics {
     fn war_strength_is_unit_only_and_saw_action_counts_distinct_units() {
         let mut game = emergency_game_with_capitals(2, 5_510, 300);
         game.turn = 40;
+        game.record_contact(0, 1);
         let start = game.military_power(0).round() as i64;
         game.do_declare_war(0, 1).unwrap();
 
@@ -59867,6 +59994,7 @@ mod district_mechanics {
     fn a_defensive_alliance_is_one_conflict_with_an_early_exit() {
         let mut game = emergency_game_with_capitals(3, 5_506, 300);
         game.turn = 40;
+        game.record_contact(0, 1);
         let alliance = AllianceState {
             kind: "military".to_string(),
             points: 0.0,
@@ -59922,6 +60050,7 @@ mod district_mechanics {
     fn a_peace_treaty_binds_for_the_shipped_ten_turns() {
         let mut game = emergency_game_with_capitals(2, 5_505, 300);
         game.turn = 20;
+        game.record_contact(0, 1);
         game.do_declare_war(0, 1).unwrap();
         game.turn = 25;
         assert!(
@@ -59965,6 +60094,8 @@ mod district_mechanics {
     fn defensive_alliances_do_not_reopen_a_front_inside_its_peace_treaty() {
         let mut game = emergency_game_with_capitals(3, 5_506, 300);
         game.turn = 20;
+        game.record_contact(0, 1);
+        game.record_contact(0, 2);
         game.do_declare_war(0, 1).unwrap();
         game.turn = 30;
         game.do_make_peace(0, 1).unwrap();
@@ -59998,6 +60129,7 @@ mod district_mechanics {
     fn a_conquest_closes_the_war_it_ended() {
         let mut game = emergency_game_with_capitals(2, 5_505, 300);
         game.turn = 30;
+        game.record_contact(0, 1);
         game.do_declare_war(0, 1).unwrap();
         let capital = game.player_city_ids(1)[0];
         game.turn = 44;
@@ -60044,6 +60176,7 @@ mod district_mechanics {
         }
         assert_eq!(game.suzerain_of(city_state), Some(1));
 
+        game.record_contact(0, 1);
         game.do_declare_war(0, 1).unwrap();
         assert!(
             game.is_at_war(0, city_state),
@@ -60150,6 +60283,7 @@ mod district_mechanics {
     fn a_captured_city_is_recorded_with_what_ranks_it() {
         let mut game = emergency_game_with_capitals(2, 5_507, 300);
         game.turn = 30;
+        game.record_contact(0, 1);
         game.do_declare_war(0, 1).unwrap();
         let capital = game.player_city_ids(1)[0];
         game.cities.get_mut(&capital).unwrap().pop = 7;
