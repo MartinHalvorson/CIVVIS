@@ -46,6 +46,7 @@ fn text(args: &[String], flag: &str, default: &str) -> String {
         .unwrap_or_else(|| default.to_string())
 }
 
+#[derive(Clone)]
 struct Group {
     rows: Vec<Vec<f32>>,
     returns: Vec<Vec<f32>>,
@@ -104,7 +105,10 @@ fn mask(row: &mut [f32], keep: &str) {
 }
 
 fn finish_group(group: Group, path: &str) -> Result<Group, String> {
-    if group.rows.len() < 2 || group.rows.len() != group.returns.len() {
+    if group.rows.len() < 2
+        || group.rows.len() != group.returns.len()
+        || group.rows.len() != group.means.len()
+    {
         return Err(format!(
             "{path}: game {} decision {:?} has incomplete candidates",
             group.game, group.decision
@@ -216,6 +220,21 @@ fn load_groups(path: &str, keep: &str) -> Result<Loaded, String> {
                 parse_value(field, path, line_number, &format!("replica {index}"))
             })
             .collect::<Result<Vec<_>, _>>()?;
+        if candidate.iter().any(|value| !value.is_finite())
+            || !mean.is_finite()
+            || replica_returns.iter().any(|value| !value.is_finite())
+        {
+            return Err(format!(
+                "{path}:{line_number}: candidate contains a non-finite value"
+            ));
+        }
+        let replica_mean =
+            replica_returns.iter().sum::<f32>() / replica_returns.len().max(1) as f32;
+        if (mean - replica_mean).abs() > 2e-6 {
+            return Err(format!(
+                "{path}:{line_number}: return {mean} does not match replica mean {replica_mean}"
+            ));
+        }
 
         if chosen {
             if let Some(group) = current.take() {
@@ -619,6 +638,12 @@ fn main() {
     );
     let width = loaded.width;
     let replicas = loaded.replicas;
+    if replicas != 4 {
+        eprintln!(
+            "q_pairwise_train: preregistered experiment requires four replicas, found {replicas}"
+        );
+        std::process::exit(2);
+    }
     let (train_groups, evaluation, label) = if let Some(path) = eval_data.as_deref() {
         let external = load_groups(path, &keep).unwrap_or_else(|error| {
             eprintln!("q_pairwise_train: {error}");
@@ -755,5 +780,27 @@ mod tests {
         mask(&mut row, "destination");
         assert!(row[..destination].iter().all(|value| *value == 0.0));
         assert!(row[destination..].iter().all(|value| *value == 1.0));
+    }
+
+    #[test]
+    fn game_macro_lift_does_not_weight_a_long_trajectory_more() {
+        let net = Linear { weights: vec![1.0] };
+        let mut helped = group(vec![vec![0.0], vec![1.0]], vec![vec![0.1; 4], vec![0.2; 4]]);
+        helped.game = 1;
+        let mut hurt = group(vec![vec![0.0], vec![1.0]], vec![vec![0.2; 4], vec![0.1; 4]]);
+        hurt.game = 2;
+        let mut groups = vec![helped];
+        groups.extend((0..9).map(|turn| {
+            let mut decision = hurt.clone();
+            decision.decision.0 += turn;
+            decision
+        }));
+        let games = evaluate(&net, &groups, 0.70);
+        let lift = games
+            .values()
+            .map(|game| game.gated_lift / game.decisions as f32)
+            .sum::<f32>()
+            / games.len() as f32;
+        assert!(lift.abs() < 1e-6, "each independent game must carry half");
     }
 }

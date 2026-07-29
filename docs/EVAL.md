@@ -5096,6 +5096,12 @@ transfer better than the mean-return listwise head. Requiring a predicted
 probability of at least **0.70** before replacing the expert will turn weak or
 profile-specific preferences into abstentions instead of regressions.
 
+The decision rule is exact: score every candidate, identify the highest-scored
+non-expert sibling (enumeration order keeps a tie), and replace the recorded
+expert only when `sigmoid(sibling_score - expert_score) >= 0.70`. A tied score
+therefore retains the expert. The 5% gate below uses the game-macro mean
+override rate, matching the return uncertainty unit.
+
 The target for each unordered candidate pair is fixed before data collection.
 Each of the four doctrine-matched return differences contributes a win, loss,
 or half-win tie. A Jeffreys `Beta(0.5, 0.5)` posterior mean is the logistic
