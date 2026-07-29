@@ -527,3 +527,25 @@ Pre-registration for the surviving arm:
 `/Users/martin/civvis-congress-counter-preregistration.md`, written before the
 run, predicting **wins null at 48–52%**. Both of its fires-check predictions
 held, the second more strongly than it was written.
+
+### A second finding that is not about AI strength
+
+The victory screen's diplomacy meter is `player.dvp / 20`
+(`Game::victory_races`), and the census measures what that number does over a
+full game: **median peak DVP is 14 at 4p and 16 at 6p**, so the screen shows a
+diplomacy race sitting at **70–80%** for empires that then win diplomatically
+**0 times in 40 games**.
+
+It is not a mis-scaled meter — 16 of 20 really is 80% of the way to a
+diplomatic victory. It is that the last four points are taken back by a veto
+that has never once failed: `world_leader` is on every ballot from the Modern
+era, it denies its target 95–98.5% of the time, and it convenes roughly every
+thirty turns. A spectator reads a race that is nearly finished; the engine is
+running a race that cannot be finished.
+
+As with the score-margin finding above, this is an observation about
+presentation and is deliberately **not** backed by a strength claim. It is
+listed here because it is the same instrument problem in a second place, and
+because it is what a viewer sees rather than what an evaluator measures.
+
+`congress_census` reproduces both the peak table and the veto rate.
