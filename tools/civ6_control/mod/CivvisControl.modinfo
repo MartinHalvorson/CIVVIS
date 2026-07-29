@@ -88,6 +88,12 @@
 				<LuaReplace>CivvisControlAutoClose.lua</LuaReplace>
 			</Properties>
 		</ReplaceUIScript>
+		<ReplaceUIScript id="CivvisControlAutoCloseRockBandMovie">
+			<Properties>
+				<LuaContext>RockBandMoviePopup</LuaContext>
+				<LuaReplace>CivvisControlAutoClose.lua</LuaReplace>
+			</Properties>
+		</ReplaceUIScript>
 	</InGameActions>
 	<Files>
 		<File>CivvisControlSetup.xml</File>

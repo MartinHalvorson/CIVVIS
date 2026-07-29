@@ -179,6 +179,13 @@ Three things about how it is wired are worth keeping:
   dedication choice — it is *continued* rather than closed, because its Close
   button skips the dedication and its Continue button raises it.
 
+One announcement is knowingly left out. Gathering Storm's
+`NaturalDisasterPopup` is already replaced by `GranColombia_Maya`, whose
+criterion is `RuleSetInUse RULESET_EXPANSION_2` — true of every run here — so a
+second `ReplaceUIScript` on that context is a load-order race with a DLC rather
+than a free addition. Disasters therefore still stop an unattended run, and
+closing that gap means answering which replacement wins before claiming it.
+
 A run's `Automation.log` says which screens armed (`autoclose_armed`, one line
 per screen as the game loads) and every screen it has since closed
 (`autoclose`, with how long it was up). The failure that has to be loud is
