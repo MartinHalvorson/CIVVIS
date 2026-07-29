@@ -19,6 +19,7 @@ use crate::game::{
     Action, Game, GameOptions, LeaderPool, PlayOnMode, VictoryConditions, CIV6_LEADER_POOL,
 };
 use crate::obs::{observation, observation_player_view, observation_spectator};
+use crate::name::Name;
 use crate::rules::Rules;
 use crate::setup::{
     start_era_from_id, start_era_id, BaseRuleset, GameSpeed, MapPoles, MapScript, MapSize,
@@ -223,7 +224,7 @@ struct ChronicleSnapshot {
     turn: u32,
     cities: BTreeMap<u32, ChronicleCity>,
     districts: BTreeMap<Pos, ChronicleDistrict>,
-    buildings: BTreeMap<(u32, String), usize>,
+    buildings: BTreeMap<(u32, Name), usize>,
     wonders: BTreeMap<String, usize>,
     religions: Vec<Option<String>>,
     governments: Vec<Option<String>>,
@@ -264,8 +265,8 @@ impl ChronicleWar {
 }
 
 struct ChronicleState {
-    districts: BTreeSet<String>,
-    buildings: BTreeSet<String>,
+    districts: BTreeSet<Name>,
+    buildings: BTreeSet<Name>,
     population_milestones: Vec<i32>,
     wars: BTreeMap<(usize, usize), ChronicleWar>,
 }
@@ -288,7 +289,7 @@ impl ChronicleSnapshot {
                     *position,
                     ChronicleDistrict {
                         city: city.id,
-                        district: district.clone(),
+                        district: district.clone().to_string(),
                         owner: city.owner,
                     },
                 );
@@ -304,7 +305,7 @@ impl ChronicleSnapshot {
                 }
             }
             for wonder in city.wonders.keys() {
-                wonders.insert(wonder.clone(), city.owner);
+                wonders.insert(wonder.to_string(), city.owner);
             }
             combat_owners
                 .entry(city.pos)
@@ -314,7 +315,7 @@ impl ChronicleSnapshot {
         let military_units = game
             .units
             .values()
-            .filter(|unit| game.rules.units[unit.kind.as_str()].class == "military")
+            .filter(|unit| game.rules.units[unit.kind].class == "military")
             .map(|unit| {
                 combat_owners
                     .entry(unit.pos)
@@ -323,7 +324,7 @@ impl ChronicleSnapshot {
                 (unit.id, unit.owner)
             })
             .collect();
-        let tree_era = |nodes: &BTreeSet<String>, technology: bool| {
+        let tree_era = |nodes: &BTreeSet<Name>, technology: bool| {
             nodes
                 .iter()
                 .filter_map(|node| {
@@ -394,7 +395,7 @@ impl ChronicleSnapshot {
     }
 }
 
-fn completed_districts(game: &Game) -> BTreeSet<String> {
+fn completed_districts(game: &Game) -> BTreeSet<Name> {
     game.cities
         .values()
         .flat_map(|city| city.districts.keys())
@@ -402,7 +403,7 @@ fn completed_districts(game: &Game) -> BTreeSet<String> {
         .collect()
 }
 
-fn completed_buildings(game: &Game) -> BTreeSet<String> {
+fn completed_buildings(game: &Game) -> BTreeSet<Name> {
     game.cities
         .values()
         .flat_map(|city| city.buildings.iter())
@@ -521,7 +522,7 @@ fn chronicle_world_events(
         .collect();
     new_districts.sort_by_key(|district| district.city);
     for district in new_districts {
-        if chronicle.districts.insert(district.district.clone()) {
+        if chronicle.districts.insert(Name::new(&district.district)) {
             let city = after
                 .cities
                 .get(&district.city)
@@ -2154,11 +2155,11 @@ impl Session {
                                 player["research_boosted"] = json!(seat
                                     .research
                                     .as_ref()
-                                    .is_some_and(|tech| seat.boosted_techs.contains(tech)));
+                                    .is_some_and(|tech| seat.boosted_techs.contains(&Name::new(tech))));
                                 player["civic_boosted"] = json!(seat
                                     .civic
                                     .as_ref()
-                                    .is_some_and(|civic| seat.boosted_civics.contains(civic)));
+                                    .is_some_and(|civic| seat.boosted_civics.contains(&Name::new(civic))));
                             }
                         }
                     }
@@ -4037,7 +4038,7 @@ mod tests {
             .map(|pid| generated_ai_name(42, pid, Some("science")))
             .collect();
         let unique: std::collections::BTreeSet<&str> =
-            science.iter().map(String::as_str).collect();
+            science.iter().map(|name| name.as_str()).collect();
         assert_eq!(unique.len(), science.len());
         assert!(science.iter().all(|name| ["Quantum", "Stellar", "Orbital", "Theory"]
             .iter()
@@ -5325,6 +5326,106 @@ mod tests {
             "if (!SPEC || specFetching || specPending || worldTransitionPending()) return;"
         ));
         assert!(fetching.contains("generation === specFetchGeneration"));
+    }
+
+    #[test]
+    fn browser_takes_over_a_same_code_successor_without_reloading_itself() {
+        // Every world is a new server process, so "the process changed" is not
+        // a reason to replace the document — "the code changed" is. Replacing
+        // it costs a full application boot, and that boot is what a viewer
+        // sees as the exhibition dropping into a loading screen mid-match.
+        assert!(EMBEDDED_INDEX.contains("function servesThisDocumentsCode(commit)"));
+        assert!(EMBEDDED_INDEX.contains("commit !== \"unknown\" && commit === documentCommit"));
+        assert!(EMBEDDED_INDEX.contains("function adoptSupervisedSuccessor(instance, seed)"));
+        // Keeping the document is only half of it. Everything outside the
+        // browser identifies the followed server by this tab's own URL, and
+        // civvis-refresh.sh navigates a tab whose `instance=` disagrees — from
+        // AppleScript, where no handoff can be staged. So an adoption says
+        // where it went, without loading anything to say it.
+        assert!(EMBEDDED_INDEX.contains("history.replaceState(history.state, \"\", here.toString());"));
+        // The document's build is the one behind its *first* frame. Comparing
+        // against the previous server instead would let a run of same-code
+        // successors walk this page onto code it is not running.
+        assert!(EMBEDDED_INDEX.contains(
+            "if (documentCommit === null && typeof st.server_commit === \"string\" &&"
+        ));
+
+        // What an adoption forgets is exactly what belonged to the world being
+        // left. A tile delta is keyed to its map, so `have=` must never name a
+        // world the new server has never heard of.
+        let adopt = EMBEDDED_INDEX
+            .split_once("function adoptSupervisedSuccessor(instance, seed) {")
+            .expect("the in-place adoption")
+            .1
+            .split_once("\n}")
+            .expect("the end of the adoption")
+            .0;
+        for forgotten in [
+            "tileStore = null;",
+            "paintedFrame = null;",
+            "lastSeed2 = null;",
+            "specPending = null;",
+            "specFetchGeneration++;",
+            // The world being left most of all: `render` returns the moment it
+            // decides to adopt, before it commits the state it was handed, so
+            // a `state` kept here is a world that never advances and whose
+            // seed re-triggers the same decision on every frame — a page
+            // frozen on a dead map with its loop running flat out.
+            "state = null;",
+            "resetAnim();",
+        ] {
+            assert!(
+                adopt.contains(forgotten),
+                "adopting a successor must forget {forgotten}"
+            );
+        }
+
+        // Both ways a supervised world can change under this page take the
+        // in-place route: a replacement *process* (every game boundary) and a
+        // new *seed* on the one already being watched (the in-process
+        // successor, and the arm a page coming back from the dark lands on).
+        assert_eq!(
+            EMBEDDED_INDEX
+                .matches("adoptSupervisedSuccessor(st.server_instance, st.seed);")
+                .count(),
+            2,
+            "a changed process and a changed world are both adopted, not reloaded"
+        );
+        // And it is not a reload, however the page got here. It reads the URL
+        // to rewrite it; nothing here navigates.
+        for navigation in ["location.replace", "location.href =", "location.assign"] {
+            assert!(
+                !adopt.contains(navigation),
+                "an adopted successor keeps this document, so it must not {navigation}"
+            );
+        }
+
+        // The watch loop runs on requestAnimationFrame, which Chrome suspends
+        // in a hidden, occluded or background tab. A page frozen there stops
+        // noticing that the world it holds has ended, so something has to keep
+        // its idea of the live server true on a clock rAF cannot stop.
+        // Measured before this existed: 23s and 18s on a dead process across
+        // two consecutive boundaries, ended only by an AppleScript navigation.
+        assert!(EMBEDDED_INDEX.contains("async function followLiveServer()"));
+        assert!(EMBEDDED_INDEX.contains("setInterval(followLiveServer, FOLLOW_POLL_MS);"));
+        assert!(EMBEDDED_INDEX.contains("if (!document.hidden) followLiveServer();"));
+        let follow = EMBEDDED_INDEX
+            .split_once("async function followLiveServer() {")
+            .expect("the follower")
+            .1
+            .split_once("\n}")
+            .expect("the end of the follower")
+            .0;
+        // It asks the lock-free endpoint. A page that cannot paint must never
+        // take the simulation mutex to find out what it is missing.
+        assert!(follow.contains("fetchJSON(\"/runtime\""));
+        assert!(
+            !follow.contains("\"/state"),
+            "a page that cannot paint must not poll /state"
+        );
+        // And it stays off the network entirely while the frame loop is alive,
+        // because that loop finds a successor sooner and knows more about it.
+        assert!(follow.contains("Date.now() - lastSpecFrameAt < FOLLOW_IDLE_MS"));
     }
 
     #[test]
@@ -8650,22 +8751,22 @@ mod tests {
             .get_mut(&first_city)
             .unwrap()
             .districts
-            .insert("campus".to_string(), district_pos);
+            .insert(crate::name!("campus"), district_pos);
         game.cities
             .get_mut(&first_city)
             .unwrap()
             .wonders
-            .insert("pyramids".to_string(), district_pos);
+            .insert(crate::name!("pyramids"), district_pos);
         game.cities
             .get_mut(&first_city)
             .unwrap()
             .buildings
-            .push("granary".to_string());
+            .push(crate::name!("granary"));
         game.cities.get_mut(&first_city).unwrap().pop = 4;
         game.players[0].religion = Some("Test Faith".to_string());
         game.players[0].government = Some("classical_republic".to_string());
-        game.players[0].techs.insert("horseback_riding".to_string());
-        game.players[0].civics.insert("drama_poetry".to_string());
+        game.players[0].techs.insert(crate::name!("horseback_riding"));
+        game.players[0].civics.insert(crate::name!("drama_poetry"));
         let city_state = game
             .players
             .iter()
@@ -8732,7 +8833,7 @@ mod tests {
             .units
             .values()
             .find(|unit| {
-                unit.owner == 1 && game.rules.units[unit.kind.as_str()].class == "military"
+                unit.owner == 1 && game.rules.units[unit.kind].class == "military"
             })
             .map(|unit| unit.id)
             .expect("player two starts with a military unit");

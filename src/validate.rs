@@ -10,6 +10,7 @@
 //! for the ones an author knows about. This is that, for our data: run it with
 //! `civvis validate`, and see `docs/UNCIV_LESSONS.md` for the lineage.
 
+use crate::name::Name;
 use crate::specmap::SpecMap;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -90,7 +91,7 @@ impl<'a> Check<'a> {
         &mut self,
         subject: &str,
         field: &str,
-        value: Option<&String>,
+        value: Option<&Name>,
         catalogue: &SpecMap<T>,
         catalogue_name: &str,
     ) {
@@ -107,7 +108,7 @@ impl<'a> Check<'a> {
         &mut self,
         subject: &str,
         field: &str,
-        values: &[String],
+        values: &[Name],
         catalogue: &SpecMap<T>,
         catalogue_name: &str,
     ) {
@@ -117,7 +118,7 @@ impl<'a> Check<'a> {
     }
 
     /// Every catalogue entry may be gated behind a technology and a civic.
-    fn gates(&mut self, subject: &str, tech: Option<&String>, civic: Option<&String>) {
+    fn gates(&mut self, subject: &str, tech: Option<&Name>, civic: Option<&Name>) {
         let techs = &self.rules.techs;
         let civics = &self.rules.civics;
         if let Some(tech) = tech {
@@ -401,7 +402,7 @@ fn trees(check: &mut Check) {
                         break;
                     }
                     if seen.insert(prerequisite.clone()) {
-                        frontier.push(prerequisite.clone());
+                        frontier.push(Name::new(&prerequisite));
                     }
                 }
             }
@@ -513,7 +514,7 @@ fn districts_and_buildings(check: &mut Check) {
         );
         check.references(&subject, "excludes", &spec.excludes, &buildings, "building");
         if let Some(belief) = &spec.worship_belief {
-            if !check.rules.beliefs.worship.contains_key(belief) {
+            if !check.rules.beliefs.worship.contains_key(belief.as_str()) {
                 check.error(
                     &subject,
                     format!("worship_belief names {belief:?}, which is not a Worship belief"),
@@ -710,7 +711,7 @@ fn people(check: &mut Check) {
         let subject = format!("governors/{id}");
         for (promotion_id, promotion) in &spec.promotions {
             for prerequisite in &promotion.requires {
-                if !spec.promotions.contains_key(prerequisite) {
+                if !spec.promotions.contains_key(prerequisite.as_str()) {
                     check.error(
                         format!("{subject}/{promotion_id}"),
                         format!("requires {prerequisite:?}, which this governor does not offer"),
@@ -942,7 +943,7 @@ mod tests {
             .units
             .get_mut("warrior")
             .unwrap()
-            .tech = Some("nonexistent_tech".to_string());
+            .tech = Some(crate::name!("nonexistent_tech"));
         let findings = validate(&rules);
         assert!(findings.iter().any(|finding| finding.severity == Severity::Error
             && finding.subject == "units/warrior"
@@ -972,7 +973,7 @@ mod tests {
     fn malformed_randomized_research_metadata_is_an_error() {
         let mut rules = Rules::embedded();
         let advanced_ai = rules.techs.get_mut("advanced_ai").unwrap();
-        advanced_ai.requires.push("robotics".to_string());
+        advanced_ai.requires.push(crate::name!("robotics"));
         advanced_ai.random_costs = vec![2300.0, 2200.0];
         rules.civics.get_mut("future_civic").unwrap().repeatable = false;
         let findings = validate(&rules);

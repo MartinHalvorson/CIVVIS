@@ -2,6 +2,7 @@
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use crate::fractal::Fractal;
+use crate::name::Name;
 use crate::rng::Rng;
 use crate::rules::Rules;
 use crate::setup::{MapPoles, MapScript, MapTopology};
@@ -2841,7 +2842,7 @@ pub fn generate_with_script(
         }
         if rng.chance(0.13) {
             let hills = wm.tiles[&pos].hills;
-            let valid: Vec<String> = rules
+            let valid: Vec<Name> = rules
                 .resources
                 .iter()
                 .filter(|(_, s)| {
@@ -2850,16 +2851,16 @@ pub fn generate_with_script(
                     // and hills-only spawns (Sheep) respect the tile's form.
                     let by_feature = feature
                         .as_ref()
-                        .map(|f| s.feature.contains(f))
+                        .map(|f| s.feature.iter().any(|want| *f == *want))
                         .unwrap_or(false);
-                    let by_terrain = feature.is_none() && s.terrain.contains(&terrain);
+                    let by_terrain = feature.is_none() && s.terrain.iter().any(|want| terrain == *want);
                     (by_feature || by_terrain) && s.hills.is_none_or(|want| want == hills)
                 })
                 .map(|(name, _)| name.clone())
                 .collect();
             if !valid.is_empty() {
                 let pick = valid[rng.below(valid.len())].clone();
-                wm.tiles.get_mut(&pos).unwrap().resource = Some(pick);
+                wm.tiles.get_mut(&pos).unwrap().resource = Some(Name::new(&pick));
             }
         }
     }
@@ -3332,7 +3333,7 @@ fn wonder_terrain_bit(terrain: &str) -> u32 {
     }
 }
 
-fn wonder_terrain_mask(terrains: &[String]) -> u32 {
+fn wonder_terrain_mask(terrains: &[Name]) -> u32 {
     terrains
         .iter()
         .fold(0, |mask, terrain| mask | wonder_terrain_bit(terrain))
@@ -5608,7 +5609,7 @@ fn place_strategic_quotas(
     // over, and enough on a large map that the deposits are not all in one
     // empire's borders.
     let quota = (num_major_spawns + 1).max(land.len() / 90);
-    let strategics: Vec<String> = rules
+    let strategics: Vec<Name> = rules
         .resources
         .iter()
         .filter(|(_, spec)| spec.class == "strategic")
@@ -5616,7 +5617,7 @@ fn place_strategic_quotas(
         .collect();
     let land_list: Vec<Pos> = land.iter().cloned().collect();
     for resource in strategics {
-        let spec = &rules.resources[resource.as_str()];
+        let spec = &rules.resources[&resource];
         let placed = wm
             .tiles
             .values()
@@ -5646,15 +5647,15 @@ fn place_strategic_quotas(
                 let by_feature = tile
                     .feature
                     .as_ref()
-                    .is_some_and(|feature| spec.feature.contains(feature));
-                let by_terrain = tile.feature.is_none() && spec.terrain.contains(&tile.terrain);
+                    .is_some_and(|feature| spec.feature.iter().any(|want| *feature == *want));
+                let by_terrain = tile.feature.is_none() && spec.terrain.iter().any(|want| tile.terrain == *want);
                 (by_feature || by_terrain) && spec.hills.is_none_or(|want| want == tile.hills)
             })
             .collect();
         while wanted > 0 && !candidates.is_empty() {
             let pick = rng.below(candidates.len());
             let pos = candidates.swap_remove(pick);
-            wm.tiles.get_mut(&pos).unwrap().resource = Some(resource.clone());
+            wm.tiles.get_mut(&pos).unwrap().resource = Some(Name::new(&resource));
             wanted -= 1;
         }
     }
@@ -5681,7 +5682,7 @@ fn place_artifact_quotas(
     reserved: &BTreeSet<Pos>,
     rng: &mut Rng,
 ) {
-    let artifacts: Vec<String> = rules
+    let artifacts: Vec<Name> = rules
         .resources
         .iter()
         .filter(|(_, spec)| spec.class == "artifact")
@@ -5689,7 +5690,7 @@ fn place_artifact_quotas(
         .collect();
     let all: Vec<Pos> = wm.tiles.keys().copied().collect();
     for resource in artifacts {
-        let spec = &rules.resources[resource.as_str()];
+        let spec = &rules.resources[&resource];
         // A wreck lies in the water and a dig site on land; the resource's own
         // terrain list is what says which, so a future artifact needs no new
         // branch here.
@@ -5737,15 +5738,15 @@ fn place_artifact_quotas(
                 let by_feature = tile
                     .feature
                     .as_ref()
-                    .is_some_and(|feature| spec.feature.contains(feature));
-                let by_terrain = tile.feature.is_none() && spec.terrain.contains(&tile.terrain);
+                    .is_some_and(|feature| spec.feature.iter().any(|want| *feature == *want));
+                let by_terrain = tile.feature.is_none() && spec.terrain.iter().any(|want| tile.terrain == *want);
                 (by_feature || by_terrain) && spec.hills.is_none_or(|want| want == tile.hills)
             })
             .collect();
         while wanted > 0 && !candidates.is_empty() {
             let pick = rng.below(candidates.len());
             let pos = candidates.swap_remove(pick);
-            wm.tiles.get_mut(&pos).unwrap().resource = Some(resource.clone());
+            wm.tiles.get_mut(&pos).unwrap().resource = Some(Name::new(&resource));
             wanted -= 1;
         }
     }
@@ -7727,7 +7728,7 @@ mod river_tests {
         for row in 3..13 {
             for col in 5..19 {
                 let pos = hex::offset_to_axial(col, row);
-                wm.tiles.get_mut(&pos).unwrap().terrain = "plains".to_string();
+                wm.tiles.get_mut(&pos).unwrap().terrain = crate::name!("plains");
                 land.push(pos);
             }
         }
@@ -8003,7 +8004,7 @@ mod river_tests {
         for row in 2..16 {
             for col in 3..29 {
                 let pos = hex::offset_to_axial(col, row);
-                wm.tiles.get_mut(&pos).unwrap().terrain = "plains".to_string();
+                wm.tiles.get_mut(&pos).unwrap().terrain = crate::name!("plains");
                 landmass.insert(pos);
             }
         }
@@ -8723,7 +8724,7 @@ mod river_tests {
             for (wonder, tiles) in seen {
                 assert_eq!(
                     tiles.len(),
-                    rules.features[wonder.as_str()].placement.tiles,
+                    rules.features[&wonder].placement.tiles,
                     "{wonder} footprint on seed {seed}"
                 );
                 let mut reached = BTreeSet::new();
@@ -8888,9 +8889,9 @@ mod river_tests {
                     let mut footprints: BTreeMap<String, Vec<Pos>> = BTreeMap::new();
                     for (position, tile) in world.tiles.iter() {
                         if let Some(feature) = &tile.feature {
-                            if rules.features[feature.as_str()].natural_wonder {
+                            if rules.features[feature].natural_wonder {
                                 footprints
-                                    .entry(feature.clone())
+                                    .entry(feature.clone().to_string())
                                     .or_default()
                                     .push(*position);
                             }

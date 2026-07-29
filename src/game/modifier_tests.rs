@@ -38,7 +38,7 @@ fn add_product_host(game: &mut Game, city: u32) {
         .get_mut(&city)
         .unwrap()
         .buildings
-        .push("stock_exchange".to_string());
+        .push(crate::name!("stock_exchange"));
     assert_eq!(game.product_capacity(&game.cities[&city]), 3);
 }
 
@@ -51,7 +51,7 @@ fn arbitrary_building_yields_and_abilities_flow_through_runtime_attachments() {
         .get_mut(&city)
         .unwrap()
         .buildings
-        .extend(["library".to_string(), "madrasa".to_string()]);
+        .extend([crate::name!("library"), crate::name!("madrasa")]);
     let baseline = game.city_yields(city).science;
 
     assert!(!game.has_ability(0, "public_engineering"));
@@ -76,7 +76,7 @@ fn per_unit_purchase_discount_is_shared_by_quotes_actions_and_execution() {
     game.players[0].gold = discounted;
     let action = Action::Buy {
         city,
-        unit: "warrior".to_string(),
+        unit: crate::name!("warrior"),
         formation: 0,
         currency: "gold".to_string(),
     };
@@ -92,7 +92,7 @@ fn theocracy_faith_purchase_quote_applies_its_discount_once() {
     let base = game.item_cost_for(
         0,
         &Item::Unit {
-            unit: "warrior".to_string(),
+            unit: crate::name!("warrior"),
         },
     );
     assert_eq!(
@@ -149,17 +149,17 @@ fn products_and_corporations_apply_all_economic_effect_families() {
 
     game.cities.get_mut(&city).unwrap().products = vec!["citrus".to_string()];
     let warrior = Item::Unit {
-        unit: "warrior".to_string(),
+        unit: crate::name!("warrior"),
     };
     let military = game.item_prod_mult(0, city, Some(&warrior));
     game.cities.get_mut(&city).unwrap().products = vec!["furs".to_string()];
     let builder = Item::Unit {
-        unit: "builder".to_string(),
+        unit: crate::name!("builder"),
     };
     let civilian = game.item_prod_mult(0, city, Some(&builder));
     game.cities.get_mut(&city).unwrap().products = vec!["gypsum".to_string()];
     let monument = Item::Building {
-        building: "monument".to_string(),
+        building: crate::name!("monument"),
     };
     let building = game.item_prod_mult(0, city, Some(&monument));
     assert!(military >= 1.30);
@@ -174,8 +174,8 @@ fn products_and_corporations_apply_all_economic_effect_families() {
         .unwrap();
     {
         let tile = game.map.tiles.get_mut(&position).unwrap();
-        tile.resource = Some("silk".to_string());
-        tile.improvement = Some("industry".to_string());
+        tile.resource = Some(crate::name!("silk"));
+        tile.improvement = Some(crate::name!("industry"));
         tile.pillaged = false;
     }
     game.cities.get_mut(&city).unwrap().products.clear();
@@ -185,7 +185,7 @@ fn products_and_corporations_apply_all_economic_effect_families() {
             .culture,
         20.0
     );
-    game.map.tiles.get_mut(&position).unwrap().improvement = Some("corporation".to_string());
+    game.map.tiles.get_mut(&position).unwrap().improvement = Some(crate::name!("corporation"));
     assert_eq!(
         game.city_resource_industry_effects(&game.cities[&city])
             .city_yield_pct

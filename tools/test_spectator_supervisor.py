@@ -238,23 +238,81 @@ class SessionSettingsTests(unittest.TestCase):
             "speed": "standard",
             "leader_pool": "civ6",
         }
-        # Board shape, pacing and victory selection follow the live game. Seat
-        # count and map script are redrawn instead of carried, and the board
-        # size is dropped with the seat count so `civvis play` can size the map
-        # for whatever was drawn. `/state` is fog-of-war trimmed, so the majors
-        # it lists are only the ones the viewing player can see -- deriving
-        # `--players` from them ratcheted the exhibition down game after game
-        # and never recovered.
+        # Climate, pacing and victory selection follow the live game. Seat
+        # count, map script and world shape are redrawn instead of carried, and
+        # the board size is dropped with the seat count so `civvis play` can
+        # size the map for whatever was drawn. `/state` is fog-of-war trimmed,
+        # so the majors it lists are only the ones the viewing player can see --
+        # deriving `--players` from them ratcheted the exhibition down game
+        # after game and never recovered.
         carried = supervisor.session_settings(state, defaults)
         self.assertEqual(
             {key: value for key, value in carried.items()
-             if key not in ("players", "map")},
-            {"turns": 250, "shape": "planet", "poles": "randomized",
+             if key not in ("players", "map", "shape")},
+            {"turns": 250, "poles": "randomized",
              "speed": "online", "leader_pool": "expanded",
              "victories": ["science", "culture", "domination", "score"]},
         )
         self.assertIn(carried["players"], supervisor.SIMULATION_PLAYER_COUNTS)
         self.assertIn(carried["map"], supervisor.MAP_TYPES)
+        self.assertIn(carried["shape"], supervisor.MAP_SHAPES)
+
+    def test_world_shape_is_drawn_for_every_world(self):
+        """A restart must not be able to strand the exhibition on one shape.
+
+        Shape used to follow the finished world, seeded from `--shape`, whose
+        default is Flat. That made Flat an absorbing state: the keeper starts a
+        fresh supervisor whenever it finds none running, that supervisor seats
+        its first world from the flags, and every world after it inherited Flat
+        from the world before. Measured off the archived saves: the 240 worlds
+        from 2026-07-27T23:26Z to 2026-07-29T02:07:40Z were every one of them a
+        globe, the keeper restarted the supervisor at 02:05:54Z, and the ~160
+        worlds since have every one of them been flat -- which took the sky,
+        the Moon, Mars and the expedition off the exhibition entirely, because
+        a sky is something only a Planet world has.
+        """
+        flat_world = {
+            "map": {"script": "pangaea", "shape": "flat", "poles": "poles"},
+            "game_speed": "online",
+            "max_turns": 250,
+        }
+        # Seeded from the flag the keeper actually passes: none, so Flat.
+        flat_defaults = {"players": 6, "turns": 250, "map": "pangaea",
+                         "shape": "flat", "poles": "poles", "speed": "online"}
+        drawn = {
+            supervisor.session_settings(flat_world, flat_defaults)["shape"]
+            for _ in range(200)
+        }
+        self.assertEqual(drawn, set(supervisor.MAP_SHAPES))
+        self.assertEqual(
+            set(supervisor.rolled_simulation_settings(flat_defaults)["shape"]
+                for _ in range(200)),
+            set(supervisor.MAP_SHAPES),
+        )
+
+    def test_a_staged_lobby_choice_still_beats_the_draw(self):
+        """An explicit setup-panel handoff is a choice, not an axis to roll."""
+        staged = {
+            "next_game_settings": {
+                "players": 8,
+                "width": 90,
+                "height": 38,
+                "city_states": 12,
+                "turns": 250,
+                "map": "continents",
+                "speed": "online",
+                "leader_pool": "civ6",
+                "victories": ["science"],
+                "shape": "planet",
+                "poles": "poles",
+            },
+            "map": {"script": "pangaea", "shape": "flat", "poles": "poles"},
+        }
+        for _ in range(20):
+            chosen = supervisor.session_settings(staged, {"turns": 250})
+            self.assertEqual(chosen["shape"], "planet")
+            self.assertEqual(chosen["map"], "continents")
+            self.assertEqual(chosen["players"], 8)
 
     def test_fogged_state_does_not_shrink_the_next_game(self):
         """A trimmed observation must not become the next game's seat count."""
@@ -378,11 +436,14 @@ class SessionSettingsTests(unittest.TestCase):
         rolled = supervisor.session_settings({}, defaults)
         self.assertEqual(
             {key: value for key, value in rolled.items()
-             if key not in ("players", "map", "speed")},
+             if key not in ("players", "map", "shape", "speed")},
             {"turns": 500, "leader_pool": "civ6"},
         )
         self.assertIn(rolled["players"], supervisor.SIMULATION_PLAYER_COUNTS)
         self.assertIn(rolled["map"], supervisor.MAP_TYPES)
+        # A world with nothing to inherit from is still a world with a shape,
+        # and it is drawn like the other two axes rather than left to the flag.
+        self.assertIn(rolled["shape"], supervisor.MAP_SHAPES)
         # Standard was asked for and Online is what the exhibition simulates.
         self.assertEqual(rolled["speed"], "online")
 
@@ -856,6 +917,7 @@ class RecoveryTests(unittest.TestCase):
             "stall_timeout": 30.0,
             "checkpoint_interval": 5.0,
             "max_resume_attempts": 2,
+            "live_refresh_grace": 1800.0,
             "no_open": True,
             "adopt_pid": 321,
         }
@@ -1514,6 +1576,7 @@ class RecoveryTests(unittest.TestCase):
             stall_timeout=30.0,
             checkpoint_interval=5.0,
             max_resume_attempts=2,
+            live_refresh_grace=1800.0,
             no_open=True,
             adopt_pid=None,
         )
@@ -1572,6 +1635,7 @@ class RecoveryTests(unittest.TestCase):
             stall_timeout=30.0,
             checkpoint_interval=5.0,
             max_resume_attempts=2,
+            live_refresh_grace=1800.0,
             no_open=True,
             adopt_pid=321,
         )
@@ -1634,6 +1698,7 @@ class RecoveryTests(unittest.TestCase):
             stall_timeout=30.0,
             checkpoint_interval=5.0,
             max_resume_attempts=2,
+            live_refresh_grace=1800.0,
             no_open=True,
             adopt_pid=321,
         )
@@ -1685,6 +1750,7 @@ class RecoveryTests(unittest.TestCase):
             stall_timeout=30.0,
             checkpoint_interval=5.0,
             max_resume_attempts=2,
+            live_refresh_grace=1800.0,
             no_open=True,
             adopt_pid=321,
         )
@@ -1753,6 +1819,7 @@ class RecoveryTests(unittest.TestCase):
             stall_timeout=30.0,
             checkpoint_interval=5.0,
             max_resume_attempts=2,
+            live_refresh_grace=1800.0,
             no_open=True,
             adopt_pid=None,
         )
@@ -1838,6 +1905,7 @@ class RecoveryTests(unittest.TestCase):
             stall_timeout=30.0,
             checkpoint_interval=5.0,
             max_resume_attempts=2,
+            live_refresh_grace=1800.0,
             no_open=True,
             adopt_pid=None,
         )
@@ -1915,6 +1983,7 @@ class RecoveryTests(unittest.TestCase):
             stall_timeout=30.0,
             checkpoint_interval=5.0,
             max_resume_attempts=2,
+            live_refresh_grace=1800.0,
             no_open=True,
             adopt_pid=None,
         )
@@ -1972,6 +2041,104 @@ class RecoveryTests(unittest.TestCase):
         # As above: the cold start and nothing after it. A retirement would
         # have shown up as a second start for the successor world.
         self.assertEqual(events, ["stop", "start", "stop"])
+
+    def _run_until_interrupt(self, grace, active, checkpoint, binary):
+        """Drive `main()` over a world this supervisor started itself.
+
+        Every other `main()` test here adopts a PID, and an adopted world is
+        exactly the case that is *never* waited on — so without this the hold
+        has no coverage of the loop that decides it, and a wiring regression
+        (`world_started_at` never set) would pass the whole suite.
+        """
+        started = []
+        messages = []
+        args = self.supervisor_args(adopt_pid=None, live_refresh_grace=grace)
+        with (
+            patch.object(supervisor, "parse_args", return_value=args),
+            patch.object(supervisor, "RUNTIME_BINARY", binary),
+            patch.object(supervisor, "checkpoint_path", return_value=checkpoint),
+            patch.object(supervisor, "checkpoint_marker", return_value=None),
+            patch.object(supervisor, "resumed_checkpoint", return_value=False),
+            patch.object(supervisor, "process_alive", return_value=True),
+            # Without this the test is not hermetic and does not test what it
+            # says: `adopt_pid=None` makes `main()` look for a game already on
+            # the port, and on this machine that is the LIVE exhibition — it
+            # adopted PID 80610 and took the adopted-world path, which is
+            # exactly the branch that never holds.
+            patch.object(supervisor, "pid_listening_on", return_value=None),
+            patch.object(supervisor, "promoted_runtime_id", return_value="same"),
+            patch.object(supervisor, "source_snapshot", return_value="fresh"),
+            # Stale when the loop opens, so a live refresh is scheduled; ready
+            # from then on, so only the hold can keep it from being taken.
+            patch.object(
+                supervisor, "runtime_matches", side_effect=[False] + [True] * 40
+            ),
+            patch.object(supervisor, "capture_checkpoint", return_value=True),
+            patch.object(
+                supervisor,
+                "read_state",
+                side_effect=[active] * 6 + [KeyboardInterrupt],
+            ),
+            patch.object(
+                supervisor,
+                "start_server",
+                side_effect=lambda *a, **k: started.append((a, k))
+                or SimpleNamespace(pid=654),
+            ),
+            patch.object(supervisor, "wait_for_server", return_value=active),
+            patch.object(supervisor, "stop_server"),
+            patch.object(supervisor, "start_background_prebuild", return_value=None),
+            patch.object(supervisor, "stop_background_prebuild"),
+            patch.object(supervisor, "log", side_effect=messages.append),
+            patch.object(supervisor.time, "sleep"),
+        ):
+            self.assertEqual(supervisor.main(), 0)
+        # The relaunch itself is the tell, not its `resume` argument: whether a
+        # checkpoint path is passed depends on `checkpoint_marker`, which is
+        # mocked here, so asserting on it would only be testing the mock.
+        return started, messages
+
+    def test_a_promoted_build_waits_for_the_boundary_of_a_world_it_started(self):
+        active = {"seed": 9, "turn": 42, "current": 2, "winner": None,
+                  "server_instance": 654}
+        with tempfile.TemporaryDirectory() as directory:
+            binary = Path(directory) / "civvis"
+            binary.touch()
+            started, messages = self._run_until_interrupt(
+                600.0, active, Path(directory) / "save.json", binary
+            )
+        self.assertEqual(
+            len(started), 1, f"a live match must not be replaced; started {started}"
+        )
+        self.assertFalse(
+            any("resuming the active game from checkpoint" in m for m in messages),
+            f"no mid-match swap may happen; got {messages}",
+        )
+        self.assertTrue(
+            any("holding it for the next" in m for m in messages),
+            f"the hold must be reported; got {messages}",
+        )
+
+    def test_a_zero_grace_still_replaces_the_runtime_mid_match(self):
+        # The operator escape hatch, and the behaviour every earlier release
+        # had: with no grace at all a ready build cuts in immediately.
+        active = {"seed": 9, "turn": 42, "current": 2, "winner": None,
+                  "server_instance": 654}
+        with tempfile.TemporaryDirectory() as directory:
+            binary = Path(directory) / "civvis"
+            binary.touch()
+            started, messages = self._run_until_interrupt(
+                0.0, active, Path(directory) / "save.json", binary
+            )
+        self.assertTrue(
+            any("resuming the active game from checkpoint" in m for m in messages),
+            f"a zero grace must swap mid-match; got {messages}",
+        )
+        self.assertEqual(
+            len(started), 2, f"the swap relaunches the server; started {started}"
+        )
+        self.assertFalse(any("holding it for the next" in m for m in messages))
+
 
 
 class LeagueRosterTests(unittest.TestCase):
@@ -2060,6 +2227,52 @@ class LeagueRosterTests(unittest.TestCase):
         self.assertIn("--league", command)
         self.assertEqual(command[command.index("--league") + 1], str(source / "league"))
         self.assertIn("--league-record", command)
+
+
+class LiveRefreshTests(unittest.TestCase):
+    """A promoted build is worth a whole game of waiting, but not an unbounded
+    one. Replacing the runtime under a live match is the only thing this
+    supervisor does that a viewer sees as the game stopping."""
+
+    def test_a_ready_build_waits_for_the_boundary_instead_of_cutting_in(self):
+        self.assertTrue(supervisor.refresh_waits_for_boundary(True, 0.0, 600.0))
+        self.assertTrue(supervisor.refresh_waits_for_boundary(True, 90.0, 600.0))
+
+    def test_a_world_that_never_ends_still_gets_the_new_runtime(self):
+        self.assertFalse(supervisor.refresh_waits_for_boundary(True, 600.0, 600.0))
+        self.assertFalse(supervisor.refresh_waits_for_boundary(True, 3600.0, 600.0))
+
+    def test_an_inherited_world_is_never_waited_on(self):
+        # An adopted PID's game may have been running for an hour or may be one
+        # turn old; with no boundary in sight the stale runtime goes now.
+        self.assertFalse(supervisor.refresh_waits_for_boundary(True, None, 600.0))
+
+    def test_nothing_is_held_back_when_there_is_no_build_to_hold(self):
+        self.assertFalse(supervisor.refresh_waits_for_boundary(False, 0.0, 600.0))
+
+    def test_a_zero_or_negative_grace_restores_the_immediate_swap(self):
+        self.assertFalse(supervisor.refresh_waits_for_boundary(True, 0.0, 0.0))
+        self.assertFalse(supervisor.refresh_waits_for_boundary(True, 0.0, -5.0))
+
+    def _args(self, argv: list[str]) -> object:
+        with patch.object(sys, "argv", ["spectator_supervisor.py", *argv]):
+            return supervisor.parse_args()
+
+    def test_the_grace_window_outlasts_a_real_game_not_a_healthy_one(self):
+        # Measured on this box: a 250-turn Online game is ~1 minute unloaded and
+        # has taken over 10 minutes with the agent fleet building. A window
+        # sized for the fast case fires on ordinary games — which is exactly
+        # what a 600s default did in production on 2026-07-29, swapping the
+        # runtime under a live match at a world age of ~600s.
+        self.assertGreaterEqual(
+            self._args(["--no-open"]).live_refresh_grace,
+            1800.0,
+            "the grace has to outlast a game played on a loaded box",
+        )
+        self.assertEqual(
+            self._args(["--no-open", "--live-refresh-grace", "0"]).live_refresh_grace,
+            0.0,
+        )
 
 
 if __name__ == "__main__":

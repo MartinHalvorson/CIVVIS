@@ -2,6 +2,7 @@
 //! 3/civic, 5/city, 2/district (4 unique), 1/building, 1/Citizen,
 //! 5/Great Person, 10 founding a religion + 2 per foreign follower city,
 //! 2/technology, 15/wonder, plus Era Score.
+use crate::name::Name;
 use super::{Action, Game};
 
 fn one_city_game() -> (Game, u32) {
@@ -30,16 +31,16 @@ fn score_uses_the_gathering_storm_category_values() {
     game.players[0].era_score = 0;
     let c = game.cities.get_mut(&city).unwrap();
     c.pop = 4;
-    c.buildings = vec!["palace".to_string(), "monument".to_string()];
+    c.buildings = vec![crate::name!("palace"), crate::name!("monument")];
     c.districts.clear();
     c.wonders.clear();
     // 5 city + 4 Citizens + 2 buildings = 11
     let base = game.score(0);
     assert_eq!(base, 11);
 
-    game.players[0].techs.insert("mining".to_string());
+    game.players[0].techs.insert(crate::name!("mining"));
     assert_eq!(game.score(0) - base, 2, "2 points per technology");
-    game.players[0].civics.insert("code_of_laws".to_string());
+    game.players[0].civics.insert(crate::name!("code_of_laws"));
     assert_eq!(game.score(0) - base, 5, "3 points per civic");
     game.players[0].great_people.push("hypatia".to_string());
     assert_eq!(game.score(0) - base, 10, "5 points per Great Person");
@@ -56,7 +57,7 @@ fn wonders_score_fifteen_and_unique_districts_score_double() {
         .get_mut(&city)
         .unwrap()
         .wonders
-        .insert("pyramids".to_string(), pos);
+        .insert(crate::name!("pyramids"), pos);
     assert_eq!(game.score(0) - before, 15, "15 points per wonder");
 
     let ordinary = game

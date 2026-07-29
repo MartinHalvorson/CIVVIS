@@ -66,8 +66,10 @@ const RING_RADIUS: i32 = 6;
 
 /// Full distance rows are valuable when one tile is compared with many
 /// others, but one row per tile turns a frequency-76 globe into an all-pairs
-/// table of more than six gigabytes. Keep only the genuinely hot sources.
-const DISTANCE_ROW_CACHE_MAX: usize = 512;
+/// table of more than six gigabytes. The byte budget keeps large worlds
+/// bounded while allowing a stock frequency-21 globe's complete 39 MB table:
+/// a fixed row-count cap used to stop that globe at 512 rows and force every
+/// later game back through point-to-point A* after the shared cache filled.
 const DISTANCE_ROW_CACHE_BYTES: usize = 64 * 1024 * 1024;
 const DISTANCE_ROW_ADMISSION_HITS: u16 = 8;
 
@@ -386,6 +388,27 @@ impl Sphere {
         out
     }
 
+    /// Every tile exactly `radius` steps away.
+    ///
+    /// Within the cached ring radius this is a filter over a table the globe
+    /// already holds; past it there is nothing better than taking the disk.
+    pub fn ring(&self, center: Pos, radius: i32) -> Vec<Pos> {
+        let Some(from) = self.index_of(center) else {
+            return Vec::new();
+        };
+        if radius <= 0 {
+            return vec![center];
+        }
+        if radius <= RING_RADIUS {
+            return self.rings[from as usize]
+                .iter()
+                .filter(|(_, distance)| *distance as i32 == radius)
+                .map(|(pos, _)| *pos)
+                .collect();
+        }
+        self.disk(center, radius)
+    }
+
     fn cached_distance(&self, from: u32, to: u32) -> Option<u16> {
         self.distance_rows[from as usize]
             .get()
@@ -444,7 +467,7 @@ impl Sphere {
 
     fn distance_row_capacity(&self) -> usize {
         let row_bytes = self.len().saturating_mul(std::mem::size_of::<u16>()).max(1);
-        (DISTANCE_ROW_CACHE_BYTES / row_bytes).clamp(1, DISTANCE_ROW_CACHE_MAX)
+        (DISTANCE_ROW_CACHE_BYTES / row_bytes).clamp(1, self.len())
     }
 
     /// Exact distances from one tile to the whole globe. Rows use two bytes:
@@ -1010,7 +1033,7 @@ mod tests {
     }
 
     #[test]
-    fn long_distance_rows_are_bounded_and_reserved_for_reused_endpoints() {
+    fn long_distance_rows_respect_the_byte_budget_and_reused_endpoints() {
         let globe = sphere(32);
         let positions: Vec<Pos> = globe.positions().collect();
         // Each source makes a long query against a target no other source
@@ -1045,11 +1068,14 @@ mod tests {
             rows,
             globe.distance_row_capacity()
         );
-        assert_eq!(
-            rows,
-            globe.distance_row_capacity(),
-            "the workload did not exercise the cache boundary"
-        );
+        assert_eq!(rows, 600.min(globe.distance_row_capacity()));
+    }
+
+    #[test]
+    fn stock_planet_can_cache_every_exact_distance_row() {
+        let globe = sphere(21);
+        assert_eq!(globe.len(), 4_412);
+        assert_eq!(globe.distance_row_capacity(), globe.len());
     }
 
     #[test]

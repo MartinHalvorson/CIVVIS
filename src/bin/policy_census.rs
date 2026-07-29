@@ -29,6 +29,7 @@
 //! agent does, never whether doing it wins -- that costs a paired `ai_eval`.
 use std::collections::{BTreeMap, BTreeSet};
 
+use civvis::name::Name;
 use civvis::ai::{Ai, AdvancedAi};
 use civvis::game::{Action, Game};
 use civvis::parallel;
@@ -91,7 +92,7 @@ fn main() {
                 }
             }
             for pid in &majors {
-                let held: BTreeSet<String> = game.players[*pid].policies.iter().cloned().collect();
+                let held: BTreeSet<Name> = game.players[*pid].policies.iter().cloned().collect();
                 let offered = game.available_policies(*pid);
                 let slots = game.gov_slots(*pid);
                 let total = slots.military + slots.economic + slots.diplomatic + slots.wildcard;
@@ -103,19 +104,21 @@ fn main() {
                     seat.idle_with_offer += empty.min(offered.len() as i64);
                 }
                 for card in &offered {
-                    seat.offered.insert(card.clone());
+                    seat.offered.insert(card.to_string());
                 }
                 for card in &held {
-                    seat.offered.insert(card.clone());
+                    seat.offered.insert(card.to_string());
                 }
-                if held != seat.last {
+                let held_text: std::collections::BTreeSet<String> =
+                    held.iter().map(|card| card.to_string()).collect();
+                if held_text != seat.last {
                     if !seat.last.is_empty() || !held.is_empty() {
                         seat.changes += 1;
                     }
-                    seat.last = held.clone();
+                    seat.last = held.iter().map(|card| card.to_string()).collect();
                 }
                 for card in held {
-                    seat.slotted.insert(card);
+                    seat.slotted.insert(card.to_string());
                 }
             }
         }

@@ -12,6 +12,7 @@
 //! it to value scouting as information gain is the next step.
 use std::collections::BTreeMap;
 
+use crate::name::Name;
 use crate::game::Game;
 use crate::obs::visibility;
 use crate::Pos;
@@ -64,7 +65,7 @@ impl BeliefState {
                     pos: unit.pos,
                     turn: g.turn,
                     owner: unit.owner,
-                    kind: unit.kind.clone(),
+                    kind: unit.kind.to_string(),
                     strength: g.unit_strength(unit, false),
                 },
             );
