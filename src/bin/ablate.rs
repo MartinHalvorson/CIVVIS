@@ -584,6 +584,8 @@ fn run_best_lane(args: &[String]) {
     let mut best_only = 0u32;
     let mut adaptive_only = 0u32;
     let mut per_lane = vec![0u32; lanes.len()];
+    let mut adaptive_outcomes = Vec::with_capacity(cells.len());
+    let mut best_outcomes = Vec::with_capacity(cells.len());
     for (index, cell) in cells.iter().enumerate() {
         let _ = cell;
         let base = index * (lanes.len() + 1);
@@ -597,6 +599,8 @@ fn run_best_lane(args: &[String]) {
         }
         adaptive_wins += u32::from(adaptive);
         best_wins += u32::from(best);
+        adaptive_outcomes.push(adaptive);
+        best_outcomes.push(best);
         match (best, adaptive) {
             (true, false) => best_only += 1,
             (false, true) => adaptive_only += 1,
@@ -606,20 +610,44 @@ fn run_best_lane(args: &[String]) {
     let n = cells.len() as f64;
     let discordant = best_only + adaptive_only;
     let p = exact_two_sided(best_only, discordant);
+    let (map_best, map_adaptive, map_neutral) =
+        map_cluster_directions(&best_outcomes, &adaptive_outcomes);
+    let map_discordant = map_best + map_adaptive;
+    let map_p = exact_two_sided(map_best, map_discordant);
     println!();
-    println!("best-lane oracle   {} cells, {players} players, {turns} {speed} turns", cells.len());
-    println!("  adaptive won        {adaptive_wins}/{} = {:.1}%   (parity {:.1}%)",
-        cells.len(), 100.0 * adaptive_wins as f64 / n, 100.0 / players as f64);
-    println!("  SOME lane won       {best_wins}/{} = {:.1}%",
-        cells.len(), 100.0 * best_wins as f64 / n);
-    println!("  matched pairs       a lane won where adaptive lost: {best_only}; \
-adaptive won where no lane did: {adaptive_only}");
+    println!(
+        "best-lane oracle   {} cells, {players} players, {turns} {speed} turns",
+        cells.len()
+    );
+    println!(
+        "  adaptive won        {adaptive_wins}/{} = {:.1}%   (parity {:.1}%)",
+        cells.len(),
+        100.0 * adaptive_wins as f64 / n,
+        100.0 / players as f64
+    );
+    println!(
+        "  SOME lane won       {best_wins}/{} = {:.1}%",
+        cells.len(),
+        100.0 * best_wins as f64 / n
+    );
+    println!(
+        "  matched pairs       a lane won where adaptive lost: {best_only}; \
+adaptive won where no lane did: {adaptive_only}"
+    );
     println!("  McNemar exact       p={p:.4} over {discordant} discordant cells");
+    println!(
+        "  map-cluster sign    best-lane won more seats on {map_best} maps, adaptive on \
+{map_adaptive}, tied on {map_neutral}; p={map_p:.4} over {map_discordant} discordant maps"
+    );
     for (lane, wins) in lanes.iter().zip(&per_lane) {
-        println!("    committed {:<11} {wins}/{} = {:.1}%",
-            format!("{lane:?}"), cells.len(), 100.0 * *wins as f64 / n);
+        println!(
+            "    committed {:<11} {wins}/{} = {:.1}%",
+            format!("{lane:?}"),
+            cells.len(),
+            100.0 * *wins as f64 / n
+        );
     }
-    let verdict = if discordant < 8 {
+    let cell_verdict = if discordant < 8 {
         "TOO FEW DISCORDANT CELLS to say anything — raise --pairs"
     } else if p >= 0.05 {
         "NO MEASURABLE HEADROOM IN VICTORY ROUTING — knowing the right lane \
@@ -631,7 +659,15 @@ this is the ceiling on it"
         "COMMITMENT IS HARMFUL — adapting beats every fixed lane, so routing \
 is not a choice worth improving"
     };
-    println!("  verdict             {verdict}");
+    println!("  cell verdict        {cell_verdict}");
+    let map_verdict = if map_p >= 0.05 {
+        "CLUSTERED INCONCLUSIVE — independently generated maps do not resolve routing headroom"
+    } else if map_best > map_adaptive {
+        "CLUSTERED ROUTING HEADROOM — the oracle edge survives map-level inference"
+    } else {
+        "CLUSTERED COMMITMENT HARM — adaptive play survives map-level inference"
+    };
+    println!("  map verdict         {map_verdict}");
 }
 
 fn main() {

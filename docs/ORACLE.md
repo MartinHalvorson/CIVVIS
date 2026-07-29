@@ -247,6 +247,12 @@ as sensitivity rationale rather than confirmed map-level inference. No
 playable policy was promoted from it, and a focal Expansion transfer claim now
 requires the disjoint clustered confirmation below.
 
+The same reporting correction applies to best-lane mode, which uses the same
+two-seat-per-map layout. Its published 25 favorable / 1 adverse cell result is
+still directionally robust under every possible within-map pairing, but future
+runs print the exact map-level sign test rather than asking readers to recover
+that bound from aggregate cells.
+
 ### Gated confirmation and decision
 
 Passing every screen term earns one disjoint confirmation with only the focal
