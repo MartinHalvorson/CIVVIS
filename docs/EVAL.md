@@ -5219,6 +5219,11 @@ ranking gradient. At each decision it selects the highest-scored non-expert
 sibling, retaining enumeration order on a score tie. Its raw margin is sibling
 score minus expert score.
 
+The regenerated frozen artifact is 1,896 bytes with SHA-256
+`2c93f4456b72d1acf548f1994c9ce49569fe158c7b8eb18f4c903b606ce1c463`.
+This pins the actual coefficients, not only their training recipe, before any
+calibration game is generated.
+
 Calibration uses one standardized scalar. The mean and population standard
 deviation of the frozen margins are learned on calibration games only, with a
 1e-6 standard-deviation floor. The target is the same Jeffreys posterior mean
