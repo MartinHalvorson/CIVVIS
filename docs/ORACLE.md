@@ -109,3 +109,39 @@ randomized distribution. This implementation also uses the normal Basic
 controller for city-states and barbarians while every major uses the named
 controller. The older Standard oracle used an `AdvancedAi` fleet for every
 player, so the two point patterns cannot isolate a speed interaction.
+
+### Online/strategic-deep result
+
+The architecture calibration also completed all 12 fixed cells. The committed,
+embedded `best.json` champion loaded; the optional `valuenet.json` did not, so
+this is the published netless `strategic_deep` configuration rather than a
+fallback to `advanced`.
+
+| grant | control won | granted won | helped / hurt / unchanged | exact p | fires | preregistered decision |
+|---|---:|---:|---:|---:|---:|---|
+| `treasury` | 1/12 | 9/12 | 8 / 0 / 4 | 0.0078 | 1,847 (153.9/game) | calibration passes |
+
+This lands exactly on the minimum eight discordant cells, all in the positive
+direction, and clears the fixed significance threshold. Oracle sensitivity
+therefore transfers to strongest-controller self-play on this two-seat Online
+profile. It licenses a future structural oracle run under `strategic_deep`; it
+does not make free resources a policy, promote an entrant, or alter the failed
+`ground` escalation decision above.
+
+The 24 strategic games took about 3 hours 2 minutes wall-clock at four jobs on
+this host, including a period of fleet oversubscription; the control phase alone
+consumed about 412 CPU-minutes. That cost is too high for a default screen. The
+tool now reports each completed control and treatment cell so a long fixed batch
+is observable without inspecting worker threads, but deployment-scale
+`strategic_deep` oracle work should remain narrowly preregistered.
+
+### Decision
+
+Both positive calibrations transfer to the deployment geometry and Online
+speed, including the strongest measured controller. Perfect territorial
+acquisition produced a favorable but underpowered 5/0 screen and stopped at its
+fixed gate, so no territorial policy experiment is justified by this batch.
+The useful advance is methodological: future oracle claims can name their
+controller and speed, share one matched control across treatments, refuse a
+silent agent fallback, and expose progress during expensive batches. No
+gameplay behavior changes here.
