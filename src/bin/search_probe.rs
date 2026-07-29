@@ -1175,6 +1175,7 @@ fn audit_selection(
         seed: seed0,
         threads: jobs,
         dir: "evolved".to_string(),
+        speed: civvis::game::default_speed(),
     };
     let opponents = vec![Weights::default()];
 

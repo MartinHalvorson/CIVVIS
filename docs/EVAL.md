@@ -2728,3 +2728,1908 @@ prediction, the seed and the size before the run, in a commit that predates it.
 - The **harness-wide** caveat from the previous entry is untouched: 19 of 20
   recorded runs still used one density, and this is the first result checked
   across two. It came out well; that is one data point, not a general licence.
+
+
+## 2026-07-28 — the agent changes its mind fourteen times a game, and spends a third of it on lanes that never win
+
+`src/bin/plan_churn.rs`. The oracle ablation on PR #366 found that capability
+is not what limits this agent and *routing* is: committing to Religion from
+turn one won 29 of 50 matched cells where the shipped adaptive agent won 14,
+McNemar exact p=0.0000. That is a thirty-point gap against a **fixed** policy,
+so hindsight does not explain it away. A fixed policy can beat an adaptive one
+for two reasons — the adaptive agent picks the wrong lane, or it picks the
+right one and does not stay in it. This separates them.
+
+`AdvancedAi::plan_stale` re-assesses every 5 turns and `assess()` recomputes
+the strategy from scratch; **nothing in it reads the previous plan**. So a
+long game contains up to a hundred independent re-decisions with hysteresis at
+none of them. `plan_churn` records the grand strategy every turn, per major
+seat, and collapses it into runs.
+
+On the oracle's own profile — `--players 4 --width 60 --height 38
+--city-states 6 --turns 500 --seed 420000`, 24 maps, 96 seats, mean game 329
+turns:
+
+| | |
+|---|---|
+| switches per seat | **14.2** |
+| switches per 100 turns | 4.30 |
+| mean run length | **21.7 turns** |
+| longest run | 90.2 turns |
+| runs under 10 turns | **37.7%** |
+| distinct strategies visited | 4.74 of 7 |
+| winning seats holding their final strategy | **32.8% of the game** |
+
+**The allocation is the finding.** Share of all turns by strategy:
+
+| strategy | share | won in the best-lane oracle |
+|---|---|---|
+| expansion | 23.5% | not a victory lane |
+| recovery | 20.5% | not a victory lane |
+| religion | 18.9% | **29/50** |
+| conquest | 17.9% | 0/50 |
+| science | 13.0% | 0/50 |
+| culture | 4.0% | 0/50 |
+| diplomacy | 2.2% | **20/50** |
+
+**34.9% of the agent's turns go to the three lanes that won nothing, and 2.2%
+to the second-best lane it has.** Religion and Diplomacy together — the only
+two that ever convert at this player count and turn budget — take 21.1%.
+
+Read with the ablation the chain is complete and mechanical: routing is the
+constraint, the routing is myopic because it is re-derived from the board
+every five turns with no memory of what the empire has already bought, and it
+re-derives *toward* lanes that cannot finish because `victory_focus` ranks
+lanes by **progress** and `lane_reachable` tests only Science. Progress is a
+correlate, and this document's standing result is that no correlate of a
+finished game is win probability.
+
+**Map size changes the reading, which is itself part of the result.** The same
+probe at 4p 24×16 (12 maps, 160-turn games) reports 4.5 switches per seat and
+a 29.1-turn mean run, and its own branch calls that "intermediate". Longer
+games contain more re-decisions, so the churn compounds with exactly the game
+length the strength evaluations use. Do not quote the small-map numbers.
+
+**What this does not establish.** That hysteresis would help. Committing
+harder to a *badly chosen* lane is worse than churning, and 37.7% of runs
+being under 10 turns is consistent both with thrash and with an agent
+correctly reacting to shocks — 20.5% of turns in Recovery says shocks are
+real. The next measurement is whether a switch is predicted by anything that
+should predict it; the intervention worth testing is a viability filter on the
+lane candidate set, not stickiness for its own sake.
+
+
+## 2026-07-28 — the routing headroom is a property of the fallback genome, not of the agent
+
+`src/bin/commit_curve.rs`, pre-registered at
+`/Users/martin/civvis-commit-curve-preregistration.md` with a calibration gate
+fixed before the run: *if committing at turn 0 is not at least 10 points above
+the adaptive control, the oracle result does not reproduce on this harness and
+nothing may be built on it.* **The gate fired.**
+
+One focal seat is committed to Religion via `AdvancedAi::retarget` at turn T,
+every other seat plays stock, and the same map is replayed for each T plus an
+adaptive control. 40 maps, 4p 60×38, 6 city-states, 500 turns, seed 420000 —
+the oracle's own profile and seed. The focal seat rotates with the map index.
+
+**On the embedded gen-14 champion, the genome every deployed agent plays:**
+
+| condition | wins | share | fired | mean end turn |
+|---|---|---|---|---|
+| commit at turn 0 | 6/40 | **15.0%** | 40/40 | 308 |
+| commit at turn 60 | 12/40 | 30.0% | 40/40 | 303 |
+| commit at turn 120 | 13/40 | 32.5% | 40/40 | 288 |
+| commit at turn 180 | 12/40 | 30.0% | 35/40 | 304 |
+| adaptive (control) | 11/40 | 27.5% | n/a | 294 |
+
+McNemar against the control: turn 0 is **2 helped / 7 hurt, p=0.1797**. The
+oracle reports the same nominal condition at 58% against a 28% control. The
+control reproduces (27.5% against 28.0%); the *treatment* does not.
+
+**Then the same run with only the genome changed:**
+
+| genome | commit at turn 0 | adaptive control | paired | McNemar |
+|---|---|---|---|---|
+| `Weights::default()` — the fallback | **37.5%** | 15.0% | 12 helped / 3 hurt | **p=0.0352** |
+| evolved champion — what ships | 15.0% | 27.5% | 2 helped / 7 hurt | p=0.1797 |
+
+`ablate::play_lane` builds its field with `AdvancedAi::fleet(&game)`, which is
+`AdvancedAi::new()`, which is `BasicAi::new()`, which is **`Weights::default()`**.
+That is the value `load_champion("evolved").unwrap_or_default()` returns when
+no artifact is present — the fallback, not the agent.
+
+**So the largest claimed gap in this repository — "the agent picks the wrong
+thing to play for, by 30 points" — is a measurement of the fallback.** On the
+fallback the direction reproduces here and is significant. On the shipped
+genome it is gone, and if anything inverted. Whatever the gen-14 GA found, part
+of it was routing that a fixed religious commitment can no longer beat.
+
+**What this does and does not establish.**
+
+- It **does** establish that the oracle's routing headroom does not reproduce on
+  the shipped genome. Reaching +30 points needs something like 15 helped against
+  a handful hurt; this run measured 2 against 7.
+- It **does not** establish that early commitment *hurts*. p=0.1797 is not a
+  result, and 40 cells resolves only large effects.
+- The two controls (15.0% and 27.5%) are **not** significantly different from
+  each other or from the 25% parity this design implies — every seat plays the
+  same genome, so the focal seat's expectation is 1-in-4 by construction. Do not
+  read the control difference as the champion being twice as good; the clean
+  comparison is the *paired* one within each genome.
+- Harness differences remain and are not fully reconciled: `ablate` samples
+  seats `[0, players-1]` over 25 maps and drives its loop from `game.current`,
+  where this samples a rotating seat over 40 maps and iterates seats directly.
+  The default-genome numbers here (37.5/15.0) do not match theirs (58/28)
+  exactly. **The within-harness contrast — everything held constant except the
+  genome — is the load-bearing comparison, not the cross-harness one.**
+
+**A mechanism worth checking separately.** `assess()` sends a Religion-targeted
+seat that has no religion yet straight to `GrandStrategy::Religion`
+(`advanced.rs:1807`), bypassing the "the assigned lane can still afford to
+expand first" arm at `:1809` that every *other* assigned target reaches. So
+commitment at turn 0 plausibly suppresses the opening expansion entirely, which
+would explain why turn 0 is the worst cell on the champion and why turns
+60/120/180 — which expand first and commit after — all land near the control.
+This has a consequence beyond the probe: `StrategicAi` projects its branches by
+calling `retarget`, so a religion branch inherits the same expansion bypass and
+the macro search may be systematically mis-projecting the lane that converts
+best. `commit_curve` now reports mean cities per condition to settle it.
+
+**The standing rule this is the third instance of.** `docs/SUPERHUMAN.md` §4:
+*measure the artifact before the algorithm — ask what the process actually
+loads, at the path it actually runs from.* The first instance was the champion
+never being loaded at all; the second was `evolve::sprt_confirm` testing parity
+at the wrong null. This is the third, and it is the most expensive, because the
+conclusion it produced was about to redirect the whole AI programme.
+
+
+## 2026-07-28 — a committed lane is not a routed agent, it is a crippled one
+
+Follow-up to the entry above, same probe, same 40 maps at 4p 60×38 / 6
+city-states / 500 turns / seed 420000, shipped champion genome.
+`commit_curve` now reports the focal seat's final city count:
+
+| condition | share | **mean cities** |
+|---|---|---|
+| commit at turn 0 | 15.0% | **1.68** |
+| commit at turn 60 | 30.0% | 2.48 |
+| adaptive (control) | 27.5% | **4.10** |
+
+**`retarget(Religion)` does not produce an agent that plays religion well. It
+produces an agent that never expands** — 1.68 cities against 4.10, a 59%
+smaller empire.
+
+This changes what the best-lane oracle measures. "Committed Religion wins 58%"
+is not "what the agent could get by routing correctly"; it is "what a
+1.7-city religious rush gets". The same applies to every other committed lane
+in that table, and therefore to the "best lane per cell = 76%" maximum built
+on top of them. **The oracle does not bound routing headroom.** It bounds the
+value of one particular commitment implementation.
+
+### The arm responsible, and how much of it it explains
+
+`assess()` at `advanced.rs:1807`: an assigned-Religion seat with no religion
+yet goes straight to `GrandStrategy::Religion`, skipping the "the assigned lane
+can still afford to expand first" test at `:1809` that **every other assigned
+target reaches**. `assigned_religion_may_expand` (off by default) makes that arm
+ask the same question the others ask. Same 40 maps:
+
+| condition | cities off → on | wins off → on |
+|---|---|---|
+| commit at turn 0 | 1.68 → **2.12** | 15.0% → 20.0% (4 helped / 7 hurt, p=0.5488) |
+| commit at turn 60 | 2.48 → 2.75 | 30.0% → 27.5% (7 helped / 7 hurt, p=1.0000) |
+| adaptive (control) | 4.10 | 27.5% |
+
+**The fix is real and small: it recovers 0.44 of a 2.42-city deficit — about
+18% — and is a null on wins at this power.** So the bypass is *a* cause and not
+the main one. A targeted seat still finishes 1.98 cities short of an adaptive
+one while being *allowed* to expand, and `desired_cities` is at least 3, so it
+is not reaching its own target. Whatever else suppresses it is downstream of
+the strategy label — production priorities, city dispositions, or settler
+assignment under `GrandStrategy::Religion` — and is not in this arm.
+
+Recorded, flag shipped off, because the cheap half of the diagnosis is done and
+the expensive half is now well posed: **find what stops a targeted seat
+expanding once the cascade lets it.**
+
+### Why this matters beyond targeted play
+
+`StrategicAi` projects every macro-search branch by calling `retarget`. So each
+religion branch is simulated by a seat carrying whatever this defect is worth,
+and religion is the lane this engine converts best. The macro search is the one
+component in this repository that has ever won Elo, and the largest gain it has
+had — `continue_from_plan`, +37 Elo — came from exactly this class of bug: the
+counterfactual was simulating the wrong thing. **Measuring the projected city
+count of a religion branch against the same branch played out is the obvious
+next instrument**, and it is a fidelity question, not a routing one.
+
+
+## 2026-07-28 — the search projects a religion branch that stops expanding, and it changes one review in four
+
+`src/bin/lane_projection.rs`. `StrategicAi::branch_agent` builds every branch by
+calling `retarget`, so a Religion branch inherits the `assess()` bypass measured
+in the entry above: an assigned-Religion seat with no religion yet skips the
+expansion test every other assigned lane reaches. The branch is therefore
+projected by an empire that stops growing, while the adaptive branch it is
+ranked against keeps growing.
+
+The screen flips one flag on **one agent at one position** and reads the branch
+values the review actually compares — paired by construction: same game, same
+seat, same plan in force, same budget, one boolean apart.
+
+**24 positions at turn 40, 4p 60×38, 6 city-states, shipped genome, seed 2100000:**
+
+| | |
+|---|---|
+| religion branch value moved | **20 of 24** |
+| direction | **10 up / 10 down** |
+| mean change | −0.0037 against a branch spread of 0.060 |
+| **argmax lane changed** | **6 of 24 — one review in four** |
+| toward Religion / away | **3 / 3** |
+
+**Not inert, and not the predicted bias.** The defect is real and moves the
+search's decision on a quarter of reviews, but it does not systematically favour
+or disfavour Religion — the direction is a coin flip. My prediction was that it
+would bias the ranking *against* the lane this engine converts best. It does
+not.
+
+**Sampling turn matters and nearly hid this.** The same screen at turn 60 moved
+only 2 of 8 positions and changed no decision. By turn 60 many seats already
+have a religion, so the arm no longer applies. A screen that samples after the
+window it is testing reads as null for the wrong reason.
+
+**The signature is the one `continue_from_plan` had.** That treatment changed
+the decision on 14 of 57 positions — one review in four — with the dispersion
+distribution unchanged and no directional story for which lane benefited
+(p=0.42), and it measured **+37 Elo**. This is the same shape. That justifies
+spending one evaluation; it is **not** evidence of a gain, and the resemblance
+is exactly the post-hoc pattern-matching this document has been burned by
+before.
+
+### The design error the screen caught
+
+The flag was first written to apply to the **branches only**, on the theory that
+this is a pure fidelity repair. That is backwards. Fidelity means the projection
+matches what the agent *would actually do* — and the acting agent still stops
+expanding when it commits to Religion. A branch that keeps expanding projects a
+game that will never be played, which is *less* faithful, not more. The two must
+move together, which is what `StrategicAi::set_religion_may_expand` now
+enforces and what the `strategic_religion_expand` entrant uses.
+
+
+## 2026-07-28 — where the other 82% of the expansion deficit probably is (HYPOTHESIS, not measured)
+
+⚠ **This section is code-derived and has not been measured.** It is recorded as
+a hypothesis with a named test so the next iteration does not re-derive it, and
+it must not be cited as a result.
+
+Repairing the `assess()` bypass recovered 0.44 of the 2.42-city gap between a
+Religion-targeted seat (1.68 cities) and an adaptive one (4.10). The other ~2.0
+cities are elsewhere. Reading the production path, the cap is *not* the
+constraint and there are two plausible mechanisms, both keyed on the strategy
+label rather than on any target:
+
+1. **Settlers are out-competed, not forbidden.** `production_value`
+   (`advanced.rs:7044`) gates a settler on
+   `city_count + counts.settlers < plan.desired_cities`, and `desired_cities`
+   is `(3 + turn/cadence).min(capacity).min(6)` — **strategy-independent, and
+   at least 3**. So a seat stalling at 2.12 cities is not hitting its cap; the
+   settler's flat `920.0 + site*4.0` is simply losing to something else. Under
+   `GrandStrategy::Religion` a prophet project carries a **2.8×** affinity
+   (`:2212`) while a religion is unfounded, and the Holy Site chain is the
+   preferred district (`:3822`).
+
+2. **The empire grows slower, so it qualifies later.** `yield_value` (`:2143`)
+   weights food at **1.4 under Religion against 2.0 under Expansion**, and the
+   settler gate also requires `city.pop >= 2`. Slower growth delays every
+   city's eligibility to build a settler at all, which compounds.
+
+**The test.** Add a per-condition settler-production and pop-trajectory count to
+`commit_curve` and compare a Religion-targeted seat against the adaptive
+control. Mechanism 1 predicts settlers *queued and displaced* — the gate passes
+and the item loses on value. Mechanism 2 predicts the gate itself failing on
+`city.pop >= 2`. They call for different repairs, and the counts separate them
+directly.
+
+**Why it may not be worth repairing at all.** A lane's whole point is to spend
+differently, so some expansion loss is the *intent*, not a defect. What made
+the `:1807` bypass a defect was that it skipped a test every other lane takes —
+an inconsistency, not a preference. Nothing above is inconsistent in that way.
+The reason to measure it is that the macro search projects branches through
+this same path, so whatever it is worth, the search is already paying it.
+
+
+## 2026-07-28 — ★ the expansion "bypass" is load-bearing: repairing it costs 53 Elo
+
+Pre-registered at `/Users/martin/civvis-religion-expand-preregistration.md`,
+prediction recorded as **NULL**, decision rule fixed in advance: anything short
+of a gate PASS ships the flag off with the result recorded and no seed re-rolls.
+
+```
+ai_eval strategic_religion_expand strategic --players 4 --pairs 120 \
+  --turns 500 --seed 2600000 --jobs 8
+```
+
+**120 maps, 240 games, average 162.9 turns:**
+
+```
+game-win share     102/240 (42.5%)  against  138/240 (57.5%)
+paired-map score   42.5%   (95% Wilson CI 34.0%..51.4%)   Elo-equivalent -53
+paired outcomes    6 sweeps / 90 neutral / 24 sweeps against
+paired direction   exact two-sided sign p = 0.0014   SIGNIFICANT for the control
+anytime-valid      control e = 2.169e2, crossed at map 63; treatment never crossed
+promotion gate     INCONCLUSIVE (it has not cleared parity — it is below it)
+terminal score     49.9%, direction 53/7/60, p = 0.5727 — a dead heat
+```
+
+**The prediction was wrong in the safe direction: I said null, and it is
+significantly negative.**
+
+### The repair worked mechanically, and that is why it lost
+
+| diagnostic | treatment | control |
+|---|---|---|
+| **cities** | **2.59** | 2.50 |
+| pop / tech / military | 16.3 / 14.5 / 175.6 | 15.5 / 13.9 / 162.3 |
+| **faith** | **436.4** | **578.8** |
+| religions founded | 0.45 | 0.61 |
+| missionaries | 0.36 | 0.49 |
+| **religious victories** | **79** | **117** |
+| domination victories | 14 | 8 |
+| turns planning religious | **29.3%** | **36.1%** |
+| turns planning domination | **13.8%** | 10.1% |
+| dominant-plan religious seats | 123, winning 22.8% | 164, winning **27.4%** |
+
+The treatment expanded more, grew more, teched more and fielded more military —
+**every empire aggregate moved in its favour, and it lost 53 Elo.** Terminal
+score was a dead heat while wins moved significantly, which is this document's
+oldest result restated: no functional of a finished empire is win probability.
+
+### The mechanism, and why it inverts the intuition
+
+Expansion costs value *inside the rollout horizon* — a settler is production
+spent now for yields that arrive after the branch has already been scored. So
+letting a religion branch expand **lowers that branch's projected value**
+(`lane_projection` measured mean −0.0037), the search commits to religion less
+(36.1% → 29.3% of turns, 164 → 123 dominant seats), and the freed reviews route
+to domination (10.1% → 13.8%), which converts far worse.
+
+> **The bypass is not a defect from the search's point of view. It is an
+> accidental correctness.** Crippling a religion branch's expansion makes
+> religion *look* better in projection, and religion is the lane this engine
+> actually converts — so a bug that biases the projection toward the best lane
+> was paying 53 Elo of rent.
+
+**What this retires.** The `assigned_religion_may_expand` /
+`branch_religion_may_expand` family, in both scopes. Both flags stay **off**,
+so the repository ships zero behaviour change from this line. Do not re-open it
+by proposing to apply the repair "only to the actor" or "only to the branches" —
+the actor-only version was already measured null end-to-end (4 helped / 7 hurt,
+p=0.5488), and the branch-only version is the incoherent one (it ranks a game
+the agent will not play).
+
+**What it establishes that is worth keeping.** A change that moves the branch
+values by a *mean of 0.0037*, and flips the lane on one review in four, is worth
+**53 Elo**. Victory routing in this engine is extremely sensitive — far more
+than the null results on `refuse_unreachable_lanes` and lane rotation suggested.
+That is a reason to keep working on routing, and a warning that the sign of any
+routing change is not predictable from its mechanism. Both directions of this
+axis have now cost real Elo: `focused_deepening` and `adaptive_horizon` by
+pruning the candidate set, this by re-valuing one branch.
+
+**A caution on the horizon interaction.** The finding depends on expansion being
+under-valued at the rollout horizon, so it is a statement about the search's
+*window*, not only about routing. An agent whose rollouts ran long enough for a
+settler to pay back might well prefer the repaired branch. `strategic_deep`
+(4× budget) is the natural place to check that, and it is a different
+experiment, not a re-run of this one.
+
+
+## 2026-07-28 — ⚠ CORRECTION: the horizon explanation for the −53 Elo result is refuted
+
+The entry above attributed the loss to the rollout window: *"expansion costs
+value inside the rollout horizon — a settler is production spent now for yields
+that arrive after the branch has already been scored"*, and it closed by
+proposing a `strategic_deep` re-run on the grounds that *"an agent whose
+rollouts ran long enough for a settler to pay back might well prefer the
+repaired branch."*
+
+**That is wrong.** `lane_projection --horizon`, same 24 positions at turn 40,
+seed 2100000, shipped genome — the only thing varying is the rollout window:
+
+| horizon | mean change in the religion branch's value | lane changed |
+|---|---|---|
+| 40 | −0.0037 | 6 of 24 |
+| 80 | −0.0053 | 4 of 24 |
+| **160** | **−0.0428** | 3 of 24 |
+
+The penalty **grows by an order of magnitude** as the window lengthens. If the
+settler-payback story were right the sign would move the other way. It does not,
+so the horizon is not what is doing this, and **the proposed `strategic_deep`
+re-run is retired before it was run** — it would have cost about four hours to
+confirm a mechanism a two-minute screen refutes.
+
+### The reading that survives
+
+A longer projection does not reveal the settler paying back; it reveals the lane
+*failing*. Religion is gated on a **finite global race** — `max_religions()`
+prophet slots, claimed first-come — and `religious_opening_viable` closes at
+turn 120. Production diverted to settlers delays the Holy Site and the Prophet,
+and a lost race is not recoverable later at any price. The longer the rollout
+runs, the more of that failure it actually simulates.
+
+So the `:1807` bypass is **not an accidental correctness and not a bug.** It
+encodes a real constraint of the lane, and its own comment says so in as many
+words: *"A Prophet is a finite global race, not an economic goal that can wait
+until the generic city target is complete."* The code was right and the reading
+that called it an inconsistency — mine — was wrong. What made it *look* like a
+defect was that it is the only assigned lane skipping that test; the reason it
+is the only one is that it is the only lane with a finite, first-come gate.
+
+**Standing lesson, and this is the second time this loop.** Both of my mechanism
+stories for this result were wrong, and the first was published here before it
+was screened. The measurement (−53 Elo) was never in doubt; the *explanation*
+was, twice. Attaching a plausible mechanism to a real number is not free — it
+directs the next experiment, and here it was about to direct four hours at the
+wrong one. **Screen the mechanism as hard as the result.**
+
+### A caveat on this instrument, found while using it
+
+`lane_projection`'s closing READING branches on the *count* of lane changes by
+direction, and at 24 positions those counts are 3-versus-1 and 1-versus-2 — far
+too noisy to carry a verdict. At horizon 80 it printed "the search was
+under-selecting Religion" on a 3/1 split while the mean change was **negative**.
+Read the mean change, which is stable across all three windows and monotone; do
+not read the branch text at this sample size. The instrument overstates its
+confidence and should be fixed or its verdict line dropped.
+
+
+## 2026-07-28 — ★ expansion is not site-limited or gate-limited: the settler loses the production argument, 100% of the time
+
+`src/bin/expansion_funnel.rs`. PR #366 measured the agent wanting six cities and
+settling 4.86, and closed with an honest unknown: *"expansion is limited by
+execution rather than by ambition. Whatever binds sits in settler production,
+site availability, or the expansion window."* Those are different defects with
+different repairs. This separates them.
+
+`production_value`'s settler arm (`advanced.rs:7044`) refuses a settler unless
+five conditions hold, and then the item still has to beat everything else in the
+queue. The probe samples every major seat every turn and attributes each turn
+the empire was short of its planned target to the **first** condition that
+failed, in the order the code tests them. Conditions 1–4 are reproduced from the
+agent's own formulas; condition 5 uses `AdvancedAi::any_settle_site`, added for
+this and used by nothing in the decision path.
+
+**12 maps, 4p 60×38, 6 city-states, 500 turns, seed 2400000, 48 seats, shipped
+genome. Cities at end 4.02 against a planned target of 5.25:**
+
+| bucket | share | seat-turns |
+|---|---|---|
+| already at target | 34.4% | 4530 |
+| settler already walking (one-at-a-time rule) | 17.3% | 2280 |
+| expansion window closed | 14.3% | 1881 |
+| no city at pop 2 | 8.2% | 1078 |
+| **no reachable site** | **0.0%** | **0** |
+| **lost the production argument** | **25.8%** | **3391** |
+
+**Zero.** Across 48 seats and 12 full games there is not one turn where the
+empire wanted a city, was permitted one, and had nowhere to put it. **The map is
+never the constraint.** Every one of those 3391 turns had a site and built
+something else.
+
+### What that indicts
+
+A settler is worth `920.0 + site_value * 4.0` — and **920 is a hardcoded
+constant.** It is not a gene, so no run of `evolve` has ever tuned it, and it is
+not a doctrine lever, so the macro search has never perturbed it. One
+un-searched literal decides a quarter of all expansion decisions in the
+subsystem the oracle ablation identified as the only one with headroom.
+
+Four independent lines now point at expansion valuation:
+
+1. this funnel — 25.8% of seat-turns, site available, settler out-competed;
+2. the agent misses **its own** target (4.02 against 5.25), so this is not a
+   disagreement about how many cities to want;
+3. `gene_leverage` measured **scrambling the expansion block as a *help*** at
+   1.8 SE — random draws beating the shipped values, which points at values
+   that are wrong rather than values that do not matter;
+4. the oracle ablation put the leverage in the economy, and city count is its
+   largest single multiplier.
+
+### What it does not establish
+
+That raising the settler's price wins. Two previous expansion results went the
+other way — `settler_min_pop = 5` produced a 3.0 SE score-share gain that
+converted to **exactly zero** win improvement, and raising the `.min(6)` ceiling
+was inert because the agent never reaches its target. This funnel explains the
+second of those (the target is not the binding gate) and is orthogonal to the
+first (that moved *when* a settler is allowed, not what it is worth).
+
+The magnitude is also unconstrained: the probe says the settler loses, not by
+how much. Nothing here names 1.6× or 2× or any other number, and picking one by
+trying several against the same maps is exactly the selection bias that cost
+this repository a recorded coordinate-descent result. One pre-registered
+magnitude, one run.
+
+
+## 2026-07-28 — ⚠⚠ CORRECTION: the settler does not lose the argument, it is never asked
+
+The entry above concluded that expansion is limited by *what a settler is
+worth*, on the strength of a 25.8% residual bucket labelled "lost the production
+argument". **That label was wrong, and the conclusion drawn from it was wrong.**
+
+The treatment built on it — `settler_price`, a multiplier on the settler's
+`920.0 + site*4.0` — was run as an upper bound at `settler_price = 100.0`, a
+settler that outbids everything by two orders of magnitude:
+
+```
+ai_eval advanced_settler_first advanced --players 4 --pairs 120
+  --turns 500 --seed 2800000
+paired-map score 48.8%, Elo -9, sign p=0.4531, gate INCONCLUSIVE
+```
+
+**That null is not a result, because the treatment never fired.** The
+fires-check — the same census re-run with the treatment applied, which is what
+should have been done *before* the eval:
+
+| bucket | price 1.0 | price 100.0 |
+|---|---|---|
+| lost the production argument | 28.4% | **28.8%** |
+| cities at end | 2.21 | **2.27** |
+| settlers started | 2.46 | **2.52** |
+
+A settler worth 100× produced 0.06 more cities. The multiplier does not reach
+the decision.
+
+### Why, and what the residual actually is
+
+`advanced_production` (`advanced.rs:6923`) opens with
+
+```rust
+if !g.cities[&cid].queue.is_empty() { continue; }
+```
+
+**A city that is already building something is skipped entirely.**
+`production_value` is consulted only when a queue runs dry, so the settler is
+not out-scored — it is never scored. Splitting the residual on whether *any*
+city was free to choose:
+
+| bucket | share | seat-turns |
+|---|---|---|
+| **every city mid-build** | **25.8%** | 1826 |
+| lost on value, with a free city | **2.6%** | 186 |
+
+So the genuine valuation loss is **2.6%**, not 25.8%, and the settler-price axis
+is closed on an upper bound that was inert — which is to say, not closed at all,
+merely irrelevant at the margin it was tested.
+
+### The finding that replaces it
+
+**This agent never reconsiders what a city is building.** Across 48 seats, on
+25.8% of all seat-turns the empire was short of its own planned city target,
+permitted a settler, had a reachable site, and every city was locked into an
+existing build. The plan above it re-assesses every 5 turns
+(`plan_stale`); the production queue underneath it re-assesses **never**.
+
+That is the opposite defect to the one recorded earlier in this document for the
+grand strategy, and the two sit one layer apart: the lane churns 14 times a game
+while the build queue does not change its mind once.
+
+**The treatment this licenses** is production preemption — let a city abandon a
+part-built item when a candidate's value greatly exceeds it. Civ 6 banks
+progress per item, so switching is close to free, and a strong human switches to
+a settler routinely. **Its fires-check is already written**: the
+`every city mid-build` bucket must collapse, and `expansion_funnel` reports it.
+
+### The process failure, recorded plainly
+
+I attributed a residual bucket to a mechanism without checking that the
+mechanism could move it, wrote that attribution into this document as a finding,
+and spent a 240-game evaluation on it. The repository's own standing rule —
+*"a treatment needs a fires-check before it needs an evaluation"*, earned at the
+cost of a 240-game expansion-ceiling run — is exactly the rule I broke, and it
+cost another 240 games. **A probe's bucket labels are hypotheses about the code,
+not observations.** The fix that caught it took four minutes: re-run the census
+with the treatment on and check the bucket moves.
+
+
+## 2026-07-28 — production preemption fires, changes the games, and does not buy a single city
+
+The entry above named production preemption as the treatment the expansion
+funnel licensed, and wrote down its fires-check: *"the `every city mid-build`
+bucket must collapse."* Both halves of that turned out to be wrong, and the
+fires-check caught it before an evaluation this time.
+
+`preempt_margin` (1.0 = off, the shipped behaviour) lets a city abandon a
+part-built item when a candidate scores more than `margin ×` the current item's
+present value. Switching is close to free here: `City::production_progress`
+banks a paused build by item key, which is the Civ 6 rule.
+
+Same census, 48 seats, 4p 24×16, 500 turns, seed 2400000:
+
+| | margin 1.0 (off) | margin 1.5 |
+|---|---|---|
+| **cities at end** | **2.21** | **2.21** |
+| settlers started | 2.46 | 2.42 |
+| every city mid-build | 1826 seat-turns | 1856 |
+| no reachable site | 91 | 143 |
+
+**The treatment fires** — the games visibly diverge, and the site bucket nearly
+doubles because the empires end up somewhere different. **It buys no
+expansion at all.**
+
+### Two errors in the fires-check itself, both mine
+
+1. **The named bucket could not have collapsed.** "Every city mid-build" counts
+   turns where every queue is *non-empty*. Preemption changes what is *in* a
+   queue, never whether one exists. The criterion was unfalsifiable in the
+   helpful direction — it could only ever stay flat or rise. The bucket that
+   actually answers the question is the outcome: cities at end, and settlers
+   started. Both are flat.
+2. **The diagnosis it came from was too quick.** A city being mid-build is not
+   what stops the settler, because when that queue does empty the settler is
+   scored then — and the genuine free-city valuation loss is only 2.6%. The
+   large blocking bucket is **"no city at pop 2" at 23.8%**: the cities are too
+   small to make settlers, which is a *growth* constraint and untouched by
+   anything in the production ranking. #496 already went at the food ceiling
+   that gates the first settler.
+
+**So the expansion axis does not close on preemption, and preemption does not
+open on expansion.** They are separate questions and this measurement separates
+them for four minutes of compute.
+
+### What survives about preemption
+
+The structural observation is still true and still unusual: **the plan layer
+re-assesses every 5 turns and the production queue re-assesses never.** That is
+a real asymmetry, preemption is the mechanism that removes it, it demonstrably
+changes play, and switching costs almost nothing in this engine. What it is
+*not* is a fix for expansion, and it must not be evaluated under that banner —
+the motivation an evaluation is run under is what its result gets recorded
+against, and a treatment that wins for reasons unrelated to its stated mechanism
+has produced two retractions in this document already.
+
+Left in the tree at `preempt_margin = 1.0`, which is exactly the shipped
+behaviour, with the fires-check recorded and no evaluation spent.
+
+
+## 2026-07-28 — routing the opportunistic war behind the Prophet race: mechanism fires, wins do not move
+
+Pre-registered at `/Users/martin/civvis-prophet-first-preregistration.md`.
+`advanced_prophet_first` tests `religious_opening_viable` **before** the arm that
+fires Conquest on a bare power ratio, instead of after. `at_war` keeps its
+priority, so only the *opportunity* to start a war is deferred, never a war
+already running.
+
+```
+ai_eval advanced_prophet_first advanced --players 4 --pairs 120
+  --turns 500 --seed 3100000
+
+paired-map score   50.8%  (95% Wilson CI 42.0%..59.6%)   Elo-equivalent +6
+paired direction   9 for / 104 neutral / 7 against    sign p=0.8036
+promotion gate     INCONCLUSIVE
+terminal score     49.4%, direction 29/49/42, p=0.1539
+```
+
+**The mechanism fired, cleanly and in the direction specified:**
+
+| diagnostic | treatment | control |
+|---|---|---|
+| faith | **246.5** | 209.5 |
+| religions founded | **0.53** | 0.47 |
+| religious victories | **108** | 102 |
+| domination victories | **5** | 9 |
+| military | 188.3 | 190.9 |
+| gold | 428.1 | **557.2** |
+
+So the reorder does what it says — the empire enters the prophet race more
+often, founds more religions, and converts more of them, while starting fewer
+wars. **None of it reaches the win rate**, and the evaluator's own note is the
+right summary: wins favour the treatment while terminal score favours the
+control, which separates victory routing from development rather than
+contradicting itself.
+
+**Recorded as a null and the flag ships off**, on the `advanced_lane_reachable`
+precedent and on the pre-registered rule. No seed re-roll.
+
+### What this does and does not license
+
+The point estimate is +6 Elo with a 95% interval of −56..+68. **At 120 maps this
+run cannot see anything smaller than about ±60 Elo**, so it excludes a large
+gain and says nothing at all about a small one. It is not evidence that the
+reorder is worthless; it is evidence that it is not large.
+
+**What it does settle** is a question the `strategic_religion_expand` result
+raised. That run measured moving commitment *away* from religion at −53 Elo, and
+the natural inference — that moving it *toward* religion should be worth
+something comparable — is now tested and **does not hold at that magnitude.**
+The relationship is not symmetric: the shipped agent is at or near the point
+where more religion stops paying, even though moving away from it is expensive.
+
+That asymmetry is worth more than the null. It means the −53 Elo was **not**
+"religion good, conquest bad" — it was the search being moved off a local
+optimum it is already sitting on, in a direction that happens to be steeply
+downhill. Any future routing treatment should be read that way: the question is
+not which lane is best, it is which direction off the current point is less bad.
+
+
+## 2026-07-28 — ★★★ the league roster has no entrant that plays the champion genome
+
+An artifact audit, not a mechanism. `docs/SUPERHUMAN.md` §4: *"measure the
+artifact before the algorithm — ask what the process actually loads, at the path
+it actually runs from."* Both of this repository's shipped gains came from that,
+and this is a third instance of the same defect, in a place the fix for the
+first one did not reach.
+
+### The chain
+
+- `AdvancedAi::new()` → `BasicAi::new()` → **`w: Weights::default()`**. The
+  hierarchical agent constructed with no arguments plays the *fallback* genome.
+- `league::make_send_ai` resolves `StrategyKind::Builtin { ai }` by name, and
+  loads the champion for exactly two: **`"advanced_evolved" | "evolved"`**.
+  Everything else, including `"advanced"`, falls to `_ => AdvancedAi::new()`.
+- The shipped roster `data/league/league.json` contains **three** builtin kinds:
+  `advanced` (rating 1702.7, 331 games), `advanced_v1` (1754.6), `basic`
+  (1490.2). **`advanced_evolved` is not among them.**
+- `Session::ai_fleet` (`server.rs`) seats the roster's best-rated strategy per
+  civ when it has one, and otherwise every major seat gets the entrant *named*
+  `"advanced"`.
+
+**So no seat in the exhibition, and no entrant in the league, can play the
+gen-14 champion that `#471` embedded in the binary.** The genome is loadable —
+`ai_eval` prints `advanced_evolved: loaded best.json` — but nothing in the
+roster asks for it.
+
+### What that is worth, measured
+
+```
+ai_eval advanced_evolved advanced --players 4 --pairs 300 --turns 500
+  --seed 3700000
+
+game-win share     350/600 (58.3%)  against  250/600 (41.7%)
+paired-map score   58.3%  (95% Wilson CI 52.7%..63.8%)   Elo-equivalent +58
+paired direction   80 for / 190 neutral / 30 against   sign p = 0.0000
+anytime-valid      e = 7.834e4, crossed at map 141
+terminal score     54.4%, 222 / 0 / 78, p = 0.0000
+promotion gate     PASS
+```
+
+Confirmed first at 120 maps on a disjoint seed (3400000): 54.6%, Elo +32,
+22 for / 11 against, terminal-score direction 85/35 at p=0.0000. Two disjoint
+seeds, same direction, the larger one clearing the unmodified gate.
+
+This also independently reproduces the genome's recorded worth — `#471` measured
+57.0% and +49 Elo through `evolve`'s gate on 1300 maps — **in the deployed
+`advanced` agent**, which is the thing the roster actually seats.
+
+### The fix, and what it deliberately does not do
+
+Added `advanced_evolved` to `data/league/league.json` as a **new entrant**, which
+is the only change that does not damage something:
+
+- Redefining `Builtin:advanced` to load the champion was rejected. It would
+  silently reinterpret an entrant with **331 games of rating history**, and
+  every published number naming `advanced` with it. This document exists partly
+  because that class of silent redefinition is expensive.
+- Seeded at `advanced`'s own rating (1702.7) with a **new entrant's RD of 350**,
+  *not* at 1702.7 + 58. A head-to-head against one opponent is not a Glicko
+  rating; the wide RD is how the league is told it does not yet know, and it
+  will converge in a handful of rounds.
+
+⚠ **This does not immediately make the exhibition stronger, and should not be
+described as if it does.** `seat_by_civ_seeded` picks from the best-rated
+available strategies, and a fresh 1702.7 entrant will not be in that set until
+the league has rated it. What the change does is make the strongest known agent
+*reachable* by the rating machinery at all, which it currently is not.
+
+⚠ A second caution, unmeasured: when the exhibition *does* seat from the roster
+it picks league-bred `Advanced(genome)` entries rated up to 1823 — and the
+best-rated of those, `g20-21` at 1790.8, measured **−98 Elo** when transferred
+into `strategic_deep` (`docs/LEAGUE_GENOME_CHALLENGER.md`). Whether the top of
+this roster is genuinely stronger than the champion is an open question this run
+does not answer, and it is the more valuable one.
+
+
+## 2026-07-28 — ★★★ the roster's top-rated genome is 108 Elo weaker than the champion it outranks by 121
+
+The entry above added an entrant that can play the champion and left the more
+valuable question open: *when the exhibition seats from the roster it takes the
+best-rated strategy — is the top of that roster actually strong, or only
+well-rated?* This answers it.
+
+`advanced_league_top` builds `AdvancedAi::with_weights(w)` from the
+highest-rated **active** `Advanced { weights }` entry in the *shipped* roster,
+so it is reproducible from the tree. That is **`g56-50`, rating 1823.3**
+(rd 50.3, 21 games) — the strategy `Session::ai_fleet` would prefer.
+
+```
+ai_eval advanced_league_top advanced_evolved --players 4 --pairs 300
+  --turns 500 --seed 4100000
+
+game-win share     210/600 (35.0%)  against  390/600 (65.0%)
+paired-map score   35.0%  (95% Wilson CI 29.8%..40.6%)   Elo-equivalent -108
+paired direction   18 for / 174 neutral / 108 against    sign p = 0.0000
+anytime-valid      advanced_evolved e = 1.233e15, crossed at map 32
+terminal score     48.0%, 118 / 182, p = 0.0003
+promotion gate     RETAIN advanced_evolved
+```
+
+**The roster ranks these two backwards by about 230 Elo.** g56-50 is rated 121
+points *above* `advanced` (1823.3 against 1702.7); the champion, which this
+document just measured at +58 over `advanced`, beats g56-50 by 108.
+
+This is a stronger form of an already-recorded result.
+`docs/LEAGUE_GENOME_CHALLENGER.md` found the second-ranked genome, `g20-21`
+(1790.8, 216 games), losing 98 Elo when transferred into `strategic_deep` — but
+that involved a transfer into a different search, which leaves room for the
+transfer to be the problem. **This has no transfer.** Two `AdvancedAi`s, one
+genome apart, is precisely the comparison the roster's numbers claim to rank,
+and they get it backwards.
+
+### Why, and what it does not mean
+
+Both halves of the pipeline that produced these ratings select on proxies.
+`evolve` breeds on `50·players·score_share + 12·players·combat_share` — a
+continuous statistic with a 24% weight on combat, which this engine converts
+almost never — and the league then rates the survivors under a Glicko-2 pool
+whose confounded era is on record in `docs/RATING.md`. A genome bred on a proxy
+and ranked by a rating fitted over proxy-bred peers is not measured against
+winning at any point in that chain.
+
+**It does not mean Glicko-2 is broken now.** `#282` re-measured the corrected
+pool at +0.4743 nats/game and 42.2% accuracy on 6502 games; the rating machinery
+works. What is stale is **this snapshot**, whose entries were bred and rated
+before those fixes, and which no run has re-rated since.
+
+**Two caveats that are part of the result.** g56-50 carries only 21 games at
+rd 50.3, so its rating is unresolved as well as wrong — but it is the entry the
+seating rule prefers, and the far better-established g20-21 (216 games, rd 31.0)
+independently measured −98. And `seat_by_civ_seeded` actually ranks on
+per-leader/civ `leader_elo`, not the global rating this entrant reads, so the
+seated strategy for a given civ may differ; the global top is representative,
+not identical.
+
+### What follows
+
+The entrant added in the previous entry is seeded at `advanced`'s 1702.7 with a
+new entrant's rd of 350, and that seed is now **known to be too low** — two
+gate-quality runs place the champion above both `advanced` and the roster's top.
+It is deliberately left there. Importing a head-to-head margin into a Glicko
+pool as a starting rating is not a rating, and rd 350 is the mechanism that
+exists for exactly this: the league will move it faster than any number chosen
+by hand, and it will do so on games rather than on assertion.
+
+The real repair is to **re-rate the shipped snapshot**, which is a league run and
+not a data edit, and is the owner's call. What this run supplies is the reason
+to spend it: the exhibition currently prefers, by rating, an agent measured 108
+Elo weaker than one the binary already carries.
+
+
+## 2026-07-28 — the exhibition and the league build their agents from different factories, and one of them downgrades silently
+
+Continuing the artifact audit. There are **two** factories turning a roster
+entry into a playing agent, and they do not agree:
+
+| caller | factory | `Builtin { ai }` resolution |
+|---|---|---|
+| the **league** (`league.rs:1554`) | `make_ai` | delegates to `elo::builtin_ai` — knows every name in `BUILTIN_AIS` |
+| the **exhibition** (`server.rs`) | `make_send_ai` | its own match: `basic`, `advanced_v1`, `random`, `advanced_evolved`/`evolved`, then **`_ => AdvancedAi::new()`** |
+
+`StrategyKind::Builtin`'s own doc comment says the field is *"One of
+`elo::BUILTIN_AIS`"*, and that list contains **`strategic`, `strategic_deep`,
+`policy`, `neural`**. None of them is handled by `make_send_ai`.
+
+**So a roster entry naming a search agent would be rated by the league as that
+agent and seated by the exhibition as a default-genome `AdvancedAi`** — the
+ratings and the games would describe different players, with nothing reporting
+the substitution. This is the same silent-fallback shape as
+`load_champion(…).unwrap_or_default()`, which cost this repository its largest
+single measured gain before anyone noticed.
+
+⚠ **It is latent, not live.** The shipped roster contains only `advanced`,
+`advanced_v1` and `basic`, all of which the two factories resolve identically,
+and the `advanced_evolved` entry added earlier today is handled by both. Nothing
+is currently mis-seated. The defect is that the roster is *documented* as
+accepting names the exhibition cannot honour, and the failure mode is silent.
+
+The minimal repair is for `make_send_ai` to stop swallowing unknown names —
+either delegate to one shared factory or panic on a name it does not implement.
+`src/league.rs` is claimed by **#273**, so this is written up rather than
+applied, and raised there.
+
+### `Send` is not the reason
+
+The obvious excuse for the duplication is that `make_send_ai` needs
+`Box<dyn Ai + Send>` and the search agents might not be `Send`. **They are.**
+A probe arm constructing `StrategicAi::with_weights(load_champion(…))` inside
+`make_send_ai` compiles clean under `cargo check --lib`. Whatever the second
+factory exists for, the trait bound is not it.
+
+### Cost is a real reason, and it does not exclude everything
+
+Measured on this machine, 8 games at 4p 24×16, 300-turn cap, single job:
+
+| agent | 8 games | relative | implied per game-turn, 4 seats |
+|---|---|---|---|
+| `advanced` | 8.1 s | 1.0× | ~6 ms |
+| `advanced_evolved` | 8.5 s | 1.05× | ~6 ms |
+| **`strategic`** | **118.6 s** | **14.6×** | **~83 ms** |
+| `strategic_deep` | 358.2 s | 44.2× | ~250 ms |
+
+The live exhibition budgets about a quarter-second per turn. `strategic_deep` at
+~250 ms would consume all of it and is fairly excluded. **`strategic` at ~83 ms
+is not** — it fits inside the existing budget with room, and it carries both the
+champion genome and `continue_from_plan`, the +37 Elo fidelity fix.
+
+So "the exhibition runs the scripted agent because search is too slow" is true
+of the deep configuration and **not** of the promoted one. What that upgrade is
+worth is a separate measurement and is running.
+
+⚠ The 14.6× and 44.2× are wall-clock on 24×16 four-player games. The exhibition
+runs 74×46 at six players, where rollout cost scales with map and seat count, so
+these ratios are a lower bound on what it would cost there. Do not treat the
+83 ms as a budget for the live profile without re-measuring on it.
+
+
+## 2026-07-28 — ★★★ the promotion gate has never measured the game that ships
+
+`ai_eval` had **no `--speed` flag**. Every result in this document — including
+`continue_from_plan` at +37, `strategic_deep` at +45, the gen-14 genome at +49,
+and the +58 measured earlier today — was produced at the **default** game speed.
+
+The exhibition and the live league both run **Online** (`data/speeds.json`:
+`turns 250`, `cost_pct 50`), which `docs/EXHIBITION`/#513 records as the one kind
+of game it simulates. Nothing in this repository has ever checked that a gain
+measured on one transfers to the other, because until now it could not.
+
+`--speed` added to `ai_eval`, defaulting to the previous behaviour. The first
+thing it was pointed at is the gain measured this morning:
+
+| | Standard (what the gate measures) | **Online (what ships)** |
+|---|---|---|
+| paired-map score | 58.3% | **51.5%** |
+| Wilson CI | 52.7%..63.8% | 45.9%..57.1% |
+| Elo-equivalent | **+58** (+19..+98) | **+10** (−29..+50) |
+| map directions | 80 for / 30 against | 60 for / 51 against |
+| sign p | **0.0000** | **0.4478** |
+| gate | **PASS** | **INCONCLUSIVE** |
+
+300 maps each, same size, same seat count, same agents; only the speed differs.
+Games average 152 turns at Standard and 112 at Online.
+
+**The difference is significant, not an eyeball.** Conditioning on the maps that
+broke — the only ones carrying information — the treatment's share of decisive
+maps falls from 80/110 = 0.727 to 60/111 = 0.541, a difference of 0.187 at
+**z = 2.94, two-sided p = 0.0033**.
+
+> **A promoted gain is a gain on the game it was measured on.** The genome is
+> not shown to be worthless at Online speed — the point estimate is still
+> positive and the interval still contains +50 — but it does not clear the gate
+> there, and the gate is the whole basis on which it was promoted.
+
+**What this does not say.** It does not retract the +58: that number is correct
+for Standard speed. It does not show the genome is useless where it runs. And it
+is one axis on one pair of agents — whether `continue_from_plan`,
+`strategic_deep` and the rest survive the same check is now answerable and
+unanswered. **That is the obvious next work, and it is cheap.**
+
+## 2026-07-28 — the live league rates the legacy agent above the current one, and speed does not explain it
+
+The live pool the spectator writes to
+(`/Users/martin/civvis-spectator-src/league/league.json`, round 2271, 2211
+matches) rates its three builtin entries:
+
+| entrant | rating | games |
+|---|---|---|
+| `advanced_v1` (the **frozen legacy control**) | **1712.8** | 1257 |
+| `basic` | 1694.1 | 442 |
+| `advanced` (the current hierarchical AI) | **1669.0** | 1692 |
+
+`advanced` ranks **11th of 12** active strategies, below both the agent it
+replaced and the simple scripted one.
+
+Head-to-head, **at the league's own speed and turn budget**:
+
+```
+ai_eval advanced advanced_v1 --players 4 --pairs 300 --turns 250
+  --speed online --seed 5500000
+
+paired-map score   74.2%  (95% Wilson CI 68.9%..78.8%)   Elo-equivalent +183
+paired direction   148 for / 149 neutral / 3 against    sign p = 0.0000
+anytime-valid      e = 1.801e37, crossed at map 22
+```
+
+**+183 Elo, against a rating that places it 44 Elo lower — an inversion of about
+227 Elo on entries with 1257 and 1692 games.** At Standard speed the same pair
+measures +114, so the gap is *larger* at Online, not smaller.
+
+**The speed hypothesis is refuted**, which was the obvious explanation and the
+one I expected to confirm. Whatever produces this rating, it is not that the
+league plays a faster game.
+
+What is left, none of it measured here: the league mixes seat counts (2, 4, 6, 8
+and 12 seats appear in `matches.csv`) and maps where this evaluation is 4p
+24×16; ratings are per leader/civ (`leader_elo`) and civ assignment may not be
+symmetric across entrants; and `docs/RATING.md` records an earlier era in which
+this pool carried negative information. **A 227-Elo inversion on two
+well-sampled entries is worth more attention than any AI change currently
+proposed**, because `Session::ai_fleet` seats by this number.
+
+⚠ Both of these are measurements of the artifacts, not of an idea. Neither
+required a new mechanism, and both were found by asking what the deployed
+process actually runs — which is the third and fourth time that has paid in this
+document.
+
+
+## 2026-07-28 — what the exhibition's default seat is giving up, at Standard speed (Online check pending)
+
+`Session::ai_fleet` seats `AdvancedAi::new()` when it is not seating from the
+roster — the scripted hierarchical agent on the *fallback* genome, with no macro
+search. `strategic` is the promoted search agent on the champion genome.
+
+```
+ai_eval strategic advanced --players 4 --pairs 300 --turns 500 --seed 4500000
+
+game-win share     397/600 (66.2%)  against  203/600 (33.8%)
+paired-map score   66.2%  (95% Wilson CI 60.6%..71.3%)   Elo-equivalent +117
+paired direction   113 for / 171 neutral / 16 against    sign p = 0.0000
+anytime-valid      e = 2.308e17, crossed at map 46
+terminal score     52.4%, 185 / 2 / 113, p = 0.0000
+promotion gate     PASS
+```
+
+Read with the cost table measured earlier — `strategic` at 14.6× `advanced`, or
+about 83 ms per game-turn across four seats against the exhibition's ~250 ms
+budget — this looks like a large, affordable upgrade to the seat the exhibition
+actually plays.
+
+⚠ **Do not act on this number yet, and that caution is the point of the entry
+above.** It was produced at Standard speed. The gain measured this morning at
++58 with a gate PASS fell to +10 and INCONCLUSIVE at Online, significantly
+(p=0.0033). Whether +117 survives the same check is running at
+`--speed online --turns 250`, seed 5900000, and **this entry will be wrong to
+cite until that lands.**
+
+The general form of the rule this loop arrived at:
+
+> **Every number in this document that predates `--speed` describes Standard
+> speed. The exhibition and the live league run Online. Re-check before
+> deploying any of them.**
+
+
+## 2026-07-28 — ★★★★ two promoted gains, both measured on the wrong game; and why the league was right
+
+The `--speed` check has now been run on the two largest gains this document
+carries, and both collapse on the speed the deployment plays.
+
+| gain | Standard (the gate) | **Online (ships)** | difference |
+|---|---|---|---|
+| gen-14 genome (`advanced_evolved` v `advanced`) | 58.3%, **+58**, gate PASS | 51.5%, **+10**, INCONCLUSIVE | z=2.94, **p=0.0033** |
+| macro search (`strategic` v `advanced`) | 66.2%, **+117**, gate PASS | 54.0%, **+28**, INCONCLUSIVE | z=4.38, **p=0.00001** |
+
+300 maps per cell, same size, same seat count, same agents. The z-tests
+condition on decisive maps, which are the only ones carrying information.
+
+**Neither gain is refuted.** Both point estimates stay positive, and the search
+still wins on direction at Online (60 for / 36 against, p=0.0184). What fails is
+the *gate*: neither clears parity on the game that ships, and both were promoted
+on the game that does not.
+
+> **Agent strength in this engine is strongly speed-dependent, and every number
+> in this document that predates `--speed` was measured at Standard.**
+
+### The same lesson, arrived at from the league — which turns out not to be broken
+
+The previous entry recorded the live pool rating `advanced_v1` (1712.8, 1257
+games) above `advanced` (1669.0, 1692 games), against a head-to-head of +183
+Elo for `advanced`, and called it an inversion worth more attention than any AI
+change proposed. **That reading was wrong, and the league's own match log says
+so.** Over its 2211 recorded matches:
+
+| | |
+|---|---|
+| games containing both `advanced` and `advanced_v1` | 478 |
+| `advanced` placed ahead | **251 — 52.5%** |
+| outright win rate, `advanced` | 21.2% |
+| outright win rate, `advanced_v1` | **23.8%** |
+
+**In the games the league actually plays, the two are at parity**, and the
+rating is a faithful summary of them. There is no rating bug. The disagreement
+is entirely between *my* evaluation profile and the league's: `ai_eval` defaults
+to **4 players on 24×16 with no city-states**, while the league mixes 2, 4, 6, 8
+and 12 seats on large maps, and the live exhibition runs 74×46 at six to ten.
+
+So the general statement is broader than speed:
+
+> **Measured strength ordering in this engine is a function of the
+> configuration — speed, seat count and map size all move it, and two agents
+> 183 Elo apart at 4p/24×16 can be at parity at the league's mix.** `ai_eval`'s
+> defaults are not the deployment, and no result should be described as "this
+> agent is stronger" without naming the profile it was measured on.
+
+### What follows, in order
+
+1. **Re-check the remaining promoted gains at `--speed online`** —
+   `continue_from_plan` (+37) and `strategic_deep` (+45) are untested there.
+2. **Re-check at the deployment's seat count and map**, not only its speed. A
+   confirmation running at 6p 74×46 is the first of these.
+3. **Consider whether the gate's defaults should be the deployment profile.**
+   That is a policy question for the repository, not a change to make quietly:
+   it would reinterpret every historical number in this document, which is
+   exactly the kind of silent redefinition that is refused elsewhere here.
+
+⚠ Retraction, recorded plainly: the previous entry's claim of "a 227-Elo
+inversion ... worth more attention than any AI change currently proposed" is
+withdrawn. The measurement behind it was sound and the interpretation was not —
+I compared a 4p 24×16 evaluation against a rating earned on a different
+distribution of games, and the league's own placement log resolves it in the
+league's favour. **Checking that took one query against data already on disk,
+and I published the accusation before running it.**
+
+
+## 2026-07-28 — ★★★★ the gate and the deployment measure different games: mirrored pairs against free-for-all
+
+Two explanations for the `advanced` / `advanced_v1` disagreement were proposed
+here and **both are now refuted by measurement**:
+
+| explanation | test | verdict |
+|---|---|---|
+| the league plays a faster speed | `--speed online` at 4p 24×16 | **refuted** — the gap *grows*, +114 → +183 |
+| the league plays bigger, fuller maps | 6p 74×46, 6 city-states, Online | **refuted** — the gap grows again, **+207** (76.7%, gate PASS) |
+
+At the exhibition's own profile the head-to-head gap is the largest measured
+anywhere. Yet in the league's own 478 games containing both, `advanced` places
+ahead 52.5% of the time. The third difference is the one that was there all
+along, and it is structural:
+
+```
+league game composition, 2211 matches (seats, distinct strategies):
+   2 seats,  2 distinct :  426
+   4 seats,  4 distinct :  605
+   6 seats,  6 distinct : 1090
+   8 seats,  8 distinct :   14
+  12 seats, 12 distinct :   75
+
+mirrored-style (2 distinct strategies over >2 seats):     0
+free-for-all (every seat a different strategy):        1784
+```
+
+**The league plays free-for-all — every seat a different strategy, and not one
+mirrored game in 2211. `ai_eval` plays mirrored pairs and nothing else**: at
+six players it fields three seats of each agent.
+
+> **These are different quantities.** Mirrored pairing asks *"if half the world
+> played A and half played B, which half wins?"* Free-for-all placement asks
+> *"dropped alone into a field of five different strategies, who finishes
+> ahead?"* Pairwise dominance does not determine free-for-all placement — a
+> multi-player game admits non-transitivity, kingmaking, and outcomes decided by
+> which neighbour a seat happens to draw. For `advanced` against `advanced_v1`
+> the two answers differ by roughly **200 Elo**.
+
+**Every promotion decision in this document is a mirrored-pair result. The
+exhibition seats by a free-for-all rating.** Nothing has ever checked that a
+gain in one is a gain in the other, and this pair is a worked example of the two
+disagreeing about as strongly as they could.
+
+### What is measured and what is inferred
+
+**Measured:** the league is 100% free-for-all or two-seat duel and 0% mirrored;
+`ai_eval` is 100% mirrored; the two disagree by ~200 Elo on this pair; speed and
+map/seat-count are both eliminated as the cause.
+
+**Not separated:** game *type* and *field composition* are confounded here. The
+league's free-for-all games seat four strong bred genomes alongside the pair,
+while a mirrored `ai_eval` contains only the pair. Whether it is being alone, or
+being alone *among strong opponents*, that closes the gap is untested — and
+`ai_eval` cannot test it, because its design fills every seat from the two
+entrants. Answering it needs a field evaluator, which `civvis league` already is.
+
+### What follows
+
+1. **Name the game type on every result.** "Stronger" is not a property of an
+   agent here; it is a property of an agent in a pairing scheme, at a speed, at
+   a seat count.
+2. **A gain intended for the exhibition should be validated free-for-all**, in
+   the league, against the field it will actually meet — not only through the
+   mirrored gate.
+3. This does **not** retract the mirrored numbers. `strategic` really is +117
+   mirrored at Standard and +28 mirrored at Online; those are correct statements
+   about mirrored play. It retracts the *unqualified* reading of them.
+
+⚠ Recorded against myself: this is the second explanation I proposed for the
+same observation and had refuted by my own next measurement, and the third
+mechanism story this loop that did not survive contact. The measurements have
+held up throughout; the stories attached to them have not. **The cheap move —
+asking what the log actually contains — resolved in one query what two
+600-game evaluations could not.**
+
+
+## 2026-07-28 — ⚠⚠ correcting the correction: the live rating IS unreliable for this pair, and one summary statistic hid why
+
+Two entries ago I claimed the live pool's rating of `advanced_v1` above
+`advanced` was a ~227 Elo inversion. One entry ago I **retracted** that on a
+single number — `advanced` places ahead in 52.5% of the 478 games containing
+both — and concluded the league was faithful and I was wrong.
+
+**That retraction was over-corrected, and the same match log says so once it is
+broken down instead of averaged.**
+
+| seats | entrant | games | win% | parity |
+|---|---|---|---|---|
+| 2 | `advanced` | 29 | 37.9% | 50.0% |
+| 2 | **`advanced_v1`** | **253** | **56.1%** | 50.0% |
+| 4 | **`advanced`** | 428 | **31.8%** | 25.0% |
+| 4 | **`advanced_v1`** | 102 | **10.8%** | 25.0% |
+| 6 | `advanced` | 820 | 16.3% | 16.7% |
+| 6 | `advanced_v1` | 484 | 12.4% | 16.7% |
+| 12 | `advanced` | 75 | 9.3% | 8.3% |
+| 12 | `advanced_v1` | 75 | 6.7% | 8.3% |
+
+**At four seats the two are not close.** `advanced` wins 31.8% against a 25%
+parity; `advanced_v1` wins 10.8% — under half its share. That is a large gap in
+the same direction as every mirrored evaluation here (+114 Standard, +183
+Online, +207 at 6p 74×46) and as the controlled free-for-all below.
+
+**Where `advanced_v1`'s rating comes from:** it played **253 two-seat duels and
+won 56.1%** of them, while `advanced` played **29**. A ninefold schedule
+imbalance on the format with the highest per-game rating swing is enough to
+carry a pool position that the four-seat games contradict.
+
+**Why the 52.5% hid it.** That statistic is dominated by the 308 six-seat games,
+where both sit near the bottom of a field containing strong bred genomes and
+"placed ahead" is nearly uninformative — at six seats they score 16.3% and 12.4%
+against a 16.7% parity, i.e. both roughly at or below their share. Averaging a
+weak-signal majority with a strong-signal minority produced a number that looked
+like parity and was not.
+
+> **A single summary over a heterogeneous schedule is not evidence about either
+> half of it.** I retracted a correct finding on one, and the disaggregation
+> that overturned the retraction was the same one query, one column further in.
+
+### The controlled free-for-all, at the stock budget
+
+Four builtin entrants, one seat each, every strategy in every game, evolution
+disabled, fresh 1500/rd 350, **stock 500-turn budget** (mean 274 turns, 2 of 128
+games at the cap). Halfway, 128 games each:
+
+| entrant | rating | wins | win% | parity |
+|---|---|---|---|---|
+| `advanced_evolved` | **1517.0** | 39 | 30.5% | 25% |
+| `strategic` | 1498.5 | **49** | **38.3%** | 25% |
+| `advanced` | 1487.0 | 32 | 25.0% | 25% |
+| `advanced_v1` | 1483.1 | 8 | **6.2%** | 25% |
+
+Free-for-all reproduces the mirrored ordering: `advanced_v1` collapses to a
+quarter of its parity share. **So the "mirrored versus free-for-all" explanation
+offered in the previous entry does not survive either** — the format is not what
+separated my evaluations from the live pool's rating; an unbalanced schedule is.
+
+⚠ Note `strategic` has the **most outright wins (49) and the second rating**.
+Glicko rates placement across the whole field, and an agent can win most often
+while placing worse when it does not. Which of those the exhibition should seat
+on is a real question and not one this run answers.
+
+⚠ A truncation caught and fixed mid-experiment: the first attempt passed
+`--turns 250` while the league plays `default_speed()` = **standard = 500**, so
+9 of 16 games hit a half-length cap. That is the failure #282/#285 exists to
+prevent. The cap-hit rate is the cheap tell — 56% there against 2 of 128 here.
+
+
+## 2026-07-28 — ★★★★★ the league breeds and seats on PLACEMENT; the gate promotes on WINS; they disagree by 3.5x
+
+The controlled free-for-all finished: four builtin entrants, **one seat each so
+every strategy plays every game** — a perfectly balanced schedule — evolution
+disabled, fresh 1500/rd 350, stock 500-turn budget, 240 games each.
+
+| entrant | Glicko | wins | win% | **mean place** | 1st | 2nd | 3rd | 4th |
+|---|---|---|---|---|---|---|---|---|
+| `strategic` | **1510.3** | 90 | 37.5% | 2.375 | 90 | 35 | 50 | 65 |
+| `advanced_evolved` | 1506.7 | 73 | 30.4% | 2.433 | 73 | 53 | 51 | 63 |
+| **`advanced_v1`** | **1485.3** | **17** | **7.1%** | 2.600 | 17 | **104** | 77 | 42 |
+| **`advanced`** | **1483.6** | **60** | **25.0%** | 2.592 | 60 | 48 | 62 | 70 |
+
+**`advanced_v1` is rated above `advanced` while winning 3.5× less often**, on a
+balanced schedule, at the stock budget, in a controlled pool. And Glicko is
+**right**: their *mean placements* are 2.600 and 2.592 — indistinguishable.
+
+`advanced_v1` takes **second place 104 times and last only 42**. It is a
+consistent non-winner. `advanced` wins 60 and comes last 70. Averaged into a
+placement, those are the same agent. Counted in victories, one is 3.5× the other.
+
+> **Mean placement is not win probability.** An agent that almost never wins but
+> rarely finishes last is indistinguishable, by the statistic this pool rates on,
+> from one that wins three and a half times as often.
+
+### Why that matters here, in code
+
+| consumer | selects on |
+|---|---|
+| `evolve_league` → `conservative_order` → `lower_confidence` | the **rating** (placement) |
+| `Session::ai_fleet` → `seat_by_civ_seeded` | the **rating** (placement) |
+| `docs/EVAL.md` promotions → `ai_eval` | **wins** |
+
+**This repository breeds its genomes and seats its exhibition on placement, and
+promotes its agents on winning.** Nothing converts between the two, and the pair
+above shows how far apart they can be.
+
+It is also the most plausible account on the table for a result measured earlier
+today: the roster's league-bred genomes lose badly to the champion on *wins*
+(`g56-50` at **−108 Elo**) while ranking above `advanced` on *rating*. A breeder
+selecting on placement will accumulate exactly that phenotype — safe, consistent,
+rarely first. ⚠ Plausible account, not a demonstration: showing it would need a
+breeding run selected on wins as a control, which this does not provide.
+
+### Four explanations tested and discarded to get here
+
+Every one of these was proposed in this document, and each was refuted by the
+next measurement:
+
+| explanation for the `advanced` / `advanced_v1` disagreement | how it died |
+|---|---|
+| the league plays a faster speed | gap *grows* at Online, +114 → +183 |
+| the league plays bigger, fuller maps | grows again, **+207** at 6p 74×46 |
+| the league plays free-for-all, the gate mirrored | FFA **reproduces** the mirrored ordering |
+| the league's schedule is unbalanced (253 duels against 29) | a balanced schedule reproduces the inversion |
+
+The statistic was the answer the whole time, and it was visible in one column of
+the match log — the placement histogram — that nothing had printed.
+
+### What follows
+
+1. **Any selection intended to produce a winning agent must weight winning.**
+   Rating on placement is a defensible choice for a ladder people watch; it is
+   the wrong objective for breeding a maximally strong AI, and it is currently
+   used for both.
+2. **`docs/EVAL.md` and the league are not comparable instruments** and never
+   were. A gain here is a gain in mirrored win rate; a rise there is a rise in
+   free-for-all mean placement.
+3. The cheapest next measurement is a league run whose parent selection is by
+   win rate rather than `lower_confidence`, against this one as control.
+
+
+## 2026-07-28 — ⚠ CORRECTION to the entry above: the inversion was a mid-run snapshot; the compression is the real result
+
+The previous entry was written from **round 15 of 16** and led with
+*"`advanced_v1` is rated above `advanced` while winning 3.5× less often."* The
+run finished one round later and **that ordering resolved.** Final, 256 games
+each:
+
+| entrant | Glicko | wins | win% | mean place | 1st | 2nd | 3rd | 4th |
+|---|---|---|---|---|---|---|---|---|
+| `advanced_evolved` | **1508.5** | 78 | 30.5% | 2.430 | 78 | 57 | 54 | 67 |
+| `strategic` | 1506.3 | **95** | **37.1%** | **2.387** | 95 | 37 | 54 | 70 |
+| `advanced` | **1489.1** | 65 | 25.4% | 2.578 | 65 | 52 | 65 | 74 |
+| `advanced_v1` | 1481.9 | 18 | **7.0%** | 2.605 | 18 | **110** | 83 | 45 |
+
+`advanced` now sits above `advanced_v1`, correctly. **The headline claim of the
+previous entry does not survive to the end of its own run, and is withdrawn.**
+
+**What survives, and it is the stronger statement:**
+
+| pair | win-rate ratio | Glicko gap | mean-place gap |
+|---|---|---|---|
+| `advanced` vs `advanced_v1` | **3.6×** (25.4% vs 7.0%) | **7.2 points** | 0.027 |
+| `strategic` vs `advanced_v1` | **5.3×** (37.1% vs 7.0%) | 24.4 points | 0.218 |
+
+> **Glicko placement compresses a 3.6× difference in winning into 7.2 rating
+> points** — about half a percent of the scale, and well inside the rd of 30 the
+> pool carries. A selection process reading this number is very nearly blind to
+> a difference that dominates the objective.
+
+That is a weaker claim than "the ordering is inverted" and a more robust one: it
+does not depend on which side of a coin-flip the last round lands, and it holds
+across all three pairs. The phenotype behind it is unchanged and stark —
+`advanced_v1` finishes **second 110 times and first 18**.
+
+⚠ Also note `advanced_evolved` rates 2.2 points above `strategic` while winning
+17 fewer games *and* placing worse on average (2.430 against 2.387). At rd 30.1
+that gap is noise, not an inversion, and it should not be reported as one.
+
+### The process failure, recorded
+
+I published a headline from a **mid-run snapshot of my own experiment** rather
+than waiting for it to finish, and the headline did not survive the next round.
+Nothing forced that — the run had a fixed, known length and was already in
+progress. The correction cost nothing but the retraction; had anyone acted on it
+first it would have cost more.
+
+**Wait for the run you designed to finish before describing what it found.**
+
+
+## 2026-07-28 — ⚠ CORRECTION: the search agent is 7x over the exhibition's time budget, not "comfortably inside" it
+
+An earlier entry measured agent cost at 4p 24×16 and concluded:
+
+> *"`strategic` at ~83 ms is not [excluded] — it fits inside the existing budget
+> with room."*
+
+with the caveat that those ratios were a lower bound for the live profile and
+should not be used as a budget without re-measuring. **Re-measured, and the
+caveat was the whole story.** At the exhibition's own profile — 6 players,
+74×46, 6 city-states, Online speed:
+
+| profile | seconds per game | ms per game-turn |
+|---|---|---|
+| 4p 24×16, Standard (the earlier estimate) | ~1.0 | ~83 |
+| **6p 74×46, Online (the exhibition)** | **201.7** | **~1833** |
+
+**Twenty-two times the estimate, and about 7× the ~250 ms the live exhibition
+budgets per turn.** That measurement seats three `strategic` agents in a
+mirrored six-player game; scaling by seat share, even a *single* strategic seat
+lands near 600 ms — still ~2.4× over — and an all-strategic table would be ~15×.
+
+Rollout cost scales with map area *and* seat count because every branch
+simulates the whole world forward, so a 9× larger map with 1.5× the seats is
+roughly two orders of magnitude per review. **`strategic` is not deployable to
+the live exhibition at its current profile**, and the earlier entry should not
+be read as saying otherwise.
+
+### What that leaves, and it is smaller than it looked
+
+| agent | cost vs `advanced` | FFA win% (256 games, parity 25%) | mirrored Elo v `advanced` |
+|---|---|---|---|
+| `advanced` | 1.0× | 25.4% | — |
+| `advanced_evolved` | **1.05×** | 30.5% | +58 Standard / **+10 Online** |
+| `strategic` | 14.6× at 4p, **~200×** at the exhibition profile | **37.1%** | +117 Standard / **+28 Online** |
+
+- **`strategic` is the strongest agent measured and cannot be afforded** where it
+  would matter. Offline consumers — the league, breeding, promotion runs — have
+  no realtime budget and can use it freely; the live exhibition cannot.
+- **`advanced_evolved` is essentially free (1.05×) and directionally better.**
+  But its FFA edge over `advanced` is **5.1 points at 1.28 SE — not
+  significant** at 256 games, and its mirrored edge at the shipped speed is +10,
+  INCONCLUSIVE. The honest summary is *cheap, plausibly better, unproven at the
+  deployment profile*.
+
+**So the deployable recommendation from this loop is modest**: the roster entrant
+that lets the champion be seated at all is worth adding (it costs nothing and
+cannot be worse), and no claim of a large exhibition gain is supported. A large
+gain would need either a cheaper search configuration than `strategic` or a
+profile the current one can afford, and neither has been measured.
+
+⚠ This is the second time in this document an estimate taken at 4p 24×16 has
+failed to transfer to the deployment profile — the first was every win-rate
+number, via `--speed`. **`ai_eval`'s defaults are not the deployment, for
+strength or for cost.**
+
+
+## 2026-07-28 — ★ the cost-performance frontier of the macro search, which nothing had measured
+
+Every registered search variant moves the budget **up** — `review_every` 20 and
+10, `horizon` 80, the 4× `strategic_deep`. Nothing has ever asked the opposite
+question, because nothing was cost-bound until the entry above measured
+`strategic` at **7× the exhibition's time budget**.
+
+`strategic_cheap` cuts all three multiplicative knobs at once:
+
+| knob | `strategic` | `strategic_cheap` |
+|---|---|---|
+| `review_every` | 40 | **80** (half the reviews) |
+| `horizon` | 40 | **20** (half the rollout) |
+| `rotate_lanes` | off (~7 branches) | **on** (~3 branches) |
+
+`rotate_lanes` is a **recorded null for strength**, which is exactly what a
+cost-bound deployment wants from a knob.
+
+### Cost
+
+| agent | 8 games, 4p 24×16 Online | vs `advanced` | ms/game-turn at the **exhibition profile** |
+|---|---|---|---|
+| `advanced` | 6.5 s | 1.0× | — |
+| `strategic` | 73.3 s | 11.3× | **1833** |
+| **`strategic_cheap`** | **6.9 s** | **1.06×** | **223** |
+
+Against a **~250 ms** budget. `strategic_cheap` is 6× cheaper in situ than
+`strategic` and lands just inside it with **three** of six seats searching; a
+single searching seat would be nearer 75 ms.
+
+### Strength, pre-registered (`/Users/martin/civvis-strategic-cheap-preregistration.md`)
+
+```
+ai_eval strategic_cheap advanced --players 4 --pairs 300 --turns 250
+  --speed online --seed 6700000
+
+paired-map score   52.3%  (95% Wilson CI 46.7%..57.9%)   Elo-equivalent +16
+paired direction   54 for / 206 neutral / 40 against    sign p = 0.1797
+promotion gate     INCONCLUSIVE
+```
+
+Reference on the identical profile: `strategic` measured **+28** (54.0%,
+p=0.0184, also INCONCLUSIVE at the gate).
+
+| agent | search cost | Online Elo v `advanced` |
+|---|---|---|
+| `advanced` | — | 0 |
+| **`strategic_cheap`** | **~6% of `strategic`'s** | **+16** (−23..+55) |
+| `strategic` | 1× | +28 (−12..+67) |
+
+**I predicted a null and most of the +28 lost.** The point estimate retained
+more than that. ⚠ But at 300 maps this resolves about ±40 Elo, so **+16 and +28
+are not distinguishable**, and neither is distinguishable from zero. The honest
+reading is *a search at 6% of the cost is not measurably worse than the full
+one*, not *the frontier is flat*.
+
+That is still the useful shape for a deployment: the expensive configuration
+buys nothing this evaluation can see, and the cheap one is affordable where the
+expensive one is not.
+
+⚠ **No deployment claim yet.** The pre-registration requires confirmation at the
+exhibition's own profile before one, because the last two estimates taken at
+4p 24×16 — every win rate, via `--speed`, and the cost table — both failed to
+transfer. That confirmation is running at 6p 74×46.
+
+
+## 2026-07-28 — ★★★ the cheap search is +16 on the evaluator's map and −63 on the deployment's
+
+The pre-registration for `strategic_cheap` required a confirmation at the
+exhibition's own profile before any deployment claim, *because the last two
+estimates taken at 4p 24×16 both failed to transfer*. It ran, and it reversed
+the result.
+
+| profile | score | Elo | direction | sign p | gate |
+|---|---|---|---|---|---|
+| 4p 24×16 Online (the evaluator's default) | 52.3% | **+16** | 54 / 40 | 0.1797 | INCONCLUSIVE |
+| **6p 74×46 Online (the exhibition)** | **41.0%** | **−63** | 22 / 49 | **0.0018** | **RETAIN `advanced`** |
+
+Terminal score agrees and is stronger: 45.4%, **23 maps for / 127 against**,
+p=0.0000, resting on all 150 maps rather than the 71 that broke on wins.
+
+**`strategic_cheap` is significantly worse than the scripted agent at the
+profile that matters, and mildly better at the one the evaluator defaults to.**
+Recommending it from the small-map number would have shipped a 63-Elo
+regression.
+
+### Why, as a hypothesis rather than a claim
+
+`strategic_cheap` cuts the rollout `horizon` from 40 to 20 and reviews half as
+often. Twenty projected rounds is a large fraction of a 4-player game on 384
+tiles and a small one of a 6-player game on 3404. The same absolute budget buys
+proportionally far less foresight as the world grows, so the configuration that
+is merely *cheaper* on a small map may be *blind* on a large one.
+
+⚠ Stated as a hypothesis deliberately. Four mechanism stories in this document
+have been refuted by the next measurement, and this one is untested — separating
+`horizon` from `review_every` from `rotate_lanes` would need three more runs.
+**The measurement stands on its own without it.**
+
+### The strategic consequence, which is uncomfortable
+
+| | 4p 24×16 | 6p 74×46 (the exhibition) |
+|---|---|---|
+| `strategic` (full search) | +28 Elo | **~200× `advanced`, 7× over the time budget** |
+| `strategic_cheap` | +16 Elo, 1.06× cost | **−63 Elo**, 223 ms/turn |
+
+At the deployment's profile the search appears to be **more necessary and less
+affordable at the same time**. The cheap configuration is the only one that fits
+the budget and it is actively harmful there; the configuration that helps cannot
+be run.
+
+⚠ "More necessary" is an inference, not a measurement — `strategic` at full
+budget has not been evaluated at 6p 74×46 because 300 games there would cost
+about 17 hours. That is the measurement that would settle it, and it is the
+obvious thing to spend an overnight run on.
+
+### The rule, now three for three
+
+| estimate taken at 4p 24×16 | at the deployment profile |
+|---|---|
+| champion genome, +58, gate PASS | +10, INCONCLUSIVE (speed alone) |
+| `strategic` cost, ~83 ms/turn | **1833 ms/turn**, 22× the estimate |
+| `strategic_cheap`, +16 | **−63, significant against** |
+
+> **`ai_eval`'s defaults are not the deployment — not for strength, not for
+> cost, and not even for the sign of an effect.** Every number in this document
+> measured at 4p 24×16 should be read as a statement about 4p 24×16 until it is
+> re-measured, and the three cases above are the reason.
+
+`strategic_cheap` stays evaluator-only with the null-and-worse recorded, per the
+pre-registered rule. No seed re-roll, no knob-tuning to rescue it.
+
+
+## 2026-07-28 — ★★★ the blindness is not `ai_eval`'s alone: the champion was bred on the profile that does not transfer
+
+Adding `--speed` to `ai_eval` fixed one instrument. Auditing the rest shows the
+gap is systemic — **every other binary that builds a game does so through
+`Game::new`, which pins `default_speed()` = `standard`:**
+
+| layer | file | speed |
+|---|---|---|
+| the evaluator | `src/bin/ai_eval.rs` | **fixed today** (`--speed`, default unchanged) |
+| **the breeder** | `src/evolve.rs:162,342` | `Game::new` → **standard** |
+| the league | `src/league.rs:1535` | `Game::new` → **standard** |
+| 21 other probes and evaluators | `src/bin/*.rs` | `Game::new` → **standard** |
+
+Among the 21 are the instruments that *gate decisions*: `policy_eval`,
+`genome_breed`, `policy_breed`, `victory_eval`, `search_probe`, `search_dose`,
+`gene_leverage`, `gene_probe`, `order_ablate`, `proxy_fit`. **Every recorded
+null and every recorded gain in this document was measured at Standard speed**,
+and the exhibition runs Online.
+
+### The chain that closes
+
+`docs/SUPERHUMAN.md` records the recipe that produced the shipped champion:
+
+```
+civvis evolve --pop 24 --generations 25 --games 96 --players 4 \
+  --width 24 --height 16 --turns 500 --seed 7
+```
+
+**4 players, 24×16, 500 turns, Standard speed** — the exact profile this
+document has now shown three times does not transfer, once reversing an
+effect's sign. And the champion's measured worth:
+
+| profile | champion v `advanced` |
+|---|---|
+| 4p 24×16 Standard — **the profile it was bred on** | **+58, gate PASS** |
+| 4p 24×16 Online — the shipped speed | **+10, INCONCLUSIVE** |
+
+> **The genome that ships was optimised on a game the deployment does not
+> play.** Its advantage is largest exactly where it was selected and largely
+> gone where it runs.
+
+⚠ **Consistent with, not proof of, specialisation.** Demonstrating that the GA
+overfitted its profile needs a breeding run at Online speed compared against
+this one on a common holdout, which nothing has done. An alternative reading —
+that Online simply compresses *all* agent differences — fits the `strategic`
+result too (+117 → +28) and is not excluded. **Both readings imply the same
+next action**, which is why the distinction can wait.
+
+### What follows
+
+1. **Breed at the speed that ships**, or at minimum evaluate the champion there
+   before promoting the next one. The machinery is one `GameOptions` field away
+   in `evolve.rs`.
+2. **`--speed` belongs on the gating evaluators**, not just `ai_eval` —
+   `policy_eval`, `victory_eval`, `genome_breed` and the `search_probe` family
+   at least. Mechanical: `Game::new(...)` → `Game::new_with(GameOptions { speed, .. })`.
+3. Until then, **every number in this document is a statement about Standard
+   speed at 4p 24×16**, and should be written that way.
+
+⚠ One caveat on the live league, which muddies its own record: `civvis league`
+builds games at Standard, while the spectator plays Online and records into the
+same directory with `--league-record`. The live pool is therefore a **mixture of
+two game types**, which is worth knowing before any rating in it is used as
+evidence — including in the entries above where I used it as such.
+
+
+## 2026-07-28 — the breeder accepted `--speed` and ignored it, so it bred truncated games
+
+Found while auditing the toolchain for the speed blindness above. It is not
+merely that `evolve` lacked the flag — **it half-had it, which is worse.**
+
+`main.rs` resolves the breeder's turn budget through `stock_turns(&args)`, and
+`stock_turns` *does* read `--speed`:
+
+```rust
+max_turns: arg(&args, "--turns", stock_turns(&args)) as u32,
+```
+
+But both game sites in `evolve.rs` called `Game::new(...)`, which pins
+`default_speed()` = `standard`. So
+
+```
+civvis evolve --speed online ...
+```
+
+set a **250-turn budget** and then played **Standard games truncated at 250** —
+exactly the half-length cap `#282`/`#285` exist to prevent, arriving silently
+through a flag that looked supported. A short cap does not shorten a game, it
+changes the answer: at 250 turns the cap named a different winner in 13 of 24
+replays.
+
+**Fixed.** `EvoCfg` gains a `speed` field defaulting to `game::default_speed()`,
+plumbed from `--speed`, and both sites now build through
+`GameOptions { speed, .. }`. The default reproduces every genome this repository
+has bred; `--speed online` now plays Online.
+
+```
+civvis evolve --speed online --pop 4 --generations 1 --games 2 --players 4 --width 24 --height 16
+  evolve: pop 4 · 2 games/genome · 24x16 4p 250t · 2 threads
+```
+
+Four other `EvoCfg` construction sites — `evolve_probe`, `search_probe`, and two
+in `genome_gate` — were updated to the explicit default so the change is
+behaviour-preserving everywhere. Suite green at **1139**.
+
+**Why this matters beyond the bug.** `docs/EVAL.md` records the shipped champion
+at **+58 Elo on the 4p 24×16 Standard profile it was bred on** and **+10,
+inconclusive, at the Online speed the exhibition plays**. Breeding at the speed
+that ships was one struct field away and the field did not exist. It does now,
+and the run that would use it — a champion bred at Online, compared against the
+shipped one on a common holdout — is the experiment that separates *the GA
+overfitted its profile* from *Online compresses every difference*. Both readings
+are live; this makes the discriminating experiment possible.
+
+⚠ The 21 other probes and evaluators still build through `Game::new` and remain
+Standard-only. This entry fixes the breeder and the two probe families that
+share `EvoCfg`, not the whole toolchain.
+
+
+## 2026-07-28 — ★★★★★ the champion's advantage is a property of the profile it was bred on
+
+The entry above left two live readings of the champion's shrinking edge — *the
+GA overfitted its breeding profile* against *Online compresses every difference*
+— and said both implied the same next action so the distinction could wait. It
+did not have to. **The data to separate them was already here.**
+
+The champion, audited at the deployment's own profile:
+
+```
+ai_eval advanced_evolved advanced --players 6 --width 74 --height 46
+  --city-states 6 --pairs 150 --turns 250 --speed online --seed 8700000
+
+paired-map score   48.7%  (95% Wilson CI 40.8%..56.6%)   Elo-equivalent -9
+paired direction   23 for / 100 neutral / 27 against    sign p = 0.6718
+promotion gate     INCONCLUSIVE
+```
+
+| profile | champion v `advanced` |
+|---|---|
+| 4p 24×16 **Standard** — the profile it was **bred** on | **+58**, gate PASS |
+| 4p 24×16 Online | +10, INCONCLUSIVE |
+| **6p 74×46 Online — the deployment** | **−9** (CI −65..+46), INCONCLUSIVE |
+
+**The deployment interval excludes +58.** The advantage the genome was promoted
+for does not exist where the genome runs.
+
+### Which reading that kills
+
+"Online compresses every agent difference" is **refuted**, by a measurement
+already in this document. At the *same* deployment profile:
+
+| pair | Elo at 6p 74×46 Online |
+|---|---|
+| `advanced` v `advanced_v1` | **+207**, gate PASS, p=0.0000 |
+| `advanced_evolved` v `advanced` | **−9**, INCONCLUSIVE |
+
+A profile that resolves a 207-Elo difference is not insensitive. It is
+specifically the *champion's* edge that vanishes there.
+
+> **The gen-14 genome is specialised to 4 players on 24×16 at Standard speed.**
+> That is the profile `civvis evolve` was run at, it is `ai_eval`'s default, and
+> it is not the game the exhibition plays. The GA did its job; it was pointed at
+> the wrong game.
+
+⚠ What this does **not** say. It does not say the genome is *worse* — −9 with a
+CI spanning ±55 is parity, not a regression. It does not say evolution cannot
+work here; it says this evolution optimised a different game. And it is one
+genome at one deployment profile — the honest generalisation is about the
+method, not about gen-14 specifically.
+
+### Correction to my own change, earlier today
+
+I added `advanced_evolved` to `data/league/league.json` and described it as
+worth **+58**, then revised that to **+10** after the speed check. **At the
+deployment profile it is worth nothing measurable.** The entrant is still worth
+having — it makes a genome the binary already carries *reachable*, which it was
+not, and at parity it costs nothing — but **no strength claim survives**, and
+the seeding at `advanced`'s own rating turns out to have been the right
+conservative call for reasons better than the ones I gave.
+
+### What this makes possible, and it is the whole point of the breeder fix
+
+The previous entry gave `evolve` a working `--speed`. The experiment this result
+demands is now one command:
+
+```
+civvis evolve --speed online --players 6 --width 74 --height 46 ...
+```
+
+Breed at the profile that ships, then compare against gen-14 **at that profile**.
+If the specialisation reading is right, a genome bred there should beat gen-14
+there by roughly what gen-14 beats the default by at 4p 24×16. That is the
+overnight run this loop has been building toward, and it is the first one whose
+target profile matches the deployment.
+
+
+## 2026-07-28 — ★★★★★ SYNTHESIS: every promoted gain evaporates at the deployment profile; the one unpromoted difference does not
+
+The last of the deployment-profile measurements, pre-registered at
+`/Users/martin/civvis-strategic-exhibition-preregistration.md`:
+
+```
+ai_eval strategic advanced --players 6 --width 74 --height 46 --city-states 6
+  --pairs 60 --turns 250 --speed online --seed 8300000
+
+paired-map score   43.3%  (95% Wilson CI 31.6%..55.9%)   Elo-equivalent -47
+paired direction   7 for / 38 neutral / 15 against    sign p = 0.1338
+terminal score     44.8%,  7 for / 53 against,  p = 0.0000
+promotion gate     INCONCLUSIVE
+```
+
+I predicted *inconclusive, with the point estimate closer to zero than +28*.
+Inconclusive on wins is right; the estimate went **past** zero to −47, and the
+terminal-score direction is unambiguous at 7 maps against 53.
+
+### The whole table, one profile at a time
+
+| comparison | 4p 24×16 Standard (the gate) | **6p 74×46 Online (ships)** |
+|---|---|---|
+| gen-14 genome v `advanced` | **+58**, gate PASS | **−9** (CI excludes +58) |
+| `strategic` v `advanced` | **+117**, gate PASS | **−47**, score p=0.0000 |
+| `strategic_cheap` v `advanced` | +16 (Online 4p) | **−63**, wins p=0.0018 |
+| `advanced` v `advanced_v1` — **never promoted** | +114 | **+207**, gate PASS |
+
+> **Every improvement this repository has promoted was measured at 4p 24×16 and
+> is absent — or reversed — at the profile the exhibition plays. The one large
+> difference that was never promoted, between the current agent and the legacy
+> one it replaced, holds and grows there.**
+
+That last row is what makes the rest interpretable. A profile which resolves
++207 at gate-PASS strength is not insensitive and is not compressing everything.
+It is specifically the *promoted* differences that fail to appear.
+
+### What is and is not established
+
+**Established.** The genome's edge is bred-profile-specific (its deployment
+interval excludes +58, and the same profile resolves +207). `strategic_cheap` is
+significantly worse where it ships. Three separate 4p 24×16 estimates — a
+strength, a cost, and a sign — failed to transfer.
+
+**Not established.** `strategic` at −47 is **inconclusive on wins** (p=0.1338 at
+60 maps); only its terminal score is significant, and terminal score is not a
+promotion input. The pre-registration says a result like this "warrants the full
+300-map overnight run before anything in `docs/SUPERHUMAN.md` is rewritten", and
+that remains the correct next step. **Nothing here retracts `strategic_deep`'s
+promotion**, which has not been measured at the deployment profile at all.
+
+**Not attempted.** Why the promoted gains are profile-specific. The genome has an
+account — it was bred there. `strategic` does not: its rollout budget is fixed in
+turns, so a larger, slower world gets proportionally less foresight, which is the
+same pressure that plausibly sank `strategic_cheap`. That is a hypothesis and
+this document has refuted five of mine.
+
+### The two runs that follow, in order
+
+1. **`strategic` v `advanced` at 6p 74×46 Online, 300 maps.** ~17 h. Settles
+   whether the flagship search agent is a regression where it ships.
+2. **`civvis evolve --speed online --players 6 --width 74 --height 46`**, then
+   gen-14 against the result *at that profile*. The breeder gained a working
+   `--speed` earlier today specifically to make this possible, and it is the
+   first breeding run in this repository aimed at the game that ships.
+
+⚠ Neither was launched from this session: the machine is carrying load 36 on 18
+cores with another agent's evaluation running, and a 17-hour job has no business
+joining that queue. Both are pre-registered and ready.
+
+
+## 2026-07-28 — the pooled confirmation was launched and did not finish; what stands, and what does not
+
+The synthesis entry above named a pooled 300-map confirmation of `strategic` at
+the deployment profile as the run that would settle whether the flagship search
+agent is a regression where it ships. It was launched —
+
+```
+ai_eval strategic advanced --players 6 --width 74 --height 46 --city-states 6
+  --pairs 240 --turns 250 --speed online --seed 9100000 --jobs 6
+```
+
+— and **stopped incomplete** when this PR was closed out, at 27 minutes of wall
+against a projected ~6.4 hours (480 games at ~202 s each, ~4.2 effective cores).
+**No result from it is recorded, because none exists.** The log at
+`/Users/martin/strategic-exhibition-240.log` contains only its header.
+
+**So the deployment-profile evidence on `strategic` remains exactly the 60-map
+run**, and its limits are the ones already stated:
+
+```
+paired-map score   43.3%  (95% Wilson CI 31.6%..55.9%)   Elo-equivalent -47
+paired direction   7 for / 38 neutral / 15 against    sign p = 0.1338
+terminal score     44.8%,  7 for / 53 against,  p = 0.0000
+promotion gate     INCONCLUSIVE
+```
+
+**`strategic` is not shown to be a regression at the deployment profile.** The
+win-rate direction is inconclusive at 60 maps; only terminal score is
+significant, and terminal score is not a promotion input. Anyone continuing this
+should treat "the flagship search agent may be a regression where it ships" as
+an **open question with one suggestive 60-map reading**, not as a finding, and
+run the pooled confirmation before acting on it.
+
+The three results that do **not** depend on that run are unaffected and stand:
+
+| finding | status |
+|---|---|
+| the gen-14 genome's edge is bred-profile-specific (deployment CI **excludes +58**, same profile resolves +207) | **established** |
+| `strategic_cheap` is significantly worse where it ships (−63, wins p=0.0018) | **established** |
+| three 4p 24×16 estimates — a strength, a cost, and a sign — failed to transfer | **established** |

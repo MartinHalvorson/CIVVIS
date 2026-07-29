@@ -12,7 +12,7 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 
 use crate::ai::{run_game, AdvancedAi, Ai, Weights};
-use crate::game::{Action, Game};
+use crate::game::{Action, Game, GameOptions};
 use crate::rng::Rng;
 use crate::setup::MapSize;
 
@@ -27,6 +27,24 @@ pub struct EvoCfg {
     pub seed: u64,
     pub threads: usize,
     pub dir: String,
+    /// The game speed every fitness and validation game is played at.
+    ///
+    /// **Defaults to `game::default_speed()`, which reproduces every genome
+    /// this repository has bred.** It exists because the two halves of the
+    /// speed setting had drifted apart: `main.rs` already resolves
+    /// `--turns` through `stock_turns(&args)`, which *does* read `--speed`,
+    /// while both game sites below called `Game::new` — which pins the
+    /// default speed. So `civvis evolve --speed online` set a 250-turn budget
+    /// and then played **Standard** games truncated at 250, which is the
+    /// half-length cap `#282`/`#285` exist to prevent, arriving silently
+    /// through a flag that looked supported.
+    ///
+    /// It also matters for what gets bred. `docs/EVAL.md` (2026-07-28) records
+    /// the shipped champion measuring **+58 Elo at the 4p 24x16 Standard
+    /// profile it was bred on and +10, inconclusive, at the Online speed the
+    /// exhibition plays**. Breeding at the speed that ships is one field, and
+    /// this is the field.
+    pub speed: String,
 }
 
 /// One observation from the exact game schedule `evolve` ranks.
@@ -159,7 +177,10 @@ fn eval_game_observation(
     let city_states = MapSize::from_dimensions(cfg.width, cfg.height)
         .map(|size| size.default_city_states)
         .unwrap_or(2);
-    let mut g = Game::new(cfg.players, cfg.width, cfg.height, seed, turns, city_states);
+    let mut g = Game::new_with(GameOptions {
+        speed: cfg.speed.clone(),
+        ..GameOptions::new(cfg.players, cfg.width, cfg.height, seed, turns, city_states)
+    });
     let mut ais = make_table(&g, w, opponents, seat);
     run_game(&mut g, &mut ais);
     let total: i64 = g
@@ -339,7 +360,10 @@ fn play_sampled(
     let city_states = MapSize::from_dimensions(cfg.width, cfg.height)
         .map(|size| size.default_city_states)
         .unwrap_or(2);
-    let mut g = Game::new(cfg.players, cfg.width, cfg.height, seed, turns, city_states);
+    let mut g = Game::new_with(GameOptions {
+        speed: cfg.speed.clone(),
+        ..GameOptions::new(cfg.players, cfg.width, cfg.height, seed, turns, city_states)
+    });
     let mut ais = make_table(&g, w, std::slice::from_ref(champ), seat);
     let mut pending: Vec<(Vec<f32>, usize)> = Vec::new();
     let mut last_sample = 0;
@@ -873,6 +897,7 @@ mod tests {
             seed: 94,
             threads: 1,
             dir: String::new(),
+            speed: crate::game::default_speed(),
         };
         let weights = Weights::default();
         let first = validation_score(&weights, &cfg, 2);
@@ -907,6 +932,7 @@ mod tests {
             seed: 95,
             threads: 1,
             dir: String::new(),
+            speed: crate::game::default_speed(),
         };
         let weights = Weights::default();
         let opponents = vec![weights.clone()];
