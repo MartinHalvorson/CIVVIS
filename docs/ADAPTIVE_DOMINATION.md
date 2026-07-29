@@ -17,6 +17,15 @@ claim-time engine base `b49bb15` instead of introducing unrelated pre-measuremen
 source churn. These corrections change no assigned treatment, actual population,
 outcome, seed, or decision gate.
 
+A final pre-data integrity audit found that the external observer loop did not
+yet assert the policy horizon it promises to preserve. Before any registered
+seed is read, the evaluator will capture `Game.max_turns` immediately after
+construction and require it to remain exactly 250 before and after every actor,
+after any fallback `EndTurn`, and at each arm's terminal boundary. A violation
+invalidates the cell instead of silently changing what the controller can see.
+This is an assertion over the already-frozen population, not a change to the
+treatment, world, observer horizon, endpoint, seed, or gate.
+
 ## Why this experiment exists
 
 The production archive shows plenty of war without a civilization converting
