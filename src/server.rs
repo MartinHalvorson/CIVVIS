@@ -10081,6 +10081,23 @@ mod tests {
         ));
         assert!(!EMBEDDED_INDEX.contains("zoomAt(want / base);"));
         assert!(EMBEDDED_INDEX.contains("Math.log(Math.max(floor, scale) / floor) / ladder"));
+        // The road leads somewhere even when the camera is not standing on a
+        // stop, and that somewhere is the nearest one — never unconditionally
+        // home. `skyNavHere` wants an arrival above .55, which one notch of the
+        // ladder falls below, so a subject that fell back to the Earth handed
+        // the road home the instant anybody touched the zoom after arriving at
+        // the destination: measured on `origin/main`, the exoplanet was in
+        // frame at 1 of 11 rungs and ended 115 billion pixels off centre with
+        // the caption reading "The Earth and the Moon". It is the same answer
+        // as before wherever home really is the nearest place.
+        assert!(!EMBEDDED_INDEX.contains("  return stop ? stop.body : SKY_EARTH;"));
+        assert!(EMBEDDED_INDEX.contains("    if (!best || away < best.away) best = {away, body:candidate.body};"));
+        // And the camera may not stand more than a third of a stage from that
+        // subject. Keying the pan to the subject's *drawn size* alone left it
+        // centred on the far stop for every rung below 2% of the stage, which
+        // out here is most of the road: the ladder zoomed into empty sky
+        // between here and the destination and never showed the destination.
+        assert!(EMBEDDED_INDEX.contains("  if (away > 0) ease = Math.max(ease, 1 - span * .35 / away);"));
 
         // The zoom buttons repeat while held. On the flat board that is a
         // convenience; out here it is the difference between a control and an

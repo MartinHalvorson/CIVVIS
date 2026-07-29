@@ -17639,7 +17639,25 @@ function skyLadderSubject() {
   const here = skyNavHere();
   const stop = here.startsWith("world:")
     ? skyWorldStops().find(candidate => `world:${candidate.id}` === here) : null;
-  return stop ? stop.body : SKY_EARTH;
+  if (stop) return stop.body;
+  // Standing on nothing. "Home" is the right answer for that in the inner
+  // system, where home *is* the nearest place anybody is between — and it is a
+  // teleport twelve light-years out. `skyNavHere` wants an arrival above .55,
+  // which one notch of the ladder is enough to fall below, so arriving at the
+  // destination and then touching the zoom handed the road back to the Earth
+  // and walked the camera to it: the destination went from filling the stage
+  // to billions of stage-widths off it, and the planet somebody had just flown
+  // to could not be zoomed in on at all.
+  //
+  // The road leads to the nearest place it *could* lead to instead, which is
+  // the same answer as before whenever the camera is anywhere near home.
+  let best = null;
+  for (const candidate of skyWorldStops()) {
+    const [bx, by] = skyBodyPos(candidate.body);
+    const away = Math.hypot(bx - SKY_PAN.x, by - SKY_PAN.y);
+    if (!best || away < best.away) best = {away, body:candidate.body};
+  }
+  return best ? best.body : SKY_EARTH;
 }
 // Where the camera stands at a given rung of that road. At the bottom it is the
 // shot this rung's own horizon wants; by the top it is over the world the road
@@ -17649,9 +17667,24 @@ function skyLadderSubject() {
 function skyLadderPan(scale, subject) {
   const frame = skyOutermostFrame();
   const [bx, by] = skyBodyPos(subject);
+  const radius = planetEarthRadius(scale);
+  const span = skyStageSpan();
   const over = Math.max(0, Math.min(1,
-    (2 * skyDrawnRadius(subject, planetEarthRadius(scale)) / skyStageSpan() - .02) / .28));
-  const ease = over * over * (3 - 2 * over);
+    (2 * skyDrawnRadius(subject, radius) / span - .02) / .28));
+  let ease = over * over * (3 - 2 * over);
+  // Drawn size alone is not enough to say where the camera should stand, and
+  // the middle of the ladder is where that shows. A world is under 2% of the
+  // stage for most of the road out to it, so `over` is zero for most of the
+  // road, so every rung below that stayed centred on the far stop — the camera
+  // zoomed into whatever empty sky happened to be between here and there, and
+  // the destination was never in the picture on the way to it.
+  //
+  // So also cap how far the camera may stand from the subject: a third of a
+  // stage. Below that this changes nothing and the drawn-size ease still has
+  // it; beyond it the subject is pulled back into frame however small it is.
+  const away = Math.hypot(bx - frame.x, by - frame.y) * radius;
+  if (away > 0) ease = Math.max(ease, 1 - span * .35 / away);
+  ease = Math.max(0, Math.min(1, ease));
   return {x:frame.x + (bx - frame.x) * ease, y:frame.y + (by - frame.y) * ease};
 }
 // The handle is already in ladder units, so it does not go through
