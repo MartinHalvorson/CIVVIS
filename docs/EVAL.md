@@ -5526,6 +5526,57 @@ There is no holdout and no gameplay promotion in this task: it adds the missing
 measurement, records the frozen screen once, and selects the next falsifiable
 midgame mechanism.
 
+### Fixed result: residual strategy churn is real, but not champion strength
+
+The preregistered seed-9981000 run completed all 60 maps and 120 games on the
+exact profile above. The embedded gen-14 champion loaded; the optional value
+net is not used by either Advanced entrant. Games averaged 247.6 turns.
+
+| midgame measure | `advanced_evolved` | stock `advanced` |
+|---|---:|---:|
+| all strategy switches / seat-game | 12.01 | 11.93 |
+| midgame switches / seat-game | 4.39 | 4.08 |
+| unanchored midgame switches / seat-game | **2.69** | 2.36 |
+| unanchored share of midgame switches | **1,292 / 2,105 (61.4%)** | 1,131 / 1,959 (57.7%) |
+| boundary-accompanied switches | 813 | 828 |
+| war / threat / city-deficit boundary counts | 225 / 591 / 164 | 209 / 660 / 106 |
+
+The champion's midgame strategy shares were Conquest 27.1%, Expansion 27.1%,
+Recovery 19.7%, Religion 14.9%, Science 10.9%, and Culture 0.4%. Stock spent
+more of the same interval in Science (24.3%) and less in Expansion (16.8%). The
+largest all-switch transition counts in both arms were Conquest↔Recovery;
+Expansion↔Science and Expansion↔Conquest supplied the next large blocks. This
+matrix includes boundary-accompanied and residual switches together, so it does
+not identify which individual transition deserves damping.
+
+The generic candidate gate **passes** exactly as frozen: 2.69 unanchored
+switches per champion seat-game exceeds 1.0, and 61.4% exceeds 50%. That earns
+a separately preregistered boundary-preserving GrandStrategy hysteresis or a
+finer trigger census. It does not authorize changing assigned victory targets:
+both entrants remained `adaptive` on 100% of observed turns and recorded zero
+target switches.
+
+The narrower strength attribution **fails every required term**:
+
+- champion residual churn is 14% higher than stock (2.69 versus 2.36), not at
+  least 25% lower;
+- paired-map score is 47.5% (95% Wilson 35.4%--59.9%), not at least 52%; and
+- map direction is 4 champion-favored, 46 neutral, and 10 stock-favored, not a
+  favorable champion direction.
+
+Raw outcomes agree with the stop: the champion won 8/120 games versus 14/120,
+paired terminal-score share was 49.3%, and both win and score directions were
+inconclusive. Therefore the genome comparison remains descriptive and no
+routing-stability, strength, retention, or promotion claim is made.
+
+The next intervention must act on `PlanReport.strategy`, immediately preserve
+visible war, threat, and city-deficit boundary reactions, and establish its own
+fires-check before an outcome seed. Because rival victory pressure was not one
+of this census's three visible boundaries, treating every residual switch as
+irrational would overclaim the measurement; either expose that missing trigger
+or freeze a bounded hold rule that yields to it. No gameplay behavior changes
+in this task.
+
 ### Result: the champion churns too, and routing stability does not explain it
 
 The frozen command completed all 60 map pairs: 120 games, 480 seat-games per
