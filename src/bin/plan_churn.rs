@@ -99,7 +99,7 @@ fn main() {
         .iter()
         .position(|arg| arg == "--genome")
         .and_then(|index| args.get(index + 1))
-        .map(String::as_str)
+        .map(|name| name.as_str())
     {
         Some("default") => Weights::default(),
         _ => civvis::evolve::load_champion("evolved").unwrap_or_default(),

@@ -3,6 +3,7 @@
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, BTreeSet};
 
+use crate::name::Name;
 use crate::game::{
     City, Game, Item, RememberedCity, DIPLOMATIC_VICTORY_POINTS, EXOPLANET_DESTINATION,
     EXOPLANET_TARGETS,
@@ -59,7 +60,7 @@ pub const EXOPLANET_EYE: &str = "launch_earth_satellite";
 /// a book.
 pub fn knows_globe(p: &crate::game::Player) -> bool {
     p.went_around
-        || GLOBE_TECHS.iter().any(|tech| p.techs.contains(*tech))
+        || GLOBE_TECHS.iter().any(|tech| p.techs.contains(&Name::new(tech)))
         || p.great_people.iter().any(|id| id.as_str() == GLOBE_GREAT_PERSON)
 }
 
@@ -85,7 +86,7 @@ pub const OUTER_SYSTEM_GREAT_PERSON: &str = "isaac_newton";
 /// there is no system to put them in yet.
 pub fn sees_outer_system(p: &crate::game::Player) -> bool {
     knows_globe(p)
-        && (OUTER_SYSTEM_TECHS.iter().any(|tech| p.techs.contains(*tech))
+        && (OUTER_SYSTEM_TECHS.iter().any(|tech| p.techs.contains(&Name::new(tech)))
             || p.great_people
                 .iter()
                 .any(|id| id.as_str() == OUTER_SYSTEM_GREAT_PERSON)
@@ -447,7 +448,7 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
             "research_progress": round1(p.research_progress),
             // A spectator watches from above the world rather than inside it,
             // so it is never the party that has to find north.
-            "found_north": omniscient || p.techs.contains(NORTH_TECH),
+            "found_north": omniscient || p.techs.contains(&Name::new(NORTH_TECH)),
             "north_tech": NORTH_TECH,
             // Whether this people's knowledge has ever run the whole way round
             // the world, which is how a civilization finds out that it does
@@ -1180,7 +1181,7 @@ fn revealed_resources(g: &Game, pid: usize, omniscient: bool) -> BTreeSet<&str> 
                 g.resource_visible_to(pid, resource)
             }
         })
-        .map(String::as_str)
+        .map(|name| name.as_str())
         .collect()
 }
 
@@ -1202,12 +1203,12 @@ fn tile_json(
     // otherwise report yields from tiles the player cannot see.
     let district_yields = tile
         .district
-        .as_deref()
-        .filter(|district| live && g.rules.districts.contains_key(*district))
+
+        .filter(|district| live && g.rules.districts.contains_key(district.as_str()))
         .map(|district| {
             (
-                g.district_yields(district, tile.pos),
-                g.district_adjacency_sources(district, tile.pos),
+                g.district_yields(Name::new(district.as_str()), tile.pos),
+                g.district_adjacency_sources(Name::new(district.as_str()), tile.pos),
             )
         });
     let (district_yields, adjacency) = match district_yields {
@@ -1221,8 +1222,8 @@ fn tile_json(
         .map(|district| {
             json!({
                 "district": district,
-                "yields": g.district_yields(district, tile.pos),
-                "adjacency": g.district_adjacency_sources(district, tile.pos),
+                "yields": g.district_yields(Name::new(district), tile.pos),
+                "adjacency": g.district_adjacency_sources(Name::new(district), tile.pos),
             })
         })
         .unwrap_or(Value::Null);
@@ -1628,11 +1629,11 @@ mod tests {
             })
             .expect("the player starts with a settler");
         let city_id = game.found_city_for(0, capital_position, Some("Academia".to_string()));
-        game.players[0].civics.insert("early_empire".to_string());
+        game.players[0].civics.insert(crate::name!("early_empire"));
         game.apply(
             0,
             &crate::game::Action::AppointGovernor {
-                governor: "pingala".to_string(),
+                governor: crate::name!("pingala"),
                 city: city_id,
             },
         )
@@ -1775,7 +1776,7 @@ mod tests {
             game.rules.techs.get(NORTH_TECH).is_some(),
             "{NORTH_TECH} must name a technology in the shipped tree",
         );
-        game.players[0].techs.remove(NORTH_TECH);
+        game.players[0].techs.remove(&Name::new(NORTH_TECH));
 
         let own = observation(&game, 0);
         assert_eq!(own["me"]["found_north"], json!(false));
@@ -1790,7 +1791,7 @@ mod tests {
             json!(true),
         );
 
-        game.players[0].techs.insert(NORTH_TECH.to_string());
+        game.players[0].techs.insert(Name::new(NORTH_TECH));
         assert_eq!(observation(&game, 0)["me"]["found_north"], json!(true));
         assert_eq!(
             observation_player_view(&game, 0)["me"]["found_north"],
@@ -1832,7 +1833,7 @@ mod tests {
     fn a_lap_of_the_world_proves_it_round_without_the_technology() {
         let mut game = Game::new(2, 18, 12, 11, 25, 0);
         for tech in GLOBE_TECHS {
-            game.players[0].techs.remove(tech);
+            game.players[0].techs.remove(&Name::new(tech));
         }
         game.players[0].great_people.clear();
         game.players[0].went_around = false;
@@ -1858,7 +1859,7 @@ mod tests {
                 game.rules.techs.get(tech).is_some(),
                 "{tech} must name a technology in the shipped tree",
             );
-            game.players[0].techs.remove(tech);
+            game.players[0].techs.remove(&Name::new(tech));
         }
         assert!(
             game.rules.great_people.get(GLOBE_GREAT_PERSON).is_some(),
@@ -1885,9 +1886,9 @@ mod tests {
 
         // Each road on its own is enough.
         for tech in GLOBE_TECHS {
-            game.players[0].techs.insert(tech.to_string());
+            game.players[0].techs.insert(Name::new(tech));
             assert_eq!(observation(&game, 0)["me"]["knows_globe"], json!(true));
-            game.players[0].techs.remove(tech);
+            game.players[0].techs.remove(&Name::new(tech));
         }
         game.players[0]
             .great_people
@@ -1921,7 +1922,7 @@ mod tests {
         // an outer planet in, so the discovery on its own is not enough.
         game.players[0]
             .techs
-            .insert(OUTER_SYSTEM_TECHS[0].to_string());
+            .insert(Name::new(OUTER_SYSTEM_TECHS[0]));
         assert_eq!(observation(&game, 0)["me"]["knows_globe"], json!(false));
         assert_eq!(
             observation(&game, 0)["me"]["sees_outer_system"],
@@ -1938,7 +1939,7 @@ mod tests {
         // Newton is the recruit who does it without the discovery, for the same
         // reason Hypatia opens the globe: the reflecting telescope every one of
         // those findings was made with a descendant of is his.
-        game.players[0].techs.remove(OUTER_SYSTEM_TECHS[0]);
+        game.players[0].techs.remove(&Name::new(OUTER_SYSTEM_TECHS[0]));
         assert_eq!(
             observation(&game, 0)["me"]["sees_outer_system"],
             json!(false),
@@ -2426,9 +2427,9 @@ mod tests {
                 (unit.kind == "settler").then_some(unit.pos)
             })
             .expect("the player starts with a settler");
-        game.map.tiles.get_mut(&deposit).unwrap().resource = Some("iron".to_string());
+        game.map.tiles.get_mut(&deposit).unwrap().resource = Some(crate::name!("iron"));
         for player in game.players.iter_mut() {
-            player.techs.remove("bronze_working");
+            player.techs.remove(&Name::new("bronze_working"));
         }
 
         let spectated = |game: &Game| {
@@ -2446,13 +2447,13 @@ mod tests {
             .expect("the world has a city-state");
         game.players[city_state]
             .techs
-            .insert("bronze_working".to_string());
+            .insert(crate::name!("bronze_working"));
         assert!(
             spectated(&game).is_null(),
             "a city-state is not one of the civilizations the spectator follows"
         );
 
-        game.players[1].techs.insert("bronze_working".to_string());
+        game.players[1].techs.insert(crate::name!("bronze_working"));
         assert_eq!(
             spectated(&game),
             json!("iron"),
@@ -2465,7 +2466,7 @@ mod tests {
             observed_tile(&observation(&game, 0), deposit)["resource"].is_null(),
             "seat 0 has not researched Bronze Working and must still see bare ground"
         );
-        game.players[0].techs.insert("bronze_working".to_string());
+        game.players[0].techs.insert(crate::name!("bronze_working"));
         assert_eq!(
             observed_tile(&observation(&game, 0), deposit)["resource"],
             json!("iron")

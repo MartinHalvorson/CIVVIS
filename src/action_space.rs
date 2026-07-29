@@ -84,7 +84,7 @@ impl FeatureContext {
     pub fn new(g: &Game, pid: usize, objectives: &[Pos]) -> FeatureContext {
         let visible = g.player_visibility(pid);
         let sample = |unit: &crate::game::Unit| {
-            let spec = &g.rules.units[unit.kind.as_str()];
+            let spec = &g.rules.units[unit.kind];
             let military = spec.class == "military";
             let range = if spec.has_ranged_attack() {
                 g.unit_attack_range(unit.id).max(1)
@@ -359,7 +359,7 @@ pub fn features_with_context(
     row[base + 11] = (g.players[pid].faith as f32 / 1000.0).clamp(0.0, 1.0);
 
     let actor = acting_unit(action).and_then(|uid| g.units.get(&uid));
-    let actor_spec = actor.map(|unit| &g.rules.units[unit.kind.as_str()]);
+    let actor_spec = actor.map(|unit| &g.rules.units[unit.kind]);
     let actor_uid = actor.map(|unit| unit.id);
     let actor_pos = actor.map(|unit| unit.pos);
     let mut destination = Vec::with_capacity(DESTINATION_WIDTH);

@@ -43,7 +43,7 @@ fn intensity_zero_leaves_every_volcano_dormant_and_fires_nothing() {
     let mut game = quiet_game();
     game.disaster_intensity = 0;
     let volcano = land_tile(&game);
-    game.map.tiles.get_mut(&volcano).unwrap().feature = Some("volcano".to_string());
+    game.map.tiles.get_mut(&volcano).unwrap().feature = Some(crate::name!("volcano"));
     assert!(!game.volcano_active(volcano));
 
     advance(&mut game, 30);
@@ -63,7 +63,7 @@ fn a_higher_intensity_activates_more_volcanoes_and_fires_more_often() {
         .take(400)
         .collect();
     for position in &volcanoes {
-        game.map.tiles.get_mut(position).unwrap().feature = Some("volcano".to_string());
+        game.map.tiles.get_mut(position).unwrap().feature = Some(crate::name!("volcano"));
     }
     let active_at = |game: &mut Game, intensity: u8| {
         game.disaster_intensity = intensity;
@@ -92,7 +92,7 @@ fn a_higher_intensity_activates_more_volcanoes_and_fires_more_often() {
 fn an_eruption_damages_the_ring_and_leaves_volcanic_soil() {
     let mut game = quiet_game();
     let volcano = land_tile(&game);
-    game.map.tiles.get_mut(&volcano).unwrap().feature = Some("volcano".to_string());
+    game.map.tiles.get_mut(&volcano).unwrap().feature = Some(crate::name!("volcano"));
     let ring: Vec<Pos> = game
         .wdisk(volcano, 1)
         .into_iter()
@@ -102,7 +102,7 @@ fn an_eruption_damages_the_ring_and_leaves_volcanic_soil() {
     for position in &ring {
         let tile = game.map.tiles.get_mut(position).unwrap();
         tile.feature = None;
-        tile.improvement = Some("farm".to_string());
+        tile.improvement = Some(crate::name!("farm"));
         tile.pillaged = false;
     }
 
@@ -129,7 +129,7 @@ fn an_eruption_damages_the_ring_and_leaves_volcanic_soil() {
 fn the_top_two_intensities_widen_the_eruption_to_two_rings() {
     let mut game = quiet_game();
     let volcano = land_tile(&game);
-    game.map.tiles.get_mut(&volcano).unwrap().feature = Some("volcano".to_string());
+    game.map.tiles.get_mut(&volcano).unwrap().feature = Some(crate::name!("volcano"));
     let second_ring: Vec<Pos> = game
         .wdisk(volcano, 2)
         .into_iter()
@@ -142,7 +142,7 @@ fn the_top_two_intensities_widen_the_eruption_to_two_rings() {
         for position in &second_ring {
             let tile = game.map.tiles.get_mut(position).unwrap();
             tile.feature = None;
-            tile.improvement = Some("farm".to_string());
+            tile.improvement = Some(crate::name!("farm"));
             tile.pillaged = false;
         }
     };
@@ -172,7 +172,7 @@ fn the_top_two_intensities_widen_the_eruption_to_two_rings() {
 fn a_drought_holds_its_tiles_then_lifts_on_schedule() {
     let mut game = quiet_game();
     let farm = land_tile(&game);
-    game.map.tiles.get_mut(&farm).unwrap().improvement = Some("farm".to_string());
+    game.map.tiles.get_mut(&farm).unwrap().improvement = Some(crate::name!("farm"));
     game.resolve_drought(&[farm]);
     game.droughts.push(Drought {
         tiles: vec![farm],

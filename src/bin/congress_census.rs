@@ -236,7 +236,7 @@ fn main() {
         .iter()
         .position(|a| a == "--arm")
         .and_then(|i| args.get(i + 1))
-        .map(String::as_str)
+        .map(|name| name.as_str())
         .unwrap_or("ship")
         .to_string();
     if !matches!(

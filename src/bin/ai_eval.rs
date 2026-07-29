@@ -488,17 +488,17 @@ impl Metrics {
                 "builder" => self.builders += 1.0,
                 "trader" => self.traders += 1.0,
                 "missionary" => self.missionaries += 1.0,
-                _ if g.rules.units[unit.kind.as_str()].class == "support" => {
+                _ if g.rules.units[unit.kind].class == "support" => {
                     self.support_units += 1.0
                 }
                 _ => {}
             }
-            if g.rules.units[unit.kind.as_str()].class == "military" {
+            if g.rules.units[unit.kind].class == "military" {
                 self.military_units += 1.0;
             } else {
                 self.civilian_units += 1.0;
             }
-            if g.rules.units[unit.kind.as_str()].class == "religious" {
+            if g.rules.units[unit.kind].class == "religious" {
                 self.religious_units += 1.0;
             }
         }
@@ -545,8 +545,8 @@ fn number(args: &[String], flag: &str, default: i64) -> i64 {
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    let a = args.first().map(String::as_str).unwrap_or("advanced");
-    let b = args.get(1).map(String::as_str).unwrap_or("basic");
+    let a = args.first().map(|name| name.as_str()).unwrap_or("advanced");
+    let b = args.get(1).map(|name| name.as_str()).unwrap_or("basic");
     assert_ne!(a, b, "choose two different AIs");
     for name in [a, b] {
         assert!(
@@ -1431,7 +1431,7 @@ mod tests {
         let baseline = terminal_score_share(&game, &seats, "challenger");
         assert!((baseline - 0.5).abs() < 1e-12);
 
-        game.players[0].techs.insert("writing".to_string());
+        game.players[0].techs.insert(civvis::name!("writing"));
         game.winner = Some(1);
         let challenger = terminal_score_share(&game, &seats, "challenger");
         let incumbent = terminal_score_share(&game, &seats, "incumbent");

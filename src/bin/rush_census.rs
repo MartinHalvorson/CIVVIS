@@ -133,19 +133,19 @@ fn snapshot(g: &Game, majors: &[usize]) -> Snapshot {
         }
         s.capitals += 1;
         let player = &g.players[pid];
-        if player.techs.contains("horseback_riding") {
+        if player.techs.contains(&civvis::name!("horseback_riding")) {
             s.horseback += 1;
         }
-        if player.techs.contains("iron_working") {
+        if player.techs.contains(&civvis::name!("iron_working")) {
             s.iron += 1;
         }
-        if player.techs.contains("masonry") {
+        if player.techs.contains(&civvis::name!("masonry")) {
             s.masonry += 1;
         }
-        if player.civics.contains("craftsmanship") {
+        if player.civics.contains(&civvis::name!("craftsmanship")) {
             s.craftsmanship += 1;
         }
-        if player.civics.contains("political_philosophy") {
+        if player.civics.contains(&civvis::name!("political_philosophy")) {
             s.political_philosophy += 1;
         }
         s.military += g
@@ -154,14 +154,14 @@ fn snapshot(g: &Game, majors: &[usize]) -> Snapshot {
             .filter(|uid| {
                 g.units
                     .get(uid)
-                    .is_some_and(|u| g.rules.units[u.kind.as_str()].class == "military")
+                    .is_some_and(|u| g.rules.units[u.kind].class == "military")
             })
             .count() as f64;
         let melee: Vec<Pos> = g
             .player_unit_ids(pid)
             .into_iter()
             .filter_map(|uid| g.units.get(&uid))
-            .filter(|u| g.rules.units[u.kind.as_str()].is_melee_capable())
+            .filter(|u| g.rules.units[u.kind].is_melee_capable())
             .map(|u| u.pos)
             .collect();
         s.melee += melee.len() as f64;
@@ -217,7 +217,7 @@ fn snapshot(g: &Game, majors: &[usize]) -> Snapshot {
         if city
             .buildings
             .iter()
-            .any(|b| g.rules.buildings[b.as_str()].outer_defense > 0)
+            .any(|b| g.rules.buildings[b].outer_defense > 0)
         {
             s.walled_capitals += 1;
         }
@@ -227,8 +227,8 @@ fn snapshot(g: &Game, majors: &[usize]) -> Snapshot {
             .into_iter()
             .filter_map(|uid| {
                 let u = &g.units[&uid];
-                (u.owner == pid && g.rules.units[u.kind.as_str()].class == "military")
-                    .then(|| g.rules.units[u.kind.as_str()].strength)
+                (u.owner == pid && g.rules.units[u.kind].class == "military")
+                    .then(|| g.rules.units[u.kind].strength)
             })
             .fold(0.0, f64::max);
         s.garrison_strength += garrison;

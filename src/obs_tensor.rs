@@ -165,7 +165,7 @@ pub fn obs_tensor(g: &Game, pid: usize) -> ObsTensor {
         if !mine && !(vis.contains(&unit.pos) && g.unit_visible_to(unit.id, pid)) {
             continue;
         }
-        let military = g.rules.units[unit.kind.as_str()].class == "military";
+        let military = g.rules.units[unit.kind].class == "military";
         let hp = (unit.hp as f32 / 100.0).clamp(0.0, 1.0);
         if mine {
             if military {
@@ -264,7 +264,7 @@ fn global_block(g: &Game, pid: usize, vis: &BTreeSet<Pos>) -> (Vec<f32>, Vec<Str
                     .values()
                     .filter(|u| {
                         u.owner == other
-                            && g.rules.units[u.kind.as_str()].class == "military"
+                            && g.rules.units[u.kind].class == "military"
                             && vis.contains(&u.pos)
                             && g.unit_visible_to(u.id, pid)
                     })

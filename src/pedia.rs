@@ -12,6 +12,7 @@
 
 use serde::Serialize;
 
+use crate::name::Name;
 use crate::rules::{Rules, Yields, ERA_NAMES};
 
 #[derive(Clone, Debug, Serialize)]
@@ -114,7 +115,7 @@ fn unlock_key(kind: &str, id: &str) -> Option<String> {
 }
 
 /// Facts and links shared by everything that can be gated behind the trees.
-fn gates(tech: &Option<String>, civic: &Option<String>) -> (Vec<(String, String)>, Vec<String>) {
+fn gates(tech: &Option<Name>, civic: &Option<Name>) -> (Vec<(String, String)>, Vec<String>) {
     let mut facts = Vec::new();
     let mut links = Vec::new();
     if let Some(tech) = tech {

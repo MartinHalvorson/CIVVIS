@@ -36,6 +36,7 @@
 //!
 //! The control arm is the stock agent, so parity is 0.500 and a *negative*
 //! edge is the expected direction: randomising a decision should not help.
+use civvis::name::Name;
 use civvis::ai::{AdvancedAi, Ai, Weights};
 use civvis::game::{Action, Game};
 use civvis::parallel;
@@ -82,7 +83,7 @@ fn scramble(
         // Progress is carried across so the ablation costs the ordering
         // information and not a turn of beakers.
         if let Some(current) = game.players[pid].research.clone() {
-            let available: Vec<String> = game
+            let available: Vec<Name> = game
                 .available_techs(pid)
                 .into_iter()
                 .filter(|t| *t != current)
@@ -102,7 +103,7 @@ fn scramble(
     }
     if civic {
         if let Some(current) = game.players[pid].civic.clone() {
-            let available: Vec<String> = game
+            let available: Vec<Name> = game
                 .available_civics(pid)
                 .into_iter()
                 .filter(|c| *c != current)

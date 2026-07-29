@@ -19,6 +19,7 @@ use crate::game::{
     Action, Game, GameOptions, LeaderPool, PlayOnMode, VictoryConditions, CIV6_LEADER_POOL,
 };
 use crate::obs::{observation, observation_player_view, observation_spectator};
+use crate::name::Name;
 use crate::rules::Rules;
 use crate::setup::{
     start_era_from_id, start_era_id, BaseRuleset, GameSpeed, MapPoles, MapScript, MapSize,
@@ -223,7 +224,7 @@ struct ChronicleSnapshot {
     turn: u32,
     cities: BTreeMap<u32, ChronicleCity>,
     districts: BTreeMap<Pos, ChronicleDistrict>,
-    buildings: BTreeMap<(u32, String), usize>,
+    buildings: BTreeMap<(u32, Name), usize>,
     wonders: BTreeMap<String, usize>,
     religions: Vec<Option<String>>,
     governments: Vec<Option<String>>,
@@ -264,8 +265,8 @@ impl ChronicleWar {
 }
 
 struct ChronicleState {
-    districts: BTreeSet<String>,
-    buildings: BTreeSet<String>,
+    districts: BTreeSet<Name>,
+    buildings: BTreeSet<Name>,
     population_milestones: Vec<i32>,
     wars: BTreeMap<(usize, usize), ChronicleWar>,
 }
@@ -288,7 +289,7 @@ impl ChronicleSnapshot {
                     *position,
                     ChronicleDistrict {
                         city: city.id,
-                        district: district.clone(),
+                        district: district.clone().to_string(),
                         owner: city.owner,
                     },
                 );
@@ -304,7 +305,7 @@ impl ChronicleSnapshot {
                 }
             }
             for wonder in city.wonders.keys() {
-                wonders.insert(wonder.clone(), city.owner);
+                wonders.insert(wonder.to_string(), city.owner);
             }
             combat_owners
                 .entry(city.pos)
@@ -314,7 +315,7 @@ impl ChronicleSnapshot {
         let military_units = game
             .units
             .values()
-            .filter(|unit| game.rules.units[unit.kind.as_str()].class == "military")
+            .filter(|unit| game.rules.units[unit.kind].class == "military")
             .map(|unit| {
                 combat_owners
                     .entry(unit.pos)
@@ -323,7 +324,7 @@ impl ChronicleSnapshot {
                 (unit.id, unit.owner)
             })
             .collect();
-        let tree_era = |nodes: &BTreeSet<String>, technology: bool| {
+        let tree_era = |nodes: &BTreeSet<Name>, technology: bool| {
             nodes
                 .iter()
                 .filter_map(|node| {
@@ -394,7 +395,7 @@ impl ChronicleSnapshot {
     }
 }
 
-fn completed_districts(game: &Game) -> BTreeSet<String> {
+fn completed_districts(game: &Game) -> BTreeSet<Name> {
     game.cities
         .values()
         .flat_map(|city| city.districts.keys())
@@ -402,7 +403,7 @@ fn completed_districts(game: &Game) -> BTreeSet<String> {
         .collect()
 }
 
-fn completed_buildings(game: &Game) -> BTreeSet<String> {
+fn completed_buildings(game: &Game) -> BTreeSet<Name> {
     game.cities
         .values()
         .flat_map(|city| city.buildings.iter())
@@ -521,7 +522,7 @@ fn chronicle_world_events(
         .collect();
     new_districts.sort_by_key(|district| district.city);
     for district in new_districts {
-        if chronicle.districts.insert(district.district.clone()) {
+        if chronicle.districts.insert(Name::new(&district.district)) {
             let city = after
                 .cities
                 .get(&district.city)
@@ -2154,11 +2155,11 @@ impl Session {
                                 player["research_boosted"] = json!(seat
                                     .research
                                     .as_ref()
-                                    .is_some_and(|tech| seat.boosted_techs.contains(tech)));
+                                    .is_some_and(|tech| seat.boosted_techs.contains(&Name::new(tech))));
                                 player["civic_boosted"] = json!(seat
                                     .civic
                                     .as_ref()
-                                    .is_some_and(|civic| seat.boosted_civics.contains(civic)));
+                                    .is_some_and(|civic| seat.boosted_civics.contains(&Name::new(civic))));
                             }
                         }
                     }
@@ -4037,7 +4038,7 @@ mod tests {
             .map(|pid| generated_ai_name(42, pid, Some("science")))
             .collect();
         let unique: std::collections::BTreeSet<&str> =
-            science.iter().map(String::as_str).collect();
+            science.iter().map(|name| name.as_str()).collect();
         assert_eq!(unique.len(), science.len());
         assert!(science.iter().all(|name| ["Quantum", "Stellar", "Orbital", "Theory"]
             .iter()
@@ -8750,22 +8751,22 @@ mod tests {
             .get_mut(&first_city)
             .unwrap()
             .districts
-            .insert("campus".to_string(), district_pos);
+            .insert(crate::name!("campus"), district_pos);
         game.cities
             .get_mut(&first_city)
             .unwrap()
             .wonders
-            .insert("pyramids".to_string(), district_pos);
+            .insert(crate::name!("pyramids"), district_pos);
         game.cities
             .get_mut(&first_city)
             .unwrap()
             .buildings
-            .push("granary".to_string());
+            .push(crate::name!("granary"));
         game.cities.get_mut(&first_city).unwrap().pop = 4;
         game.players[0].religion = Some("Test Faith".to_string());
         game.players[0].government = Some("classical_republic".to_string());
-        game.players[0].techs.insert("horseback_riding".to_string());
-        game.players[0].civics.insert("drama_poetry".to_string());
+        game.players[0].techs.insert(crate::name!("horseback_riding"));
+        game.players[0].civics.insert(crate::name!("drama_poetry"));
         let city_state = game
             .players
             .iter()
@@ -8832,7 +8833,7 @@ mod tests {
             .units
             .values()
             .find(|unit| {
-                unit.owner == 1 && game.rules.units[unit.kind.as_str()].class == "military"
+                unit.owner == 1 && game.rules.units[unit.kind].class == "military"
             })
             .map(|unit| unit.id)
             .expect("player two starts with a military unit");

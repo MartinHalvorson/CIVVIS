@@ -24,6 +24,7 @@
 //!
 //! Each grant is applied at the start of the seat's turn, before the wrapped
 //! agent plays, because `AdvancedAi::take_turn` ends its own turn.
+use crate::name::Name;
 use crate::ai::{Ai, PlanReport};
 use std::collections::BTreeSet;
 use crate::game::{Game, Item};
@@ -219,7 +220,7 @@ impl<A: Ai> Oracle<A> {
                     break;
                 }
                 if let Some(unit) = g.units.get_mut(&uid) {
-                    unit.kind = target;
+                    unit.kind = Name::new(&target);
                 }
                 self.fired += 1;
             }
@@ -420,7 +421,7 @@ impl<A: Ai> Oracle<A> {
                 .values()
                 .filter(|unit| unit.owner == pid)
                 .filter(|unit| {
-                    let spec = &g.rules.units[unit.kind.as_str()];
+                    let spec = &g.rules.units[unit.kind];
                     spec.class == "military" && spec.is_melee_capable()
                 })
                 .filter(|unit| g.wdist(unit.pos, city_pos) > 1)
@@ -709,7 +710,7 @@ mod tests {
                     .into_iter()
                     .map(|cid| probe.cities[&cid].production_progress.values().sum::<f64>())
                     .sum();
-                let before: Vec<(Pos, String)> = foundations_of(&probe, 0);
+                let before: Vec<(Pos, crate::name::Name)> = foundations_of(&probe, 0);
                 let gold = probe.players[0].gold;
 
                 oracle.grant_siting(&mut probe, 0);
@@ -762,8 +763,8 @@ mod tests {
         assert!(ever_moved, "no foundation ever changed tile");
     }
 
-    fn foundations_of(g: &Game, pid: usize) -> Vec<(Pos, String)> {
-        let mut out: Vec<(Pos, String)> = g
+    fn foundations_of(g: &Game, pid: usize) -> Vec<(Pos, crate::name::Name)> {
+        let mut out: Vec<(Pos, crate::name::Name)> = g
             .player_city_ids(pid)
             .into_iter()
             .flat_map(|cid| g.cities[&cid].owned_tiles.clone())
