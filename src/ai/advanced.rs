@@ -851,6 +851,17 @@ pub struct AdvancedAi {
     pub city_strategy_breadbasket: bool,
     pub city_strategy_comparative: bool,
     pub city_strategy_pressure: bool,
+    /// Value a power-plant conversion only by the utility gained over the
+    /// plant the city already owns.
+    ///
+    /// **Off by default.** Stock scores every legal conversion by the target
+    /// plant's absolute fuel/climate utility. Because the current plant alone
+    /// is illegal, that makes the runner-up attractive immediately after the
+    /// best plant finishes and creates a deterministic conversion cycle. The
+    /// evaluator-only `advanced_reactor_marginal` entrant subtracts the exact
+    /// same utility for the current plant and rejects anything that is not a
+    /// strict improvement. See `docs/REACTOR_CONVERSION.md`.
+    pub reactor_marginal: bool,
     /// Ignore every by-name civilization signal in the decision layer.
     ///
     /// An **ablation**, not a strategy. `docs/GENOME.md`'s rule is that a null
@@ -1118,6 +1129,7 @@ impl AdvancedAi {
             city_strategy_breadbasket: true,
             city_strategy_comparative: true,
             city_strategy_pressure: true,
+            reactor_marginal: false,
             civ_blind: false,
             deny_leaders: true,
             early_rush: false,
@@ -8132,6 +8144,52 @@ impl AdvancedAi {
         }
     }
 
+    fn power_plant_weights(resource: &str) -> Option<(f64, f64)> {
+        match resource {
+            "coal" => Some((18.0, -110.0)),
+            "oil" => Some((20.0, -55.0)),
+            "uranium" => Some((55.0, 130.0)),
+            _ => None,
+        }
+    }
+
+    /// Preserve the stock expression's exact left-to-right floating-point
+    /// evaluation order while the treatment flag is off.
+    fn stock_power_plant_value(g: &Game, pid: usize, resource: &str) -> f64 {
+        let Some((stock_value, clean_value)) = Self::power_plant_weights(resource) else {
+            return f64::NEG_INFINITY;
+        };
+        450.0
+            + g.strategic_stockpile(pid, Name::new(resource)).min(50.0) * stock_value
+            + g.climate_phase as f64 * clean_value
+    }
+
+    fn power_plant_utility(g: &Game, pid: usize, resource: &str) -> f64 {
+        let Some((stock_value, clean_value)) = Self::power_plant_weights(resource) else {
+            return f64::NEG_INFINITY;
+        };
+        g.strategic_stockpile(pid, Name::new(resource)).min(50.0) * stock_value
+            + g.climate_phase as f64 * clean_value
+    }
+
+    /// The one fuel represented by the city's current regional power plant.
+    /// No plant or an impossible multiple-plant state both fail closed.
+    fn current_power_plant(city: &crate::game::City) -> Option<&'static str> {
+        let mut current = None;
+        for building in &city.buildings {
+            let resource = match building.as_str() {
+                "coal_power_plant" => "coal",
+                "oil_power_plant" => "oil",
+                "nuclear_power_plant" => "uranium",
+                _ => continue,
+            };
+            if current.replace(resource).is_some() {
+                return None;
+            }
+        }
+        current
+    }
+
     fn production_value(
         &self,
         g: &Game,
@@ -8825,14 +8883,25 @@ impl AdvancedAi {
                         "convert_reactor_to_coal"
                         | "convert_reactor_to_oil"
                         | "convert_reactor_to_uranium" => {
-                            let (resource, stock_value, clean_value) = match project.as_str() {
-                                "convert_reactor_to_coal" => ("coal", 18.0, -110.0),
-                                "convert_reactor_to_oil" => ("oil", 20.0, -55.0),
-                                _ => ("uranium", 55.0, 130.0),
+                            let target = match project.as_str() {
+                                "convert_reactor_to_coal" => "coal",
+                                "convert_reactor_to_oil" => "oil",
+                                _ => "uranium",
                             };
-                            450.0
-                                + g.strategic_stockpile(pid, Name::new(resource)).min(50.0) * stock_value
-                                + g.climate_phase as f64 * clean_value
+                            if !self.reactor_marginal {
+                                Self::stock_power_plant_value(g, pid, target)
+                            } else if let Some(current) = Self::current_power_plant(city) {
+                                let target_utility = Self::power_plant_utility(g, pid, target);
+                                let improvement =
+                                    target_utility - Self::power_plant_utility(g, pid, current);
+                                if improvement > f64::EPSILON {
+                                    improvement
+                                } else {
+                                    -10_000.0
+                                }
+                            } else {
+                                -10_000.0
+                            }
                         }
                         "carbon_recapture" => {
                             if g.global_co2_emissions() <= f64::EPSILON
@@ -17365,7 +17434,7 @@ mod tests {
     }
 
     #[test]
-    fn project_search_maintains_aged_reactors_and_avoids_dirty_conversion_churn() {
+    fn project_search_maintains_aged_reactors_and_marginal_conversion_avoids_churn() {
         let mut game = Game::new(2, 24, 16, 7_101, 200, 0);
         let settler = game
             .player_unit_ids(0)
@@ -17388,6 +17457,27 @@ mod tests {
         };
         let counts = EmpireCounts::default();
         let ai = AdvancedAi::new();
+        game.climate_phase = 5;
+        game.players[0]
+            .strategic_resources
+            .insert(crate::name!("coal"), 0.1);
+        let original_stock_value =
+            450.0 + game.strategic_stockpile(0, crate::name!("coal")).min(50.0) * 18.0
+                + game.climate_phase as f64 * -110.0;
+        let regrouped_stock_value = 450.0
+            + (game.strategic_stockpile(0, crate::name!("coal")).min(50.0) * 18.0
+                + game.climate_phase as f64 * -110.0);
+        assert_ne!(
+            original_stock_value.to_bits(),
+            regrouped_stock_value.to_bits(),
+            "the regression fixture must distinguish floating-point evaluation order"
+        );
+        assert_eq!(
+            AdvancedAi::stock_power_plant_value(&game, 0, "coal").to_bits(),
+            original_stock_value.to_bits(),
+            "the default-off path must preserve the stock expression bit for bit"
+        );
+        game.climate_phase = 0;
         let recommission = Item::Project {
             project: crate::name!("recommission_reactor"),
         };
@@ -17408,12 +17498,70 @@ mod tests {
         let coal = Item::Project {
             project: crate::name!("convert_reactor_to_coal"),
         };
+        let oil = Item::Project {
+            project: crate::name!("convert_reactor_to_oil"),
+        };
         let nuclear = Item::Project {
             project: crate::name!("convert_reactor_to_uranium"),
         };
         assert!(
             ai.production_value(&game, 0, city, &nuclear, &plan, &counts)
                 > ai.production_value(&game, 0, city, &coal, &plan, &counts)
+        );
+
+        game.players[0]
+            .strategic_resources
+            .insert(crate::name!("oil"), 10.0);
+        let mut marginal = ai.clone();
+        marginal.reactor_marginal = true;
+        assert!(
+            marginal.production_value(&game, 0, city, &coal, &plan, &counts) < -9_000.0,
+            "coal is worse than the current oil plant at climate phase six"
+        );
+        assert!(
+            marginal.production_value(&game, 0, city, &nuclear, &plan, &counts) > 0.0,
+            "uranium is a strict improvement over the current oil plant"
+        );
+        assert_eq!(
+            ai.production_value(&game, 0, city, &recommission, &plan, &counts),
+            marginal.production_value(&game, 0, city, &recommission, &plan, &counts),
+            "the treatment must not change non-conversion scoring"
+        );
+
+        game.cities.get_mut(&city).unwrap().buildings =
+            vec![crate::name!("factory"), crate::name!("nuclear_power_plant")];
+        assert!(marginal.production_value(&game, 0, city, &coal, &plan, &counts) < -9_000.0);
+        assert!(marginal.production_value(&game, 0, city, &oil, &plan, &counts) < -9_000.0);
+
+        game.climate_phase = 0;
+        game.players[0]
+            .strategic_resources
+            .insert(crate::name!("coal"), 50.0);
+        game.players[0]
+            .strategic_resources
+            .insert(crate::name!("uranium"), 0.0);
+        assert!(
+            marginal.production_value(&game, 0, city, &coal, &plan, &counts) > 0.0,
+            "a real fuel/climate utility reversal must remain eligible"
+        );
+
+        game.cities.get_mut(&city).unwrap().buildings = vec![crate::name!("factory")];
+        assert!(
+            marginal.production_value(&game, 0, city, &nuclear, &plan, &counts) < -9_000.0,
+            "a missing current plant fails closed"
+        );
+        assert!(
+            ai.production_value(&game, 0, city, &nuclear, &plan, &counts) > -9_000.0,
+            "the default-off controller retains stock absolute valuation"
+        );
+        game.cities
+            .get_mut(&city)
+            .unwrap()
+            .buildings
+            .extend([crate::name!("oil_power_plant"), crate::name!("nuclear_power_plant")]);
+        assert!(
+            marginal.production_value(&game, 0, city, &coal, &plan, &counts) < -9_000.0,
+            "an impossible multiple-plant state fails closed"
         );
     }
 
