@@ -177,9 +177,11 @@ The mechanism census reports Conquest/Flight/resource-ready turns, legal
 airbase and aircraft opportunities, successful queue orders, completed and
 queued Aerodromes, aircraft trained/surviving/queued by type, treatment games
 that fired, real strategic material committed, and successful offensive
-`AirStrike`/`AirPillage` actions. Rebase, patrol, and interception activity is
-reported separately. Axis-specific summaries are descriptive only; only the
-pooled frozen gate decides.
+`AirStrike`/`AirPillage` actions. Rebase and patrol actions are reported
+separately. The engine resolves interception internally without an action-log
+entry or persistent counter, so interception itself is not claimed as an
+evaluator-only observable. Axis-specific summaries are descriptive only; only
+the pooled frozen gate decides.
 
 ## Exact replay null
 
