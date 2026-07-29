@@ -80,6 +80,49 @@ the exact full-horizon null remains unopened. Immediately before measurement,
 latest `main` may be merged only if this artifact's bytes and the relevant
 controller/action semantics are unchanged.
 
+## Prospective deployment-population and observer-horizon amendment
+
+This amendment was also frozen before the exact null or either treatment seed
+was run or read. The unattended supervisor does not play only the original
+eight-player Continents/Planet cell. It independently samples player counts 4
+through 10, all nine supported map scripts, and Flat/Planet topology. With
+Score disabled it also keeps stepping the same world after nominal turn 250
+until an enabled victory; simply constructing a 320-turn game would be wrong
+because policy code reads `Game.max_turns`.
+
+The formal batches therefore use the same deterministic, space-filling
+deployment cycle already shared by the Spaceport and horizon studies. For
+zero-based map offset `i`:
+
+- players are `[4, 6, 8, 10, 5, 7, 9][i mod 7]`;
+- scripts are `[land_only, water_world, continents, true_start_earth, lakes,
+  inland_sea, pangaea, small_continents, islands][i mod 9]`; and
+- topology is Flat at even `i` and Planet at odd `i`.
+
+The periods are pairwise coprime, so all 126 joint profiles occur once before
+repetition. `MapSize::for_players` supplies requested dimensions and
+city-state counts; the evaluator may not copy that table. Every phase restarts
+at offset zero and retains its already-frozen seed range. The four-map null,
+30-map screen, and 120-map holdout therefore cover four, 30, and 120 distinct
+joint profiles respectively. Focal seats remain first and final major, and
+both stay inside their shared map-level inference unit.
+
+Each game is constructed with `Game.max_turns = 250`, and the runner continues
+the unchanged game and stateful champion fleet only through external turn 320
+or an enabled victory. It must assert that the policy-visible horizon remains
+250 and report both values. A formal invocation requires
+`--deployment-mix --turns 250 --observe-through 320`; fixed-profile flags are
+rejected under the deployment mix. Player/script/topology balances are printed
+for each batch, but only the preregistered pooled map gate decides.
+
+This prospectively corrects the sampled population and terminal observation,
+not the treatment. Champion identity, action-log splice, map counts, focal
+seats, seed ranges, endpoints, thresholds, stopping rule, and six-job cap are
+unchanged. The original fixed-cell and turn-250 language below is superseded.
+Earlier seed `9987998` smokes remain mechanics-only; after implementation that
+same non-focal seed may exercise one derived profile at a short diagnostic
+horizon without touching a registered map.
+
 ## Preregistration: frozen before implementation or focal data
 
 ### Hypothesis
@@ -88,10 +131,10 @@ controller/action semantics are unchanged.
 > Museum, substituting Royal Society will cause real Builder contributions to
 > Spaceport projects and improve game outcomes on the production profile.
 
-The treatment is deliberately one cell, not a general government-plaza
-rewrite. It does not change Tier 1 or Tier 2, does not alter any non-Science
-plan, does not force a Builder or Spaceport project, and does not add a special
-value to the shipped governor.
+The treatment is deliberately one action boundary, not a general
+government-plaza rewrite. It does not change Tier 1 or Tier 2, does not alter
+any non-Science plan, does not force a Builder or Spaceport project, and does
+not add a special value to the shipped governor.
 
 ### Exact treatment boundary
 
@@ -124,7 +167,7 @@ serialized `Game`, focal result, and census must match exactly for all eight
 seat cells. Any mismatch blocks the treatment run.
 
 The exact null invocation is the screen command below with `--maps 4`,
-`--seed 9987999`, `--null`, and the same explicit champion flag.
+`--seed 9987999`, and `--null`.
 
 ### Fixed development screen
 
@@ -132,19 +175,18 @@ The untouched screen is 30 maps, two focal seats per map, each seat replayed
 once as stock and once as treatment: 60 matched seat cells and 120 games.
 
 ```text
-science_royal_society_eval --maps 30 --players 8 --width 84 --height 54 \
-  --city-states 12 --turns 250 --speed online --map continents \
-  --shape planet --poles poles --randomize-civs \
+science_royal_society_eval --deployment-mix --maps 30 --turns 250 \
+  --observe-through 320 --speed online --poles poles --randomize-civs \
   --victories science,culture,domination --ai advanced_evolved \
   --seed 9988000 --jobs 6
 ```
 
 All majors use the embedded `advanced_evolved` champion; city-states and
-barbarians use that controller's normal minor paths. Focal seats are 0 and 7.
-The two seats are aggregated before inference, so the independent unit is the
-map, not an individual start. The screen must run alone in the six-core simulator slot and
-is queued behind every older registered batch, currently #561, #567, #570,
-#574, #579, #589, and #591.
+barbarians use that controller's normal minor paths. Focal seats are 0 and the
+final major seat. The two seats are aggregated before inference, so the
+independent unit is the map, not an individual start. The screen must run alone
+in the six-core simulator slot and is queued behind every older registered
+batch, currently #561, #567, #570, #574, #579, #589, and #591.
 
 The evaluator reports, by arm:
 
@@ -184,13 +226,12 @@ government-plaza rewrite, seed retry, or holdout.
 ### Disjoint holdout
 
 Passing the complete screen earns one unchanged 120-map holdout at seed
-`9989000` on the same profile, including `--ai advanced_evolved`. It must
-retain at least ten substitutions, ten contributions across five seat-games,
-nonnegative score and Science-progress
-directions, at least as many Science wins, and a favorable win direction with
-a two-sided exact sign-test `p < 0.05`. Only that result permits a separate
-gameplay PR. This PR remains an evaluator and scientific record regardless of
-outcome.
+`9989000` on the same deployment schedule, including `--ai advanced_evolved`.
+It must retain at least ten substitutions, ten contributions across five
+seat-games, nonnegative score and Science-progress directions, at least as many
+Science wins, and a favorable win direction with a two-sided exact sign-test
+`p < 0.05`. Only that result permits a separate gameplay PR. This PR remains an
+evaluator and scientific record regardless of outcome.
 
 No seed `9988000` or `9989000` map was generated or read before this document
 was committed. The implementation, null replay, latest-main merge, and full CI
