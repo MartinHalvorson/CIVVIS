@@ -86,6 +86,24 @@ rating. Unit tests must prove that the nominal snapshot is taken exactly once,
 that continuation can pass turn 250 while `max_turns` remains 250, and that a
 winner before the boundary is not classified as late.
 
+## Amended implementation checkpoint
+
+The deployment-population amendment was committed and pushed as
+`6b01ca5f6e6703a70a8d765ef6073c2d80106d33` before its implementation. The
+completed runner is frozen at
+`250f1c1f8011e4cb063a6fd5bef165d2febca61a`. It derives every size row through
+`MapSize::for_players`, rejects fixed-profile flags under `--deployment-mix`,
+caps execution at six jobs, reports every map's requested and realized
+geometry, and emits player-count, script, and topology summaries without
+letting them enter the pooled gate.
+
+All four focused CI-profile tests passed, including the 126-cell uniqueness and
+exact 12/48-map marginal balances. The standalone binary rejected a conflicting
+`--deployment-mix --players 8` invocation before simulation. A one-map,
+one-turn diagnostic at seed 9,986,999 exercised the derived 4-player Land
+Only/Flat profile, retained `Game.max_turns = 1`, and printed no focal gate. No
+map from seed 9,986,000 or 9,987,000 has been run or read.
+
 ## Fixed deployment-population screen
 
 The amended frozen command is:
