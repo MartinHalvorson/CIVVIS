@@ -365,6 +365,26 @@ binary used for the diagnostics above. No simulation or seed was touched by
 the failed invocation. The null seed 9,995,000 and both treatment ranges remain
 untouched.
 
+The exhaustive integrity amendment was frozen and pushed independently at
+`24dc638f2614cf79f2e3b43a931dd03345953818` before source changed. Commit
+`a48e5cb4ba1b78ef3bd379eda213785c2e9e6072` then implemented only that
+amendment.
+
+- All 14 focused CI-profile tests passed, including malformed later
+  duplicates, unsupported and positional tokens, exact champion provenance,
+  full serialized-world null equality, legal repair mechanics, the
+  policy-horizon invariant, and frozen gates.
+- A standalone release build succeeded. The binary rejected an unknown flag,
+  a positional token, `--turns 250 --turns nope`, and a valueless `--maps`
+  with status 2 before simulation.
+- The permitted one-map/one-turn null diagnostic at seed 79,991 printed
+  champion generation 14 and FNV-1a `0x40b1fbb2a5b88bc6`, reproduced both
+  matched `GameResult` values and complete serialized terminal `Game` values,
+  and emitted only the diagnostic null label.
+
+Registered null seed 9,995,000, screen seed 9,996,000, and holdout seed
+9,997,000 remain unopened.
+
 ## Resource rule
 
 The evaluator must not begin a large-map batch while another simulator job is
