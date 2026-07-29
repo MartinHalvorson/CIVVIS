@@ -39,7 +39,9 @@ const CITY_WORK_RADIUS: usize = 3;
 /// The city count the expansion grant stops at — the same six
 /// `StrategicPlan::desired_cities` aims at, so the grant removes the cost of
 /// the agent's own appetite rather than inventing a larger one.
-const EXPANSION_TARGET: usize = 6;
+/// `pub` so `src/bin/rebate_census.rs` can report when a seat stopped being
+/// eligible for a payout, which is the length of the window both grants act in.
+pub const EXPANSION_TARGET: usize = 6;
 
 /// The city an expansion grant would pay out of, or `None` when this seat is
 /// not short of its city target or already has a Settler in flight.
@@ -493,6 +495,28 @@ impl<A: Ai> Oracle<A> {
         // Settler here at all — a Congress ban, say. Paying nothing is the
         // honest match for that, and firing would be counted as an effect.
         if !cost.is_finite() || cost <= 0.0 {
+            return;
+        }
+        // Serialize on unspent money, the way the expansion grant serializes
+        // on a Settler already walking.
+        //
+        // ⚠ This is the correction that made the grant a control at all. The
+        // firing *condition* is shared with `grant_expansion` and is identical
+        // instant by instant, but the two have different consequences: a
+        // granted Settler occupies the `already_walking` slot for its whole
+        // transit and switches its own trigger off, while a lump of banked
+        // production switches nothing off. Measured over 20 cells, that made
+        // the rebate pay **66.5 times a game against the expansion grant's
+        // 5.6** — twelve times the gift, which is not a cost-matched control
+        // but a much larger one wearing its name. 87.0% of those payments
+        // landed on a city whose queue was already empty and still holding the
+        // last one.
+        //
+        // A fires-check that compares the two on one shared position cannot
+        // see this: they agree on every instant and diverge only over a
+        // trajectory. **The rate has to be measured over whole games**, which
+        // is what `rebate_census` is for.
+        if g.cities.get(&home).is_some_and(|city| city.production >= cost) {
             return;
         }
         let keeps_population = g.governor_effect(pid, home, "settler_no_population") > 0.0;
