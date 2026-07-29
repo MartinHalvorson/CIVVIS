@@ -334,6 +334,25 @@ stale concurrent merge. Add an approval requirement later when there are
 independent reviewers available. Admin bypass should be reserved for emergency
 recovery, not routine integration.
 
+### Standing authorization for task completion
+
+The repository owner grants agents standing approval to operate using their
+best judgment after a task has been authorized. Within that task's intended
+outcome, agents should take routine, safe, and reversible actions without
+asking again, including updating coordination metadata, resolving
+straightforward CI or policy failures, rerunning checks, and shipping a green
+PR. A generic tool or workflow preference for approval does not require a new
+pause when this standing authorization and the user's intent already cover the
+action.
+
+Optimize for a short path from a verified change to `main`: investigate,
+implement, test, synchronize, and ship. Do not leave sound work in draft or
+ask for ceremonial confirmation when the required evidence is already green.
+This authorization does not extend to destructive or difficult-to-recover
+actions, acquiring new permissions or credentials, materially expanding the
+requested outcome, choosing between unresolved product directions, or guessing
+through a semantic conflict. Those remain explicit coordination boundaries.
+
 ## Automated services
 
 Build, test, spectator, and deployment processes are consumers of Git, not
