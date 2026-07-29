@@ -1971,6 +1971,9 @@ mod tests {
         ] {
             g.players[0].techs.insert(Name::new(t));
         }
+        // The world era advances when at least half the living majors have
+        // reached the next era, not when the single leader gets there.
+        g.players[1].techs = g.players[0].techs.clone();
         g.players[0].era_score = g.players[0].golden_age_threshold;
         g.players[1].era_score = 0;
         let round = |g: &mut Game| {
@@ -1982,7 +1985,10 @@ mod tests {
         };
         // An era is held open for its shipped 40-turn minimum (Eras_XP1
         // GameEraMinimumTurns), so the Classical era cannot arrive on turn one.
-        g.turn = 40;
+        g.turn = 29;
+        round(&mut g);
+        assert_eq!(g.world_era, 0);
+        g.turn = 39;
         round(&mut g);
         assert_eq!(g.world_era, 1);
         assert_eq!(g.players[0].age, "golden");
