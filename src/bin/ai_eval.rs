@@ -808,7 +808,7 @@ fn family_counts(families: &BTreeMap<String, usize>, seats: &BTreeMap<String, us
         .into_iter()
         .map(|(family, count)| {
             format!(
-                "{family} {count} in {} seats",
+                "{family} {count} across {} seat-games",
                 seats.get(family).copied().unwrap_or(0)
             )
         })
@@ -1920,6 +1920,48 @@ mod tests {
     }
 
     #[test]
+    fn overlapping_visible_boundaries_are_one_switch_but_retain_each_component() {
+        let mut trace = PlanTrace::default();
+        for (strategy, reason, context) in [
+            (
+                "expansion",
+                "short of cities with land still open",
+                StrategyContext {
+                    at_major_war: false,
+                    threatened: false,
+                    city_deficit: true,
+                },
+            ),
+            (
+                "recovery",
+                "at war and losing ground at home",
+                StrategyContext {
+                    at_major_war: true,
+                    threatened: true,
+                    city_deficit: false,
+                },
+            ),
+        ] {
+            trace.observe(PlanObservation {
+                target: "adaptive",
+                strategy,
+                reason,
+                rush: false,
+                context,
+                midgame: true,
+            });
+        }
+
+        assert_eq!(trace.midgame_strategy_switches, 1);
+        assert_eq!(trace.midgame_boundary_switches, 1);
+        assert_eq!(trace.midgame_unanchored_switches, 0);
+        assert_eq!(trace.midgame_war_boundary_switches, 1);
+        assert_eq!(trace.midgame_threat_boundary_switches, 1);
+        assert_eq!(trace.midgame_city_deficit_boundary_switches, 1);
+        assert!(trace.midgame_unanchored_reason_families.is_empty());
+    }
+
+    #[test]
     fn assessment_family_coverage_counts_each_seat_once_and_ranks_ties_by_label() {
         let family = reason_family("already at war", "at war and losing ground at home");
         let mut first = PlanTrace::default();
@@ -1945,7 +1987,9 @@ mod tests {
                 &metrics.midgame_unanchored_reason_families,
                 &metrics.midgame_unanchored_reason_family_seats,
             ),
-            format!("alpha <-> zeta 4 in 1 seats, {family} 4 in 2 seats")
+            format!(
+                "alpha <-> zeta 4 across 1 seat-games, {family} 4 across 2 seat-games"
+            )
         );
     }
 
