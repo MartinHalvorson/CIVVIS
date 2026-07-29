@@ -5525,3 +5525,56 @@ fails, the genome comparison is descriptive and no outcome attribution is made.
 There is no holdout and no gameplay promotion in this task: it adds the missing
 measurement, records the frozen screen once, and selects the next falsifiable
 midgame mechanism.
+
+### Result: the champion churns too, and routing stability does not explain it
+
+The frozen command completed all 60 map pairs: 120 games, 480 seat-games per
+entrant, 116,293 observed champion player-turns and 116,636 stock player-turns.
+Games averaged 247.6 turns. The new trace exposes what the old target report
+could not: both entrants remained `adaptive` for 100% of assigned-target
+observations with zero target switches, while their live grand strategies
+changed about twelve times per seat-game.
+
+| midgame strategy diagnostic | `advanced_evolved` | `advanced` |
+|---|---:|---:|
+| switches per seat-game | 4.39 | 4.08 |
+| unanchored per seat-game | **2.69** | 2.36 |
+| unanchored share | **1,292 / 2,105 (61.4%)** | 1,131 / 1,959 (57.7%) |
+| boundary-accompanied | 813 / 2,105 (38.6%) | 828 / 1,959 (42.3%) |
+| all-game switches per 100 turns | 4.96 | 4.91 |
+
+The champion passes both preregistered commitment-instability eligibility
+terms: 2.69 is above 1.0 unanchored switch per seat-game and 61.4% is above the
+50% residual-share floor. This revives commitment as a mechanism worth
+isolating on the agent that ships; it does **not** promote hysteresis by itself.
+“Unanchored” deliberately omits public victory denial, relative military
+power, and victory-progress changes, any of which can be a sound reason to
+switch.
+
+The exposure and transition table localize where the next instrument belongs.
+Champion midgame turns were 27.1% Conquest and 19.7% Recovery, and
+Conquest→Recovery (353) plus Recovery→Conquest (278) made up 631 of 2,105
+switches (30.0%). The visible boundary totals were threat 591, war 225, and
+city deficit 164; components overlap. That aggregate cannot say which of the
+1,292 residual switches came from denial, opportunistic power, or best-lane
+progress. Adding a generic cooldown now could therefore suppress an urgent
+counter-plan while claiming to cure churn. The next falsifiable routing
+instrument is the already-computed `assess()` trigger (`because`) beside the
+strategy report, followed by trigger-scoped rather than generic hysteresis if
+one elective trigger dominates the residual.
+
+The narrower genome mechanism is refuted on every frozen term:
+
+- unanchored churn was **14% higher**, not at least 25% lower (2.69 versus
+  2.36 per seat-game);
+- paired-map score was **47.5%**, not at least 52% (95% CI 35.4%–59.9%,
+  −17 Elo, CI −104–+70); and
+- map directions were **4 champion / 46 neutral / 10 stock**, not champion
+  favorable (exact sign p=0.1796).
+
+The outcome is `INCONCLUSIVE`, not evidence that the embedded champion is
+weaker. Terminal score was 49.3%, with directions 26–34 (p=0.3663). The exact
+profile produced 8 champion wins (all Science) and 14 stock wins (13 Science,
+1 Culture). What is established is narrower and useful: **routing stability
+does not explain champion strength, because the champion is not more stable.**
+No holdout is run and no gameplay behavior changes.
