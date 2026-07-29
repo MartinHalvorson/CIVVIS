@@ -5328,6 +5328,106 @@ mod tests {
     }
 
     #[test]
+    fn browser_takes_over_a_same_code_successor_without_reloading_itself() {
+        // Every world is a new server process, so "the process changed" is not
+        // a reason to replace the document — "the code changed" is. Replacing
+        // it costs a full application boot, and that boot is what a viewer
+        // sees as the exhibition dropping into a loading screen mid-match.
+        assert!(EMBEDDED_INDEX.contains("function servesThisDocumentsCode(commit)"));
+        assert!(EMBEDDED_INDEX.contains("commit !== \"unknown\" && commit === documentCommit"));
+        assert!(EMBEDDED_INDEX.contains("function adoptSupervisedSuccessor(instance, seed)"));
+        // Keeping the document is only half of it. Everything outside the
+        // browser identifies the followed server by this tab's own URL, and
+        // civvis-refresh.sh navigates a tab whose `instance=` disagrees — from
+        // AppleScript, where no handoff can be staged. So an adoption says
+        // where it went, without loading anything to say it.
+        assert!(EMBEDDED_INDEX.contains("history.replaceState(history.state, \"\", here.toString());"));
+        // The document's build is the one behind its *first* frame. Comparing
+        // against the previous server instead would let a run of same-code
+        // successors walk this page onto code it is not running.
+        assert!(EMBEDDED_INDEX.contains(
+            "if (documentCommit === null && typeof st.server_commit === \"string\" &&"
+        ));
+
+        // What an adoption forgets is exactly what belonged to the world being
+        // left. A tile delta is keyed to its map, so `have=` must never name a
+        // world the new server has never heard of.
+        let adopt = EMBEDDED_INDEX
+            .split_once("function adoptSupervisedSuccessor(instance, seed) {")
+            .expect("the in-place adoption")
+            .1
+            .split_once("\n}")
+            .expect("the end of the adoption")
+            .0;
+        for forgotten in [
+            "tileStore = null;",
+            "paintedFrame = null;",
+            "lastSeed2 = null;",
+            "specPending = null;",
+            "specFetchGeneration++;",
+            // The world being left most of all: `render` returns the moment it
+            // decides to adopt, before it commits the state it was handed, so
+            // a `state` kept here is a world that never advances and whose
+            // seed re-triggers the same decision on every frame — a page
+            // frozen on a dead map with its loop running flat out.
+            "state = null;",
+            "resetAnim();",
+        ] {
+            assert!(
+                adopt.contains(forgotten),
+                "adopting a successor must forget {forgotten}"
+            );
+        }
+
+        // Both ways a supervised world can change under this page take the
+        // in-place route: a replacement *process* (every game boundary) and a
+        // new *seed* on the one already being watched (the in-process
+        // successor, and the arm a page coming back from the dark lands on).
+        assert_eq!(
+            EMBEDDED_INDEX
+                .matches("adoptSupervisedSuccessor(st.server_instance, st.seed);")
+                .count(),
+            2,
+            "a changed process and a changed world are both adopted, not reloaded"
+        );
+        // And it is not a reload, however the page got here. It reads the URL
+        // to rewrite it; nothing here navigates.
+        for navigation in ["location.replace", "location.href =", "location.assign"] {
+            assert!(
+                !adopt.contains(navigation),
+                "an adopted successor keeps this document, so it must not {navigation}"
+            );
+        }
+
+        // The watch loop runs on requestAnimationFrame, which Chrome suspends
+        // in a hidden, occluded or background tab. A page frozen there stops
+        // noticing that the world it holds has ended, so something has to keep
+        // its idea of the live server true on a clock rAF cannot stop.
+        // Measured before this existed: 23s and 18s on a dead process across
+        // two consecutive boundaries, ended only by an AppleScript navigation.
+        assert!(EMBEDDED_INDEX.contains("async function followLiveServer()"));
+        assert!(EMBEDDED_INDEX.contains("setInterval(followLiveServer, FOLLOW_POLL_MS);"));
+        assert!(EMBEDDED_INDEX.contains("if (!document.hidden) followLiveServer();"));
+        let follow = EMBEDDED_INDEX
+            .split_once("async function followLiveServer() {")
+            .expect("the follower")
+            .1
+            .split_once("\n}")
+            .expect("the end of the follower")
+            .0;
+        // It asks the lock-free endpoint. A page that cannot paint must never
+        // take the simulation mutex to find out what it is missing.
+        assert!(follow.contains("fetchJSON(\"/runtime\""));
+        assert!(
+            !follow.contains("\"/state"),
+            "a page that cannot paint must not poll /state"
+        );
+        // And it stays off the network entirely while the frame loop is alive,
+        // because that loop finds a successor sooner and knows more about it.
+        assert!(follow.contains("Date.now() - lastSpecFrameAt < FOLLOW_IDLE_MS"));
+    }
+
+    #[test]
     fn browser_lets_an_observer_narrow_the_reasoning_log() {
         // The panel is only useful if a reader can ask a narrower question
         // than "everything every civilization thought": whose reasoning, how

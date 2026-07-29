@@ -500,7 +500,7 @@ pub(crate) fn mutate(w: &Weights, rng: &mut Rng, bounds: &[(f64, f64)]) -> Weigh
         }
         *g = g.clamp(lo, hi);
     }
-    Weights::from_vec(&v)
+    Weights::from_vec_like(&v, w)
 }
 
 pub(crate) fn crossover(a: &Weights, b: &Weights, rng: &mut Rng) -> Weights {
@@ -510,7 +510,20 @@ pub(crate) fn crossover(a: &Weights, b: &Weights, rng: &mut Rng) -> Weights {
         .zip(&vb)
         .map(|(x, y)| if rng.chance(0.5) { *x } else { *y })
         .collect();
-    Weights::from_vec(&v)
+    Weights::from_vec_like(&v, a)
+}
+
+/// Keep experiment configuration fixed while retaining every genome's genes.
+///
+/// A saved population may predate a non-gene field, and a fresh population
+/// deliberately includes one hand-default gene vector beside the champion.
+/// Neither is permission to vary policy state inside a genetic search that
+/// cannot select or mutate those fields.
+fn align_population_non_gene_state(pop: &mut [Weights], champion: &Weights) {
+    for genome in pop {
+        let genes = genome.to_vec();
+        *genome = Weights::from_vec_like(&genes, champion);
+    }
 }
 
 fn next_generation(
@@ -642,6 +655,7 @@ pub fn evolve(cfg: &EvoCfg) {
         pop.push(champ.clone());
         pop.push(Weights::default());
     }
+    align_population_non_gene_state(&mut pop, &champ);
     while pop.len() < cfg.pop {
         pop.push(mutate(&champ, &mut rng, &bounds));
     }
@@ -859,6 +873,43 @@ mod tests {
             }),
             "offspring should explore coordinated-combat doctrine"
         );
+    }
+
+    #[test]
+    fn mutation_and_crossover_preserve_non_gene_policy_state() {
+        let template = Weights {
+            pol_food: 1.75,
+            policy_deck: crate::ai::PolicyDeck::Live,
+            dedication_choice: crate::ai::DedicationChoice::Alphabetical,
+            ..Weights::default()
+        };
+        let bounds = Weights::bounds();
+        let mut rng = Rng::new(9_712);
+        let child = mutate(&template, &mut rng, &bounds);
+        assert_eq!(child.pol_food, template.pol_food);
+        assert_eq!(child.policy_deck, template.policy_deck);
+        assert_eq!(child.dedication_choice, template.dedication_choice);
+
+        let other = Weights {
+            focus_fire: 7.5,
+            ..Weights::default()
+        };
+        let crossed = crossover(&template, &other, &mut rng);
+        assert_eq!(crossed.pol_food, template.pol_food);
+        assert_eq!(crossed.policy_deck, template.policy_deck);
+        assert_eq!(crossed.dedication_choice, template.dedication_choice);
+
+        let mut population = vec![other, crossed];
+        let genes_before: Vec<Vec<f64>> = population.iter().map(Weights::to_vec).collect();
+        align_population_non_gene_state(&mut population, &template);
+        for (genome, genes) in population.iter().zip(genes_before) {
+            assert_eq!(genome.to_vec(), genes, "alignment must retain every gene");
+            assert_eq!(
+                genome,
+                &Weights::from_vec_like(&genome.to_vec(), &template),
+                "fresh and resumed parents must share all champion policy state"
+            );
+        }
     }
 
     #[test]
