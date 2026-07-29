@@ -6106,3 +6106,64 @@ player count and turn budget.
 
 So two headrooms are confirmed on the shipped agent: **transit** (+36.5 over
 control) and **routing** (adaptive 32% against a 76% ceiling).
+
+## 2026-07-29 — the modelled subsystems compose, and they clear Emperor
+
+`Grant::Compound` applies every subsystem grant to one seat: modernity,
+attrition, taker, ground, siting, idle-reserve, suzerain, expansion. It excludes
+`Treasury` (the instrument's calibration, not a subsystem) and the expansion
+splits and `Rebate` (subsets or controls of `Expansion`).
+
+`ablate --grant compound --pairs 100 --players 4 --turns 500 --seed 460000`:
+
+| difficulty | control | compound | ratio | discordant | McNemar |
+|---|---|---|---|---|---|
+| prince | 52/200 = 26.0% | **193/200 = 96.5%** | **3.7x** | 145 (143-2) | **p=0.0000** |
+| emperor | 7/200 = 3.5% | **89/200 = 44.5%** | **12.7x** | 90 (86-4) | **p=0.0000** |
+
+★★★★ **The subsystems compose super-additively, and the set of them clears
+Emperor.** At Emperor, `expansion` alone is a 2.0x multiplier (4.0% to 8.0%) and
+the whole set is **12.7x** — 44.5% against a parity of 25%. So the question the
+ladder raised is answered: **the gap to the rung where this agent stops being
+competitive is reachable inside the subsystems this harness already models.**
+
+That corrects the pessimistic reading of the Deity result. No *single* perfect
+subsystem clears Emperor, which is what the 2-3x-per-subsystem curve implied.
+The set of them clears it comfortably.
+
+### ⚠ The controls moved, and the reason matters
+
+The compound batches ran on a binary built *after* a merge from `origin/main`
+that brought **350 lines of `src/ai/advanced.rs` and 83 of `src/game.rs`** — real
+gameplay changes. The controls shifted with it:
+
+| difficulty | control, pre-merge binary | control, post-merge binary |
+|---|---|---|
+| prince | 46/200 = 23.0% | 52/200 = 26.0% |
+| emperor | 4/100 = 4.0% | 7/200 = 3.5% |
+
+Every `ablate` batch plays its own control, so each **within-batch** McNemar test
+above is exact and unaffected. But a **cross-batch** comparison — `expansion`'s
+8.0% at Emperor against `compound`'s 44.5% — spans a binary change. The controls
+are close (4.0% against 3.5%), so the comparison is sound in direction and
+roughly sound in size, and it is not exact. Read ratios against each batch's own
+control, never across batches.
+
+### The settler walk, measured at 60x38
+
+`rebate_census --games 12 --seed 470000`, 24 cells an arm, the roomy map rather
+than the cramped default:
+
+| arm | settlers/game | turns alive each | tiles/turn | stood still |
+|---|---|---|---|---|
+| none | 4.71 | **16.8** | **0.75** | **25.0%** |
+| rebate | 4.67 | 13.5 | 0.85 | 15.2% |
+| expansion | 6.62 | 16.1 | 0.88 | 11.7% |
+
+A stock Settler lives **16.8 turns** and covers **0.75 tiles a turn against a
+shipped `moves` of 2**. It stands still on a quarter of its turns; on the turns
+it does move it still averages only about one tile. So the transit cost that
+`expansion_swift` buys back (+7.0 points over the plain grant) decomposes into
+**two roughly equal halves — a quarter of turns lost entirely, and half the
+movement allowance unused when it does move.** Both are movement-layer problems,
+and neither is the site-scarcity story `docs/OPENINGS.md` inferred from 32x22.
