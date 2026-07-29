@@ -497,6 +497,30 @@ impl<A: Ai> Oracle<A> {
         if !cost.is_finite() || cost <= 0.0 {
             return;
         }
+        // Cost-match on the BUDGET, because matching the rate does not work.
+        //
+        // The expansion grant hands over one Settler per city it is short of
+        // `EXPANSION_TARGET`, so over a game that climbs from the capital to
+        // the target it pays five times, and it measured 5.6 — the surplus is
+        // Settlers lost and cities retaken. Serializing the rebate on unspent
+        // money alone left it at 34.6 payments a game, still six times over,
+        // because nothing about a lump of production imposes a Settler's
+        // fifteen turns of transit.
+        //
+        // So the rebate is capped at one Settler's price per city the target
+        // permits beyond the capital. That is the same accounting the
+        // expansion grant does implicitly, and it is deliberately the
+        // *conservative* side of 5.6: a control that is trying to fail should
+        // not be handed more than the thing it is a control for.
+        //
+        // Note this cannot be expressed as "pay again once the last payment
+        // bought a city" — the tempting version — because the finding under
+        // test is precisely that the money does *not* buy cities, and that
+        // rule would cut the control's budget to one payment exactly when the
+        // hypothesis is true.
+        if self.fired >= EXPANSION_TARGET as u64 - 1 {
+            return;
+        }
         // Serialize on unspent money, the way the expansion grant serializes
         // on a Settler already walking.
         //
@@ -1026,18 +1050,22 @@ mod tests {
         assert!(ever_granted, "no settler was ever observed being granted");
     }
 
-    /// The rebate must fire on exactly the turns the expansion grant fires,
-    /// pay exactly a Settler's price into exactly the same city, and hand over
-    /// no unit.
+    /// When the rebate pays, it pays exactly a Settler's price into exactly
+    /// the city the expansion grant would have used, returns exactly one
+    /// population, and hands over no unit.
     ///
-    /// The schedule assertion is the load-bearing one. `rebate` is only a
-    /// control for `expansion` if the two are handed out at the same moments;
-    /// a rebate that fired more often, or on different turns, would turn the
-    /// comparison into a comparison of firing rates and a difference in win
-    /// rate would mean nothing. Both are driven off the same probe game state
-    /// here, so the two calls see identical positions.
+    /// ⚠ It asserts a **subset**, not an equality: every turn the rebate pays
+    /// is a turn the expansion grant would also have fired, but not the
+    /// reverse. The first version of this test asserted equality, which was
+    /// true of the code as first written and was exactly the wrong property to
+    /// pin down — the two grants agree on every shared position and diverge
+    /// over a trajectory, so equality here certified a rebate that went on to
+    /// pay 66.5 times a game against the expansion grant's 5.6. The budget is
+    /// what makes it a control, and
+    /// `the_rebate_never_pays_more_than_the_expansion_grant_could` is where
+    /// that lives.
     #[test]
-    fn the_rebate_matches_the_expansion_grants_schedule_and_price() {
+    fn the_rebate_pays_a_settlers_price_where_the_expansion_grant_would() {
         let mut g = Game::new(4, 28, 18, 8_108, 200, 2);
         let mut rebate = Oracle::new(AdvancedAi::new(), Grant::Rebate);
         let mut expansion = Oracle::new(AdvancedAi::new(), Grant::Expansion);
@@ -1072,10 +1100,11 @@ mod tests {
                 rebate.grant_rebate(&mut paid, 0);
                 expansion.grant_expansion(&mut settled, 0);
 
-                assert_eq!(
-                    rebate.fired() - fired_before,
-                    expansion.fired() - expansion_fired_before,
-                    "the rebate and the expansion grant fired on different turns"
+                let rebate_fires = rebate.fired() - fired_before;
+                let expansion_fires = expansion.fired() - expansion_fired_before;
+                assert!(
+                    rebate_fires <= expansion_fires,
+                    "the rebate paid on a turn the expansion grant would not have"
                 );
                 assert_eq!(
                     units_before,
@@ -1109,6 +1138,42 @@ mod tests {
         }
         assert!(rebate.fired() > 0, "the rebate never paid out");
         assert!(ever_paid, "no payment was ever observed");
+    }
+
+    /// The rebate's whole-game budget is capped at one Settler's price per
+    /// city the target permits beyond the capital.
+    ///
+    /// This is the assertion `the_rebate_matches_the_expansion_grants_schedule_and_price`
+    /// cannot make. That test compares the two grants on one shared position,
+    /// where they agree by construction; the quantity that actually decides
+    /// whether the rebate is a cost-matched control is the **total** it hands
+    /// over across a whole game, and the two diverge there because a granted
+    /// Settler switches its own trigger off for its entire transit and banked
+    /// production switches nothing off. Measured before this cap existed, the
+    /// rebate paid 66.5 times a game and then 34.6 with serialization alone,
+    /// against the expansion grant's 5.6.
+    #[test]
+    fn the_rebate_never_pays_more_than_the_expansion_grant_could() {
+        let mut g = Game::new(4, 28, 18, 8_108, 200, 2);
+        let mut rebate = Oracle::new(AdvancedAi::new(), Grant::Rebate);
+        let mut others = AdvancedAi::fleet(&g);
+        while g.winner.is_none() && g.turn <= 200 {
+            let pid = g.current;
+            if pid == 0 {
+                rebate.take_turn(&mut g, pid);
+                assert!(
+                    rebate.fired() < EXPANSION_TARGET as u64,
+                    "the rebate paid {} times, past its own budget",
+                    rebate.fired()
+                );
+            } else {
+                others[pid].take_turn(&mut g, pid);
+            }
+            if g.winner.is_none() && g.current == pid {
+                let _ = g.apply(pid, &crate::game::Action::EndTurn);
+            }
+        }
+        assert!(rebate.fired() > 0, "the rebate never paid, so the cap is untested");
     }
 
     /// The grant must be modernization and nothing else: no Gold, no health,

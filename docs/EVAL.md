@@ -5578,3 +5578,90 @@ profile produced 8 champion wins (all Science) and 14 stock wins (13 Science,
 1 Culture). What is established is narrower and useful: **routing stability
 does not explain champion strength, because the champion is not more stable.**
 No holdout is run and no gameplay behavior changes.
+
+## 2026-07-29 — the expansion grant's headroom is the city, not the money
+
+`Grant::Expansion` (23.0% → 52.3% over 400 maps, #554) is the only grant in
+`oracle.rs` that has ever returned headroom, and a dozen pull requests rest on
+it. It had never had a **cost-matched control**: it fires ~5.6 times a game and
+each firing is worth a Settler's production *plus* the point of population
+`finish_unit` charges, so nothing separated *this empire needed cities* from
+*this empire needed resources*. That mattered because every honest treatment on
+the pipeline has measured null or inert — parallel settlers, capital
+food-first, destination commitment, production preemption, a Settler priced at
+100x, and the `map_capacity` ceiling. **A bundle worth thirty points whose every
+component is worth nothing is what a mis-attributed grant looks like.**
+
+`Grant::Rebate` pays the same price on the same schedule into the same city and
+hands over no Settler. `rebate_census`, 10 maps x 2 seats, 4p 60x38, 500
+Standard turns, seed 470000:
+
+| arm | payments/game | cities at end | settlers trained | captures |
+|---|---|---|---|---|
+| none | 0 | 5.40 | **3.70** | 1.10 |
+| **rebate** | **5.0** | **5.85** | **3.70** | 1.85 |
+| **expansion** | **5.6** | **8.45** | 0.00 (granted) | 2.55 |
+
+**Five Settler-prices buy +0.45 cities. Five Settlers buy +3.05.** The money is
+worth about 15% of the unit, and it buys **zero** extra Settlers — 3.70 against
+the control's 3.70, to the digit. The extra cities the rebate does reach are
+captures.
+
+**So the expansion axis is correctly aimed.** The grant's value is the city
+itself, delivered past a production ranking that will not buy one at any price.
+This converges with two results already recorded here: a Settler valued at 100x
+was inert, and `production_allocation_census` puts Settlers at 2.8% of lifetime
+production.
+
+### ★ And the census names the honest treatment
+
+Both grants pay while the seat holds fewer than a hardcoded six. The agent has
+a target of its own — `desired_cities`, which ramps as
+`(3 + turn/standard_duration(90)).min(map_capacity).min(6)`. Read off the plan
+in force at each eligible turn:
+
+| arm | the agent's own target | already held that many |
+|---|---|---|
+| none | 4.24 | **47.9%** |
+| rebate | 3.72 | 79.6% |
+| expansion | 3.11 | 60.7% |
+
+**On 47.9% of the turns where the grant would fire, the stock agent already
+held as many cities as its own plan asked for.** It is not short by its own
+reckoning; it is short only against the hardcoded six. The grant works in large
+part by overriding the agent's own target, and the cities it buys win games.
+
+Note this does *not* reopen `advanced_wide` (2026-07-26, bit-identical over 240
+games). That treatment raised the **ceiling**, which first binds past turn ~450.
+What the table above indicts is the **ramp** — three cities for the first 90
+Standard turns — which nothing has yet measured.
+
+### ⚠⚠ Two methodological corrections this cost, both worth more than the result
+
+1. **A shared firing condition is not a shared schedule.** The rebate's first
+   version shared `grant_expansion`'s condition exactly, and a unit test
+   confirmed identical firing *against one shared position*. A granted Settler
+   occupies the `already_walking` slot for its whole transit and switches its
+   own trigger off; banked production switches nothing off. The two agree
+   instant by instant and diverge over a trajectory: **66.5 payments a game
+   against 5.6**, twelve times the gift. A preregistered `ablate` batch was
+   stopped at 248/300 control cells rather than finish measuring that.
+   **A firing rate has to be measured over whole games, not over one position.**
+2. **Matching the rate does not work; match the budget.** Serializing the
+   rebate on unspent money only got it to 34.6/game — nothing about a lump of
+   production imposes a Settler's fifteen turns of transit. Capping it at one
+   Settler's price per city the target permits beyond the capital lands at 5.0
+   against 5.6, by construction rather than by tuning. The tempting alternative
+   — pay again once the last payment bought a city — is a trap: the hypothesis
+   under test is that the money does *not* buy cities, so that rule would
+   collapse the control's budget to one payment exactly when the hypothesis is
+   true.
+
+A third, in the instrument: the census counted *eligible turns* as payments, so
+a fix that can only ever cut payments appeared to raise them (66.5 → 78.4).
+Payments now come off `Oracle::fired()` with eligibility reported beside them.
+
+**Also worth recording:** `ablate` defaults to `MapSize::for_players(players)`
+— **60x38 at four players**, ~570 tiles per player, i.e. deployment density.
+#554's headroom was never a cramped-24x16 artifact, and the control seat holds
+5.40 cities here rather than the 1.83 seen at the `ai_eval` default.
