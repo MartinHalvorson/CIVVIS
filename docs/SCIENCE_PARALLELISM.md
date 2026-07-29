@@ -22,7 +22,7 @@ sizes, endpoints, thresholds, stop rules, and resource cap below are unchanged.
 The only earlier runtime treatment smoke used the diagnostic seed 9,982,999 and
 is not part of any frozen batch.
 
-## Prospective deployment-topology amendment
+## Superseded prospective deployment-topology amendment
 
 This second amendment was frozen before running the null or reading any focal
 seed. The production supervisor's independently merged shape-redraw fix (#543)
@@ -53,6 +53,67 @@ supervisor contract and archived control saves. The treatment, seats, seed
 ranges, sample sizes, endpoints, thresholds, stop rules, and resource cap are
 unchanged. In particular, no extra maps are added and neither shape may rescue
 a failing pooled gate after results are read.
+
+This topology-only design was itself superseded prospectively, before any focal
+seed was read, by the deployment-population amendment below. It is retained as
+an audit trail: the 50-save census was accurate, but those saves came from an
+open viewer repeatedly handing an explicit eight-player Continents setup to the
+next game. That setup-panel handoff correctly overrides the supervisor's random
+draw and therefore described one viewer-selected operational stratum, not the
+unattended deployment population.
+
+## Prospective deployment-population amendment
+
+This third amendment was frozen after the topology implementation but before
+the null at seed 9,982,000 or either treatment seed was run or read. After the
+viewer disconnected, the next automatically rolled production world started
+with nine players on True Start Earth/Flat. Inspection of the already-merged
+supervisor contract (#543) confirmed that every unattended world independently
+draws three axes uniformly:
+
+- player count from 4, 5, 6, 7, 8, 9, and 10;
+- map script from Land Only, Lakes, Inland Sea, Pangaea, Continents, Small
+  Continents, Islands, Water World, and True Start Earth; and
+- topology from Flat and Planet.
+
+The previous fixed eight-player Continents design would therefore estimate the
+treatment in only one of 126 equally likely deployment profiles. The frozen
+batches now use a deterministic space-filling cycle over all 126 profiles. For
+zero-based map offset `i`, the axes are:
+
+- players: `[4, 6, 8, 10, 5, 7, 9][i mod 7]`;
+- script: `[land_only, water_world, continents, true_start_earth, lakes,
+  inland_sea, pangaea, small_continents, islands][i mod 9]`; and
+- topology: Flat at even `i`, Planet at odd `i`.
+
+Because 7, 9, and 2 are pairwise coprime, every joint profile appears exactly
+once before the schedule repeats at offset 126. Axis ordering changes no
+weight: it makes the four-map replay null deliberately span all four deployed
+map-size rows and exercise land-heavy, water-heavy, ordinary rolled, and fixed
+geography. Those null maps are 4-player Land Only/Flat, 6-player Water
+World/Planet, 8-player Continents/Flat, and 10-player True Start Earth/Planet.
+
+Player count derives requested dimensions and city-state count through the same
+`MapSize::for_players` table as `civvis play`: 4 players request 60x38 with 6
+city-states; 5--6 request 74x46 with 9; 7--8 request 84x54 with 12; and 9--10
+request 96x60 with 15. Planet then stores the corresponding 75x32, 90x38,
+105x44, or 120x50 globe; Flat retains the requested rectangle. No evaluator
+copy of the size table is permitted.
+
+Each phase restarts at offset zero and uses disjoint frozen game seeds. The
+30-map screen has 15 maps per topology, 4 or 5 maps per player count, and 3 or
+4 maps per script. The 120-map holdout has 60 maps per topology, 17 or 18 per
+player count, and 13 or 14 per script; it covers 120 distinct cells of the
+126-cell factorial. Every control/treatment replay for a map shares the exact
+profile and seed. The map remains the inference unit.
+
+The runner will report descriptive mechanism and outcome summaries separately
+by player count, map script, and topology. Only the pooled 30-map or 120-map
+gate controls the decision; no axis-specific result may promote, extend, or
+rescue the treatment. This amendment changes only the prospectively sampled
+deployment population. The treatment, seed ranges, map counts, endpoints,
+thresholds, stop rules, observation horizon, and resource cap are unchanged.
+The only runtime smoke remains diagnostic seed 9,982,999.
 
 ## Observation and hypothesis
 
@@ -108,35 +169,44 @@ branch change, not the gameplay integration itself.
 
 ## Frozen experiment
 
-Every independent map is replayed four times: focal seats 0 and 7, each under
-control and treatment. All other seats use stock `AdvancedAi`. The inference
-unit is the map; the two focal seats are averaged within a map and are never
-counted as independent samples.
+Every independent map is replayed four times: focal seats 0 and the final major
+seat, each under control and treatment. All other seats use stock `AdvancedAi`.
+The inference unit is the map; the two focal seats are averaged within a map
+and are never counted as independent samples.
 
-The fixed profile is:
+The fixed deployment population is:
 
-- 8 players, randomized civilizations;
-- Continents and Poles, requested 84×54, 12 city-states, with Flat and Planet
-  topology alternating by map offset in equal numbers;
+- the deterministic 7-player-count × 9-script × 2-topology schedule above,
+  with randomized civilizations and size/city-state defaults derived from each
+  player count;
+- Poles on every map;
 - Online speed, policy-visible 250-turn limit, externally observed through turn
   320 without changing `Game.max_turns`;
 - Science, Culture, and Domination victories; and
 - stock embedded rules and adaptive fleet from the exact tested commit.
 
-Before any treatment batch, a four-map null at seed **9,982,000** (two Flat and
-two Planet) must compare a direct stock control with the action-log replay arm
-while applying no added order. All eight matched focal cells must be exactly
-equal. Unit tests must also prove deterministic shape assignment,
-deterministic site selection, the Moon/Mars 2/3 schedule, no action outside a
-Science plan, and at most one legal order.
+Before any treatment batch, a four-map null at seed **9,982,000** (the four
+cross-size profiles named above) must compare a direct stock control with the
+action-log replay arm while applying no added order. All eight matched focal
+cells must be exactly equal. Unit tests must also prove the deterministic
+126-profile schedule and frozen batch balances, deterministic site selection,
+the Moon/Mars 2/3 schedule, no action outside a Science plan, and at most one
+legal order.
 
 The one allowed development screen is **30 maps starting at seed 9,983,000**
-(15 Flat and 15 Planet; 120 games). If and only if its frozen gate passes, the
-one allowed holdout is **120 maps starting at seed 9,984,000** (60 Flat and 60
-Planet; 480 games). No seed may be replaced, extended, or retried; no threshold
-or treatment detail may change after a treatment result is read. Compile and
-one-map runtime smokes are diagnostic only and may not be used to tune the
-policy or gate.
+(120 games). If and only if its frozen gate passes, the one allowed holdout is
+**120 maps starting at seed 9,984,000** (480 games). Both use the deployment
+schedule and balances above. No seed may be replaced, extended, or retried; no
+threshold or treatment detail may change after a treatment result is read.
+Compile and one-map runtime smokes are diagnostic only and may not be used to
+tune the policy or gate.
+
+The exact frozen invocations must include `--deployment-mix`, `--turns 250`,
+`--observe-through 320`, `--speed online`, `--poles poles`,
+`--randomize-civs`, and `--victories science,culture,domination`, plus the
+phase's frozen map count and seed. Supplying a player count, dimensions,
+city-state count, script, or shape alongside `--deployment-mix` is an error,
+not a new profile.
 
 ## Endpoints and gates
 
