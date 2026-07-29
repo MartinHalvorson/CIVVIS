@@ -36,6 +36,7 @@
 //! **Groups are runs, by the emitter's contract.** `q_dataset` writes a chosen
 //! row and then its negatives, so a group begins at each `chosen=1`. That is
 //! pinned by a test over there rather than assumed here.
+use std::collections::BTreeMap;
 use std::fs;
 use std::io::{BufRead, BufReader, Write};
 
@@ -368,46 +369,95 @@ fn mean_standard_error(values: &[f32]) -> (f32, f32) {
 /// An aggregate top-1 can be carried by cheap non-tactical decisions. Report
 /// each represented kind against its own candidate-count chance rate, so a
 /// move-ordering claim has to be true specifically for moves and attacks.
+#[derive(Default)]
+struct AccuracyTotals {
+    hits: f32,
+    chance: f32,
+    decisions: usize,
+}
+
+/// Macro-average a metric over games: decisions inside one game are correlated
+/// observations from one trajectory, not independent samples. The top-1 and
+/// chance columns therefore give every unseen game equal weight, and the error
+/// bar is the standard error across those game-level differences.
+fn accuracy_summary(games: &BTreeMap<u64, AccuracyTotals>) -> (usize, f32, f32, f32, f32) {
+    let decisions = games.values().map(|totals| totals.decisions).sum();
+    let top: Vec<f32> = games
+        .values()
+        .map(|totals| totals.hits / totals.decisions.max(1) as f32)
+        .collect();
+    let chance: Vec<f32> = games
+        .values()
+        .map(|totals| totals.chance / totals.decisions.max(1) as f32)
+        .collect();
+    let deltas: Vec<f32> = top
+        .iter()
+        .zip(&chance)
+        .map(|(top, chance)| top - chance)
+        .collect();
+    let (top, _) = mean_standard_error(&top);
+    let (chance, _) = mean_standard_error(&chance);
+    let (lift, se) = mean_standard_error(&deltas);
+    (decisions, chance, top, lift, se)
+}
+
 fn report_by_kind(net: &Net, groups: &[Group], minimum: usize, label: &str) {
-    let mut hits = vec![Vec::<f32>::new(); civvis::action_space::KINDS.len()];
-    let mut chances = vec![Vec::<f32>::new(); civvis::action_space::KINDS.len()];
+    let mut all = BTreeMap::<u64, AccuracyTotals>::new();
+    let mut by_kind: Vec<BTreeMap<u64, AccuracyTotals>> = (0..civvis::action_space::KINDS.len())
+        .map(|_| BTreeMap::new())
+        .collect();
     for group in groups {
-        if group.kind >= hits.len() {
+        if group.kind >= by_kind.len() {
             continue;
         }
         let (_, hit) = score_group(net, group, None);
-        hits[group.kind].push(hit);
-        chances[group.kind].push(1.0 / group.rows.len() as f32);
+        let chance = 1.0 / group.rows.len() as f32;
+        for totals in [
+            all.entry(group.game).or_default(),
+            by_kind[group.kind].entry(group.game).or_default(),
+        ] {
+            totals.hits += hit;
+            totals.chance += chance;
+            totals.decisions += 1;
+        }
     }
 
-    let mut order: Vec<usize> = (0..hits.len())
-        .filter(|kind| hits[*kind].len() >= minimum)
+    let mut order: Vec<usize> = (0..by_kind.len())
+        .filter(|kind| {
+            by_kind[*kind]
+                .values()
+                .map(|totals| totals.decisions)
+                .sum::<usize>()
+                >= minimum
+        })
         .collect();
     order.sort_by(|left, right| {
-        hits[*right].len().cmp(&hits[*left].len()).then_with(|| {
+        let decisions = |kind: usize| {
+            by_kind[kind]
+                .values()
+                .map(|totals| totals.decisions)
+                .sum::<usize>()
+        };
+        decisions(*right).cmp(&decisions(*left)).then_with(|| {
             civvis::action_space::KINDS[*left].cmp(civvis::action_space::KINDS[*right])
         })
     });
-    println!("{label} by chosen action kind (minimum {minimum} decisions):");
-    println!("  kind                    decisions  chance   top-1        lift");
-    for kind in order {
-        let (top, _) = mean_standard_error(&hits[kind]);
-        let (chance, _) = mean_standard_error(&chances[kind]);
-        let deltas: Vec<f32> = hits[kind]
-            .iter()
-            .zip(&chances[kind])
-            .map(|(hit, chance)| hit - chance)
-            .collect();
-        let (lift, se) = mean_standard_error(&deltas);
+    println!("{label} by chosen action kind (game-macro, minimum {minimum} decisions):");
+    println!("  kind                    decisions games  chance   top-1        lift");
+    let print = |name: &str, games: &BTreeMap<u64, AccuracyTotals>| {
+        let (decisions, chance, top, lift, se) = accuracy_summary(games);
         println!(
-            "  {:<23} {:>9}  {:>5.1}%  {:>6.1}%  {:+6.1} +/- {:>4.1} pp",
-            civvis::action_space::KINDS[kind],
-            hits[kind].len(),
+            "  {name:<23} {decisions:>9} {:>5}  {:>5.1}%  {:>6.1}%  {:+6.1} +/- {:>4.1} pp",
+            games.len(),
             100.0 * chance,
             100.0 * top,
             100.0 * lift,
             100.0 * se,
         );
+    };
+    print("all", &all);
+    for kind in order {
+        print(civvis::action_space::KINDS[kind], &by_kind[kind]);
     }
 }
 
@@ -653,5 +703,42 @@ fn main() {
     match fs::File::create(&out).and_then(|mut f| f.write_all(json.as_bytes())) {
         Ok(()) => println!("wrote {out}"),
         Err(error) => eprintln!("cannot write {out}: {error}"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{accuracy_summary, AccuracyTotals};
+    use std::collections::BTreeMap;
+
+    /// A game with nine decisions must not outweigh a game with one decision.
+    /// The model is evaluated on unseen trajectories, so games are the
+    /// independent units and the uncertainty must be clustered at that level.
+    #[test]
+    fn accuracy_is_macro_averaged_by_game() {
+        let games = BTreeMap::from([
+            (
+                1,
+                AccuracyTotals {
+                    hits: 1.0,
+                    chance: 0.5,
+                    decisions: 1,
+                },
+            ),
+            (
+                2,
+                AccuracyTotals {
+                    hits: 0.0,
+                    chance: 4.5,
+                    decisions: 9,
+                },
+            ),
+        ]);
+        let (decisions, chance, top, lift, se) = accuracy_summary(&games);
+        assert_eq!(decisions, 10);
+        assert!((chance - 0.5).abs() < 1e-6);
+        assert!((top - 0.5).abs() < 1e-6);
+        assert!(lift.abs() < 1e-6);
+        assert!((se - 0.5).abs() < 1e-6);
     }
 }
