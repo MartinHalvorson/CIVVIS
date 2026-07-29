@@ -219,3 +219,25 @@ The champion-controller amendment above supersedes the original default-weight
 population and the old diagnostic's controller identity. Its documentation is
 committed and pushed separately before implementation; no focal seed has been
 opened.
+
+## Champion implementation checkpoint
+
+The target population was frozen and pushed independently at `30bbbc8` before
+source changed. Commit `e9a930f1f5a262e4ba48dfd520cabae606babb24` then
+implemented only that amendment: embedded champion parsing, weighted fleets in
+both arms, controller/generation reporting, exact formal flag recognition, and
+rejection of every other controller name.
+
+Validation after implementation remained off the focal seeds:
+
+- all eight focused release tests passed, including exact action-log replay on
+  the champion and a proof that its weights differ from `Weights::default()`;
+- a standalone release binary rejected `--ai advanced` with status 2 before
+  constructing a game; and
+- a one-map, two-player, one-turn diagnostic null at the already non-focal seed
+  `9987998` reported embedded generation 14 and reproduced both champion seat
+  replays exactly. It correctly labeled itself diagnostic rather than spending
+  the preregistered null gate.
+
+The exact null at `9987999`, screen at `9988000`, and holdout at `9989000`
+remain unopened and queued behind the older simulator batches.
