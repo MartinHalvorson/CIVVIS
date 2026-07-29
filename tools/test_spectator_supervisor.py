@@ -917,6 +917,7 @@ class RecoveryTests(unittest.TestCase):
             "stall_timeout": 30.0,
             "checkpoint_interval": 5.0,
             "max_resume_attempts": 2,
+            "live_refresh_grace": 600.0,
             "no_open": True,
             "adopt_pid": 321,
         }
@@ -1575,6 +1576,7 @@ class RecoveryTests(unittest.TestCase):
             stall_timeout=30.0,
             checkpoint_interval=5.0,
             max_resume_attempts=2,
+            live_refresh_grace=600.0,
             no_open=True,
             adopt_pid=None,
         )
@@ -1633,6 +1635,7 @@ class RecoveryTests(unittest.TestCase):
             stall_timeout=30.0,
             checkpoint_interval=5.0,
             max_resume_attempts=2,
+            live_refresh_grace=600.0,
             no_open=True,
             adopt_pid=321,
         )
@@ -1695,6 +1698,7 @@ class RecoveryTests(unittest.TestCase):
             stall_timeout=30.0,
             checkpoint_interval=5.0,
             max_resume_attempts=2,
+            live_refresh_grace=600.0,
             no_open=True,
             adopt_pid=321,
         )
@@ -1746,6 +1750,7 @@ class RecoveryTests(unittest.TestCase):
             stall_timeout=30.0,
             checkpoint_interval=5.0,
             max_resume_attempts=2,
+            live_refresh_grace=600.0,
             no_open=True,
             adopt_pid=321,
         )
@@ -1814,6 +1819,7 @@ class RecoveryTests(unittest.TestCase):
             stall_timeout=30.0,
             checkpoint_interval=5.0,
             max_resume_attempts=2,
+            live_refresh_grace=600.0,
             no_open=True,
             adopt_pid=None,
         )
@@ -1899,6 +1905,7 @@ class RecoveryTests(unittest.TestCase):
             stall_timeout=30.0,
             checkpoint_interval=5.0,
             max_resume_attempts=2,
+            live_refresh_grace=600.0,
             no_open=True,
             adopt_pid=None,
         )
@@ -1976,6 +1983,7 @@ class RecoveryTests(unittest.TestCase):
             stall_timeout=30.0,
             checkpoint_interval=5.0,
             max_resume_attempts=2,
+            live_refresh_grace=600.0,
             no_open=True,
             adopt_pid=None,
         )
@@ -2121,6 +2129,43 @@ class LeagueRosterTests(unittest.TestCase):
         self.assertIn("--league", command)
         self.assertEqual(command[command.index("--league") + 1], str(source / "league"))
         self.assertIn("--league-record", command)
+
+
+class LiveRefreshTests(unittest.TestCase):
+    """A promoted build is worth a whole game of waiting, but not an unbounded
+    one. Replacing the runtime under a live match is the only thing this
+    supervisor does that a viewer sees as the game stopping."""
+
+    def test_a_ready_build_waits_for_the_boundary_instead_of_cutting_in(self):
+        self.assertTrue(supervisor.refresh_waits_for_boundary(True, 0.0, 600.0))
+        self.assertTrue(supervisor.refresh_waits_for_boundary(True, 90.0, 600.0))
+
+    def test_a_world_that_never_ends_still_gets_the_new_runtime(self):
+        self.assertFalse(supervisor.refresh_waits_for_boundary(True, 600.0, 600.0))
+        self.assertFalse(supervisor.refresh_waits_for_boundary(True, 3600.0, 600.0))
+
+    def test_an_inherited_world_is_never_waited_on(self):
+        # An adopted PID's game may have been running for an hour or may be one
+        # turn old; with no boundary in sight the stale runtime goes now.
+        self.assertFalse(supervisor.refresh_waits_for_boundary(True, None, 600.0))
+
+    def test_nothing_is_held_back_when_there_is_no_build_to_hold(self):
+        self.assertFalse(supervisor.refresh_waits_for_boundary(False, 0.0, 600.0))
+
+    def test_a_zero_or_negative_grace_restores_the_immediate_swap(self):
+        self.assertFalse(supervisor.refresh_waits_for_boundary(True, 0.0, 0.0))
+        self.assertFalse(supervisor.refresh_waits_for_boundary(True, 0.0, -5.0))
+
+    def _args(self, argv: list[str]) -> object:
+        with patch.object(sys, "argv", ["spectator_supervisor.py", *argv]):
+            return supervisor.parse_args()
+
+    def test_the_grace_window_is_an_operator_flag_with_a_whole_game_default(self):
+        self.assertEqual(self._args(["--no-open"]).live_refresh_grace, 600.0)
+        self.assertEqual(
+            self._args(["--no-open", "--live-refresh-grace", "0"]).live_refresh_grace,
+            0.0,
+        )
 
 
 if __name__ == "__main__":
