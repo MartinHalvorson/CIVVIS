@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- CIVVIS Control: play Civilization VI without a person at the keyboard.
+     Separate from CivvisGrounding, which observes AI-only autoplay games and
+     must keep working unchanged while this one takes a seat and plays.
+
+     The id must be a syntactically valid GUID. The modding framework parses it
+     before it logs anything about the mod, so one non-hex character makes the
+     mod disappear from discovery with nothing in any log naming it. -->
+<Mod id="4d2c8b16-7e05-49af-a3c1-6b90d5f2e841" version="1">
+	<Properties>
+		<Name>CIVVIS Control</Name>
+		<Teaser>Configures, starts and plays a game under program control.</Teaser>
+		<Description>Computer control for Civilization VI. One context configures a game from an exact specification and hosts it from the main menu; the other takes a player's seat and issues every order that player needs, turn after turn, until the game ends. Changes no rules.</Description>
+		<Authors>CIVVIS</Authors>
+		<!-- Loaded from the install's DLC tree, which this build scans; no user
+		     Mods directory is scanned. Enabled by default so an unattended run
+		     needs no menu interaction. -->
+		<EnabledByDefault>1</EnabledByDefault>
+		<CompatibleVersions>2.0</CompatibleVersions>
+	</Properties>
+	<FrontEndActions>
+		<AddUserInterfaces id="CivvisControlSetupUI">
+			<Properties>
+				<Context>FrontEnd</Context>
+			</Properties>
+			<File>CivvisControlSetup.xml</File>
+		</AddUserInterfaces>
+	</FrontEndActions>
+	<InGameActions>
+		<AddUserInterfaces id="CivvisControlAgentUI">
+			<Properties>
+				<Context>InGame</Context>
+			</Properties>
+			<File>CivvisControlAgent.xml</File>
+		</AddUserInterfaces>
+	</InGameActions>
+	<Files>
+		<File>CivvisControlSetup.xml</File>
+		<File>CivvisControlSetup.lua</File>
+		<File>CivvisControlAgent.xml</File>
+		<File>CivvisControlAgent.lua</File>
+	</Files>
+</Mod>
