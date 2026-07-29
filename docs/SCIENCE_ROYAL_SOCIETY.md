@@ -330,3 +330,17 @@ Validation remained off every registered seed:
 
 The amended exact null, screen, and holdout remain unopened. They now require
 the deployment-mix commands and external horizon frozen above.
+
+## Fail-closed implementation checkpoint
+
+The strict invocation contract was frozen and pushed at `2729748` before
+source changed. Commit `49a59673dbcb4e88ce7f80251458dc6ab732be84`
+implemented strict numeric/text parsing plus exact flag/value recognition for
+the shared profile and each phase.
+
+All eleven focused release tests passed. The standalone binary rejected
+`--turns nope` with status 2 before simulation. A one-map, one-turn diagnostic
+at seed `9987998` included the otherwise formal `--jobs 6` flag, reproduced
+both champion replays exactly, and still refused a registered label because
+its maps, seed, and horizons were diagnostic. The registered seeds remain
+unopened.
