@@ -713,6 +713,43 @@ struct Artifact<'a> {
     calibration: Calibrator,
 }
 
+fn write_artifact(
+    out: &str,
+    model: &FrozenModel,
+    calibrator: Calibrator,
+    steps: usize,
+    rate: f64,
+    l2: f64,
+    threshold: f64,
+) {
+    let artifact = Artifact {
+        schema: "civvis-q-pairwise-calibration-v1",
+        base_schema: &model.schema,
+        base_feature_width: model.feature_width,
+        base_keep: &model.keep,
+        base_weights: &model.weights,
+        replicas: model.replicas,
+        steps,
+        rate,
+        l2,
+        override_probability: threshold,
+        calibration: calibrator,
+    };
+    if let Some(parent) = std::path::Path::new(out).parent() {
+        if !parent.as_os_str().is_empty() {
+            let _ = fs::create_dir_all(parent);
+        }
+    }
+    let json = serde_json::to_string(&artifact).expect("calibration artifact serializes");
+    fs::File::create(out)
+        .and_then(|mut file| file.write_all(json.as_bytes()))
+        .unwrap_or_else(|error| {
+            eprintln!("q_pairwise_calibrate: cannot write {out}: {error}");
+            std::process::exit(2);
+        });
+    println!("wrote {out}");
+}
+
 fn load_experiment_data(
     path: &str,
     model: &FrozenModel,
@@ -745,6 +782,7 @@ fn main() {
     let model_path = text(&args, "--model", "/tmp/q-pairwise-base.json");
     let calibration_path = text(&args, "--calibration-data", "/tmp/q-calibration.csv");
     let selection_path = text(&args, "--selection-data", "/tmp/q-selection.csv");
+    let fit_only = args.iter().any(|arg| arg == "--fit-only");
     let external_path = args
         .iter()
         .position(|arg| arg == "--external-data")
@@ -780,13 +818,6 @@ fn main() {
         CALIBRATION_GAMES,
         "calibration",
     );
-    let selection = load_experiment_data(
-        &selection_path,
-        &model,
-        SELECTION_SEED,
-        SELECTION_GAMES,
-        "selection",
-    );
     let calibrator = fit_calibrator(&samples(&model, &calibration.groups), steps, rate, l2);
     println!(
         "frozen calibrator: margin mean {:+.6}, stddev {:.6}, slope {:.4}, intercept {:+.4}",
@@ -798,6 +829,22 @@ fn main() {
         &calibration.groups,
         threshold,
         "calibration",
+    );
+    write_artifact(&out, &model, calibrator, steps, rate, l2, threshold);
+    if fit_only {
+        if external_path.is_some() {
+            eprintln!("q_pairwise_calibrate: --fit-only cannot inspect external data");
+            std::process::exit(2);
+        }
+        println!("fit-only: selection data remained unopened");
+        return;
+    }
+    let selection = load_experiment_data(
+        &selection_path,
+        &model,
+        SELECTION_SEED,
+        SELECTION_GAMES,
+        "selection",
     );
     let selection_report = report(
         &model,
@@ -828,33 +875,6 @@ fn main() {
             }
         );
     }
-
-    let artifact = Artifact {
-        schema: "civvis-q-pairwise-calibration-v1",
-        base_schema: &model.schema,
-        base_feature_width: model.feature_width,
-        base_keep: &model.keep,
-        base_weights: &model.weights,
-        replicas: model.replicas,
-        steps,
-        rate,
-        l2,
-        override_probability: threshold,
-        calibration: calibrator,
-    };
-    if let Some(parent) = std::path::Path::new(&out).parent() {
-        if !parent.as_os_str().is_empty() {
-            let _ = fs::create_dir_all(parent);
-        }
-    }
-    let json = serde_json::to_string(&artifact).expect("calibration artifact serializes");
-    fs::File::create(&out)
-        .and_then(|mut file| file.write_all(json.as_bytes()))
-        .unwrap_or_else(|error| {
-            eprintln!("q_pairwise_calibrate: cannot write {out}: {error}");
-            std::process::exit(2);
-        });
-    println!("wrote {out}");
 }
 
 #[cfg(test)]
