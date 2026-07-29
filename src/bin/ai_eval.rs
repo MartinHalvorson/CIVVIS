@@ -304,12 +304,14 @@ fn direction_sign(directions: &DirectionalOutcomes) -> Option<bool> {
 struct PlanTrace {
     observations: usize,
     switches: usize,
+    rush_observations: usize,
+    ever_rushed: bool,
     targets: BTreeMap<String, usize>,
     last_target: Option<String>,
 }
 
 impl PlanTrace {
-    fn observe(&mut self, target: &str) {
+    fn observe(&mut self, target: &str, rush: bool) {
         if self
             .last_target
             .as_deref()
@@ -318,6 +320,8 @@ impl PlanTrace {
             self.switches += 1;
         }
         self.observations += 1;
+        self.rush_observations += rush as usize;
+        self.ever_rushed |= rush;
         *self.targets.entry(target.to_string()).or_default() += 1;
         self.last_target = Some(target.to_string());
     }
@@ -340,10 +344,14 @@ impl PlanTrace {
     }
 }
 
-fn plan_target(ai: &dyn Ai) -> &'static str {
-    ai.plan_report().map_or("unreported", |plan| {
-        plan.victory_target.unwrap_or("adaptive")
+fn plan_observation(ai: &dyn Ai) -> (&'static str, bool) {
+    ai.plan_report().map_or(("unreported", false), |plan| {
+        (plan.victory_target.unwrap_or("adaptive"), plan.rush)
     })
+}
+
+fn plan_target(ai: &dyn Ai) -> &'static str {
+    plan_observation(ai).0
 }
 
 fn run_traced_game(
@@ -356,7 +364,8 @@ fn run_traced_game(
         let pid = game.current;
         ais[pid].take_turn(game, pid);
         if pid < traced_players {
-            traces[pid].observe(plan_target(ais[pid].as_ref()));
+            let (target, rush) = plan_observation(ais[pid].as_ref());
+            traces[pid].observe(target, rush);
         }
         if game.winner.is_none() && game.current == pid {
             let _ = game.apply(pid, &Action::EndTurn);
@@ -411,6 +420,8 @@ struct Metrics {
     plan_turns: BTreeMap<String, usize>,
     plan_observations: usize,
     plan_switches: usize,
+    rush_seats: usize,
+    rush_turns: usize,
     /// Reviews summed over every seat this entrant played, so a run can say
     /// whether the macro search ever ran. Stays zero for agents that do not
     /// search, which is honest rather than missing.
@@ -439,6 +450,8 @@ impl Metrics {
         outcome.wins += won as usize;
         self.plan_observations += trace.observations;
         self.plan_switches += trace.switches;
+        self.rush_seats += trace.ever_rushed as usize;
+        self.rush_turns += trace.rush_observations;
         for (target, turns) in &trace.targets {
             *self.plan_turns.entry(target.clone()).or_default() += turns;
         }
@@ -1011,6 +1024,19 @@ fn main() {
             target_shares(metrics)
         );
     }
+    println!("\nAncient-rush treatment exposure:");
+    for name in [a, b] {
+        let metrics = &totals[name];
+        println!(
+            "  {name:<11} {}/{} seat-games ever rushed ({:.1}%); {}/{} observed player-turns rushing ({:.1}%)",
+            metrics.rush_seats,
+            metrics.games,
+            100.0 * metrics.rush_seats as f64 / metrics.games.max(1) as f64,
+            metrics.rush_turns,
+            metrics.plan_observations,
+            100.0 * metrics.rush_turns as f64 / metrics.plan_observations.max(1) as f64,
+        );
+    }
     // A searching entrant that never reached its search is a scripted agent
     // under a searching agent's name. Say so beside the win rate, because
     // the win rate cannot.
@@ -1442,11 +1468,18 @@ mod tests {
     #[test]
     fn plan_trace_counts_exposure_and_switches() {
         let mut trace = PlanTrace::default();
-        for target in ["adaptive", "religion", "religion", "adaptive"] {
-            trace.observe(target);
+        for (target, rush) in [
+            ("adaptive", false),
+            ("religion", true),
+            ("religion", true),
+            ("adaptive", false),
+        ] {
+            trace.observe(target, rush);
         }
         assert_eq!(trace.observations, 4);
         assert_eq!(trace.switches, 2);
+        assert_eq!(trace.rush_observations, 2);
+        assert!(trace.ever_rushed);
         assert_eq!(trace.targets["adaptive"], 2);
         assert_eq!(trace.targets["religion"], 2);
         assert_eq!(trace.dominant_target(), "adaptive");

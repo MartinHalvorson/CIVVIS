@@ -491,8 +491,8 @@ successful selector.
 
 ### Fresh development screen
 
-Implementation cannot begin while PR #544 owns the AI and evaluator paths.
-After that ownership clears, the fixed 120-map development screen is:
+PR #544 merged as `1da0a9b` before any development outcome was read, and the
+implementation began in PR #557. The fixed 120-map development screen is:
 
 ```text
 ai_eval advanced_rush_connected advanced --players 8 --width 84 --height 54 \
