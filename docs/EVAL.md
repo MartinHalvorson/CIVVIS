@@ -4633,3 +4633,67 @@ The three results that do **not** depend on that run are unaffected and stand:
 | the gen-14 genome's edge is bred-profile-specific (deployment CI **excludes +58**, same profile resolves +207) | **established** |
 | `strategic_cheap` is significantly worse where it ships (−63, wins p=0.0018) | **established** |
 | three 4p 24×16 estimates — a strength, a cost, and a sign — failed to transfer | **established** |
+
+## 2026-07-29 — ★★★ what the action encoding can and cannot rank
+
+`policy_wide` lost 313 Elo because a net fit to outcomes encodes correlation and
+an argmax over siblings optimises whichever correlate is cheapest to move. The
+prescription recorded then was Q or advantage on **returns for actions actually
+taken**, and nothing in the repository emitted that data. `q_dataset` now does,
+and `q_train` fits a ranker over it — *which action was taken*, not what the
+outcome was, because a head asked that question has no correlate to chase.
+
+The dataset is built by replaying `game.log` against a fresh game of the same
+seed, so it records without disturbing what it records. That replay is checked
+rather than assumed: 60 games, **0 rejected applications, 0 divergent score
+lines**, 2.66M rows. A run that diverges exits without claiming the file.
+
+Held-out top-1, split **by game**.
+
+**Mixed-kind negatives** (125,623 held-out decisions, chance 20.0%):
+
+| features | top-1 |
+|---|---|
+| state only (34) | **20.0%** — exactly chance |
+| kind one-hot only (77) | 54.4% |
+| geometry only (13) | 54.2% |
+| all (124) | 54.0% |
+
+The full vector is no better than the kind one-hot alone. What is learned here is
+that the expert moves more often than it fortifies — true, and useless for
+choosing *which* move. State landing on exactly chance is both the metric's
+sanity check and `policy_wide`'s failure reproduced from the other side: every
+candidate in a decision shares one state vector, so state can only tie.
+
+**Same-kind negatives** (60,363 held-out decisions, chance 21.2%):
+
+| features | top-1 |
+|---|---|
+| kind one-hot only | 22.6% — chance, as it must be when the one-hot is constant |
+| **geometry only (13)** | **31.8%** |
+| all (124) | 31.3% |
+
+So the thirteen geometry terms *do* discriminate siblings, by half again over
+chance, on unseen games. That is the signal a move-ordering prior needs — and it
+is a **prior for a unit-action search that does not exist yet**, not a policy.
+`StrategicAi` searches victory lanes, not unit actions, so there is nothing in
+the tree today for this to order. Read as a greedy policy its ceiling is the
+expert it imitates.
+
+**Two corrections, each of which changed a conclusion:**
+
+- The within-kind control was first run on stride-sampled data, where only **103
+  of 531,892** decisions were same-kind by chance. It reported 22.1% and meant
+  nothing. `--negatives-same-kind` exists because of that.
+- Tie credit is `1/k`. `max_by` returns the *last* maximum, so a head that cannot
+  separate candidates read **0.0%** where the honest answer is chance — which
+  made structural blindness look like a trained anti-preference and inverted the
+  first reading of which feature block carried the signal.
+
+| claim | status |
+|---|---|
+| the replay-based emitter reproduces the games it records | **established** (0/60 divergent) |
+| state features cannot rank siblings, by construction | **established** (exactly chance) |
+| mixed-kind ranking is a kind prior, not action discrimination | **established** (kind alone matches the full vector) |
+| geometry discriminates same-kind siblings | **established** (31.8% vs 21.2%, n=60,363) |
+| any of this improves play | **unmeasured** — no agent or default changed |
