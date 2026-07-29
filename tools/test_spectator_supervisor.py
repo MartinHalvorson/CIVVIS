@@ -917,7 +917,7 @@ class RecoveryTests(unittest.TestCase):
             "stall_timeout": 30.0,
             "checkpoint_interval": 5.0,
             "max_resume_attempts": 2,
-            "live_refresh_grace": 600.0,
+            "live_refresh_grace": 1800.0,
             "no_open": True,
             "adopt_pid": 321,
         }
@@ -1576,7 +1576,7 @@ class RecoveryTests(unittest.TestCase):
             stall_timeout=30.0,
             checkpoint_interval=5.0,
             max_resume_attempts=2,
-            live_refresh_grace=600.0,
+            live_refresh_grace=1800.0,
             no_open=True,
             adopt_pid=None,
         )
@@ -1635,7 +1635,7 @@ class RecoveryTests(unittest.TestCase):
             stall_timeout=30.0,
             checkpoint_interval=5.0,
             max_resume_attempts=2,
-            live_refresh_grace=600.0,
+            live_refresh_grace=1800.0,
             no_open=True,
             adopt_pid=321,
         )
@@ -1698,7 +1698,7 @@ class RecoveryTests(unittest.TestCase):
             stall_timeout=30.0,
             checkpoint_interval=5.0,
             max_resume_attempts=2,
-            live_refresh_grace=600.0,
+            live_refresh_grace=1800.0,
             no_open=True,
             adopt_pid=321,
         )
@@ -1750,7 +1750,7 @@ class RecoveryTests(unittest.TestCase):
             stall_timeout=30.0,
             checkpoint_interval=5.0,
             max_resume_attempts=2,
-            live_refresh_grace=600.0,
+            live_refresh_grace=1800.0,
             no_open=True,
             adopt_pid=321,
         )
@@ -1819,7 +1819,7 @@ class RecoveryTests(unittest.TestCase):
             stall_timeout=30.0,
             checkpoint_interval=5.0,
             max_resume_attempts=2,
-            live_refresh_grace=600.0,
+            live_refresh_grace=1800.0,
             no_open=True,
             adopt_pid=None,
         )
@@ -1905,7 +1905,7 @@ class RecoveryTests(unittest.TestCase):
             stall_timeout=30.0,
             checkpoint_interval=5.0,
             max_resume_attempts=2,
-            live_refresh_grace=600.0,
+            live_refresh_grace=1800.0,
             no_open=True,
             adopt_pid=None,
         )
@@ -1983,7 +1983,7 @@ class RecoveryTests(unittest.TestCase):
             stall_timeout=30.0,
             checkpoint_interval=5.0,
             max_resume_attempts=2,
-            live_refresh_grace=600.0,
+            live_refresh_grace=1800.0,
             no_open=True,
             adopt_pid=None,
         )
@@ -2258,8 +2258,17 @@ class LiveRefreshTests(unittest.TestCase):
         with patch.object(sys, "argv", ["spectator_supervisor.py", *argv]):
             return supervisor.parse_args()
 
-    def test_the_grace_window_is_an_operator_flag_with_a_whole_game_default(self):
-        self.assertEqual(self._args(["--no-open"]).live_refresh_grace, 600.0)
+    def test_the_grace_window_outlasts_a_real_game_not_a_healthy_one(self):
+        # Measured on this box: a 250-turn Online game is ~1 minute unloaded and
+        # has taken over 10 minutes with the agent fleet building. A window
+        # sized for the fast case fires on ordinary games — which is exactly
+        # what a 600s default did in production on 2026-07-29, swapping the
+        # runtime under a live match at a world age of ~600s.
+        self.assertGreaterEqual(
+            self._args(["--no-open"]).live_refresh_grace,
+            1800.0,
+            "the grace has to outlast a game played on a loaded box",
+        )
         self.assertEqual(
             self._args(["--no-open", "--live-refresh-grace", "0"]).live_refresh_grace,
             0.0,

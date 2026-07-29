@@ -10,7 +10,11 @@ runtime starts the successor instead. If that fallback was necessary, the
 supervisor keeps retrying, and hands the match to fresh code at the next game
 boundary — a promoted build interrupts a match in progress only after
 `--live-refresh-grace`, because a mid-match process handoff is a visible stall
-and a boundary is never more than a game away. The browser's guarded result
+and a boundary is normally only a game away. That window has to outlast a real
+game, not a healthy one: the exhibition plays a 250-turn Online game in about a
+minute unloaded, but this box runs an agent fleet and the same game has been
+measured at over ten minutes under load, so a window sized for the fast case
+turns the valve into the common path. The browser's guarded result
 countdown cannot race either path ahead on stale code.
 """
 
@@ -1513,7 +1517,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--live-refresh-grace",
         type=float,
-        default=600.0,
+        default=1800.0,
         help="how long a promoted runtime waits for the active game to end "
         "before it replaces the server mid-match",
     )
@@ -1973,6 +1977,16 @@ def main() -> int:
                                 "game boundary rather than interrupting this match"
                             )
                         checkpoint_ready = False
+                    elif runtime_ready and world_started_at is not None:
+                        # The valve, not the ordinary path. Say so: a mid-match
+                        # handoff is the one thing here a viewer sees, and
+                        # "the grace ran out" is the only reason this supervisor
+                        # ever chooses one for a world it started itself.
+                        log(
+                            f"this world has run {now - world_started_at:.0f}s, past the "
+                            f"{args.live_refresh_grace:.0f}s grace; taking the new runtime mid-match"
+                        )
+                        checkpoint_ready = capture_checkpoint(args.port, save_path)
                     elif runtime_ready:
                         checkpoint_ready = capture_checkpoint(args.port, save_path)
                     else:
