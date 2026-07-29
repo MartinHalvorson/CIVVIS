@@ -3,8 +3,8 @@
 //! Each deployment map is replayed from major seats 0 and N-1 under exact
 //! stock `strategic_deep` and under the same controller with one default-off
 //! production-eligibility flag enabled. The map, not the seat-game, is the
-//! inference unit. `Game::max_turns` stays 250 while the external observer may
-//! continue the same stateful agents through turn 320.
+//! inference unit. Every game uses the real 250-turn deployment horizon and
+//! stops at the engine's ordinary enabled-victory or score-tiebreak boundary.
 
 use civvis::ai::Ai;
 use civvis::elo::{builtin_ai, builtin_provenance};
@@ -21,7 +21,7 @@ const SCREEN_SEED: u64 = 9_972_000;
 const CONFIRM_MAPS: usize = 60;
 const CONFIRM_SEED: u64 = 9_973_000;
 const NOMINAL_TURNS: u32 = 250;
-const OBSERVE_THROUGH: u32 = 320;
+const OBSERVE_THROUGH: u32 = NOMINAL_TURNS;
 const DEPLOYMENT_PLAYERS: [usize; 7] = [4, 6, 8, 10, 5, 7, 9];
 const DEPLOYMENT_SCRIPTS: [MapScript; 9] = [
     MapScript::LandOnly,
@@ -399,7 +399,10 @@ fn play(
     let mut game = Game::new_with(options);
     game.victory_conditions = VictoryConditions::parse("science,culture,domination").unwrap();
     let nominal_limit = game.max_turns;
-    assert!(observe_through >= nominal_limit);
+    assert_eq!(
+        observe_through, nominal_limit,
+        "this evaluator measures the real engine horizon"
+    );
     let kinds = recon_kinds(&game);
     let mut ais = controller_fleet(&game, focal, mode, map_seed);
     assert_eq!(ais.len(), game.players.len());
@@ -936,8 +939,11 @@ fn main() {
     .max(1) as usize;
     let turns = number(&args, "--turns", NOMINAL_TURNS as i64).max(1) as u32;
     let observe_through = number(&args, "--observe-through", OBSERVE_THROUGH as i64).max(1) as u32;
-    if observe_through < turns {
-        eprintln!("--observe-through must be at least --turns");
+    if observe_through != turns {
+        eprintln!(
+            "--observe-through must equal --turns: the engine awards its score tiebreak after \
+             Game::max_turns, so a longer observer horizon would not describe the same game"
+        );
         std::process::exit(2);
     }
     let seed = number(
@@ -1023,7 +1029,7 @@ fn main() {
         );
     }
     println!(
-        "rules: {turns} nominal {speed} turns, observe through {observe_through}; poles {}; civilizations {}; victories {victory_names}; seed {seed}; {jobs} jobs; difficulty {difficulty}",
+        "rules: {turns} {speed} turns at the real engine horizon; poles {}; civilizations {}; victories {victory_names}; seed {seed}; {jobs} jobs; difficulty {difficulty}",
         map_poles.id(),
         if randomize_civs {
             "randomized"

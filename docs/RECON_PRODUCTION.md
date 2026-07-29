@@ -20,6 +20,14 @@ propagation, deployment scheduling, inference/gate arithmetic, and observer
 accounting. No registered screen or confirmation seed was started or inspected
 while the shared Strategic Expansion oracle owned the simulator queue.
 
+A later engine audit, still before any registered run, corrected the observer
+horizon. Disabling Score in the lobby does not disable the engine's unconditional
+turn-limit tiebreak: it awards a score winner after `Game.max_turns`. The earlier
+turn-320 wording therefore described neither the implementation nor a valid
+continuation of a 250-turn world. The registered null, screen, and confirmation
+now stop at the real 250-turn engine boundary. No treatment, outcome threshold,
+seed, map population, or other decision rule changed.
+
 ## Production observation
 
 The frozen archive is the latest 50 completed production saves at the
@@ -180,9 +188,11 @@ periods are pairwise coprime and cover the 126 unattended rollover profiles
 without reweighting. Every phase restarts at offset zero. Axis-specific results
 are descriptive only and cannot promote, extend, or rescue the pooled gate.
 
-Each game keeps `Game.max_turns = 250` and continues the same stateful agents
-externally through turn 320 or an enabled victory. The runner must assert the
-policy-visible horizon never changes. It reports, by focal arm and paired map:
+Each game keeps `Game.max_turns = 250` and stops at an enabled victory or the
+engine's ordinary unconditional turn-limit score tiebreak. The runner asserts
+that the requested observer horizon equals this real game horizon; it may not
+manufacture post-game turns by changing `max_turns` around rollover or clearing
+a winner after `begin_turn` was skipped. It reports, by focal arm and paired map:
 
 - completed production and purchase actions for every recon-family type,
   separately by Production, Gold, and Faith;
@@ -209,7 +219,7 @@ entrant carrying `recon_family_cap = false`:
 
 ```text
 recon_family_eval --null --deployment-mix --maps 4 --turns 250 \
-  --observe-through 320 --speed online --poles poles --randomize-civs \
+  --observe-through 250 --speed online --poles poles --randomize-civs \
   --victories science,culture,domination --seed 9971999 --jobs 6
 ```
 
@@ -235,7 +245,7 @@ The one allowed screen is 12 maps / 48 games:
 
 ```text
 recon_family_eval --deployment-mix --maps 12 --turns 250 \
-  --observe-through 320 --speed online --poles poles --randomize-civs \
+  --observe-through 250 --speed online --poles poles --randomize-civs \
   --victories science,culture,domination --seed 9972000 --jobs 6
 ```
 
