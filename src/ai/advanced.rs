@@ -5791,12 +5791,7 @@ impl AdvancedAi {
             let target = g
                 .players
                 .iter()
-                .filter(|minor| {
-                    minor.alive
-                        && minor.is_minor
-                        && !minor.is_barbarian
-                        && !g.is_at_war(pid, minor.id)
-                })
+                .filter(|minor| g.can_send_envoy(pid, minor.id))
                 .map(|minor| {
                     let mine = g.envoys_at(pid, minor.id);
                     let rival = g
@@ -19083,6 +19078,15 @@ mod tests {
     #[test]
     fn diplomatic_strategy_concentrates_envoys_into_a_suzerainty() {
         let mut g = Game::new(2, 24, 16, 77, 80, 2);
+        let city_states: Vec<usize> = g
+            .players
+            .iter()
+            .filter(|player| player.is_minor && !player.is_barbarian)
+            .map(|player| player.id)
+            .collect();
+        for city_state in city_states {
+            g.record_contact(0, city_state);
+        }
         g.players[0].envoys_free = 3;
         AdvancedAi::new().advanced_envoys(&mut g, 0, GrandStrategy::Diplomacy, None);
         assert_eq!(g.players[0].envoys_free, 0);
@@ -19116,6 +19120,9 @@ mod tests {
             .collect();
         let hattusa = states[0];
         let zanzibar = states[1];
+        for city_state in states.iter().copied() {
+            game.record_contact(0, city_state);
+        }
         game.players[hattusa].civ = "Hattusa".to_string();
         game.players[zanzibar].civ = "Zanzibar".to_string();
         game.players[0].envoys = vec![(hattusa, 4), (zanzibar, 5)];
@@ -19141,6 +19148,9 @@ mod tests {
             .map(|player| player.id)
             .collect();
         assert_eq!(minors.len(), 2);
+        for city_state in minors.iter().copied() {
+            game.record_contact(0, city_state);
+        }
         game.players[minors[0]].civ = "Kandy".to_string();
         game.players[minors[1]].civ = "Yerevan".to_string();
         game.players[0].envoys_free = 1;
@@ -19164,6 +19174,35 @@ mod tests {
         AdvancedAi::new().advanced_envoys(&mut game, 0, GrandStrategy::Religion, None);
         assert_eq!(game.envoys_at(0, minors[0]), 1);
         assert_eq!(game.envoys_at(0, minors[1]), 0);
+    }
+
+    #[test]
+    fn strategic_envoys_ignore_an_unmet_city_states_identity() {
+        let mut game = Game::new_full(1, 24, 16, 90_733, 120, 2, false);
+        let city_states: Vec<usize> = game
+            .players
+            .iter()
+            .filter(|player| player.is_minor && !player.is_barbarian)
+            .map(|player| player.id)
+            .collect();
+        assert_eq!(city_states.len(), 2);
+        let hidden = city_states[0];
+        let known = city_states[1];
+        for player in 0..game.players.len() {
+            game.players[player].met.clear();
+        }
+        game.players[hidden].civ = "Yerevan".to_string();
+        game.players[known].civ = "Kandy".to_string();
+        game.record_contact(0, known);
+        game.players[0].envoys_free = 1;
+
+        // Yerevan has the higher Religion score. Ranking it before contact
+        // would both leak its identity and make apply reject the first send.
+        AdvancedAi::new().advanced_envoys(&mut game, 0, GrandStrategy::Religion, None);
+
+        assert_eq!(game.players[0].envoys_free, 0);
+        assert_eq!(game.envoys_at(0, hidden), 0);
+        assert_eq!(game.envoys_at(0, known), 1);
     }
 
     #[test]
@@ -22164,6 +22203,173 @@ mod tests {
                     total_deficit as f64 / free_samples.len().max(1) as f64,
                     mean(&free_samples)
                 );
+            }
+        }
+        println!();
+    }
+
+    /// Census, not an assertion: does the agent ever build an envoy income?
+    ///
+    /// #602 measured perfect suzerainty at **56.7% against a 22.7% control**
+    /// (p=0.0000, 400 maps) — the largest ceiling this harness has found. #608
+    /// showed the gap is not allocation: the envoy pool reads **0.00 unspent at
+    /// every sample** and the agent is suzerain of **3%** of the city-states it
+    /// meets. It spends everything it earns, and earns almost nothing.
+    ///
+    /// So the live question is acquisition, and unlike the settler's production
+    /// cost that expansion foundered on, **every input here is a decision**.
+    /// `city_state_influence` accrues `influence` per turn and converts it to
+    /// envoys whenever it crosses the government's `influence_threshold`:
+    ///
+    /// - **government** — `influence_per_turn` *and* `envoys_per_threshold`,
+    ///   which runs 1 for chiefdom/autocracy/oligarchy/classical_republic,
+    ///   2 for monarchy/merchant_republic/theocracy, 3 for
+    ///   communism/democracy/fascism, 4 for the modern three
+    /// - **policy cards** — `charismatic_leader` (+2/turn),
+    ///   `gunboat_diplomacy` (+4/turn)
+    /// - **buildings** — `consulate` (+2), `chancery` (+3)
+    ///
+    /// If the agent holds an early government, slots neither card and builds
+    /// neither building, the shortfall is a straightforward consequence and
+    /// each of those three is a treatment. If it already does all three, the
+    /// ceiling is out of reach the way expansion's was.
+    ///
+    /// Run with `cargo test --release envoy_income_census -- --ignored --nocapture`.
+    #[test]
+    #[ignore = "census, not an assertion; run explicitly with --nocapture"]
+    fn envoy_income_census() {
+        const CARDS: [&str; 2] = ["charismatic_leader", "gunboat_diplomacy"];
+        const BUILDINGS: [&str; 2] = ["consulate", "chancery"];
+
+        for (label, players, width, height, city_states) in [
+            ("eval 4p 24x16", 4usize, 24i32, 16i32, 4usize),
+            ("deployment 6p 74x46", 6, 74, 46, 12),
+        ] {
+            let mut govs = BTreeMap::<String, u64>::new();
+            let mut envoys_per_threshold: Vec<f64> = Vec::new();
+            let mut influence_rate: Vec<f64> = Vec::new();
+            let mut card_turns = BTreeMap::<&str, u64>::new();
+            let mut building_ever = BTreeMap::<&str, u64>::new();
+            let mut turns = 0u64;
+            let mut civic_turns = BTreeMap::<&str, u64>::new();
+            let mut diplo_slot_turns = 0u64;
+            let mut diplo_quarter_games = 0u64;
+            let maps = 6u64;
+
+            for map in 0..maps {
+                let mut game = Game::new_full(
+                    players, width, height, 480_000 + map, 200, city_states, false,
+                );
+                let mut ais: Vec<AdvancedAi> =
+                    (0..game.players.len()).map(|_| AdvancedAi::new()).collect();
+                game.set_fog_memory(false);
+                let mut built_here = BTreeSet::<&str>::new();
+                while game.winner.is_none() && game.turn <= game.max_turns {
+                    let pid = game.current;
+                    ais[pid].take_turn(&mut game, pid);
+                    if game.winner.is_none() && game.current == pid {
+                        let _ = game.apply(pid, &crate::game::Action::EndTurn);
+                    }
+                    if pid != 0 {
+                        continue;
+                    }
+                    turns += 1;
+                    let seat = &game.players[0];
+                    let gov = seat.government.clone().unwrap_or_else(|| "none".into());
+                    *govs.entry(gov.to_string()).or_default() += 1;
+                    if let Some(spec) = seat
+                        .government
+                        .as_ref()
+                        .and_then(|g| game.rules.governments.get(g.as_str()))
+                    {
+                        envoys_per_threshold.push(spec.envoys_per_threshold as f64);
+                        influence_rate.push(spec.influence_per_turn);
+                    } else {
+                        envoys_per_threshold.push(0.0);
+                        influence_rate.push(0.0);
+                    }
+                    for card in CARDS {
+                        if seat.policies.iter().any(|p| p.as_str() == card) {
+                            *card_turns.entry(card).or_default() += 1;
+                        }
+                    }
+                    for civic in ["political_philosophy", "ideology"] {
+                        if seat.civics.iter().any(|c| c.as_str() == civic) {
+                            *civic_turns.entry(civic).or_default() += 1;
+                        }
+                    }
+                    if game.gov_slots(0).diplomatic > 0 {
+                        diplo_slot_turns += 1;
+                    }
+                    if game
+                        .cities
+                        .values()
+                        .any(|c| c.owner == 0 && c.districts.keys().any(|d| d.as_str() == "diplomatic_quarter"))
+                        && built_here.insert("diplomatic_quarter")
+                    {
+                        diplo_quarter_games += 1;
+                    }
+                    for b in BUILDINGS {
+                        if game
+                            .cities
+                            .values()
+                            .any(|c| c.owner == 0 && c.buildings.iter().any(|x| x.as_str() == b))
+                            && built_here.insert(b)
+                        {
+                            *building_ever.entry(b).or_default() += 1;
+                        }
+                    }
+                }
+            }
+
+            let mean = |v: &Vec<f64>| v.iter().sum::<f64>() / v.len().max(1) as f64;
+            println!("\n=== envoy income [{label}]: {turns} seat-turns over {maps} maps ===");
+            println!(
+                "  ★ envoys_per_threshold held   mean {:.2}   (1 = earliest tier, 4 = modern)",
+                mean(&envoys_per_threshold)
+            );
+            println!(
+                "  government influence/turn     mean {:.2}",
+                mean(&influence_rate)
+            );
+            let mut rows: Vec<(&String, &u64)> = govs.iter().collect();
+            rows.sort_by(|a, b| b.1.cmp(a.1));
+            println!("  governments held (top 4):");
+            for (name, count) in rows.into_iter().take(4) {
+                println!("    {name:<24} {:>5.1}% of turns", *count as f64 / turns.max(1) as f64 * 100.0);
+            }
+            println!("  ★ influence policy cards slotted:");
+            for card in CARDS {
+                let n = card_turns.get(card).copied().unwrap_or(0);
+                println!("    {card:<22} {:>5.1}% of turns", n as f64 / turns.max(1) as f64 * 100.0);
+            }
+            // ⚠ "never chosen" and "never available" are different findings.
+            // Both cards need a *diplomatic policy slot* plus a civic, and both
+            // buildings need a `diplomatic_quarter` district. Without these
+            // three numbers the ones above measure the ruleset, not the agent.
+            println!("  availability — was it ever even possible?");
+            println!(
+                "    political_philosophy held  {:>5.1}% of turns",
+                civic_turns.get("political_philosophy").copied().unwrap_or(0) as f64
+                    / turns.max(1) as f64
+                    * 100.0
+            );
+            println!(
+                "    ideology held              {:>5.1}% of turns",
+                civic_turns.get("ideology").copied().unwrap_or(0) as f64 / turns.max(1) as f64
+                    * 100.0
+            );
+            println!(
+                "    a diplomatic slot open     {:>5.1}% of turns",
+                diplo_slot_turns as f64 / turns.max(1) as f64 * 100.0
+            );
+            println!(
+                "    diplomatic_quarter built   in {diplo_quarter_games} of {maps} games"
+            );
+            println!("  ★ influence buildings ever built:");
+            for b in BUILDINGS {
+                let n = building_ever.get(b).copied().unwrap_or(0);
+                println!("    {b:<22} in {n} of {maps} games");
             }
         }
         println!();

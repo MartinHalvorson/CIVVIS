@@ -1716,6 +1716,7 @@ mod tests {
             }
             _ => {}
         }
+        g.record_contact(0, minor);
         g.players[0].envoys_free = 1;
         let before = g.city_yields(cap);
         g.apply(0, &Action::SendEnvoy { player: minor }).unwrap();

@@ -2630,7 +2630,7 @@ impl BasicAi {
             let target = g
                 .players
                 .iter()
-                .filter(|m| m.is_minor && !m.is_barbarian && m.alive && !g.is_at_war(pid, m.id))
+                .filter(|m| g.can_send_envoy(pid, m.id))
                 .max_by_key(|m| (g.envoys_at(pid, m.id), std::cmp::Reverse(m.id)))
                 .map(|m| m.id);
             match target {
@@ -6646,6 +6646,34 @@ mod tests {
             g.turn += 1;
         }
         (ai, g, ground, scout)
+    }
+
+    #[test]
+    fn baseline_envoys_skip_an_unmet_city_state_and_reach_a_known_one() {
+        let mut game = Game::new_full(1, 24, 16, 90_732, 120, 2, false);
+        let city_states: Vec<usize> = game
+            .players
+            .iter()
+            .filter(|player| player.is_minor && !player.is_barbarian)
+            .map(|player| player.id)
+            .collect();
+        assert_eq!(city_states.len(), 2);
+        let hidden = city_states[0];
+        let known = city_states[1];
+        for player in 0..game.players.len() {
+            game.players[player].met.clear();
+        }
+        game.record_contact(0, known);
+        game.players[0].envoys_free = 1;
+
+        // With equal influence, the baseline's stable tie-break would prefer
+        // the lower-id hidden state. It must discard that candidate rather
+        // than fail its first send and leave the known court unfunded.
+        BasicAi::new().research_without_government(&mut game, 0);
+
+        assert_eq!(game.players[0].envoys_free, 0);
+        assert_eq!(game.envoys_at(0, hidden), 0);
+        assert_eq!(game.envoys_at(0, known), 1);
     }
 
     /// The single-turn reversal ban cannot see a round trip that takes two
