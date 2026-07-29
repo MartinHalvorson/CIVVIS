@@ -227,17 +227,23 @@ local function onUpdate()
 	-- configure, and hosted anyway -- which is why hosting is not conditional
 	-- on the configuration succeeding.
 	local ok, err = pcall(applyConfiguration);
+	-- Not `ok and nil or tostring(err)`: nil is falsy, so that idiom falls
+	-- through to the second branch on success and reports pcall's return value
+	-- as an error message.
+	local failure = nil;
+	if not ok then failure = tostring(err); end
 	pcall(function()
-		GameConfiguration.SetValue("CIVVIS_SETUP", ok and "ok" or tostring(err));
+		GameConfiguration.SetValue("CIVVIS_SETUP", ok and "ok" or failure);
 	end);
 	if not ok then
-		emit("error", { where = "applyConfiguration", error = tostring(err) });
+		emit("error", { where = "applyConfiguration", error = failure });
 	end
 	local hosted, hostErr = pcall(function()
 		Network.HostGame(ServerType.SERVER_TYPE_NONE);
 	end);
-	emit("host", { started = hosted, configured = ok,
-	               error = hosted and nil or tostring(hostErr) });
+	local hostFailure = nil;
+	if not hosted then hostFailure = tostring(hostErr); end
+	emit("host", { started = hosted, configured = ok, error = hostFailure });
 end
 
 function Initialize()

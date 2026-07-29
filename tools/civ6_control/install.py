@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import json
 import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -72,13 +73,34 @@ def install_dir() -> Path:
     return env.assets_dir() / "DLC" / MOD_NAME
 
 
+def check_syntax(path: Path) -> str | None:
+    """Reject a script that will not parse, before the game swallows it.
+
+    A Lua syntax error in a mod script is the worst failure mode here: the
+    context loads, the script dies at parse time, and nothing is written to any
+    log -- so a broken agent is indistinguishable from a game that is thinking.
+    ``luac -p`` costs milliseconds and turns that into an install-time error.
+    Absent ``luac``, the check is skipped rather than faked.
+    """
+    if shutil.which("luac") is None:
+        return None
+    result = subprocess.run(["luac", "-p", str(path)], capture_output=True, text=True)
+    if result.returncode == 0:
+        return None
+    return (result.stderr or result.stdout).strip()
+
+
 def install(config: dict) -> Path:
     target = install_dir()
     target.mkdir(parents=True, exist_ok=True)
     text = prelude(config)
     for src in sorted(MOD_SOURCE.iterdir()):
         if src.name in SCRIPTS:
-            (target / src.name).write_text(text + src.read_text())
+            written = target / src.name
+            written.write_text(text + src.read_text())
+            error = check_syntax(written)
+            if error:
+                raise SystemExit(f"{src.name} does not parse: {error}")
         else:
             shutil.copy2(src, target / src.name)
     # Kept beside the scripts so the active settings are readable in the
