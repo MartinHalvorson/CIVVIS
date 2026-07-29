@@ -328,7 +328,34 @@ fn empire_reading(g: &Game, pid: usize, w: &Weights) -> f64 {
             strength += g.unit_strength(unit, false) + g.unit_strength(unit, true);
         }
     }
-    value + w.pol_military * strength
+    // Influence is neither a city yield nor unit strength, so a card whose
+    // whole effect is `influence_per_turn` reads bit-identical either side of
+    // the counterfactual and scores exactly 0.0 -- the same failure the
+    // `*_production_pct` family had before `item_prod_mult` was folded in
+    // above, and it silences an entire slot category. Ten of the seventeen
+    // diplomatic cards name no yield in any effect key, `charismatic_leader`
+    // (+2 influence) and `gunboat_diplomacy` (+4) among them.
+    //
+    // It is worth seeing because influence is the whole envoy economy. #602
+    // measured suzerainty of every met city-state at **56.7% against a 22.7%
+    // control**, p=0.0000 over 400 maps -- the largest ceiling in this
+    // repository. #608 found the envoy pool at 0.00 unspent on every sample
+    // and the agent suzerain of 3% of the city-states it meets, so the gap is
+    // income, not placement. #612 found `charismatic_leader` unlocked on 63.7%
+    // of turns with an open diplomatic slot on 49.1% -- and slotted on 0.0%.
+    //
+    // Read as a rate, because that is what a card changes. The stock is
+    // `player.influence`, which the counterfactual cannot move in one turn.
+    //
+    // Only the policy term appears. `city_state_influence` sums three sources
+    // -- the government's `influence_per_turn`, this, and the `influence_points`
+    // buildings -- but slotting a card moves neither of the other two, so they
+    // are identical either side of the counterfactual and cancel exactly in
+    // the difference. Including them would add a large constant to both
+    // readings and change no ranking.
+    value
+        + w.pol_military * strength
+        + w.pol_influence * g.policy_effect(pid, "influence_per_turn")
 }
 
 /// Take the Dedications this age offers, best first.
@@ -586,6 +613,18 @@ pub struct Weights {
     /// Yield-equivalent of one point of fielded combat strength. Small: a card
     /// worth +5% to ten units moves strength by tens, a yield card by ones.
     pub pol_military: f64,
+    /// What one point of influence per turn is worth to the policy valuation,
+    /// in the same units as a point of yield.
+    ///
+    /// **Zero by default, which reproduces the shipped behaviour exactly.**
+    /// Influence converts to envoys at the government's `influence_threshold`
+    /// and envoys convert to suzerainty at three per city-state, so a point of
+    /// influence is worth a fraction of an envoy and an envoy is worth a
+    /// fraction of a suzerainty -- but the suzerainty it eventually buys is
+    /// measured at a 34-point win-rate swing, so the chain is short and the
+    /// prize is large. The right value is not derivable from that and is what
+    /// an evaluation is for; this exists so the axis can be measured at all.
+    pub pol_influence: f64,
     /// Fraction by which a challenger must beat the incumbent to take its
     /// slot. Zero re-shuffles the deck on noise; one never swaps at all.
     pub pol_swap_margin: f64,
@@ -731,6 +770,7 @@ impl Default for Weights {
             pol_culture: 1.0,
             pol_faith: 0.7,
             pol_military: 0.05,
+            pol_influence: 0.0,
             pol_swap_margin: 0.15,
             // LEGACY, not Live. The counterfactual deck is a measured null:
             // 18 map directions to 15, p=0.7283 over 120 mirrored maps, with
@@ -862,6 +902,7 @@ impl Weights {
         weights.pol_culture = template.pol_culture;
         weights.pol_faith = template.pol_faith;
         weights.pol_military = template.pol_military;
+        weights.pol_influence = template.pol_influence;
         weights.pol_swap_margin = template.pol_swap_margin;
         weights.policy_deck = template.policy_deck;
         weights.dedication_choice = template.dedication_choice;
@@ -10236,5 +10277,76 @@ mod tests {
                 .map(|mission| mission.kind.as_str()),
             Some("siphon_funds")
         );
+    }
+
+    /// Fires-check for `pol_influence`: does making influence visible actually
+    /// get the card slotted?
+    ///
+    /// `empire_reading` scores a card by the counterfactual difference it makes
+    /// to the empire. Influence is neither a city yield nor unit strength, so
+    /// `charismatic_leader` — whose entire effect is `influence_per_turn: 2` —
+    /// read bit-identical either side and scored exactly 0.0, then lost every
+    /// tie because `POLICY_PRIORITY` does not name it. `envoy_income_census`
+    /// (#612) measured the consequence: unlocked on 63.7% of turns with an open
+    /// diplomatic slot on 49.1%, and slotted on 0.0%.
+    ///
+    /// The criterion is the outcome — the card in a slot — not a score.
+    ///
+    /// Run with `cargo test --release influence_visible_fires -- --ignored --nocapture`.
+    #[test]
+    #[ignore = "census, not an assertion; run explicitly with --nocapture"]
+    fn influence_visible_fires() {
+        for weight in [0.0f64, 1.0, 4.0] {
+            let mut slotted = 0u64;
+            let mut turns = 0u64;
+            let mut envoys_placed = 0.0f64;
+            let maps = 6u64;
+            for map in 0..maps {
+                let mut game = crate::game::Game::new_full(6, 74, 46, 480_000 + map, 200, 12, false);
+                let mut ais: Vec<AdvancedAi> = (0..game.players.len())
+                    .map(|_| {
+                        // ⚠ `Weights::default()` is `PolicyDeck::Legacy`, which
+                        // returns before the counterfactual scoring ever runs.
+                        // The shipped agent loads the evolved champion, and
+                        // that artifact deserializes to `Live` — forcing
+                        // champions to Legacy was measured to lose (12 map
+                        // directions for, 26 against, p=0.0336). Testing on the
+                        // default would measure a path deployment never takes.
+                        let mut w = crate::evolve::load_champion("evolved")
+                            .unwrap_or_default();
+                        w.policy_deck = PolicyDeck::Live;
+                        w.pol_influence = weight;
+                        AdvancedAi::with_weights(w)
+                    })
+                    .collect();
+                game.set_fog_memory(false);
+                while game.winner.is_none() && game.turn <= game.max_turns {
+                    let pid = game.current;
+                    ais[pid].take_turn(&mut game, pid);
+                    if game.winner.is_none() && game.current == pid {
+                        let _ = game.apply(pid, &crate::game::Action::EndTurn);
+                    }
+                    if pid != 0 {
+                        continue;
+                    }
+                    turns += 1;
+                    if game.players[0]
+                        .policies
+                        .iter()
+                        .any(|p| p.as_str() == "charismatic_leader")
+                    {
+                        slotted += 1;
+                    }
+                    envoys_placed +=
+                        game.players[0].envoys.iter().map(|(_, n)| *n).sum::<i64>() as f64;
+                }
+            }
+            println!(
+                "  pol_influence={weight:<4}  charismatic_leader slotted {:>5.1}% of turns   envoys placed mean {:.2}",
+                slotted as f64 / turns.max(1) as f64 * 100.0,
+                envoys_placed / turns.max(1) as f64
+            );
+        }
+        println!();
     }
 }
