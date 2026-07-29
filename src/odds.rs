@@ -166,14 +166,14 @@ pub fn table(game: &Game, prior_elo: impl Fn(usize) -> f64) -> BTreeMap<usize, S
         .collect();
     let start = team_shares(game, &seats, &win_shares(&prior));
 
-    for ((pid, prior_elo), handicap_elo) in seats.iter().zip(&prior).zip(&handicap) {
+    for (index, pid) in seats.iter().enumerate() {
         odds.insert(
             *pid,
             SeatOdds {
-                start: start[seats.iter().position(|seat| seat == pid).expect("own seat")],
+                start: start[index],
                 now: 0.0,
-                prior_elo: *prior_elo,
-                handicap_elo: *handicap_elo,
+                prior_elo: prior[index],
+                handicap_elo: handicap[index],
                 standing_elo: 0.0,
                 race_pct: 0.0,
             },
