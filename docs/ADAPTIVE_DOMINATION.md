@@ -68,7 +68,8 @@ the branch's claim-time `origin/main`, commit
 `b49bb15eeda57969a7d77c5bf0010d91def1e60d`.
 
 Each map contributes two independent focal-seat cells, seats 0 and 7. For each
-cell the evaluator constructs one base world, clones it, and runs:
+cell the evaluator constructs one base world and one focal controller, then
+clones both literally before running:
 
 - **control:** the ordinary adaptive champion; and
 - **treatment:** the same stateful adaptive champion until the first qualifying
