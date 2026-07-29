@@ -489,6 +489,56 @@ fn metric(games: &BTreeMap<u64, GameMetrics>, read: impl Fn(&GameMetrics) -> f32
         .collect()
 }
 
+fn percentile(sorted: &[f32], quantile: f32) -> f32 {
+    if sorted.is_empty() {
+        return 0.0;
+    }
+    let index = ((sorted.len() - 1) as f32 * quantile.clamp(0.0, 1.0)).round() as usize;
+    sorted[index]
+}
+
+fn confidence_distribution(net: &Linear, groups: &[Group]) -> Vec<f32> {
+    let mut probabilities = Vec::with_capacity(groups.len());
+    for group in groups {
+        let scores: Vec<f32> = group.rows.iter().map(|row| net.score(row)).collect();
+        let alternative = scores
+            .iter()
+            .enumerate()
+            .skip(1)
+            .fold(1, |best, (index, score)| {
+                if *score > scores[best] + EPS {
+                    index
+                } else {
+                    best
+                }
+            });
+        probabilities.push(sigmoid(scores[alternative] - scores[0]));
+    }
+    probabilities.sort_by(f32::total_cmp);
+    probabilities
+}
+
+fn target_census(groups: &[Group], label: &str) {
+    let mut targets = [0usize; 10];
+    for group in groups {
+        for left in 0..group.rows.len() {
+            for right in left + 1..group.rows.len() {
+                let target = superiority_target(&group.returns[left], &group.returns[right]);
+                targets[(target * 10.0).round().clamp(0.0, 9.0) as usize] += 1;
+            }
+        }
+    }
+    let total: usize = targets.iter().sum();
+    let populated = targets
+        .iter()
+        .enumerate()
+        .filter(|(_, count)| **count > 0)
+        .map(|(tenths, count)| format!("{:.1}:{count}", tenths as f32 / 10.0))
+        .collect::<Vec<_>>()
+        .join("  ");
+    println!("{label} pair posterior targets ({total} pairs): {populated}");
+}
+
 struct Report {
     lift: f32,
     lift_se: f32,
@@ -513,6 +563,7 @@ fn report(net: &Linear, groups: &[Group], threshold: f32, label: &str) -> Report
     let (ungated_lift, ungated_lift_se) = mean_se(&metric(&games, |game| game.ungated_lift));
     let (lift, lift_se) = mean_se(&metric(&games, |game| game.gated_lift));
     let (override_rate, override_rate_se) = mean_se(&metric(&games, |game| game.overrides as f32));
+    let confidence = confidence_distribution(net, groups);
     println!(
         "{label}: {decisions} decisions in {} games, mean return spread {spread:.4}",
         games.len()
@@ -531,6 +582,30 @@ fn report(net: &Linear, groups: &[Group], threshold: f32, label: &str) -> Report
          mean outcomes +/=/− {positive}/{tied}/{negative}",
         100.0 * override_rate,
         100.0 * override_rate_se
+    );
+    println!(
+        "  best-sibling P(beat expert): p50 {:.3}, p90 {:.3}, p99 {:.3}, max {:.3}; \
+         clear 0.55/0.60/0.65/{threshold:.2}: {}/{}/{}/{}",
+        percentile(&confidence, 0.50),
+        percentile(&confidence, 0.90),
+        percentile(&confidence, 0.99),
+        percentile(&confidence, 1.00),
+        confidence
+            .iter()
+            .filter(|value| **value + EPS >= 0.55)
+            .count(),
+        confidence
+            .iter()
+            .filter(|value| **value + EPS >= 0.60)
+            .count(),
+        confidence
+            .iter()
+            .filter(|value| **value + EPS >= 0.65)
+            .count(),
+        confidence
+            .iter()
+            .filter(|value| **value + EPS >= threshold)
+            .count()
     );
     println!(
         "  matched doctrine outcomes on overrides: +/=/− \
@@ -681,8 +756,22 @@ fn main() {
         train_groups.len(),
         evaluation.len()
     );
+    target_census(&train_groups, "train");
+    target_census(&evaluation, label);
 
     let net = train(&train_groups, width, epochs, batch, rate, l2);
+    println!(
+        "model scale: L2 norm {:.4}, largest |weight| {:.4}",
+        net.weights
+            .iter()
+            .map(|weight| weight * weight)
+            .sum::<f32>()
+            .sqrt(),
+        net.weights
+            .iter()
+            .map(|weight| weight.abs())
+            .fold(0.0, f32::max)
+    );
     report(&net, &train_groups, threshold, "train");
     let result = report(&net, &evaluation, threshold, label);
     let pass = if label == "external" {
