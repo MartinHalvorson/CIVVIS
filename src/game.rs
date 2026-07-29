@@ -17985,12 +17985,12 @@ impl Game {
 
     /// Whether `pid` has researched the technology that retires `kind`. The
     /// unit stays on the map; it simply leaves every production menu.
-    pub fn unit_is_obsolete(&self, pid: usize, kind: &str) -> bool {
+    pub fn unit_is_obsolete(&self, pid: usize, kind: impl AsName) -> bool {
         self.rules
             .units
-            .get(kind)
-            .and_then(|spec| spec.obsolete_tech.as_deref())
-            .is_some_and(|tech| self.players[pid].techs.contains(&Name::new(tech)))
+            .get_interned(kind.as_name())
+            .and_then(|spec| spec.obsolete_tech)
+            .is_some_and(|tech| self.players[pid].techs.contains(&tech))
     }
 
     /// Gold and strategic material to upgrade one `kind` into its successor.
@@ -18000,7 +18000,7 @@ impl Game {
     /// game applies it inside its own executable, and the observed in-game
     /// prices are twice the Production difference on top of the base cost.
     pub fn unit_upgrade_price(&self, pid: usize, kind: &str) -> Option<(Name, f64, f64)> {
-        let target = self.unit_upgrade_target(pid, kind)?;
+        let target = self.unit_upgrade_target(pid, Name::new(kind))?;
         let from = self.rules.units.get(kind)?.cost;
         let spec = self.rules.units.get(&target)?;
         let gold = self
@@ -18254,14 +18254,14 @@ impl Game {
             .get(effect)
             .into_iter()
             .flatten()
-            .filter(|(node, _)| player.techs.contains(&Name::new(node)));
+            .filter(|(node, _)| player.techs.contains(node));
         let adopted = self
             .rules
             .civic_effects
             .get(effect)
             .into_iter()
             .flatten()
-            .filter(|(node, _)| player.civics.contains(&Name::new(node)));
+            .filter(|(node, _)| player.civics.contains(node));
         // Node lists are in tree order, so this adds the same values in the
         // same sequence as walking the player's own trees did.
         researched.chain(adopted).map(|(_, value)| *value).sum()
@@ -33342,23 +33342,24 @@ impl Game {
     /// Resolve a generic upgrade target to this civilization's unique
     /// replacement. For example, Nubian Slingers advance to Pitati Archers
     /// instead of creating Archers that Nubia is not allowed to train.
-    fn player_unit_replacement(&self, pid: usize, unit: &str) -> Name {
+    fn player_unit_replacement(&self, pid: usize, unit: impl AsName) -> Name {
+        let unit = unit.as_name();
         self.rules
             .units
             .iter()
             .find(|(_, spec)| {
-                spec.replaces == Some(Name::new(&unit))
+                spec.replaces == Some(unit)
                     && spec.unique_to.as_deref() == Some(self.players[pid].civ.as_str())
             })
-            .map(|(name, _)| name.clone())
-            .unwrap_or_else(|| Name::new(unit))
+            .map(|(name, _)| *name)
+            .unwrap_or(unit)
     }
 
     /// Direct, currently unlocked successor for one unit kind. Upgrade
     /// actions deliberately advance one link per turn, matching Civ VI and
     /// preserving the production-cost basis of every intermediate step.
-    pub fn unit_upgrade_target(&self, pid: usize, unit: &str) -> Option<Name> {
-        let base = self.rules.units.get(unit)?.upgrade_to.as_deref()?;
+    pub fn unit_upgrade_target(&self, pid: usize, unit: impl AsName) -> Option<Name> {
+        let base = self.rules.units[unit.as_name()].upgrade_to?;
         let target = self.player_unit_replacement(pid, base);
         let spec = self.rules.units.get(&target)?;
         (spec.buildable && self.unlocked(pid, &spec.tech, &spec.civic)).then_some(target)
@@ -33370,17 +33371,18 @@ impl Game {
         &self,
         pid: usize,
         cid: u32,
-        unit: &str,
+        unit: impl AsName,
         check_obsolete: bool,
         resource_credit: f64,
     ) -> bool {
+        let unit = unit.as_name();
         let Some(city) = self.cities.get(&cid).filter(|city| city.owner == pid) else {
             return false;
         };
-        let Some(spec) = self.rules.units.get(unit) else {
+        let Some(spec) = self.rules.units.get_interned(unit) else {
             return false;
         };
-        if matches!(unit, "rock_band" | "naturalist") {
+        if matches!(unit.as_str(), "rock_band" | "naturalist") {
             return false; // Faith purchase only (Civ VI)
         }
         // A city-state is permanently one city. This is an engine rule rather
@@ -33431,9 +33433,7 @@ impl Game {
         if self.player_unit_replacement(pid, unit) != unit {
             return false;
         }
-        let item = Item::Unit {
-            unit: Name::new(unit),
-        };
+        let item = Item::Unit { unit };
         if let Some(resource) = &spec.requires_resource {
             let resource_cost = self.unit_resource_cost(cid, &item);
             if resource_cost > 0.0
@@ -40778,14 +40778,14 @@ impl Game {
                 * self.rules.units["spy"].maintenance
     }
 
-    fn building_district_is_active(&self, city: &City, building: &str) -> bool {
-        let Some(family) = self.rules.buildings[building].district else {
+    fn building_district_is_active(&self, city: &City, building: impl AsName) -> bool {
+        let Some(family) = self.rules.buildings[building.as_name()].district else {
             return true;
         };
         if family == "city_center" {
             return true;
         }
-        let wanted = self.district_family(Name::new(&family));
+        let wanted = self.district_family(family);
         city.districts.iter().any(|(district, position)| {
             self.district_family(*district) == wanted
                 && self.district_is_active(city, district, *position)
@@ -46369,10 +46369,10 @@ impl Game {
             if !seen.insert(source.to_string()) {
                 return;
             }
-            if !self.unit_is_obsolete(pid, source) {
+            if !self.unit_is_obsolete(pid, Name::new(source)) {
                 return;
             }
-            let Some(target) = self.unit_upgrade_target(pid, source) else {
+            let Some(target) = self.unit_upgrade_target(pid, Name::new(source)) else {
                 return;
             };
             let target_item = formation.map_or_else(

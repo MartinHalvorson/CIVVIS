@@ -1279,8 +1279,8 @@ pub struct Rules {
     /// one or two nodes. The tables are inverted once, when the ruleset is
     /// built, and each list is in node order so the sum is added up in exactly
     /// the order it always was.
-    pub tech_effects: SpecMap<Vec<(String, f64)>>,
-    pub civic_effects: SpecMap<Vec<(String, f64)>>,
+    pub tech_effects: SpecMap<Vec<(Name, f64)>>,
+    pub civic_effects: SpecMap<Vec<(Name, f64)>>,
     /// Every node a given node depends on, however far back.
     ///
     /// Asking whether one technology leads to another used to walk the
@@ -1745,14 +1745,14 @@ fn ancestry(nodes: &SpecMap<TechSpec>) -> SpecMap<BTreeSet<String>> {
 }
 
 /// Invert a tree's per-node effect tables into per-effect node lists.
-fn effect_sources(nodes: &SpecMap<TechSpec>) -> SpecMap<Vec<(String, f64)>> {
-    let mut sources: BTreeMap<String, Vec<(String, f64)>> = BTreeMap::new();
+fn effect_sources(nodes: &SpecMap<TechSpec>) -> SpecMap<Vec<(Name, f64)>> {
+    let mut sources: BTreeMap<String, Vec<(Name, f64)>> = BTreeMap::new();
     for (name, spec) in nodes.iter() {
         for (effect, value) in &spec.effects {
             sources
                 .entry(effect.clone())
                 .or_default()
-                .push((name.to_string(), *value));
+                .push((*name, *value));
         }
     }
     SpecMap::from(sources)

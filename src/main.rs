@@ -368,7 +368,7 @@ fn standings(g: &Game) {
         let army: Vec<String> = army
             .iter()
             .map(|(kind, count)| {
-                let stale = if g.unit_is_obsolete(pid, kind) { "*" } else { "" };
+                let stale = if g.unit_is_obsolete(pid, civvis::name::Name::new(kind)) { "*" } else { "" };
                 format!("{count}x{kind}{stale}")
             })
             .collect();
