@@ -157,6 +157,34 @@ population. After implementation, the same non-focal seed was replayed for one
 turn under the champion solely to validate mechanics; the required frozen null
 remains unopened and will validate the full-horizon champion replay exactly.
 
+## Prospective fail-closed invocation amendment
+
+This fifth amendment was frozen before the null at seed 9,982,000 or either
+treatment seed was run or read. A static command-path audit found that the
+runner's convenience parser silently substituted defaults for a missing or
+malformed numeric value. Its formal-profile label also required only the
+presence of most frozen flags, did not bind `--jobs 6`, and could therefore
+classify an omitted, duplicated, or default-substituted option as a registered
+batch. No focal output exposed this bookkeeping defect: all three registered
+seed ranges remain unopened.
+
+The parser must now exit 2 before constructing a game whenever a supplied
+numeric or text option lacks a usable value. Formal recognition is stricter
+than diagnostic execution: every frozen option must occur exactly once with
+its raw preregistered value. The common options are `--deployment-mix`,
+`--ai advanced_evolved`, `--turns 250`, `--observe-through 320`,
+`--speed online`, `--poles poles`, `--randomize-civs`,
+`--victories science,culture,domination`, and `--jobs 6`. Each phase must also
+bind its exact `--maps` and `--seed`; the null must contain `--null` exactly
+once, while both treatment phases must omit it. Defaults and duplicated flags
+remain available only for clearly labelled diagnostics and cannot receive a
+frozen null, development, or holdout decision label.
+
+This is a prospective integrity correction derived solely from source and the
+already-frozen command contract. It changes no controller, treatment, world
+profile, seat, seed, sample size, endpoint, threshold, stop rule, observation
+horizon, or resource cap.
+
 ## Observation and hypothesis
 
 The eight most recent production final saves available on 2026-07-29 (through
