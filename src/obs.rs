@@ -681,6 +681,7 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
                 "exoplanet_distance": round1(o.exoplanet_distance),
                 "government": o.government,
                 "anarchy_turns": o.anarchy_turns,
+                "age": o.age,
                 "score": g.score(o.id),
                 "cities": g.player_city_ids(o.id).len(),
                 "suzerain_count": g.players.iter()
@@ -1738,6 +1739,7 @@ mod tests {
             "leader",
             "agenda",
             "government",
+            "age",
             "wonder_count",
             "opinion_of_me",
         ] {
@@ -1763,6 +1765,47 @@ mod tests {
             json!(true),
             "and the meeting was mutual"
         );
+    }
+
+    /// Ages belong to civilizations rather than to the observing seat. Once a
+    /// civilization is on the public standings ledger, its current age must be
+    /// present there so every row can render the AGE column independently.
+    #[test]
+    fn player_standings_report_each_civilizations_age() {
+        let mut game = Game::new_full(4, 22, 16, 74_116, 25, 1, false);
+        let expected = ["heroic", "golden", "normal", "dark"];
+        for (player, age) in game
+            .players
+            .iter_mut()
+            .filter(|player| !player.is_minor && !player.is_barbarian)
+            .zip(expected)
+        {
+            player.age = age.to_string();
+        }
+
+        let observed = observation_spectator(&game, 0);
+        let ages = observed["players"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|player| {
+                !player["is_minor"].as_bool().unwrap_or(false)
+                    && !player["is_barbarian"].as_bool().unwrap_or(false)
+            })
+            .map(|player| player["age"].as_str().unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(ages, expected);
+
+        const INDEX: &str = include_str!("../web/index.html");
+        let age_column = INDEX.find("{key:\"age\", label:\"Age\"").unwrap();
+        let plan_column = INDEX.find("{key:\"plan\", label:\"Plan\"").unwrap();
+        let next_column = INDEX[age_column + 1..].find("{key:\"").unwrap() + age_column + 1;
+        assert_eq!(
+            next_column, plan_column,
+            "the resizable AGE column belongs immediately before PLAN"
+        );
+        assert!(INDEX.contains("title=\"Civilization age\">AGE</span>"));
+        assert!(INDEX.contains("diplomacy-identity-field diplomacy-age"));
     }
 
     /// The viewer starts a world facing wherever it was found and only puts
