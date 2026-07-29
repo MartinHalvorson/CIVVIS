@@ -2448,6 +2448,18 @@ impl AdvancedAi {
         changed
     }
 
+    /// Unit actions can capture the objective or end the target civilization.
+    /// Reconcile that result before observers sample the completed turn, and
+    /// immediately rebuild the ordinary plan if the appointment changed it.
+    /// Otherwise a final-city capture leaves `plan_report()` temporarily empty
+    /// and its cumulative lifecycle event disappears from terminal traces.
+    fn reconcile_war_plan_after_actions(&mut self, g: &Game, pid: usize) {
+        if self.sync_war_plan(g, pid) && self.plan.is_none() {
+            self.plan = Some(self.assess(g, pid));
+        }
+        self.sync_war_commitments(g, pid);
+    }
+
     /// Does any city of `pid` currently see somewhere to send a settler?
     ///
     /// This mirrors, exactly, the site test inside `production_value`'s settler
@@ -14300,7 +14312,7 @@ impl AdvancedAi {
         self.advanced_units(g, pid, &plan);
         // A city capture happens inside unit movement. Reconcile immediately
         // so the objective is never left pinned for another five-turn cadence.
-        self.sync_war_plan(g, pid);
+        self.reconcile_war_plan_after_actions(g, pid);
         self.resolve_city_dispositions(g, pid, plan.strategy);
         if g.winner.is_none() && g.current == pid {
             let _ = g.apply(pid, &Action::EndTurn);
@@ -15025,6 +15037,14 @@ mod tests {
         assert_eq!(game.units[&archer].attacks_left, 0);
         assert_eq!(game.units[&catapult].attacks_left, 0);
         assert_eq!(game.units[&finisher].pos, objective);
+        ai.reconcile_war_plan_after_actions(&game, 0);
+        assert_eq!(ai.war_lifecycle.objective_captures, 1);
+        assert_eq!(ai.war_lifecycle.quick_captures, 1);
+        let report = ai
+            .plan_report()
+            .expect("same-turn capture lifecycle remains observable at turn end");
+        assert_eq!(report.war_lifecycle.objective_captures, 1);
+        assert_eq!(report.war_lifecycle.quick_captures, 1);
     }
 
     #[test]
