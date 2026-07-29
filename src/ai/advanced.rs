@@ -20281,4 +20281,231 @@ mod tests {
             bastions as f64 / city_turns.max(1) as f64 * 100.0
         );
     }
+
+    /// Census, not an assertion: how often a city faces a locally competitive
+    /// hostile force that `production_value`'s `threatened` flag cannot see.
+    ///
+    /// `threatened` is true only when the city is *the* empire's single worst
+    /// (`plan.threatened_city` returns one `Option<u32>`) or when it was hit in
+    /// the last four turns. `threatened_city` additionally gates on
+    /// `danger >= 0.90`, or `>= 0.45` with a breach or a recent hit against a
+    /// damaged city. So a second city under siege, or any city with an army
+    /// standing next to it that has not struck yet, prioritises no defenses at
+    /// all -- which is exactly what `early_rush`'s doc comment describes as the
+    /// timing rule that lane plays against.
+    ///
+    /// Run with `cargo test --release blind_defense_census -- --ignored --nocapture`.
+    #[test]
+    #[ignore = "census, not an assertion; run explicitly with --nocapture"]
+    fn blind_defense_census() {
+        let mut city_turns = 0u64;
+        let mut pressed = 0u64;
+        let mut pressed_and_blind = 0u64;
+        let mut blind_by_band = [0u64; 4];
+        let mut band_pressed = [0u64; 4];
+
+        for map in 0..8u64 {
+            let mut game = Game::new_full(4, 24, 16, 430_000 + map, 200, 1, false);
+            let mut ais: Vec<AdvancedAi> =
+                (0..game.players.len()).map(|_| AdvancedAi::new()).collect();
+            game.set_fog_memory(false);
+            while game.winner.is_none() && game.turn <= game.max_turns {
+                let pid = game.current;
+                ais[pid].take_turn(&mut game, pid);
+                if game.winner.is_none() && game.current == pid {
+                    let _ = game.apply(pid, &Action::EndTurn);
+                }
+                if pid != 0 {
+                    continue;
+                }
+                let Some(plan) = ais[0].plan.clone() else {
+                    continue;
+                };
+                let band = match game.turn {
+                    0..=39 => 0,
+                    40..=79 => 1,
+                    80..=139 => 2,
+                    _ => 3,
+                };
+                for cid in game.player_city_ids(0) {
+                    city_turns += 1;
+                    let pressure = AdvancedAi::city_pressure(&game, 0, cid);
+                    if pressure < BASTION_PRESSURE {
+                        continue;
+                    }
+                    pressed += 1;
+                    band_pressed[band] += 1;
+                    let city = &game.cities[&cid];
+                    let threatened = plan.threatened_city == Some(cid)
+                        || (city.last_attacked > 0
+                            && game.turn.saturating_sub(city.last_attacked) <= 4);
+                    if !threatened {
+                        pressed_and_blind += 1;
+                        blind_by_band[band] += 1;
+                    }
+                }
+            }
+        }
+
+        println!("\n=== blind-defense census: {city_turns} city-turns over 8 maps ===");
+        println!(
+            "  locally competitive hostile force present on {pressed} city-turns ({:.1}%)",
+            pressed as f64 / city_turns.max(1) as f64 * 100.0
+        );
+        println!(
+            "  of those, {pressed_and_blind} were INVISIBLE to `threatened` ({:.1}%)",
+            pressed_and_blind as f64 / pressed.max(1) as f64 * 100.0
+        );
+        for (band, label) in ["t1-39", "t40-79", "t80-139", "t140+"].iter().enumerate() {
+            println!(
+                "  {label:<8} {:>4} pressed, {:>4} blind ({:>5.1}%)",
+                band_pressed[band],
+                blind_by_band[band],
+                blind_by_band[band] as f64 / band_pressed[band].max(1) as f64 * 100.0
+            );
+        }
+        println!();
+    }
+
+    /// Census, not an assertion: what a city actually decides, turn by turn.
+    ///
+    /// Five arms of scripted "give the city a strategy" treatment have now
+    /// measured null across three seeds, so this stops proposing tilts to the
+    /// city's decisions and asks a different question: are any of them plainly
+    /// *broken*? That is the question that paid last time -- the growth halt
+    /// was a real -38 Elo defect and no amount of reasoning about weights
+    /// found it, a census did.
+    ///
+    /// Run with `cargo test --release city_decision_census -- --ignored --nocapture`.
+    #[test]
+    #[ignore = "census, not an assertion; run explicitly with --nocapture"]
+    fn city_decision_census() {
+        let mut city_turns = 0u64;
+        let mut idle = 0u64;
+        let mut head_changes = 0u64;
+        let mut stranded = 0.0f64;
+        let mut kinds = BTreeMap::<&str, u64>::new();
+        let mut walls_built = 0u64;
+        let mut cities_seen = BTreeSet::<(u64, u32)>::new();
+        let mut walled = BTreeSet::<(u64, u32)>::new();
+        let mut first_wall_turn = Vec::<u32>::new();
+        let mut food_now = 0.0f64;
+        let mut food_ceiling = 0.0f64;
+        let mut prod_now = 0.0f64;
+        let mut prod_ceiling = 0.0f64;
+        let mut prev_head = BTreeMap::<u32, String>::new();
+
+        for map in 0..8u64 {
+            let mut game = Game::new_full(4, 24, 16, 440_000 + map, 200, 1, false);
+            let mut ais: Vec<AdvancedAi> =
+                (0..game.players.len()).map(|_| AdvancedAi::new()).collect();
+            game.set_fog_memory(false);
+            prev_head.clear();
+            while game.winner.is_none() && game.turn <= game.max_turns {
+                let pid = game.current;
+                ais[pid].take_turn(&mut game, pid);
+                if game.winner.is_none() && game.current == pid {
+                    let _ = game.apply(pid, &Action::EndTurn);
+                }
+                if pid != 0 {
+                    continue;
+                }
+                for cid in game.player_city_ids(0) {
+                    city_turns += 1;
+                    cities_seen.insert((map, cid));
+                    let city = &game.cities[&cid];
+                    match city.queue.first() {
+                        None => idle += 1,
+                        Some(item) => {
+                            let key = match item {
+                                Item::Unit { .. } | Item::Formation { .. } => "unit",
+                                Item::Building { .. } => "building",
+                                Item::District { .. } => "district",
+                                Item::Wonder { .. } => "wonder",
+                                Item::Project { .. } => "project",
+                                Item::Product { .. } => "product",
+                                Item::Repair { .. } => "repair",
+                            };
+                            *kinds.entry(key).or_default() += 1;
+                            let head = format!("{item:?}");
+                            if prev_head.get(&cid).is_some_and(|old| *old != head) {
+                                head_changes += 1;
+                            }
+                            prev_head.insert(cid, head);
+                        }
+                    }
+                    // Production banked against builds the city walked away
+                    // from. `item_remaining_cost_for_city` is what the AI
+                    // prices a resumed build with, so progress that is not on
+                    // the queue head is capital sitting idle.
+                    stranded += city.production_progress.values().sum::<f64>();
+                    if city.buildings.iter().any(|b| b.contains("walls")) {
+                        if walled.insert((map, cid)) {
+                            walls_built += 1;
+                            first_wall_turn.push(game.turn);
+                        }
+                    }
+                    // How much of the city's own ceiling do the shipped
+                    // weights actually claim? `city_yields_weighted` is the
+                    // public substitution instrument `docs/OPENINGS.md` uses to
+                    // bound the capital's food ceiling; asking it per city-turn
+                    // turns that one-off into a standing measurement.
+                    let now = game.city_yields(cid);
+                    let all_food = Yields {
+                        food: 10.0,
+                        ..Yields::default()
+                    };
+                    let all_prod = Yields {
+                        production: 10.0,
+                        ..Yields::default()
+                    };
+                    food_now += now.food;
+                    food_ceiling += game.city_yields_weighted(cid, all_food).food;
+                    prod_now += now.production;
+                    prod_ceiling += game.city_yields_weighted(cid, all_prod).production;
+                }
+            }
+        }
+
+        let pct = |n: u64| n as f64 / city_turns.max(1) as f64 * 100.0;
+        println!("\n=== city decision census: {city_turns} city-turns over 8 maps ===");
+        println!("  idle queue          {idle:>6}  ({:>5.1}%)", pct(idle));
+        println!(
+            "  queue head changed  {head_changes:>6}  ({:>5.1}% of city-turns)",
+            pct(head_changes)
+        );
+        println!(
+            "  mean production stranded off the queue head: {:.1} per city-turn",
+            stranded / city_turns.max(1) as f64
+        );
+        println!(
+            "  food claimed {:.1}% of the city's own food ceiling ({:.1} of {:.1} per city-turn)",
+            food_now / food_ceiling.max(1e-9) * 100.0,
+            food_now / city_turns.max(1) as f64,
+            food_ceiling / city_turns.max(1) as f64
+        );
+        println!(
+            "  production claimed {:.1}% of its ceiling ({:.1} of {:.1} per city-turn)",
+            prod_now / prod_ceiling.max(1e-9) * 100.0,
+            prod_now / city_turns.max(1) as f64,
+            prod_ceiling / city_turns.max(1) as f64
+        );
+        println!("  what the queue head is:");
+        for (kind, count) in &kinds {
+            println!("    {kind:<10} {count:>6}  ({:>5.1}%)", pct(*count));
+        }
+        println!(
+            "  cities that ever built walls: {walls_built} of {} ({:.1}%)",
+            cities_seen.len(),
+            walls_built as f64 / cities_seen.len().max(1) as f64 * 100.0
+        );
+        first_wall_turn.sort_unstable();
+        if !first_wall_turn.is_empty() {
+            println!(
+                "  median turn walls appeared: {}",
+                first_wall_turn[first_wall_turn.len() / 2]
+            );
+        }
+        println!();
+    }
 }
