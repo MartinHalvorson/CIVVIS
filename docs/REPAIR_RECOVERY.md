@@ -29,6 +29,36 @@ does not recognize. Output therefore says **resource-bearing improvements**,
 not “resource connections.” This is a label correction before focal data, not
 a changed count, treatment priority, endpoint, or gate.
 
+## Prospective champion-controller amendment
+
+This controller-population amendment was frozen before the null at seed
+9,995,000 or either treatment seed was run or read. A read-only deployment
+audit established that the unattended supervisor is launched with
+`--league ... --league-record`. Under that contract, `Session::ai_fleet`
+seats the active rating roster rather than constructing `AdvancedAi::new()`
+for every major. The live seed 5,222,428 at the audit point contained six
+adaptive evolved-genome seats, one `advanced_v1` seat, and one stock
+`advanced` seat. The evaluator, despite targeting that production repair debt,
+constructed only the stock default-weight fleet.
+
+The live league changes membership and ratings after recorded games and is not
+a reproducible causal target. This experiment therefore fixes both arms to the
+repository's embedded `advanced_evolved` champion: the stable world-class
+controller a successful repair policy is intended to improve. Every major
+uses the exact champion weights compiled from `data/evolved/best.json` at the
+tested source commit. City-states and barbarians retain the default
+minor/barbarian path. The runner reports the controller and embedded champion
+generation, rejects every other controller name, and emits a formal frozen
+verdict only when `--ai advanced_evolved` is explicit.
+
+This amendment follows only from the deployed supervisor command, public live
+roster metadata, and static fleet construction. No focal seed, repair outcome,
+or treatment output informed it. The repair policy, deployment-world schedule,
+seats, seeds, sample sizes, endpoints, gates, stop rules, horizon, and resource
+cap are unchanged. Earlier one-turn diagnostics exercised stock weights and
+remain audit history rather than champion evidence; the required frozen null
+is still unopened.
+
 ## Observation and causal diagnosis
 
 This study began with an exploratory census of the 20 completed production
@@ -70,11 +100,12 @@ guards are binding.
 
 ## Treatment
 
-`repair_recovery_eval` will run the shipped adaptive fleet in both arms. At the
-start of each focal treatment turn, before the stock `AdvancedAi` acts, it may
-execute one repair-crew order. Every action is applied through the public game
-action interface; the evaluator does not mutate tiles, grant movement or
-charges, reveal information, alter rules, or change controller state.
+`repair_recovery_eval` will run the embedded `advanced_evolved` adaptive
+champion in both arms. At the start of each focal treatment turn, before the
+untreated champion acts, it may execute one repair-crew order. Every action is
+applied through the public game action interface; the evaluator does not mutate
+tiles, grant movement or charges, reveal information, alter rules, or change
+controller state.
 
 The repair crew follows this frozen policy:
 
@@ -139,10 +170,10 @@ deployment-horizon study. The evaluator must assert that `max_turns` remains
 ## Frozen experiment
 
 Each independent map is played four times: focal seat 0 and the final major
-seat, each under stock control and treatment. All non-focal seats use stock
-`AdvancedAi`; city-states and barbarians use their shipped controllers. The two
-focal seats are averaged within a map. The map, not the seat-game, is the
-inference unit.
+seat, each under untreated champion control and treatment. All non-focal major
+seats use the same embedded `advanced_evolved` champion; city-states and
+barbarians retain the default minor/barbarian path. The two focal seats are
+averaged within a map. The map, not the seat-game, is the inference unit.
 
 Before any treatment batch, a four-map no-op null at seed **9,995,000** must
 compare two executions of the same evaluator loop with repair routing disabled.
@@ -158,12 +189,13 @@ extended, or retried. Focal outcomes may not tune the treatment, endpoints,
 thresholds, or sample sizes. Compile, unit, and non-focal runtime smokes are
 diagnostic only.
 
-Frozen invocations must specify `--deployment-mix`, `--turns 250`,
-`--observe-through 320`, `--speed online`, `--poles poles`,
+Frozen invocations must specify `--ai advanced_evolved`, `--deployment-mix`,
+`--turns 250`, `--observe-through 320`, `--speed online`, `--poles poles`,
 `--randomize-civs`, and `--victories science,culture,domination`, plus the
 phase's exact seed, map count, and `--jobs` cap. Supplying an explicit player
 count, dimensions, city-state count, script, or shape with `--deployment-mix`
-is an error.
+is an error. Any other controller name is rejected rather than treated as a
+new experiment.
 
 ## Endpoints and gates
 
@@ -224,10 +256,12 @@ Preregistration commit `deb1475` was pushed before implementation commit
 - The rebuilt release binary rejected `--deployment-mix --players 8` with exit
   2 before constructing a world.
 - A one-map, one-turn fixed-cell null at diagnostic seed 79,991 reproduced both
-  matched focal cells exactly.
+  matched focal cells exactly under the then-frozen stock-weight controller.
 - A one-map, one-turn fixed-cell treatment-loop smoke at diagnostic seed 79,992
-  completed with no eligible damage and no intervention. It is not evidence
-  for the treatment and cannot alter the frozen design or gate.
+  completed under stock weights with no eligible damage and no intervention.
+  The champion-controller amendment supersedes that controller population, so
+  neither diagnostic is champion evidence or can alter the frozen design or
+  gate.
 
 An initial attempt to invoke the standalone executable after `cargo test`
 failed immediately with exit 127 because a test harness does not create
