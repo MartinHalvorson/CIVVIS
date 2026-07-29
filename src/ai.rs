@@ -657,10 +657,16 @@ pub enum DedicationChoice {
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum PolicyDeck {
     /// Cards valued by slotting them and reading the empire either side.
-    #[default]
     Live,
     /// The pre-2026-07-27 behaviour: the twenty cards of `POLICY_PRIORITY`, in
     /// order, and only while a slot stands empty.
+    ///
+    /// This must agree with `Weights::default`. Old champion artifacts do not
+    /// serialize the non-gene policy fields, so Serde asks the enum default
+    /// for this field. A different enum default silently makes a loaded
+    /// champion play one deck while `Weights::from_vec(champion.to_vec())`
+    /// plays another, confounding every mutation and gene intervention.
+    #[default]
     Legacy,
     /// Slot nothing, ever.
     ///
@@ -958,6 +964,17 @@ mod gene_table_tests {
                 v[index]
             );
         }
+    }
+
+    #[test]
+    fn serde_defaults_match_runtime_weight_defaults() {
+        let restored: Weights = serde_json::from_str("{}").expect("empty legacy weights");
+        assert_eq!(restored, Weights::default());
+        assert_eq!(
+            Weights::from_vec(&restored.to_vec()),
+            restored,
+            "gene-vector reconstruction must not change non-gene policy state"
+        );
     }
 }
 

@@ -27,9 +27,11 @@ intervention base and the non-anchor opponent.
 
 ### Fixed fires-check
 
-For a gene, take whichever bound gives the larger mean absolute response. The
-score-only channel remains a plausible breeding signal only if all three gates
-pass:
+For a gene, take whichever bound gives the larger mean absolute response in the
+**current full objective**. This gives the incumbent objective first choice of
+the intervention and prevents the score-only arm from cherry-picking the more
+favorable bound. The score-only channel remains a plausible breeding signal
+only if all three gates pass:
 
 1. score share changes on at least 25% of paired games for at least 16 of 21
    military genes (75% coverage);
@@ -54,4 +56,90 @@ are not the mutation distribution and 24 held-out outcomes have low power.
 
 ## Result
 
-Pending the pre-registered run.
+### Integrity rejection before inference
+
+The first execution completed all 1,008 games and printed a nominal three-gate
+PASS. It is **invalid and contributes no evidence**. Every endpoint changed
+score on all 24 maps, and several unrelated genes produced byte-identical
+rows. The suspicious result led to a round-trip test, which failed:
+
+```text
+load_champion("evolved").policy_deck               Live
+Weights::from_vec(champion.to_vec()).policy_deck   Legacy
+```
+
+The committed generation-14 artifact predates the non-gene `policy_deck`
+field. `Weights` explicitly defaults to the measured production deck,
+`Legacy`, but the enum independently derived `Default` as `Live`. Serde uses
+the enum default for the missing field, while gene-vector reconstruction uses
+`Weights::default`. Therefore all 41 purported single-gene interventions also
+switched the candidate from Live to Legacy. Their mean score deltas of roughly
+10--16 objective points measured that shared deck change, not military-gene
+reach.
+
+This is a production evolution defect as well as an instrument defect:
+`evolve::mutate` and `crossover` reconstruct gene vectors, so the first child
+of an old loaded champion silently changes its non-gene policy. The enum
+default now matches `Weights::default`, with tests pinning both legacy Serde
+restoration and champion gene-vector round trips.
+
+No threshold or seed was inspected or changed. The exact pre-registered command
+must be rerun after the integrity test passes; only that run can populate the
+result.
+
+### Valid primary run
+
+The corrected run used the exact pre-registered command, thresholds and seed.
+All candidates now preserve the production Legacy deck, and the result changed
+qualitatively:
+
+| fires-check | required | observed | verdict |
+|---|---:|---:|---|
+| score-responsive military genes | at least 16/21 | **17/21** | PASS |
+| median `mean |score delta| / mean |full delta|` | at least 0.50 | **0.831** | PASS |
+| combat-only genes | fewer than 6 | **0/21** | PASS |
+
+The four genes score could not reach were `war_ratio`, `war_margin`,
+`peace_ratio`, and `war_min_turn`. Both bounds of all four produced zero score
+change **and zero full-objective change on all 24 maps**. The combat term does
+not rescue them; at this champion and deployment profile, the war-declaration
+block is unreachable by either breeding objective.
+
+The genes that did fire did not merely perturb combat. Score changed in 15--24
+of 24 maps for the incumbent-favorable endpoint, with a median 83.1% of the
+full objective's mean absolute response. The largest effects were army size,
+attack threshold, movement support/threat, withdrawal, and rejoining. Removing
+combat would reduce dense signal but would not strand any observed military
+gene.
+
+The predeclared exploratory leave-one-map-out comparison selected the same
+endpoint for 17/24 held-out maps. Where the objectives differed, score-only
+selection won 8 games against 7 for the full objective (two discordances for,
+one against) and improved held-out score share by **+0.01278 +/- 0.00507**.
+This is directionally consistent with the earlier independent finding that the
+combat term reduced agreement with the win gate, but it was explicitly not a
+gate and does not change production.
+
+## Confirmation pre-registration — 2026-07-29
+
+Replicate the complete endpoint grid and leave-one-map-out selection procedure
+on 24 disjoint deployment-profile maps at seed 9,810,000. All candidates,
+thresholds, game options, and the fixed Legacy-deck integrity tests remain
+unchanged.
+
+The hypothesis is that removing the combat term improves the generalization of
+selection because combat achievement is a distinct, partly anti-aligned target,
+while score retains most of its useful causal response. Score-only earns a
+production change only if all three confirmation gates pass:
+
+1. the two objectives select different candidates on at least four held-out
+   maps, so the A/B actually fires;
+2. the mean held-out score-share difference, score-only minus full, is positive
+   by at least two paired standard errors; and
+3. score-only wins at least as many held-out games as the full objective.
+
+If the confirmation passes, production selection becomes
+`62 * players * score_share`: the factor 62 preserves the current objective's
+parity value and therefore the separately calibrated 65-point screen, while
+not affecting genome rankings. Champion promotion remains outcome-only and is
+unchanged. Any failure retains the current combat term.
