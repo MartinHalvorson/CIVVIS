@@ -5,23 +5,50 @@ has been read**.
 
 ## Implementation checkpoint
 
-The opt-in treatment now carries one persistent `WarPlan` through target and
-technology selection, prerequisite research, predecessor production, exact
+The opt-in treatment checkpoint carries one persistent `WarPlan` through target
+and technology selection, prerequisite research, predecessor production, exact
 upgrade reservation, formal-war preparation, route-aware staging, local
-readiness, and same-turn ranged/siege setup plus melee capture. Its lifecycle
-is observable independently from the ordinary five-turn strategy report, and
-the evaluator folds each treatment seat's terminal lifecycle exactly once.
+readiness, and same-turn ranged/siege setup plus melee capture. The focused
+mechanism suite for that checkpoint was green, but a later pre-data semantic
+audit found that the implementation still lacks the stable episode records,
+two-level target ordering, capture provenance, and fog-honest appointment seam
+required below. The code is therefore incomplete and the focal command remains
+prohibited.
 
-The deterministic mechanism suite covers every original obligation below,
-including unique replacements, unavailable resources, quoted upgrade
-protection across all major Gold sinks, compatible wall breach, every
-preregistered invalidation, two-assessment Recovery, constructor inheritance,
-public JSON, and a real-route rejection. The evaluator's lifecycle aggregation,
-medians, and frozen gate classification tests also pass. Stable episode records
-and the clarified raw target-ordering fixture below remain queued behind PR
-#574's already-claimed assessment-observer seam. Full CI and the repository
-soak remain pending until that semantic merge. The first focal command and all
-thresholds below are unchanged and unread.
+PR #574 owns the overlapping assessment-observer seam and lands first. This PR
+then merges it, implements the prospective validity amendment below, reruns the
+focused and full suites, and completes the repository soak. No focal seed has
+been read.
+
+## Prospective pre-data validity amendment (2026-07-29)
+
+This amendment was written after static review of the implementation and before
+seed `10100000` or any other focal outcome. It closes four ways the checkpoint
+could otherwise answer a different question from the intended timing-policy
+experiment:
+
+1. An appointment may consider only a living, legal major with at least one
+   City Center in the acting seat's **current** visibility set. A stale or
+   never-seen city cannot create an appointment. Current visibility includes
+   only the engine's normal team/alliance sharing.
+2. Objective and route selection are fog-honest. The objective score uses only
+   the visible city, the acting seat's own cities and units, currently visible
+   target units, and last-seen tile memory. Unknown tiles are impassable to the
+   planning search. Mutating an unmet rival, a hidden city or unit, or an
+   unexplored route while holding this public state fixed must not change the
+   selected `WarPlan`.
+3. A quick objective capture requires immediate engine provenance that the
+   treated seat conquered the appointed city from the appointed target after
+   its elective declaration. A later owner match is insufficient.
+4. A timed declaration is already illegal unless its modern package is
+   complete. The complete-package fraction is consequently an implementation
+   invariant, not independent capability evidence. It must equal 100% for a
+   result to be valid, but it is removed from the advancement score rather than
+   being presented as a fitted success rate.
+
+These are prospective validity corrections, not a response to outcomes. The
+command, seeds, exposure band, declaration denominators, quick-capture rate,
+paired outcome gates, and no-retry rule remain unchanged.
 
 This is the next military experiment after the ancient-rush line was retired
 on the live Continents/Planet cell. It is deliberately not another ancient
@@ -106,11 +133,37 @@ emergencies, explicit victory-denial targets, and the Byzantine Tagma timing
 retain their current priority and are not reclassified as this treatment.
 
 The target set is living major civilizations legal under
-`campaign_target_legal`. A candidate objective must have a real route for a
-current land melee unit to the existing 3-tile staging ring; wrapped or
-spherical graph distance alone is not enough. The objective city continues to
-use the existing campaign-city valuation, including capitals, defenses,
-loyalty, distance, yields, and victory pressure.
+`campaign_target_legal` with a City Center currently visible to the acting
+seat. A candidate objective must have a remembered-terrain route for a current
+land melee unit to the existing 3-to-5-tile staging ring; wrapped or spherical
+graph distance alone is not enough. The route search traverses only the seat's
+last-seen tile snapshots, applies its current embark/ocean unlocks to those
+snapshots, treats an unknown tile as impassable, and uses remembered ownership
+for border legality. Live hidden terrain, ownership, cities, and units are not
+consulted. Ordinary execution still revalidates each immediate move, and one
+temporary obstruction still does not invalidate a plan.
+
+For a currently visible candidate city define the frozen public objective cost
+
+```text
+7 * nearest-own-city distance
++ 5 * nearest-routed-land-melee distance
++ 1.8 * visible City Combat Strength
++ 0.12 * visible city HP
++ 0.16 * visible wall HP
++ 0.45 * clamp(visible hostile strength - own local strength, -250, 250)
++ 11 * (6 - remembered passable land approaches)
+- 7 * visible population
+- 180 if it is an Original Capital
+- 135 if its original owner is the acting seat
+```
+
+Local strength uses radius seven. A hostile unit contributes only when its tile
+is currently visible and `unit_visible_to` is true. Approaches are the six
+adjacent remembered tiles and are capped at six. Terms that require private or
+hidden state—current off-screen defenders, buildings, districts, yields,
+loyalty, unseen population pressure, rival military totals, and inferred
+victory pressure—contribute nothing. Lower cost is better.
 
 For each target, inspect land military units legal for this civilization whose
 unlock is an unowned technology. An assault candidate must:
@@ -120,8 +173,9 @@ unlock is an unowned technology. An assault candidate must:
    predecessor, or over the strongest currently trainable melee body when no
    predecessor exists;
 3. have expected full-health damage of at least 36 against the harder of the
-   objective city's current Combat Strength and the strongest target field
-   unit within six tiles, using the engine's own mean damage curve; and
+   visible objective city's current Combat Strength and the strongest currently
+   visible target field unit within six tiles, using the engine's own mean
+   damage curve; and
 4. be materially feasible: a resource-free unit qualifies immediately; a
    resource unit qualifies only with a connected source or enough current
    stock plus deterministic accumulation to supply the package by launch.
@@ -141,13 +195,15 @@ the slowest required body's movement and the real staging route.
 For each candidate target, the appointment first uses that target's **least
 remaining Science path** that meets the excellent-unit test. Ties prefer the
 earlier launch estimate, then higher expected damage, then the stable unit ID.
-Target selection then minimizes one raw objective: the existing rival and city
-campaign cost plus the unscaled estimated turns to research, produce the bodies
-and breach package, and march. Ties use stable target and objective IDs. These
-components are reported and pinned by a deterministic ordering fixture; they
-are not normalized or reweighted after results. The selector therefore chooses
-the best *attack window*, not simply the weakest nameplate. No leader or
-civilization name receives a target bonus.
+Target selection then minimizes one raw objective: the public objective cost
+above plus the unscaled estimated turns to research, produce the bodies and
+breach package, and march. Ties use stable target and objective IDs. The unit
+winner is finalized within each target before any target is compared; remaining
+Science may never dominate across targets. These components are reported and
+pinned by a deterministic two-level ordering fixture; they are not normalized
+or reweighted after results. The selector therefore chooses the best *known
+attack window*, not simply the weakest nameplate. No leader or civilization
+name receives a target bonus.
 
 If no target/unlock pair qualifies, the treatment is exactly ordinary
 `advanced` for that assessment. It may try again after the ordinary five-turn
@@ -210,8 +266,11 @@ unit to ignore nearby defenders. Ranged and siege units act before melee as
 today; at least one healthy melee unit is preserved from a non-forcing attack
 when the objective is projected to become capturable later in the same turn.
 The objective is then reassessed immediately after capture rather than five
-turns later. The quick-strike endpoint is time to first target city, not a
-promise that every selected war must eliminate a whole civilization.
+turns later. At that post-action boundary, a capture is credited only while the
+city's conquest provenance names the appointed target as `captured_from` (or an
+equivalent engine war event names the treated actor, target, city, and turn).
+The quick-strike endpoint is time to first target city, not a promise that every
+selected war must eliminate a whole civilization.
 
 ### 4. Invalidation is explicit
 
@@ -227,8 +286,9 @@ of these reasons and drops the production and Gold reserves immediately.
 
 Implementation is incomplete until focused tests prove all of the following:
 
-1. the chooser selects the least-research qualifying unlock, not the strongest
-   end-tree unit;
+1. the chooser selects the least-research qualifying unlock *within each
+   target*, then compares target objective-plus-launch costs without allowing a
+   cheaper technology to dominate across targets;
 2. a civilization's unique replacement participates in both quality and
    upgrade calculations;
 3. an unavailable strategic resource rejects an otherwise attractive unit;
@@ -247,7 +307,16 @@ Implementation is incomplete until focused tests prove all of the following:
 11. each invalidation clears the military floor and treasury reserve; and
 12. `advanced`, `advanced_timing_attack`, evolved/Strategic construction, and
     the public plan JSON report the intended off/on/inherited behavior without
-    changing minor or barbarian controllers.
+    changing minor or barbarian controllers;
+13. hidden-state noninterference holds for unmet rivals, unseen cities and
+    units, and unexplored or changed-under-fog route tiles;
+14. stable seat-local episode IDs and retained records prevent abort/replan
+    events from blending in the evaluator fold;
+15. ownership changes without treated-seat conquest provenance never count as
+    an objective capture; and
+16. every recorded timed declaration satisfies the complete-package invariant,
+    while the screen classifier does not treat that tautology as advancement
+    evidence.
 
 The focused suite is followed by `cargo test --profile ci --locked` and the
 engine soak required by `CONTRIBUTING.md`.
@@ -271,15 +340,19 @@ objective capture; declarations with a complete modern package; objectives
 captured within 10 turns; abort reasons; and treatment player-turn exposure.
 These are mechanism diagnostics and never replace wins.
 
-The capture endpoint is credited only when the treated seat owns the appointed
-city after its own elective declaration. Third-party capture, liberation,
-loyalty transfer, razing by another seat, or any other objective-owner change
-does not count as a treatment capture.
+The capture endpoint is credited only from the immediate conquest provenance
+specified above after the treated seat's own elective declaration. Third-party
+capture, liberation, loyalty transfer, trade, razing by another seat, or a later
+objective-owner match does not count as a treatment capture.
+
+Before any outcome gate is interpreted, every recorded elective timed
+declaration must satisfy the complete-package invariant. A value below 100%
+invalidates the run as an implementation failure and stops the line without a
+seed retry; it is neither evidence for nor against the policy.
 
 The treatment advances only if every term passes:
 
 - 15% to 75% of treatment seat-games form a power-spike appointment;
-- at least 60% of its elective declarations carry the complete modern package;
 - at least 35% of declared appointments capture their objective within 10
   turns, with at least 12 declared appointments in the denominator;
 - paired win score is at least 52%;
@@ -288,18 +361,19 @@ The treatment advances only if every term passes:
 - the repository's unchanged promotion gate does not retain `advanced`.
 
 The exposure band prevents a nearly inert arm or a renamed universal-Conquest
-arm from advancing. The two mechanism rates are absolute capability gates,
-not comparisons fitted to the control, which has no corresponding appointment
+arm from advancing. The quick-capture rate is an absolute capability gate, not
+a comparison fitted to the control, which has no corresponding appointment
 state. If fewer than 12 plans declare, the capability claim is unresolved and
 the screen stops.
 
 ## Disjoint holdout and strongest-controller transfer
 
 Passing every screen term earns one unchanged 240-map holdout at seed 10,110,000
-on the same profile. Coverage must remain in 15%..75%, complete-package
-declarations at or above 60%, ten-turn captures at or above 35% with at least
-30 declarations, terminal-score share at or above 50%, favorable directions
-above adverse, and the unchanged win gate must say `PROMOTE`.
+on the same profile. Coverage must remain in 15%..75%, ten-turn captures at or
+above 35% with at least 30 declarations, terminal-score share at or above 50%,
+favorable directions above adverse, and the unchanged win gate must say
+`PROMOTE`. The 100% complete-package validity invariant is checked first here
+as well.
 
 Only that result enables `timed_war` by default in `AdvancedAi`. Because the
 implementation sits below the wrappers, defaulting it transfers the behavior
