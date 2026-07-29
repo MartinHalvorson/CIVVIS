@@ -51,7 +51,8 @@ league selection logic, or a production default.
 The Rust source for the official binary is byte-identical to base
 `0aa1e0f51e84b72bec8c1811dfc71bed1f5f5a26`; this branch adds only the
 protocol and candidate fixture. The prospective protocol checkpoint is
-recorded below before any focal run. Immediately before each phase:
+`06a55bb7fac7d17838e004ca886fdec7e2d9882b`, committed before any focal
+run. Immediately before each phase:
 
 1. verify the tracked fixture's frozen SHA-256;
 2. copy it byte-for-byte to ignored `evolved/best.json` in this worktree;
