@@ -3440,6 +3440,35 @@ impl AdvancedAi {
         }
     }
 
+    /// Whether replacing one active card with another can fit in the current
+    /// typed and wildcard policy slots. This mirrors the engine's set-level
+    /// seating rule before either action is applied: probing by actually
+    /// unslotting a card writes a real action even when the candidate then
+    /// fails and the old card is restored.
+    fn policy_swap_fits(g: &Game, pid: usize, current: &Name, candidate: &str) -> bool {
+        let slots = g.gov_slots(pid);
+        let (mut military, mut economic, mut diplomatic, mut wildcard) =
+            (0i64, 0i64, 0i64, 0i64);
+        let mut count = |card: &str| match g.rules.policies[card].slot.as_str() {
+            "military" => military += 1,
+            "economic" => economic += 1,
+            "diplomatic" => diplomatic += 1,
+            _ => wildcard += 1,
+        };
+        for card in g.players[pid]
+            .policies
+            .iter()
+            .filter(|card| *card != current)
+        {
+            count(card);
+        }
+        count(candidate);
+        let overflow = (military - slots.military).max(0)
+            + (economic - slots.economic).max(0)
+            + (diplomatic - slots.diplomatic).max(0);
+        overflow + wildcard <= slots.wildcard
+    }
+
     /// Reassess policy cards as the civic tree advances instead of treating
     /// the first cards which filled a government as permanent.  Each plan has
     /// a complete late-game portfolio, while temporary Dark Age cards are
@@ -3758,6 +3787,7 @@ impl AdvancedAi {
                 .policies
                 .iter()
                 .filter(|current| !desired_set.contains(current.as_str()))
+                .filter(|current| Self::policy_swap_fits(g, pid, current, card))
                 .cloned()
                 .collect();
             replaceable.sort_by(|first, second| {
@@ -18244,6 +18274,113 @@ mod tests {
         assert!(ancient
             .iter()
             .all(|card| !game.players[0].policies.contains(&Name::new(*card))));
+    }
+
+    #[test]
+    fn policy_reassessment_only_executes_swaps_that_can_fit() {
+        let install = |game: &mut Game, government: &str, policies: &[&str]| {
+            let settler = game
+                .player_unit_ids(0)
+                .into_iter()
+                .find(|unit| game.units[unit].kind == "settler")
+                .unwrap();
+            game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+            game.players[0].government = Some(government.to_string());
+            game.players[0].policies = policies.iter().map(|card| Name::new(*card)).collect();
+        };
+
+        // Fascism plus Big Ben seats six Military cards by spending both
+        // wildcard slots, two Economic cards, and one Diplomatic card. The
+        // remaining Conquest card is Diplomatic, so removing Rationalism
+        // cannot make Gunboat Diplomacy fit: the free Economic slot does not
+        // relieve either Military overflow slot. Probing that impossible swap
+        // used to emit an Unslot/Slot pair which restored the exact same state.
+        let mut blocked = Game::new(2, 24, 16, 79_102, 250, 0);
+        install(
+            &mut blocked,
+            "fascism",
+            &[
+                "lightning_warfare",
+                "total_war",
+                "propaganda",
+                "levee_en_masse",
+                "force_modernization",
+                "logistics",
+                "five_year_plan",
+                "rationalism",
+                "cryptography",
+            ],
+        );
+        let city = blocked.player_city_ids(0)[0];
+        let position = blocked.cities[&city].pos;
+        blocked
+            .cities
+            .get_mut(&city)
+            .unwrap()
+            .wonders
+            .insert(crate::name!("big_ben"), position);
+        blocked.players[0]
+            .civics
+            .extend([crate::name!("ideology"), crate::name!("the_enlightenment")]);
+        let policies_before = blocked.players[0].policies.clone();
+        let log_before = blocked.log.len();
+
+        AdvancedAi::new().strategic_policies(&mut blocked, 0, GrandStrategy::Conquest);
+
+        assert_eq!(blocked.players[0].policies, policies_before);
+        assert_eq!(
+            blocked
+                .log
+                .since(log_before)
+                .filter(|(_, action)| matches!(
+                    action,
+                    Action::SlotPolicy { .. } | Action::UnslotPolicy { .. }
+                ))
+                .count(),
+            0,
+            "an impossible replacement must not be executed and undone"
+        );
+
+        // A different typed card can still be the right replacement. Here an
+        // extra Economic card occupies Autocracy's wildcard slot. Removing it
+        // frees that wildcard for Logistics, so the exact set-fit check must
+        // allow the cross-type Rationalism -> Logistics swap.
+        let mut valid = Game::new(2, 24, 16, 79_103, 250, 0);
+        install(
+            &mut valid,
+            "autocracy",
+            &[
+                "lightning_warfare",
+                "five_year_plan",
+                "rationalism",
+                "cryptography",
+            ],
+        );
+        valid.players[0]
+            .civics
+            .extend([
+                crate::name!("ideology"),
+                crate::name!("mercantilism"),
+                crate::name!("the_enlightenment"),
+            ]);
+        let log_before = valid.log.len();
+
+        AdvancedAi::new().strategic_policies(&mut valid, 0, GrandStrategy::Conquest);
+
+        assert!(valid.players[0].policies.contains(&crate::name!("logistics")));
+        assert!(!valid.players[0].policies.contains(&crate::name!("rationalism")));
+        assert_eq!(
+            valid
+                .log
+                .since(log_before)
+                .filter(|(_, action)| matches!(
+                    action,
+                    Action::SlotPolicy { .. } | Action::UnslotPolicy { .. }
+                ))
+                .count(),
+            2,
+            "one valid replacement is one Unslot followed by one Slot"
+        );
     }
 
     #[test]
