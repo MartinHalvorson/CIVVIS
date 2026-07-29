@@ -235,3 +235,75 @@ keeps supplying ordinary production defaults to callers that have no template.
 The probe's explicit `--policy-deck legacy` keeps both recorded mechanism runs
 reproducible while its default `--policy-deck artifact` tests the artifact
 exactly as deployed. Tests pin mutation, crossover, and population alignment.
+
+## Production Live-deck military search — pre-registration, 2026-07-29
+
+The Legacy counterfactual cannot establish which military parameters the
+deployed controller can evolve. The artifact intentionally resolves to Live,
+and the deployment A/B above shows that controller is materially stronger.
+This experiment repeats the endpoint intervention on the production artifact
+and adds a prospectively fixed route from dense fitness to a win-rate change.
+
+The causal code audit makes one prediction before the run. Candidate majors in
+`evolve::make_table` are `AdvancedAi`. Major turns call
+`AdvancedAi::advanced_diplomacy`, not `BasicAi::diplomacy`; the latter is used
+only for minor and barbarian fallback turns. Repository-wide reference search
+finds `war_ratio`, `war_margin`, `peace_ratio`, and `war_min_turn` in the
+Basic diplomacy path, while Advanced diplomacy uses separate hard-coded
+thresholds. Therefore both endpoints of exactly those four genes should make
+zero paired difference for the candidate major. This is a prediction, not a
+post-hoc explanation.
+
+### Discovery
+
+Run the same 42 endpoint interventions and incumbent through the exact
+production fitness schedule on 24 new maps:
+
+```sh
+cargo run --release --bin gene_objective_probe -- \
+  --policy-deck artifact --players 6 --games 24 --width 74 --height 46 \
+  --speed online --turns 250 --seed 9840000 --jobs 12
+```
+
+The run is valid only if the probe reports that `artifact` resolves to `Live`,
+the champion survives templated gene reconstruction, and both endpoints of the
+four predicted inactive genes change neither score nor full fitness on any map.
+At least 12 of the other 17 military genes must change score on six or more of
+24 maps; otherwise the active search surface is too sparse for endpoint
+selection and this line stops for instrumentation or representation work.
+
+For a possible strength change, nominate exactly one endpoint: the one with
+the largest mean paired change in the current full production objective. The
+fixed discovery gate requires all of:
+
+1. mean full-objective delta is positive by at least two paired standard
+   errors;
+2. mean score-component delta is positive;
+3. full fitness changes on at least 12 of 24 maps; and
+4. the endpoint wins at least as many of the 24 games as the incumbent.
+
+The 42-way discovery comparison is not confirmatory. It only freezes the gene,
+bound, and numeric value for one disjoint test. No runner-up or threshold is
+substituted after seeing the results.
+
+### Disjoint confirmation and gameplay gate
+
+Only after a discovery pass, repeat the complete frozen grid at seed 9,850,000
+with every other option unchanged. The nominated endpoint confirms only if the
+same four conditions pass again when applied to that already-frozen endpoint.
+Its rank among the other endpoints is reported but is not a gate. Any failure
+ends the line without retry.
+
+Only a confirmation pass spends the final evaluation: 120 mirrored maps,
+two directions, six players, 74x46, six city-states, Online speed, 250 turns,
+seed 9,860,000. Both arms load the embedded champion and use the Live deck;
+the treatment alone receives the frozen gene value through `policy_eval`.
+The endpoint earns a champion change only if it wins both directions on more
+maps than it loses both directions with an exact two-sided sign-test p < 0.05.
+Terminal score is diagnostic because wins, not score, own deployment. A pass
+authorizes changing that one embedded champion gene and rerunning the full
+validation; a failure changes no gameplay default.
+
+The combat term remains regardless of this experiment. It already failed its
+own disjoint removal gate, and this study is candidate optimization under the
+objective that actually ships.

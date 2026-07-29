@@ -251,6 +251,7 @@ fn main() {
         dir: String::new(),
         speed: speed.clone(),
     };
+    let resolved_deck = base.policy_deck;
     let opponents = vec![base];
     println!(
         "gene objective probe: {} endpoint candidates x {games} paired games; \
@@ -258,7 +259,8 @@ fn main() {
         candidates.len() - 1
     );
     println!(
-        "base/opponents: champion from {artifact}; policy deck {deck_arg}; jobs {jobs}\n"
+        "base/opponents: champion from {artifact}; policy deck request {deck_arg}, resolved {:?}; jobs {jobs}\n",
+        resolved_deck,
     );
     let results = parallel::map_reporting(
         candidates.len(),
@@ -367,6 +369,35 @@ fn main() {
     let retention_pass = median_ratio >= 0.50;
     let stranded_pass = combat_only < 6;
     let passed = coverage_pass && retention_pass && stranded_pass;
+
+    let nominated = (1..candidates.len())
+        .max_by(|left, right| {
+            endpoint_stats[*left]
+                .full_mean
+                .partial_cmp(&endpoint_stats[*right].full_mean)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| right.cmp(left))
+        })
+        .expect("the probe has endpoint candidates");
+    let nominated_stats = endpoint_stats[nominated];
+    let nominated_wins = results[nominated]
+        .iter()
+        .filter(|observation| observation.won)
+        .count();
+    let incumbent_wins = results[0]
+        .iter()
+        .filter(|observation| observation.won)
+        .count();
+    println!("\nproduction-objective nomination (maximum mean full delta):");
+    println!(
+        "  {}: full {:+.3} +/- {:.3}, score {:+.3} +/- {:.3}, full changed {}/{games}, wins {nominated_wins}/{games} vs incumbent {incumbent_wins}/{games}",
+        candidates[nominated].label,
+        nominated_stats.full_mean,
+        nominated_stats.full_se,
+        nominated_stats.score_mean,
+        nominated_stats.score_se,
+        nominated_stats.full_changed,
+    );
 
     let mut same_pick = 0;
     let mut score_wins = 0;
