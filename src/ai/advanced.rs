@@ -68,6 +68,17 @@ const RUSH_ARMY: usize = 4;
 /// as a threat.
 const BASTION_PRESSURE: f64 = 0.45;
 
+/// Turns between a settler finishing and its city standing. `settle_siting_census`
+/// measures the chosen site a median three tiles from where the alternatives
+/// were judged, and a settler moves two.
+const SETTLE_LAG: u32 = 3;
+
+/// Turns a founded city must then stand to be worth its settler. A new city
+/// starts at one population working its centre tile, so this is deliberately
+/// not ambitious: it is the point where the city has returned the production
+/// and the population the settler cost, not where it has become good.
+const SETTLE_PAYBACK: u32 = 15;
+
 
 
 /// The per-tile discount `settle_sites` already applies inside the search
@@ -745,6 +756,24 @@ pub struct AdvancedAi {
     /// 2.76, food 36.9 against 45.5, pop 13.4 against 16.7.
     ///
     /// `city_strategy_emphasis` and `city_strategy_roles` decompose that.
+    /// Close the expansion window on whether a settler would pay for itself
+    /// rather than on a flat end-of-game reserve.
+    ///
+    /// See `expansion_pays_back_for`. The motivation is measured, not
+    /// aesthetic: #554 showed a free settler while short of the city target
+    /// more than doubles the win rate (23.0% to 52.3%, p=0.0000 over 300
+    /// games), and #559 localised where the settler is refused — on the
+    /// deployment map the shut window is the **sole** blocker on 31.2% of the
+    /// city-turns an empire spends short of its own target.
+    ///
+    /// ⚠ It replaces one constant with two smaller ones. That is a real
+    /// objection and the reason this is an entrant rather than a default: what
+    /// makes it more than retuning is that the reserve now scales with the
+    /// city's actual production rate, so a strong city may still expand late
+    /// and a weak one stops earlier than the flat rule allowed.
+    ///
+    /// Reachable as `advanced_expansion_payback`, paired against `advanced`.
+    pub expansion_pays_back: bool,
     pub city_strategy: bool,
     /// Ablation halves of `city_strategy`, so the loss above can be attributed
     /// rather than guessed at. Each is meaningless unless `city_strategy` is
@@ -1044,6 +1073,7 @@ impl AdvancedAi {
             settler_commit: false,
             settler_stalls: BTreeMap::new(),
             parallel_settlers: false,
+            expansion_pays_back: false,
             city_strategy: false,
             city_strategy_emphasis: true,
             city_strategy_roles: true,
@@ -2551,6 +2581,33 @@ impl AdvancedAi {
             // production bonus must not follow it.
             rush: rush_victim.is_some_and(|(victim, _)| target_player == Some(victim)),
         }
+    }
+
+    /// Whether a settler built *here, now* would still pay for itself.
+    ///
+    /// `expansion_window_open` reserves a flat `standard_duration(50)` at the
+    /// end of every game for every city, whatever that city can actually do.
+    /// A city making 20 production a turn builds a settler in four turns; one
+    /// making three takes twenty-seven. A single reserve is wrong for both, and
+    /// `expansion_funnel_blocker_census` measures the cost of being wrong in
+    /// the strict direction: on the 6p/74x46 map the exhibition serves, the
+    /// shut window is the **sole** blocker on 310 of 993 city-turns spent short
+    /// of the empire's own city target — 31.2% of them.
+    ///
+    /// This asks the question the reserve was standing in for. Time enough to
+    /// build the settler at this city's real production rate, walk it out, and
+    /// then hold the ground long enough to return more than it cost.
+    fn expansion_pays_back_for(&self, g: &Game, pid: usize, cid: u32) -> bool {
+        let remaining = g.max_turns.saturating_sub(g.turn) as f64;
+        let production = g.city_yields(cid).production.max(1.0);
+        let build = g.item_remaining_cost_for_city(
+            pid,
+            cid,
+            &Item::Unit {
+                unit: "settler".into(),
+            },
+        ) / production;
+        remaining > build + g.standard_duration(SETTLE_LAG + SETTLE_PAYBACK) as f64
     }
 
     fn expansion_window_open(g: &Game) -> bool {
@@ -7999,7 +8056,9 @@ impl AdvancedAi {
                         })
                         .flatten()
                 });
-                let expansion_open = if self.victory_target.is_some() {
+                let expansion_open = if self.expansion_pays_back {
+                    self.expansion_pays_back_for(g, pid, cid)
+                } else if self.victory_target.is_some() {
                     g.turn < g.standard_duration(175)
                 } else {
                     Self::expansion_window_open(g)
@@ -21267,6 +21326,66 @@ mod tests {
                 t[t.len() / 2],
                 t[t.len() * 9 / 10]
             );
+        }
+        println!();
+    }
+
+    /// Fires-check for `expansion_pays_back`, at both map scales.
+    ///
+    /// The treatment exists to unblock the 31.2% of short city-turns where
+    /// `expansion_funnel_blocker_census` measures the shut window as the sole
+    /// blocker, so the thing to verify before spending an eval is that it
+    /// actually opens on those turns — and that it is not simply "always open",
+    /// which would make it a deletion of the gate rather than a payback test.
+    ///
+    /// Run with `cargo test --release expansion_payback_fires -- --ignored --nocapture`.
+    #[test]
+    #[ignore = "census, not an assertion; run explicitly with --nocapture"]
+    fn expansion_payback_fires() {
+        for (label, players, width, height) in
+            [("eval 4p 24x16", 4usize, 24i32, 16i32), ("deployment 6p 74x46", 6, 74, 46)]
+        {
+            let mut agree = 0u64;
+            let mut opened = 0u64;
+            let mut closed = 0u64;
+            for map in 0..6u64 {
+                let mut game =
+                    Game::new_full(players, width, height, 480_000 + map, 200, 1, false);
+                let mut ais: Vec<AdvancedAi> =
+                    (0..game.players.len()).map(|_| AdvancedAi::new()).collect();
+                let treated = {
+                    let mut ai = AdvancedAi::new();
+                    ai.expansion_pays_back = true;
+                    ai
+                };
+                game.set_fog_memory(false);
+                while game.winner.is_none() && game.turn <= game.max_turns {
+                    let pid = game.current;
+                    if pid == 0 {
+                        let flat = AdvancedAi::expansion_window_open(&game);
+                        for cid in game.player_city_ids(0) {
+                            let pays = treated.expansion_pays_back_for(&game, 0, cid);
+                            match (flat, pays) {
+                                (a, b) if a == b => agree += 1,
+                                (false, true) => opened += 1,
+                                (true, false) => closed += 1,
+                                _ => {}
+                            }
+                        }
+                    }
+                    ais[pid].take_turn(&mut game, pid);
+                    if game.winner.is_none() && game.current == pid {
+                        let _ = game.apply(pid, &crate::game::Action::EndTurn);
+                    }
+                }
+            }
+            let total = agree + opened + closed;
+            println!(
+                "\n=== expansion payback vs flat reserve [{label}]: {total} city-turns ===",
+            );
+            println!("  agree                     {agree:>6}  ({:>5.1}%)", agree as f64 / total.max(1) as f64 * 100.0);
+            println!("  payback OPENS what the flat reserve shut   {opened:>6}  ({:>5.1}%)", opened as f64 / total.max(1) as f64 * 100.0);
+            println!("  payback SHUTS what the flat reserve opened {closed:>6}  ({:>5.1}%)", closed as f64 / total.max(1) as f64 * 100.0);
         }
         println!();
     }
