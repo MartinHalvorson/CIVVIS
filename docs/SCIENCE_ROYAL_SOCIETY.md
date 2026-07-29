@@ -375,3 +375,28 @@ at seed `9987998` included the otherwise formal `--jobs 6` flag, reproduced
 both champion replays exactly, and still refused a registered label because
 its maps, seed, and horizons were diagnostic. The registered seeds remain
 unopened.
+
+## Replay and provenance integrity checkpoint
+
+The final integrity amendment was frozen and pushed independently at
+`08634352bbe51c59d0d3559fb9083f30a4962b55` before source changed. Commit
+`65024ebe199dd018d52d4a3002ace5db6933d9dd` then implemented only that
+amendment: exhaustive argument validation, canonical formal numeric values,
+exact champion generation and byte fingerprint checks, mandatory terminal
+`EndTurn` on non-winning stock traces, fail-closed fallback turn progression,
+and policy-horizon checks around every controller and turn boundary.
+
+Validation after implementation remained off every registered seed:
+
+- all 12 focused CI-profile tests passed, including malformed later
+  duplicates, unsupported and positional tokens, canonical formal values,
+  champion fingerprinting, exact champion replay, and external observation;
+- a standalone release build succeeded, and the binary rejected an unknown
+  flag, a positional token, `--turns 250 --turns nope`, and a valueless
+  `--maps` with status 2 before simulation; and
+- the permitted one-map/one-turn diagnostic null at seed `9987998` printed
+  champion generation 14 and FNV-1a `0x40b1fbb2a5b88bc6`, reproduced both
+  champion seat replays exactly, and emitted only a diagnostic label.
+
+The exact null at `9987999`, development screen at `9988000`, and holdout at
+`9989000` remain unopened and queued behind the older simulator batches.
