@@ -594,6 +594,7 @@ struct Metrics {
     midgame_reason_turns: BTreeMap<String, usize>,
     midgame_reason_transitions: BTreeMap<String, usize>,
     midgame_unanchored_reason_transitions: BTreeMap<String, usize>,
+    midgame_unanchored_reason_transition_seats: BTreeMap<String, usize>,
     midgame_unanchored_same_reason_transitions: BTreeMap<String, usize>,
     midgame_unanchored_reason_families: BTreeMap<String, usize>,
     midgame_unanchored_reason_family_seats: BTreeMap<String, usize>,
@@ -743,6 +744,10 @@ impl Metrics {
                 .midgame_unanchored_reason_transitions
                 .entry(transition.clone())
                 .or_default() += count;
+            *self
+                .midgame_unanchored_reason_transition_seats
+                .entry(transition.clone())
+                .or_default() += 1;
         }
         for (transition, count) in &trace.midgame_unanchored_same_reason_transitions {
             *self
@@ -811,6 +816,27 @@ fn family_counts(families: &BTreeMap<String, usize>, seats: &BTreeMap<String, us
             format!(
                 "{family} {count} across {} seat-games",
                 seats.get(family).copied().unwrap_or(0)
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+fn transition_counts_with_seats(
+    transitions: &BTreeMap<String, usize>,
+    seats: &BTreeMap<String, usize>,
+) -> String {
+    let mut ranked: Vec<(&str, usize)> = transitions
+        .iter()
+        .map(|(transition, count)| (transition.as_str(), *count))
+        .collect();
+    ranked.sort_by(|left, right| right.1.cmp(&left.1).then_with(|| left.0.cmp(right.0)));
+    ranked
+        .into_iter()
+        .map(|(transition, count)| {
+            format!(
+                "{transition} {count} across {} seat-games",
+                seats.get(transition).copied().unwrap_or(0)
             )
         })
         .collect::<Vec<_>>()
@@ -1418,7 +1444,10 @@ fn main() {
         );
         println!(
             "  {name:<11} unanchored reason changes {}; same-reason strategy changes {}",
-            transition_counts(&metrics.midgame_unanchored_reason_transitions),
+            transition_counts_with_seats(
+                &metrics.midgame_unanchored_reason_transitions,
+                &metrics.midgame_unanchored_reason_transition_seats,
+            ),
             transition_counts(&metrics.midgame_unanchored_same_reason_transitions),
         );
         println!(
@@ -1428,10 +1457,12 @@ fn main() {
                 &metrics.midgame_unanchored_reason_family_seats,
             ),
         );
-        println!(
-            "  {name:<11} trigger-scoped experiment gate {}",
-            trigger_gate_report(metrics),
-        );
+        if name == a {
+            println!(
+                "  {name:<11} trigger-scoped experiment gate {}",
+                trigger_gate_report(metrics),
+            );
+        }
     }
     println!("\nAncient-rush treatment exposure:");
     for name in [a, b] {
@@ -2042,16 +2073,23 @@ mod tests {
     }
 
     #[test]
-    fn assessment_family_coverage_counts_each_seat_once_and_ranks_ties_by_label() {
+    fn assessment_coverage_counts_each_seat_once_and_ranks_ties_by_label() {
         let family = reason_family("already at war", "at war and losing ground at home");
+        let transition = ordered_transition("already at war", "at war and losing ground at home");
         let mut first = PlanTrace::default();
         first
             .midgame_unanchored_reason_families
             .insert(family.clone(), 3);
+        first
+            .midgame_unanchored_reason_transitions
+            .insert(transition.clone(), 3);
         let mut second = PlanTrace::default();
         second
             .midgame_unanchored_reason_families
             .insert(family.clone(), 1);
+        second
+            .midgame_unanchored_reason_transitions
+            .insert(transition.clone(), 1);
         second
             .midgame_unanchored_reason_families
             .insert("alpha <-> zeta".to_string(), 4);
@@ -2062,6 +2100,18 @@ mod tests {
 
         assert_eq!(metrics.midgame_unanchored_reason_families[&family], 4);
         assert_eq!(metrics.midgame_unanchored_reason_family_seats[&family], 2);
+        assert_eq!(metrics.midgame_unanchored_reason_transitions[&transition], 4);
+        assert_eq!(
+            metrics.midgame_unanchored_reason_transition_seats[&transition],
+            2
+        );
+        assert_eq!(
+            transition_counts_with_seats(
+                &metrics.midgame_unanchored_reason_transitions,
+                &metrics.midgame_unanchored_reason_transition_seats,
+            ),
+            format!("{transition} 4 across 2 seat-games")
+        );
         assert_eq!(
             family_counts(
                 &metrics.midgame_unanchored_reason_families,
