@@ -20,6 +20,8 @@ const CONFIRM_MAPS: usize = 48;
 const CONFIRM_SEED: u64 = 9_987_000;
 const STRATEGIC_REVIEW_EVERY: u32 = 20;
 const STRATEGIC_HORIZON: u32 = 80;
+const FROZEN_CHAMPION_GENERATION: u32 = 14;
+const FROZEN_CHAMPION_FNV1A: u64 = 0x40b1_fbb2_a5b8_8bc6;
 const EMBEDDED_CHAMPION: &str = include_str!("../../data/evolved/best.json");
 const DEPLOYMENT_PLAYERS: [usize; 7] = [4, 6, 8, 10, 5, 7, 9];
 const DEPLOYMENT_SCRIPTS: [MapScript; 9] = [
@@ -42,10 +44,49 @@ const PROFILE_OVERRIDE_FLAGS: [&str; 6] = [
     "--map",
     "--shape",
 ];
+const FLAG_OPTIONS: [&str; 2] = ["--deployment-mix", "--randomize-civs"];
+const VALUE_OPTIONS: [&str; 15] = [
+    "--players",
+    "--width",
+    "--height",
+    "--city-states",
+    "--maps",
+    "--turns",
+    "--observe-through",
+    "--seed",
+    "--jobs",
+    "--speed",
+    "--difficulty",
+    "--map",
+    "--shape",
+    "--poles",
+    "--victories",
+];
+
+const fn fnv1a(bytes: &[u8]) -> u64 {
+    let mut hash = 0xcbf2_9ce4_8422_2325;
+    let mut index = 0;
+    while index < bytes.len() {
+        hash ^= bytes[index] as u64;
+        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+        index += 1;
+    }
+    hash
+}
 
 fn frozen_champion() -> Champion {
-    serde_json::from_str(EMBEDDED_CHAMPION)
-        .expect("the committed advanced_evolved champion must be valid JSON")
+    assert_eq!(
+        fnv1a(EMBEDDED_CHAMPION.as_bytes()),
+        FROZEN_CHAMPION_FNV1A,
+        "data/evolved/best.json changed after the horizon preregistration"
+    );
+    let champion: Champion = serde_json::from_str(EMBEDDED_CHAMPION)
+        .expect("the committed advanced_evolved champion must be valid JSON");
+    assert_eq!(
+        champion.gen, FROZEN_CHAMPION_GENERATION,
+        "horizon evaluator champion generation changed"
+    );
+    champion
 }
 
 fn frozen_strategic_deep(weights: &Weights) -> StrategicAi {
@@ -98,24 +139,55 @@ fn has_arg(args: &[String], key: &str) -> bool {
     args.iter().any(|arg| arg == key)
 }
 
-fn option_value<'a>(args: &'a [String], key: &str) -> Result<Option<&'a str>, String> {
-    let Some(index) = args.iter().position(|arg| arg == key) else {
-        return Ok(None);
-    };
-    match args.get(index + 1).map(String::as_str) {
-        Some(value) if !value.starts_with("--") => Ok(Some(value)),
-        _ => Err(format!("{key} requires a value")),
+fn validate_args(args: &[String]) -> Result<(), String> {
+    let mut index = 0;
+    while index < args.len() {
+        let argument = args[index].as_str();
+        if FLAG_OPTIONS.contains(&argument) {
+            index += 1;
+        } else if VALUE_OPTIONS.contains(&argument) {
+            match args.get(index + 1).map(String::as_str) {
+                Some(value) if !value.starts_with("--") => index += 2,
+                _ => return Err(format!("{argument} requires a value")),
+            }
+        } else {
+            return Err(format!("unsupported argument {argument:?}"));
+        }
     }
+    Ok(())
+}
+
+/// Validate every supplied occurrence. A malformed duplicate must not hide
+/// behind an earlier valid value and accidentally reach a diagnostic run.
+fn option_values<'a>(args: &'a [String], key: &str) -> Result<Vec<&'a str>, String> {
+    let mut values = Vec::new();
+    for (index, argument) in args.iter().enumerate() {
+        if argument != key {
+            continue;
+        }
+        match args.get(index + 1).map(String::as_str) {
+            Some(value) if !value.starts_with("--") => values.push(value),
+            _ => return Err(format!("{key} requires a value")),
+        }
+    }
+    Ok(values)
+}
+
+fn option_value<'a>(args: &'a [String], key: &str) -> Result<Option<&'a str>, String> {
+    Ok(option_values(args, key)?.into_iter().next())
 }
 
 fn number_value(args: &[String], key: &str) -> Result<Option<i64>, String> {
-    option_value(args, key)?
-        .map(|value| {
+    let values = option_values(args, key)?;
+    let mut parsed = Vec::with_capacity(values.len());
+    for value in values {
+        parsed.push(
             value
-                .parse()
-                .map_err(|_| format!("{key} requires an integer value; got {value:?}"))
-        })
-        .transpose()
+                .parse::<i64>()
+                .map_err(|_| format!("{key} requires an integer value; got {value:?}"))?,
+        );
+    }
+    Ok(parsed.into_iter().next())
 }
 
 fn number(args: &[String], key: &str, default: i64) -> i64 {
@@ -310,6 +382,10 @@ fn observe_game(mut game: Game, mut ais: Vec<Box<dyn Ai>>, observe_through: u32)
     let mut nominal_captures = 0;
 
     loop {
+        assert_eq!(
+            game.max_turns, nominal_limit,
+            "Game.max_turns changed during external horizon observation"
+        );
         if nominal.is_none() && (game.winner.is_some() || game.turn > nominal_limit) {
             let observed_turn = if game.winner.is_some() {
                 game.reported_turn().min(nominal_limit)
@@ -325,19 +401,30 @@ fn observe_game(mut game: Game, mut ais: Vec<Box<dyn Ai>>, observe_through: u32)
         }
         let pid = game.current;
         ais[pid].take_turn(&mut game, pid);
+        assert_eq!(
+            game.max_turns, nominal_limit,
+            "Game.max_turns changed during external horizon observation"
+        );
         if game.winner.is_none() && game.current == pid {
-            let _ = game.apply(pid, &Action::EndTurn);
+            game.apply(pid, &Action::EndTurn).unwrap_or_else(|why| {
+                panic!(
+                    "fallback EndTurn failed for player {pid} on turn {}: {why}",
+                    game.turn
+                )
+            });
+            assert_eq!(
+                game.max_turns, nominal_limit,
+                "Game.max_turns changed during external horizon observation"
+            );
         }
     }
 
-    // `observe_through >= nominal_limit`, so this is reachable only when a
-    // malformed agent/game exits without advancing. Keep the invariant
-    // explicit rather than silently returning no boundary observation.
-    let nominal = nominal.unwrap_or_else(|| {
-        nominal_captures += 1;
-        snapshot(&game, nominal_limit.min(game.reported_turn()))
-    });
-    debug_assert_eq!(nominal_captures, 1);
+    let nominal = nominal.expect("external observer exited before the nominal boundary");
+    assert_eq!(nominal_captures, 1);
+    assert_eq!(
+        game.max_turns, nominal_limit,
+        "Game.max_turns changed during external horizon observation"
+    );
     let final_turn = if game.winner.is_some() {
         game.reported_turn()
     } else {
@@ -375,7 +462,11 @@ fn wilson_95(hits: usize, n: usize) -> (f64, f64) {
 }
 
 fn main() {
-    let args: Vec<String> = std::env::args().collect();
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    if let Err(why) = validate_args(&args) {
+        eprintln!("{why}");
+        std::process::exit(2);
+    }
     let deployment_mix = has_arg(&args, "--deployment-mix");
     if deployment_mix {
         let conflicts = PROFILE_OVERRIDE_FLAGS
@@ -444,8 +535,8 @@ fn main() {
     }
     let champion = frozen_champion();
     println!(
-        "agent: strategic_deep; embedded champion generation {}; review every {STRATEGIC_REVIEW_EVERY}, horizon {STRATEGIC_HORIZON}; score-share terminal evaluator",
-        champion.gen
+        "agent: strategic_deep; embedded champion generation {}, FNV-1a {FROZEN_CHAMPION_FNV1A:#018x}; review every {STRATEGIC_REVIEW_EVERY}, horizon {STRATEGIC_HORIZON}; score-share terminal evaluator",
+        champion.gen,
     );
     println!("Deployment horizon censoring census");
     if deployment_mix {
@@ -737,14 +828,15 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::{
-        deployment_counts, deployment_profile, frozen_champion, frozen_strategic_deep,
+        deployment_counts, deployment_profile, fnv1a, frozen_champion, frozen_strategic_deep,
         has_exact_flag, has_exact_frozen_common_args, has_exact_number, has_exact_value,
-        number_value, observe_game, option_value, percentile, wilson_95, HorizonResult, Snapshot,
-        CONFIRM_MAPS, DEPLOYMENT_SCRIPTS, DEPLOYMENT_TOPOLOGIES, SCREEN_MAPS, STRATEGIC_HORIZON,
-        STRATEGIC_REVIEW_EVERY,
+        number_value, observe_game, option_value, percentile, validate_args, wilson_95,
+        HorizonResult, Snapshot, CONFIRM_MAPS, DEPLOYMENT_SCRIPTS, DEPLOYMENT_TOPOLOGIES,
+        EMBEDDED_CHAMPION, FROZEN_CHAMPION_FNV1A, FROZEN_CHAMPION_GENERATION, SCREEN_MAPS,
+        STRATEGIC_HORIZON, STRATEGIC_REVIEW_EVERY,
     };
     use civvis::ai::{Ai, BasicAi, Weights};
-    use civvis::game::{Game, VictoryConditions};
+    use civvis::game::{Action, Game, VictoryConditions};
     use civvis::setup::{MapScript, MapTopology};
 
     #[test]
@@ -752,6 +844,15 @@ mod tests {
         assert_eq!(option_value(&[], "--speed").unwrap(), None);
         assert!(option_value(&["--speed".to_string()], "--speed").is_err());
         assert!(option_value(&["--speed".to_string(), "--maps".to_string()], "--speed").is_err());
+        assert!(option_value(
+            &[
+                "--speed".to_string(),
+                "online".to_string(),
+                "--speed".to_string(),
+            ],
+            "--speed"
+        )
+        .is_err());
         assert_eq!(
             number_value(&["--turns".to_string(), "250".to_string()], "--turns").unwrap(),
             Some(250)
@@ -761,6 +862,23 @@ mod tests {
             "--turns"
         )
         .is_err());
+        assert!(number_value(
+            &[
+                "--turns".to_string(),
+                "250".to_string(),
+                "--turns".to_string(),
+                "not-a-number".to_string(),
+            ],
+            "--turns"
+        )
+        .is_err());
+
+        assert!(validate_args(&["--unknown".to_string()]).is_err());
+        assert!(validate_args(&["positional".to_string()]).is_err());
+        assert!(validate_args(&["--maps".to_string()]).is_err());
+        assert!(
+            validate_args(&["--deployment-mix".to_string(), "unexpected".to_string(),]).is_err()
+        );
     }
 
     #[test]
@@ -811,7 +929,8 @@ mod tests {
     #[test]
     fn frozen_controller_uses_the_embedded_champion_and_exact_search_budget() {
         let champion = frozen_champion();
-        assert!(champion.gen > 0);
+        assert_eq!(champion.gen, FROZEN_CHAMPION_GENERATION);
+        assert_eq!(fnv1a(EMBEDDED_CHAMPION.as_bytes()), FROZEN_CHAMPION_FNV1A);
         assert_ne!(champion.weights, Weights::default());
         let ai = frozen_strategic_deep(&champion.weights);
         assert_eq!(ai.review_every, STRATEGIC_REVIEW_EVERY);
@@ -891,6 +1010,28 @@ mod tests {
         assert_eq!(result.final_.observed_turn, 3);
         assert_eq!(result.final_.max_turns, 1);
         assert!(result.still_censored());
+    }
+
+    struct HorizonMutator;
+
+    impl Ai for HorizonMutator {
+        fn take_turn(&mut self, game: &mut Game, pid: usize) {
+            game.max_turns += 1;
+            let _ = game.apply(pid, &Action::EndTurn);
+        }
+    }
+
+    #[test]
+    #[should_panic(expected = "Game.max_turns changed during external horizon observation")]
+    fn external_observer_rejects_a_policy_visible_horizon_change() {
+        let mut game = Game::new_full(2, 24, 16, 998_599, 1, 0, false);
+        game.victory_conditions = no_victories();
+        let mut ais: Vec<Box<dyn Ai>> = BasicAi::fleet(&game)
+            .into_iter()
+            .map(|ai| Box::new(ai) as Box<dyn Ai>)
+            .collect();
+        ais[game.current] = Box::new(HorizonMutator);
+        let _ = observe_game(game, ais, 3);
     }
 
     #[test]
