@@ -123,6 +123,28 @@ Earlier seed `9987998` smokes remain mechanics-only; after implementation that
 same non-focal seed may exercise one derived profile at a short diagnostic
 horizon without touching a registered map.
 
+## Prospective fail-closed invocation amendment
+
+This validation amendment was frozen before any registered run. A static CLI
+audit found that the original numeric helper converted a malformed or valueless
+explicit option back to its default. For example, `--turns nope` could resolve
+to 250, while the gate predicate checked only the resolved number. The formal
+profile also omitted the frozen `--jobs 6` resource term. A mistyped command
+could therefore print an official decision label.
+
+Explicit malformed or valueless numeric/text options must now fail with status
+2 before simulation. A formal label requires exactly one occurrence of every
+frozen argument/value pair: deployment mix, phase-specific maps and seed,
+nominal/external horizons, Online speed, Poles, randomized civilizations,
+Science/Culture/Domination victories, `advanced_evolved`, and six jobs. The
+null additionally requires exactly one `--null`; treatment phases require its
+absence. Duplicate or merely defaulted values remain diagnostic even when
+their resolved values happen to match.
+
+This closes only command recognition. It changes no controller, deployment
+schedule, treatment, seed, batch size, endpoint, gate, observation horizon, or
+resource allocation.
+
 ## Preregistration: frozen before implementation or focal data
 
 ### Hypothesis
