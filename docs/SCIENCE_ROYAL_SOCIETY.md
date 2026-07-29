@@ -145,6 +145,37 @@ This closes only command recognition. It changes no controller, deployment
 schedule, treatment, seed, batch size, endpoint, gate, observation horizon, or
 resource allocation.
 
+## Prospective replay and provenance integrity amendment
+
+This final static audit was completed before the exact null or either treatment
+seed was run or read. The earlier fail-closed parser validated only the first
+occurrence of a key, so a valid value could hide a malformed later duplicate;
+it also ignored unsupported flags and positional arguments. The champion JSON
+was embedded but its documented generation and exact bytes were not asserted.
+Finally, the replay seam did not require an untreated stock trace to finish in
+`EndTurn`, the outer loop discarded fallback `EndTurn` errors, and the
+policy-visible horizon was asserted only after the game rather than throughout
+external continuation. No registered output exposed these defects.
+
+Before any registered seed, the runner must reject every unsupported token and
+validate every occurrence of every supported value option. Duplicate valid
+options remain non-formal under the existing exact-command predicate, while a
+malformed duplicate exits 2 before constructing a game. The embedded champion
+must assert generation 14 and exact FNV-1a fingerprint
+`0x40b1fbb2a5b88bc6`, corresponding to the SHA-256 already frozen above, and
+print both identifiers. A non-winning stock trace must end in the focal seat's
+`EndTurn`; every action must still replay successfully. Fallback turn
+progression must fail closed, and `Game.max_turns` must equal its
+construction-time value before and after every actor as well as at the terminal
+boundary. The full serialized terminal `Game` and recorded result remain the
+exact-null contract.
+
+These checks alter no valid controller action, treatment substitution, world,
+population, seed, horizon, endpoint, threshold, gate, or resource rule. The
+existing one-map/one-turn non-focal diagnostic may be replayed after
+implementation; registered seeds `9987999`, `9988000`, and `9989000` remain
+unopened.
+
 ## Preregistration: frozen before implementation or focal data
 
 ### Hypothesis
