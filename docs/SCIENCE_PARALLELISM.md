@@ -113,7 +113,9 @@ gate controls the decision; no axis-specific result may promote, extend, or
 rescue the treatment. This amendment changes only the prospectively sampled
 deployment population. The treatment, seed ranges, map counts, endpoints,
 thresholds, stop rules, observation horizon, and resource cap are unchanged.
-The only runtime smoke remains diagnostic seed 9,982,999.
+The only intentional runtime smoke remains diagnostic seed 9,982,999. The
+execution audit below separately records a terminated stale-binary partial null
+startup that produced no completed map or result.
 
 ## Observation and hypothesis
 
@@ -244,6 +246,30 @@ as control, paired map win score is at least 50%, and paired terminal-score
 share is at least 50%. Failure means retain the controller. Passing permits a
 separate gameplay-integration PR and its normal full promotion test; it does
 not itself promote the policy.
+
+## Validation and execution audit
+
+Commit `d3226f3` implemented the deployment-population amendment after its
+independent preregistration commit `0d643d3`:
+
+- `cargo test --release --locked --bin science_parallelism_eval -j 2` passed
+  all 7 focused tests, including 126 unique joint profiles, the exact null
+  profiles, and the frozen 30/120-map marginal counts;
+- a rebuilt standalone binary rejected `--deployment-mix --players 8` with
+  exit 2 before simulation; and
+- a four-map, one-turn replay diagnostic at seed 9,982,999 used two jobs and
+  exercised the four null profiles. It reported the expected derived sizes and
+  axis counts and reproduced all 8 direct/replay focal cells exactly.
+
+Execution audit: immediately before the standalone rebuild, an intended
+conflict check invoked the stale pre-amendment release executable. That binary
+ignored `--deployment-mix`, accepted `--players 8`, and began its default null
+at seed 9,982,000. Its exact process was terminated after 26 seconds. It printed
+only the static profile header: no map completed, no progress or result line
+appeared, and no focal outcome was read. This happened after the final design
+was frozen and did not inform any code, treatment, endpoint, threshold, or
+sample choice. The frozen four-map null has not yet completed or been read; no
+treatment seed has been touched.
 
 ## Resource rule
 
