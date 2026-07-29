@@ -1,0 +1,901 @@
+//! Matched evaluation of Royal Society as the Science Tier-3 plaza choice.
+//!
+//! The treatment observes one complete stock `AdvancedAi` turn, retains the
+//! controller state it produced, and replays its successful actions with one
+//! legal same-cost substitution: when the plan in force is Science, replace
+//! `Produce(NationalHistoryMuseum)` with `Produce(RoyalSociety)` in the same
+//! city. Every map is replayed from seats 0 and N-1 with and without the
+//! treatment, and inference is aggregated by map.
+use civvis::ai::{AdvancedAi, Ai};
+use civvis::game::{Action, Game, GameOptions, Item, VictoryConditions};
+use civvis::name::Name;
+use civvis::rules::Rules;
+use civvis::setup::{MapPoles, MapScript, MapSize, MapTopology};
+use std::collections::BTreeMap;
+
+const SCREEN_MAPS: usize = 30;
+const SCREEN_SEED: u64 = 9_988_000;
+const HOLDOUT_MAPS: usize = 120;
+const HOLDOUT_SEED: u64 = 9_989_000;
+const REQUIRED_SCIENCE_PROJECTS: [&str; 4] = [
+    "launch_earth_satellite",
+    "launch_moon_landing",
+    "launch_mars_colony",
+    "exoplanet_expedition",
+];
+
+fn number(args: &[String], key: &str, default: i64) -> i64 {
+    args.iter()
+        .position(|arg| arg == key)
+        .and_then(|index| args.get(index + 1))
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(default)
+}
+
+fn text(args: &[String], key: &str, default: &str) -> String {
+    args.iter()
+        .position(|arg| arg == key)
+        .and_then(|index| args.get(index + 1))
+        .cloned()
+        .unwrap_or_else(|| default.to_string())
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Mode {
+    Stock,
+    NullReplay,
+    RoyalSociety,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct ChoiceCensus {
+    opportunities: u32,
+    substitutions: u32,
+    contributions: u32,
+}
+
+fn science_plan(ai: &AdvancedAi) -> bool {
+    ai.plan_report()
+        .is_some_and(|plan| plan.strategy == "science")
+}
+
+fn is_national_history_choice(action: &Action) -> bool {
+    matches!(
+        action,
+        Action::Produce {
+            item: Item::Building { building },
+            ..
+        } if building == "national_history_museum"
+    )
+}
+
+fn royal_society_replacement(action: &Action, science: bool) -> Option<Action> {
+    if !science {
+        return None;
+    }
+    let Action::Produce {
+        city,
+        item: Item::Building { building },
+    } = action
+    else {
+        return None;
+    };
+    (building == "national_history_museum").then(|| Action::Produce {
+        city: *city,
+        item: Item::Building {
+            building: Name::new("royal_society"),
+        },
+    })
+}
+
+fn count_opportunities(actions: &[(usize, Action)], pid: usize, science: bool) -> u32 {
+    if !science {
+        return 0;
+    }
+    actions
+        .iter()
+        .filter(|(owner, action)| *owner == pid && is_national_history_choice(action))
+        .count() as u32
+}
+
+/// Run the stock controller on a clone, preserve the controller state it
+/// reached, and replay every successful action except the final EndTurn.
+/// Substitution changes one logged `Produce` action through `Game::apply`.
+fn replay_stock_turn(
+    game: &mut Game,
+    ai: &mut AdvancedAi,
+    pid: usize,
+    substitute: bool,
+    census: &mut ChoiceCensus,
+) -> Result<(), String> {
+    let mut observed = game.clone();
+    let before = observed.log.len();
+    let mut actor = ai.clone();
+    actor.take_turn(&mut observed, pid);
+    let science = science_plan(&actor);
+    let mut actions: Vec<(usize, Action)> = observed.log.since(before).cloned().collect();
+    census.opportunities += count_opportunities(&actions, pid, science);
+
+    let ended = actions
+        .last()
+        .is_some_and(|(owner, action)| *owner == pid && matches!(action, Action::EndTurn));
+    if ended {
+        actions.pop();
+    }
+
+    for (owner, stock) in actions {
+        if owner != pid {
+            return Err(format!(
+                "stock seat {pid} logged an action for seat {owner}: {stock:?}"
+            ));
+        }
+        let replacement = substitute
+            .then(|| royal_society_replacement(&stock, science))
+            .flatten();
+        let action = replacement.as_ref().unwrap_or(&stock);
+        game.apply(owner, action).map_err(|why| {
+            format!(
+                "stock action replay failed for seat {pid}: {why}; stock={stock:?}; replay={action:?}"
+            )
+        })?;
+        census.substitutions += replacement.is_some() as u32;
+    }
+    *ai = actor;
+    if ended && game.winner.is_none() && game.current != pid {
+        return Err(format!(
+            "stock replay advanced from seat {pid} before the deferred EndTurn"
+        ));
+    }
+    Ok(())
+}
+
+fn science_progress(game: &Game, pid: usize) -> (usize, f64) {
+    let expedition_launched = game.players[pid]
+        .science_projects
+        .contains("exoplanet_expedition");
+    let completed = REQUIRED_SCIENCE_PROJECTS
+        .iter()
+        .filter(|project| {
+            game.players[pid]
+                .science_projects
+                .iter()
+                .any(|finished| finished.as_str() == **project)
+        })
+        .count();
+    let distance = if expedition_launched {
+        game.players[pid].exoplanet_distance.clamp(0.0, 50.0) / 50.0
+    } else {
+        0.0
+    };
+    (completed, completed as f64 + distance)
+}
+
+fn empire_building_count(game: &Game, pid: usize, building: &str) -> usize {
+    game.cities
+        .values()
+        .filter(|city| city.owner == pid)
+        .map(|city| {
+            city.buildings
+                .iter()
+                .filter(|held| held.as_str() == building)
+                .count()
+        })
+        .sum()
+}
+
+#[derive(Clone, Debug, PartialEq)]
+struct GameResult {
+    won: bool,
+    victory: Option<String>,
+    reported_turn: u32,
+    score: i64,
+    faith: f64,
+    cities: usize,
+    builders: usize,
+    national_history_museums: usize,
+    royal_societies: usize,
+    science_projects: usize,
+    science_progress: f64,
+    census: ChoiceCensus,
+}
+
+struct Played {
+    result: GameResult,
+    serialized: Option<String>,
+}
+
+fn play(options: GameOptions, focal: usize, mode: Mode, serialize: bool) -> Played {
+    let mut game = Game::new_with(options);
+    game.set_fog_memory(false);
+    game.victory_conditions = VictoryConditions {
+        science: true,
+        culture: true,
+        religious: false,
+        diplomatic: false,
+        domination: true,
+        score: false,
+    };
+    let mut ais = AdvancedAi::fleet(&game);
+    let mut census = ChoiceCensus::default();
+
+    while game.winner.is_none() && game.turn <= game.max_turns {
+        let pid = game.current;
+        let before = game.log.len();
+        if pid == focal && mode != Mode::Stock {
+            replay_stock_turn(
+                &mut game,
+                &mut ais[pid],
+                pid,
+                mode == Mode::RoyalSociety,
+                &mut census,
+            )
+            .unwrap_or_else(|why| panic!("turn {} seat {pid}: {why}", game.turn));
+        } else {
+            ais[pid].take_turn(&mut game, pid);
+            if pid == focal {
+                let actions: Vec<(usize, Action)> = game.log.since(before).cloned().collect();
+                census.opportunities += count_opportunities(&actions, pid, science_plan(&ais[pid]));
+            }
+        }
+        if game.winner.is_none() && game.current == pid {
+            let _ = game.apply(pid, &Action::EndTurn);
+        }
+        if pid == focal {
+            census.contributions += game
+                .log
+                .since(before)
+                .filter(|(owner, action)| {
+                    *owner == pid && matches!(action, Action::ContributeProject { .. })
+                })
+                .count() as u32;
+        }
+    }
+
+    let (science_projects, science_progress) = science_progress(&game, focal);
+    let result = GameResult {
+        won: game.winner == Some(focal),
+        victory: (game.winner == Some(focal))
+            .then(|| game.victory_type.clone())
+            .flatten(),
+        reported_turn: game.reported_turn(),
+        score: game.score(focal),
+        faith: game.players[focal].faith,
+        cities: game.player_city_ids(focal).len(),
+        builders: game
+            .units
+            .values()
+            .filter(|unit| unit.owner == focal && unit.kind == "builder")
+            .count(),
+        national_history_museums: empire_building_count(&game, focal, "national_history_museum"),
+        royal_societies: empire_building_count(&game, focal, "royal_society"),
+        science_projects,
+        science_progress,
+        census,
+    };
+    let serialized = serialize
+        .then(|| serde_json::to_string(&game).expect("terminal Game must remain serializable"));
+    Played { result, serialized }
+}
+
+#[derive(Clone, Debug)]
+struct MapResult {
+    control: [GameResult; 2],
+    treatment: [GameResult; 2],
+    exact: [bool; 2],
+}
+
+fn map_score(control_wins: usize, treatment_wins: usize) -> f64 {
+    0.5 + (treatment_wins as f64 - control_wins as f64) / 4.0
+}
+
+fn paired_share(control: f64, treatment: f64) -> f64 {
+    let control = control.max(0.0);
+    let treatment = treatment.max(0.0);
+    let total = control + treatment;
+    if total > 0.0 {
+        treatment / total
+    } else {
+        0.5
+    }
+}
+
+fn exact_two_sided(hits: usize, n: usize) -> f64 {
+    if n == 0 {
+        return 1.0;
+    }
+    let extreme = hits.min(n - hits);
+    let mut coefficient = 1.0_f64;
+    let mut tail = 0.0_f64;
+    for k in 0..=n {
+        if k > 0 {
+            coefficient *= (n - k + 1) as f64 / k as f64;
+        }
+        if k <= extreme || k >= n - extreme {
+            tail += coefficient;
+        }
+    }
+    (tail / 2f64.powi(n as i32)).min(1.0)
+}
+
+#[derive(Default)]
+struct ArmSummary {
+    games: usize,
+    wins: usize,
+    turns: u64,
+    score: i64,
+    faith: f64,
+    cities: usize,
+    builders: usize,
+    opportunities: u64,
+    substitutions: u64,
+    substitution_games: usize,
+    contributions: u64,
+    contribution_games: usize,
+    national_history_museums: usize,
+    royal_societies: usize,
+    science_projects: usize,
+    science_progress: f64,
+    victories: BTreeMap<String, usize>,
+}
+
+impl ArmSummary {
+    fn record(&mut self, result: &GameResult) {
+        self.games += 1;
+        self.wins += result.won as usize;
+        self.turns += result.reported_turn as u64;
+        self.score += result.score;
+        self.faith += result.faith;
+        self.cities += result.cities;
+        self.builders += result.builders;
+        self.opportunities += result.census.opportunities as u64;
+        self.substitutions += result.census.substitutions as u64;
+        self.substitution_games += (result.census.substitutions > 0) as usize;
+        self.contributions += result.census.contributions as u64;
+        self.contribution_games += (result.census.contributions > 0) as usize;
+        self.national_history_museums += result.national_history_museums;
+        self.royal_societies += result.royal_societies;
+        self.science_projects += result.science_projects;
+        self.science_progress += result.science_progress;
+        if result.won {
+            *self
+                .victories
+                .entry(
+                    result
+                        .victory
+                        .clone()
+                        .unwrap_or_else(|| "unknown".to_string()),
+                )
+                .or_default() += 1;
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+struct GateInputs {
+    substitution_games: usize,
+    substitutions: u64,
+    contributions: u64,
+    contribution_games: usize,
+    control_national_history: usize,
+    treatment_national_history: usize,
+    control_royal_society: usize,
+    treatment_royal_society: usize,
+    paired_score: f64,
+    win_favorable: usize,
+    win_adverse: usize,
+    win_p: f64,
+    terminal_score: f64,
+    terminal_favorable: usize,
+    terminal_adverse: usize,
+    progress_favorable: usize,
+    progress_adverse: usize,
+    control_progress: f64,
+    treatment_progress: f64,
+    control_science_wins: usize,
+    treatment_science_wins: usize,
+}
+
+fn mechanism_passes(gate: GateInputs) -> bool {
+    gate.substitution_games >= 10
+        && gate.substitutions >= 10
+        && gate.contributions >= 10
+        && gate.contribution_games >= 5
+        && gate.treatment_royal_society > gate.control_royal_society
+        && gate.treatment_national_history <= gate.control_national_history
+}
+
+fn screen_passes(gate: GateInputs) -> bool {
+    mechanism_passes(gate)
+        && gate.paired_score >= 0.525
+        && gate.win_favorable > gate.win_adverse
+        && gate.terminal_score >= 0.50
+        && gate.progress_favorable >= gate.progress_adverse
+        && gate.treatment_progress + f64::EPSILON >= gate.control_progress
+        && gate.treatment_science_wins >= gate.control_science_wins
+}
+
+fn holdout_passes(gate: GateInputs) -> bool {
+    mechanism_passes(gate)
+        && gate.win_favorable > gate.win_adverse
+        && gate.win_p < 0.05
+        && gate.terminal_score >= 0.50
+        && gate.terminal_favorable >= gate.terminal_adverse
+        && gate.progress_favorable >= gate.progress_adverse
+        && gate.treatment_progress + f64::EPSILON >= gate.control_progress
+        && gate.treatment_science_wins >= gate.control_science_wins
+}
+
+fn main() {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    let maps = number(&args, "--maps", SCREEN_MAPS as i64).max(1) as usize;
+    let players = number(&args, "--players", 8).max(2) as usize;
+    let width = number(&args, "--width", 84).max(8) as i32;
+    let height = number(&args, "--height", 54).max(8) as i32;
+    let city_states = number(&args, "--city-states", 12).max(0) as usize;
+    let turns = number(&args, "--turns", 250).max(1) as u32;
+    let seed = number(&args, "--seed", SCREEN_SEED as i64).max(0) as u64;
+    let jobs = match number(&args, "--jobs", 0) {
+        requested if requested > 0 => requested as usize,
+        _ => civvis::parallel::default_jobs(),
+    }
+    .clamp(1, 6);
+    let default_speed = civvis::game::default_speed();
+    let speed = text(&args, "--speed", &default_speed);
+    let map_name = text(&args, "--map", MapScript::default().id());
+    let map_script = MapScript::from_id(&map_name).unwrap_or_else(|| {
+        eprintln!("unknown map script {map_name:?}");
+        std::process::exit(2);
+    });
+    let shape_name = text(&args, "--shape", MapTopology::default().id());
+    let map_topology = MapTopology::from_id(&shape_name).unwrap_or_else(|| {
+        eprintln!("unknown map shape {shape_name:?}");
+        std::process::exit(2);
+    });
+    let poles_name = text(&args, "--poles", MapPoles::default().id());
+    let map_poles = MapPoles::from_id(&poles_name).unwrap_or_else(|| {
+        eprintln!("unknown thermal distribution {poles_name:?}");
+        std::process::exit(2);
+    });
+    let victory_names = text(&args, "--victories", "science,culture,domination");
+    let victories = VictoryConditions::parse(&victory_names).unwrap_or_else(|why| {
+        eprintln!(
+            "--victories: {why}; choose from {:?}",
+            VictoryConditions::NAMES
+        );
+        std::process::exit(2);
+    });
+    let required_victories = VictoryConditions {
+        science: true,
+        culture: true,
+        religious: false,
+        diplomatic: false,
+        domination: true,
+        score: false,
+    };
+    if victories != required_victories {
+        eprintln!(
+            "this treatment is defined only for science,culture,domination; got {victory_names:?}"
+        );
+        std::process::exit(2);
+    }
+    let randomize_civs = args.iter().any(|arg| arg == "--randomize-civs");
+    let null_replay = args.iter().any(|arg| arg == "--null");
+    let rules = Rules::embedded();
+    if !rules.speeds.contains_key(&speed) {
+        eprintln!("unknown game speed {speed:?}");
+        std::process::exit(2);
+    }
+
+    let stored_dimensions = MapSize::from_dimensions(width, height)
+        .map(|size| size.dimensions(map_topology))
+        .unwrap_or((width, height));
+    println!("Royal Society Science evaluator");
+    println!(
+        "profile: {players}p requested {width}x{height}, stored {}x{}, {city_states} city-states, \
+         {turns} {speed} turns, map {}, shape {}, poles {}, civilizations {}, victories {}",
+        stored_dimensions.0,
+        stored_dimensions.1,
+        map_script.id(),
+        map_topology.id(),
+        map_poles.id(),
+        if randomize_civs {
+            "randomized"
+        } else {
+            "fixed"
+        },
+        VictoryConditions::NAMES
+            .into_iter()
+            .filter(|name| victories.is_enabled(name))
+            .collect::<Vec<_>>()
+            .join(","),
+    );
+    println!(
+        "batch: {maps} independent maps x seats 0/{} x control/treatment = {} games; seed {seed}; {jobs} jobs",
+        players - 1,
+        maps * 4
+    );
+    println!(
+        "treatment: {}",
+        if null_replay {
+            "NULL action-log replay (no substitution)"
+        } else {
+            "on a stock Science turn, replace National History Museum with Royal Society"
+        }
+    );
+
+    let results: Vec<MapResult> = civvis::parallel::map_reporting(
+        maps,
+        jobs,
+        |map| {
+            let options = GameOptions {
+                speed: speed.clone(),
+                map_script,
+                map_topology,
+                map_poles,
+                randomize_civs,
+                ..GameOptions::new(
+                    players,
+                    width,
+                    height,
+                    seed + map as u64,
+                    turns,
+                    city_states,
+                )
+            };
+            let treatment_mode = if null_replay {
+                Mode::NullReplay
+            } else {
+                Mode::RoyalSociety
+            };
+
+            let control0 = play(options.clone(), 0, Mode::Stock, null_replay);
+            let treatment0 = play(options.clone(), 0, treatment_mode, null_replay);
+            let exact0 = !null_replay
+                || (control0.result == treatment0.result
+                    && control0.serialized == treatment0.serialized);
+            let last = players - 1;
+            let control1 = play(options.clone(), last, Mode::Stock, null_replay);
+            let treatment1 = play(options, last, treatment_mode, null_replay);
+            let exact1 = !null_replay
+                || (control1.result == treatment1.result
+                    && control1.serialized == treatment1.serialized);
+
+            MapResult {
+                control: [control0.result, control1.result],
+                treatment: [treatment0.result, treatment1.result],
+                exact: [exact0, exact1],
+            }
+        },
+        |completed, _| eprintln!("progress: {}/{} maps complete", completed + 1, maps),
+    );
+
+    let mut control = ArmSummary::default();
+    let mut treatment = ArmSummary::default();
+    let mut paired_scores = Vec::with_capacity(maps);
+    let mut paired_terminal = Vec::with_capacity(maps);
+    let mut paired_progress = Vec::with_capacity(maps);
+    let mut win_favorable = 0usize;
+    let mut win_adverse = 0usize;
+    let mut terminal_favorable = 0usize;
+    let mut terminal_adverse = 0usize;
+    let mut progress_favorable = 0usize;
+    let mut progress_adverse = 0usize;
+    let mut helped_cells = 0usize;
+    let mut hurt_cells = 0usize;
+    let mut exact_mismatches = 0usize;
+
+    for result in &results {
+        let control_wins = result.control.iter().filter(|game| game.won).count();
+        let treatment_wins = result.treatment.iter().filter(|game| game.won).count();
+        paired_scores.push(map_score(control_wins, treatment_wins));
+        match treatment_wins.cmp(&control_wins) {
+            std::cmp::Ordering::Greater => win_favorable += 1,
+            std::cmp::Ordering::Less => win_adverse += 1,
+            std::cmp::Ordering::Equal => {}
+        }
+
+        let terminal = result
+            .control
+            .iter()
+            .zip(&result.treatment)
+            .map(|(old, new)| paired_share(old.score as f64, new.score as f64))
+            .sum::<f64>()
+            / 2.0;
+        paired_terminal.push(terminal);
+        if terminal > 0.5 + f64::EPSILON {
+            terminal_favorable += 1;
+        } else if terminal < 0.5 - f64::EPSILON {
+            terminal_adverse += 1;
+        }
+
+        let progress = result
+            .control
+            .iter()
+            .zip(&result.treatment)
+            .map(|(old, new)| paired_share(old.science_progress, new.science_progress))
+            .sum::<f64>()
+            / 2.0;
+        paired_progress.push(progress);
+        if progress > 0.5 + f64::EPSILON {
+            progress_favorable += 1;
+        } else if progress < 0.5 - f64::EPSILON {
+            progress_adverse += 1;
+        }
+
+        for (old, new) in result.control.iter().zip(&result.treatment) {
+            control.record(old);
+            treatment.record(new);
+            match (old.won, new.won) {
+                (false, true) => helped_cells += 1,
+                (true, false) => hurt_cells += 1,
+                _ => {}
+            }
+        }
+        exact_mismatches += result.exact.iter().filter(|exact| !**exact).count();
+    }
+
+    let paired_score = paired_scores.iter().sum::<f64>() / maps as f64;
+    let terminal_score = paired_terminal.iter().sum::<f64>() / maps as f64;
+    let progress_share = paired_progress.iter().sum::<f64>() / maps as f64;
+    let win_p = exact_two_sided(win_favorable, win_favorable + win_adverse);
+    let terminal_p = exact_two_sided(terminal_favorable, terminal_favorable + terminal_adverse);
+    let progress_p = exact_two_sided(progress_favorable, progress_favorable + progress_adverse);
+    let control_science_wins = control.victories.get("science").copied().unwrap_or(0);
+    let treatment_science_wins = treatment.victories.get("science").copied().unwrap_or(0);
+    let control_progress = control.science_progress / control.games.max(1) as f64;
+    let treatment_progress = treatment.science_progress / treatment.games.max(1) as f64;
+    let gate = GateInputs {
+        substitution_games: treatment.substitution_games,
+        substitutions: treatment.substitutions,
+        contributions: treatment.contributions,
+        contribution_games: treatment.contribution_games,
+        control_national_history: control.national_history_museums,
+        treatment_national_history: treatment.national_history_museums,
+        control_royal_society: control.royal_societies,
+        treatment_royal_society: treatment.royal_societies,
+        paired_score,
+        win_favorable,
+        win_adverse,
+        win_p,
+        terminal_score,
+        terminal_favorable,
+        terminal_adverse,
+        progress_favorable,
+        progress_adverse,
+        control_progress,
+        treatment_progress,
+        control_science_wins,
+        treatment_science_wins,
+    };
+
+    println!();
+    println!(
+        "arm        wins/games  turns  score  faith  cities builders  NHM  RS  projects progress"
+    );
+    for (name, arm) in [("control", &control), ("treatment", &treatment)] {
+        let n = arm.games.max(1) as f64;
+        println!(
+            "{name:<10} {:>3}/{:<3} {:>6.1} {:>6.1} {:>6.1} {:>7.2} {:>8.2} {:>4} {:>3} {:>9.2} {:>8.3}",
+            arm.wins,
+            arm.games,
+            arm.turns as f64 / n,
+            arm.score as f64 / n,
+            arm.faith / n,
+            arm.cities as f64 / n,
+            arm.builders as f64 / n,
+            arm.national_history_museums,
+            arm.royal_societies,
+            arm.science_projects as f64 / n,
+            arm.science_progress / n,
+        );
+    }
+    println!(
+        "victory types: control {:?}; treatment {:?}",
+        control.victories, treatment.victories
+    );
+    println!(
+        "mechanism: control opportunities {}; treatment opportunities {}, substitutions {} in {}/{} seat-games, contributions {} in {} seat-games",
+        control.opportunities,
+        treatment.opportunities,
+        treatment.substitutions,
+        treatment.substitution_games,
+        treatment.games,
+        treatment.contributions,
+        treatment.contribution_games,
+    );
+    println!(
+        "matched seat cells: treatment helped {helped_cells}, hurt {hurt_cells}, unchanged {} (descriptive; map is the inference unit)",
+        control.games - helped_cells - hurt_cells
+    );
+    println!("paired map win score: {:.1}%", 100.0 * paired_score);
+    println!(
+        "win direction: favorable {win_favorable}, neutral {}, adverse {win_adverse}; exact two-sided sign p={win_p:.4}",
+        maps - win_favorable - win_adverse
+    );
+    println!(
+        "paired terminal-score share: {:.1}%; favorable {terminal_favorable}, neutral {}, adverse {terminal_adverse}; exact p={terminal_p:.4}",
+        100.0 * terminal_score,
+        maps - terminal_favorable - terminal_adverse,
+    );
+    println!(
+        "paired Science-progress share: {:.1}%; favorable {progress_favorable}, neutral {}, adverse {progress_adverse}; exact p={progress_p:.4}; arm means {:.3}/{:.3}",
+        100.0 * progress_share,
+        maps - progress_favorable - progress_adverse,
+        control_progress,
+        treatment_progress,
+    );
+
+    if null_replay {
+        if exact_mismatches == 0 {
+            println!(
+                "null sanity: PASS — all {} matched seat replays reproduced the result and serialized Game exactly",
+                control.games
+            );
+        } else {
+            println!(
+                "null sanity: BROKEN — {exact_mismatches}/{} matched seat replays differed",
+                control.games
+            );
+            std::process::exit(3);
+        }
+        return;
+    }
+
+    let exact_profile = players == 8
+        && width == 84
+        && height == 54
+        && city_states == 12
+        && turns == 250
+        && speed == "online"
+        && map_script == MapScript::Continents
+        && map_topology == MapTopology::Planet
+        && map_poles == MapPoles::Poles
+        && randomize_civs;
+    if exact_profile && maps == SCREEN_MAPS && seed == SCREEN_SEED {
+        println!(
+            "development gate: {}",
+            if screen_passes(gate) {
+                "PASS — run only the fixed disjoint holdout"
+            } else {
+                "STOP — at least one preregistered term failed; do not tune or retry"
+            }
+        );
+    } else if exact_profile && maps == HOLDOUT_MAPS && seed == HOLDOUT_SEED {
+        println!(
+            "holdout gate: {}",
+            if holdout_passes(gate) {
+                "PASS — a separate gameplay integration PR is permitted"
+            } else {
+                "RETAIN AdvancedAi — no gameplay integration"
+            }
+        );
+    } else {
+        println!(
+            "decision: DIAGNOSTIC ONLY — this is neither the preregistered screen nor holdout profile"
+        );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn produce(building: &str, city: u32) -> Action {
+        Action::Produce {
+            city,
+            item: Item::Building {
+                building: Name::new(building),
+            },
+        }
+    }
+
+    #[test]
+    fn replacement_is_exactly_the_science_tier_three_choice() {
+        assert_eq!(
+            royal_society_replacement(&produce("national_history_museum", 17), true),
+            Some(produce("royal_society", 17))
+        );
+        assert!(
+            royal_society_replacement(&produce("national_history_museum", 17), false).is_none()
+        );
+        assert!(royal_society_replacement(&produce("war_department", 17), true).is_none());
+    }
+
+    #[test]
+    fn null_action_log_replay_reconstructs_the_stock_turn() {
+        let mut stock = Game::new(2, 20, 14, 88_001, 20, 0);
+        stock.set_fog_memory(false);
+        let mut replay = stock.clone();
+        let mut stock_ai = AdvancedAi::new();
+        let mut replay_ai = stock_ai.clone();
+        stock_ai.take_turn(&mut stock, 0);
+        let mut census = ChoiceCensus::default();
+        replay_stock_turn(&mut replay, &mut replay_ai, 0, false, &mut census).unwrap();
+        if replay.winner.is_none() && replay.current == 0 {
+            replay.apply(0, &Action::EndTurn).unwrap();
+        }
+
+        assert_eq!(
+            serde_json::to_string(&replay).unwrap(),
+            serde_json::to_string(&stock).unwrap()
+        );
+        assert_eq!(replay_ai.plan_report(), stock_ai.plan_report());
+    }
+
+    #[test]
+    fn science_progress_is_bounded_and_counts_only_required_projects() {
+        let mut game = Game::new(2, 20, 14, 88_002, 20, 0);
+        game.players[0]
+            .science_projects
+            .insert("launch_earth_satellite".to_string());
+        game.players[0]
+            .science_projects
+            .insert("manhattan_project".to_string());
+        game.players[0].exoplanet_distance = 75.0;
+        assert_eq!(science_progress(&game, 0), (1, 1.0));
+        game.players[0]
+            .science_projects
+            .insert("exoplanet_expedition".to_string());
+        assert_eq!(science_progress(&game, 0), (2, 3.0));
+    }
+
+    #[test]
+    fn map_score_keeps_two_seats_inside_one_independent_observation() {
+        assert_eq!(map_score(0, 2), 1.0);
+        assert_eq!(map_score(0, 1), 0.75);
+        assert_eq!(map_score(1, 1), 0.5);
+        assert_eq!(map_score(2, 0), 0.0);
+    }
+
+    #[test]
+    fn exact_sign_test_matches_known_edges() {
+        assert!((exact_two_sided(5, 5) - 0.0625).abs() < 1e-12);
+        assert!((exact_two_sided(8, 8) - 0.0078125).abs() < 1e-12);
+        assert_eq!(exact_two_sided(0, 0), 1.0);
+    }
+
+    #[test]
+    fn gates_enforce_mechanism_direction_and_confirmation() {
+        let passing = GateInputs {
+            substitution_games: 10,
+            substitutions: 10,
+            contributions: 10,
+            contribution_games: 5,
+            control_national_history: 10,
+            treatment_national_history: 0,
+            control_royal_society: 0,
+            treatment_royal_society: 10,
+            paired_score: 0.525,
+            win_favorable: 8,
+            win_adverse: 2,
+            win_p: 0.05,
+            terminal_score: 0.50,
+            terminal_favorable: 6,
+            terminal_adverse: 6,
+            progress_favorable: 5,
+            progress_adverse: 5,
+            control_progress: 3.0,
+            treatment_progress: 3.0,
+            control_science_wins: 2,
+            treatment_science_wins: 2,
+        };
+        assert!(screen_passes(passing));
+        assert!(!holdout_passes(passing));
+        assert!(holdout_passes(GateInputs {
+            win_p: 0.049,
+            ..passing
+        }));
+        assert!(!screen_passes(GateInputs {
+            contribution_games: 4,
+            ..passing
+        }));
+        assert!(!screen_passes(GateInputs {
+            progress_adverse: 6,
+            ..passing
+        }));
+        assert!(!screen_passes(GateInputs {
+            treatment_science_wins: 1,
+            ..passing
+        }));
+    }
+}
