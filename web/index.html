@@ -23039,11 +23039,7 @@ function drawPlayerHud() {
   }
   const rankById = new Map(majors.map((p, index) => [p.id, index + 1]));
   const statsByPlayer = new Map(majors.map(p => [p.id, playerHudStats(p, rankById.get(p.id))]));
-  const capitalsByOwner = new Map();
-  for (const city of state.cities || []) {
-    if (city.is_capital && !capitalsByOwner.has(city.owner))
-      capitalsByOwner.set(city.owner, city);
-  }
+  const capitals = capitalIndex();
   const highestByStat = new Map();
   statsByPlayer.forEach(stats => stats.forEach(([kind, , value]) => {
     const numericValue = Number(value) || 0;
@@ -23090,10 +23086,21 @@ function drawPlayerHud() {
       const color = pcol(p.id);
       const leader = p.leader || "Unknown leader";
       const rank = rankById.get(p.id);
-      const capital = capitalsByOwner.get(p.id);
-      const empireTitle = capital
-        ? `View ${p.civ}'s empire from its capital, ${capital.name}`
-        : `${p.civ} has no capital to view`;
+      // A defeated civilization keeps its faded row and nothing else — but the
+      // capital it founded still stands under whoever took it, so the row's
+      // link goes there rather than going dead with the empire. That ground is
+      // the one place on the map that still remembers them, and it is exactly
+      // what somebody reading a greyed-out row wants to look at.
+      const capital = empireCapitalFrom(capitals, p.id);
+      const capitalTaken = Boolean(capital) && capital.owner !== p.id;
+      const capitalHolder = capitalTaken
+        ? state.players.find(other => other.id === capital.owner) : null;
+      const empireTitle = !capital
+        ? `${p.civ} has no capital to view`
+        : capitalTaken
+        ? `View ${p.civ}'s first capital, ${capital.name}` +
+          (capitalHolder ? ` — now held by ${capitalHolder.civ}` : " — now in other hands")
+        : `View ${p.civ}'s empire from its capital, ${capital.name}`;
       const alliance = p.alliance;
       const strategy = p.ai_strategy || "";
       const strategyText = strategy ? `${titleCase(strategy)} plan` : "";
@@ -27561,12 +27568,37 @@ function setDirector(on) {
   if (on && (!SPEC || VIEW !== "cinematic")) return;
   setCinemaMode(!!on);
 }
+// Every capital on the map, indexed in one pass the three ways a row can need
+// one. A captured capital keeps both `is_capital` and the `original_owner` that
+// founded it, so `founded` outlives the civilization in it.
+function capitalIndex() {
+  const seat = new Map(), held = new Map(), founded = new Map();
+  for (const city of state?.cities || []) {
+    if (!city.is_capital) continue;
+    if (city.owner === city.original_owner) seat.set(city.owner, city);
+    if (!held.has(city.owner)) held.set(city.owner, city);
+    if (!founded.has(city.original_owner)) founded.set(city.original_owner, city);
+  }
+  return {seat, held, founded};
+}
+// Where a civilization's row points on the map, in falling order of what is
+// still true: the capital it founded and still holds, then any capital it has
+// taken from somebody else, then — for an empire driven off the board — the
+// capital it founded, standing under its conqueror. Only a founding capital
+// nobody has ever seen leaves a row with nowhere to go.
+function empireCapitalFrom(index, pid) {
+  return index.seat.get(pid) || index.held.get(pid) || index.founded.get(pid) || null;
+}
+function empireCapital(pid) {
+  if (!state || !Number.isInteger(pid)) return null;
+  return empireCapitalFrom(capitalIndex(), pid);
+}
 // A civilization's own cell is the stable way into its capital view. It moves
 // the map without changing whose fog of war is being viewed; that distinct
 // transition belongs to Watch as.
 function focusCapital(pid) {
   if (!state) return;
-  const capital = state.cities.find(city => city.owner === pid && city.is_capital);
+  const capital = empireCapital(pid);
   if (!capital) return;
   takeCameraControl();
   centerWorld(capital.pos);
