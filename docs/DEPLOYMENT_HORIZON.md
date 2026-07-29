@@ -169,6 +169,31 @@ static factory code. No screen or confirmation output informed it; the
 controller role, world population, horizons, seeds, map counts, endpoints,
 thresholds, stop rule, and resource cap are unchanged.
 
+## Post-amendment validation
+
+The fail-closed invocation design was frozen at `d9b98a4` and implemented at
+`3a4339a8a194e0bb401968d6d4c87bc609d905b9`. The controller-artifact design
+was then frozen at `f101fca`, after the first non-focal replay exposed only its
+artifact provenance, and implemented at
+`e5cc7c7ed9a735897a7b5fb6b34efc156143d0f3`.
+
+- `cargo test --release --locked --bin deployment_horizon -j 1` passed all
+  seven focused tests, including fail-closed supplied values, the complete
+  canonical common command, explicit-difficulty exclusion, deployment
+  balance, immutable nominal horizon, censoring classification/statistics,
+  and the embedded non-default champion with exact 20/80 search budget.
+- The rebuilt standalone binary rejected malformed `--turns nope`, a
+  valueless `--speed`, and `--deployment-mix --players 8` with exit 2 before
+  simulation.
+- The one-map, one-turn replay at the established non-focal seed 9,986,999
+  used one job and the first deployment profile. The final build reported the
+  embedded generation-14 champion, 20/80 search budget, and score-share
+  terminal evaluator, preserved `Game.max_turns = 1`, and emitted only the
+  diagnostic profile label. It cannot spend a gate.
+
+No map from screen seed 9,986,000 or confirmation seed 9,987,000 has been run
+or read.
+
 ## Fixed deployment-population screen
 
 The amended frozen command is:
