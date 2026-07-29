@@ -1017,7 +1017,6 @@ threaded batch equal the serial ones.
 The practical consequence: the twenty-map runs in the entries above were
 never a considered choice of sample size. Re-run anything worth deciding at
 a hundred maps or more.
-||||||| b07a0ea
 
 ## 2026-07-26 — the cadence effect is real; two corrections to get there
 
@@ -1355,6 +1354,66 @@ contents.
 thresholds set well below what was observed and far above what
 `evolve::features` reaches, so the property is a regression test rather
 than a number in a document.
+
+## 2026-07-26 — freeing the frozen armies changes the behaviour and not the result
+
+`plan.threatened_city` is an empire-wide fact and `force_orders` sent every
+force group to `Hold` whenever any city anywhere was under pressure. The
+shipped census reported 61% of holds as threat-held, but it counted a hold
+that way whenever the flag was *set*, including groups below the
+local-superiority floor that would have held regardless. Attributed to the
+disjunct that actually fired, the causal share is **34%**.
+
+Measured over 6,568 force-group turns in eight six-player games (74x46, 250
+turns, seeds 7000-7007), those holds were not a defensive posture at all:
+
+- `Hold` was **56.4%** of all force-group turns
+- **33.6% of holds** were groups that cleared the superiority floor and were
+  stopped only by the global flag — **19.0% of all group turns**
+- they stood a mean **13.2 hexes** from the emergency, and **83.1%** were
+  outside the six-hex radius that defines the threat, so they could not have
+  affected it whatever they did
+- **4.4 units** frozen per order
+
+Scoping the hold to groups that could plausibly arrive (the six-hex radius
+plus three turns of march at the slowest member's pace) does exactly what it
+was designed to do. Same eight seeds:
+
+| | before | after |
+|---|---|---|
+| `Hold` | 56.4% | 50.7% |
+| `Advance` | 17% | 23.5% |
+| holds by a group strong enough to advance | 19.0% | **10.4%** |
+| their mean distance from the emergency | 13.2 | **8.8** |
+
+**And it bought nothing.** Pre-registered before the run — challenger,
+control, settings, n and decision rule fixed in writing — `ai_eval
+advanced_relief_scoped advanced --pairs 120 --players 4 --width 60 --height
+38 --city-states 6 --turns 500 --seed 220000`:
+
+- 118/240 games (49.2%) for the scoped hold, paired-map score 49.2%
+- 14 map directions for, 16 against, exact sign **p=0.8555**
+- Wilson **40.4%..58.0%**, Elo-equivalent **-6** (CI -68..+85)
+- anytime e-process peak 1.00 for the treatment; not crossed
+- **`promotion gate: INCONCLUSIVE`**
+
+60x38 rather than the 24x16 default because the default map's maximum
+separation is below the relief radius, which would have made treatment and
+control nearly the same agent; 500 turns because a cap changes which agent
+wins (#282/#285) and this is a military change that pays late.
+
+The reading that survives is that **mobility was not the binding
+constraint.** An army freed to march still arrives with 81% of its units
+three or more eras stale and converts a spent garrison into a capture 22% of
+the time. Freeing 9% of force-group turns to advance moves nothing while
+what they advance *into* is unchanged.
+
+So the behaviour stays behind `AdvancedAi::scoped_relief_hold`, off by
+default, reachable as the `advanced_relief_scoped` entrant. It is worth
+re-running, unchanged, once siege conversion moves — which is the point of
+keeping it rather than reverting it. The census attribution fix lands
+regardless: it was reporting 61% where the truth is 34%, and that number is
+what made this look like the biggest available lever in the first place.
 
 ## 2026-07-26 — three free military superpowers, all worth nothing
 
@@ -1726,3 +1785,946 @@ Q or advantage, trained on returns for actions actually taken — not a
 state-value regression read greedily. The self-play loop is still required,
 but as the thing that generates action-conditioned returns rather than as a
 distribution fix.
+
+## 2026-07-26 — freeze the symptom: a causal test, and a design rule
+
+The previous entry blamed `policy_wide`'s collapse on the net's contact
+terms: an argmax optimising a *symptom* of strength rather than a cause.
+That was inferred from a correlation between chosen actions and one
+feature, and this session has already retracted two mechanisms inferred
+that way. So it was tested by denying the agent that specific symptom —
+`policy_wide_frozen` holds the two contact terms at their pre-action values
+while scoring candidates, so the net cannot reward an action for moving
+them. Nothing else changes: same net, same features, same everything.
+
+Same 120 maps as the collapse:
+
+| variant | games | maps for | against | Elo-equivalent |
+|---|---|---|---|---|
+| `policy` (25-wide, blind) | 108/240 (45.0%) | 9 | 21 | −35 |
+| `policy_wide` (contact free) | 34/240 (14.2%) | 1 | 87 | **−313** |
+| `policy_wide_frozen` (contact frozen) | **120/240 (50.0%)** | 16 | 16 | **0** |
+
+**Two features accounted for the entire collapse.** Denying them recovers
+−313 Elo to exact parity, and the recovered agent is better than the blind
+one it started as (50.0% against 45.0%) while genuinely acting — 16 maps
+won against 9, on 32 maps that broke against 30.
+
+That confirms the mechanism causally rather than by association, and it
+yields a design rule the earlier entries missed:
+
+> **A feature that makes a decision visible can simultaneously make it
+> exploitable. In any feature set consumed by an argmax over actions, every
+> feature must be one you would be content for the agent to maximise.**
+
+The 34-wide vector was designed for *visibility* — measured, and correct on
+its own terms: action visibility 44.5% → 86.1%. But visibility and safety
+are different properties, and the terms divide cleanly along that line.
+Material, HP, fortification and city fabric are **causal**: more of them is
+genuinely better, and an agent that maximises them is doing something
+sensible. Adjacency and gap are **correlational**: they are high in won
+games because a strong empire presses attacks, and an agent that maximises
+them charges into fights it loses. The visibility work needed both kinds;
+the ranking work can only survive the first.
+
+This is the cheapest available statement of what an action-conditioned
+value would buy. Q or advantage learns the return of *taking* the action,
+so a move into a losing fight is scored by what it costs, not by what it
+resembles. Until that exists, a feature audited only for visibility is not
+safe to hand to an argmax — and `policy_wide` is left in the tree as the
+demonstration.
+
+Both variants remain eval-only, and no default changed.
+
+## 2026-07-26 — an audit for what the argmax exploits
+
+The rule from the previous entry — that every feature handed to an argmax
+must be one you would be content for the agent to maximise — is only useful
+if someone remembers it. `PolicyAi::feature_pressure` makes it measurable:
+for each feature it reports the mean change the *chosen* action makes,
+beside the mean change an average legal candidate makes. A feature the
+policy is exploiting shows a chosen-delta far above the field's.
+
+That ratio is exactly how `policy_wide`'s collapse was found — contact at
+0.137 against the field's 0.002, seventy-eight times, while the agent lost
+material and 86% of its games. None of the instruments already in the
+repository would have shown it: the win rate said "bad" without saying
+why, the calibration check said the net was accurate, and the visibility
+table said the features were working as designed. All three were correct.
+
+`the_audit_detects_a_feature_the_argmax_exploits` pins it as a regression
+check: with the contact terms free the audit must flag them, and with them
+frozen it must not. A future feature set can be run through the same
+measurement before it is wired to an argmax rather than after it loses 300
+Elo.
+
+The audit reports a question, not a verdict. Heavy pressure on a *causal*
+feature is the policy working — an agent that pushes its own material up is
+doing what it should. Heavy pressure on a *correlational* one is the
+failure. Telling those apart still needs judgement about the game; what
+this removes is the need to first suspect that something is wrong.
+
+## 2026-07-26 — the measured agent ladder
+
+`strategic_deep` was promoted on evidence gathered entirely against
+`strategic`. The fleet's default major agent is `advanced`, so the
+comparison an operator actually needs was missing. It is now measured, on
+the same seed set and settings as everything else (four players, 200
+turns, 120 mirrored maps, seed 70000):
+
+| pairing | games | maps for | against | sign p | e | gate |
+|---|---|---|---|---|---|---|
+| `strategic_deep` > `advanced` | 136/240 (56.7%) | **22** | 6 | **0.0037** | 89 (crossed at 112) | INCONCLUSIVE |
+| `strategic_deep` > `strategic` | 142/240 (59.2%) | 29 | 7 | 0.0003 | 335 (crossed at 91) | PASS |
+| `strategic` > `advanced` | 130/240 (54.2%) | 20 | 10 | 0.0987 | 2.9 | INCONCLUSIVE |
+
+Plus the pre-registered 300-map run that carried the promotion:
+`strategic_deep` over `strategic`, 339/600 games, 56 maps to 17, sign
+p=0.0000, e=3.14e4, `promotion gate: PASS`.
+
+The ordering is consistent across every pairing: **`strategic_deep` >
+`strategic` > `advanced`**, and the promoted agent beats the scripted
+default by sign test and by anytime-valid evidence. The gate still reads
+INCONCLUSIVE against `advanced` for the reason established earlier — at a
+56.7% effect the Wilson bound needs roughly 300 maps, and this run is 120.
+
+Two things worth taking from the table beyond the ranking.
+
+**`strategic` has never been shown to beat `advanced` at adequate power.**
+It leans ahead at 20 maps to 10, but p=0.0987 and an e-value of 2.9 are not
+a result, and the 41.7%-at-four-players figure in older entries predates
+every instrument fix made since. Anyone treating the existing search agent
+as a known improvement over the scripted one is relying on numbers that
+were never resolvable.
+
+**Terminal score is 49.1% here too**, as it has been for every arm this
+session. The promoted agent wins more games without out-scoring anyone,
+which is exactly the signature of a change to victory-lane routing rather
+than to economy — the same reading the direction-resolution line was added
+to make legible.
+
+## 2026-07-26 — action-conditioned value from expert logs inherits the confound
+
+The corrected recommendation two entries ago was action-conditioned value —
+Q or advantage on returns for actions actually taken — on the grounds that
+it scores a move into a losing fight by what it costs rather than by what
+it resembles. That reasoning has a hole, and this session's record on
+unmeasured reasoning is three retractions, so it was measured before anyone
+built on it.
+
+A Q fit to logged play can only order actions the log contains. Over 480
+expert decision points:
+
+| quantity | value |
+|---|---|
+| legal move candidates offered per decision | 25.2 |
+| of those, candidates that raise contact | 3.9 (15%) |
+| expert turns that raised contact | **36%** of decisions |
+| share of offered candidates that can appear as a taken action | **≤ 3.96%** |
+
+Two things follow, and they point the same way.
+
+**Coverage is about four percent.** Roughly 96% of the actions a learner
+would consider never appear in the log at all, so Q has no signal for them
+and must extrapolate — which is the situation that produced the −313 result
+in the first place, moved from states to actions.
+
+**The expert takes contact-raising moves at more than twice the base
+rate** — 36% of its turns against 15% of candidates. So the log does not
+say "contact is bad"; it says contact-taking accompanies good play, because
+the scripted agent enters contact when the fight is favourable and declines
+when it is not. A Q fit to that learns the same association the state-value
+net learned. It is the *declined* moves — contact in unfavourable positions
+— that carry the corrective signal, and by construction they are the ones
+the log does not contain.
+
+So action-conditioned value is not by itself the fix. What distinguishes a
+good contact move from a bad one is absent from any purely observational
+corpus of a competent agent, however it is labelled. Getting it requires
+data that contains the bad version of the action: **on-policy exploration**
+that actually takes the losing move and records the loss, or **search**
+that plays the candidate out counterfactually instead of recognising it.
+
+That is the same conclusion the whole session keeps arriving at from
+different directions, and it is now measured rather than argued: the macro
+search wins games because a rollout is an experiment, and every learned
+component that failed was reading a correlation.
+
+## 2026-07-26 — the horizon has a ceiling, and the promoted agent is near it
+
+Doubling the search budget is the one change promoted this session, so the
+obvious follow-up is to retest the null results at the larger budget — the
+doctrine axis first, since a longer projection should let play styles
+separate. A probe answered that before an evaluation was spent on it, and
+the answer is no, for a reason that matters more than the retest would
+have.
+
+Spread between the four doctrine branches at one lane, three seeds, three
+sampled reviews each, four-player 200-turn games:
+
+| horizon | median spread | max spread | reviews where every branch is decided |
+|---|---|---|---|
+| 40 | 0.00451 | 0.01454 | 22% |
+| 80 | **0.00000** | 0.06162 | **56%** |
+| 120 | **0.00000** | 0.15994 | **89%** |
+
+The median collapses to zero while the maximum grows tenfold. That is
+saturation, not noise: a branch that reaches a decided game returns exactly
+1.0 or 0.0, so once every branch resolves inside the horizon they agree **by
+construction**, and the search is blind however good its evaluator is. At
+horizon 120, 89% of reviews are in that state.
+
+Three consequences.
+
+**The doctrine axis should not be retested at the promoted budget.** It
+would act less often, not more — the retest is answered.
+
+**`strategic_deep` is already over half saturated.** It projects 80 rounds,
+where 56% of these reviews are decided before the horizon ends. It wins
+anyway, and the promotion stands on 540 maps, but the natural next move —
+push the horizon further — is measured to be a dead end. The compute lever
+that has paid all session has a ceiling, and it is close.
+
+**The signal is bimodal, which suggests the fix.** Saturated reviews carry
+nothing; unsaturated ones carry *more* at longer horizons, with the maximum
+spread rising from 0.015 to 0.160. A fixed horizon averages those two
+regimes together. An adaptive one — project until the branches separate or
+the game decides, rather than for a fixed count — would spend rounds only
+where they still buy discrimination. That is the first concrete improvement
+to the macro search this session has identified that is not simply more
+compute, and it is untested.
+
+The threshold scales with how much game remains, so these percentages are
+specific to 200-turn four-player games and will bite later in longer ones.
+
+## 2026-07-26 — ★ PROMOTED: branches project from the plan in force
+
+`StrategicAi` handed every branch of its macro search a **freshly
+constructed** `AdvancedAi`. That discards the strategic plan, settler and
+builder assignments, `major_war_since`, the `peace_until` cooldown and the
+whole force-group table — so the projection answered *"what happens if I
+restart my planner and commit to this lane"* while standing in for *"what
+happens if I commit to this lane from here."*
+
+`branch_agent` now clones the agent in force and applies the branch's
+decision through the same three calls `take_turn` makes after a review
+(`retarget` / `adapt` / `reweight`), and only when they would change
+something. All three preserve campaign and unit-role memory by contract and
+drop only the plan, so a branch re-assesses under its new lane without
+amnesia. The counterfactual becomes an exact simulation of the decision being
+considered.
+
+**Pre-registered confirmation, fresh seed 132000, `--players 4 --pairs 500
+--turns 200`:**
+
+```
+game-win share: strategic_warm 553/1000 (55.3%)  strategic 447/1000 (44.7%)
+paired-map score: 55.3% (95% Wilson CI 50.9%..59.6%), Elo-equivalent +37 (CI +6..+68)
+paired direction: warm 87, neutral 379, strategic 34; sign p=0.0000
+anytime evidence: warm peak e=6.623e4, crossed at map 209; strategic peak e=1.000e0
+terminal-score direction: warm 271, neutral 23, strategic 206; sign p=0.0033
+promotion gate: PASS
+```
+
+Three disjoint seed sets:
+
+| seed | maps | for | against | sign p |
+|---|---|---|---|---|
+| 130000 | 120 | 17 | 10 | 0.2478 |
+| 131000 | 240 | 36 | 14 | 0.0026 |
+| 132000 | 500 | 87 | 34 | 0.0000 |
+| **pooled** | **860** | **140** | **58** | **5.2e-09** |
+
+**On by default, unlike `strategic_deep`.** That one costs 4× the macro-search
+compute on every game and therefore had to be opt-in; this costs one clone of
+a small struct where there was one construction of it, so every caller gets
+it — `strategic`, `strategic_deep`, `strategic_score`, soak, the fleet and the
+exhibition. `strategic_cold` is the frozen control that keeps every published
+pre-promotion `strategic` number reproducible. The league is unaffected: it
+rates `Weights` genomes over `AdvancedAi` and never constructs a `StrategicAi`.
+
+**What moved was routing, not the economy.** The promoted agent took 32
+domination seats against the control's 51, and 148 religious against 112,
+while terminal score moved 0.8 points. Domination converts at 3–8%, the worst
+lane on the board. This also refutes the mechanism originally proposed for the
+change — that a cold branch finds an empty force-group table and therefore
+*under*-projects the militarised lanes, which predicted more domination, not
+less. The run cannot separate which piece of retained state is responsible.
+
+### Two negative results that bracket it
+
+Both were pre-registered, both failed, and together they close a family of
+ideas rather than one idea.
+
+| change | what it does to a review | result |
+|---|---|---|
+| `strategic_h80` | 2× depth on **every** branch | 21 map directions to 5, p=0.0025 |
+| `adaptive_horizon` | stop as soon as the branches separate | 39.2%, Elo −76, p=0.0000 |
+| `focused_deepening` | same budget, concentrated on the leaders | 49.2%, p=0.8318 |
+
+Depth on all branches wins; depth on the branches that look best does nothing;
+stopping when they separate loses badly. **A shallow estimate is not
+rank-preserving with respect to the deep one** — a lane behind the adaptive
+baseline at depth 12 can be the best lane at depth 84 — so any within-review
+pruning discards real signal. That retires rotation, adaptive stopping,
+focused deepening, progressive widening and sequential halving together. The
+only lever that has ever worked on this search is raising the total.
+
+`focused_deepening`'s first run is worth recording separately because its
+headline was misleading. It scored 46.2% while **terminal score was a dead
+heat** (49.4%, 56 map directions to 57, p=1.0000): it built an equally good
+empire and stopped committing — 58.4% of player-turns uncommitted against the
+control's 44.9%, religious commitment 24.5% against 29.0%. Cause: a review is
+a *maximum over the surviving lanes*, and a maximum over one draw clears a
+fixed margin far less often than a maximum over six. **The commitment margin
+is calibrated to the size of the candidate set the argmax ranges over**, so
+any change to that set silently moves the decision threshold. That is also a
+mechanism for `rotate_lanes` measuring null. Read the plan-commitment table
+before the win rate whenever a treatment touches the candidate set.
+
+See `docs/SUPERHUMAN.md` for the design reading these three runs support.
+
+## 2026-07-26 — branch spread: the mechanism behind the promotion, and a population correction
+
+The promotion above was argued from a mechanism that the numbers then
+contradicted — a cold branch reaching for the army finds an empty force-group
+table, so the militarised lanes should be *under*-projected and the promoted
+agent should take *more* domination. It takes less. This is the measured
+mechanism instead.
+
+**Method.** Play a `StrategicAi` seat forward to a real mid-game position,
+skip the ones a prior would answer, then call `rollout()` for the adaptive
+baseline and every enabled lane exactly as `review` does, and record
+`max − min` over those values. 16–18 positions per configuration.
+
+| config | median spread | max | share above the 0.01 margin |
+|---|---|---|---|
+| 4p 24×16, cold branches | 0.0311 | 0.73 | 61% |
+| 4p 24×16, **warm branches** | **0.0622** | 0.75 | **78%** |
+| 3p 20×14, cold branches | 0.0491 | 0.62 | 94% |
+| 3p 20×14, **warm branches** | **0.0850** | 0.72 | 94% |
+
+**Projecting from the plan in force roughly doubles the spread between branch
+values.** The counterfactual discriminates about twice as well between lanes,
+because a cold branch's first act is to re-plan, which partially washes out
+the very difference the branch exists to measure. That is a mechanism for +37
+Elo that does not require any claim about which lane benefits.
+
+> ### ⚠ RETRACTED the same day — the measurement above is unpaired
+>
+> The table compares two arms that **played different games**. A warm agent
+> and a cold agent diverge from their first review, so they arrive at
+> different positions, and the comparison confounds the treatment with the
+> positions the treatment steers into. Re-measured properly by
+> `search_probe`, which flips the flag on **one agent at one position** and so
+> is paired:
+>
+> ```
+> 57 of 120 positions reached the rollouts (4p 24x16, warmup 60)
+>                       median      p90      max  >margin  decided  would commit
+>   warm (stock)        0.0550   0.5838   0.7205      61%      43%          28%
+>   cold (treatment)    0.0405   0.6077   0.7223      60%      46%          21%
+> paired: cold spread higher on 17, lower on 20, identical on 20; sign p=0.7428
+> ```
+>
+> **The spread difference is a coin flip.** The medians still differ in the
+> same direction, which is exactly how an unpaired comparison misleads: a real
+> per-position effect of zero can show a large difference in marginal medians.
+>
+> **What replaces it.** The two configurations **decide differently on 14 of
+> 57 positions — one review in four** — while the dispersion distribution is
+> unchanged. Fidelity does not sharpen the search's resolution; it moves its
+> answer. The honest mechanism for +37 Elo is that a faithful counterfactual
+> picks a different lane about a quarter of the time and those picks are
+> better. No dispersion claim survives, and neither does the force-group story
+> this entry was written to replace.
+>
+> The flip direction is 5 toward a lane against 9 toward adaptive (p=0.4240),
+> so not even the *sign* of the routing change is resolved at this sample.
+> Which lane benefits remains unexplained; only that the promotion is real
+> (860 maps, sign p=5.2e-09) and that it works by changing decisions.
+
+### Population correction: 0.0045 and 0.031 are both right
+
+The horizon-saturation entry records a median branch spread of **0.00451** at
+horizon 40 with a **maximum of 0.01454**. The median in the table above is
+larger than that maximum, so the two cannot be measuring the same set.
+
+A branch that reaches a decided game returns exactly 1.0 or 0.0, and the same
+entry records that **22% of reviews are in that state at horizon 40**. The
+0.0045 figure therefore describes the **undecided** subset, where every branch
+is a live position judged by score share. Over all reviews the median is
+0.031–0.085.
+
+The distinction matters because a whole hypothesis was built on the smaller
+number: that an ordinary review cannot clear the 0.01 commitment margin, so
+only decided branches can act, and lowering the margin should therefore
+convert search into action. `strategic_m002` (margin 0.002) tested it:
+
+```
+uncommitted player-turns: 47.3% -> 41.9%     lane switches/game: 2.33 -> 2.47
+paired-map score: 50.0% over 60 maps, 2 map directions to 2, sign p=1.0000
+```
+
+The gate binds on a minority of reviews and moving it does a minority-sized
+thing. Not promoted, not pursued further. **When quoting a spread, say which
+population it is over** — the two differ by an order of magnitude and they
+support opposite conclusions.
+
+## 2026-07-26 — `search_probe`, and what screening three known knobs says
+
+`search_probe` flips one flag on one agent at one position and reports the
+branch values a review would compare and the lane it would choose. Paired by
+construction, 48 seconds for 120 maps against about forty minutes for the
+`ai_eval` run it triages for. It is a screen: a flat reading refutes, a moved
+reading earns a pre-registered run and nothing more.
+
+Calibrating it against three knobs whose evaluation outcomes are already
+known, all at 57 paired positions, 4p 24×16, warmup 60, seeds 900..:
+
+| knob | known eval outcome | spread, paired | would-commit | flip direction |
+|---|---|---|---|---|
+| `--horizon 80` | **won** 21–5, p=0.0025 | 26 up, 11 down, p=0.0201 | 28% → 12% | 3 lane / 12 adaptive |
+| `--rotate` | **null** | 0 up, 32 down — *not comparable* | 28% → 7% | 0 lane / 12 adaptive |
+| `--cold` | **lost** 34–87 | 17 up, 20 down, p=0.7428 | 28% → 21% | 5 lane / 9 adaptive |
+
+Three things follow, and two of them retract earlier readings.
+
+**Commitment rate does not predict strength, in either direction.** The knob
+that won cuts it hardest but one (28% → 12%); the knob that measured null cuts
+it hardest (28% → 7%); the knob that lost cuts it least (28% → 21%). Two losing
+treatments happened to reduce it and that coincidence was written up as if it
+were a law. It is a diagnostic that a treatment is doing *something*, not
+evidence about what.
+
+**Spread is only comparable between arms that project the same number of
+branches.** Spread is `max − min` over the projected branches, so a treatment
+that shrinks the candidate set lowers it mechanically. `--rotate` cuts seven
+branches to about 2.7 — 224 projected branches against 85 — and duly reports
+spread lower on 32 of 32 positions with no bearing on quality. This is the same
+confound that makes the commitment margin a function of the candidate set. The
+probe now detects it and prints `[NOT COMPARABLE]`.
+
+**What the screen can honestly claim today is the negative half.** A treatment
+that leaves every branch value identical cannot change a decision, and that has
+happened here often enough to be worth two minutes (`INERT`, exit 3). Three
+calibration points cannot establish that any positive reading predicts a win,
+and this table should not be read as if they had: the winner raises spread and
+the loser is flat, but a single null sits outside that ordering because its
+spread reading is invalid. **Screen for inertness; decide with `ai_eval`.**
+
+## 2026-07-26 — the priors make 3× the search's lane decisions, and removing the biggest is null
+
+**Who decides the lane** (`search_probe --priors`, 200 four-player positions,
+warmup 60, seeds 900..):
+
+```
+  prior                        n     agrees median spread    decided
+  duel-religion                5         0%        0.0000       100%
+  urgent-counter               2         0%        0.1911        57%
+  irreversible-religion       92        15%        0.1106        32%
+
+who decides the lane, over 200 sampled reviews:
+  priors    answered   99 reviews and named a lane in   99 (100%)
+  rollouts  answered  101 reviews and named a lane in   33 (33%)
+  -> the priors make 3.0x as many lane decisions as the search does
+```
+
+A prior always names a lane; the rollouts name one only when a lane clears the
+adaptive baseline by the commitment margin, and two times in three none does.
+So the macro search picks roughly a **quarter** of the lanes this agent plays,
+and `viable_religious_commitment` picks half of them alone — disagreeing with
+the projection on 85% of the reviews it answers, always by taking Religion
+where the search would stay adaptive.
+
+Note this corrects an emphasis: `docs/AI_GAPS.md` names `urgent_counter` as the
+dominant prior, measured over whole games. At the stage where lanes are chosen
+it is not close — 2 against 92.
+
+**Removing it is null.** `strategic_noprophet` (the prior disabled), 240
+mirrored maps at fresh seed 160000:
+
+```
+game-win share: noprophet 238/480 (49.6%)  strategic 242/480 (50.4%)
+paired-map score: 49.6% (95% Wilson CI 43.3%..55.9%), Elo-equivalent -3
+paired direction: noprophet 12, neutral 214, strategic 14; sign p=0.8450
+terminal-score direction: noprophet 58, neutral 137, strategic 45; p=0.2369
+promotion gate: INCONCLUSIVE
+```
+
+Both pre-registered predictions fired, so this is a null and not a misfire:
+search exposure **57% → 63%** with `irreversible-religion` priors **211 → 0**,
+and religious commitment **30.3% → 26.8%**.
+
+### Why a 3× decision share converts to a 0× strength share
+
+**`adaptive` is not a lane.** Returning `None` hands the turn back to
+`AdvancedAi`'s own victory planner, which frequently picks the same lane the
+prior named. So 85% of those reviews changed their *label* while religious
+victories moved only 171 → 164. The prior is largely **redundant with** the
+behaviour underneath it rather than additional to it.
+
+**A disagreement rate is an upper bound on behavioural impact, and a loose
+one.** `search_probe` now says so in its own output. This is the third
+confound of this shape recorded here — after the unpaired-trajectory
+comparison and the unequal-branch-count spread — and they share a root: a
+number computed at the decision layer does not measure the play layer.
+
+### What this closes
+
+| treatment | lane decisions changed | strength |
+|---|---|---|
+| `strategic_noprophet` | ~42% of all reviews | **0** (p=0.8450) |
+| `focused_deepening`, rank-pruned | uncommitted turns 44.9% → 58.4% | **0** (p=0.8318 repaired) |
+| warm branches (#413) | 1 review in 4 | **+37 Elo** |
+
+Changing *more* lane decisions is uncorrelated with strength, and the
+treatment that won changed the fewest. **Lane routing is not the lever.** The
+macro search's only output is a lane, so what remains there is compute — which
+works, and whose ceiling is already measured at horizon 80. Effort belongs on
+a decision that repeats.
+
+## 2026-07-26 — the production search is not blind, and its ranking is horizon-independent
+
+`ProductionSearchAi` is a recorded negative result (9 map directions to 21,
+p=0.0428) whose module note names a diagnosis it was never run against: *"if
+every branch returns the same number the horizon is too short for the build to
+land, and no win rate would say so."* It exposes `candidate_values` for exactly
+that check. `search_probe --production` takes it.
+
+```
+production audit: 71 city decisions over 40 maps (4p 24x16, warmup 60)
+
+  candidates projected per decision   5.0
+  values the evaluator can separate   3.7
+  median spread across candidates     0.015657
+  p90 spread                          0.070006
+  decisions where every candidate scores the SAME   3 of 71 (4%)
+  same pick at horizon 200 as at the shipped ceiling  54 of 56 (96%)
+```
+
+**Both halves of the diagnosis are false.**
+
+- **Not blind.** The evaluator separates 3.7 of 5.0 candidates; only 4% of
+  decisions score every candidate alike. Contrast `PolicyAi`, whose computed
+  gain was exactly zero on 96.4% of candidates — that is what blind looks like.
+- **Not horizon-bound.** Raising the ceiling from 40 to 200, long enough for
+  any build in the game to land and compound, leaves the chosen item unchanged
+  on 96% of decisions. `ProductionSearchAi::max_horizon` exists so this stays
+  re-measurable.
+
+So the search sees the difference, keeps seeing the same difference once every
+payoff has landed, and still loses to the scripted governor.
+
+### What that leaves: the objective, not the window
+
+**Score share is not win probability.** The lane search works because its
+branches reach *decided* games and return exactly 1.0 or 0.0 — 22% of reviews
+at horizon 40, 56% at 80. A production rollout starting mid-game and stopping
+40 or 200 rounds later essentially never decides, so it ranks entirely by a
+proxy, and on this decision the governor's hand-tuned sequencing beats that
+proxy.
+
+That also explains `production_net` cleanly: it swapped one function of the 25
+empire aggregates for another, when the problem is that **no** function of them
+is win probability.
+
+### What this retires, before it was built
+
+The obvious repair — make the rollout cheap enough (sealed per-city
+simulation, frozen rivals) to afford a payoff-length horizon — is aimed at a
+defect that is not there, and is **predicted-null**. It was on the roadmap as
+M4 in `docs/SUPERHUMAN.md` and is retired there, on measurement rather than on
+a run.
+
+The surviving route is the one the module already named: branches continued to
+a **real result**. A full continuation per candidate is roughly seventy times
+the cost of a game, so it is an offline labeller feeding a distilled policy —
+`docs/SUPERHUMAN.md` M6 then M5 — not an online agent.
+
+## 2026-07-26 — what an outcome label would actually be worth
+
+Two closed lines both ended at the same sentence — score share is not win
+probability — and both pointed at the same repair: continue each candidate to
+a **real result** and label it with the outcome. Before building that,
+`search_probe --outcome` measures the label it would produce. Every candidate
+of a city decision is continued to a natural end at the stock 500-turn budget.
+
+```
+outcome audit: 51 city decisions, every candidate continued to a real result
+               (4p 24x16, warmup 60, 500-turn budget)
+
+  candidates continued per decision              5.0
+  decisions where the label DISCRIMINATES        14 of 51 (27%)
+  ...of those, proxy pick == outcome pick         3 of 14 (21%)
+  ...of those, the proxy's pick WON its game      6 of 14 (43%)
+```
+
+**On 73% of decisions every candidate leads to the same outcome.** The label
+carries no signal there, whatever it costs to produce — and it costs about
+seventy times a game per decision. Where it does discriminate, score share
+picks the winning candidate 43% of the time, near chance, so the headroom is
+real; it just exists on about a quarter of decisions.
+
+**27% is an upper bound, not an estimate.** The engine is deterministic, so
+each continuation is a single sample and a build that "wins" may win for
+reasons unrelated to it. Chaotic divergence and causal effect are
+indistinguishable in this design, and — because the same position and the same
+agents always produce the same game — the label cannot be denoised by
+repeating it.
+
+**What that implies for the design.** An outcome-labelled corpus built from
+single continuations would train on noise for three quarters of its rows. The
+fix is replication across *opponents*, not more decisions: continue each
+candidate against several distinct rival policies and label with the resulting
+win rate. `data/league` already maintains a rated pool of distinct strategies,
+which is the natural source. That is a larger job than the labeller as
+originally scoped, and it is the honest version of it.
+
+## 2026-07-27 — replicating the outcome label across opponents: the noise floor
+
+The previous entry said a single continuation cannot be denoised — the engine is
+deterministic — and that the fix is replication across *opponents*.
+`search_probe --outcome --replicas K` does that: the searching seat keeps the
+stock agent while the rivals are drawn from a pool of five distinct-but-sane
+policies (the four `Doctrine` perturbations of the stock genome, each clamped by
+evolution's own per-gene bounds, plus the frozen legacy planner). 850 full games
+at the stock 500-turn budget, 12 minutes wall.
+
+```
+outcome audit: 34 city decisions, 5 candidates, 5 opponent replicas each
+
+  decisions where the label DISCRIMINATES         8 of 34 (24%)
+  candidates whose replicas DISAGREED            48 of 170 (28%)
+  median win-rate spread across candidates       0.20
+  decisions separating by >= 0.4 win rate         9 of 34 (26%)
+```
+
+**Replication does denoise, and it reveals the label is under its own noise
+floor.** 28% of candidates changed outcome when only the opponents changed, so a
+single continuation is genuinely noise for about a quarter of them. But a win
+rate over K replicas carries a standard error of `sqrt(p(1-p)/K)` — **0.224 at
+K=5** — and the median spread *between* candidates is **0.20**. The signal is
+smaller than the error on each measurement of it.
+
+| replicas | SE | resolves a true gap of |
+|---|---|---|
+| 5 | 0.224 | 0.89 |
+| 20 | 0.112 | 0.45 |
+| 50 | 0.071 | 0.28 |
+| **100** | **0.050** | **0.20** |
+
+So resolving the effect that is actually there needs about **100 replicas per
+candidate, twenty times this run**: 4 hours for these 34 decisions, and roughly
+**1200 hours** for a 10,000-decision corpus at 873 ms per game. A pilot is
+affordable; the corpus is not, on this machine.
+
+### The general criterion, which is the durable part
+
+> **Search pays on a decision whose effect exceeds the outcome noise floor.**
+
+That is why the lane search works and the production search does not, and it is
+measurable in advance for either. A lane branch reaches a decided game 22% of the
+time at horizon 40 and 56% at 80, returning exactly 1.0 or 0.0 — an effect of 1.0
+against a floor near zero. A build choice moves the win rate by about 0.20 against
+a floor of 0.224 at affordable replica counts.
+
+**Measure the ratio before building search for any decision.**
+`search_probe --outcome --replicas K` prints it, including the replica count that
+would be required. This is the same discipline that retired the sealed-rollout
+family and the commitment-margin hypothesis, applied one level up: not "does the
+treatment fire" but "is there anything here to find".
+
+## 2026-07-27 — ★ SHIPPED: the first evolved genome, and what it replaces
+
+Every strategic agent in this repository resolves its genome through
+`evolve::load_champion("evolved").unwrap_or_default()`. `evolved/` was
+gitignored and **no `best.json` existed on this machine or in a fresh clone**,
+so `advanced`, `advanced_evolved`, `strategic`, `strategic_deep`, the
+exhibition and the fleet all silently played `Weights::default()`. The
+hand-written defaults were never the intended agent — they were what the
+loader returned when the intended one was missing. **Every strength number
+published before today was measured on top of that.**
+
+`data/evolved/best.json` is now a committed champion, on the same arrangement
+as `data/league`: `.gitignore` anchors `/evolved/` to the repo root only, and
+`load_champion` prefers a local `evolved/` so an in-progress run is never
+shadowed by the snapshot.
+
+### How it was earned
+
+`civvis evolve --pop 24 --generations 25 --games 96 --players 4 --width 24
+--height 16 --turns 500 --seed 7`, promoted at generation 2 by the unmodified
+gate: SPRT **22–32 = 40.7%** against the incumbent where parity at a
+four-player table is 25% (Fishtest-style, H1 0.40, LLR bounds ±2.94), holdout
+no regression.
+
+Then evaluated against the defaults it replaces, pre-registered, at the stock
+500-turn budget:
+
+```
+ai_eval advanced_evolved advanced --players 4 --pairs 1300 --seed 172000 --turns 500
+
+game-win share: advanced_evolved 1419/2600 (54.6%)  advanced 1181/2600 (45.4%)
+paired-map score: 54.6% (95% Wilson CI 51.9%..57.3%), Elo-equivalent +32 (CI +13..+51)
+paired direction: evolved 253, neutral 913, advanced 134; sign p=0.0000
+anytime evidence: evolved peak e=1.601e7, crossed at map 746
+terminal-score direction: evolved 836, neutral 2, advanced 462; sign p=0.0000
+promotion gate: PASS
+```
+
+| seed | maps | for | against | sign p |
+|---|---|---|---|---|
+| 170000 | 240 | 46 | 27 | 0.0344 |
+| 171000 | 500 | 80 | 51 | 0.0141 |
+| 172000 | 1300 | 253 | 134 | 0.0000 |
+| **pooled, disjoint** | **2040** | **379** | **212** | **~1e-13** |
+
+Two earlier runs were reported here as unpromoted positives because they read
+INCONCLUSIVE on the fixed-*n* Wilson bound. At 54.6% that bound needs about
+1200 maps; 1300 were run so the criterion could be met rather than loosened.
+
+### What is and is not established
+
+- **Established:** the committed genome beats `Weights::default()` for
+  `AdvancedAi` at four players and the stock budget, on three disjoint seed
+  sets.
+- **Not established:** transfer to `StrategicAi`. `strategic` and
+  `strategic_deep` load the same champion and wrap an `AdvancedAi`, so they
+  inherit it, but no paired run has measured them under it. #466 is testing a
+  league-selected genome under `strategic_deep`; this one wants the same
+  treatment before any claim is made about those entrants.
+- **Not established:** transfer to other player counts or map sizes. The
+  genome was evolved at 4p on 24×16 and evaluated there. `auto_dimension`
+  gives 60×38 for four players in ordinary play, and that is a different
+  distribution.
+- **Superseded numbers:** any published comparison whose entrants resolve
+  through `load_champion` now differs from its recorded value, because the
+  loader no longer returns `None`. Re-measure rather than compare across the
+  boundary.
+
+## 2026-07-27 — a better champion, and carrying it where it is actually used
+
+Two corrections to the entry above, both measured.
+
+### 1. Generation 14 is the champion, not generation 2
+
+The GA kept running. Generation 14 promoted through the same unmodified gate
+(SPRT 36–62 = 36.7% against the incumbent where parity is 25%, holdout no
+regression) with the run's best validation, 141.6 against 125.6.
+
+Evaluated against the **same control, the same 1300 maps and the same seed**
+as generation 2's gate run, so the two are directly comparable:
+
+| champion | paired score | Wilson | Elo | map directions | sign p |
+|---|---|---|---|---|---|
+| gen 2 | 54.6% | 51.9–57.3% | **+32** (+13..+51) | 253 – 134 | 0.0000 |
+| **gen 14** | **57.0%** | **54.3–59.7%** | **+49** (+30..+68) | **304 – 122** | 5.2e-19 |
+
+Both pass. Generation 14 is +17 Elo above generation 2 with barely overlapping
+intervals, so it replaces it in `data/evolved/best.json`.
+
+### 2. The committed file alone would never have reached a game
+
+`load_champion`'s `data/` fallback resolves against the **current working
+directory**. `tools/spectator_supervisor.py` builds from `origin/main` in a
+private worktree, `promote_binary()` copies only the binary, and the server
+runs with the *deployment* checkout as its cwd — 548 commits behind
+`origin/main` when this was written. The exhibition, the fleet, and any copied
+binary would have gone on loading `Weights::default()` while the repository
+contained a champion.
+
+The genome is now compiled in with `include_str!`, exactly as `rules.rs`
+already embeds all 29 ruleset files. Resolution order where a tree exists is
+unchanged — local `evolved/`, then `data/evolved/`, then the built-in — so an
+in-progress run still overrides the snapshot and a genome can still be swapped
+without rebuilding. The built-in answers only for the canonical `evolved`
+directory, because `--artifact-dir` asks about *that* directory and
+`--require-artifacts` depends on the answer being honest.
+
+**The general shape, which has now cost this session twice:** a number true in
+one context read as true in another. The genome was present in the repository
+and absent in the process; the fallback was correct in a checkout and wrong in
+deployment. Ship-and-verify means verifying where the code runs, not where it
+was written.
+
+## 2026-07-27 — PRE-REGISTRATION: the shipped genome may be tuned for the wrong map
+
+Written before the runs report, so the prediction is on record rather than
+fitted to the outcome.
+
+`data/evolved/best.json` was evolved and validated entirely at **4 players on
+24×16**. The exhibition runs **6 players on 74×46 with 9 city-states**
+(`tools/spectator_supervisor.py`'s own command line).
+
+```
+validation : 24x16 =  384 tiles / 4 players =  96 tiles per player
+deployment : 74x46 = 3404 tiles / 6 players = 567 tiles per player
+             -> 5.9x more room per player where it actually runs
+```
+
+The champion's expansion genes moved sharply toward building tall:
+
+| gene | default | champion | change |
+|---|---|---|---|
+| `city_target` | 4.000 | 2.408 | **−40%** |
+| `settler_min_pop` | 2.000 | 4.457 | **+123%** |
+| `settle_dist` | 0.400 | 0.692 | +73% |
+| `min_city_dist` | 4.000 | 3.638 | −9% |
+| `settler_stop_turn` | 150.0 | 143.2 | −5% |
+
+It targets 40% fewer cities and demands a city more than twice as populous
+before producing a settler. On 96 tiles per player that is correct — there is
+nowhere to put more cities. On 567 tiles per player, land is nearly free and
+under-expansion is a severe error.
+
+**Prediction: the shipped genome under-expands at the deployment configuration
+and may be weaker than `Weights::default()` there.** The eval prints city
+counts, so the mechanism is checkable independently of the win rate.
+
+**Runs in flight**, both pre-registered, fresh disjoint seeds, stock budget:
+
+```
+ai_eval advanced_evolved advanced --players 6 --width 74 --height 46 \
+        --city-states 9 --pairs 200 --seed 190000 --turns 500
+ai_eval strategic_deep strategic_deep_default --players 4 --pairs 500 \
+        --seed 180000 --turns 500
+```
+
+**If the prediction holds**, the artifact needs scoping to small four-player
+maps or re-evolving at the deployment configuration, and this file will say so.
+**If it is refuted**, the genome transfers and the mechanism above is wrong.
+
+### The process failure this exposes, which is not statistical
+
+The genome carries a 1300-map validation, a 500-map confirmation and a 240-map
+pilot. **All three used the configuration it was evolved on.** Three
+independent seed sets cannot detect a mismatch between where a thing is
+measured and where it is deployed — that is not a power problem, it is a
+different error, and adding maps would never have found it.
+
+It is the second instance of that error in two days. The first was the working
+directory: `data/evolved/best.json` resolved in a checkout and not in the
+process that serves games, until the genome was compiled into the binary.
+**Both were invisible to every statistic and visible immediately on reading
+what the deployment actually does.**
+
+## 2026-07-27 — every result in this file was measured at one map density
+
+The entry above pre-registers a mismatch for the shipped genome: evolved and
+validated at 4 players on 24×16, deployed at 6 players on 74×46. Checking
+whether that was one experiment's mistake or a property of the harness:
+
+```
+recorded `ai_eval` commands in this file          20
+      ... that specify a map size                  1   (the deployment check itself)
+ai_eval defaults                                  --width 24 --height 16 --players 2
+```
+
+**Nineteen of twenty ran at 24×16.** So every strength number in this
+ledger — `strategic_r20`, `strategic_h80`, the `strategic_deep` promotion,
+`policy_wide`'s −313, branch fidelity's +37, the genome's +49 — was measured at
+
+```
+     24x16 / 4 players =  96 tiles per player
+     74x46 / 6 players = 567 tiles per player   (what the exhibition runs)
+```
+
+**about one sixth of the deployment density**, and none has been checked for
+density sensitivity.
+
+### This is a caveat, not a retraction
+
+Mechanisms differ in how much density can matter to them, and the difference is
+not rhetorical:
+
+- **Expansion weights are directly coupled.** `city_target`, `settler_min_pop`
+  and `settle_dist` answer "how many cities can I fit and when should I stop",
+  which is a question *about* density. The shipped genome moved `city_target`
+  −40% and `settler_min_pop` +123%, which is the correct answer at 96 tiles per
+  player and plausibly the wrong one at 567. That one has a mechanism and a
+  pre-registered test.
+- **Branch fidelity has no obvious coupling.** Projecting a rollout from the
+  planner in force rather than a fresh one is a construction fix; nothing in it
+  refers to available land. Lower risk — but unchecked, which is a different
+  thing from safe.
+- **Macro-search depth and cadence are in between.** More room means longer
+  games and different victory-lane dynamics, so the horizon that saturates at
+  24×16 need not saturate at 74×46. The 22/56/89% saturation table is itself a
+  24×16 measurement.
+
+### What to do about it
+
+Cheap and worth doing: **state the map size in every recorded command.** Nineteen
+entries here do not, so a reader cannot tell what was measured without knowing
+the binary's defaults.
+
+Expensive and worth doing selectively: re-measure the promoted changes at
+deployment density. A deployment-config game costs roughly 200× a 24×16 one, so
+this is a per-result decision, not a sweep. Note that **matching density does
+not require matching dimensions** — 47×47 at four players is 552 tiles per
+player, close to deployment, at about 6× the cost of 24×16 rather than 200×.
+
+The general form, which has now cost this session twice: **a number is true
+inside the conditions that produced it.** The first instance was a working
+directory, the second is a map density, and both were invisible to every
+statistic computed on top of them.
+
+## 2026-07-27 — REFUTED: the genome transfers to the deployment configuration
+
+The pre-registration above predicted that the shipped genome would
+**under-expand** at 6 players on 74×46, because it moved `city_target` −40% and
+`settler_min_pop` +123% while being evolved at one sixth the density. The run
+it named has reported.
+
+```
+ai_eval advanced_evolved advanced --players 6 --width 74 --height 46 \
+        --city-states 9 --pairs 200 --seed 190000 --turns 500
+
+mirrored head-to-head: 200 maps, 400 games, 6 players, average 388.3 turns
+game-win share: advanced_evolved 217/400 (54.2%)  advanced 183/400 (45.8%)
+paired-map score: 54.2% (95% Wilson CI 47.3%..61.0%), Elo-equivalent +30
+paired direction: evolved 58, neutral 101, advanced 41; sign p=0.1074
+terminal-score direction: evolved 131, neutral 0, advanced 69; sign p=0.0000
+promotion gate: INCONCLUSIVE
+```
+
+**The prediction is wrong, and wrong on its own mechanism.**
+
+| | cities | pop | score |
+|---|---|---|---|
+| `advanced_evolved` | **5.39** | 65.1 | 548.9 |
+| `advanced` (defaults) | 4.76 | 59.5 | 501.3 |
+
+The champion builds **13% more cities** at deployment density, not fewer. Its
+paired score there (54.2%) is within noise of its score at the configuration it
+was evolved on (54.6% over 1300 maps), and terminal score separates decisively
+in its favour, 131–69 at p=0.0000. The gate reads INCONCLUSIVE only on the
+fixed-*n* Wilson bound at 200 maps, which is a power statement, not a null.
+
+### Why the reasoning failed
+
+`city_target` is a *target*, not a rate. Reading one gene's direction and
+inferring a behaviour ignored the rest of the genome it operates with —
+`settle_dist` moved +73% in the same champion, and the settling decision is a
+joint function of several weights plus the map. **A 40% cut to one parameter
+produced 13% more cities.**
+
+The general lesson is narrower than "check your deployment config", which the
+pre-registration got right, and it is this: **genome parameters interact, so
+behaviour cannot be read off a single weight's direction.** The mechanism was
+invented from a table of deltas and it did not survive contact with a
+measurement of the behaviour itself.
+
+What made this a clean refutation rather than a story was pre-registering the
+prediction, the seed and the size before the run, in a commit that predates it.
+
+### What stands
+
+- The genome is favourable at **both** densities measured: 54.6% at 4p/24×16
+  over 1300 maps (gate PASS), 54.2% at 6p/74×46 over 200 maps (underpowered).
+- `docs/EVAL.md`'s "not established" list loses the map-size entry and keeps
+  the rest.
+- The **harness-wide** caveat from the previous entry is untouched: 19 of 20
+  recorded runs still used one density, and this is the first result checked
+  across two. It came out well; that is one data point, not a general licence.

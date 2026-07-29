@@ -5,10 +5,10 @@ use std::time::Instant;
 use civvis::ai::{run_game, AdvancedAi, Ai};
 use civvis::game::{
     default_difficulty, default_speed, Game, GameOptions, LeaderPool, VictoryConditions,
-    DEFAULT_DISASTER_INTENSITY, GAME_MODES,
+    WarRecord, DEFAULT_DISASTER_INTENSITY, GAME_MODES,
 };
 use civvis::rules::Rules;
-use civvis::setup::{GameSpeed, MapPoles, MapScript, MapSize, MapTopology};
+use civvis::setup::{self, BaseRuleset, GameSpeed, MapPoles, MapScript, MapSize, MapTopology};
 
 fn arg(args: &[String], key: &str, default: i64) -> i64 {
     args.iter()
@@ -122,13 +122,9 @@ fn auto_dimension(args: &[String], key: &str, players: i64, width: bool) -> i32 
 }
 
 /// The world's shape, which is asked for separately from what fills it.
-/// `--map true_start_earth` is the one type that overrules it: Earth is drawn
-/// from real longitudes and latitudes and closes on itself.
+/// Fixed geography changes where the land comes from, not which shape it is
+/// sampled onto: even True Start Earth can be a flat atlas or a globe.
 fn map_topology(args: &[String]) -> MapTopology {
-    let script = MapScript::from_id(&arg_text(args, "--map", "pangaea")).unwrap_or_default();
-    if script.is_fixed_geography() {
-        return MapTopology::Planet;
-    }
     // `--map planet` named a world type before the globe became a shape of its
     // own, and still means both halves of what it meant then.
     let default = if arg_text(args, "--map", "pangaea") == "planet" {
@@ -142,6 +138,34 @@ fn map_topology(args: &[String]) -> MapTopology {
 /// Whether the world has cold ends.
 fn map_poles(args: &[String]) -> MapPoles {
     MapPoles::from_id(&arg_text(args, "--poles", "poles")).unwrap_or_default()
+}
+
+/// Which published game's rules the world is played by.
+fn base_ruleset(args: &[String]) -> BaseRuleset {
+    let id = arg_text(args, "--ruleset", BaseRuleset::default().id());
+    BaseRuleset::from_id(&id).unwrap_or_else(|| {
+        eprintln!("unknown ruleset {id:?}; this build models civ6");
+        std::process::exit(2);
+    })
+}
+
+/// How far into history the game opens.
+///
+/// A rung of the ladder that is declared but not built yet is refused here
+/// rather than quietly played as the Ancient era — the whole point of listing
+/// it is that it is not the same game.
+fn start_era(args: &[String]) -> usize {
+    let id = arg_text(args, "--start-era", setup::stock_start_era_id());
+    setup::start_era_from_id(&id).unwrap_or_else(|| {
+        let playable: Vec<&str> = setup::playable_start_eras().map(|spec| spec.id).collect();
+        let known = setup::START_ERAS.iter().any(|spec| spec.id == id);
+        if known {
+            eprintln!("cannot open in the {id:?} era yet; choose one of: {}", playable.join(", "));
+        } else {
+            eprintln!("unknown start era {id:?}; choose one of: {}", playable.join(", "));
+        }
+        std::process::exit(2);
+    })
 }
 
 /// Difficulty and speed are chosen the same way everywhere: by name, against
@@ -201,6 +225,8 @@ fn game_options(args: &[String], players: i64, seed: u64) -> GameOptions {
         teams
     };
     GameOptions {
+        base_ruleset: base_ruleset(args),
+        start_era: start_era(args),
         map_script: MapScript::from_id(&arg_text(args, "--map", "pangaea"))
             .unwrap_or(MapScript::Pangaea),
         map_topology: map_topology(args),
@@ -310,7 +336,7 @@ fn standings(g: &Game) {
                 w.civ,
                 w.id,
                 g.victory_type.clone().unwrap_or_default(),
-                g.turn
+                g.reported_turn()
             );
         }
         None => println!(
@@ -508,8 +534,19 @@ fn main() {
                         // ended in a white peace reads exactly like a game of
                         // uninterrupted peace. Count what the declarations
                         // actually achieved.
-                        let wars = g.wars.len();
-                        let (units_lost, cities_taken) = g.wars.values().fold(
+                        // `Game::wars` holds only the wars still running:
+                        // `close_war_record` removes a finished one and pushes
+                        // it to `concluded_wars`. Reading the live map alone
+                        // therefore hid every war that ended — which is every
+                        // war that was *won*, and every white peace this block
+                        // was written to make legible. Measured over eight
+                        // six-player games it saw 6 of 39 declarations, 96 of
+                        // 317 unit losses, and 0 of 13 city captures, while
+                        // `ended_in_peace` could not be anything but zero.
+                        let all_wars: Vec<&WarRecord> =
+                            g.wars.values().chain(g.concluded_wars.iter()).collect();
+                        let wars = all_wars.len();
+                        let (units_lost, cities_taken) = all_wars.iter().fold(
                             (0u32, 0u32),
                             |(units, cities), war| {
                                 (
@@ -519,16 +556,15 @@ fn main() {
                                 )
                             },
                         );
-                        let capitals_taken = g
-                            .wars
-                            .values()
+                        let capitals_taken = all_wars
+                            .iter()
                             .flat_map(|war| war.highlights.iter())
                             .filter(|highlight| highlight.kind == "capital_captured")
                             .count();
                         // How long the declarations lasted, because a war that
                         // ends in a handful of turns cannot take a walled city
                         // whatever army was pointed at it.
-                        let (turns_at_war, ended) = g.wars.values().fold(
+                        let (turns_at_war, ended) = all_wars.iter().fold(
                             (0u32, 0usize),
                             |(turns, ended), war| {
                                 let stop = war.ended.unwrap_or(g.turn);
@@ -547,7 +583,7 @@ fn main() {
                         // that only ever produces its own declaration is
                         // legible as exactly that.
                         let mut events: BTreeMap<&str, usize> = BTreeMap::new();
-                        for highlight in g.wars.values().flat_map(|war| war.highlights.iter()) {
+                        for highlight in all_wars.iter().flat_map(|war| war.highlights.iter()) {
                             *events.entry(highlight.kind.as_str()).or_default() += 1;
                         }
                         let events: Vec<String> = events
@@ -607,7 +643,7 @@ fn main() {
                         Some(format!(
                             "seed {:3}  t{:<4} {:<10} {:<8} majors_alive={}/{} cities={:<2} cs_alive={}/{} [{:.2}s]{}",
                             seed,
-                            g.turn,
+                            g.reported_turn(),
                             g.victory_type.clone().unwrap_or_default(),
                             w.map_or("-", |w| w.civ.as_str()),
                             majors.iter().filter(|p| p.alive).count(),
@@ -899,11 +935,11 @@ fn main() {
                 players: players as usize,
                 width: auto_dimension(&args, "--width", players, true),
                 height: auto_dimension(&args, "--height", players, false),
-                // `eval_game` pays 100 for an outright win on top of a ~50
-                // average score share, but at 160 turns almost nothing reaches
-                // a victory, so the win term that is supposed to decide
-                // champion promotion almost never fired and fitness was score
-                // at an arbitrary cutoff. See `stock_turns`.
+                // Selection reads continuous score and combat shares, but the
+                // separate promotion SPRT still decides on outright wins. At
+                // 160 turns almost nothing reaches a victory, so confirmation
+                // would judge arbitrary cutoffs rather than completed games.
+                // See `stock_turns`.
                 max_turns: arg(&args, "--turns", stock_turns(&args)) as u32,
                 seed: arg(&args, "--seed", 1) as u64,
                 threads: arg(&args, "--threads", 8) as usize,
@@ -961,6 +997,8 @@ fn main() {
                     width: auto_dimension(&args, "--width", players, true),
                     height: auto_dimension(&args, "--height", players, false),
                     seed,
+                    base_ruleset: play_options.base_ruleset,
+                    start_era: play_options.start_era,
                     map_script,
                     map_topology,
                     map_poles,
@@ -975,7 +1013,6 @@ fn main() {
                     leader_pool: play_options.leader_pool,
                     civs: play_options.civs,
                     supervised: args.iter().any(|a| a == "--supervised"),
-                    restart_ms: arg(&args, "--restart-ms", 5_000).max(5_000) as u64,
                     league_dir: {
                         let dir = arg_text(&args, "--league", "");
                         (!dir.is_empty()).then_some(dir)
@@ -1113,8 +1150,8 @@ fn main() {
                 "usage: civvis <simulate|soak|benchmark|tournament|league|rating|play|evolve|validate|pedia> \
                       [--players N] [--seed N] [--turns N] [--width N] [--height N] \
                       [--city-states N] [--games N] [--ais a,b] [--ratings path] [--port N] [--no-open] \
-                      [--map land_only|lakes|inland_sea|pangaea|continents|small_continents|islands|water_world|true_start_earth] \
-                      [--shape flat|planet] [--poles poles|no_poles] \
+                      [--map land_only|lakes|inland_sea|grand_canals|grand_canals_2|pangaea|continents|small_continents|islands|water_world|true_start_earth] \
+                      [--shape flat|planet] [--poles poles|randomized] \
                       [--difficulty settler|chieftain|warlord|prince|king|emperor|immortal|deity] \
                       [--speed online|quick|standard|epic|marathon] \
                       [--disasters 0|1|2|3|4] [--barbarians on|off] \
@@ -1122,11 +1159,50 @@ fn main() {
                       [--leader-pool civ6|expanded] \
                       [--human-seats 0,1] [--teams 0,0,1,1] [--mods path/to/mod,path/to/other] \
                       [--victories science,culture,religious,diplomatic,domination,score] \
-                      [--spectate] [--supervised] [--restart-ms N] [--resume checkpoint.json] [--strict] \
+                      [--spectate] [--supervised] [--resume checkpoint.json] [--strict] \
                       [--league dir] [--league-record] [--standings [--civ Rome | --civs]] [--rounds N] \
                       [--evolve-every N] [--pop N] [--worker ID] [--lease-seconds N] \
                       [rating: --dir league/ --backtest|--sweep|--stages --burn-in F --stage-decay F --anchors a,b]"
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use civvis::game::{Action, Game};
+
+    /// The soak's WAR block folds over the wars it can see, and
+    /// `close_war_record` moves a finished war out of `Game::wars` into
+    /// `Game::concluded_wars`. Reading the live map alone therefore hides
+    /// every war that ended — which is every war that was *won*, and every
+    /// white peace the block exists to make legible — and makes
+    /// `ended_in_peace` structurally impossible to observe.
+    #[test]
+    fn a_settled_war_leaves_the_live_map_and_must_still_be_counted() {
+        let mut game = Game::new(2, 24, 16, 5150, 400, 0);
+        game.current = 0;
+        game.apply(0, &Action::DeclareWar { player: 1 }).unwrap();
+        assert_eq!(game.wars.len(), 1, "the declaration must open a war");
+        assert!(game.concluded_wars.is_empty());
+
+        // Peace is gated behind a mandatory war duration; wait it out.
+        while let Some(until) = game.peace_available_at(0, 1) {
+            assert!(until > game.turn, "the gate must advance the clock");
+            game.turn = until;
+        }
+        game.apply(0, &Action::MakePeace { player: 1 }).unwrap();
+
+        assert!(
+            game.wars.is_empty(),
+            "a settled war must not remain in the live map"
+        );
+        assert_eq!(
+            game.concluded_wars.len(),
+            1,
+            "the settled war has to be read from concluded_wars or it is \
+             invisible to every count in the soak line"
+        );
+        assert!(game.concluded_wars[0].ended.is_some());
     }
 }

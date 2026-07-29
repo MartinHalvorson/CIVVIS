@@ -19,6 +19,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, OpenOptions};
 use std::io::{self, ErrorKind, Write};
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -1344,10 +1345,39 @@ fn seed_league(dir: &str) -> League {
 
 pub fn load_league(dir: &str) -> Option<League> {
     let raw = fs::read_to_string(Path::new(dir).join("league.json")).ok()?;
-    let mut league: League = serde_json::from_str(&raw).ok()?;
+    Some(parse_league(&raw)?)
+}
+
+fn parse_league(raw: &str) -> Option<League> {
+    let mut league: League = serde_json::from_str(raw).ok()?;
     migrate_legacy_leader_ratings(&mut league);
     ensure_usernames(&mut league);
     Some(league)
+}
+
+/// The committed roster, compiled into the binary.
+///
+/// `load_league` reads a *directory*, so the snapshot under `data/league` was
+/// only ever found when the process happened to be started with a checkout
+/// root as its working directory. That is true of `cargo test` and of a
+/// developer standing in a checkout, and false of everything else: the
+/// installed binary run from anywhere, a launcher that starts it from `/`, and
+/// the published WASM build, which has no filesystem at all. Every one of
+/// those showed a provisional 1500 down the whole table, because a seat with
+/// no roster row behind it is exactly that (see `display_rating`).
+///
+/// A rating on screen must not depend on which directory the binary was
+/// started from, so the snapshot travels with the code. It is a read-only
+/// prior: nothing is ever recorded into it — `record_league_result` still
+/// requires a `--league` directory — and a roster on disk always wins.
+const SHIPPED_LEAGUE: &str = include_str!("../data/league/league.json");
+
+/// The shipped roster, parsed once. `None` only if the committed snapshot
+/// itself stopped parsing, which is a build-time mistake rather than a
+/// runtime condition.
+pub fn shipped_league() -> Option<League> {
+    static PARSED: OnceLock<Option<League>> = OnceLock::new();
+    PARSED.get_or_init(|| parse_league(SHIPPED_LEAGUE)).clone()
 }
 
 fn default_leader(civilization: &str) -> String {
@@ -1567,7 +1597,7 @@ fn play_job(manifest: &RoundManifest, job: &WorkJob, worker: &str) -> StoredOutc
         ranks,
         won: ranked.iter().map(|pid| game.winner == Some(*pid)).collect(),
         seed: job.seed,
-        turn: game.turn,
+        turn: game.reported_turn(),
         victory: game.victory_type.clone().unwrap_or_default(),
     }
 }
@@ -1925,18 +1955,71 @@ fn evolve_league(
     (born, retired)
 }
 
+/// The rating every player holds before they have finished anything: the
+/// Glicko starting point at full uncertainty. Nobody is *without* a rating —
+/// a player nothing is known about is a 1500 who has yet to move — so a seat
+/// with no league identity at all is shown here rather than left blank.
+pub const PROVISIONAL_RATING: f64 = BASE_RATING;
+pub const PROVISIONAL_RD: f64 = BASE_RD;
+
+/// What a seat's rating badge should say.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct DisplayRating {
+    pub rating: f64,
+    pub rd: f64,
+    /// The number is this leader/civilization's own table rather than the
+    /// player's overall one.
+    pub civ_specific: bool,
+    /// No finished game stands behind this number yet: it is the base every
+    /// new player starts from, and the first rated result will move it up or
+    /// down. The figure is real and comparable, just unearned so far.
+    pub provisional: bool,
+}
+
 /// The rating to show for an exact player/leader/civilization combination.
 /// An unplayed combination uses the player's global prior; after its first
 /// game, the combination's own rating is always returned, even provisionally.
+///
+/// `None` is a seat the league has never heard of — a game running without a
+/// roster, or an agent nobody has rated. It still gets the base rating, and
+/// the badge says so, because "unrated" and "no rating" are different claims
+/// and only the first one is true.
+pub fn display_rating(player: Option<&Strategy>, civ: &str) -> DisplayRating {
+    display_rating_for(player, &default_leader(civ), civ)
+}
+
+pub fn display_rating_for(player: Option<&Strategy>, leader: &str, civ: &str) -> DisplayRating {
+    let Some(s) = player else {
+        return DisplayRating {
+            rating: PROVISIONAL_RATING,
+            rd: PROVISIONAL_RD,
+            civ_specific: false,
+            provisional: true,
+        };
+    };
+    match combination_rating(s, leader, civ) {
+        Some(rating) if rating.games > 0 => DisplayRating {
+            rating: rating.rating,
+            rd: rating.rd,
+            civ_specific: true,
+            provisional: false,
+        },
+        _ => DisplayRating {
+            rating: s.rating,
+            rd: s.rd,
+            civ_specific: false,
+            provisional: s.games == 0,
+        },
+    }
+}
+
 pub fn display_elo(s: &Strategy, civ: &str) -> (f64, f64, bool) {
     display_elo_for(s, &default_leader(civ), civ)
 }
 
 pub fn display_elo_for(s: &Strategy, leader: &str, civ: &str) -> (f64, f64, bool) {
-    match combination_rating(s, leader, civ) {
-        Some(rating) if rating.games > 0 => (rating.rating, rating.rd, true),
-        _ => (s.rating, s.rd, false),
-    }
+    let shown = display_rating_for(Some(s), leader, civ);
+    (shown.rating, shown.rd, shown.civ_specific)
 }
 
 /// Seat a table whose civs are already known (civs are fixed per seat in
@@ -2532,6 +2615,98 @@ pub fn run_league(cfg: &LeagueCfg) -> League {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Nobody is without a rating.
+    ///
+    /// "Unrated" is a claim about a player's *record*, not about whether they
+    /// have a number: everyone enters at 1500 with the deviation to say how
+    /// little that means yet, and the first result moves it. A seat the
+    /// league has never heard of is that same 1500, so a badge can always
+    /// show a figure instead of a dash.
+    #[test]
+    fn an_unplayed_seat_is_a_provisional_1500_rather_than_no_rating() {
+        let unknown = display_rating(None, "Rome");
+        assert_eq!((unknown.rating, unknown.rd), (1500.0, 350.0));
+        assert!(unknown.provisional && !unknown.civ_specific);
+
+        // A registered player who has finished nothing: their own row, but
+        // still the number they started with.
+        let mut fresh = Strategy::new(
+            "newcomer",
+            StrategyKind::Builtin { ai: "advanced".to_string() },
+            0,
+        );
+        let shown = display_rating(Some(&fresh), "Rome");
+        assert_eq!((shown.rating, shown.rd), (1500.0, 350.0));
+        assert!(shown.provisional);
+
+        // One finished game and the global number is earned, even though this
+        // civilization's own table has not been opened yet.
+        fresh.games = 1;
+        fresh.rating = 1532.0;
+        let shown = display_rating(Some(&fresh), "Rome");
+        assert_eq!(shown.rating, 1532.0);
+        assert!(!shown.provisional && !shown.civ_specific);
+
+        // And once the combination has been played, it speaks for itself.
+        fresh
+            .leader_elo
+            .entry(default_leader("Rome"))
+            .or_default()
+            .insert(
+                "Rome".to_string(),
+                CivRating { rating: 1610.0, rd: 180.0, games: 3, ..CivRating::default() },
+            );
+        let shown = display_rating(Some(&fresh), "Rome");
+        assert_eq!((shown.rating, shown.rd), (1610.0, 180.0));
+        assert!(shown.civ_specific && !shown.provisional);
+        // A different civilization still falls back to the global rating.
+        assert!(!display_rating(Some(&fresh), "Egypt").civ_specific);
+    }
+
+    /// The committed roster travels with the code, so a rating never depends
+    /// on which directory the binary was started from.
+    ///
+    /// It used to be read out of `data/league`, a path resolved against the
+    /// working directory — found by `cargo test` and by a developer standing
+    /// in a checkout, and by nothing else. Started from anywhere else the read
+    /// failed, no seat had a roster row behind it, and the whole table showed
+    /// the provisional 1500 that means "the league has never heard of this
+    /// player". The published WASM build, which has no filesystem at all,
+    /// could never show anything else.
+    #[test]
+    fn the_shipped_roster_is_compiled_in_and_its_entrants_are_rated() {
+        let league = shipped_league().expect("the committed snapshot parses");
+        assert!(
+            league.strategies.len() >= 10,
+            "a roster of {} is not the shipped snapshot",
+            league.strategies.len()
+        );
+        assert!(
+            league.strategies.iter().any(|s| !s.retired && !s.human),
+            "the auto-play control has entrants to offer"
+        );
+
+        // `advanced` is the entrant every unseated table is labelled with:
+        // majors run the default hierarchical AI, which is what this row
+        // rates. If it is not here, an ordinary game has nothing to show.
+        let advanced = league
+            .strategies
+            .iter()
+            .find(|s| s.name == "advanced")
+            .expect("the default entrant is in the shipped roster");
+        assert!(advanced.games > 0, "and it has actually played");
+        let shown = display_rating(Some(advanced), "Rome");
+        assert!(
+            !shown.provisional,
+            "a rating with games behind it is not provisional"
+        );
+        assert!(
+            (800.0..=2600.0).contains(&shown.rating),
+            "{} is not a rating",
+            shown.rating
+        );
+    }
 
     /// The worked example from Glickman's Glicko-2 paper: 1500/200/0.06
     /// beating 1400/30 then losing to 1550/100 and 1700/300 in one period

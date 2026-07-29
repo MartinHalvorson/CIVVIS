@@ -272,6 +272,145 @@ of **180/272** and 8-tech/11-civic prices of **204/308**. The forged-price test
 also posts a zero quote and proves the engine still charges its recomputed live
 price, so the browser's quote is never trusted as authority.
 
+## Closed: only a full civilization annexes tiles with its own yields
+
+`CivilizationLevels` is the table that decides who may take ground, and only
+one of its four rows may take it unaided:
+
+| level | `CanAnnexTilesWithCulture` | `CanAnnexTilesWithGold` | `CanAnnexTilesWithReceivedInfluence` | `StartingTilesForCity` |
+|---|---|---|---|---|
+| `FULL_CIV` | 1 | 1 | 0 | 6 |
+| `CITY_STATE` | 0 | 0 | 1 | 5 |
+| `FREE_CITIES` | 0 | 0 | 0 | 0 |
+| `TRIBE` | 0 | 0 | 0 | 0 |
+
+A city-state's territory therefore grows **only** by one tile per Envoy it
+receives from its Suzerain.
+CIVVIS ran the ordinary Culture border curve for every city whatever its
+owner, and `plot_purchase_cost` had no owner gate either, so a minor accreted
+ground for the whole game on top of the Envoy tiles it was already paid.
+
+Measured over four 250-turn games on the tournament lobby before the fix, a
+city-state finished **larger than the average major city** — 23.8 tiles and
+10.4 Population against 22.2 and 9.9 — on a mean of 8.6 Envoys from all
+majors combined. Territory is the mechanism and Population is the symptom:
+more owned tiles is more worked tiles is more Food.
+
+`annexes_tiles_with_own_yields` now gates both paths.
+
+### Deliberate divergence: a founding city-state takes its whole first ring
+
+`StartingTilesForCity` is the one number in that table CIVVIS does not follow.
+The column counts tiles *besides* the centre — Russia's Mother Russia is
+`MODIFIER_PLAYER_ADJUST_CITY_TILES` with `Amount` **5**, and Russian cities
+visibly open with the whole first ring plus five more, which only adds up if
+the base 6 *is* the ring. So the shipped minor really does found one plot
+short.
+
+CIVVIS grants the full ring anyway. The count is shipped but the **choice**
+is not: nothing in the database says which of the six a city-state gives up,
+so it fell to the plot-influence picker, and the result was a neutral hole
+inside a city's own first ring on every single city-state — measured at 5 of 6
+owned across 96 city-states over 8 map seeds, always exactly one, never taken
+by anybody else. On the map that reads as a rendering fault rather than a
+rule. The gate above is what keeps a city-state small; this tile is worth
+about 2 Food and costs the map its legibility.
+
+The grant is still free ground only: a ring plot a neighbouring city already
+holds stays with that neighbour, exactly as for a full civilization.
+
+## Resolved: a city-state weighed nothing for itself
+
+Every city-state in a 406-turn spectator game sat at exactly 100 Loyalty while
+the observation reported it losing **-25 a turn**. Both halves were wrong, and
+they were hiding each other.
+
+`loyalty_change_for_city` skipped every minor-owned city when it summed
+population pressure. That was meant to model the shipped rule that a minor
+projects no pressure onto its neighbours — the population tooltip really does
+drop the "also applies to other cities within 9 tiles" clause for minors:
+
+> Ranges from +20 to -20, based on the comparison of pressure coming from
+> nearby Citizens belonging to the city's owner and nearby Citizens belonging
+> to a different civilization. 1 Pressure per Citizen normally. Increased in
+> Capital.
+>
+> — `LOC_CULTURAL_IDENTITY_POPULATION_PRESSURE_TOOLTIP_MINOR_CIVS`
+
+But the skip also removed a city-state's own Citizens from its *own* domestic
+side. A pop-14 Kabul therefore compared **0** against its neighbours and pinned
+the ratio at the -20 floor forever. `process_loyalty` then returned early for
+minors, so the number was computed, published to the HUD, and never applied.
+The city survived because the second bug cancelled the first.
+
+Two shipped constants were missing beside it. `IDENTITY_PER_TURN_FROM_CITY_STATES`
+is **20** and `IDENTITY_PER_TURN_FROM_FREE_CITIES` is **10** — "Base strength as
+a City-State" and "Desire for independence" in the pressure breakdown. Only the
+Free City half was paid.
+
+CIVVIS now counts a minor's own Citizens as its domestic pressure while still
+projecting nothing outward, pays the +20, and runs city-states through the same
+`process_loyalty` as anybody else, so an overwhelmed one revolts into a Free
+City. Replaying that same 406-turn checkpoint takes the count of cities that
+claim to be bleeding Loyalty while pinned at 100 from **18 to 0**, and no
+city-state flips: the most pressured of the eighteen still clears +15 a turn,
+which is the balance the +20 base exists to produce.
+
+The occupation term went with it. Rise & Fall charged a flat penalty between
+`IDENTITY_PER_TURN_FROM_OCCUPATION_MIN` -1 and `_MAX` -5; Gathering Storm
+rescaled the range to 0..10 and added `_MULTIPLIER` **25**, which the
+Civilopedia reads as "Loyalty penalties based on the conqueror's Grievances
+caused against the city's original owner". CIVVIS charged R&F's flat -5 and
+cancelled it outright when a unit was garrisoned. It now charges 25% of those
+Grievances clamped to [0, 10] whether or not anyone is garrisoned, and a
+garrison instead pays the separate `IDENTITY_PER_TURN_FROM_MARTIAL_LAW` **+8** —
+so holding a fresh conquest down with troops raises its Loyalty rather than
+merely stopping the bleed.
+
+Verified unchanged in the same pass: the ±20 clamp is exactly
+`LOYALTY_PER_TURN_FROM_NEARBY_CITIZEN_PRESSURE_MAX_RATIO` 3.0 against
+`_NEUTRAL_RATIO` 1.0; the 10%-per-tile falloff; `CITIZEN_IDENTITY_PRESSURE_BASE`
+1 with `_CAPITAL` +1 and the Golden/Dark ±0.5 per-Citizen age terms; every
+`Governors.IdentityPressure` is **8**; the Statue of Liberty's
+`STATUELIBERTY_CITIES_ALWAYS_LOYAL` really does pin all cities within 6 tiles;
+and the `LoyaltyLevels` yield/growth bands.
+
+## Open, and needing a judgement call: resource placement frequency
+
+`Resources.Frequency` and `SeaFrequency` weight the shipped placement lottery.
+CIVVIS picks **uniformly** among the resources valid for a tile:
+
+```rust
+let pick = valid[rng.below(valid.len())].clone();
+```
+
+The shipped weights are not close to uniform. On land, Stone and Wheat are 10
+against Copper, Deer, Sheep and Bananas at 4 — two and a half times as likely.
+At sea it is starker: Fish 23, Crabs 17, Turtles 5, and Amber, Pearls and Whales
+1 apiece, so a Whale should be a twenty-third as common as a Fish and CIVVIS
+makes them equally likely. Land luxuries are the one group that really is
+uniform, all at 2, which CIVVIS gets right by accident.
+
+**Why this is not simply fixed.** The lottery runs before start selection and
+feeds it: resources are part of what scores a start, through
+`StartBias::weight(resource_tier)`. Weighting the lottery therefore moves
+starts. Implementing it made two of roughly a hundred sampled (size, seed)
+combinations miss the start-spacing tolerance in
+`stock_map_profiles_produce_spread_and_complete_spawn_sets` and
+`islands_flat_poles_spread_starts_across_the_whole_archipelago` — both
+marginally, 207% against a 200% cap and 64.7% against a 65% floor.
+
+One or two marginal misses in a hundred is consistent with ordinary variance
+around a tight threshold, and it is also consistent with a small real
+degradation. n=1 does not separate them, and even start spacing is a
+tournament-fairness property this project cares about. Loosening the tolerance
+or reseeding until the sample passes would settle the argument in the change's
+favour without evidence, so the code is not in the tree.
+
+What would settle it: run the spacing property over a few hundred seeds with and
+without the weighting and compare failure rates. If they match, the weighting is
+correct and the thresholds simply sit close to the natural spread.
+
 ## Swept clean: the systematic comparisons already run
 
 These are whole-axis comparisons, not spot checks. Each was run against every
@@ -398,8 +537,32 @@ resolved. The largest:
 
 The "Only in Civ VI" column measures scope rather than error — the units and
 buildings CIVVIS does not model are almost all civilization uniques from DLC
-packs, and the missing features are natural wonders plus the volcano system.
-That column is the content backlog.
+packs. That column is the content backlog. **Features is now empty**: the eight
+Natural Wonders it used to name (the Bermuda Triangle, Eyjafjallajökull, the
+Fountain of Youth, Lysefjord, Païtiti, Mount Roraima, Tsingy de Bemaraha and
+Sahara el Beyda) all exist, so CIVVIS carries the whole thirty-four-wonder
+roster with the shipped yields, appeal, impassability and sight.
+
+**The audit's own loader had two blind spots, and both of them libelled a
+wonder.** Fixed together with the roster:
+
+- An expansion ships a compatibility overlay that applies only when the *other*
+  expansion is installed. `DLC/Expansion1/Data/Expansion1_Expansion2.xml` is
+  Gathering Storm's rebalance of Rise and Fall content, and sorted filename
+  order applied it *before* the rows it edits existed — so every `<Update>` in
+  it silently matched nothing. The Eye of the Sahara kept Rise and Fall's 1
+  Production against CIVVIS' correct 2, and Pike and Shot's maintenance was
+  read as 4 when Gathering Storm sets it to 3 (that one was a real CIVVIS
+  error, now fixed). Cross-expansion overlays are applied last.
+- `RemoveData` files were excluded as cosmetic. They are how the later packs
+  retire content: Byzantium & Gaul deletes the Biosphere's `+8 Science` when
+  Gathering Storm is active, so the audit reported CIVVIS as missing a yield it
+  is correct not to have. Loading them also retires Twilight Valor and Letters
+  of Marque, which the same pack deletes and CIVVIS still carries — those two
+  now show in "Only in CIVVIS" as genuine backlog.
+
+With both fixed, **Wonders and Features compare 53 and 50 entries with zero
+divergences and nothing missing on either side.**
 
 **District adjacency (parallel session):** `District_Adjacencies` joined to
 `Adjacency_YieldChanges` against each district's per-source `adjacency` map,

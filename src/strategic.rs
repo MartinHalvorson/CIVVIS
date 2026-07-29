@@ -14,7 +14,7 @@
 //! self-play trajectories.
 use crate::ai::{run_game, AdvancedAi, Ai, PlanReport, VictoryTarget, Weights};
 use crate::evolve::features;
-use crate::game::{Action, Game, Item};
+use crate::game::{Action, ActionFamilies, Game, Item};
 use crate::obs_tensor::obs_tensor;
 use crate::valuenet::ValueNet;
 
@@ -26,6 +26,10 @@ const VALUE_NET_WEIGHT: f64 = 0.25;
 /// amounts, and a margin larger than the spread is a search that can never
 /// choose.
 const DOCTRINE_COMMITMENT_MARGIN: f64 = 0.002;
+/// Rounds projected between separation checks under an adaptive horizon.
+/// Small enough to stop soon after the branches part, large enough that
+/// the check itself is not most of the work.
+const ADAPTIVE_CHUNK: u32 = 10;
 pub const FIRST_REVIEW_TURN: u32 = 30;
 
 /// One position on the exact distribution consumed by the Strategic value
@@ -202,16 +206,202 @@ pub struct StrategicAi {
     net: Option<ValueNet>,
     census: ReviewCensus,
     pub review_every: u32,
+    /// Rounds each branch is projected before it is judged.
+    ///
+    /// Longer is not monotonically better, and the ceiling is closer than
+    /// it looks. A branch that reaches a decided game returns exactly 1.0
+    /// or 0.0, so once every branch resolves inside the horizon they agree
+    /// by construction rather than by judgement and the search is blind.
+    /// Measured on four-player 200-turn games, the share of reviews where
+    /// every branch is already decided runs 22% at horizon 40, **56% at
+    /// 80**, and 89% at 120. `strategic_deep` uses 80 — it wins, but it is
+    /// already over half saturated, and pushing further mostly buys
+    /// agreement rather than discrimination. The threshold scales with how
+    /// much game is left, so it bites sooner in short games and later in
+    /// long ones.
     pub horizon: u32,
     next_review: u32,
+    /// Project each branch from the plan actually in force, instead of
+    /// from a planner that has just been constructed.
+    ///
+    /// `AdvancedAi` carries state a rollout cannot re-derive in forty
+    /// rounds: the strategic plan, settler and builder assignments, the
+    /// turn a major war started, a peace cooldown, and the force groups
+    /// that make campaigns coherent. Every branch has always been handed a
+    /// **new** agent, so the projection asks "what happens if I restart my
+    /// planner and commit to this lane" when the decision it is standing in
+    /// for is "what happens if I commit to this lane from here". A branch
+    /// that reaches for the army finds an empty force-group table; a branch
+    /// projected from an empire mid-campaign forgets it is at war and
+    /// forgets it is inside a peace cooldown.
+    ///
+    /// Cloning the agent in force and applying the branch's decision to the
+    /// clone — `retarget`, `adapt`, `reweight`, the same three calls
+    /// `take_turn` makes after a review — makes the counterfactual an exact
+    /// simulation of the decision being considered. All three deliberately
+    /// preserve campaign and unit-role memory and drop only the plan, so
+    /// the branch re-assesses under its new lane without amnesia.
+    ///
+    /// Costs nothing: the same number of branches, the same horizon, one
+    /// clone of a small struct in place of one construction of it.
+    ///
+    /// **★ PROMOTED — on by default.** Earned on a pre-registered 500-map
+    /// run at fresh seed 132000: 553/1000 games (55.3%), 87 map directions
+    /// to 34, sign p=0.0000, Wilson 50.9%–59.6%, Elo-equivalent +37,
+    /// anytime-valid evidence 6.6e4 crossing at map 209, and
+    /// `promotion gate: PASS` under the unmodified gate. Terminal score
+    /// agrees independently (271 to 206, p=0.0033). Three disjoint seed sets
+    /// total **860 maps, 140 map-directions to 58, sign p=5.2e-09**.
+    ///
+    /// Unlike `strategic_deep`, which costs 4x the macro-search compute and
+    /// therefore had to be opt-in, this costs nothing, so every caller gets
+    /// it: `strategic`, `strategic_deep`, `strategic_score`, soak, the fleet
+    /// and the exhibition. `strategic_cold` is the frozen control that keeps
+    /// every published pre-promotion number reproducible.
+    ///
+    /// One caution for anyone reading the older numbers: what shifted was
+    /// victory *routing*, not the economy. The promoted agent took 32
+    /// domination seats against the control's 51 and 148 religious against
+    /// 112, while terminal score moved only 0.8 points. Domination converts
+    /// at 3-8%, the worst lane on the board. The run cannot separate which
+    /// piece of retained state does it -- the force groups, the peace
+    /// cooldown, or simply the plan surviving.
+    pub continue_from_plan: bool,
+    /// Let the irreversible-Prophet prior answer a review before the
+    /// rollouts run. True reproduces the shipped behaviour exactly.
+    ///
+    /// **This prior answers about half of all reviews, and the search
+    /// disagrees with it 85% of the time.** Audited over 200 four-player
+    /// positions at turn ~60 (`search_probe --priors`): 99 were answered by
+    /// a prior rather than the rollouts, **92 of them by this one**, and on
+    /// 85 of the 99 the projection would have chosen differently — always
+    /// the same way, the prior taking Religion where the search would stay
+    /// adaptive.
+    ///
+    /// That is not evidence the prior is wrong. Its argument is sound and
+    /// the search cannot check it: a Prophet slot is an irreversible global
+    /// race, and a forty-round projection scored by score share cannot see
+    /// the value of an option that pays out beyond it. It is evidence that
+    /// this one predicate, not the evaluator and not the horizon, is what
+    /// decides the lane in half of this agent's reviews — and that had never
+    /// been measured.
+    pub trust_religious_prior: bool,
     /// Search the doctrine axis as well as the lane. Off by default so
     /// `strategic` is bit-identical to its published behaviour; the
     /// `strategic_doctrine` entrant turns it on, which makes the two an
     /// exact paired A/B of the second axis alone.
     pub doctrine_search: bool,
+    /// Project every branch together and stop as soon as they separate,
+    /// instead of running each for a fixed count of rounds.
+    ///
+    /// **Measured worse, and kept only so nobody rebuilds it.** Against the
+    /// frozen `strategic_deep` control over 120 mirrored maps it scored
+    /// 39.2% (95% Wilson CI 30.9%..48.1%), Elo-equivalent **-76**, sign
+    /// p=0.0000, with the anytime-valid evidence crossing against it at map
+    /// 62. The gate said RETAIN `strategic_deep`.
+    ///
+    /// The reasoning it was built on: a branch that reaches a decided game
+    /// returns exactly 1.0 or 0.0, so once every branch resolves inside the
+    /// horizon they agree by construction — 56% of reviews are in that
+    /// state at horizon 80 and 89% at 120 — while the reviews that do not
+    /// saturate carry more the longer they run. Stopping at the first chunk
+    /// where the branches differ by more than the commitment margin should
+    /// therefore have spent rounds only while they still bought something.
+    ///
+    /// The inferential gap, which the run exposes: saturation says extra
+    /// rounds add nothing *once the branches are decided*. It does not say
+    /// an early difference predicts the late one. Stopping at the first
+    /// separation commits on a gap that has not held up yet, and at
+    /// horizon 80 most of those gaps do not survive.
+    ///
+    /// The run localises the damage exactly. Terminal score is a dead heat
+    /// (49.8%, p=0.7770) and the adaptive agent is in fact slightly *ahead*
+    /// on development — 2.60 cities to 2.41, 17.0 population to 15.9, 14.8
+    /// techs to 14.0. What it loses is conversion: 79 religious victories
+    /// against 130. It builds the better empire and wins fewer games, which
+    /// is what a broken victory-routing decision looks like, and it is
+    /// evidence for spending a review's budget on depth rather than on
+    /// stopping early.
+    pub adaptive_horizon: bool,
+    /// Model a rival as the victory lane its public empire already reveals.
+    ///
+    /// The stock rollout reconstructs every opponent as a fresh adaptive
+    /// `AdvancedAi`. That preserves the opponent class, but erases a visible
+    /// strategic commitment: a religion founder with foreign conversions or
+    /// a tourism leader may spend the whole projection rediscovering a plan
+    /// the real empire has pursued for dozens of turns. When this treatment
+    /// is enabled, a confidently separated public victory-screen signal pins
+    /// that rival to the inferred lane for the branch. Weak and tied signals
+    /// deliberately remain adaptive.
+    ///
+    /// **Measured, not promoted.** The fires-check found inferred lanes on
+    /// 65.5% of eligible rival seats and changed 61/77 branch values, but a
+    /// fresh 120-map confirmation scored 47.9% (-14 Elo-equivalent), with
+    /// five favorable map directions to ten adverse. Terminal score was
+    /// exactly 50.0%. Kept off by default as a reproducible negative control;
+    /// see `docs/RIVAL_ROLLOUTS.md`.
+    pub model_rival_lanes: bool,
     /// Whether a prior-driven interrupt postpones the next periodic review.
     /// True reproduces the shipped behaviour exactly.
     pub defer_periodic_on_interrupt: bool,
+    /// Preserve the exact win objective when terminal branches tie, while
+    /// retaining the information in *when* they ended.
+    ///
+    /// The ordinary evaluator maps every projected win to `1.0` and every
+    /// projected loss to `0.0`. That is correct but needlessly blind once a
+    /// deep review resolves several branches to the same result: at horizon
+    /// 80, more than half of reviews have every branch terminal. With this
+    /// treatment enabled, terminal and unresolved results occupy disjoint
+    /// lexicographic bands:
+    ///
+    /// - own win: `3 - turn_fraction` (a faster conversion is better),
+    /// - unresolved: `1 + position_value`,
+    /// - loss: `turn_fraction` (a line that survives longer is better).
+    ///
+    /// Therefore every projected win still beats every unresolved branch,
+    /// and every unresolved branch still beats every projected loss. Tempo
+    /// can only break ties inside the exact outcome class; it can never trade
+    /// a win away for prettier development. Off by default; the evaluator-only
+    /// `strategic_deep_tempo` entrant measures it against `strategic_deep`.
+    ///
+    /// **Measured, not promoted.** On 30 fresh mirrored maps the treatment
+    /// scored 28-32 games, with one favorable map direction to three adverse
+    /// and terminal score exactly 50.0%. It clearly changed routing --
+    /// religion-dominant seats rose from 20 to 42 -- but religious conversion
+    /// barely moved (26.2% versus 25.0%). No disjoint gate was earned; see
+    /// `docs/TERMINAL_TEMPO_SEARCH.md`.
+    pub terminal_tempo: bool,
+    /// Search the exact religious action that changes conversion geometry
+    /// before handing the rest of the turn to the scripted controller.
+    ///
+    /// `Action::Spread` does not name a city. When several cities are in
+    /// range, the engine applies it by deterministic adjacency order rather
+    /// than the destination the route planner had in mind. This treatment
+    /// evaluates every immediately legal religious action and every legal
+    /// religious move followed by one such action on cloned states. It
+    /// executes a sequence only when it strictly improves the founder's
+    /// lexicographic religious-victory geometry. Off by default; the
+    /// evaluator-only `strategic_deep_conversion` entrant measures it.
+    ///
+    /// **Measured, not promoted.** It lost the disjoint 120-map gate 114-126
+    /// games (five favorable map directions to 11 adverse), while terminal
+    /// score remained slightly favorable at 50.2%. Religious victories fell
+    /// from 81 to 65. Exact local conversion gains did not compose into
+    /// stronger game conversion; see `docs/RELIGIOUS_CONVERSION_FINISHER.md`.
+    pub religious_finish_search: bool,
+    /// Search the same exact religious action space, but accept a sequence
+    /// only when applying it gives this civilization the actual religious
+    /// victory. This is the outcome-only repair to the failed conversion
+    /// proxy above: no pressure, city-majority, or development gain can
+    /// consume a unit action unless the game ends. Off by default; the
+    /// evaluator-only `strategic_deep_checkmate` entrant measures it.
+    ///
+    /// **Measured, not promoted.** Two disjoint 30-map screens -- one on the
+    /// fallback weights and one on the first shipped evolved genome -- each
+    /// split games 30-30 with every map direction neutral and identical
+    /// victory types. Removing the proxy removed both the prior harm and
+    /// measurable headroom; see `docs/RELIGIOUS_CHECKMATE_SEARCH.md`.
+    pub religious_checkmate_search: bool,
     /// Project a rotating subset of lanes instead of all of them: the
     /// adaptive baseline, the lane in force, and one challenger that
     /// advances each review. Cuts a review from seven branches to about
@@ -251,8 +441,15 @@ impl StrategicAi {
             weights,
             net,
             census: ReviewCensus::default(),
+            continue_from_plan: true,
+            adaptive_horizon: false,
+            model_rival_lanes: false,
+            trust_religious_prior: true,
             doctrine_search: false,
             defer_periodic_on_interrupt: true,
+            terminal_tempo: false,
+            religious_finish_search: false,
+            religious_checkmate_search: false,
             rotate_lanes: false,
             rotation: 0,
             doctrine: Doctrine::Incumbent,
@@ -267,6 +464,186 @@ impl StrategicAi {
 
     pub fn current_target(&self) -> Option<VictoryTarget> {
         self.inner.victory_target()
+    }
+
+    /// Religious-victory geometry after an exact action sequence.
+    ///
+    /// The ordering is intentionally win-aligned: a completed victory first,
+    /// then civilizations already over their city-majority threshold, then
+    /// the least-converted rival, total converted cities, and only finally
+    /// continuous pressure share. The last term lets a spread be recognized
+    /// before it flips a city, while the earlier terms prevent farming easy
+    /// cities in one empire from outranking the last holdout civilization.
+    fn conversion_value(g: &Game, pid: usize) -> Option<ConversionValue> {
+        // Team victory accepts any religion founded by a teammate and may
+        // record a different teammate as the winner. This single-founder
+        // value is deliberately disabled there rather than optimizing a
+        // geometry that does not match the engine's victory predicate.
+        if !g.victory_conditions.religious
+            || !g.players[pid].alive
+            || g.players[pid].team.is_some()
+        {
+            return None;
+        }
+        let religion = g.players[pid].religion.as_deref()?;
+        let rivals: Vec<usize> = g
+            .players
+            .iter()
+            .filter(|player| {
+                player.id != pid && player.alive && !player.is_minor && !player.is_barbarian
+            })
+            .map(|player| player.id)
+            .collect();
+        if rivals.is_empty() {
+            return None;
+        }
+
+        let mut converted_rivals = 0;
+        let mut weakest_rival: f64 = 1.0;
+        let mut following_cities = 0;
+        let mut pressure_share = 0.0;
+        for rival in rivals {
+            let cities: Vec<_> = g
+                .cities
+                .values()
+                .filter(|city| city.owner == rival)
+                .collect();
+            if cities.is_empty() {
+                weakest_rival = 0.0;
+                continue;
+            }
+            let following = cities
+                .iter()
+                .filter(|city| g.city_religion(city) == Some(religion))
+                .count();
+            let needed = cities.len() / 2 + 1;
+            converted_rivals += usize::from(following >= needed);
+            following_cities += following;
+            weakest_rival = weakest_rival.min(following as f64 / needed as f64);
+            for city in cities {
+                let own = city.pressure.get(religion).copied().unwrap_or(0.0).max(0.0);
+                let total = city.atheist_pressure.max(0.0)
+                    + city
+                        .pressure
+                        .values()
+                        .map(|pressure| pressure.max(0.0))
+                        .sum::<f64>();
+                pressure_share += own / total.max(1.0);
+            }
+        }
+        Some(ConversionValue {
+            won: g.winner == Some(pid),
+            converted_rivals,
+            weakest_rival,
+            following_cities,
+            pressure_share,
+        })
+    }
+
+    fn religious_effect_unit(action: &Action) -> Option<u32> {
+        match action {
+            Action::Spread { unit }
+            | Action::TheologicalAttack { unit, .. }
+            | Action::CondemnHeretic { unit, .. }
+            | Action::RemoveHeresy { unit }
+            | Action::PerformConcert { unit } => Some(*unit),
+            _ => None,
+        }
+    }
+
+    fn religious_move_unit(g: &Game, pid: usize, action: &Action) -> Option<u32> {
+        let unit = match action {
+            Action::Move { unit, .. } | Action::MoveTo { unit, .. } => *unit,
+            _ => return None,
+        };
+        let state = g.units.get(&unit)?;
+        (state.owner == pid
+            && g.rules.units[state.kind.as_str()].class == "religious")
+            .then_some(unit)
+    }
+
+    /// Best one- or two-action conversion sequence available at the start of
+    /// this turn. Ties retain legal-action order, keeping the search fully
+    /// deterministic. In checkmate mode the first exact winning sequence is
+    /// returned and every non-winning improvement is ignored; otherwise an
+    /// empty plan means no sequence improves religious-victory geometry.
+    fn religious_action_plan(
+        &self,
+        g: &Game,
+        pid: usize,
+        checkmate_only: bool,
+    ) -> Vec<Action> {
+        let Some(mut best_value) = Self::conversion_value(g, pid) else {
+            return Vec::new();
+        };
+        let mut best = Vec::new();
+        let legal = g.legal_actions_within(pid, ActionFamilies::UNITS);
+
+        for action in &legal {
+            if Self::religious_effect_unit(action).is_some() {
+                let mut after = g.clone();
+                if after.apply(pid, action).is_ok() {
+                    if let Some(value) = Self::conversion_value(&after, pid) {
+                        if checkmate_only && value.won {
+                            return vec![action.clone()];
+                        }
+                        if !checkmate_only && value.better_than(&best_value) {
+                            best_value = value;
+                            best = vec![action.clone()];
+                        }
+                    }
+                }
+            }
+
+            let Some(unit) = Self::religious_move_unit(g, pid, action) else {
+                continue;
+            };
+            let mut moved = g.clone();
+            if moved.apply(pid, action).is_err() {
+                continue;
+            }
+            for followup in moved.legal_actions_within(pid, ActionFamilies::UNITS) {
+                if Self::religious_effect_unit(&followup) != Some(unit) {
+                    continue;
+                }
+                let mut after = moved.clone();
+                if after.apply(pid, &followup).is_err() {
+                    continue;
+                }
+                if let Some(value) = Self::conversion_value(&after, pid) {
+                    if checkmate_only && value.won {
+                        return vec![action.clone(), followup];
+                    }
+                    if !checkmate_only && value.better_than(&best_value) {
+                        best_value = value;
+                        best = vec![action.clone(), followup];
+                    }
+                }
+            }
+        }
+        best
+    }
+
+    fn apply_religious_action_plan(
+        &self,
+        g: &mut Game,
+        pid: usize,
+        checkmate_only: bool,
+    ) -> bool {
+        let plan = self.religious_action_plan(g, pid, checkmate_only);
+        if plan.is_empty() {
+            return false;
+        }
+        for action in plan {
+            if g.winner.is_some() || g.apply(pid, &action).is_err() {
+                break;
+            }
+        }
+        true
+    }
+
+    fn apply_religious_conversion_plan(&self, g: &mut Game, pid: usize) -> bool {
+        self.apply_religious_action_plan(g, pid, false)
     }
 
     fn position_value(&self, g: &Game, pid: usize) -> f64 {
@@ -312,6 +689,106 @@ impl StrategicAi {
             VictoryTarget::Domination => g.victory_conditions.domination,
             VictoryTarget::Score => g.victory_conditions.score,
         }
+    }
+
+    /// Infer a rival's durable victory lane from public victory-screen state.
+    ///
+    /// This deliberately mirrors the signals used by `AdvancedAi`'s adaptive
+    /// victory focus without consulting hidden planner state. Science receives
+    /// its public technology-tree trajectory; the other lanes receive only
+    /// concrete tourism, religious conversion, diplomatic-victory and
+    /// suzerainty progress. A weak or nearly tied argmax returns `None`, which
+    /// leaves the rollout rival adaptive instead of pretending certainty.
+    pub fn inferred_rival_target(&self, g: &Game, rival: usize) -> Option<VictoryTarget> {
+        let player = g.players.get(rival)?;
+        if !player.alive || player.is_minor || player.is_barbarian || g.turn < FIRST_REVIEW_TURN {
+            return None;
+        }
+        let living_majors: Vec<usize> = g
+            .players
+            .iter()
+            .filter(|candidate| candidate.alive && !candidate.is_minor && !candidate.is_barbarian)
+            .map(|candidate| candidate.id)
+            .collect();
+
+        let tech_progress =
+            25 + (30 * player.techs.len() / g.rules.techs.len().max(1)).min(30) as i32;
+        let project_progress = player.science_projects.len().min(4) as i32 * 18;
+        let travel_progress = if player.science_projects.contains("exoplanet_expedition") {
+            (player.exoplanet_distance * 100.0 / 50.0).clamp(0.0, 100.0) as i32
+        } else {
+            0
+        };
+        let science = tech_progress
+            .max(project_progress)
+            .max(travel_progress)
+            .max((player.civ == "China") as i32 * 45);
+
+        let culture_target = living_majors
+            .iter()
+            .filter(|other| **other != rival)
+            .map(|other| g.domestic_tourists(*other))
+            .max()
+            .unwrap_or(1)
+            .max(1);
+        let culture = (100 * g.foreign_tourists(rival) / culture_target).clamp(0, 100) as i32;
+
+        let religion = player.religion.as_ref().map_or(0, |religion| {
+            let converted = living_majors
+                .iter()
+                .filter(|other| {
+                    let cities = g.player_city_ids(**other);
+                    let following = cities
+                        .iter()
+                        .filter(|city| g.city_religion(&g.cities[city]) == Some(religion.as_str()))
+                        .count();
+                    !cities.is_empty() && following * 2 > cities.len()
+                })
+                .count();
+            // Founding is a durable forty-point commitment in the adaptive
+            // planner; conversions then measure the public race itself.
+            40 + (60 * converted / living_majors.len().max(1)) as i32
+        });
+
+        let suzerain = g
+            .players
+            .iter()
+            .filter(|minor| {
+                minor.alive
+                    && minor.is_minor
+                    && !minor.is_barbarian
+                    && g.suzerain_of(minor.id) == Some(rival)
+            })
+            .count() as i64;
+        let diplomacy = (player.dvp * 5 + suzerain * 6).clamp(0, 100) as i32;
+
+        let mut lanes = vec![
+            (VictoryTarget::Science, science),
+            (
+                VictoryTarget::Culture,
+                culture.max((player.civ == "Greece") as i32 * 45),
+            ),
+            (VictoryTarget::Religion, religion),
+            (VictoryTarget::Diplomacy, diplomacy),
+        ];
+        lanes.retain(|(target, _)| Self::target_enabled(g, *target));
+        lanes.sort_by(|left, right| right.1.cmp(&left.1));
+        let (target, progress) = *lanes.first()?;
+        let runner_up = lanes.get(1).map_or(0, |(_, progress)| *progress);
+        // Thirty is the first point at which technology progress has moved
+        // meaningfully beyond its unearned opening floor. Five points is the
+        // smallest separation the underlying integer focus cannot reverse on
+        // one ordinary technology or envoy tick.
+        (progress >= 30 && progress >= runner_up + 5).then_some(target)
+    }
+
+    fn rival_agent(&self, g: &Game, rival: usize) -> Box<dyn Ai> {
+        if self.model_rival_lanes {
+            if let Some(target) = self.inferred_rival_target(g, rival) {
+                return Box::new(AdvancedAi::targeting(target));
+            }
+        }
+        Box::new(AdvancedAi::new())
     }
 
     /// Prophet slots are an irreversible global race. Once the opening book
@@ -597,18 +1074,13 @@ impl StrategicAi {
             .iter()
             .map(|p| {
                 if p.id == pid {
-                    if let Some(target) = target {
-                        Box::new(AdvancedAi::with_weights_and_target(weights.clone(), target))
-                            as Box<dyn Ai>
-                    } else {
-                        Box::new(AdvancedAi::with_weights(weights.clone())) as Box<dyn Ai>
-                    }
+                    self.branch_agent(target, weights)
                 } else {
                     // The counterfactual must preserve the opponent class the
                     // strategic layer is trying to beat. BasicAi understates
                     // victory pressure (especially religion), so a locally
                     // attractive Science rollout can be globally losing.
-                    Box::new(AdvancedAi::new()) as Box<dyn Ai>
+                    self.rival_agent(g, p.id)
                 }
             })
             .collect();
@@ -621,6 +1093,50 @@ impl StrategicAi {
             }
         }
         (sim, ais)
+    }
+
+    /// The searching seat's agent for one branch.
+    ///
+    /// With `continue_from_plan` off this is the shipped behaviour: a newly
+    /// constructed planner carrying the branch's lane and genome and nothing
+    /// else. With it on, the agent in force is cloned and the branch's
+    /// decision is applied to the clone through exactly the calls
+    /// `take_turn` makes after a review — and only when they would change
+    /// something, so a branch that re-nominates the lane already in force
+    /// keeps its plan rather than dropping it for no reason.
+    fn branch_agent(&self, target: Option<VictoryTarget>, weights: &Weights) -> Box<dyn Ai> {
+        if !self.continue_from_plan {
+            return match target {
+                Some(target) => {
+                    Box::new(AdvancedAi::with_weights_and_target(weights.clone(), target))
+                        as Box<dyn Ai>
+                }
+                None => Box::new(AdvancedAi::with_weights(weights.clone())) as Box<dyn Ai>,
+            };
+        }
+        let mut inner = self.inner.clone();
+        if inner.weights().to_vec() != weights.to_vec() {
+            inner.reweight(weights.clone());
+        }
+        match target {
+            Some(target) if inner.victory_target() != Some(target) => inner.retarget(target),
+            None if inner.victory_target().is_some() => inner.adapt(),
+            _ => {}
+        }
+        Box::new(inner) as Box<dyn Ai>
+    }
+
+    /// Every branch's projected value, in the order `review` compares them.
+    ///
+    /// Exposed for the same reason `doctrine_values` is: whether projecting
+    /// from the plan in force changes what the search sees is a question
+    /// about these numbers, and a win rate cannot answer it.
+    pub fn lane_values(&self, g: &Game, pid: usize) -> Vec<(f64, Option<VictoryTarget>)> {
+        let mut values = vec![(self.rollout(g, pid, None), None)];
+        for target in self.lane_candidates(g) {
+            values.push((self.rollout(g, pid, Some(target)), Some(target)));
+        }
+        values
     }
 
     /// Projected value of staying adaptive (`None`) or committing to `target`
@@ -637,11 +1153,7 @@ impl StrategicAi {
         weights: &Weights,
     ) -> f64 {
         let (sim, _) = self.rollout_state_weighted(g, pid, target, weights);
-        match sim.winner {
-            Some(w) if w == pid => 1.0,
-            Some(_) => 0.0,
-            None => self.position_value(&sim, pid),
-        }
+        self.branch_value(&sim, pid)
     }
 
     /// Second axis of the same search: with the lane fixed, project each
@@ -809,6 +1321,123 @@ impl StrategicAi {
             .and_then(|(_, target)| target)
     }
 
+    /// Every branch's value, projected in lockstep and stopped as soon as
+    /// they separate.
+    ///
+    /// Returns the same `(value, target)` pairs a fixed-horizon review
+    /// produces, so `choose_rollout_target` is unchanged. Determinism is
+    /// preserved: the branches are stepped in a fixed order, the stopping
+    /// test reads only their values, and no clock or RNG is consulted.
+    fn lockstep_values(
+        &self,
+        g: &Game,
+        pid: usize,
+        targets: &[Option<VictoryTarget>],
+    ) -> Vec<(f64, Option<VictoryTarget>)> {
+        self.lockstep_values_projected(g, pid, targets).0
+    }
+
+    /// The same search, also reporting how many rounds it actually spent.
+    /// A treatment has to be shown to fire before it is worth evaluating,
+    /// and the rounds it declines to project are the only direct evidence
+    /// that this one does anything at all.
+    fn lockstep_values_projected(
+        &self,
+        g: &Game,
+        pid: usize,
+        targets: &[Option<VictoryTarget>],
+    ) -> (Vec<(f64, Option<VictoryTarget>)>, u32) {
+        let mut branches: Vec<(Game, Vec<Box<dyn Ai>>)> = targets
+            .iter()
+            .map(|target| self.branch_state(g, pid, *target))
+            .collect();
+        let deadline = g.turn + self.horizon;
+        let mut projected = 0;
+        loop {
+            let chunk = ADAPTIVE_CHUNK.min(self.horizon.saturating_sub(projected));
+            if chunk == 0 {
+                break;
+            }
+            for (sim, ais) in branches.iter_mut() {
+                let stop = sim.turn + chunk;
+                while sim.winner.is_none() && sim.turn < stop && sim.turn < deadline {
+                    let current = sim.current;
+                    ais[current].take_turn(sim, current);
+                    if sim.winner.is_none() && sim.current == current {
+                        let _ = sim.apply(current, &Action::EndTurn);
+                    }
+                }
+            }
+            projected += chunk;
+            let values: Vec<f64> = branches
+                .iter()
+                .map(|(sim, _)| self.branch_value(sim, pid))
+                .collect();
+            let low = values.iter().copied().fold(f64::INFINITY, f64::min);
+            let high = values.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+            // Separated enough to decide, or every branch has resolved and
+            // further rounds cannot change anything.
+            if high - low > TARGET_COMMITMENT_MARGIN
+                || branches.iter().all(|(sim, _)| sim.winner.is_some())
+            {
+                break;
+            }
+        }
+        (
+            branches
+                .iter()
+                .zip(targets)
+                .map(|((sim, _), target)| (self.branch_value(sim, pid), *target))
+                .collect(),
+            projected,
+        )
+    }
+
+    fn branch_state(
+        &self,
+        g: &Game,
+        pid: usize,
+        target: Option<VictoryTarget>,
+    ) -> (Game, Vec<Box<dyn Ai>>) {
+        let sim = g.clone();
+        let ais: Vec<Box<dyn Ai>> = sim
+            .players
+            .iter()
+            .map(|p| {
+                if p.id == pid {
+                    match target {
+                        Some(target) => Box::new(AdvancedAi::with_weights_and_target(
+                            self.weights.clone(),
+                            target,
+                        )) as Box<dyn Ai>,
+                        None => {
+                            Box::new(AdvancedAi::with_weights(self.weights.clone())) as Box<dyn Ai>
+                        }
+                    }
+                } else {
+                    self.rival_agent(g, p.id)
+                }
+            })
+            .collect();
+        (sim, ais)
+    }
+
+    fn branch_value(&self, sim: &Game, pid: usize) -> f64 {
+        if self.terminal_tempo {
+            let turn_fraction = sim.turn.min(sim.max_turns) as f64 / sim.max_turns.max(1) as f64;
+            return match sim.winner {
+                Some(winner) if winner == pid => 3.0 - turn_fraction,
+                Some(_) => turn_fraction,
+                None => 1.0 + self.position_value(sim, pid),
+            };
+        }
+        match sim.winner {
+            Some(winner) if winner == pid => 1.0,
+            Some(_) => 0.0,
+            None => self.position_value(sim, pid),
+        }
+    }
+
     /// Compare the adaptive parent with every enabled victory lane. Deterministic:
     /// rollouts are seed-free clones and ties keep declaration order; an explicit
     /// lane must clear the adaptive value by `TARGET_COMMITMENT_MARGIN`.
@@ -829,16 +1458,22 @@ impl StrategicAi {
         if let Some(counter) = self.urgent_counter_target(g, pid) {
             return (Some(counter), ReviewPath::UrgentCounter);
         }
-        if Self::viable_religious_commitment(g, pid) {
+        if self.trust_religious_prior && Self::viable_religious_commitment(g, pid) {
             return (
                 Some(VictoryTarget::Religion),
                 ReviewPath::IrreversibleReligion,
             );
         }
-        let mut values = vec![(self.rollout(g, pid, None), None)];
-        for target in self.lane_candidates(g) {
-            values.push((self.rollout(g, pid, Some(target)), Some(target)));
-        }
+        let mut branches: Vec<Option<VictoryTarget>> = vec![None];
+        branches.extend(self.lane_candidates(g).into_iter().map(Some));
+        let values = if self.adaptive_horizon {
+            self.lockstep_values(g, pid, &branches)
+        } else {
+            branches
+                .into_iter()
+                .map(|target| (self.rollout(g, pid, target), target))
+                .collect()
+        };
         (self.choose_rollout_target(&values), ReviewPath::Rollouts)
     }
 
@@ -891,6 +1526,19 @@ impl StrategicAi {
 impl Ai for StrategicAi {
     fn take_turn(&mut self, g: &mut Game, pid: usize) {
         let major = !g.players[pid].is_minor && !g.players[pid].is_barbarian;
+        if major
+            && (self.religious_finish_search || self.religious_checkmate_search)
+            && g.winner.is_none()
+        {
+            if self.religious_finish_search {
+                self.apply_religious_conversion_plan(g, pid);
+            } else {
+                self.apply_religious_action_plan(g, pid, true);
+            }
+            if g.winner.is_some() {
+                return;
+            }
+        }
         let counter = major.then(|| self.urgent_counter(g, pid)).flatten();
         let interrupted = counter.as_ref().is_some_and(|(rival, target)| {
             self.inner.victory_target() != Some(*target)
@@ -963,11 +1611,40 @@ impl Ai for StrategicAi {
     fn review_census(&self) -> Option<ReviewCensus> {
         Some(self.census)
     }
+
+    /// The reasoning an observer sees is the inner agent's. This wrapper's
+    /// rollouts run over *clones* of that agent, whose journals are silent by
+    /// construction, so a hypothetical line of play never reaches the log —
+    /// only the plan this agent went on to carry out.
+    fn attach_journal(&mut self, journal: crate::reasoning::Journal) {
+        self.inner.attach_journal(journal);
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+struct ConversionValue {
+    won: bool,
+    converted_rivals: usize,
+    weakest_rival: f64,
+    following_cities: usize,
+    pressure_share: f64,
+}
+
+impl ConversionValue {
+    fn better_than(&self, other: &ConversionValue) -> bool {
+        self.won
+            .cmp(&other.won)
+            .then_with(|| self.converted_rivals.cmp(&other.converted_rivals))
+            .then_with(|| self.weakest_rival.total_cmp(&other.weakest_rival))
+            .then_with(|| self.following_cities.cmp(&other.following_cities))
+            .then_with(|| self.pressure_share.total_cmp(&other.pressure_share))
+            .is_gt()
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{Doctrine, StrategicAi};
+    use super::{Doctrine, StrategicAi, FIRST_REVIEW_TURN};
     use crate::ai::{run_game, Ai, BasicAi, VictoryTarget, Weights};
     use crate::game::{Action, Game};
     use crate::valuenet::ValueNet;
@@ -987,8 +1664,160 @@ mod tests {
     }
 
     #[test]
+    fn terminal_tempo_is_lexicographic_and_default_play_is_unchanged() {
+        let mut game = Game::new_full(3, 20, 14, 27, 100, 0, false);
+        game.turn = 25;
+
+        let stock = StrategicAi::new();
+        game.winner = Some(0);
+        assert_eq!(stock.branch_value(&game, 0), 1.0);
+        game.winner = Some(1);
+        assert_eq!(stock.branch_value(&game, 0), 0.0);
+
+        let mut tempo = StrategicAi::new();
+        tempo.terminal_tempo = true;
+        game.winner = Some(0);
+        let win = tempo.branch_value(&game, 0);
+        assert!((win - 2.75).abs() < 1e-12);
+        game.winner = None;
+        let unresolved = tempo.branch_value(&game, 0);
+        game.winner = Some(1);
+        let loss = tempo.branch_value(&game, 0);
+        assert!((loss - 0.25).abs() < 1e-12);
+        assert!(win > unresolved && unresolved > loss);
+
+        game.turn = 60;
+        game.winner = Some(0);
+        assert!(win > tempo.branch_value(&game, 0), "faster wins rank first");
+        game.winner = Some(1);
+        assert!(
+            tempo.branch_value(&game, 0) > loss,
+            "later losses rank first"
+        );
+    }
+
+    #[test]
+    fn religious_finisher_applies_only_an_exact_conversion_gain() {
+        let mut game = Game::new_full(3, 20, 14, 28, 120, 0, false);
+        found_capitals(&mut game, 3);
+        game.players[0].religion = Some("Home Faith".to_string());
+        let target = game.player_city_ids(1)[0];
+        let target_city = game.cities.get_mut(&target).unwrap();
+        target_city.atheist_pressure = 0.0;
+        target_city
+            .pressure
+            .insert("Rival Faith".to_string(), 50.0);
+        let missionary = game.spawn_test_unit("missionary", 0, game.cities[&target].pos);
+        game.units.get_mut(&missionary).unwrap().religion = Some("Home Faith".to_string());
+        game.current = 0;
+
+        let stock = StrategicAi::new();
+        assert!(!stock.religious_finish_search);
+        assert!(!stock.religious_checkmate_search);
+        let before = StrategicAi::conversion_value(&game, 0).unwrap();
+        let plan = stock.religious_action_plan(&game, 0, false);
+        assert!(
+            matches!(
+                plan.as_slice(),
+                [Action::Move { unit, .. }, Action::Spread { unit: spread }]
+                    if *unit == missionary && *spread == missionary
+            ),
+            "the exact search should find the stronger move-then-spread sequence: {plan:?}"
+        );
+        assert!(game.cities.values().all(|city| city
+            .pressure
+            .get("Home Faith")
+            .copied()
+            .unwrap_or(0.0)
+            == 0.0), "planning must not mutate the live game");
+
+        assert!(
+            stock.religious_action_plan(&game, 0, true).is_empty(),
+            "an exact local gain must not masquerade as checkmate"
+        );
+        let converted = game.player_city_ids(2)[0];
+        game.cities
+            .get_mut(&converted)
+            .unwrap()
+            .pressure
+            .insert("Home Faith".to_string(), 10_000.0);
+        let checkmate = stock.religious_action_plan(&game, 0, true);
+        assert!(!checkmate.is_empty(), "the exact winning sequence must be found");
+        assert_eq!(game.winner, None, "search must not mutate the live game");
+        let mut checkmate_game = game.clone();
+        assert!(stock.apply_religious_action_plan(&mut checkmate_game, 0, true));
+        assert_eq!(checkmate_game.winner, Some(0));
+
+        assert!(stock.apply_religious_conversion_plan(&mut game, 0));
+        assert_eq!(game.winner, Some(0));
+        let after = StrategicAi::conversion_value(&game, 0).unwrap();
+        assert!(after.better_than(&before));
+        assert!(game.cities.values().any(|city| {
+            city.owner != 0
+                && city
+                    .pressure
+                    .get("Home Faith")
+                    .copied()
+                    .unwrap_or(0.0)
+                    > 0.0
+        }));
+        assert!(
+            stock.religious_action_plan(&game, 2, false).is_empty(),
+            "a civilization without a founded religion has no conversion plan"
+        );
+        game.players[0].team = Some(0);
+        assert!(
+            StrategicAi::conversion_value(&game, 0).is_none(),
+            "single-founder geometry must not stand in for team victory"
+        );
+    }
+
+    #[test]
     fn default_macro_search_looks_forty_rounds_ahead() {
         assert_eq!(StrategicAi::new().horizon, 40);
+    }
+
+    #[test]
+    fn rival_lane_model_is_off_by_default() {
+        assert!(!StrategicAi::new().model_rival_lanes);
+    }
+
+    #[test]
+    fn rival_lane_inference_abstains_before_public_progress_separates() {
+        let mut game = Game::new(4, 20, 14, 200, 12, 0);
+        game.turn = FIRST_REVIEW_TURN;
+        assert_eq!(StrategicAi::new().inferred_rival_target(&game, 1), None);
+    }
+
+    #[test]
+    fn rival_lane_inference_reads_public_science_religion_and_diplomacy_state() {
+        let strategic = StrategicAi::new();
+
+        let mut science = Game::new(4, 20, 14, 201, 12, 0);
+        science.turn = FIRST_REVIEW_TURN;
+        let needed = science.rules.techs.len().div_ceil(6);
+        let techs: Vec<String> = science.rules.techs.keys().take(needed).cloned().collect();
+        science.players[1].techs.extend(techs);
+        assert_eq!(
+            strategic.inferred_rival_target(&science, 1),
+            Some(VictoryTarget::Science)
+        );
+
+        let mut religion = Game::new(4, 20, 14, 202, 12, 0);
+        religion.turn = FIRST_REVIEW_TURN;
+        religion.players[1].religion = Some("Visible Faith".to_string());
+        assert_eq!(
+            strategic.inferred_rival_target(&religion, 1),
+            Some(VictoryTarget::Religion)
+        );
+
+        let mut diplomacy = Game::new(4, 20, 14, 203, 12, 0);
+        diplomacy.turn = FIRST_REVIEW_TURN;
+        diplomacy.players[1].dvp = 10;
+        assert_eq!(
+            strategic.inferred_rival_target(&diplomacy, 1),
+            Some(VictoryTarget::Diplomacy)
+        );
     }
 
     #[test]
@@ -1453,6 +2282,123 @@ mod tests {
 
         game.victory_conditions.religious = false;
         assert!(!StrategicAi::duel_religious_race(&game, 0));
+    }
+
+    /// A treatment has to be shown to fire before it is worth evaluating.
+    /// #380 cost a 240-game run to discover its treatment was inert with
+    /// every diagnostic identical to the digit, so this asserts directly
+    /// that projecting from the plan in force changes the numbers the
+    /// search reads — on the same agent, in the same position, with only
+    /// the flag moved.
+    #[test]
+    fn projecting_from_the_plan_in_force_changes_what_the_search_sees() {
+        let mut changed = 0;
+        let mut checked = 0;
+        for seed in [31u64, 57, 83] {
+            let mut g = Game::new(3, 20, 14, seed, 200, 0);
+            let mut strategic = StrategicAi::with_weights(Default::default());
+            let mut rivals = BasicAi::fleet(&g);
+            // Let the searching seat accumulate the plan, campaign and
+            // force-group state a cold branch throws away.
+            for _ in 0..45 {
+                if g.winner.is_some() {
+                    break;
+                }
+                for pid in 0..g.players.len() {
+                    if g.winner.is_some() {
+                        break;
+                    }
+                    if pid == 0 {
+                        strategic.take_turn(&mut g, pid);
+                    } else {
+                        rivals[pid].take_turn(&mut g, pid);
+                    }
+                }
+            }
+            if g.winner.is_some() {
+                continue;
+            }
+            checked += 1;
+            strategic.continue_from_plan = false;
+            let cold = strategic.lane_values(&g, 0);
+            strategic.continue_from_plan = true;
+            let warm = strategic.lane_values(&g, 0);
+            assert_eq!(cold.len(), warm.len());
+            assert!(warm.iter().all(|(value, _)| value.is_finite()));
+            // Determinism: the same flag must give the same numbers twice.
+            assert_eq!(warm, strategic.lane_values(&g, 0));
+            if cold
+                .iter()
+                .zip(&warm)
+                .any(|((left, _), (right, _))| left != right)
+            {
+                changed += 1;
+            }
+        }
+        assert!(checked > 0, "no ordinary mid-game position was reached");
+        assert!(
+            changed > 0,
+            "the warm and cold projections agreed to the digit in all {checked} positions, \
+             so the plan in force carries nothing the rollout cannot re-derive and an \
+             evaluation would measure nothing"
+        );
+    }
+
+    /// #380 spent a 240-game run to discover its treatment was inert, with
+    /// every diagnostic identical to the digit. This asserts the adaptive
+    /// horizon actually declines rounds in ordinary positions, so that a
+    /// pre-registered evaluation is measuring something that happens.
+    #[test]
+    fn the_adaptive_horizon_stops_early_in_ordinary_games() {
+        let mut checked = 0;
+        let mut fired = 0;
+        for seed in [31u64, 57, 83] {
+            // Three players: a duel is answered by the religion prior and
+            // never reaches the rollouts this measures.
+            let mut g = Game::new(3, 20, 14, seed, 200, 0);
+            let mut strategic = StrategicAi::with_weights(Default::default());
+            strategic.adaptive_horizon = true;
+            // The promoted deep budget, which is the one the saturation
+            // measurement was taken at and the only one this can help: at
+            // horizon 40 the median spread between branches is 0.0045
+            // *over the undecided subset*, under the 0.01 commitment
+            // margin, so those branches never separate and the search runs
+            // its full count regardless. (Over all reviews the median is
+            // 0.031-0.085 and the margin is cleared 61-94% of the time; the
+            // two figures describe different populations. See
+            // docs/SUPERHUMAN.md.)
+            strategic.horizon = 80;
+            let mut ais = BasicAi::fleet(&g);
+            for _ in 0..40 {
+                if g.winner.is_some() {
+                    break;
+                }
+                for pid in 0..g.players.len() {
+                    if g.winner.is_some() {
+                        break;
+                    }
+                    ais[pid].take_turn(&mut g, pid);
+                }
+            }
+            if g.winner.is_some() {
+                continue;
+            }
+            let mut targets: Vec<Option<VictoryTarget>> = vec![None];
+            targets.extend(strategic.lane_candidates(&g).into_iter().map(Some));
+            let (values, projected) = strategic.lockstep_values_projected(&g, 0, &targets);
+            assert_eq!(values.len(), targets.len());
+            assert!(values.iter().all(|(value, _)| value.is_finite()));
+            checked += 1;
+            if projected < strategic.horizon {
+                fired += 1;
+            }
+        }
+        assert!(checked > 0, "no ordinary mid-game position was reached");
+        assert!(
+            fired > 0,
+            "the adaptive horizon projected every round in all {checked} positions, \
+             so it is inert and an evaluation would measure nothing"
+        );
     }
 
     #[test]

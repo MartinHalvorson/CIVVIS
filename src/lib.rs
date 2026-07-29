@@ -25,6 +25,7 @@ pub mod decision_features;
 pub mod policy;
 pub mod production;
 pub mod rating;
+pub mod reasoning;
 pub mod rng;
 pub mod rules;
 pub mod selfplay;
@@ -1976,6 +1977,9 @@ mod tests {
                 g.apply(cur, &Action::EndTurn).unwrap();
             }
         };
+        // An era is held open for its shipped 40-turn minimum (Eras_XP1
+        // GameEraMinimumTurns), so the Classical era cannot arrive on turn one.
+        g.turn = 40;
         round(&mut g);
         assert_eq!(g.world_era, 1);
         assert_eq!(g.players[0].age, "golden");

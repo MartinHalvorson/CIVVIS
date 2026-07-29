@@ -7,6 +7,61 @@ fn two_player_game() -> Game {
 }
 
 #[test]
+fn a_late_unlock_cannot_skip_world_eras() {
+    let mut game = two_player_game();
+    game.world_era = 2;
+    game.players[0]
+        .techs
+        .insert("telecommunications".to_string());
+    assert_eq!(
+        game.era_from_progress(),
+        7,
+        "the fixture's leading civilization has reached Information"
+    );
+
+    for expected in 3..=7 {
+        // Shipped Eras_XP1.GameEraMinimumTurns holds each era open for 40
+        // standard turns, so the intervening eras arrive one after another
+        // rather than all on the same turn -- but every one of them still
+        // arrives, which is what this test is about.
+        game.turn += 40;
+        game.process_eras();
+        assert_eq!(
+            game.world_era, expected,
+            "the world must enter every era between Medieval and Information"
+        );
+    }
+}
+
+#[test]
+fn an_era_is_held_open_for_its_shipped_minimum() {
+    // Before this floor existed the world era tracked the single most advanced
+    // civilization with nothing holding it back: measured over 60 six-seat
+    // games the 10th percentile gap between age transitions was ONE turn, and
+    // an age nobody had turns to bank Era Score in is a Dark Age for the whole
+    // table. 79% of all transitions were Dark.
+    let mut game = two_player_game();
+    game.world_era = 1;
+    game.world_era_since = 10;
+    game.players[0].techs.insert("telecommunications".to_string());
+
+    game.turn = 40;
+    game.process_eras();
+    assert_eq!(
+        game.world_era, 1,
+        "39 turns into the era is too early for the next one"
+    );
+
+    game.turn = 50;
+    game.process_eras();
+    assert_eq!(game.world_era, 2, "40 turns in, the era may turn over");
+    assert_eq!(
+        game.world_era_since, 50,
+        "and the clock restarts for the era just entered"
+    );
+}
+
+#[test]
 fn every_dedication_carries_both_halves_and_an_era_span() {
     let rules = crate::rules::Rules::embedded();
     assert_eq!(
@@ -138,6 +193,9 @@ fn a_heroic_age_still_grants_three_dedications() {
     game.players[0].era_score = game.players[0].golden_age_threshold;
     game.players[1].era_score = 0;
     game.players[0].techs.insert("horseback_riding".to_string());
+    // An era is held open for its shipped 40-turn minimum, so a fixture that
+    // wants the next one has to stand far enough into this one.
+    game.turn = 40;
     game.process_eras();
     assert_eq!(game.players[0].age, "heroic");
     assert_eq!(game.players[0].dedication_choices, 3);
@@ -154,6 +212,9 @@ fn an_age_transition_clears_last_age_dedications() {
         .dedications
         .insert("monumentality".to_string());
     game.players[0].techs.insert("horseback_riding".to_string());
+    // An era is held open for its shipped 40-turn minimum, so a fixture that
+    // wants the next one has to stand far enough into this one.
+    game.turn = 40;
     game.process_eras();
     assert!(
         game.players[0].dedications.is_empty(),
@@ -230,6 +291,9 @@ fn leaving_a_dark_age_takes_the_card_back_out_of_its_slot() {
     game.players[0].era_score = game.players[0].golden_age_threshold;
     game.players[0].techs.insert("horseback_riding".to_string());
     game.world_era = 0;
+    // An era is held open for its shipped 40-turn minimum, so a fixture that
+    // wants the next one has to stand far enough into this one.
+    game.turn = 40;
 
     game.process_eras();
 
@@ -428,4 +492,234 @@ fn a_wonder_is_worth_more_while_it_is_still_current() {
     game.world_era = 4;
     assert!(game.wonder_era("pyramids") < game.world_era, "long past");
     let _ = rules;
+}
+
+#[test]
+fn a_golden_age_pays_its_bonus_and_banks_nothing() {
+    // Every COMMEMORATION_*_QUEST modifier hangs off
+    // PLAYER_ELIGIBLE_FOR_COMMEMORATION_QUEST, a TEST_ANY set whose only two
+    // members are an inverted REQUIREMENT_PLAYER_HAS_GOLDEN_AGE and a
+    // REQUIREMENT_PLAYER_ALWAYS_ALLOWED_COMMEMORATION_QUEST nothing in the
+    // shipped data grants. So the two halves are exclusive, and a Golden Age
+    // cannot finance its own successor.
+    let mut game = two_player_game();
+    game.players[0]
+        .dedications
+        .insert("free_inquiry".to_string());
+
+    for age in ["golden", "heroic"] {
+        game.players[0].age = age.to_string();
+        game.players[0].era_score = 0;
+        game.dedication_trigger(0, "eureka", 4);
+        assert_eq!(
+            game.players[0].era_score, 0,
+            "a {age} Age banks no Era Score"
+        );
+        assert!(
+            game.dedication_active(0, "free_inquiry"),
+            "it is paid in the Golden-Age half instead"
+        );
+    }
+
+    game.players[0].age = "normal".to_string();
+    game.players[0].era_score = 0;
+    game.dedication_trigger(0, "eureka", 4);
+    assert_eq!(
+        game.players[0].era_score, 4,
+        "and a Normal Age banks, which is the whole trade"
+    );
+}
+
+#[test]
+fn the_trigger_tally_counts_behaviour_not_what_was_paid_for() {
+    // The tally is what `projected_dedication_score` reads, so it has to be
+    // the behaviour itself: kept whether or not the trigger was dedicated, and
+    // kept through a Golden Age that pays nothing for it.
+    let mut game = two_player_game();
+    game.players[0].age = "golden".to_string();
+    game.dedication_trigger(0, "eureka", 3);
+    game.dedication_trigger(0, "district", 2);
+
+    assert_eq!(game.players[0].era_triggers.get("eureka"), Some(&3));
+    assert_eq!(game.players[0].era_triggers.get("district"), Some(&2));
+    assert_eq!(
+        game.players[0].era_score, 0,
+        "counted, but not paid, and no Dedication was even held"
+    );
+}
+
+#[test]
+fn a_dedication_is_projected_from_the_era_that_just_ended() {
+    let mut game = two_player_game();
+    game.players[0].age = "normal".to_string();
+    game.dedication_trigger(0, "eureka", 5);
+    game.dedication_trigger(0, "science_building", 2);
+    game.dedication_trigger(0, "district", 1);
+    assert_eq!(
+        game.projected_dedication_score(0, "free_inquiry"),
+        0,
+        "an era in progress is not yet evidence"
+    );
+
+    game.players[0].techs.insert("horseback_riding".to_string());
+    // An era is held open for its shipped 40-turn minimum, so a fixture that
+    // wants the next one has to stand far enough into this one.
+    game.turn = 40;
+    game.process_eras();
+
+    // Free Inquiry pays 1 per Eureka and 1 per Science building: 5 + 2.
+    assert_eq!(game.projected_dedication_score(0, "free_inquiry"), 7);
+    // Monumentality pays 1 per District: 1.
+    assert_eq!(game.projected_dedication_score(0, "monumentality"), 1);
+    // Nothing naval happened, so Hic Sunt Dracones projects nothing.
+    assert_eq!(game.projected_dedication_score(0, "hic_sunt_dracones"), 0);
+    assert!(
+        game.players[0].era_triggers.is_empty(),
+        "and the new era starts its own tally"
+    );
+}
+
+#[test]
+fn the_dedication_arms_choose_differently_and_the_default_banks() {
+    use crate::ai::{choose_dedications, DedicationChoice, Weights};
+
+    // Alphabetically the Classical era offers exodus_of_the_evangelists first,
+    // and that is what both AI tiers took for the whole history of the repo.
+    // Ranking BOTH halves on projected Era Score lost to it 41.2% to 58.8%;
+    // ranking only the half where Era Score is the objective beat it 57.7% to
+    // 42.3% over a pre-registered 300 maps. See the DedicationChoice docs.
+    assert_eq!(
+        Weights::default().dedication_choice,
+        DedicationChoice::Banking,
+        "the shipped agent is the one that passed its gate"
+    );
+    let mut game = two_player_game();
+    game.world_era = 1;
+    game.players[0].age = "normal".to_string();
+    game.players[0].dedication_choices = 1;
+    game.players[0]
+        .last_era_triggers
+        .insert("eureka".to_string(), 6);
+
+    let mut shipped = game.clone();
+    choose_dedications(&mut shipped, 0, DedicationChoice::Alphabetical);
+    assert!(
+        shipped.players[0]
+            .dedications
+            .contains("exodus_of_the_evangelists"),
+        "the shipped arm takes the first name in the map"
+    );
+
+    choose_dedications(&mut game, 0, DedicationChoice::Measured);
+    assert!(
+        game.players[0].dedications.contains("free_inquiry"),
+        "six Eurekas last era say Free Inquiry, not a religion this civ has not founded"
+    );
+    assert_eq!(game.players[0].dedication_choices, 0);
+}
+
+#[test]
+fn a_heroic_age_takes_the_three_best_dedications() {
+    use crate::ai::{choose_dedications, DedicationChoice};
+
+    let mut game = two_player_game();
+    game.world_era = 1;
+    game.players[0].age = "heroic".to_string();
+    game.players[0].dedication_choices = 3;
+    for (trigger, count) in [("eureka", 9), ("district", 5), ("inspiration", 2)] {
+        game.players[0]
+            .last_era_triggers
+            .insert(trigger.to_string(), count);
+    }
+
+    choose_dedications(&mut game, 0, DedicationChoice::Measured);
+
+    let held = &game.players[0].dedications;
+    assert_eq!(held.len(), 3, "a Heroic Age dedicates three times");
+    assert!(held.contains("free_inquiry"), "9 Eurekas");
+    assert!(held.contains("monumentality"), "5 Districts");
+    assert!(held.contains("pen_brush_and_voice"), "2 Inspirations");
+    assert!(
+        !held.contains("exodus_of_the_evangelists"),
+        "and the one with no record behind it is the one left out"
+    );
+}
+
+#[test]
+fn every_dark_age_card_spans_the_eras_the_shipped_game_offers_it_in() {
+    // Policies_XP1.MinimumGameEra / MaximumGameEra, as ChronologyIndex - 1.
+    let rules = crate::rules::Rules::embedded();
+    for (name, first, last) in [
+        ("monasticism", 1, 2),
+        ("twilight_valor", 1, 3),
+        ("inquisition", 1, 3),
+        ("elite_forces", 1, 3),
+        ("isolationism", 1, 4),
+        ("letters_of_marque", 3, 5),
+        ("robber_barons", 4, 6),
+    ] {
+        let spec = &rules.policies[name];
+        assert!(spec.dark_age, "{name} is a Dark Age card");
+        assert_eq!(
+            spec.eras,
+            Some((first, last)),
+            "{name} spans the wrong eras"
+        );
+        assert!(!spec.offered("normal", first), "{name} needs a Dark Age");
+        assert!(spec.offered("dark", first), "{name} opens at {first}");
+        assert!(spec.offered("dark", last), "{name} closes after {last}");
+        assert!(
+            !spec.offered("dark", last + 1),
+            "{name} is gone by {}",
+            last + 1
+        );
+    }
+}
+
+#[test]
+fn the_banking_arm_ranks_only_where_era_score_is_the_objective() {
+    use crate::ai::{choose_dedications, DedicationChoice};
+
+    // A Normal or Dark Age banks Era Score, so the projection is the literal
+    // objective and Banking ranks on it exactly as Measured does.
+    for age in ["normal", "dark"] {
+        let mut game = two_player_game();
+        game.world_era = 1;
+        game.players[0].age = age.to_string();
+        game.players[0].dedication_choices = 1;
+        game.players[0]
+            .last_era_triggers
+            .insert("eureka".to_string(), 6);
+
+        choose_dedications(&mut game, 0, DedicationChoice::Banking);
+        assert!(
+            game.players[0].dedications.contains("free_inquiry"),
+            "a {age} age banks, so six Eurekas name Free Inquiry"
+        );
+    }
+
+    // A Golden or Heroic Age banks nothing, so the projection is only a
+    // correlate there and Banking leaves that choice where the default puts it.
+    // Ranking on a correlate is what lost the first gate.
+    for age in ["golden", "heroic"] {
+        let mut game = two_player_game();
+        game.world_era = 1;
+        game.players[0].age = age.to_string();
+        game.players[0].dedication_choices = 1;
+        game.players[0]
+            .last_era_triggers
+            .insert("eureka".to_string(), 6);
+
+        let mut ranked = game.clone();
+        choose_dedications(&mut ranked, 0, DedicationChoice::Measured);
+        assert!(ranked.players[0].dedications.contains("free_inquiry"));
+
+        choose_dedications(&mut game, 0, DedicationChoice::Banking);
+        assert!(
+            game.players[0]
+                .dedications
+                .contains("exodus_of_the_evangelists"),
+            "a {age} age keeps the default choice, which is the one that wins"
+        );
+    }
 }

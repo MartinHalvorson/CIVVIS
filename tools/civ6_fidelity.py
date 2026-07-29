@@ -73,10 +73,24 @@ LOAD_ORDER = [
 ] + [f"DLC/{pack}/Data" for pack in CONTENT_PACKS]
 
 # Pack files that never carry rules tables, or that belong to optional modes.
+#
+# ``RemoveData`` is *not* excluded: those files are how the later packs retire
+# content, and skipping them left the audit comparing rows the shipped game no
+# longer has. The Biosphere is the case that found it — Byzantium & Gaul
+# deletes its `+8 Science` yield when Gathering Storm is active, so the audit
+# reported CIVVIS as missing a yield it is correct not to have.
 PACK_EXCLUDE = re.compile(
-    r"_MODE|Icons|Colors|Config|Civilopedia|RemoveData|Loc_|Text|Audio|ARX",
+    r"_MODE|Icons|Colors|Config|Civilopedia|Loc_|Text|Audio|ARX",
     re.IGNORECASE,
 )
+
+# An expansion ships a compatibility overlay that only applies when the *other*
+# expansion is also installed (`Expansion1_Expansion2.xml` is the Gathering
+# Storm rebalance of Rise and Fall content). Sorted filename order applies it
+# before the rows it edits exist, so its `<Update>` elements silently match
+# nothing: the Eye of the Sahara kept Rise and Fall's 1 Production instead of
+# Gathering Storm's 2. These are applied last, after every base table is in.
+CROSS_EXPANSION = re.compile(r"_Expansion[12]\.xml$", re.IGNORECASE)
 
 INSTALL_CANDIDATES = [
     r"C:\Program Files (x86)\Steam\steamapps\common\Sid Meier's Civilization VI",
@@ -334,6 +348,7 @@ def load_cache_database(path: Path) -> Database:
 
 def load_database(install: Path) -> Database:
     database = Database()
+    deferred: list[Path] = []
     for relative in LOAD_ORDER:
         directory = install / relative
         if not directory.is_dir():
@@ -343,7 +358,9 @@ def load_database(install: Path) -> Database:
         core = relative in LOAD_ORDER[:3]
         for path in sorted(directory.rglob("*.xml")):
             if core:
-                if FILE_PATTERN.match(path.name):
+                if not FILE_PATTERN.match(path.name) and CROSS_EXPANSION.search(path.name):
+                    deferred.append(path)
+                elif FILE_PATTERN.match(path.name):
                     database.apply_file(path)
             elif not PACK_EXCLUDE.search(path.name):
                 # Content packs interleave tables freely (and ship
@@ -351,6 +368,8 @@ def load_database(install: Path) -> Database:
                 # everything that is not clearly cosmetic; apply_file skips
                 # tables the audit does not track.
                 database.apply_file(path)
+    for path in deferred:
+        database.apply_file(path)
     return database
 
 
@@ -630,6 +649,11 @@ FEATURE_ALIASES = {
     "ikkil": "ik_kil",
     "chocolatehills": "chocolate_hills",
     "devilstower": "mato_tipila",
+    # And four more of the same kind, from the packs that complete the roster.
+    "lysefjorden": "lysefjord",
+    "roraima": "mount_roraima",
+    "tsingy": "tsingy_de_bemaraha",
+    "whitedesert": "sahara_el_beyda",
 }
 
 
@@ -1211,6 +1235,11 @@ ENGINE_PARAMETERS = {
     "TRADE_ROUTE_TURN_DURATION_BASE": 20,  # game.rs trade_route_duration
     "BARBARIAN_CAMP_MINIMUM_DISTANCE_CITY": 4,  # game.rs spawn_camp
     "BARBARIAN_CAMP_MINIMUM_DISTANCE_ANOTHER_CAMP": 7,
+    # A third of the target is seated before turn one, and every turn after it
+    # the world rolls one in two for one more -- both in the fog, since a camp
+    # may not be placed where any non-Barbarian unit or city is looking.
+    "BARBARIAN_CAMP_FIRST_TURN_PERCENT_OF_TARGET_TO_ADD": 33,  # game.rs new_with
+    "BARBARIAN_CAMP_ODDS_OF_NEW_CAMP_SPAWNING": 2,  # game.rs barbarian_phase
     "BARBARIAN_TECH_PERCENT": 50,  # game.rs barbarian_phase unit pool
     "BARBARIAN_NUM_RANDOM_UNIT_CHOICES": 3,
     # Verified against the engine during the 2026-07-26 tournament-rules sweep.
@@ -1609,6 +1638,8 @@ def project_buildings(database: Database) -> dict[str, dict]:
             "maintenance": number(row.get("Maintenance")),
             "housing": number(row.get("Housing")),
             "amenity": number(row.get("Entertainment")),
+            # Every wall tier is 100; Georgia's Tsikhe is the one 200.
+            "outer_defense": number(row.get("OuterDefenseHitPoints")),
             "citizen_slots": number(row.get("CitizenSlots")),
             "yields": yields.get(name, {}),
             "regional_range": number(row.get("RegionalRange")),
@@ -1828,9 +1859,18 @@ def project_projects(database: Database) -> dict[str, dict]:
 def project_districts(database: Database) -> dict[str, dict]:
     projected = {}
     for row in database.rows("Districts"):
-        projected[slug(row["DistrictType"], "DISTRICT_")] = {
+        entry = {
             "cost": number(row.get("Cost")),
+            "maintenance": number(row.get("Maintenance")),
+            "appeal": number(row.get("Appeal")),
+            "air_slots": number(row.get("AirSlots")),
         }
+        # MaxPerPlayer is -1 for "as many as you like"; CIVVIS leaves the field
+        # off. Only the Government Plaza and the Diplomatic Quarter carry a 1.
+        limit = number(row.get("MaxPerPlayer"))
+        if limit > 0:
+            entry["max_per_empire"] = limit
+        projected[slug(row["DistrictType"], "DISTRICT_")] = entry
     return projected
 
 

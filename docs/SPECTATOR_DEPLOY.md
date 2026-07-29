@@ -22,9 +22,9 @@ It is one cross-platform program; only the way you keep it alive differs per OS.
    resumes the same active match on the fresh binary. If the build or checkpoint
    is not ready, the last verified server stays live and the supervisor retries;
    the loop never stalls on slow or broken source.
-5. When a winner appears it archives the result, keeps it on screen for
-   `--cooldown` seconds (default 5), then deals the next game on the freshest
-   verified build.
+5. When a winner appears it archives the result, keeps it on screen for the ten
+   seconds the result screen counts down, then deals the next game on the
+   freshest verified build.
 6. Crash/stall recovery: active games are checkpointed every few seconds and
    resumed; a wedged game is nudged, then quarantined rather than looped on.
 
@@ -92,11 +92,14 @@ lasts; it never promised that anybody managed to read it, and a page that
 paints slower than the budget used to lose turns silently.
 
 Only a page that paints holds the simulation to a turn. The browser reports the
-turn it last drew on each `/state` poll (`?painted=<turn>&world=<seed>`), so the
-keeper's refresh check and any `curl` read the same state without dragging the
-exhibition down to their own cadence. A viewer that stops asking is dropped
-after a few seconds and costs the unattended exhibition exactly one turn's
-delay.
+frame it last drew on each `/state` poll
+(`?painted=<turn>&world=<seed>&finished=<0-or-1>`), so the keeper's refresh check
+and any `curl` read the same state without dragging the exhibition down to their
+own cadence. The terminal bit matters because a seat can decide a victory in
+the middle of a round without incrementing the turn; that result must wake and
+paint as a distinct frame rather than wait for the long-poll timeout. A viewer
+that stops asking is dropped after a few seconds and costs the unattended
+exhibition exactly one turn's delay.
 
 **Every viewer is owed every turn, and each paint is waited for on its own.** Two tabs
 on one exhibition used to take alternate turns: the stepper released a turn as
@@ -115,12 +118,13 @@ between polls, which was a ceiling of ten turns a second however fast the world
 could be played.
 
 **The map is sent as a patch.** A page says which tile array it is holding
-(`&have=<world>:<turn>`) and is sent only the tiles that changed — about a dozen
-of 2252 on a standard turn, so a poll costs ~157 KB instead of ~1.36 MB, an 89%
-saving. Saying so is also what parks the poll until there *is* a next turn, so a
-finished turn is written to a socket the moment it exists rather than at the
-page's next tick. A page that reports no baseline, including every health check,
-is answered immediately with the whole map.
+(`&have=<world>:<turn>:<finished>`) and is sent only the tiles that changed —
+about a dozen of 2252 on a standard turn, so a poll costs ~157 KB instead of
+~1.36 MB, an 89% saving. Saying so is also what parks the poll until there *is*
+a next frame, so a finished turn or same-turn victory is written to a socket
+the moment it exists rather than at the page's next tick. A page that reports
+no baseline, including every health check, is answered immediately with the
+whole map.
 
 That report is also what makes the promise auditable while it runs. `/status`
 carries:
@@ -133,15 +137,35 @@ carries:
   which is not the same as the promise being kept.
 - `viewers` — how many pages that promise is being kept to, and so how many
   paints a turn costs before the next one starts.
+- `autoplay_turns` — turns `POST /autoplay` has simulated, which is the count
+  auto-play's share of `frames_missed` is out of. Zero here means auto-play was
+  never used, not that it behaved.
+
+**Auto-play is measured separately, because for a long time it was not measured
+at all.** The three numbers above are all built out of a viewer's
+`/state?painted=` acknowledgements. A single-player game is not stepped by the
+exhibition loop and its page never sends those — it advances by posting to
+`/autoplay` — so nothing above could see it. It was batching up to ten turns
+into one request, returning only the state after the last, and reporting a
+perfectly clean `frames_missed: 0` while nine turns in ten reached no screen.
+A response carries one state, so `autoplayed - 1` is the shortfall exactly, and
+that is now charged to `frames_missed` where an operator will see it.
 
 ```bash
 python3 tools/civvis_frames.py watch --port 8766          # read a live exhibition
 python3 tools/civvis_frames.py probe --port 8766 --render-ms 400   # be a slow viewer
+python3 tools/civvis_frames.py autoplay --port 8912 --turns 30     # audit a human game
 ```
 
 `probe` polls the way the page does and names every turn that never arrived.
 Give `--render-ms` a cost a loaded machine would really spend on a repaint: a
 fast synthetic viewer proves much less than the browser it stands in for.
+
+`autoplay` hands a human seat to an agent one turn per request and checks each
+turn came back as its own state. It plays the game it is pointed at, so point it
+at a scratch `civvis play` server rather than one somebody is using. `--batch`
+above 1 reproduces the old behaviour deliberately, which is the quickest way to
+confirm the audit still has teeth.
 
 A viewer slower than the pace now sets the pace, by design — the alternative is
 turns nobody sees. A full-size map costs the page about 55ms a frame, well
@@ -155,8 +179,11 @@ that cannot put a frame on a screen should not be holding a turn open waiting to
 
 ## Tuning
 
-`--players --width --height --city-states --turns --map --speed` size the game;
-`--cooldown` is the seconds the finished result stays on screen before the next
-game (the "~5–10s between games"). `--port` defaults to 8766; the fleet's watched
+`--players --width --height --city-states --turns --map --speed` size the game.
+A finished result stays on screen for **ten seconds**, and that is not a
+setting: it is the countdown the server shows the viewer, so anything able to
+disagree with it is a way for the screen to be wrong. `--cooldown` is still
+accepted for launchers that pass it, and ignored (the supervisor logs that it
+did). `--port` defaults to 8766; the fleet's watched
 exhibition runs on **8765**. Shorter games rotate builds onto the screen more
 often, which makes a better production heartbeat.

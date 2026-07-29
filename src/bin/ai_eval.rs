@@ -686,7 +686,7 @@ fn main() {
                 targets,
                 censuses,
             } = result;
-            total_turns += game.turn as u64;
+            total_turns += game.reported_turn() as u64;
             let score = game_score(game.winner, &seats, a);
             let terminal = terminal_score_share(&game, &seats, a);
             if index % 2 == 0 {
@@ -724,6 +724,22 @@ fn main() {
         *score /= 2.0;
     }
 
+    // Say what was measured, not just how much of it.
+    //
+    // Nineteen of the twenty `ai_eval` commands recorded in docs/EVAL.md do
+    // not specify a map size, so every one of them ran at the 24x16 default
+    // and a reader cannot tell without knowing that. The exhibition runs
+    // 74x46 at six players -- 567 tiles per player against 96 -- and the
+    // shipped genome moved `city_target` -40% and `settler_min_pop` +123%,
+    // which is the right answer at one density and plausibly the wrong one at
+    // the other. Density belongs in the header of anything that claims a
+    // strength result.
+    let tiles_per_player = (width as f64 * height as f64) / players as f64;
+    println!(
+        "map: {width}x{height} = {} tiles, {tiles_per_player:.0} per player \
+         (the exhibition runs 74x46 at 6 players = 567 per player)",
+        width * height
+    );
     println!(
         "mirrored head-to-head: {pairs} maps, {} games, {players} players, average {:.1} turns",
         2 * pairs,

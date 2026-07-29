@@ -53,7 +53,7 @@ End Turn button announces them, and the order `Enter` walks them.
 | 6 | A policy slot is empty | Government panel |
 | 7 | No research is selected | Science card / tech tree |
 | 8 | No civic is selected | Culture card / civics tree |
-| 9 | A city is producing nothing | City command panel |
+| 9 | A city is producing nothing | city screen ▸ Build |
 | 10 | A unit has moves and no orders | select the unit; move, fortify, skip or sleep |
 
 Blockers 1–4 and 7–10 are engine-legal actions the client can already resolve;
@@ -117,7 +117,7 @@ the action from the UI without a debugger.
 | World Congress | `congress_vote` | yes — Government panel |
 | Ages | `choose_dedication`, `choose_secret_society` | yes — Government panel |
 | Conquest | `keep_city`, `raze_city`, `liberate_city` | yes — modal |
-| Setup | difficulty, leader choice, save and load | yes — Game settings ▸ Single player, with a leader, a difficulty and the server's saves |
+| Setup | difficulty, leader choice, save and load | yes — Game setup ▸ Single player, with a leader, a difficulty and the server's saves |
 | Auto-play | `POST /autoplay` | yes — a league strategy and a turn count under the End Turn button |
 
 Rows marked "no" or "partial" are the remaining work, in roughly that order of
@@ -158,7 +158,7 @@ Great Work slots".
 
 ## Setup
 
-The browser's Game settings panel used to offer one mode — an AI-only
+The browser's Game setup panel used to offer one mode — an AI-only
 simulation — with "Single player · later" greyed out beside it. Single player
 is no longer "later", and the modes are listed in the order this project
 values them:
@@ -224,17 +224,25 @@ been lied to.
 
 Two things the client does deliberately:
 
-- **It plays in batches, not in one request.** A full game is over a minute of
-  engine work. Somebody who asked for 250 turns still wants to watch them
-  happen and still wants to be able to stop, so the loop posts a batch, renders
-  it, and goes again; the batch grows only while batches keep coming back
-  quickly, which leaves a handful of turns turn-by-turn. Pressing the button
-  again stops between batches.
+- **It plays one turn per request, and draws every one of them.** Somebody who
+  asked for 250 turns wants to watch them happen, and a batch is turns nobody
+  watches: the engine plays every turn in it, but only the state *after the
+  last one* ever comes back, so a batch of ten draws one frame and discards
+  nine. Each turn now gets its own request and its own `requestAnimationFrame`,
+  because two states rendered inside one display refresh are composited into a
+  single frame — the same one-turn-per-presented-frame rule the exhibition
+  keeps. Throughput survives it: the next turn is requested *before* the
+  current one is painted, so the engine plays turn N+1 while the browser draws
+  turn N. Measured on this machine, that costs about a fifth of the raw turn
+  rate late in a game (18 against 22 turns/s at turn 200) and buys every turn
+  a frame instead of one in ten. Pressing the button again stops after the
+  turn already in flight, which is drawn rather than dropped.
 - **It says the seat is on loan.** While an agent plays, End Turn is disabled
   and reads "An agent is playing", and both selects lock. A lit control that
   quietly does nothing is worse than a disabled one that explains itself.
 
-The roster is the committed league snapshot under `data/league` unless this
+The roster is the committed league snapshot under `data/league`, compiled into
+the binary so it is found wherever the program was started from, unless this
 game is already being rated against another one, in which case it is that one
 and the ratings shown are the ratings in play. Reading it is a labelling
 concern only: nothing about auto-play seats a rival differently.
@@ -330,33 +338,48 @@ error toast when pressed.
   your `end_turn` with "not your turn" — so the button says your civilization
   has fallen and the finale says so too.
 
-Both offer the one thing still useful: another game, started from the setup
-panel. A spectated finale keeps its countdown instead, because the supervisor
-owns that handoff.
+Both offer the one thing still useful: another game, on the settings currently
+in the setup panel. **Start another game** counts itself down from ten seconds
+and then starts, so a finished game does not sit on its result screen forever
+waiting for a click; the button carries the count. Any click, key press or
+scroll stops the countdown, because somebody who is still deciding has just
+proved they are there — as does choosing one of the ways to keep the world
+below. A spectated finale keeps the supervisor's countdown instead, because
+the supervisor owns that handoff.
 
-### One more turn
+### Continue after victory
 
-A finale with a victor also offers to keep the world. **One more turn** puts
-the same map back into play for another 25 turns — the same seed, the same
-empires, from the turn the victory was declared on.
+A finale with a victor also offers three ways to keep the same map, seed, and
+empires from the turn on which victory was declared:
+
+- **Take a look around** returns the world under the next-victory rule but
+  pauses the exhibition before another AI turn can run. Resume whenever you
+  are ready from the normal simulation controls. A human game already waits
+  for its player's next action.
+- **Continue** resumes immediately and stops when a civilization earns a result
+  other than the exact result on the finale.
+- **To infinity and beyond** resumes immediately and ignores every later
+  victory.
+
+The two resuming choices are named for what the person wants, not for the
+stopping rule they select; each rule is spelled out on its button's tooltip.
+
+All three choices remove the turn cap from the continued world.
 
 - The result is not thrown away. It is recorded as the game's verdict, the
   turn readout gains a *Playing on* line, and the league rating that was
   written when the victory landed is never written again.
-- No victory can be declared during borrowed turns, including the one that was
-  just won. A science victory is still won on the turn after it was won, so a
-  game that only cleared its winner would re-declare the same result
-  immediately and the button would do nothing.
-- When the extension runs out the original verdict is restored — not a fresh
-  score count, which would be free to name somebody else — and the finale
-  comes back with the offer again.
+- The exact winner and victory path shown on the finale cannot immediately
+  repeat. A genuinely later result can end the next-victory continuation;
+  indefinite play suppresses all of them.
 
 The offer is real on the exhibition too. Every result a browser can see is held
-for at least five seconds (`--restart-ms` may ask for longer, never shorter),
+for ten seconds — the same countdown a single-player finale runs, and not
+configurable in either place —
 the countdown is published on the same state that first carries the winner, and
-the supervisor re-reads the world after its cooldown: a world that was asked
-for more turns is left running instead of being retired. Borrowed turns are not
-a setting, so the raised turn limit is never carried into the next game.
+the supervisor re-reads the world after its cooldown: a continued world is not
+retired. Continuing is not a setup setting, so its uncapped turn rule is never
+carried into the next game.
 Headless simulation — `civvis sim`, soaks, the league — has no result screen and
 no viewer, and waits for nothing.
 

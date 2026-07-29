@@ -39,15 +39,78 @@ if os.name == "nt":
     from ctypes import wintypes
 
 
-MIN_FINAL_COUNTDOWN_SECONDS = 5.0
-FINAL_COUNTDOWN_SECONDS = MIN_FINAL_COUNTDOWN_SECONDS
+# How long a finished world stays on screen before this supervisor retires it.
+#
+# It has to be the server's `RESULT_COUNTDOWN_MS` exactly, because the server
+# is what counts the number down in front of the viewer: retire the world
+# earlier and the countdown is cut off mid-promise, later and it sits at zero.
+# So this is not configurable either — `--cooldown` is accepted and ignored.
+FINAL_COUNTDOWN_SECONDS = 10.0
+
+MAP_TYPES = (
+    "land_only",
+    "lakes",
+    "inland_sea",
+    "pangaea",
+    "continents",
+    "small_continents",
+    "islands",
+    "water_world",
+    "true_start_earth",
+)
+MAP_SHAPES = ("flat", "planet")
+MAP_POLES = ("poles", "randomized")
+
+# Every world the exhibition simulates is the same *kind* of game: Online
+# speed, an Ancient start, and no teams. Two axes vary between worlds -- how
+# many seats are at the table and what the map is -- and nothing else does.
+#
+# Speed and start era are pinned at the launch boundary in `server_command`
+# rather than in the generator below, because the generator is not the only
+# way a world gets started: a staged lobby handoff arrives through
+# `normalized_simulation_settings`, and a resume arrives with the settings the
+# checkpoint was written under. Pinning where the argument list is built is
+# the one place all three paths pass through.
+SIMULATION_SPEED = "online"
+SIMULATION_START_ERA = "ancient"
+# Four seats is the floor at which the war log, diplomacy and the victory race
+# all have something to show; a duel has no diplomacy to watch. Ten is the
+# ceiling this box finishes in an evening -- a 20-major world was measured
+# taking 27 hours at load 45, which is a world nobody ever sees the end of.
+SIMULATION_PLAYER_COUNTS = (4, 5, 6, 7, 8, 9, 10)
+# Teams are never passed. `civvis play` reads `--teams` as one entry per major
+# seat and treats an absent flag as a free-for-all, so the guarantee here is
+# the absence of the argument, and `test_no_world_is_started_with_teams` is
+# what keeps it absent.
+
+
+def rolled_simulation_settings(settings: dict[str, Any]) -> dict[str, Any]:
+    """Redraw the two axes that vary between exhibition worlds.
+
+    Width, height and city-state counts are *dropped* rather than rolled or
+    carried: all three are functions of the seat count, and `civvis play`
+    derives them from `--players` through `MapSize::for_players`, which is the
+    shipped Civilization VI size table. Computing them here would put a second
+    copy of that table in Python to keep in step, and carrying the finished
+    world's 74x46 forward would crowd ten seats onto a board built for six.
+    """
+    rolled = dict(settings)
+    rolled["players"] = random.choice(SIMULATION_PLAYER_COUNTS)
+    rolled["map"] = random.choice(MAP_TYPES)
+    for derived in ("width", "height", "city_states"):
+        rolled.pop(derived, None)
+    return rolled
 
 
 def final_countdown_seconds(requested: float) -> float:
-    """Use five seconds by default while allowing a deliberate longer hold."""
-    if not math.isfinite(requested):
-        return MIN_FINAL_COUNTDOWN_SECONDS
-    return max(MIN_FINAL_COUNTDOWN_SECONDS, requested)
+    """Ten seconds, whatever `--cooldown` asked for.
+
+    The argument is still taken so an existing launcher's `--cooldown` keeps
+    parsing, and still ignored so it cannot put a number on the result screen
+    that disagrees with the countdown the server is showing.
+    """
+    del requested
+    return FINAL_COUNTDOWN_SECONDS
 
 
 SCRIPT_PATH = Path(__file__).resolve()
@@ -819,11 +882,16 @@ def session_settings(state: dict[str, Any], defaults: dict[str, Any]) -> dict[st
     players = state.get("players") or []
     game_map = state.get("map") or {}
     settings = {
-        # Seat counts stay with the operator's flags; see the note above.
-        "players": defaults["players"],
-        "width": int(game_map.get("width") or defaults["width"]),
-        "height": int(game_map.get("height") or defaults["height"]),
-        "city_states": defaults["city_states"],
+        # Seat count and map script are redrawn for every world -- they are the
+        # two axes the exhibition varies -- so neither the operator's flags nor
+        # the finished game decides them. The flags still seat the *first*
+        # world of a supervisor's life, because nothing has finished yet for
+        # this branch to run on.
+        #
+        # The fog-of-war note above is why the finished game is not consulted
+        # for a seat count even now: a redraw is a fresh number, but reading
+        # one off `/state` would still be reading a trimmed observation.
+        "players": random.choice(SIMULATION_PLAYER_COUNTS),
         # Turns borrowed by "one more turn" are not a setting. A played-on
         # world carries a raised `max_turns`, and feeding that back as the next
         # `--turns` would ratchet the exhibition longer with every press, the
@@ -831,10 +899,21 @@ def session_settings(state: dict[str, Any], defaults: dict[str, Any]) -> dict[st
         "turns": defaults["turns"]
         if state.get("decided") is not None
         else int(state.get("max_turns") or defaults["turns"]),
-        "map": game_map.get("script") or defaults["map"],
-        "speed": state.get("game_speed") or defaults["speed"],
+        "map": random.choice(MAP_TYPES),
+        "speed": SIMULATION_SPEED,
         "leader_pool": state.get("leader_pool") or defaults.get("leader_pool", "civ6"),
     }
+    # Shape and climate are independent of the map script. They used to be
+    # omitted here and in `server_command`, so a selected Planet world made it
+    # across the HTTP handoff, then silently relaunched as Flat in the fresh
+    # process. Keep them optional only for compatibility with an older server
+    # that does not report either field yet.
+    shape = game_map.get("shape") or defaults.get("shape")
+    poles = game_map.get("poles") or defaults.get("poles")
+    if shape in MAP_SHAPES:
+        settings["shape"] = shape
+    if poles in MAP_POLES:
+        settings["poles"] = poles
     victory_conditions = state.get("victory_conditions")
     if isinstance(victory_conditions, dict):
         settings["victories"] = [
@@ -862,7 +941,7 @@ def normalized_simulation_settings(values: Any) -> dict[str, Any] | None:
         leader_pool = str(values.get("leader_pool", "civ6"))
         if leader_pool not in ("civ6", "expanded"):
             return None
-        return {
+        normalized = {
             "players": int(values["players"]),
             "width": int(values["width"]),
             "height": int(values["height"]),
@@ -873,6 +952,20 @@ def normalized_simulation_settings(values: Any) -> dict[str, Any] | None:
             "leader_pool": leader_pool,
             "victories": [str(value) for value in values["victories"]],
         }
+        # New servers always send both. Keeping them optional lets a promoted
+        # supervisor finish a handoff from the immediately preceding server
+        # version without rejecting the entire request.
+        if "shape" in values:
+            shape = str(values["shape"])
+            if shape not in MAP_SHAPES:
+                return None
+            normalized["shape"] = shape
+        if "poles" in values:
+            poles = str(values["poles"])
+            if poles not in MAP_POLES:
+                return None
+            normalized["poles"] = poles
+        return normalized
     except (KeyError, TypeError, ValueError):
         return None
 
@@ -978,6 +1071,16 @@ def server_command(
     resume: Path | None = None,
     initially_paused: bool = False,
 ) -> list[str]:
+    # Every exhibition world is Online speed and an Ancient start, whatever
+    # asked for it. Say so when something asked for otherwise: a staged lobby
+    # handoff that names Epic is a real operator action, and silently starting
+    # a different game than the panel promised is worse than refusing to.
+    requested_speed = str(settings.get("speed", SIMULATION_SPEED))
+    if requested_speed != SIMULATION_SPEED:
+        log(
+            f"settings asked for {requested_speed} speed; the exhibition "
+            f"simulates {SIMULATION_SPEED} only, starting {SIMULATION_SPEED}"
+        )
     args = [
         str(
             RUNTIME_BINARY
@@ -987,18 +1090,14 @@ def server_command(
         "play",
         "--players",
         str(settings["players"]),
-        "--width",
-        str(settings["width"]),
-        "--height",
-        str(settings["height"]),
-        "--city-states",
-        str(settings["city_states"]),
         "--turns",
         str(settings["turns"]),
         "--map",
         str(settings["map"]),
         "--speed",
-        str(settings["speed"]),
+        SIMULATION_SPEED,
+        "--start-era",
+        SIMULATION_START_ERA,
         "--leader-pool",
         str(settings.get("leader_pool", "civ6")),
         "--seed",
@@ -1007,9 +1106,19 @@ def server_command(
         str(port),
         "--spectate",
         "--supervised",
-        "--restart-ms",
-        str(math.ceil(FINAL_COUNTDOWN_SECONDS * 1000)),
     ]
+    # A board size is only passed when something explicitly chose one -- the
+    # operator's flags on the first world, or a resumed checkpoint. A rolled
+    # world omits all three so `civvis play` sizes the map for the seat count
+    # it actually drew, off the shipped Civilization VI table.
+    for flag, key in (("--width", "width"), ("--height", "height"),
+                      ("--city-states", "city_states")):
+        if settings.get(key) is not None:
+            args.extend((flag, str(settings[key])))
+    if "shape" in settings:
+        args.extend(("--shape", str(settings["shape"])))
+    if "poles" in settings:
+        args.extend(("--poles", str(settings["poles"])))
     if resume is not None:
         args.extend(("--resume", str(resume)))
     if initially_paused:
@@ -1267,9 +1376,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--turns", type=int, default=250)
     parser.add_argument(
         "--map",
-        choices=("pangaea", "continents", "small_continents", "inland_sea"),
+        choices=MAP_TYPES,
         default="pangaea",
     )
+    parser.add_argument("--shape", choices=MAP_SHAPES, default="flat")
+    parser.add_argument("--poles", choices=MAP_POLES, default="poles")
     parser.add_argument(
         "--speed",
         choices=("online", "quick", "standard", "epic", "marathon"),
@@ -1310,8 +1421,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--cooldown",
         type=float,
-        default=5.0,
-        help="seconds to keep the result visible (minimum 5; larger values are honored)",
+        default=FINAL_COUNTDOWN_SECONDS,
+        help=(
+            "accepted and ignored. A finished result is always held for "
+            f"{FINAL_COUNTDOWN_SECONDS:g} seconds, because that is the "
+            "countdown the server shows the viewer"
+        ),
     )
     parser.add_argument("--poll", type=float, default=0.5)
     parser.add_argument("--build-retry", type=float, default=15.0)
@@ -1433,8 +1548,11 @@ def release_single_instance() -> None:
 
 def main() -> int:
     args = parse_args()
-    global FINAL_COUNTDOWN_SECONDS
-    FINAL_COUNTDOWN_SECONDS = final_countdown_seconds(args.cooldown)
+    if args.cooldown != FINAL_COUNTDOWN_SECONDS:
+        log(
+            f"--cooldown {args.cooldown:g} ignored; a result is held for "
+            f"{FINAL_COUNTDOWN_SECONDS:g}s, the countdown the server shows"
+        )
     if getattr(args, "prepare_once", False):
         try:
             return 0 if prepare_latest_once() else 1
@@ -1457,6 +1575,12 @@ def main() -> int:
         "speed": args.speed,
         "leader_pool": getattr(args, "leader_pool", "civ6"),
     }
+    # `getattr` keeps a self-updating supervisor able to adopt arguments from
+    # the immediately preceding version, whose Namespace had neither option.
+    if getattr(args, "shape", None) in MAP_SHAPES:
+        settings["shape"] = args.shape
+    if getattr(args, "poles", None) in MAP_POLES:
+        settings["poles"] = args.poles
     if getattr(args, "victories", None):
         settings["victories"] = list(args.victories)
     global LEAGUE_SPEC, LEAGUE_RECORD
@@ -1576,8 +1700,15 @@ def main() -> int:
             log("active runtime is behind the worktree; scheduling a safe live refresh")
 
         while True:
-            state = read_state(args.port)
-            if state is None:
+            # A restart is asked for by the person watching, and the moment it
+            # is most needed is the moment a long AI turn holds the simulation
+            # lock — which is exactly when `/state` cannot be built and this
+            # loop used to see nothing at all. `/runtime` answers from atomics
+            # beside the session, so the request is read while the turn runs.
+            manual_request = manual_new_game_request(read_json(args.port, "/runtime") or {})
+            if manual_request is None:
+                state = read_state(args.port)
+            if manual_request is None and state is None:
                 now = time.monotonic()
                 unavailable_since = unavailable_since or now
                 alive = process_alive(process, adopted_pid)
@@ -1633,7 +1764,11 @@ def main() -> int:
             busy_check_at = 0.0
             busy_until = 0.0
 
-            manual_request = manual_new_game_request(state)
+            # `/state` remains the fallback: this supervisor re-execs itself
+            # from newer source while an older promoted runtime is still live,
+            # and that runtime answers `/runtime` without the request in it.
+            if manual_request is None:
+                manual_request = manual_new_game_request(state)
             if manual_request is not None:
                 mode, requested_settings, preserve_pause = manual_request
                 if mode == "fresh_code":
@@ -1799,8 +1934,15 @@ def main() -> int:
                 finished_key = current_finished_key
                 finished_seen_at = now
                 update_retry_at = 0.0
+                # `victory_turn` is the turn the result is dated on: a score
+                # victory is settled by a count taken on the wrap out of the
+                # final turn, so a finished 250-turn game is reported on turn
+                # 250 rather than the turn 251 nobody plays.
+                finished_turn = state.get("victory_turn")
+                if finished_turn is None:
+                    finished_turn = state.get("turn")
                 log(
-                    f"game finished on turn {state.get('turn')} "
+                    f"game finished on turn {finished_turn} "
                     f"({state.get('victory_type') or 'unknown'} victory); checking for updates"
                 )
                 standings = result_standings(state)
