@@ -6632,6 +6632,53 @@ mod action_family_tests {
 }
 
 #[cfg(test)]
+mod envoy_contact_tests {
+    use super::*;
+
+    #[test]
+    fn envoys_require_contact_in_both_enumeration_and_apply() {
+        let mut game = Game::new_full(1, 24, 16, 90_731, 120, 2, false);
+        let city_states: Vec<usize> = game
+            .players
+            .iter()
+            .filter(|player| player.is_minor && !player.is_barbarian)
+            .map(|player| player.id)
+            .collect();
+        assert_eq!(city_states.len(), 2);
+        let hidden = city_states[0];
+        let known = city_states[1];
+
+        for player in 0..game.players.len() {
+            game.players[player].met.clear();
+        }
+        game.record_contact(0, known);
+        game.players[0].envoys_free = 1;
+
+        assert!(!game.can_send_envoy(0, hidden));
+        assert!(game.can_send_envoy(0, known));
+        let actions = game.legal_actions_within(0, ActionFamilies::EMPIRE);
+        assert!(!actions
+            .iter()
+            .any(|action| matches!(action, Action::SendEnvoy { player } if *player == hidden)));
+        assert!(actions
+            .iter()
+            .any(|action| matches!(action, Action::SendEnvoy { player } if *player == known)));
+
+        assert_eq!(
+            game.apply(0, &Action::SendEnvoy { player: hidden }),
+            Err("invalid city-state".to_string())
+        );
+        assert_eq!(game.players[0].envoys_free, 1);
+        assert_eq!(game.raw_envoys_at(0, hidden), 0);
+
+        game.apply(0, &Action::SendEnvoy { player: known })
+            .unwrap();
+        assert_eq!(game.players[0].envoys_free, 0);
+        assert_eq!(game.raw_envoys_at(0, known), 1);
+    }
+}
+
+#[cfg(test)]
 mod agenda_cache_tests {
     use super::*;
 
@@ -22082,16 +22129,29 @@ impl Game {
             .unwrap_or(0)
     }
 
+    /// Whether this civilization can currently send one of its Envoys to a
+    /// city-state. Contact is part of legality, not merely presentation: an
+    /// unmet city-state's identity and influence table are hidden information.
+    pub(crate) fn can_send_envoy(&self, pid: usize, minor: usize) -> bool {
+        self.players
+            .get(pid)
+            .is_some_and(|player| player.envoys_free > 0)
+            && self.players.get(minor).is_some_and(|player| {
+                player.is_minor && !player.is_barbarian && player.alive
+            })
+            && self.has_met(pid, minor)
+            && !self.is_at_war(pid, minor)
+    }
+
     fn do_send_envoy(&mut self, pid: usize, minor: usize) -> Result<(), String> {
-        if self.players[pid].envoys_free <= 0 {
+        if self
+            .players
+            .get(pid)
+            .is_none_or(|player| player.envoys_free <= 0)
+        {
             return Err("no envoys to send".into());
         }
-        let ok = self
-            .players
-            .get(minor)
-            .map(|m| m.is_minor && !m.is_barbarian && m.alive)
-            .unwrap_or(false);
-        if !ok || self.is_at_war(pid, minor) {
+        if !self.can_send_envoy(pid, minor) {
             return Err("invalid city-state".into());
         }
         // Diplomatic League reacts to the first envoy actually sent; Amani's
@@ -33564,7 +33624,7 @@ impl Game {
                     .as_ref()
                     .is_some_and(|civ| self.players[pid].civ != *civ)
                     || self.rules.buildings.values().any(|candidate| {
-                        candidate.replaces == Some(Name::new(&building.as_str()))
+                        candidate.replaces == Some(*building)
                             && (candidate.unique_to.as_deref()
                                 == Some(self.players[pid].civ.as_str())
                                 || society_for(candidate).is_some_and(|society| {
@@ -33683,7 +33743,7 @@ impl Game {
                         .as_ref()
                         .is_some_and(|civ| self.players[pid].civ != *civ)
                     || self.rules.districts.values().any(|candidate| {
-                        candidate.replaces == Some(Name::new(&district.as_str()))
+                        candidate.replaces == Some(*district)
                             && candidate.unique_to.as_deref()
                                 == Some(self.players[pid].civ.as_str())
                     })
@@ -33921,7 +33981,7 @@ impl Game {
                     .as_ref()
                     .is_some_and(|civ| self.players[pid].civ != *civ)
                 || self.rules.districts.values().any(|candidate| {
-                    candidate.replaces == Some(Name::new(&name.as_str()))
+                    candidate.replaces == Some(*name)
                         && candidate.unique_to.as_deref() == Some(self.players[pid].civ.as_str())
                 })
             {
@@ -34803,14 +34863,7 @@ impl Game {
             }
             if p.envoys_free > 0 {
                 for m in &self.players {
-                    // An envoy needs somewhere to be sent. A city-state
-                    // nobody has found yet has no court to receive one.
-                    if m.is_minor
-                        && !m.is_barbarian
-                        && m.alive
-                        && self.has_met(pid, m.id)
-                        && !self.is_at_war(pid, m.id)
-                    {
+                    if self.can_send_envoy(pid, m.id) {
                         acts.push(Action::SendEnvoy { player: m.id });
                     }
                 }

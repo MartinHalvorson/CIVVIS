@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Script-only context: the loader binds the same-named .lua alongside it.
+     Written open-and-close for the reason given in CivvisControlSetup.xml. -->
+<Context>
+</Context>

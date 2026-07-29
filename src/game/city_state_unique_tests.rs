@@ -777,6 +777,8 @@ fn leading_sent_envoys_expand_borders_and_strengthen_the_city_state() {
         .unwrap();
     let minor_city = game.found_city_for(minor, minor_position, None);
     let initial_tiles = game.cities[&minor_city].owned_tiles.len();
+    game.record_contact(0, minor);
+    game.record_contact(1, minor);
 
     game.players[0].envoys_free = 2;
     game.do_send_envoy(0, minor).unwrap();

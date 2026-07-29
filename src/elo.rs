@@ -38,13 +38,14 @@ pub const BUILTIN_AIS: [&str; 10] = [
 /// tournament ratings. Keeping them out of `BUILTIN_AIS` prevents a control
 /// factory from being pooled into the same player/leader rating key as
 /// its treatment.
-pub const EVAL_ONLY_AIS: [&str; 61] = [
+pub const EVAL_ONLY_AIS: [&str; 64] = [
     "advanced_congress_counter",
     "advanced_congress_votes",
     "advanced_congress_counter_hard",
     "advanced_banking_dedication",
     "advanced_blind_to_leaders",
     "advanced_rush",
+    "advanced_rush_connected",
     "advanced_city_strategy",
     "advanced_city_strategy_emphasis",
     "advanced_city_strategy_roles",
@@ -61,6 +62,8 @@ pub const EVAL_ONLY_AIS: [&str; 61] = [
     "advanced_early_score_build",
     "advanced_evolved_blind",
     "advanced_settler_commit",
+    "advanced_wide_opening",
+    "advanced_expansion_payback",
     "advanced_food_first",
     "advanced_measured_dedication",
     "advanced_lane_reachable",
@@ -554,6 +557,15 @@ pub fn builtin_ai(name: &str, seed: u64) -> Box<dyn Ai> {
             ai.early_rush = true;
             Box::new(ai)
         }
+        // Frozen route selector for the ancient-rush mechanism. It changes no
+        // rush rule after target eligibility: only rivals a starting land
+        // melee unit could route to the existing staging ring may trigger it.
+        "advanced_rush_connected" => {
+            let mut ai = AdvancedAi::new();
+            ai.early_rush = true;
+            ai.route_connected_rush = true;
+            Box::new(ai)
+        }
         // Treatment for the response-shape axis: identical to `advanced`
         // except that a Science or Expansion threat is answered by racing the
         // leader in that lane rather than by declaring on them. The alarm is
@@ -726,6 +738,23 @@ pub fn builtin_ai(name: &str, seed: u64) -> Box<dyn Ai> {
             ai.city_strategy = true;
             ai.city_strategy_halt_growth = true;
             ai.city_strategy_expansion_first = false;
+            Box::new(ai)
+        }
+        // Treatment for the expansion-window axis: identical to `advanced`
+        // except the settler gate closes on whether a settler built here and
+        // now would pay for itself, rather than on a flat end-of-game reserve.
+        // See `AdvancedAi::expansion_pays_back` and #554/#559.
+        "advanced_expansion_payback" => {
+            let mut ai = AdvancedAi::new();
+            ai.expansion_pays_back = true;
+            Box::new(ai)
+        }
+        // Treatment for the city-target axis: identical to `advanced` except
+        // that the target ramp starts at six rather than three. See
+        // `AdvancedAi::city_target_floor`, #554 and #569.
+        "advanced_wide_opening" => {
+            let mut ai = AdvancedAi::new();
+            ai.city_target_floor = 6;
             Box::new(ai)
         }
         "advanced_lane_reachable" => {
@@ -1462,6 +1491,8 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         ),
         "advanced" => (Vec::new(), "advanced"),
         "advanced_lane_reachable" => (Vec::new(), "advanced_lane_reachable"),
+        "advanced_wide_opening" => (Vec::new(), "advanced_wide_opening"),
+        "advanced_expansion_payback" => (Vec::new(), "advanced_expansion_payback"),
         "advanced_city_strategy" => (Vec::new(), "advanced_city_strategy"),
         "advanced_city_strategy_emphasis" => (Vec::new(), "advanced_city_strategy_emphasis"),
         "advanced_city_strategy_roles" => (Vec::new(), "advanced_city_strategy_roles"),
@@ -1502,6 +1533,7 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         ),
         "advanced_civ_blind" => (Vec::new(), "advanced_civ_blind"),
         "advanced_rush" => (Vec::new(), "advanced_rush"),
+        "advanced_rush_connected" => (Vec::new(), "advanced_rush_connected"),
         "advanced_settler_commit" => (Vec::new(), "advanced_settler_commit"),
         "advanced_food_first" => (Vec::new(), "advanced_food_first"),
         "advanced_v1" => (Vec::new(), "advanced_v1"),
@@ -1990,10 +2022,11 @@ mod tests {
             // Anything else reaching that state fell through to the
             // catch-all and is claiming to need nothing while quietly
             // needing a net.
-            const SCRIPTED: [&str; 33] = [
+            const SCRIPTED: [&str; 36] = [
                 "advanced",
                 "advanced_blind_to_leaders",
                 "advanced_rush",
+                "advanced_rush_connected",
                 "advanced_congress_counter",
                 "advanced_congress_votes",
                 "advanced_congress_counter_hard",
@@ -2002,6 +2035,8 @@ mod tests {
                 "advanced_early_score_alarm",
                 "advanced_early_score_build",
                 "advanced_settler_commit",
+                "advanced_wide_opening",
+                "advanced_expansion_payback",
                 "advanced_banking_dedication",
                 "advanced_city_strategy",
                 "advanced_city_strategy_emphasis",

@@ -60,6 +60,10 @@ const RUSH_STACK: usize = 2;
 /// at 2 and continuing to build to 4 gets both — the war starts the turn it
 /// can, and the reinforcements walk into a siege already in progress.
 const RUSH_ARMY: usize = 4;
+/// Inner edge of the existing 3..=5 peacetime staging ring. The connected
+/// treatment asks whether a current land melee unit can route to this edge;
+/// it is not a fitted reach threshold.
+const RUSH_STAGING_RANGE: i32 = 3;
 
 /// Local hostile-over-friendly strength at which a city becomes a Bastion and
 /// stops growing. Deliberately the same 0.45 `threatened_city` treats as a
@@ -67,6 +71,17 @@ const RUSH_ARMY: usize = 4;
 /// governor and the empire's recovery alarm cannot disagree about what counts
 /// as a threat.
 const BASTION_PRESSURE: f64 = 0.45;
+
+/// Turns between a settler finishing and its city standing. `settle_siting_census`
+/// measures the chosen site a median three tiles from where the alternatives
+/// were judged, and a settler moves two.
+const SETTLE_LAG: u32 = 3;
+
+/// Turns a founded city must then stand to be worth its settler. A new city
+/// starts at one population working its centre tile, so this is deliberately
+/// not ambitious: it is the point where the city has returned the production
+/// and the population the settler cost, not where it has become good.
+const SETTLE_PAYBACK: u32 = 15;
 
 
 
@@ -745,6 +760,46 @@ pub struct AdvancedAi {
     /// 2.76, food 36.9 against 45.5, pop 13.4 against 16.7.
     ///
     /// `city_strategy_emphasis` and `city_strategy_roles` decompose that.
+    /// Close the expansion window on whether a settler would pay for itself
+    /// rather than on a flat end-of-game reserve.
+    ///
+    /// See `expansion_pays_back_for`. The motivation is measured, not
+    /// aesthetic: #554 showed a free settler while short of the city target
+    /// more than doubles the win rate (23.0% to 52.3%, p=0.0000 over 300
+    /// games), and #559 localised where the settler is refused — on the
+    /// deployment map the shut window is the **sole** blocker on 31.2% of the
+    /// city-turns an empire spends short of its own target.
+    ///
+    /// ⚠ It replaces one constant with two smaller ones. That is a real
+    /// objection and the reason this is an entrant rather than a default: what
+    /// makes it more than retuning is that the reserve now scales with the
+    /// city's actual production rate, so a strong city may still expand late
+    /// and a weak one stops earlier than the flat rule allowed.
+    ///
+    /// Reachable as `advanced_expansion_payback`, paired against `advanced`.
+    pub expansion_pays_back: bool,
+    /// Where the city-target ramp starts. **3 by default, the shipped value.**
+    ///
+    /// `assess` computes `desired_cities = (3 + turn / cadence).min(map_capacity).min(6)`
+    /// — the empire wants three cities at the opening and adds roughly one per
+    /// era. #554's oracle handed a seat settlers up to **six** from the start
+    /// and more than doubled its win rate (23.0% to 52.3%, p=0.0000 over 300
+    /// games). The gap between those two numbers is this ramp.
+    ///
+    /// ⚠ **`GENOME.md`'s "`city_target` saturates above six" does not cover
+    /// this.** That sweep moved the `city_target` *gene*, and the gene is only
+    /// reached through `unwrap_or_else` when there is no plan — a live
+    /// `AdvancedAi` reads `plan.desired_cities` and never consults it. The
+    /// sweep measured a fallback path, which is why every value above six came
+    /// back identical to four decimal places.
+    ///
+    /// #569 removed the affordability objection: the missing cities cost 0.5%
+    /// of everything the empire produces. And on the deployment map the empire
+    /// reaches 4.83 of its own 5.00 target, so what limits it is the target,
+    /// not its ability to hit one.
+    ///
+    /// Reachable as `advanced_wide_opening`, paired against `advanced`.
+    pub city_target_floor: usize,
     pub city_strategy: bool,
     /// Ablation halves of `city_strategy`, so the loss above can be attributed
     /// rather than guessed at. Each is meaningless unless `city_strategy` is
@@ -872,6 +927,14 @@ pub struct AdvancedAi {
     /// Reachable as `advanced_rush`. Paired against `advanced` it isolates the
     /// early-aggression lane and nothing else.
     pub early_rush: bool,
+    /// Restrict `early_rush` to rivals a starting land melee unit can actually
+    /// reach. The reachable set is frozen once all living major capitals have
+    /// been founded, before this treatment can change movement, research,
+    /// production, diplomacy, or war.
+    ///
+    /// Reachable as `advanced_rush_connected`; see `docs/RUSH.md` section 9.
+    pub route_connected_rush: bool,
+    rush_route_targets: Option<BTreeSet<usize>>,
 
     /// Whether a Science or Expansion threat is answered by racing the leader
     /// in that lane instead of by declaring on them.
@@ -1044,6 +1107,8 @@ impl AdvancedAi {
             settler_commit: false,
             settler_stalls: BTreeMap::new(),
             parallel_settlers: false,
+            expansion_pays_back: false,
+            city_target_floor: 3,
             city_strategy: false,
             city_strategy_emphasis: true,
             city_strategy_roles: true,
@@ -1056,6 +1121,8 @@ impl AdvancedAi {
             civ_blind: false,
             deny_leaders: true,
             early_rush: false,
+            route_connected_rush: false,
+            rush_route_targets: None,
             counter_in_lane: false,
             counter_stand_down: false,
             early_score_alarm: false,
@@ -2287,7 +2354,7 @@ impl AdvancedAi {
         // the cadence with game speed; the old fixed turn-175 cutoff expired
         // before the five-city target even became active on Standard speed.
         let city_cadence = g.standard_duration(90).max(1) as usize;
-        let desired_cities = (3 + g.turn as usize / city_cadence)
+        let desired_cities = (self.city_target_floor + g.turn as usize / city_cadence)
             .min(map_capacity)
             .min(6);
         let mut expansion_origins: Vec<Pos> = cities.iter().map(|cid| g.cities[cid].pos).collect();
@@ -2551,6 +2618,33 @@ impl AdvancedAi {
             // production bonus must not follow it.
             rush: rush_victim.is_some_and(|(victim, _)| target_player == Some(victim)),
         }
+    }
+
+    /// Whether a settler built *here, now* would still pay for itself.
+    ///
+    /// `expansion_window_open` reserves a flat `standard_duration(50)` at the
+    /// end of every game for every city, whatever that city can actually do.
+    /// A city making 20 production a turn builds a settler in four turns; one
+    /// making three takes twenty-seven. A single reserve is wrong for both, and
+    /// `expansion_funnel_blocker_census` measures the cost of being wrong in
+    /// the strict direction: on the 6p/74x46 map the exhibition serves, the
+    /// shut window is the **sole** blocker on 310 of 993 city-turns spent short
+    /// of the empire's own city target — 31.2% of them.
+    ///
+    /// This asks the question the reserve was standing in for. Time enough to
+    /// build the settler at this city's real production rate, walk it out, and
+    /// then hold the ground long enough to return more than it cost.
+    fn expansion_pays_back_for(&self, g: &Game, pid: usize, cid: u32) -> bool {
+        let remaining = g.max_turns.saturating_sub(g.turn) as f64;
+        let production = g.city_yields(cid).production.max(1.0);
+        let build = g.item_remaining_cost_for_city(
+            pid,
+            cid,
+            &Item::Unit {
+                unit: "settler".into(),
+            },
+        ) / production;
+        remaining > build + g.standard_duration(SETTLE_LAG + SETTLE_PAYBACK) as f64
     }
 
     fn expansion_window_open(g: &Game) -> bool {
@@ -3346,6 +3440,35 @@ impl AdvancedAi {
         }
     }
 
+    /// Whether replacing one active card with another can fit in the current
+    /// typed and wildcard policy slots. This mirrors the engine's set-level
+    /// seating rule before either action is applied: probing by actually
+    /// unslotting a card writes a real action even when the candidate then
+    /// fails and the old card is restored.
+    fn policy_swap_fits(g: &Game, pid: usize, current: &Name, candidate: &str) -> bool {
+        let slots = g.gov_slots(pid);
+        let (mut military, mut economic, mut diplomatic, mut wildcard) =
+            (0i64, 0i64, 0i64, 0i64);
+        let mut count = |card: &str| match g.rules.policies[card].slot.as_str() {
+            "military" => military += 1,
+            "economic" => economic += 1,
+            "diplomatic" => diplomatic += 1,
+            _ => wildcard += 1,
+        };
+        for card in g.players[pid]
+            .policies
+            .iter()
+            .filter(|card| *card != current)
+        {
+            count(card);
+        }
+        count(candidate);
+        let overflow = (military - slots.military).max(0)
+            + (economic - slots.economic).max(0)
+            + (diplomatic - slots.diplomatic).max(0);
+        overflow + wildcard <= slots.wildcard
+    }
+
     /// Reassess policy cards as the civic tree advances instead of treating
     /// the first cards which filled a government as permanent.  Each plan has
     /// a complete late-game portfolio, while temporary Dark Age cards are
@@ -3664,6 +3787,7 @@ impl AdvancedAi {
                 .policies
                 .iter()
                 .filter(|current| !desired_set.contains(current.as_str()))
+                .filter(|current| Self::policy_swap_fits(g, pid, current, card))
                 .cloned()
                 .collect();
             replaceable.sort_by(|first, second| {
@@ -4928,6 +5052,57 @@ impl AdvancedAi {
             .collect()
     }
 
+    /// Freeze the rivals the connected-rush treatment may ever target.
+    ///
+    /// Waiting until every living major has founded its capital prevents seat
+    /// order from deciding which rivals exist. Returning whether the freeze
+    /// happened lets the caller reassess immediately: the same turn is the
+    /// treatment's first opportunity to differ from ordinary `advanced`.
+    fn freeze_rush_route_targets(&mut self, g: &Game, pid: usize) -> bool {
+        if !self.early_rush || !self.route_connected_rush || self.rush_route_targets.is_some() {
+            return false;
+        }
+
+        let Some(majors) = g
+            .players
+            .iter()
+            .filter(|player| player.alive && !player.is_minor && !player.is_barbarian)
+            .map(|player| {
+                g.player_city_ids(player.id)
+                    .into_iter()
+                    .find(|city| g.cities[city].is_capital)
+                    .map(|city| (player.id, g.cities[&city].pos))
+            })
+            .collect::<Option<Vec<_>>>()
+        else {
+            return false;
+        };
+
+        let land_melee: Vec<u32> = g
+            .player_unit_ids(pid)
+            .into_iter()
+            .filter(|unit| {
+                let spec = &g.rules.units[g.units[unit].kind];
+                spec.class == "military"
+                    && spec.is_melee_capable()
+                    && !matches!(spec.domain.as_deref(), Some("sea" | "air"))
+            })
+            .collect();
+        let reachable = majors
+            .into_iter()
+            .filter(|(target, _)| *target != pid)
+            .filter(|(_, capital)| {
+                land_melee.iter().any(|unit| {
+                    g.wdist(g.units[unit].pos, *capital) <= RUSH_STAGING_RANGE
+                        || g.route_step(*unit, *capital, RUSH_STAGING_RANGE).is_some()
+                })
+            })
+            .map(|(target, _)| target)
+            .collect();
+        self.rush_route_targets = Some(reachable);
+        true
+    }
+
     /// Global power answers whether a war is affordable; this answers whether
     /// the army is actually in position to prosecute it. At least one melee
     /// unit is mandatory because ranged and siege units cannot capture a city.
@@ -4968,6 +5143,13 @@ impl AdvancedAi {
             .iter()
             .filter(|player| {
                 player.id != pid && player.alive && !player.is_minor && !player.is_barbarian
+            })
+            .filter(|player| {
+                !self.route_connected_rush
+                    || self
+                        .rush_route_targets
+                        .as_ref()
+                        .is_some_and(|targets| targets.contains(&player.id))
             })
             .filter(|player| self.campaign_target_legal(g, pid, player.id))
             // Not stronger than us. The stack is what makes the rush work, so
@@ -5609,12 +5791,7 @@ impl AdvancedAi {
             let target = g
                 .players
                 .iter()
-                .filter(|minor| {
-                    minor.alive
-                        && minor.is_minor
-                        && !minor.is_barbarian
-                        && !g.is_at_war(pid, minor.id)
-                })
+                .filter(|minor| g.can_send_envoy(pid, minor.id))
                 .map(|minor| {
                     let mine = g.envoys_at(pid, minor.id);
                     let rival = g
@@ -7999,7 +8176,9 @@ impl AdvancedAi {
                         })
                         .flatten()
                 });
-                let expansion_open = if self.victory_target.is_some() {
+                let expansion_open = if self.expansion_pays_back {
+                    self.expansion_pays_back_for(g, pid, cid)
+                } else if self.victory_target.is_some() {
                     g.turn < g.standard_duration(175)
                 } else {
                     Self::expansion_window_open(g)
@@ -12432,6 +12611,7 @@ impl Ai for AdvancedAi {
         Some(PlanReport {
             strategy: plan.strategy.as_str(),
             victory_target: self.victory_target.map(VictoryTarget::as_str),
+            rush: plan.rush,
             target_player: plan.target_player,
             target_city: plan.target_city,
             threatened_city: plan.threatened_city,
@@ -12476,12 +12656,13 @@ impl AdvancedAi {
             self.base.take_turn(g, pid);
             return;
         }
+        let rush_routes_frozen = self.freeze_rush_route_targets(g, pid);
         let disposition_strategy = active_victory_target
             .map(VictoryTarget::strategy)
             .unwrap_or_else(|| self.victory_focus(g, pid).strategy);
         self.resolve_city_dispositions(g, pid, disposition_strategy);
         self.observe_campaign(g, pid);
-        if self.plan_stale(g, pid) {
+        if rush_routes_frozen || self.plan_stale(g, pid) {
             self.plan = Some(self.assess(g, pid));
         }
         let plan = self.plan.clone().unwrap();
@@ -12719,6 +12900,137 @@ mod tests {
             })
             .expect("test map has a nearby city site");
         game.found_city_for(owner, position, None)
+    }
+
+    /// A small Pangaea on which the shipped rush has exactly one legal victim
+    /// and a starting land melee unit can route to its staging ring.
+    fn connected_rush_fixture() -> Game {
+        for seed in 560_000..560_064 {
+            let mut game = Game::new_full(2, 24, 16, seed, 200, 0, false);
+            for pid in 0..2 {
+                let settler = game
+                    .player_unit_ids(pid)
+                    .into_iter()
+                    .find(|unit| game.units[unit].kind == "settler")
+                    .expect("each major starts with a settler");
+                let position = game.units[&settler].pos;
+                game.found_city_for(pid, position, None);
+                game.remove_unit(settler);
+            }
+            game.current = 0;
+            let mut rush = AdvancedAi::new();
+            rush.early_rush = true;
+            let Some((target, capital)) = rush.early_rush_victim(&game, 0) else {
+                continue;
+            };
+            if target != 1 {
+                continue;
+            }
+            let objective = game.cities[&capital].pos;
+            let connected = game.player_unit_ids(0).into_iter().any(|unit| {
+                let spec = &game.rules.units[game.units[&unit].kind];
+                spec.class == "military"
+                    && spec.is_melee_capable()
+                    && !matches!(spec.domain.as_deref(), Some("sea" | "air"))
+                    && game.wdist(game.units[&unit].pos, objective) > RUSH_STAGING_RANGE
+                    && game
+                        .route_step(unit, objective, RUSH_STAGING_RANGE)
+                        .is_some()
+            });
+            if connected {
+                return game;
+            }
+        }
+        panic!("the fixed seed window needs one route-connected rush fixture")
+    }
+
+    /// Turn the ring immediately outside the selector's staging range into
+    /// water. A pre-embarkation land unit then has no route to any tile within
+    /// the range, while the capital's geometric distance remains unchanged.
+    fn split_capital_from_land_route(game: &mut Game, capital: Pos) {
+        let barrier: BTreeSet<Pos> = game
+            .wdisk(capital, RUSH_STAGING_RANGE + 1)
+            .into_iter()
+            .filter(|position| game.wdist(*position, capital) == RUSH_STAGING_RANGE + 1)
+            .collect();
+        for tile in game.map.tiles.values_mut() {
+            if barrier.contains(&tile.pos) {
+                tile.terrain = crate::name!("ocean");
+                tile.feature = None;
+            }
+        }
+    }
+
+    #[test]
+    fn connected_rush_matches_the_unconditional_plan_on_pangaea() {
+        let game = connected_rush_fixture();
+        let mut unconditional = AdvancedAi::new();
+        unconditional.early_rush = true;
+        let expected = unconditional.assess(&game, 0);
+        assert!(expected.rush, "the fixture must exercise the treatment");
+
+        let mut connected = AdvancedAi::new();
+        connected.early_rush = true;
+        connected.route_connected_rush = true;
+        assert!(connected.freeze_rush_route_targets(&game, 0));
+        assert_eq!(connected.assess(&game, 0), expected);
+    }
+
+    #[test]
+    fn disconnected_rush_stays_on_the_ordinary_plan() {
+        let mut game = connected_rush_fixture();
+        let capital = game.cities[&game.player_city_ids(1)[0]].pos;
+        split_capital_from_land_route(&mut game, capital);
+
+        let mut connected = AdvancedAi::new();
+        connected.early_rush = true;
+        connected.route_connected_rush = true;
+        assert!(connected.freeze_rush_route_targets(&game, 0));
+        assert_eq!(connected.rush_route_targets, Some(BTreeSet::new()));
+
+        let ordinary = AdvancedAi::new().assess(&game, 0);
+        let selected = connected.assess(&game, 0);
+        assert!(!selected.rush);
+        assert_eq!(selected, ordinary);
+    }
+
+    #[test]
+    fn rush_route_targets_are_frozen_after_the_first_complete_capital_state() {
+        let mut game = connected_rush_fixture();
+        let mut connected = AdvancedAi::new();
+        connected.early_rush = true;
+        connected.route_connected_rush = true;
+        assert!(connected.freeze_rush_route_targets(&game, 0));
+        let frozen = connected.rush_route_targets.clone();
+        assert_eq!(frozen, Some(BTreeSet::from([1])));
+
+        for unit in game.player_unit_ids(0) {
+            game.remove_unit(unit);
+        }
+        assert!(!connected.freeze_rush_route_targets(&game, 0));
+        assert_eq!(connected.rush_route_targets, frozen);
+    }
+
+    #[test]
+    fn a_committed_connected_rush_finishes_after_the_route_changes() {
+        let mut game = connected_rush_fixture();
+        let mut connected = AdvancedAi::new();
+        connected.early_rush = true;
+        connected.route_connected_rush = true;
+        assert!(connected.freeze_rush_route_targets(&game, 0));
+
+        let capital = game.cities[&game.player_city_ids(1)[0]].pos;
+        split_capital_from_land_route(&mut game, capital);
+        game.at_war.insert((0, 1));
+        game.turn = RUSH_WINDOW_CLOSES + 1;
+
+        assert_eq!(
+            connected
+                .early_rush_victim(&game, 0)
+                .map(|(target, _)| target),
+            Some(1)
+        );
+        assert!(connected.assess(&game, 0).rush);
     }
 
     #[test]
@@ -17960,6 +18272,113 @@ mod tests {
     }
 
     #[test]
+    fn policy_reassessment_only_executes_swaps_that_can_fit() {
+        let install = |game: &mut Game, government: &str, policies: &[&str]| {
+            let settler = game
+                .player_unit_ids(0)
+                .into_iter()
+                .find(|unit| game.units[unit].kind == "settler")
+                .unwrap();
+            game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+            game.players[0].government = Some(government.to_string());
+            game.players[0].policies = policies.iter().map(|card| Name::new(*card)).collect();
+        };
+
+        // Fascism plus Big Ben seats six Military cards by spending both
+        // wildcard slots, two Economic cards, and one Diplomatic card. The
+        // remaining Conquest card is Diplomatic, so removing Rationalism
+        // cannot make Gunboat Diplomacy fit: the free Economic slot does not
+        // relieve either Military overflow slot. Probing that impossible swap
+        // used to emit an Unslot/Slot pair which restored the exact same state.
+        let mut blocked = Game::new(2, 24, 16, 79_102, 250, 0);
+        install(
+            &mut blocked,
+            "fascism",
+            &[
+                "lightning_warfare",
+                "total_war",
+                "propaganda",
+                "levee_en_masse",
+                "force_modernization",
+                "logistics",
+                "five_year_plan",
+                "rationalism",
+                "cryptography",
+            ],
+        );
+        let city = blocked.player_city_ids(0)[0];
+        let position = blocked.cities[&city].pos;
+        blocked
+            .cities
+            .get_mut(&city)
+            .unwrap()
+            .wonders
+            .insert(crate::name!("big_ben"), position);
+        blocked.players[0]
+            .civics
+            .extend([crate::name!("ideology"), crate::name!("the_enlightenment")]);
+        let policies_before = blocked.players[0].policies.clone();
+        let log_before = blocked.log.len();
+
+        AdvancedAi::new().strategic_policies(&mut blocked, 0, GrandStrategy::Conquest);
+
+        assert_eq!(blocked.players[0].policies, policies_before);
+        assert_eq!(
+            blocked
+                .log
+                .since(log_before)
+                .filter(|(_, action)| matches!(
+                    action,
+                    Action::SlotPolicy { .. } | Action::UnslotPolicy { .. }
+                ))
+                .count(),
+            0,
+            "an impossible replacement must not be executed and undone"
+        );
+
+        // A different typed card can still be the right replacement. Here an
+        // extra Economic card occupies Autocracy's wildcard slot. Removing it
+        // frees that wildcard for Logistics, so the exact set-fit check must
+        // allow the cross-type Rationalism -> Logistics swap.
+        let mut valid = Game::new(2, 24, 16, 79_103, 250, 0);
+        install(
+            &mut valid,
+            "autocracy",
+            &[
+                "lightning_warfare",
+                "five_year_plan",
+                "rationalism",
+                "cryptography",
+            ],
+        );
+        valid.players[0]
+            .civics
+            .extend([
+                crate::name!("ideology"),
+                crate::name!("mercantilism"),
+                crate::name!("the_enlightenment"),
+            ]);
+        let log_before = valid.log.len();
+
+        AdvancedAi::new().strategic_policies(&mut valid, 0, GrandStrategy::Conquest);
+
+        assert!(valid.players[0].policies.contains(&crate::name!("logistics")));
+        assert!(!valid.players[0].policies.contains(&crate::name!("rationalism")));
+        assert_eq!(
+            valid
+                .log
+                .since(log_before)
+                .filter(|(_, action)| matches!(
+                    action,
+                    Action::SlotPolicy { .. } | Action::UnslotPolicy { .. }
+                ))
+                .count(),
+            2,
+            "one valid replacement is one Unslot followed by one Slot"
+        );
+    }
+
+    #[test]
     fn dark_age_policies_follow_strategy_and_never_close_live_expansion() {
         let mut game = Game::new(2, 24, 16, 79_101, 250, 0);
         let settler = game
@@ -18659,6 +19078,15 @@ mod tests {
     #[test]
     fn diplomatic_strategy_concentrates_envoys_into_a_suzerainty() {
         let mut g = Game::new(2, 24, 16, 77, 80, 2);
+        let city_states: Vec<usize> = g
+            .players
+            .iter()
+            .filter(|player| player.is_minor && !player.is_barbarian)
+            .map(|player| player.id)
+            .collect();
+        for city_state in city_states {
+            g.record_contact(0, city_state);
+        }
         g.players[0].envoys_free = 3;
         AdvancedAi::new().advanced_envoys(&mut g, 0, GrandStrategy::Diplomacy, None);
         assert_eq!(g.players[0].envoys_free, 0);
@@ -18692,6 +19120,9 @@ mod tests {
             .collect();
         let hattusa = states[0];
         let zanzibar = states[1];
+        for city_state in states.iter().copied() {
+            game.record_contact(0, city_state);
+        }
         game.players[hattusa].civ = "Hattusa".to_string();
         game.players[zanzibar].civ = "Zanzibar".to_string();
         game.players[0].envoys = vec![(hattusa, 4), (zanzibar, 5)];
@@ -18717,6 +19148,9 @@ mod tests {
             .map(|player| player.id)
             .collect();
         assert_eq!(minors.len(), 2);
+        for city_state in minors.iter().copied() {
+            game.record_contact(0, city_state);
+        }
         game.players[minors[0]].civ = "Kandy".to_string();
         game.players[minors[1]].civ = "Yerevan".to_string();
         game.players[0].envoys_free = 1;
@@ -18740,6 +19174,35 @@ mod tests {
         AdvancedAi::new().advanced_envoys(&mut game, 0, GrandStrategy::Religion, None);
         assert_eq!(game.envoys_at(0, minors[0]), 1);
         assert_eq!(game.envoys_at(0, minors[1]), 0);
+    }
+
+    #[test]
+    fn strategic_envoys_ignore_an_unmet_city_states_identity() {
+        let mut game = Game::new_full(1, 24, 16, 90_733, 120, 2, false);
+        let city_states: Vec<usize> = game
+            .players
+            .iter()
+            .filter(|player| player.is_minor && !player.is_barbarian)
+            .map(|player| player.id)
+            .collect();
+        assert_eq!(city_states.len(), 2);
+        let hidden = city_states[0];
+        let known = city_states[1];
+        for player in 0..game.players.len() {
+            game.players[player].met.clear();
+        }
+        game.players[hidden].civ = "Yerevan".to_string();
+        game.players[known].civ = "Kandy".to_string();
+        game.record_contact(0, known);
+        game.players[0].envoys_free = 1;
+
+        // Yerevan has the higher Religion score. Ranking it before contact
+        // would both leak its identity and make apply reject the first send.
+        AdvancedAi::new().advanced_envoys(&mut game, 0, GrandStrategy::Religion, None);
+
+        assert_eq!(game.players[0].envoys_free, 0);
+        assert_eq!(game.envoys_at(0, hidden), 0);
+        assert_eq!(game.envoys_at(0, known), 1);
     }
 
     #[test]
@@ -21267,6 +21730,647 @@ mod tests {
                 t[t.len() / 2],
                 t[t.len() * 9 / 10]
             );
+        }
+        println!();
+    }
+
+    /// Fires-check for `expansion_pays_back`, at both map scales.
+    ///
+    /// The treatment exists to unblock the 31.2% of short city-turns where
+    /// `expansion_funnel_blocker_census` measures the shut window as the sole
+    /// blocker, so the thing to verify before spending an eval is that it
+    /// actually opens on those turns — and that it is not simply "always open",
+    /// which would make it a deletion of the gate rather than a payback test.
+    ///
+    /// Run with `cargo test --release expansion_payback_fires -- --ignored --nocapture`.
+    #[test]
+    #[ignore = "census, not an assertion; run explicitly with --nocapture"]
+    fn expansion_payback_fires() {
+        for (label, players, width, height) in
+            [("eval 4p 24x16", 4usize, 24i32, 16i32), ("deployment 6p 74x46", 6, 74, 46)]
+        {
+            let mut agree = 0u64;
+            let mut opened = 0u64;
+            let mut closed = 0u64;
+            for map in 0..6u64 {
+                let mut game =
+                    Game::new_full(players, width, height, 480_000 + map, 200, 1, false);
+                let mut ais: Vec<AdvancedAi> =
+                    (0..game.players.len()).map(|_| AdvancedAi::new()).collect();
+                let treated = {
+                    let mut ai = AdvancedAi::new();
+                    ai.expansion_pays_back = true;
+                    ai
+                };
+                game.set_fog_memory(false);
+                while game.winner.is_none() && game.turn <= game.max_turns {
+                    let pid = game.current;
+                    if pid == 0 {
+                        let flat = AdvancedAi::expansion_window_open(&game);
+                        for cid in game.player_city_ids(0) {
+                            let pays = treated.expansion_pays_back_for(&game, 0, cid);
+                            match (flat, pays) {
+                                (a, b) if a == b => agree += 1,
+                                (false, true) => opened += 1,
+                                (true, false) => closed += 1,
+                                _ => {}
+                            }
+                        }
+                    }
+                    ais[pid].take_turn(&mut game, pid);
+                    if game.winner.is_none() && game.current == pid {
+                        let _ = game.apply(pid, &crate::game::Action::EndTurn);
+                    }
+                }
+            }
+            let total = agree + opened + closed;
+            println!(
+                "\n=== expansion payback vs flat reserve [{label}]: {total} city-turns ===",
+            );
+            println!("  agree                     {agree:>6}  ({:>5.1}%)", agree as f64 / total.max(1) as f64 * 100.0);
+            println!("  payback OPENS what the flat reserve shut   {opened:>6}  ({:>5.1}%)", opened as f64 / total.max(1) as f64 * 100.0);
+            println!("  payback SHUTS what the flat reserve opened {closed:>6}  ({:>5.1}%)", closed as f64 / total.max(1) as f64 * 100.0);
+        }
+        println!();
+    }
+
+    /// Census, not an assertion: where does an empire's production actually go,
+    /// and how much of it would the missing cities have cost?
+    ///
+    /// This is the last open question on the expansion axis, and the axis is
+    /// worth closing properly because #554 measured real headroom there — a
+    /// free Settler while short of the city target more than doubles the win
+    /// rate (23.0% → 52.3%, p=0.0000), the only subsystem grant this harness
+    /// has ever returned HEADROOM for.
+    ///
+    /// Every *decision* mechanism proposed for it has since measured null:
+    ///
+    /// - the expansion window (#562): +0.12 cities, wins unmeasurable
+    /// - production preemption (`docs/EVAL.md` 2026-07-28): cities at end
+    ///   **2.21 vs 2.21**, settlers started 2.46 vs 2.42
+    /// - the settler's own valuation: when a city is free it already picks the
+    ///   settler, and the genuine free-city loss is only **2.6%**
+    /// - capital growth (`docs/OPENINGS.md` §12): every city after the first
+    ///   arrives **later**, monotonically in the dose
+    ///
+    /// That leaves one explanation standing, and it is not a decision at all:
+    /// **the empire cannot afford the settlers.** This measures it directly.
+    /// If the settler share of production is already large and the shortfall
+    /// would cost more than the empire ever produces, the axis is closed to
+    /// decision changes and the oracle's headroom is only reachable by having a
+    /// bigger economy — which #532 measured at 99.5% of its own ceiling.
+    ///
+    /// Run with `cargo test --release production_allocation_census -- --ignored --nocapture`.
+    #[test]
+    #[ignore = "census, not an assertion; run explicitly with --nocapture"]
+    fn production_allocation_census() {
+        for (label, players, width, height) in
+            [("eval 4p 24x16", 4usize, 24i32, 16i32), ("deployment 6p 74x46", 6, 74, 46)]
+        {
+            let mut spent = BTreeMap::<&str, f64>::new();
+            let mut total = 0.0f64;
+            let mut end_cities = 0.0f64;
+            let mut target = 0.0f64;
+            let mut shortfall_cost = 0.0f64;
+            let maps = 6u64;
+
+            for map in 0..maps {
+                let mut game =
+                    Game::new_full(players, width, height, 480_000 + map, 200, 1, false);
+                let mut ais: Vec<AdvancedAi> =
+                    (0..game.players.len()).map(|_| AdvancedAi::new()).collect();
+                game.set_fog_memory(false);
+                let mut prev: BTreeMap<u32, f64> = BTreeMap::new();
+                while game.winner.is_none() && game.turn <= game.max_turns {
+                    let pid = game.current;
+                    ais[pid].take_turn(&mut game, pid);
+                    if game.winner.is_none() && game.current == pid {
+                        let _ = game.apply(pid, &crate::game::Action::EndTurn);
+                    }
+                    if pid != 0 {
+                        continue;
+                    }
+                    // Production is banked per item key, so the turn-over-turn
+                    // rise in a city's yield is what it actually spent, and the
+                    // queue head says on what.
+                    for cid in game.player_city_ids(0) {
+                        let city = &game.cities[&cid];
+                        let yield_now = game.city_yields(cid).production.max(0.0);
+                        let key = match city.queue.first() {
+                            Some(Item::Unit { unit }) if unit.as_str() == "settler" => "settler",
+                            Some(Item::Unit { unit }) => {
+                                if game.rules.units[unit.as_str()].class == "military" {
+                                    "military unit"
+                                } else {
+                                    "civilian unit"
+                                }
+                            }
+                            Some(Item::Formation { .. }) => "military unit",
+                            Some(Item::Building { .. }) => "building",
+                            Some(Item::District { .. }) => "district",
+                            Some(Item::Wonder { .. }) => "wonder",
+                            Some(Item::Project { .. }) => "project",
+                            Some(Item::Product { .. }) => "product",
+                            Some(Item::Repair { .. }) => "repair",
+                            None => "idle",
+                        };
+                        *spent.entry(key).or_default() += yield_now;
+                        total += yield_now;
+                        prev.insert(cid, yield_now);
+                    }
+                }
+                let held = game.player_city_ids(0).len() as f64;
+                end_cities += held;
+                let want = ais[0]
+                    .plan
+                    .as_ref()
+                    .map(|p| p.desired_cities as f64)
+                    .unwrap_or(0.0);
+                target += want;
+                // Civ VI escalates settler cost 80/110/140/...; price the
+                // cities the empire never built at that schedule.
+                let missing = (want - held).max(0.0) as usize;
+                let built = held.max(1.0) as usize;
+                for n in 0..missing {
+                    shortfall_cost += 80.0 + 30.0 * (built + n) as f64;
+                }
+            }
+
+            println!("\n=== production allocation [{label}]: {total:.0} production over {maps} maps ===");
+            let mut rows: Vec<(&&str, &f64)> = spent.iter().collect();
+            rows.sort_by(|a, b| b.1.partial_cmp(a.1).unwrap());
+            for (kind, amount) in rows {
+                println!("  {kind:<14} {amount:>10.0}  ({:>5.1}%)", amount / total.max(1.0) * 100.0);
+            }
+            println!(
+                "  cities held {:.2} against a target of {:.2}",
+                end_cities / maps as f64,
+                target / maps as f64
+            );
+            println!(
+                "  the missing cities would have cost {:.0} production — {:.1}% of everything the empire made",
+                shortfall_cost / maps as f64,
+                shortfall_cost / total.max(1.0) * 100.0
+            );
+        }
+        println!();
+    }
+
+    /// Fires-check for `city_target_floor`, at both map scales.
+    ///
+    /// ⚠ The criterion is the **outcome** — cities at end — not a mechanism
+    /// bucket. `docs/EVAL.md` records the last expansion fires-check choosing
+    /// "the every-city-mid-build bucket must collapse", which the treatment
+    /// could never have moved, so it was unfalsifiable in the helpful
+    /// direction. If cities at end do not rise, nothing else here matters.
+    ///
+    /// Run with `cargo test --release city_target_floor_fires -- --ignored --nocapture`.
+    #[test]
+    #[ignore = "census, not an assertion; run explicitly with --nocapture"]
+    fn city_target_floor_fires() {
+        for (label, players, width, height) in
+            [("eval 4p 24x16", 4usize, 24i32, 16i32), ("deployment 6p 74x46", 6, 74, 46)]
+        {
+            for floor in [3usize, 6] {
+                let mut cities = 0.0f64;
+                let mut target = 0.0f64;
+                let mut score = 0.0f64;
+                let maps = 6u64;
+                for map in 0..maps {
+                    let mut game =
+                        Game::new_full(players, width, height, 480_000 + map, 200, 1, false);
+                    let mut ais: Vec<AdvancedAi> = (0..game.players.len())
+                        .map(|_| {
+                            let mut ai = AdvancedAi::new();
+                            ai.city_target_floor = floor;
+                            ai
+                        })
+                        .collect();
+                    game.set_fog_memory(false);
+                    while game.winner.is_none() && game.turn <= game.max_turns {
+                        let pid = game.current;
+                        ais[pid].take_turn(&mut game, pid);
+                        if game.winner.is_none() && game.current == pid {
+                            let _ = game.apply(pid, &crate::game::Action::EndTurn);
+                        }
+                    }
+                    cities += game.player_city_ids(0).len() as f64;
+                    score += game.score(0) as f64;
+                    target += ais[0]
+                        .plan
+                        .as_ref()
+                        .map(|p| p.desired_cities as f64)
+                        .unwrap_or(0.0);
+                }
+                println!(
+                    "  [{label}] floor={floor}  cities {:.2} / target {:.2}   score {:.0}",
+                    cities / maps as f64,
+                    target / maps as f64,
+                    score / maps as f64
+                );
+            }
+        }
+        println!();
+    }
+
+    /// Census, not an assertion: how much of its treasury does an empire never
+    /// spend?
+    ///
+    /// The `ablate` harness's calibration grant hands a seat 200 Gold and 100
+    /// Faith a turn and wins **89 of 100** — by a wide margin the largest
+    /// effect any grant has produced, against `ground`, `siting`, `taker`,
+    /// `modernity` and `attrition` all null and `expansion` at 52.3%. That
+    /// grant is not a subsystem and proves nothing on its own; it is the
+    /// instrument's proof that it can detect an advantage.
+    ///
+    /// But it does raise a question nothing in `docs/` has asked: the treasury
+    /// is evidently worth an enormous amount, so **does this agent use the one
+    /// it already has?** A balance sitting idle is capital earning nothing, and
+    /// unlike expansion it costs no production to deploy.
+    ///
+    /// Reported as *turns of income held*, because an absolute balance is not
+    /// interpretable on its own — 300 Gold is prudent at 5 gold per turn and
+    /// dead weight at 40.
+    ///
+    /// Run with `cargo test --release idle_treasury_census -- --ignored --nocapture`.
+    #[test]
+    #[ignore = "census, not an assertion; run explicitly with --nocapture"]
+    fn idle_treasury_census() {
+        for (label, players, width, height) in
+            [("eval 4p 24x16", 4usize, 24i32, 16i32), ("deployment 6p 74x46", 6, 74, 46)]
+        {
+            let mut gold_samples: Vec<f64> = Vec::new();
+            let mut faith_samples: Vec<f64> = Vec::new();
+            let mut gpt_samples: Vec<f64> = Vec::new();
+            let mut gold_turns_held: Vec<f64> = Vec::new();
+            let mut peak_gold = 0.0f64;
+            let maps = 6u64;
+
+            for map in 0..maps {
+                let mut game =
+                    Game::new_full(players, width, height, 480_000 + map, 200, 1, false);
+                let mut ais: Vec<AdvancedAi> =
+                    (0..game.players.len()).map(|_| AdvancedAi::new()).collect();
+                game.set_fog_memory(false);
+                while game.winner.is_none() && game.turn <= game.max_turns {
+                    let pid = game.current;
+                    ais[pid].take_turn(&mut game, pid);
+                    if game.winner.is_none() && game.current == pid {
+                        let _ = game.apply(pid, &crate::game::Action::EndTurn);
+                    }
+                    if pid != 0 {
+                        continue;
+                    }
+                    let gold = game.players[0].gold;
+                    let faith = game.players[0].faith;
+                    // Income, not balance: what the empire earns each turn is
+                    // the yardstick a balance has to be read against.
+                    let gpt = game
+                        .player_city_ids(0)
+                        .into_iter()
+                        .map(|cid| game.city_yields(cid).gold)
+                        .sum::<f64>()
+                        .max(0.1);
+                    gold_samples.push(gold);
+                    faith_samples.push(faith);
+                    gpt_samples.push(gpt);
+                    gold_turns_held.push(gold / gpt);
+                    peak_gold = peak_gold.max(gold);
+                }
+            }
+
+            let mean = |v: &Vec<f64>| v.iter().sum::<f64>() / v.len().max(1) as f64;
+            let median = |v: &Vec<f64>| {
+                let mut c = v.clone();
+                c.sort_by(f64::total_cmp);
+                c[c.len() / 2]
+            };
+            println!("\n=== idle treasury [{label}]: {} seat-turns ===", gold_samples.len());
+            println!(
+                "  Gold held      mean {:.0}   median {:.0}   peak {:.0}",
+                mean(&gold_samples),
+                median(&gold_samples),
+                peak_gold
+            );
+            println!("  Gold income    mean {:.1}/turn", mean(&gpt_samples));
+            println!(
+                "  ★ Gold held as TURNS OF INCOME   mean {:.1}   median {:.1}",
+                mean(&gold_turns_held),
+                median(&gold_turns_held)
+            );
+            println!(
+                "  Faith held     mean {:.0}   median {:.0}",
+                mean(&faith_samples),
+                median(&faith_samples)
+            );
+            // The mean sits far above the median, so the distribution has a
+            // tail and the tail is where any real waste lives. A seat holding
+            // thirty turns of income is not keeping a prudent reserve.
+            for cut in [10.0f64, 30.0, 60.0] {
+                let share = gold_turns_held.iter().filter(|t| **t > cut).count() as f64
+                    / gold_turns_held.len().max(1) as f64
+                    * 100.0;
+                println!("    seat-turns holding more than {cut:>4.0} turns of income: {share:>5.1}%");
+            }
+        }
+        println!();
+    }
+
+    /// Census, not an assertion: is the envoy gap a resource shortfall or an
+    /// allocation failure?
+    ///
+    /// #602 measured `Grant::Suzerain` — suzerain of every met city-state — at
+    /// **56.7% against a 22.7% control**, p=0.0000 over 400 maps and 168
+    /// discordant cells, 150 directions for to 18 against. That is the largest
+    /// subsystem headroom this harness has found, larger than `expansion`.
+    ///
+    /// A large ceiling is not a reachable one. Expansion has an equally real
+    /// ceiling and **seven consecutive treatments failed to reach it**, because
+    /// the oracle there removed the settler's *cost* and no decision can remove
+    /// a cost. So the question that decides whether this axis is worth a
+    /// treatment at all is which kind of gap it is:
+    ///
+    /// - **`envoys_free` accumulates** → the seat earns envoys and does not
+    ///   place them. An allocation failure, and `advanced_envoys` can fix it.
+    /// - **`envoys_free` sits near zero** → the seat spends everything it earns
+    ///   and is simply outbid. A resource gap, and this goes the way expansion
+    ///   went.
+    ///
+    /// The deficit distribution decides how much it would take: being outbid by
+    /// one envoy at many city-states is a very different problem from being
+    /// outbid by ten at a few.
+    ///
+    /// Run with `cargo test --release envoy_allocation_census -- --ignored --nocapture`.
+    #[test]
+    #[ignore = "census, not an assertion; run explicitly with --nocapture"]
+    fn envoy_allocation_census() {
+        for (label, players, width, height, city_states) in [
+            ("eval 4p 24x16", 4usize, 24i32, 16i32, 4usize),
+            ("deployment 6p 74x46", 6, 74, 46, 12),
+        ] {
+            let mut free_samples: Vec<f64> = Vec::new();
+            let mut placed_samples: Vec<f64> = Vec::new();
+            let mut met_samples: Vec<f64> = Vec::new();
+            let mut held_samples: Vec<f64> = Vec::new();
+            let mut deficits: Vec<i64> = Vec::new();
+            let maps = 6u64;
+
+            for map in 0..maps {
+                let mut game = Game::new_full(
+                    players,
+                    width,
+                    height,
+                    480_000 + map,
+                    200,
+                    city_states,
+                    false,
+                );
+                let mut ais: Vec<AdvancedAi> =
+                    (0..game.players.len()).map(|_| AdvancedAi::new()).collect();
+                game.set_fog_memory(false);
+                while game.winner.is_none() && game.turn <= game.max_turns {
+                    let pid = game.current;
+                    ais[pid].take_turn(&mut game, pid);
+                    if game.winner.is_none() && game.current == pid {
+                        let _ = game.apply(pid, &crate::game::Action::EndTurn);
+                    }
+                    if pid != 0 {
+                        continue;
+                    }
+                    let minors: Vec<usize> = game
+                        .players
+                        .iter()
+                        .filter(|m| m.is_minor && m.alive && !m.is_barbarian)
+                        .map(|m| m.id)
+                        .filter(|m| game.has_met(0, *m))
+                        .collect();
+                    if minors.is_empty() {
+                        continue;
+                    }
+                    free_samples.push(game.players[0].envoys_free as f64);
+                    placed_samples
+                        .push(game.players[0].envoys.iter().map(|(_, n)| *n).sum::<i64>() as f64);
+                    met_samples.push(minors.len() as f64);
+                    let held = minors
+                        .iter()
+                        .filter(|m| game.suzerain_of(**m) == Some(0))
+                        .count();
+                    held_samples.push(held as f64);
+                    // For each city-state it does NOT hold, how many more
+                    // envoys would it have taken? That is the size of the
+                    // reallocation the oracle performed for free.
+                    for minor in &minors {
+                        if game.suzerain_of(*minor) == Some(0) {
+                            continue;
+                        }
+                        let best_rival = game
+                            .players
+                            .iter()
+                            .filter(|o| !o.is_minor && o.alive && o.id != 0)
+                            .map(|o| game.envoys_at(o.id, *minor))
+                            .max()
+                            .unwrap_or(0);
+                        let want = (best_rival + 1).max(3);
+                        deficits.push((want - game.envoys_at(0, *minor)).max(0));
+                    }
+                }
+            }
+
+            let mean = |v: &Vec<f64>| v.iter().sum::<f64>() / v.len().max(1) as f64;
+            deficits.sort_unstable();
+            let total_deficit: i64 = deficits.iter().sum();
+            println!("\n=== envoy allocation [{label}]: {} seat-turns ===", free_samples.len());
+            println!(
+                "  ★ envoys UNSPENT in the pool   mean {:.2}   (a pool near zero means resource-bound)",
+                mean(&free_samples)
+            );
+            println!("  envoys placed on the board     mean {:.1}", mean(&placed_samples));
+            println!(
+                "  city-states met {:.1}, suzerain of {:.1}  ({:.0}% held)",
+                mean(&met_samples),
+                mean(&held_samples),
+                mean(&held_samples) / mean(&met_samples).max(1e-9) * 100.0
+            );
+            if !deficits.is_empty() {
+                println!(
+                    "  when NOT suzerain, envoys short: median {}  p90 {}  max {}",
+                    deficits[deficits.len() / 2],
+                    deficits[deficits.len() * 9 / 10],
+                    deficits[deficits.len() - 1]
+                );
+                println!(
+                    "  ★ total shortfall {:.1} envoys per seat-turn against a pool of {:.2}",
+                    total_deficit as f64 / free_samples.len().max(1) as f64,
+                    mean(&free_samples)
+                );
+            }
+        }
+        println!();
+    }
+
+    /// Census, not an assertion: does the agent ever build an envoy income?
+    ///
+    /// #602 measured perfect suzerainty at **56.7% against a 22.7% control**
+    /// (p=0.0000, 400 maps) — the largest ceiling this harness has found. #608
+    /// showed the gap is not allocation: the envoy pool reads **0.00 unspent at
+    /// every sample** and the agent is suzerain of **3%** of the city-states it
+    /// meets. It spends everything it earns, and earns almost nothing.
+    ///
+    /// So the live question is acquisition, and unlike the settler's production
+    /// cost that expansion foundered on, **every input here is a decision**.
+    /// `city_state_influence` accrues `influence` per turn and converts it to
+    /// envoys whenever it crosses the government's `influence_threshold`:
+    ///
+    /// - **government** — `influence_per_turn` *and* `envoys_per_threshold`,
+    ///   which runs 1 for chiefdom/autocracy/oligarchy/classical_republic,
+    ///   2 for monarchy/merchant_republic/theocracy, 3 for
+    ///   communism/democracy/fascism, 4 for the modern three
+    /// - **policy cards** — `charismatic_leader` (+2/turn),
+    ///   `gunboat_diplomacy` (+4/turn)
+    /// - **buildings** — `consulate` (+2), `chancery` (+3)
+    ///
+    /// If the agent holds an early government, slots neither card and builds
+    /// neither building, the shortfall is a straightforward consequence and
+    /// each of those three is a treatment. If it already does all three, the
+    /// ceiling is out of reach the way expansion's was.
+    ///
+    /// Run with `cargo test --release envoy_income_census -- --ignored --nocapture`.
+    #[test]
+    #[ignore = "census, not an assertion; run explicitly with --nocapture"]
+    fn envoy_income_census() {
+        const CARDS: [&str; 2] = ["charismatic_leader", "gunboat_diplomacy"];
+        const BUILDINGS: [&str; 2] = ["consulate", "chancery"];
+
+        for (label, players, width, height, city_states) in [
+            ("eval 4p 24x16", 4usize, 24i32, 16i32, 4usize),
+            ("deployment 6p 74x46", 6, 74, 46, 12),
+        ] {
+            let mut govs = BTreeMap::<String, u64>::new();
+            let mut envoys_per_threshold: Vec<f64> = Vec::new();
+            let mut influence_rate: Vec<f64> = Vec::new();
+            let mut card_turns = BTreeMap::<&str, u64>::new();
+            let mut building_ever = BTreeMap::<&str, u64>::new();
+            let mut turns = 0u64;
+            let mut civic_turns = BTreeMap::<&str, u64>::new();
+            let mut diplo_slot_turns = 0u64;
+            let mut diplo_quarter_games = 0u64;
+            let maps = 6u64;
+
+            for map in 0..maps {
+                let mut game = Game::new_full(
+                    players, width, height, 480_000 + map, 200, city_states, false,
+                );
+                let mut ais: Vec<AdvancedAi> =
+                    (0..game.players.len()).map(|_| AdvancedAi::new()).collect();
+                game.set_fog_memory(false);
+                let mut built_here = BTreeSet::<&str>::new();
+                while game.winner.is_none() && game.turn <= game.max_turns {
+                    let pid = game.current;
+                    ais[pid].take_turn(&mut game, pid);
+                    if game.winner.is_none() && game.current == pid {
+                        let _ = game.apply(pid, &crate::game::Action::EndTurn);
+                    }
+                    if pid != 0 {
+                        continue;
+                    }
+                    turns += 1;
+                    let seat = &game.players[0];
+                    let gov = seat.government.clone().unwrap_or_else(|| "none".into());
+                    *govs.entry(gov.to_string()).or_default() += 1;
+                    if let Some(spec) = seat
+                        .government
+                        .as_ref()
+                        .and_then(|g| game.rules.governments.get(g.as_str()))
+                    {
+                        envoys_per_threshold.push(spec.envoys_per_threshold as f64);
+                        influence_rate.push(spec.influence_per_turn);
+                    } else {
+                        envoys_per_threshold.push(0.0);
+                        influence_rate.push(0.0);
+                    }
+                    for card in CARDS {
+                        if seat.policies.iter().any(|p| p.as_str() == card) {
+                            *card_turns.entry(card).or_default() += 1;
+                        }
+                    }
+                    for civic in ["political_philosophy", "ideology"] {
+                        if seat.civics.iter().any(|c| c.as_str() == civic) {
+                            *civic_turns.entry(civic).or_default() += 1;
+                        }
+                    }
+                    if game.gov_slots(0).diplomatic > 0 {
+                        diplo_slot_turns += 1;
+                    }
+                    if game
+                        .cities
+                        .values()
+                        .any(|c| c.owner == 0 && c.districts.keys().any(|d| d.as_str() == "diplomatic_quarter"))
+                        && built_here.insert("diplomatic_quarter")
+                    {
+                        diplo_quarter_games += 1;
+                    }
+                    for b in BUILDINGS {
+                        if game
+                            .cities
+                            .values()
+                            .any(|c| c.owner == 0 && c.buildings.iter().any(|x| x.as_str() == b))
+                            && built_here.insert(b)
+                        {
+                            *building_ever.entry(b).or_default() += 1;
+                        }
+                    }
+                }
+            }
+
+            let mean = |v: &Vec<f64>| v.iter().sum::<f64>() / v.len().max(1) as f64;
+            println!("\n=== envoy income [{label}]: {turns} seat-turns over {maps} maps ===");
+            println!(
+                "  ★ envoys_per_threshold held   mean {:.2}   (1 = earliest tier, 4 = modern)",
+                mean(&envoys_per_threshold)
+            );
+            println!(
+                "  government influence/turn     mean {:.2}",
+                mean(&influence_rate)
+            );
+            let mut rows: Vec<(&String, &u64)> = govs.iter().collect();
+            rows.sort_by(|a, b| b.1.cmp(a.1));
+            println!("  governments held (top 4):");
+            for (name, count) in rows.into_iter().take(4) {
+                println!("    {name:<24} {:>5.1}% of turns", *count as f64 / turns.max(1) as f64 * 100.0);
+            }
+            println!("  ★ influence policy cards slotted:");
+            for card in CARDS {
+                let n = card_turns.get(card).copied().unwrap_or(0);
+                println!("    {card:<22} {:>5.1}% of turns", n as f64 / turns.max(1) as f64 * 100.0);
+            }
+            // ⚠ "never chosen" and "never available" are different findings.
+            // Both cards need a *diplomatic policy slot* plus a civic, and both
+            // buildings need a `diplomatic_quarter` district. Without these
+            // three numbers the ones above measure the ruleset, not the agent.
+            println!("  availability — was it ever even possible?");
+            println!(
+                "    political_philosophy held  {:>5.1}% of turns",
+                civic_turns.get("political_philosophy").copied().unwrap_or(0) as f64
+                    / turns.max(1) as f64
+                    * 100.0
+            );
+            println!(
+                "    ideology held              {:>5.1}% of turns",
+                civic_turns.get("ideology").copied().unwrap_or(0) as f64 / turns.max(1) as f64
+                    * 100.0
+            );
+            println!(
+                "    a diplomatic slot open     {:>5.1}% of turns",
+                diplo_slot_turns as f64 / turns.max(1) as f64 * 100.0
+            );
+            println!(
+                "    diplomatic_quarter built   in {diplo_quarter_games} of {maps} games"
+            );
+            println!("  ★ influence buildings ever built:");
+            for b in BUILDINGS {
+                let n = building_ever.get(b).copied().unwrap_or(0);
+                println!("    {b:<22} in {n} of {maps} games");
+            }
         }
         println!();
     }
