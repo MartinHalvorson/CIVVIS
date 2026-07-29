@@ -150,9 +150,7 @@ fn play(
     if let Some((index, value)) = gene {
         let mut v = treat_w.to_vec();
         v[index] = value;
-        let deck = treat_w.policy_deck;
-        treat_w = Weights::from_vec(&v);
-        treat_w.policy_deck = deck;
+        treat_w = Weights::from_vec_like(&v, &treat_w);
     }
     let mut control_w = base.clone();
     control_w.policy_deck = arms.1;

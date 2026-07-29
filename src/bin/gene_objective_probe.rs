@@ -4,7 +4,7 @@
 //! fitness path on common seeds. The primary gate is pre-registered in
 //! `docs/GENE_OBJECTIVE.md`; exploratory leave-one-map-out selection is
 //! reported separately and cannot override it.
-use civvis::ai::Weights;
+use civvis::ai::{PolicyDeck, Weights};
 use civvis::evolve::{fitness_observations, load_champion, EvoCfg, FitnessObservation};
 use civvis::parallel;
 
@@ -56,6 +56,21 @@ fn text(args: &[String], flag: &str, default: &str) -> String {
         .and_then(|index| args.get(index + 1))
         .cloned()
         .unwrap_or_else(|| default.to_string())
+}
+
+fn policy_deck(name: &str) -> Option<PolicyDeck> {
+    match name {
+        "artifact" => None,
+        "live" => Some(PolicyDeck::Live),
+        "legacy" => Some(PolicyDeck::Legacy),
+        "empty" => Some(PolicyDeck::Empty),
+        other => {
+            eprintln!(
+                "gene_objective_probe: unknown policy deck {other:?}; use artifact, live, legacy or empty"
+            );
+            std::process::exit(2);
+        }
+    }
 }
 
 fn mean_se(values: &[f64]) -> (f64, f64) {
@@ -190,10 +205,14 @@ fn main() {
     let jobs = number(&args, "--jobs", parallel::default_jobs()).max(1);
     let speed = text(&args, "--speed", "online");
     let artifact = text(&args, "--base", "evolved");
-    let Some(base) = load_champion(&artifact) else {
+    let deck_arg = text(&args, "--policy-deck", "artifact");
+    let Some(mut base) = load_champion(&artifact) else {
         eprintln!("gene_objective_probe: no valid champion in {artifact:?}");
         std::process::exit(2);
     };
+    if let Some(deck) = policy_deck(&deck_arg) {
+        base.policy_deck = deck;
+    }
 
     let names = Weights::gene_names();
     let bounds = Weights::bounds();
@@ -214,7 +233,7 @@ fn main() {
             candidates.push(Candidate {
                 gene: Some(gene),
                 label: format!("{}={endpoint}", names[gene]),
-                weights: Weights::from_vec(&values),
+                weights: Weights::from_vec_like(&values, &base),
             });
         }
     }
@@ -238,7 +257,9 @@ fn main() {
          {players}p {width}x{height} {speed}, {turns}t (every third doubles), seed {seed}",
         candidates.len() - 1
     );
-    println!("base/opponents: champion from {artifact}; jobs {jobs}\n");
+    println!(
+        "base/opponents: champion from {artifact}; policy deck {deck_arg}; jobs {jobs}\n"
+    );
     let results = parallel::map_reporting(
         candidates.len(),
         jobs,
@@ -448,7 +469,10 @@ mod tests {
     #[test]
     fn shipped_champion_survives_gene_vector_round_trip() {
         let champion = load_champion("evolved").expect("embedded champion");
-        assert_eq!(champion, Weights::from_vec(&champion.to_vec()));
+        assert_eq!(
+            champion,
+            Weights::from_vec_like(&champion.to_vec(), &champion)
+        );
     }
 
     #[test]

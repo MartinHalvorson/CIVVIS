@@ -79,19 +79,27 @@ reach.
 
 This is a production evolution defect as well as an instrument defect:
 `evolve::mutate` and `crossover` reconstruct gene vectors, so the first child
-of an old loaded champion silently changes its non-gene policy. The enum
-default now matches `Weights::default`, with tests pinning both legacy Serde
-restoration and champion gene-vector round trips.
+of an old loaded champion silently changes its non-gene policy. The first
+repair made the enum default match `Weights::default` so the gene experiment
+could proceed without the confound. The deployment A/B below later rejected
+changing the champion's behavior; the final repair instead preserves the
+template's non-gene state through vector reconstruction.
 
 No threshold or seed was inspected or changed. The exact pre-registered command
 must be rerun after the integrity test passes; only that run can populate the
 result.
 
-### Valid primary run
+### Legacy-deck mechanism screen
 
 The corrected run used the exact pre-registered command, thresholds and seed.
-All candidates now preserve the production Legacy deck, and the result changed
-qualitatively:
+All candidates in this internally valid screen preserve the Legacy deck, and
+the result changed qualitatively:
+
+```sh
+cargo run --release --bin gene_objective_probe -- \
+  --policy-deck legacy --players 6 --games 24 --width 74 --height 46 \
+  --speed online --turns 250 --seed 9800000 --jobs 12
+```
 
 | fires-check | required | observed | verdict |
 |---|---:|---:|---|
@@ -102,8 +110,8 @@ qualitatively:
 The four genes score could not reach were `war_ratio`, `war_margin`,
 `peace_ratio`, and `war_min_turn`. Both bounds of all four produced zero score
 change **and zero full-objective change on all 24 maps**. The combat term does
-not rescue them; at this champion and deployment profile, the war-declaration
-block is unreachable by either breeding objective.
+not rescue them; for this champion under the Legacy-deck counterfactual, the
+war-declaration block is unreachable by either breeding objective.
 
 The genes that did fire did not merely perturb combat. Score changed in 15--24
 of 24 maps for the incumbent-favorable endpoint, with a median 83.1% of the
@@ -126,6 +134,12 @@ Replicate the complete endpoint grid and leave-one-map-out selection procedure
 on 24 disjoint deployment-profile maps at seed 9,810,000. All candidates,
 thresholds, game options, and the fixed Legacy-deck integrity tests remain
 unchanged.
+
+```sh
+cargo run --release --bin gene_objective_probe -- \
+  --policy-deck legacy --players 6 --games 24 --width 74 --height 46 \
+  --speed online --turns 250 --seed 9810000 --jobs 12
+```
 
 The hypothesis is that removing the combat term improves the generalization of
 selection because combat achievement is a distinct, partly anti-aligned target,
@@ -160,9 +174,11 @@ genes. The objective-selection result did not reproduce at the required power:
 The direction remained positive but was smaller than its uncertainty. Per the
 pre-registration, `FitnessObservation::selection_value` is unchanged and the
 combat term remains. The supported conclusion is about representation, not a
-new objective: score alone reaches the active military genome, while the four
-war-declaration parameters are dead under both dense signals on two disjoint
-deployment samples.
+new objective: score alone reaches the military genome under the Legacy-deck
+counterfactual, while the four war-declaration parameters are dead under both
+dense signals on two disjoint deployment samples. The deployment A/B below
+rejects making Legacy the production controller, so these gene-level findings
+must not be silently generalized to the stronger Live-deck champion.
 
 ## Champion policy-default repair
 
@@ -173,11 +189,11 @@ generation-14 artifact omits `policy_deck`, so before this repair every
 production controller use Legacy. The shipped champion and its first child
 therefore differed on a non-gene dimension before mutation touched anything.
 
-The fix makes the Serde/enum default agree with `Weights::default` at Legacy.
-This is the deck already measured against Live over 120 small-profile mirrored
-maps: 18 directions for Live, 15 for Legacy, sign p=0.7283, terminal score flat.
-The repair removes a measured-null evaluator and restores mutation integrity,
-but that old result is not a deployment-profile result.
+The first repair candidate made the Serde/enum default agree with
+`Weights::default` at Legacy. This is the deck already measured against Live
+over 120 small-profile mirrored maps: 18 directions for Live, 15 for Legacy,
+sign p=0.7283, terminal score flat. That old result is not a deployment-profile
+result, so the candidate required the A/B below.
 
 ### Deployment A/B pre-registration — 2026-07-29
 
@@ -192,3 +208,30 @@ the run: Legacy is the documented default, preserves vector mutation exactly,
 and removes policy-evaluation cost; Live needs evidence of strength to justify
 silently re-entering through an old artifact. Wins decide, with terminal score
 reported only as diagnosis.
+
+### Deployment result — retain Live, preserve it through mutation
+
+The deployment profile rejects Legacy significantly:
+
+```text
+decisive games   Legacy 106/240 (44.2%)
+map directions  12 for / 26 against / 82 neutral
+sign test        p = 0.0336
+terminal score  48.4% (parity 50.0%)
+```
+
+Per the pre-registration, the enum/Serde default stays Live. The small-map null
+did not transfer: changing the old artifact to the documented Legacy default
+would have shipped a measurable regression.
+
+The integrity defect is repaired at the actual mutation boundary instead.
+`Weights::from_vec_like` reconstructs the 40 genes and copies every non-gene
+policy appetite, deck, and Dedication from a template. `evolve::mutate`,
+`crossover`, population initialization/resume, and the gene probe now use it.
+Therefore a loaded Live champion, the hand-default seed genome, resumed
+parents, and every child share one fixed non-gene experiment configuration
+until an explicit non-gene experiment changes it. Plain `Weights::from_vec`
+keeps supplying ordinary production defaults to callers that have no template.
+The probe's explicit `--policy-deck legacy` keeps both recorded mechanism runs
+reproducible while its default `--policy-deck artifact` tests the artifact
+exactly as deployed. Tests pin mutation, crossover, and population alignment.
