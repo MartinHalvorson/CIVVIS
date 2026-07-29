@@ -305,6 +305,21 @@ implemented at `7fb4441d4667cec39eb94677a7b09ae61330f0b5`:
   deployment-null profiles, and reproduced all 8 matched focal cells exactly.
   It was not a focal batch and cannot spend a gate.
 
+The fail-closed invocation design was frozen independently at `fa34c83` and
+then implemented at `1b64be1fb8e5f1d152b1ef830507d731c985589a`:
+
+- `cargo test --release --locked --bin repair_recovery_eval -j 1` passed all
+  13 focused tests, including missing/malformed value rejection, canonical
+  one-occurrence formal flags, deployment balance, champion binding, legal
+  repair mechanics, the policy horizon, and frozen gates;
+- the rebuilt standalone binary rejected malformed `--turns nope`, a valueless
+  `--speed`, `--ai advanced`, and `--deployment-mix --players 8` with exit 2
+  before simulation; and
+- a one-map, one-turn null diagnostic at the pre-existing non-focal seed 79,991
+  used one job, selected the first deployment profile, named the embedded
+  generation-14 champion, reproduced both matched focal cells exactly, and
+  emitted only the diagnostic null label. It cannot spend a gate.
+
 An initial attempt to invoke the standalone executable after `cargo test`
 failed immediately with exit 127 because a test harness does not create
 `target/release/repair_recovery_eval`. `cargo build --release` then created the
