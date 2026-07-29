@@ -4,6 +4,13 @@ Status: **preregistered before implementation and before any registered seed
 is run or read**. This study is observer-only. It cannot change a shipped AI
 policy or authorize gameplay integration.
 
+Protocol amendment, still before any registered seed is run or read: the
+initial routing bullets counted correlated focal seat-games and pooled all
+checkpoints even though the paragraph below correctly named the map as the
+independent unit. The frozen routing below instead pools the two focal seats
+within each map and gives every map equal weight. This correction was made
+from code/protocol review alone, without outcome data.
+
 ## Question and correction
 
 Perfect suzerainty may be valuable, but the current oracle cannot distinguish
@@ -84,7 +91,9 @@ correction; they cannot count as evidence for a stronger allocation strategy.
 At the end of every focal turn with at least one met, living, non-belligerent
 city-state, the observer snapshots actual allocation and the conserved-stock
 bound below. Seat-game summaries retain counts and checkpoint coverage so a
-long-lived empire cannot masquerade as many independent observations.
+long-lived empire cannot masquerade as many independent observations. Routing
+first pools both focal seats within a map, then averages map-level shares so a
+long game or one seat cannot dominate the decision.
 
 ## Frozen conserved-stock bound
 
@@ -145,13 +154,15 @@ envoy_allocation_census --deployment-mix --maps 30 --turns 250 \
 The result prints one of four prospectively defined routes. These are
 experiment-nomination rules, never gameplay promotion gates:
 
-- **ALLOCATION LEAD** when at least 10 of 60 seat-games have a positive
-  conserved-stock suzerainty or threshold gap at five or more checkpoints,
-  or when at least 10 seat-games and at least 10% of all met-target sends have
-  no immediate threshold/control change;
-- **ACQUISITION LEAD** when the allocation condition is false, at least 20
-  seat-games have eligible checkpoints, and at least 25% of all eligible
-  checkpoints have a conserved-stock maximum of zero suzerainties;
+- **ALLOCATION LEAD** when at least 10 of 30 maps contain a focal seat with a
+  positive conserved-stock suzerainty or threshold gap at five or more
+  checkpoints, or when at least 10 maps contain a met-target send with no
+  immediate threshold/control change and the equal-weighted mean of each
+  sending map's no-immediate/met-send share is at least 10%;
+- **ACQUISITION LEAD** when the allocation condition is false, at least 20 of
+  30 maps have eligible checkpoints, and the equal-weighted mean of each
+  eligible map's fraction of checkpoints with a conserved-stock maximum of
+  zero suzerainties is at least 25%;
 - **MIXED** when both the allocation condition and the acquisition coverage
   condition hold; and
 - **NO MECHANISM** otherwise.
