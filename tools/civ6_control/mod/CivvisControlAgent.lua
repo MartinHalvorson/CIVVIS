@@ -466,10 +466,25 @@ end
 -- The search is deliberately plain -- land, passable, unowned or ours, far
 -- enough from every city we have, nearest such plot wins. Site *quality* is a
 -- real lever and a separate one; site *existence* is what was missing.
-local function findSettleSite(player, pid, unit)
+-- Sites found this turn, keyed by unit. The search below reads a 15x15 block
+-- of plots through guarded calls, and the order pass runs on every batch of
+-- game-core events, so recomputing it per tick is what took a turn from thirty
+-- seconds to four minutes -- the controller was starving the game it was
+-- playing.
+local siteMemo = { turn = -1, sites = {} };
+
+local function findSettleSite(player, pid, unit, turn)
+	local id = try(function() return unit:GetID(); end, -1);
+	if siteMemo.turn ~= turn then siteMemo = { turn = turn, sites = {} }; end
+	local cached = siteMemo.sites[id];
+	if cached ~= nil then
+		if cached == false then return nil; end
+		return cached;
+	end
+
 	local ux = try(function() return unit:GetX(); end, -1);
 	local uy = try(function() return unit:GetY(); end, -1);
-	if ux < 0 then return nil; end
+	if ux < 0 then siteMemo.sites[id] = false; return nil; end
 
 	local cities = {};
 	eachCity(player, function(city)
@@ -510,15 +525,16 @@ local function findSettleSite(player, pid, unit)
 			end
 		end
 	end
+	siteMemo.sites[id] = best or false;
 	return best;
 end
 
-local function orderSettler(player, pid, unit)
+local function orderSettler(player, pid, unit, turn)
 	if canOperate(unit, OP["UNITOPERATION_FOUND_CITY"])
 			and operate(unit, OP["UNITOPERATION_FOUND_CITY"]) then
 		return "found_city";
 	end
-	local plot = findSettleSite(player, pid, unit);
+	local plot = findSettleSite(player, pid, unit, turn);
 	if plot ~= nil then
 		local params = {};
 		params[UnitOperationTypes.PARAM_X] = plot:GetX();
@@ -660,7 +676,7 @@ local function orderFor(player, pid, unit, turn)
 	local name = unitTypeName(unit);
 	local row = GameInfo.Units[name];
 	if name == "UNIT_SETTLER" then
-		return orderSettler(player, pid, unit);
+		return orderSettler(player, pid, unit, turn);
 	elseif name == "UNIT_BUILDER" then
 		return orderBuilder(unit);
 	elseif name == "UNIT_SCOUT" then
@@ -804,7 +820,7 @@ end
 -- request, so the "queue is empty" test fires again and again.
 local lastBuild = {};
 
-local function driveProduction(player, turn)
+local function driveProduction(player, turn, force)
 	local counts = countUnits(player);
 	local cities = {};
 	eachCity(player, function(city) cities[#cities + 1] = city; end);
@@ -819,7 +835,10 @@ local function driveProduction(player, turn)
 		end, 0);
 		local cityId = try(function() return city:GetID(); end, -1);
 		local remembered = lastBuild[cityId];
-		local fresh = (remembered == nil) or (remembered.turn ~= turn);
+		-- The memo stops per-tick spam, but when the game says it is *blocked*
+		-- on production the whole point is to try again: an order that was
+		-- refused once must not lock the city out for the rest of the turn.
+		local fresh = force or (remembered == nil) or (remembered.turn ~= turn);
 		if (current == nil or current == 0) and fresh then
 			local name, row, why = chooseProduction(city, counts, #cities, turn);
 			if row ~= nil then
@@ -1002,6 +1021,21 @@ end
 
 -- ---------------------------------------------------------------- the turn
 
+-- How many times each expensive pass may run in one turn.
+--
+-- The controller shares a process with the game it is playing, so a pass that
+-- walks the policy table or tests twenty build items runs *instead of* the
+-- game advancing. Unbounded, they turned a four-second turn into ten minutes:
+-- every batch of game-core events re-ran the lot. Bounded, the same decisions
+-- get made and the game gets its frames back.
+local passes = { soft = 0, production = 0, policies = 0 };
+
+local function spend(name, limit)
+	if passes[name] >= limit then return false; end
+	passes[name] = passes[name] + 1;
+	return true;
+end
+
 local blockerNames = nil;
 
 local function blockerName(id)
@@ -1048,10 +1082,12 @@ local function answerBlocker(player, pid, blocker, turn)
 	elseif name == "ENDTURN_BLOCKING_CIVIC" then
 		return chooseCivic(player, pid);
 	elseif name == "ENDTURN_BLOCKING_PRODUCTION" then
-		return driveProduction(player, turn) > 0 and "production" or nil;
+		if not spend("production", cfg.MaxProductionPasses or 4) then return nil; end
+		return driveProduction(player, turn, true) > 0 and "production" or nil;
 	elseif name == "ENDTURN_BLOCKING_PANTHEON" then
 		return choosePantheon(player, pid);
 	elseif name == "ENDTURN_BLOCKING_FILL_CIVIC_SLOT" then
+		if not spend("policies", cfg.MaxPolicyPasses or 2) then return nil; end
 		return fillPolicies(player);
 	elseif name == "ENDTURN_BLOCKING_CONSIDER_GOVERNMENT_CHANGE" then
 		return chooseGovernment(player) or "government considered";
@@ -1080,6 +1116,7 @@ end
 local turnsPlayed = 0;
 local lastTurnSeen = -1;
 local attempts = 0;
+
 local inTick = false;
 local finished = false;
 
@@ -1127,6 +1164,7 @@ local function tick()
 			lastTurnSeen = turn;
 			turnsPlayed = turnsPlayed + 1;
 			attempts = 0;
+			passes = { soft = 0, production = 0, policies = 0 };
 			playTurn(player, pid, turn);
 		end
 
@@ -1149,7 +1187,13 @@ local function tick()
 			attempts = attempts + 1;
 			local answered;
 			if SOFT_BLOCKERS[name] then
-				orderUnits(player, pid, turn);
+				-- Bounded per turn. The order pass is the expensive one, and a
+				-- soft blocker that will not clear -- a unit the engine keeps
+				-- listing as ready -- would otherwise run it on every batch of
+				-- game-core events for the rest of the turn.
+				if spend("soft", cfg.MaxSoftPasses or 3) then
+					orderUnits(player, pid, turn);
+				end
 				answered = "units";
 			else
 				answered = answerBlocker(player, pid, blocker, turn);
@@ -1206,6 +1250,27 @@ local function ensureStarted()
 	started = true;
 
 	pcall(resolveActions);
+
+	-- Try to impose a turn limit from inside the game.
+	--
+	-- The simple Create Game screen has no max-turns control and the Advanced
+	-- Setup one is below the fold of a panel that has to be scrolled, so a game
+	-- started by the harness runs to turn five hundred and a Score victory --
+	-- the cheapest win there is -- never arrives. Whether the engine honours a
+	-- limit set after the game exists is not documented anywhere, so it is set
+	-- and then *read back*, and the readback is what the seat record reports.
+	if (cfg.MaxTurns or 0) > 0 then
+		pcall(function()
+			GameConfiguration.SetMaxTurns(cfg.MaxTurns);
+			GameConfiguration.SetTurnLimitType(TurnLimitTypes.CUSTOM);
+		end);
+		emit("turn_limit", {
+			asked = cfg.MaxTurns,
+			config = try(function() return GameConfiguration.GetMaxTurns(); end, -1),
+			game = try(function() return Game.GetMaxTurns(); end, -1),
+		});
+	end
+
 	pcall(survey);
 	-- The load screen waits on a keypress before the first turn runs, and
 	-- nothing in any log says so -- a harness watching for turn data sees only
