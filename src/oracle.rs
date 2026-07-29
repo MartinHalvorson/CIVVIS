@@ -41,6 +41,37 @@ const CITY_WORK_RADIUS: usize = 3;
 /// the agent's own appetite rather than inventing a larger one.
 const EXPANSION_TARGET: usize = 6;
 
+/// The city an expansion grant would pay out of, or `None` when this seat is
+/// not short of its city target or already has a Settler in flight.
+///
+/// Shared by [`Grant::Expansion`] and its cost-matched control
+/// [`Grant::Rebate`] so the two cannot fire on different schedules. That is
+/// not tidiness: the control is only a control if the two grants are handed
+/// out at the same moments, and two copies of this condition would be free to
+/// drift apart and quietly turn the comparison into a comparison of firing
+/// rates.
+///
+/// `pub` because `src/bin/rebate_census.rs` has to recognise a payment turn
+/// from outside the crate in order to record what the payout city was
+/// building when the money landed — the observation that says whether a
+/// rebate buys a city or something else.
+///
+/// The capital is taken by lowest id so both grants are deterministic.
+pub fn expansion_payout_city(g: &Game, pid: usize) -> Option<u32> {
+    let cities = g.player_city_ids(pid);
+    if cities.is_empty() || cities.len() >= EXPANSION_TARGET {
+        return None;
+    }
+    let already_walking = g
+        .player_unit_ids(pid)
+        .into_iter()
+        .any(|uid| g.units.get(&uid).is_some_and(|unit| unit.kind == "settler"));
+    if already_walking {
+        return None;
+    }
+    cities.iter().copied().min()
+}
+
 /// A capability granted to the wrapped agent for free.
 ///
 /// Each one is chosen to bound one measured failure, so a null result closes
@@ -416,32 +447,6 @@ impl<A: Ai> Oracle<A> {
         ys.food + ys.production + ys.gold + ys.science + ys.culture + ys.faith
     }
 
-    /// The city an expansion grant would pay out of, or `None` when this seat
-    /// is not short of its city target or already has a Settler in flight.
-    ///
-    /// Shared by [`Grant::Expansion`] and its cost-matched control
-    /// [`Grant::Rebate`] so the two cannot fire on different schedules. That
-    /// is not tidiness: the control is only a control if the two grants are
-    /// handed out at the same moments, and two copies of this condition would
-    /// be free to drift apart and quietly turn the comparison into a
-    /// comparison of firing rates.
-    ///
-    /// The capital is taken by lowest id so both grants are deterministic.
-    fn expansion_payout_city(g: &Game, pid: usize) -> Option<u32> {
-        let cities = g.player_city_ids(pid);
-        if cities.is_empty() || cities.len() >= EXPANSION_TARGET {
-            return None;
-        }
-        let already_walking = g
-            .player_unit_ids(pid)
-            .into_iter()
-            .any(|uid| g.units.get(&uid).is_some_and(|unit| unit.kind == "settler"));
-        if already_walking {
-            return None;
-        }
-        cities.iter().copied().min()
-    }
-
     /// Hand the seat a free Settler while it is short of its city target.
     ///
     /// One at a time, which is the engine's own standing constraint on
@@ -450,7 +455,7 @@ impl<A: Ai> Oracle<A> {
     /// six `StrategicPlan::desired_cities` aims at, so the grant stops exactly
     /// where the agent's own appetite stops rather than expanding forever.
     fn grant_expansion(&mut self, g: &mut Game, pid: usize) {
-        let Some(home) = Self::expansion_payout_city(g, pid) else {
+        let Some(home) = expansion_payout_city(g, pid) else {
             return;
         };
         let Some(pos) = g.cities.get(&home).map(|city| city.pos) else {
@@ -477,7 +482,7 @@ impl<A: Ai> Oracle<A> {
     /// one, a Settler. Overflow with an empty queue is the engine's existing
     /// unassigned-progress case and needs no special handling here.
     fn grant_rebate(&mut self, g: &mut Game, pid: usize) {
-        let Some(home) = Self::expansion_payout_city(g, pid) else {
+        let Some(home) = expansion_payout_city(g, pid) else {
             return;
         };
         let settler = Item::Unit {
@@ -1027,7 +1032,7 @@ mod tests {
 
                 let units_before = paid.player_unit_ids(0).len();
                 let gold = paid.players[0].gold;
-                let home = Oracle::<AdvancedAi>::expansion_payout_city(&paid, 0);
+                let home = super::expansion_payout_city(&paid, 0);
                 let banked = home.map(|cid| paid.cities[&cid].production);
                 let pop = home.map(|cid| paid.cities[&cid].pop);
                 let price = home.map(|cid| {
