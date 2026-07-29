@@ -2085,6 +2085,58 @@
   .victory-option-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 7px 9px; }
   .victory-option { display: flex; align-items: center; gap: 5px; min-width: 0; color: var(--muted); font-size: var(--type-small); cursor: pointer; }
   .victory-option input { margin: 0; }
+  /* The first setup pass stays short. Less common rules live behind one
+     disclosure at the bottom of each panel, where they remain discoverable
+     without making every new game begin with a wall of switches. */
+  .advanced-settings {
+    grid-column: 1 / -1; width: 100%; margin-top: 2px; overflow: hidden;
+    border: 1px solid var(--line-soft); border-radius: 9px; background: #09131080;
+  }
+  .advanced-settings > summary {
+    min-height: 38px; display: flex; align-items: center; justify-content: space-between;
+    gap: 10px; padding: 10px 11px; color: var(--muted); cursor: pointer;
+    list-style: none; font-size: var(--type-small); font-weight: 850;
+    letter-spacing: .09em; text-transform: uppercase; user-select: none;
+  }
+  .advanced-settings > summary::-webkit-details-marker { display: none; }
+  .advanced-settings > summary::after {
+    content: "+"; flex: 0 0 auto; color: var(--gold); font-size: var(--type-body); line-height: 1;
+  }
+  .advanced-settings[open] > summary { border-bottom: 1px solid var(--line-soft); color: var(--text); }
+  .advanced-settings[open] > summary::after { content: "−"; }
+  .advanced-settings-summary { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+  .advanced-settings-summary small {
+    overflow: hidden; color: var(--faint); font-size: var(--type-label); font-weight: 650;
+    letter-spacing: .02em; text-overflow: ellipsis; text-transform: none; white-space: nowrap;
+  }
+  .advanced-settings-body {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
+    padding: 10px 10px 11px; align-items: end;
+  }
+  .advanced-settings-body > .victory-options,
+  .advanced-settings-body > .mod-options,
+  .advanced-settings-body > .overlay-options,
+  .advanced-settings-body > .setting-row { grid-column: 1 / -1; }
+  .advanced-settings-body > .overlay-options { margin-top: 0; }
+  .advanced-settings-body > .setting-row { margin-top: 2px; }
+  .mod-options {
+    padding: 9px 10px 10px; border: 1px solid var(--line-soft);
+    border-radius: 9px; background: #07100e99;
+  }
+  .mod-help { margin: -1px 0 9px; line-height: 1.4; }
+  .mod-tier + .mod-tier { margin-top: 10px; padding-top: 9px; border-top: 1px solid var(--line-soft); }
+  .mod-tier-title {
+    margin-bottom: 7px; color: var(--gold); font-size: var(--type-label);
+    font-weight: 850; letter-spacing: .08em; text-transform: uppercase;
+  }
+  .mod-option-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 7px 8px; }
+  .mod-option {
+    min-width: 0; display: flex; align-items: flex-start; gap: 6px;
+    color: var(--muted); font-size: var(--type-small); line-height: 1.25; cursor: pointer;
+  }
+  .mod-option input { flex: 0 0 auto; margin: 1px 0 0; }
+  .mod-option span { min-width: 0; }
+  .mod-option small { display: block; margin-top: 1px; color: var(--faint); font-size: var(--type-label); }
 
   /* Tech and civic overlay */
   #pedia {
@@ -3666,10 +3718,10 @@
       </summary>
       <div class="sec settings-sec" id="game-settings">
       <div id="newgame-options">
-        <label class="small">Base game ruleset<select id="baseruleset" style="margin-top:4px">
+        <label class="small game-advanced-setting" data-advanced-order="10">Base game ruleset<select id="baseruleset" style="margin-top:4px">
           <option value="civ6" selected>Civ 6</option>
         </select></label>
-        <label class="small">Leader Pool<select id="leaderpool" style="margin-top:4px">
+        <label class="small game-advanced-setting" data-advanced-order="20">Leader Pool<select id="leaderpool" style="margin-top:4px">
           <option value="civ6" selected>Civ 6 Leaders</option>
           <option value="expanded">Expanded</option>
         </select></label>
@@ -3678,7 +3730,7 @@
           <option value="single">Single player</option>
           <option disabled>Multiplayer · later</option>
         </select></label>
-        <label class="small">Teams<select id="teams" style="margin-top:4px"
+        <label class="small game-advanced-setting" data-advanced-order="30">Teams<select id="teams" style="margin-top:4px"
           title="Permanent pre-game teams. Teammates share sight, pass each other the Eureka for a technology they have not researched, fight the same wars and win together.">
           <option value="ffa" selected>Free-for-all</option>
           <option value="2">2 teams</option>
@@ -3690,7 +3742,7 @@
           <option value="">Random</option>
         </select></label>
         <label class="small human-setting">Difficulty<select id="difficulty" style="margin-top:4px"></select></label>
-        <label class="small">World shape<select id="mapshape" style="margin-top:4px">
+        <label class="small game-advanced-setting" data-advanced-order="40">World shape<select id="mapshape" style="margin-top:4px">
           <option value="flat">Flat</option>
           <option value="planet">Planet</option>
         </select></label>
@@ -3707,7 +3759,7 @@
           <option value="water_world">Water World</option>
           <option value="true_start_earth">True Start Earth</option>
         </select></label>
-        <label class="small">Thermal distribution<select id="mappoles" style="margin-top:4px">
+        <label class="small game-advanced-setting" data-advanced-order="50">Thermal distribution<select id="mappoles" style="margin-top:4px">
           <option value="poles">Hot equator, cold poles</option>
           <option value="randomized">Randomized</option>
         </select></label>
@@ -3719,7 +3771,7 @@
           <option value="10">Large · 10 civs · 15 city-states · 96×60</option>
           <option value="12">Huge · 12 civs · 18 city-states · 106×66</option>
         </select></label>
-        <label class="small">Start era<select id="startera" style="margin-top:4px">
+        <label class="small game-advanced-setting" data-advanced-order="60">Start era<select id="startera" style="margin-top:4px">
           <option value="stone_age" disabled>Stone Age · later</option>
           <option value="ancient" selected>Ancient</option>
         </select></label>
@@ -3739,7 +3791,7 @@
             <button id="savebtn" title="Write a save this server can offer back later">Save</button>
           </div>
         </div>
-        <div class="victory-options" role="group" aria-labelledby="victory-options-title">
+        <div class="victory-options game-advanced-setting" data-advanced-order="80" role="group" aria-labelledby="victory-options-title">
           <h2 id="victory-options-title">Victory conditions</h2>
           <div class="victory-option-grid">
             <label class="victory-option"><input type="checkbox" id="victory-science" checked>Science</label>
@@ -3750,6 +3802,37 @@
             <label class="victory-option"><input type="checkbox" id="victory-score" checked>Score</label>
           </div>
         </div>
+        <label class="small game-advanced-setting" data-advanced-order="70">Future Era<select id="futureera" style="margin-top:4px">
+          <option value="classic" selected>Classic Future Era</option>
+          <option value="martin" disabled>Martin's Future Era · later</option>
+        </select></label>
+        <div class="mod-options game-advanced-setting" data-advanced-order="90"
+             role="group" aria-labelledby="mod-options-title">
+          <h2 id="mod-options-title">Mods</h2>
+          <div class="small mod-help">Tournament defaults are preselected. These choices are saved for the upcoming per-game mod loader; the active server ruleset is unchanged for now.</div>
+          <div class="mod-tier">
+            <div class="mod-tier-title">Civ 6 tournament defaults</div>
+            <div class="mod-option-grid">
+              <label class="mod-option"><input type="checkbox" data-game-mod="bbg" checked><span>Better Balanced Game<small>BBG · balance rules</small></span></label>
+              <label class="mod-option"><input type="checkbox" data-game-mod="bbm" checked><span>Better Balanced Maps<small>BBM · fair starts</small></span></label>
+              <label class="mod-option"><input type="checkbox" data-game-mod="mph" checked><span>Multiplayer Helper<small>MPH · lobby tools</small></span></label>
+              <label class="mod-option"><input type="checkbox" data-game-mod="bsm" checked><span>Better Spectator Mod<small>BSM · observer tools</small></span></label>
+            </div>
+          </div>
+          <div class="mod-tier">
+            <div class="mod-tier-title">Optional</div>
+            <div class="mod-option-grid">
+              <label class="mod-option"><input type="checkbox" data-game-mod="quick-deals"><span>Quick Deals<small>Trade quality of life</small></span></label>
+              <label class="mod-option"><input type="checkbox" data-game-mod="detailed-map-tacks"><span>Detailed Map Tacks<small>Planning tools</small></span></label>
+              <label class="mod-option"><input type="checkbox" data-game-mod="extended-policy-cards"><span>Extended Policy Cards<small>Policy yield previews</small></span></label>
+              <label class="mod-option"><input type="checkbox" data-game-mod="sukritacts-oceans"><span>Sukritact's Oceans<small>Expanded ocean rules</small></span></label>
+            </div>
+          </div>
+        </div>
+        <details class="advanced-settings" id="game-advanced-settings" data-advanced-settings="game">
+          <summary><span class="advanced-settings-summary">Advanced Settings<small id="game-advanced-summary">Rules, eras, victories · 4 of 8 mods</small></span></summary>
+          <div class="advanced-settings-body" id="game-advanced-settings-body"></div>
+        </details>
       </div>
       </div>
     </details>
@@ -3785,7 +3868,7 @@
           </div>
           <label class="setting-row" id="cinema-setting" hidden><span><input type="checkbox" id="cinemachk" checked> Cinema presentation</span><kbd>C</kbd></label>
         </div>
-        <div class="overlay-options" role="group" aria-labelledby="overlay-options-title">
+        <div class="overlay-options display-advanced-setting" data-advanced-order="10" role="group" aria-labelledby="overlay-options-title">
           <h2 id="overlay-options-title">Map overlays</h2>
           <div class="small overlay-layout-help">Drag a title bar to move an overlay; drag any edge or corner to resize. Your layout saves automatically.</div>
           <div class="small overlay-layout-help">In the standings, drag a thin bar in the column heading to divide two columns differently; double-click one to put that pair back. Widths are shares of the panel, so they follow it as the window resizes. ◉ locks a row: it stays in view while the rest of the table scrolls past it. Two seats of the same civilization lock separately, and a lock is remembered into the next game.</div>
@@ -3798,7 +3881,7 @@
           </div>
           <button class="ghost overlay-layout-reset" id="reset-overlay-layout" type="button">Reset overlay positions, sizes &amp; columns</button>
         </div>
-        <div class="overlay-options" id="flat-map-wrap-settings" role="group"
+        <div class="overlay-options display-advanced-setting" data-advanced-order="20" id="flat-map-wrap-settings" role="group"
              aria-labelledby="flat-map-wrap-title">
           <h2 id="flat-map-wrap-title">Flat map wraparound</h2>
           <div class="overlay-option-grid">
@@ -3809,8 +3892,12 @@
         <label class="setting-row"><span><input type="checkbox" id="yieldchk"> Show yields per tile</span><kbd>Y</kbd></label>
         <label class="setting-row"><span><input type="checkbox" id="gridchk"> Show the hex grid</span><kbd>G</kbd></label>
         <label class="setting-row"><span><input type="checkbox" id="reschk"> Show resource icons</span><kbd>Q</kbd></label>
-        <label class="setting-row"><span><input type="checkbox" id="edgepanchk"> Pan when the pointer reaches a map edge</span></label>
-        <label class="setting-row"><span><input type="checkbox" id="artifactchk"> Show artifact sites &amp; shipwrecks</span></label>
+        <label class="setting-row display-advanced-setting" data-advanced-order="30"><span><input type="checkbox" id="edgepanchk"> Pan when the pointer reaches a map edge</span></label>
+        <label class="setting-row display-advanced-setting" data-advanced-order="40"><span><input type="checkbox" id="artifactchk"> Show artifact sites &amp; shipwrecks</span></label>
+        <details class="advanced-settings" id="display-advanced-settings" data-advanced-settings="display">
+          <summary><span class="advanced-settings-summary">Advanced Settings<small>Overlay layout, map edges &amp; archaeology</small></span></summary>
+          <div class="advanced-settings-body" id="display-advanced-settings-body"></div>
+        </details>
       </div>
       </div>
     </details>
@@ -3978,6 +4065,8 @@
 "use strict";
 const SIDEBAR_SECTION_STATE_KEY = "civvis-sidebar-sections-v1";
 const SIDEBAR_COLLAPSED_STATE_KEY = "civvis-sidebar-collapsed-v1";
+const ADVANCED_SETTINGS_STATE_KEY = "civvis-advanced-settings-v1";
+const GAME_MOD_STATE_KEY = "civvis-game-mods-v1";
 function initSidebarSections() {
   let saved = {};
   try { saved = JSON.parse(localStorage.getItem(SIDEBAR_SECTION_STATE_KEY) || "{}"); }
@@ -3992,6 +4081,71 @@ function initSidebarSections() {
   }
 }
 initSidebarSections();
+function initAdvancedSettings() {
+  const moveByOrder = (source, selector, target) => {
+    const nodes = [...source.querySelectorAll(selector)]
+      .sort((first, second) => +(first.dataset.advancedOrder || 0) - +(second.dataset.advancedOrder || 0));
+    for (const node of nodes) target.appendChild(node);
+  };
+
+  // Keep the source order that older clients and the embedded-page contract
+  // understand, then compose the shorter basic pass in the live DOM. Moving
+  // the real controls (rather than cloning them) preserves their ids, values,
+  // delegated change handler and accessibility labels.
+  const game = document.getElementById("newgame-options");
+  const gameAdvanced = document.getElementById("game-advanced-settings");
+  moveByOrder(game, ".game-advanced-setting", document.getElementById("game-advanced-settings-body"));
+  const basic = ["gamemode", "maptype", "leader", "difficulty", "np", "gamespeed"]
+    .map(id => document.getElementById(id).closest("label"));
+  basic.push(document.getElementById("saves-group"));
+  for (const node of basic) gameAdvanced.before(node);
+
+  const display = document.getElementById("display-settings");
+  moveByOrder(display, ".display-advanced-setting", document.getElementById("display-advanced-settings-body"));
+
+  let disclosureState = {};
+  try { disclosureState = JSON.parse(localStorage.getItem(ADVANCED_SETTINGS_STATE_KEY) || "{}"); }
+  catch (_) { disclosureState = {}; }
+  for (const details of document.querySelectorAll("[data-advanced-settings]")) {
+    const key = details.dataset.advancedSettings;
+    if (Object.prototype.hasOwnProperty.call(disclosureState, key))
+      details.open = !!disclosureState[key];
+    details.addEventListener("toggle", () => {
+      disclosureState[key] = details.open;
+      try { localStorage.setItem(ADVANCED_SETTINGS_STATE_KEY, JSON.stringify(disclosureState)); }
+      catch (_) {}
+    });
+  }
+
+  // The repository's current mod loader is process-wide, so this first UI
+  // pass saves a future per-game pack without claiming it changed the running
+  // ruleset. Static checked attributes remain the tournament defaults when no
+  // preference has been saved yet.
+  const modBoxes = [...document.querySelectorAll("[data-game-mod]")];
+  try {
+    const saved = JSON.parse(localStorage.getItem(GAME_MOD_STATE_KEY) || "null");
+    if (Array.isArray(saved)) {
+      const selected = new Set(saved);
+      for (const box of modBoxes) box.checked = selected.has(box.dataset.gameMod);
+    }
+  } catch (_) {}
+  const syncModSummary = () => {
+    const selected = modBoxes.filter(box => box.checked).map(box => box.dataset.gameMod);
+    document.getElementById("game-advanced-summary").textContent =
+      `Rules, eras, victories · ${selected.length} of ${modBoxes.length} mods`;
+    return selected;
+  };
+  syncModSummary();
+  for (const box of modBoxes) box.addEventListener("change", event => {
+    const selected = syncModSummary();
+    try { localStorage.setItem(GAME_MOD_STATE_KEY, JSON.stringify(selected)); }
+    catch (_) {}
+    // These are saved preferences until the per-game loader exists; do not
+    // stage an identical engine setup merely because this future pack changed.
+    event.stopPropagation();
+  });
+}
+initAdvancedSettings();
 // ---------------------------------------------------------------- constants
 const S = 36, SQ3 = Math.sqrt(3);
 const TERRAIN = { grassland:"#5e9440", plains:"#ab9e4e", desert:"#d8c184",
