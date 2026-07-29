@@ -22,6 +22,33 @@ sizes, endpoints, thresholds, stop rules, and resource cap below are unchanged.
 The only earlier runtime treatment smoke used the diagnostic seed 9,982,999 and
 is not part of any frozen batch.
 
+## Prospective deployment-topology amendment
+
+This second amendment was frozen before running the null or reading any focal
+seed. The production supervisor's independently merged shape-redraw fix (#543)
+made topology an explicit deployment mixture rather than a stable Planet-only
+cell. A read-only census of the latest 50 completed production saves through
+`20260729T140735.561985Z` found 27 Flat and 23 Planet worlds; all 50 retained
+the eight-player Continents, Online, Poles, and Science/Culture/Domination
+profile below. The supervisor samples uniformly from `flat,planet`, so the
+near-even archive split is expected deployment behavior, not a treatment
+result.
+
+The frozen batches therefore balance topology deterministically inside the
+existing map sample: a zero-based even map offset uses Flat and an odd offset
+uses Planet. The four-map null contains two maps of each shape, the 30-map
+screen contains 15 of each, and the 120-map holdout contains 60 of each. Every
+control/treatment replay for one map retains that map's shape. Requested size
+remains 84x54: Flat stores 84x54, while Planet stores the engine's corresponding
+105x44 globe. This removes random shape imbalance without changing the map as
+the inference unit.
+
+This is a prospective external-validity correction based only on the deployed
+supervisor contract and archived control saves. The treatment, seats, seed
+ranges, sample sizes, endpoints, thresholds, stop rules, and resource cap are
+unchanged. In particular, no extra maps are added and neither shape may rescue
+a failing pooled gate after results are read.
+
 ## Observation and hypothesis
 
 The eight most recent production final saves available on 2026-07-29 (through
@@ -84,24 +111,27 @@ counted as independent samples.
 The fixed profile is:
 
 - 8 players, randomized civilizations;
-- Continents, Planet topology, Poles, requested 84×54, 12 city-states;
+- Continents and Poles, requested 84×54, 12 city-states, with Flat and Planet
+  topology alternating by map offset in equal numbers;
 - Online speed, policy-visible 250-turn limit, externally observed through turn
   320 without changing `Game.max_turns`;
 - Science, Culture, and Domination victories; and
 - stock embedded rules and adaptive fleet from the exact tested commit.
 
-Before any treatment batch, a four-map null at seed **9,982,000** must compare
-a direct stock control with the action-log replay arm while applying no added
-order. All eight matched focal cells must be exactly equal. Unit tests must
-also prove deterministic selection, the Moon/Mars 2/3 schedule, no action
-outside a Science plan, and at most one legal order.
+Before any treatment batch, a four-map null at seed **9,982,000** (two Flat and
+two Planet) must compare a direct stock control with the action-log replay arm
+while applying no added order. All eight matched focal cells must be exactly
+equal. Unit tests must also prove deterministic shape assignment,
+deterministic site selection, the Moon/Mars 2/3 schedule, no action outside a
+Science plan, and at most one legal order.
 
 The one allowed development screen is **30 maps starting at seed 9,983,000**
-(120 games). If and only if its frozen gate passes, the one allowed holdout is
-**120 maps starting at seed 9,984,000** (480 games). No seed may be replaced,
-extended, or retried; no threshold or treatment detail may change after a
-treatment result is read. Compile and one-map runtime smokes are diagnostic
-only and may not be used to tune the policy or gate.
+(15 Flat and 15 Planet; 120 games). If and only if its frozen gate passes, the
+one allowed holdout is **120 maps starting at seed 9,984,000** (60 Flat and 60
+Planet; 480 games). No seed may be replaced, extended, or retried; no threshold
+or treatment detail may change after a treatment result is read. Compile and
+one-map runtime smokes are diagnostic only and may not be used to tune the
+policy or gate.
 
 ## Endpoints and gates
 
