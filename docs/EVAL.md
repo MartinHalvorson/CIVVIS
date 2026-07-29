@@ -4697,3 +4697,57 @@ expert it imitates.
 | mixed-kind ranking is a kind prior, not action discrimination | **established** (kind alone matches the full vector) |
 | geometry discriminates same-kind siblings | **established** (31.8% vs 21.2%, n=60,363) |
 | any of this improves play | **unmeasured** — no agent or default changed |
+
+## 2026-07-29 — ★★★★ the breeding proxy is aligned with winning; its combat term is not
+
+`evolve` selects on `50*P*score_share + 12*P*combat_share` and promotes on wins.
+That split has been called a defect (including by me, three times) on the grounds
+that the search operator climbs one hill while the gate stands on another. It was
+never measured, so `proxy_align` measures it: play whole games with the stock
+fleet, rebuild `selection_value` exactly as `eval_game_observation` does, and ask
+how often the seat the proxy would pick is the seat that won.
+
+120 games, 4 players, 44×28, 200 turns; all 120 decided by victory.
+
+| objective | leader is the winner | 95% CI |
+|---|---|---|
+| chance | 25.0% | — |
+| `selection_value` (shipped) | 104/120 = **86.7%** | 79.4–91.6% |
+| score share alone | 115/120 = **95.8%** | 90.6–98.2% |
+
+Mean Spearman between the proxy's ordering of the table and the ordering by final
+score: **0.917**.
+
+**The objection does not stand.** At 86.7% against a 25% baseline the proxy is
+strongly aligned with winning, and the dense-signal/sparse-gate split is sound
+engineering rather than a misalignment.
+
+**But the combat term is dragging it, significantly.** The two objectives are
+read on the same games, so the comparison is paired: the combat term makes the
+proxy right where score alone was wrong in **2** games, and wrong where score
+alone was right in **13**. Fifteen discordant pairs, exact two-sided sign test
+**p = 0.0074**.
+
+So the 12-point combat share is not a free extra signal. It costs about nine
+points of agreement with the gate, and dropping it would make selection propose
+candidates the SPRT is more likely to accept.
+
+**Two limits on that recommendation, stated rather than buried:**
+
+- This measures the proxy *within a table*, on games between identical stock
+  agents. `evolve` uses it to rank *different genomes* across paired games, which
+  is not the same question. An objective that cannot pick the winner in front of
+  it is a weaker instrument for ranking genomes, but this run does not measure
+  the second thing directly.
+- The combat term is plausibly the only thing giving the war genes anything to
+  select on, and `gene_probe` already found much of that block inert. Removing it
+  may buy alignment at the cost of making those genes fully dead. That side of
+  the trade is **unmeasured**.
+
+| claim | status |
+|---|---|
+| the breeding proxy is aligned with winning | **established** (86.7% vs 25%, n=120) |
+| the split between dense selection and sparse gate is a defect | **refuted** |
+| the combat term reduces agreement with the gate | **established** (p=0.0074, paired) |
+| dropping it would improve evolution's throughput | **untested** — it follows, but it is not measured |
+| dropping it would strand the war genes | **unmeasured** |
