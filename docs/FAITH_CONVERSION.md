@@ -96,3 +96,38 @@ evaluator and record.
 
 The holdout is specific to the exhibition's three-victory cell. All-victory
 games retain a competing religious use for Faith and are outside the claim.
+
+## 2026-07-29 development result: stop
+
+The fixed null replay ran first on the exact screen profile. All 60 matched
+seat replays reproduced exactly: both arms won 2/60 games by Culture and
+matched at 574.0 mean score, 2,770.7 terminal Faith, 29.1 tourists, and 5.95
+cities. This clears the evaluator's determinism prerequisite.
+
+The treatment screen then ran once at seed 9980000, unchanged. The mechanism
+was not rare: 36/60 treatment seat-games fired (60.0%), with 235 offered
+opportunities and 234 successful purchases. Those purchases comprised 14
+Naturalists and 220 Rock Bands. Mean terminal Faith fell from 2,770.7 to
+1,029.5 (62.8%) while mean tourists rose from 29.1 to 39.8 (36.8%). Treatment
+won 3/60 games, all by Culture, versus control's 2/60 Culture wins.
+
+That conversion did not clear the registered outcome screen:
+
+- matched seat cells were one helped, zero hurt, and 59 unchanged;
+- paired map win score was **50.8%** (conservative Wilson 33.9%..67.6%), below
+  the fixed 52.5% minimum;
+- win direction was one favorable, 29 neutral, and zero adverse (`p=1.0000`);
+  and
+- paired terminal-score share printed 50.0%, with 15 favorable, four neutral,
+  and 11 adverse maps (`p=0.5572`).
+
+One offered purchase failed to apply. Even assigning that one seat-game the
+largest possible win flip raises the 30-map paired score by only 0.8 points,
+to 51.7%, still below the registered threshold. The stopping decision is
+therefore not sensitive to that failed application.
+
+The development gate is **STOP**. The screen shows that non-Culture plans can
+legally convert a stranded Faith bank into substantially more cultural units
+and tourists, but it does not show a sufficient game-winning return. Per the
+preregistration there is no tuning, retry, holdout, or gameplay integration;
+shipped `AdvancedAi` remains unchanged.
