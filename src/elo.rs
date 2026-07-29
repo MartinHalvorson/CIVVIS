@@ -38,13 +38,14 @@ pub const BUILTIN_AIS: [&str; 10] = [
 /// tournament ratings. Keeping them out of `BUILTIN_AIS` prevents a control
 /// factory from being pooled into the same player/leader rating key as
 /// its treatment.
-pub const EVAL_ONLY_AIS: [&str; 61] = [
+pub const EVAL_ONLY_AIS: [&str; 62] = [
     "advanced_congress_counter",
     "advanced_congress_votes",
     "advanced_congress_counter_hard",
     "advanced_banking_dedication",
     "advanced_blind_to_leaders",
     "advanced_rush",
+    "advanced_rush_connected",
     "advanced_city_strategy",
     "advanced_city_strategy_emphasis",
     "advanced_city_strategy_roles",
@@ -552,6 +553,15 @@ pub fn builtin_ai(name: &str, seed: u64) -> Box<dyn Ai> {
         "advanced_rush" => {
             let mut ai = AdvancedAi::new();
             ai.early_rush = true;
+            Box::new(ai)
+        }
+        // Frozen route selector for the ancient-rush mechanism. It changes no
+        // rush rule after target eligibility: only rivals a starting land
+        // melee unit could route to the existing staging ring may trigger it.
+        "advanced_rush_connected" => {
+            let mut ai = AdvancedAi::new();
+            ai.early_rush = true;
+            ai.route_connected_rush = true;
             Box::new(ai)
         }
         // Treatment for the response-shape axis: identical to `advanced`
@@ -1502,6 +1512,7 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         ),
         "advanced_civ_blind" => (Vec::new(), "advanced_civ_blind"),
         "advanced_rush" => (Vec::new(), "advanced_rush"),
+        "advanced_rush_connected" => (Vec::new(), "advanced_rush_connected"),
         "advanced_settler_commit" => (Vec::new(), "advanced_settler_commit"),
         "advanced_food_first" => (Vec::new(), "advanced_food_first"),
         "advanced_v1" => (Vec::new(), "advanced_v1"),
@@ -1990,10 +2001,11 @@ mod tests {
             // Anything else reaching that state fell through to the
             // catch-all and is claiming to need nothing while quietly
             // needing a net.
-            const SCRIPTED: [&str; 33] = [
+            const SCRIPTED: [&str; 34] = [
                 "advanced",
                 "advanced_blind_to_leaders",
                 "advanced_rush",
+                "advanced_rush_connected",
                 "advanced_congress_counter",
                 "advanced_congress_votes",
                 "advanced_congress_counter_hard",

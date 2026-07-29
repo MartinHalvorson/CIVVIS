@@ -109,6 +109,10 @@ pub struct ForceReport {
 pub struct PlanReport {
     pub strategy: &'static str,
     pub victory_target: Option<&'static str>,
+    /// Whether the plan in force is the ancient-rush treatment. Observer-only:
+    /// evaluators use this to measure treatment exposure, never to choose an
+    /// action.
+    pub rush: bool,
     pub target_player: Option<usize>,
     pub target_city: Option<u32>,
     pub threatened_city: Option<u32>,
