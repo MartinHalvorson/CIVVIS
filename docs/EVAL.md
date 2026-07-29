@@ -5195,3 +5195,67 @@ coverage; lowering 0.70 on this corpus is not evidence.
 | the raw pairwise sigmoid reaches a selective 0.70 override region | **refuted (maximum 0.532; 0/76 overrides)** |
 | the fixed head transfers to Online | **not tested; external spend gate failed** |
 | the current head should control gameplay | **rejected before external evaluation or A/B** |
+
+## 2026-07-29 — PRE-REGISTRATION: calibrate ranking confidence on independent games
+
+The replica-aware head above ranked held-out moves in the right direction, but
+its raw score difference was not a calibrated probability: every prediction
+stayed between approximately 0.47 and 0.53. Lowering the override threshold on
+those observed games would spend the selection set twice. This experiment
+instead freezes that ranker and learns only a two-parameter probability map on
+new games before opening another new Standard selection set.
+
+**Hypothesis.** Independent Platt calibration of the frozen pairwise margin
+will identify a nonempty high-confidence tail whose 0.70-gated choices improve
+counterfactual return over the expert on fresh Standard games. If calibration
+only magnifies noise, held-out Brier score or return lift will reject it before
+the untouched Online profile is generated.
+
+The ranker is exactly the destination-only model selected above: seeds
+946000-946063, the existing 25% game-hash holdout, 171 training decisions, 80
+epochs, batch 32, rate 0.05, and L2 0.0001. It is regenerated deterministically
+from that command and then frozen; neither new Standard split contributes a
+ranking gradient. At each decision it selects the highest-scored non-expert
+sibling, retaining enumeration order on a score tie. Its raw margin is sibling
+score minus expert score.
+
+Calibration uses one standardized scalar. The mean and population standard
+deviation of the frozen margins are learned on calibration games only, with a
+1e-6 standard-deviation floor. The target is the same Jeffreys posterior mean
+for that selected sibling against the expert: four matched return differences
+contribute wins, losses, or half-win exact ties to `Beta(0.5, 0.5)`. A
+monotone map `sigmoid(a * standardized_margin + b)` is fitted with full-batch
+gradient descent for 4,000 fixed steps at rate 0.05, L2 0.01 on `a` only, and
+`a` projected to [0, 20]. Every decision receives inverse game decision-count
+weight so one independent game is one calibration unit. There is no threshold
+search: the expert is replaced only at calibrated probability at least 0.70.
+
+The new data are fixed before collection:
+
+- calibration: **32** four-player 44x28 Standard games, seeds
+  948000-948031, no city-states, observations at turns 50/75/100/125;
+- blind Standard selection: **32** otherwise identical games, seeds
+  948032-948063, generated only after the calibrator implementation and
+  parameters are frozen;
+- untouched external test, generated only after a selection pass: **32**
+  six-player 74x46 Online games, seeds 947000-947031, six city-states,
+  observations at turns 70/100/130/160;
+- every corpus uses three same-unit alternatives, an 80-round horizon, the
+  four distinct doctrine rotations, and zero tolerated rejected branches,
+  repeat mismatches, or observation errors. Additional replicas are not
+  repetitions: the emitter has exactly four distinct doctrines.
+
+Selection passes only if all three preregistered conditions hold on seeds
+948032-948063: calibrated Brier score is lower than the frozen raw sigmoid,
+0.70-gated game-macro return lift over the expert is positive, and game-macro
+override coverage is at least 5%. The calibrator and ranker then remain frozen
+for one Online evaluation. External success additionally requires the
+game-macro 95% lower confidence bound on return lift to exceed zero, at least
+5% coverage, and calibrated Brier score below raw. Report oracle regret,
+ungated and gated lift, Brier and log loss, probability quantiles, override
+mean-return signs, and matched-doctrine wins/ties/losses.
+
+No model enters gameplay from this experiment. A selection failure leaves the
+Online seeds untouched. An external failure ends the line. External success
+would earn a separate mirrored gameplay A/B; it would not itself authorize a
+default policy change.
