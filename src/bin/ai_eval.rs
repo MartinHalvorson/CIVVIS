@@ -1197,8 +1197,9 @@ fn main() {
             shares(&metrics.strategy_turns, metrics.plan_observations),
         );
         println!(
-            "  {name:<11} midgame switches/seat-game {:.2}; unanchored {}/{} ({:.1}%); {}",
+            "  {name:<11} midgame switches/seat-game {:.2}; unanchored/seat-game {:.2}, {}/{} ({:.1}%); {}",
             metrics.midgame_strategy_switches as f64 / games as f64,
+            metrics.midgame_unanchored_switches as f64 / games as f64,
             metrics.midgame_unanchored_switches,
             metrics.midgame_strategy_switches,
             100.0 * metrics.midgame_unanchored_switches as f64 / switches as f64,
