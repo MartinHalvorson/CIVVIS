@@ -22036,4 +22036,136 @@ mod tests {
         }
         println!();
     }
+
+    /// Census, not an assertion: is the envoy gap a resource shortfall or an
+    /// allocation failure?
+    ///
+    /// #602 measured `Grant::Suzerain` — suzerain of every met city-state — at
+    /// **56.7% against a 22.7% control**, p=0.0000 over 400 maps and 168
+    /// discordant cells, 150 directions for to 18 against. That is the largest
+    /// subsystem headroom this harness has found, larger than `expansion`.
+    ///
+    /// A large ceiling is not a reachable one. Expansion has an equally real
+    /// ceiling and **seven consecutive treatments failed to reach it**, because
+    /// the oracle there removed the settler's *cost* and no decision can remove
+    /// a cost. So the question that decides whether this axis is worth a
+    /// treatment at all is which kind of gap it is:
+    ///
+    /// - **`envoys_free` accumulates** → the seat earns envoys and does not
+    ///   place them. An allocation failure, and `advanced_envoys` can fix it.
+    /// - **`envoys_free` sits near zero** → the seat spends everything it earns
+    ///   and is simply outbid. A resource gap, and this goes the way expansion
+    ///   went.
+    ///
+    /// The deficit distribution decides how much it would take: being outbid by
+    /// one envoy at many city-states is a very different problem from being
+    /// outbid by ten at a few.
+    ///
+    /// Run with `cargo test --release envoy_allocation_census -- --ignored --nocapture`.
+    #[test]
+    #[ignore = "census, not an assertion; run explicitly with --nocapture"]
+    fn envoy_allocation_census() {
+        for (label, players, width, height, city_states) in [
+            ("eval 4p 24x16", 4usize, 24i32, 16i32, 4usize),
+            ("deployment 6p 74x46", 6, 74, 46, 12),
+        ] {
+            let mut free_samples: Vec<f64> = Vec::new();
+            let mut placed_samples: Vec<f64> = Vec::new();
+            let mut met_samples: Vec<f64> = Vec::new();
+            let mut held_samples: Vec<f64> = Vec::new();
+            let mut deficits: Vec<i64> = Vec::new();
+            let maps = 6u64;
+
+            for map in 0..maps {
+                let mut game = Game::new_full(
+                    players,
+                    width,
+                    height,
+                    480_000 + map,
+                    200,
+                    city_states,
+                    false,
+                );
+                let mut ais: Vec<AdvancedAi> =
+                    (0..game.players.len()).map(|_| AdvancedAi::new()).collect();
+                game.set_fog_memory(false);
+                while game.winner.is_none() && game.turn <= game.max_turns {
+                    let pid = game.current;
+                    ais[pid].take_turn(&mut game, pid);
+                    if game.winner.is_none() && game.current == pid {
+                        let _ = game.apply(pid, &crate::game::Action::EndTurn);
+                    }
+                    if pid != 0 {
+                        continue;
+                    }
+                    let minors: Vec<usize> = game
+                        .players
+                        .iter()
+                        .filter(|m| m.is_minor && m.alive && !m.is_barbarian)
+                        .map(|m| m.id)
+                        .filter(|m| game.has_met(0, *m))
+                        .collect();
+                    if minors.is_empty() {
+                        continue;
+                    }
+                    free_samples.push(game.players[0].envoys_free as f64);
+                    placed_samples
+                        .push(game.players[0].envoys.iter().map(|(_, n)| *n).sum::<i64>() as f64);
+                    met_samples.push(minors.len() as f64);
+                    let held = minors
+                        .iter()
+                        .filter(|m| game.suzerain_of(**m) == Some(0))
+                        .count();
+                    held_samples.push(held as f64);
+                    // For each city-state it does NOT hold, how many more
+                    // envoys would it have taken? That is the size of the
+                    // reallocation the oracle performed for free.
+                    for minor in &minors {
+                        if game.suzerain_of(*minor) == Some(0) {
+                            continue;
+                        }
+                        let best_rival = game
+                            .players
+                            .iter()
+                            .filter(|o| !o.is_minor && o.alive && o.id != 0)
+                            .map(|o| game.envoys_at(o.id, *minor))
+                            .max()
+                            .unwrap_or(0);
+                        let want = (best_rival + 1).max(3);
+                        deficits.push((want - game.envoys_at(0, *minor)).max(0));
+                    }
+                }
+            }
+
+            let mean = |v: &Vec<f64>| v.iter().sum::<f64>() / v.len().max(1) as f64;
+            deficits.sort_unstable();
+            let total_deficit: i64 = deficits.iter().sum();
+            println!("\n=== envoy allocation [{label}]: {} seat-turns ===", free_samples.len());
+            println!(
+                "  ★ envoys UNSPENT in the pool   mean {:.2}   (a pool near zero means resource-bound)",
+                mean(&free_samples)
+            );
+            println!("  envoys placed on the board     mean {:.1}", mean(&placed_samples));
+            println!(
+                "  city-states met {:.1}, suzerain of {:.1}  ({:.0}% held)",
+                mean(&met_samples),
+                mean(&held_samples),
+                mean(&held_samples) / mean(&met_samples).max(1e-9) * 100.0
+            );
+            if !deficits.is_empty() {
+                println!(
+                    "  when NOT suzerain, envoys short: median {}  p90 {}  max {}",
+                    deficits[deficits.len() / 2],
+                    deficits[deficits.len() * 9 / 10],
+                    deficits[deficits.len() - 1]
+                );
+                println!(
+                    "  ★ total shortfall {:.1} envoys per seat-turn against a pool of {:.2}",
+                    total_deficit as f64 / free_samples.len().max(1) as f64,
+                    mean(&free_samples)
+                );
+            }
+        }
+        println!();
+    }
 }
