@@ -112,6 +112,34 @@ The frozen command already omitted the flag and therefore already selected
 Prince; this is prospective validation hardening only, with no change to the
 command, population, controller, seed, endpoint, threshold, or resource rule.
 
+## Prospective fail-closed invocation amendment
+
+This second pre-flight correction was frozen before either focal seed was run
+or read. A static command-path audit found that a supplied numeric option with
+no parseable value silently fell back to its default. The exact-profile
+predicate also accepted duplicated/default-substituted flags, did not bind
+`--jobs 6`, and compared phase map counts and seeds only after parsing rather
+than to their canonical raw command values. The earlier difficulty correction
+bound resolved Prince difficulty but still allowed an explicit diagnostic
+`--difficulty prince` even though the frozen command intentionally omits that
+flag. No focal output exposed these bookkeeping defects; both registered seed
+ranges remain unopened.
+
+The runner must now exit 2 before constructing a game whenever a supplied
+numeric or text option lacks a usable value. Formal recognition requires each
+common command option exactly once with its canonical raw value:
+`--deployment-mix`, `--turns 250`, `--observe-through 320`, `--speed online`,
+`--poles poles`, `--randomize-civs`,
+`--victories science,culture,domination`, and `--jobs 6`. The screen must bind
+`--maps 12 --seed 9986000`; confirmation must bind
+`--maps 48 --seed 9987000`. `--difficulty` must remain absent so the frozen
+production-default Prince selection is made exactly as preregistered. Defaults,
+noncanonical numeric spellings, duplicated flags, and diagnostic overrides may
+run only under the diagnostic label and cannot receive either gate.
+
+This prospective integrity correction changes no controller, sampled world,
+horizon, seed, map count, endpoint, threshold, stop rule, or resource cap.
+
 ## Fixed deployment-population screen
 
 The amended frozen command is:
