@@ -5071,19 +5071,19 @@ mod governor_runtime_tests {
             .take(2)
             .collect();
         assert_eq!(resource_tiles.len(), 2);
-        for (position, resource, improvement) in [
-            (resource_tiles[0], "silk", "plantation"),
-            (resource_tiles[1], "iron", "mine"),
+        for (position, terrain, resource, improvement) in [
+            (resource_tiles[0], "plains", "silk", "plantation"),
+            (resource_tiles[1], "coast", "oil", "offshore_oil_rig"),
         ] {
             let tile = game.map.tiles.get_mut(&position).unwrap();
-            tile.terrain = crate::name!("plains");
+            tile.terrain = Name::new(terrain);
             tile.feature = None;
             tile.resource = Some(Name::new(resource));
             tile.improvement = Some(Name::new(improvement));
             tile.pillaged = false;
         }
         assert_eq!(game.resource_access_count(0, "silk"), 1);
-        assert_eq!(game.strategic_resource_rate(0, "iron"), 2.0);
+        assert_eq!(game.strategic_resource_rate(0, "oil"), 3.0);
 
         game.players[0].envoys.push((minor, 1));
         game.players[0]
@@ -5094,7 +5094,7 @@ mod governor_runtime_tests {
             .insert("puppeteer".to_string());
         assert_eq!(game.envoys_at(0, minor), 6);
         assert_eq!(game.suzerain_of(minor), Some(0));
-        assert_eq!(game.strategic_resource_rate(0, "iron"), 4.0);
+        assert_eq!(game.strategic_resource_rate(0, "oil"), 6.0);
 
         let amani_position = game.cities[&city_state].pos;
         let target_position = game
@@ -7089,6 +7089,22 @@ mod strategic_resource_tests {
             .unwrap()
     }
 
+    fn set_resource_tile(
+        game: &mut Game,
+        position: Pos,
+        resource: &str,
+        improvement: &str,
+        pillaged: bool,
+    ) {
+        let tile = game.map.tiles.get_mut(&position).unwrap();
+        tile.terrain = crate::name!("coast");
+        tile.feature = None;
+        tile.hills = false;
+        tile.resource = Some(Name::new(resource));
+        tile.improvement = Some(Name::new(improvement));
+        tile.pillaged = pillaged;
+    }
+
     #[test]
     fn improved_sources_use_gathering_storm_rates_and_buildings_raise_capacity() {
         let mut game = strategic_game();
@@ -7133,6 +7149,135 @@ mod strategic_resource_tests {
             .policies
             .insert(crate::name!("equestrian_orders"));
         assert_eq!(game.strategic_resource_rate(0, "iron"), 3.0);
+    }
+
+    #[test]
+    fn alternate_water_resources_connect_and_repair_without_builder_charges() {
+        let mut game = strategic_game();
+        let position = resource_tile(&game, 0);
+        let city = game.map.tiles[&position].owner_city.unwrap();
+
+        set_resource_tile(&mut game, position, "oil", "offshore_oil_rig", false);
+        assert!(game.rules.improvements["offshore_oil_rig"]
+            .resources
+            .contains(&crate::name!("oil")));
+        assert_eq!(game.connected_resource_count(0, "oil"), 1);
+        assert_eq!(game.connected_resource_census(0).get("oil"), Some(&1));
+        assert_eq!(
+            game.city_connected_strategic_resources(&game.cities[&city]),
+            1
+        );
+        assert_eq!(game.strategic_resource_rate(0, "oil"), 3.0);
+
+        game.map.tiles.get_mut(&position).unwrap().pillaged = true;
+        assert_eq!(game.connected_resource_count(0, "oil"), 0);
+        assert_eq!(game.connected_resource_census(0).get("oil"), None);
+        assert_eq!(
+            game.city_connected_strategic_resources(&game.cities[&city]),
+            0
+        );
+        assert_eq!(game.strategic_resource_rate(0, "oil"), 0.0);
+
+        let builder = game.spawn_test_unit("builder", 0, position);
+        let charges = game.units[&builder].charges;
+        game.apply(0, &Action::RepairImprovement { unit: builder })
+            .unwrap();
+        assert_eq!(game.units[&builder].charges, charges);
+        assert_eq!(game.connected_resource_count(0, "oil"), 1);
+        assert_eq!(game.connected_resource_census(0).get("oil"), Some(&1));
+        assert_eq!(game.strategic_resource_rate(0, "oil"), 3.0);
+
+        set_resource_tile(&mut game, position, "amber", "fishing_boats", false);
+        assert!(game.rules.improvements["fishing_boats"]
+            .resources
+            .contains(&crate::name!("amber")));
+        assert_eq!(game.connected_resource_count(0, "amber"), 1);
+        assert_eq!(game.connected_resource_census(0).get("amber"), Some(&1));
+        assert_eq!(game.empire_luxuries(0), 1);
+
+        game.map.tiles.get_mut(&position).unwrap().pillaged = true;
+        game.units.get_mut(&builder).unwrap().moves_left = 2.0;
+        assert_eq!(game.connected_resource_count(0, "amber"), 0);
+        assert_eq!(game.empire_luxuries(0), 0);
+        game.apply(0, &Action::RepairImprovement { unit: builder })
+            .unwrap();
+        assert_eq!(game.units[&builder].charges, charges);
+        assert_eq!(game.connected_resource_count(0, "amber"), 1);
+        assert_eq!(game.connected_resource_census(0).get("amber"), Some(&1));
+        assert_eq!(game.empire_luxuries(0), 1);
+    }
+
+    #[test]
+    fn shared_resource_connection_contract_preserves_defaults_and_rejects_mismatches() {
+        let mut game = strategic_game();
+        let position = resource_tile(&game, 0);
+        let city = game.map.tiles[&position].owner_city.unwrap();
+
+        // Every explicit improvement-resource row and every stock default is
+        // accepted by the same predicate the accounting endpoints now use.
+        for (improvement, spec) in &game.rules.improvements {
+            for resource in &spec.resources {
+                assert!(
+                    game.improvement_connects_resource(*improvement, *resource),
+                    "{} must connect its listed {} resource",
+                    improvement,
+                    resource
+                );
+            }
+        }
+        for (resource, spec) in &game.rules.resources {
+            if !spec.improvement.is_empty() {
+                assert!(
+                    game.improvement_connects_resource(Name::new(&spec.improvement), *resource),
+                    "{} must retain its stock {} connection",
+                    resource,
+                    spec.improvement
+                );
+            }
+        }
+        assert!(game.improvement_connects_resource(crate::name!("industry"), crate::name!("amber")));
+        assert!(
+            game.improvement_connects_resource(crate::name!("corporation"), crate::name!("amber"))
+        );
+        assert!(!game.improvement_connects_resource(crate::name!("farm"), crate::name!("amber")));
+
+        set_resource_tile(&mut game, position, "amber", "mine", false);
+        assert_eq!(game.connected_resource_count(0, "amber"), 1);
+        assert_eq!(game.connected_resource_census(0).get("amber"), Some(&1));
+        set_resource_tile(&mut game, position, "amber", "farm", false);
+        assert_eq!(game.connected_resource_count(0, "amber"), 0);
+        assert_eq!(game.connected_resource_census(0).get("amber"), None);
+
+        // The Grand Bazaar's per-city Luxury effect follows the same live
+        // connection, including alternate improvements and pillage state.
+        install_test_district(&mut game, city, "commercial_hub");
+        game.cities
+            .get_mut(&city)
+            .unwrap()
+            .buildings
+            .extend([crate::name!("market"), crate::name!("grand_bazaar")]);
+        let mismatched = game.city_local_amenities_uncached(&game.cities[&city]);
+        set_resource_tile(&mut game, position, "amber", "fishing_boats", false);
+        assert_eq!(
+            game.city_local_amenities_uncached(&game.cities[&city]),
+            mismatched + 1
+        );
+        game.map.tiles.get_mut(&position).unwrap().pillaged = true;
+        assert_eq!(
+            game.city_local_amenities_uncached(&game.cities[&city]),
+            mismatched
+        );
+
+        // The same building's strategic accumulation recognizes the water
+        // Oil source, rather than silently paying only land Oil Wells.
+        set_resource_tile(&mut game, position, "oil", "offshore_oil_rig", false);
+        assert_eq!(game.strategic_resource_rate(0, "oil"), 4.0);
+        game.players[0]
+            .policies
+            .insert(crate::name!("resource_management"));
+        assert_eq!(game.strategic_resource_rate(0, "oil"), 5.0);
+        game.players[0].government = Some("corporate_libertarianism".to_string());
+        assert_eq!(game.strategic_resource_rate(0, "oil"), 6.0);
     }
 
     #[test]
@@ -19344,20 +19489,14 @@ impl Game {
             .iter()
             .filter(|position| {
                 let tile = &self.map.tiles[position];
-                let Some(resource) = tile.resource.as_deref() else {
+                let Some(resource) = tile.resource else {
                     return false;
                 };
-                let Some(spec) = self.rules.resources.get(resource) else {
+                let Some(spec) = self.rules.resources.get_interned(resource) else {
                     return false;
                 };
                 spec.class == "strategic"
-                    && !tile.pillaged
-                    && (**position == city.pos
-                        || tile.improvement.as_deref() == Some(spec.improvement.as_str())
-                        || matches!(
-                            tile.improvement.as_deref(),
-                            Some("industry" | "corporation")
-                        ))
+                    && self.tile_connects_resource(tile, resource, **position == city.pos)
             })
             .count()
     }
@@ -24985,12 +25124,11 @@ impl Game {
                 .iter()
                 .filter_map(|position| {
                     let tile = &self.map.tiles[position];
-                    let resource = tile.resource.as_deref()?;
-                    let spec = self.rules.resources.get(resource)?;
+                    let resource = tile.resource?;
+                    let spec = self.rules.resources.get_interned(resource)?;
                     (spec.class == "luxury"
-                        && (*position == city.pos
-                            || tile.improvement.as_deref() == Some(spec.improvement.as_str())))
-                    .then_some(resource)
+                        && self.tile_connects_resource(tile, resource, *position == city.pos))
+                    .then_some(resource.as_str())
                 })
                 .collect();
             supply += per_luxury * luxuries.len() as f64;
@@ -25562,23 +25700,54 @@ impl Game {
             .is_some_and(|spec| self.unlocked(pid, &spec.tech, &spec.civic))
     }
 
+    /// Whether an improvement is one of the ruleset-defined ways to connect
+    /// the resource beneath it. Water alternates such as Offshore Oil Rigs on
+    /// Oil and Fishing Boats on Amber live in `ImprovementSpec.resources`,
+    /// while Industries and Corporations inherit their resource from the tile.
+    #[inline]
+    fn improvement_connects_resource(&self, improvement: Name, resource: Name) -> bool {
+        let Some(resource_spec) = self.rules.resources.get_interned(resource) else {
+            return false;
+        };
+        resource_spec.improvement == improvement.as_str()
+            || self
+                .rules
+                .improvements
+                .get_interned(improvement)
+                .is_some_and(|spec| spec.resources.contains(&resource))
+            || matches!(improvement.as_str(), "industry" | "corporation")
+    }
+
+    /// A resource connection is live only while the tile is unpillaged. City
+    /// Centers connect their resource directly; every other tile must have a
+    /// matching improvement under the shared ruleset predicate above.
+    #[inline]
+    fn tile_connects_resource(&self, tile: &Tile, resource: Name, city_center: bool) -> bool {
+        tile.resource == Some(resource)
+            && !tile.pillaged
+            && self.rules.resources.contains_name(resource)
+            && (city_center
+                || tile.improvement.is_some_and(|improvement| {
+                    self.improvement_connects_resource(improvement, resource)
+                }))
+    }
+
     pub fn strategic_resource_rate(&self, pid: usize, res: &str) -> f64 {
         if !self.resource_visible_to(pid, res) {
             return 0.0;
         }
-        let expected_improvement = self.rules.resources[res].improvement.as_str();
+        let resource = Name::new(res);
         let mut improved = 0.0;
         let mut government_improved = 0.0;
         let mut governor_accumulation = 0.0;
         for c in self.cities.values().filter(|c| c.owner == pid) {
             for pos in &c.owned_tiles {
                 let tile = &self.map.tiles[pos];
-                if tile.resource.as_deref() == Some(res)
-                    && !tile.pillaged
-                    && (*pos == c.pos || tile.improvement.as_deref() == Some(expected_improvement))
-                {
+                if self.tile_connects_resource(tile, resource, *pos == c.pos) {
                     improved += 1.0;
-                    if tile.improvement.as_deref() == Some(expected_improvement) {
+                    if tile.improvement.is_some_and(|improvement| {
+                        self.improvement_connects_resource(improvement, resource)
+                    }) {
                         government_improved += 1.0;
                     }
                     governor_accumulation +=
@@ -25614,11 +25783,7 @@ impl Game {
             .filter(|city| {
                 city.owned_tiles.iter().any(|position| {
                     let tile = &self.map.tiles[position];
-                    tile.resource.as_deref() == Some(res)
-                        && !tile.pillaged
-                        && (*position == city.pos
-                            || tile.improvement.as_deref()
-                                == Some(self.rules.resources[res].improvement.as_str()))
+                    self.tile_connects_resource(tile, resource, *position == city.pos)
                 })
             })
             .map(|city| self.city_building_effect(city, "strategic_resource_accumulation"))
@@ -25645,7 +25810,6 @@ impl Game {
         let amani = self
             .amani_city_state_for_effect(pid, "city_state_resource_access")
             .map(|(_, minor)| {
-                let expected = self.rules.resources[res].improvement.as_str();
                 let sources = self
                     .cities
                     .values()
@@ -25657,10 +25821,7 @@ impl Game {
                     })
                     .filter(|(city, position)| {
                         let tile = &self.map.tiles[position];
-                        tile.resource.as_deref() == Some(res)
-                            && !tile.pillaged
-                            && (**position == city.pos
-                                || tile.improvement.as_deref() == Some(expected))
+                        self.tile_connects_resource(tile, resource, **position == city.pos)
                     })
                     .count() as f64;
                 // Foreign Investor supplies the assigned state's resources
@@ -25813,23 +25974,11 @@ impl Game {
         for city in self.cities.values().filter(|city| city.owner == pid) {
             for position in &city.owned_tiles {
                 let tile = &self.map.tiles[position];
-                let Some(resource) = tile.resource.as_deref() else {
+                let Some(resource) = tile.resource else {
                     continue;
                 };
-                if tile.pillaged {
-                    continue;
-                }
-                let Some(spec) = self.rules.resources.get(resource) else {
-                    continue;
-                };
-                let connected = *position == city.pos
-                    || tile.improvement.as_deref() == Some(spec.improvement.as_str())
-                    || matches!(
-                        tile.improvement.as_deref(),
-                        Some("industry" | "corporation")
-                    );
-                if connected {
-                    *counts.entry(resource).or_insert(0) += 1;
+                if self.tile_connects_resource(tile, resource, *position == city.pos) {
+                    *counts.entry(resource.as_str()).or_insert(0) += 1;
                 }
             }
         }
@@ -25837,9 +25986,10 @@ impl Game {
     }
 
     fn connected_resource_count_unchecked(&self, pid: usize, res: &str) -> i32 {
-        let Some(spec) = self.rules.resources.get(res) else {
+        if self.rules.resources.get(res).is_none() {
             return 0;
-        };
+        }
+        let resource = Name::new(res);
         self.cities
             .values()
             .filter(|city| city.owner == pid)
@@ -25850,14 +26000,7 @@ impl Game {
             })
             .filter(|(city, position)| {
                 let tile = &self.map.tiles[position];
-                tile.resource.as_deref() == Some(res)
-                    && !tile.pillaged
-                    && (**position == city.pos
-                        || tile.improvement.as_deref() == Some(spec.improvement.as_str())
-                        || matches!(
-                            tile.improvement.as_deref(),
-                            Some("industry" | "corporation")
-                        ))
+                self.tile_connects_resource(tile, resource, **position == city.pos)
             })
             .count() as i32
     }
