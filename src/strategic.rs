@@ -206,6 +206,24 @@ pub struct StrategicAi {
     weights: Weights,
     net: Option<ValueNet>,
     census: ReviewCensus,
+    /// Judge every lane under the doctrine it would actually be played with,
+    /// instead of under the doctrine currently in force.
+    ///
+    /// `review_doctrine`'s own comment argues the shipped order: "the lane is
+    /// chosen first because it is the coarser decision — what an empire is
+    /// playing for changes which doctrine suits it far more than the reverse."
+    /// Measured over 175 review points, the first half of that is right: the
+    /// best doctrine depends on the lane in **80%** of reviews. The second half
+    /// does not follow from it. Judging a lane under the incumbent's weights
+    /// projects a Domination lane with Consolidate genes — the worst version of
+    /// itself — and the lane that wins changes in **43.4%** of reviews, with a
+    /// gap over the commitment margin in 22.3% and worst cases twenty times the
+    /// lane margin.
+    ///
+    /// Off by default. It costs the product rather than the sum — 28 rollouts a
+    /// review against 11 — and no default moves until a paired run at the
+    /// deployment profile says it wins games. `docs/EVAL.md`, 2026-07-29.
+    pub joint_axes: bool,
     pub review_every: u32,
     /// Rounds each branch is projected before it is judged.
     ///
@@ -487,6 +505,7 @@ impl StrategicAi {
             continue_from_plan: true,
             branch_religion_may_expand: false,
             adaptive_horizon: false,
+            joint_axes: false,
             model_rival_lanes: false,
             trust_religious_prior: true,
             doctrine_search: false,
@@ -1532,7 +1551,9 @@ impl StrategicAi {
         }
         let mut branches: Vec<Option<VictoryTarget>> = vec![None];
         branches.extend(self.lane_candidates(g).into_iter().map(Some));
-        let values = if self.adaptive_horizon {
+        let values = if self.joint_axes {
+            self.joint_lane_values(g, pid, &branches)
+        } else if self.adaptive_horizon {
             self.lockstep_values(g, pid, &branches)
         } else {
             branches
@@ -1541,6 +1562,39 @@ impl StrategicAi {
                 .collect()
         };
         (self.choose_rollout_target(&values), ReviewPath::Rollouts)
+    }
+
+    /// Every lane's value at the doctrine it would actually be played with.
+    ///
+    /// This is the product the shipped search deliberately does not pay for.
+    /// The maximum over doctrines is the right summary because that is the
+    /// value the lane would really deliver: if this agent commits to a lane,
+    /// `review_doctrine` runs immediately afterwards and moves to that lane's
+    /// best doctrine anyway. Judging the lane by the incumbent's value is
+    /// therefore judging it by a number the agent itself would never realise.
+    ///
+    /// Deliberately not lockstep-aware. `lockstep_values` stops projecting once
+    /// branches separate, and its stopping test reads the branch values; making
+    /// it read a maximum over four doctrines instead would change when it stops
+    /// and confound the axis change with a horizon change. One thing at a time.
+    fn joint_lane_values(
+        &self,
+        g: &Game,
+        pid: usize,
+        branches: &[Option<VictoryTarget>],
+    ) -> Vec<(f64, Option<VictoryTarget>)> {
+        branches
+            .iter()
+            .map(|target| {
+                let best = Doctrine::ALL
+                    .into_iter()
+                    .map(|doctrine| {
+                        self.rollout_weighted(g, pid, *target, &doctrine.apply(&self.weights))
+                    })
+                    .fold(f64::NEG_INFINITY, f64::max);
+                (best, *target)
+            })
+            .collect()
     }
 
     /// Lanes this review will project, always alongside the adaptive
@@ -2642,5 +2696,30 @@ mod tests {
             .collect();
         run_game(&mut g, &mut ais);
         assert!(g.winner.is_some());
+    }
+}
+
+#[cfg(test)]
+mod joint_axis_tests {
+    use super::{Doctrine, StrategicAi};
+    use crate::ai::Weights;
+
+    /// The product costs 2.5x the rollouts, so it stays off until a paired run
+    /// at the deployment profile says it wins games. A default that drifts on
+    /// is the failure this repository has recorded most often.
+    #[test]
+    fn joint_axes_is_off_by_default() {
+        assert!(!StrategicAi::new().joint_axes);
+        assert!(!StrategicAi::with_weights(Weights::default()).joint_axes);
+    }
+
+    /// With the flag off the agent must project exactly what it always did.
+    /// The joint path is a superset of the sequential one, so an accidental
+    /// always-on would be invisible in a win rate and obvious here.
+    #[test]
+    fn the_shipped_search_still_judges_lanes_under_the_incumbent() {
+        let ai = StrategicAi::with_weights(Weights::default());
+        assert!(!ai.joint_axes);
+        assert_eq!(ai.doctrine(), Doctrine::Incumbent);
     }
 }

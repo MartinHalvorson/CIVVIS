@@ -38,7 +38,7 @@ pub const BUILTIN_AIS: [&str; 10] = [
 /// tournament ratings. Keeping them out of `BUILTIN_AIS` prevents a control
 /// factory from being pooled into the same player/leader rating key as
 /// its treatment.
-pub const EVAL_ONLY_AIS: [&str; 64] = [
+pub const EVAL_ONLY_AIS: [&str; 65] = [
     "advanced_congress_counter",
     "advanced_congress_votes",
     "advanced_congress_counter_hard",
@@ -103,6 +103,7 @@ pub const EVAL_ONLY_AIS: [&str; 64] = [
     "strategic_deep_adaptive",
     "strategic_rivals",
     "strategic_deep_rivals",
+    "strategic_joint",
 ];
 
 /// On-disk schema for the shared player/leader/civilization rating ledger.
@@ -1011,6 +1012,18 @@ pub fn builtin_ai(name: &str, seed: u64) -> Box<dyn Ai> {
         // for further search work, the way `advanced_v1` is for
         // `advanced`, and this costs four times the macro-search compute,
         // which batch callers should adopt on purpose rather than inherit.
+        // Judges every lane under the doctrine it would actually be played
+        // with, rather than under the one in force. Costs the product instead
+        // of the sum -- 28 rollouts a review against 11. Named rather than
+        // default because no strength claim exists for it yet; the measurement
+        // that motivates it is in docs/EVAL.md, 2026-07-29.
+        "strategic_joint" => {
+            let mut ai = crate::strategic::StrategicAi::with_weights(
+                crate::evolve::load_champion("evolved").unwrap_or_default(),
+            );
+            ai.joint_axes = true;
+            Box::new(ai)
+        }
         "strategic_deep" => {
             let mut ai = crate::strategic::StrategicAi::with_weights(
                 crate::evolve::load_champion("evolved").unwrap_or_default(),
