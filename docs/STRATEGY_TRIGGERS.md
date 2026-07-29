@@ -119,8 +119,25 @@ already queued primary experiment.
 ## Frozen decision rule
 
 Let the **dominant family** be the most frequent unordered reason-pair family
-among the champion's unanchored midgame strategy switches. It nominates a
-single trigger-scoped gameplay experiment only if all three conditions hold:
+among all of the champion's unanchored midgame strategy switches. Count ties
+break by the canonical family label. The dominant family is **eligible** only
+when both of its reasons (or its one same-reason label) belong to this frozen
+elective set:
+
+- `strong enough to take what a neighbour has`
+- `already well down its best victory lane`
+- `short of cities with land still open`
+- `its best available victory lane`
+
+Every family containing defense, emergency, active war, victory denial,
+assigned-lane routing, ancient-rush timing, Tagma timing, or the finite Prophet
+race is ineligible. In particular, neither entry to nor release from urgent
+defense or victory denial may be delayed on this evidence. If the globally
+dominant family is ineligible, no lower-ranked elective family may be selected
+after seeing the result.
+
+An eligible dominant family nominates a single trigger-scoped gameplay
+experiment only if all three conditions hold:
 
 1. it accounts for at least **30%** of the champion's unanchored midgame
    switches;
@@ -133,27 +150,20 @@ cannot be pooled after seeing the data.
 
 The intervention scope is frozen by the winning family:
 
-- A family containing `at war and losing ground at home`, `an emergency
-  objective is standing`, or `countering a rival close to winning` may never
-  delay entry into that reason. The next A/B may only debounce release from the
-  urgent reason, and it must preserve immediate re-entry.
-- A family containing `already at war` must stay inside the current war. Its
-  next A/B may stabilize Recovery/Conquest posture but may not delay war entry,
-  peace, or an emergency response.
 - A same-reason family under `its best available victory lane` or `already well
   down its best victory lane` nominates margin-based lane hysteresis, because
   the broad assessment arm stayed fixed while its argmax changed.
 - A family led by `strong enough to take what a neighbour has` nominates
   threshold hysteresis around opportunistic Conquest only; assigned lanes,
   emergencies, active wars, ancient rushes, and victory denial remain exempt.
-- Any other passing family receives a minimal boundary-specific development
-  arm whose exemptions are written before its outcome seeds are chosen. It
-  does not authorize a generic strategy cooldown.
+- A family involving `short of cities with land still open` nominates only a
+  settlement-availability or city-target margin around that branch. It may not
+  hold an Expansion strategy after the reported city deficit closes.
 
-If no family passes all three gates, generic and trigger-scoped hysteresis are
-both rejected on this evidence. The next military experiment must improve
-execution inside a stable Conquest/Recovery episode rather than suppress plan
-changes.
+If the dominant family is ineligible, or if it fails any of the three gates,
+generic and trigger-scoped hysteresis are both rejected on this evidence. The
+next military experiment must improve execution inside a stable
+Conquest/Recovery episode rather than suppress plan changes.
 
 Even when a family passes, this task promotes only a hypothesis, not gameplay.
 The subsequent arm requires a fresh preregistration, a development screen,
