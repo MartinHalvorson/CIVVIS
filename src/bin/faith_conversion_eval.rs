@@ -45,6 +45,7 @@ enum CultureAsset {
 /// independently testable without manufacturing a late-game fixture.
 fn select_culture_purchase(
     actions: impl IntoIterator<Item = Action>,
+    has_park_site: bool,
     active_naturalists: usize,
     active_bands: usize,
 ) -> Option<(CultureAsset, Action)> {
@@ -63,7 +64,7 @@ fn select_culture_purchase(
             band = Some((CultureAsset::RockBand, action));
         }
     }
-    if active_naturalists == 0 {
+    if has_park_site && active_naturalists == 0 {
         if let Some(candidate) = naturalist {
             return Some(candidate);
         }
@@ -87,6 +88,7 @@ fn culture_purchase(g: &Game, pid: usize) -> Option<(CultureAsset, Action)> {
         .count();
     select_culture_purchase(
         g.legal_actions_within(pid, ActionFamilies::PURCHASES | ActionFamilies::EMPIRE),
+        !g.national_park_sites(pid).is_empty(),
         active_naturalists,
         active_bands,
     )
@@ -669,11 +671,13 @@ mod tests {
             buy("naturalist", "faith", 1),
             buy("naturalist", "gold", 3),
         ];
-        let (asset, _) = select_culture_purchase(actions.clone(), 0, 0).unwrap();
+        let (asset, _) = select_culture_purchase(actions.clone(), true, 0, 0).unwrap();
         assert_eq!(asset, CultureAsset::Naturalist);
-        let (asset, _) = select_culture_purchase(actions.clone(), 1, 0).unwrap();
+        let (asset, _) = select_culture_purchase(actions.clone(), true, 1, 0).unwrap();
         assert_eq!(asset, CultureAsset::RockBand);
-        assert!(select_culture_purchase(actions, 1, 2).is_none());
+        let (asset, _) = select_culture_purchase(actions.clone(), false, 0, 0).unwrap();
+        assert_eq!(asset, CultureAsset::RockBand);
+        assert!(select_culture_purchase(actions, true, 1, 2).is_none());
     }
 
     #[test]
