@@ -75,6 +75,13 @@ switch is its own family. Pair canonicalization is lexical and output ordering
 is count descending, then label ascending, so parallel execution cannot alter
 the report.
 
+The evaluator, rather than the analyst, will apply the frozen family decision:
+select the globally dominant family with the same deterministic tie break,
+check its exact elective vocabulary, and print the concentration, occurrences
+per seat-game, seat coverage, and `NOMINATE`/`REJECT` verdict. The documented
+thresholds are constants in that calculation; displayed rounding is never used
+for the comparison.
+
 The primary interval is unchanged: Standard turn 60 inclusive through
 Standard turn 180 exclusive, speed-normalized by `Game::standard_duration`.
 A switch belongs to the interval when its new observation is in the interval,

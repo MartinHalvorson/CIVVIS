@@ -12,6 +12,9 @@ use std::collections::{BTreeMap, BTreeSet};
 
 const PROMOTION_MIN_MAPS: usize = 20;
 const Z_95: f64 = 1.959_963_984_540_054;
+const TRIGGER_MIN_SHARE: f64 = 0.30;
+const TRIGGER_MIN_PER_SEAT: f64 = 0.75;
+const TRIGGER_MIN_SEAT_COVERAGE: f64 = 0.25;
 /// Split a 5% two-sided error budget equally between promotion and retention.
 const ANYTIME_TAIL_ALPHA: f64 = 0.025;
 /// Fixed, pre-declared bets for a finite mixture e-process. At the parity null
@@ -816,6 +819,81 @@ fn family_counts(families: &BTreeMap<String, usize>, seats: &BTreeMap<String, us
         .join(", ")
 }
 
+fn elective_reason(reason: &str) -> bool {
+    matches!(
+        reason,
+        "strong enough to take what a neighbour has"
+            | "already well down its best victory lane"
+            | "short of cities with land still open"
+            | "its best available victory lane"
+    )
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct TriggerGate<'a> {
+    family: &'a str,
+    occurrences: usize,
+    seats: usize,
+    eligible: bool,
+    share: f64,
+    per_seat: f64,
+    seat_coverage: f64,
+}
+
+impl TriggerGate<'_> {
+    fn passes(self) -> bool {
+        self.eligible
+            && self.share >= TRIGGER_MIN_SHARE
+            && self.per_seat >= TRIGGER_MIN_PER_SEAT
+            && self.seat_coverage >= TRIGGER_MIN_SEAT_COVERAGE
+    }
+}
+
+fn trigger_gate(metrics: &Metrics) -> Option<TriggerGate<'_>> {
+    let (family, occurrences) = metrics
+        .midgame_unanchored_reason_families
+        .iter()
+        .map(|(family, count)| (family.as_str(), *count))
+        .max_by(|left, right| left.1.cmp(&right.1).then_with(|| right.0.cmp(left.0)))?;
+    let (left, right) = family
+        .split_once(" <-> ")
+        .expect("canonical reason families always have two labels");
+    let seats = metrics
+        .midgame_unanchored_reason_family_seats
+        .get(family)
+        .copied()
+        .unwrap_or(0);
+    let games = metrics.games.max(1) as f64;
+    Some(TriggerGate {
+        family,
+        occurrences,
+        seats,
+        eligible: elective_reason(left) && elective_reason(right),
+        share: occurrences as f64 / metrics.midgame_unanchored_switches.max(1) as f64,
+        per_seat: occurrences as f64 / games,
+        seat_coverage: seats as f64 / games,
+    })
+}
+
+fn trigger_gate_report(metrics: &Metrics) -> String {
+    let Some(gate) = trigger_gate(metrics) else {
+        return "REJECT (no unanchored reason family)".to_string();
+    };
+    format!(
+        "{}: {} — {}/{} ({:.1}%), {:.2}/seat-game, {}/{} seats ({:.1}%), elective {}",
+        if gate.passes() { "NOMINATE" } else { "REJECT" },
+        gate.family,
+        gate.occurrences,
+        metrics.midgame_unanchored_switches,
+        100.0 * gate.share,
+        gate.per_seat,
+        gate.seats,
+        metrics.games,
+        100.0 * gate.seat_coverage,
+        if gate.eligible { "yes" } else { "no" },
+    )
+}
+
 fn text(args: &[String], flag: &str, default: &str) -> String {
     args.iter()
         .position(|arg| arg == flag)
@@ -1351,6 +1429,10 @@ fn main() {
                 &metrics.midgame_unanchored_reason_families,
                 &metrics.midgame_unanchored_reason_family_seats,
             ),
+        );
+        println!(
+            "  {name:<11} trigger-scoped experiment gate {}",
+            trigger_gate_report(metrics),
         );
     }
     println!("\nAncient-rush treatment exposure:");
@@ -1991,6 +2073,82 @@ mod tests {
                 "alpha <-> zeta 4 across 1 seat-games, {family} 4 across 2 seat-games"
             )
         );
+    }
+
+    #[test]
+    fn trigger_gate_requires_the_global_dominant_family_to_be_elective() {
+        let urgent = reason_family("already at war", "at war and losing ground at home");
+        let elective = reason_family(
+            "already well down its best victory lane",
+            "its best available victory lane",
+        );
+        let mut metrics = Metrics {
+            games: 4,
+            midgame_unanchored_switches: 8,
+            ..Metrics::default()
+        };
+        metrics
+            .midgame_unanchored_reason_families
+            .insert(urgent.clone(), 5);
+        metrics
+            .midgame_unanchored_reason_family_seats
+            .insert(urgent.clone(), 3);
+        metrics
+            .midgame_unanchored_reason_families
+            .insert(elective.clone(), 3);
+        metrics
+            .midgame_unanchored_reason_family_seats
+            .insert(elective, 2);
+
+        let gate = trigger_gate(&metrics).unwrap();
+        assert_eq!(gate.family, urgent);
+        assert!(!gate.eligible);
+        assert!(!gate.passes(), "an elective runner-up cannot be selected");
+    }
+
+    #[test]
+    fn trigger_gate_automates_all_three_preregistered_thresholds() {
+        let family = reason_family(
+            "already well down its best victory lane",
+            "its best available victory lane",
+        );
+        let make_metrics = |occurrences, total, seats| {
+            let mut metrics = Metrics {
+                games: 4,
+                midgame_unanchored_switches: total,
+                ..Metrics::default()
+            };
+            metrics
+                .midgame_unanchored_reason_families
+                .insert(family.clone(), occurrences);
+            metrics
+                .midgame_unanchored_reason_family_seats
+                .insert(family.clone(), seats);
+            metrics
+        };
+
+        assert!(trigger_gate(&make_metrics(3, 10, 1)).unwrap().passes());
+        assert!(!trigger_gate(&make_metrics(2, 10, 1)).unwrap().passes());
+        assert!(!trigger_gate(&make_metrics(2, 4, 1)).unwrap().passes());
+        assert!(!trigger_gate(&make_metrics(3, 10, 0)).unwrap().passes());
+    }
+
+    #[test]
+    fn trigger_gate_breaks_dominant_count_ties_by_family_label() {
+        let mut metrics = Metrics {
+            games: 4,
+            midgame_unanchored_switches: 6,
+            ..Metrics::default()
+        };
+        for family in ["zeta <-> zeta", "alpha <-> alpha"] {
+            metrics
+                .midgame_unanchored_reason_families
+                .insert(family.to_string(), 3);
+            metrics
+                .midgame_unanchored_reason_family_seats
+                .insert(family.to_string(), 2);
+        }
+        assert_eq!(trigger_gate(&metrics).unwrap().family, "alpha <-> alpha");
     }
 
     #[test]
