@@ -17,10 +17,10 @@
 //! harness is reporting its own noise as headroom.
 use civvis::ai::{AdvancedAi, Ai, VictoryTarget};
 use civvis::elo::{builtin_ai, builtin_provenance, BUILTIN_AIS, EVAL_ONLY_AIS};
-use civvis::game::{default_difficulty, Action, Game, GameOptions};
+use civvis::game::{default_difficulty, Action, Game, GameOptions, VictoryConditions};
 use civvis::oracle::{Grant, Oracle};
 use civvis::rules::Rules;
-use civvis::setup::MapSize;
+use civvis::setup::{MapPoles, MapScript, MapSize, MapTopology};
 use std::collections::BTreeSet;
 
 fn number(args: &[String], key: &str, default: i64) -> i64 {
@@ -41,6 +41,59 @@ fn text(args: &[String], key: &str, default: &str) -> String {
 
 fn known_ai(name: &str) -> bool {
     BUILTIN_AIS.contains(&name) || EVAL_ONLY_AIS.contains(&name)
+}
+
+/// World axes grant mode adds to the historical evaluator profile.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct GrantProfile {
+    map_script: MapScript,
+    map_topology: MapTopology,
+    map_poles: MapPoles,
+    randomize_civs: bool,
+    victory_conditions: VictoryConditions,
+}
+
+fn parse_grant_profile(args: &[String]) -> Result<GrantProfile, String> {
+    let map_name = text(args, "--map", MapScript::default().id());
+    let map_script =
+        MapScript::from_id(&map_name).ok_or_else(|| format!("unknown map script {map_name:?}"))?;
+    let shape_name = text(args, "--shape", MapTopology::default().id());
+    let map_topology = MapTopology::from_id(&shape_name)
+        .ok_or_else(|| format!("unknown map shape {shape_name:?}"))?;
+    let poles_name = text(args, "--poles", MapPoles::default().id());
+    let map_poles = MapPoles::from_id(&poles_name)
+        .ok_or_else(|| format!("unknown thermal distribution {poles_name:?}"))?;
+    let default_victories = VictoryConditions::NAMES.join(",");
+    let victory_names = text(args, "--victories", &default_victories);
+    let victory_conditions = VictoryConditions::parse(&victory_names).map_err(|why| {
+        format!(
+            "--victories: {why}; choose from {:?}",
+            VictoryConditions::NAMES
+        )
+    })?;
+    Ok(GrantProfile {
+        map_script,
+        map_topology,
+        map_poles,
+        randomize_civs: args.iter().any(|arg| arg == "--randomize-civs"),
+        victory_conditions,
+    })
+}
+
+/// Planet accepts a stock flat-map size request, then realizes the closest
+/// equal-area globe. Report what the engine will actually store rather than
+/// leaving `84x54 --shape planet` to look like a rectangular 84x54 game.
+fn realized_geometry(width: i32, height: i32, topology: MapTopology) -> (i32, i32, usize) {
+    if topology.is_globe() {
+        let frequency = civvis::mapgen::globe_frequency(width, height);
+        (
+            civvis::sphere::Sphere::width_for(frequency),
+            civvis::sphere::Sphere::height_for(frequency),
+            civvis::sphere::Sphere::tiles_for(frequency),
+        )
+    } else {
+        (width, height, (width * height).max(0) as usize)
+    }
 }
 
 /// Parse one grant, `all`, or a comma-separated set sharing one control.
@@ -67,8 +120,15 @@ fn parse_grants(requested: &str) -> Result<Vec<Grant>, String> {
 /// One game. `oracle_seat` is the seat holding the grant; every other major
 /// plays the stock agent. Returns whether the granted seat won, and how many
 /// times its grant fired.
-fn play(options: GameOptions, oracle_seat: usize, grant: Grant, ai_name: &str) -> (bool, u64) {
+fn play(
+    options: GameOptions,
+    victory_conditions: VictoryConditions,
+    oracle_seat: usize,
+    grant: Grant,
+    ai_name: &str,
+) -> (bool, u64) {
     let mut game = Game::new_with(options);
+    game.victory_conditions = victory_conditions;
     let mut stock: Vec<Box<dyn Ai>> = game
         .players
         .iter()
@@ -162,6 +222,10 @@ fn run(grants: &[Grant], args: &[String]) {
         number(args, "--city-states", size.default_city_states as i64).max(0) as usize;
     let speed = text(args, "--speed", &civvis::game::default_speed());
     let ai_name = text(args, "--ai", "advanced");
+    let profile = parse_grant_profile(args).unwrap_or_else(|error| {
+        eprintln!("{error}");
+        std::process::exit(2);
+    });
     if !known_ai(&ai_name) {
         eprintln!("unknown AI {ai_name:?}; choose a builtin or evaluator-only AI name");
         std::process::exit(2);
@@ -191,12 +255,31 @@ fn run(grants: &[Grant], args: &[String]) {
         eprintln!("unknown difficulty {difficulty:?}");
         std::process::exit(2);
     }
+    let (realized_width, realized_height, realized_tiles) =
+        realized_geometry(width, height, profile.map_topology);
     println!(
-        "profile: {players}p {width}x{height}, {city_states} city-states, \
+        "profile: {players}p requested {width}x{height}, realized \
+{realized_width}x{realized_height} ({realized_tiles} tiles), {city_states} city-states, \
 {turns} {speed} turns, seed {seed}, {jobs} jobs, difficulty {difficulty}"
     );
     println!(
-        "sampling seats 0 and {}; fixed stock civilizations; Basic city-states/barbarians",
+        "world: map {}, shape {}, poles {}, civilizations {}, victories {}",
+        profile.map_script.id(),
+        profile.map_topology.id(),
+        profile.map_poles.id(),
+        if profile.randomize_civs {
+            "randomized"
+        } else {
+            "fixed stock"
+        },
+        VictoryConditions::NAMES
+            .into_iter()
+            .filter(|name| profile.victory_conditions.is_enabled(name))
+            .collect::<Vec<_>>()
+            .join(","),
+    );
+    println!(
+        "sampling seats 0 and {}; Basic city-states/barbarians",
         players - 1
     );
 
@@ -221,6 +304,10 @@ fn run(grants: &[Grant], args: &[String]) {
         );
         options.difficulty = difficulty.clone();
         options.speed = speed.clone();
+        options.map_script = profile.map_script;
+        options.map_topology = profile.map_topology;
+        options.map_poles = profile.map_poles;
+        options.randomize_civs = profile.randomize_civs;
         // Only the granted seat sits on the human side of the ladder, so the
         // handicap moves with the grant rather than with the map.
         options.human_seats = BTreeSet::from([cell.seat]);
@@ -243,6 +330,7 @@ fn run(grants: &[Grant], args: &[String]) {
         |index| {
             play(
                 options_for(cells[index]),
+                profile.victory_conditions,
                 cells[index].seat,
                 Grant::None,
                 &ai_name,
@@ -260,26 +348,24 @@ fn run(grants: &[Grant], args: &[String]) {
     );
 
     for &grant in grants {
-        println!("playing {} treatment games for {}...", cells.len(), grant.name());
+        println!(
+            "playing {} treatment games for {}...",
+            cells.len(),
+            grant.name()
+        );
         let played = civvis::parallel::map_reporting(
             cells.len(),
             jobs,
             |index| {
                 play(
                     options_for(cells[index]),
+                    profile.victory_conditions,
                     cells[index].seat,
                     grant,
                     &ai_name,
                 )
             },
-            |index, _| {
-                println!(
-                    "  {} progress {}/{}",
-                    grant.name(),
-                    index + 1,
-                    cells.len()
-                )
-            },
+            |index, _| println!("  {} progress {}/{}", grant.name(), index + 1, cells.len()),
         );
         let treated: Vec<bool> = played.iter().map(|(won, _)| *won).collect();
         let fired: u64 = played.iter().map(|(_, fired)| *fired).sum();
@@ -538,8 +624,14 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
-    use super::{known_ai, parse_grants};
+    use super::{known_ai, parse_grant_profile, parse_grants, realized_geometry};
+    use civvis::game::VictoryConditions;
     use civvis::oracle::Grant;
+    use civvis::setup::{MapPoles, MapScript, MapTopology};
+
+    fn args(values: &[&str]) -> Vec<String> {
+        values.iter().map(|value| (*value).to_string()).collect()
+    }
 
     #[test]
     fn comma_separated_grants_share_a_control_without_duplicates() {
@@ -557,5 +649,53 @@ mod tests {
         assert!(known_ai("advanced"));
         assert!(known_ai("strategic_deep"));
         assert!(!known_ai("strategic_typo"));
+    }
+
+    #[test]
+    fn historical_grant_profile_is_the_default() {
+        let profile = parse_grant_profile(&[]).unwrap();
+        assert_eq!(profile.map_script, MapScript::Pangaea);
+        assert_eq!(profile.map_topology, MapTopology::Flat);
+        assert_eq!(profile.map_poles, MapPoles::Poles);
+        assert!(!profile.randomize_civs);
+        assert_eq!(profile.victory_conditions, VictoryConditions::default());
+    }
+
+    #[test]
+    fn production_profile_resolves_every_axis_and_planet_geometry() {
+        let profile = parse_grant_profile(&args(&[
+            "--map",
+            "continents",
+            "--shape",
+            "planet",
+            "--poles",
+            "randomized",
+            "--randomize-civs",
+            "--victories",
+            "science,culture,domination",
+        ]))
+        .unwrap();
+        assert_eq!(profile.map_script, MapScript::Continents);
+        assert_eq!(profile.map_topology, MapTopology::Planet);
+        assert_eq!(profile.map_poles, MapPoles::Randomized);
+        assert!(profile.randomize_civs);
+        assert!(profile.victory_conditions.science);
+        assert!(profile.victory_conditions.culture);
+        assert!(profile.victory_conditions.domination);
+        assert!(!profile.victory_conditions.religious);
+        assert!(!profile.victory_conditions.diplomatic);
+        assert!(!profile.victory_conditions.score);
+        assert_eq!(
+            realized_geometry(84, 54, profile.map_topology),
+            (105, 44, 4412)
+        );
+    }
+
+    #[test]
+    fn unknown_profile_values_are_refused() {
+        assert!(parse_grant_profile(&args(&["--map", "supercontinent"])).is_err());
+        assert!(parse_grant_profile(&args(&["--shape", "torus"])).is_err());
+        assert!(parse_grant_profile(&args(&["--poles", "temperate"])).is_err());
+        assert!(parse_grant_profile(&args(&["--victories", "economic"])).is_err());
     }
 }
