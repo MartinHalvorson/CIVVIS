@@ -90,13 +90,13 @@ currently owns and has kept a city satisfying all of:
 survives `KeepCity` in the ordinary case. The engine clears that field when the
 previous owner is eliminated, however, so the observer also records the exact
 pre-turn owner of a city named by a focal `KeepCity` action. It retains that
-evidence only while the focal seat continuously owns the city. Thus trade,
-peaceful transfer, founding, Envoy/Suzerain control, loyalty accession, and a
-recapture of the focal seat's own city cannot trigger the treatment. Capturing
-a Free City does not qualify because the immediate conquered owner is not a
-major. The trigger deliberately does not require an Original Capital: the
-hypothesis is that the first *successful major conquest* should make subsequent
-wars aim at capitals.
+evidence only while every observed actor boundary still has the focal seat as
+owner. Thus trade, peaceful transfer, founding, Envoy/Suzerain control, loyalty
+accession, and a recapture of the focal seat's own city cannot trigger the
+treatment. Capturing a Free City does not qualify because the immediate
+conquered owner is not a major. The trigger deliberately does not require an
+Original Capital: the hypothesis is that the first *successful major conquest*
+should make subsequent wars aim at capitals.
 
 The commitment is seat-local and irreversible for the rest of that game. It
 does not disappear if the triggering city is lost, the war ends, or the

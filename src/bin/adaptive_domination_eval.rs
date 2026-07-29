@@ -538,7 +538,14 @@ fn advance_one(
         observer.note_kept_captures(game, focal, log_start, captures_before, &owners_before);
     }
     if game.winner.is_none() && game.current == pid {
-        let _ = game.apply(pid, &Action::EndTurn);
+        game.apply(pid, &Action::EndTurn).map_err(|why| {
+            format!("seat {pid} did not end its turn and fallback EndTurn failed: {why}")
+        })?;
+    }
+    if game.winner.is_none() && game.current == pid {
+        return Err(format!(
+            "seat {pid} remained current after its turn and fallback EndTurn"
+        ));
     }
     observer.observe(game, focal);
     Ok(triggered)
@@ -1633,6 +1640,22 @@ mod tests {
         assert!(result.exact_terminal);
         assert_eq!(result.control, result.treatment);
         assert_eq!(result.control.retargets, 0);
+    }
+
+    #[test]
+    fn a_nonadvancing_actor_fails_closed_instead_of_hanging() {
+        let mut game = Game::new_full(1, 20, 14, 71_903, 2, 0, false);
+        for player in game.players.iter_mut().skip(1) {
+            player.alive = false;
+        }
+        game.current = 0;
+        game.victory_conditions = VictoryConditions::parse("science,culture,domination").unwrap();
+        let mut ai = pinned_advanced();
+        let mut support = support_fleet(&game, 0, 71_903);
+        let mut observer = Observer::default();
+        let error =
+            advance_one(&mut game, 0, &mut ai, &mut support, &mut observer, false).unwrap_err();
+        assert!(error.contains("remained current"), "{error}");
     }
 
     #[test]
