@@ -2,6 +2,26 @@
 
 Status: **preregistered; no treatment result has been read**.
 
+## Prospective horizon amendment
+
+This amendment was frozen before running the null at seed 9,982,000 or either
+treatment seed. A concurrent, independently preregistered deployment-horizon
+audit (#570) identified a mismatch in the phrase “320-turn limit”: production
+constructs an Online game with `Game.max_turns = 250`, disables Score, and
+continues the outer server loop until an enabled victory, often after turn 250.
+Constructing this evaluator with `Game.max_turns = 320` would instead change
+policy-visible expansion deadlines, payback calculations, and late production
+values.
+
+The fixed profile therefore preserves `Game.max_turns = 250` and observes the
+unchanged game and controllers externally through turn 320. The runner must
+assert that the nominal value remains 250 throughout continuation. This is a
+prospective external-validity correction based only on production configuration
+and code, not on a focal result. The treatment, map unit, seats, seeds, sample
+sizes, endpoints, thresholds, stop rules, and resource cap below are unchanged.
+The only earlier runtime treatment smoke used the diagnostic seed 9,982,999 and
+is not part of any frozen batch.
+
 ## Observation and hypothesis
 
 The eight most recent production final saves available on 2026-07-29 (through
@@ -65,7 +85,8 @@ The fixed profile is:
 
 - 8 players, randomized civilizations;
 - Continents, Planet topology, Poles, requested 84×54, 12 city-states;
-- Online speed, 320-turn limit;
+- Online speed, policy-visible 250-turn limit, externally observed through turn
+  320 without changing `Game.max_turns`;
 - Science, Culture, and Domination victories; and
 - stock embedded rules and adaptive fleet from the exact tested commit.
 
