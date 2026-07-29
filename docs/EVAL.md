@@ -5808,3 +5808,52 @@ That is worth stating plainly for whoever picks this up: **the expansion gap is
 real and is not currently reachable by changing a decision.** Anything further
 here should either change what a settler costs, or stop and go elsewhere.
 ||||||| 2dbf641
+
+## 2026-07-29 — ★★★★ what a searching turn costs, and why the first answer was wrong
+
+The entry above established that no searching agent is seated in the deployed
+league and that breeding cannot produce one. The obvious explanation is cost.
+`turn_cost` measures it at the deployment profile: 6 players, 74×46, 9
+city-states, interleaved on the same seeds so both fleets meet the same
+contention on a shared box.
+
+| fleet | ms a game-turn | ratio |
+|---|---|---|
+| all `AdvancedAi` | 13.3 | 1× |
+| **one searching seat among five** | **76.7** | **6.4×** |
+| all `StrategicAi` | 410.0 | 29.2× |
+
+**The first version of this probe measured only the all-searching fleet and
+would have given the wrong recommendation.** It reported 25–31× and concluded
+"too expensive to seat as it stands — make the search cheaper rather than
+better." But nothing seats that way. A league entry is *one* strategy among five
+opponents, so the cost of admitting search is `(5a + s) / 6a`, not `s / a`. The
+configuration that would actually ship costs **6.4×**, which is a deliberate
+trade rather than an impossibility — and the difference between those two
+conclusions is the difference between abandoning the search line and investing in
+it.
+
+That is a general trap worth naming: **measure the configuration that would
+ship, not the one that is convenient to construct.** It is the same failure as
+evaluating at 4p 24×16 and deploying at 6p 74×46, one level down.
+
+**What follows.** Seating a searching agent in the league is affordable. A round
+would take several times as long, which is a real cost for an offline rating
+system that runs continuously, but 76.7 ms a game-turn is about thirteen turns a
+second — the live exhibition paces turns for viewers and reports
+`frames_missed: 0`, so a searching seat is very unlikely to be what a spectator
+would notice. The highest-value change available is therefore to anchor one, so
+the self-improvement loop can rate search against the bred genomes at all.
+
+**Limits.** Three seeds, 100 turns, on a box at load 30–50. The ratio is robust
+to that because the runs are interleaved, but the absolutes are not, and
+early-game turns are cheaper than late ones for both fleets, so a 250-turn game
+would move both numbers up. The category — single digits, not tens — is what
+this establishes.
+
+| claim | status |
+|---|---|
+| an all-searching fleet costs ~29× a scripted one | **established** (n=3) |
+| **seating one searching entry costs ~6.4×** | **established** (n=3) |
+| search is too expensive to seat | **refuted** — that conclusion came from measuring a fleet nobody runs |
+| a searching seat would break the exhibition's frame-per-turn guarantee | **unmeasured**, and unlikely at 13 turns/sec |
