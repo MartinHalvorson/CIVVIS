@@ -117,6 +117,27 @@ struct Census {
     /// A seat that reaches the target early stops being eligible, so this is
     /// how long the payout window was open.
     reached_target: Option<u32>,
+    /// Turns on which the seat had at least one Settler alive.
+    ///
+    /// Against `cities_founded` this is the delivery time the whole expansion
+    /// axis turns on. `Grant::Expansion` hands over the unit and still pays
+    /// transit, so transit is inside its measured headroom rather than
+    /// excluded from it — and `docs/OPENINGS.md` measured a Settler covering
+    /// **0.81 tiles a turn against a shipped `moves` of 2** at 32x22, with 70%
+    /// of its standing-still turns holding no destination at all. That was
+    /// read as site scarcity, but #559 later found "no settle site" to be a
+    /// pure 24x16 artifact that never fires at deployment density, so the
+    /// transit finding needs re-measuring at a roomy map too.
+    settler_turns: u64,
+    /// Tiles Settlers actually covered, and the subset of turns they did not
+    /// move at all.
+    settler_tiles: u64,
+    settler_still: u64,
+    /// Distinct Settlers the seat ever had. Counted by unit id rather than off
+    /// `trained:settler`, because the expansion arm trains none — every one of
+    /// its Settlers is granted — and dividing lifetime by a training count
+    /// would report the one arm the metric exists for as having no Settlers.
+    settlers_seen: u64,
     /// Sum of the agent's own `desired_cities` over eligible turns, and the
     /// count it is averaged over.
     target_at_eligible: u64,
@@ -158,6 +179,10 @@ fn play(options: GameOptions, oracle_seat: usize, grant: Grant, ai_name: &str) -
         grant,
     );
     let mut census = Census::default();
+    // Settler positions as of this seat's previous turn, so movement is
+    // measured over the seat's own turns rather than over every player's.
+    let mut settler_was: BTreeMap<u32, civvis::Pos> = BTreeMap::new();
+    let mut seen_settlers: BTreeSet<u32> = BTreeSet::new();
     while game.winner.is_none() && game.turn <= game.max_turns {
         let pid = game.current;
         if pid == oracle_seat {
@@ -187,6 +212,36 @@ fn play(options: GameOptions, oracle_seat: usize, grant: Grant, ai_name: &str) -
                 }
             }
             oracle.take_turn(&mut game, pid);
+
+            // Read movement after the agent has played, so a Settler that was
+            // ordered to move this turn is credited with it.
+            let now: BTreeMap<u32, civvis::Pos> = game
+                .player_unit_ids(pid)
+                .into_iter()
+                .filter_map(|uid| game.units.get(&uid))
+                .filter(|unit| unit.kind == "settler")
+                .map(|unit| (unit.id, unit.pos))
+                .collect();
+            if !now.is_empty() {
+                census.settler_turns += 1;
+            }
+            for (uid, pos) in &now {
+                if !seen_settlers.contains(uid) {
+                    seen_settlers.insert(*uid);
+                    census.settlers_seen += 1;
+                }
+                // A Settler seen for the first time has no previous position
+                // and is neither moving nor standing still yet.
+                if let Some(before) = settler_was.get(uid) {
+                    let step = game.wdist(*before, *pos);
+                    if step <= 0 {
+                        census.settler_still += 1;
+                    } else {
+                        census.settler_tiles += step as u64;
+                    }
+                }
+            }
+            settler_was = now;
         } else {
             stock[pid].take_turn(&mut game, pid);
         }
@@ -222,6 +277,10 @@ fn report(label: &str, runs: &[Census], games: f64) {
     let units: i64 = runs.iter().map(|run| run.units_trained).sum();
     let captures: i64 = runs.iter().map(|run| run.captures).sum();
     let reached: Vec<u32> = runs.iter().filter_map(|run| run.reached_target).collect();
+    let settler_turns: u64 = runs.iter().map(|run| run.settler_turns).sum();
+    let settler_tiles: u64 = runs.iter().map(|run| run.settler_tiles).sum();
+    let settler_still: u64 = runs.iter().map(|run| run.settler_still).sum();
+    let settlers_seen: u64 = runs.iter().map(|run| run.settlers_seen).sum();
     let wins = runs.iter().filter(|run| run.won).count();
     println!("\ngrant {label}");
     println!(
@@ -252,6 +311,17 @@ of {:.1} units trained",
         eligible as f64 / games
     );
     println!("  won                 {wins}/{} — NOT a win rate", runs.len());
+    if settlers_seen > 0 {
+        let stepped = (settler_tiles + settler_still).max(1);
+        println!(
+            "  settler transit     {:.2} settlers/game, each alive {:.1} turns; \
+{:.2} tiles/turn; stood still on {:.1}% of its turns",
+            settlers_seen as f64 / games,
+            settler_turns as f64 / settlers_seen as f64,
+            settler_tiles as f64 / stepped as f64,
+            100.0 * settler_still as f64 / stepped as f64
+        );
+    }
     let samples: u64 = runs.iter().map(|run| run.target_samples).sum();
     let satisfied: u64 = runs.iter().map(|run| run.eligible_but_satisfied).sum();
     let planless: u64 = runs.iter().map(|run| run.eligible_without_plan).sum();
