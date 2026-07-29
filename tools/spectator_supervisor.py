@@ -7,9 +7,15 @@ stepping. Once a winner appears it retires that server immediately, leaving the
 rendered result screen visible while it tries the newest stable worktree. A
 broken or changing side edit cannot stall the cycle because the last verified
 runtime starts the successor instead. If that fallback was necessary, the
-supervisor keeps retrying and atomically resumes the match on fresh code as soon
-as a stable build and safe checkpoint are both available. The browser's guarded
-result countdown cannot race either path ahead on stale code.
+supervisor keeps retrying, and hands the match to fresh code at the next game
+boundary — a promoted build interrupts a match in progress only after
+`--live-refresh-grace`, because a mid-match process handoff is a visible stall
+and a boundary is normally only a game away. That window has to outlast a real
+game, not a healthy one: the exhibition plays a 250-turn Online game in about a
+minute unloaded, but this box runs an agent fleet and the same game has been
+measured at over ten minutes under load, so a window sized for the fast case
+turns the valve into the common path. The browser's guarded result
+countdown cannot race either path ahead on stale code.
 """
 
 from __future__ import annotations
@@ -481,6 +487,31 @@ def runtime_replacement_pending(
 ) -> bool:
     """Whether a running process predates the latest verified promotion."""
     return promoted_runtime is not None and running_runtime_id != promoted_runtime
+
+
+def refresh_waits_for_boundary(
+    runtime_ready: bool, world_age: float | None, grace: float
+) -> bool:
+    """Whether a promoted build should wait rather than interrupt a live match.
+
+    Replacing the runtime under an active game is a process handoff: the world
+    is checkpointed, the server killed, and the match resumed on the new binary
+    while every watching page loses its socket. From the far side of the glass
+    that is the game stopping and a loading screen arriving in the middle of a
+    match — and the exhibition reaches a game boundary every minute or two,
+    where a fresh process is started from the newest promoted build anyway. So
+    the wait costs at most the tail of one game played on the previous commit.
+
+    Two things end the wait. The grace window bounds it, so a world that never
+    ends — paused for an hour, or played at a pace where 250 turns take all
+    afternoon — cannot strand a runtime forever. And a world this supervisor
+    did not start (`world_age` of None: an adopted PID) is not waited on at
+    all, because nothing here knows how long it has already been playing or
+    whether its boundary is a minute or an hour away.
+    """
+    if not runtime_ready or world_age is None:
+        return False
+    return world_age < max(0.0, grace)
 
 
 def build_latest(max_attempts: int = 3) -> bool:
@@ -1483,6 +1514,13 @@ def parse_args() -> argparse.Namespace:
         default=2,
         help="discard a checkpoint after it repeats the same freeze this many times",
     )
+    parser.add_argument(
+        "--live-refresh-grace",
+        type=float,
+        default=1800.0,
+        help="how long a promoted runtime waits for the active game to end "
+        "before it replaces the server mid-match",
+    )
     parser.add_argument("--no-open", action="store_true")
     parser.add_argument(
         "--adopt-pid",
@@ -1635,12 +1673,18 @@ def main() -> int:
     busy_until = 0.0
     refresh_pending = False
     refresh_at = 0.0
+    # When this supervisor started the world now being played, and whether the
+    # decision to hold a promoted build for its boundary has been reported.
+    # None means the world was inherited, so its age is unknown.
+    world_started_at: float | None = None
+    refresh_deferred_logged = False
     source_check_at = 0.0
     prebuild_process: subprocess.Popen[str] | None = None
 
     def launch_recovery(
         open_browser: bool = False, preserve_pause: bool = False
     ) -> dict[str, Any]:
+        nonlocal world_started_at, refresh_deferred_logged
         nonlocal process, adopted_pid, running_runtime_id
         stop_server(process, adopted_pid)
         process = None
@@ -1688,6 +1732,10 @@ def main() -> int:
             log("runtime could not resume the checkpoint; continued with a fresh game")
         else:
             log("continued with a fresh game because no safe checkpoint was available")
+        # This supervisor owns the clock on the world it just started, so a
+        # build promoted from here on can be held for its boundary.
+        world_started_at = time.monotonic()
+        refresh_deferred_logged = False
         return recovered
 
     try:
@@ -1704,6 +1752,9 @@ def main() -> int:
                 return 2
             log(f"adopted PID {adopted_pid} on port {args.port}")
             state = read_state(args.port)
+            # An inherited world has an unknown age and an unknown boundary, so
+            # a stale runtime under it is refreshed rather than waited on.
+            world_started_at = None
 
         # A cold supervisor can inherit a verified but stale runtime, and a
         # boundary may deliberately start that fallback when source is still
@@ -1835,6 +1886,8 @@ def main() -> int:
                 checkpoint_at = 0.0
                 refresh_pending = not runtime_matches(source_snapshot())
                 refresh_at = time.monotonic()
+                world_started_at = time.monotonic()
+                refresh_deferred_logged = False
                 source_check_at = time.monotonic() + max(1.0, args.source_check_interval)
                 continue
 
@@ -1911,7 +1964,30 @@ def main() -> int:
                     refresh_at = now + max(0.1, args.build_retry)
                     snapshot = source_snapshot()
                     runtime_ready = prebuild_process is None and runtime_matches(snapshot)
-                    if runtime_ready:
+                    held_for_boundary = refresh_waits_for_boundary(
+                        runtime_ready,
+                        None if world_started_at is None else now - world_started_at,
+                        args.live_refresh_grace,
+                    )
+                    if held_for_boundary:
+                        if not refresh_deferred_logged:
+                            refresh_deferred_logged = True
+                            log(
+                                "fresh runtime is ready; holding it for the next "
+                                "game boundary rather than interrupting this match"
+                            )
+                        checkpoint_ready = False
+                    elif runtime_ready and world_started_at is not None:
+                        # The valve, not the ordinary path. Say so: a mid-match
+                        # handoff is the one thing here a viewer sees, and
+                        # "the grace ran out" is the only reason this supervisor
+                        # ever chooses one for a world it started itself.
+                        log(
+                            f"this world has run {now - world_started_at:.0f}s, past the "
+                            f"{args.live_refresh_grace:.0f}s grace; taking the new runtime mid-match"
+                        )
+                        checkpoint_ready = capture_checkpoint(args.port, save_path)
+                    elif runtime_ready:
                         checkpoint_ready = capture_checkpoint(args.port, save_path)
                     else:
                         checkpoint_ready = False
@@ -1933,7 +2009,7 @@ def main() -> int:
                     if prebuild_process is None and not runtime_ready:
                         log("retrying stable source for the active fallback runtime")
                         prebuild_process = start_background_prebuild()
-                    elif prebuild_process is None:
+                    elif prebuild_process is None and not held_for_boundary:
                         log("fresh build is ready but no safe checkpoint was captured; retrying")
                 elif not refresh_pending and now >= source_check_at:
                     source_check_at = now + max(1.0, args.source_check_interval)
@@ -2047,6 +2123,10 @@ def main() -> int:
                 state = set_spectator_pause(args.port, True) or state
             refresh_pending = not latest_ready
             refresh_at = time.monotonic()
+            # A new world gets its own grace window: this boundary is exactly
+            # the moment the previous one's hold was waiting for.
+            world_started_at = time.monotonic()
+            refresh_deferred_logged = False
             source_check_at = time.monotonic() + max(1.0, args.source_check_interval)
             last_progress = progress_marker(state)
             progress_at = time.monotonic()

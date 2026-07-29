@@ -657,6 +657,12 @@ pub enum DedicationChoice {
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum PolicyDeck {
     /// Cards valued by slotting them and reading the empire either side.
+    ///
+    /// Old champion artifacts predate this non-gene field. They deserialize
+    /// to Live for compatibility, and a deployment-profile A/B showed that
+    /// changing them to Legacy loses significantly (12 map directions for,
+    /// 26 against, p=0.0336). Gene-vector children preserve their template's
+    /// non-gene policy through `Weights::from_vec_like`.
     #[default]
     Live,
     /// The pre-2026-07-27 behaviour: the twenty cards of `POLICY_PRIORITY`, in
@@ -839,6 +845,29 @@ impl Weights {
         }
     }
 
+    /// Reconstruct the gene vector without changing non-gene policy state.
+    ///
+    /// `from_vec` intentionally supplies production defaults when no template
+    /// exists. Evolution and causal gene interventions do have a template:
+    /// the parent or incumbent they are changing. Old champion artifacts can
+    /// carry a compatibility policy different from `Weights::default`, so
+    /// dropping these fields makes the first child differ before any gene
+    /// mutation acts.
+    pub fn from_vec_like(v: &[f64], template: &Weights) -> Weights {
+        let mut weights = Weights::from_vec(v);
+        weights.pol_food = template.pol_food;
+        weights.pol_production = template.pol_production;
+        weights.pol_gold = template.pol_gold;
+        weights.pol_science = template.pol_science;
+        weights.pol_culture = template.pol_culture;
+        weights.pol_faith = template.pol_faith;
+        weights.pol_military = template.pol_military;
+        weights.pol_swap_margin = template.pol_swap_margin;
+        weights.policy_deck = template.policy_deck;
+        weights.dedication_choice = template.dedication_choice;
+        weights
+    }
+
     /// (lo, hi) clamp per gene, same order as to_vec.
     pub fn bounds() -> [(f64, f64); 40] {
         [
@@ -958,6 +987,31 @@ mod gene_table_tests {
                 v[index]
             );
         }
+    }
+
+    #[test]
+    fn gene_vector_children_preserve_non_gene_policy_state() {
+        let legacy_artifact: Weights = serde_json::from_str("{}").expect("empty legacy weights");
+        assert_eq!(legacy_artifact.policy_deck, super::PolicyDeck::Live);
+        assert_eq!(Weights::default().policy_deck, super::PolicyDeck::Legacy);
+        let template = Weights {
+            pol_food: 0.11,
+            pol_production: 0.22,
+            pol_gold: 0.33,
+            pol_science: 0.44,
+            pol_culture: 0.55,
+            pol_faith: 0.66,
+            pol_military: 0.77,
+            pol_swap_margin: 0.88,
+            policy_deck: super::PolicyDeck::Live,
+            dedication_choice: super::DedicationChoice::Alphabetical,
+            ..Weights::default()
+        };
+        assert_eq!(
+            Weights::from_vec_like(&template.to_vec(), &template),
+            template,
+            "a templated gene reconstruction must not change non-gene policy state"
+        );
     }
 }
 
