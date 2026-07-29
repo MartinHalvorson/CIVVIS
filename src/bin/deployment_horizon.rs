@@ -78,20 +78,74 @@ fn deployment_counts<T: Copy + Eq>(
     counts
 }
 
+fn has_arg(args: &[String], key: &str) -> bool {
+    args.iter().any(|arg| arg == key)
+}
+
+fn option_value<'a>(args: &'a [String], key: &str) -> Result<Option<&'a str>, String> {
+    let Some(index) = args.iter().position(|arg| arg == key) else {
+        return Ok(None);
+    };
+    match args.get(index + 1).map(String::as_str) {
+        Some(value) if !value.starts_with("--") => Ok(Some(value)),
+        _ => Err(format!("{key} requires a value")),
+    }
+}
+
+fn number_value(args: &[String], key: &str) -> Result<Option<i64>, String> {
+    option_value(args, key)?
+        .map(|value| {
+            value
+                .parse()
+                .map_err(|_| format!("{key} requires an integer value; got {value:?}"))
+        })
+        .transpose()
+}
+
 fn number(args: &[String], key: &str, default: i64) -> i64 {
-    args.iter()
-        .position(|arg| arg == key)
-        .and_then(|index| args.get(index + 1))
-        .and_then(|value| value.parse().ok())
+    number_value(args, key)
+        .unwrap_or_else(|why| {
+            eprintln!("{why}");
+            std::process::exit(2);
+        })
         .unwrap_or(default)
 }
 
 fn text(args: &[String], key: &str, default: &str) -> String {
-    args.iter()
-        .position(|arg| arg == key)
-        .and_then(|index| args.get(index + 1))
-        .cloned()
-        .unwrap_or_else(|| default.to_string())
+    option_value(args, key)
+        .unwrap_or_else(|why| {
+            eprintln!("{why}");
+            std::process::exit(2);
+        })
+        .unwrap_or(default)
+        .to_string()
+}
+
+fn has_exact_value(args: &[String], key: &str, value: &str) -> bool {
+    args.iter().filter(|arg| arg.as_str() == key).count() == 1
+        && args
+            .windows(2)
+            .any(|pair| pair[0] == key && pair[1] == value)
+}
+
+fn has_exact_number(args: &[String], key: &str, value: i64) -> bool {
+    has_exact_value(args, key, &value.to_string())
+}
+
+fn has_exact_flag(args: &[String], key: &str) -> bool {
+    args.iter().filter(|arg| arg.as_str() == key).count() == 1
+}
+
+fn has_exact_frozen_common_args(args: &[String]) -> bool {
+    has_exact_flag(args, "--deployment-mix")
+        && has_exact_number(args, "--turns", 250)
+        && has_exact_number(args, "--observe-through", 320)
+        && has_exact_value(args, "--speed", "online")
+        && !has_arg(args, "--difficulty")
+        && has_exact_value(args, "--poles", "poles")
+        && has_exact_flag(args, "--randomize-civs")
+        && has_exact_value(args, "--victories", "science,culture,domination")
+        && has_exact_number(args, "--jobs", 6)
 }
 
 fn realized_geometry(width: i32, height: i32, topology: MapTopology) -> (i32, i32, usize) {
@@ -306,12 +360,12 @@ fn wilson_95(hits: usize, n: usize) -> (f64, f64) {
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
-    let deployment_mix = args.iter().any(|arg| arg == "--deployment-mix");
+    let deployment_mix = has_arg(&args, "--deployment-mix");
     if deployment_mix {
         let conflicts = PROFILE_OVERRIDE_FLAGS
             .iter()
             .copied()
-            .filter(|flag| args.iter().any(|arg| arg == flag))
+            .filter(|flag| has_arg(&args, flag))
             .collect::<Vec<_>>();
         if !conflicts.is_empty() {
             eprintln!(
@@ -416,7 +470,7 @@ fn main() {
         "rules: {nominal_turns} nominal {speed} turns, observe through {observe_through}, poles {}, \
          civilizations {}, victories {}, seed {seed}, {jobs} jobs, difficulty {difficulty}",
         map_poles.id(),
-        if args.iter().any(|arg| arg == "--randomize-civs") {
+        if has_arg(&args, "--randomize-civs") {
             "randomized"
         } else {
             "fixed stock"
@@ -431,7 +485,7 @@ fn main() {
         "playing {maps} independent strategic_deep worlds; Game.max_turns remains {nominal_turns}"
     );
 
-    let randomize_civs = args.iter().any(|arg| arg == "--randomize-civs");
+    let randomize_civs = has_arg(&args, "--randomize-civs");
     let results: Vec<ProfiledResult> = civvis::parallel::map_reporting(
         maps,
         jobs,
@@ -627,25 +681,21 @@ fn main() {
     }
 
     let exact_profile = deployment_mix
-        && [
-            "--maps",
-            "--seed",
-            "--turns",
-            "--observe-through",
-            "--speed",
-            "--poles",
-            "--victories",
-        ]
-        .iter()
-        .all(|flag| args.iter().any(|arg| arg == flag))
+        && has_exact_frozen_common_args(&args)
         && nominal_turns == 250
         && observe_through == 320
         && speed == "online"
         && difficulty == default_difficulty()
         && map_poles == MapPoles::Poles
         && randomize_civs
-        && victory_conditions == VictoryConditions::parse("science,culture,domination").unwrap();
-    if exact_profile && maps == SCREEN_MAPS && seed == SCREEN_SEED {
+        && victory_conditions == VictoryConditions::parse("science,culture,domination").unwrap()
+        && jobs == 6;
+    if exact_profile
+        && has_exact_number(&args, "--maps", SCREEN_MAPS as i64)
+        && maps == SCREEN_MAPS
+        && has_exact_number(&args, "--seed", SCREEN_SEED as i64)
+        && seed == SCREEN_SEED
+    {
         println!(
             "screen gate: {}",
             if late_complete >= 3 {
@@ -654,7 +704,12 @@ fn main() {
                 "STOP — retain the turn-250 convention"
             }
         );
-    } else if exact_profile && maps == CONFIRM_MAPS && seed == CONFIRM_SEED {
+    } else if exact_profile
+        && has_exact_number(&args, "--maps", CONFIRM_MAPS as i64)
+        && maps == CONFIRM_MAPS
+        && has_exact_number(&args, "--seed", CONFIRM_SEED as i64)
+        && seed == CONFIRM_SEED
+    {
         println!(
             "confirmation gate: {}",
             if late_complete >= 10 && lower > 0.10 {
@@ -671,12 +726,75 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::{
-        deployment_counts, deployment_profile, observe_game, percentile, wilson_95, HorizonResult,
-        Snapshot, CONFIRM_MAPS, DEPLOYMENT_SCRIPTS, DEPLOYMENT_TOPOLOGIES, SCREEN_MAPS,
+        deployment_counts, deployment_profile, has_exact_flag, has_exact_frozen_common_args,
+        has_exact_number, has_exact_value, number_value, observe_game, option_value, percentile,
+        wilson_95, HorizonResult, Snapshot, CONFIRM_MAPS, DEPLOYMENT_SCRIPTS,
+        DEPLOYMENT_TOPOLOGIES, SCREEN_MAPS,
     };
     use civvis::ai::{Ai, BasicAi};
     use civvis::game::{Game, VictoryConditions};
     use civvis::setup::{MapScript, MapTopology};
+
+    #[test]
+    fn supplied_values_fail_closed_and_numbers_do_not_default() {
+        assert_eq!(option_value(&[], "--speed").unwrap(), None);
+        assert!(option_value(&["--speed".to_string()], "--speed").is_err());
+        assert!(option_value(&["--speed".to_string(), "--maps".to_string()], "--speed").is_err());
+        assert_eq!(
+            number_value(&["--turns".to_string(), "250".to_string()], "--turns").unwrap(),
+            Some(250)
+        );
+        assert!(number_value(
+            &["--turns".to_string(), "not-a-number".to_string()],
+            "--turns"
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn formal_common_command_is_canonical_and_omits_difficulty() {
+        let args = [
+            "--deployment-mix",
+            "--turns",
+            "250",
+            "--observe-through",
+            "320",
+            "--speed",
+            "online",
+            "--poles",
+            "poles",
+            "--randomize-civs",
+            "--victories",
+            "science,culture,domination",
+            "--jobs",
+            "6",
+        ]
+        .map(str::to_string);
+        assert!(has_exact_frozen_common_args(&args));
+        assert!(has_exact_value(&args, "--speed", "online"));
+        assert!(has_exact_number(&args, "--jobs", 6));
+        assert!(has_exact_flag(&args, "--deployment-mix"));
+
+        let mut explicit_difficulty = args.to_vec();
+        explicit_difficulty.extend(["--difficulty".to_string(), "prince".to_string()]);
+        assert!(!has_exact_frozen_common_args(&explicit_difficulty));
+
+        let mut duplicate_jobs = args.to_vec();
+        duplicate_jobs.extend(["--jobs".to_string(), "6".to_string()]);
+        assert!(!has_exact_frozen_common_args(&duplicate_jobs));
+
+        let noncanonical_turns = args
+            .iter()
+            .map(|arg| {
+                if arg == "250" {
+                    "0250".to_string()
+                } else {
+                    arg.clone()
+                }
+            })
+            .collect::<Vec<_>>();
+        assert!(!has_exact_frozen_common_args(&noncanonical_turns));
+    }
 
     fn no_victories() -> VictoryConditions {
         VictoryConditions {
