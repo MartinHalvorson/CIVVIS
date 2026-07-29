@@ -384,6 +384,45 @@ describe a much smaller historical rules workload.
 - `civvis::strategic::StrategicAi` (builtin `strategic`) picks its victory
   lane by rolling each lane forward and judging the resulting position —
   the first macro-search rung above the scripted agents.
+- Builtin `strategic_deep` is the same agent with four times the search
+  compute, split across both of its axes: it reviews every 20 turns rather
+  than 40 and projects 80 rounds rather than 40. It is the strongest agent
+  measured here and the only one promoted through the gate.
+
+  Its evidence is a pre-registered 300-map run at a fresh seed — size and
+  decision rule fixed in writing beforehand, because the gate's Wilson
+  interval is a fixed-n statistic and stopping when it happens to clear
+  would be optional stopping. Result: 339/600 games (56.5%), **56 mirrored
+  maps to 17**, sign p=0.0000, an anytime e-process of 3.14e4 crossing at
+  map 127, Wilson 50.8%..62.0%, Elo-equivalent +45 (CI +6..+85), and
+  `promotion gate: PASS` under the unmodified gate. Two earlier disjoint
+  sets add 240 maps at 53 to 15, for 540 independent maps at 109 to 32.
+
+  Against the scripted default rather than its own parent it is also
+  ahead: 136/240 games, 22 mirrored maps to 6, sign p=0.0037, e=89. The
+  measured ordering is `strategic_deep` > `strategic` > `advanced`,
+  consistent across every pairing. Note that `strategic` itself has never
+  been shown to beat `advanced` at adequate power — it leans ahead 20 maps
+  to 10 at p=0.0987, which is not a result.
+
+  Each doubling on its own clears the anytime-valid evidence but not the
+  effect interval; only together do they clear both. Spending the same 4×
+  on frequency alone (`strategic_r10`) is the weakest arm measured, so it
+  is the product of the axes that pays rather than the total.
+
+  `strategic` is unchanged and is the frozen control for measuring further
+  search changes, the way `advanced_v1` is for `advanced`. Four times the
+  macro-search compute is also a real cost, so batch callers (soak, league,
+  fleet) should adopt it deliberately rather than inherit it.
+
+  Two cautions that generalize beyond this agent. Nothing below about a
+  hundred maps of `ai_eval --players 4` is a result here — the same
+  measurements at twenty maps said the opposite twice, in opposite
+  directions — and since `--jobs` landed, a hundred maps is one run of
+  roughly half an hour. And the gate can decline overwhelming evidence:
+  `strategic_r20` reached an e-value of 19,720 over 400 maps, 46 map
+  directions to 12, and still read INCONCLUSIVE because its 54.2% effect
+  needs about 540 maps for the Wilson bound to clear.
 - Ranked AI-strength roadmap and current status: `docs/AI_GAPS.md`.
   Recorded eval baselines and the regression battery: `docs/EVAL.md`.
 

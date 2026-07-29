@@ -34,6 +34,7 @@ use std::io::{BufWriter, Write};
 use std::path::Path;
 
 use crate::ai::{Ai, VictoryTarget};
+use crate::decision_features::decision_features;
 use crate::elo::builtin_ai;
 use crate::evolve::features as scalar_features;
 use crate::game::{Action, Game, GameOptions};
@@ -63,6 +64,9 @@ pub struct SelfPlayCfg {
     /// How many games to play at once. Samples are still written in game
     /// order; a chunk of this many games is held in memory while it plays.
     pub jobs: usize,
+    /// Record `decision_features` (34 wide) instead of `evolve::features`
+    /// (25 wide).
+    pub decision_features: bool,
 }
 
 pub struct SelfPlayStats {
@@ -182,7 +186,7 @@ fn play_one(cfg: &SelfPlayCfg, game_index: usize) -> PlayedGame {
                     pending.push(PendingSample {
                         planes,
                         globals,
-                        scalars: scalar_features(&g, player),
+                        scalars: features_for(&cfg, &g, player),
                         pid: player,
                         fraction,
                         won: None,
@@ -209,6 +213,23 @@ fn play_one(cfg: &SelfPlayCfg, game_index: usize) -> PlayedGame {
 /// Play the configured games, exporting ordinary living-major snapshots or
 /// one rotated Strategic counterfactual root at each sampling checkpoint.
 /// Returns what was written.
+/// Which feature vector a corpus records.
+///
+/// The 25 empire aggregates are the historical default and what every
+/// trained artifact so far uses. `decision_features` is the same vector
+/// extended with nine terms that respond to unit position, unit condition,
+/// city fabric and current research — measured to take overall action
+/// visibility from 44.5% to 86.1%, and unit moves from 2.1% to 69.2%.
+/// A net trained on one cannot be evaluated with the other, which
+/// `ValueNet::load_width` enforces at load time.
+fn features_for(cfg: &SelfPlayCfg, g: &crate::game::Game, pid: usize) -> Vec<f32> {
+    if cfg.decision_features {
+        decision_features(g, pid)
+    } else {
+        scalar_features(g, pid)
+    }
+}
+
 pub fn export(cfg: &SelfPlayCfg) -> std::io::Result<SelfPlayStats> {
     if cfg.every == 0 {
         return Err(std::io::Error::new(
@@ -283,7 +304,7 @@ pub fn export(cfg: &SelfPlayCfg) -> std::io::Result<SelfPlayStats> {
                 "game {:3} seed {:<6} t{:<4} {:<10} samples={}",
                 game_index,
                 seed,
-                g.turn,
+                g.reported_turn(),
                 g.victory_type.clone().unwrap_or_else(|| "none".into()),
                 samples
             );
@@ -359,6 +380,7 @@ mod tests {
                 .to_string(),
             scalar_only: true,
             counterfactual: true,
+            decision_features: false,
             counterfactual_roots: 1,
             jobs: 1,
         };
@@ -391,6 +413,7 @@ mod tests {
             out: dir.to_string_lossy().to_string(),
             scalar_only: false,
             counterfactual: true,
+            decision_features: false,
             counterfactual_roots: 0,
             jobs: 1,
         };
@@ -427,6 +450,7 @@ mod tests {
             out: String::new(),
             scalar_only: true,
             counterfactual: true,
+            decision_features: false,
             counterfactual_roots: 0,
             jobs: 1,
         };
@@ -455,6 +479,7 @@ mod tests {
             out: dir.to_string_lossy().to_string(),
             scalar_only: false,
             counterfactual: false,
+            decision_features: false,
             counterfactual_roots: 0,
             jobs: 2,
         };
@@ -492,6 +517,7 @@ mod tests {
             out: dir.to_string_lossy().to_string(),
             scalar_only: true,
             counterfactual: false,
+            decision_features: false,
             counterfactual_roots: 0,
             jobs: 2,
         };

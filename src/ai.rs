@@ -1,11 +1,13 @@
 //! Scripted AIs (mirrors civvis/ai/). BasicAi reads full state (no fog) —
 //! sparring partner, not a fair-play agent.
 use crate::game::{effective_strength, Action, ActionFamilies, Game, Item};
+use crate::reasoning::{plain, Journal};
 use crate::rng::Rng;
+use crate::think;
 use crate::Pos;
 use std::cell::RefCell;
 use std::cmp::Ordering;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 
 /// A bounded first-step initiative bonus breaks positional and formation ties
 /// in favor of doing something useful with the turn. Four points can overcome
@@ -13,14 +15,48 @@ use std::collections::{HashMap, HashSet};
 /// stepping into a dangerous attack envelope.
 const FIRST_MOVE_SCORE_BONUS: f64 = 4.0;
 
+/// How many turns of a unit's recent whereabouts to keep. A livelock is not
+/// visible in one decision — every individual step looks like the best one
+/// available — so it can only be recognized from a unit's own recent past.
+const LIVELOCK_WINDOW: usize = 6;
+
+/// A unit whose whole recent past fits in this many tiles has not gone
+/// anywhere. Three allows a genuine three-tile shuffle around an obstacle to
+/// be recognized as one, while any unit on a real march leaves the footprint
+/// within two turns and is never considered again.
+const LIVELOCK_FOOTPRINT: usize = 3;
+
+/// What leaving a proven-fruitless footprint is worth to a unit that is
+/// circling inside it, in the same units the tactical scorers use. Two hexes
+/// of positional error is a price worth paying to get out of a loop; walking
+/// into an even fight, at roughly fifteen points of threat, is not — so this
+/// redirects a stuck unit without ever ordering it to its death.
+const LIVELOCK_ESCAPE_VALUE: f64 = 8.0;
+
+/// After this many fruitless turns the tabu has had every chance to work and
+/// has not: whatever the unit is trying to reach, it cannot. Standing it down
+/// is strictly better than another lap — it fortifies, heals, and stops
+/// paying for a route search that keeps returning the same answer.
+const LIVELOCK_STAND_DOWN_AFTER: u32 = 2 * LIVELOCK_WINDOW as u32;
+
+/// Long enough for the neighbours, borders, and enemies that produced the
+/// loop to have moved on before the unit tries again.
+const LIVELOCK_STAND_DOWN_TURNS: u32 = 4;
+
 /// Unlevied city-state forces defend the state and its immediate approaches;
 /// ownership transfers to the Suzerain while levied, so those units naturally
 /// use the major civilization's unrestricted tactical doctrine instead.
 const MINOR_DEFENSE_RADIUS: i32 = 6;
 
+/// Railroads are valuable infrastructure, but every tile consumes one Iron
+/// and one Coal. Keep enough of each material for an emergency unit upgrade
+/// instead of letting an idle Engineer pave the stockpile down to zero.
+const RAILROAD_RESOURCE_RESERVE: f64 = 4.0;
+
 mod advanced;
 pub use advanced::{
-    AdvancedAi, ForceDomain, ForceGroup, ForcePosture, GrandStrategy, StrategicPlan, VictoryTarget,
+    AdvancedAi, ForceDomain, ForceGroup, ForcePosture, GrandStrategy, StrategicPlan,
+    StrategyCensus, VictoryTarget,
 };
 
 const TECH_PRIORITY: [&str; 15] = [
@@ -92,6 +128,24 @@ pub trait Ai {
     fn plan_report(&self) -> Option<PlanReport> {
         None
     }
+
+    /// How many of this agent's macro reviews reached its search, for
+    /// evaluators only. An agent that searches must be able to say when it
+    /// did not: a cheap prior answering every review leaves a scripted
+    /// agent under a searching agent's name, and a win rate cannot tell the
+    /// difference. Agents without a search return `None`.
+    fn review_census(&self) -> Option<crate::strategic::ReviewCensus> {
+        None
+    }
+
+    /// Write this agent's reasoning into an observer's log.
+    ///
+    /// Every seat at a watched table is handed a handle on the *same*
+    /// [`Journal`], so the record is one ordered account of a turn rather than
+    /// one log per civilization that has to be interleaved afterwards. An
+    /// agent with nothing to say about itself — the random baseline — ignores
+    /// this, which is what the default does.
+    fn attach_journal(&mut self, _journal: Journal) {}
 }
 
 impl<T: Ai + ?Sized> Ai for Box<T> {
@@ -105,6 +159,14 @@ impl<T: Ai + ?Sized> Ai for Box<T> {
 
     fn plan_report(&self) -> Option<PlanReport> {
         (**self).plan_report()
+    }
+
+    fn review_census(&self) -> Option<crate::strategic::ReviewCensus> {
+        (**self).review_census()
+    }
+
+    fn attach_journal(&mut self, journal: Journal) {
+        (**self).attach_journal(journal);
     }
 }
 
@@ -214,6 +276,251 @@ const POLICY_PRIORITY: [&str; 20] = [
     "strategos",
 ];
 
+/// Turns between re-examinations of a deck that is already full. Each review
+/// costs one empire valuation per candidate card, and the answer moves on the
+/// scale of a civic unlocking, not of a turn passing.
+const POLICY_REVIEW_EVERY: u32 = 8;
+
+/// What `pid`'s empire is worth to `w` right now, in yield-equivalent points.
+///
+/// Read either side of a candidate card, the difference is that card's entire
+/// effect **as the engine computes it** — district adjacency percentages,
+/// unit-era windows, per-city production multipliers and all. Nothing here
+/// names an effect key, so the 125-card catalogue and every card a mod adds
+/// are covered by construction, and a card whose effect the engine does not
+/// implement scores exactly zero instead of scoring its own documentation.
+///
+/// This is a counterfactual, which is the only kind of estimate this
+/// repository has ever got value from: the card is applied and the result
+/// measured, rather than a regression predicting what cards tend to accompany
+/// winning. `docs/SUPERHUMAN.md` §0 is the evidence for preferring the former.
+fn empire_reading(g: &Game, pid: usize, w: &Weights) -> f64 {
+    let mut value = 0.0;
+    for cid in g.player_city_ids(pid) {
+        let y = g.city_yields(cid);
+        // Production is read as production *toward what this city is actually
+        // building*. `city_yields` carries flat adders -- Urban Planning's
+        // `city_production` -- but the whole `*_production_pct` family reaches
+        // the game only through `item_prod_mult`, so without this factor Agoge,
+        // Colonization, Ilkum, Maritime Industries, Conscription, Limes and
+        // Maneuver all score exactly 0.0 and lose every tie to a card worth a
+        // rounding error of gold. That is the failure `PolicyAi` was retired
+        // for, one layer up.
+        let queued = g.cities.get(&cid).and_then(|city| city.queue.first());
+        let toward_item = g.item_prod_mult(pid, cid, queued);
+        value += w.pol_food * y.food
+            + w.pol_production * y.production * toward_item
+            + w.pol_gold * y.gold
+            + w.pol_science * y.science
+            + w.pol_culture * y.culture
+            + w.pol_faith * y.faith;
+    }
+    // Combat cards move no yield. Ask the units themselves instead: a card
+    // worth +5 strength to a standing army is visible here and nowhere else.
+    let mut strength = 0.0;
+    for uid in g.player_unit_ids(pid) {
+        if let Some(unit) = g.units.get(&uid) {
+            strength += g.unit_strength(unit, false) + g.unit_strength(unit, true);
+        }
+    }
+    value + w.pol_military * strength
+}
+
+/// Take the Dedications this age offers, best first.
+///
+/// Both AI tiers used to take `available_dedications(pid).next()` — the first
+/// name in a `BTreeMap`, so every civilization in every game dedicated
+/// alphabetically. In the Classical era that is Exodus of the Evangelists,
+/// chosen by civilizations that have not founded a religion and never will.
+///
+/// The ranking is the civilization's own record. `projected_dedication_score`
+/// asks what each Dedication *would have paid* over the era that just ended,
+/// from a tally of trigger firings the engine keeps whether or not the trigger
+/// was dedicated. That single number ranks both halves of the choice, because
+/// a Dedication's two halves name the same activity: Free Inquiry counts your
+/// Eurekas and then makes Eurekas worth more, To Arms counts your Corps kills
+/// and then makes Corps cheaper. So the civilization that has been doing a
+/// thing is the one both halves pay.
+///
+/// Which half is live still changes what the number *means*, and the engine
+/// settles that: a Golden or Heroic Age banks no Era Score at all, so there the
+/// tally is read purely as "which lane am I in". In a Normal or Dark Age it is
+/// read literally, as the score that buys the next age.
+///
+/// Ties — including the all-zero tie of a civilization whose first age arrives
+/// before it has done anything the table counts — fall back to the alphabetical
+/// order this code has always used, so the choice only moves where there is
+/// evidence to move it.
+pub(crate) fn choose_dedications(g: &mut Game, pid: usize, choice: DedicationChoice) {
+    loop {
+        let mut offered = g.available_dedications(pid);
+        if offered.is_empty() {
+            return;
+        }
+        // A Golden or Heroic Age banks no Era Score, so there the projection is
+        // only a correlate of what the Golden half is worth — and ranking on it
+        // is what lost the first gate. `Banking` keeps the measured number
+        // where it is the literal objective and leaves the rest alone.
+        let banking = !matches!(g.players[pid].age.as_str(), "golden" | "heroic");
+        let rank = match choice {
+            DedicationChoice::Alphabetical => false,
+            DedicationChoice::Measured => true,
+            DedicationChoice::Banking => banking,
+        };
+        if rank {
+            offered.sort_by(|left, right| {
+                g.projected_dedication_score(pid, right)
+                    .cmp(&g.projected_dedication_score(pid, left))
+                    .then(left.cmp(right))
+            });
+        }
+        let mut progressed = false;
+        for dedication in offered {
+            if g.apply(pid, &Action::ChooseDedication { dedication }).is_ok() {
+                progressed = true;
+                break;
+            }
+        }
+        if !progressed {
+            return;
+        }
+    }
+}
+
+/// Hold the deck the empire is worth most with, and change it when that
+/// changes.
+///
+/// The predecessor of this function tried twenty hard-coded cards in a fixed
+/// order, and only while a slot stood empty — so a deck filled once in the
+/// Ancient era and `policies_fit` refused every later card for the rest of the
+/// game. Measured over 64 seat-games (`src/bin/policy_census.rs`), an average
+/// seat unlocked 42.0 cards and played 7.3 of them.
+///
+/// Ordering falls back to `POLICY_PRIORITY` on ties, so wherever the
+/// counterfactual is silent — a card the engine gives no effect — the choice
+/// is exactly the one this code has always made.
+fn revise_policy_deck(g: &mut Game, pid: usize, w: &Weights) {
+    let slots = g.gov_slots(pid);
+    let total = slots.military + slots.economic + slots.diplomatic + slots.wildcard;
+    if total <= 0 {
+        return;
+    }
+    if w.policy_deck == PolicyDeck::Empty {
+        return;
+    }
+    if w.policy_deck == PolicyDeck::Legacy {
+        if (g.players[pid].policies.len() as i64) < total {
+            for card in POLICY_PRIORITY {
+                let _ = g.apply(
+                    pid,
+                    &Action::SlotPolicy {
+                        policy: card.to_string(),
+                    },
+                );
+            }
+        }
+        return;
+    }
+    let held: Vec<String> = g.players[pid].policies.iter().cloned().collect();
+    if held.len() as i64 >= total && g.turn % POLICY_REVIEW_EVERY != 0 {
+        return;
+    }
+
+    let mut candidates = g.available_policies(pid);
+    candidates.extend(held.iter().cloned());
+    candidates.sort();
+    candidates.dedup();
+
+    let rank = |card: &str| {
+        POLICY_PRIORITY
+            .iter()
+            .position(|entry| *entry == card)
+            .unwrap_or(POLICY_PRIORITY.len())
+    };
+
+    let mut scored: Vec<(f64, usize, String, String)> = Vec::new();
+    for card in &candidates {
+        let slot = match g.rules.policies.get(card) {
+            Some(spec) => spec.slot.clone(),
+            None => continue, // a priority-list entry the ruleset never had
+        };
+        let incumbent = g.players[pid].policies.contains(card);
+        if incumbent {
+            g.players[pid].policies.remove(card);
+        }
+        let without = empire_reading(g, pid, w);
+        g.players[pid].policies.insert(card.clone());
+        let with = empire_reading(g, pid, w);
+        if !incumbent {
+            g.players[pid].policies.remove(card);
+        }
+        let gain = with - without;
+        // A sitting card keeps its slot unless beaten by the margin. Without
+        // this the deck reshuffles on arithmetic noise every review.
+        let hysteresis = if incumbent {
+            w.pol_swap_margin * gain.abs()
+        } else {
+            0.0
+        };
+        scored.push((gain + hysteresis, rank(card), slot, card.clone()));
+    }
+
+    scored.sort_by(|a, b| {
+        b.0.partial_cmp(&a.0)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then(a.1.cmp(&b.1))
+            .then(a.3.cmp(&b.3))
+    });
+
+    let mut room = [slots.military, slots.economic, slots.diplomatic];
+    let mut wildcard = slots.wildcard;
+    let mut target: std::collections::BTreeSet<String> = Default::default();
+    for (_, _, slot, card) in &scored {
+        let kind = match slot.as_str() {
+            "military" => 0,
+            "economic" => 1,
+            "diplomatic" => 2,
+            _ => 3, // a Wildcard card fits only a Wildcard slot
+        };
+        if kind < 3 && room[kind] > 0 {
+            room[kind] -= 1;
+            target.insert(card.clone());
+        } else if wildcard > 0 {
+            wildcard -= 1;
+            target.insert(card.clone());
+        }
+    }
+
+    for card in held {
+        if !target.contains(&card) {
+            let _ = g.apply(pid, &Action::UnslotPolicy { policy: card });
+        }
+    }
+    for card in &target {
+        if !g.players[pid].policies.contains(card) {
+            let _ = g.apply(
+                pid,
+                &Action::SlotPolicy {
+                    policy: card.clone(),
+                },
+            );
+        }
+    }
+    // Floor: whatever the assignment above left empty, fill the way this code
+    // always has. An empty slot is strictly worse than a card of unknown worth,
+    // and this guarantees the change can never reduce occupancy.
+    if (g.players[pid].policies.len() as i64) < total {
+        for card in POLICY_PRIORITY {
+            let _ = g.apply(
+                pid,
+                &Action::SlotPolicy {
+                    policy: card.to_string(),
+                },
+            );
+        }
+    }
+}
+
 /// Strategy weights steering BasicAi decisions. Defaults reproduce the
 /// original hand-tuned behavior; the `evolve` GA searches this space.
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -266,6 +573,102 @@ pub struct Weights {
     pub local_superiority: f64,  // caution when local hostile power is greater
     pub withdraw_hp: f64,        // enter persistent recovery at or below this HP
     pub rejoin_hp: f64,          // leave recovery at or above this HP
+    // Policy deck appetite. A card is valued by slotting it and asking the
+    // engine what changed (`Weights::card_value`), so these are the exchange
+    // rates between the things a card can buy -- not a per-card table. The
+    // catalogue is 125 cards and grows with any mod, so nothing here names one.
+    pub pol_food: f64,
+    pub pol_production: f64,
+    pub pol_gold: f64,
+    pub pol_science: f64,
+    pub pol_culture: f64,
+    pub pol_faith: f64,
+    /// Yield-equivalent of one point of fielded combat strength. Small: a card
+    /// worth +5% to ten units moves strength by tens, a yield card by ones.
+    pub pol_military: f64,
+    /// Fraction by which a challenger must beat the incumbent to take its
+    /// slot. Zero re-shuffles the deck on noise; one never swaps at all.
+    pub pol_swap_margin: f64,
+    /// Which deck this strategy holds.
+    ///
+    /// **Not a gene.** Deliberately absent from `to_vec`/`from_vec`/`bounds`,
+    /// so the GA can neither read nor breed it and the genome stays 48 wide.
+    /// It rides on `Weights` for one reason: `AdvancedAi::with_weights` already
+    /// carries a genome into the inner `BasicAi`, so an eval arm costs no
+    /// change to `src/ai/advanced.rs` or `src/elo.rs`. Set it in a harness;
+    /// leave it alone in play.
+    #[serde(default)]
+    pub policy_deck: PolicyDeck,
+    /// How this strategy picks its Dedication at an age transition.
+    ///
+    /// **Not a gene**, for the same reasons as `policy_deck`: absent from
+    /// `to_vec`/`from_vec`/`bounds`, so the genome stays 48 wide.
+    #[serde(default)]
+    pub dedication_choice: DedicationChoice,
+}
+
+/// The two arms a Dedication experiment needs.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum DedicationChoice {
+    /// The first name `available_dedications` returns, which is a `BTreeMap`
+    /// key, which is alphabetical order.
+    ///
+    /// **This is the agent that plays, because it is the agent that wins.** It
+    /// looks arbitrary and it is, but in the Classical era alphabetical order
+    /// leads with Exodus of the Evangelists, whose Golden-Age half feeds
+    /// missionaries and Great Prophet points — and religion is the lane that
+    /// converts in this engine. Measured against `Measured` over 120 mirrored
+    /// maps it took **58.8%** of games, 31 map directions to 10, sign
+    /// p=0.0015, with the anytime-valid e-process crossing at map 51. See
+    /// `docs/AGES.md`. It is no longer the default — `Banking` beat it — but it
+    /// remains the frozen control for every age number published before
+    /// 2026-07-27.
+    Alphabetical,
+    /// Ranked by what each Dedication would have paid over the era that just
+    /// ended, measured from the civilization's own trigger tally.
+    ///
+    /// **A recorded negative result, retained as an evaluator arm.** The
+    /// projection is the right objective in a Normal or Dark Age, where Era
+    /// Score literally buys the next age. In a Golden or Heroic Age it is only
+    /// a *correlate* of what the Golden half is worth, and an argmax over a
+    /// correlate is the failure mode this repository keeps rediscovering.
+    Measured,
+    /// `Measured` restricted to the ages where the number it ranks on is the
+    /// literal objective: a Normal or Dark Age banks Era Score, so the
+    /// Dedication that would have paid most is the one that buys the next age
+    /// soonest. A Golden or Heroic Age banks nothing, so that choice is left
+    /// exactly as `Alphabetical` makes it.
+    ///
+    /// This is the repair for `Measured`'s loss, and it is the whole of the
+    /// repair — no new signal, just the same signal withdrawn from the half of
+    /// the decision where it was never causal.
+    ///
+    /// **PROMOTED.** Pre-registered at seed 970000, 300 mirrored maps, 600
+    /// games: **57.7%**, 67 map directions to 21, sign p=0.0000, Elo **+54**
+    /// (CI +14..+93), Wilson **52.0%–63.1%**, e-process 5.72e4 crossing at map
+    /// 112 — `promotion gate: PASS` under the unmodified gate. The earlier
+    /// disjoint seed 960000 agreed at 56.2%; pooled that is **420 maps, 93 map
+    /// directions to 32**.
+    #[default]
+    Banking,
+}
+
+/// The three arms a policy-deck experiment needs.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum PolicyDeck {
+    /// Cards valued by slotting them and reading the empire either side.
+    #[default]
+    Live,
+    /// The pre-2026-07-27 behaviour: the twenty cards of `POLICY_PRIORITY`, in
+    /// order, and only while a slot stands empty.
+    Legacy,
+    /// Slot nothing, ever.
+    ///
+    /// Not a strategy — an ablation. `Legacy` against `Empty` measures what the
+    /// entire card layer is worth, which bounds what *any* card policy can win
+    /// and therefore whether choosing well within it deserves more effort. Run
+    /// this before optimising a subsystem, not after.
+    Empty,
 }
 
 pub const OPENING_MENU: [&str; 6] = [
@@ -315,6 +718,24 @@ impl Default for Weights {
             local_superiority: 6.0,
             withdraw_hp: 45.0,
             rejoin_hp: 80.0,
+            pol_food: 0.6,
+            pol_production: 1.0,
+            pol_gold: 0.6,
+            pol_science: 1.0,
+            pol_culture: 1.0,
+            pol_faith: 0.7,
+            pol_military: 0.05,
+            pol_swap_margin: 0.15,
+            // LEGACY, not Live. The counterfactual deck is a measured null:
+            // 18 map directions to 15, p=0.7283 over 120 mirrored maps, with
+            // terminal score also flat. It costs an empire valuation per
+            // candidate card per review, so shipping it would buy a real
+            // slowdown with no evidence of strength. The mechanism stays for
+            // study -- `PolicyDeck::Live` still selects it and the eval arms
+            // still work -- but the agent that plays is the one that always
+            // played.
+            policy_deck: PolicyDeck::Legacy,
+            dedication_choice: DedicationChoice::Banking,
         }
     }
 }
@@ -407,6 +828,14 @@ impl Weights {
             local_superiority: v[37],
             withdraw_hp: v[38],
             rejoin_hp: v[39],
+            // The policy appetites are NOT genes. Measured on the statistic
+            // that tracks winning, scrambling the whole policy block costs
+            // +0.0006 +/- 0.0229 -- flat. Carrying eight worthless dimensions
+            // would widen the search for nothing, and it collided with the
+            // committed 40-gene champion another agent landed on main.
+            // `PolicyDeck::Live` still reads them; the GA does not.
+            // `policy_deck` and the appetites take the shipped defaults here.
+            ..Weights::default()
         }
     }
 
@@ -455,6 +884,81 @@ impl Weights {
             (60.0, 100.0),
         ]
     }
+
+    /// Gene names, same order as `to_vec` and `bounds`.
+    ///
+    /// A search that reports per-gene results has to name them, and deriving
+    /// the name from the index by hand is how a table ends up mislabelled by
+    /// one row. `gene_names_match_the_vector` pins the length.
+    pub fn gene_names() -> [&'static str; 40] {
+        [
+            "city_target",
+            "settler_min_pop",
+            "settler_stop_turn",
+            "mil_per_city",
+            "builder_per_city",
+            "war_ratio",
+            "war_margin",
+            "peace_ratio",
+            "war_min_turn",
+            "attack_floor",
+            "kill_bonus",
+            "trade_caution",
+            "settle_food",
+            "settle_prod",
+            "settle_gold",
+            "settle_dist",
+            "min_city_dist",
+            "wonder_min_bld",
+            "faith_builder",
+            "d_campus",
+            "d_commercial",
+            "d_holy",
+            "d_theater",
+            "open0",
+            "open1",
+            "open2",
+            "open3",
+            "mv_support",
+            "mv_threat",
+            "command_radius",
+            "muster_radius",
+            "muster_readiness",
+            "cohesion",
+            "focus_fire",
+            "screen",
+            "role_spacing",
+            "objective_progress",
+            "local_superiority",
+            "withdraw_hp",
+            "rejoin_hp",
+        ]
+    }
+}
+
+#[cfg(test)]
+mod gene_table_tests {
+    use super::Weights;
+
+    #[test]
+    fn gene_names_match_the_vector() {
+        let w = Weights::default();
+        assert_eq!(w.to_vec().len(), Weights::gene_names().len());
+        assert_eq!(w.to_vec().len(), Weights::bounds().len());
+    }
+
+    #[test]
+    fn every_gene_default_sits_inside_its_own_bounds() {
+        let v = Weights::default().to_vec();
+        for (index, (lo, hi)) in Weights::bounds().iter().enumerate() {
+            assert!(
+                v[index] >= *lo && v[index] <= *hi,
+                "{} default {} outside [{lo}, {hi}]",
+                Weights::gene_names()[index],
+                v[index]
+            );
+        }
+    }
 }
 
 /// Strategic job inferred from a unit's class and promotion line. Both AI
@@ -473,6 +977,70 @@ pub(crate) enum UnitDoctrine {
     Carrier,
 }
 
+/// Everything about a unit that changes when it accomplishes something:
+/// charges spent improving, building, or spreading; experience from a fight;
+/// damage taken or healed; a promotion chosen; a concert played. Whatever else
+/// a unit did with a turn, if none of this moved then the turn bought nothing.
+type WorkMark = (i32, i64, i32, usize, i64);
+
+fn work_mark(g: &Game, uid: u32) -> WorkMark {
+    let unit = &g.units[&uid];
+    (
+        unit.charges,
+        unit.xp,
+        unit.hp,
+        unit.promotions.len(),
+        unit.album_sales,
+    )
+}
+
+/// One unit's recent whereabouts, which is the only place a livelock is
+/// visible. Every step of a loop is individually the best move available, so
+/// no single decision can be blamed for it; only the unit's own history shows
+/// that the decisions together are going nowhere.
+#[derive(Clone, Default)]
+struct UnitMotion {
+    /// The tile this unit began each of its last `LIVELOCK_WINDOW` turns on,
+    /// newest last.
+    tiles: VecDeque<Pos>,
+    /// The work fingerprint as of the last turn it changed.
+    work: WorkMark,
+    /// Consecutive turns since the fingerprint last changed.
+    fruitless: u32,
+    /// While this is in the future the unit holds its ground instead of
+    /// issuing orders it has already proved are worthless.
+    resume_turn: u32,
+    /// This turn's verdict, settled once when the window is taken down. The
+    /// tactical scorers ask about it for every candidate tile of every unit,
+    /// which is far too hot a path to re-derive it in.
+    looping: bool,
+}
+
+impl UnitMotion {
+    /// How many distinct tiles the window covers.
+    fn footprint(&self) -> usize {
+        let mut seen: Vec<Pos> = Vec::with_capacity(self.tiles.len());
+        for tile in &self.tiles {
+            if !seen.contains(tile) {
+                seen.push(*tile);
+            }
+        }
+        seen.len()
+    }
+
+    /// A full window of turns spent moving between a handful of tiles while
+    /// nothing about the unit changed. Both halves matter: a unit that has
+    /// stopped is a different (already reported) problem, and a unit that is
+    /// spending charges or trading blows is working, however small its circuit.
+    fn circling(&self) -> bool {
+        if self.tiles.len() < LIVELOCK_WINDOW || (self.fruitless as usize) < LIVELOCK_WINDOW {
+            return false;
+        }
+        (2..=LIVELOCK_FOOTPRINT).contains(&self.footprint())
+    }
+}
+
+#[derive(Clone)]
 pub struct BasicAi {
     minor: bool,
     barb: bool,
@@ -499,6 +1067,14 @@ pub struct BasicAi {
     /// otherwise be undone by A* with the unit's next movement point, and the
     /// identical round trip would repeat forever.
     last_path_step_from: RefCell<HashMap<u32, (u32, Pos)>>,
+    /// The same round trip spread over two turns instead of one, which nothing
+    /// inside a single turn's reasoning can see. Each unit's recent
+    /// whereabouts are remembered here, and a unit found circling is priced
+    /// out of the tiles it has already proved are worthless.
+    unit_motion: BTreeMap<u32, UnitMotion>,
+    /// Where this agent tells an observer what it is doing. Off unless a
+    /// spectator attached one; see [`crate::reasoning`].
+    pub(crate) journal: Journal,
 }
 
 impl Default for BasicAi {
@@ -858,7 +1434,7 @@ impl BasicAi {
     }
 
     fn minor_district_family(g: &Game, pid: usize) -> &'static str {
-        match Game::cs_type(&g.players[pid].civ) {
+        match g.cs_type(&g.players[pid].civ) {
             "scientific" => "campus",
             "cultural" => "theater_square",
             "religious" => "holy_site",
@@ -869,7 +1445,7 @@ impl BasicAi {
     }
 
     fn minor_tech_goal(g: &Game, pid: usize) -> Option<&'static str> {
-        let goal = match Game::cs_type(&g.players[pid].civ) {
+        let goal = match g.cs_type(&g.players[pid].civ) {
             "scientific" => "writing",
             "religious" => "astrology",
             "militaristic" => "bronze_working",
@@ -1274,6 +1850,8 @@ impl BasicAi {
             patrol_posts: HashMap::new(),
             settler_targets: HashMap::new(),
             last_path_step_from: RefCell::new(HashMap::new()),
+            unit_motion: BTreeMap::new(),
+            journal: Journal::default(),
         }
     }
 
@@ -1290,6 +1868,8 @@ impl BasicAi {
             patrol_posts: HashMap::new(),
             settler_targets: HashMap::new(),
             last_path_step_from: RefCell::new(HashMap::new()),
+            unit_motion: BTreeMap::new(),
+            journal: Journal::default(),
         }
     }
 
@@ -1314,7 +1894,17 @@ impl BasicAi {
 
 impl Ai for BasicAi {
     fn take_turn(&mut self, g: &mut Game, pid: usize) {
+        // Stamp the context once. Nothing below repeats the turn number or the
+        // acting civilization; the journal carries both. `AdvancedAi` opens
+        // the turn on the shared journal before delegating here, and doing it
+        // again is the same statement, so the baseline running on its own is
+        // recorded identically.
+        self.journal.begin_turn(g.turn, pid);
         g.with_deferred_visibility(|g| self.take_turn_inner(g, pid));
+    }
+
+    fn attach_journal(&mut self, journal: Journal) {
+        self.journal = journal;
     }
 }
 
@@ -1351,10 +1941,123 @@ impl BasicAi {
 
 impl BasicAi {
     /// Reset caches whose contents depend on the current player's borders and
-    /// movement capabilities. Persistent destinations live across turns; the
-    /// expensive all-map candidate scan does not need to.
-    pub(crate) fn begin_movement_turn(&mut self) {
+    /// movement capabilities, and take down where every unit is standing
+    /// before any of them moves. Persistent destinations live across turns;
+    /// the expensive all-map candidate scan does not need to.
+    pub(crate) fn begin_movement_turn(&mut self, g: &Game, pid: usize) {
         self.patrol_posts.clear();
+        self.observe_unit_motion(g, pid);
+    }
+
+    /// Record this turn's starting tile for every unit, and judge each unit
+    /// against the window that has just closed. This is the only point in the
+    /// turn where a livelock can be seen at all: it is a property of a unit's
+    /// history, not of any decision the unit is about to make.
+    fn observe_unit_motion(&mut self, g: &Game, pid: usize) {
+        let ids = g.player_unit_ids(pid);
+        self.unit_motion
+            .retain(|uid, _| g.units.get(uid).is_some_and(|unit| unit.owner == pid));
+        for uid in ids {
+            let mark = work_mark(g, uid);
+            let pos = g.units[&uid].pos;
+            let motion = self.unit_motion.entry(uid).or_default();
+            let was_looping = motion.looping;
+            if motion.tiles.is_empty() {
+                motion.work = mark;
+            }
+            if motion.work != mark {
+                // The unit achieved something, so whatever it was doing was
+                // worth doing. Judge it from here rather than against a
+                // history that has just been made irrelevant.
+                *motion = UnitMotion {
+                    work: mark,
+                    resume_turn: motion.resume_turn,
+                    ..UnitMotion::default()
+                };
+            } else {
+                motion.fruitless += 1;
+            }
+            motion.tiles.push_back(pos);
+            while motion.tiles.len() > LIVELOCK_WINDOW {
+                motion.tiles.pop_front();
+            }
+            motion.looping = motion.circling();
+            let looping = motion.looping;
+            let fruitless = motion.fruitless;
+            let footprint = motion.footprint();
+            let stand_down = looping && fruitless >= LIVELOCK_STAND_DOWN_AFTER;
+            if stand_down {
+                // The tabu has had a full second window to redirect this unit
+                // and has not. Stop paying for the same fruitless search, hold
+                // the ground, and come back to the problem with a clean slate
+                // once the world around it has changed.
+                *motion = UnitMotion {
+                    work: mark,
+                    resume_turn: g.turn + LIVELOCK_STAND_DOWN_TURNS,
+                    ..UnitMotion::default()
+                };
+            }
+            // Say it once when the loop is first recognized, and once more if
+            // it outlasts every attempt to steer out of it.
+            let kind = g.units[&uid].kind.as_str();
+            if stand_down {
+                think!(self.journal, Military, Decision,
+                       "{kind} {uid} stands down; it is going nowhere";
+                       "{fruitless} turns inside {footprint} tiles with nothing to show for \
+                        them, and steering it out did not work; holding for \
+                        {LIVELOCK_STAND_DOWN_TURNS} turns";
+                       pos);
+            } else if looping && !was_looping {
+                think!(self.journal, Military, Detail,
+                       "{kind} {uid} is walking in circles";
+                       "{fruitless} turns inside {footprint} tiles with nothing to show for \
+                        them; anywhere outside them is now worth \
+                        {LIVELOCK_ESCAPE_VALUE:.0} more";
+                       pos);
+            }
+        }
+    }
+
+    /// Dig in a stood-down unit that took its whole turn and found nothing to
+    /// do. This runs *after* the unit's own step, never instead of it: an
+    /// earlier version pre-empted the turn and guessed at what the unit might
+    /// have wanted, which cost more productive turns than the loops it broke.
+    /// A unit that acted needs nothing from this; one that did not is standing
+    /// in the open regardless, and is better off fortified and healing.
+    pub(crate) fn hold_stood_down_unit(&self, g: &mut Game, pid: usize, uid: u32) {
+        let standing_down = self
+            .unit_motion
+            .get(&uid)
+            .is_some_and(|motion| g.turn < motion.resume_turn);
+        if standing_down && g.units.contains_key(&uid) {
+            self.fortify_or_stop(g, pid, uid);
+        }
+    }
+
+    /// What a candidate tile is worth against the fact that this unit has been
+    /// going in circles. Nothing at all for a unit that is getting somewhere —
+    /// which is almost every unit, almost always — and for one that is not, a
+    /// flat charge for every tile of the footprint it keeps re-entering,
+    /// including the one it is standing on. Any tile outside the loop is
+    /// thereby worth `LIVELOCK_ESCAPE_VALUE` more than any tile inside it.
+    pub(crate) fn livelock_penalty(&self, uid: u32, tile: Pos) -> f64 {
+        match self.unit_motion.get(&uid) {
+            Some(motion) if motion.looping && motion.tiles.contains(&tile) => {
+                -LIVELOCK_ESCAPE_VALUE
+            }
+            _ => 0.0,
+        }
+    }
+
+    /// Whether a plain pathing step should be refused because it walks back
+    /// into a footprint this unit has already exhausted. Unlike the tactical
+    /// scorers there is nothing to trade off here — the route is chosen for
+    /// progress alone — so the tabu is absolute while it lasts, and it lasts
+    /// only until the window slides off the loop or the stand-down fires.
+    fn retreads_a_loop(&self, uid: u32, to: Pos) -> bool {
+        self.unit_motion
+            .get(&uid)
+            .is_some_and(|motion| motion.looping && motion.tiles.contains(&to))
     }
 
     /// Run each available agent once. The baseline establishes sources before
@@ -1600,7 +2303,7 @@ impl BasicAi {
         if g.players[pid].civic.is_none() {
             let avail = g.available_civics(pid);
             if !avail.is_empty() {
-                let cultural_goal = (Game::cs_type(&g.players[pid].civ) == "cultural"
+                let cultural_goal = (g.cs_type(&g.players[pid].civ) == "cultural"
                     && !g.players[pid].civics.contains("drama_poetry"))
                 .then_some("drama_poetry");
                 let pick = Self::civic_step_toward(g, &avail, cultural_goal)
@@ -1663,6 +2366,14 @@ impl BasicAi {
                 let _ = g.apply(pid, &Action::Civic { civic: pick });
             }
         }
+        // Great People are not awarded automatically when the points cross
+        // the threshold: recruitment is a legal player action. Patronage had
+        // a strategic buyer, but the free action had no AI consumer at all,
+        // so a winning Scientist or Prophet could remain on the board while
+        // every headless civilization waited forever. Claim every earned and
+        // currently activatable person before founding a Religion or valuing
+        // paid patronage later in the turn.
+        Self::claim_free_great_people(g, pid);
         if choose_government {
             for gname in GOV_PRIORITY {
                 if let Some(spec) = g.rules.governments.get(gname) {
@@ -1685,18 +2396,7 @@ impl BasicAi {
                 }
             }
         }
-        let slots = g.gov_slots(pid);
-        let total = slots.military + slots.economic + slots.diplomatic + slots.wildcard;
-        if (g.players[pid].policies.len() as i64) < total {
-            for card in POLICY_PRIORITY {
-                let _ = g.apply(
-                    pid,
-                    &Action::SlotPolicy {
-                        policy: card.to_string(),
-                    },
-                );
-            }
-        }
+        revise_policy_deck(g, pid, &self.w);
         if g.players[pid].secret_society.is_none() {
             let society = if self.pursue_religion {
                 "voidsingers"
@@ -1711,14 +2411,17 @@ impl BasicAi {
             );
         }
         if !self.minor && g.players[pid].pantheon.is_none() && g.players[pid].faith >= 25.0 {
-            for b in [
+            for (rank, b) in [
                 "divine_spark",
                 "fertility_rites",
                 "god_of_the_forge",
                 "religious_settlements",
                 "god_of_the_open_sky",
                 "god_of_the_sea",
-            ] {
+            ]
+            .into_iter()
+            .enumerate()
+            {
                 if g.apply(
                     pid,
                     &Action::ChoosePantheon {
@@ -1727,6 +2430,9 @@ impl BasicAi {
                 )
                 .is_ok()
                 {
+                    think!(self.journal, Faith, Decision, "Founding the pantheon {}", plain(b);
+                           "the {} choice on the standing list still unclaimed",
+                           match rank { 0 => "first".to_string(), _ => format!("{}th", rank + 1) });
                     break;
                 }
             }
@@ -1776,6 +2482,10 @@ impl BasicAi {
                     )
                     .is_ok()
                     {
+                        think!(self.journal, Faith, Decision, "Founding a religion";
+                               "on the {} follower belief and the {} founder \
+                                belief, the first pair still unclaimed",
+                               plain(&follower), plain(founder));
                         break 'found;
                     }
                 }
@@ -1814,6 +2524,12 @@ impl BasicAi {
                     }
                     continue;
                 }
+                // A modded ruleset can replace every stock Governor name.
+                // Keep the generic assignment tool as the data-driven
+                // fallback instead of leaving all of those titles idle.
+                if g.apply(pid, &Action::AssignGovernor { city: c }).is_ok() {
+                    continue;
+                }
             }
             let promotion = [
                 "pingala", "magnus", "liang", "reyna", "victor", "moksha", "amani",
@@ -1840,6 +2556,12 @@ impl BasicAi {
                 break;
             }
         }
+        // Appointment is not the end of governor play. If an ungoverned city
+        // is already close to revolt, move an idle Governor there, or pull one
+        // from a completely loyal city. AdvancedAI runs its plan-aware
+        // governor pass first, so this is an emergency backstop rather than a
+        // second strategy fighting the first one.
+        Self::reassign_governor_for_loyalty(g, pid);
         while g.players[pid].envoys_free > 0 {
             // consolidate on the city-state we already lead in (suzerain push)
             let target = g
@@ -1859,14 +2581,91 @@ impl BasicAi {
         }
     }
 
-    fn diplomacy(&self, g: &mut Game, pid: usize) {
-        while let Some(dedication) = g.available_dedications(pid).into_iter().next() {
-            if g.apply(pid, &Action::ChooseDedication { dedication })
-                .is_err()
-            {
-                break;
-            }
+    /// Take every no-cost Great Person claim the empire has earned.
+    ///
+    /// The action list is authoritative about activation requirements: a
+    /// Scientist still needs a Campus, a Writer needs enough work slots, and a
+    /// Prophet needs an active Holy Site or Stonehenge. Applying the actions
+    /// rather than duplicating those conditions keeps the AI on the same tool
+    /// protocol as a human or learned policy.
+    fn claim_free_great_people(g: &mut Game, pid: usize) -> usize {
+        let threshold_reached = g.players[pid]
+            .gpp
+            .iter()
+            .any(|(kind, points)| *points + f64::EPSILON >= g.gp_cost(pid, kind));
+        if !threshold_reached {
+            return 0;
         }
+        let mut recruits: Vec<Action> = g
+            .legal_actions_within(pid, ActionFamilies::EMPIRE)
+            .into_iter()
+            .filter(|action| matches!(action, Action::RecruitGreatPerson { .. }))
+            .collect();
+        // Determinism matters for same-seed evaluation. The rules map order is
+        // stable today, but make the intended order explicit at this boundary.
+        recruits.sort_by(|left, right| format!("{left:?}").cmp(&format!("{right:?}")));
+        recruits
+            .into_iter()
+            .filter(|action| g.apply(pid, action).is_ok())
+            .count()
+    }
+
+    /// Relocate one Governor to a city in immediate Loyalty danger.
+    fn reassign_governor_for_loyalty(g: &mut Game, pid: usize) -> bool {
+        let target = g
+            .player_city_ids(pid)
+            .into_iter()
+            .filter(|city| !g.players[pid].governors.contains(city))
+            .filter(|city| g.cities[city].loyalty < 70.0)
+            .min_by(|left, right| {
+                g.cities[left]
+                    .loyalty
+                    .total_cmp(&g.cities[right].loyalty)
+                    .then(left.cmp(right))
+            });
+        let Some(target) = target else { return false };
+        let target_loyalty = g.cities[&target].loyalty;
+        let action = g
+            .legal_actions_within(pid, ActionFamilies::EMPIRE)
+            .into_iter()
+            .filter_map(|action| {
+                let Action::ReassignGovernor { governor, city } = &action else {
+                    return None;
+                };
+                if *city != target {
+                    return None;
+                }
+                let state = &g.players[pid].governor_roster[governor];
+                let source_loyalty = state
+                    .city
+                    .and_then(|city| g.cities.get(&city))
+                    .map_or(101.0, |city| city.loyalty);
+                // An unassigned Governor is free to move. An established one
+                // only leaves a city with a substantial Loyalty cushion.
+                (state.city.is_none()
+                    || (source_loyalty >= 90.0
+                        && source_loyalty - target_loyalty >= 20.0))
+                    .then_some((
+                        state.city.is_none(),
+                        governor == "victor",
+                        source_loyalty,
+                        std::cmp::Reverse(governor.clone()),
+                        action,
+                    ))
+            })
+            .max_by(|left, right| {
+                left.0
+                    .cmp(&right.0)
+                    .then(left.1.cmp(&right.1))
+                    .then(left.2.total_cmp(&right.2))
+                    .then(left.3.cmp(&right.3))
+            })
+            .map(|(_, _, _, _, action)| action);
+        action.is_some_and(|action| g.apply(pid, &action).is_ok())
+    }
+
+    fn diplomacy(&self, g: &mut Game, pid: usize) {
+        choose_dedications(g, pid, self.w.dedication_choice);
         let incoming: Vec<u32> = g
             .pending_deals
             .iter()
@@ -2207,6 +3006,35 @@ impl BasicAi {
         );
     }
 
+    /// Name a production item the way an observer's reasoning log says it.
+    /// The wire carries rule keys everywhere else; this is the one place a
+    /// person reads them, so a Corps is a Corps and a district says where it
+    /// is going.
+    pub(crate) fn item_label(item: &Item) -> String {
+        match item {
+            Item::Unit { unit } => plain(unit),
+            Item::Formation { unit, formation } => match formation {
+                2 => format!("an Army of {}", plain(unit)),
+                _ => format!("a Corps of {}", plain(unit)),
+            },
+            Item::Building { building } => plain(building),
+            Item::District { district, pos } => format!("a {} district at {pos:?}", plain(district)),
+            Item::Wonder { wonder, pos } => format!("the wonder {} at {pos:?}", plain(wonder)),
+            Item::Repair { repair, pos } => format!("repairs to the {} at {pos:?}", plain(repair)),
+            Item::Project { project } => format!("the {} project", plain(project)),
+            Item::Product { product } => format!("the product {}", plain(product)),
+        }
+    }
+
+    /// Where on the map a production item is going, when it is going
+    /// somewhere in particular rather than into the city itself.
+    pub(crate) fn item_focus(item: &Item, city: Pos) -> Pos {
+        match item {
+            Item::District { pos, .. } | Item::Wonder { pos, .. } | Item::Repair { pos, .. } => *pos,
+            _ => city,
+        }
+    }
+
     fn cities(&mut self, g: &mut Game, pid: usize) {
         let mut settlers: usize = 0;
         let mut builders = 0;
@@ -2481,6 +3309,25 @@ impl BasicAi {
                 )
                 .is_ok()
                 {
+                    if self.journal.wants(crate::reasoning::Level::Decision) {
+                        let cost = g.item_cost_for_city(pid, *cid, &item);
+                        let per_turn = g.city_yields(*cid).production.max(0.1);
+                        let city = &g.cities[cid];
+                        let turns = (cost / per_turn).ceil().max(1.0);
+                        think!(self.journal, Cities, Decision,
+                               "{} starts {}", city.name, Self::item_label(&item);
+                               "{cost:.0} production, about {turns:.0} turn{} at \
+                                {per_turn:.1} a turn; the empire holds {military} military \
+                                for {n_cities} {} against a target of {:.1} each, and \
+                                {settlers} settler{}, {builders} builder{}, {traders} trader{}",
+                               if turns == 1.0 { "" } else { "s" },
+                               if n_cities == 1 { "city" } else { "cities" },
+                               self.w.mil_per_city,
+                               if settlers == 1 { "" } else { "s" },
+                               if builders == 1 { "" } else { "s" },
+                               if traders == 1 { "" } else { "s" };
+                               Self::item_focus(&item, city.pos));
+                    }
                     match &item {
                         Item::Unit { unit } if unit == "settler" => settlers += 1,
                         Item::Unit { unit } if unit == "builder" => builders += 1,
@@ -2517,6 +3364,7 @@ impl BasicAi {
                 &Action::Buy {
                     city: city_ids[0],
                     unit: "builder".to_string(),
+                    formation: 0,
                     currency: "faith".to_string(),
                 },
             );
@@ -2538,6 +3386,7 @@ impl BasicAi {
                             &Action::Buy {
                                 city: *cid,
                                 unit: "missionary".to_string(),
+                                formation: 0,
                                 currency: "faith".to_string(),
                             },
                         );
@@ -2600,11 +3449,46 @@ impl BasicAi {
                     best = Some((value, gold, uid));
                 }
             }
-            let Some((_, _, uid)) = best else { return };
+            let Some((_, _, uid)) = best else { break };
             if g.apply(pid, &Action::UpgradeUnit { unit: uid }).is_err() {
-                return;
+                break;
             }
         }
+        Self::use_opportunistic_unit_tools(g, pid);
+    }
+
+    /// Execute rare, unambiguously beneficial unit tools before ordinary
+    /// movement consumes the acting unit's turn.
+    ///
+    /// `AdvancedAi` deliberately calls this shared pre-movement pass, so these
+    /// actions are part of the default strategic agent as well as BasicAI.
+    fn use_opportunistic_unit_tools(g: &mut Game, pid: usize) -> usize {
+        let conversion_ready = g.barb_pid.is_some()
+            && g.player_unit_ids(pid).into_iter().any(|unit| {
+                let unit = &g.units[&unit];
+                unit.kind == "apostle"
+                    && unit.moves_left > 0.0
+                    && unit.charges > 0
+                    && unit.promotions.iter().any(|promotion| {
+                        g.rules
+                            .promotions
+                            .get(promotion)
+                            .and_then(|spec| spec.effects.get("convert_barbarians"))
+                            .is_some_and(|value| *value > 0.0)
+                    })
+            });
+        if !conversion_ready {
+            return 0;
+        }
+        let conversions: Vec<Action> = g
+            .legal_actions_within(pid, ActionFamilies::UNITS)
+            .into_iter()
+            .filter(|action| matches!(action, Action::ConvertBarbarians { .. }))
+            .collect();
+        conversions
+            .into_iter()
+            .filter(|action| g.apply(pid, action).is_ok())
+            .count()
     }
 
     fn best_military(
@@ -2820,6 +3704,7 @@ impl BasicAi {
                 &Action::Buy {
                     city: *cid,
                     unit: unit.to_string(),
+                    formation: 0,
                     currency: "gold".to_string(),
                 },
             )
@@ -2891,6 +3776,7 @@ impl BasicAi {
             &Action::Buy {
                 city,
                 unit,
+                formation: 0,
                 currency: "gold".to_string(),
             },
         )
@@ -3785,7 +4671,7 @@ impl BasicAi {
     }
 
     fn units(&mut self, g: &mut Game, pid: usize) {
-        self.begin_movement_turn();
+        self.begin_movement_turn(g, pid);
         self.prepare_unit_formations(g, pid);
         self.recovering_units
             .retain(|uid| g.units.get(uid).is_some_and(|unit| unit.owner == pid));
@@ -3794,6 +4680,7 @@ impl BasicAi {
         self.settler_targets
             .retain(|uid, _| g.units.get(uid).is_some_and(|unit| unit.owner == pid));
         for uid in g.player_unit_ids(pid) {
+            let mut took_a_turn = false;
             for _ in 0..8 {
                 if !g.units.contains_key(&uid) {
                     break;
@@ -3817,6 +4704,10 @@ impl BasicAi {
                 if !acted {
                     break;
                 }
+                took_a_turn = true;
+            }
+            if !took_a_turn {
+                self.hold_stood_down_unit(g, pid, uid);
             }
         }
     }
@@ -3974,7 +4865,7 @@ impl BasicAi {
             // refuse to leave their initial cluster even when a safe campaign
             // route is open.
             s += self.w.mv_support * adjacent_support.min(2) as f64;
-            s
+            s + self.livelock_penalty(uid, tile)
         };
         let stay = score(g, upos);
         let holding_role_position = g.wdist(upos, target) == preferred_range;
@@ -4064,7 +4955,22 @@ impl BasicAi {
         if reverses_last_step {
             return false;
         }
-        if g.apply(pid, &Action::Move { unit: uid, to }).is_err() {
+        // The same refusal over the unit's last several turns rather than its
+        // last several movement points. A route that keeps proposing a tile
+        // this unit has already been standing on all window is not a route.
+        if self.retreads_a_loop(uid, to) {
+            return false;
+        }
+        // Settlers use the shared route-order tool exposed to network clients
+        // and learned agents. The AI has already selected and validated this
+        // adjacent step, so it remains behaviorally identical to Move without
+        // making every military step pay for route reconstruction.
+        let movement = if g.units[&uid].kind == "settler" {
+            Action::MoveTo { unit: uid, to }
+        } else {
+            Action::Move { unit: uid, to }
+        };
+        if g.apply(pid, &movement).is_err() {
             return false;
         }
         self.last_path_step_from
@@ -4499,14 +5405,7 @@ impl BasicAi {
         let Some(next) = g.route_step(uid, target, 0) else {
             return false;
         };
-        g.apply(
-            pid,
-            &Action::Move {
-                unit: uid,
-                to: next,
-            },
-        )
-        .is_ok()
+        self.path_move(g, pid, uid, next)
     }
 
     /// Whether this empire has any tile left for a Builder to work on: an
@@ -4717,15 +5616,44 @@ impl BasicAi {
                 Some((g.wdist(current, position), position, city))
             })
             .min();
-        let Some((_, position, city)) = target else {
-            return self.military_step(g, pid, uid);
-        };
-        if current == position && g.can_contribute_district(pid, uid, city) {
-            return g
-                .apply(pid, &Action::ContributeDistrict { unit: uid, city })
-                .is_ok();
+        if let Some((_, position, city)) = target {
+            if current == position && g.can_contribute_district(pid, uid, city) {
+                return g
+                    .apply(pid, &Action::ContributeDistrict { unit: uid, city })
+                    .is_ok();
+            }
+            return self.step_toward(g, pid, uid, position);
         }
-        self.step_toward(g, pid, uid, position)
+
+        // Once Steam Power arrives, connect city centers with a continuous
+        // Railroad. The current tile is laid before movement, then the next
+        // turn continues toward the nearest center that is not connected yet.
+        // District contributions remain the higher priority above: finishing
+        // a Dam, Aqueduct, or Canal is worth an Engineer charge immediately.
+        let has_rail_material = g.strategic_stockpile(pid, "iron")
+            >= RAILROAD_RESOURCE_RESERVE + 1.0
+            && g.strategic_stockpile(pid, "coal") >= RAILROAD_RESOURCE_RESERVE + 1.0;
+        let railroad_target = has_rail_material
+            .then(|| {
+                g.player_city_ids(pid)
+                    .into_iter()
+                    .map(|city| g.cities[&city].pos)
+                    .filter(|position| g.map.tiles[position].road < 5)
+                    .filter(|position| {
+                        *position == current || g.route_step(uid, *position, 0).is_some()
+                    })
+                    .min_by_key(|position| (g.wdist(current, *position), *position))
+            })
+            .flatten();
+        if let Some(position) = railroad_target {
+            if g.can_build_railroad(pid, uid) {
+                return g.apply(pid, &Action::BuildRailroad { unit: uid }).is_ok();
+            }
+            if current != position {
+                return self.step_toward(g, pid, uid, position);
+            }
+        }
+        self.military_step(g, pid, uid)
     }
 
     fn naturalist_step(&self, g: &mut Game, pid: usize, uid: u32) -> bool {
@@ -5109,14 +6037,10 @@ impl BasicAi {
             Some(p) if g.can_move(uid, p) => p,
             _ => return false,
         };
-        g.apply(
-            pid,
-            &Action::Move {
-                unit: uid,
-                to: next,
-            },
-        )
-        .is_ok()
+        // The exhaustive search is the greedy walk's fallback, so it must
+        // honour the same refusals — otherwise a Scout barred from retreading
+        // its loop by the cheap path takes the identical step here.
+        self.path_move(g, pid, uid, next)
     }
 
     fn patrol_tile(&self, g: &Game, pid: usize, uid: u32, pos: Pos) -> bool {
@@ -5148,15 +6072,14 @@ impl BasicAi {
                     .route_step(uid, target, 0)
                     .filter(|pos| g.can_move(uid, *pos))
                 {
-                    return g
-                        .apply(
-                            pid,
-                            &Action::Move {
-                                unit: uid,
-                                to: next,
-                            },
-                        )
-                        .is_ok();
+                    // A dense frontier can offer two adjacent posts, and a
+                    // unit that keeps swapping between them is pacing, not
+                    // patrolling. `path_move` declines the retread, which
+                    // sends the selection below after a post it has not
+                    // already worn out.
+                    if self.path_move(g, pid, uid, next) {
+                        return true;
+                    }
                 }
             }
             self.patrol_targets.remove(&uid);
@@ -5218,7 +6141,9 @@ impl BasicAi {
         // all-map path search when a unit is isolated on another landmass.
         for offset in 0..posts.len().min(24) {
             let target = posts[(start + offset) % posts.len()];
-            if target == current {
+            // A post inside the footprint this unit has been circling is not a
+            // destination; it is where the circling has been happening.
+            if target == current || self.retreads_a_loop(uid, target) {
                 continue;
             }
             let Some(next) = g
@@ -5227,16 +6152,11 @@ impl BasicAi {
             else {
                 continue;
             };
+            if !self.path_move(g, pid, uid, next) {
+                continue;
+            }
             self.patrol_targets.insert(uid, target);
-            return g
-                .apply(
-                    pid,
-                    &Action::Move {
-                        unit: uid,
-                        to: next,
-                    },
-                )
-                .is_ok();
+            return true;
         }
         false
     }
@@ -5610,6 +6530,154 @@ impl BasicAi {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A quiet one-player world with a lone Scout, so nothing else on the map
+    /// can move the unit or attack it while its whereabouts are recorded.
+    fn scouted_world() -> (Game, Vec<Pos>, u32) {
+        let mut g = Game::new_full(1, 20, 12, 5, 300, 0, true);
+        // Nothing else on the map, so the only thing the record can be
+        // measuring is the Scout's own itinerary.
+        g.units.clear();
+        let mut ground: Vec<Pos> = g
+            .map
+            .tiles
+            .iter()
+            .filter(|(_, tile)| !g.rules.is_water(tile) && g.rules.is_passable(tile))
+            .map(|(pos, _)| *pos)
+            .collect();
+        ground.sort();
+        assert!(ground.len() > 8, "the case needs somewhere to walk");
+        let scout = g.spawn_test_unit("scout", 0, ground[0]);
+        (g, ground, scout)
+    }
+
+    /// Walk one unit through a scripted sequence of tiles, letting the agent
+    /// take down where the unit stood at the start of each turn exactly as a
+    /// real movement phase would.
+    fn observe_walk(tiles: &[usize], spend_charge_on: Option<usize>) -> (BasicAi, Game, Vec<Pos>, u32) {
+        let (mut g, ground, scout) = scouted_world();
+        let mut ai = BasicAi::new();
+        for (turn, tile) in tiles.iter().enumerate() {
+            g.units.get_mut(&scout).unwrap().pos = ground[*tile];
+            if spend_charge_on == Some(turn) {
+                g.units.get_mut(&scout).unwrap().charges += 1;
+            }
+            ai.begin_movement_turn(&g, 0);
+            g.turn += 1;
+        }
+        (ai, g, ground, scout)
+    }
+
+    /// The single-turn reversal ban cannot see a round trip that takes two
+    /// turns to complete, and every step of one is individually the best move
+    /// available. Only the unit's own recent history gives the loop away.
+    #[test]
+    fn a_unit_shuttling_between_two_tiles_is_priced_out_of_both() {
+        let shuttle: Vec<usize> = (0..LIVELOCK_WINDOW + 2).map(|turn| turn % 2).collect();
+        let (ai, _g, ground, scout) = observe_walk(&shuttle, None);
+
+        assert!(ai.livelock_penalty(scout, ground[0]) < 0.0);
+        assert!(ai.livelock_penalty(scout, ground[1]) < 0.0);
+        assert_eq!(
+            ai.livelock_penalty(scout, ground[7]),
+            0.0,
+            "anywhere it has not already been is worth going"
+        );
+        assert!(ai.retreads_a_loop(scout, ground[1]));
+        assert!(!ai.retreads_a_loop(scout, ground[7]));
+    }
+
+    #[test]
+    fn a_unit_that_is_getting_somewhere_is_left_alone() {
+        let march: Vec<usize> = (0..LIVELOCK_WINDOW + 2).collect();
+        let (ai, _g, ground, scout) = observe_walk(&march, None);
+        for tile in &ground[..8] {
+            assert_eq!(ai.livelock_penalty(scout, *tile), 0.0);
+        }
+    }
+
+    /// A Builder working two tiles beside a city occupies the same footprint
+    /// as a Builder stuck between them. Spending the charge is the difference,
+    /// and it is what the work fingerprint exists to see.
+    #[test]
+    fn a_unit_that_accomplishes_something_keeps_its_ground() {
+        let shuttle: Vec<usize> = (0..LIVELOCK_WINDOW + 2).map(|turn| turn % 2).collect();
+        let halfway = Some(LIVELOCK_WINDOW / 2);
+        let (working, _g, ground, scout) = observe_walk(&shuttle, halfway);
+        assert_eq!(working.livelock_penalty(scout, ground[0]), 0.0);
+
+        let (idle, _g, ground, scout) = observe_walk(&shuttle, None);
+        assert!(idle.livelock_penalty(scout, ground[0]) < 0.0);
+    }
+
+    /// A three-tile shuffle is still a loop; a four-tile circuit is a unit
+    /// covering ground, and pricing that would punish ordinary movement. Both
+    /// walks stop short of `LIVELOCK_STAND_DOWN_AFTER`, which would wipe the
+    /// record being examined.
+    #[test]
+    fn the_footprint_bound_separates_a_loop_from_a_march() {
+        let turns = LIVELOCK_WINDOW + 2;
+        let (looping, _g, ground, scout) =
+            observe_walk(&(0..turns).map(|turn| turn % 3).collect::<Vec<_>>(), None);
+        assert!(looping.livelock_penalty(scout, ground[0]) < 0.0);
+
+        let (marching, _g, ground, scout) =
+            observe_walk(&(0..turns).map(|turn| turn % 4).collect::<Vec<_>>(), None);
+        assert_eq!(marching.livelock_penalty(scout, ground[0]), 0.0);
+    }
+
+    /// The tabu redirects a unit that has somewhere else to go. A unit with
+    /// nowhere else to go keeps circling anyway; for that one the record is
+    /// wiped so the retry re-plans against a world that has moved on, and a
+    /// unit that then still finds nothing to do digs in rather than standing
+    /// in the open.
+    #[test]
+    fn a_unit_still_looping_after_a_second_window_starts_over_and_digs_in() {
+        let shuttle: Vec<usize> = (0..LIVELOCK_STAND_DOWN_AFTER as usize + 1)
+            .map(|turn| turn % 2)
+            .collect();
+        let (ai, mut g, ground, scout) = observe_walk(&shuttle, None);
+
+        assert_eq!(
+            ai.livelock_penalty(scout, ground[0]),
+            0.0,
+            "the stand-down clears the record, so the retry is unencumbered"
+        );
+        ai.hold_stood_down_unit(&mut g, 0, scout);
+        assert!(g.units[&scout].fortified);
+
+        // And it ends on its own: a unit past its stand-down is left alone.
+        g.turn += LIVELOCK_STAND_DOWN_TURNS;
+        let (later, mut g, _ground, other) = observe_walk(&[0, 0], None);
+        later.hold_stood_down_unit(&mut g, 0, other);
+        assert!(!g.units[&other].fortified);
+    }
+
+    /// Digging in must never take the place of a turn the unit could have
+    /// spent. An earlier version ran *before* the unit's own step and guessed
+    /// at what it might have wanted; measured over six games it cost more
+    /// productive turns than the loops it broke, which is exactly what the
+    /// `picket` column in `audit` exists to expose.
+    #[test]
+    fn a_stood_down_unit_still_takes_a_turn_it_can_use() {
+        let shuttle: Vec<usize> = (0..LIVELOCK_STAND_DOWN_AFTER as usize + 1)
+            .map(|turn| turn % 2)
+            .collect();
+        let (mut ai, mut g, _ground, scout) = observe_walk(&shuttle, None);
+        assert!(
+            ai.unit_motion[&scout].resume_turn > g.turn,
+            "the case needs a unit that is serving out a stand-down"
+        );
+
+        let before = g.units[&scout].pos;
+        ai.units(&mut g, 0);
+
+        assert_ne!(
+            g.units[&scout].pos, before,
+            "a Scout with a whole world left to look at goes and looks at it"
+        );
+        assert!(!g.units[&scout].fortified);
+    }
 
     #[test]
     fn a_game_no_enabled_victory_can_end_still_stops_at_its_turn_limit() {
@@ -6018,6 +7086,99 @@ mod tests {
 
         assert_eq!(game.units[&slinger].kind, "archer");
         assert_eq!(game.players[0].gold, 120.0);
+    }
+
+    #[test]
+    fn ai_claims_an_earned_great_person_instead_of_leaving_it_pending() {
+        let mut game = Game::new_full(1, 20, 14, 41_006, 80, 0, false);
+        let settler = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+        let city = game.player_city_ids(0)[0];
+        let campus = game.cities[&city]
+            .owned_tiles
+            .iter()
+            .copied()
+            .find(|position| *position != game.cities[&city].pos)
+            .unwrap();
+        game.map.tiles.get_mut(&campus).unwrap().district = Some("campus".to_string());
+        game.cities
+            .get_mut(&city)
+            .unwrap()
+            .districts
+            .insert("campus".to_string(), campus);
+        let cost = game.gp_cost(0, "scientist");
+        game.players[0].gpp.insert("scientist".to_string(), cost);
+        assert!(game.legal_actions(0).iter().any(
+            |action| matches!(action, Action::RecruitGreatPerson { kind } if kind == "scientist")
+        ));
+
+        assert_eq!(BasicAi::claim_free_great_people(&mut game, 0), 1);
+        assert_eq!(game.players[0].gp_claimed["scientist"], 1);
+        assert!(game.players[0].great_people.iter().any(|person| person == "hypatia"));
+    }
+
+    #[test]
+    fn ai_reassigns_a_governor_from_a_safe_city_to_a_loyalty_emergency() {
+        let (mut game, source, target) = island_colony_game(1);
+        let second_settler = game.spawn_test_unit("settler", 0, target);
+        let second = game.found_city_for(0, game.units[&second_settler].pos, None);
+        let first = game.city_at(source).unwrap();
+        game.players[0]
+            .counters
+            .insert("district_governor_titles".to_string(), 1);
+        game.apply(
+            0,
+            &Action::AppointGovernor {
+                governor: "victor".to_string(),
+                city: first,
+            },
+        )
+        .unwrap();
+        game.cities.get_mut(&first).unwrap().loyalty = 100.0;
+        game.cities.get_mut(&second).unwrap().loyalty = 35.0;
+
+        assert!(BasicAi::reassign_governor_for_loyalty(&mut game, 0));
+        assert_eq!(
+            game.players[0].governor_roster["victor"].city,
+            Some(second)
+        );
+    }
+
+    #[test]
+    fn ai_uses_heathen_conversion_before_the_apostle_moves() {
+        let mut game = Game::new_full(1, 20, 14, 41_007, 80, 0, true);
+        let settler = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+        let center = game.cities[&game.player_city_ids(0)[0]].pos;
+        let adjacent = game
+            .nbrs(center)
+            .into_iter()
+            .find(|position| {
+                game.map.get(*position).is_some_and(|tile| {
+                    game.rules.is_passable(tile) && !game.rules.is_water(tile)
+                })
+            })
+            .unwrap();
+        let apostle = game.spawn_test_unit("apostle", 0, center);
+        game.units
+            .get_mut(&apostle)
+            .unwrap()
+            .promotions
+            .insert("heathen_conversion".to_string());
+        let barbarian = game.barb_pid.unwrap();
+        let converted = game.spawn_test_unit("warrior", barbarian, adjacent);
+
+        assert_eq!(BasicAi::use_opportunistic_unit_tools(&mut game, 0), 1);
+        assert_eq!(game.units[&converted].owner, 0);
+        assert_eq!(game.units[&apostle].moves_left, 0.0);
     }
 
     #[test]
@@ -6446,7 +7607,9 @@ mod tests {
 
     #[test]
     fn unfounded_empire_reserves_only_one_holy_site_for_the_prophet_race() {
-        let mut game = Game::new_full(1, 24, 16, 91_772, 120, 0, false);
+        let mut game = Game::new_full(
+            1, 24, 16, crate::rng::fixture_seed("HOLYSITE", 91_773), 120, 0, false,
+        );
         let settler = game
             .player_unit_ids(0)
             .into_iter()
@@ -8168,7 +9331,9 @@ mod tests {
 
     #[test]
     fn one_queued_spaceport_reserves_the_empire_launch_site() {
-        let mut game = Game::new_full(1, 30, 20, 324_001, 100, 0, false);
+        let mut game = Game::new_full(
+            1, 30, 20, crate::rng::fixture_seed("SPACEPORT", 324_006), 100, 0, false,
+        );
         let first_settler = game
             .player_unit_ids(0)
             .into_iter()
@@ -8437,6 +9602,7 @@ mod tests {
             &Action::Buy {
                 city: home,
                 unit: "battering_ram".to_string(),
+                formation: 0,
                 currency: "gold".to_string(),
             },
         )
@@ -8773,6 +9939,47 @@ mod tests {
         );
         assert_eq!(game.units[&engineer].charges, 1);
         assert_eq!(game.units[&engineer].moves_left, 0.0);
+    }
+
+    #[test]
+    fn idle_military_engineer_starts_a_stockpile_safe_railroad() {
+        let mut game = Game::new_full(1, 20, 14, 36_002, 80, 0, false);
+        let settler = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+        let city = game.player_city_ids(0)[0];
+        let center = game.cities[&city].pos;
+        game.players[0].techs.insert("steam_power".to_string());
+        game.players[0]
+            .strategic_resources
+            .insert("iron".to_string(), 8.0);
+        game.players[0]
+            .strategic_resources
+            .insert("coal".to_string(), 8.0);
+        let engineer = game.spawn_test_unit("military_engineer", 0, center);
+        let mut ai = BasicAi::new();
+
+        assert!(ai.military_engineer_step(&mut game, 0, engineer));
+        assert_eq!(game.map.tiles[&center].road, 5);
+        assert_eq!(game.strategic_stockpile(0, "iron"), 7.0);
+        assert_eq!(game.strategic_stockpile(0, "coal"), 7.0);
+
+        // Once either reserve reaches the floor, the Engineer stops spending
+        // and remains available for a Dam/Aqueduct/Canal contribution.
+        game.map.tiles.get_mut(&center).unwrap().road = 1;
+        game.players[0]
+            .strategic_resources
+            .insert("coal".to_string(), RAILROAD_RESOURCE_RESERVE);
+        game.units.get_mut(&engineer).unwrap().moves_left = 2.0;
+        let _ = ai.military_engineer_step(&mut game, 0, engineer);
+        assert_ne!(game.map.tiles[&center].road, 5);
+        assert_eq!(
+            game.strategic_stockpile(0, "coal"),
+            RAILROAD_RESOURCE_RESERVE
+        );
     }
 
     #[test]

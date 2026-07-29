@@ -724,7 +724,7 @@ fn people(check: &mut Check) {
     // engine that reads it, or the civilization silently has no ability at
     // all — a misspelt key is indistinguishable from a fair one until someone
     // measures a whole game against the note in the ruleset.
-    const CIV_EFFECTS: [&str; 15] = [
+    const CIV_EFFECTS: [&str; 22] = [
         "city_food",
         "city_production",
         "city_gold",
@@ -740,6 +740,13 @@ fn people(check: &mut Check) {
         "holy_city_combat_strength",
         "unit_kill_religious_pressure",
         "unit_xp_pct",
+        "land_corps_civic_mercenaries",
+        "land_army_civic_nationalism",
+        "naval_formation_civic_mercantilism",
+        "formation_combat_strength",
+        "capture_formation_upgrade",
+        "garrison_loyalty",
+        "formation_garrison_loyalty",
     ];
     let units = check.rules.units.clone();
     for (id, spec) in &check.rules.civs.clone() {
@@ -860,6 +867,9 @@ fn setup(check: &mut Check) {
         }
         if spec.barb_force_scale <= 0.0 {
             check.error(&subject, "scales barbarian forces to nothing");
+        }
+        if spec.barb_spawn_scale <= 0.0 {
+            check.error(&subject, "stops barbarian camps spawning entirely");
         }
     }
 

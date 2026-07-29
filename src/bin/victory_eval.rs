@@ -183,7 +183,7 @@ fn main() {
                 } else {
                     winner.to_string()
                 },
-                game.turn,
+                game.reported_turn(),
                 game.world_era,
                 major_progress,
                 progress.unwrap_or_default(),

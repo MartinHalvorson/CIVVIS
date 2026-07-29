@@ -73,10 +73,24 @@ LOAD_ORDER = [
 ] + [f"DLC/{pack}/Data" for pack in CONTENT_PACKS]
 
 # Pack files that never carry rules tables, or that belong to optional modes.
+#
+# ``RemoveData`` is *not* excluded: those files are how the later packs retire
+# content, and skipping them left the audit comparing rows the shipped game no
+# longer has. The Biosphere is the case that found it — Byzantium & Gaul
+# deletes its `+8 Science` yield when Gathering Storm is active, so the audit
+# reported CIVVIS as missing a yield it is correct not to have.
 PACK_EXCLUDE = re.compile(
-    r"_MODE|Icons|Colors|Config|Civilopedia|RemoveData|Loc_|Text|Audio|ARX",
+    r"_MODE|Icons|Colors|Config|Civilopedia|Loc_|Text|Audio|ARX",
     re.IGNORECASE,
 )
+
+# An expansion ships a compatibility overlay that only applies when the *other*
+# expansion is also installed (`Expansion1_Expansion2.xml` is the Gathering
+# Storm rebalance of Rise and Fall content). Sorted filename order applies it
+# before the rows it edits exist, so its `<Update>` elements silently match
+# nothing: the Eye of the Sahara kept Rise and Fall's 1 Production instead of
+# Gathering Storm's 2. These are applied last, after every base table is in.
+CROSS_EXPANSION = re.compile(r"_Expansion[12]\.xml$", re.IGNORECASE)
 
 INSTALL_CANDIDATES = [
     r"C:\Program Files (x86)\Steam\steamapps\common\Sid Meier's Civilization VI",
@@ -334,6 +348,7 @@ def load_cache_database(path: Path) -> Database:
 
 def load_database(install: Path) -> Database:
     database = Database()
+    deferred: list[Path] = []
     for relative in LOAD_ORDER:
         directory = install / relative
         if not directory.is_dir():
@@ -343,7 +358,9 @@ def load_database(install: Path) -> Database:
         core = relative in LOAD_ORDER[:3]
         for path in sorted(directory.rglob("*.xml")):
             if core:
-                if FILE_PATTERN.match(path.name):
+                if not FILE_PATTERN.match(path.name) and CROSS_EXPANSION.search(path.name):
+                    deferred.append(path)
+                elif FILE_PATTERN.match(path.name):
                     database.apply_file(path)
             elif not PACK_EXCLUDE.search(path.name):
                 # Content packs interleave tables freely (and ship
@@ -351,6 +368,8 @@ def load_database(install: Path) -> Database:
                 # everything that is not clearly cosmetic; apply_file skips
                 # tables the audit does not track.
                 database.apply_file(path)
+    for path in deferred:
+        database.apply_file(path)
     return database
 
 
@@ -483,6 +502,16 @@ def project_units(database: Database) -> dict[str, dict]:
                 number(row.get("ReligiousHealCharges")),
             ),
             "zone_of_control": truthy(row.get("ZoneOfControl")),
+            # Theological combat: the strength an Apostle brings to it, and the
+            # share of rival pressure the unit strips when it acts. CIVVIS
+            # spends the Inquisitor's through Remove Heresy rather than Spread,
+            # so its 75 shows up as pressure retained at a quarter.
+            "religious_strength": number(row.get("ReligiousStrength")),
+            # There is no spread-strength column: RELIGION_SPREAD_STRENGTH_
+            # MULTIPLIER is 200, so a unit spreads at twice its Religious
+            # Strength. CIVVIS stores the product, which is why an Apostle
+            # carries 110 and 220.
+            "religious_spread": number(row.get("ReligiousStrength")) * 2,
             # UnitUpgrades is a separate table; MandatoryObsoleteTech is the
             # column that closes a unit's production menu for good.
             "upgrade_to": upgrades.get(slug(row["UnitType"], "UNIT_")),
@@ -620,6 +649,11 @@ FEATURE_ALIASES = {
     "ikkil": "ik_kil",
     "chocolatehills": "chocolate_hills",
     "devilstower": "mato_tipila",
+    # And four more of the same kind, from the packs that complete the roster.
+    "lysefjorden": "lysefjord",
+    "roraima": "mount_roraima",
+    "tsingy": "tsingy_de_bemaraha",
+    "whitedesert": "sahara_el_beyda",
 }
 
 
@@ -1192,10 +1226,20 @@ ENGINE_PARAMETERS = {
     "CULTURE_COST_LATER_PLOT_MULTIPLIER": 6,
     "CULTURE_COST_LATER_PLOT_EXPONENT": 1.3,
     "GOVERNMENT_BASE_ANARCHY_TURNS": 2,  # game.rs do_government / process_anarchy
+    "DIPLOMACY_ALLIANCE_TIME_LIMIT": 30,  # game.rs STANDARD_DEAL_TURNS
+    "DIPLOMACY_DENOUNCE_TIME_LIMIT": 30,  # game.rs process_diplomacy
+    "DIPLOMACY_DENOUNCE_WAR_DELAY": 5,
     "DIPLOMACY_PEACE_MIN_TURNS": 10,  # game.rs PEACE_TREATY_TURNS
     "DIPLOMACY_WAR_MIN_TURNS": 10,  # game.rs WAR_MIN_TURNS
+    "TRADE_ROUTE_BASE_RANGE": 15,  # game.rs can_establish_trade_route
+    "TRADE_ROUTE_TURN_DURATION_BASE": 20,  # game.rs trade_route_duration
     "BARBARIAN_CAMP_MINIMUM_DISTANCE_CITY": 4,  # game.rs spawn_camp
     "BARBARIAN_CAMP_MINIMUM_DISTANCE_ANOTHER_CAMP": 7,
+    # A third of the target is seated before turn one, and every turn after it
+    # the world rolls one in two for one more -- both in the fog, since a camp
+    # may not be placed where any non-Barbarian unit or city is looking.
+    "BARBARIAN_CAMP_FIRST_TURN_PERCENT_OF_TARGET_TO_ADD": 33,  # game.rs new_with
+    "BARBARIAN_CAMP_ODDS_OF_NEW_CAMP_SPAWNING": 2,  # game.rs barbarian_phase
     "BARBARIAN_TECH_PERCENT": 50,  # game.rs barbarian_phase unit pool
     "BARBARIAN_NUM_RANDOM_UNIT_CHOICES": 3,
     # Verified against the engine during the 2026-07-26 tournament-rules sweep.
@@ -1245,6 +1289,55 @@ ENGINE_PARAMETERS = {
     # nothing for a bare turn and nothing for a trade partner, so a term for
     # either would be invention.
     "WORLD_CONGRESS_SUZERAIN_FAVOR_PER_TURN": 1,  # process_diplomacy
+    "INFLUENCE_TOKENS_MINIMUM_FOR_SUZERAIN": 3,  # game.rs suzerain_of_uncached
+    # game.rs HealingLocation::rate and the naval branch of unit_heal_rate.
+    "COMBAT_HEAL_LAND_FRIENDLY": 15,
+    "COMBAT_HEAL_LAND_NEUTRAL": 10,
+    "COMBAT_HEAL_LAND_ENEMY": 5,
+    "COMBAT_HEAL_NAVAL_FRIENDLY": 20,
+    "COMBAT_HEAL_NAVAL_NEUTRAL": 0,
+    "COMBAT_HEAL_NAVAL_ENEMY": 0,
+    "COMBAT_HEAL_CITY_GARRISON": 20,
+    # game.rs tourism_multiplier, domestic_tourists and tourism_components.
+    "RELIGION_SPREAD_STRENGTH_MULTIPLIER": 200,  # religious_spread is 2x strength
+    "RELIGION_INITIAL_BELIEFS": 2,  # game.rs do_found_religion
+    "TOURISM_OPEN_BORDERS_BONUS": 25,
+    "TOURISM_TRADE_ROUTE_BONUS": 25,
+    "TOURISM_DIFFERENT_RELIGION_REDUCTION": 50,
+    "TOURISM_CULTURE_PER_CITIZEN": 100,  # one domestic tourist per 100 Culture
+    "TOURISM_TOURISM_TO_MOVE_CITIZEN": 200,  # game.rs TOURISM_PER_VISITOR
+    "TOURISM_BASE_FROM_WONDER": 2,
+    "TOURISM_FROM_HOLY_CITY": 8,
+    # game.rs `damage`: 30 * exp((att - def) / 25) * U(0.8, 1.2), clamped.
+    # 30 * 0.8 is the base 24 and 30 * 1.2 is 24 + the 12 of extra, and
+    # dividing the strength difference by 25 is the same as scaling it by 0.04.
+    "COMBAT_MAX_EXTRA_DAMAGE": 12,
+    "COMBAT_MINIMUM_DAMAGE": 1,
+    "COMBAT_MAX_HIT_POINTS": 100,
+    "COMBAT_POWER_SCALING": 0.04,
+    "COMBAT_FLANKING_BONUS_MODIFIER": 2,  # game.rs flanking_bonus
+    "COMBAT_SUPPORT_BONUS_MODIFIER": 2,  # game.rs support_bonus
+    # game.rs city_take_damage: the multiplier each attack puts on walls.
+    "COMBAT_DEFENSE_DAMAGE_PERCENT_MELEE": 15,
+    "COMBAT_DEFENSE_DAMAGE_PERCENT_RANGED": 50,
+    "COMBAT_DEFENSE_DAMAGE_PERCENT_BOMBARD": 100,
+    "CITY_POPULATION_LOSS_TO_CONQUEST_PERCENTAGE": 0.25,  # capture keeps 75%
+    "LOYALTY_AFTER_TRANSFERRED_BY_COMBAT": 50,  # game.rs capture_city
+    "LOYALTY_MAXIMUM": 100,
+    "LOYALTY_START": 100,
+    "DISTRICT_POPULATION_REQUIRED_PER": 3,  # one specialty per three Population
+    "WAR_WEARINESS_PER_UNIT_KILLED": 3,  # game.rs record_war_unit_loss
+    "WAR_WEARINESS_PER_COMBAT_IN_ALLIED_LANDS": 1,  # accrue_combat_weariness
+    "WAR_WEARINESS_PER_COMBAT_IN_FOREIGN_LANDS": 2,
+    "WAR_WEARINESS_PER_WMD_LAUNCHED": 10,  # game.rs Action::WmdStrike
+    "UNIT_CORPS_COST_MODIFIER": 1.5,  # game.rs base_item_cost
+    "UNIT_ARMY_COST_MODIFIER": 2.0,
+    "SCIENCE_VICTORY_POINTS_REQUIRED": 50,  # game.rs EXOPLANET_DESTINATION
+    "GRIEVANCES_FOR_DENOUNCEMENT": 25,  # game.rs do_denounce
+    # Held as a decay offset rather than an addition, which comes to the same
+    # thing: game.rs occupation_modifier in the grievance decay loop.
+    "GRIEVANCES_POSSESS_CAPITAL_PER_TURN": 3,
+    "GRIEVANCES_POSSESS_NON_CAPITAL_PER_TURN": 1,
     "WORLD_CONGRESS_ALLIANCE_FAVOR_PER_TURN": 1,  # per alliance level
     "WORLD_CONGRESS_BASELINE_FAVOR_PER_TURN": 0,
     "WORLD_CONGRESS_TRADE_PARTNER_FAVOR_PER_TURN": 0,
@@ -1545,6 +1638,8 @@ def project_buildings(database: Database) -> dict[str, dict]:
             "maintenance": number(row.get("Maintenance")),
             "housing": number(row.get("Housing")),
             "amenity": number(row.get("Entertainment")),
+            # Every wall tier is 100; Georgia's Tsikhe is the one 200.
+            "outer_defense": number(row.get("OuterDefenseHitPoints")),
             "citizen_slots": number(row.get("CitizenSlots")),
             "yields": yields.get(name, {}),
             "regional_range": number(row.get("RegionalRange")),
@@ -1764,9 +1859,18 @@ def project_projects(database: Database) -> dict[str, dict]:
 def project_districts(database: Database) -> dict[str, dict]:
     projected = {}
     for row in database.rows("Districts"):
-        projected[slug(row["DistrictType"], "DISTRICT_")] = {
+        entry = {
             "cost": number(row.get("Cost")),
+            "maintenance": number(row.get("Maintenance")),
+            "appeal": number(row.get("Appeal")),
+            "air_slots": number(row.get("AirSlots")),
         }
+        # MaxPerPlayer is -1 for "as many as you like"; CIVVIS leaves the field
+        # off. Only the Government Plaza and the Diplomatic Quarter carry a 1.
+        limit = number(row.get("MaxPerPlayer"))
+        if limit > 0:
+            entry["max_per_empire"] = limit
+        projected[slug(row["DistrictType"], "DISTRICT_")] = entry
     return projected
 
 

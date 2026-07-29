@@ -15,13 +15,13 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
-use crate::ai::{AdvancedAi, Ai, BasicAi, RandomAi};
+use crate::ai::{AdvancedAi, Ai, BasicAi, RandomAi, Weights};
 use crate::game::{Action, Game};
 use crate::rng::Rng;
 use crate::rules::Rules;
 use crate::setup::MapSize;
 
-pub const BUILTIN_AIS: [&str; 9] = [
+pub const BUILTIN_AIS: [&str; 10] = [
     "advanced",
     "advanced_evolved",
     "advanced_v1",
@@ -30,6 +30,7 @@ pub const BUILTIN_AIS: [&str; 9] = [
     "evolved",
     "neural",
     "strategic",
+    "strategic_deep",
     "policy",
 ];
 
@@ -37,11 +38,81 @@ pub const BUILTIN_AIS: [&str; 9] = [
 /// tournament ratings. Keeping them out of `BUILTIN_AIS` prevents a control
 /// factory from being pooled into the same player/leader rating key as
 /// its treatment.
-pub const EVAL_ONLY_AIS: [&str; 1] = ["strategic_score"];
+pub const EVAL_ONLY_AIS: [&str; 43] = [
+    "advanced_banking_dedication",
+    "advanced_blind_to_leaders",
+    "advanced_civ_blind",
+    "advanced_counter_in_lane",
+    "advanced_counter_stand_down",
+    "advanced_early_score_alarm",
+    "advanced_early_score_build",
+    "advanced_evolved_blind",
+    "advanced_settler_commit",
+    "advanced_food_first",
+    "advanced_measured_dedication",
+    "advanced_lane_reachable",
+    "advanced_parallel_settlers",
+    "advanced_relief_scoped",
+    "strategic_score",
+    "strategic_doctrine",
+    "strategic_r20",
+    "strategic_r10",
+    "strategic_nodefer",
+    "strategic_r20h20",
+    "strategic_h80",
+    "strategic_rot20",
+    "strategic_rot10",
+    "strategic_deep",
+    "strategic_ultra",
+    "strategic_deep_default",
+    "strategic_deep_tempo",
+    "strategic_deep_conversion",
+    "strategic_deep_checkmate",
+    "strategic_deep_expand",
+    "strategic_deep_consolidate",
+    "strategic_deep_militarize",
+    "strategic_deep_league",
+    "production",
+    "production_net",
+    "policy_wide",
+    "policy_wide_frozen",
+    "strategic_warm",
+    "strategic_cold",
+    "strategic_noprophet",
+    "strategic_deep_adaptive",
+    "strategic_rivals",
+    "strategic_deep_rivals",
+];
 
 /// On-disk schema for the shared player/leader/civilization rating ledger.
 pub const ELO_SCHEMA_VERSION: u32 = 2;
 pub const DEFAULT_RATINGS_PATH: &str = "data/elo_ratings.json";
+const LEAGUE_SNAPSHOT_DIR: &str = "data/league";
+const LEAGUE_SNAPSHOT_FILE: &str = "data/league/league.json";
+
+/// Conservatively strongest active, untargeted genome in the committed
+/// outcome-rated league. Lane specialists answer a different question; this
+/// challenger isolates whether a win-selected generalist policy transfers to
+/// the strongest macro-search budget.
+fn league_generalist() -> Option<(String, Weights)> {
+    crate::league::load_league(LEAGUE_SNAPSHOT_DIR)?
+        .strategies
+        .into_iter()
+        .filter(|strategy| !strategy.retired && !strategy.human)
+        .filter_map(|strategy| match strategy.kind {
+            crate::league::StrategyKind::Advanced {
+                weights,
+                target: None,
+            } => Some((strategy.rating - 1.96 * strategy.rd, strategy.name, weights)),
+            _ => None,
+        })
+        .max_by(|left, right| {
+            left.0
+                .partial_cmp(&right.0)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        })
+        .map(|(_, name, weights)| (name, weights))
+}
 
 /// Resolve the leader supplied by the active ruleset. Keeping this beside the
 /// ledger migration also gives old civilization-only rows an unambiguous home.
@@ -406,11 +477,158 @@ impl EloPool {
 pub fn builtin_ai(name: &str, seed: u64) -> Box<dyn Ai> {
     match name {
         "advanced" => Box::new(AdvancedAi::new()),
+        // Treatment for the lane-reachability axis: identical to `advanced`
+        // except that it refuses to route toward a victory lane it cannot
+        // finish inside the turn budget. Paired against `advanced` this
+        // isolates the filter and nothing else. Measured no stronger at 120
+        // mirrored maps -- 49.6% paired score, Elo-equivalent -3, sign
+        // p=1.0000, gate INCONCLUSIVE -- which is why it is an entrant and
+        // not the default.
+        // Ablation for the civilization-aware decision layer: identical to
+        // `advanced` except that it ignores every by-name civilization signal
+        // (the Greece and China lane floors, the unique-unit tech bonus, the
+        // Egypt/China wonder exemption). It still builds whatever uniques it
+        // has -- that is mechanics. Paired against `advanced` this bounds what
+        // the existing per-civilization code is worth, which is the ceiling
+        // any better per-civilization play has to beat. See `docs/OPENINGS.md`.
+        // Treatment for the expansion-tempo axis: identical to `advanced`
+        // except that its governors want food while the empire is short of
+        // its city target. See `docs/OPENINGS.md` §11 for the ceiling that
+        // motivated it and for the production it trades away.
+        "advanced_food_first" => {
+            let mut ai = AdvancedAi::new();
+            ai.food_first = 0.6;
+            Box::new(ai)
+        }
+        // Treatment for the settler-commitment axis: identical to `advanced`
+        // except that a settler holds its chosen site across a turn it could
+        // not move, for up to three such turns. See `docs/OPENINGS.md` §15.
+        "advanced_settler_commit" => {
+            let mut ai = AdvancedAi::new();
+            ai.settler_commit = true;
+            Box::new(ai)
+        }
+        // Ablation for the counter-leader axis: identical to `advanced`
+        // except that it never reacts to a rival closing on a victory --
+        // `victory_denial` is silent and `urgent_victory_threat` never waives
+        // the ordinary war-readiness checks. It still fights, expands and
+        // races; it just never does any of it *because* somebody else is
+        // about to win. Paired against `advanced` this is what the whole
+        // denial response is worth. See `docs/COUNTERING_LEADERS.md`, which
+        // measures the layer as a near-perfect predictor of the winner, no
+        // deterrent, and a real cost in development at deployment scale.
+        "advanced_blind_to_leaders" => {
+            let mut ai = AdvancedAi::new();
+            ai.deny_leaders = false;
+            Box::new(ai)
+        }
+        // Treatment for the response-shape axis: identical to `advanced`
+        // except that a Science or Expansion threat is answered by racing the
+        // leader in that lane rather than by declaring on them. The alarm is
+        // unchanged; only what it asks for changes. See
+        // `docs/COUNTERING_LEADERS.md`: at deployment scale one or two
+        // belligerents wins 4.4% and 10.7% of seats against a 16.7% base.
+        "advanced_counter_in_lane" => {
+            let mut ai = AdvancedAi::new();
+            ai.counter_in_lane = true;
+            Box::new(ai)
+        }
+        // Decomposition arm for the response-shape axis: reacts to the other
+        // four races exactly as `advanced` does and to a Science or Expansion
+        // threat not at all. Read against `advanced_counter_in_lane` it says
+        // whether that treatment's effect is "stop declaring" or "race them".
+        "advanced_counter_stand_down" => {
+            let mut ai = AdvancedAi::new();
+            ai.counter_stand_down = true;
+            Box::new(ai)
+        }
+        // Instrument treatment: reads the score race as a margin over the
+        // field instead of as a last-quarter clock. The response is unchanged.
+        "advanced_early_score_alarm" => {
+            let mut ai = AdvancedAi::new();
+            ai.early_score_alarm = true;
+            Box::new(ai)
+        }
+        // The earlier alarm asking for a build instead of a war -- the only
+        // combination `docs/COUNTERING_LEADERS.md` leaves untested, since every
+        // response-side change measured null on the shipped instrument.
+        "advanced_early_score_build" => {
+            let mut ai = AdvancedAi::new();
+            ai.early_score_alarm = true;
+            ai.counter_in_lane = true;
+            Box::new(ai)
+        }
+        "advanced_civ_blind" => {
+            let mut ai = AdvancedAi::new();
+            ai.civ_blind = true;
+            Box::new(ai)
+        }
+        // Treatment for the expansion-rate axis: identical to `advanced`
+        // except that it may hold more than one settler at a time, up to its
+        // shortfall against the city target. Paired against `advanced` this
+        // isolates the empire-wide `counts.settlers == 0` serialization and
+        // nothing else. See `docs/OPENINGS.md` for the measurement that
+        // motivated it and for what would refute it.
+        "advanced_parallel_settlers" => {
+            let mut ai = AdvancedAi::new();
+            ai.parallel_settlers = true;
+            Box::new(ai)
+        }
+        "advanced_lane_reachable" => {
+            let mut ai = AdvancedAi::new();
+            ai.refuse_unreachable_lanes = true;
+            Box::new(ai)
+        }
+        // Treatment for the relief-radius axis: identical to `advanced` in
+        // every other respect, holding only the force groups that could
+        // reach a threatened city instead of every group in the empire.
+        // Paired against `advanced` this isolates the scoped hold and
+        // nothing else. Measured no stronger at 120 maps, which is why it is
+        // an entrant rather than the default; kept so the comparison can be
+        // re-run once siege conversion improves.
+        "advanced_relief_scoped" => {
+            let mut ai = AdvancedAi::new();
+            ai.scoped_relief_hold = true;
+            Box::new(ai)
+        }
+        // The denial ablation on the weights the deployment actually plays.
+        // Every other arm in `docs/COUNTERING_LEADERS.md` ran on
+        // `Weights::default()`, and a genome moves `war_ratio`, `city_target`
+        // and the rest -- so a layer that is worth nothing to the default
+        // agent is not automatically worth nothing to the shipped one. Paired
+        // against `advanced_evolved`, this is the same ablation on the seat
+        // the exhibition fills.
+        "advanced_evolved_blind" => {
+            let mut ai = crate::evolve::load_champion("evolved")
+                .map(AdvancedAi::with_weights)
+                .unwrap_or_else(AdvancedAi::new);
+            ai.deny_leaders = false;
+            Box::new(ai)
+        }
         "advanced_evolved" => Box::new(
             crate::evolve::load_champion("evolved")
                 .map(AdvancedAi::with_weights)
                 .unwrap_or_else(AdvancedAi::new),
         ),
+        // The Dedication chooser that ranks the offer by what each Dedication
+        // would have paid over the era just ended. **A recorded negative
+        // result**, kept as an evaluator arm: over 120 mirrored maps against
+        // the shipped alphabetical default it took 41.2% of games, 10 map
+        // directions to 31, sign p=0.0015, e-process crossing against it at
+        // map 51, and terminal score 46.3% (p=0.0000). See `docs/AGES.md`.
+        "advanced_measured_dedication" => {
+            let mut w = crate::evolve::load_champion("evolved").unwrap_or_default();
+            w.dedication_choice = crate::ai::DedicationChoice::Measured;
+            Box::new(AdvancedAi::with_weights(w))
+        }
+        // The repair for that loss: rank on the projection only in a Normal or
+        // Dark Age, where Era Score is the literal objective, and leave the
+        // Golden and Heroic choice exactly as the default makes it.
+        "advanced_banking_dedication" => {
+            let mut w = crate::evolve::load_champion("evolved").unwrap_or_default();
+            w.dedication_choice = crate::ai::DedicationChoice::Banking;
+            Box::new(AdvancedAi::with_weights(w))
+        }
         "advanced_v1" => Box::new(AdvancedAi::legacy()),
         "random" => Box::new(RandomAi::new(seed)),
         "evolved" => Box::new(
@@ -420,11 +638,31 @@ pub fn builtin_ai(name: &str, seed: u64) -> Box<dyn Ai> {
         ),
         "neural" => {
             let w = crate::evolve::load_champion("evolved").unwrap_or_default();
-            match crate::valuenet::ValueNet::load("evolved") {
+            match crate::valuenet::ValueNet::load_width("evolved", crate::evolve::FEATURE_WIDTH) {
                 Some(n) => Box::new(crate::neural::NeuralAi::new(w, n)),
                 None => Box::new(BasicAi::with_weights(w)),
             }
         }
+        // `policy` scored with the 34-wide `decision_features` and a net
+        // trained on it. The 25-wide vector is unchanged by 96% of the
+        // candidates this agent clones; the wide one moves for 69% of unit
+        // moves, so this is the first configuration where the tactical
+        // evaluator can distinguish the actions it is ranking at all.
+        // `policy_wide` denied the one correlate it was measured to be
+        // exploiting. A causal test of the ranking failure, not a proposed
+        // agent.
+        "policy_wide_frozen" => Box::new(
+            crate::policy::PolicyAi::with_weights(
+                crate::evolve::load_champion("evolved").unwrap_or_default(),
+            )
+            .with_frozen_contact(),
+        ),
+        "policy_wide" => Box::new(
+            crate::policy::PolicyAi::with_weights(
+                crate::evolve::load_champion("evolved").unwrap_or_default(),
+            )
+            .with_decision_features(),
+        ),
         "policy" => Box::new(crate::policy::PolicyAi::with_weights(
             crate::evolve::load_champion("evolved").unwrap_or_default(),
         )),
@@ -434,8 +672,614 @@ pub fn builtin_ai(name: &str, seed: u64) -> Box<dyn Ai> {
         "strategic_score" => Box::new(crate::strategic::StrategicAi::score_only_with_weights(
             crate::evolve::load_champion("evolved").unwrap_or_default(),
         )),
+        // Public-state opponent model. The searching seat, branch set and
+        // compute budget are identical to `strategic`; only confidently
+        // inferred rival lanes remain fixed through a projection instead of
+        // being reconstructed as blank adaptive planners.
+        "strategic_rivals" => {
+            let mut ai = crate::strategic::StrategicAi::with_weights(
+                crate::evolve::load_champion("evolved").unwrap_or_default(),
+            );
+            ai.model_rival_lanes = true;
+            Box::new(ai)
+        }
+        // Treatment for the doctrine axis: identical to `strategic` in
+        // weights, horizon, lane policy and priors, differing only in that
+        // a review which reaches the rollouts also projects the four play
+        // styles. Paired against `strategic` this isolates the second
+        // search axis and nothing else.
+        // Search-cadence doses. Everything else — weights, horizon, lane
+        // policy, priors — matches `strategic`, so a pair isolates how
+        // often the search runs and nothing about how well it runs.
+        "strategic_r20" => {
+            let mut ai = crate::strategic::StrategicAi::with_weights(
+                crate::evolve::load_champion("evolved").unwrap_or_default(),
+            );
+            ai.review_every = 20;
+            Box::new(ai)
+        }
+        "strategic_r10" => {
+            let mut ai = crate::strategic::StrategicAi::with_weights(
+                crate::evolve::load_champion("evolved").unwrap_or_default(),
+            );
+            ai.review_every = 10;
+            Box::new(ai)
+        }
+        // Compute-matched cadence: twice the reviews at half the horizon,
+        // so total simulated rounds per game match `strategic`. Paired
+        // against it, this separates "more decisions" from "more compute".
+        "strategic_r20h20" => {
+            let mut ai = crate::strategic::StrategicAi::with_weights(
+                crate::evolve::load_champion("evolved").unwrap_or_default(),
+            );
+            ai.review_every = 20;
+            ai.horizon = 20;
+            Box::new(ai)
+        }
+        // The other way to spend the doubling `strategic_r20` spends on
+        // frequency: same decisions, twice the lookahead. Run on the same
+        // maps, the pair asks where a marginal unit of search compute is
+        // worth more.
+        "strategic_h80" => {
+            let mut ai = crate::strategic::StrategicAi::with_weights(
+                crate::evolve::load_champion("evolved").unwrap_or_default(),
+            );
+            ai.horizon = 80;
+            Box::new(ai)
+        }
+        // The macro search with four times the compute, split across both
+        // of its axes: reviews every 20 turns instead of 40, projected 80
+        // rounds instead of 40. The strongest configuration measured —
+        // Promoted on a pre-registered 300-map run at a fresh seed:
+        // 56 mirrored maps to 17, sign p=0.0000, e-process 3.14e4 crossing
+        // at map 127, Wilson 50.8%..62.0% clearing parity — `promotion
+        // gate: PASS` under the unmodified gate. With the two earlier
+        // disjoint sets that is 540 independent maps, 109 to 32.
+        //
+        // `strategic` is deliberately unchanged: it is the frozen control
+        // for further search work, the way `advanced_v1` is for
+        // `advanced`, and this costs four times the macro-search compute,
+        // which batch callers should adopt on purpose rather than inherit.
+        "strategic_deep" => {
+            let mut ai = crate::strategic::StrategicAi::with_weights(
+                crate::evolve::load_champion("evolved").unwrap_or_default(),
+            );
+            ai.review_every = 20;
+            ai.horizon = 80;
+            Box::new(ai)
+        }
+        // The first strength-first budget above `strategic_deep`: preserve
+        // its full 80-round horizon and spend another doubling on the
+        // generation-14-favored review cadence. This is deliberately an
+        // evaluator-only 8x entrant until an independent promotion gate says
+        // that the extra compute buys strength.
+        "strategic_ultra" => {
+            let mut ai = crate::strategic::StrategicAi::with_weights(
+                crate::evolve::load_champion("evolved").unwrap_or_default(),
+            );
+            ai.review_every = 10;
+            ai.horizon = 80;
+            Box::new(ai)
+        }
+        // Frozen control for testing whether the committed AdvancedAi
+        // champion transfers through StrategicAi's 20x80 macro search. It
+        // retains the same optional value-net path but deliberately refuses
+        // best.json, so the genome is the only policy difference. The first
+        // transfer screen favored the champion 33-27 games and 5-2 map
+        // directions; retained evaluator-only for future artifact audits.
+        "strategic_deep_default" => {
+            let mut ai = crate::strategic::StrategicAi::with_weights(
+                crate::ai::Weights::default(),
+            );
+            ai.review_every = 20;
+            ai.horizon = 80;
+            Box::new(ai)
+        }
+        // Same promoted 20x80 search budget, but retain the time-to-terminal
+        // signal when several deep branches all win or all lose. Outcome
+        // classes remain lexicographic, so this cannot prefer an unresolved
+        // score proxy over a projected win or prefer a projected loss over an
+        // unresolved branch. Measured 28-32 games on 30 fresh mirrored maps;
+        // retained evaluator-only because it did not earn a disjoint gate.
+        "strategic_deep_tempo" => {
+            let mut ai = crate::strategic::StrategicAi::with_weights(
+                crate::evolve::load_champion("evolved").unwrap_or_default(),
+            );
+            ai.review_every = 20;
+            ai.horizon = 80;
+            ai.terminal_tempo = true;
+            Box::new(ai)
+        }
+        // Exact one- and two-action search over religious conversions before
+        // the ordinary controller takes the rest of the turn. Same promoted
+        // 20x80 macro budget as its control. Retained evaluator-only after it
+        // lost the disjoint gate 114-126 games and religious wins fell 81-65.
+        "strategic_deep_conversion" => {
+            let mut ai = crate::strategic::StrategicAi::with_weights(
+                crate::evolve::load_champion("evolved").unwrap_or_default(),
+            );
+            ai.review_every = 20;
+            ai.horizon = 80;
+            ai.religious_finish_search = true;
+            Box::new(ai)
+        }
+        // Outcome-only repair to the conversion treatment above. It searches
+        // the same one- and two-action religious space but acts only when the
+        // cloned result is an actual religious victory for this civilization.
+        // Retained evaluator-only after two exact 30-30 screens -- fallback
+        // and evolved genomes -- with all 60 map directions neutral and
+        // identical victory types within each pair.
+        "strategic_deep_checkmate" => {
+            let mut ai = crate::strategic::StrategicAi::with_weights(
+                crate::evolve::load_champion("evolved").unwrap_or_default(),
+            );
+            ai.review_every = 20;
+            ai.horizon = 80;
+            ai.religious_checkmate_search = true;
+            Box::new(ai)
+        }
+        // Static genome challengers for the strongest measured search
+        // budget. Unlike `strategic_doctrine`, these do not ask a noisy
+        // per-review rollout to choose a play style. Each applies one bounded
+        // Doctrine perturbation for the whole game, so a paired evaluation
+        // measures whether that policy itself is stronger.
+        "strategic_deep_expand" => {
+            let weights = crate::strategic::Doctrine::Expand
+                .apply(&crate::evolve::load_champion("evolved").unwrap_or_default());
+            let mut ai = crate::strategic::StrategicAi::with_weights(weights);
+            ai.review_every = 20;
+            ai.horizon = 80;
+            Box::new(ai)
+        }
+        "strategic_deep_consolidate" => {
+            let weights = crate::strategic::Doctrine::Consolidate
+                .apply(&crate::evolve::load_champion("evolved").unwrap_or_default());
+            let mut ai = crate::strategic::StrategicAi::with_weights(weights);
+            ai.review_every = 20;
+            ai.horizon = 80;
+            Box::new(ai)
+        }
+        "strategic_deep_militarize" => {
+            let weights = crate::strategic::Doctrine::Militarize
+                .apply(&crate::evolve::load_champion("evolved").unwrap_or_default());
+            let mut ai = crate::strategic::StrategicAi::with_weights(weights);
+            ai.review_every = 20;
+            ai.horizon = 80;
+            Box::new(ai)
+        }
+        // Transfer test for the policy-level evolutionary system: the league
+        // rates genomes on completed multiplayer outcomes. Apply its
+        // conservatively strongest settled generalist to the promoted search
+        // budget, falling back honestly when the committed snapshot is absent.
+        "strategic_deep_league" => {
+            let weights = league_generalist()
+                .map(|(_, weights)| weights)
+                .unwrap_or_default();
+            let mut ai = crate::strategic::StrategicAi::with_weights(weights);
+            ai.review_every = 20;
+            ai.horizon = 80;
+            Box::new(ai)
+        }
+        // The same opponent-model treatment on the strongest measured macro
+        // search, isolating whether better branch fidelity still helps when
+        // each review already spends the promoted 20x80 budget.
+        "strategic_deep_rivals" => {
+            let mut ai = crate::strategic::StrategicAi::with_weights(
+                crate::evolve::load_champion("evolved").unwrap_or_default(),
+            );
+            ai.review_every = 20;
+            ai.horizon = 80;
+            ai.model_rival_lanes = true;
+            Box::new(ai)
+        }
+        // Rollout search over what a city builds, rate-limited to one
+        // decision every fifteen turns so the whole feature costs about
+        // what the lane search costs.
+        // The same search judged by the trained value net rather than
+        // score share. It measured identically to `production` (109/240
+        // against 108/240), which is the evidence that a net over the same
+        // 25 features is a re-weighting of score share and not a second
+        // opinion. Kept so the comparison can be re-run.
+        "production_net" => Box::new(
+            crate::production::ProductionSearchAi::with_weights(
+                crate::evolve::load_champion("evolved").unwrap_or_default(),
+            )
+            .with_value_net(),
+        ),
+        "production" => Box::new(crate::production::ProductionSearchAi::with_weights(
+            crate::evolve::load_champion("evolved").unwrap_or_default(),
+        )),
+        // The frozen pre-promotion control: branches projected from a newly
+        // constructed planner, which is what every `strategic` number
+        // published before 2026-07-26 was measured on. Kept so those numbers
+        // stay reproducible now that the promoted behaviour is the default.
+        "strategic_cold" => {
+            let mut ai = crate::strategic::StrategicAi::with_weights(
+                crate::evolve::load_champion("evolved").unwrap_or_default(),
+            );
+            ai.continue_from_plan = false;
+            Box::new(ai)
+        }
+        // Retained as an explicit name for the promoted behaviour, which is
+        // now what `strategic` already does. Kept so the pre-registered runs
+        // that earned the promotion can be re-run by name.
+        "strategic_warm" => {
+            let mut ai = crate::strategic::StrategicAi::with_weights(
+                crate::evolve::load_champion("evolved").unwrap_or_default(),
+            );
+            ai.continue_from_plan = true;
+            Box::new(ai)
+        }
+        // The promoted deep budget, spent adaptively: project every branch
+        // in lockstep and stop at the first chunk where they separate,
+        // rather than always running the full count. Measured WORSE than
+        // its control over 120 mirrored maps -- 39.2% paired score,
+        // Elo-equivalent -76, sign p=0.0000, gate RETAIN strategic_deep --
+        // and kept as an entrant only so the result stays reproducible.
+        //
+        // There is deliberately no `strategic_adaptive` at the default
+        // horizon of 40. The branches there separate by a median 0.0045,
+        // under the 0.01 commitment margin, so the search never stops
+        // early and the entrant would be bit-identical to its control —
+        // an evaluation of it would measure nothing, which is what #380
+        // cost a 240-game run to discover.
+        "strategic_deep_adaptive" => {
+            let mut ai = crate::strategic::StrategicAi::with_weights(
+                crate::evolve::load_champion("evolved").unwrap_or_default(),
+            );
+            ai.review_every = 20;
+            ai.horizon = 80;
+            ai.adaptive_horizon = true;
+            Box::new(ai)
+        }
+        // The irreversible-Prophet prior removed, so the rollouts answer the
+        // reviews it was short-circuiting. It answers about half of all
+        // reviews and the search disagrees with it 85% of the time
+        // (`search_probe --priors`), which makes it the largest single
+        // restriction on this search that has ever been measured -- and an
+        // entirely untested one.
+        "strategic_noprophet" => {
+            let mut ai = crate::strategic::StrategicAi::with_weights(
+                crate::evolve::load_champion("evolved").unwrap_or_default(),
+            );
+            ai.trust_religious_prior = false;
+            Box::new(ai)
+        }
+        "strategic_rot20" => {
+            let mut ai = crate::strategic::StrategicAi::with_weights(
+                crate::evolve::load_champion("evolved").unwrap_or_default(),
+            );
+            ai.review_every = 20;
+            ai.rotate_lanes = true;
+            Box::new(ai)
+        }
+        "strategic_rot10" => {
+            let mut ai = crate::strategic::StrategicAi::with_weights(
+                crate::evolve::load_champion("evolved").unwrap_or_default(),
+            );
+            ai.review_every = 10;
+            ai.rotate_lanes = true;
+            Box::new(ai)
+        }
+        "strategic_nodefer" => {
+            let mut ai = crate::strategic::StrategicAi::with_weights(
+                crate::evolve::load_champion("evolved").unwrap_or_default(),
+            );
+            ai.defer_periodic_on_interrupt = false;
+            Box::new(ai)
+        }
+        "strategic_doctrine" => {
+            let mut ai = crate::strategic::StrategicAi::with_weights(
+                crate::evolve::load_champion("evolved").unwrap_or_default(),
+            );
+            ai.doctrine_search = true;
+            Box::new(ai)
+        }
         _ => Box::new(BasicAi::new()),
     }
+}
+
+/// Directory `builtin_ai` resolves trained artifacts from.
+pub const ARTIFACT_DIR: &str = "evolved";
+/// Evolved strategy genome written by `civvis evolve`.
+pub const CHAMPION_FILE: &str = "best.json";
+/// Distilled scalar value net written by `tools/train_valuenet.py`.
+pub const VALUENET_FILE: &str = "valuenet.json";
+
+/// One trained artifact a builtin name reads, and whether it loaded.
+///
+/// `definitional` separates the two ways a name depends on an artifact. A
+/// definitional artifact *is* the agent: without it `builtin_ai` returns a
+/// different agent under the same name. A non-definitional one only tunes
+/// the agent, so its absence leaves the name honest but the numbers
+/// untrained.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ArtifactStatus {
+    pub file: &'static str,
+    pub found: bool,
+    pub definitional: bool,
+}
+
+/// What a builtin name actually plays as once its artifacts are resolved.
+///
+/// `builtin_ai` falls back silently when a trained artifact is missing —
+/// correctly, because a missing file should not stop a game. What it must
+/// not do is let an evaluation record the result under the learned name: on
+/// a checkout with no `evolved/` directory, `neural` is `basic` and
+/// `policy` is `advanced`, so a run pitting them against `advanced`
+/// measures the scripted agent against itself and reports it as evidence
+/// about a learned one.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AgentProvenance {
+    /// The name the caller asked for.
+    pub requested: String,
+    /// Every artifact the name reads, in the order it reads them.
+    pub artifacts: Vec<ArtifactStatus>,
+    /// The agent that actually plays. Equals `requested` unless a
+    /// definitional artifact is missing.
+    pub effective: &'static str,
+}
+
+impl AgentProvenance {
+    /// True when the name promises more than the loaded artifacts deliver.
+    pub fn degraded(&self) -> bool {
+        self.effective != self.requested
+    }
+
+    /// True when some artifact the name reads did not load, whether or not
+    /// that changed which agent plays.
+    pub fn untrained(&self) -> bool {
+        self.artifacts.iter().any(|artifact| !artifact.found)
+    }
+
+    pub fn missing(&self) -> Vec<&'static str> {
+        self.artifacts
+            .iter()
+            .filter(|artifact| !artifact.found)
+            .map(|artifact| artifact.file)
+            .collect()
+    }
+
+    /// One reportable line, e.g.
+    /// `neural: plays as basic (missing valuenet.json, best.json)`.
+    pub fn line(&self) -> String {
+        let missing = self.missing();
+        if missing.is_empty() {
+            return match self.artifacts.is_empty() {
+                true => format!("{}: scripted, no artifacts required", self.requested),
+                false => format!("{}: loaded {}", self.requested, self.artifacts_list()),
+            };
+        }
+        let plays = match self.degraded() {
+            true => format!("plays as {}", self.effective),
+            false => format!("plays as {} with untrained defaults", self.requested),
+        };
+        format!("{}: {} (missing {})", self.requested, plays, missing.join(", "))
+    }
+
+    fn artifacts_list(&self) -> String {
+        self.artifacts
+            .iter()
+            .map(|artifact| artifact.file)
+            .collect::<Vec<_>>()
+            .join(", ")
+    }
+}
+
+/// Resolve what `builtin_ai(name, _)` will actually construct from `dir`.
+///
+/// Presence is decided by the same loaders the agents use, not by a stat:
+/// a `valuenet.json` that fails `ValueNet::valid` is rejected at load time,
+/// so reporting it as present would restate the bug it is meant to catch.
+pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
+    let champion = crate::evolve::load_champion(dir).is_some();
+    let net = crate::valuenet::ValueNet::load_width(dir, crate::evolve::FEATURE_WIDTH).is_some();
+    let genome = ArtifactStatus {
+        file: CHAMPION_FILE,
+        found: champion,
+        definitional: false,
+    };
+    let value = |definitional| ArtifactStatus {
+        file: VALUENET_FILE,
+        found: net,
+        definitional,
+    };
+    let league = league_generalist().is_some();
+    let (artifacts, effective) = match name {
+        // The genome *is* these two names; without it they are the stock
+        // scripted agent under a name that claims otherwise.
+        "evolved" => (
+            vec![ArtifactStatus {
+                definitional: true,
+                ..genome
+            }],
+            if champion { "evolved" } else { "advanced" },
+        ),
+        "advanced_evolved" => (
+            vec![ArtifactStatus {
+                definitional: true,
+                ..genome
+            }],
+            if champion {
+                "advanced_evolved"
+            } else {
+                "advanced"
+            },
+        ),
+        // NeuralAi needs the net to exist at all and drops all the way to
+        // the lightweight agent without it — the largest silent gap here.
+        "neural" => (
+            vec![genome, value(true)],
+            if net { "neural" } else { "basic" },
+        ),
+        "policy" => (
+            vec![genome, value(true)],
+            if net { "policy" } else { "advanced" },
+        ),
+        // The *wide* net is definitional and is a different artifact from
+        // the one `policy` wants: `load_width` refuses each to the other,
+        // so without a 34-wide net in place this is the scripted agent.
+        "policy_wide" | "policy_wide_frozen" => (
+            vec![
+                genome,
+                ArtifactStatus {
+                    file: VALUENET_FILE,
+                    found: crate::valuenet::ValueNet::load_width(
+                        dir,
+                        crate::decision_features::WIDTH,
+                    )
+                    .is_some(),
+                    definitional: true,
+                },
+            ],
+            if crate::valuenet::ValueNet::load_width(dir, crate::decision_features::WIDTH).is_some()
+            {
+                if name == "policy_wide" {
+                    "policy_wide"
+                } else {
+                    "policy_wide_frozen"
+                }
+            } else {
+                "advanced"
+            },
+        ),
+        // Strategic keeps its lane rollouts without a net; what it loses is
+        // the learned terminal evaluator, which is exactly the published
+        // `strategic_score` control.
+        "strategic" => (
+            vec![genome, value(true)],
+            if net { "strategic" } else { "strategic_score" },
+        ),
+        // The control refuses a net by construction, so it is never
+        // degraded — only untrained when the genome is absent.
+        "strategic_score" => (vec![genome], "strategic_score"),
+        "strategic_rivals" => (vec![genome, value(false)], "strategic_rivals"),
+        // Unlike `strategic`, its netless form has no separate published
+        // name to degrade *to*: the doctrine axis runs either way. A
+        // missing net therefore leaves it untrained rather than renamed,
+        // which the provenance line says in those words.
+        "strategic_doctrine" => (vec![genome, value(false)], "strategic_doctrine"),
+        "strategic_r20" => (vec![genome, value(false)], "strategic_r20"),
+        "strategic_r10" => (vec![genome, value(false)], "strategic_r10"),
+        "strategic_nodefer" => (vec![genome, value(false)], "strategic_nodefer"),
+        "strategic_r20h20" => (vec![genome, value(false)], "strategic_r20h20"),
+        "strategic_h80" => (vec![genome, value(false)], "strategic_h80"),
+        "strategic_rot20" => (vec![genome, value(false)], "strategic_rot20"),
+        "strategic_warm" => (vec![genome, value(false)], "strategic_warm"),
+        "strategic_cold" => (vec![genome, value(false)], "strategic_cold"),
+        "strategic_noprophet" => (vec![genome, value(false)], "strategic_noprophet"),
+        "strategic_deep_adaptive" => (vec![genome, value(false)], "strategic_deep_adaptive"),
+        // Same artifact dependencies as `strategic`: the genome tunes it,
+        // and the net is non-definitional because the search runs without
+        // one. There is no separate published netless name to degrade to.
+        "strategic_deep" => (vec![genome, value(false)], "strategic_deep"),
+        "strategic_ultra" => (vec![genome, value(false)], "strategic_ultra"),
+        // The frozen genome is in code; only the same optional value net read
+        // by `strategic_deep` remains in its provenance.
+        "strategic_deep_default" => (vec![value(false)], "strategic_deep_default"),
+        "strategic_deep_tempo" => (
+            vec![genome, value(false)],
+            "strategic_deep_tempo",
+        ),
+        "strategic_deep_conversion" => (
+            vec![genome, value(false)],
+            "strategic_deep_conversion",
+        ),
+        "strategic_deep_checkmate" => (
+            vec![genome, value(false)],
+            "strategic_deep_checkmate",
+        ),
+        "strategic_deep_expand" => (vec![genome, value(false)], "strategic_deep_expand"),
+        "strategic_deep_consolidate" => (vec![genome, value(false)], "strategic_deep_consolidate"),
+        "strategic_deep_militarize" => (vec![genome, value(false)], "strategic_deep_militarize"),
+        "strategic_deep_league" => (
+            vec![ArtifactStatus {
+                file: LEAGUE_SNAPSHOT_FILE,
+                found: league,
+                definitional: true,
+            }],
+            if league {
+                "strategic_deep_league"
+            } else {
+                "strategic_deep"
+            },
+        ),
+        "strategic_deep_rivals" => (vec![genome, value(false)], "strategic_deep_rivals"),
+        "strategic_rot10" => (vec![genome, value(false)], "strategic_rot10"),
+        // The genome tunes both its rollout policy and its scripted
+        // governor; it consults no net.
+        "production" => (vec![genome], "production"),
+        // The net is definitional: without it this is exactly `production`.
+        "production_net" => (
+            vec![genome, value(true)],
+            if net { "production_net" } else { "production" },
+        ),
+        "advanced" => (Vec::new(), "advanced"),
+        "advanced_lane_reachable" => (Vec::new(), "advanced_lane_reachable"),
+        "advanced_banking_dedication" => (Vec::new(), "advanced_banking_dedication"),
+        "advanced_measured_dedication" => (Vec::new(), "advanced_measured_dedication"),
+        "advanced_parallel_settlers" => (Vec::new(), "advanced_parallel_settlers"),
+        "advanced_blind_to_leaders" => (Vec::new(), "advanced_blind_to_leaders"),
+        "advanced_counter_in_lane" => (Vec::new(), "advanced_counter_in_lane"),
+        "advanced_counter_stand_down" => (Vec::new(), "advanced_counter_stand_down"),
+        "advanced_early_score_alarm" => (Vec::new(), "advanced_early_score_alarm"),
+        "advanced_early_score_build" => (Vec::new(), "advanced_early_score_build"),
+        // The genome is definitional here for the same reason it is for
+        // `advanced_evolved`: without it this is the stock agent with the
+        // denial layer off, which is a different measurement entirely.
+        "advanced_evolved_blind" => (
+            vec![ArtifactStatus {
+                definitional: true,
+                ..genome
+            }],
+            if champion {
+                "advanced_evolved_blind"
+            } else {
+                "advanced_blind_to_leaders"
+            },
+        ),
+        "advanced_civ_blind" => (Vec::new(), "advanced_civ_blind"),
+        "advanced_settler_commit" => (Vec::new(), "advanced_settler_commit"),
+        "advanced_food_first" => (Vec::new(), "advanced_food_first"),
+        "advanced_v1" => (Vec::new(), "advanced_v1"),
+        "advanced_relief_scoped" => (Vec::new(), "advanced_relief_scoped"),
+        "random" => (Vec::new(), "random"),
+        // `builtin_ai` answers every other name with the lightweight agent.
+        "basic" => (Vec::new(), "basic"),
+        _ => (Vec::new(), "basic"),
+    };
+    AgentProvenance {
+        requested: name.to_string(),
+        artifacts,
+        effective,
+    }
+}
+
+/// Provenance for a whole entrant list, in the order given.
+pub fn builtin_provenances(names: &[&str], dir: &str) -> Vec<AgentProvenance> {
+    names
+        .iter()
+        .map(|name| builtin_provenance(name, dir))
+        .collect()
+}
+
+/// Distinct requested names that resolve to the same agent, which makes any
+/// difference between them noise. Returns `(first, second, shared agent)`.
+pub fn collapsed_entrants(names: &[&str], dir: &str) -> Vec<(String, String, &'static str)> {
+    let resolved = builtin_provenances(names, dir);
+    let mut out = Vec::new();
+    for (index, left) in resolved.iter().enumerate() {
+        for right in resolved.iter().skip(index + 1) {
+            if left.requested != right.requested && left.effective == right.effective {
+                out.push((
+                    left.requested.clone(),
+                    right.requested.clone(),
+                    left.effective,
+                ));
+            }
+        }
+    }
+    out
 }
 
 pub struct TourneyCfg {
@@ -609,7 +1453,7 @@ where
                 |winner| game.players[winner].civ.clone(),
             ),
             game.victory_type.clone().unwrap_or_default(),
-            game.turn,
+            game.reported_turn(),
         )
     });
 
@@ -773,14 +1617,231 @@ pub fn leaderboard(pool: &EloPool) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        expected, scheduled_seats, seat_schedule, win_shares, EloPool, RatedPlayer, RatingKey,
-        ELO_SCHEMA_VERSION,
+        builtin_ai, builtin_provenance, collapsed_entrants, expected, league_generalist,
+        scheduled_seats, seat_schedule, win_shares, EloPool, RatedPlayer, RatingKey, BUILTIN_AIS,
+        CHAMPION_FILE, ELO_SCHEMA_VERSION, EVAL_ONLY_AIS, VALUENET_FILE,
     };
     use crate::rng::Rng;
     use std::collections::BTreeMap;
     use std::fs;
     use std::sync::{Arc, Barrier};
     use std::time::{SystemTime, UNIX_EPOCH};
+
+    /// A checkout with no trained artifacts is the default state of this
+    /// repository — `evolved/` is generated and ignored — so every learned
+    /// name must report the scripted agent it really is.
+    #[test]
+    fn a_bare_checkout_reports_the_agent_that_actually_plays() {
+        let dir = "target/test-provenance-bare";
+        let _ = fs::remove_dir_all(dir);
+        fs::create_dir_all(dir).unwrap();
+        for (name, effective) in [
+            ("evolved", "advanced"),
+            ("advanced_evolved", "advanced"),
+            ("neural", "basic"),
+            ("policy", "advanced"),
+            ("strategic", "strategic_score"),
+        ] {
+            let resolved = builtin_provenance(name, dir);
+            assert_eq!(resolved.effective, effective, "{name}");
+            assert!(resolved.degraded(), "{name}");
+            assert!(resolved.untrained(), "{name}");
+            assert!(resolved.line().contains("missing"), "{}", resolved.line());
+        }
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    /// The scripted names promise nothing they load, so they are never
+    /// degraded and never untrained — including on a bare checkout.
+    #[test]
+    fn scripted_names_are_never_degraded() {
+        let dir = "target/test-provenance-scripted";
+        let _ = fs::remove_dir_all(dir);
+        fs::create_dir_all(dir).unwrap();
+        for name in ["advanced", "advanced_v1", "basic", "random"] {
+            let resolved = builtin_provenance(name, dir);
+            assert_eq!(resolved.effective, name);
+            assert!(!resolved.degraded(), "{name}");
+            assert!(!resolved.untrained(), "{name}");
+        }
+        // The evaluator-only control refuses a net by construction, so a
+        // missing net is not a degradation for it — only the genome is.
+        let control = builtin_provenance("strategic_score", dir);
+        assert_eq!(control.effective, "strategic_score");
+        assert!(!control.degraded());
+        assert!(control.untrained());
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    /// Presence is decided by the loaders the agents use. A file that exists
+    /// but cannot load leaves the agent scripted, so provenance must not
+    /// call it found.
+    #[test]
+    fn an_unloadable_artifact_is_not_a_loaded_one() {
+        let dir = "target/test-provenance-corrupt";
+        let _ = fs::remove_dir_all(dir);
+        fs::create_dir_all(dir).unwrap();
+        fs::write(format!("{dir}/{VALUENET_FILE}"), "{\"sizes\":[1,2]}").unwrap();
+        fs::write(format!("{dir}/{CHAMPION_FILE}"), "not json").unwrap();
+        let resolved = builtin_provenance("neural", dir);
+        assert_eq!(resolved.effective, "basic");
+        assert_eq!(resolved.missing(), vec![CHAMPION_FILE, VALUENET_FILE]);
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    /// Two entrants that resolve to one agent make their difference noise.
+    #[test]
+    fn entrants_that_collapse_to_one_agent_are_reported() {
+        let dir = "target/test-provenance-collapse";
+        let _ = fs::remove_dir_all(dir);
+        fs::create_dir_all(dir).unwrap();
+        let collapsed = collapsed_entrants(&["policy", "advanced", "basic"], dir);
+        assert_eq!(
+            collapsed,
+            vec![("policy".to_string(), "advanced".to_string(), "advanced")]
+        );
+        assert!(collapsed_entrants(&["advanced", "basic", "random"], dir).is_empty());
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    /// Every selectable entrant name must have an explicit provenance row,
+    /// so adding a builtin cannot quietly inherit the catch-all. The
+    /// catch-all reports "no artifacts required", which for a learned
+    /// entrant is a false statement rather than a missing one — exactly
+    /// what this module exists to prevent, and it happened once
+    /// (`policy_wide`) before this assertion was tightened.
+    #[test]
+    fn every_selectable_name_resolves_to_itself_or_a_named_fallback() {
+        let dir = "target/test-provenance-names";
+        let _ = fs::remove_dir_all(dir);
+        fs::create_dir_all(dir).unwrap();
+        for name in BUILTIN_AIS.iter().chain(EVAL_ONLY_AIS.iter()) {
+            let resolved = builtin_provenance(name, dir);
+            assert!(
+                BUILTIN_AIS.contains(&resolved.effective)
+                    || EVAL_ONLY_AIS.contains(&resolved.effective),
+                "{name} resolved to unknown {}",
+                resolved.effective
+            );
+            // Only the genuinely scripted agents may report no artifacts.
+            // Anything else reaching that state fell through to the
+            // catch-all and is claiming to need nothing while quietly
+            // needing a net.
+            const SCRIPTED: [&str; 17] = [
+                "advanced",
+                "advanced_blind_to_leaders",
+                "advanced_counter_in_lane",
+                "advanced_counter_stand_down",
+                "advanced_early_score_alarm",
+                "advanced_early_score_build",
+                "advanced_settler_commit",
+                "advanced_banking_dedication",
+                "advanced_civ_blind",
+                "advanced_food_first",
+                "advanced_lane_reachable",
+                "advanced_measured_dedication",
+                "advanced_parallel_settlers",
+                "advanced_relief_scoped",
+                "advanced_v1",
+                "basic",
+                "random",
+            ];
+            assert!(
+                !resolved.artifacts.is_empty() || SCRIPTED.contains(name),
+                "{name} has no provenance row and inherited the catch-all"
+            );
+            // The whitelist above is a list of names, so it grows every time
+            // a scripted entrant is added and stops discriminating as it
+            // does. This does not: the catch-all answers `basic`, so any
+            // name that needs no artifacts and still does not resolve to
+            // itself reached that arm rather than a row of its own.
+            if resolved.artifacts.is_empty() {
+                assert_eq!(
+                    resolved.effective, *name,
+                    "{name} needs no artifacts yet resolves to {}, which only \
+                     the catch-all does",
+                    resolved.effective
+                );
+            }
+        }
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn static_doctrine_challengers_construct_searching_agents() {
+        for name in [
+            "strategic_deep_expand",
+            "strategic_deep_consolidate",
+            "strategic_deep_militarize",
+        ] {
+            let ai = builtin_ai(name, 1);
+            assert_eq!(ai.review_census(), Some(Default::default()), "{name}");
+        }
+    }
+
+    #[test]
+    fn terminal_tempo_challenger_constructs_a_searching_agent() {
+        let ai = builtin_ai("strategic_deep_tempo", 1);
+        assert_eq!(ai.review_census(), Some(Default::default()));
+        let provenance = builtin_provenance("strategic_deep_tempo", "unused");
+        assert_eq!(provenance.effective, "strategic_deep_tempo");
+        assert!(!provenance.degraded());
+    }
+
+    #[test]
+    fn ultra_challenger_constructs_a_searching_agent() {
+        let ai = builtin_ai("strategic_ultra", 1);
+        assert_eq!(ai.review_census(), Some(Default::default()));
+        let provenance = builtin_provenance("strategic_ultra", "unused");
+        assert_eq!(provenance.effective, "strategic_ultra");
+        assert!(!provenance.degraded());
+    }
+
+    #[test]
+    fn deep_default_control_refuses_the_champion_artifact() {
+        let ai = builtin_ai("strategic_deep_default", 1);
+        assert_eq!(ai.review_census(), Some(Default::default()));
+        let provenance = builtin_provenance("strategic_deep_default", "unused");
+        assert_eq!(provenance.effective, "strategic_deep_default");
+        assert!(!provenance.degraded());
+        assert!(
+            provenance
+                .artifacts
+                .iter()
+                .all(|artifact| artifact.file != CHAMPION_FILE),
+            "the control must never resolve best.json"
+        );
+    }
+
+    #[test]
+    fn religious_conversion_challenger_constructs_a_searching_agent() {
+        let ai = builtin_ai("strategic_deep_conversion", 1);
+        assert_eq!(ai.review_census(), Some(Default::default()));
+        let provenance = builtin_provenance("strategic_deep_conversion", "unused");
+        assert_eq!(provenance.effective, "strategic_deep_conversion");
+        assert!(!provenance.degraded());
+    }
+
+    #[test]
+    fn religious_checkmate_challenger_constructs_a_searching_agent() {
+        let ai = builtin_ai("strategic_deep_checkmate", 1);
+        assert_eq!(ai.review_census(), Some(Default::default()));
+        let provenance = builtin_provenance("strategic_deep_checkmate", "unused");
+        assert_eq!(provenance.effective, "strategic_deep_checkmate");
+        assert!(!provenance.degraded());
+    }
+
+    #[test]
+    fn league_genome_challenger_loads_a_win_selected_searching_agent() {
+        let (name, _) = league_generalist().expect("committed league has a generalist genome");
+        assert_eq!(name, "g20-21", "update the documented transfer candidate");
+        let ai = builtin_ai("strategic_deep_league", 1);
+        assert_eq!(ai.review_census(), Some(Default::default()));
+        let provenance = builtin_provenance("strategic_deep_league", "unused");
+        assert_eq!(provenance.effective, "strategic_deep_league");
+        assert!(!provenance.degraded());
+        assert!(!provenance.untrained());
+    }
 
     fn player(name: &str, leader: &str, civ: &str, score: i64, won: bool) -> RatedPlayer {
         RatedPlayer::new(name, leader, civ, score, won)

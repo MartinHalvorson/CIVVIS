@@ -15,14 +15,43 @@ use std::time::{Duration, Instant};
 use serde_json::{json, Value};
 
 use crate::ai::{AdvancedAi, Ai, BasicAi};
-use crate::game::{Action, Game, GameOptions, VictoryConditions};
-use crate::rules::Rules;
+use crate::game::{
+    Action, Game, GameOptions, LeaderPool, PlayOnMode, VictoryConditions, CIV6_LEADER_POOL,
+};
 use crate::obs::{observation, observation_player_view, observation_spectator};
+use crate::rules::Rules;
 use crate::setup::{
-    GameSpeed, MapPoles, MapScript, MapSize, MapTopology, CIV6_GAME_SPEEDS, CIV6_MAP_SCRIPTS,
-    CIV6_MAP_SIZES, MAP_POLES, MAP_TOPOLOGIES,
+    start_era_from_id, start_era_id, BaseRuleset, GameSpeed, MapPoles, MapScript, MapSize,
+    MapTopology, BASE_RULESETS, CIV6_GAME_SPEEDS, CIV6_MAP_SCRIPTS, CIV6_MAP_SIZES, MAP_POLES,
+    MAP_TOPOLOGIES, START_ERAS,
 };
 use crate::Pos;
+
+/// The published browser build's request router, which answers these same
+/// endpoints inside the page instead of over a socket. A child module so it
+/// can reach the private helpers below rather than widening them; `cfg`-gated
+/// so no native build compiles it.
+#[cfg(target_arch = "wasm32")]
+#[path = "wasm.rs"]
+pub mod wasm;
+
+/// Which runtime is answering, so a long-lived page can notice it is talking
+/// to a different one than it booted against and reload.
+///
+/// A native build answers with its process. `wasm32-unknown-unknown` has no
+/// process to ask about — `std::process::id()` panics outright there — and a
+/// browser tab is never handed off to a successor runtime mid-game, so the
+/// published build is always the same one identity.
+fn process_identity() -> u32 {
+    #[cfg(target_arch = "wasm32")]
+    {
+        1
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        std::process::id()
+    }
+}
 
 const EMBEDDED_INDEX: &str = include_str!("../web/index.html");
 const EMBEDDED_CINEMATIC_3D: &str = include_str!("../web/cinematic3d.js");
@@ -35,6 +64,8 @@ const EMBEDDED_NATURAL_WONDER_ATLAS: &[u8] =
 const EMBEDDED_WORLD_WONDER_ATLAS: &[u8] =
     include_bytes!("../web/assets/world-wonder-atlas.png");
 const EMBEDDED_MOUNTAIN_ATLAS: &[u8] = include_bytes!("../web/assets/mountain-atlas.png");
+const EMBEDDED_HIDDEN_MAP_MONSTERS: &[u8] =
+    include_bytes!("../web/assets/hidden-map-monsters.png");
 
 /// The agents that exist in every build, whether or not a league snapshot is
 /// on disk, with the handle the leaderboards give them. `make_send_ai`
@@ -53,6 +84,13 @@ pub struct Params {
     pub width: i32,
     pub height: i32,
     pub seed: u64,
+    /// Which published game's rules the world is played by — the first thing
+    /// the lobby asks, because it decides what every later answer means.
+    pub base_ruleset: BaseRuleset,
+    /// How far into history the world opens, as an era of
+    /// [`crate::rules::ERA_NAMES`]. Only a rung the rules have a tree for ever
+    /// reaches here; see [`new_game_params`].
+    pub start_era: usize,
     pub map_script: MapScript,
     /// What shape the world is, chosen independently of what fills it.
     pub map_topology: MapTopology,
@@ -67,15 +105,14 @@ pub struct Params {
     pub difficulty: String,
     pub speed: String,
     pub teams: Vec<Option<usize>>,
+    /// Roster used for every major seat the setup did not name explicitly.
+    pub leader_pool: LeaderPool,
     /// Civilizations for the leading major seats, in seat order — seat 0 is
     /// the person's own. Empty is the stock roster; see `Game::seat_civs`.
     pub civs: Vec<String>,
     /// A lifecycle supervisor, rather than the browser countdown, owns the
     /// transition after a completed spectator game.
     pub supervised: bool,
-    /// Requested result-screen duration. Five seconds is the minimum; a
-    /// supervisor may ask for longer when its handoff needs more time.
-    pub restart_ms: u64,
     /// League directory to seat major players from (`civvis play --league`):
     /// each civ gets its best-rated strategies and the HUD shows per-player
     /// elo. `None` still annotates elo when a `league/` dir exists, because
@@ -104,15 +141,23 @@ pub struct Session {
     chronicle: ChronicleState,
     /// Manual new-game handoff consumed by the external spectator supervisor.
     /// The current process stays available until the requested runtime is ready.
-    supervisor_request: Option<Value>,
     /// Setup selected while this world is running. It is inert until the next
     /// automatic or explicitly requested simulation boundary.
-    next_game_params: Option<Params>,
+    /// Setup for the next world carried in from launch flags by a resume.
+    /// The live queue belongs to `Shared`; this only hands the resumed value
+    /// across at construction, and is taken exactly once.
+    resumed_next_game_params: Option<Params>,
     /// League roster used to label seats with player handles and elo (and,
     /// with `--league`, to choose who plays each civ).
     league: Option<crate::league::League>,
     /// Per-seat index into `league.strategies` for rated major seats.
     seat_strategy: Vec<Option<usize>>,
+    /// Whether the roster above actually *chose* who plays each civ. Without
+    /// `--league` it did not: every major runs the default hierarchical agent
+    /// and each seat points at the entrant the league rates that agent as, so
+    /// the rating is the seat's own but the handle is one name repeated down
+    /// the table. Such a seat keeps its generated per-seat name instead.
+    seat_from_roster: bool,
     /// The strategies auto-play can hand the human seat to. `league` above is
     /// the roster this game is *rated* against and is often absent; every
     /// build ships the committed snapshot under `data/league`, so the choice
@@ -134,6 +179,15 @@ pub struct Session {
     /// Who is playing each human seat: a player registered when this game
     /// began, never one of the agents already in the roster.
     human_players: BTreeMap<usize, SeatPlayer>,
+    /// What every agent at this table decided, and why.
+    ///
+    /// One journal for the whole session, handed to each seat, so a turn is
+    /// one ordered account rather than one log per civilization. It is live
+    /// only in spectate mode: nobody is watching a headless tournament, and a
+    /// silent journal costs a branch. A restored save keeps the record it
+    /// accumulates from the turn it resumes — the reasoning behind a decision
+    /// is not part of the game state and cannot be recovered from one.
+    journal: crate::reasoning::Journal,
 }
 
 /// The identity of a person playing a seat.
@@ -360,6 +414,13 @@ fn completed_buildings(game: &Game) -> BTreeSet<String> {
         })
         .cloned()
         .collect()
+}
+
+/// One decimal place, the precision every accumulating figure in the
+/// observation is reported at. A progress bar cannot show more, and the extra
+/// digits are pure bytes on a document that is already the bottleneck.
+fn round_tenth(v: f64) -> f64 {
+    (v * 10.0).round() / 10.0
 }
 
 fn population_milestone(population: i32) -> i32 {
@@ -773,7 +834,31 @@ fn chronicle_world_events(
 /// time whatever the player count. `0` means unlimited: no artificial wait at
 /// all, the simulation runs as fast as the machine allows.
 pub struct Shared {
+    /// The active world's identity without taking the simulation lock. This
+    /// keeps a successor probe from queuing behind an AI turn just to learn
+    /// whether the supervised process has changed.
+    pub current_seed: AtomicU64,
     pub session: Mutex<Session>,
+    /// A restart the viewer asked for, and the settings the live world was
+    /// started from, both kept off the simulation lock for exactly the reason
+    /// `current_seed` is.
+    ///
+    /// Pressing Restart used to take `session`, so it queued behind whatever
+    /// AI turn was in flight. On the live exhibition that is not a theoretical
+    /// wait: a late turn on a 74x46 six-player world held the lock for over
+    /// two minutes, `/state` and `/status` both timed out, and the page — which
+    /// gives up at fifteen seconds — cleared its veil and flashed an error
+    /// while the supervisor, whose only view of the request is that same
+    /// `/state`, never learned a restart had been asked for at all. Neither
+    /// mutex here is ever held across anything but a field read.
+    supervisor_request: Mutex<Option<Value>>,
+    live_params: Mutex<Params>,
+    /// Setup the viewer has chosen for the next world. Here for the same
+    /// reason the request above is: it is written by a `change` on the setup
+    /// panel, and `startNewSimulation` waits for that write before it asks for
+    /// the restart — so a settings control that queued behind an AI turn put
+    /// the whole restart behind it too.
+    next_game_params: Mutex<Option<Params>>,
     pub pace_ms: AtomicU64,
     pub paused: AtomicBool,
     pub restart_in: AtomicU64, // ms until auto-restart; u64::MAX = not pending
@@ -807,6 +892,9 @@ pub struct Shared {
 struct SpectatorFrame {
     seed: u64,
     turn: u32,
+    /// A victory may be decided by a seat in the middle of a round, without
+    /// advancing `turn`. That terminal state is still a distinct frame.
+    finished: bool,
 }
 
 /// One page, tracked apart from every other page.
@@ -865,6 +953,10 @@ struct FrameDelivery {
     /// record. A seat is retired six seconds after its page stops asking; the
     /// audit is for the whole run.
     missed: u64,
+    /// Every turn `POST /autoplay` has simulated since this server started.
+    /// The denominator `missed` is otherwise missing: see
+    /// [`FrameDelivery::turns_simulated_without_a_frame`].
+    autoplayed: u64,
 }
 
 impl FrameDelivery {
@@ -933,6 +1025,34 @@ impl FrameDelivery {
         self.missed += lost;
     }
 
+    /// Turns a single request simulated that no page could ever have drawn.
+    ///
+    /// Everything above counts a *viewer's* gaps: a page says which turn it
+    /// painted, and the turns between that and its previous acknowledgement
+    /// were simulated behind its back. Auto-play never has that conversation.
+    /// The browser asks for `n` turns over `POST /autoplay`, the engine plays
+    /// all of them, and exactly one state comes back — the one after the last.
+    /// The other `n - 1` were played, were never serialised, and reached no
+    /// screen. Nobody missed them; there was never a frame to miss.
+    ///
+    /// So they are counted here, at the only place that knows: the response is
+    /// one state, and `played` says how many turns went into it. `played - 1`
+    /// is the shortfall exactly, and it is the difference between a promise
+    /// somebody remembered to keep in the client and one this server can be
+    /// held to. `/status` reported a clean `frames_missed: 0` through a run
+    /// that dropped nine turns in ten, because the only thing it knew how to
+    /// count was an acknowledgement auto-play does not send.
+    ///
+    /// The turns are totalled as well as the shortfall, for the reason
+    /// `frames_painted` exists: no misses is not the same claim as no misses
+    /// *out of something*. A run of two hundred clean turns and a game where
+    /// auto-play was never pressed both report zero, and only the total tells
+    /// them apart.
+    fn turns_simulated_without_a_frame(&mut self, played: usize) {
+        self.autoplayed += played as u64;
+        self.missed += played.saturating_sub(1) as u64;
+    }
+
     /// How long the stepper must still hold this turn: the longest wait owed
     /// to any attached viewer that has not acknowledged painting its complete
     /// snapshot yet. Delivery alone is not enough: a socket is not a screen.
@@ -951,7 +1071,22 @@ impl FrameDelivery {
     }
 }
 
-const MIN_RESTART_MS: u64 = 5_000;
+/// The result screen counts down for ten seconds before the next world. Not
+/// "at least ten", not "ten by default" — ten.
+///
+/// Ten is the whole product's one answer to "how long does a finished game
+/// stay up", and the browser's own countdown on a single-player finale is the
+/// same constant.
+///
+/// **This deliberately has no input.** It used to be `--restart-ms`, floored
+/// by the server and fed by the supervisor's `--cooldown`, and the number the
+/// viewer read was whichever value had won that chain. Twice in one evening
+/// the exhibition put a countdown on screen that nobody had chosen — first two
+/// minutes, then, once a ceiling was added, exactly that ceiling. A dial whose
+/// only effect is a number on a screen, and which every layer can override, is
+/// not a setting; it is a way for the screen to be wrong. `--restart-ms` and
+/// `--cooldown` are now accepted and ignored.
+const RESULT_COUNTDOWN_MS: u64 = 10_000;
 /// How long after its last request a viewer is still considered present, and
 /// so still owed a frame for every turn.
 ///
@@ -977,8 +1112,51 @@ const UNLIMITED_BREATH_MS: u64 = 100;
 /// Minor civilizations and barbarians take a quarter of a major's slice.
 const MINOR_SHARE: f64 = 0.25;
 
-fn final_countdown_ms(requested: u64) -> u64 {
-    requested.max(MIN_RESTART_MS)
+/// Ten seconds, whatever anybody asked for. Kept as a function so the two
+/// places that arm the countdown cannot each grow their own idea of it.
+fn final_countdown_ms() -> u64 {
+    RESULT_COUNTDOWN_MS
+}
+
+/// Give an unrated AI seat a compact, deterministic handle. The first half of
+/// the handle follows its published grand strategy; the second distinguishes
+/// seats pursuing the same plan. A strategy reassessment may therefore rename
+/// an unrated agent, which makes the player column describe what is actually
+/// running now instead of preserving a stale opening label.
+fn generated_ai_name(seed: u64, pid: usize, strategy: Option<&str>) -> String {
+    const ROLES: [&str; 12] = [
+        "Architect",
+        "Pathfinder",
+        "Steward",
+        "Visionary",
+        "Tactician",
+        "Builder",
+        "Navigator",
+        "Marshal",
+        "Sage",
+        "Keeper",
+        "Pioneer",
+        "Planner",
+    ];
+    let prefixes = match strategy {
+        Some("expansion") => ["Frontier", "Horizon", "Homestead", "Border"],
+        Some("science") => ["Quantum", "Stellar", "Orbital", "Theory"],
+        Some("culture") => ["Mosaic", "Lyric", "Gallery", "Festival"],
+        Some("religion" | "religious") => ["Pilgrim", "Sacred", "Temple", "Oracle"],
+        Some("diplomacy" | "diplomatic") => ["Concord", "Treaty", "Envoy", "Summit"],
+        Some("conquest" | "domination") => ["Vanguard", "Iron", "Siege", "Legion"],
+        Some("recovery") => ["Phoenix", "Bastion", "Rally", "Reserve"],
+        _ => ["Adaptive", "Strategic", "Resolute", "Calculated"],
+    };
+    let seed_mix = (seed ^ (seed >> 32)) as usize;
+    let prefix = prefixes[(pid + seed_mix) % prefixes.len()];
+    let role = ROLES[(pid / prefixes.len() + seed_mix / prefixes.len()) % ROLES.len()];
+    let cycle = pid / (prefixes.len() * ROLES.len());
+    if cycle == 0 {
+        format!("{prefix}{role}")
+    } else {
+        format!("{prefix}{role}{}", cycle + 1)
+    }
 }
 
 /// One seat's slice of the turn budget. Seats divide it in proportion to the
@@ -1034,6 +1212,7 @@ impl Shared {
                 SpectatorFrame {
                     seed: session.game.seed,
                     turn: session.game.turn,
+                    finished: session.game.winner.is_some(),
                 }
             };
             if current != held {
@@ -1068,8 +1247,10 @@ impl Shared {
     /// one reported drawing, and how many pages are watching. The second reads
     /// the first: no painted turn at all means nobody was watching, which is a
     /// different thing from a promise being kept. The third says how many
-    /// pages that "no turns missed" is a promise to.
-    fn frame_audit(&self) -> (u64, Option<u32>, usize) {
+    /// pages that "no turns missed" is a promise to. The fourth is auto-play's
+    /// own denominator: turns it has simulated, so that its zero can be told
+    /// apart from a game where nobody ever pressed it.
+    fn frame_audit(&self) -> (u64, Option<u32>, usize, u64) {
         let mut delivery = self.frame_delivery.lock().unwrap();
         delivery.retire_departed(Instant::now());
         let missed = delivery.missed;
@@ -1078,7 +1259,7 @@ impl Shared {
             .values()
             .filter_map(|seat| seat.painted.map(|frame| frame.turn))
             .max();
-        (missed, painted, delivery.seats.len())
+        (missed, painted, delivery.seats.len(), delivery.autoplayed)
     }
 
     /// Replace the tile array in `o` with just the tiles that have changed
@@ -1158,6 +1339,85 @@ impl Shared {
     /// turn-bound surface must complete one shared-snapshot render before the
     /// next turn begins. With no viewer inside `VIEWER_ACTIVE` there is
     /// nothing to wait for and an unattended exhibition still runs flat out.
+    /// Ask the supervisor to replace this process with a new simulation.
+    ///
+    /// Deliberately touches nothing the AI holds. The whole point of the
+    /// control is to get out of the world that is running, so it cannot be the
+    /// one request that waits on it: see the `supervisor_request` field.
+    fn request_supervised_new_game(&self, request: &Value) -> Result<(), String> {
+        let base = self.live_params.lock().unwrap().clone();
+        if !base.supervised {
+            return Err("fresh-code launches require the spectator supervisor".into());
+        }
+        let mode = request["mode"]
+            .as_str()
+            .ok_or_else(|| "mode must be restart or fresh_code".to_string())?;
+        if mode != "restart" && mode != "fresh_code" {
+            return Err("mode must be restart or fresh_code".into());
+        }
+
+        let paused = request["paused"]
+            .as_bool()
+            .unwrap_or_else(|| self.paused.load(Ordering::Relaxed));
+        let mut params = new_game_params(&base, request);
+        params.spectate = true;
+        *self.supervisor_request.lock().unwrap() = Some(json!({
+            "mode": mode,
+            "server_instance": process_identity(),
+            "paused": paused,
+            "settings": simulation_settings(&params),
+        }));
+        // The world on screen is being replaced. Stop stepping it rather than
+        // spending the handoff computing turns nobody will ever be shown.
+        self.paused.store(true, Ordering::Relaxed);
+        Ok(())
+    }
+
+    /// Queue setup controls for the next world without changing this one.
+    fn stage_next_game_settings(&self, request: &Value) {
+        let base = self.live_params.lock().unwrap().clone();
+        *self.next_game_params.lock().unwrap() = Some(staged_next_game_params(&base, request));
+    }
+
+    /// What the next world will be started from, as the setup panel reads it.
+    fn staged_next_game_settings(&self) -> Value {
+        self.next_game_params
+            .lock()
+            .unwrap()
+            .as_ref()
+            .map(simulation_settings)
+            .unwrap_or(Value::Null)
+    }
+
+    /// Hand the queue to the world that is about to consume it.
+    fn take_next_game_params(&self) -> Option<Params> {
+        self.next_game_params.lock().unwrap().take()
+    }
+
+    /// The request the supervisor is being asked to act on, if any.
+    fn pending_new_game_request(&self) -> Option<Value> {
+        self.supervisor_request.lock().unwrap().clone()
+    }
+
+    /// Adopt the settings a freshly started world runs under, so the next
+    /// new-game request can be normalized against them without the lock.
+    fn adopt_live_params(&self, params: &Params) {
+        *self.live_params.lock().unwrap() = params.clone();
+    }
+
+    /// Whether any viewer still present is owed `frame`.
+    ///
+    /// The same question `wait_for_turn_frame` blocks on, asked once. The
+    /// stepper uses it to re-confirm, under the frame gate, that the answer it
+    /// waited for outside the gate is still true.
+    fn frame_outstanding(&self, frame: SpectatorFrame) -> bool {
+        self.frame_delivery
+            .lock()
+            .unwrap()
+            .wait_remaining(frame, Instant::now())
+            .is_some()
+    }
+
     fn wait_for_turn_frame(&self, frame: SpectatorFrame) {
         let mut delivery = self.frame_delivery.lock().unwrap();
         loop {
@@ -1242,16 +1502,29 @@ impl Session {
     fn load_roster(league: Option<&crate::league::League>) -> Option<crate::league::League> {
         match league {
             Some(l) => Some(l.clone()),
-            None => crate::league::load_league("data/league"),
+            None => crate::league::shipped_league(),
         }
     }
 
-    /// The roster named by `--league`, else a best-effort `league/` load
-    /// purely for elo labels.
+    /// The roster named by `--league`, else a best-effort load purely for
+    /// elo labels: the runtime `league/` this checkout records into, then the
+    /// snapshot compiled into every build. Only the named roster is ever
+    /// written to, so a labelled game still rates nothing — but it does say
+    /// what the league already knows about the agent in each seat, which used
+    /// to require passing `--league` to see at all.
+    ///
+    /// The last step is `league::shipped_league` rather than a read of
+    /// `data/league`, because a directory is resolved against the working
+    /// directory and a rating must not depend on where the binary was started
+    /// from. Reading that path is what left every seat at a provisional 1500
+    /// anywhere but a checkout root.
     fn load_params_league(params: &Params) -> (Option<crate::league::League>, bool) {
         match &params.league_dir {
             Some(dir) => (crate::league::load_league(dir), true),
-            None => (crate::league::load_league("league"), false),
+            None => (
+                crate::league::load_league("league").or_else(crate::league::shipped_league),
+                false,
+            ),
         }
     }
 
@@ -1329,6 +1602,8 @@ impl Session {
             BTreeSet::from([0usize])
         };
         let mut game = Game::new_with(GameOptions {
+            base_ruleset: params.base_ruleset,
+            start_era: params.start_era,
             map_script: params.map_script,
             map_topology: params.map_topology,
             map_poles: params.map_poles,
@@ -1337,6 +1612,7 @@ impl Session {
             human_seats,
             teams: params.teams.clone(),
             civs: params.civs.clone(),
+            leader_pool: params.leader_pool,
             randomize_civs: true,
             ..GameOptions::new(
                 params.num_players,
@@ -1352,7 +1628,17 @@ impl Session {
         // strongest built-in default. Minors/barbarians retain the cheaper
         // baseline because they do not need empire-level planning.
         let (mut league, seat_from_roster) = Self::load_params_league(&params);
-        let (ais, mut seat_strategy) = Self::ai_fleet(&game, league.as_ref(), seat_from_roster);
+        let (mut ais, mut seat_strategy) = Self::ai_fleet(&game, league.as_ref(), seat_from_roster);
+        // Only a watched table records its reasoning. Everywhere else the
+        // journal is off and every `think!` is one `Option` test.
+        let journal = if params.spectate {
+            crate::reasoning::Journal::recording()
+        } else {
+            crate::reasoning::Journal::default()
+        };
+        for ai in &mut ais {
+            ai.attach_journal(journal.handle());
+        }
         let human_players =
             Self::register_human_players(&params, &game, &mut league, &mut seat_strategy);
         let chronicle = ChronicleState::from_game(&game);
@@ -1364,15 +1650,16 @@ impl Session {
             spectator_paused: false,
             view_player: None,
             chronicle,
-            supervisor_request: None,
-            next_game_params: None,
+            resumed_next_game_params: None,
             league,
             seat_strategy,
+            seat_from_roster,
             roster,
             autoplay_strategy: None,
             last_autoplay_request: None,
             league_recorded: false,
             human_players,
+            journal,
         }
     }
 
@@ -1396,6 +1683,8 @@ impl Session {
         params.width = game.map.width;
         params.height = game.map.height;
         params.seed = game.seed;
+        params.base_ruleset = game.base_ruleset;
+        params.start_era = game.start_era;
         params.map_script = game.map_script;
         params.map_topology = if game.map.topology == crate::world::Topology::Cylinder {
             MapTopology::Flat
@@ -1407,6 +1696,7 @@ impl Session {
         params.max_turns = game.max_turns;
         params.difficulty = game.difficulty.clone();
         params.speed = game.speed.clone();
+        params.leader_pool = game.leader_pool;
         params.victory_conditions = game.victory_conditions;
         params.teams = game
             .players
@@ -1418,7 +1708,19 @@ impl Session {
             != simulation_settings(&params))
         .then_some(requested_next);
         let (mut league, seat_from_roster) = Self::load_params_league(&params);
-        let (ais, mut seat_strategy) = Self::ai_fleet(&game, league.as_ref(), seat_from_roster);
+        let (mut ais, mut seat_strategy) =
+            Self::ai_fleet(&game, league.as_ref(), seat_from_roster);
+        // A save carries the world, not what anyone was thinking while they
+        // played it. The restored table starts a fresh record from the turn it
+        // resumes.
+        let journal = if params.spectate {
+            crate::reasoning::Journal::recording()
+        } else {
+            crate::reasoning::Journal::default()
+        };
+        for ai in &mut ais {
+            ai.attach_journal(journal.handle());
+        }
         let chronicle = ChronicleState::from_game(&game);
         // A match restored with its winner already decided was rated when it
         // finished; rating it again on the next step would count it twice.
@@ -1439,22 +1741,20 @@ impl Session {
             spectator_paused: false,
             view_player: None,
             chronicle,
-            supervisor_request: None,
-            next_game_params,
+            resumed_next_game_params: next_game_params,
             league,
             seat_strategy,
+            seat_from_roster,
             roster,
             autoplay_strategy: None,
             last_autoplay_request: None,
             league_recorded,
             human_players,
+            journal,
         }
     }
 
     fn set_view_player(&mut self, player: Option<usize>) -> Result<(), String> {
-        if !self.params.spectate && player.is_none() {
-            return Err("player views are only available in spectate mode".into());
-        }
         if let Some(pid) = player {
             let Some(candidate) = self.game.players.get(pid) else {
                 return Err(format!("unknown player {pid}"));
@@ -1462,12 +1762,12 @@ impl Session {
             if candidate.is_minor || candidate.is_barbarian {
                 return Err(format!("player {pid} is not a major civilization"));
             }
-            // Selecting a civilization from the HUD is also the handoff from
-            // an interactive match to AI-only observation. Keep the current
-            // world intact; the already-created AI fleet can take over every
-            // seat on the next spectator step.
-            self.params.spectate = true;
         }
+        // Selecting either a civilization or the all-player Spectator heading
+        // in the HUD is the handoff from an interactive match to AI-only
+        // observation. Keep the current world intact; the already-created AI
+        // fleet can take over every seat on the next spectator step.
+        self.params.spectate = true;
         self.view_player = player;
         Ok(())
     }
@@ -1493,7 +1793,7 @@ impl Session {
                 .ok_or_else(|| "replace_finished.server_instance must be an integer".to_string())?;
             if self.game.winner.is_none()
                 || self.game.seed != expected_seed
-                || expected_instance != std::process::id() as u64
+                || expected_instance != process_identity() as u64
             {
                 return Err("finished game is no longer the active session".into());
             }
@@ -1524,47 +1824,24 @@ impl Session {
         Ok(())
     }
 
-    fn request_supervised_new_game(&mut self, request: &Value) -> Result<(), String> {
-        if !self.params.supervised {
-            return Err("fresh-code launches require the spectator supervisor".into());
-        }
-        let mode = request["mode"]
-            .as_str()
-            .ok_or_else(|| "mode must be restart or fresh_code".to_string())?;
-        if mode != "restart" && mode != "fresh_code" {
-            return Err("mode must be restart or fresh_code".into());
-        }
-
-        let paused = request["paused"].as_bool().unwrap_or(self.spectator_paused);
-        let mut params = new_game_params(&self.params, request);
-        params.spectate = true;
-        self.supervisor_request = Some(json!({
-            "mode": mode,
-            "server_instance": std::process::id(),
-            "paused": paused,
-            "settings": simulation_settings(&params),
-        }));
-        self.spectator_paused = true;
-        Ok(())
-    }
-
     /// Queue setup controls for the next world without changing this one.
-    fn stage_next_game_settings(&mut self, request: &Value) {
-        let mut params = new_game_params(&self.params, request);
-        params.spectate = self.params.spectate;
-        self.next_game_params = Some(params);
+    /// Take the setup a resume carried in, for `Shared` to hold from here on.
+    fn take_resumed_next_game_params(&mut self) -> Option<Params> {
+        self.resumed_next_game_params.take()
     }
 
-    fn start_automatic_next_game(&mut self) {
+    /// Start the next world, from whatever setup the viewer queued for it.
+    ///
+    /// The queue is passed in rather than read from here: it is written by a
+    /// setup control that must never wait on the simulation, so it lives
+    /// beside the session rather than inside it.
+    fn start_automatic_next_game(&mut self, queued: Option<Params>) {
         let next_seed = self
             .params
             .seed
             .wrapping_mul(6364136223846793005)
             .wrapping_add(1442695040888963407);
-        let mut params = self
-            .next_game_params
-            .take()
-            .unwrap_or_else(|| self.params.clone());
+        let mut params = queued.unwrap_or_else(|| self.params.clone());
         params.seed = next_seed;
         *self = Session::new(params);
     }
@@ -1572,6 +1849,61 @@ impl Session {
     /// An agent's plan as the spectator sees it. City ids mean nothing to a
     /// browser, so each one is resolved here into the name and owner the HUD
     /// can actually print.
+    /// The reasoning recorded since the observer's `cursor`.
+    ///
+    /// This is a *delta*, and it has to be. `/state` is close to a megabyte on
+    /// a standard map and the watching page fetches one per turn; sending the
+    /// whole reasoning ring alongside it every time would add a fixed six
+    /// thousand entries to a document that is already the bottleneck. A page
+    /// asks with the last id it holds and is answered with what came after it,
+    /// which on a normal turn is a few dozen lines.
+    ///
+    /// A page that names a cursor this log has never issued — a tab that
+    /// survived into the next world — is answered with the whole window and
+    /// told to discard what it holds.
+    pub fn reasoning_json(&self, cursor: u64) -> Value {
+        let delta = self.journal.since(cursor);
+        // Watching *as* a civilization means seeing what that civilization can
+        // see, and nobody can read a rival's mind. The redaction is done here,
+        // on the wire, rather than by hiding rows in the browser — the same
+        // rule the observation itself follows for an unmet civ.
+        let seat = self.view_player;
+        let thoughts: Vec<&crate::reasoning::Thought> = delta
+            .thoughts
+            .iter()
+            .filter(|thought| seat.is_none_or(|pid| thought.player == pid))
+            .collect();
+        json!({
+            "cursor": delta.cursor,
+            "reset": delta.reset,
+            // Reasoning the ring has already evicted, and civilization-turns
+            // cut short by the per-turn budget. A log that is not the whole
+            // story has to say so rather than read as a quiet game.
+            "dropped": delta.dropped,
+            "truncated_turns": delta.truncated_turns,
+            "thoughts": thoughts.iter().map(|thought| {
+                let mut value = json!({
+                    "id": thought.id,
+                    "turn": thought.turn,
+                    "player": thought.player,
+                    "topic": thought.topic.as_str(),
+                    "level": thought.level.as_str(),
+                    "headline": thought.headline,
+                });
+                // Two fields most thoughts do not carry. Omitting them rather
+                // than sending empty ones is worth real bytes over a delta of
+                // a few hundred lines a turn.
+                if !thought.detail.is_empty() {
+                    value["detail"] = json!(thought.detail);
+                }
+                if let Some((q, r)) = thought.focus {
+                    value["pos"] = json!([q, r]);
+                }
+                value
+            }).collect::<Vec<_>>(),
+        })
+    }
+
     fn plan_json(&self, plan: &crate::ai::PlanReport) -> Value {
         let city = |id: Option<u32>| {
             id.and_then(|id| self.game.cities.get(&id)).map(|city| {
@@ -1608,10 +1940,10 @@ impl Session {
     }
 
     /// Say who is playing each human seat: the handle this game registered
-    /// for them, and — once a rated roster is holding it — the rating they
-    /// are defending. A player with no finished game is `player_rated` with
-    /// zero games rather than an authoritative 1500, the same way the
-    /// leaderboards mark a provisional entrant.
+    /// for them and the rating they are defending. Somebody who has finished
+    /// nothing still has a rating — the base every player starts from — so
+    /// the seat carries 1500 marked `player_elo_provisional` rather than a
+    /// blank, and their first result moves it up or down from there.
     fn name_human_players(&self, o: &mut Value) {
         if self.human_players.is_empty() {
             return;
@@ -1629,19 +1961,129 @@ impl Session {
             player["player_name"] = json!(seat.name);
             player["player_username"] = json!(seat.username);
             player["player_rated"] = json!(seat.rated);
-            let rating = self
+            // Their own row, found by the name they were registered under —
+            // not `seat_entry`, which follows whichever agent is holding the
+            // seat. Handing it to auto-play does not hand over your rating.
+            let entry = self
                 .league
                 .as_ref()
-                .zip(self.seat_strategy.get(id).copied().flatten())
-                .map(|(league, index)| &league.strategies[index]);
-            if let Some(entry) = rating {
-                let civ = &self.game.players[id].civ;
-                let (elo, rd, civ_specific) = crate::league::display_elo(entry, civ);
-                player["player_elo"] = json!(elo.round() as i64);
-                player["player_elo_rd"] = json!(rd.round() as i64);
-                player["player_elo_civ"] = json!(civ_specific);
-                player["player_games"] = json!(entry.games);
+                .and_then(|league| league.strategies.iter().find(|s| s.name == seat.name));
+            let civ = &self.game.players[id].civ;
+            let shown = crate::league::display_rating(entry, civ);
+            player["player_elo"] = json!(shown.rating.round() as i64);
+            player["player_elo_rd"] = json!(shown.rd.round() as i64);
+            player["player_elo_civ"] = json!(shown.civ_specific);
+            player["player_elo_provisional"] = json!(shown.provisional);
+            player["player_games"] = json!(entry.map_or(0, |entry| entry.games));
+        }
+    }
+
+    /// The league row backing a seat, if the league has one. `None` is the
+    /// ordinary case for a game running without a roster, and is a seat the
+    /// league has never heard of rather than a seat that cannot be rated:
+    /// `league::display_rating` gives it the provisional base.
+    fn seat_entry(&self, seat: usize) -> Option<&crate::league::Strategy> {
+        let index = self.seat_strategy.get(seat).copied().flatten()?;
+        self.league.as_ref()?.strategies.get(index)
+    }
+
+    /// Give every met major the rating it is defending and its share of the
+    /// table's single win.
+    ///
+    /// Every major carries a rating, roster or no roster. Most games run
+    /// without `--league`, and a column of dashes read as "this build cannot
+    /// rate anyone" when the truth was only that nobody at this table has
+    /// finished a rated game yet. An unknown player is a provisional 1500
+    /// that the first result moves. A standing is public the way a chess
+    /// opponent's is, so an *opponent* in an interactive game carries one
+    /// too — subject to the same fog as everything else here: a civ you have
+    /// not met is not annotated at all.
+    fn name_seat_ratings(&self, o: &mut Value) {
+        let g = &self.game;
+        let rating_of = |pid: usize| {
+            crate::league::display_rating(self.seat_entry(pid), &g.players[pid].civ)
+        };
+        // Gathered up front, because a seat's expected win share is a
+        // question about the whole table. A seat the league has no row for is
+        // in here too: leaving it out would make the remaining shares add to
+        // one between themselves and quietly claim the unrated seat cannot
+        // win.
+        let seat_elo: std::collections::BTreeMap<usize, f64> = g
+            .players
+            .iter()
+            .filter(|p| p.alive && !p.is_minor && !p.is_barbarian)
+            .map(|p| (p.id, rating_of(p.id).rating))
+            .collect();
+        // One table, one winner: the seats share out a single win rather than
+        // each answering a separate two-player question.
+        let seat_expected: std::collections::BTreeMap<usize, f64> = if seat_elo.len() > 1 {
+            let ratings: Vec<f64> = seat_elo.values().copied().collect();
+            seat_elo
+                .keys()
+                .copied()
+                .zip(crate::elo::win_shares(&ratings))
+                .collect()
+        } else {
+            std::collections::BTreeMap::new()
+        };
+        let Some(players) = o["players"].as_array_mut() else {
+            return;
+        };
+        for player in players {
+            let Some(id) = player["id"].as_u64().map(|id| id as usize) else {
+                continue;
+            };
+            if player["met"] == json!(false)
+                || !g
+                    .players
+                    .get(id)
+                    .is_some_and(|p| !p.is_minor && !p.is_barbarian)
+            {
+                continue;
             }
+            let shown = rating_of(id);
+            // A handle names a seat only when the roster picked that seat.
+            // Otherwise the whole table is the same entrant and repeating its
+            // name down every row would hide who is who; the generated
+            // per-seat name from `name_ai_players` reads better and is just
+            // as true.
+            if let (true, Some(s)) = (self.seat_from_roster, self.seat_entry(id)) {
+                player["ai_username"] = json!(s.username);
+                player["ai_strat_label"] = json!(s.label());
+            }
+            player["ai_elo"] = json!(shown.rating.round() as i64);
+            player["ai_elo_rd"] = json!(shown.rd.round() as i64);
+            player["ai_elo_civ"] = json!(shown.civ_specific);
+            player["ai_elo_provisional"] = json!(shown.provisional);
+            if let Some(share) = seat_expected.get(&id) {
+                player["ai_expected"] = json!((share * 100.0).round() / 100.0);
+            }
+        }
+    }
+
+    /// Name every major AI visible in this observation, including opponents
+    /// in an interactive game. Human identity is written afterward and wins
+    /// in the browser, while a seat handed over through Watch as naturally
+    /// falls back to this agent name.
+    fn name_ai_players(&self, o: &mut Value) {
+        let Some(players) = o["players"].as_array_mut() else {
+            return;
+        };
+        for player in players {
+            let Some(id) = player["id"].as_u64().map(|id| id as usize) else {
+                continue;
+            };
+            if player["met"] == json!(false)
+                || !self
+                    .game
+                    .players
+                    .get(id)
+                    .is_some_and(|seat| !seat.is_minor && !seat.is_barbarian)
+            {
+                continue;
+            }
+            let strategy = self.ais.get(id).and_then(|ai| ai.strategy_label());
+            player["ai_name"] = json!(generated_ai_name(self.game.seed, id, strategy));
         }
     }
 
@@ -1665,49 +2107,19 @@ impl Session {
                 Some(pid) => observation_player_view(g, pid),
                 None => observation_spectator(g, summary_pid),
             };
-            // Each rated seat's display elo (civ table when settled, else
-            // global), gathered up front so a seat's expected win share can
-            // be computed against the rest of the table.
-            let seat_elo: std::collections::BTreeMap<usize, f64> = self
-                .seat_strategy
-                .iter()
-                .enumerate()
-                .filter_map(|(pid, si)| {
-                    let (si, league) = ((*si)?, self.league.as_ref()?);
-                    let p = &g.players[pid];
-                    if !p.alive || p.is_minor || p.is_barbarian {
-                        return None;
-                    }
-                    Some((
-                        pid,
-                        crate::league::display_elo(&league.strategies[si], &p.civ).0,
-                    ))
-                })
-                .collect();
-            // One table, one winner: the seats share out a single win rather
-            // than each answering a separate two-player question.
-            let seat_expected: std::collections::BTreeMap<usize, f64> = if seat_elo.len() > 1 {
-                let ratings: Vec<f64> = seat_elo.values().copied().collect();
-                seat_elo
-                    .keys()
-                    .copied()
-                    .zip(crate::elo::win_shares(&ratings))
-                    .collect()
-            } else {
-                std::collections::BTreeMap::new()
-            };
             if let Some(players) = o["players"].as_array_mut() {
                 for player in players {
                     let Some(id) = player["id"].as_u64().map(|id| id as usize) else {
                         continue;
                     };
                     // A perspective the observation has already withheld does
-                    // not get its plan, its handle or its rating pinned back
-                    // on here. Only the omniscient view annotates everyone.
+                    // not get its plan pinned back on here. Only the
+                    // omniscient view annotates everyone.
                     if player["met"] == json!(false) {
                         continue;
                     }
-                    if let Some(strategy) = self.ais.get(id).and_then(|ai| ai.strategy_label()) {
+                    let strategy = self.ais.get(id).and_then(|ai| ai.strategy_label());
+                    if let Some(strategy) = strategy {
                         player["ai_strategy"] = json!(strategy);
                     }
                     // The expanded HUD card explains a civilization's whole
@@ -1716,59 +2128,77 @@ impl Session {
                     if let Some(plan) = self.ais.get(id).and_then(|ai| ai.plan_report()) {
                         player["ai_plan"] = self.plan_json(&plan);
                     }
-                    // League identity: who is playing this seat and how
-                    // strong the league currently believes they are on this
-                    // civ. `ai_expected` is the elo-implied chance of winning
-                    // this table outright, so the seats sum to 1 and the
-                    // number can be checked against winners over time.
-                    if let (Some(league), Some(Some(si))) =
-                        (self.league.as_ref(), self.seat_strategy.get(id))
-                    {
-                        let s = &league.strategies[*si];
-                        let civ = &g.players[id].civ;
-                        let (elo, rd, civ_specific) = crate::league::display_elo(s, civ);
-                        player["ai_username"] = json!(s.username);
-                        player["ai_strat_label"] = json!(s.label());
-                        player["ai_elo"] = json!(elo.round() as i64);
-                        player["ai_elo_rd"] = json!(rd.round() as i64);
-                        player["ai_elo_civ"] = json!(civ_specific);
-                        if let Some(share) = seat_expected.get(&id) {
-                            player["ai_expected"] = json!((share * 100.0).round() / 100.0);
+                    // What this civilization is actually spending its science
+                    // and culture on, for the Active AI strategy panel. The
+                    // observation only ever carries the *observed* seat's, in
+                    // `me`, and above the world there is no observed seat.
+                    //
+                    // Omniscient view only. Watching as one civilization means
+                    // seeing what that civilization sees, and a rival's
+                    // laboratory is not on that list — the same rule
+                    // `reasoning_json` applies to a rival's thoughts. That seat
+                    // reads its own out of `me` as it always has.
+                    if self.view_player.is_none() {
+                        if let Some(seat) = g.players.get(id) {
+                            if !seat.is_minor && !seat.is_barbarian {
+                                player["research"] = json!(seat.research);
+                                player["research_progress"] =
+                                    json!(round_tenth(seat.research_progress));
+                                player["civic"] = json!(seat.civic);
+                                player["civic_progress"] = json!(round_tenth(seat.civic_progress));
+                                // Only whether the *current* study is boosted.
+                                // A late-game empire's whole boosted set is
+                                // dozens of strings per seat on a document that
+                                // is already the bottleneck, and the card asks
+                                // one question of it.
+                                player["research_boosted"] = json!(seat
+                                    .research
+                                    .as_ref()
+                                    .is_some_and(|tech| seat.boosted_techs.contains(tech)));
+                                player["civic_boosted"] = json!(seat
+                                    .civic
+                                    .as_ref()
+                                    .is_some_and(|civic| seat.boosted_civics.contains(civic)));
+                            }
                         }
                     }
                 }
             }
+            // League identity: who is playing each seat and how strong the
+            // league currently believes they are on this civ.
+            self.name_seat_ratings(&mut o);
+            self.name_ai_players(&mut o);
             o["spectate"] = json!(true);
             o["supervised"] = json!(self.params.supervised);
             o["spectator_paused"] = json!(self.spectator_paused);
             o["view_player"] = json!(self.view_player);
+            o["leader_pool"] = json!(self.game.leader_pool.id());
+            o["teams"] = json!(major_teams(&self.game));
             o["victory_conditions"] = json!(self.game.victory_conditions);
-            o["supervisor_request"] = json!(self.supervisor_request);
-            o["next_game_settings"] = self
-                .next_game_params
-                .as_ref()
-                .map(simulation_settings)
-                .unwrap_or(Value::Null);
             o["legal_actions"] = json!([]);
             // Lets a long-running spectator notice that its server was
             // rebuilt/restarted between games and reload the latest UI.
-            o["server_instance"] = json!(std::process::id());
+            o["server_instance"] = json!(process_identity());
+            o["server_commit"] = json!(option_env!("CIVVIS_COMMIT").unwrap_or("unknown"));
             return o;
         }
         let mut o = observation(&self.game, 0);
+        // A rival you have met has a standing, the same way a chess opponent
+        // does, and the HUD has always had a column for it. It used to be
+        // empty in every interactive game because only the spectator wrote
+        // one. Their plan is still theirs; only the rating is public.
+        self.name_seat_ratings(&mut o);
+        self.name_ai_players(&mut o);
         self.name_human_players(&mut o);
         o["spectate"] = json!(false);
         o["supervised"] = json!(self.params.supervised);
         o["view_player"] = json!(0);
+        o["leader_pool"] = json!(self.game.leader_pool.id());
+        o["teams"] = json!(major_teams(&self.game));
         o["victory_conditions"] = json!(self.game.victory_conditions);
-        o["supervisor_request"] = json!(self.supervisor_request);
-        o["next_game_settings"] = self
-            .next_game_params
-            .as_ref()
-            .map(simulation_settings)
-            .unwrap_or(Value::Null);
         o["legal_actions"] = serde_json::to_value(self.game.legal_actions(0)).unwrap();
-        o["server_instance"] = json!(std::process::id());
+        o["server_instance"] = json!(process_identity());
+        o["server_commit"] = json!(option_env!("CIVVIS_COMMIT").unwrap_or("unknown"));
         o
     }
 
@@ -1861,7 +2291,7 @@ impl Session {
             &dir,
             &placements,
             self.game.seed,
-            self.game.turn,
+            self.game.reported_turn(),
             &victory,
         ) else {
             eprintln!("[league] could not rate this game into {dir}");
@@ -1920,6 +2350,9 @@ impl Session {
             })
             .ok_or_else(|| format!("no strategy named {name}"))?;
         self.ais[seat] = crate::league::make_send_ai(&kind, seed);
+        // A newly seated agent joins the same record as the rest of the table;
+        // without this the seat a player just handed over goes quiet.
+        self.ais[seat].attach_journal(self.journal.handle());
         // The rated roster and the offered roster can be different rosters, so
         // only claim a rated identity for the seat when this name is in the
         // rated one; the name below is what the browser is told either way.
@@ -1964,16 +2397,16 @@ impl Session {
     /// Seat 0 already has an agent built for it — in a human game it simply
     /// never gets asked — so this is a matter of asking it.
     ///
-    /// "Play the rest of it" is a turn count like any other: the bound is the
-    /// turns this game has left, because a game ends at its limit and the loop
-    /// already stops on a winner or a dead seat.
+    /// "Play the rest of it" is bounded by the live turn limit. A continued
+    /// game has no such limit, so a single HTTP request gets a generous finite
+    /// batch instead; the browser can keep requesting batches until the next
+    /// result or until the person stops an indefinite run.
     pub fn autoplay(&mut self, turns: u32) -> usize {
         let mut played = 0;
-        let remaining = self
-            .game
-            .max_turns
-            .saturating_sub(self.game.turn)
-            .saturating_add(1);
+        let remaining = self.game.turn_limit().map_or_else(
+            || turns.min(250),
+            |limit| limit.saturating_sub(self.game.turn).saturating_add(1),
+        );
         for _ in 0..turns.min(remaining) {
             if self.game.winner.is_some() || !self.game.players[0].alive {
                 break;
@@ -2009,8 +2442,8 @@ impl Session {
     /// would come back live on an AI seat, refusing every action the person
     /// tried to take. So the same catch-up `act` runs after an end-turn runs
     /// here, handing the round back to seat zero.
-    pub fn play_on(&mut self) -> bool {
-        if !self.game.play_on() {
+    pub fn play_on(&mut self, mode: PlayOnMode) -> bool {
+        if !self.game.play_on(mode) {
             return false;
         }
         if !self.params.spectate {
@@ -2103,6 +2536,11 @@ fn world_wonder_atlas() -> Vec<u8> {
 fn mountain_atlas() -> Vec<u8> {
     std::fs::read("web/assets/mountain-atlas.png")
         .unwrap_or_else(|_| EMBEDDED_MOUNTAIN_ATLAS.to_vec())
+}
+
+fn hidden_map_monsters() -> Vec<u8> {
+    std::fs::read("web/assets/hidden-map-monsters.png")
+        .unwrap_or_else(|_| EMBEDDED_HIDDEN_MAP_MONSTERS.to_vec())
 }
 
 /// Where a single-player game keeps its own saves, relative to the process's
@@ -2299,16 +2737,42 @@ fn tile_mark(tile: &Value) -> u64 {
 }
 
 /// The frame a page says its own copy of the tiles is built from, written
-/// `world:turn`. Both halves matter: a patch is only meaningful against the
-/// exact array the server sent, and turn 5 of one world is not turn 5 of the
-/// next. Anything unparseable simply means no baseline, and the page is sent
-/// the whole map.
+/// `world:turn:finished`. All three parts matter: a victory may be decided
+/// during a seat's step without incrementing the turn, and the terminal map is
+/// not the non-terminal map from the same turn. Legacy two-part tokens remain
+/// valid non-terminal baselines. Anything unparseable simply means no
+/// baseline, and the page is sent the whole map.
 fn held_frame(token: &str) -> Option<SpectatorFrame> {
-    let (seed, turn) = token.split_once(':')?;
+    let mut fields = token.split(':');
+    let seed = fields.next()?.parse().ok()?;
+    let turn = fields.next()?.parse().ok()?;
+    let finished = match fields.next() {
+        None | Some("0") => false,
+        Some("1") => true,
+        Some(_) => return None,
+    };
+    if fields.next().is_some() {
+        return None;
+    }
     Some(SpectatorFrame {
-        seed: seed.parse().ok()?,
-        turn: turn.parse().ok()?,
+        seed,
+        turn,
+        finished,
     })
+}
+
+/// The pre-game teams of a world, one entry per major seat in seat order;
+/// `null` is a seat playing for itself.
+///
+/// The lobby reads its own Teams control back out of this, so a page that
+/// reloads over a team game offers to restart *that* game rather than a
+/// free-for-all with the same map.
+fn major_teams(game: &Game) -> Vec<Option<usize>> {
+    game.players
+        .iter()
+        .filter(|player| !player.is_minor && !player.is_barbarian)
+        .map(|player| player.team)
+        .collect()
 }
 
 fn simulation_settings(params: &Params) -> Value {
@@ -2329,10 +2793,14 @@ fn simulation_settings(params: &Params) -> Value {
         "height": params.height,
         "city_states": params.num_city_states,
         "turns": params.max_turns,
+        "base_ruleset": params.base_ruleset.id(),
+        "start_era": start_era_id(params.start_era),
         "map": params.map_script.id(),
         "shape": params.map_topology.id(),
         "poles": params.map_poles.id(),
         "speed": params.game_speed.id(),
+        "leader_pool": params.leader_pool.id(),
+        "teams": params.teams,
         "victories": victories,
     })
 }
@@ -2394,6 +2862,17 @@ fn new_game_params(current: &Params, request: &Value) -> Params {
     if let Some(v) = request["seed"].as_u64() {
         p.seed = v;
     }
+    if let Some(v) = request["base_ruleset"].as_str().and_then(BaseRuleset::from_id) {
+        p.base_ruleset = v;
+    }
+    // A rung nobody has built yet is refused rather than substituted: a lobby
+    // that asks for the Stone Age and is quietly handed the Ancient era has
+    // been lied to. `start_era_from_id` answers with nothing for an unbuilt
+    // rung exactly as it does for an unknown one, so the previous setting
+    // stands and the client can see it did.
+    if let Some(era) = request["start_era"].as_str().and_then(start_era_from_id) {
+        p.start_era = era;
+    }
     if let Some(v) = request["map_script"].as_str().and_then(MapScript::from_id) {
         p.map_script = v;
         // `planet` used to name a world type; it now names a shape. A client
@@ -2409,13 +2888,12 @@ fn new_game_params(current: &Params, request: &Value) -> Params {
     if let Some(v) = request["map_poles"].as_str().and_then(MapPoles::from_id) {
         p.map_poles = v;
     }
-    if let Some(v) = request["map_poles"].as_bool() {
-        p.map_poles = if v { MapPoles::Poles } else { MapPoles::NoPoles };
-    }
-    // Earth is drawn from real longitudes and latitudes and closes on itself,
-    // so it is always a globe whatever shape the lobby asked for.
-    if p.map_script.is_fixed_geography() {
-        p.map_topology = MapTopology::Planet;
+    // Heat was a boolean once — poles on or off. Only its `true` still names a
+    // world that exists, and that world is the default anyway, so a client
+    // sending the old boolean is left where it already was rather than being
+    // pushed into the one remaining alternative it never asked for.
+    if request["map_poles"].as_bool() == Some(true) {
+        p.map_poles = MapPoles::Poles;
     }
     // A globe is stored in a rectangle of its own shape, so the chosen size is
     // re-expressed whenever either the size or the shape moves, and the lobby
@@ -2435,6 +2913,9 @@ fn new_game_params(current: &Params, request: &Value) -> Params {
     }
     if let Some(v) = request["max_turns"].as_u64() {
         p.max_turns = v as u32;
+    }
+    if let Some(v) = request["leader_pool"].as_str().and_then(LeaderPool::from_id) {
+        p.leader_pool = v;
     }
     // The two settings a Civ 6 lobby asks for that this protocol could not
     // carry: how hard the rivals play, and who the player is. Both are
@@ -2533,21 +3014,69 @@ fn auto_step_loop(sh: Arc<Shared>) {
             std::thread::sleep(Duration::from_millis(150));
             continue;
         }
+        // A game somebody is playing is not stepped from here, and this loop
+        // must not hold the frame gate while it idles past it.
+        //
+        // The gate orders this loop against a viewer's *first* snapshot, so
+        // the opening `/state?painted=` of every page blocks on it. Taking it,
+        // sleeping 300ms and immediately retaking it leaves a window too narrow
+        // to win against a thread that is already parked on the mutex, and a
+        // single-player page then never finishes booting: its opening read is
+        // starved until the page gives up at fifteen seconds, retries, and is
+        // starved again. So decide before taking the gate, not after.
+        //
+        // Read it into a bool first: a guard built in an `if` condition lives
+        // until the end of the whole `if`, so testing the lock inline would
+        // hold the *session* across the sleep below and stall every request
+        // that needs it.
+        let being_played_by_hand = !sh.session.lock().unwrap().params.spectate;
+        if being_played_by_hand {
+            std::thread::sleep(Duration::from_millis(300));
+            continue;
+        }
         // Close the first-viewer race as well as the steady-state one. A page
         // attaching to the current turn must either finish registering and
         // receive that snapshot before this step begins, or wait until the
         // step completes and receive the next snapshot as its first frame.
         // Once registered, its current frame must be painted before any more
         // simulation work starts.
-        let simulation_frame_gate = sh.simulation_frame_gate.lock().unwrap();
-        let current_frame = {
-            let s = sh.session.lock().unwrap();
-            SpectatorFrame {
-                seed: s.game.seed,
-                turn: s.game.turn,
+        //
+        // Wait for that frame *before* taking the gate, then take it and
+        // confirm nobody seated itself in between. Waiting while holding the
+        // gate deadlocked the two halves against each other: the only way to
+        // register as a viewer is an opening `/state?painted=`, which needs
+        // this same gate, so a page arriving while the loop waited for some
+        // *other* viewer could not get in — and a restart, whose whole job is
+        // to put a new page in front of a new world, is exactly that arrival.
+        // Measured on a 74x46 six-player exhibition: 0 turns in 25 seconds.
+        // A re-check under the gate is as atomic as waiting inside it was,
+        // because seating happens under the gate too.
+        let simulation_frame_gate = loop {
+            let current_frame = {
+                let s = sh.session.lock().unwrap();
+                SpectatorFrame {
+                    seed: s.game.seed,
+                    turn: s.game.turn,
+                    finished: s.game.winner.is_some(),
+                }
+            };
+            sh.wait_for_turn_frame(current_frame);
+            let gate = sh.simulation_frame_gate.lock().unwrap();
+            if !sh.frame_outstanding(current_frame) {
+                break gate;
             }
         };
-        sh.wait_for_turn_frame(current_frame);
+        // A request can pause while this loop is waiting for the frame gate.
+        // Check again after entering it so a play-on-and-pause transition can
+        // clear the winner without one already-admitted AI step slipping past
+        // the new pause.
+        if sh.paused.load(Ordering::Relaxed) {
+            over_since = None;
+            watched_turn = None;
+            drop(simulation_frame_gate);
+            std::thread::sleep(Duration::from_millis(150));
+            continue;
+        }
         let cadence_started = Instant::now();
         let delay; // this seat's slice of the turn budget
         let mut waiting = false; // between games nothing is being simulated
@@ -2555,17 +3084,23 @@ fn auto_step_loop(sh: Arc<Shared>) {
         {
             let mut s = sh.session.lock().unwrap();
             if !s.params.spectate {
+                // Seating can change between the check above and this one, so
+                // this stays as the authority — but it releases the gate
+                // before idling, for the same reason.
                 drop(s);
+                drop(simulation_frame_gate);
                 std::thread::sleep(Duration::from_millis(300));
                 continue;
             }
             if s.game.winner.is_some() {
                 let t0 = *over_since.get_or_insert_with(Instant::now);
-                let left = final_countdown_ms(s.params.restart_ms)
-                    .saturating_sub(t0.elapsed().as_millis() as u64);
+                let left =
+                    final_countdown_ms().saturating_sub(t0.elapsed().as_millis() as u64);
                 sh.restart_in.store(left, Ordering::Relaxed);
                 if left == 0 {
-                    s.start_automatic_next_game();
+                    s.start_automatic_next_game(sh.take_next_game_params());
+                    sh.current_seed.store(s.game.seed, Ordering::Relaxed);
+                    sh.adopt_live_params(&s.params);
                     over_since = None;
                     watched_turn = None;
                     sh.restart_in.store(u64::MAX, Ordering::Relaxed);
@@ -2578,6 +3113,7 @@ fn auto_step_loop(sh: Arc<Shared>) {
                     completed_frame = Some(SpectatorFrame {
                         seed: s.game.seed,
                         turn: s.game.turn,
+                        finished: false,
                     });
                 }
                 delay = 200;
@@ -2586,28 +3122,31 @@ fn auto_step_loop(sh: Arc<Shared>) {
                 over_since = None;
                 sh.restart_in.store(u64::MAX, Ordering::Relaxed);
                 let step_started = Instant::now();
-                let turn_before = s.game.turn;
+                let frame_before = SpectatorFrame {
+                    seed: s.game.seed,
+                    turn: s.game.turn,
+                    finished: false,
+                };
                 let (pid, _) = s.step();
                 turn_compute_us += step_started.elapsed().as_micros() as u64;
-                if s.game.turn != turn_before {
-                    completed_frame = Some(SpectatorFrame {
-                        seed: s.game.seed,
-                        turn: s.game.turn,
-                    });
+                let frame_after = SpectatorFrame {
+                    seed: s.game.seed,
+                    turn: s.game.turn,
+                    finished: s.game.winner.is_some(),
+                };
+                if frame_after != frame_before {
+                    completed_frame = Some(frame_after);
                 }
                 // The step that ends a game has to hand the viewer its
                 // countdown in the same breath. Arming it on the next pass
                 // instead left `/state` reporting no countdown at all for a
                 // beat, so the result screen opened on "preparing the next
-                // world" and only then began counting down from five — and the
+                // world" and only then began counting down from ten — and the
                 // window in which "one more turn" can be pressed is exactly
                 // the window the countdown describes.
                 if s.game.winner.is_some() {
                     over_since = Some(Instant::now());
-                    sh.restart_in.store(
-                        final_countdown_ms(s.params.restart_ms),
-                        Ordering::Relaxed,
-                    );
+                    sh.restart_in.store(final_countdown_ms(), Ordering::Relaxed);
                 }
                 // A turn is one step per seat, so a seat waits for its own
                 // share of the turn budget and the round adds up to the pace.
@@ -2676,6 +3215,16 @@ fn auto_step_loop(sh: Arc<Shared>) {
 }
 
 /// Attach exhibition metadata (restart countdown, pace, paused) to a state.
+/// The world the setup panel is describing, normalized against the live one.
+///
+/// A free function because the queue has two homes: `Shared` on a server, and
+/// a thread local in the wasm build, which has no threads to share between.
+fn staged_next_game_params(base: &Params, request: &Value) -> Params {
+    let mut params = new_game_params(base, request);
+    params.spectate = base.spectate;
+    params
+}
+
 fn decorate(o: &mut Value, sh: &Shared) {
     let r = sh.restart_in.load(Ordering::Relaxed);
     if r != u64::MAX {
@@ -2693,6 +3242,17 @@ fn decorate(o: &mut Value, sh: &Shared) {
     if compute > 0 {
         o["turn_compute_ms"] = json!(compute as f64 / 1000.0);
     }
+    // The request lives beside the session rather than inside it, so it is
+    // attached here for every reader that used to find it in `state()`.
+    if let Some(request) = sh.pending_new_game_request() {
+        o["supervisor_request"] = request;
+        // A world being handed over is not a world that has stalled: the
+        // supervisor reads this before deciding to nudge it.
+        o["spectator_paused"] = json!(true);
+    } else {
+        o["supervisor_request"] = Value::Null;
+    }
+    o["next_game_settings"] = sh.staged_next_game_settings();
 }
 
 fn handle(stream: &mut TcpStream, sh: &Shared) {
@@ -2755,6 +3315,27 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
         ("GET", "/assets/mountain-atlas.png") => {
             respond(stream, "200 OK", "image/png", &mountain_atlas());
         }
+        ("GET", "/assets/hidden-map-monsters.png") => {
+            respond(stream, "200 OK", "image/png", &hidden_map_monsters());
+        }
+        // A lock-free identity probe for supervised process handoffs. The
+        // browser used to fetch the multi-megabyte `/state` document here and
+        // could queue behind an AI step for its entire three-second timeout.
+        ("GET", "/runtime") => {
+            respond_json(
+                stream,
+                &json!({
+                    "server_instance": process_identity(),
+                    "seed": sh.current_seed.load(Ordering::Relaxed),
+                    "commit": option_env!("CIVVIS_COMMIT").unwrap_or("unknown"),
+                    // The supervisor's only view of a restart used to be
+                    // `/state`, which is exactly what a long AI turn makes
+                    // unavailable. This probe takes no lock the simulation
+                    // holds, so a restart is seen while the turn runs.
+                    "supervisor_request": sh.pending_new_game_request(),
+                }),
+            );
+        }
         ("GET", "/state") => {
             // A Planet world is a globe, and a client cannot draw one from tile
             // coordinates alone. It asks for the sphere's geometry the first
@@ -2793,8 +3374,18 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
                 let painted = match (
                     reported.parse::<u32>(),
                     query_value(&request_target, "world").map(str::parse::<u64>),
+                    query_value(&request_target, "finished"),
                 ) {
-                    (Ok(turn), Some(Ok(seed))) => Some(SpectatorFrame { seed, turn }),
+                    (Ok(turn), Some(Ok(seed)), Some("0") | None) => Some(SpectatorFrame {
+                        seed,
+                        turn,
+                        finished: false,
+                    }),
+                    (Ok(turn), Some(Ok(seed)), Some("1")) => Some(SpectatorFrame {
+                        seed,
+                        turn,
+                        finished: true,
+                    }),
                     _ => None, // a page that has painted nothing yet
                 };
                 sh.note_viewer_request(&viewer, painted);
@@ -2803,17 +3394,27 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
             // this one again, so it waits here instead of spinning on a clock
             // of its own. A reader that names nothing is answered at once.
             sh.wait_for_next_turn(have);
+            // A page watching the AI reason says which thought it last holds,
+            // and gets what has been recorded since. Absent, nothing is sent:
+            // the keeper's refresh probe and any curl read `/state` too, and
+            // none of them are reading the reasoning log.
+            let wants_reasoning = query_value(&request_target, "think")
+                .map(|cursor| cursor.parse::<u64>().unwrap_or(0));
             let (mut o, frame) = {
                 let session = sh.session.lock().unwrap();
                 let frame = SpectatorFrame {
                     seed: session.game.seed,
                     turn: session.game.turn,
+                    finished: session.game.winner.is_some(),
                 };
                 let mut observed = session.state();
                 if wants_planet {
                     if let Some(geometry) = crate::obs::planet_geometry(&session.game) {
                         observed["map"]["planet"] = geometry;
                     }
+                }
+                if let Some(cursor) = wants_reasoning {
+                    observed["ai_reasoning"] = session.reasoning_json(cursor);
                 }
                 (observed, frame)
             };
@@ -2835,7 +3436,7 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
         // few seconds to read one field spends the server's time on rendering
         // a view nobody looks at.
         ("GET", "/status") => {
-            let (frames_missed, frames_painted, viewers) = sh.frame_audit();
+            let (frames_missed, frames_painted, viewers, autoplay_turns) = sh.frame_audit();
             let session = sh.session.lock().unwrap();
             let game = &session.game;
             respond_json(
@@ -2859,6 +3460,15 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
                     // waited for separately, so this is also the number of
                     // paints a turn now costs before the next one starts.
                     "viewers": viewers,
+                    // Turns `POST /autoplay` has simulated. A human game is
+                    // not stepped by the exhibition loop and its page sends no
+                    // painted acknowledgements, so auto-play contributes
+                    // nothing to `frames_painted` and used to contribute
+                    // nothing to `frames_missed` either — it could drop nine
+                    // turns in ten and still read clean. This is the count
+                    // those misses are out of: zero here means auto-play was
+                    // never pressed, not that it behaved.
+                    "autoplay_turns": autoplay_turns,
                     // Which code is actually playing. A binary swap only
                     // happens between games, so a running server is always
                     // somewhat behind origin/main and there was no way to see
@@ -2993,6 +3603,12 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
                     let mut session = sh.session.lock().unwrap();
                     let params = session.params.clone();
                     *session = Session::from_game(params, game);
+                    sh.current_seed
+                        .store(session.game.seed, Ordering::Relaxed);
+                    sh.adopt_live_params(&session.params);
+                    if let Some(queued) = session.take_resumed_next_game_params() {
+                        *sh.next_game_params.lock().unwrap() = Some(queued);
+                    }
                     let mut out = session.state();
                     out["error"] = Value::Null;
                     drop(session);
@@ -3024,18 +3640,18 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
                     "wonders": r.wonders,
                     "projects": r.projects,
                     "policies": r.policies, "beliefs": r.beliefs, "civs": r.civs,
+                    "civ6_leaders": CIV6_LEADER_POOL.as_slice(),
                     "great_people": r.great_people, "governors": r.governors,
                     "map_sizes": CIV6_MAP_SIZES,
                     "difficulties": r.difficulties, "speeds": r.speeds,
+                    "base_rulesets": BASE_RULESETS,
+                    "start_eras": START_ERAS,
                     "map_scripts": CIV6_MAP_SCRIPTS,
                     "map_topologies": MAP_TOPOLOGIES,
                     "map_poles": MAP_POLES,
                     "game_speeds": CIV6_GAME_SPEEDS,
                     "strategies": strategy_roster(&session),
                     "seat_strategy": session.seated_strategy_name(0),
-                    // What one press of "one more turn" buys, so the result
-                    // screen can promise the number the engine actually grants.
-                    "play_on_turns": crate::game::PLAY_ON_TURNS,
                 }),
             );
         }
@@ -3057,7 +3673,7 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
                 .is_some_and(|seed| seed != session.game.seed)
                 || parsed["server_instance"]
                     .as_u64()
-                    .is_some_and(|instance| instance != std::process::id() as u64)
+                    .is_some_and(|instance| instance != process_identity() as u64)
             {
                 drop(session);
                 respond_json(stream, &json!({"error": "the game changed before auto-play began"}));
@@ -3100,6 +3716,16 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
             out["autoplayed"] = json!(played);
             out["autoplay_strategy"] = json!(session.seated_strategy_name(0));
             drop(session);
+            // One response carries one state, so every turn in this batch past
+            // the first was played where nobody could see it. Recorded after
+            // the session lock is released, and only on the path that actually
+            // simulated: the retry arm above answers from
+            // `last_autoplay_request` without playing anything, and counting
+            // there would charge a dropped response twice.
+            sh.frame_delivery
+                .lock()
+                .unwrap()
+                .turns_simulated_without_a_frame(played);
             decorate(&mut out, sh);
             respond_json(stream, &out);
         }
@@ -3210,13 +3836,32 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
             decorate(&mut out, sh);
             respond_json(stream, &out);
         }
-        // "One more turn": carry the decided world on instead of retiring it.
-        // The countdown is cleared here rather than left to the stepper, so a
-        // state read between the press and the stepper's next pass never
-        // reports a restart that is no longer coming.
+        // Carry the decided world on instead of retiring it. `paused` is part
+        // of the same transition: the frame gate makes "look around" clear the
+        // winner and stop the stepper atomically, rather than racing a second
+        // request to /pace against the first continued turn.
         ("POST", "/play-on") => {
+            let mode_name = parsed["mode"].as_str().unwrap_or("until_next_victory");
+            let Some(mode) = PlayOnMode::parse(mode_name) else {
+                respond_json(
+                    stream,
+                    &json!({"error": format!("unknown play-on mode {mode_name:?}")}),
+                );
+                return;
+            };
+            let requested_pause = parsed.get("paused").and_then(Value::as_bool);
+            let simulation_frame_gate = sh.simulation_frame_gate.lock().unwrap();
             let mut session = sh.session.lock().unwrap();
-            let played_on = session.play_on();
+            let played_on = session.play_on(mode);
+            if played_on {
+                if let Some(paused) = requested_pause {
+                    sh.paused.store(paused, Ordering::Relaxed);
+                    session.spectator_paused = paused;
+                }
+                // Clear this before taking the response snapshot, so it can
+                // never promise both a paused continuation and a new world.
+                sh.restart_in.store(u64::MAX, Ordering::Relaxed);
+            }
             let mut out = session.state();
             out["error"] = if played_on {
                 Value::Null
@@ -3224,9 +3869,7 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
                 json!("this game has no result to play on past")
             };
             drop(session);
-            if played_on {
-                sh.restart_in.store(u64::MAX, Ordering::Relaxed);
-            }
+            drop(simulation_frame_gate);
             decorate(&mut out, sh);
             respond_json(stream, &out);
         }
@@ -3259,24 +3902,22 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
             }
         }
         ("POST", "/next-game-settings") => {
-            let mut session = sh.session.lock().unwrap();
-            session.stage_next_game_settings(&parsed);
+            // No session lock, for the same reason `/supervisor-new` has none:
+            // every `change` on the setup panel comes through here, and the
+            // restart that follows waits for this write to land.
+            sh.stage_next_game_settings(&parsed);
             respond_json(
                 stream,
-                &json!({
-                    "ok": true,
-                    "next_game_settings": session
-                        .next_game_params
-                        .as_ref()
-                        .map(simulation_settings)
-                        .unwrap_or(Value::Null),
-                }),
+                &json!({"ok": true, "next_game_settings": sh.staged_next_game_settings()}),
             );
         }
         ("POST", "/new") => {
             let mut session = sh.session.lock().unwrap();
             let result = session.start_new_game(&parsed);
             if result.is_ok() {
+                sh.current_seed
+                    .store(session.game.seed, Ordering::Relaxed);
+                sh.adopt_live_params(&session.params);
                 let paused = parsed["paused"]
                     .as_bool()
                     .unwrap_or_else(|| sh.paused.load(Ordering::Relaxed));
@@ -3293,16 +3934,22 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
             respond_json(stream, &o);
         }
         ("POST", "/supervisor-new") => {
-            let mut session = sh.session.lock().unwrap();
-            let result = session.request_supervised_new_game(&parsed);
-            let mut out = session.state();
-            out["error"] = match result {
-                Ok(()) => Value::Null,
-                Err(error) => Value::String(error),
-            };
-            drop(session);
-            decorate(&mut out, sh);
-            respond_json(stream, &out);
+            // Answered without the simulation lock, and answered *small*. The
+            // page reads only `error` from this, and building a full
+            // observation for it would put the one control that escapes a
+            // wedged turn right back behind that turn.
+            let result = sh.request_supervised_new_game(&parsed);
+            respond_json(
+                stream,
+                &json!({
+                    "error": match result {
+                        Ok(()) => Value::Null,
+                        Err(error) => Value::String(error),
+                    },
+                    "server_instance": process_identity(),
+                    "supervisor_request": sh.pending_new_game_request(),
+                }),
+            );
         }
         _ => {
             respond(
@@ -3319,17 +3966,26 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
 #[allow(clippy::items_after_test_module)]
 mod tests {
     use super::{
-        chronicle_world_events, final_countdown_ms, new_game_params, query_value, request_path,
-        save_path, seat_delay_ms, strategy_roster, tile_mark, ChronicleSnapshot, ChronicleState,
-        FrameDelivery, Params,
-        Session, SpectatorFrame, EMBEDDED_CINEMATIC_3D, EMBEDDED_INDEX, MIN_RESTART_MS,
-        EMBEDDED_WORLD_WONDER_ATLAS, SAVE_DIR, STATE_LONG_POLL, VIEWER_ACTIVE,
+        chronicle_world_events, final_countdown_ms, held_frame, new_game_params, query_value,
+        request_path, save_path, seat_delay_ms, strategy_roster, tile_mark, ChronicleSnapshot,
+        ChronicleState, FrameDelivery, Params,
+        Session, Shared, SpectatorFrame, EMBEDDED_CINEMATIC_3D, EMBEDDED_INDEX,
+        RESULT_COUNTDOWN_MS,
+        EMBEDDED_HIDDEN_MAP_MONSTERS, EMBEDDED_WORLD_WONDER_ATLAS, SAVE_DIR, STATE_LONG_POLL,
+        VIEWER_ACTIVE,
     };
-    use crate::game::{Action, Game, VictoryConditions};
-    use crate::setup::{GameSpeed, MapPoles, MapScript, MapTopology};
+    use crate::game::{
+        Action, Game, LeaderPool, PlayOnMode, VictoryConditions, CIV6_LEADER_POOL,
+    };
+    use crate::server::{generated_ai_name, simulation_settings};
+    use crate::setup::{
+        start_era_from_id, BaseRuleset, GameSpeed, MapPoles, MapScript, MapTopology, MAP_POLES,
+    };
     use serde_json::{json, Value};
     use std::io::{Read, Write};
     use std::net::{TcpListener, TcpStream};
+    use std::sync::atomic::{AtomicBool, AtomicU64};
+    use std::sync::{mpsc, Arc, Condvar, Mutex};
     use std::time::{Duration, Instant};
 
     /// The pace a viewer picks is what a turn costs, so the seats' waits have
@@ -3355,20 +4011,139 @@ mod tests {
         assert_eq!(seat_delay_ms(0, 8, 12, false), 0);
     }
 
+    /// Ten seconds, and nothing can ask for anything else.
+    ///
+    /// This was a dial — `--restart-ms`, floored by the server, fed by the
+    /// supervisor's `--cooldown`. The number a viewer read was whichever value
+    /// had won that chain, and twice in one evening the exhibition counted
+    /// down from a duration nobody had chosen: first two minutes, then, once a
+    /// ceiling existed, exactly that ceiling. The dial is gone. The one thing
+    /// this must never again be is *configurable*.
     #[test]
-    fn final_countdown_is_five_seconds_unless_longer_is_requested() {
-        assert_eq!(final_countdown_ms(0), 5_000);
-        assert_eq!(final_countdown_ms(4_999), 5_000);
-        assert_eq!(final_countdown_ms(5_000), 5_000);
-        assert_eq!(final_countdown_ms(12_500), 12_500);
+    fn the_result_countdown_is_ten_seconds_with_no_input() {
+        assert_eq!(final_countdown_ms(), 10_000);
+        assert_eq!(RESULT_COUNTDOWN_MS, 10_000);
+        // The browser's own finale countdown is the same ten seconds, so a
+        // person and the exhibition are offered the identical window.
+        assert!(EMBEDDED_INDEX.contains(&format!(
+            "const FINALE_RESTART_SECONDS = {};",
+            RESULT_COUNTDOWN_MS / 1_000
+        )));
+    }
+
+    #[test]
+    fn generated_ai_names_are_unique_and_follow_their_strategy() {
+        let science: Vec<String> = (0..12)
+            .map(|pid| generated_ai_name(42, pid, Some("science")))
+            .collect();
+        let unique: std::collections::BTreeSet<&str> =
+            science.iter().map(String::as_str).collect();
+        assert_eq!(unique.len(), science.len());
+        assert!(science.iter().all(|name| ["Quantum", "Stellar", "Orbital", "Theory"]
+            .iter()
+            .any(|prefix| name.starts_with(prefix))));
+        assert_ne!(
+            generated_ai_name(42, 0, Some("science")),
+            generated_ai_name(42, 0, Some("conquest"))
+        );
+        assert!(generated_ai_name(42, 0, None).starts_with("Resolute"));
+    }
+
+    #[test]
+    fn a_mid_turn_victory_is_a_distinct_spectator_frame() {
+        let playing = SpectatorFrame {
+            seed: 41,
+            turn: 7,
+            finished: false,
+        };
+        let won = SpectatorFrame {
+            seed: 41,
+            turn: 7,
+            finished: true,
+        };
+        assert_ne!(playing, won);
+        assert_eq!(held_frame("41:7"), Some(playing));
+        assert_eq!(held_frame("41:7:0"), Some(playing));
+        assert_eq!(held_frame("41:7:1"), Some(won));
+        assert_eq!(held_frame("41:7:maybe"), None);
+    }
+
+    #[test]
+    fn a_mid_turn_victory_wakes_the_waiting_state_request_immediately() {
+        let mut session = Session::new(current());
+        session.game.turn = 7;
+        session.game.winner = None;
+        let seed = session.game.seed;
+        let shared = Arc::new(Shared {
+            current_seed: AtomicU64::new(seed),
+            supervisor_request: Mutex::new(None),
+            live_params: Mutex::new(session.params.clone()),
+            next_game_params: Mutex::new(session.take_resumed_next_game_params()),
+            session: Mutex::new(session),
+            pace_ms: AtomicU64::new(0),
+            paused: AtomicBool::new(false),
+            restart_in: AtomicU64::new(u64::MAX),
+            turn_us: AtomicU64::new(0),
+            turn_compute_us: AtomicU64::new(0),
+            frame_delivery: Mutex::new(FrameDelivery::default()),
+            frame_painted: Condvar::new(),
+            simulation_frame_gate: Mutex::new(()),
+            latest: Mutex::new(None),
+            turn_ready: Condvar::new(),
+        });
+        let playing = SpectatorFrame {
+            seed,
+            turn: 7,
+            finished: false,
+        };
+        let won = SpectatorFrame {
+            finished: true,
+            ..playing
+        };
+        let (sent, received) = mpsc::channel();
+        let waiter = shared.clone();
+        let started = Instant::now();
+        std::thread::spawn(move || {
+            waiter.wait_for_next_turn(Some(playing));
+            sent.send(started.elapsed()).unwrap();
+        });
+
+        std::thread::sleep(Duration::from_millis(40));
+        shared.session.lock().unwrap().game.winner = Some(0);
+        shared.note_turn_ready(won);
+
+        let elapsed = received
+            .recv_timeout(Duration::from_millis(300))
+            .expect("the terminal frame should wake the long poll");
+        assert!(
+            elapsed < Duration::from_millis(250),
+            "terminal state waited for the {:?} long-poll cap: {elapsed:?}",
+            STATE_LONG_POLL
+        );
     }
 
     #[test]
     fn every_turn_waits_for_its_frame_only_while_a_viewer_is_active() {
         let now = Instant::now();
-        let turn_7 = SpectatorFrame { seed: 41, turn: 7 };
-        let turn_8 = SpectatorFrame { seed: 41, turn: 8 };
-        let next_world = SpectatorFrame { seed: 42, turn: 7 };
+        let turn_7 = SpectatorFrame {
+            seed: 41,
+            turn: 7,
+            finished: false,
+        };
+        let turn_8 = SpectatorFrame {
+            seed: 41,
+            turn: 8,
+            finished: false,
+        };
+        let next_world = SpectatorFrame {
+            seed: 42,
+            turn: 7,
+            finished: false,
+        };
+        let final_turn_7 = SpectatorFrame {
+            finished: true,
+            ..turn_7
+        };
         let mut delivery = FrameDelivery::default();
 
         assert_eq!(delivery.wait_remaining(turn_7, now), None);
@@ -3389,6 +4164,7 @@ mod tests {
         assert_eq!(delivery.wait_remaining(turn_7, now), None);
         assert!(delivery.wait_remaining(turn_8, now).is_some());
         assert!(delivery.wait_remaining(next_world, now).is_some());
+        assert!(delivery.wait_remaining(final_turn_7, now).is_some());
 
         assert_eq!(
             delivery.wait_remaining(turn_8, now + Duration::from_millis(40) + VIEWER_ACTIVE),
@@ -3407,7 +4183,11 @@ mod tests {
     #[test]
     fn every_viewer_is_owed_the_turn_not_whichever_asks_first() {
         let now = Instant::now();
-        let turn_7 = SpectatorFrame { seed: 41, turn: 7 };
+        let turn_7 = SpectatorFrame {
+            seed: 41,
+            turn: 7,
+            finished: false,
+        };
         let mut delivery = FrameDelivery::default();
 
         delivery.viewer_request("one", None, now);
@@ -3434,7 +4214,11 @@ mod tests {
         // And a tab that closes stops holding turns open once it goes stale,
         // rather than costing the exhibition a wait for a page nobody has.
         let later = now + VIEWER_ACTIVE + Duration::from_millis(1);
-        let turn_8 = SpectatorFrame { seed: 41, turn: 8 };
+        let turn_8 = SpectatorFrame {
+            seed: 41,
+            turn: 8,
+            finished: false,
+        };
         delivery.viewer_request("one", None, later);
         delivery.frame_delivered("one", turn_8, later);
         delivery.viewer_request("one", Some(turn_8), later);
@@ -3445,9 +4229,21 @@ mod tests {
     #[test]
     fn only_the_exact_delivered_snapshot_can_acknowledge_a_complete_frame() {
         let now = Instant::now();
-        let turn_7 = SpectatorFrame { seed: 41, turn: 7 };
-        let turn_8 = SpectatorFrame { seed: 41, turn: 8 };
-        let other_world = SpectatorFrame { seed: 42, turn: 7 };
+        let turn_7 = SpectatorFrame {
+            seed: 41,
+            turn: 7,
+            finished: false,
+        };
+        let turn_8 = SpectatorFrame {
+            seed: 41,
+            turn: 8,
+            finished: false,
+        };
+        let other_world = SpectatorFrame {
+            seed: 42,
+            turn: 7,
+            finished: false,
+        };
         let mut delivery = FrameDelivery::default();
 
         delivery.viewer_request("one", None, now);
@@ -3463,11 +4259,143 @@ mod tests {
         assert_eq!(delivery.wait_remaining(turn_7, now), None);
     }
 
+    /// A batch of `n` turns answers with one state, so `n - 1` of them were
+    /// played where no page could draw them.
+    ///
+    /// This is arithmetic on the response, not an inference about a viewer:
+    /// whatever the browser does with the state it gets, the turns that never
+    /// became a state cannot be drawn by anybody. One turn per request is the
+    /// only shape that costs nothing.
+    #[test]
+    fn a_batch_of_turns_answers_with_one_state_and_owes_the_rest() {
+        let mut delivery = FrameDelivery::default();
+
+        // The shape the browser is supposed to use.
+        for _ in 0..5 {
+            delivery.turns_simulated_without_a_frame(1);
+        }
+        assert_eq!(delivery.missed, 0, "one turn per response is one frame each");
+        assert_eq!(delivery.autoplayed, 5);
+
+        // The shape that lost them: ten turns, one state.
+        delivery.turns_simulated_without_a_frame(10);
+        assert_eq!(delivery.missed, 9, "nine of the ten turns had no state");
+        assert_eq!(delivery.autoplayed, 15);
+
+        // A request that ran out of game played nothing and owes nothing.
+        delivery.turns_simulated_without_a_frame(0);
+        assert_eq!(delivery.missed, 9);
+        assert_eq!(delivery.autoplayed, 15);
+    }
+
+    /// `/status` has to be able to see auto-play, which it could not.
+    ///
+    /// `frames_missed` is built out of the gaps between a viewer's
+    /// `/state?painted=` acknowledgements. A single-player page advances over
+    /// `POST /autoplay` and sends none, and the exhibition stepper does not
+    /// touch a game somebody is playing — so auto-play could drop nine turns
+    /// in ten and every number on the audit still read clean. That is why this
+    /// went unnoticed for as long as it did, so the audit is what gets the
+    /// test: one turn per request must cost nothing, a batch must be charged
+    /// for what it swallowed, and a retried request must not be charged twice.
+    #[test]
+    fn the_audit_can_see_the_turns_auto_play_never_shows() {
+        let port = TcpListener::bind(("127.0.0.1", 0))
+            .expect("a free port")
+            .local_addr()
+            .unwrap()
+            .port();
+        let mut params = current();
+        params.num_players = 3;
+        params.num_city_states = 0;
+        params.width = 24;
+        params.height = 16;
+        params.seed = 20_260_726;
+        assert!(!params.spectate, "auto-play is the human-game path");
+        std::thread::spawn(move || super::serve_with_game(port, false, params, None, false));
+
+        let deadline = Instant::now() + Duration::from_secs(60);
+        while http_get(port, "/status").is_none() {
+            assert!(Instant::now() < deadline, "single-player server never came up");
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        let audit = |port| -> Value {
+            serde_json::from_str(&http_get(port, "/status").expect("status")).expect("status JSON")
+        };
+        let ask = |turns: u32, id: &str| {
+            json!({
+                "turns": turns,
+                "strategy": "basic",
+                "request_id": id,
+                "seed": 20_260_726,
+                "server_instance": std::process::id(),
+            })
+            .to_string()
+        };
+
+        assert_eq!(
+            audit(port)["autoplay_turns"],
+            json!(0),
+            "nothing has been auto-played yet, and that is a different claim from a clean run"
+        );
+
+        // The shape the browser uses: one turn, one state, one frame.
+        for n in 1..=5 {
+            let body = ask(1, &format!("viewer-1-autoplay-{n}"));
+            let played: Value =
+                serde_json::from_str(&http_post(port, "/autoplay", &body).expect("a response"))
+                    .expect("response is JSON");
+            assert_eq!(played["autoplayed"], json!(1), "request {n} played one turn");
+        }
+        let clean = audit(port);
+        assert_eq!(clean["autoplay_turns"], json!(5));
+        assert_eq!(
+            clean["frames_missed"],
+            json!(0),
+            "five turns arrived as five states and none of them was owed a frame"
+        );
+
+        // The shape that lost them. Nine of these ten turns are simulated into
+        // a state that is thrown away before it is ever serialised.
+        let batch = ask(10, "viewer-1-autoplay-batch");
+        let swallowed: Value =
+            serde_json::from_str(&http_post(port, "/autoplay", &batch).expect("batch response"))
+                .expect("batch response is JSON");
+        assert_eq!(swallowed["autoplayed"], json!(10));
+        let charged = audit(port);
+        assert_eq!(charged["autoplay_turns"], json!(15));
+        assert_eq!(
+            charged["frames_missed"],
+            json!(9),
+            "a ten-turn batch answers with one state, so nine turns had none"
+        );
+
+        // A dropped response is replayed from `last_autoplay_request` without
+        // simulating anything, so the retry arm must not be charged.
+        let retry: Value =
+            serde_json::from_str(&http_post(port, "/autoplay", &batch).expect("retry response"))
+                .expect("retry response is JSON");
+        assert_eq!(retry["turn"], swallowed["turn"], "the retry replayed the batch");
+        let after_retry = audit(port);
+        assert_eq!(
+            after_retry["autoplay_turns"],
+            json!(15),
+            "the retry played no turns, so it owes none"
+        );
+        assert_eq!(after_retry["frames_missed"], json!(9));
+    }
+
     /// Each viewer's misses are its own. One page catching every turn does not
     /// cover for another that is dropping them.
     #[test]
     fn misses_are_counted_against_the_viewer_that_missed_them() {
-        let world = |turn| Some(SpectatorFrame { seed: 41, turn });
+        let world = |turn| {
+            Some(SpectatorFrame {
+                seed: 41,
+                turn,
+                finished: false,
+            })
+        };
         let mut now = Instant::now();
         let beat = Duration::from_millis(50);
         let mut delivery = FrameDelivery::default();
@@ -3491,7 +4419,13 @@ mod tests {
     /// rather than assumed not to exist.
     #[test]
     fn painting_reports_count_the_turns_no_viewer_ever_drew() {
-        let world = |turn| Some(SpectatorFrame { seed: 41, turn });
+        let world = |turn| {
+            Some(SpectatorFrame {
+                seed: 41,
+                turn,
+                finished: false,
+            })
+        };
         let mut now = Instant::now();
         let mut poll = |delivery: &mut FrameDelivery, painted, after: Duration| {
             now += after;
@@ -3526,9 +4460,33 @@ mod tests {
         // the turns before it belonged to another game. Nor is a repeated turn
         // a miss — the page redraws the same turn whenever it polls twice
         // inside one.
-        poll(&mut delivery, Some(SpectatorFrame { seed: 42, turn: 40 }), beat);
-        poll(&mut delivery, Some(SpectatorFrame { seed: 42, turn: 40 }), beat);
-        poll(&mut delivery, Some(SpectatorFrame { seed: 42, turn: 41 }), beat);
+        poll(
+            &mut delivery,
+            Some(SpectatorFrame {
+                seed: 42,
+                turn: 40,
+                finished: false,
+            }),
+            beat,
+        );
+        poll(
+            &mut delivery,
+            Some(SpectatorFrame {
+                seed: 42,
+                turn: 40,
+                finished: false,
+            }),
+            beat,
+        );
+        poll(
+            &mut delivery,
+            Some(SpectatorFrame {
+                seed: 42,
+                turn: 41,
+                finished: false,
+            }),
+            beat,
+        );
         assert_eq!(missed(&delivery), 3);
     }
 
@@ -3653,6 +4611,90 @@ mod tests {
         assert_eq!(status["frames_painted"], json!(last));
     }
 
+    /// A restart puts a new page in front of a new world, and that page's
+    /// opening `/state?painted=` is the whole of how it gets there. It must
+    /// not be made to wait on somebody else's paint.
+    ///
+    /// The stepper used to hold the frame gate across `wait_for_turn_frame`,
+    /// and seating a viewer needs that same gate — so an arriving page was
+    /// locked out for exactly as long as whoever was already watching took to
+    /// draw. Measured on a 74x46 six-player exhibition, that was 4.5s of veil
+    /// on every restart against 0.05s once the wait moved outside the gate.
+    /// Worse, the restarting page gave up at its own timeout and retried,
+    /// seating itself as a viewer owed a frame it then never painted, and the
+    /// successor stopped stepping altogether: 0 turns in 25 seconds.
+    #[test]
+    fn an_arriving_page_is_not_held_up_by_another_viewers_paint() {
+        let port = TcpListener::bind(("127.0.0.1", 0))
+            .expect("a free port")
+            .local_addr()
+            .unwrap()
+            .port();
+        let mut params = current();
+        params.spectate = true;
+        params.num_players = 3;
+        params.num_city_states = 1;
+        params.width = 24;
+        params.height = 16;
+        params.seed = 20_260_727;
+        std::thread::spawn(move || super::serve_with_game(port, false, params, None, false));
+
+        let deadline = Instant::now() + Duration::from_secs(60);
+        while http_get(port, "/status").is_none() {
+            assert!(Instant::now() < deadline, "spectator server never came up");
+            std::thread::sleep(Duration::from_millis(50));
+        }
+
+        // Somebody is already watching, and drawing slowly. The stepper owes
+        // this viewer every turn and will wait for it; the question is only
+        // whether it waits with the door held shut behind it.
+        let watcher = std::thread::spawn(move || {
+            let mut painted: Option<(u64, u32)> = None;
+            for _ in 0..8 {
+                let target = match painted {
+                    None => "/state?painted=&viewer=watcher".to_string(),
+                    Some((seed, turn)) => {
+                        format!("/state?painted={turn}&world={seed}&viewer=watcher")
+                    }
+                };
+                let Some(body) = http_get(port, &target) else {
+                    return;
+                };
+                let state: Value = serde_json::from_str(&body).expect("state is JSON");
+                std::thread::sleep(Duration::from_millis(1_500)); // the paint
+                painted = Some((
+                    state["seed"].as_u64().expect("a world"),
+                    state["turn"].as_u64().expect("a turn") as u32,
+                ));
+            }
+        });
+        std::thread::sleep(Duration::from_millis(600)); // let it take its seat
+
+        // Each arrival is a distinct page, exactly as a reload or a restart is.
+        // Asked repeatedly, because a lock-out is a race and one lucky read
+        // proves nothing.
+        for attempt in 1..=5 {
+            let started = Instant::now();
+            let body = http_get(port, &format!("/state?painted=&viewer=arriving-{attempt}"))
+                .unwrap_or_else(|| panic!("arrival {attempt}: the opening state never arrived"));
+            let elapsed = started.elapsed();
+            let state: Value = serde_json::from_str(&body)
+                .unwrap_or_else(|e| panic!("arrival {attempt}: opening state is not JSON: {e}"));
+            assert!(
+                state["turn"].is_number(),
+                "arrival {attempt}: the opening state carries no turn"
+            );
+            assert!(
+                elapsed < Duration::from_millis(600),
+                "arrival {attempt} waited {elapsed:?} for its first frame while another \
+                 viewer was painting, and a restart shows a veil for every bit of that"
+            );
+            std::thread::sleep(Duration::from_millis(150));
+        }
+        http_post(port, "/pace", "{\"paused\":true}"); // stop stepping this game
+        let _ = watcher.join();
+    }
+
     /// Martin's requirement is a simulation gate, not merely an audit after
     /// the fact. Once a turn has reached the socket, the game must remain on
     /// that turn until the viewer reports that the complete frame rendered.
@@ -3719,14 +4761,42 @@ mod tests {
         port
     }
 
+    #[test]
+    fn runtime_identity_is_a_small_successor_probe() {
+        let port = exhibition(20_260_726);
+        http_post(port, "/pace", "{\"paused\":true}").expect("pause the exhibition");
+        let runtime_body = http_get(port, "/runtime").expect("runtime identity");
+        let state_body = http_get(port, "/state").expect("full state");
+        let runtime: Value = serde_json::from_str(&runtime_body).expect("runtime is JSON");
+        let state: Value = serde_json::from_str(&state_body).expect("state is JSON");
+
+        assert_eq!(runtime["server_instance"], state["server_instance"]);
+        assert_eq!(runtime["seed"], state["seed"]);
+        assert_eq!(runtime["commit"], state["server_commit"]);
+        // The supervisor's whole view of a pending restart. It rides here
+        // rather than only on `/state` because a long AI turn is exactly when
+        // a restart is asked for and exactly when `/state` cannot be built.
+        assert!(runtime["supervisor_request"].is_null());
+        assert_eq!(runtime["supervisor_request"], state["supervisor_request"]);
+        assert!(
+            runtime_body.len() < 256,
+            "successor identity should stay tiny, got {} bytes",
+            runtime_body.len()
+        );
+        assert!(
+            runtime_body.len() * 10 < state_body.len(),
+            "the identity probe should not resemble a full observation"
+        );
+    }
+
     /// A result has to arrive with the window it promises, and that window has
     /// to be answerable.
     ///
     /// The countdown used to be armed on the stepper's *next* pass, so for a
     /// beat `/state` carried a winner and no `restart_in` at all and the
     /// result screen opened on "preparing the next world" before it started
-    /// counting. That beat is the difference between five seconds to press
-    /// "one more turn" and however much of five seconds is left over.
+    /// counting. That beat is the difference between ten seconds to press
+    /// "one more turn" and however much of ten seconds is left over.
     #[test]
     fn a_result_arrives_with_its_countdown_and_can_be_played_past() {
         let port = TcpListener::bind(("127.0.0.1", 0))
@@ -3765,30 +4835,51 @@ mod tests {
         // Every state that carries a winner carries the countdown with it.
         assert_eq!(
             decided["restart_in"],
-            json!(MIN_RESTART_MS / 1_000),
-            "a result was published without the five seconds it is owed"
+            json!(RESULT_COUNTDOWN_MS / 1_000),
+            "a result was published without the ten seconds it is owed"
         );
 
-        let played_on: Value =
-            serde_json::from_str(&http_post(port, "/play-on", "{}").expect("play on"))
-                .expect("play-on answers JSON");
+        let played_on: Value = serde_json::from_str(
+            &http_post(
+                port,
+                "/play-on",
+                "{\"mode\":\"until_next_victory\",\"paused\":true}",
+            )
+            .expect("look around"),
+        )
+        .expect("play-on answers JSON");
         assert!(played_on["error"].is_null());
         assert!(played_on["winner"].is_null(), "the world is live again");
         // The verdict survives the extension, and the countdown that was
-        // running for it does not.
-        assert_eq!(played_on["decided"]["turn"], decided["turn"]);
+        // running for it does not. It keeps the turn the result was reported
+        // on: this game runs to its three-turn limit, so the score tiebreak is
+        // dated on turn three even though the count that settled it was taken
+        // on the wrap into a fourth turn nobody plays.
+        assert_eq!(played_on["decided"]["turn"], decided["victory_turn"]);
         assert_eq!(
             played_on["decided"]["victory_type"],
             decided["victory_type"]
         );
-        assert!(played_on["restart_in"].is_null());
         assert_eq!(
-            played_on["max_turns"].as_u64().expect("a raised limit"),
-            decided["turn"].as_u64().unwrap() + u64::from(crate::game::PLAY_ON_TURNS)
+            played_on["decided"]["mode"],
+            json!("until_next_victory")
         );
+        assert!(played_on["restart_in"].is_null());
+        assert!(played_on["turn_limit"].is_null(), "there is no new cap");
+        assert_eq!(played_on["max_turns"], json!(3), "setup stays intact");
         assert_eq!(played_on["seed"], decided["seed"], "the same world");
+        assert_eq!(played_on["paused"], json!(true));
+        assert_eq!(played_on["spectator_paused"], json!(true));
 
-        http_post(port, "/pace", "{\"paused\":true}");
+        // "Take a look around" means the final map really is held. A pause
+        // posted separately from play-on could let the stepper claim one AI
+        // turn in between the two requests.
+        std::thread::sleep(Duration::from_millis(350));
+        let held = read("/state");
+        assert_eq!(held["seed"], decided["seed"]);
+        assert_eq!(held["turn"], played_on["turn"]);
+        assert!(held["winner"].is_null());
+        assert_eq!(held["paused"], json!(true));
     }
 
     /// Two tabs on one exhibition are two promises, not one.
@@ -4024,6 +5115,46 @@ mod tests {
     }
 
     #[test]
+    fn a_page_that_cannot_boot_says_so_instead_of_showing_a_black_map() {
+        // The failure this pins is invisible from outside the browser: the
+        // shell paints, the title is right, the server is healthy, and the map
+        // is simply never drawn. A page that is still retrying must say which
+        // attempt it is on, and must take the notice down once a world arrives.
+        let boot = EMBEDDED_INDEX
+            .split_once("async function boot() {")
+            .expect("browser boot function")
+            .1
+            .split_once("\nasync function send(action) {")
+            .expect("end of browser boot function")
+            .0;
+        assert!(
+            boot.contains("showBootRetrying(++bootAttempts);"),
+            "a failed boot must report itself on screen, not only to the console"
+        );
+        assert!(
+            boot.contains("if (bootAttempts) { bootAttempts = 0; clearBootRetrying(); }"),
+            "a boot that finally succeeds must clear its own notice"
+        );
+        assert!(EMBEDDED_INDEX.contains("Connecting to the server — retrying (attempt ${attempt})"));
+    }
+
+    /// A finished game holds the screen for the same length of time whoever
+    /// was playing it. The browser counts a single-player finale down itself
+    /// and the server counts the exhibition's, so the two numbers live in
+    /// different languages and had already drifted to ten and five — one
+    /// result screen unhurried, the other hustling the verdict away.
+    #[test]
+    fn the_page_counts_a_finale_down_from_the_same_ten_seconds_the_server_does() {
+        assert!(
+            EMBEDDED_INDEX.contains(&format!(
+                "const FINALE_RESTART_SECONDS = {};",
+                RESULT_COUNTDOWN_MS / 1_000
+            )),
+            "the browser's finale countdown must be the server's countdown"
+        );
+    }
+
+    #[test]
     fn browser_renders_each_delivered_state_as_one_complete_frame() {
         let requirement = include_str!("../docs/SPECTATOR_DEPLOY.md");
         assert!(
@@ -4035,7 +5166,9 @@ mod tests {
         );
 
         let render = EMBEDDED_INDEX
-            .split_once("function render(st, recordChronicle = true) {")
+            .split_once(
+                "function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false) {",
+            )
             .expect("browser render function")
             .1
             .split_once("\nfunction drawCaptureChoice()")
@@ -4049,7 +5182,7 @@ mod tests {
             .expect("map, minimap, HUDs, and controls must repaint together");
         assert!(state_assignment < full_frame);
         let painted = render
-            .find("paintedFrame = {seed:st.seed, turn:st.turn};")
+            .find("paintedFrame = {seed:st.seed, turn:st.turn,")
             .expect("complete-frame acknowledgement");
         assert!(
             full_frame < painted,
@@ -4075,8 +5208,8 @@ mod tests {
             .split_once("\nfunction playerHudOverview()")
             .expect("end of turn plate renderer")
             .0;
-        assert!(turn_plate.contains("<strong>${state.turn}</strong>"));
-        assert!(!victory_hud.contains("<strong>${state.turn}</strong>"));
+        assert!(turn_plate.contains("<strong>${reportedTurn()}</strong>"));
+        assert!(!victory_hud.contains("<strong>${reportedTurn()}</strong>"));
 
         let player_hud = EMBEDDED_INDEX
             .split_once("function drawPlayerHud() {")
@@ -4094,10 +5227,28 @@ mod tests {
         // A seat somebody is playing is named after the player this game
         // registered for them, and it is preferred over any agent handle: a
         // person is never one of the entrants on the leaderboard.
-        assert!(player_hud.contains("p.player_username || p.ai_username || \"AI player\""));
-        // And a player with nothing behind them reads unrated rather than
-        // wearing the 1500 every unrated player would have.
-        assert!(player_hud.contains("(playedGames ? `${p.player_elo} ELO` : \"Unrated\")"));
+        assert!(player_hud
+            .contains("p.player_username || p.ai_username || p.ai_name || \"AI player\""));
+        // Civilization has absorbed the old Empire action. Watch as remains a
+        // distinct, wider perspective control with breathing room before the
+        // player identity it changes.
+        assert!(player_hud.contains(
+            "class=\"diplomacy-identity diplomacy-civ-link\" data-hud-action=\"capital\""
+        ));
+        assert!(!player_hud.contains("class=\"empire-link\""));
+        assert!(EMBEDDED_INDEX.contains("--hud-watch-column: 68px"));
+        // Watch-as and the All button heading it share one fixed track, so they
+        // are inset by the same single pixel. Four pixels of difference read as
+        // a head overhanging its own column.
+        assert!(EMBEDDED_INDEX.contains("width: calc(100% - 2px); height: 22px; margin: 0 1px;"));
+        assert_eq!(EMBEDDED_INDEX.matches("width: calc(100% - 2px);").count(), 2,
+            "the two controls in the Watch-as column are the same width at every screen size");
+        // And a player with nothing behind them still wears a rating: the
+        // 1500 every player starts from, marked provisional rather than
+        // replaced by a dash that would read as "cannot be rated".
+        assert!(player_hud.contains("const playerElo = eloKnown ? `${eloValue}` : \"—\";"));
+        assert!(player_hud.contains("${eloProvisional ? \" provisional\" : \"\"}"));
+        assert!(EMBEDDED_INDEX.contains(".diplomacy-elo-value.provisional {"));
 
         // The side panel is the one part of a frame that is allowed to skip a
         // repaint, because below a second per turn it changes faster than
@@ -4120,15 +5271,18 @@ mod tests {
         // And the page tells the server which turn it painted, both so that
         // only a painting page holds the simulation to a turn and so that
         // turns nobody drew can be counted instead of assumed away.
-        assert!(EMBEDDED_INDEX.contains("paintedFrame = {seed:st.seed, turn:st.turn};"));
+        assert!(EMBEDDED_INDEX.contains("paintedFrame = {seed:st.seed, turn:st.turn,"));
         assert!(EMBEDDED_INDEX
-            .contains("`?painted=${paintedFrame.turn}&world=${paintedFrame.seed}`"));
+            .contains("finished:st.winner !== null && st.winner !== undefined"));
+        assert!(EMBEDDED_INDEX
+            .contains("`&finished=${paintedFrame.finished ? 1 : 0}`"));
         assert!(EMBEDDED_INDEX.contains("fetchJSON(\"/state\" + paintedQuery())"));
         // Two tabs are two promises, so a page says which one it is, and what
         // it holds is asked separately from what it drew — a state can arrive,
         // patch the tiles and still fail to paint.
         assert!(EMBEDDED_INDEX.contains("&viewer=${VIEWER_ID}"));
-        assert!(EMBEDDED_INDEX.contains("&have=${tileStore.seed}:${tileStore.turn}"));
+        assert!(EMBEDDED_INDEX
+            .contains("&have=${tileStore.seed}:${tileStore.turn}:${tileStore.finished ? 1 : 0}"));
 
         // And it draws one turn per animation frame, on the display's clock
         // rather than a timer of its own. Two turns painted inside one refresh
@@ -4173,10 +5327,396 @@ mod tests {
         assert!(fetching.contains("generation === specFetchGeneration"));
     }
 
+    #[test]
+    fn browser_lets_an_observer_narrow_the_reasoning_log() {
+        // The panel is only useful if a reader can ask a narrower question
+        // than "everything every civilization thought": whose reasoning, how
+        // deep into it, and about what.
+        assert!(EMBEDDED_INDEX.contains("<span>AI reasoning log</span>"));
+        assert!(EMBEDDED_INDEX.contains("id=\"reasonplayer\""));
+        assert!(EMBEDDED_INDEX.contains("id=\"reasonlevel\""));
+        assert!(EMBEDDED_INDEX.contains("id=\"reasontopic\""));
+        assert!(EMBEDDED_INDEX.contains("<option value=\"all\">All civilizations</option>"));
+        // Anything the combined log can show, the civ filter can isolate. A
+        // Free City keeps developing the cities it inherited and so keeps
+        // making production decisions; without this it appeared under "All
+        // civilizations" with no way to select it.
+        assert!(EMBEDDED_INDEX.contains("for (const thought of reasoningLog.thoughts) listed.add(thought.player);"));
+        assert!(EMBEDDED_INDEX.contains("function logSeatNote(id)"));
+        assert!(EMBEDDED_INDEX.contains("<option value=\"all\">All topics</option>"));
+        // Depth is a floor, not an equality — a decision read without the plan
+        // it serves explains nothing — and the three rungs are the ones the
+        // engine records at.
+        assert!(EMBEDDED_INDEX.contains("const REASON_LEVEL_RANK = {strategy: 0, decision: 1, detail: 2};"));
+        for level in ["strategy", "decision", "detail"] {
+            assert!(
+                EMBEDDED_INDEX.contains(&format!("<option value=\"{level}\"")),
+                "the depth filter is missing {level}"
+            );
+        }
+        // Every topic the engine can record is offered, under the same name.
+        for topic in crate::reasoning::Topic::ALL {
+            assert!(
+                EMBEDDED_INDEX
+                    .contains(&format!("[\"{}\", \"{}\"]", topic.as_str(), topic.label())),
+                "the topic filter is missing {}",
+                topic.as_str()
+            );
+        }
+        // The log arrives as a delta on the turn's own fetch, not as part of
+        // the multi-megabyte world observation.
+        assert!(EMBEDDED_INDEX.contains("const thinking = `&think=${reasoningLog.cursor}`;"));
+        assert!(EMBEDDED_INDEX.contains("function absorbReasoning(st)"));
+        // A change of observed seat discards what the page holds, the same way
+        // a change of world does. `reasoning_json` stops sending a rival's
+        // thoughts the moment Watch as is entered, but the page had absorbed
+        // them while it was above the world — so without this the redaction is
+        // defeated by having watched first, and the log under the Active
+        // strategy panel names every civilization while the panel names one.
+        assert!(EMBEDDED_INDEX.contains("const viewer = st.view_player ?? null;"));
+        assert!(EMBEDDED_INDEX
+            .contains("if (newWorld || reasoningLog.viewer !== viewer) {"));
+        // A log that is not the whole story says so.
+        assert!(EMBEDDED_INDEX.contains("Earlier reasoning has been discarded"));
+        // The three logs share the sidebar's spare height. Each floor is
+        // header + padding + border + what the panel holds, and every one of
+        // them now has to cover a filter bar as well as its list — measured in
+        // the page, because a section squeezed under its floor does not clip:
+        // its list paints straight over the panel below it. The reasoning
+        // log's bar is three rows (97px); the war and event logs' are two
+        // (66px), and that bar is the whole difference between these numbers
+        // and the ones that were here before the filters — each list keeps the
+        // height it had.
+        assert!(EMBEDDED_INDEX.contains("#reasonsec[open] { flex: 3 0 0; min-height: 300px; }"));
+        assert!(EMBEDDED_INDEX.contains("#eventsec[open] { flex: 2 0 0; min-height: 302px; }"));
+        assert!(EMBEDDED_INDEX.contains("#warsec[open] { flex: 2 0 0; min-height: 266px; }"));
+        assert!(EMBEDDED_INDEX.contains(".reason-list { flex: 1 1 auto; min-height: 132px;"));
+        // One filter bar, worn in the same place by every panel that narrows
+        // by civilization — the three logs and the Active AI strategy card above
+        // them. A second copy of this chrome under another name is how four
+        // pickers drift into four shapes.
+        assert!(EMBEDDED_INDEX.contains(".log-filters { flex: 0 0 auto;"));
+        assert!(!EMBEDDED_INDEX.contains(".reason-filter"));
+        assert!(EMBEDDED_INDEX.contains(
+            "<label class=\"log-filter\"><span>Civ</span>\n            <select id=\"strategyplayer\""
+        ));
+    }
+
+    /// The war log and the game event log are narrowed the same way.
+    ///
+    /// Both panels are chronicles of a whole world, and by the industrial era
+    /// a spectator is reading thirty conflicts and sixty notices looking for
+    /// one empire's story. The civ filter is the question actually being
+    /// asked; each log carries exactly one more, the one its own shape needs.
+    #[test]
+    fn browser_lets_an_observer_narrow_the_two_chronicles() {
+        for control in ["warplayer", "warstatus", "eventplayer", "eventkind"] {
+            assert!(
+                EMBEDDED_INDEX.contains(&format!("id=\"{control}\"")),
+                "the log filters are missing {control}"
+            );
+        }
+        // All three logs name a seat with one vocabulary and correct a
+        // selection that has left the list the same way, so a filter can never
+        // strand a reader on an empty panel with no way back out of it.
+        assert!(EMBEDDED_INDEX.contains("function syncCivFilterOptions(select, seats, allLabel, chosen)"));
+        assert!(EMBEDDED_INDEX
+            .contains("const kept = chosen !== \"all\" && !seats.includes(Number(chosen)) ? \"all\" : chosen;"));
+        assert!(EMBEDDED_INDEX.contains("function syncWarOptions(wars)"));
+        assert!(EMBEDDED_INDEX.contains("function syncEventOptions()"));
+        // A war is filtered on the belligerents the panel itself would name,
+        // city-states dragged in by a Suzerain included — not on the two
+        // civilizations in the declaration.
+        assert!(EMBEDDED_INDEX.contains("function warBelligerents(war)"));
+        assert!(EMBEDDED_INDEX.contains("for (const party of (war.parties || [])) seats.add(party.player);"));
+        // The war log's own filtering happens in the hook the panel already
+        // reads through, so the chronicle's order is still never rewritten.
+        let war_filter = EMBEDDED_INDEX
+            .split("function warsForLog(wars)")
+            .nth(1)
+            .expect("the war log's filter")
+            .split("function warLogSeats(wars)")
+            .next()
+            .unwrap();
+        for status in ["ongoing", "ended"] {
+            assert!(
+                war_filter.contains(&format!("warFilters.status === \"{status}\"")),
+                "the war status filter is missing {status}"
+            );
+            assert!(
+                EMBEDDED_INDEX.contains(&format!("<option value=\"{status}\">")),
+                "the war status filter offers no {status} option"
+            );
+        }
+        assert!(!war_filter.contains("sort("));
+        // Every category the engine can stamp on an event is gathered by one
+        // of the kinds the filter offers. A category no kind claims would be
+        // an entry the combined log shows and no narrower question can reach.
+        let kinds = EMBEDDED_INDEX
+            .split("const EVENT_KINDS = [")
+            .nth(1)
+            .expect("the event log's kinds")
+            .split("];")
+            .next()
+            .unwrap();
+        for category in crate::game::EVENT_CATEGORIES {
+            assert!(
+                kinds.contains(&format!("\"{category}\"")),
+                "no event-log kind gathers the {category} category"
+            );
+            assert!(
+                EMBEDDED_INDEX.contains(&format!("{category}: \"")),
+                "the {category} category reaches the log with no icon of its own"
+            );
+        }
+        // An entry is filtered on the civilizations it is *about*, recorded as
+        // the log is written. Matching on the text would make "Rome" in
+        // "Rome captured Antium from Egypt" hide the entry from Egypt.
+        assert!(EMBEDDED_INDEX.contains("function eventSubjects(event)"));
+        assert!(EMBEDDED_INDEX.contains(
+            "!eventSubjects(event).includes(Number(eventFilters.player))"
+        ));
+        assert!(EMBEDDED_INDEX.contains("\"War\", [event.player, event.former]"));
+        assert!(EMBEDDED_INDEX.contains("\"War\", [event.aggressor, event.defender]"));
+        // An engine entry is attributed by the id the engine sends, not by
+        // whichever seat the frame happened to be observed from: the
+        // spectator's feed rotates through the seats between frames, so the
+        // combined log's entries come from all of them.
+        assert!(EMBEDDED_INDEX.contains("event.category, [event.player ?? eventViewPlayer(next)]"));
+        // A choice is answered on the frame it is made on, and survives the
+        // tab being closed.
+        assert!(EMBEDDED_INDEX
+            .contains("function applyLogFilter(filters, storageKey, field, value, listId, redraw)"));
+        for key in [
+            "civvis-reasoning-filters-v1",
+            "civvis-war-filters-v1",
+            "civvis-event-filters-v1",
+        ] {
+            assert!(EMBEDDED_INDEX.contains(key), "no stored preference for {key}");
+        }
+        // A narrowed panel says so rather than reading as a quiet world: "At
+        // peace" under a filter would be a claim about the world made by a
+        // panel that is only showing part of it.
+        assert!(EMBEDDED_INDEX.contains("No conflict matches that filter."));
+        assert!(EMBEDDED_INDEX.contains("Nothing in this log matches that filter."));
+        assert!(EMBEDDED_INDEX.contains("`${wars.length} of ${rawWars.length}`"));
+        assert!(EMBEDDED_INDEX.contains("`${events.length} of ${held.length}`"));
+    }
+
+    /// Every topic the reasoning log offers is one a game actually reaches.
+    ///
+    /// Ignored because it plays two hundred turns of a six-player world, which
+    /// is minutes in a debug build. Run it with `cargo test --release --
+    /// --ignored reasoning_reaches_every_topic` after adding a topic: a filter
+    /// entry nothing ever writes to is a control that looks broken.
+    ///
+    /// Measured 2026-07-27 at turn 204 of seed 20260727: a median of 27
+    /// thoughts a turn and a worst turn of 70, which is the few kilobytes per
+    /// turn the delta on `/state` was designed around.
+    #[test]
+    #[ignore]
+    fn reasoning_reaches_every_topic() {
+        let mut params = watched_table();
+        params.num_players = 6;
+        params.width = 44;
+        params.height = 26;
+        params.num_city_states = 6;
+        let mut session = Session::new(params);
+        let mut seen: std::collections::BTreeMap<String, usize> = Default::default();
+        let mut per_turn: Vec<usize> = Vec::new();
+        let (mut cursor, mut turn, mut this_turn) = (0u64, session.game.turn, 0usize);
+        for _ in 0..5_000 {
+            session.step();
+            let delta = session.reasoning_json(cursor);
+            cursor = delta["cursor"].as_u64().unwrap();
+            for thought in delta["thoughts"].as_array().unwrap() {
+                *seen
+                    .entry(thought["topic"].as_str().unwrap().to_string())
+                    .or_default() += 1;
+                this_turn += 1;
+            }
+            if session.game.turn != turn {
+                per_turn.push(std::mem::take(&mut this_turn));
+                turn = session.game.turn;
+            }
+            if session.game.winner.is_some() {
+                break;
+            }
+        }
+        per_turn.sort_unstable();
+        let missing: Vec<&str> = crate::reasoning::Topic::ALL
+            .iter()
+            .map(|topic| topic.as_str())
+            .filter(|topic| !seen.contains_key(*topic))
+            .collect();
+        assert!(
+            missing.is_empty(),
+            "reached turn {} and these topics never recorded anything: {missing:?} \
+             (counts {seen:?})",
+            session.game.turn
+        );
+        let median = per_turn[per_turn.len() / 2];
+        assert!(
+            median < 200,
+            "a turn's reasoning delta has grown to {median} thoughts, which no longer \
+             belongs on the per-turn `/state` fetch"
+        );
+    }
+
+    /// A spectated table, which is the only kind that records its reasoning.
+    fn watched_table() -> Params {
+        let mut params = current();
+        params.spectate = true;
+        params.num_players = 3;
+        params.seed = 20_260_727;
+        params
+    }
+
+    #[test]
+    fn a_watched_table_records_why_it_did_what_it_did() {
+        let mut session = Session::new(watched_table());
+        for _ in 0..24 {
+            session.step();
+        }
+        let delta = session.reasoning_json(0);
+        let thoughts = delta["thoughts"].as_array().expect("a reasoning delta");
+        assert!(
+            !thoughts.is_empty(),
+            "twenty-four turns of a watched table produced no reasoning at all"
+        );
+        // Every thought says who thought it, when, and at what depth, because
+        // those three are exactly what the observer's filters run on.
+        for thought in thoughts {
+            assert!(thought["turn"].is_u64());
+            assert!(thought["player"].is_u64());
+            assert!(!thought["headline"].as_str().unwrap_or("").is_empty());
+            assert!(matches!(
+                thought["level"].as_str(),
+                Some("strategy" | "decision" | "detail")
+            ));
+            assert!(crate::reasoning::Topic::ALL
+                .iter()
+                .any(|topic| topic.as_str() == thought["topic"].as_str().unwrap_or("")));
+        }
+        // More than one civilization is thinking, and the record is one
+        // ordered account rather than one log per seat.
+        let seats: std::collections::BTreeSet<u64> = thoughts
+            .iter()
+            .filter_map(|thought| thought["player"].as_u64())
+            .collect();
+        assert!(seats.len() > 1, "only one seat was recorded: {seats:?}");
+        let ids: Vec<u64> = thoughts
+            .iter()
+            .filter_map(|thought| thought["id"].as_u64())
+            .collect();
+        assert!(ids.windows(2).all(|pair| pair[0] < pair[1]), "ids are not ordered");
+        // The plan itself has to be in there — it is what every other line is
+        // an instance of.
+        assert!(
+            thoughts.iter().any(|thought| {
+                thought["level"] == json!("strategy")
+                    && thought["headline"]
+                        .as_str()
+                        .is_some_and(|line| line.starts_with("Grand strategy: "))
+            }),
+            "no civilization reported its grand strategy"
+        );
+    }
+
+    #[test]
+    fn a_reasoning_cursor_is_answered_with_only_the_new_thoughts() {
+        let mut session = Session::new(watched_table());
+        for _ in 0..12 {
+            session.step();
+        }
+        let first = session.reasoning_json(0);
+        let cursor = first["cursor"].as_u64().expect("a cursor");
+        assert!(cursor > 0);
+        assert_eq!(first["reset"], json!(false));
+        // Nothing has happened since, so nothing comes back. This is the
+        // property that keeps the delta off the per-turn `/state` budget.
+        let idle = session.reasoning_json(cursor);
+        assert!(idle["thoughts"].as_array().unwrap().is_empty());
+        for _ in 0..6 {
+            session.step();
+        }
+        let next = session.reasoning_json(cursor);
+        let fresh = next["thoughts"].as_array().unwrap();
+        assert!(!fresh.is_empty());
+        assert!(
+            fresh.iter().all(|thought| thought["id"].as_u64().unwrap() > cursor),
+            "a cursor was answered with thoughts it already held"
+        );
+        // A cursor from a world this log is not — a tab that outlived the
+        // previous game — is told to discard what it holds.
+        let stale = session.reasoning_json(u64::MAX);
+        assert_eq!(stale["reset"], json!(true));
+        assert!(!stale["thoughts"].as_array().unwrap().is_empty());
+    }
+
+    #[test]
+    fn watching_as_one_civilization_shows_only_that_civilizations_reasoning() {
+        let mut session = Session::new(watched_table());
+        for _ in 0..18 {
+            session.step();
+        }
+        let everyone = session.reasoning_json(0);
+        let seats: std::collections::BTreeSet<u64> = everyone["thoughts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|thought| thought["player"].as_u64())
+            .collect();
+        assert!(seats.len() > 1);
+        // Sitting behind one civilization's fog means seeing what it can see,
+        // and nobody can read a rival's mind. The redaction is on the wire.
+        session.set_view_player(Some(1)).expect("a major seat");
+        let seated = session.reasoning_json(0);
+        let thoughts = seated["thoughts"].as_array().unwrap();
+        assert!(!thoughts.is_empty());
+        assert!(
+            thoughts.iter().all(|thought| thought["player"] == json!(1)),
+            "another civilization's reasoning reached a fogged view"
+        );
+    }
+
+    #[test]
+    fn an_unwatched_game_records_nothing() {
+        // A headless game has nobody reading the log, and the cost of building
+        // one is the cost of every `format!` in the agent. Off is the default
+        // and this is what pins it.
+        let mut session = Session::new(current());
+        for _ in 0..8 {
+            session.step();
+        }
+        let delta = session.reasoning_json(0);
+        assert!(delta["thoughts"].as_array().unwrap().is_empty());
+        assert_eq!(delta["cursor"], json!(0));
+    }
+
+    #[test]
+    fn the_state_document_carries_reasoning_only_when_a_page_asks_for_it() {
+        // `/state` is close to a megabyte on a standard map and a watching
+        // page fetches one per turn. The reasoning rides along only for a
+        // client that named a cursor.
+        let mut session = Session::new(watched_table());
+        for _ in 0..6 {
+            session.step();
+        }
+        assert!(session.state().get("ai_reasoning").is_none());
+        let mut with_reasoning = session.state();
+        with_reasoning["ai_reasoning"] = session.reasoning_json(0);
+        assert!(with_reasoning["ai_reasoning"]["thoughts"]
+            .as_array()
+            .is_some_and(|thoughts| !thoughts.is_empty()));
+    }
+
     fn current() -> Params {
         Params {
             map_topology: MapTopology::Flat,
             map_poles: MapPoles::Poles,
+            base_ruleset: BaseRuleset::Civ6,
+            start_era: 0,
             num_players: 2,
             width: 20,
             height: 14,
@@ -4190,9 +5730,9 @@ mod tests {
             difficulty: crate::game::default_difficulty(),
             speed: crate::game::default_speed(),
             teams: Vec::new(),
+            leader_pool: LeaderPool::Civ6,
             civs: Vec::new(),
             supervised: false,
-            restart_ms: 5_000,
             league_dir: None,
             league_record: false,
         }
@@ -4268,7 +5808,9 @@ mod tests {
     /// agents; the serialized game keeps the authoritative RNG.
     #[test]
     fn a_saved_game_reloads_onto_the_same_turn() {
-        let mut session = Session::new(current());
+        let mut params = current();
+        params.leader_pool = LeaderPool::Expanded;
+        let mut session = Session::new(params);
         for _ in 0..3 {
             session.act(&json!({"type": "end_turn"}));
         }
@@ -4279,9 +5821,11 @@ mod tests {
             serde_json::from_value(serde_json::to_value(&session.game).unwrap()).unwrap();
         assert_eq!(round_tripped.turn, turn);
         assert_eq!(round_tripped.seed, session.game.seed);
+        assert_eq!(round_tripped.leader_pool, LeaderPool::Expanded);
 
         let mut restored = Session::from_game(session.params.clone(), round_tripped);
         assert_eq!(restored.game.turn, turn);
+        assert_eq!(restored.params.leader_pool, LeaderPool::Expanded);
         assert!(restored.act(&json!({"type": "end_turn"})).is_none());
         assert!(restored.game.turn > turn, "a loaded game plays on");
     }
@@ -4337,6 +5881,102 @@ mod tests {
         );
         assert_eq!(custom.game_speed, GameSpeed::Marathon);
         assert_eq!(custom.max_turns, 99);
+    }
+
+    /// The first question the lobby asks. One ruleset is modeled, so the
+    /// setting has exactly one legal answer, and an id from some other game
+    /// leaves it on Civilization VI rather than being taken at face value.
+    #[test]
+    fn the_base_ruleset_setting_accepts_only_the_game_this_models() {
+        let stock = current();
+        assert_eq!(stock.base_ruleset, BaseRuleset::Civ6);
+        assert_eq!(
+            new_game_params(&stock, &json!({"base_ruleset": "civ5"})).base_ruleset,
+            BaseRuleset::Civ6
+        );
+        let asked = new_game_params(&stock, &json!({"base_ruleset": "civ6"}));
+        assert_eq!(asked.base_ruleset, BaseRuleset::Civ6);
+        assert_eq!(simulation_settings(&asked)["base_ruleset"], "civ6");
+        assert_eq!(Session::new(asked).game.base_ruleset, BaseRuleset::Civ6);
+    }
+
+    /// A rung that is declared but not built is refused, not substituted: a
+    /// lobby that asks for the Stone Age and is quietly handed the Ancient era
+    /// has been lied to about what it is about to play. An unbuilt rung and an
+    /// unknown one are answered the same way, because in both cases the honest
+    /// reply is that the setting did not move.
+    #[test]
+    fn a_start_era_nobody_has_built_is_refused_rather_than_substituted() {
+        let stock = current();
+        assert_eq!(stock.start_era, 0);
+        assert_eq!(simulation_settings(&stock)["start_era"], "ancient");
+        // The eon the ladder used to hang off is gone from the wire entirely.
+        assert!(simulation_settings(&stock).get("eon").is_none());
+
+        let medieval = new_game_params(&stock, &json!({"start_era": "medieval"}));
+        assert_eq!(medieval.start_era, start_era_from_id("medieval").unwrap());
+        assert_eq!(simulation_settings(&medieval)["start_era"], "medieval");
+
+        // The Stone Age is on the ladder but has no tree behind it; "future"
+        // is an era of the ruleset that is not offered as a start; the rest
+        // are not rungs at all. Every one of them leaves the setting alone.
+        for refused in ["stone_age", "future", "dinosaur", "holocene", ""] {
+            let asked = new_game_params(&medieval, &json!({"start_era": refused}));
+            assert_eq!(
+                asked.start_era, medieval.start_era,
+                "{refused:?} moved the start era"
+            );
+            assert_eq!(simulation_settings(&asked)["start_era"], "medieval");
+        }
+    }
+
+    /// The setting has to reach the world, survive being read back off it, and
+    /// be what the lobby is offered again next time.
+    #[test]
+    fn a_started_game_opens_in_the_era_the_lobby_asked_for() {
+        let asked = new_game_params(&current(), &json!({"start_era": "medieval"}));
+        let era = start_era_from_id("medieval").unwrap();
+        let session = Session::new(asked);
+        assert_eq!(session.game.start_era, era);
+        assert_eq!(session.game.world_era, era);
+        // Everyone on the board opens with the earlier eras researched.
+        assert!(session
+            .game
+            .players
+            .iter()
+            .filter(|player| !player.is_barbarian)
+            .all(|player| !player.techs.is_empty()));
+
+        // A world restored from that game offers its own setup back, not the
+        // default one — this is the lobby's only source of truth for what is
+        // on screen.
+        let params = current();
+        let restored = Session::from_game(params, session.game.clone());
+        assert_eq!(restored.params.start_era, era);
+        assert_eq!(restored.params.base_ruleset, BaseRuleset::Civ6);
+    }
+
+    #[test]
+    fn leader_pool_defaults_to_civ6_and_accepts_expanded_explicitly() {
+        let stock = current();
+        assert_eq!(stock.leader_pool, LeaderPool::Civ6);
+
+        let ignored = new_game_params(&stock, &json!({"leader_pool": "unknown"}));
+        assert_eq!(ignored.leader_pool, LeaderPool::Civ6);
+
+        let expanded = new_game_params(&stock, &json!({"leader_pool": "expanded"}));
+        assert_eq!(expanded.leader_pool, LeaderPool::Expanded);
+        let session = Session::new(expanded);
+        assert_eq!(session.game.leader_pool, LeaderPool::Expanded);
+        assert_eq!(session.state()["leader_pool"], "expanded");
+
+        let stock_session = Session::new(stock);
+        assert!(stock_session
+            .game
+            .players
+            .iter()
+            .filter(|player| !player.is_minor && !player.is_barbarian)
+            .all(|player| CIV6_LEADER_POOL.contains(&player.civ.as_str())));
     }
 
     #[test]
@@ -4414,6 +6054,96 @@ mod tests {
                  the whole client script dies at that line"
             );
         }
+    }
+
+    /// Every lobby setting is answered before a game starts: each select
+    /// offers only real values, and a victory condition is the two states a
+    /// checkbox knows. Nothing in the panel stands in for a decision that has
+    /// not been made, and nothing rolls one on somebody's behalf.
+    #[test]
+    fn every_game_setting_is_answered_before_a_game_starts() {
+        for setting in [
+            "baseruleset",
+            "gamemode",
+            "startera",
+            "leaderpool",
+            "leader",
+            "difficulty",
+            "mapshape",
+            "maptype",
+            "mappoles",
+            "np",
+            "teams",
+            "gamespeed",
+        ] {
+            let select = format!("id=\"{setting}\"");
+            let at = EMBEDDED_INDEX
+                .find(&select)
+                .unwrap_or_else(|| panic!("browser setup is missing the {setting} select"));
+            let tail = &EMBEDDED_INDEX[at..];
+            let end = tail.find("</select>").expect("unterminated select");
+            assert!(
+                !tail[..end].contains("?????"),
+                "the {setting} setting still offers a non-answer"
+            );
+        }
+        for victory in ["science", "culture", "religious", "diplomatic", "domination", "score"] {
+            assert!(EMBEDDED_INDEX.contains(&format!(
+                "id=\"victory-{victory}\" checked>"
+            )));
+        }
+        // The lobby reads its own controls once, with no resolving pass and no
+        // remembered marks between the panel and the payload.
+        assert!(EMBEDDED_INDEX.contains("const payload = selectedSimulationSettings();"));
+        assert!(EMBEDDED_INDEX.contains("return {...selectedSimulationSettings(),"));
+        assert!(EMBEDDED_INDEX.contains("const changed = human || (activeSimulationSettingsKey"));
+        assert!(EMBEDDED_INDEX.contains("spectate: gameMode === \"ai_sim\","));
+        // None of the machinery that used to stand in for an unmade decision
+        // survives anywhere in the client.
+        for gone in [
+            "?????",
+            "RANDOM_SETTING",
+            "randomSettings",
+            "feelingLucky",
+            "luckybtn",
+            "randomnote",
+            "civvis-random-settings-v1",
+            "victory-random",
+            "indeterminate",
+        ] {
+            assert!(
+                !EMBEDDED_INDEX.contains(gone),
+                "the client still carries the settings-left-to-chance machinery: {gone}"
+            );
+        }
+    }
+
+    /// Teams are chosen in the lobby and are permanent once the world exists,
+    /// so the division the browser asked for has to be readable back out of
+    /// `/state`: a page that reloads over a team game offers to restart *that*
+    /// game rather than a free-for-all with the same map.
+    #[test]
+    fn a_team_division_reaches_the_world_and_comes_back_in_the_state() {
+        let stock = current();
+        let small = json!({"num_players": 4, "width": 20, "height": 14, "num_city_states": 1});
+        let mut request = small.clone();
+        request["teams"] = json!([0, 0, 1, 1]);
+        let params = new_game_params(&stock, &request);
+        assert_eq!(params.teams, vec![Some(0), Some(0), Some(1), Some(1)]);
+        let session = Session::new(params);
+        assert_eq!(session.state()["teams"], json!([0, 0, 1, 1]));
+        // A free-for-all is every seat playing for itself, said out loud, so
+        // the lobby can tell it from a world that never mentioned teams.
+        let alone = Session::new(new_game_params(&stock, &small));
+        assert_eq!(alone.state()["teams"], json!([null, null, null, null]));
+        // The staged world carries the same division, or the exhibition's next
+        // game would quietly drop it between staging and starting.
+        let staged = shared_for(Session::new(current()));
+        staged.stage_next_game_settings(&request);
+        assert_eq!(
+            decorated_state(&staged)["next_game_settings"]["teams"],
+            json!([0, 0, 1, 1])
+        );
     }
 
     /// Planet is drawn from geometry the client cannot derive, so the
@@ -4508,17 +6238,41 @@ mod tests {
         // size's own rectangle.
         let flat = new_game_params(&stock, &json!({"map_topology": "flat"}));
         assert_eq!((flat.width, flat.height), (size.width, size.height));
-        // Earth is the exception, and overrules the shape it is handed.
+        // Fixed geography changes the coastline source, not the selected
+        // shape: Earth can be sampled onto a flat atlas too.
         let earth = new_game_params(
             &flat,
             &json!({"map_script": "true_start_earth", "map_topology": "flat"}),
         );
-        assert_eq!(earth.map_topology, MapTopology::Planet);
-        assert_eq!((earth.width, earth.height), (size.globe_width(), size.globe_height()));
+        assert_eq!(earth.map_topology, MapTopology::Flat);
+        assert_eq!((earth.width, earth.height), (size.width, size.height));
     }
 
     #[test]
     fn browser_orders_settings_event_log_and_strategy() {
+        // Readability is a shared interface contract, not a collection of
+        // one-off enlargements. Panels inherit one system stack and a named
+        // scale with a 9px floor; map labels use the same platform-native
+        // stack instead of depending on an unbundled webfont.
+        assert!(EMBEDDED_INDEX.contains("--font-ui: system-ui"));
+        assert!(EMBEDDED_INDEX.contains("--type-micro: 9px;"));
+        assert!(EMBEDDED_INDEX.contains("--type-body: 14px;"));
+        assert!(EMBEDDED_INDEX.contains("font: var(--type-body)/1.5 var(--font-ui);"));
+        assert!(EMBEDDED_INDEX.contains("text-size-adjust: 100%"));
+        assert!(EMBEDDED_INDEX.contains(
+            "9px system-ui, -apple-system, BlinkMacSystemFont, sans-serif"
+        ));
+        for illegible in [
+            "font-size: 5.5px",
+            "font-size: 6px",
+            "font-size: 7px",
+            "font-size: 8px",
+        ] {
+            assert!(
+                !EMBEDDED_INDEX.contains(illegible),
+                "browser CSS should not restore the illegible {illegible} declaration"
+            );
+        }
         for players in [2, 4, 6, 8, 10, 12] {
             assert!(
                 EMBEDDED_INDEX.contains(&format!("<option value=\"{players}\"")),
@@ -4529,6 +6283,32 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("RULES.map_scripts.map(script =>"));
         assert!(EMBEDDED_INDEX.contains("RULES.game_speeds.map(speed =>"));
         assert!(EMBEDDED_INDEX.contains("id=\"gamemode\""));
+        // The ruleset is asked before the mode, because it decides what the
+        // next question means. Both it and the start-era ladder come from the
+        // server, so a new ruleset — or a rung somebody finally builds — never
+        // means editing the markup.
+        assert!(EMBEDDED_INDEX.contains("id=\"baseruleset\""));
+        assert!(EMBEDDED_INDEX.contains(">Base game ruleset<"));
+        assert!(EMBEDDED_INDEX.contains("RULES.base_rulesets.map(ruleset =>"));
+        assert!(EMBEDDED_INDEX.contains("id=\"startera\""));
+        assert!(EMBEDDED_INDEX.contains(">Start era<"));
+        assert!(EMBEDDED_INDEX.contains("RULES.start_eras.map(era =>"));
+        assert!(EMBEDDED_INDEX.contains("base_ruleset: baseRuleset, start_era: startEra,"));
+        assert!(
+            EMBEDDED_INDEX.find(">Base game ruleset<") < EMBEDDED_INDEX.find(">Game mode<"),
+            "the ruleset must be asked before the game mode"
+        );
+        // The eon that used to sit above the era is gone from the lobby, and
+        // the ladder it hung off with it.
+        assert!(!EMBEDDED_INDEX.contains("id=\"starteon\""));
+        assert!(!EMBEDDED_INDEX.contains(">Start eon<"));
+        assert!(!EMBEDDED_INDEX.contains("start_eon"));
+        assert!(EMBEDDED_INDEX.contains("id=\"leaderpool\""));
+        assert!(EMBEDDED_INDEX.contains(">Civ 6 Leaders</option>"));
+        assert!(EMBEDDED_INDEX.contains(">Expanded</option>"));
+        assert!(EMBEDDED_INDEX.contains("leader_pool: leaderPool"));
+        assert!(EMBEDDED_INDEX.contains("function syncLeaderPool()"));
+        assert!(EMBEDDED_INDEX.contains("RULES.civ6_leaders"));
         assert!(EMBEDDED_INDEX.contains("id=\"maptype\""));
         // The globe has its own renderer, and it is the only one: both globe
         // scripts are drawn by it, so neither needs a projection of its own.
@@ -4586,6 +6366,91 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("applyPlanetBasis(planetTurn(touchGesture.basis, dx, dy))"));
         assert!(EMBEDDED_INDEX.contains("applyPlanetBasis(planetTurn(basis, -screenX, -screenY))"));
         assert!(EMBEDDED_INDEX.contains("spin:planetGlide(released.vpx, released.vpy)"));
+        // Zooming shares that turn too, and it aims at a world rather than at a
+        // pixel. Out in the system a body is a few pixels across — the Moon is
+        // four on the whole-system shot — so an anchor held to the raw point of
+        // space under the pointer demanded an aim nobody can manage and walked
+        // off into empty sky when it was missed: measured at twelve pixels wide
+        // of the Moon, sixteen wheel steps finished three thousand pixels away
+        // with nothing at all on the stage. So every world claims a halo, the
+        // strongest claim takes the pointer, and a pointer on nothing is
+        // therefore taken by the roughly nearest world. What the pointer's aim
+        // is *for* changes with how big that world is drawn: travel while it is
+        // a marble, and once it is the place underfoot the world turns until the
+        // ground that was under the pointer is back under it, which is the same
+        // lean a flat map has always had and which the globe recovered three per
+        // cent of before this. The ceiling comes from the world being flown to,
+        // not from whichever marble happens to be nearest the frame's middle.
+        assert!(EMBEDDED_INDEX.contains("function skyPointerWorld(sx, sy, radius = planetEarthRadius(), pan = SKY_PAN)"));
+        assert!(EMBEDDED_INDEX.contains("function skyWorldGrab(drawn)"));
+        assert!(EMBEDDED_INDEX.contains("function skyZoomAim(sx, sy, radius = planetEarthRadius(), pan = SKY_PAN)"));
+        assert!(EMBEDDED_INDEX.contains("function skySurfacePoint(body, sx, sy, radius, pan = SKY_PAN)"));
+        assert!(EMBEDDED_INDEX.contains("function skyLean(lean, ease)"));
+        assert!(EMBEDDED_INDEX.contains(
+            "applyPlanetBasis(planetSpin(basis, axis.map(value => value / length), -owed * ease));",
+        ));
+        assert!(EMBEDDED_INDEX.contains("if (!body || !lean.point || body.id !== \"earth\") return 0;"));
+        assert!(EMBEDDED_INDEX
+            .contains("function planetMaxScale(pan = SKY_PAN, body = skyNearestWorld(pan))"));
+        assert!(EMBEDDED_INDEX.contains("const ceiling = planetMaxScale(basePan, subject);"));
+        assert!(EMBEDDED_INDEX.contains("const aim = skyAnchor"));
+        assert!(EMBEDDED_INDEX.contains("cameraZoom = {kind:\"planet\", scale, pan, lean};"));
+        assert!(EMBEDDED_INDEX
+            .contains("const leanLeft = cameraZoom.lean ? skyLean(cameraZoom.lean, ease) : 0;"));
+        // The old raw-point anchor, and the early return that left a chart with
+        // no lean at all, must both be gone: a chart has no system to travel
+        // through, but it leans towards the pointer exactly as a flat map does.
+        assert!(!EMBEDDED_INDEX.contains("const pointerX = skyAnchor?.x ??"));
+        assert!(!EMBEDDED_INDEX.contains("const scale = planetScaleClampAt(base * f, {x:0, y:0});"));
+        // A notch of zoom is a fraction of the ladder in front of it, not a
+        // fixed ratio: with a fixed ratio the far stop is a hundred and sixty
+        // wheel notches from the ground and the far half of the sky can be
+        // built and never reached. Every zoom that arrives as a step of intent goes
+        // through the gearing; a pinch is absolute and is geared at its own
+        // site, against the spread the fingers started from.
+        assert!(EMBEDDED_INDEX.contains("function skyZoomPace(scale = cam.scale, pan = SKY_PAN)"));
+        assert!(EMBEDDED_INDEX.contains("function skyZoomStep(f)"));
+        assert!(EMBEDDED_INDEX
+            .contains("const pace = skyZoomLadder() / (SKY_ZOOM_SWEEPS * FLAT_ZOOM_LADDER);"));
+        assert!(EMBEDDED_INDEX.contains("zoomAt(skyZoomStep(factor), ev.clientX - r.left, ev.clientY - r.top);"));
+        assert!(EMBEDDED_INDEX.contains("zoomAt(skyZoomStep(1.35))"));
+        assert!(EMBEDDED_INDEX.contains("zoomAt(skyZoomStep(1 / 1.35))"));
+        assert!(EMBEDDED_INDEX
+            .contains("const want = touchGesture.scale * Math.pow(spread, touchGesture.pace || 1);"));
+        // And the divisor under it has to sit below every scale that can really
+        // be standing there. At `1e-4` it sat above most of the sky, so past
+        // Jupiter a pinch opening the fingers slammed the camera to the far
+        // stop, the wrong way, in one move — everything out there was
+        // unreachable by touch.
+        assert!(EMBEDDED_INDEX
+            .contains("zoomAt(want / Math.max(1e-30, base), mx, my, touchGesture.skyAnchor);"));
+        assert!(!EMBEDDED_INDEX.contains("want / Math.max(1e-4, base)"));
+        // A flat board never sees any of it, and a people who have not proved
+        // their world round have no ladder to gear: `skyZoomStep` hands the
+        // factor straight back, and the pace floors at one.
+        assert!(EMBEDDED_INDEX.contains("  if (!planetMap()) return f;"));
+        // The arrival, and the two halves of it that have to hold together. A
+        // world's drawn size is a property of the zoom alone, so the camera has
+        // to be *at* the body as well — otherwise a tile's zoom over the
+        // Atlantic reads as an arrival at the Moon, which is nominally four
+        // stages wide there. How slow an arrival is nobody chooses: the gearing
+        // is handed back until one notch is the notch the flat board has.
+        assert!(EMBEDDED_INDEX.contains("function skyArrival(body, radius, pan)"));
+        assert!(EMBEDDED_INDEX.contains(
+            "  return size * Math.max(0, 1 - away / (span * .6 + drawn));",
+        ));
+        assert!(EMBEDDED_INDEX
+            .contains("return pace / (1 + (pace - 1) * Math.max(0, Math.min(1, arrival)));"));
+        // Home is one of the arrivals, so standing on the board the gearing is
+        // fully off and a zoom over the map is the zoom it has always been.
+        // Every notch this lengthens is a notch out in the dark.
+        assert!(EMBEDDED_INDEX.contains("const SKY_ARRIVALS = [\"earth\", \"moon\", \"mars\", \"exo\"];"));
+        // And the destination's own star with them, because out there the stop
+        // belongs to the star: LHS 1140 is twelve times its own planet and sits
+        // at the same catalogue point, so `planetMaxScale` answers with the
+        // star's ceiling and the zoom ends while the planet is still a bead.
+        // Keyed to the planet alone the arrival never got past 0.46.
+        assert!(EMBEDDED_INDEX.contains("const star = skyTarget(st)?.star;"));
         assert!(EMBEDDED_INDEX.contains("<option value=\"planet\">Planet</option>"));
         assert!(EMBEDDED_INDEX
             .contains("<option value=\"true_start_earth\">True Start Earth</option>"));
@@ -4598,6 +6463,8 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("<option value=\"land_only\">Land Only</option>"));
         assert!(EMBEDDED_INDEX.contains("<option value=\"water_world\">Water World</option>"));
         assert!(EMBEDDED_INDEX.contains("RULES.map_topologies"));
+        assert!(EMBEDDED_INDEX.contains("shape.disabled = false"));
+        assert!(!EMBEDDED_INDEX.contains("if (earth) shape.value = \"planet\""));
         assert!(EMBEDDED_INDEX.contains("id=\"gamespeed\""));
         for victory in [
             "science",
@@ -4645,9 +6512,21 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains(
             "sessionStorage.setItem(\"civvis-restart-paused-v1\", handoff.paused ? \"1\" : \"0\")"
         ));
-        assert!(EMBEDDED_INDEX.contains("<html class=\"world-loading\">"));
+        assert!(EMBEDDED_INDEX.contains("<html>"));
+        assert!(!EMBEDDED_INDEX.contains("<html class=\"world-loading\">"));
+        assert!(EMBEDDED_INDEX.contains("<body aria-busy=\"false\">"));
+        assert!(!EMBEDDED_INDEX.contains("Joining the world"));
         assert!(EMBEDDED_INDEX.contains("id=\"world-transition\""));
+        assert!(EMBEDDED_INDEX.contains(
+            "document.documentElement.classList.add(\"world-loading\", \"world-restarting\")"
+        ));
         assert!(EMBEDDED_INDEX.contains("sessionStorage.setItem(\"civvis-world-transition-v1\""));
+        // Losing the socket is what a process handoff *is*, so the veil does
+        // not call the ordinary case a reconnection.
+        assert!(EMBEDDED_INDEX.contains("const HANDOFF_QUIET_MS = 2500;"));
+        assert!(EMBEDDED_INDEX.contains(
+            "setWorldTransitionStage(Date.now() - watchStartedAt < HANDOFF_QUIET_MS"
+        ));
         assert!(EMBEDDED_INDEX.contains("await settingsStageChain.catch(() => {})"));
         assert!(EMBEDDED_INDEX.contains("specFetching || specPending || worldTransitionPending()"));
         assert!(EMBEDDED_INDEX.contains("specFetchAbort?.abort()"));
@@ -4655,7 +6534,7 @@ mod tests {
         assert!(EMBEDDED_INDEX
             .contains("String(st?.seed) === String(worldTransitionHandoff.targetSeed)"));
         assert!(EMBEDDED_INDEX.contains("finishWorldTransition(st);"));
-        assert!(EMBEDDED_INDEX.contains("setTimeout(startFade, 500)"));
+        assert!(EMBEDDED_INDEX.contains("clearWorldTransition();"));
         assert!(EMBEDDED_INDEX.contains("fetchJSON(\"/next-game-settings\""));
         assert!(EMBEDDED_INDEX.contains("with selected settings"));
         assert!(EMBEDDED_INDEX.contains("fetchJSON(\"/supervisor-new\""));
@@ -4668,28 +6547,96 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains(
             "waitForSupervisedSuccessor(st.server_instance, st.seed)"
         ));
-        assert!(EMBEDDED_INDEX.contains("fetchJSON(\"/state\", {cache: \"no-store\"}, 3000)"));
+        assert!(EMBEDDED_INDEX.contains("fetchJSON(\"/runtime\", {cache: \"no-store\"}, 500)"));
+        assert!(EMBEDDED_INDEX.contains("render(adoptTiles(first), true, true);"));
         assert!(EMBEDDED_INDEX.contains("st.seed !== state.seed"));
         assert!(!EMBEDDED_INDEX.contains("id=\"head-newgame\""));
+        // The mode still decides whether anyone is watching or playing.
         assert!(EMBEDDED_INDEX.contains("spectate: gameMode === \"ai_sim\""));
         assert!(!EMBEDDED_INDEX.contains("id=\"specchk\""));
         assert!(!EMBEDDED_INDEX.contains("RULES.map_sizes.filter"));
 
-        let mode_setting = EMBEDDED_INDEX
-            .find("id=\"gamemode\"")
-            .expect("game mode setting");
-        let map_setting = EMBEDDED_INDEX.find("id=\"maptype\"").expect("map setting");
-        let world_setting = EMBEDDED_INDEX
-            .find("id=\"np\"")
-            .expect("world size setting");
-        let speed_setting = EMBEDDED_INDEX
-            .find("id=\"gamespeed\"")
-            .expect("game speed setting");
+        // The lobby's reading order. `#newgame-options` is a two-column grid
+        // filled row by row, so document order *is* left-then-right,
+        // top-to-bottom on screen, and each row is a pair that belongs
+        // together: the rules and who plays under them, then who is at the
+        // table and how they are divided, then the world from the outside in —
+        // what shape it is, what is drawn on that shape, how heat is laid out
+        // across it and how big it is — and last the clock, where history
+        // starts and how fast it runs.
+        //
+        // The two seat settings sit between the second and third rows and are
+        // hidden while nobody is at the keyboard, so they take a row of their
+        // own rather than splitting a pair.
+        let order = [
+            "baseruleset",
+            "leaderpool",
+            "gamemode",
+            "teams",
+            "leader",
+            "difficulty",
+            "mapshape",
+            "maptype",
+            "mappoles",
+            "np",
+            "startera",
+            "gamespeed",
+        ]
+        .map(|setting| {
+            EMBEDDED_INDEX
+                .find(&format!("id=\"{setting}\""))
+                .unwrap_or_else(|| panic!("browser setup is missing the {setting} select"))
+        });
         assert!(
-            mode_setting < map_setting
-                && map_setting < world_setting
-                && world_setting < speed_setting
+            order.windows(2).all(|pair| pair[0] < pair[1]),
+            "lobby order must read ruleset/pool, mode/teams, seat, shape/map, thermal/size, era/speed"
         );
+        let thermal_setting = order[8];
+        // Teams are a division of the table, so they sit beside the setting
+        // that says who is at it. A world opens free-for-all, and the splits a
+        // size can seat are named in the option rather than left to be found
+        // by trying one.
+        assert!(EMBEDDED_INDEX.contains("Teams<select id=\"teams\""));
+        assert!(EMBEDDED_INDEX.contains("<option value=\"ffa\" selected>Free-for-all</option>"));
+        assert!(EMBEDDED_INDEX.contains("const TEAM_RULES = [\"2\", \"3\", \"4\", \"pairs\"];"));
+        assert!(EMBEDDED_INDEX.contains("option.disabled = !split;"));
+        // The world size decides which splits exist, so it re-fits them before
+        // the panel's own delegated listener stages what is now selected.
+        assert!(EMBEDDED_INDEX
+            .contains("document.getElementById(\"np\").addEventListener(\"change\", syncTeams);"));
+        // The server is handed the seat-by-seat assignment, never the rule
+        // that produced it; a world on screen is read back the other way.
+        assert!(EMBEDDED_INDEX.contains("teams: teamAssignment(np, readSetting(\"teams\")),"));
+        assert!(EMBEDDED_INDEX.contains("teamRuleFromArray(st.teams)"));
+        assert!(EMBEDDED_INDEX.contains("teamRuleFromArray(settings.teams)"));
+        // Heat is a setting about climate, not about whether two ice caps
+        // exist, so it is named for what it decides.
+        assert!(EMBEDDED_INDEX.contains("Thermal distribution<select id=\"mappoles\""));
+        assert!(EMBEDDED_INDEX.contains("<option value=\"randomized\">Randomized</option>"));
+        assert!(!EMBEDDED_INDEX.contains("Poles<select id=\"mappoles\""));
+        // And it offers two worlds, not three: heat either follows latitude or
+        // it doesn't. The world with no cold end at all is retired, so it is
+        // gone from the markup as well as from `MAP_POLES` — the select is
+        // rebuilt from that list on load, and the two have to say the same
+        // thing or the lobby offers a world the engine will not build.
+        let thermal_options = {
+            let tail = &EMBEDDED_INDEX[thermal_setting..];
+            &tail[..tail.find("</select>").expect("unterminated thermal select")]
+        };
+        assert_eq!(
+            thermal_options.matches("<option").count(),
+            2,
+            "thermal distribution offers exactly two worlds"
+        );
+        assert!(!thermal_options.contains("no_poles"));
+        assert_eq!(MAP_POLES.len(), 2);
+        for spec in MAP_POLES {
+            assert!(
+                thermal_options.contains(&format!("value=\"{}\"", spec.id)),
+                "the lobby is missing {}",
+                spec.id
+            );
+        }
 
         let game_settings = EMBEDDED_INDEX
             .find("id=\"game-settings\"")
@@ -4703,18 +6650,30 @@ mod tests {
         let war_log = EMBEDDED_INDEX
             .find("<span>War log</span>")
             .expect("war log");
+        let reasoning_log = EMBEDDED_INDEX
+            .find("<span>AI reasoning log</span>")
+            .expect("AI reasoning log");
         let strategy = EMBEDDED_INDEX
-            .find("<span>Active strategy</span>")
+            .find("<span>Active AI strategy</span>")
             .expect("active strategy section");
+        // The column runs deepest-cause first — what a civilization is trying
+        // to do now, why it acted, the wars that reasoning started, then the
+        // world's record of what happened — so reading the column downward
+        // reads a turn in the order it was decided. Active AI strategy leads
+        // because it is the standing plan every entry below it is an instance
+        // of: the reasoning log is an account over turns, and this is the
+        // current answer.
         assert!(
             game_settings < display_settings
-                && display_settings < event_log
-                && event_log < war_log
-                && war_log < strategy,
-            "left panel should show game settings, display settings, and the two logs first"
+                && display_settings < strategy
+                && strategy < reasoning_log
+                && reasoning_log < war_log
+                && war_log < event_log,
+            "left panel should show game setup, display settings, \
+             the active AI strategy and then the three logs"
         );
         assert!(EMBEDDED_INDEX.contains("<span>Display settings</span>"));
-        for overlay in ["players", "victory", "minimap", "controls"] {
+        for overlay in ["players", "victory", "minimap", "controls", "lenses"] {
             assert!(
                 EMBEDDED_INDEX.contains(&format!("data-overlay-close=\"{overlay}\"")),
                 "map overlay {overlay} should have a close control"
@@ -4728,8 +6687,8 @@ mod tests {
         );
         // The switches are a two-column grid, and the order they are written in
         // follows the map: the rail read top to bottom — standings, victory
-        // tracker, world minimap — and then the map controls, which are the one
-        // instrument still standing in the opposite corner.
+        // tracker, world minimap — and then the map controls and lenses docked
+        // together in the opposite corner.
         assert!(EMBEDDED_INDEX
             .contains(".overlay-option-grid { display: grid; grid-template-columns: 1fr 1fr;"));
         let switches = EMBEDDED_INDEX
@@ -4748,9 +6707,30 @@ mod tests {
             .collect();
         assert_eq!(
             corners,
-            ["players", "victory", "minimap", "controls"],
-            "the switches read down the rail, then the map controls in the far corner"
+            ["players", "victory", "minimap", "controls", "lenses"],
+            "the switches read down the rail, then the map dock in the far corner"
         );
+        assert!(EMBEDDED_INDEX.contains("id=\"map-lens-exit\""));
+        assert!(EMBEDDED_INDEX.contains("body.overlay-lenses-hidden #map-lenses"));
+        // The lenses scroll sideways inside the bar. Their dismiss control is a
+        // sibling of that scroller, not its last item, so it neither rides away
+        // with the buttons nor comes to rest on top of one.
+        let lens_bar = EMBEDDED_INDEX
+            .split_once("<div id=\"map-lenses\"")
+            .expect("map lens bar")
+            .1;
+        let strip = lens_bar.find("<div id=\"map-lens-strip\"").expect("lens scroller");
+        let strip_end = lens_bar.find("</div>").expect("end of lens scroller");
+        let close = lens_bar
+            .find("data-overlay-close=\"lenses\"")
+            .expect("lens dismiss control");
+        assert!(
+            strip < strip_end && strip_end < close,
+            "the lens bar's close control belongs outside the strip that scrolls"
+        );
+        assert!(EMBEDDED_INDEX.contains("#map-lens-strip::-webkit-scrollbar { display: none; }"));
+        assert!(EMBEDDED_INDEX
+            .contains("document.getElementById(\"map-lens-exit\").onclick = () => setMapLens(null);"));
         // One instrument, one name. The switch, the title bar it is dragged by
         // and the label that follows it across the map all say "World minimap",
         // so nothing in the interface reads as a second, separate world map —
@@ -4799,10 +6779,11 @@ mod tests {
         // The standings grow from one consolidated row through eight readable
         // rows. A twelve-player exhibition then scrolls even on a tall screen
         // instead of continuing to consume the world below it.
-        assert!(EMBEDDED_INDEX.contains("--player-hud-max-height: min(34vh, 244px);"));
-        assert!(EMBEDDED_INDEX.contains("maxHeightRatio:.34"));
+        assert!(EMBEDDED_INDEX.contains("--player-hud-max-height: min(38vh, 280px);"));
+        assert!(EMBEDDED_INDEX.contains("maxHeightRatio:.38"));
+        assert!(EMBEDDED_INDEX.contains("const requestedHeight = Math.max(154, 50 + rows * 28);"));
         assert!(EMBEDDED_INDEX
-            .contains("const requestedWidth = 760 + Math.max(0, rows - 1) * 100;"));
+            .contains("const requestedWidth = 820 + Math.max(0, rows - 1) * 100;"));
         assert!(EMBEDDED_INDEX.contains(
             "mapArea.style.setProperty(\"--player-hud-width\", `${requestedWidth}px`);"
         ));
@@ -4810,13 +6791,20 @@ mod tests {
             "const playerScroll = hud.querySelector(\".diplomacy-ribbon\")?.scrollTop || 0;"
         ));
         assert!(EMBEDDED_INDEX.contains("playerRibbon.scrollTop = playerScroll;"));
-        // The masthead grows toward the right rail but never beneath it. The
-        // tracker grows by the contender rows it shows but never through the
-        // minimap seam.
+        // The masthead grows toward the victory tracker but never beneath it,
+        // and the tracker is the only instrument beside it along the top edge.
+        // Measuring that seam against --hud-rail-width — the wider reservation
+        // the minimap needs in the bottom corner — left 192px of empty map
+        // between the two panels at 1600px while the values were squeezed to
+        // 27px each. The rail width still governs the minimap.
         assert!(EMBEDDED_INDEX.contains("--hud-rail-width:"));
         assert!(EMBEDDED_INDEX.contains(
             "width: min(var(--player-hud-width, 100%),\n      \
-             calc(100% - min(var(--hud-rail-width), var(--hud-rail-share)) - 32px));"
+             calc(100% - var(--victory-hud-width) - 20px));"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "width: min(var(--hud-rail-width), var(--hud-rail-share)); \
+             height: var(--minimap-height);"
         ));
         assert!(EMBEDDED_INDEX.contains(
             "height: min(var(--victory-hud-height, 100%),\n      \
@@ -4831,14 +6819,134 @@ mod tests {
         ));
         assert!(EMBEDDED_INDEX.contains("data-victory-focus=\"${isFocus}\""));
         assert!(EMBEDDED_INDEX.contains("grid-auto-rows: var(--hud-row-height);"));
-        // A masthead row is one line: identity and the ten values side by side,
-        // under one set of column heads. Stacking them was what the rail needed
-        // and it costs the map 12px of height per civilization here.
+        // A masthead row is one line: civilization carries the capital action,
+        // followed by the explicit watch action, identity and ten values.
+        // Watch-as deliberately has no column heading; the button carries its
+        // own visible label.
         assert!(EMBEDDED_INDEX.contains(
-            "grid-template-columns: var(--hud-lock-column, 0px) var(--hud-medallion-column) \
-             var(--hud-identity-column) minmax(0, 1fr);"
+            "grid-template-columns: var(--hud-lock-column, 0px)\n      \
+             var(--hud-watch-column) var(--hud-identity-column) var(--hud-stats-column);"
         ));
-        assert!(EMBEDDED_INDEX.contains("--hud-row-height: 23px;"));
+        // The values claim their width first and the identity block flexes, so a
+        // narrow masthead ellipsizes a name rather than running two figures
+        // together. A percentage identity column with a 300px floor never
+        // yielded, which left the ten values 27px each at 1600px.
+        //
+        // Every data column is now a share rather than a pixel count, and each
+        // of these two enclosing tracks is the exact *sum* of the columns
+        // inside it — 6 identity columns totalling 9.804 against 10 value
+        // columns of 1. That identity is not decoration: it is what lets the
+        // bar between the two blocks move width across itself, and it is the
+        // ratio origin/main rendered (1fr against 1.02fr) to the tenth of a
+        // pixel at 1280, 1600, 1920 and 2400. Changing one number here without
+        // the other silently re-weights the whole masthead.
+        assert!(EMBEDDED_INDEX.contains(
+            "--hud-identity-column: minmax(\n      \
+             calc(var(--hud-ident-min) * 4 + var(--hud-ident-num-min) * 2), 9.804fr);"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "--hud-stats-column: minmax(\n      \
+             calc(var(--hud-stat-min) * 10 + var(--hud-stat-gap) * 9), 10fr);"
+        ));
+        // The floors stay in the stylesheet so the width breakpoints can lower
+        // them; the shares belong to the viewer. A breakpoint that rewrote a
+        // share would undo a dragged column on the next window resize, so no
+        // media rule may set either track list or either enclosing track.
+        assert!(EMBEDDED_INDEX.contains("--hud-ident-min: 30px; --hud-ident-num-min: 38px;"));
+        assert_eq!(EMBEDDED_INDEX.matches("--hud-ident-num-min:").count(), 1,
+            "the figure floor is declared once and holds at every width: four \
+             digits need the same room on a laptop as on a wall");
+        assert_eq!(EMBEDDED_INDEX.matches("--hud-identity-column:").count(), 1,
+            "the identity track is written once and then only from the column model");
+        assert_eq!(EMBEDDED_INDEX.matches("--hud-stats-column:").count(), 1,
+            "the value track is written once and then only from the column model");
+        // A gutter between adjacent figures, and no per-value hairline.
+        assert!(EMBEDDED_INDEX.contains("column-gap: var(--hud-stat-gap, 0px);"));
+        // Heading and rows read the same two track lists, which is the only
+        // reason a dragged column moves the figures under it as well as its
+        // own head.
+        assert_eq!(EMBEDDED_INDEX.matches("grid-template-columns: var(--hud-stat-tracks);").count(), 2,
+            "the value heads and the value cells are the same ten tracks");
+        assert_eq!(EMBEDDED_INDEX.matches("grid-template-columns: var(--hud-identity-tracks);").count(), 2,
+            "the identity heads and the identity cells are the same tracks");
+        // Player, ELO, WIN% and PLAN are drawn inside one button spanning four
+        // of those tracks, so that button divides itself with `subgrid` — the
+        // same tracks, not a copy of their ratios. A copy is what shipped
+        // before, and it came apart in both directions a copy can: it carried
+        // `minmax(0, …)` where the heads carry the 30px label floor and the
+        // 38px figure floor, so on a 1280px screen the ELO head stood at 38px
+        // over a 27.5px figure and every "1703" rendered as "1…"; and it never
+        // heard about a drag, so moving the ELO/WIN% bar 26px at 1920px moved
+        // the head 21px and left the figures where they were.
+        assert!(EMBEDDED_INDEX.contains(
+            "#playerhud .diplomacy-identity-secondary {\n    grid-template-columns: subgrid;\n  }"
+        ), "the four identity columns inside one button are the parent's own tracks");
+        assert!(!EMBEDDED_INDEX.contains("minmax(0, .55fr) minmax(0, .55fr)"),
+            "a second copy of the identity ratios is exactly what subgrid replaced");
+        // The rows carry a 1px border that says allied, at war or defeated, and
+        // both boxes are border-box — so the heading carries a transparent one
+        // or it divides two more pixels than a row does and every head sits off
+        // its own figures by up to a pixel, in opposite directions at the two
+        // ends of the table.
+        assert!(EMBEDDED_INDEX.contains(
+            "align-items: stretch; gap: var(--hud-column-gap); padding: 0 4px 0 3px;\n    \
+             border: 1px solid transparent;"
+        ), "the heading has the row's border box, or the columns skew across the table");
+        // For the same reason the heading gives up its inline padding wherever
+        // a row does. A breakpoint that moves one without the other reopens
+        // the skew it was moved to close.
+        assert!(EMBEDDED_INDEX.contains(
+            "#playerhud .diplomacy-card, #playerhud .ribbon-stat-heading { padding-inline: 2px; }"
+        ), "the heading is a row of the same table and gives up the same pixels");
+        assert_eq!(EMBEDDED_INDEX.matches("padding: 1px 4px 1px 3px;").count(), 1,
+            "the row's inline padding is written once, and the heading matches it");
+        // `clip`, not `ellipsis`: the fitter compares integral scrollWidth with
+        // integral clientWidth while the browser applies text-overflow on any
+        // sub-pixel overflow, so ellipsis spends a character on a head that
+        // renders whole. Measured at 1600px: WIN% in its 38px column.
+        assert!(EMBEDDED_INDEX.contains(
+            "border-left: 1px solid #ffffff10; text-overflow: clip; white-space: nowrap;"
+        ));
+
+        // One bar per seam between two adjacent data columns, dragged to move
+        // width from the column on its left into the column on its right.
+        assert!(EMBEDDED_INDEX.contains("const HUD_COLUMN_STORAGE_KEY = \"civvis-hud-columns-v1\";"));
+        assert!(EMBEDDED_INDEX.contains("const PLAYER_HUD_COLUMN_SEAMS = PLAYER_HUD_COLUMNS.slice(0, -1)"));
+        assert!(EMBEDDED_INDEX.contains("function aimPlayerHudSeam(seam, targetWidth)"));
+        assert!(EMBEDDED_INDEX.contains("class=\"hud-col-grip\" type=\"button\" data-hud-column-seam="));
+        assert!(EMBEDDED_INDEX.contains("role=\"separator\" aria-orientation=\"vertical\""));
+        // The bar takes the pointer; the layer over the heads does not, or the
+        // heads lose their tooltips and the All button loses its click.
+        assert!(EMBEDDED_INDEX.contains(
+            ".hud-col-grips { position: absolute; inset: 0; z-index: 2; pointer-events: none; }"
+        ));
+        assert!(EMBEDDED_INDEX.contains("cursor: col-resize; pointer-events: auto; touch-action: none;"));
+        // A repaint mid-gesture would take the bar out from under the pointer
+        // along with its pointer capture.
+        assert!(EMBEDDED_INDEX.contains(
+            "if (html === hudHtml || hudLayoutGesture?.name === \"players\" || playerHudColumnGesture) {"
+        ));
+        // The bars are placed from the rendered heading, so they cannot drift
+        // from the columns they name.
+        assert!(EMBEDDED_INDEX.contains("function syncPlayerHudColumnGrips()"));
+        assert!(EMBEDDED_INDEX.contains("grip.style.left = `${Math.round(left.right - origin)}px`;"));
+        // The fitter has to measure the cell: the figure is centered content in
+        // its own grid, so its clientWidth and scrollWidth are always equal and
+        // it can never report the overflow that would shrink it.
+        assert!(EMBEDDED_INDEX.contains(
+            "{selector:\"#playerhud .ribbon-stat b\", min:10, max:15, parentWidth:true},"
+        ));
+        // No coloured bloom behind eighty figures at once.
+        assert!(!EMBEDDED_INDEX.contains("text-shadow: 0 1px 2px #000, 0 0 8px currentColor;"));
+        assert!(EMBEDDED_INDEX.contains(
+            "class=\"diplomacy-identity diplomacy-civ-link\" data-hud-action=\"capital\""
+        ));
+        assert!(!EMBEDDED_INDEX.contains("class=\"empire-link\""));
+        assert!(!EMBEDDED_INDEX.contains(">Empire</button>"));
+        assert!(!EMBEDDED_INDEX.contains("class=\"capital-link\""));
+        assert!(!EMBEDDED_INDEX.contains("data-hud-action=\"empire\""));
+        assert!(EMBEDDED_INDEX.contains("function focusCapital(pid)"));
+        assert!(EMBEDDED_INDEX.contains("--hud-row-height: 26px;"));
         assert!(EMBEDDED_INDEX.contains("function dismissOverlay(name, source)"));
         assert!(EMBEDDED_INDEX.contains("addEventListener(\"pointerdown\", event =>"));
         assert!(EMBEDDED_INDEX.contains("overlay-return-flash .24s ease-in-out 3"));
@@ -4919,6 +7027,18 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("p.ai_plan"));
         assert!(EMBEDDED_INDEX.contains(".civ-dossier {"));
         assert!(EMBEDDED_INDEX.contains("changed its grand strategy from"));
+        // Active AI strategy speaks for one civilization at a time, and which
+        // civilizations it may speak for is the observation's answer, not the
+        // panel's: `view_player` names a seat in a played game and in Watch as,
+        // and is null only for the view entitled to read every plan.
+        assert!(EMBEDDED_INDEX.contains("function strategySeats()"));
+        assert!(EMBEDDED_INDEX.contains("if (viewer !== null && viewer !== undefined) \
+             return players[viewer] ? [viewer] : [];"));
+        assert!(EMBEDDED_INDEX.contains("pick.style.display = seats.length > 1 ? \"block\" : \"none\";"));
+        // The observed seat's study rides in `me`; a rival's rides in
+        // `players[]`, and only the omniscient view is sent it.
+        assert!(EMBEDDED_INDEX
+            .contains("const source = state.view_player === p.id ? (state.me || {}) : p;"));
         // The log never reorders: an overflowing log retires its least
         // valuable entry instead of holding important ones frozen at the top.
         assert!(!EMBEDDED_INDEX.contains("e.important && now - e.at < 6000"));
@@ -5037,23 +7157,43 @@ mod tests {
         // Default camera moves compose at the exact center of the rectangle
         // requested by the operator: the command deck's right edge to the
         // victory rail's left edge, and the player HUD's bottom edge to the
-        // screen bottom. A missing widget naturally leaves its screen edge in
-        // place, and the minimap is deliberately absent from this calculation.
+        // screen bottom. At the responsive breakpoint the victory rail becomes
+        // a top band, so its live box extends the top edge instead of collapsing
+        // the horizontal stage against its 8px left gutter. A missing widget
+        // naturally leaves its screen edge in place, and the minimap is
+        // deliberately absent from this calculation.
+        //
+        // The measurement takes the box it is asked about, because the map
+        // area's automatic fit asks it of the whole container while the camera
+        // asks it of the viewport that fit produced. One rule, two questions —
+        // see `the_map_area_is_a_rectangle_the_viewer_can_set`.
         assert!(EMBEDDED_INDEX.contains("function mapOverlayVisible(name)"));
         assert!(EMBEDDED_INDEX.contains(
             "document.body.classList.contains(\"sidebar-hidden\")"
         ));
-        assert!(EMBEDDED_INDEX.contains("function mapWidgetBox(name, areaRect)"));
+        assert!(EMBEDDED_INDEX.contains("function mapWidgetBox(name, origin)"));
         assert!(EMBEDDED_INDEX.contains("function mapFocusBounds()"));
         assert!(EMBEDDED_INDEX.contains("function mapFocusPoint()"));
         assert!(EMBEDDED_INDEX.contains(
-            "left = Math.max(0, Math.min(width, sideRect.right - areaRect.left));"
-        ));
-        assert!(EMBEDDED_INDEX.contains(
-            "if (victory) right = Math.max(0, Math.min(width, victory.left));"
+            "left = Math.max(0, Math.min(width, sideRect.right - origin.left));"
         ));
         assert!(EMBEDDED_INDEX.contains(
             "if (players) top = Math.max(0, Math.min(height, players.bottom));"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "const spansWidth = victory.left <= 16 && victory.right >= width - 16;"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "if (spansWidth) top = Math.max(top, Math.max(0, Math.min(height, victory.bottom)));"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "else right = Math.max(0, Math.min(width, victory.left));"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "if (right <= left) { left = 0; right = width; }"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "if (bottom <= top) { top = 0; bottom = height; }"
         ));
         assert!(!EMBEDDED_INDEX.contains(
             "if (minimap) left = Math.max(left, (minimap.left + minimap.right) / 2);"
@@ -5072,13 +7212,45 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains(
             "const {x:desiredX, y:desiredY} = mapFocusPoint();"
         ));
-        assert!(EMBEDDED_INDEX.contains("View as"));
+        // The domination column counts captured capitals, and says so. "HQs"
+        // was a word from no part of this game.
+        assert!(EMBEDDED_INDEX.contains("<span></span><span>Capitals</span>"));
+        assert!(!EMBEDDED_INDEX.contains("HQs"));
+        assert!(EMBEDDED_INDEX.contains("<span>Terrain</span>"));
+        assert!(EMBEDDED_INDEX.contains("<span>Watch as</span>"));
+        assert_eq!(
+            EMBEDDED_INDEX
+                .matches("Spectator - Full Map Visablity")
+                .count(),
+            2,
+            "the initial and refreshed viewpoint menus should use the same spectator label"
+        );
+        assert!(EMBEDDED_INDEX.contains(
+            "Player ${p.id + 1} - ${p.civ} (${p.leader || \"Unknown leader\"})"
+        ));
         assert!(EMBEDDED_INDEX.contains("id=\"viewplayer\""));
         assert!(EMBEDDED_INDEX.contains("fetchJSON(\"/view\""));
         // The ribbon repaints under the cursor, so its buttons declare their
         // action as data and one delegated listener dispatches it.
+        assert!(EMBEDDED_INDEX.contains(
+            "class=\"watch-as-link\" data-hud-action=\"watch\""
+        ));
+        assert!(EMBEDDED_INDEX.contains(">Watch as</button>"));
+        // The label is centred against a border rather than ellipsized, so the
+        // fitter is asked for a few pixels back: fitted to the last pixel, its
+        // own rounding tolerance let the "s" of "Watch as" sit on the frame.
+        assert!(EMBEDDED_INDEX
+            .contains("{selector:\"#playerhud .watch-as-link\", min:9, max:12, slack:6}"));
+        assert!(EMBEDDED_INDEX.contains(
+            "class=\"spectator-view-link\" data-hud-action=\"spectator\""
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "Spectator mode: see everyone with full map visibility"
+        ));
+        assert!(EMBEDDED_INDEX.contains(">All</button>"));
         assert!(EMBEDDED_INDEX.contains("data-hud-action=\"watch\" data-hud-civ=\"${p.id}\""));
         assert!(EMBEDDED_INDEX.contains("data-hud-action=\"dossier\" data-hud-civ=\"${p.id}\""));
+        assert!(EMBEDDED_INDEX.contains("spectatePlayer(null);"));
         assert!(EMBEDDED_INDEX.contains("else spectatePlayer(id);"));
         assert!(EMBEDDED_INDEX.contains("async function spectatePlayer(player)"));
         // Watching one civilization is a persistent empire portrait, not a
@@ -5086,8 +7258,32 @@ mod tests {
         // frame; strategic, grouped, promoted, and war-front units may widen
         // it, while a lone recon unit cannot continually zoom the map out.
         assert!(EMBEDDED_INDEX.contains("function watchedEmpireSubjects(player)"));
-        assert!(EMBEDDED_INDEX.contains("function observedViewGoal(anchors)"));
+        assert!(EMBEDDED_INDEX.contains(
+            "function observedViewGoal(anchors, oneEmpire = Number.isInteger(state?.view_player))"
+        ));
         assert!(EMBEDDED_INDEX.contains("watchedEmpireAutoFrame"));
+        // The same portrait on a round world. Framing the whole globe is the
+        // right shot only when the whole of it is being watched: a seat has
+        // seen the ground it walked and nothing else, so a globe-wide opening
+        // frame left a new single-player game staring at blank ocean with its
+        // own settler nowhere on the stage.
+        let observed_view = EMBEDDED_INDEX
+            .split("function setObservedPlayersView(smooth = false)")
+            .nth(1)
+            .unwrap()
+            .split("function actionViewingAnchor(focus)")
+            .next()
+            .unwrap();
+        assert!(observed_view.contains("if (planetMap() && !watched) { fitPlanetView(); return; }"));
+        assert!(observed_view.contains("if (planetMap()) skyReturnHome();"));
+        assert!(EMBEDDED_INDEX.contains("function observedCameraPoints(anchors)"));
+        assert!(EMBEDDED_INDEX.contains("function observedPlanetViewGoal(anchors, maximum)"));
+        assert!(EMBEDDED_INDEX
+            .contains("if (planetMap()) return observedPlanetViewGoal(anchors, maximum);"));
+        // A far-flung scout must not zoom the empire shot out past the world
+        // itself and off into the system.
+        assert!(EMBEDDED_INDEX
+            .contains("planetScaleClamp(Math.max(wholeWorld, Math.min(maximum, fitX, fitY)))"));
         assert!(EMBEDDED_INDEX.contains("const EMPIRE_RECON_UNITS"));
         assert!(EMBEDDED_INDEX.contains("const atWarFront"));
         assert!(EMBEDDED_INDEX.contains("Number(unit.formation) > 0"));
@@ -5102,6 +7298,76 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("function drawWarLog()"));
         assert!(EMBEDDED_INDEX.contains("function warsForLog(wars)"));
         assert!(EMBEDDED_INDEX.contains("id=\"warsec\""));
+        assert!(EMBEDDED_INDEX.contains("function warTheaterSubjects(war)"));
+        assert!(EMBEDDED_INDEX.contains("function focusWarOnMap(warKey)"));
+        assert!(EMBEDDED_INDEX.contains("for (const site of war.theater || []) add(site?.pos);"));
+        assert!(EMBEDDED_INDEX.contains("data-war-key=\"${escapeAttr(warLogKey(war))}\""));
+        assert!(EMBEDDED_INDEX.contains(">${mapAction}</button></div>"));
+        // Watching is a held reading position as well as a camera move: the
+        // control is a toggle, it names the state it is in, and it reports that
+        // state to assistive technology.
+        assert!(EMBEDDED_INDEX.contains(
+            "const mapAction = watched ? \"Watching\" : (over ? \"View aftermath\" : \"Watch\");"
+        ));
+        assert!(EMBEDDED_INDEX.contains("aria-pressed=\"${watched ? \"true\" : \"false\"}\""));
+        assert!(EMBEDDED_INDEX.contains("${watched ? \" watched\" : \"\"}"));
+        assert!(EMBEDDED_INDEX.contains("${watched ? \" watching\" : \"\"}"));
+        assert!(EMBEDDED_INDEX.contains("function watchWar(warKey)"));
+        assert!(EMBEDDED_INDEX.contains("function releaseWatchedWar()"));
+        // The whole point of the hold: the watched card keeps the offset it had
+        // inside the list's viewport while the rest of the chronicle re-sorts
+        // around it, and the scroll pays for the difference.
+        assert!(EMBEDDED_INDEX.contains("function measureWatchedWar(el)"));
+        assert!(EMBEDDED_INDEX.contains("function holdWatchedWar(el)"));
+        assert!(EMBEDDED_INDEX.contains("function warCardFor(el, warKey)"));
+        let war_hold = EMBEDDED_INDEX
+            .split("function holdWatchedWar(el)")
+            .nth(1)
+            .unwrap()
+            .split("function watchWar(warKey)")
+            .next()
+            .unwrap();
+        assert!(war_hold.contains(
+            "const within = card.getBoundingClientRect().top - el.getBoundingClientRect().top + el.scrollTop;"
+        ));
+        assert!(war_hold.contains("const target = Math.max(0, Math.min(reach, within - watchedWar.offset));"));
+        assert!(war_hold.contains("el.scrollTop = target;"));
+        // Re-measured before every rebuild, so a viewer who scrolls the log
+        // moves the lock rather than fighting it, and the sort order itself is
+        // never rewritten to keep the card still.
+        let war_draw = EMBEDDED_INDEX
+            .split("function drawWarLog()")
+            .nth(1)
+            .unwrap()
+            .split("function drawSide(")
+            .next()
+            .unwrap();
+        assert!(war_draw.contains("measureWatchedWar(el);"));
+        assert!(war_draw.contains("holdWatchedWar(el);"));
+        assert!(war_draw.contains("if (watchedWar && watchedWar.seed !== state.seed) watchedWar = null;"));
+        assert!(war_draw.contains("if (watchedWar && !warCardFor(el, watchedWar.key)) watchedWar = null;"));
+        assert!(
+            !war_draw.contains("wars.sort("),
+            "the war log must stay the engine's chronicle; a hold moves the scroll, not the order"
+        );
+        assert!(EMBEDDED_INDEX
+            .contains("if (watchedWar && watchedWar.key === key) releaseWatchedWar();"));
+        assert!(EMBEDDED_INDEX.contains(".war-card.watched { border-color: #d8ad5e;"));
+        assert!(
+            EMBEDDED_INDEX.find(".war-card.ended .war-period").unwrap()
+                < EMBEDDED_INDEX.find(".war-card.watched .war-period").unwrap(),
+            "the watched rules share `.ended`'s specificity and must follow it to win"
+        );
+        let war_focus = EMBEDDED_INDEX
+            .split("function focusWarOnMap(warKey)")
+            .nth(1)
+            .unwrap()
+            .split("function drawWarLog()")
+            .next()
+            .unwrap();
+        assert!(war_focus.contains("takeCameraControl();"));
+        assert!(war_focus.contains("flyCameraTo(subjects[subjects.length - 1].pos"));
+        assert!(war_focus.contains("const goal = observedViewGoal(subjects, true);"));
         assert!(EMBEDDED_INDEX.contains("function warBelligerentRows("));
         assert!(EMBEDDED_INDEX.contains("function warPartyIsCityState("));
         assert!(EMBEDDED_INDEX.contains("war-row-label\">Belligerents"));
@@ -5114,13 +7380,25 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("overflow-wrap: break-word"));
         assert!(EMBEDDED_INDEX.contains("height: 4px"));
         assert!(EMBEDDED_INDEX.contains("width: var(--war-effort, 0%)"));
+        // Both bars grow outward from the seam between the columns: each is
+        // pushed against it, squared off on that end and rounded on the other,
+        // and the seam itself is drawn as an axis under a full-height rule.
         assert!(EMBEDDED_INDEX.contains(
-            ".war-side.aggressor .war-belligerent-bar { margin-left: auto; }"
+            ".war-side.aggressor .war-belligerent-bar { margin-left: auto; border-radius: 2px 0 0 2px; }"
         ));
         assert!(EMBEDDED_INDEX.contains(
-            ".war-side.defender .war-belligerent-bar { margin-right: auto; }"
+            ".war-side.defender .war-belligerent-bar { margin-right: auto; border-radius: 0 2px 2px 0; }"
         ));
-        assert!(EMBEDDED_INDEX.contains("const effort = maxSawAction > 0 ? 100 * sawAction / maxSawAction : 0"));
+        assert!(EMBEDDED_INDEX
+            .contains(".war-columns::before { content: \"\"; position: absolute; top: 0; bottom: 0; left: 50%;"));
+        // Painted over the bars, so two sides of one row cannot fuse into a
+        // single two-tone bar with no visible origin between them.
+        assert!(EMBEDDED_INDEX.contains("box-shadow: 0 0 0 1px #0c110f"));
+        assert!(EMBEDDED_INDEX.contains("min-width: 3px; height: 4px"));
+        // The busiest army in a war tops out well short of its column's rim.
+        assert!(EMBEDDED_INDEX.contains("const WAR_EFFORT_MAX_PERCENT = 80;"));
+        assert!(EMBEDDED_INDEX.contains("const effort = WAR_EFFORT_MAX_PERCENT * share;"));
+        assert!(EMBEDDED_INDEX.contains("measured out from the centre"));
         assert!(!EMBEDDED_INDEX.contains("strength_total"));
         assert!(!EMBEDDED_INDEX.contains("Military strength at entry"));
         assert!(EMBEDDED_INDEX.contains("war-row-label\">Chronology"));
@@ -5130,8 +7408,73 @@ mod tests {
         let losses = EMBEDDED_INDEX.find("war-row-label\">Losses").unwrap();
         let chronology = EMBEDDED_INDEX.find("war-row-label\">Chronology").unwrap();
         assert!(belligerents < losses && losses < chronology);
-        assert!(EMBEDDED_INDEX.contains("entered Turn ${party.entered}"));
-        assert!(EMBEDDED_INDEX.contains("peaced out Turn ${party.exited}"));
+        // A belligerent gets one section carrying its whole involvement, so the
+        // note is built from that belligerent's intervals rather than from one
+        // row per interval, and a second entry reads as a re-entry.
+        assert!(EMBEDDED_INDEX.contains("entered ${turn}${interval.entered}"));
+        assert!(EMBEDDED_INDEX.contains("re-entered ${turn}${interval.entered}"));
+        assert!(EMBEDDED_INDEX
+            .contains("peaced out ${notes.length ? \"\" : \"Turn \"}${interval.exited}"));
+        assert!(EMBEDDED_INDEX.contains("function warMergeParties(parties)"));
+        assert!(EMBEDDED_INDEX.contains("function warPartyIntervals(party)"));
+        // The bar rules the line under the name it measures, so the name comes
+        // first in the row and the bar follows it.
+        let belligerent_row = EMBEDDED_INDEX
+            .split("function warBelligerentRows(")
+            .nth(1)
+            .unwrap()
+            .split("function nuclearStrikeFor(")
+            .next()
+            .unwrap();
+        let party_name = belligerent_row.find("class=\"war-party-name\"").unwrap();
+        let bar = belligerent_row.find("class=\"war-belligerent-bar\"").unwrap();
+        let note = belligerent_row.find("class=\"war-party-note\"").unwrap();
+        assert!(
+            party_name < bar && bar < note,
+            "the effort bar belongs below the belligerent's name, above its notes"
+        );
+        // The declarer is named in one word so the label shares the name's
+        // line: a two-line name box drops this side's effort bar below its
+        // opposite number's, and the bars are what the two columns compare.
+        // Asserted against the emitted markup rather than the whole function,
+        // so the comment above the template is still free to name the form it
+        // replaced -- a bare `contains` over the body matches the prose too.
+        assert!(belligerent_row.contains("class=\"war-party-role\">(aggressor)</span>"));
+        assert!(!belligerent_row.contains("class=\"war-party-role\">(initial"));
+        assert!(EMBEDDED_INDEX.contains(".war-party-role {")
+            && EMBEDDED_INDEX
+                .split(".war-party-role {")
+                .nth(1)
+                .unwrap()
+                .split('}')
+                .next()
+                .unwrap()
+                .contains("white-space: nowrap"));
+        assert!(belligerent_row.contains("party.player === war.aggressor"));
+        // Cities are listed under the belligerent that lost them, said plainly,
+        // and ranked capital first then by the population that changed hands.
+        assert!(EMBEDDED_INDEX.contains("function warCityLosses(party, war)"));
+        assert!(EMBEDDED_INDEX.contains("loss.razed ? \"razed\" : \"conquered\""));
+        assert!(EMBEDDED_INDEX
+            .contains("Number(b.capital) - Number(a.capital) || b.pop - a.pop"));
+        // The class the ledger is ordered by is reachable on the row, never a
+        // banner across it.
+        assert!(!EMBEDDED_INDEX.contains("war-loss-category"));
+        // Each side's casualties are one column packed from the top, never a
+        // shared row per unit kind: a side is a coalition, so a row that put
+        // one alliance's Warriors opposite another's invited a head-to-head
+        // reading of two civilizations that may never have met in the field.
+        assert!(EMBEDDED_INDEX.contains("function warLossSideColumn(side, war)"));
+        assert!(!EMBEDDED_INDEX.contains("war-loss-unit-row"));
+        assert!(!EMBEDDED_INDEX.contains("war-loss-unit-cell empty"));
+        // And a belligerent that lost neither a unit nor a city is left out of
+        // the ledger entirely. Belligerents above it is where "who fought" is
+        // answered; here the column is spent on what was actually lost.
+        assert!(EMBEDDED_INDEX.contains("function warPartyLostAnything(party, war)"));
+        assert!(EMBEDDED_INDEX
+            .contains("warParties(war, declarerSide).filter(party => warPartyLostAnything(party, war))"));
+        assert!(EMBEDDED_INDEX.contains("No losses"));
+        assert!(EMBEDDED_INDEX.contains("No recorded losses"));
         assert!(EMBEDDED_INDEX.contains("sort((a, b) => a.turn - b.turn)"));
         assert!(EMBEDDED_INDEX.contains("built the world's first"));
         assert!(EMBEDDED_INDEX.contains("changed government from"));
@@ -5139,7 +7482,16 @@ mod tests {
         assert!(!EMBEDDED_INDEX
             .contains("civilization${summaries.length === 1 ? \"\" : \"s\"} completed"));
         assert!(EMBEDDED_INDEX.contains("id=\"strategysec\""));
-        assert!(EMBEDDED_INDEX
+        // Active AI strategy is no longer withheld from the omniscient spectator.
+        // It was, for as long as the panel could only ever speak for `state.me`
+        // and above the world there is no single "me"; it now names the
+        // civilization it is speaking for, so the one view that can read every
+        // plan is the last one that should hide it.
+        assert!(
+            EMBEDDED_INDEX.contains("document.getElementById(\"strategysec\").style.display = \"block\";"),
+            "the active strategy panel is shown in every view"
+        );
+        assert!(!EMBEDDED_INDEX
             .contains("document.getElementById(\"strategysec\").style.display = fullMapSpectator"));
         assert!(EMBEDDED_INDEX.contains("if (!fullMapSpectator && (SPEC || govs.length"));
         assert!(EMBEDDED_INDEX.contains(".sort((a, b) => b.score - a.score || a.id - b.id)"));
@@ -5152,7 +7504,7 @@ mod tests {
             .map(|(rule, _)| rule)
             .unwrap_or_default();
         assert!(side_rule.contains("order: -1"));
-        assert!(EMBEDDED_INDEX.contains("<strong>${state.turn}</strong>"));
+        assert!(EMBEDDED_INDEX.contains("<strong>${reportedTurn()}</strong>"));
         assert!(!EMBEDDED_INDEX.contains("${state.turn}/${maxTurns}"));
     }
 
@@ -5384,6 +7736,118 @@ mod tests {
     }
 
     #[test]
+    fn undiscovered_ground_is_an_illustrated_fog_safe_chart() {
+        assert!(EMBEDDED_HIDDEN_MAP_MONSTERS.starts_with(b"\x89PNG\r\n\x1a\n"));
+        assert!(EMBEDDED_HIDDEN_MAP_MONSTERS.len() > 1_000_000);
+        assert!(EMBEDDED_INDEX
+            .contains("HIDDEN_MAP_MONSTER_ATLAS.src = \"/assets/hidden-map-monsters.png\""));
+
+        let parchment = EMBEDDED_INDEX
+            .split("function drawHiddenMapParchment")
+            .nth(1)
+            .and_then(|tail| tail.split("function drawHiddenMapMonsters").next())
+            .expect("continuous hidden-map parchment renderer");
+        assert!(parchment.contains("for (const cell of layer.cells) appendHexPath"));
+        assert!(parchment.contains("cx.fillStyle = PARCH; cx.fill()"));
+        assert!(!parchment.contains("PARCH_GRID"), "the hidden sheet must not expose a hex grid");
+
+        let monsters = EMBEDDED_INDEX
+            .split("function drawHiddenMapMonsters")
+            .nth(1)
+            .and_then(|tail| tail.split("function drawHiddenMapFrontier").next())
+            .expect("hidden-map monster placement");
+        assert!(monsters.contains("hiddenMapIsDeep"));
+        assert!(monsters.contains("MODE.painted ? .48 : .41"));
+        assert!(EMBEDDED_INDEX.contains("drawHiddenMapParchment(hiddenMap);\n  drawHiddenMapMonsters(hiddenMap);"));
+        assert!(EMBEDDED_INDEX.contains("drawHiddenMapFrontier(tiles);"));
+        assert!(EMBEDDED_INDEX.contains("if (camera.chart && !spectator)"));
+    }
+
+    /// Fog of war must not report where the stored map stops. A civilization
+    /// that has seen eighteen tiles knows eighteen tiles, and the shape of the
+    /// rectangle they are stored in is not one of the things it knows.
+    #[test]
+    fn the_map_edge_is_veiled_until_a_world_has_been_measured() {
+        // The veil is the observed civilization's, not the viewer's: a
+        // spectator is not exploring anything, and `wentAround` already
+        // answers true for one, so the exhibition keeps the whole rectangle.
+        assert!(EMBEDDED_INDEX.contains("function mapEdgeVeiled()"));
+        assert!(EMBEDDED_INDEX
+            .contains("return !!state && !planetMap() && !wentAround();"));
+        // Three to fifteen tiles, per world and per side, so the give is never
+        // the same twice and the two sides of one map never agree.
+        assert!(EMBEDDED_INDEX.contains("const MAP_VEIL_MIN = 3, MAP_VEIL_MAX = 15;"));
+        assert!(EMBEDDED_INDEX.contains("function mapEdgeVeil()"));
+        assert!(EMBEDDED_INDEX.contains(
+            "MAP_VEIL = {left:reach(0), right:reach(1), top:reach(2), bottom:reach(3)};"
+        ));
+
+        // The parchment runs past the stored rectangle rather than stopping on
+        // it, and it is drawn out to the frame on every side rather than out to
+        // the veil, so no zoom and no bearing can find the end of the sheet.
+        let hidden = EMBEDDED_INDEX
+            .split("function hiddenMapCellAt")
+            .nth(1)
+            .and_then(|tail| tail.split("function hiddenMapSeedWords").next())
+            .expect("hidden-map cell test and viewport");
+        assert!(
+            hidden.contains("col < 0 || col >= state.map.width) return mapEdgeVeiled();"),
+            "ground past the stored rectangle must read as unsurveyed, not as nothing"
+        );
+        assert!(hidden.contains("const veiled = !open && mapEdgeVeiled();"));
+        assert!(
+            hidden.contains("const span = open || veiled ? framedHexBounds(3)"),
+            "a veiled sheet is spanned by the frame, not by the map's rectangle"
+        );
+        assert!(hidden.contains("const [x, y] = open || veiled ? hexXYRaw(q, row) : hexXY(q, row);"));
+        // Only one copy of a wrapping world is drawn, so the background either
+        // side of it is somewhere nobody has been rather than somewhere that
+        // does not exist — which is what closes the same leak at full zoom-out.
+        assert!(EMBEDDED_INDEX.contains("function veilDrawsGroundAt(q, r)"));
+        assert!(hidden.contains("const test = veiled ? (q, r) => !veilDrawsGroundAt(q, r)"));
+        // A canvas compound path costs quadratic time in its own size, so a
+        // sheet that covers a whole frame has to be drawn as its rectangle.
+        assert!(hidden.contains("return {open, solid:veiled, cells, test};"));
+        assert!(EMBEDDED_INDEX
+            .contains("if (layer.solid) cx.rect(minX, minY, maxX - minX, maxY - minY);"));
+
+        // A camera that stops dead on the last row says the same thing the
+        // parchment no longer does, so the veil owns that axis while it lasts.
+        assert!(EMBEDDED_INDEX.contains("function mapVeilPanBounds()"));
+        let bounds = EMBEDDED_INDEX
+            .split("function cameraYBounds")
+            .nth(1)
+            .and_then(|tail| tail.split("function clampCameraY").next())
+            .expect("vertical camera bounds");
+        assert!(
+            bounds.contains("const veil = mapVeilPanBounds();\n  if (veil?.y) return veil.y;"),
+            "the veil must be consulted before the map's own rows frame the camera"
+        );
+        assert!(EMBEDDED_INDEX.contains("function clampCameraX(x)"));
+
+        // Soft, and bouncy: a drag past the bound is resisted rather than
+        // refused, a coast into it stretches and is handed to a spring, and
+        // both come home to the bound instead of sailing back over the world.
+        assert!(EMBEDDED_INDEX.contains("function cameraRubberBand(value, bounds, give = CAMERA_GIVE())"));
+        assert!(EMBEDDED_INDEX.contains("function holdCameraInBounds(x, y)"));
+        assert!(EMBEDDED_INDEX.contains("function handOffCameraBounce()"));
+        assert!(EMBEDDED_INDEX.contains("function settleCameraBounce(dt)"));
+        assert!(EMBEDDED_INDEX.contains("if (settleCameraBounce(dt)) active = true;"));
+        assert!(
+            EMBEDDED_INDEX.contains("[cam.x, cam.y] = holdCameraInBounds("),
+            "the drag paths must go through the rubber band"
+        );
+
+        // And the thumbnail, which is the loudest statement of extent there is.
+        let mini = EMBEDDED_INDEX
+            .split("function miniBounds()")
+            .nth(1)
+            .and_then(|tail| tail.split("function miniLayout").next())
+            .expect("minimap bounds");
+        assert!(mini.contains("if ((!chartIsOpen() && !mapEdgeVeiled()) || !tiles?.length) {"));
+    }
+
+    #[test]
     fn cinematic_3d_module_covers_every_unit_renderer_family() {
         for family in [
             "embarked",
@@ -5490,6 +7954,38 @@ mod tests {
     }
 
     #[test]
+    fn painted_planet_blends_terrain_without_revealing_the_hex_mesh() {
+        let underpaint = EMBEDDED_INDEX
+            .split("function planetTerrainUnderpaint")
+            .nth(1)
+            .and_then(|tail| tail.split("function drawPlanetShoreline").next())
+            .expect("painted planet terrain foundation");
+        assert!(underpaint.contains("isWater(tile)"));
+        assert!(underpaint.contains("#174b61"));
+        assert!(underpaint.contains("#747655"));
+
+        let ground = EMBEDDED_INDEX
+            .split("function drawPlanetGround")
+            .nth(1)
+            .and_then(|tail| tail.split("function drawPlanetSurfaceDetail").next())
+            .expect("planet terrain renderer");
+        assert!(ground.contains("painted ? planetTerrainUnderpaint(cell.tile)"));
+        assert!(ground.contains("const blend = Math.max(1.2, Math.min(5.2"));
+        assert!(ground.contains("cx.filter = `blur(${blend.toFixed(2)}px)`"));
+        assert!(ground.contains("cx.globalCompositeOperation = \"soft-light\""));
+        assert!(ground.contains("drawPlanetShoreline(knownCells)"));
+
+        let shoreline = EMBEDDED_INDEX
+            .split("function drawPlanetShoreline")
+            .nth(1)
+            .and_then(|tail| tail.split("function drawPlanetGround").next())
+            .expect("painted planet shoreline renderer");
+        assert!(shoreline.contains("const painted = new Set(cells.map"));
+        assert!(shoreline.contains("painted.has(cell.nbrs[side])"));
+        assert!(shoreline.contains("cx.quadraticCurveTo(mx, my, bx, by)"));
+    }
+
+    #[test]
     fn instance_tagged_spectator_url_routes_to_the_embedded_page() {
         assert_eq!(request_path("/"), "/");
         assert_eq!(request_path("/?instance=9232"), "/");
@@ -5510,6 +8006,7 @@ mod tests {
             session.params.num_city_states,
             session.params.map_script,
             session.params.game_speed,
+            session.params.leader_pool,
             session.params.spectate,
         );
 
@@ -5526,6 +8023,7 @@ mod tests {
                 session.params.num_city_states,
                 session.params.map_script,
                 session.params.game_speed,
+                session.params.leader_pool,
                 session.params.spectate,
             ),
             previous_settings
@@ -5537,46 +8035,119 @@ mod tests {
     fn selected_settings_wait_for_the_next_automatic_game() {
         let mut params = current();
         params.spectate = true;
-        let mut session = Session::new(params);
+        let session = Session::new(params);
         let original_seed = session.game.seed;
         let original_script = session.game.map_script;
         let original_speed = session.game.game_speed;
+        let shared = shared_for(session);
 
-        session.stage_next_game_settings(&json!({
+        shared.stage_next_game_settings(&json!({
             "num_players": 6,
             "map_script": "continents",
             "game_speed": "quick",
+            "leader_pool": "expanded",
             "victory_conditions": {"culture": false, "score": false},
         }));
 
-        assert_eq!(session.game.seed, original_seed);
-        assert_eq!(session.game.map_script, original_script);
-        assert_eq!(session.game.game_speed, original_speed);
+        {
+            let live = shared.session.lock().unwrap();
+            assert_eq!(live.game.seed, original_seed);
+            assert_eq!(live.game.map_script, original_script);
+            assert_eq!(live.game.game_speed, original_speed);
+        }
         assert_eq!(
-            session.state()["next_game_settings"],
+            decorated_state(&shared)["next_game_settings"],
             json!({
                 "players": 6,
                 "width": 74,
                 "height": 46,
                 "city_states": 9,
                 "turns": 330,
+                "base_ruleset": "civ6",
+                "start_era": "ancient",
                 "map": "continents",
                 "shape": "flat",
                 "poles": "poles",
                 "speed": "quick",
+                "leader_pool": "expanded",
+                "teams": [],
                 "victories": ["science", "religious", "diplomatic", "domination"],
             })
         );
 
-        session.start_automatic_next_game();
+        let queued = shared.take_next_game_params();
+        shared
+            .session
+            .lock()
+            .unwrap()
+            .start_automatic_next_game(queued);
 
+        let session = shared.session.lock().unwrap();
         assert_ne!(session.game.seed, original_seed);
         assert_eq!(session.params.num_players, 6);
         assert_eq!(session.params.map_script, MapScript::Continents);
         assert_eq!(session.params.game_speed, GameSpeed::Quick);
+        assert_eq!(session.params.leader_pool, LeaderPool::Expanded);
         assert!(!session.game.victory_conditions.culture);
         assert!(!session.game.victory_conditions.score);
-        assert!(session.state()["next_game_settings"].is_null());
+        drop(session);
+        // The queue is spent: the world after this one is this one's settings.
+        assert!(decorated_state(&shared)["next_game_settings"].is_null());
+    }
+
+    /// The setup panel writes on every `change`, and `startNewSimulation`
+    /// waits for that write before it asks for the restart — so a settings
+    /// control that queued behind an AI turn put the restart behind it too.
+    #[test]
+    fn settings_are_staged_while_the_simulation_lock_is_held() {
+        let mut params = current();
+        params.spectate = true;
+        let shared = shared_for(Session::new(params));
+
+        let turn_in_flight = shared.session.lock().unwrap();
+        let started = Instant::now();
+        shared.stage_next_game_settings(&json!({"num_players": 6, "map_script": "continents"}));
+        let staged = started.elapsed();
+
+        assert_eq!(shared.staged_next_game_settings()["players"], json!(6));
+        assert_eq!(shared.staged_next_game_settings()["map"], json!("continents"));
+        assert!(
+            staged < Duration::from_millis(50),
+            "choosing a setting waited {staged:?} on the turn in flight"
+        );
+        drop(turn_in_flight);
+    }
+
+    /// A `Shared` around one session. The new-game request deliberately lives
+    /// beside the simulation rather than inside it, so a test of it needs the
+    /// same wrapper the server runs behind.
+    fn shared_for(mut session: Session) -> Arc<Shared> {
+        let seed = session.game.seed;
+        Arc::new(Shared {
+            current_seed: AtomicU64::new(seed),
+            supervisor_request: Mutex::new(None),
+            live_params: Mutex::new(session.params.clone()),
+            next_game_params: Mutex::new(session.take_resumed_next_game_params()),
+            session: Mutex::new(session),
+            pace_ms: AtomicU64::new(0),
+            paused: AtomicBool::new(false),
+            restart_in: AtomicU64::new(u64::MAX),
+            turn_us: AtomicU64::new(0),
+            turn_compute_us: AtomicU64::new(0),
+            frame_delivery: Mutex::new(FrameDelivery::default()),
+            frame_painted: Condvar::new(),
+            simulation_frame_gate: Mutex::new(()),
+            latest: Mutex::new(None),
+            turn_ready: Condvar::new(),
+        })
+    }
+
+    /// What a reader of `/state` actually sees: the session's observation with
+    /// everything `decorate` attaches from beside it.
+    fn decorated_state(shared: &Shared) -> Value {
+        let mut state = shared.session.lock().unwrap().state();
+        super::decorate(&mut state, shared);
+        state
     }
 
     #[test]
@@ -5584,23 +8155,33 @@ mod tests {
         let mut params = current();
         params.spectate = true;
         params.supervised = true;
-        let mut session = Session::new(params);
+        let session = Session::new(params);
         let original_seed = session.game.seed;
+        let shared = shared_for(session);
 
-        session
+        shared
             .request_supervised_new_game(&json!({
                 "mode": "fresh_code",
                 "paused": false,
                 "num_players": 4,
                 "map_script": "continents",
                 "game_speed": "quick",
+                "leader_pool": "expanded",
                 "victory_conditions": {"culture": false, "score": false},
             }))
             .unwrap();
 
-        let state = session.state();
-        assert_eq!(session.game.seed, original_seed);
-        assert!(session.spectator_paused);
+        let state = decorated_state(&shared);
+        assert_eq!(shared.session.lock().unwrap().game.seed, original_seed);
+        // The outgoing world stops stepping, and reads as held rather than
+        // stalled, without the request ever having touched the session.
+        assert!(shared.paused.load(std::sync::atomic::Ordering::Relaxed));
+        assert_eq!(state["spectator_paused"], json!(true));
+        // The same request is on the lock-free probe the supervisor polls.
+        assert_eq!(
+            shared.pending_new_game_request().expect("a pending request")["mode"],
+            "fresh_code"
+        );
         assert_eq!(state["supervisor_request"]["mode"], "fresh_code");
         assert_eq!(state["supervisor_request"]["paused"], false);
         assert_eq!(
@@ -5615,22 +8196,62 @@ mod tests {
                 "height": 38,
                 "city_states": 6,
                 "turns": 330,
+                "base_ruleset": "civ6",
+                "start_era": "ancient",
                 "map": "continents",
                 "shape": "flat",
                 "poles": "poles",
                 "speed": "quick",
+                "leader_pool": "expanded",
+                "teams": [],
                 "victories": ["science", "religious", "diplomatic", "domination"],
             })
         );
     }
 
+    /// The control that leaves a world must not queue behind that world.
+    ///
+    /// Pressing Restart took the simulation lock, so it waited out whatever AI
+    /// turn was in flight. On the live exhibition that is not a small wait: a
+    /// late turn on a 74x46 six-player world held it long enough that `/state`
+    /// did not answer in 120 seconds and `/status` did not answer in 30, so
+    /// the page gave up at its own fifteen, cleared the veil and flashed an
+    /// error — and the supervisor, which read the request out of that same
+    /// `/state`, never saw one. Holding the lock here is what a turn does.
+    #[test]
+    fn a_restart_is_accepted_while_the_simulation_lock_is_held() {
+        let mut params = current();
+        params.spectate = true;
+        params.supervised = true;
+        let shared = shared_for(Session::new(params));
+
+        let turn_in_flight = shared.session.lock().unwrap();
+        let started = Instant::now();
+        shared
+            .request_supervised_new_game(&json!({"mode": "restart", "paused": false}))
+            .expect("a restart is accepted mid-turn");
+        let accepted = started.elapsed();
+
+        // And the supervisor can read it without the lock either.
+        let pending = shared
+            .pending_new_game_request()
+            .expect("the supervisor's probe carries the request");
+        assert_eq!(pending["mode"], "restart");
+        assert!(
+            accepted < Duration::from_millis(50),
+            "the restart waited {accepted:?} on a turn it exists to abandon"
+        );
+        drop(turn_in_flight);
+    }
+
     #[test]
     fn unsupervised_server_rejects_supervisor_new_game_requests() {
-        let mut session = Session::new(current());
-        assert!(session
+        let shared = shared_for(Session::new(current()));
+        assert!(shared
             .request_supervised_new_game(&json!({"mode": "fresh_code"}))
             .is_err());
-        assert!(session.state()["supervisor_request"].is_null());
+        assert!(shared.pending_new_game_request().is_none());
+        assert!(decorated_state(&shared)["supervisor_request"].is_null());
     }
 
     /// The supervisor replaces the AI exhibition process by process, so this
@@ -5661,7 +8282,7 @@ mod tests {
         assert_eq!(state["supervised"], json!(true));
         assert!(!state["legal_actions"].as_array().unwrap().is_empty());
 
-        assert!(session
+        assert!(shared_for(session)
             .request_supervised_new_game(&json!({"mode": "restart", "paused": false}))
             .is_ok());
     }
@@ -5680,17 +8301,20 @@ mod tests {
         session.game.winner = Some(1);
         session.game.victory_type = Some("science".to_string());
 
-        assert!(session.play_on());
+        assert!(session.play_on(PlayOnMode::UntilNextVictory));
         assert_eq!(session.game.current, 0);
         assert!(session.game.winner.is_none());
-        assert_eq!(session.game.max_turns, 12 + crate::game::PLAY_ON_TURNS);
+        assert_eq!(session.game.max_turns, 40);
+        assert_eq!(session.game.turn_limit(), None);
         let state = session.state();
         assert!(state["winner"].is_null());
         assert_eq!(state["decided"]["victory_type"], json!("science"));
         assert_eq!(state["decided"]["turn"], json!(12));
+        assert_eq!(state["decided"]["mode"], json!("until_next_victory"));
+        assert!(state["turn_limit"].is_null());
         // A live game has nothing to play on past, and says so rather than
         // quietly granting turns nobody won.
-        assert!(!session.play_on());
+        assert!(!session.play_on(PlayOnMode::Indefinite));
     }
 
     #[test]
@@ -5741,15 +8365,93 @@ mod tests {
             .all(|unit| unit.get("reachable").is_none()));
         assert!(state["players"][0]["ai_strategy"].is_null());
         assert!(state["players"][0]["ai_plan"].is_null());
+        assert!(state["players"][0]["ai_name"]
+            .as_str()
+            .is_some_and(|name| name != "AI player"));
         session.step();
         let stepped = session.state();
         assert_eq!(stepped["players"][0]["ai_strategy"], "expansion");
+        assert!(["Frontier", "Horizon", "Homestead", "Border"]
+            .iter()
+            .any(|prefix| stepped["players"][0]["ai_name"]
+                .as_str()
+                .is_some_and(|name| name.starts_with(prefix))));
         // The expanded HUD card reads the whole plan, not just its label.
         let plan = &stepped["players"][0]["ai_plan"];
         assert_eq!(plan["strategy"], "expansion");
         assert!(plan["desired_cities"].as_u64().is_some());
         assert!(plan["assessed_turn"].as_u64().is_some());
         assert!(plan["forces"].is_array());
+    }
+
+    /// The Active AI strategy panel reads one civilization's plan beside what it
+    /// is actually spending its science and culture on. The observation only
+    /// ever carries the *observed* seat's study, in `me`, and above the world
+    /// there is no observed seat — so the omniscient view names every major's.
+    ///
+    /// Only that view. Watching as one civilization means seeing what it can
+    /// see, and a rival's laboratory is not on that list; the panel's picker
+    /// collapses to the one seat precisely because the wire gives it one.
+    #[test]
+    fn only_the_omniscient_view_reads_a_rivals_laboratory() {
+        let mut params = current();
+        params.spectate = true;
+        let mut session = Session::new(params);
+        // A world at turn 0 has chosen nothing yet.
+        for _ in 0..8 {
+            session.step();
+        }
+        let omniscient = session.state();
+        let majors = || {
+            omniscient["players"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter(|p| p["is_minor"] == json!(false) && p["is_barbarian"] == json!(false))
+        };
+        assert!(majors().count() > 1, "a table needs rivals to withhold");
+        assert!(
+            majors().any(|p| p["research"].is_string()),
+            "somebody has picked a technology by turn 8"
+        );
+        for player in majors() {
+            for field in [
+                "research",
+                "research_progress",
+                "research_boosted",
+                "civic",
+                "civic_progress",
+                "civic_boosted",
+            ] {
+                assert!(
+                    player.get(field).is_some(),
+                    "the omniscient view owes {} its {field}",
+                    player["civ"]
+                );
+            }
+            assert!(player["research_boosted"].is_boolean());
+            assert!(player["civic_boosted"].is_boolean());
+            assert!(player["research_progress"].is_number());
+        }
+        // A city-state has no research panel to fill and is not annotated.
+        for player in omniscient["players"].as_array().unwrap() {
+            if player["is_minor"] == json!(true) || player["is_barbarian"] == json!(true) {
+                assert!(player.get("research").is_none());
+            }
+        }
+
+        session.set_view_player(Some(1)).unwrap();
+        let watched = session.state();
+        for player in watched["players"].as_array().unwrap() {
+            assert!(
+                player.get("research").is_none() && player.get("civic").is_none(),
+                "watching as one civilization must not read {}'s laboratory",
+                player["civ"]
+            );
+        }
+        // The watched seat still reads its own out of `me`, as it always has.
+        assert!(watched["me"].get("research").is_some());
+        assert!(watched["me"]["boosted_techs"].is_array());
     }
 
     #[test]
@@ -5797,6 +8499,23 @@ mod tests {
             assert_eq!(player_view["view_player"].as_u64(), Some(pid as u64));
             assert!(player_view["map"]["tiles"].as_array().unwrap().len() < omniscient_tile_count);
         }
+    }
+
+    #[test]
+    fn selecting_all_players_promotes_the_live_match_to_omniscient_spectator_mode() {
+        let mut session = Session::new(current());
+        assert!(!session.params.spectate);
+
+        session.set_view_player(None).unwrap();
+        let spectator_view = session.state();
+
+        assert!(session.params.spectate);
+        assert_eq!(spectator_view["spectate"].as_bool(), Some(true));
+        assert!(spectator_view["view_player"].is_null());
+        assert_eq!(
+            spectator_view["visible"].as_array().unwrap().len(),
+            session.game.map.tiles.len()
+        );
     }
 
     #[test]
@@ -6086,7 +8805,6 @@ mod tests {
         for piece in [
             "id=\"leader\"",
             "id=\"difficulty\"",
-            "id=\"startgame\"",
             "id=\"saves-group\"",
             "function syncSetupMode()",
             "async function refreshSaves()",
@@ -6114,19 +8832,19 @@ mod tests {
     /// Choosing single player and pressing the one start control on screen
     /// must open that game — on the supervised exhibition too, where every
     /// simulation is a fresh process but a human game takes this one over.
-    /// Which control that is follows the world on screen, never the pending
-    /// selection: keying the sidebar button to the mode select left a player
-    /// who picked AI-only with no way to launch anything at all.
+    /// The control itself persists when the world changes; only its presentation
+    /// transforms, so a second Start new game button never materializes.
     #[test]
-    fn browser_enters_single_player_from_whichever_start_control_is_showing() {
+    fn browser_transforms_restart_control_for_single_player() {
         assert!(EMBEDDED_INDEX
             .contains("const supervised = !!(state && state.supervised) && payload.spectate;"));
-        assert!(EMBEDDED_INDEX.contains("const human = !selectedSimulationSettings().spectate;"));
+        // Only a world that is definitely spectated leaves this a restart.
+        assert!(EMBEDDED_INDEX.contains("const human = settings.spectate !== true;"));
         // Choosing single player renames that control after the game it opens,
         // rather than leaving "Restart sim" over a single-player subtitle.
         assert!(EMBEDDED_INDEX.contains("<span class=\"lbl\">Restart sim</span>"));
         assert!(EMBEDDED_INDEX.contains("button.classList.toggle(\"human-start\", human);"));
-        assert!(EMBEDDED_INDEX.contains("? \"Start Single Player Game\""));
+        assert!(EMBEDDED_INDEX.contains("? \"Start new game\""));
         assert!(EMBEDDED_INDEX
             .contains(".spec-controls #restart-sim.human-start::before { content: \"▶\";"));
         // It shares the row with Pause/Resume rather than displacing it: keep
@@ -6140,11 +8858,21 @@ mod tests {
         ));
         assert!(EMBEDDED_INDEX
             .contains(".spec-controls:has(#restart-sim.human-start) #specpause.primary {"));
-        assert!(EMBEDDED_INDEX.contains("body.watching-sim #startgame { display: none; }"));
+        assert!(EMBEDDED_INDEX.contains(
+            "document.getElementById(\"specbar\").style.display = \"block\";"
+        ));
+        // Adopting the running mode still re-reads the panel and relabels the
+        // control, so the world that just arrived is described by the control
+        // that will replace it.
+        assert!(EMBEDDED_INDEX.contains(
+            "syncSetupMode();\n  updateRestartSimulationButton();"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "body:not(.watching-sim) .spec-controls:has(#restart-sim) {"
+        ));
+        assert_eq!(EMBEDDED_INDEX.matches("id=\"restart-sim\"").count(), 1);
+        assert!(!EMBEDDED_INDEX.contains("id=\"startgame\""));
         assert!(EMBEDDED_INDEX.contains("document.body.classList.toggle(\"watching-sim\", SPEC);"));
-        // The start button belongs to the game being played, not to the mode
-        // the sidebar is staging for the next one.
-        assert!(!EMBEDDED_INDEX.contains("human-setting\" id=\"startgame\""));
         // Leader and difficulty still do follow the selection.
         assert!(EMBEDDED_INDEX.contains("body.spectating .human-setting { display: none; }"));
         assert!(EMBEDDED_INDEX.contains("class=\"small human-setting\">Leader"));
@@ -6327,12 +9055,67 @@ mod tests {
         // countdown, because the supervisor owns that handoff.
         assert!(EMBEDDED_INDEX.contains("class=\"primary winner-again\" onclick=\"startNewSimulation()\""));
         assert!(EMBEDDED_INDEX.contains("id=\"respawn\" role=\"timer\""));
-        // Both finales also offer the other answer: keep this world. It is
-        // the reason the countdown has to be long enough to read — a button
-        // nobody can reach before the next world loads is not an offer.
-        assert!(EMBEDDED_INDEX.contains("id=\"play-on\" onclick=\"playOnPastVictory()\""));
-        assert!(EMBEDDED_INDEX.contains("async function playOnPastVictory()"));
+        // Both finales also offer three ways to keep this world. It is the
+        // reason the countdown has to be long enough to read — a button nobody
+        // can reach before the next world loads is not an offer.
+        assert!(EMBEDDED_INDEX.contains("id=\"play-on-look-around\""));
+        assert!(EMBEDDED_INDEX.contains("id=\"play-on-next-victory\""));
+        assert!(EMBEDDED_INDEX.contains("id=\"play-on-indefinite\""));
+        assert!(EMBEDDED_INDEX.contains("Take a look around"));
+        // The two rules that resume play are named for what the person wants
+        // rather than for the rule they select. "Continue" alone did not say
+        // what it continues *to* — the two play-on buttons differ only in
+        // which later result stops them, and a bare verb left that on the
+        // tooltip where nobody reads it.
+        assert!(EMBEDDED_INDEX.contains(">Continue to the next Victory type</button>"));
+        assert!(EMBEDDED_INDEX.contains(">To infinity and beyond</button>"));
+        assert!(EMBEDDED_INDEX.contains(
+            "title=\"Keep playing this world without a turn limit. The exact result shown \
+             here will not repeat; the next distinct victory ends the game.\">\
+             Continue to the next Victory type<"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "title=\"Keep playing this world without a turn limit and ignore every later \
+             victory.\">To infinity and beyond<"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "playOnPastVictory('until_next_victory', true)"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "playOnPastVictory('until_next_victory', false)"
+        ));
+        assert!(EMBEDDED_INDEX.contains("playOnPastVictory('indefinite', false)"));
+        assert!(EMBEDDED_INDEX.contains("async function playOnPastVictory(mode, paused)"));
+        assert!(EMBEDDED_INDEX.contains("body: JSON.stringify({mode, paused})"));
         assert!(EMBEDDED_INDEX.contains("cancelSupervisedSuccessorWatch();"));
+    }
+
+    /// A spectated finale is counted down by the supervisor. A finished human
+    /// game has nobody driving it, so its own result screen counts down to the
+    /// next game — and every way of saying "I am still here" has to stop it,
+    /// or the offer to keep the world is only an offer for ten seconds.
+    #[test]
+    fn a_human_finale_counts_itself_down_to_the_next_game() {
+        assert!(EMBEDDED_INDEX.contains("const FINALE_RESTART_SECONDS = 10;"));
+        assert!(EMBEDDED_INDEX.contains("id=\"finale-restart\""));
+        assert!(EMBEDDED_INDEX
+            .contains("button.textContent = `${FINALE_RESTART_LABEL} (${left})`;"));
+        // The supervisor owns the exhibition's handoff, so a spectated finale
+        // never arms this one on top of the countdown it already publishes.
+        assert!(EMBEDDED_INDEX
+            .contains("if (SPEC || finaleCountdownResult === signature) return;"));
+        // Both human endings count down: a victory and a last city lost.
+        assert_eq!(EMBEDDED_INDEX.matches("armFinaleCountdown(signature);").count(), 2);
+        // Any input stops it, the three ways to keep the world stop it, and a
+        // result screen that goes away takes it with it.
+        assert!(EMBEDDED_INDEX.contains(
+            "for (const gesture of [\"pointerdown\", \"keydown\", \"wheel\"])"
+        ));
+        assert!(EMBEDDED_INDEX.contains("cancelFinaleCountdown(),\n    {capture: true, passive: true});"));
+        assert!(EMBEDDED_INDEX.contains("cancelSupervisedSuccessorWatch();\n  cancelFinaleCountdown();"));
+        assert!(EMBEDDED_INDEX.contains("clearFinaleCountdown();"));
+        // And reaching zero is the same act as pressing the button.
+        assert!(EMBEDDED_INDEX.contains("cancelFinaleCountdown();\n  startNewSimulation();"));
     }
 
     /// Auto-play used to be one button that ran whichever agent the fleet
@@ -6472,6 +9255,131 @@ mod tests {
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
+    /// Every major on screen carries a rating, whether or not this game is
+    /// being rated into anything.
+    ///
+    /// The elo column used to be empty for every seat in every game that was
+    /// not launched with `--league`, which is almost all of them — a table of
+    /// dashes that reads as "this build cannot rate anyone". Two things fix
+    /// it: the snapshot every build ships is loaded for labels, and a seat
+    /// the league has no row for shows the provisional base rather than
+    /// nothing.
+    #[test]
+    fn every_major_carries_a_rating_without_a_named_roster() {
+        let mut params = current();
+        params.spectate = true;
+        params.num_players = 4;
+        let session = Session::new(params);
+        assert!(
+            session.league.is_some(),
+            "the shipped snapshot labels a game that names no roster"
+        );
+        assert!(!session.seat_from_roster, "and it seats nobody");
+
+        let state = session.state();
+        let majors: Vec<&Value> = state["players"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|p| p["is_minor"] != json!(true) && p["is_barbarian"] != json!(true))
+            .collect();
+        assert_eq!(majors.len(), 4);
+        let mut shares = 0.0;
+        for player in &majors {
+            let elo = player["ai_elo"].as_i64().expect("every major has a rating");
+            assert!((800..=2600).contains(&elo), "{elo} is not a rating");
+            assert!(player["ai_elo_rd"].as_i64().is_some());
+            shares += player["ai_expected"].as_f64().expect("and a win share");
+            // Nobody chose these seats, so the one entrant behind all of them
+            // does not get to put its handle on four different civilizations.
+            assert!(
+                player["ai_username"].is_null(),
+                "an unseated table keeps its per-seat names"
+            );
+            assert!(player["ai_name"].as_str().is_some_and(|n| !n.is_empty()));
+        }
+        assert!(
+            (shares - 1.0).abs() < 0.02,
+            "one table, one winner: shares summed to {shares}"
+        );
+        // An earned rating, not the base everybody starts from. The check
+        // above passes on a provisional 1500 too, which is exactly what the
+        // whole table showed while the roster was read from a relative path.
+        for player in &majors {
+            assert_eq!(
+                player["ai_elo_provisional"],
+                json!(false),
+                "the shipped roster has games behind it"
+            );
+        }
+    }
+
+    /// The roster that labels an ordinary game is compiled in, so the ratings
+    /// on screen are the same wherever the binary was started from.
+    ///
+    /// The label roster ended at a read of `data/league`, a directory resolved
+    /// against the working directory. `cargo test` runs at the crate root and
+    /// a developer is usually standing in a checkout, so the read succeeded
+    /// exactly where anyone would look and failed everywhere the program
+    /// actually ships: the installed binary run from a home directory, a
+    /// launcher that starts it from `/`, and the WASM build, which has no
+    /// filesystem at all. Every seat in those games showed a provisional 1500.
+    #[test]
+    fn the_label_roster_is_compiled_in_rather_than_read_from_the_working_directory() {
+        let shipped = crate::league::shipped_league().expect("the snapshot is compiled in");
+        let mut params = current();
+        params.league_dir = None;
+        let (league, seats) = Session::load_params_league(&params);
+        let league = league.expect("a game that names no roster is still labelled");
+        assert!(!seats, "a label roster seats nobody and rates nothing");
+        // A checkout that has been recording locally answers from its own
+        // runtime `league/` first, which is the point of that step. With no
+        // such directory — a fresh checkout, and every shipped build — the
+        // chain has to reach the compiled-in snapshot rather than stop at a
+        // path that is not there.
+        if crate::league::load_league("league").is_none() {
+            assert_eq!(
+                league.strategies.len(),
+                shipped.strategies.len(),
+                "the labels come from the shipped roster"
+            );
+        }
+    }
+
+    /// An interactive game rates its rivals on screen too — but only the
+    /// ones you have met, and never their plan.
+    ///
+    /// Only the spectator used to annotate ratings, so the HUD's ELO column
+    /// was empty for every opponent in every game somebody was actually
+    /// playing.
+    #[test]
+    fn an_interactive_game_rates_the_rivals_you_have_met() {
+        let mut params = current();
+        params.num_players = 3;
+        let session = Session::new(params);
+        let state = session.state();
+        assert_eq!(state["spectate"], json!(false));
+        let players = state["players"].as_array().unwrap();
+        let mut met = 0;
+        for player in players {
+            let unmet = player["met"] == json!(false);
+            let minor = player["is_minor"] == json!(true) || player["is_barbarian"] == json!(true);
+            if unmet || minor {
+                assert!(
+                    player["ai_elo"].is_null(),
+                    "an unmet or minor seat is not annotated"
+                );
+                continue;
+            }
+            met += 1;
+            assert!(player["ai_elo"].as_i64().is_some(), "a met major is rated");
+            // Their standing is public; what they intend to do with it is not.
+            assert!(player["ai_plan"].is_null());
+            assert!(player["ai_strategy"].is_null());
+        }
+        assert!(met > 0, "the player's own seat is met at the very least");
+    }
+
     /// Most games are rated against nothing at all. The person is still not
     /// an existing player: they get a handle for this game, and it goes no
     /// further than this game.
@@ -6483,7 +9391,12 @@ mod tests {
         let state = session.state();
         assert_eq!(state["players"][0]["player_username"], json!("Player"));
         assert_eq!(state["players"][0]["player_rated"], json!(false));
-        assert!(state["players"][0]["player_elo"].is_null());
+        // Nothing is being rated, and they have still never finished a game,
+        // so the seat wears the rating everybody starts from and says so.
+        assert_eq!(state["players"][0]["player_elo"], json!(1500));
+        assert_eq!(state["players"][0]["player_elo_rd"], json!(350));
+        assert_eq!(state["players"][0]["player_elo_provisional"], json!(true));
+        assert_eq!(state["players"][0]["player_games"], json!(0));
 
         // A spectated world has nobody at a keyboard and registers nobody.
         let mut params = current();
@@ -6505,6 +9418,59 @@ mod tests {
         let played = session.autoplay(u32::MAX);
         assert!(played <= 13, "played {played} turns of a 12-turn game");
         assert!(played >= 12, "only played {played} turns of a 12-turn game");
+    }
+
+    /// A single-player page has to be able to read its own first state.
+    ///
+    /// The opening `/state?painted=` of every page takes
+    /// `simulation_frame_gate` — that is how a page attaching mid-turn is
+    /// ordered against the stepper. The stepper does not step a game somebody
+    /// is playing, but it used to take that gate *first* and only then notice,
+    /// sleeping 300ms with the gate held and retaking it the moment it let go.
+    /// The window left for the page was too narrow to win, so a browser opening
+    /// a single-player game was starved out of its first snapshot: boot aborts
+    /// at fifteen seconds, retries, and is starved again. The map never
+    /// appears, and auto-play has nothing to draw a frame from.
+    #[test]
+    fn a_single_player_page_gets_its_first_state_at_once() {
+        let port = TcpListener::bind(("127.0.0.1", 0))
+            .expect("a free port")
+            .local_addr()
+            .unwrap()
+            .port();
+        let mut params = current();
+        params.num_players = 3;
+        params.num_city_states = 0;
+        params.width = 24;
+        params.height = 16;
+        params.seed = 20_260_726;
+        assert!(!params.spectate, "this test is about the human-game path");
+        std::thread::spawn(move || super::serve_with_game(port, false, params, None, false));
+
+        let deadline = Instant::now() + Duration::from_secs(60);
+        while http_get(port, "/status").is_none() {
+            assert!(Instant::now() < deadline, "single-player server never came up");
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        // Exactly what boot asks for: a viewer that has painted nothing yet.
+        // Asked repeatedly, because starvation is a race and one lucky read
+        // proves nothing.
+        for attempt in 1..=5 {
+            let started = Instant::now();
+            let body = http_get(port, "/state?painted=&viewer=boot-probe")
+                .unwrap_or_else(|| panic!("read {attempt}: the opening state never arrived"));
+            let elapsed = started.elapsed();
+            let state: Value = serde_json::from_str(&body)
+                .unwrap_or_else(|e| panic!("read {attempt}: opening state is not JSON: {e}"));
+            assert!(
+                state["turn"].is_number(),
+                "read {attempt}: the opening state carries no turn"
+            );
+            assert!(
+                elapsed < Duration::from_secs(5),
+                "read {attempt}: the opening state took {elapsed:?}, and a page gives up at 15s"
+            );
+        }
     }
 
     /// A browser can lose the response after the agent has already played the
@@ -6601,17 +9567,55 @@ mod tests {
         assert!(EMBEDDED_INDEX
             .contains("const roster = Array.isArray(rules.strategies) ? rules.strategies : []"));
         assert!(EMBEDDED_INDEX.contains("fillStrategies(RULES)"));
-        // The choice rides on every request, so a run continued in batches
+        // The choice rides on every request, so a run continued turn by turn
         // cannot change agent halfway through.
         assert!(EMBEDDED_INDEX.contains("async function autoplayBatch(turns, strategy)"));
         assert!(EMBEDDED_INDEX.contains("request_id: requestId"));
         assert!(EMBEDDED_INDEX.contains("AUTOPLAY_BATCH_TIMEOUT_MS = 120000"));
-        assert!(EMBEDDED_INDEX.contains("const next = await autoplayBatch(ask, strategy)"));
         // Pressing it again stops, rather than queueing a second run.
         assert!(EMBEDDED_INDEX.contains("if (autoplaying) { autoplayStop = true; return; }"));
-        assert!(EMBEDDED_INDEX.contains("while (left > 0 && !autoplayStop)"));
-        // Short of the turns asked for means the game ended under it.
-        assert!(EMBEDDED_INDEX.contains("if (played < ask) break;"));
+        assert!(EMBEDDED_INDEX.contains("while (inFlight)"));
+    }
+
+    /// Every turn auto-play simulates has to reach the screen as a frame.
+    ///
+    /// This is Martin's standing requirement, and auto-play was the one loop
+    /// that broke it. It asked the engine for a *batch* of turns and got back
+    /// only the state after the last one, so a batch of ten played ten turns
+    /// and drew one — nine turns simulated, delivered to nobody, gone. The
+    /// batch doubled while responses were quick, which is why it looked like
+    /// turns were skipped "sometimes": the run began at one turn per request
+    /// and grew away from it within a second.
+    ///
+    /// Two properties fix it and both are load-bearing. The request is for one
+    /// turn, so every turn has a state of its own. And the paint happens inside
+    /// an animation frame, because two states rendered inside one display
+    /// refresh are composited into a single frame — a turn can otherwise be
+    /// simulated, delivered, drawn, and still never appear on a screen.
+    #[test]
+    fn auto_play_draws_a_frame_for_every_turn_it_plays() {
+        // One turn per request, both the first and every one after it.
+        assert!(EMBEDDED_INDEX.contains("inFlight = autoplayBatch(1, strategy);"));
+        assert!(EMBEDDED_INDEX.contains(
+            "inFlight = played > 0 && left > 0 && !autoplayStop ? autoplayBatch(1, strategy) : null;"
+        ));
+        // One presented frame per turn.
+        assert!(EMBEDDED_INDEX.contains(
+            "return new Promise(drawn => requestAnimationFrame(() => { render(st); drawn(); }));"
+        ));
+        assert!(EMBEDDED_INDEX.contains("await autoplayFrame(next);"));
+        // The adaptive batch is what dropped the turns. It must not come back,
+        // in any of the three shapes it had.
+        for gone in [
+            "batch = elapsed < 250",
+            "const ask = Math.min(batch, left)",
+            "await autoplayBatch(ask, strategy)",
+        ] {
+            assert!(
+                !EMBEDDED_INDEX.contains(gone),
+                "auto-play is batching turns again, so turns go unseen: {gone}"
+            );
+        }
     }
 
     /// Which named Great Person a kind is offering is a world fact — it
@@ -6737,8 +9741,8 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("function wakeSleepers()"));
     }
 
-    /// Hovering a tile reports it, the way Civ 6's plot tooltip does — and it
-    /// keeps doing so after the map has been panned.
+    /// Resting over a tile reports it, the way Civ 6's plot tooltip does — and
+    /// it keeps doing so after the map has been panned or the simulation advances.
     ///
     /// `dragMoved` outlives its gesture: the click that follows clears it, and
     /// a drag released off the canvas never produces one. A hover guard that
@@ -6746,10 +9750,22 @@ mod tests {
     /// exactly how the tooltip died. The guard has to ask whether a gesture is
     /// in flight *now*.
     #[test]
-    fn hovering_a_tile_reports_it_and_survives_a_pan() {
+    fn resting_over_a_tile_delays_details_survives_a_pan_and_tracks_new_turns() {
         assert!(
-            EMBEDDED_INDEX.contains("if (!state || dragState || mapTouches.size || rdrag) {"),
+            EMBEDDED_INDEX.contains(
+                "dragState || mapTouches.size || rdrag) {"
+            ),
             "the hover guard must test a live gesture, never the stale dragMoved flag"
+        );
+        assert!(
+            EMBEDDED_INDEX.contains("const TILE_TIP_DELAY_MS = 350;")
+                && EMBEDDED_INDEX.contains("(!reveal && !tileTipVisible)")
+                && EMBEDDED_INDEX.contains("}, TILE_TIP_DELAY_MS);"),
+            "tile details must wait for the pointer to rest, even across snapshot renders"
+        );
+        assert!(
+            EMBEDDED_INDEX.contains("drawCaptureChoice();\n  refreshTileTip();"),
+            "each delivered simulation snapshot must refresh an open tile tooltip"
         );
         for piece in [
             "function tileMoveCost(t)",
@@ -6811,6 +9827,374 @@ mod tests {
             depth, 0,
             "every map overlay must close its own <section>; an unclosed one \
              hides the tooltip and every dialog after it inside #empire"
+        );
+    }
+
+    /// The map controls read left to right in the order a viewer reaches for
+    /// them: collapse the command deck, set the map area, face north, zoom in,
+    /// zoom out, dismiss. Dismissal is last because it is the only one that
+    /// removes the bar, and it hides itself while the deck is collapsed —
+    /// Display settings is the only way back and it lives inside the deck.
+    #[test]
+    fn the_map_controls_run_from_collapse_to_dismiss() {
+        let dock = EMBEDDED_INDEX
+            .split_once("<div id=\"zoomctl\">")
+            .expect("the map control dock")
+            .1
+            .split_once("</div>")
+            .expect("the end of the map control dock")
+            .0;
+        let mut previous = 0usize;
+        let mut last = "the start of the dock";
+        for control in [
+            "id=\"paneltoggle\"",
+            "id=\"mapareaset\"",
+            "id=\"compass\"",
+            "id=\"zin\"",
+            "id=\"zout\"",
+            "data-overlay-close=\"controls\"",
+        ] {
+            let at = dock
+                .find(control)
+                .unwrap_or_else(|| panic!("the map controls are missing {control}"));
+            assert!(
+                at > previous,
+                "the map controls run in reading order: {control} must follow {last}"
+            );
+            previous = at;
+            last = control;
+        }
+        assert!(
+            EMBEDDED_INDEX.contains(
+                r#"body.sidebar-hidden .overlay-close[data-overlay-close="controls"] { display: none; }"#
+            ),
+            "the dismiss control must go while the deck that restores it is collapsed"
+        );
+    }
+
+    /// Gearing the wheel made fourteen orders of magnitude *reachable*; it did
+    /// not make them navigable. Sixty-five notches is a distance nobody
+    /// scrolls, and every one of them has to be aimed over empty space. So the
+    /// sky carries its own way about: the four places the gearing already
+    /// calls arrivals, the shots that hold a whole scale, and the zoom laid
+    /// out end to end as a ladder — one bar, standing over the zoom buttons,
+    /// up only while there is a sky to cross.
+    #[test]
+    fn the_sky_carries_its_own_way_about() {
+        // It is part of the map controls: the same dock, the same dismissal.
+        // It stands *above* the zoom buttons rather than in the dock's flow,
+        // because the dock's height is ground the framing already reserves and
+        // a second row in the flow would move the world every time the camera
+        // left the globe.
+        let dock = EMBEDDED_INDEX
+            .split_once("<div id=\"map-controls-dock\">")
+            .expect("the map control dock")
+            .1;
+        let bar = dock.find("id=\"skynav\"").expect("the sky navigator");
+        let zoom = dock.find("<div id=\"zoomctl\">").expect("the zoom controls");
+        assert!(
+            bar < zoom,
+            "the sky navigator reads before the zoom buttons it stands over"
+        );
+        assert!(EMBEDDED_INDEX.contains("body.overlay-controls-hidden #skynav"));
+        assert!(EMBEDDED_INDEX.contains("#skynav[hidden] { display: none; }"));
+        assert!(EMBEDDED_INDEX.contains("bottom: calc(100% + 6px)"));
+        for part in [
+            "id=\"skynav-worlds\"",
+            "id=\"skynav-scales\"",
+            "id=\"skyladder\"",
+            "id=\"skyspan\"",
+        ] {
+            assert!(
+                EMBEDDED_INDEX.contains(part),
+                "the sky navigator is missing {part}"
+            );
+        }
+        // Only home takes the bar down, and only while home fills the frame:
+        // home is the one world with a board on it. Every other world is
+        // somewhere to get back off, and two readings of that rule cost a pass
+        // each. Keyed to home's *nominal* size the bar vanished the moment a
+        // jump arrived anywhere but home — on Mars the Earth is drawn two
+        // stages wide and is also a hundred million kilometres away and not on
+        // the screen at all — and keyed to whatever the camera focused on it
+        // vanished at the destination, because the star there is twelve times
+        // its own planet, sits at the same catalogue point, and is not even
+        // painted at that zoom.
+        assert!(EMBEDDED_INDEX.contains("if (!focus || focus.body.id !== \"earth\") return true;"));
+        assert!(EMBEDDED_INDEX
+            .contains("return 2 * focus.drawn < stage * (SKY_NAV_UP ? 1.05 : .9);"));
+        assert!(!EMBEDDED_INDEX.contains("const across = 2 * skyDrawnRadius(SKY_EARTH);"));
+        // And it is synced before the branch, so it comes down when the world
+        // under it is a flat board as surely as it goes up above a globe.
+        let sync = EMBEDDED_INDEX
+            .find("  syncSkyNav();")
+            .expect("the sky navigator is synced from the renderer");
+        let branch = EMBEDDED_INDEX
+            .find("if (drawPlanetMap()) return;")
+            .expect("the planet branch");
+        assert!(sync < branch, "the sky navigator syncs before the renderer branches");
+
+        // The places are the arrivals and nothing else — one list, so the bar
+        // can never name somewhere the gearing does not treat as a landing —
+        // and only what this civilization may look at.
+        assert!(EMBEDDED_INDEX.contains("  for (const id of SKY_ARRIVALS) {"));
+        assert!(EMBEDDED_INDEX
+            .contains("const known = new Set(skyKnownWorlds().map(body => body.id));"));
+        assert!(EMBEDDED_INDEX
+            .contains("const SKY_STOP_MARKS = {earth:\"◉\", moon:\"☾\", mars:\"♂\", exo:\"✧\"};"));
+        // A named shot is the same arithmetic as the stop the zoom already
+        // stops at, taken out of `skySystemFrame` rather than written twice.
+        assert!(EMBEDDED_INDEX.contains("return skyFrameFor(skyOutermostFrame());"));
+        assert!(EMBEDDED_INDEX.contains("function skyFrameFor(box)"));
+        assert!(EMBEDDED_INDEX.contains("function skyStopScale(stop)"));
+        assert!(EMBEDDED_INDEX.contains("  if (knowsNeighbourhood())"));
+        // The sky stops at twenty light-years, and the stop is written as the
+        // **width of the stage** rather than as a reach — which is the number
+        // the bar prints under it. Every other shot out here is a radius inside
+        // the padded frame, and a stop written that way printed `45.7 ly`
+        // beneath itself: a view arguing with its own caption. `skyFrameFor`
+        // and `skyReachForStageWidth` are the two directions of one conversion,
+        // so the stop and the readout cannot drift apart.
+        assert!(EMBEDDED_INDEX.contains("const SKY_STOP_LY = 20;"));
+        assert!(EMBEDDED_INDEX.contains("function skyStopReach()"));
+        assert!(EMBEDDED_INDEX.contains("function skyReachForStageWidth(width)"));
+        assert!(EMBEDDED_INDEX.contains("function skyFramedBox()"));
+        assert!(EMBEDDED_INDEX.contains(
+            "  return width * Math.min(inside.width, inside.height) / (2 * skyStageSpan());"
+        ));
+        // And the drawn shell is half of it, so the ring spans the stage rather
+        // than hanging off the edge of it.
+        assert!(EMBEDDED_INDEX.contains("const SKY_BUBBLE_LY = SKY_STOP_LY / 2;"));
+        // The top rung's stop is the voyage rather than a scale: the Sun at one
+        // end and the route out towards the destination. It decides where the
+        // camera leans, never how far it pulls back — a stop that quietly opens
+        // whenever the expedition is aimed a long way off is not a stop — and
+        // the lean is capped against the *stage*, which is not the same length
+        // as the reach.
+        assert!(EMBEDDED_INDEX.contains("  if (seesDestination()) return skyVoyageFrame();"));
+        assert!(EMBEDDED_INDEX.contains("function skyVoyageFrame()"));
+        assert!(EMBEDDED_INDEX.contains("  const room = SKY_STOP_LY * LIGHT_YEAR * .4;"));
+        // Centred a *third* of the way along the trip rather than half. This is
+        // the view the race is watched from: the expedition leaves the Sun and
+        // crawls outward over the rest of the game, so what is being tracked
+        // spends almost all of its life at the near end of the route, and the
+        // far end is a world that is not going anywhere. On the midpoint half
+        // the stage went to the empty side of a dot.
+        assert!(EMBEDDED_INDEX.contains("const SKY_VOYAGE_ALONG = 1 / 3;"));
+        assert!(EMBEDDED_INDEX.contains(
+            "  const dx = (ex - sx) * SKY_VOYAGE_ALONG, dy = (ey - sy) * SKY_VOYAGE_ALONG;"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "  const lean = Math.min(1, room / Math.max(1e-9, Math.hypot(dx, dy)));"
+        ));
+        assert!(EMBEDDED_INDEX.contains("  return {x:sx + dx * lean, y:sy + dy * lean, reach};"));
+        // Two shots, named as the places they are: the solar system, and the
+        // voyage. The third was the galaxy and it is gone with the picture it
+        // framed — every constant, every trace and the caption that read off
+        // them, so nothing is left drawing a hundred thousand light-years that
+        // no zoom can now reach.
+        assert!(EMBEDDED_INDEX.contains("label:\"Solar system\", mark:\"☉\""));
+        assert!(EMBEDDED_INDEX.contains("stops.push({id:\"voyage\", label:\"Voyage\""));
+        // And the bar reads outward in one order — Earth, Moon, Mars, Solar
+        // system, Voyage, Exoplanet. The divider is no longer the difference
+        // between a world and a shot: it falls where the sky stops being
+        // somewhere anyone has stood, so the destination sits with the far
+        // pictures rather than beside the Moon.
+        assert!(EMBEDDED_INDEX
+            .contains("    const near = worlds.filter(stop => stop.id !== \"exo\");"));
+        assert!(EMBEDDED_INDEX.contains(
+            "                 ...worlds.filter(stop => stop.id === \"exo\").map(stop => [\"world\", stop])];"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "    skyNavScaleRow.replaceChildren(...far.map(([kind, stop]) => skyNavButton(kind, stop)));"
+        ));
+        // A switch takes three times as long as it first shipped at, both ways.
+        // The distances are the content, and at the old pace the crossing was
+        // over before it had said anything about what lay between the two ends.
+        assert!(EMBEDDED_INDEX.contains("const SKY_TRAVEL_PACE = 3;"));
+        assert!(EMBEDDED_INDEX.contains("  return Math.max(420 * SKY_TRAVEL_PACE,"));
+        assert!(!EMBEDDED_INDEX.contains("return Math.max(420, Math.min(1700, S * 240));"));
+        for gone in [
+            "GALAXY_DISC_LY",
+            "GALAXY_SUN_RADIUS_LY",
+            "GALAXY_ARMS",
+            "GALAXY_SPUR",
+            "function drawSkyGalaxy",
+            "function galaxySpeckle",
+            "function drawSkyHere",
+            "The Milky Way",
+            "The Orion Spur",
+            "label:\"Galaxy\"",
+        ] {
+            assert!(
+                !EMBEDDED_INDEX.contains(gone),
+                "the galaxy view is dropped, but {gone} is still in the client"
+            );
+        }
+        // The destination is a button called Exoplanet, not one called whatever
+        // that game's survey happened to turn up: the same control reads
+        // `Teegarden's Star b` in one game and `82 Eridani d` in the next, and
+        // a control that renames itself between games is one nobody learns.
+        // The real name stays on the tooltip and on the world's own captions.
+        assert!(EMBEDDED_INDEX
+            .contains("const SKY_STOP_LABELS = {earth:\"Earth\", exo:\"Exoplanet\"};"));
+        assert!(EMBEDDED_INDEX.contains(
+            "                label:SKY_STOP_LABELS[id] || body.name.replace(/^The /, \"\"),"
+        ));
+        assert!(EMBEDDED_INDEX.contains("                                     : `Fly to ${body.name}`});"));
+        // And the bar's rebuild key carries the title, because the labels no
+        // longer move: `Exoplanet` and `Voyage` read the same whichever world
+        // the expedition settled on, so keyed on the labels alone the bar would
+        // never rebuild when the destination was chosen and both tooltips would
+        // name the pre-launch default for the rest of the game.
+        assert!(EMBEDDED_INDEX
+            .contains(".map(stop => `${stop.id}/${stop.label}/${stop.title}`).join(\",\");"));
+        // Short of the ceiling on purpose: a jump that lands exactly on the
+        // stop leaves the zoom-in button dead in the hand on arrival.
+        assert!(EMBEDDED_INDEX.contains("const SKY_STOP_FILL = .8;"));
+
+        // A jump is a path with a shape, not an ease toward a target. Easing a
+        // zoom and a pan together across fourteen orders of magnitude spends
+        // the whole middle of the trip over empty space with nothing on the
+        // stage; Van Wijk and Nuij's path pulls back until both ends are in
+        // view, crosses, and comes back down.
+        assert!(EMBEDDED_INDEX.contains("function skyTravelPath(from, w0, to, w1)"));
+        assert!(EMBEDDED_INDEX.contains("const SKY_TRAVEL_RHO = 1.42;"));
+        assert!(EMBEDDED_INDEX.contains("cameraZoom = {kind:\"planet\", scale:want, pan:to, lean:null,"));
+        // `ln(-b + sqrt(b*b + 1))` has to be written as `-asinh(b)`: out here
+        // `b` reaches 1e15, `sqrt(b*b + 1)` is exactly `b` in float64, the
+        // subtraction cancels to zero and the whole flight comes out NaN.
+        assert!(EMBEDDED_INDEX.contains("const r0 = -Math.asinh(b0), r1 = -Math.asinh(b1);"));
+        assert!(!EMBEDDED_INDEX.contains("Math.log(-b0 + Math.sqrt"));
+
+        // The ladder is the gearing's own ruler with a grip on it, so it is
+        // not geared again — and it does not go through `zoomAt`, which stops
+        // a zoom in at the ceiling of the world nearest the *camera*. That is
+        // right for one notch and catastrophic for a whole ladder in one move:
+        // at the far stop the nearest world is some red dwarf, its ceiling is
+        // a hundredth, and dragging the handle to the ground put the camera
+        // there and left it. The ladder's own top is the world it leads to.
+        assert!(EMBEDDED_INDEX.contains("function skyLadderSubject()"));
+        assert!(EMBEDDED_INDEX.contains("function skyLadderPan(scale, subject)"));
+        assert!(EMBEDDED_INDEX.contains(
+            "                        Math.min(planetMaxScale(SKY_PAN, subject), skyLadderScale(along)));"
+        ));
+        assert!(!EMBEDDED_INDEX.contains("zoomAt(want / base);"));
+        assert!(EMBEDDED_INDEX.contains("Math.log(Math.max(floor, scale) / floor) / ladder"));
+
+        // The zoom buttons repeat while held. On the flat board that is a
+        // convenience; out here it is the difference between a control and an
+        // ornament.
+        assert!(EMBEDDED_INDEX.contains("function bindHeldZoom(id, step)"));
+        assert!(EMBEDDED_INDEX.contains(
+            "bindHeldZoom(\"zin\", () => { takeCameraControl(true); zoomAt(skyZoomStep(1.35)); });"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "bindHeldZoom(\"zout\", () => { takeCameraControl(true); zoomAt(skyZoomStep(1 / 1.35)); });"
+        ));
+
+        // The eased planet zoom's divisor has to sit below every scale that can
+        // really be standing there, and `1e-6` did not: the sky past about a
+        // hundred AU is a smaller number than that, so out there the ratio
+        // stopped tracking the camera and became a constant. Measured on
+        // unmodified `main`, seventy wheel notches out from a tile came to rest
+        // at 2.2e-155 against a far stop of 3.7e-15 — a hundred and forty
+        // orders of magnitude past the end of the sky, still zooming, and it
+        // never stops. It is the pinch's `1e-4` again, one guard along.
+        assert!(EMBEDDED_INDEX.contains(
+            "cam.scale *= Math.exp(Math.log(cameraZoom.scale / Math.max(1e-30, cam.scale)) * ease);"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "const scaleLeft = Math.abs(Math.log(cameraZoom.scale / Math.max(1e-30, cam.scale)));"
+        ));
+        assert!(!EMBEDDED_INDEX.contains("Math.max(1e-6, cam.scale)"));
+
+        // The sky keeps its captions clear of the bar the way it does of every
+        // other widget, and the block that says what the picture is a picture
+        // of is measured off the same edge the bar is.
+        assert!(EMBEDDED_INDEX.contains("  const nav = skyNavBox(viewRect);"));
+        assert!(EMBEDDED_INDEX.contains("const nav = skyNavBox(cv.getBoundingClientRect());"));
+    }
+
+    /// The world is drawn into a rectangle of the map area rather than into
+    /// all of it, so a viewer moves the map out from under the panels instead
+    /// of dragging the world around underneath them. The canvas, the
+    /// vignettes and the editor's own edges take their box from one set of
+    /// custom properties, every renderer measures in `MAPW`/`MAPH` rather
+    /// than in the container, and the automatic fit is the same uncovered
+    /// rectangle the camera already composes into — one measurement, not two
+    /// that can disagree.
+    #[test]
+    fn the_map_area_is_a_rectangle_the_viewer_can_set() {
+        for piece in [
+            "--map-area-left: 0px;",
+            "--map-area-width: 100%;",
+            "function uncoveredMapBox(origin, width, height)",
+            "function syncMapViewport()",
+            "function refitMapAreaToChrome()",
+            "function moveMapAreaEdgeTo(edge, clientX, clientY)",
+            "civvis-map-area-v1",
+            "id=\"map-area-editor\"",
+            "id=\"map-area-apply\"",
+            "id=\"map-area-cancel\"",
+            "id=\"map-area-reset\"",
+            "body.map-area-inset #map",
+        ] {
+            assert!(
+                EMBEDDED_INDEX.contains(piece),
+                "the map area is missing {piece}"
+            );
+        }
+        for edge in ["top", "bottom", "left", "right"] {
+            assert!(
+                EMBEDDED_INDEX.contains(&format!("data-map-edge=\"{edge}\"")),
+                "the map area must be set by dragging its {edge} edge"
+            );
+            assert!(
+                EMBEDDED_INDEX.contains(&format!("data-shade=\"{edge}\"")),
+                "the ground outside the map area's {edge} edge must be dimmed"
+            );
+        }
+        // The canvas is placed by those properties rather than stretched to
+        // its container. `width: 100%` on #map is exactly what this replaces.
+        let map_rule = EMBEDDED_INDEX
+            .split_once("  #map {")
+            .expect("the map canvas rule")
+            .1
+            .split_once('}')
+            .expect("the end of the map canvas rule")
+            .0;
+        for property in [
+            "left: var(--map-area-left)",
+            "top: var(--map-area-top)",
+            "width: var(--map-area-width)",
+            "height: var(--map-area-height)",
+        ] {
+            assert!(
+                map_rule.contains(property),
+                "the map canvas must take its {property} from the map area"
+            );
+        }
+        assert!(
+            !map_rule.contains("width: 100%"),
+            "a canvas stretched to its container cannot be moved off the panels"
+        );
+        // Renderers and camera measure the viewport, never the container.
+        assert!(EMBEDDED_INDEX.contains("const vx = (sx - MAPW / 2) / cam.scale;"));
+        assert!(EMBEDDED_INDEX.contains("cv.width !== backingWidth"));
+        // The fit is on out of the box, in the stored default and in the
+        // switch that reports it, and moving an edge by hand turns it off.
+        assert!(EMBEDDED_INDEX.contains("const MAP_AREA_DEFAULT = {auto:true,"));
+        assert!(EMBEDDED_INDEX
+            .contains(r#"<input type="checkbox" id="map-area-auto" checked>"#));
+        assert!(EMBEDDED_INDEX.contains("if (!MAP_AREA.auto || mapAreaRefitDepth) return false;"));
+        // Every place a panel or an overlay moves refits a fitted area.
+        assert_eq!(
+            EMBEDDED_INDEX.matches("refitMapAreaToChrome();").count(),
+            4,
+            "a fitted map area follows the standings, the overlay switches, and \
+             both HUD layout paths — four call sites; a fifth means a new one \
+             belongs in this count, a third means one was dropped"
         );
     }
 
@@ -6898,7 +10282,12 @@ pub fn serve_with_game(
     } else {
         println!("You are player 0. Ctrl+C to quit.");
     }
+    let current_seed = session.game.seed;
     let shared = Arc::new(Shared {
+        current_seed: AtomicU64::new(current_seed),
+        supervisor_request: Mutex::new(None),
+        live_params: Mutex::new(session.params.clone()),
+        next_game_params: Mutex::new(session.take_resumed_next_game_params()),
         session: Mutex::new(session),
         pace_ms: AtomicU64::new(1_000), // one second per turn by default
         paused: AtomicBool::new(initially_paused),

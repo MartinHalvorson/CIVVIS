@@ -497,7 +497,9 @@ fn named_generals_promote_or_form_exactly_one_land_unit() {
 
 #[test]
 fn named_admirals_apply_exact_unit_trade_building_and_flanking_effects() {
-    let mut game = Game::new_full(2, 28, 18, 95_006, 300, 0, false);
+    let mut game = Game::new_full(
+        2, 28, 18, crate::rng::fixture_seed("ADMIRAL", 95_009), 300, 0, false,
+    );
     let mut cities = Vec::new();
     for pid in 0..2 {
         let settler = game
@@ -515,6 +517,13 @@ fn named_admirals_apply_exact_unit_trade_building_and_flanking_effects() {
         "foreign_trade".to_string(),
         "military_tradition".to_string(),
     ]);
+
+    let formation_ship = game.spawn_unit("galley", 0, harbor);
+    assert_eq!(
+        recruit_current_military_person(&mut game, "admiral"),
+        "gaius_duilius"
+    );
+    assert_eq!(game.units[&formation_ship].formation, 1);
 
     let quadrireme = Item::Unit {
         unit: "quadrireme".to_string(),
@@ -572,6 +581,12 @@ fn named_admirals_apply_exact_unit_trade_building_and_flanking_effects() {
     );
     assert!((game.city_yields(foreign_city).gold - origin_gold - 2.0).abs() < 1e-9);
     assert!((game.city_yields(admiral_city).gold - destination_gold - 2.0).abs() < 1e-9);
+
+    assert_eq!(
+        recruit_current_military_person(&mut game, "admiral"),
+        "santa_cruz"
+    );
+    assert_eq!(game.units[&formation_ship].formation, 2);
 
     let target = game
         .map

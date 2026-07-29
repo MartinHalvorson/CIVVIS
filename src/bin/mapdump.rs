@@ -6,9 +6,10 @@
 //! VI's own generator targets, so a change can be judged by eye and by number.
 //!
 //! Usage: mapdump [--seed N] [--width N] [--height N]
-//!                 [--script land_only|lakes|inland_sea|pangaea|continents|
-//!                  small_continents|islands|water_world|true_start_earth]
-//!                 [--shape flat|planet] [--poles poles|no_poles]
+//!                 [--script land_only|lakes|inland_sea|grand_canals|
+//!                  grand_canals_2|pangaea|continents|small_continents|
+//!                  islands|water_world|true_start_earth]
+//!                 [--shape flat|planet] [--poles poles|randomized]
 //!                 [--maps N] [--quiet]
 //!
 //! `--shape planet` is a globe, and its rectangle is the storage the sphere is
@@ -53,16 +54,13 @@ fn main() {
     let script = MapScript::from_id(&requested).unwrap_or(MapScript::Pangaea);
     // `--script planet` named a world type before the globe became a shape of
     // its own, and still asks for both halves of what it used to mean.
-    let default_shape = if requested == "planet" || script.is_fixed_geography() {
+    let default_shape = if requested == "planet" {
         MapTopology::Planet
     } else {
         MapTopology::Flat
     };
-    let topology = if script.is_fixed_geography() {
-        MapTopology::Planet
-    } else {
-        MapTopology::from_id(&text("--shape", default_shape.id())).unwrap_or(default_shape)
-    };
+    let topology =
+        MapTopology::from_id(&text("--shape", default_shape.id())).unwrap_or(default_shape);
     let poles = MapPoles::from_id(&text("--poles", "poles")).unwrap_or_default();
     let rules = Rules::embedded();
 
