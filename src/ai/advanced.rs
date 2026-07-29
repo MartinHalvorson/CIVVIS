@@ -5791,12 +5791,7 @@ impl AdvancedAi {
             let target = g
                 .players
                 .iter()
-                .filter(|minor| {
-                    minor.alive
-                        && minor.is_minor
-                        && !minor.is_barbarian
-                        && !g.is_at_war(pid, minor.id)
-                })
+                .filter(|minor| g.can_send_envoy(pid, minor.id))
                 .map(|minor| {
                     let mine = g.envoys_at(pid, minor.id);
                     let rival = g
@@ -19083,6 +19078,15 @@ mod tests {
     #[test]
     fn diplomatic_strategy_concentrates_envoys_into_a_suzerainty() {
         let mut g = Game::new(2, 24, 16, 77, 80, 2);
+        let city_states: Vec<usize> = g
+            .players
+            .iter()
+            .filter(|player| player.is_minor && !player.is_barbarian)
+            .map(|player| player.id)
+            .collect();
+        for city_state in city_states {
+            g.record_contact(0, city_state);
+        }
         g.players[0].envoys_free = 3;
         AdvancedAi::new().advanced_envoys(&mut g, 0, GrandStrategy::Diplomacy, None);
         assert_eq!(g.players[0].envoys_free, 0);
@@ -19116,6 +19120,9 @@ mod tests {
             .collect();
         let hattusa = states[0];
         let zanzibar = states[1];
+        for city_state in states.iter().copied() {
+            game.record_contact(0, city_state);
+        }
         game.players[hattusa].civ = "Hattusa".to_string();
         game.players[zanzibar].civ = "Zanzibar".to_string();
         game.players[0].envoys = vec![(hattusa, 4), (zanzibar, 5)];
@@ -19141,6 +19148,9 @@ mod tests {
             .map(|player| player.id)
             .collect();
         assert_eq!(minors.len(), 2);
+        for city_state in minors.iter().copied() {
+            game.record_contact(0, city_state);
+        }
         game.players[minors[0]].civ = "Kandy".to_string();
         game.players[minors[1]].civ = "Yerevan".to_string();
         game.players[0].envoys_free = 1;
@@ -19164,6 +19174,35 @@ mod tests {
         AdvancedAi::new().advanced_envoys(&mut game, 0, GrandStrategy::Religion, None);
         assert_eq!(game.envoys_at(0, minors[0]), 1);
         assert_eq!(game.envoys_at(0, minors[1]), 0);
+    }
+
+    #[test]
+    fn strategic_envoys_ignore_an_unmet_city_states_identity() {
+        let mut game = Game::new_full(1, 24, 16, 90_733, 120, 2, false);
+        let city_states: Vec<usize> = game
+            .players
+            .iter()
+            .filter(|player| player.is_minor && !player.is_barbarian)
+            .map(|player| player.id)
+            .collect();
+        assert_eq!(city_states.len(), 2);
+        let hidden = city_states[0];
+        let known = city_states[1];
+        for player in 0..game.players.len() {
+            game.players[player].met.clear();
+        }
+        game.players[hidden].civ = "Yerevan".to_string();
+        game.players[known].civ = "Kandy".to_string();
+        game.record_contact(0, known);
+        game.players[0].envoys_free = 1;
+
+        // Yerevan has the higher Religion score. Ranking it before contact
+        // would both leak its identity and make apply reject the first send.
+        AdvancedAi::new().advanced_envoys(&mut game, 0, GrandStrategy::Religion, None);
+
+        assert_eq!(game.players[0].envoys_free, 0);
+        assert_eq!(game.envoys_at(0, hidden), 0);
+        assert_eq!(game.envoys_at(0, known), 1);
     }
 
     #[test]
