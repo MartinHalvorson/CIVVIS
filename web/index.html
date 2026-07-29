@@ -7860,11 +7860,19 @@ let finaleCountdownTimer = null;
 // finale cannot re-arm itself on the next poll, and cleared when the screen
 // goes away so a later result in the same world gets its own countdown.
 let finaleCountdownResult = null;
+// Process and seed are the authority behind that result. A throttled timer can
+// wake after the supervisor has already put a successor on the same port; it
+// must never turn that old finale into a restart of the new, active world.
+let finaleCountdownWorld = null;
 
 function armFinaleCountdown(signature) {
   if (SPEC || finaleCountdownResult === signature) return;
   cancelFinaleCountdown();
   finaleCountdownResult = signature;
+  finaleCountdownWorld = {
+    serverInstance: state?.server_instance ?? null,
+    seed: state?.seed ?? null,
+  };
   finaleCountdownDeadline = Date.now() + FINALE_RESTART_SECONDS * 1000;
   // Sub-second ticks so the number on the button is never a second stale, and
   // so a throttled background tab cannot overshoot the start by a whole tick.
@@ -7873,10 +7881,24 @@ function armFinaleCountdown(signature) {
 }
 
 function tickFinaleCountdown() {
+  // A gesture or play-on action may cancel an interval whose callback was
+  // already queued. Clearing the timer is the authority; that queued callback
+  // no longer owns a restart.
+  if (finaleCountdownTimer === null) return;
   const button = document.getElementById("finale-restart");
   // The result screen was replaced or dismissed under the countdown. Nothing
   // is left to count, and an interval with no button never stops on its own.
   if (!button) { cancelFinaleCountdown(); return; }
+  // Re-check at the firing edge, not only when the timer was armed. Browser
+  // timers are deliberately throttled in a background tab, so this callback
+  // may run after a process handoff and after the new world has begun. The
+  // successor is not an answer to the old result screen.
+  if (SPEC || !state || !finaleCountdownWorld ||
+      state.server_instance !== finaleCountdownWorld.serverInstance ||
+      state.seed !== finaleCountdownWorld.seed) {
+    clearFinaleCountdown();
+    return;
+  }
   const left = Math.max(0, Math.ceil((finaleCountdownDeadline - Date.now()) / 1000));
   button.textContent = `${FINALE_RESTART_LABEL} (${left})`;
   if (left > 0) return;
@@ -7896,6 +7918,7 @@ function cancelFinaleCountdown() {
 function clearFinaleCountdown() {
   cancelFinaleCountdown();
   finaleCountdownResult = null;
+  finaleCountdownWorld = null;
 }
 
 for (const gesture of ["pointerdown", "keydown", "wheel"])
@@ -30334,11 +30357,16 @@ async function startNewSimulation() {
     sel = null; selCity = null;
     clearTimeout(specTimer);
     if (supervised) {
-      const finishedInstance = state.server_instance;
-      const finishedSeed = state.seed;
+      // Use the identity captured before the settings write above. The port
+      // may belong to a successor by the time this POST runs; that server must
+      // reject a request created for the world it replaced.
+      const finishedInstance = handoff.finishedInstance;
+      const finishedSeed = handoff.finishedSeed;
       const requested = await fetchJSON("/supervisor-new", { method: "POST",
         headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({...payload, mode: "restart"}) });
+        body: JSON.stringify({...payload, mode: "restart", replace_world: {
+          server_instance: finishedInstance, seed: finishedSeed,
+        }}) });
       if (requested.error) throw new Error(requested.error);
       const respawn = document.getElementById("respawn");
       if (respawn) respawn.textContent = "restarting sim on existing code";
