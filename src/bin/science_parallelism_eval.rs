@@ -502,7 +502,8 @@ fn main() {
     let jobs = match number(&args, "--jobs", 0) {
         requested if requested > 0 => requested as usize,
         _ => civvis::parallel::default_jobs(),
-    };
+    }
+    .clamp(1, 6);
     let speed = text(&args, "--speed", "online");
     let map_name = text(&args, "--map", "continents");
     let map_script = MapScript::from_id(&map_name).unwrap_or_else(|| {
