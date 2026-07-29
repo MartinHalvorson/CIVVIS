@@ -767,8 +767,13 @@ end
 
 -- --------------------------------------------------------- city production
 
-local function chooseProduction(city, counts, nCities, turn)
+local function chooseProduction(city, counts, nCities, turn, refused)
+	refused = refused or {};
 	local function playable(name)
+		-- Already asked for this one on this turn and the game did not start
+		-- it. `CanProduce` will keep saying yes, so the caller's record of what
+		-- was refused is the only thing that makes the ladder fall through.
+		if refused[name] then return nil; end
 		local row = GameInfo.Types[name];
 		if row == nil then return nil; end
 		local ok, can = pcall(function()
@@ -865,28 +870,51 @@ local function driveProduction(player, turn, force)
 		-- refused once must not lock the city out for the rest of the turn.
 		local fresh = force or (remembered == nil) or (remembered.turn ~= turn);
 		if (current == nil or current == 0) and fresh then
-			local name, row, why = chooseProduction(city, counts, #cities, turn);
-			if row ~= nil then
+			-- Ask for candidates in ladder order and keep going until one
+			-- actually STARTS. `pcall` succeeding means the request did not
+			-- throw, not that the game accepted it, and `CanProduce` green-lit
+			-- items this city could not begin -- so a refused first entry used
+			-- to end the attempt and the ladder's fallthrough never ran.
+			--
+			-- Measured before this existed: run settler-20260729T221605Z asked
+			-- for UNIT_SETTLER in its capital on all 83 turns from turn 2 to
+			-- 85, every one `applied = true`, and finished with ONE city, ZERO
+			-- units and 501 unspent Gold. The queue read back empty every turn
+			-- because the order never landed, so the city built nothing at all
+			-- for the whole game while the always-available floor sat unused
+			-- below a candidate that could never start.
+			local refused = {};
+			for _ = 1, 6 do
+				local name, row, why = chooseProduction(city, counts, #cities, turn, refused);
+				if row == nil then break; end
 				local params = buildParams(row);
-				if params ~= nil then
-					local ok = pcall(function()
-						CityManager.RequestOperation(city, CityOperationTypes.BUILD, params);
-					end);
-					if ok then
-						issued = issued + 1;
-						lastBuild[cityId] = { turn = turn, item = name };
-						if name == "UNIT_SETTLER" then counts.settler = counts.settler + 1;
-						elseif name == "UNIT_BUILDER" then counts.builder = counts.builder + 1;
-						elseif name == "UNIT_SCOUT" then counts.scout = counts.scout + 1;
-						elseif row.Kind == "KIND_UNIT" then counts.military = counts.military + 1;
-						end
+				if params == nil then refused[name] = true; goto continue; end
+				local ok = pcall(function()
+					CityManager.RequestOperation(city, CityOperationTypes.BUILD, params);
+				end);
+				-- The order is only real if the queue now holds something.
+				local started = try(function()
+					local queue = city:GetBuildQueue();
+					local hash = queue and queue:GetCurrentProductionTypeHash() or 0;
+					return hash ~= nil and hash ~= 0;
+				end, false);
+				emit("build", {
+					turn = turn,
+					city = try(function() return Locale.Lookup(city:GetName()); end, "?"),
+					item = name, reason = why, applied = ok, started = started,
+				});
+				if ok and started then
+					issued = issued + 1;
+					lastBuild[cityId] = { turn = turn, item = name };
+					if name == "UNIT_SETTLER" then counts.settler = counts.settler + 1;
+					elseif name == "UNIT_BUILDER" then counts.builder = counts.builder + 1;
+					elseif name == "UNIT_SCOUT" then counts.scout = counts.scout + 1;
+					elseif row.Kind == "KIND_UNIT" then counts.military = counts.military + 1;
 					end
-					emit("build", {
-						turn = turn,
-						city = try(function() return Locale.Lookup(city:GetName()); end, "?"),
-						item = name, reason = why, applied = ok,
-					});
+					break;
 				end
+				refused[name] = true;
+				::continue::
 			end
 		end
 	end
