@@ -1340,6 +1340,28 @@ fn seed_league(dir: &str) -> League {
     builtin("advanced", "advanced", true);
     builtin("basic", "basic", true);
     builtin("advanced_v1", "advanced_v1", false);
+    // The only agent here that searches, and the only one this roster could not
+    // otherwise contain.
+    //
+    // Breeding produces `StrategyKind::Advanced` and nothing else, so a league
+    // seeded without a searching entry can never acquire one however long it
+    // runs: it explores 48-gene variants of a scripted agent forever. That is
+    // worth naming next to three measured facts — the genome is a local optimum
+    // on wins, 11 of 48 genes produce zero divergence, and about a thousand
+    // rounds produced no measurable gain. The loop is not failing to climb; it
+    // cannot see the axis next door.
+    //
+    // It costs. Measured at the deployment profile (6p, 74x46, 9 city-states),
+    // one searching seat among five scripted ones runs **6.4x** a game-turn:
+    // 76.7 ms against 13.3. An all-searching fleet is 29x, but nothing seats
+    // that way and quoting it overstates the price about fivefold — a league
+    // entry is one strategy among its opponents. `docs/EVAL.md`, 2026-07-29.
+    //
+    // An anchor rather than a competitor: it is a reference point the bred
+    // genomes are measured against, and `League::active` never retires one, so
+    // a slow start cannot cull the only entry that can answer whether search is
+    // worth its cost.
+    builtin("strategic", "strategic", true);
     for lane in VictoryTarget::ALL {
         strategies.push(Strategy::new(
             &format!("adv-{}", lane.as_str()),
@@ -3970,5 +3992,47 @@ mod tests {
             .count();
         assert_eq!(remaining_claims, 0);
         let _ = fs::remove_dir_all(&dir);
+    }
+}
+
+#[cfg(test)]
+mod searching_anchor_tests {
+    use super::{seed_league, StrategyKind};
+
+    /// A league that cannot seat a searching agent cannot ever rate one:
+    /// breeding only produces `StrategyKind::Advanced`, so anything not in the
+    /// founding roster is unreachable for the lifetime of that league.
+    #[test]
+    fn the_founding_roster_contains_a_searching_agent() {
+        let dir = std::env::temp_dir().join(format!("civvis-seed-{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&dir);
+        let league = seed_league(dir.to_str().expect("temp path is utf-8"));
+        let searching = league.strategies.iter().find(|s| s.name == "strategic");
+        let searching = searching.expect("the founding roster seats a searching agent");
+        assert!(
+            matches!(&searching.kind, StrategyKind::Builtin { ai } if ai == "strategic"),
+            "the searching entry is a builtin, not a bred genome"
+        );
+        assert!(
+            searching.anchor,
+            "it is an anchor: retiring the only searching entry would make the \
+             question it exists to answer unanswerable"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Breeding cannot produce one, which is why the roster must. This pins the
+    /// premise rather than the consequence: if `StrategyKind` ever grows a
+    /// variant that breeding can use to reach a searching agent, this test
+    /// should be revisited rather than silently kept.
+    #[test]
+    fn breeding_only_produces_advanced_genomes() {
+        // `StrategyKind` has exactly two variants; `Advanced` is the one every
+        // offspring is built from.
+        let bred = StrategyKind::Advanced {
+            weights: crate::ai::Weights::default(),
+            target: None,
+        };
+        assert!(matches!(bred, StrategyKind::Advanced { .. }));
     }
 }
