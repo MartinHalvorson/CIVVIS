@@ -1,4 +1,4 @@
-//! Oracle ablation: measure the headroom in one subsystem at a time.
+//! Oracle interventions: measure the headroom in one subsystem at a time.
 //!
 //! For a subsystem S, this plays the stock agent against a copy of itself
 //! that has been handed a free, cheating version of S, on mirrored maps with
@@ -15,6 +15,8 @@
 //!
 //! `--grant none` is the control and must land at parity; if it does not, the
 //! harness is reporting its own noise as headroom.
+//! `idle_reserve` is a destructive, sign-reversed ablation. It remains
+//! available explicitly but is deliberately excluded from safe `all`.
 use civvis::ai::{AdvancedAi, Ai, VictoryTarget};
 use civvis::elo::{builtin_ai, builtin_provenance, BUILTIN_AIS, EVAL_ONLY_AIS};
 use civvis::game::{default_difficulty, Action, Game, GameOptions, VictoryConditions};
@@ -96,10 +98,21 @@ fn realized_geometry(width: i32, height: i32, topology: MapTopology) -> (i32, i3
     }
 }
 
-/// Parse one grant, `all`, or a comma-separated set sharing one control.
+/// The default capability screen. `IdleReserve` deliberately destroys a
+/// resource and reverses the meaning of the treatment direction, so it must
+/// be requested explicitly rather than silently joining `all`.
+fn default_grants() -> Vec<Grant> {
+    Grant::ALL
+        .into_iter()
+        .filter(|grant| *grant != Grant::IdleReserve)
+        .collect()
+}
+
+/// Parse one intervention, safe `all`, or a comma-separated set sharing one
+/// control. The destructive `idle_reserve` ablation remains available by name.
 fn parse_grants(requested: &str) -> Result<Vec<Grant>, String> {
     if requested == "all" {
-        return Ok(Grant::ALL.to_vec());
+        return Ok(default_grants());
     }
     let mut grants = Vec::new();
     for name in requested.split(',') {
@@ -227,6 +240,78 @@ fn map_cluster_directions(treated: &[bool], control: &[bool]) -> (u32, u32, u32)
         }
     }
     (helped, hurt, unchanged)
+}
+
+/// Interpret one matched intervention without silently reversing a destructive
+/// ablation or turning a nonsignificant result into evidence of no effect.
+fn cell_verdict(grant: Grant, helped: u32, hurt: u32, p: f64) -> &'static str {
+    let discordant = helped + hurt;
+    if grant == Grant::None {
+        return if discordant == 0 {
+            "SANITY OK — the null intervention reproduced the control exactly, so \
+the harness is deterministic and adds nothing of its own"
+        } else {
+            "BROKEN — the null intervention changed outcomes, so every number \
+here includes harness noise and none of it can be trusted"
+        };
+    }
+    if discordant < 8 {
+        return "UNDERRESOLVED — fewer than eight cells changed outcome; do not infer an effect";
+    }
+    if p >= 0.05 {
+        return "INCONCLUSIVE — this run does not resolve whether the intervention changes outcomes";
+    }
+    if grant == Grant::IdleReserve {
+        return if helped > hurt {
+            "DELETING THE RESERVE HELPS — confiscation improves outcomes, so the stock reserve is counterproductive"
+        } else {
+            "RESERVE IS VALUABLE — confiscation harms outcomes, so retained Gold protects wins"
+        };
+    }
+    if helped > hurt {
+        "HEADROOM — this capability limits the agent; work on it can pay"
+    } else {
+        "HARMFUL — free capability here loses, so the grant is mis-specified rather than the subsystem being fine"
+    }
+}
+
+fn map_verdict(grant: Grant, helped: u32, hurt: u32, p: f64) -> &'static str {
+    let discordant = helped + hurt;
+    if grant == Grant::None {
+        return if discordant == 0 {
+            "MAP SANITY OK — the null intervention reproduced every map cluster"
+        } else {
+            "MAP SANITY BROKEN — the null intervention changed at least one map cluster"
+        };
+    }
+    if p >= 0.05 {
+        return "CLUSTERED INCONCLUSIVE — independently generated maps do not resolve an effect";
+    }
+    if grant == Grant::IdleReserve {
+        return if helped > hurt {
+            "CLUSTERED RESERVE-DELETION BENEFIT — confiscation improves outcomes across maps"
+        } else {
+            "CLUSTERED RESERVE VALUE — confiscation harms outcomes across maps"
+        };
+    }
+    if helped > hurt {
+        "CLUSTERED HEADROOM — the positive direction survives map-level inference"
+    } else {
+        "CLUSTERED HARMFUL — the adverse direction survives map-level inference"
+    }
+}
+
+fn best_lane_cell_verdict(best_only: u32, adaptive_only: u32, p: f64) -> &'static str {
+    let discordant = best_only + adaptive_only;
+    if discordant < 8 {
+        "UNDERRESOLVED VICTORY-ROUTING RESULT — fewer than eight cells changed outcome"
+    } else if p >= 0.05 {
+        "INCONCLUSIVE VICTORY-ROUTING RESULT — this run does not resolve a difference between the oracle and adaptive play"
+    } else if best_only > adaptive_only {
+        "HEADROOM IN VICTORY ROUTING — choosing the lane better can pay, and this is the ceiling on it"
+    } else {
+        "COMMITMENT IS HARMFUL — adapting beats every fixed lane, so routing is not a choice worth improving"
+    }
 }
 
 fn run(grants: &[Grant], args: &[String]) {
@@ -417,17 +502,17 @@ fn run(grants: &[Grant], args: &[String]) {
         let n = cells.len() as f64;
 
         println!(
-            "grant {:<10} {pairs} maps x 2 seats, {players} players, {turns} {speed} turns, {ai_name}",
+            "intervention {:<10} {pairs} maps x 2 seats, {players} players, {turns} {speed} turns, {ai_name}",
             grant.name()
         );
         println!(
-            "  granted seat won    {wins}/{} = {:.1}%   (control {control_wins} = {:.1}%)",
+            "  treatment seat won  {wins}/{} = {:.1}%   (control {control_wins} = {:.1}%)",
             cells.len(),
             100.0 * wins as f64 / n,
             100.0 * control_wins as f64 / n
         );
         println!(
-            "  matched pairs       grant won where control lost: {helped}; \
+            "  matched pairs       treatment won where control lost: {helped}; \
 lost where control won: {hurt}; unchanged: {}",
             cells.len() as u32 - discordant
         );
@@ -437,50 +522,24 @@ lost where control won: {hurt}; unchanged: {}",
 {map_hurt}, tied on {map_unchanged}; p={map_p:.4} over {map_discordant} discordant maps"
         );
         println!(
-            "  grant fired         {fired} times ({:.1} per game)",
+            "  intervention fired  {fired} times ({:.1} per game)",
             fired as f64 / n
         );
         if grant != Grant::None && fired == 0 {
             println!(
-                "  WARNING: the grant never fired, so this measured the stock \
+                "  WARNING: the intervention never fired, so this measured the stock \
 agent under an oracle's name and says nothing about {}",
                 grant.name()
             );
         }
-        let cell_verdict = if grant == Grant::None {
-            if discordant == 0 {
-                "SANITY OK — the null grant reproduced the control exactly, so \
-the harness is deterministic and adds nothing of its own"
-            } else {
-                "BROKEN — the null grant changed outcomes, so every number \
-here includes harness noise and none of it can be trusted"
-            }
-        } else if discordant < 8 {
-            "TOO FEW DISCORDANT CELLS to say anything — raise --pairs"
-        } else if p >= 0.05 {
-            "NO MEASURABLE HEADROOM — perfecting this subsystem is worth less \
-than this run can resolve"
-        } else if helped > hurt {
-            "HEADROOM — this subsystem limits the agent; work on it can pay"
-        } else {
-            "HARMFUL — free perfection here loses, so the grant is \
-mis-specified rather than the subsystem being fine"
-        };
-        println!("  cell verdict        {cell_verdict}");
-        let map_verdict = if grant == Grant::None {
-            if map_discordant == 0 {
-                "MAP SANITY OK — the null grant reproduced every map cluster"
-            } else {
-                "MAP SANITY BROKEN — the null grant changed at least one map cluster"
-            }
-        } else if map_p >= 0.05 {
-            "CLUSTERED INCONCLUSIVE — independently generated maps do not resolve headroom"
-        } else if map_helped > map_hurt {
-            "CLUSTERED HEADROOM — the positive direction survives map-level inference"
-        } else {
-            "CLUSTERED HARMFUL — the adverse direction survives map-level inference"
-        };
-        println!("  map verdict         {map_verdict}");
+        println!(
+            "  cell verdict        {}",
+            cell_verdict(grant, helped, hurt, p)
+        );
+        println!(
+            "  map verdict         {}",
+            map_verdict(grant, map_helped, map_hurt, map_p)
+        );
         println!();
     }
 }
@@ -647,19 +706,10 @@ adaptive won where no lane did: {adaptive_only}"
             100.0 * *wins as f64 / n
         );
     }
-    let cell_verdict = if discordant < 8 {
-        "TOO FEW DISCORDANT CELLS to say anything — raise --pairs"
-    } else if p >= 0.05 {
-        "NO MEASURABLE HEADROOM IN VICTORY ROUTING — knowing the right lane \
-in advance does not win these games"
-    } else if best_only > adaptive_only {
-        "HEADROOM IN VICTORY ROUTING — choosing the lane better can pay, and \
-this is the ceiling on it"
-    } else {
-        "COMMITMENT IS HARMFUL — adapting beats every fixed lane, so routing \
-is not a choice worth improving"
-    };
-    println!("  cell verdict        {cell_verdict}");
+    println!(
+        "  cell verdict        {}",
+        best_lane_cell_verdict(best_only, adaptive_only, p)
+    );
     let map_verdict = if map_p >= 0.05 {
         "CLUSTERED INCONCLUSIVE — independently generated maps do not resolve routing headroom"
     } else if map_best > map_adaptive {
@@ -698,10 +748,11 @@ fn main() {
         }
     };
     println!(
-        "Oracle ablation. Each grant hands one seat a free, cheating version of one\n\
-         subsystem and plays it against stock agents on mirrored maps. The result is an\n\
-         UPPER BOUND on what honest work on that subsystem could be worth, never a\n\
-         playable agent. `none` is the control and must land at parity.\n"
+        "Oracle intervention study. Capability grants hand one seat a free, cheating\n\
+         subsystem and play it against stock agents on mirrored maps. Their result is an\n\
+         UPPER BOUND on honest work, never a playable agent. `idle_reserve` instead\n\
+         destroys Gold and reverses the treatment sign; it is explicit-only and excluded\n\
+         from safe `all`. `none` is the control and must land at parity.\n"
     );
     run(&grants, &args);
 }
@@ -709,8 +760,8 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::{
-        exact_two_sided, known_ai, map_cluster_directions, parse_grant_profile, parse_grants,
-        realized_geometry,
+        best_lane_cell_verdict, cell_verdict, exact_two_sided, known_ai, map_cluster_directions,
+        map_verdict, parse_grant_profile, parse_grants, realized_geometry,
     };
     use civvis::game::VictoryConditions;
     use civvis::oracle::Grant;
@@ -726,9 +777,36 @@ mod tests {
             parse_grants("treasury,ground,treasury").unwrap(),
             vec![Grant::Treasury, Grant::Ground]
         );
-        assert_eq!(parse_grants("all").unwrap(), Grant::ALL);
+        let safe_all = parse_grants("all").unwrap();
+        assert_eq!(safe_all.len(), Grant::ALL.len() - 1);
+        assert!(!safe_all.contains(&Grant::IdleReserve));
+        assert_eq!(
+            parse_grants("idle_reserve").unwrap(),
+            vec![Grant::IdleReserve]
+        );
         assert!(parse_grants("all,ground").is_err());
         assert!(parse_grants("treasury,unknown").is_err());
+    }
+
+    #[test]
+    fn verdicts_keep_destructive_ablation_polarity_and_uncertainty_explicit() {
+        let significant = exact_two_sided(8, 8);
+        assert!(cell_verdict(Grant::Expansion, 8, 0, significant).starts_with("HEADROOM"));
+        assert!(cell_verdict(Grant::IdleReserve, 8, 0, significant)
+            .starts_with("DELETING THE RESERVE HELPS"));
+        assert!(
+            cell_verdict(Grant::IdleReserve, 0, 8, significant).starts_with("RESERVE IS VALUABLE")
+        );
+        assert!(map_verdict(Grant::IdleReserve, 6, 0, 0.03125)
+            .starts_with("CLUSTERED RESERVE-DELETION BENEFIT"));
+        assert!(
+            map_verdict(Grant::IdleReserve, 0, 6, 0.03125).starts_with("CLUSTERED RESERVE VALUE")
+        );
+
+        assert!(cell_verdict(Grant::Expansion, 4, 4, 1.0).starts_with("INCONCLUSIVE"));
+        assert!(
+            best_lane_cell_verdict(4, 4, 1.0).starts_with("INCONCLUSIVE VICTORY-ROUTING RESULT")
+        );
     }
 
     #[test]

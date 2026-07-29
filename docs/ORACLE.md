@@ -15,6 +15,20 @@ Two checks make a null interpretable:
 The number of times a grant fires is a third, separate check. A grant that
 never changes the position has measured the stock agent under another name.
 
+`--grant all` is the safe capability set, including its exact `none` sanity
+arm. It deliberately excludes `idle_reserve`. That intervention confiscates
+Gold rather than granting a capability, so its sign reads in reverse and it
+must be requested explicitly as `--grant idle_reserve`. When confiscation wins
+more matched outcomes, deleting the reserve helps; when it loses more, the
+reserve is valuable. The evaluator labels those directions directly instead of
+calling either one generic “headroom.”
+
+The evaluator also treats a nonsignificant result as unresolved, not as proof
+of a null. A powered null requires a preregistered sensitivity argument outside
+the generic tool output. This applies equally to capability grants and the
+best-lane oracle: a run that does not resolve a direction cannot establish that
+perfecting a subsystem or choosing the winning lane is worthless.
+
 ## 2026-07-29 preregistration: test the profile, not only the grant
 
 Every oracle result recorded so far used `AdvancedAi` at Standard speed. The
