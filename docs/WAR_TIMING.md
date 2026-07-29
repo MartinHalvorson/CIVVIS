@@ -1,6 +1,24 @@
 # The midgame power-spike appointment
 
-Status: **preregistered; no focal seed has been read**.
+Status: **implemented and locally verified; no focal seed has been read**.
+
+## Implementation checkpoint
+
+The opt-in treatment now carries one persistent `WarPlan` through target and
+technology selection, prerequisite research, predecessor production, exact
+upgrade reservation, formal-war preparation, route-aware staging, local
+readiness, and same-turn ranged/siege setup plus melee capture. Its lifecycle
+is observable independently from the ordinary five-turn strategy report, and
+the evaluator folds each treatment seat's terminal lifecycle exactly once.
+
+The deterministic mechanism suite covers every obligation below, including
+unique replacements, unavailable resources, quoted upgrade protection across
+all major Gold sinks, compatible wall breach, every preregistered invalidation,
+two-assessment Recovery, constructor inheritance, public JSON, and a real-route
+rejection. The evaluator's lifecycle aggregation, medians, and frozen gate
+classification tests also pass. Full CI and the repository soak remain pending
+until the implementation is checkpointed. The first focal command and all
+thresholds below are unchanged and unread.
 
 This is the next military experiment after the ancient-rush line was retired
 on the live Continents/Planet cell. It is deliberately not another ancient

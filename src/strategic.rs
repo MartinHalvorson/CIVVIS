@@ -1192,6 +1192,12 @@ impl StrategicAi {
         self.inner.assigned_religion_may_expand = on;
     }
 
+    /// Enable the same target-specific power-spike appointment on the acting
+    /// agent and on the retained-state rollout branches cloned from it.
+    pub fn set_timed_war(&mut self, on: bool) {
+        self.inner.timed_war = on;
+    }
+
     /// Every branch's projected value, in the order `review` compares them.
     ///
     /// Exposed for the same reason `doctrine_values` is: whether projecting
@@ -1674,6 +1680,10 @@ impl Ai for StrategicAi {
         self.inner.plan_report()
     }
 
+    fn timed_war_enabled(&self) -> bool {
+        self.inner.timed_war_enabled()
+    }
+
     fn review_census(&self) -> Option<ReviewCensus> {
         Some(self.census)
     }
@@ -1727,6 +1737,16 @@ mod tests {
                 .unwrap();
         }
         game.current = 0;
+    }
+
+    #[test]
+    fn timed_war_setting_reaches_the_actor_and_retained_rollout_branches() {
+        let mut strategic = StrategicAi::new();
+        assert!(!strategic.timed_war_enabled());
+        strategic.set_timed_war(true);
+        assert!(strategic.timed_war_enabled());
+        let branch = strategic.branch_agent(None, &Weights::default());
+        assert!(branch.timed_war_enabled());
     }
 
     #[test]

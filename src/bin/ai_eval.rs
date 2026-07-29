@@ -1,5 +1,5 @@
 //! Paired, seat-balanced head-to-head evaluator for built-in AIs.
-use civvis::ai::Ai;
+use civvis::ai::{Ai, PlanReport, WarLifecycleReport};
 use civvis::elo::{
     builtin_ai, builtin_provenances, collapsed_entrants, AgentProvenance, ARTIFACT_DIR,
     BUILTIN_AIS, EVAL_ONLY_AIS,
@@ -319,6 +319,8 @@ struct PlanTrace {
     midgame_city_deficit_boundary_switches: usize,
     midgame_strategy_turns: BTreeMap<String, usize>,
     midgame_transitions: BTreeMap<String, usize>,
+    war_turns: usize,
+    war_lifecycle: WarLifecycleReport,
     last_strategy: Option<String>,
     last_context: Option<StrategyContext>,
 }
@@ -400,6 +402,18 @@ impl PlanTrace {
         self.last_context = Some(context);
     }
 
+    /// Preserve cumulative appointment evidence even after the active plan has
+    /// completed or aborted. The current-plan bit supplies player-turn
+    /// exposure; the lifetime report supplies event denominators exactly once
+    /// when this seat-game is folded into the evaluator totals.
+    fn observe_war(&mut self, report: Option<&PlanReport>) {
+        let Some(report) = report else {
+            return;
+        };
+        self.war_turns += report.war.is_some() as usize;
+        self.war_lifecycle = report.war_lifecycle.clone();
+    }
+
     /// Target used on the most observed player-turns. A tie keeps the final
     /// target, matching the tournament's dominant-strategy attribution.
     fn dominant_target(&self) -> &str {
@@ -469,6 +483,8 @@ fn run_traced_game(
         if pid < traced_players {
             let observation = plan_observation(game, pid, ais[pid].as_ref());
             traces[pid].observe(observation);
+            let report = ais[pid].plan_report();
+            traces[pid].observe_war(report.as_ref());
         }
         if game.winner.is_none() && game.current == pid {
             let _ = game.apply(pid, &Action::EndTurn);
@@ -481,6 +497,44 @@ fn run_traced_game(
 struct TargetOutcome {
     games: usize,
     wins: usize,
+}
+
+#[derive(Default)]
+struct WarMetrics {
+    seats: usize,
+    turns: usize,
+    lifecycle: WarLifecycleReport,
+}
+
+impl WarMetrics {
+    fn record(&mut self, trace: &PlanTrace) {
+        self.seats += (trace.war_lifecycle.appointments > 0) as usize;
+        self.turns += trace.war_turns;
+        let source = &trace.war_lifecycle;
+        self.lifecycle.appointments += source.appointments;
+        self.lifecycle.breakthroughs += source.breakthroughs;
+        self.lifecycle.mobilizations += source.mobilizations;
+        self.lifecycle.declarations += source.declarations;
+        self.lifecycle.complete_declarations += source.complete_declarations;
+        self.lifecycle.objective_captures += source.objective_captures;
+        self.lifecycle.quick_captures += source.quick_captures;
+        self.lifecycle
+            .appointment_to_tech
+            .extend_from_slice(&source.appointment_to_tech);
+        self.lifecycle
+            .tech_to_declaration
+            .extend_from_slice(&source.tech_to_declaration);
+        self.lifecycle
+            .declaration_to_capture
+            .extend_from_slice(&source.declaration_to_capture);
+        for (reason, count) in &source.abort_reasons {
+            *self
+                .lifecycle
+                .abort_reasons
+                .entry(reason.clone())
+                .or_default() += count;
+        }
+    }
 }
 
 #[derive(Default)]
@@ -536,6 +590,7 @@ struct Metrics {
     midgame_transitions: BTreeMap<String, usize>,
     rush_seats: usize,
     rush_turns: usize,
+    war: WarMetrics,
     /// Reviews summed over every seat this entrant played, so a run can say
     /// whether the macro search ever ran. Stays zero for agents that do not
     /// search, which is honest rather than missing.
@@ -574,6 +629,7 @@ impl Metrics {
         self.midgame_city_deficit_boundary_switches += trace.midgame_city_deficit_boundary_switches;
         self.rush_seats += trace.ever_rushed as usize;
         self.rush_turns += trace.rush_observations;
+        self.war.record(trace);
         for (target, turns) in &trace.targets {
             *self.plan_turns.entry(target.clone()).or_default() += turns;
         }
@@ -701,6 +757,87 @@ fn transition_counts(transitions: &BTreeMap<String, usize>) -> String {
         .join(", ")
 }
 
+fn median_turns(values: &[u32]) -> Option<f64> {
+    if values.is_empty() {
+        return None;
+    }
+    let mut ordered = values.to_vec();
+    ordered.sort_unstable();
+    let middle = ordered.len() / 2;
+    Some(if ordered.len() % 2 == 0 {
+        (ordered[middle - 1] as f64 + ordered[middle] as f64) / 2.0
+    } else {
+        ordered[middle] as f64
+    })
+}
+
+fn duration_label(values: &[u32]) -> String {
+    median_turns(values).map_or_else(|| "n/a".to_string(), |turns| format!("{turns:.1}"))
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PowerSpikeScreenVerdict {
+    Pass,
+    Stop,
+    Unresolved,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct PowerSpikeScreen {
+    exposure: bool,
+    declaration_count: bool,
+    complete_package: bool,
+    quick_capture: bool,
+    paired_score: bool,
+    favorable_directions: bool,
+    terminal_score: bool,
+    control_not_retained: bool,
+    verdict: PowerSpikeScreenVerdict,
+}
+
+/// The first, frozen screen from `docs/WAR_TIMING.md`. Mechanism terms are
+/// absolute capability gates over the treatment's cumulative appointments;
+/// they do not borrow the control's zero-filled observer state.
+fn power_spike_screen(
+    treatment: &Metrics,
+    inference: &PairedInference,
+    directions: &DirectionalOutcomes,
+    terminal_score: f64,
+) -> PowerSpikeScreen {
+    let lifecycle = &treatment.war.lifecycle;
+    let seat_share = treatment.war.seats as f64 / treatment.games.max(1) as f64;
+    let declaration_count = lifecycle.declarations >= 12;
+    let declaration_denominator = lifecycle.declarations.max(1) as f64;
+    let complete_share = lifecycle.complete_declarations as f64 / declaration_denominator;
+    let quick_share = lifecycle.quick_captures as f64 / declaration_denominator;
+    let mut result = PowerSpikeScreen {
+        exposure: (0.15..=0.75).contains(&seat_share),
+        declaration_count,
+        complete_package: lifecycle.declarations > 0 && complete_share >= 0.60,
+        quick_capture: lifecycle.declarations > 0 && quick_share >= 0.35,
+        paired_score: inference.score >= 0.52,
+        favorable_directions: directions.challenger_favored > directions.incumbent_favored,
+        terminal_score: terminal_score >= 0.50,
+        control_not_retained: inference.verdict != PromotionVerdict::Retain,
+        verdict: PowerSpikeScreenVerdict::Stop,
+    };
+    result.verdict = if !result.declaration_count {
+        PowerSpikeScreenVerdict::Unresolved
+    } else if result.exposure
+        && result.complete_package
+        && result.quick_capture
+        && result.paired_score
+        && result.favorable_directions
+        && result.terminal_score
+        && result.control_not_retained
+    {
+        PowerSpikeScreenVerdict::Pass
+    } else {
+        PowerSpikeScreenVerdict::Stop
+    };
+    result
+}
+
 fn text(args: &[String], flag: &str, default: &str) -> String {
     args.iter()
         .position(|arg| arg == flag)
@@ -779,6 +916,11 @@ fn main() {
     let width = number(&args, "--width", 24).max(8) as i32;
     let height = number(&args, "--height", 16).max(8) as i32;
     let seed = number(&args, "--seed", 4000).max(0) as u64;
+    // Ask the constructed controllers, not their names, whether they carry the
+    // opt-in treatment. This stays correct if the capability later moves up or
+    // down the AI ladder without teaching the evaluator another alias table.
+    let a_timed_war = builtin_ai(a, seed).timed_war_enabled();
+    let b_timed_war = builtin_ai(b, seed).timed_war_enabled();
     // The exhibition varies all three world axes and pins its enabled victory
     // set. An evaluator that cannot name them silently measures a different
     // game: historically Pangaea/flat/fixed-roster/all-victories, whatever the
@@ -1230,6 +1372,137 @@ fn main() {
             metrics.plan_observations,
             100.0 * metrics.rush_turns as f64 / metrics.plan_observations.max(1) as f64,
         );
+    }
+    if a_timed_war || b_timed_war {
+        println!("\nPower-spike appointment lifecycle:");
+        for (name, enabled) in [(a, a_timed_war), (b, b_timed_war)] {
+            if !enabled {
+                continue;
+            }
+            let metrics = &totals[name];
+            let lifecycle = &metrics.war.lifecycle;
+            println!(
+                "  {name:<24} plan seats {}/{} ({:.1}%); active {}/{} player-turns ({:.1}%)",
+                metrics.war.seats,
+                metrics.games,
+                100.0 * metrics.war.seats as f64 / metrics.games.max(1) as f64,
+                metrics.war.turns,
+                metrics.plan_observations,
+                100.0 * metrics.war.turns as f64 / metrics.plan_observations.max(1) as f64,
+            );
+            println!(
+                "  {name:<24} appointments {}, breakthroughs {}, mobilizations {}, declarations {}; complete packages {}",
+                lifecycle.appointments,
+                lifecycle.breakthroughs,
+                lifecycle.mobilizations,
+                lifecycle.declarations,
+                lifecycle.complete_declarations,
+            );
+            println!(
+                "  {name:<24} objective captures {}, within 10 turns {}; median turns appointment->tech {}, tech->declaration {}, declaration->capture {}",
+                lifecycle.objective_captures,
+                lifecycle.quick_captures,
+                duration_label(&lifecycle.appointment_to_tech),
+                duration_label(&lifecycle.tech_to_declaration),
+                duration_label(&lifecycle.declaration_to_capture),
+            );
+            println!(
+                "  {name:<24} abort reasons {}",
+                if lifecycle.abort_reasons.is_empty() {
+                    "none".to_string()
+                } else {
+                    lifecycle
+                        .abort_reasons
+                        .iter()
+                        .map(|(reason, count)| format!("{reason} {count}"))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                }
+            );
+        }
+    }
+
+    let frozen_initial_screen = a == "advanced_timing_attack"
+        && b == "advanced"
+        && pairs == 60
+        && players == 8
+        && width == 84
+        && height == 54
+        && city_states == 12
+        && turns == 250
+        && speed == "online"
+        && map_script == MapScript::Continents
+        && map_topology == MapTopology::Planet
+        && map_poles == MapPoles::Poles
+        && randomize_civs
+        && seed == 10_100_000
+        && VictoryConditions::NAMES
+            .into_iter()
+            .filter(|name| victory_conditions.is_enabled(name))
+            .collect::<Vec<_>>()
+            == vec!["science", "culture", "domination"];
+    if frozen_initial_screen {
+        let treatment = &totals[a];
+        let lifecycle = &treatment.war.lifecycle;
+        let screen = power_spike_screen(treatment, &inference, &directions, terminal_mean);
+        let declaration_denominator = lifecycle.declarations.max(1) as f64;
+        println!("\nFrozen power-spike screen:");
+        println!(
+            "  {} exposure 15%..75%: {:.1}%",
+            if screen.exposure { "PASS" } else { "FAIL" },
+            100.0 * treatment.war.seats as f64 / treatment.games.max(1) as f64,
+        );
+        println!(
+            "  {} declaration denominator >=12: {}",
+            if screen.declaration_count {
+                "PASS"
+            } else {
+                "UNRESOLVED"
+            },
+            lifecycle.declarations,
+        );
+        println!(
+            "  {} complete-package declarations >=60%: {:.1}%",
+            if screen.complete_package { "PASS" } else { "FAIL" },
+            100.0 * lifecycle.complete_declarations as f64 / declaration_denominator,
+        );
+        println!(
+            "  {} objective captures within 10 turns >=35%: {:.1}%",
+            if screen.quick_capture { "PASS" } else { "FAIL" },
+            100.0 * lifecycle.quick_captures as f64 / declaration_denominator,
+        );
+        println!(
+            "  {} paired-map score >=52%: {:.1}%",
+            if screen.paired_score { "PASS" } else { "FAIL" },
+            100.0 * inference.score,
+        );
+        println!(
+            "  {} favorable directions > adverse: {} > {}",
+            if screen.favorable_directions { "PASS" } else { "FAIL" },
+            directions.challenger_favored,
+            directions.incumbent_favored,
+        );
+        println!(
+            "  {} terminal-score share >=50%: {:.1}%",
+            if screen.terminal_score { "PASS" } else { "FAIL" },
+            100.0 * terminal_mean,
+        );
+        println!(
+            "  {} unchanged promotion gate does not retain advanced: {:?}",
+            if screen.control_not_retained { "PASS" } else { "FAIL" },
+            inference.verdict,
+        );
+        match screen.verdict {
+            PowerSpikeScreenVerdict::Pass => println!(
+                "  frozen screen: PASS — every preregistered term clears; the disjoint holdout is authorized"
+            ),
+            PowerSpikeScreenVerdict::Stop => println!(
+                "  frozen screen: STOP — at least one preregistered term fails; do not run the holdout"
+            ),
+            PowerSpikeScreenVerdict::Unresolved => println!(
+                "  frozen screen: UNRESOLVED — fewer than 12 appointments declared; do not run the holdout"
+            ),
+        }
     }
     // A searching entrant that never reached its search is a scripted agent
     // under a searching agent's name. Say so beside the win rate, because
@@ -1689,6 +1962,97 @@ mod tests {
         assert_eq!(trace.targets["religion"], 2);
         assert_eq!(trace.strategy_turns["religion"], 2);
         assert_eq!(trace.dominant_target(), "adaptive");
+    }
+
+    #[test]
+    fn power_spike_lifecycle_is_folded_once_from_each_terminal_seat_trace() {
+        let mut first = PlanTrace {
+            war_turns: 17,
+            ..PlanTrace::default()
+        };
+        first.war_lifecycle.appointments = 2;
+        first.war_lifecycle.breakthroughs = 1;
+        first.war_lifecycle.declarations = 1;
+        first.war_lifecycle.complete_declarations = 1;
+        first.war_lifecycle.appointment_to_tech.push(8);
+        first
+            .war_lifecycle
+            .abort_reasons
+            .insert("target died".to_string(), 1);
+
+        let mut second = PlanTrace {
+            war_turns: 9,
+            ..PlanTrace::default()
+        };
+        second.war_lifecycle.appointments = 1;
+        second.war_lifecycle.mobilizations = 1;
+        second.war_lifecycle.declarations = 1;
+        second.war_lifecycle.objective_captures = 1;
+        second.war_lifecycle.quick_captures = 1;
+        second.war_lifecycle.declaration_to_capture.push(6);
+        second
+            .war_lifecycle
+            .abort_reasons
+            .insert("target died".to_string(), 2);
+
+        let mut aggregate = WarMetrics::default();
+        aggregate.record(&first);
+        aggregate.record(&second);
+        assert_eq!(aggregate.seats, 2);
+        assert_eq!(aggregate.turns, 26);
+        assert_eq!(aggregate.lifecycle.appointments, 3);
+        assert_eq!(aggregate.lifecycle.breakthroughs, 1);
+        assert_eq!(aggregate.lifecycle.mobilizations, 1);
+        assert_eq!(aggregate.lifecycle.declarations, 2);
+        assert_eq!(aggregate.lifecycle.complete_declarations, 1);
+        assert_eq!(aggregate.lifecycle.objective_captures, 1);
+        assert_eq!(aggregate.lifecycle.quick_captures, 1);
+        assert_eq!(aggregate.lifecycle.appointment_to_tech, vec![8]);
+        assert_eq!(aggregate.lifecycle.declaration_to_capture, vec![6]);
+        assert_eq!(aggregate.lifecycle.abort_reasons["target died"], 3);
+    }
+
+    #[test]
+    fn power_spike_medians_preserve_even_and_odd_turn_samples() {
+        assert_eq!(median_turns(&[]), None);
+        assert_eq!(median_turns(&[9, 3, 5]), Some(5.0));
+        assert_eq!(median_turns(&[9, 3, 5, 7]), Some(6.0));
+    }
+
+    #[test]
+    fn frozen_power_spike_screen_requires_every_term_and_marks_small_denominators_unresolved() {
+        let scores = vec![0.75; 80];
+        let inference = paired_inference(&scores);
+        let directions = directional_outcomes(&scores);
+        let mut treatment = Metrics {
+            games: 100,
+            ..Metrics::default()
+        };
+        treatment.war.seats = 15;
+        treatment.war.lifecycle.declarations = 20;
+        treatment.war.lifecycle.complete_declarations = 12;
+        treatment.war.lifecycle.quick_captures = 7;
+
+        let boundary = power_spike_screen(&treatment, &inference, &directions, 0.50);
+        assert_eq!(boundary.verdict, PowerSpikeScreenVerdict::Pass);
+        assert!(boundary.exposure);
+        assert!(boundary.complete_package);
+        assert!(boundary.quick_capture);
+
+        treatment.war.lifecycle.declarations = 11;
+        treatment.war.lifecycle.complete_declarations = 11;
+        treatment.war.lifecycle.quick_captures = 11;
+        assert_eq!(
+            power_spike_screen(&treatment, &inference, &directions, 0.60).verdict,
+            PowerSpikeScreenVerdict::Unresolved,
+        );
+
+        treatment.war.lifecycle.declarations = 20;
+        treatment.war.seats = 76;
+        assert_eq!(
+            power_spike_screen(&treatment, &inference, &directions, 0.60).verdict,
+            PowerSpikeScreenVerdict::Stop,
+        );
     }
 
     #[test]

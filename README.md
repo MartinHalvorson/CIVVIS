@@ -56,6 +56,55 @@ envoys. Economic plans persist for five turns to stop strategic thrashing,
 interrupted early by a surprise war, a newly threatened city, or a rival about to
 win.
 
+#### How a power-spike war is planned
+
+The military planner's hard problem is not deciding that a weak neighbour would
+be useful territory. It is making research, production, Gold, diplomacy and
+movement arrive at the same moment. Earlier measurement found the agent opening
+wars with its army nearby but only after reaching an average **11.5x total
+military advantage**. That is safe, but strategically late: it waits for a
+walkover instead of manufacturing a temporary edge.
+
+The opt-in power-spike planner therefore chooses a **target and the minimum
+excellent unit technology together**. After the ancient window, while at peace,
+with at least two cities, no threatened home city and enough game left to use the
+gain, it examines each legal rival city and every civilization-legal land melee
+unlock not yet researched. An unlock qualifies only if it is at least eight
+Combat Strength better than the available body, deals at least 36 expected damage
+against the harder of the city or its nearby field army, has a feasible strategic
+resource supply, and has a real land route to the neutral staging ring. The
+choice minimizes the complete remaining Science path and then the joint
+research/build/march schedule plus the existing campaign value. It is choosing
+an attack window, not assigning a bonus to a leader name or blindly chasing the
+strongest late-game unit.
+
+That decision becomes a persistent `WarPlan`, separate from the ordinary
+five-turn strategy assessment. It locks the victim, objective, breakthrough and
+four-body assault package so routine plan churn cannot send each subsystem in a
+different direction. Cities prebuild directly upgradeable predecessors while
+research is under way; adaptive Conquest reaches the plan-aware production
+evaluator; a walled objective adds a genuinely compatible support or siege unit;
+and the treasury protects the exact live upgrade quotes from purchases, deals,
+plot annexation and Great Person patronage. On the breakthrough turn those
+upgrades happen before any discretionary spending or unit movement.
+
+The army then assembles outside enemy territory on the existing three-to-five
+tile ring. Formal war is withheld until four modern assault bodies and the breach
+package exist, at least three bodies are staged and the fourth can arrive that
+turn, local strength reaches parity, and the homeland is not in Recovery. Once
+war opens, the objective city stays pinned: ranged and siege setup acts first, a
+healthy melee finisher is preserved for the capture, and the objective is
+reassessed immediately when it falls. Target death, an illegal diplomatic
+relationship, lost resource feasibility, an overrun launch horizon or persistent
+home danger explicitly cancels the appointment and releases both the military
+floor and Gold reserve.
+
+This mechanism lives inside `AdvancedAi`, so weighted/evolved agents and
+`StrategicAi` inherit the same planning machinery when it is enabled. It remains
+off in the ordinary constructors while the frozen live-profile experiment is
+unread; `advanced_timing_attack` and `strategic_deep_timing` are evaluator-only
+arms, not claims about shipped default strength.
+
 **`AdvancedAi` is roughly three times as strong as `BasicAi`** and is the
 benchmark everything else is measured against. `advanced_v1` is the pre-upgrade
 version, frozen on purpose as a regression control.

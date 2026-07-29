@@ -1929,6 +1929,40 @@ impl Session {
             "threatened_city": city(plan.threatened_city),
             "desired_cities": plan.desired_cities,
             "assessed_turn": plan.assessed_turn,
+            "war": plan.war.as_ref().map(|war| json!({
+                "phase": war.phase,
+                "target_player": war.target_player,
+                "objective_city": city(Some(war.objective_city)),
+                "breakthrough_tech": war.breakthrough_tech,
+                "assault_unit": war.assault_unit,
+                "predecessor": war.predecessor,
+                "required_bodies": war.required_bodies,
+                "modern_bodies": war.modern_bodies,
+                "breach_unit": war.breach_unit,
+                "breach_ready": war.breach_ready,
+                "research_cost": war.research_cost,
+                "production_cost": war.production_cost,
+                "upgrade_cost": war.upgrade_cost,
+                "march_turns": war.march_turns,
+                "reserved_gold": war.reserved_gold,
+                "appointed_turn": war.appointed_turn,
+                "breakthrough_turn": war.breakthrough_turn,
+                "declaration_turn": war.declaration_turn,
+                "first_capture_turn": war.first_capture_turn,
+            })),
+            "war_lifecycle": {
+                "appointments": plan.war_lifecycle.appointments,
+                "breakthroughs": plan.war_lifecycle.breakthroughs,
+                "mobilizations": plan.war_lifecycle.mobilizations,
+                "declarations": plan.war_lifecycle.declarations,
+                "complete_declarations": plan.war_lifecycle.complete_declarations,
+                "objective_captures": plan.war_lifecycle.objective_captures,
+                "quick_captures": plan.war_lifecycle.quick_captures,
+                "appointment_to_tech": plan.war_lifecycle.appointment_to_tech,
+                "tech_to_declaration": plan.war_lifecycle.tech_to_declaration,
+                "declaration_to_capture": plan.war_lifecycle.declaration_to_capture,
+                "abort_reasons": plan.war_lifecycle.abort_reasons,
+            },
             "forces": plan.forces.iter().map(|force| json!({
                 "domain": force.domain,
                 "posture": force.posture,
@@ -5837,6 +5871,85 @@ mod tests {
             league_dir: None,
             league_record: false,
         }
+    }
+
+    #[test]
+    fn public_plan_json_reports_the_power_spike_and_cumulative_lifecycle() {
+        let mut session = Session::new(current());
+        for pid in 0..2 {
+            let settler = session
+                .game
+                .player_unit_ids(pid)
+                .into_iter()
+                .find(|unit| session.game.units[unit].kind == "settler")
+                .unwrap();
+            session.game.current = pid;
+            session
+                .game
+                .apply(pid, &Action::FoundCity { unit: settler })
+                .unwrap();
+        }
+        session.game.current = 0;
+        let objective = session.game.player_city_ids(1)[0];
+        let report = crate::ai::PlanReport {
+            strategy: "conquest",
+            victory_target: None,
+            rush: false,
+            target_player: Some(1),
+            target_city: Some(objective),
+            threatened_city: None,
+            desired_cities: 3,
+            assessed_turn: 65,
+            war: Some(crate::ai::WarPlanReport {
+                phase: "stage",
+                target_player: 1,
+                objective_city: objective,
+                breakthrough_tech: "iron_working".to_string(),
+                assault_unit: "legion".to_string(),
+                predecessor: Some("warrior".to_string()),
+                required_bodies: 4,
+                modern_bodies: 3,
+                breach_unit: None,
+                breach_ready: true,
+                research_cost: 120.0,
+                production_cost: 120.0,
+                upgrade_cost: 600.0,
+                march_turns: 4.0,
+                reserved_gold: 150.0,
+                appointed_turn: 60,
+                breakthrough_turn: Some(64),
+                declaration_turn: None,
+                first_capture_turn: None,
+            }),
+            war_lifecycle: crate::ai::WarLifecycleReport {
+                appointments: 1,
+                breakthroughs: 1,
+                mobilizations: 0,
+                declarations: 0,
+                complete_declarations: 0,
+                objective_captures: 0,
+                quick_captures: 0,
+                appointment_to_tech: vec![4],
+                tech_to_declaration: Vec::new(),
+                declaration_to_capture: Vec::new(),
+                abort_reasons: std::collections::BTreeMap::from([(
+                    "resource package became impossible".to_string(),
+                    1,
+                )]),
+            },
+            forces: Vec::new(),
+        };
+
+        let value = session.plan_json(&report);
+        assert_eq!(value["war"]["phase"], json!("stage"));
+        assert_eq!(value["war"]["assault_unit"], json!("legion"));
+        assert_eq!(value["war"]["objective_city"]["id"], json!(objective));
+        assert_eq!(value["war_lifecycle"]["appointments"], json!(1));
+        assert_eq!(
+            value["war_lifecycle"]["abort_reasons"]
+                ["resource package became impossible"],
+            json!(1)
+        );
     }
 
     /// A Civ 6 lobby asks two things this protocol could not carry: how hard

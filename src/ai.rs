@@ -57,7 +57,7 @@ const RAILROAD_RESOURCE_RESERVE: f64 = 4.0;
 mod advanced;
 pub use advanced::{
     AdvancedAi, ForceDomain, ForceGroup, ForcePosture, GrandStrategy, StrategicPlan,
-    StrategyCensus, VictoryTarget,
+    StrategyCensus, VictoryTarget, WarPhase, WarPlan,
 };
 
 const TECH_PRIORITY: [&str; 15] = [
@@ -101,6 +101,52 @@ pub struct ForceReport {
     pub strength_ratio: f64,
 }
 
+/// The inspectable portion of a target-specific military appointment.
+///
+/// This is observer state only. It lets evaluators and the spectator tell a
+/// real research/build/stage appointment from an ordinary Conquest label.
+#[derive(Clone, Debug, PartialEq)]
+pub struct WarPlanReport {
+    pub phase: &'static str,
+    pub target_player: usize,
+    pub objective_city: u32,
+    pub breakthrough_tech: String,
+    pub assault_unit: String,
+    pub predecessor: Option<String>,
+    pub required_bodies: usize,
+    pub modern_bodies: usize,
+    pub breach_unit: Option<String>,
+    pub breach_ready: bool,
+    pub research_cost: f64,
+    pub production_cost: f64,
+    pub upgrade_cost: f64,
+    pub march_turns: f64,
+    pub reserved_gold: f64,
+    pub appointed_turn: u32,
+    pub breakthrough_turn: Option<u32>,
+    pub declaration_turn: Option<u32>,
+    pub first_capture_turn: Option<u32>,
+}
+
+/// Lifetime evidence for the power-spike mechanism.
+///
+/// Durations remain as individual observations instead of being reduced to a
+/// mean so the evaluator can report the preregistered medians exactly.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct WarLifecycleReport {
+    pub appointments: u32,
+    pub breakthroughs: u32,
+    pub mobilizations: u32,
+    pub declarations: u32,
+    pub complete_declarations: u32,
+    pub objective_captures: u32,
+    pub quick_captures: u32,
+    pub appointment_to_tech: Vec<u32>,
+    pub tech_to_declaration: Vec<u32>,
+    pub declaration_to_capture: Vec<u32>,
+    pub abort_reasons: BTreeMap<String, u32>,
+}
+
 /// Everything an agent is willing to say about its own medium-term
 /// intentions. The spectator HUD reads this to explain *why* a civilization
 /// is doing what it does instead of only showing the outcome; nothing here
@@ -118,6 +164,12 @@ pub struct PlanReport {
     pub threatened_city: Option<u32>,
     pub desired_cities: usize,
     pub assessed_turn: u32,
+    /// Current target-specific power-spike appointment, when the opt-in
+    /// treatment has one in force.
+    pub war: Option<WarPlanReport>,
+    /// Cumulative mechanism evidence survives after a plan completes or
+    /// aborts, so a terminal observation cannot erase treatment exposure.
+    pub war_lifecycle: WarLifecycleReport,
     pub forces: Vec<ForceReport>,
 }
 
@@ -132,6 +184,13 @@ pub trait Ai {
     /// have no plan to report.
     fn plan_report(&self) -> Option<PlanReport> {
         None
+    }
+
+    /// Whether this controller carries the opt-in midgame power-spike
+    /// treatment. Observer-only: factories and tests use this to prove that a
+    /// named evaluator arm actually differs from its control.
+    fn timed_war_enabled(&self) -> bool {
+        false
     }
 
     /// How many of this agent's macro reviews reached its search, for
@@ -164,6 +223,10 @@ impl<T: Ai + ?Sized> Ai for Box<T> {
 
     fn plan_report(&self) -> Option<PlanReport> {
         (**self).plan_report()
+    }
+
+    fn timed_war_enabled(&self) -> bool {
+        (**self).timed_war_enabled()
     }
 
     fn review_census(&self) -> Option<crate::strategic::ReviewCensus> {
@@ -1136,6 +1199,10 @@ pub struct BasicAi {
     /// needs four. Without this floor the rush plans a war it never builds
     /// the army for, which is the failure the census caught.
     pub(crate) rush_military_floor: usize,
+    /// Fighting bodies required by a target-specific power-spike appointment.
+    /// Like the rush floor, this is rewritten by `AdvancedAi` every turn and
+    /// remains zero for BasicAI, city-states, barbarians, and the control arm.
+    pub(crate) strategic_military_floor: usize,
     /// Where this agent tells an observer what it is doing. Off unless a
     /// spectator attached one; see [`crate::reasoning`].
     pub(crate) journal: Journal,
@@ -1913,6 +1980,7 @@ impl BasicAi {
             last_path_step_from: RefCell::new(HashMap::new()),
             unit_motion: BTreeMap::new(),
             rush_military_floor: 0,
+            strategic_military_floor: 0,
             journal: Journal::default(),
         }
     }
@@ -1932,6 +2000,7 @@ impl BasicAi {
             last_path_step_from: RefCell::new(HashMap::new()),
             unit_motion: BTreeMap::new(),
             rush_military_floor: 0,
+            strategic_military_floor: 0,
             journal: Journal::default(),
         }
     }
@@ -4392,11 +4461,9 @@ impl BasicAi {
         // only melee exerts the zone of control that seals a siege ring, and a
         // land ranged unit attacking a city takes a flat -17 strength.
         let rushing = !self.minor && !self.barb && self.rush_military_floor > 0;
-        let military_floor = if rushing {
-            (self.w.mil_per_city * n_cities as f64).max(self.rush_military_floor as f64)
-        } else {
-            self.w.mil_per_city * n_cities as f64
-        };
+        let military_floor = (self.w.mil_per_city * n_cities as f64)
+            .max(self.rush_military_floor as f64)
+            .max(self.strategic_military_floor as f64);
         if can_add_military && (military as f64) < military_floor {
             let picked = if rushing && melee < self.rush_military_floor {
                 self.best_military(g, pid, cid, Some(false))

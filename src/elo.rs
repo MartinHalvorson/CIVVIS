@@ -38,7 +38,7 @@ pub const BUILTIN_AIS: [&str; 10] = [
 /// tournament ratings. Keeping them out of `BUILTIN_AIS` prevents a control
 /// factory from being pooled into the same player/leader rating key as
 /// its treatment.
-pub const EVAL_ONLY_AIS: [&str; 63] = [
+pub const EVAL_ONLY_AIS: [&str; 65] = [
     "advanced_congress_counter",
     "advanced_congress_votes",
     "advanced_congress_counter_hard",
@@ -46,6 +46,7 @@ pub const EVAL_ONLY_AIS: [&str; 63] = [
     "advanced_blind_to_leaders",
     "advanced_rush",
     "advanced_rush_connected",
+    "advanced_timing_attack",
     "advanced_city_strategy",
     "advanced_city_strategy_emphasis",
     "advanced_city_strategy_roles",
@@ -102,6 +103,7 @@ pub const EVAL_ONLY_AIS: [&str; 63] = [
     "strategic_deep_adaptive",
     "strategic_rivals",
     "strategic_deep_rivals",
+    "strategic_deep_timing",
 ];
 
 /// On-disk schema for the shared player/leader/civilization rating ledger.
@@ -497,6 +499,14 @@ impl EloPool {
 pub fn builtin_ai(name: &str, seed: u64) -> Box<dyn Ai> {
     match name {
         "advanced" => Box::new(AdvancedAi::new()),
+        // Frozen midgame power-spike treatment: choose one target and minimum
+        // excellent unlock, prebuild its bodies, reserve exact upgrades,
+        // stage the modern package, then declare at local parity.
+        "advanced_timing_attack" => {
+            let mut ai = AdvancedAi::new();
+            ai.timed_war = true;
+            Box::new(ai)
+        }
         // Treatment for the lane-reachability axis: identical to `advanced`
         // except that it refuses to route toward a victory lane it cannot
         // finish inside the turn budget. Paired against `advanced` this
@@ -1010,6 +1020,15 @@ pub fn builtin_ai(name: &str, seed: u64) -> Box<dyn Ai> {
             ai.horizon = 80;
             Box::new(ai)
         }
+        "strategic_deep_timing" => {
+            let mut ai = crate::strategic::StrategicAi::with_weights(
+                crate::evolve::load_champion("evolved").unwrap_or_default(),
+            );
+            ai.review_every = 20;
+            ai.horizon = 80;
+            ai.set_timed_war(true);
+            Box::new(ai)
+        }
         // The first strength-first budget above `strategic_deep`: preserve
         // its full 80-round horizon and spend another doubling on the
         // generation-14-favored review cadence. This is deliberately an
@@ -1471,6 +1490,7 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
             },
         ),
         "strategic_deep_rivals" => (vec![genome, value(false)], "strategic_deep_rivals"),
+        "strategic_deep_timing" => (vec![genome, value(false)], "strategic_deep_timing"),
         "strategic_rot10" => (vec![genome, value(false)], "strategic_rot10"),
         // The genome tunes both its rollout policy and its scripted
         // governor; it consults no net.
@@ -1481,6 +1501,7 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
             if net { "production_net" } else { "production" },
         ),
         "advanced" => (Vec::new(), "advanced"),
+        "advanced_timing_attack" => (Vec::new(), "advanced_timing_attack"),
         "advanced_lane_reachable" => (Vec::new(), "advanced_lane_reachable"),
         "advanced_expansion_payback" => (Vec::new(), "advanced_expansion_payback"),
         "advanced_city_strategy" => (Vec::new(), "advanced_city_strategy"),
@@ -1956,6 +1977,16 @@ mod tests {
         assert!(!control.degraded());
         assert!(control.untrained());
         fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn timing_attack_factories_enable_only_the_preregistered_treatment_arms() {
+        for control in ["advanced", "advanced_evolved", "evolved", "strategic_deep"] {
+            assert!(!builtin_ai(control, 7).timed_war_enabled(), "{control}");
+        }
+        for treatment in ["advanced_timing_attack", "strategic_deep_timing"] {
+            assert!(builtin_ai(treatment, 7).timed_war_enabled(), "{treatment}");
+        }
     }
 
     /// Presence is decided by the loaders the agents use. A file that exists

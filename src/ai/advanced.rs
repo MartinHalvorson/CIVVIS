@@ -3,7 +3,9 @@
 //! `BasicAi` deliberately remains the small deterministic baseline.  This
 //! agent adds a shared strategic model so research, production, diplomacy,
 //! civilian work, and military movement pursue the same medium-term goal.
-use super::{Ai, BasicAi, ForceReport, PlanReport, UnitDoctrine, Weights};
+use super::{
+    Ai, BasicAi, ForceReport, PlanReport, UnitDoctrine, WarLifecycleReport, WarPlanReport, Weights,
+};
 use crate::name::Name;
 use crate::game::{
     Action, ActionFamilies, CityDirective, CityRole, CongressResolution, DiplomaticDeal, Game, Item,
@@ -64,6 +66,18 @@ const RUSH_ARMY: usize = 4;
 /// treatment asks whether a current land melee unit can route to this edge;
 /// it is not a fitted reach threshold.
 const RUSH_STAGING_RANGE: i32 = 3;
+
+/// A power-spike appointment needs enough bodies to occupy most of a city
+/// ring while retaining a healthy unit that can actually take the city.
+const TIMED_WAR_BODIES: usize = 4;
+/// A renamed unit is not a timing window. This is the preregistered minimum
+/// stock strength jump over the body it replaces.
+const TIMED_WAR_MIN_GAIN: f64 = 8.0;
+/// First ordinary mean roll produced by roughly +5 Combat Strength.
+const TIMED_WAR_MIN_DAMAGE: f64 = 36.0;
+/// The appointment creates a temporary local advantage; it does not require
+/// the old empire-wide walkover before declaring.
+const TIMED_WAR_LOCAL_RATIO: f64 = 1.0;
 
 /// Local hostile-over-friendly strength at which a city becomes a Bastion and
 /// stops growing. Deliberately the same 0.45 `threatened_city` treats as a
@@ -293,6 +307,58 @@ pub struct StrategicPlan {
     pub rush: bool,
 }
 
+/// Where a target-specific military appointment is in its lifecycle.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum WarPhase {
+    Research,
+    Mobilize,
+    Stage,
+    Strike,
+    Exploit,
+}
+
+impl WarPhase {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            WarPhase::Research => "research",
+            WarPhase::Mobilize => "mobilize",
+            WarPhase::Stage => "stage",
+            WarPhase::Strike => "strike",
+            WarPhase::Exploit => "exploit",
+        }
+    }
+}
+
+/// One persistent appointment shared by research, production, treasury,
+/// diplomacy, movement, and tactics.
+#[derive(Clone, Debug, PartialEq)]
+pub struct WarPlan {
+    pub target_player: usize,
+    pub objective_city: u32,
+    pub breakthrough_tech: Name,
+    pub assault_unit: Name,
+    pub predecessor: Option<Name>,
+    pub required_bodies: usize,
+    pub breach_unit: Option<Name>,
+    pub research_cost: f64,
+    pub production_cost: f64,
+    pub upgrade_cost: f64,
+    pub march_turns: f64,
+    pub phase: WarPhase,
+    pub appointed_turn: u32,
+    pub breakthrough_turn: Option<u32>,
+    pub mobilization_turn: Option<u32>,
+    pub declaration_turn: Option<u32>,
+    pub first_capture_turn: Option<u32>,
+    pub modern_bodies: usize,
+    pub breach_ready: bool,
+    pub reserved_gold: f64,
+    resource: Option<Name>,
+    resource_required: f64,
+    recovery_assessments: u8,
+    last_recovery_assessment: u32,
+}
+
 /// Movement domain for a coordinated force. The same planner operates on
 /// armies, fleets, and future domains without baking land-unit assumptions
 /// into the campaign layer.
@@ -469,6 +535,12 @@ pub struct AdvancedAi {
     forced_target_player: Option<usize>,
     force_groups: Vec<ForceGroup>,
     force_groups_dirty: bool,
+    /// Opt-in target-specific midgame power-spike appointment. Off in every
+    /// shipped constructor until the frozen live-profile gate earns default
+    /// promotion; evaluator entrants turn it on explicitly.
+    pub timed_war: bool,
+    war_plan: Option<WarPlan>,
+    war_lifecycle: WarLifecycleReport,
     /// Hold only the force groups that could actually reach the threatened
     /// city, instead of every group in the empire.
     ///
@@ -1074,6 +1146,9 @@ impl AdvancedAi {
             forced_target_player: None,
             force_groups: Vec::new(),
             force_groups_dirty: false,
+            timed_war: false,
+            war_plan: None,
+            war_lifecycle: WarLifecycleReport::default(),
             scoped_relief_hold: false,
             refuse_unreachable_lanes: false,
             prophet_before_opportunism: false,
@@ -1186,6 +1261,1155 @@ impl AdvancedAi {
 
     pub fn current_plan(&self) -> Option<&StrategicPlan> {
         self.plan.as_ref()
+    }
+
+    /// Current target-specific military appointment, exposed for observers
+    /// and deterministic mechanism tests. Ordinary strategic reassessment is
+    /// deliberately kept in the separate [`StrategicPlan`].
+    pub fn current_war_plan(&self) -> Option<&WarPlan> {
+        self.war_plan.as_ref()
+    }
+
+    fn player_unit_replacement(g: &Game, pid: usize, base: &str) -> Name {
+        g.rules
+            .units
+            .iter()
+            .find(|(_, spec)| {
+                spec.replaces.as_deref() == Some(base)
+                    && spec.unique_to.as_deref() == Some(g.players[pid].civ.as_str())
+            })
+            .map(|(name, _)| name.clone())
+            .unwrap_or_else(|| Name::new(base))
+    }
+
+    fn civilization_can_field(g: &Game, pid: usize, unit: &str) -> bool {
+        let Some(spec) = g.rules.units.get(unit) else {
+            return false;
+        };
+        spec.buildable
+            && spec
+                .unique_to
+                .as_deref()
+                .is_none_or(|civilization| civilization == g.players[pid].civ)
+            && Self::player_unit_replacement(g, pid, unit) == unit
+    }
+
+    fn unit_unlock_owned(g: &Game, pid: usize, unit: &str) -> bool {
+        let Some(spec) = g.rules.units.get(unit) else {
+            return false;
+        };
+        Self::civilization_can_field(g, pid, unit)
+            && spec
+                .tech
+                .as_ref()
+                .is_none_or(|tech| g.players[pid].techs.contains(tech))
+            && spec
+                .civic
+                .as_ref()
+                .is_none_or(|civic| g.players[pid].civics.contains(civic))
+    }
+
+    fn currently_trainable_unit(g: &Game, pid: usize, unit: &str) -> bool {
+        Self::unit_unlock_owned(g, pid, unit)
+            && g.player_city_ids(pid).into_iter().any(|city| {
+                g.can_produce(
+                    pid,
+                    city,
+                    &Item::Unit {
+                        unit: Name::new(unit),
+                    },
+                )
+            })
+    }
+
+    fn direct_predecessor(g: &Game, pid: usize, assault: &str) -> Option<Name> {
+        let upgrade_base = g.rules.units[assault]
+            .replaces
+            .as_deref()
+            .unwrap_or(assault);
+        g.rules
+            .units
+            .iter()
+            .filter(|(_, spec)| spec.upgrade_to.as_deref() == Some(upgrade_base))
+            .filter(|(name, _)| Self::civilization_can_field(g, pid, name))
+            .filter(|(name, _)| Self::unit_unlock_owned(g, pid, name))
+            .max_by(|(left, left_spec), (right, right_spec)| {
+                left_spec
+                    .strength
+                    .total_cmp(&right_spec.strength)
+                    .then_with(|| right.cmp(left))
+            })
+            .map(|(name, _)| name.clone())
+    }
+
+    fn strongest_trainable_melee(g: &Game, pid: usize) -> Option<Name> {
+        g.rules
+            .units
+            .iter()
+            .filter(|(name, spec)| {
+                spec.class == "military"
+                    && spec.is_melee_capable()
+                    && !matches!(spec.domain.as_deref(), Some("sea" | "air"))
+                    && Self::currently_trainable_unit(g, pid, name)
+            })
+            .max_by(|(left, left_spec), (right, right_spec)| {
+                left_spec
+                    .strength
+                    .total_cmp(&right_spec.strength)
+                    .then_with(|| right.cmp(left))
+            })
+            .map(|(name, _)| name.clone())
+    }
+
+    fn remaining_tech_path(&self, g: &Game, pid: usize, target: &str) -> (f64, BTreeSet<String>) {
+        let mut path = g
+            .rules
+            .tech_ancestors
+            .get(target)
+            .cloned()
+            .unwrap_or_default();
+        path.insert(target.to_string());
+        let mut remaining = path
+            .iter()
+            .filter(|tech| !g.players[pid].techs.contains(&Name::new(tech)))
+            .map(|tech| g.tech_cost(tech))
+            .sum::<f64>();
+        if let Some(current) = g.players[pid]
+            .research
+            .as_deref()
+            .filter(|current| path.contains(*current))
+        {
+            remaining -= g.players[pid]
+                .research_progress
+                .min(g.tech_cost(current));
+        }
+        (remaining.max(0.0), path)
+    }
+
+    fn unit_upgrade_quote(
+        g: &Game,
+        pid: usize,
+        from: &str,
+        to: &str,
+        formation: u8,
+    ) -> f64 {
+        let base = g.game_speed.scale(
+            (10.0 + 2.0 * (g.rules.units[to].cost - g.rules.units[from].cost).max(0.0))
+                .max(15.0),
+        );
+        let (gold, _) = g.upgrade_costs(pid, base, g.rules.units[to].resource_cost);
+        gold * match formation {
+            0 => 1.0,
+            1 => 2.0,
+            _ => 3.0,
+        }
+    }
+
+    fn assault_or_successor(g: &Game, pid: usize, kind: &str, assault: &str) -> bool {
+        let mut cursor = Name::new(assault);
+        for _ in 0..16 {
+            if cursor == kind {
+                return true;
+            }
+            let Some(next) = g.rules.units[&cursor].upgrade_to.as_deref() else {
+                return false;
+            };
+            cursor = Self::player_unit_replacement(g, pid, next);
+        }
+        false
+    }
+
+    fn war_body_ids(g: &Game, pid: usize, war: &WarPlan) -> Vec<u32> {
+        g.player_unit_ids(pid)
+            .into_iter()
+            .filter(|unit| {
+                Self::assault_or_successor(
+                    g,
+                    pid,
+                    &g.units[unit].kind,
+                    &war.assault_unit,
+                )
+            })
+            .collect()
+    }
+
+    fn war_body_commitments(g: &Game, pid: usize, war: &WarPlan) -> (usize, usize) {
+        let modern = Self::war_body_ids(g, pid, war).len()
+            + g.cities
+                .values()
+                .filter(|city| city.owner == pid)
+                .flat_map(|city| city.queue.iter())
+                .filter(|item| match item {
+                    Item::Unit { unit } | Item::Formation { unit, .. } => {
+                        Self::assault_or_successor(g, pid, unit, &war.assault_unit)
+                    }
+                    _ => false,
+                })
+                .count();
+        let predecessors = war.predecessor.as_ref().map_or(0, |predecessor| {
+            g.units
+                .values()
+                .filter(|unit| unit.owner == pid && unit.kind == *predecessor)
+                .count()
+                + g.cities
+                    .values()
+                    .filter(|city| city.owner == pid)
+                    .flat_map(|city| city.queue.iter())
+                    .filter(|item| match item {
+                        Item::Unit { unit } | Item::Formation { unit, .. } => unit == predecessor,
+                        _ => false,
+                    })
+                    .count()
+        });
+        (modern, predecessors)
+    }
+
+    fn wall_levels(g: &Game, city: &crate::game::City) -> usize {
+        city.buildings
+            .iter()
+            .filter(|building| g.rules.buildings[*building].outer_defense > 0)
+            .count()
+    }
+
+    fn breach_kind_works(g: &Game, city: &crate::game::City, kind: &str) -> bool {
+        let walls = Self::wall_levels(g, city);
+        if walls == 0 {
+            return false;
+        }
+        match kind {
+            "battering_ram" => {
+                walls == 1 && !g.players[city.owner].techs.contains(&crate::name!("steel"))
+            }
+            "siege_tower" => {
+                walls <= 2 && !g.players[city.owner].techs.contains(&crate::name!("steel"))
+            }
+            _ => {
+                let spec = &g.rules.units[kind];
+                spec.siege && spec.bombard_strength + 1e-9 >= g.city_strength(city.id)
+            }
+        }
+    }
+
+    /// `Some(None)` means the target is unwalled; `None` means it is walled
+    /// and no compatible package can currently be trained or reused.
+    fn choose_breach_unit(
+        &self,
+        g: &Game,
+        pid: usize,
+        city: &crate::game::City,
+    ) -> Option<Option<Name>> {
+        if Self::wall_levels(g, city) == 0 {
+            return Some(None);
+        }
+        g.rules
+            .units
+            .iter()
+            .filter(|(name, _)| Self::breach_kind_works(g, city, name))
+            .filter(|(name, _)| {
+                g.units
+                    .values()
+                    .any(|unit| unit.owner == pid && unit.kind.as_str() == name.as_str())
+                    || Self::currently_trainable_unit(g, pid, name)
+            })
+            .min_by(|(left, left_spec), (right, right_spec)| {
+                left_spec
+                    .cost
+                    .total_cmp(&right_spec.cost)
+                    .then_with(|| left.cmp(right))
+            })
+            .map(|(name, _)| Some(name.clone()))
+    }
+
+    fn breach_ready(g: &Game, pid: usize, war: &WarPlan) -> bool {
+        let Some(required) = &war.breach_unit else {
+            return true;
+        };
+        let Some(city) = g.cities.get(&war.objective_city) else {
+            return false;
+        };
+        g.units.values().any(|unit| {
+            unit.owner == pid
+                && (unit.kind == *required || Self::breach_kind_works(g, city, &unit.kind))
+                && Self::breach_kind_works(g, city, &unit.kind)
+        })
+    }
+
+    fn breach_committed(g: &Game, pid: usize, war: &WarPlan) -> bool {
+        Self::breach_ready(g, pid, war)
+            || war.breach_unit.as_ref().is_some_and(|required| {
+                g.cities
+                    .values()
+                    .filter(|city| city.owner == pid)
+                    .flat_map(|city| city.queue.iter())
+                    .any(|item| {
+                        matches!(
+                            item,
+                            Item::Unit { unit } | Item::Formation { unit, .. }
+                                if unit == required
+                        )
+                    })
+            })
+    }
+
+    fn war_upgrade_reserve_for(g: &Game, pid: usize, war: &WarPlan) -> f64 {
+        if war.declaration_turn.is_some() {
+            return 0.0;
+        }
+        let Some(predecessor) = &war.predecessor else {
+            return 0.0;
+        };
+        let (modern, _) = Self::war_body_commitments(g, pid, war);
+        let modern = modern.min(war.required_bodies);
+        let mut slots = war.required_bodies.saturating_sub(modern);
+        let mut reserve = 0.0;
+        let mut existing: Vec<_> = g
+            .units
+            .values()
+            .filter(|unit| unit.owner == pid && unit.kind == *predecessor)
+            .collect();
+        existing.sort_by_key(|unit| unit.id);
+        for unit in existing.into_iter().take(slots) {
+            reserve += Self::unit_upgrade_quote(
+                g,
+                pid,
+                predecessor,
+                &war.assault_unit,
+                unit.formation,
+            );
+            slots -= 1;
+        }
+        if slots > 0 {
+            reserve += slots as f64
+                * Self::unit_upgrade_quote(g, pid, predecessor, &war.assault_unit, 0);
+        }
+        reserve
+    }
+
+    fn war_upgrade_reserve(&self, g: &Game, pid: usize) -> f64 {
+        self.war_plan
+            .as_ref()
+            .map_or(0.0, |war| Self::war_upgrade_reserve_for(g, pid, war))
+    }
+
+    fn sync_war_military_floor(&mut self) {
+        self.base.strategic_military_floor = self.war_plan.as_ref().map_or(0, |war| {
+            war.required_bodies + usize::from(war.breach_unit.is_some())
+        });
+    }
+
+    fn planned_war_upgrades(&mut self, g: &mut Game, pid: usize) -> usize {
+        let Some(war) = self.war_plan.clone().filter(|war| {
+            war.declaration_turn.is_none()
+                && g.players[pid].techs.contains(&war.breakthrough_tech)
+                && war.predecessor.is_some()
+        }) else {
+            return 0;
+        };
+        let predecessor = war.predecessor.as_ref().unwrap();
+        let mut upgraded = 0;
+        loop {
+            let mut candidates: Vec<(f64, u32)> = g
+                .player_unit_ids(pid)
+                .into_iter()
+                .filter(|unit| g.units[unit].kind == *predecessor)
+                .filter_map(|unit| {
+                    let (target, gold, _) = g.unit_gold_upgrade_offer(pid, unit)?;
+                    (target == war.assault_unit
+                        && g.players[pid].gold - gold + 1e-9 >= 120.0)
+                        .then_some((gold, unit))
+                })
+                .collect();
+            candidates.sort_by(|left, right| {
+                left.0
+                    .total_cmp(&right.0)
+                    .then_with(|| left.1.cmp(&right.1))
+            });
+            let Some((gold, unit)) = candidates.first().copied() else {
+                break;
+            };
+            if g.apply(pid, &Action::UpgradeUnit { unit }).is_err() {
+                break;
+            }
+            upgraded += 1;
+            think!(self.journal(), Military, Decision,
+                   "Upgrading {} to {}", plain(predecessor), plain(&war.assault_unit);
+                   "{gold:.0} Gold from the reserved launch bill, before movement";
+                   g.units.get(&unit).map(|unit| unit.pos).unwrap_or((0, 0)));
+        }
+        upgraded
+    }
+
+    /// A predecessor must be in friendly territory to consume the reserved
+    /// upgrade. During mobilization, route it home instead of marching an
+    /// obsolete body toward the objective.
+    fn war_upgrade_home_step(
+        &mut self,
+        g: &mut Game,
+        pid: usize,
+        uid: u32,
+    ) -> Option<bool> {
+        let war = self.war_plan.as_ref()?;
+        if war.declaration_turn.is_some()
+            || !g.players[pid].techs.contains(&war.breakthrough_tech)
+            || war.predecessor.as_ref() != Some(&g.units.get(&uid)?.kind)
+        {
+            return None;
+        }
+        let position = g.units[&uid].pos;
+        let territory = g
+            .map
+            .tiles
+            .get(&position)
+            .and_then(|tile| tile.owner_city)
+            .and_then(|city| g.cities.get(&city))
+            .map(|city| city.owner);
+        let friendly = territory.is_some_and(|owner| {
+            owner == pid
+                || g.suzerain_of(owner) == Some(pid)
+                || g.alliance_with(pid, owner).is_some()
+        });
+        if friendly {
+            return None;
+        }
+        let target = g
+            .player_city_ids(pid)
+            .into_iter()
+            .filter_map(|city| {
+                let destination = g.cities[&city].pos;
+                g.route_step(uid, destination, 0)
+                    .map(|step| (g.wdist(position, destination), city, step))
+            })
+            .min_by_key(|(distance, city, _)| (*distance, *city));
+        let Some((_, _, step)) = target else {
+            return Some(self.base.fortify_or_stop(g, pid, uid));
+        };
+        Some(g.apply(pid, &Action::Move { unit: uid, to: step }).is_ok())
+    }
+
+    fn war_resource_feasible(&self, g: &Game, pid: usize, war: &WarPlan) -> bool {
+        let Some(resource) = &war.resource else {
+            return true;
+        };
+        // A queued resource unit has not paid its material yet. Only bodies
+        // already on the map reduce the material still needed for the four-
+        // body package; queued assault units reduce Production, not stockpile.
+        let modern = Self::war_body_ids(g, pid, war).len();
+        let remaining_required = war
+            .required_bodies
+            .saturating_sub(modern)
+            as f64
+            * g.rules.units[&war.assault_unit].resource_cost;
+        if remaining_required <= f64::EPSILON {
+            return true;
+        }
+        if g.connected_resource_count(pid, resource) > 0
+            || g.controlled_resource_count(pid, resource) > 0
+        {
+            return true;
+        }
+        let turns = self.estimated_war_launch_turns(g, pid, war);
+        g.strategic_stockpile(pid, resource)
+            + g.strategic_resource_rate(pid, resource) * turns
+            + 1e-9
+            >= remaining_required
+    }
+
+    fn estimated_war_launch_turns(&self, g: &Game, pid: usize, war: &WarPlan) -> f64 {
+        let science = g
+            .player_city_ids(pid)
+            .into_iter()
+            .map(|city| g.city_yields(city).science)
+            .sum::<f64>()
+            .max(1.0);
+        let research = if g.players[pid].techs.contains(&war.breakthrough_tech) {
+            0.0
+        } else {
+            self.remaining_tech_path(g, pid, &war.breakthrough_tech).0 / science
+        };
+        let (modern, predecessors) = Self::war_body_commitments(g, pid, war);
+        let committed = if g.players[pid].techs.contains(&war.breakthrough_tech) {
+            modern
+        } else {
+            modern + predecessors
+        };
+        let body = if g.players[pid].techs.contains(&war.breakthrough_tech) {
+            &war.assault_unit
+        } else {
+            war.predecessor.as_ref().unwrap_or(&war.assault_unit)
+        };
+        let production_per_turn = g
+            .player_city_ids(pid)
+            .into_iter()
+            .map(|city| g.city_yields(city).production)
+            .sum::<f64>()
+            .max(1.0);
+        let production = war.required_bodies.saturating_sub(committed) as f64
+            * g.rules.units[body].cost
+            / production_per_turn;
+        let breach = if Self::breach_committed(g, pid, war) {
+            0.0
+        } else {
+            war.breach_unit
+                .as_ref()
+                .map_or(0.0, |unit| g.rules.units[unit].cost / production_per_turn)
+        };
+        research + production + breach + war.march_turns
+    }
+
+    fn unit_has_war_route(
+        &self,
+        g: &Game,
+        pid: usize,
+        target: usize,
+        unit: u32,
+        objective: Pos,
+    ) -> bool {
+        let held = &g.units[&unit];
+        let spec = &g.rules.units[held.kind];
+        if spec.class != "military"
+            || !spec.is_melee_capable()
+            || matches!(spec.domain.as_deref(), Some("sea" | "air"))
+        {
+            return false;
+        }
+        if self.campaign_staging_position(g, pid, target, unit, objective, held.pos) {
+            return true;
+        }
+        let goals: HashSet<Pos> = g
+            .wdisk(objective, 5)
+            .into_iter()
+            .filter(|position| {
+                self.campaign_staging_position(g, pid, target, unit, objective, *position)
+            })
+            .collect();
+        !goals.is_empty() && g.route_step_to_any(unit, &goals).is_some()
+    }
+
+    fn war_route_exists(&self, g: &Game, pid: usize, target: usize, objective: Pos) -> bool {
+        g.player_unit_ids(pid)
+            .into_iter()
+            .any(|unit| self.unit_has_war_route(g, pid, target, unit, objective))
+    }
+
+    /// Length of one concrete legal route to the peacetime staging ring.
+    /// `route_step` caches the full A* path, so after the first step the clone
+    /// can walk that same path without re-running a world search at every hex.
+    fn unit_war_route_steps(
+        &self,
+        g: &Game,
+        pid: usize,
+        target: usize,
+        unit: u32,
+        objective: Pos,
+    ) -> Option<usize> {
+        if !self.unit_has_war_route(g, pid, target, unit, objective) {
+            return None;
+        }
+        let held = &g.units[&unit];
+        if self.campaign_staging_position(g, pid, target, unit, objective, held.pos) {
+            return Some(0);
+        }
+        let mut goals: Vec<Pos> = g
+            .wdisk(objective, 5)
+            .into_iter()
+            .filter(|position| {
+                self.campaign_staging_position(g, pid, target, unit, objective, *position)
+            })
+            .collect();
+        goals.sort_by_key(|position| (g.wdist(held.pos, *position), *position));
+        let mut routed = g.clone();
+        let goal = goals
+            .into_iter()
+            .find(|goal| routed.route_step(unit, *goal, 0).is_some())?;
+        for steps in 1..=routed.map.tiles.len() {
+            let next = routed.route_step(unit, goal, 0)?;
+            routed.units.get_mut(&unit)?.pos = next;
+            if next == goal {
+                return Some(steps);
+            }
+        }
+        None
+    }
+
+    fn choose_war_plan(&self, g: &Game, pid: usize) -> Option<WarPlan> {
+        let at_war = g.players.iter().any(|player| {
+            player.id != pid
+                && player.alive
+                && !player.is_barbarian
+                && g.is_at_war(pid, player.id)
+        });
+        let basil_timing = g.has_ability(pid, "taxis")
+            && (g.players[pid].religion.is_some()
+                || g.players[pid].civics.contains(&crate::name!("divine_right")));
+        if !self.timed_war
+            || at_war
+            || g.turn < g.standard_duration(RUSH_WINDOW_CLOSES)
+            || g.player_city_ids(pid).len() < 2
+            || self.threatened_city(g, pid).is_some()
+            || g.emergency_objective(pid).is_some()
+            || self.forced_target_player.is_some()
+            || self.victory_denial(g, pid).is_some()
+            || basil_timing
+            || g.turn.saturating_add(g.standard_duration(40)) > g.max_turns
+        {
+            return None;
+        }
+
+        let science = g
+            .player_city_ids(pid)
+            .into_iter()
+            .map(|city| g.city_yields(city).science)
+            .sum::<f64>()
+            .max(1.0);
+        let production_per_turn = g
+            .player_city_ids(pid)
+            .into_iter()
+            .map(|city| g.city_yields(city).production)
+            .sum::<f64>()
+            .max(1.0);
+        let fallback = Self::strongest_trainable_melee(g, pid)?;
+        let mut best: Option<(
+            f64,
+            f64,
+            f64,
+            std::cmp::Reverse<i64>,
+            String,
+            usize,
+            u32,
+            WarPlan,
+        )> = None;
+
+        for target in g.players.iter().filter(|player| {
+            player.id != pid
+                && player.alive
+                && !player.is_minor
+                && !player.is_barbarian
+                && self.campaign_target_legal(g, pid, player.id)
+        }) {
+            let Some(objective) = g
+                .cities
+                .values()
+                .filter(|city| city.owner == target.id)
+                .filter(|city| self.war_route_exists(g, pid, target.id, city.pos))
+                .min_by(|left, right| {
+                    self.campaign_city_value(g, pid, left, GrandStrategy::Conquest)
+                        .total_cmp(&self.campaign_city_value(
+                            g,
+                            pid,
+                            right,
+                            GrandStrategy::Conquest,
+                        ))
+                        .then_with(|| left.id.cmp(&right.id))
+                })
+            else {
+                continue;
+            };
+            let Some(breach_unit) = self.choose_breach_unit(g, pid, objective) else {
+                continue;
+            };
+            let Some(march_steps) = g
+                .player_unit_ids(pid)
+                .into_iter()
+                .filter_map(|unit| {
+                    self.unit_war_route_steps(
+                        g,
+                        pid,
+                        target.id,
+                        unit,
+                        objective.pos,
+                    )
+                })
+                .min()
+            else {
+                continue;
+            };
+            let field_defense = g
+                .units
+                .values()
+                .filter(|unit| unit.owner == target.id && g.wdist(unit.pos, objective.pos) <= 6)
+                .filter(|unit| g.rules.units[unit.kind].class == "military")
+                .map(|unit| g.unit_strength(unit, true))
+                .fold(0.0_f64, f64::max);
+            let defense = g.city_strength(objective.id).max(field_defense);
+
+            for (unit, spec) in g.rules.units.iter().filter(|(unit, spec)| {
+                spec.class == "military"
+                    && spec.is_melee_capable()
+                    && !matches!(spec.domain.as_deref(), Some("sea" | "air"))
+                    && spec.tech.is_some_and(|tech| !g.players[pid].techs.contains(&tech))
+                    && Self::civilization_can_field(g, pid, unit)
+            }) {
+                let Some(tech) = spec.tech.clone() else {
+                    continue;
+                };
+                let predecessor = Self::direct_predecessor(g, pid, unit);
+                let comparison = predecessor.as_ref().unwrap_or(&fallback);
+                let gain = spec.strength - g.rules.units[comparison].strength;
+                if gain + 1e-9 < TIMED_WAR_MIN_GAIN {
+                    continue;
+                }
+                let damage = 30.0 * ((spec.strength - defense) / 25.0).exp();
+                if damage + 1e-9 < TIMED_WAR_MIN_DAMAGE {
+                    continue;
+                }
+                let (research_cost, _) = self.remaining_tech_path(g, pid, &tech);
+                let existing = g
+                    .units
+                    .values()
+                    .filter(|candidate| candidate.owner == pid)
+                    .filter(|candidate| {
+                        candidate.kind == *unit
+                            || predecessor
+                                .as_ref()
+                                .is_some_and(|from| candidate.kind == *from)
+                    })
+                    .count()
+                    + g.cities
+                        .values()
+                        .filter(|city| city.owner == pid)
+                        .flat_map(|city| city.queue.iter())
+                        .filter(|item| match item {
+                            Item::Unit { unit: queued } | Item::Formation { unit: queued, .. } => {
+                                queued == unit
+                                    || predecessor.as_ref().is_some_and(|from| queued == from)
+                            }
+                            _ => false,
+                        })
+                        .count();
+                let body = predecessor.as_ref().unwrap_or(unit);
+                let production_cost = TIMED_WAR_BODIES.saturating_sub(existing) as f64
+                    * g.rules.units[body].cost
+                    + breach_unit.as_ref().map_or(0.0, |breach| {
+                        let committed = g.units.values().any(|candidate| {
+                            candidate.owner == pid
+                                && Self::breach_kind_works(g, objective, &candidate.kind)
+                        }) || g
+                            .cities
+                            .values()
+                            .filter(|city| city.owner == pid)
+                            .flat_map(|city| city.queue.iter())
+                            .any(|item| match item {
+                                Item::Unit { unit } | Item::Formation { unit, .. } => {
+                                    Self::breach_kind_works(g, objective, unit)
+                                }
+                                _ => false,
+                            });
+                        if committed {
+                            0.0
+                        } else {
+                            g.rules.units[breach].cost
+                        }
+                    });
+                let pace = breach_unit.as_ref().map_or(
+                    g.rules.units[body].moves,
+                    |breach| g.rules.units[body].moves.min(g.rules.units[breach].moves),
+                ).max(1.0);
+                let march_turns = march_steps as f64 / pace;
+                let launch_turns = research_cost / science
+                    + production_cost / production_per_turn
+                    + march_turns;
+                if g.turn as f64
+                    + launch_turns.ceil()
+                    + g.standard_duration(40) as f64
+                    > g.max_turns as f64
+                {
+                    continue;
+                }
+                let existing_modern = g
+                    .units
+                    .values()
+                    .filter(|candidate| {
+                        candidate.owner == pid
+                            && Self::assault_or_successor(g, pid, &candidate.kind, unit)
+                    })
+                    .count();
+                let resource_required = spec.resource_cost
+                    * TIMED_WAR_BODIES.saturating_sub(existing_modern) as f64;
+                if let Some(resource) = &spec.requires_resource {
+                    let source = g.connected_resource_count(pid, resource) > 0
+                        || g.controlled_resource_count(pid, resource) > 0;
+                    let projected = g.strategic_stockpile(pid, resource)
+                        + g.strategic_resource_rate(pid, resource) * launch_turns;
+                    if !source && projected + 1e-9 < resource_required {
+                        continue;
+                    }
+                }
+                let modern_committed = existing_modern
+                    + g.cities
+                        .values()
+                        .filter(|city| city.owner == pid)
+                        .flat_map(|city| city.queue.iter())
+                        .filter(|item| match item {
+                            Item::Unit { unit: queued }
+                            | Item::Formation { unit: queued, .. } => {
+                                Self::assault_or_successor(g, pid, queued, unit)
+                            }
+                            _ => false,
+                        })
+                        .count();
+                let upgrade_cost = predecessor.as_ref().map_or(0.0, |from| {
+                    TIMED_WAR_BODIES.saturating_sub(modern_committed) as f64
+                        * Self::unit_upgrade_quote(g, pid, from, unit, 0)
+                });
+                let campaign = self.campaign_target_value_with_culture(g, pid, target.id, None)
+                    + self.campaign_city_value(g, pid, objective, GrandStrategy::Conquest)
+                    + launch_turns;
+                let war = WarPlan {
+                    target_player: target.id,
+                    objective_city: objective.id,
+                    breakthrough_tech: tech.clone(),
+                    assault_unit: unit.clone(),
+                    predecessor,
+                    required_bodies: TIMED_WAR_BODIES,
+                    breach_unit,
+                    research_cost,
+                    production_cost,
+                    upgrade_cost,
+                    march_turns,
+                    phase: WarPhase::Research,
+                    appointed_turn: g.turn,
+                    breakthrough_turn: None,
+                    mobilization_turn: None,
+                    declaration_turn: None,
+                    first_capture_turn: None,
+                    modern_bodies: 0,
+                    breach_ready: false,
+                    reserved_gold: upgrade_cost,
+                    resource: spec.requires_resource.clone(),
+                    resource_required,
+                    recovery_assessments: 0,
+                    last_recovery_assessment: g.turn,
+                };
+                let key = (
+                    research_cost,
+                    campaign,
+                    launch_turns,
+                    std::cmp::Reverse((damage * 1_000.0).round() as i64),
+                    unit.to_string(),
+                    target.id,
+                    objective.id,
+                    war,
+                );
+                if best.as_ref().is_none_or(|current| {
+                    key.0.total_cmp(&current.0)
+                        .then_with(|| key.1.total_cmp(&current.1))
+                        .then_with(|| key.2.total_cmp(&current.2))
+                        .then_with(|| key.3.cmp(&current.3))
+                        .then_with(|| key.4.cmp(&current.4))
+                        .then_with(|| key.5.cmp(&current.5))
+                        .then_with(|| key.6.cmp(&current.6))
+                        == std::cmp::Ordering::Less
+                }) {
+                    best = Some(key);
+                }
+            }
+        }
+        best.map(|(_, _, _, _, _, _, _, war)| war)
+    }
+
+    fn timed_war_readiness(
+        &self,
+        g: &Game,
+        pid: usize,
+        war: &WarPlan,
+    ) -> (usize, bool, usize, bool, f64, bool) {
+        let Some(city) = g.cities.get(&war.objective_city) else {
+            return (0, false, 0, false, 0.0, false);
+        };
+        let bodies = Self::war_body_ids(g, pid, war);
+        let modern = bodies.len();
+        let breach = Self::breach_ready(g, pid, war);
+        let staged: Vec<u32> = bodies
+            .iter()
+            .copied()
+            .filter(|unit| {
+                self.campaign_staging_position(
+                    g,
+                    pid,
+                    war.target_player,
+                    *unit,
+                    city.pos,
+                    g.units[unit].pos,
+                )
+            })
+            .collect();
+        let staging_reachable: Vec<u32> = bodies
+            .iter()
+            .copied()
+            .filter(|unit| {
+                staged.contains(unit)
+                    || g.reachable(*unit).into_iter().any(|position| {
+                    self.campaign_staging_position(
+                        g,
+                        pid,
+                        war.target_player,
+                        *unit,
+                        city.pos,
+                        position,
+                    )
+                })
+            })
+            .collect();
+        let one_turn = staging_reachable.len() >= war.required_bodies;
+        let ratio = self.local_strength_ratio(
+            g,
+            &staging_reachable,
+            &[war.target_player],
+            city.pos,
+        );
+        let ready = g.players[pid].techs.contains(&war.breakthrough_tech)
+            && modern >= war.required_bodies
+            && breach
+            && staged.len() >= 3
+            && one_turn
+            && ratio + 1e-9 >= TIMED_WAR_LOCAL_RATIO
+            && self.threatened_city(g, pid).is_none();
+        (modern, breach, staged.len(), one_turn, ratio, ready)
+    }
+
+    fn abort_war_plan(&mut self, reason: &'static str) {
+        let Some(war) = self.war_plan.take() else {
+            return;
+        };
+        *self
+            .war_lifecycle
+            .abort_reasons
+            .entry(reason.to_string())
+            .or_default() += 1;
+        self.base.strategic_military_floor = 0;
+        self.plan = None;
+        think!(self.journal(), Military, Strategy,
+               "Power-spike appointment aborted";
+               "{reason}; target player {}, objective city {}, {} through {}",
+               war.target_player, war.objective_city, plain(&war.predecessor.as_ref().unwrap_or(&war.assault_unit)),
+               plain(&war.assault_unit));
+    }
+
+    fn finish_war_plan(&mut self, reason: &'static str) {
+        let Some(war) = self.war_plan.take() else {
+            return;
+        };
+        self.base.strategic_military_floor = 0;
+        self.plan = None;
+        think!(self.journal(), Military, Strategy,
+               "Power-spike appointment complete";
+               "{reason}; target player {}, first objective city {}",
+               war.target_player, war.objective_city);
+    }
+
+    /// Reconcile the persistent appointment with the live world. Returning
+    /// true asks the ordinary strategic layer to reassess immediately because
+    /// the locked target, objective, or lifecycle changed.
+    fn sync_war_plan(&mut self, g: &Game, pid: usize) -> bool {
+        if !self.timed_war {
+            if self.war_plan.is_some() {
+                self.abort_war_plan("treatment disabled");
+                return true;
+            }
+            return false;
+        }
+
+        if self.war_plan.is_none() {
+            // Appointment search belongs to the ordinary five-turn strategic
+            // assessment. Re-running the target/technology/route join on every
+            // player turn changes the frozen treatment exposure and pays
+            // several world-scale route searches without a new assessment.
+            if !self.plan_stale(g, pid) {
+                return false;
+            }
+            if let Some(mut war) = self.choose_war_plan(g, pid) {
+                self.war_lifecycle.appointments += 1;
+                let launch = self.estimated_war_launch_turns(g, pid, &war);
+                let readiness = self.timed_war_readiness(g, pid, &war);
+                war.modern_bodies = readiness.0;
+                war.breach_ready = readiness.1;
+                war.reserved_gold = Self::war_upgrade_reserve_for(g, pid, &war);
+                think!(self.journal(), Military, Strategy,
+                       "Power-spike appointment: {} against {}",
+                       plain(&war.assault_unit), g.players[war.target_player].civ;
+                       "research {}, prebuild {}, reserve {:.0} Gold, march {:.1} turns; \
+                        objective {} and launch estimate {:.1} turns",
+                       plain(&war.breakthrough_tech),
+                       plain(&war.predecessor.as_ref().unwrap_or(&war.assault_unit)),
+                       war.upgrade_cost, war.march_turns, war.objective_city, launch);
+                self.war_plan = Some(war);
+                self.plan = None;
+                return true;
+            }
+            return false;
+        }
+
+        let pre_declaration_reason = {
+            let war = self.war_plan.as_ref().unwrap();
+            if war.declaration_turn.is_some() {
+                None
+            } else if !g
+                .players
+                .get(war.target_player)
+                .is_some_and(|target| target.alive)
+            {
+                Some("target died")
+            } else if !g
+                .cities
+                .get(&war.objective_city)
+                .is_some_and(|city| city.owner == war.target_player)
+            {
+                Some("objective changed owner")
+            } else if g.is_at_war(pid, war.target_player) {
+                Some("war opened externally")
+            } else if !self.campaign_target_legal(g, pid, war.target_player) {
+                Some("friendship or alliance made war illegal")
+            } else if !self.war_resource_feasible(g, pid, war) {
+                Some("resource package became impossible")
+            } else if g.turn as f64
+                + self.estimated_war_launch_turns(g, pid, war).ceil()
+                + g.standard_duration(40) as f64
+                > g.max_turns as f64
+            {
+                Some("launch moved past the remaining horizon")
+            } else {
+                None
+            }
+        };
+        if let Some(reason) = pre_declaration_reason {
+            self.abort_war_plan(reason);
+            return true;
+        }
+
+        if self
+            .war_plan
+            .as_ref()
+            .is_some_and(|war| war.declaration_turn.is_some())
+        {
+            let target = self.war_plan.as_ref().unwrap().target_player;
+            if !g.is_at_war(pid, target) {
+                self.finish_war_plan("peace closed the appointed war");
+                return true;
+            }
+            let objective = self.war_plan.as_ref().unwrap().objective_city;
+            let captured = g
+                .cities
+                .get(&objective)
+                .is_some_and(|city| city.owner == pid);
+            if captured {
+                let declaration = self.war_plan.as_ref().unwrap().declaration_turn.unwrap();
+                let first = self.war_plan.as_ref().unwrap().first_capture_turn.is_none();
+                if first {
+                    let elapsed = g.turn.saturating_sub(declaration);
+                    self.war_lifecycle.objective_captures += 1;
+                    self.war_lifecycle.declaration_to_capture.push(elapsed);
+                    self.war_lifecycle.quick_captures += (elapsed <= 10) as u32;
+                    self.war_plan.as_mut().unwrap().first_capture_turn = Some(g.turn);
+                }
+                let next = g
+                    .cities
+                    .values()
+                    .filter(|city| city.owner == target)
+                    .min_by(|left, right| {
+                        self.campaign_city_value(g, pid, left, GrandStrategy::Conquest)
+                            .total_cmp(&self.campaign_city_value(
+                                g,
+                                pid,
+                                right,
+                                GrandStrategy::Conquest,
+                            ))
+                            .then_with(|| left.id.cmp(&right.id))
+                    })
+                    .map(|city| city.id);
+                if let Some(next) = next {
+                    self.war_plan.as_mut().unwrap().objective_city = next;
+                    self.plan = None;
+                    return true;
+                }
+                self.finish_war_plan("no legal target city remains");
+                return true;
+            }
+            if !g
+                .cities
+                .get(&objective)
+                .is_some_and(|city| city.owner == target)
+            {
+                self.finish_war_plan("the appointed objective changed owner");
+                return true;
+            }
+        }
+
+        let assessment_cadence = g.standard_duration(5).max(1);
+        let due_recovery_assessment = self.war_plan.as_ref().is_some_and(|war| {
+            war.declaration_turn.is_none()
+                && g.turn.saturating_sub(war.last_recovery_assessment) >= assessment_cadence
+        });
+        if due_recovery_assessment {
+            let threatened = self.threatened_city(g, pid).is_some();
+            let war = self.war_plan.as_mut().unwrap();
+            war.last_recovery_assessment = g.turn;
+            war.recovery_assessments = if threatened {
+                war.recovery_assessments.saturating_add(1)
+            } else {
+                0
+            };
+            if war.recovery_assessments >= 2 {
+                self.abort_war_plan("home Recovery persisted for two assessments");
+                return true;
+            }
+        }
+
+        let mut changed = false;
+        let tech_owned = {
+            let war = self.war_plan.as_ref().unwrap();
+            g.players[pid].techs.contains(&war.breakthrough_tech)
+        };
+        if tech_owned && self.war_plan.as_ref().unwrap().breakthrough_turn.is_none() {
+            let appointed = self.war_plan.as_ref().unwrap().appointed_turn;
+            self.war_lifecycle.breakthroughs += 1;
+            self.war_lifecycle
+                .appointment_to_tech
+                .push(g.turn.saturating_sub(appointed));
+            self.war_plan.as_mut().unwrap().breakthrough_turn = Some(g.turn);
+            changed = true;
+        }
+        let package_complete = {
+            let war = self.war_plan.as_ref().unwrap();
+            let (modern, breach, _, _, _, _) = self.timed_war_readiness(g, pid, war);
+            modern >= war.required_bodies && breach
+        };
+        if package_complete && self.war_plan.as_ref().unwrap().mobilization_turn.is_none() {
+            self.war_lifecycle.mobilizations += 1;
+            self.war_plan.as_mut().unwrap().mobilization_turn = Some(g.turn);
+            changed = true;
+        }
+        let new_phase = {
+            let war = self.war_plan.as_ref().unwrap();
+            if war.declaration_turn.is_some() {
+                WarPhase::Exploit
+            } else if !tech_owned {
+                WarPhase::Research
+            } else if !package_complete {
+                WarPhase::Mobilize
+            } else if self.timed_war_readiness(g, pid, war).5 {
+                WarPhase::Strike
+            } else {
+                WarPhase::Stage
+            }
+        };
+        if self.war_plan.as_ref().unwrap().phase != new_phase {
+            self.war_plan.as_mut().unwrap().phase = new_phase;
+            changed = true;
+        }
+        let snapshot = {
+            let war = self.war_plan.as_ref().unwrap();
+            let readiness = self.timed_war_readiness(g, pid, war);
+            (
+                readiness.0,
+                readiness.1,
+                Self::war_upgrade_reserve_for(g, pid, war),
+            )
+        };
+        let war = self.war_plan.as_mut().unwrap();
+        war.modern_bodies = snapshot.0;
+        war.breach_ready = snapshot.1;
+        war.reserved_gold = snapshot.2;
+        changed
     }
 
     /// Does any city of `pid` currently see somewhere to send a settler?
@@ -2390,6 +3614,14 @@ impl AdvancedAi {
                 GrandStrategy::Conquest,
                 "a neighbour is inside the ancient window and cannot wall in time",
             )
+        } else if self.war_plan.is_some()
+            && self.forced_target_player.is_none()
+            && denial.is_none()
+        {
+            (
+                GrandStrategy::Conquest,
+                "a target-specific power-spike appointment is in force",
+            )
         } else if let Some(target) = active_victory_target {
             // The assigned-Religion arm is the only one that does not first ask
             // whether the empire can afford to expand. Measured, that costs the
@@ -2472,6 +3704,12 @@ impl AdvancedAi {
                     .filter(|(rival, _)| self.campaign_target_legal(g, pid, *rival))
                     .map(|(rival, _)| rival)
                     .or_else(|| {
+                        self.war_plan
+                            .as_ref()
+                            .filter(|war| self.campaign_target_legal(g, pid, war.target_player))
+                            .map(|war| war.target_player)
+                    })
+                    .or_else(|| {
                         let mut candidates: Vec<_> = major_rivals
                             .iter()
                             .copied()
@@ -2543,6 +3781,12 @@ impl AdvancedAi {
             .or_else(|| {
                 rush_victim.filter(|(target, _)| target_player == Some(*target))
                     .map(|(_, capital)| capital)
+            })
+            .or_else(|| {
+                self.war_plan
+                    .as_ref()
+                    .filter(|war| target_player == Some(war.target_player))
+                    .map(|war| war.objective_city)
             })
             .or_else(|| {
                 target_player.and_then(|target| {
@@ -3000,7 +4244,53 @@ impl AdvancedAi {
             .victory_target
             .map(VictoryTarget::strategy)
             .unwrap_or(plan.strategy);
-        if g.players[pid].research.is_none() {
+        let timed_goal = self.war_plan.as_ref().filter(|war| {
+            war.declaration_turn.is_none()
+                && plan.target_player == Some(war.target_player)
+                && !g.players[pid].techs.contains(&war.breakthrough_tech)
+        });
+        if let Some(war) = timed_goal {
+            let (_, path) = self.remaining_tech_path(g, pid, &war.breakthrough_tech);
+            let current_on_path = g.players[pid]
+                .research
+                .as_deref()
+                .is_some_and(|current| path.contains(current));
+            if !current_on_path {
+                let pick = g
+                    .available_techs(pid)
+                    .into_iter()
+                    .filter(|tech| path.contains(tech.as_str()))
+                    .min_by(|left, right| {
+                        g.tech_cost(left)
+                            .total_cmp(&g.tech_cost(right))
+                            .then_with(|| left.cmp(right))
+                    });
+                if let Some(tech) = pick {
+                    think!(self.journal(), Research, Decision,
+                           "Researching {}", plain(&tech);
+                           "the cheapest remaining prerequisite for the appointed {} breakthrough",
+                           plain(&war.assault_unit));
+                    // The engine normally exposes Research only when no node
+                    // is selected and stores progress only for that node. A
+                    // target-specific appointment cannot keep paying turns
+                    // into an unrelated technology while its launch estimate
+                    // assumes an immediate prerequisite route, so explicitly
+                    // abandon off-path progress. Restore it if the selected
+                    // prerequisite is not legal for any reason.
+                    let abandoned = g.players[pid].research.take().map(|research| {
+                        let progress = g.players[pid].research_progress;
+                        g.players[pid].research_progress = 0.0;
+                        (research, progress)
+                    });
+                    if g.apply(pid, &Action::Research { tech }).is_err() {
+                        if let Some((research, progress)) = abandoned {
+                            g.players[pid].research = Some(research);
+                            g.players[pid].research_progress = progress;
+                        }
+                    }
+                }
+            }
+        } else if g.players[pid].research.is_none() {
             let available = g.available_techs(pid);
             let science_commitment = objective == GrandStrategy::Science
                 || self.diplomatic_science_backup(g, pid, plan);
@@ -5444,13 +6734,22 @@ impl AdvancedAi {
             .map(|deal| deal.id)
             .collect();
         for deal_id in incoming {
+            let upgrade_reserve = self.war_upgrade_reserve(g, pid);
             let Some((accept, peace, worth, from)) = g
                 .pending_deals
                 .iter()
                 .find(|deal| deal.id == deal_id)
                 .map(|deal| {
                     let worth = self.incoming_deal_value(g, pid, deal, plan);
-                    (worth >= 0.0, deal.peace, worth, deal.from)
+                    let preserves_appointment = upgrade_reserve <= f64::EPSILON
+                        || g.players[pid].gold - deal.request_gold
+                            >= 120.0 + upgrade_reserve;
+                    (
+                        worth >= 0.0 && preserves_appointment,
+                        deal.peace,
+                        worth,
+                        deal.from,
+                    )
                 })
             else {
                 continue;
@@ -5545,7 +6844,13 @@ impl AdvancedAi {
                 || g.is_at_war(pid, *target)
                 || self.rival_victory_pressure(g, *target).progress >= 78
         });
-        self.strategic_bilateral_trade(g, pid, denied_partner, plan.strategy);
+        // Quick deals can include an opaque Gold side-payment. While an exact
+        // upgrade bill is reserved, decline the discretionary trade pass
+        // rather than let a mutually beneficial quote silently spend the
+        // appointment's launch budget.
+        if self.war_upgrade_reserve(g, pid) <= f64::EPSILON {
+            self.strategic_bilateral_trade(g, pid, denied_partner, plan.strategy);
+        }
         self.propose_strategic_alliance(g, pid, plan, denied_partner);
         let my_power = g.military_power(pid);
         let rivals: Vec<usize> = g
@@ -5643,7 +6948,12 @@ impl AdvancedAi {
             return;
         }
         let target_power = g.military_power(target);
-        let close_enough = plan
+        let appointed_target = self.war_plan.as_ref().is_some_and(|war| {
+            war.declaration_turn.is_none()
+                && war.target_player == target
+                && war.objective_city == plan.target_city.unwrap_or(u32::MAX)
+        });
+        let close_enough = appointed_target || plan
             .target_city
             .and_then(|cid| g.cities.get(&cid))
             .is_some_and(|target_city| {
@@ -5659,13 +6969,41 @@ impl AdvancedAi {
         // threshold that authorizes a Surprise War, waiting for superiority
         // guarantees that the rival gets the final uncontested turns.
         let urgent_denial = self.urgent_victory_threat(g, target);
+        let timed_campaign = appointed_target && !urgent_denial;
+        let timed_readiness = self
+            .war_plan
+            .as_ref()
+            .filter(|_| timed_campaign)
+            .map(|war| self.timed_war_readiness(g, pid, war));
+        // Pay the Formal-War notice while research and mobilization are still
+        // running. Waiting until the fourth body reaches the ring adds five
+        // idle turns after the package is ready and turns a planned timing
+        // attack back into the late walkover this appointment is meant to
+        // replace. Urgent denial remains separate and may still use Surprise
+        // War through `preferred_war_opening` below.
+        if timed_campaign
+            && !g.players[pid]
+                .denounced_until
+                .get(&target)
+                .is_some_and(|until| *until > g.turn)
+        {
+            if let Some(action) = g
+                .legal_actions_within(pid, ActionFamilies::CORE)
+                .into_iter()
+                .find(|action| matches!(action, Action::Denounce { player } if *player == target))
+            {
+                let _ = g.apply(pid, &action);
+            }
+        }
         // `my_power > target_power * 1.32 + 12` is an empire-wide comparison,
         // and at turn 40 both empires are three or four units, so the `+ 12`
         // alone can outweigh the whole ratio. What decides an ancient siege is
         // not the empires' totals but how many takers are standing at the
         // objective, which is exactly what `early_rush_stack_ready` counts.
         let ready = urgent_denial
-            || if rushing {
+            || if timed_campaign {
+                timed_readiness.is_some_and(|readiness| readiness.5)
+            } else if rushing {
                 plan.target_city
                     .and_then(|city| g.cities.get(&city))
                     .is_some_and(|city| self.early_rush_stack_ready(g, pid, target, city.id))
@@ -5674,21 +7012,24 @@ impl AdvancedAi {
             } else {
                 my_power > target_power * 1.32 + 12.0
             };
-        let staged = plan
-            .target_city
-            .and_then(|city| g.cities.get(&city))
-            .is_some_and(|city| {
-                self.campaign_staged_for_war(
-                    g,
-                    pid,
-                    target,
-                    city.pos,
-                    // A staged rush stack is already at the objective and has
-                    // counted its own takers, so hold it to the domination
-                    // ratio rather than the elective-war one.
-                    committed_domination || rushing,
-                )
-            });
+        let staged = if timed_campaign {
+            timed_readiness.is_some_and(|readiness| readiness.5)
+        } else {
+            plan.target_city
+                .and_then(|city| g.cities.get(&city))
+                .is_some_and(|city| {
+                    self.campaign_staged_for_war(
+                        g,
+                        pid,
+                        target,
+                        city.pos,
+                        // A staged rush stack is already at the objective and has
+                        // counted its own takers, so hold it to the domination
+                        // ratio rather than the elective-war one.
+                        committed_domination || rushing,
+                    )
+                })
+        };
         if close_enough && ready && staged {
             if let Some(action) = self.preferred_war_opening(g, pid, target) {
                 if self.journal().wants(crate::reasoning::Level::Strategy) {
@@ -5708,7 +7049,20 @@ impl AdvancedAi {
                                ""
                            });
                 }
-                let _ = g.apply(pid, &action);
+                let applied = g.apply(pid, &action).is_ok();
+                if applied && timed_campaign && g.is_at_war(pid, target) {
+                    let complete = timed_readiness.is_some_and(|readiness| readiness.5);
+                    let war = self.war_plan.as_mut().unwrap();
+                    war.declaration_turn = Some(g.turn);
+                    war.phase = WarPhase::Exploit;
+                    self.war_lifecycle.declarations += 1;
+                    self.war_lifecycle.complete_declarations += complete as u32;
+                    if let Some(tech) = war.breakthrough_turn {
+                        self.war_lifecycle
+                            .tech_to_declaration
+                            .push(g.turn.saturating_sub(tech));
+                    }
+                }
             }
         } else if self.journal().wants(crate::reasoning::Level::Detail) {
             // Not opening a war is a decision too, and the observer cannot see
@@ -5855,7 +7209,7 @@ impl AdvancedAi {
     /// limited to one tempo purchase per turn.
     fn advanced_great_people(&self, g: &mut Game, pid: usize, strategy: GrandStrategy) {
         let city_count = g.player_city_ids(pid).len() as f64;
-        let gold_reserve = 150.0 + 50.0 * city_count;
+        let gold_reserve = 150.0 + 50.0 * city_count + self.war_upgrade_reserve(g, pid);
         let faith_reserve = match strategy {
             GrandStrategy::Religion => 250.0,
             GrandStrategy::Culture if g.players[pid].civics.contains(&crate::name!("cold_war")) => 700.0,
@@ -5963,7 +7317,7 @@ impl AdvancedAi {
             GrandStrategy::Conquest | GrandStrategy::Recovery => {
                 75.0 + 25.0 * city_count as f64
             }
-        };
+        } + self.war_upgrade_reserve(g, pid);
         let purchase_limit = city_count.clamp(1, 4);
         let unit_purchase_limit = if g.players[pid].gold > reserve + 1_000.0 {
             2
@@ -8084,6 +9438,42 @@ impl AdvancedAi {
         }
     }
 
+    fn war_production_priority(&self, g: &Game, pid: usize, item: &Item) -> f64 {
+        let Some(war) = self
+            .war_plan
+            .as_ref()
+            .filter(|war| war.declaration_turn.is_none())
+        else {
+            return 0.0;
+        };
+        let (modern, predecessors) = Self::war_body_commitments(g, pid, war);
+        let tech_owned = g.players[pid].techs.contains(&war.breakthrough_tech);
+        let committed = if tech_owned {
+            modern
+        } else {
+            modern + predecessors
+        };
+        let wanted = if tech_owned {
+            &war.assault_unit
+        } else {
+            war.predecessor.as_ref().unwrap_or(&war.assault_unit)
+        };
+        if committed < war.required_bodies
+            && matches!(item, Item::Unit { unit } if unit == wanted)
+        {
+            return 12_000.0 + (war.required_bodies - committed) as f64 * 500.0;
+        }
+        if !Self::breach_committed(g, pid, war)
+            && war
+                .breach_unit
+                .as_ref()
+                .is_some_and(|required| matches!(item, Item::Unit { unit } if unit == required))
+        {
+            return 11_500.0;
+        }
+        0.0
+    }
+
     fn production_value(
         &self,
         g: &Game,
@@ -8116,7 +9506,14 @@ impl AdvancedAi {
         } else {
             desired_military
         };
-        let raw = match item {
+        let desired_military = self.war_plan.as_ref().map_or(desired_military, |war| {
+            desired_military.max(
+                war.required_bodies
+                    + usize::from(war.breach_unit.is_some()),
+            )
+        });
+        let war_priority = self.war_production_priority(g, pid, item);
+        let mut raw = match item {
             Item::Unit { unit } if unit == "settler" => {
                 let site = self.best_settle_site(g, pid, city.pos, 11).or_else(|| {
                     g.players[pid]
@@ -8298,6 +9695,7 @@ impl AdvancedAi {
                         && self.victory_target != Some(VictoryTarget::Domination)
                         && domain_saturated
                         && !threatened
+                        && war_priority <= 0.0
                     {
                         return -2_000.0;
                     }
@@ -8325,7 +9723,7 @@ impl AdvancedAi {
                             candidate.strength.max(candidate.ranged_attack_strength())
                         })
                         .fold(0.0_f64, f64::max);
-                    if unit != "scout" && power + 5.0 < best_role_power {
+                    if unit != "scout" && power + 5.0 < best_role_power && war_priority <= 0.0 {
                         return -2_000.0;
                     }
                     let force_gap = if naval {
@@ -8858,6 +10256,7 @@ impl AdvancedAi {
                 1_600.0 + strategic - existing * 280.0
             }
         };
+        raw += war_priority;
         if raw <= -9_999.0 {
             return raw;
         }
@@ -11424,6 +12823,32 @@ impl AdvancedAi {
         self.advanced_military_step_with_decline(g, pid, uid, plan, decline_settlers)
     }
 
+    fn appointed_finisher(
+        &self,
+        g: &Game,
+        pid: usize,
+        plan: &StrategicPlan,
+    ) -> Option<u32> {
+        let war = self.war_plan.as_ref().filter(|war| {
+            war.declaration_turn.is_some() && plan.target_city == Some(war.objective_city)
+        })?;
+        let objective = g.cities.get(&war.objective_city)?.pos;
+        Self::war_body_ids(g, pid, war)
+            .into_iter()
+            .filter(|unit| {
+                let held = &g.units[unit];
+                g.rules.units[held.kind].is_melee_capable()
+                    && held.hp as f64 > self.base.w.withdraw_hp + 15.0
+            })
+            .min_by_key(|unit| {
+                (
+                    g.wdist(g.units[unit].pos, objective),
+                    std::cmp::Reverse(g.units[unit].hp),
+                    *unit,
+                )
+            })
+    }
+
     fn advanced_military_step_with_decline(
         &mut self,
         g: &mut Game,
@@ -11436,6 +12861,41 @@ impl AdvancedAi {
         let rules = std::sync::Arc::clone(&g.rules);
         let spec = &rules.units[unit.kind];
         let doctrine = BasicAi::unit_doctrine(g, uid);
+        if let Some(acted) = self.war_upgrade_home_step(g, pid, uid) {
+            return acted;
+        }
+        let appointed_finisher = self.appointed_finisher(g, pid, plan) == Some(uid);
+        let reserved_for_objective = appointed_finisher
+            && plan.target_city.is_some_and(|city| {
+                g.cities.get(&city).is_some_and(|objective| {
+                    objective.owner != pid && objective.wall_hp <= 0 && objective.hp <= 80
+                })
+            });
+        if appointed_finisher {
+            if let Some(city) = plan
+                .target_city
+                .and_then(|city| g.cities.get(&city))
+                .filter(|city| city.owner != pid && city.wall_hp <= 0 && city.hp <= 40)
+            {
+                if g.wdist(unit.pos, city.pos) <= 1 {
+                    let action = if city.hp <= 0 {
+                        Action::Move {
+                            unit: uid,
+                            to: city.pos,
+                        }
+                    } else {
+                        Action::Attack {
+                            unit: uid,
+                            target: city.pos,
+                        }
+                    };
+                    if g.apply(pid, &action).is_ok() {
+                        self.force_groups_dirty = true;
+                        return true;
+                    }
+                }
+            }
+        }
         let unwanted_settler_adjacent = decline_settlers
             && g.nbrs(unit.pos).into_iter().any(|position| {
                 g.units_at(position).iter().any(|other| {
@@ -11457,12 +12917,13 @@ impl AdvancedAi {
                 .get(&cid)
                 .is_some_and(|city| g.wdist(unit.pos, city.pos) <= 3)
         });
-        if !unwanted_settler_adjacent && !holding_threatened_city {
+        if !unwanted_settler_adjacent && !holding_threatened_city && !reserved_for_objective {
             if let Some(acted) = self.base.healing_step(g, pid, uid) {
                 return acted;
             }
         }
-        if self
+        if !reserved_for_objective
+            && self
             .base
             .capture_adjacent_civilian(g, pid, uid, decline_settlers)
         {
@@ -11480,17 +12941,19 @@ impl AdvancedAi {
             self.force_groups_dirty |= acted && changes_force_picture;
             return acted;
         }
-        if let Some(action) = self.base.doctrine_action(g, pid, uid) {
-            let changes_force_picture = matches!(
-                &action,
-                Action::Attack { .. }
-                    | Action::Ranged { .. }
-                    | Action::AirStrike { .. }
-                    | Action::PriorityTarget { .. }
-            );
-            let acted = g.apply(pid, &action).is_ok();
-            self.force_groups_dirty |= acted && changes_force_picture;
-            return acted;
+        if !reserved_for_objective {
+            if let Some(action) = self.base.doctrine_action(g, pid, uid) {
+                let changes_force_picture = matches!(
+                    &action,
+                    Action::Attack { .. }
+                        | Action::Ranged { .. }
+                        | Action::AirStrike { .. }
+                        | Action::PriorityTarget { .. }
+                );
+                let acted = g.apply(pid, &action).is_ok();
+                self.force_groups_dirty |= acted && changes_force_picture;
+                return acted;
+            }
         }
         if !unwanted_settler_adjacent {
             if let Some(city) = self.occupation_garrison_target(g, pid, uid) {
@@ -11624,7 +13087,16 @@ impl AdvancedAi {
         }
         if let Some((score, at, action)) = best {
             let required_margin = if unit.hp < 55 { 12.0 } else { 0.0 };
-            if score > required_margin {
+            let spends_reserved_finisher = appointed_finisher
+                && plan.target_city.is_some_and(|city| {
+                    g.cities.get(&city).is_some_and(|objective| {
+                        objective.owner != pid
+                            && objective.wall_hp <= 0
+                            && objective.hp <= 80
+                            && objective.pos != at
+                    })
+                });
+            if score > required_margin && !spends_reserved_finisher {
                 if self.journal().wants(crate::reasoning::Level::Detail) {
                     let verb = match &action {
                         Action::Ranged { .. } => "shells",
@@ -12101,6 +13573,7 @@ impl AdvancedAi {
         // counts up to eight times for every military unit in the same turn.
         let decline_settlers = self.counts(g, pid).settlers > 0
             || !self.base.has_practical_settle_site(g, pid);
+        let finisher = self.appointed_finisher(g, pid, plan);
         let mut ids = g.player_unit_ids(pid);
         ids.sort_by_key(|uid| {
             let u = &g.units[uid];
@@ -12115,6 +13588,7 @@ impl AdvancedAi {
                 "rock_band" => 3,
                 _ if spec.has_ranged_attack() && !spec.siege => 4,
                 _ if spec.siege => 5,
+                _ if Some(*uid) == finisher => 7,
                 _ => 6,
             };
             (order, *uid)
@@ -12569,6 +14043,28 @@ impl Ai for AdvancedAi {
             threatened_city: plan.threatened_city,
             desired_cities: plan.desired_cities,
             assessed_turn: plan.assessed_turn,
+            war: self.war_plan.as_ref().map(|war| WarPlanReport {
+                phase: war.phase.as_str(),
+                target_player: war.target_player,
+                objective_city: war.objective_city,
+                breakthrough_tech: war.breakthrough_tech.to_string(),
+                assault_unit: war.assault_unit.to_string(),
+                predecessor: war.predecessor.as_ref().map(ToString::to_string),
+                required_bodies: war.required_bodies,
+                modern_bodies: war.modern_bodies,
+                breach_unit: war.breach_unit.as_ref().map(ToString::to_string),
+                breach_ready: war.breach_ready,
+                research_cost: war.research_cost,
+                production_cost: war.production_cost,
+                upgrade_cost: war.upgrade_cost,
+                march_turns: war.march_turns,
+                reserved_gold: war.reserved_gold,
+                appointed_turn: war.appointed_turn,
+                breakthrough_turn: war.breakthrough_turn,
+                declaration_turn: war.declaration_turn,
+                first_capture_turn: war.first_capture_turn,
+            }),
+            war_lifecycle: self.war_lifecycle.clone(),
             forces: self
                 .force_groups
                 .iter()
@@ -12582,6 +14078,10 @@ impl Ai for AdvancedAi {
                 })
                 .collect(),
         })
+    }
+
+    fn timed_war_enabled(&self) -> bool {
+        self.timed_war
     }
 
     fn take_turn(&mut self, g: &mut Game, pid: usize) {
@@ -12614,7 +14114,8 @@ impl AdvancedAi {
             .unwrap_or_else(|| self.victory_focus(g, pid).strategy);
         self.resolve_city_dispositions(g, pid, disposition_strategy);
         self.observe_campaign(g, pid);
-        if rush_routes_frozen || self.plan_stale(g, pid) {
+        let war_plan_changed = self.sync_war_plan(g, pid);
+        if rush_routes_frozen || war_plan_changed || self.plan_stale(g, pid) {
             self.plan = Some(self.assess(g, pid));
         }
         let plan = self.plan.clone().unwrap();
@@ -12624,6 +14125,7 @@ impl AdvancedAi {
         // never builds an army for. Rewritten every turn, including back to
         // zero the turn the window shuts.
         self.base.rush_military_floor = if plan.rush { RUSH_ARMY } else { 0 };
+        self.sync_war_military_floor();
         // Before anything spends this turn, tell each city what the empire
         // wants of it. Production, governors and the citizen governor all read
         // the same plan afterwards, so what a city builds and what its
@@ -12642,6 +14144,11 @@ impl AdvancedAi {
         }
         self.census.count(plan.strategy);
         self.advanced_research(g, pid, &plan);
+        // The breakthrough is processed at the start of a player turn. Spend
+        // its reserved upgrade bill immediately, before any discretionary
+        // Gold action and before a predecessor can move out of friendly land.
+        self.planned_war_upgrades(g, pid);
+        self.sync_war_plan(g, pid);
         if self.victory_planning {
             let denied_rival = plan
                 .target_player
@@ -12721,7 +14228,10 @@ impl AdvancedAi {
             if self.victory_planning && plan.strategy == GrandStrategy::Culture {
                 self.culture_spending(g, pid);
             }
-            if plan.strategy == GrandStrategy::Recovery || active_victory_target.is_some() {
+            if plan.strategy == GrandStrategy::Recovery
+                || active_victory_target.is_some()
+                || self.war_plan.is_some()
+            {
                 self.advanced_production(g, pid, &plan);
             }
             if active_victory_target.is_none() {
@@ -12729,7 +14239,7 @@ impl AdvancedAi {
                 self.base.cities(g, pid);
             }
         }
-        if active_victory_target.is_some() {
+        if active_victory_target.is_some() && self.war_plan.is_none() {
             let counts = self.counts(g, pid);
             let cities = g.player_city_ids(pid);
             self.base.spend_gold(
@@ -12749,6 +14259,9 @@ impl AdvancedAi {
         }
         BasicAi::upgrade_units(g, pid);
         self.advanced_units(g, pid, &plan);
+        // A city capture happens inside unit movement. Reconcile immediately
+        // so the objective is never left pinned for another five-turn cadence.
+        self.sync_war_plan(g, pid);
         self.resolve_city_dispositions(g, pid, plan.strategy);
         if g.winner.is_none() && g.current == pid {
             let _ = g.apply(pid, &Action::EndTurn);
@@ -12894,6 +14407,738 @@ mod tests {
             }
         }
         panic!("the fixed seed window needs one route-connected rush fixture")
+    }
+
+    /// A settled, route-connected midgame in which player 0 can make an
+    /// elective appointment but has no accidental strategic-resource source.
+    /// Individual tests add only the material their candidate is meant to use.
+    fn timed_war_fixture() -> (Game, AdvancedAi, u32) {
+        let mut game = connected_rush_fixture();
+        game.max_turns = 1_000;
+        game.turn = game.standard_duration(RUSH_WINDOW_CLOSES) + 5;
+        game.current = 0;
+        game.record_contact(0, 1);
+        game.players[0].civ = "America".to_string();
+        game.players[0].strategic_resources.clear();
+        for tile in game.map.tiles.values_mut() {
+            if tile.resource.as_ref().is_some_and(|resource| {
+                matches!(
+                    resource.as_str(),
+                    "horses" | "iron" | "niter" | "coal" | "oil" | "aluminum" | "uranium"
+                )
+            }) {
+                tile.resource = None;
+                tile.improvement = None;
+            }
+        }
+        for unit in game.player_unit_ids(1) {
+            game.remove_unit(unit);
+        }
+        let home = game.cities[&game.player_city_ids(0)[0]].pos;
+        found_nearby_test_city(&mut game, 0, home);
+        let objective = game.player_city_ids(1)[0];
+        game.cities.get_mut(&objective).unwrap().buildings.clear();
+        game.cities.get_mut(&objective).unwrap().wall_hp = 0;
+
+        let mut ai = AdvancedAi::new();
+        ai.timed_war = true;
+        (game, ai, objective)
+    }
+
+    #[test]
+    fn timed_war_chooses_the_least_research_excellent_unlock_and_rejects_missing_material() {
+        let (mut game, ai, _) = timed_war_fixture();
+        game.players[0]
+            .techs
+            .extend([crate::name!("mining"), crate::name!("wheel")]);
+
+        let without_horses = ai
+            .choose_war_plan(&game, 0)
+            .expect("a resource-free excellent unit remains available");
+        assert_ne!(without_horses.assault_unit, crate::name!("horseman"));
+        assert!(
+            without_horses.resource.is_none(),
+            "an unavailable strategic resource must reject the otherwise earlier Horseman"
+        );
+
+        game.players[0]
+            .strategic_resources
+            .insert(crate::name!("horses"), 80.0);
+        let with_horses = ai
+            .choose_war_plan(&game, 0)
+            .expect("the stocked four-Horseman package is feasible");
+        assert_eq!(with_horses.assault_unit, crate::name!("horseman"));
+        assert_eq!(with_horses.breakthrough_tech, crate::name!("horseback_riding"));
+        assert!(
+            game.rules.units[&with_horses.assault_unit].strength
+                < game.rules.units["modern_at"].strength,
+            "the chooser must prefer the minimum excellent path, not the strongest end-tree body"
+        );
+    }
+
+    #[test]
+    fn timed_war_uses_unique_replacements_for_quality_and_exact_upgrade_costs() {
+        let (mut game, ai, _) = timed_war_fixture();
+        game.players[0].civ = "Rome".to_string();
+        game.players[0]
+            .techs
+            .extend([crate::name!("mining"), crate::name!("wheel"), crate::name!("bronze_working")]);
+        game.players[0]
+            .strategic_resources
+            .insert(crate::name!("iron"), 40.0);
+
+        let war = ai
+            .choose_war_plan(&game, 0)
+            .expect("Rome's four-Legion package is feasible");
+        assert_eq!(war.assault_unit, crate::name!("legion"));
+        assert_eq!(war.predecessor, Some(crate::name!("warrior")));
+        assert_ne!(war.assault_unit, crate::name!("swordsman"));
+        let quote = AdvancedAi::unit_upgrade_quote(&game, 0, "warrior", "legion", 0);
+        assert!((war.upgrade_cost - quote * war.required_bodies as f64).abs() < 1e-9);
+    }
+
+    #[test]
+    fn timed_war_research_credits_only_on_path_progress_and_switches_to_the_prerequisite_path() {
+        let (mut game, mut ai, _) = timed_war_fixture();
+        game.players[0]
+            .techs
+            .extend([crate::name!("mining"), crate::name!("wheel")]);
+        game.players[0]
+            .strategic_resources
+            .insert(crate::name!("horses"), 80.0);
+        let war = ai.choose_war_plan(&game, 0).unwrap();
+        assert_eq!(war.breakthrough_tech, crate::name!("horseback_riding"));
+
+        game.players[0].research = Some("archery".to_string());
+        game.players[0].research_progress = 30.0;
+        let (credited, path) = ai.remaining_tech_path(&game, 0, "horseback_riding");
+        assert_eq!(path, BTreeSet::from([
+            "animal_husbandry".to_string(),
+            "archery".to_string(),
+            "horseback_riding".to_string(),
+        ]));
+        assert!((credited - 165.0).abs() < 1e-9);
+
+        game.players[0].research = Some("pottery".to_string());
+        game.players[0].research_progress = 24.0;
+        assert!((ai.remaining_tech_path(&game, 0, "horseback_riding").0 - 195.0).abs() < 1e-9);
+        let plan = StrategicPlan {
+            strategy: GrandStrategy::Conquest,
+            target_player: Some(war.target_player),
+            target_city: Some(war.objective_city),
+            threatened_city: None,
+            desired_cities: 3,
+            assessed_turn: game.turn,
+            rush: false,
+        };
+        ai.war_plan = Some(war);
+        ai.advanced_research(&mut game, 0, &plan);
+        assert_eq!(game.players[0].research.as_deref(), Some("animal_husbandry"));
+    }
+
+    #[test]
+    fn timed_war_target_and_unlock_survive_ordinary_reassessment() {
+        let (mut game, mut ai, _) = timed_war_fixture();
+        game.players[0]
+            .techs
+            .extend([crate::name!("mining"), crate::name!("wheel")]);
+        game.players[0]
+            .strategic_resources
+            .insert(crate::name!("horses"), 80.0);
+        assert!(ai.sync_war_plan(&game, 0));
+        let appointed = ai.war_plan.clone().unwrap();
+        ai.plan = Some(ai.assess(&game, 0));
+
+        game.turn += game.standard_duration(5);
+        assert!(!ai.sync_war_plan(&game, 0));
+        let reassessed = ai.assess(&game, 0);
+        let retained = ai.war_plan.as_ref().unwrap();
+        assert_eq!(retained.target_player, appointed.target_player);
+        assert_eq!(retained.objective_city, appointed.objective_city);
+        assert_eq!(retained.breakthrough_tech, appointed.breakthrough_tech);
+        assert_eq!(reassessed.target_player, Some(appointed.target_player));
+        assert_eq!(reassessed.target_city, Some(appointed.objective_city));
+    }
+
+    #[test]
+    fn timed_war_retries_appointment_selection_only_on_the_strategy_cadence() {
+        let (mut game, mut ai, _) = timed_war_fixture();
+        game.players[0]
+            .techs
+            .extend([crate::name!("mining"), crate::name!("wheel")]);
+        assert!(ai.choose_war_plan(&game, 0).is_some());
+        ai.plan = Some(ai.assess(&game, 0));
+
+        assert!(!ai.sync_war_plan(&game, 0));
+        assert!(ai.war_plan.is_none());
+        game.turn += 4;
+        assert!(!ai.sync_war_plan(&game, 0));
+        game.turn += 1;
+        assert!(ai.sync_war_plan(&game, 0));
+        assert!(ai.war_plan.is_some());
+    }
+
+    fn legion_war_fixture() -> (Game, AdvancedAi, WarPlan) {
+        let (mut game, ai, _) = timed_war_fixture();
+        game.players[0].civ = "Rome".to_string();
+        game.players[0]
+            .techs
+            .extend([crate::name!("mining"), crate::name!("wheel"), crate::name!("bronze_working")]);
+        game.players[0]
+            .strategic_resources
+            .insert(crate::name!("iron"), 40.0);
+        let war = ai.choose_war_plan(&game, 0).unwrap();
+        assert_eq!(war.assault_unit, crate::name!("legion"));
+        (game, ai, war)
+    }
+
+    fn conquest_plan_for(war: &WarPlan, turn: u32) -> StrategicPlan {
+        StrategicPlan {
+            strategy: GrandStrategy::Conquest,
+            target_player: Some(war.target_player),
+            target_city: Some(war.objective_city),
+            threatened_city: None,
+            desired_cities: 3,
+            assessed_turn: turn,
+            rush: false,
+        }
+    }
+
+    #[test]
+    fn timed_war_counts_predecessor_commitments_raises_the_floor_and_uses_plan_aware_production() {
+        let (mut game, mut ai, war) = legion_war_fixture();
+        for city in game.player_city_ids(0) {
+            game.cities.get_mut(&city).unwrap().queue.clear();
+        }
+        let first = game.player_city_ids(0)[0];
+        game.cities.get_mut(&first).unwrap().queue.push(Item::Unit {
+            unit: crate::name!("warrior"),
+        });
+        assert_eq!(AdvancedAi::war_body_commitments(&game, 0, &war), (0, 2));
+
+        let plan = conquest_plan_for(&war, game.turn);
+        ai.war_plan = Some(war.clone());
+        ai.sync_war_military_floor();
+        assert_eq!(ai.base.strategic_military_floor, 4);
+        assert!(
+            ai.war_production_priority(
+                &game,
+                0,
+                &Item::Unit {
+                    unit: crate::name!("warrior")
+                }
+            ) > 12_000.0
+        );
+
+        ai.advanced_production(&mut game, 0, &plan);
+        let queued_predecessors = game
+            .cities
+            .values()
+            .filter(|city| city.owner == 0)
+            .flat_map(|city| city.queue.iter())
+            .filter(|item| matches!(item, Item::Unit { unit } if unit == "warrior"))
+            .count();
+        assert!(
+            queued_predecessors >= 2,
+            "the adaptive Conquest path must send an idle city through plan-aware predecessor production"
+        );
+    }
+
+    #[test]
+    fn timed_war_preserves_the_live_upgrade_bill_then_upgrades_before_units_can_move() {
+        let (mut game, mut ai, war) = legion_war_fixture();
+        for unit in game.player_unit_ids(0) {
+            game.remove_unit(unit);
+        }
+        let home = game.cities[&game.player_city_ids(0)[0]].pos;
+        let warriors: Vec<u32> = (0..war.required_bodies)
+            .map(|_| game.spawn_test_unit("warrior", 0, home))
+            .collect();
+        game.players[0].techs.insert(crate::name!("iron_working"));
+        ai.war_plan = Some(war.clone());
+
+        let quote = AdvancedAi::unit_upgrade_quote(&game, 0, "warrior", "legion", 0);
+        let bill = quote * war.required_bodies as f64;
+        assert!((ai.war_upgrade_reserve(&game, 0) - bill).abs() < 1e-9);
+        // Two-city Conquest keeps 125 ordinary Gold above the exact bill.
+        game.players[0].gold = bill + 125.0;
+        let before = game.players[0].gold;
+        let plan = conquest_plan_for(&war, game.turn);
+        assert!(!ai.advanced_gold_spending(&mut game, 0, &plan));
+        assert!((game.players[0].gold - before).abs() < 1e-9);
+
+        assert_eq!(ai.planned_war_upgrades(&mut game, 0), war.required_bodies);
+        assert!((game.players[0].gold - 125.0).abs() < 1e-9);
+        assert!((game.strategic_stockpile(0, crate::name!("iron")) - 0.0).abs() < 1e-9);
+        for unit in warriors {
+            assert_eq!(game.units[&unit].kind, crate::name!("legion"));
+            assert!(game.units[&unit].acted);
+            assert_eq!(game.units[&unit].moves_left, 0.0);
+        }
+        assert_eq!(ai.war_upgrade_reserve(&game, 0), 0.0);
+    }
+
+    #[test]
+    fn timed_war_queued_modern_bodies_still_need_material_but_not_upgrade_gold() {
+        let (mut game, mut ai, war) = legion_war_fixture();
+        let city = game.player_city_ids(0)[0];
+        game.cities.get_mut(&city).unwrap().queue.push(Item::Unit {
+            unit: crate::name!("legion"),
+        });
+        ai.war_plan = Some(war.clone());
+        let quote = AdvancedAi::unit_upgrade_quote(&game, 0, "warrior", "legion", 0);
+        assert!((ai.war_upgrade_reserve(&game, 0) - 3.0 * quote).abs() < 1e-9);
+
+        game.players[0].strategic_resources.clear();
+        assert!(
+            !ai.war_resource_feasible(&game, 0, &war),
+            "a queued Legion has not paid its Iron yet"
+        );
+        game.players[0]
+            .strategic_resources
+            .insert(crate::name!("iron"), 40.0);
+        assert!(ai.war_resource_feasible(&game, 0, &war));
+    }
+
+    #[test]
+    fn timed_war_upgrade_bill_is_also_reserved_from_great_person_patronage() {
+        let (mut game, mut ai, war) = legion_war_fixture();
+        let city = game.player_city_ids(0)[0];
+        install_ai_test_district(&mut game, city, "campus");
+        let cost = game.gp_cost(0, "scientist");
+        game.players[0]
+            .gpp
+            .insert("scientist".to_string(), cost - 5.0);
+        ai.war_plan = Some(war);
+        let bill = ai.war_upgrade_reserve(&game, 0);
+        let price = game
+            .great_person_patronage_price(0, "scientist", "gold")
+            .unwrap();
+        let ordinary_reserve = 150.0 + 50.0 * game.player_city_ids(0).len() as f64;
+
+        game.players[0].gold = bill + ordinary_reserve + price - 1.0;
+        let before = game.players[0].gold;
+        ai.advanced_great_people(&mut game, 0, GrandStrategy::Science);
+        assert_eq!(game.players[0].gold, before);
+        assert_eq!(
+            game.players[0]
+                .gp_claimed
+                .get("scientist")
+                .copied()
+                .unwrap_or(0),
+            0
+        );
+
+        game.players[0].gold = bill + ordinary_reserve + price;
+        ai.advanced_great_people(&mut game, 0, GrandStrategy::Science);
+        assert_eq!(game.players[0].gp_claimed["scientist"], 1);
+        assert!(game.players[0].gold + 1e-9 >= bill + ordinary_reserve);
+    }
+
+    #[test]
+    fn timed_war_requires_real_compatible_breach_for_walls_only() {
+        let (mut game, mut ai, mut war) = legion_war_fixture();
+        let objective = war.objective_city;
+        assert_eq!(ai.choose_breach_unit(&game, 0, &game.cities[&objective]), Some(None));
+
+        game.cities
+            .get_mut(&objective)
+            .unwrap()
+            .buildings
+            .push(crate::name!("walls"));
+        game.cities.get_mut(&objective).unwrap().wall_hp = 100;
+        assert_eq!(ai.choose_breach_unit(&game, 0, &game.cities[&objective]), None);
+
+        game.players[0].techs.insert(crate::name!("masonry"));
+        let breach = ai
+            .choose_breach_unit(&game, 0, &game.cities[&objective])
+            .flatten()
+            .expect("Masonry makes the wall-compatible ram trainable");
+        assert_eq!(breach, crate::name!("battering_ram"));
+        war.breach_unit = Some(breach.clone());
+        ai.war_plan = Some(war.clone());
+        ai.sync_war_military_floor();
+        assert_eq!(ai.base.strategic_military_floor, 5);
+        assert!(!AdvancedAi::breach_ready(&game, 0, &war));
+        let home = game.cities[&game.player_city_ids(0)[0]].pos;
+        game.spawn_test_unit(&breach, 0, home);
+        assert!(AdvancedAi::breach_ready(&game, 0, &war));
+    }
+
+    #[test]
+    fn timed_war_waits_for_four_modern_arrivals_then_uses_formal_war() {
+        let (mut game, mut ai, _) = timed_war_fixture();
+        game.players[0]
+            .techs
+            .extend([crate::name!("mining"), crate::name!("wheel")]);
+        game.players[0]
+            .strategic_resources
+            .insert(crate::name!("horses"), 80.0);
+        let mut war = ai.choose_war_plan(&game, 0).unwrap();
+        assert_eq!(war.assault_unit, crate::name!("horseman"));
+        game.players[0]
+            .techs
+            .extend([crate::name!("animal_husbandry"), crate::name!("archery"), crate::name!("horseback_riding")]);
+        for unit in game.player_unit_ids(0) {
+            game.remove_unit(unit);
+        }
+        let objective = game.cities[&war.objective_city].pos;
+        for position in game.wdisk(objective, 12) {
+            if game.city_at(position).is_none() {
+                let tile = game.map.tiles.get_mut(&position).unwrap();
+                tile.terrain = crate::name!("grassland");
+                tile.feature = None;
+                tile.hills = false;
+                tile.owner_city = None;
+            }
+        }
+        let home = game.cities[&game.player_city_ids(0)[0]].pos;
+        let probe = game.spawn_test_unit("horseman", 0, home);
+        let mut staging: Vec<Pos> = game
+            .wdisk(objective, 5)
+            .into_iter()
+            .filter(|position| {
+                ai.campaign_staging_position(&game, 0, war.target_player, probe, objective, *position)
+            })
+            .collect();
+        staging.sort_unstable();
+        assert!(staging.len() >= 4);
+        game.remove_unit(probe);
+        let modern: Vec<u32> = staging[..3]
+            .iter()
+            .map(|position| game.spawn_test_unit("horseman", 0, *position))
+            .collect();
+        let obsolete = game.spawn_test_unit("warrior", 0, staging[3]);
+        war.breakthrough_turn = Some(game.turn);
+        war.phase = WarPhase::Stage;
+        ai.war_plan = Some(war.clone());
+        let plan = conquest_plan_for(&war, game.turn);
+
+        let obsolete_readiness = ai.timed_war_readiness(&game, 0, &war);
+        assert_eq!(obsolete_readiness.0, 3);
+        assert!(!obsolete_readiness.5);
+        ai.advanced_diplomacy(&mut game, 0, &plan);
+        assert!(!game.is_at_war(0, war.target_player));
+        assert!(game.players[0]
+            .denounced_until
+            .get(&war.target_player)
+            .is_some_and(|until| *until > game.turn),
+            "Formal-War notice should run while the package is still mobilizing");
+
+        game.remove_unit(obsolete);
+        let remote = game
+            .map
+            .tiles
+            .keys()
+            .copied()
+            .filter(|position| game.city_at(*position).is_none())
+            .filter(|position| game.wdist(*position, objective) >= 10)
+            .min()
+            .expect("fixture has a remote muster tile");
+        let fourth = game.spawn_test_unit("horseman", 0, remote);
+        let remote_readiness = ai.timed_war_readiness(&game, 0, &war);
+        assert_eq!((remote_readiness.0, remote_readiness.2), (4, 3));
+        assert!(!remote_readiness.3, "the remote fourth body cannot reach the ring this turn");
+        assert!(!remote_readiness.5);
+
+        game.units.get_mut(&fourth).unwrap().pos = staging[3];
+        let ready = ai.timed_war_readiness(&game, 0, &war);
+        assert_eq!((ready.0, ready.2), (4, 4));
+        assert!(ready.5);
+        ai.advanced_diplomacy(&mut game, 0, &plan);
+        assert!(!game.is_at_war(0, war.target_player));
+        assert!(game.players[0]
+            .denounced_until
+            .get(&war.target_player)
+            .is_some_and(|until| *until > game.turn));
+
+        game.turn += 5;
+        ai.advanced_diplomacy(&mut game, 0, &plan);
+        assert!(game.is_at_war(0, war.target_player));
+        assert_eq!(ai.war_lifecycle.declarations, 1);
+        assert_eq!(ai.war_lifecycle.complete_declarations, 1);
+        assert!(modern.into_iter().all(|unit| game.units.contains_key(&unit)));
+    }
+
+    #[test]
+    fn timed_war_ranged_and_siege_setup_leave_the_melee_finisher_to_capture() {
+        let (mut game, mut ai, _) = timed_war_fixture();
+        game.players[0]
+            .techs
+            .extend([crate::name!("archery"), crate::name!("engineering"), crate::name!("horseback_riding")]);
+        for pid in 0..2 {
+            for unit in game.player_unit_ids(pid) {
+                game.remove_unit(unit);
+            }
+        }
+        let objective_city = game.player_city_ids(1)[0];
+        let objective = game.cities[&objective_city].pos;
+        for position in game.wdisk(objective, 3) {
+            if game.city_at(position).is_none() {
+                let tile = game.map.tiles.get_mut(&position).unwrap();
+                tile.terrain = crate::name!("grassland");
+                tile.feature = None;
+                tile.hills = false;
+                tile.owner_city = None;
+            }
+        }
+        let mut adjacent: Vec<Pos> = game
+            .nbrs(objective)
+            .into_iter()
+            .filter(|position| game.city_at(*position).is_none())
+            .collect();
+        adjacent.sort_unstable();
+        let mut range_two: Vec<Pos> = game
+            .wdisk(objective, 2)
+            .into_iter()
+            .filter(|position| game.wdist(*position, objective) == 2)
+            .filter(|position| game.city_at(*position).is_none())
+            .collect();
+        range_two.sort_unstable();
+        assert!(adjacent.len() >= 1 && range_two.len() >= 2);
+        let archer = game.spawn_test_unit("archer", 0, range_two[0]);
+        let catapult = game.spawn_test_unit("catapult", 0, range_two[1]);
+        let finisher = game.spawn_test_unit("horseman", 0, adjacent[0]);
+        game.cities.get_mut(&objective_city).unwrap().wall_hp = 0;
+        game.cities.get_mut(&objective_city).unwrap().hp = 100;
+        game.at_war.insert((0, 1));
+        let war = WarPlan {
+            target_player: 1,
+            objective_city,
+            breakthrough_tech: crate::name!("horseback_riding"),
+            assault_unit: crate::name!("horseman"),
+            predecessor: None,
+            required_bodies: 4,
+            breach_unit: None,
+            research_cost: 0.0,
+            production_cost: 0.0,
+            upgrade_cost: 0.0,
+            march_turns: 0.0,
+            phase: WarPhase::Exploit,
+            appointed_turn: game.turn - 5,
+            breakthrough_turn: Some(game.turn - 3),
+            mobilization_turn: Some(game.turn - 2),
+            declaration_turn: Some(game.turn),
+            first_capture_turn: None,
+            modern_bodies: 1,
+            breach_ready: true,
+            reserved_gold: 0.0,
+            resource: Some(crate::name!("horses")),
+            resource_required: 80.0,
+            recovery_assessments: 0,
+            last_recovery_assessment: game.turn,
+        };
+        let plan = conquest_plan_for(&war, game.turn);
+        ai.war_plan = Some(war);
+        assert_eq!(ai.appointed_finisher(&game, 0, &plan), Some(finisher));
+
+        ai.advanced_units(&mut game, 0, &plan);
+        assert_eq!(game.cities[&objective_city].owner, 0);
+        assert_eq!(game.units[&archer].attacks_left, 0);
+        assert_eq!(game.units[&catapult].attacks_left, 0);
+        assert_eq!(game.units[&finisher].pos, objective);
+    }
+
+    #[test]
+    fn every_predeclaration_invalidation_drops_the_floor_and_upgrade_reserve() {
+        for (case, expected) in [
+            (0, "target died"),
+            (1, "objective changed owner"),
+            (2, "friendship or alliance made war illegal"),
+            (3, "resource package became impossible"),
+            (4, "launch moved past the remaining horizon"),
+        ] {
+            let (mut game, mut ai, war) = legion_war_fixture();
+            let target = war.target_player;
+            let objective = war.objective_city;
+            ai.war_plan = Some(war);
+            ai.sync_war_military_floor();
+            assert!(ai.base.strategic_military_floor >= 4);
+            assert!(ai.war_upgrade_reserve(&game, 0) > 0.0);
+            match case {
+                0 => game.players[target].alive = false,
+                1 => game.cities.get_mut(&objective).unwrap().owner = 0,
+                2 => {
+                    game.players[0].friends_until.insert(target, game.turn + 30);
+                    game.players[target].friends_until.insert(0, game.turn + 30);
+                }
+                3 => game.players[0].strategic_resources.clear(),
+                4 => game.max_turns = game.turn + game.standard_duration(40),
+                _ => unreachable!(),
+            }
+            assert!(ai.sync_war_plan(&game, 0), "{expected}");
+            assert!(ai.war_plan.is_none(), "{expected}");
+            assert_eq!(ai.base.strategic_military_floor, 0, "{expected}");
+            assert_eq!(ai.war_upgrade_reserve(&game, 0), 0.0, "{expected}");
+            assert_eq!(ai.war_lifecycle.abort_reasons.get(expected), Some(&1), "{expected}");
+        }
+
+        let (game, mut ai, war) = legion_war_fixture();
+        ai.war_plan = Some(war);
+        ai.sync_war_military_floor();
+        ai.abort_war_plan("home Recovery persisted for two assessments");
+        assert!(ai.war_plan.is_none());
+        assert_eq!(ai.base.strategic_military_floor, 0);
+        assert_eq!(ai.war_upgrade_reserve(&game, 0), 0.0);
+    }
+
+    #[test]
+    fn persistent_home_recovery_alarm_aborts_an_appointment_on_its_second_assessment() {
+        let mut game = Game::new_full(2, 24, 16, 77_115, 1_000, 1, false);
+        for pid in 0..2 {
+            let settler = game
+                .player_unit_ids(pid)
+                .into_iter()
+                .find(|unit| game.units[unit].kind == "settler")
+                .unwrap();
+            game.current = pid;
+            game.apply(pid, &Action::FoundCity { unit: settler }).unwrap();
+        }
+        game.current = 0;
+        game.turn = 70;
+        game.players[0].civ = "Rome".to_string();
+        game.players[0]
+            .techs
+            .extend([crate::name!("mining"), crate::name!("bronze_working")]);
+        game.players[0]
+            .strategic_resources
+            .insert(crate::name!("iron"), 40.0);
+        let target_city = game.player_city_ids(1)[0];
+        let minor = game
+            .players
+            .iter()
+            .find(|player| player.is_minor && !player.is_barbarian)
+            .map(|player| player.id)
+            .expect("fixture includes one city-state");
+        game.at_war.insert((0, minor));
+        let home = game.cities[&game.player_city_ids(0)[0]].pos;
+        for _ in 0..6 {
+            game.spawn_test_unit("modern_armor", minor, home);
+        }
+        let mut ai = AdvancedAi::new();
+        ai.timed_war = true;
+        ai.war_plan = Some(WarPlan {
+            target_player: 1,
+            objective_city: target_city,
+            breakthrough_tech: crate::name!("iron_working"),
+            assault_unit: crate::name!("legion"),
+            predecessor: Some(crate::name!("warrior")),
+            required_bodies: 4,
+            breach_unit: None,
+            research_cost: 120.0,
+            production_cost: 120.0,
+            upgrade_cost: 600.0,
+            march_turns: 4.0,
+            phase: WarPhase::Research,
+            appointed_turn: 60,
+            breakthrough_turn: None,
+            mobilization_turn: None,
+            declaration_turn: None,
+            first_capture_turn: None,
+            modern_bodies: 0,
+            breach_ready: true,
+            reserved_gold: 600.0,
+            resource: Some(crate::name!("iron")),
+            resource_required: 40.0,
+            recovery_assessments: 1,
+            last_recovery_assessment: game.turn - game.standard_duration(5),
+        });
+        ai.sync_war_military_floor();
+
+        assert!(ai.threatened_city(&game, 0).is_some());
+        assert!(ai.sync_war_plan(&game, 0));
+        assert!(ai.war_plan.is_none());
+        assert_eq!(ai.base.strategic_military_floor, 0);
+        assert_eq!(
+            ai.war_lifecycle
+                .abort_reasons
+                .get("home Recovery persisted for two assessments"),
+            Some(&1)
+        );
+    }
+
+    #[test]
+    fn timed_war_is_opt_in_for_weighted_majors_and_never_appoints_for_minor_controllers() {
+        assert!(!AdvancedAi::new().timed_war_enabled());
+        let mut weighted = AdvancedAi::with_weights(Weights::default());
+        assert!(!weighted.timed_war_enabled());
+        weighted.timed_war = true;
+        assert!(weighted.timed_war_enabled());
+
+        let (mut minor_game, mut minor_ai, _) = timed_war_fixture();
+        minor_game.players[0].is_minor = true;
+        minor_ai.take_turn(&mut minor_game, 0);
+        assert!(minor_ai.war_plan.is_none());
+
+        let (mut barbarian_game, mut barbarian_ai, _) = timed_war_fixture();
+        barbarian_game.players[0].is_barbarian = true;
+        barbarian_ai.take_turn(&mut barbarian_game, 0);
+        assert!(barbarian_ai.war_plan.is_none());
+    }
+
+    #[test]
+    fn timed_war_treats_perpetual_barbarian_hostility_as_peace_for_appointments() {
+        let (mut game, ai, _) = timed_war_fixture();
+        game.players[0]
+            .techs
+            .extend([crate::name!("mining"), crate::name!("wheel")]);
+        let barbarian = game.players.len();
+        let mut barbarian_player = game.players[1].clone();
+        barbarian_player.id = barbarian;
+        barbarian_player.civ = "Barbarians".to_string();
+        barbarian_player.alive = true;
+        barbarian_player.is_minor = true;
+        barbarian_player.is_barbarian = true;
+        barbarian_player.is_free_city = false;
+        game.players.push(barbarian_player);
+        game.barb_pid = Some(barbarian);
+
+        assert!(game.is_at_war(0, barbarian));
+        assert!(ai.choose_war_plan(&game, 0).is_some(),
+            "the always-hostile barbarian seat must not make every live game ineligible");
+    }
+
+    #[test]
+    fn timed_war_rejects_a_geometrically_close_target_without_a_real_staging_route() {
+        let (mut game, ai, objective) = timed_war_fixture();
+        game.players[0]
+            .techs
+            .extend([crate::name!("mining"), crate::name!("wheel")]);
+        assert!(ai.choose_war_plan(&game, 0).is_some());
+
+        let objective_position = game.cities[&objective].pos;
+        let remote = game
+            .map
+            .tiles
+            .values()
+            .filter(|tile| {
+                game.wdist(tile.pos, objective_position) >= RUSH_STAGING_RANGE + 3
+                    && game.rules.is_passable(tile)
+                    && !game.rules.is_water(tile)
+                    && game.city_at(tile.pos).is_none()
+            })
+            .map(|tile| tile.pos)
+            .min()
+            .expect("fixture has land outside the target's staging ring");
+        for unit in game.player_unit_ids(0) {
+            if game.rules.units[game.units[&unit].kind].is_melee_capable() {
+                game.units.get_mut(&unit).unwrap().pos = remote;
+            }
+        }
+        let barrier: BTreeSet<Pos> = game
+            .wdisk(objective_position, 6)
+            .into_iter()
+            .filter(|position| game.wdist(*position, objective_position) == 6)
+            .collect();
+        for tile in game.map.tiles.values_mut() {
+            if barrier.contains(&tile.pos) {
+                tile.terrain = crate::name!("ocean");
+                tile.feature = None;
+            }
+        }
+        assert!(!ai.war_route_exists(&game, 0, 1, objective_position));
+        assert!(ai.choose_war_plan(&game, 0).is_none(),
+            "wrapped distance alone must not appoint a force that cannot reach the neutral ring");
     }
 
     /// Turn the ring immediately outside the selector's staging range into
@@ -21022,7 +23267,7 @@ mod tests {
                     // settler cannot choose a site nobody has seen, and
                     // scoring it against one would measure the fog rather than
                     // the decision.
-                    let mut best_at = |radius: i32| {
+                    let best_at = |radius: i32| {
                         game.wdisk(chosen_pos, radius)
                             .into_iter()
                             .filter(|pos| {
