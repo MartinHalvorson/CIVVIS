@@ -1207,8 +1207,8 @@ fn tile_json(
         .filter(|district| live && g.rules.districts.contains_key(district.as_str()))
         .map(|district| {
             (
-                g.district_yields(district.as_str(), tile.pos),
-                g.district_adjacency_sources(district.as_str(), tile.pos),
+                g.district_yields(Name::new(district.as_str()), tile.pos),
+                g.district_adjacency_sources(Name::new(district.as_str()), tile.pos),
             )
         });
     let (district_yields, adjacency) = match district_yields {
@@ -1222,8 +1222,8 @@ fn tile_json(
         .map(|district| {
             json!({
                 "district": district,
-                "yields": g.district_yields(district, tile.pos),
-                "adjacency": g.district_adjacency_sources(district, tile.pos),
+                "yields": g.district_yields(Name::new(district), tile.pos),
+                "adjacency": g.district_adjacency_sources(Name::new(district), tile.pos),
             })
         })
         .unwrap_or(Value::Null);

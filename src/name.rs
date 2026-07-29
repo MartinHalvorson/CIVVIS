@@ -35,8 +35,9 @@
 use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::fmt;
+use std::hash::{BuildHasherDefault, Hasher};
 use std::ops::Deref;
-use std::sync::{Mutex, OnceLock};
+use std::sync::{OnceLock, RwLock};
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
@@ -58,9 +59,44 @@ struct Entry {
 
 static SLOTS: [OnceLock<Entry>; CAPACITY] = [const { OnceLock::new() }; CAPACITY];
 
-fn registry() -> &'static Mutex<HashMap<&'static str, u32>> {
-    static REGISTRY: OnceLock<Mutex<HashMap<&'static str, u32>>> = OnceLock::new();
-    REGISTRY.get_or_init(|| Mutex::new(HashMap::new()))
+/// The same multiply-shift hash `SpecMap` uses. The registry is read far more
+/// often than it is written — every `Name::new` on a borrowed string is a read
+/// — and the standard hasher's SipHash rounds cost more than everything else
+/// in the lookup put together.
+#[derive(Default)]
+struct NameHasher(u64);
+
+impl Hasher for NameHasher {
+    fn write(&mut self, bytes: &[u8]) {
+        const SEED: u64 = 0x9E37_79B9_7F4A_7C15;
+        let mut hash = self.0 ^ SEED ^ (bytes.len() as u64);
+        let mut chunks = bytes.chunks_exact(8);
+        for chunk in &mut chunks {
+            let word = u64::from_le_bytes(chunk.try_into().unwrap());
+            hash = (hash ^ word).wrapping_mul(SEED);
+        }
+        let rest = chunks.remainder();
+        if !rest.is_empty() {
+            let mut word = [0u8; 8];
+            word[..rest.len()].copy_from_slice(rest);
+            hash = (hash ^ u64::from_le_bytes(word)).wrapping_mul(SEED);
+        }
+        self.0 = hash ^ (hash >> 31);
+    }
+
+    fn finish(&self) -> u64 {
+        self.0
+    }
+}
+
+type Registry = HashMap<&'static str, u32, BuildHasherDefault<NameHasher>>;
+
+/// Read-write rather than exclusive: interning a name that already exists —
+/// which is what every lookup from borrowed text does — needs only a shared
+/// borrow, so seats running in parallel do not serialise on each other.
+fn registry() -> &'static RwLock<Registry> {
+    static REGISTRY: OnceLock<RwLock<Registry>> = OnceLock::new();
+    REGISTRY.get_or_init(|| RwLock::new(Registry::default()))
 }
 
 fn head_of(text: &str) -> u64 {
@@ -84,7 +120,14 @@ impl Name {
     /// a `Name` it was given, or use [`name!`](crate::name) for a literal,
     /// which interns once and then costs an atomic load.
     pub fn new(text: &str) -> Name {
-        let mut registry = registry().lock().expect("the name registry was poisoned");
+        if let Some(id) = registry()
+            .read()
+            .expect("the name registry was poisoned")
+            .get(text)
+        {
+            return Name(*id);
+        }
+        let mut registry = registry().write().expect("the name registry was poisoned");
         if let Some(id) = registry.get(text) {
             return Name(*id);
         }
@@ -131,7 +174,10 @@ impl Name {
     /// How many names have been interned so far — the exclusive upper bound on
     /// any live [`Name::id`].
     pub fn interned() -> usize {
-        registry().lock().expect("the name registry was poisoned").len()
+        registry()
+            .read()
+            .expect("the name registry was poisoned")
+            .len()
     }
 }
 

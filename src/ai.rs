@@ -4128,7 +4128,7 @@ impl BasicAi {
         ["commercial_hub", "harbor"]
             .into_iter()
             .flat_map(|district| {
-                g.district_sites(cid, district)
+                g.district_sites(cid, Name::new(district))
                     .into_iter()
                     .map(move |pos| (district, pos))
             })
@@ -4138,7 +4138,7 @@ impl BasicAi {
                     pos,
                 };
                 g.can_produce(pid, cid, &item).then_some((
-                    g.district_yields(district, pos).gold,
+                    g.district_yields(Name::new(district), pos).gold,
                     std::cmp::Reverse(district),
                     std::cmp::Reverse(pos),
                     item,
@@ -4366,7 +4366,7 @@ impl BasicAi {
                         ))
             });
             if !has_spaceport && g.players[pid].techs.contains(&crate::name!("rocketry")) {
-                if let Some(pos) = g.district_sites(cid, "spaceport").into_iter().next() {
+                if let Some(pos) = g.district_sites(cid, crate::name!("spaceport")).into_iter().next() {
                     let item = Item::District {
                         district: crate::name!("spaceport"),
                         pos,
@@ -4556,7 +4556,7 @@ impl BasicAi {
             if !unlocked {
                 continue;
             }
-            let sites = g.district_sites(cid, dname.as_str());
+            let sites = g.district_sites(cid, Name::new(dname.as_str()));
             if !sites.is_empty() {
                 let best = *sites
                     .iter()
@@ -5652,9 +5652,9 @@ impl BasicAi {
         // turn continues toward the nearest center that is not connected yet.
         // District contributions remain the higher priority above: finishing
         // a Dam, Aqueduct, or Canal is worth an Engineer charge immediately.
-        let has_rail_material = g.strategic_stockpile(pid, "iron")
+        let has_rail_material = g.strategic_stockpile(pid, crate::name!("iron"))
             >= RAILROAD_RESOURCE_RESERVE + 1.0
-            && g.strategic_stockpile(pid, "coal") >= RAILROAD_RESOURCE_RESERVE + 1.0;
+            && g.strategic_stockpile(pid, crate::name!("coal")) >= RAILROAD_RESOURCE_RESERVE + 1.0;
         let railroad_target = has_rail_material
             .then(|| {
                 g.player_city_ids(pid)

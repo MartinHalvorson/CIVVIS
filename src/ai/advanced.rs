@@ -1556,8 +1556,8 @@ impl AdvancedAi {
         });
         let best_site = city_ids
             .iter()
-            .flat_map(|cid| g.district_sites(*cid, "holy_site"))
-            .map(|pos| g.district_yields("holy_site", pos).faith)
+            .flat_map(|cid| g.district_sites(*cid, crate::name!("holy_site")))
+            .map(|pos| g.district_yields(crate::name!("holy_site"), pos).faith)
             .max_by(f64::total_cmp);
         if !has_holy_site && !holy_site_planned && best_site.is_none() {
             return None;
@@ -6144,7 +6144,7 @@ impl AdvancedAi {
                     if district != "holy_site" {
                         continue;
                     }
-                    let faith = g.district_yields("holy_site", pos).faith;
+                    let faith = g.district_yields(crate::name!("holy_site"), pos).faith;
                     if best
                         .map(|old| {
                             faith > old.0 || (faith == old.0 && (*cid, pos) > (old.1, old.2))
@@ -8645,7 +8645,7 @@ impl AdvancedAi {
                                 _ => ("uranium", 55.0, 130.0),
                             };
                             450.0
-                                + g.strategic_stockpile(pid, resource).min(50.0) * stock_value
+                                + g.strategic_stockpile(pid, Name::new(resource)).min(50.0) * stock_value
                                 + g.climate_phase as f64 * clean_value
                         }
                         "carbon_recapture" => {

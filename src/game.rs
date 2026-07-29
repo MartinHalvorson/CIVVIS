@@ -17537,7 +17537,7 @@ impl Game {
                 if city.owner != unit.owner {
                     continue;
                 }
-                let mut faith = self.district_yields(district.as_str(), position).faith;
+                let mut faith = self.district_yields(Name::new(district.as_str()), position).faith;
                 faith += city
                     .buildings
                     .iter()
@@ -18077,7 +18077,7 @@ impl Game {
             .requires_resource
             .as_deref()
         {
-            if resources > 0.0 && self.strategic_stockpile(pid, resource) + f64::EPSILON < resources
+            if resources > 0.0 && self.strategic_stockpile(pid, Name::new(resource)) + f64::EPSILON < resources
             {
                 return Err("not enough strategic material");
             }
@@ -23267,7 +23267,7 @@ impl Game {
         let spec = &self.rules.units[u.kind];
         if spec.resource_maintenance > 0.0 {
             if let Some(resource) = spec.requires_resource.as_deref() {
-                s -= self.strategic_shortage_penalty(u.owner, resource) as f64;
+                s -= self.strategic_shortage_penalty(u.owner, Name::new(resource)) as f64;
             }
         }
         let friendly = self.wdisk(u.pos, 1).into_iter().any(|position| {
@@ -23778,8 +23778,8 @@ impl Game {
                 b.1.partial_cmp(&a.1)
                     .unwrap()
                     .then_with(|| {
-                        self.strategic_stockpile(pid, b.0)
-                            .partial_cmp(&self.strategic_stockpile(pid, a.0))
+                        self.strategic_stockpile(pid, Name::new(b.0))
+                            .partial_cmp(&self.strategic_stockpile(pid, Name::new(a.0)))
                             .unwrap()
                     })
                     .then_with(|| {
@@ -23794,7 +23794,7 @@ impl Game {
                 if remaining <= f64::EPSILON {
                     break;
                 }
-                let stock = self.strategic_stockpile(pid, resource);
+                let stock = self.strategic_stockpile(pid, Name::new(resource));
                 let available = stock.floor();
                 if available <= 0.0 {
                     continue;
@@ -25703,18 +25703,18 @@ impl Game {
         })
     }
 
-    pub fn strategic_stockpile(&self, pid: usize, resource: &str) -> f64 {
+    pub fn strategic_stockpile(&self, pid: usize, resource: impl AsName) -> f64 {
         self.players[pid]
             .strategic_resources
-            .get(&Name::new(resource))
+            .get(&resource.as_name())
             .copied()
             .unwrap_or(0.0)
     }
 
-    fn strategic_shortage_penalty(&self, pid: usize, resource: &str) -> i32 {
+    fn strategic_shortage_penalty(&self, pid: usize, resource: impl AsName) -> i32 {
         self.players[pid]
             .strategic_resource_shortages
-            .get(&Name::new(resource))
+            .get(&resource.as_name())
             .copied()
             .unwrap_or(0)
             .clamp(0, 20)
@@ -26149,7 +26149,7 @@ impl Game {
             .get(res)
             .map(|spec| spec.class.as_str())
         {
-            Some("strategic") => self.strategic_stockpile(pid, res).floor().max(0.0) as i32,
+            Some("strategic") => self.strategic_stockpile(pid, Name::new(res)).floor().max(0.0) as i32,
             _ => {
                 let ordinary = self.controlled_resource_count(pid, res)
                     + self.resource_trade_balance(pid, res);
@@ -29736,7 +29736,8 @@ impl Game {
             }
     }
 
-    pub fn district_yields(&self, dname: &str, dpos: Pos) -> Yields {
+    pub fn district_yields(&self, dname: impl AsName, dpos: Pos) -> Yields {
+        let dname = dname.as_name();
         let spec = &self.rules.districts[dname];
         let mut ys = spec.yields;
         ys.add(self.district_adjacency(dname, dpos, None));
@@ -29762,7 +29763,7 @@ impl Game {
     /// interface can show a player where each point came from instead of only
     /// the total.  Modifiers (Gaul's mines, a doubling policy card) are lines
     /// of their own.
-    pub fn district_adjacency_sources(&self, dname: &str, dpos: Pos) -> Vec<AdjacencySource> {
+    pub fn district_adjacency_sources(&self, dname: impl AsName, dpos: Pos) -> Vec<AdjacencySource> {
         let mut detail = Vec::new();
         self.district_adjacency(dname, dpos, Some(&mut detail));
         detail
@@ -29773,10 +29774,11 @@ impl Game {
     /// and nothing else.
     fn district_adjacency(
         &self,
-        dname: &str,
+        dname: impl AsName,
         dpos: Pos,
         mut detail: Option<&mut Vec<AdjacencySource>>,
     ) -> Yields {
+        let dname = dname.as_name();
         let spec = &self.rules.districts[dname];
         let mut adj = Yields::default();
         if !spec.adjacency.is_empty() {
@@ -31196,7 +31198,7 @@ impl Game {
                     if self
                         .city_district_family_position(city, family)
                         .map(|position| {
-                            let adjacency = self.district_yields(family.as_str(), position);
+                            let adjacency = self.district_yields(Name::new(family.as_str()), position);
                             match yield_of {
                                 0 => adjacency.science,
                                 1 => adjacency.gold,
@@ -31224,7 +31226,7 @@ impl Game {
                         .district
 
                         .unwrap_or(district);
-                    let mut adjacency = self.district_yields(placed.as_str(), position);
+                    let mut adjacency = self.district_yields(Name::new(placed.as_str()), position);
                     let base = self.rules.districts[placed].yields;
                     adjacency.food -= base.food;
                     adjacency.production -= base.production;
@@ -32431,7 +32433,8 @@ impl Game {
         false
     }
 
-    pub fn district_sites(&self, cid: u32, dname: &str) -> Vec<Pos> {
+    pub fn district_sites(&self, cid: u32, dname: impl AsName) -> Vec<Pos> {
+        let dname = dname.as_name();
         let city = &self.cities[&cid];
         let spec = &self.rules.districts[dname];
         let mut out: Vec<Pos> = city
@@ -32448,7 +32451,7 @@ impl Game {
         let city_family_count = city
             .districts
             .keys()
-            .filter(|built| self.district_is_family(*built, Name::new(dname)))
+            .filter(|built| self.district_is_family(*built, dname))
             .count()
             + self.city_foundation_count(city, Some(Name::new(&dname)));
         let empire_family_count = self
@@ -32459,7 +32462,7 @@ impl Game {
                 candidate
                     .districts
                     .keys()
-                    .filter(|built| self.district_is_family(*built, Name::new(dname)))
+                    .filter(|built| self.district_is_family(*built, dname))
                     .count()
                     + self.city_foundation_count(candidate, Some(Name::new(&dname)))
             })
@@ -33503,7 +33506,7 @@ impl Game {
                     let resource_cost = self.unit_resource_cost(cid, item);
                     if resource_cost > 0.0
                         && !committed
-                        && self.strategic_stockpile(pid, resource) + f64::EPSILON < resource_cost
+                        && self.strategic_stockpile(pid, Name::new(resource)) + f64::EPSILON < resource_cost
                     {
                         return false;
                     }
@@ -37307,8 +37310,8 @@ impl Game {
             && self.players[pid].techs.contains(&crate::name!("steam_power"))
             && !self.rules.is_water(tile)
             && tile.road < 5
-            && self.strategic_stockpile(pid, "iron") >= 1.0
-            && self.strategic_stockpile(pid, "coal") >= 1.0
+            && self.strategic_stockpile(pid, crate::name!("iron")) >= 1.0
+            && self.strategic_stockpile(pid, crate::name!("coal")) >= 1.0
     }
 
     /// Gathering Storm Railroads: engineer-built only (BuildOnlyWithUnit),
@@ -38587,7 +38590,7 @@ impl Game {
         }) {
             return true;
         }
-        if !self.district_sites(cid, district).contains(&pos) {
+        if !self.district_sites(cid, Name::new(district)).contains(&pos) {
             return false;
         }
         let cost = self
@@ -41302,7 +41305,7 @@ impl Game {
         items.resources.iter().all(|(resource, amount)| {
             self.rules.resources.get(resource).is_none_or(|spec| {
                 spec.class != "strategic"
-                    || self.strategic_stockpile(receiver, resource) + *amount as f64
+                    || self.strategic_stockpile(receiver, Name::new(resource)) + *amount as f64
                         <= capacity + f64::EPSILON
             })
         })
@@ -41391,8 +41394,8 @@ impl Game {
                 continue;
             }
             let quantity = *amount as f64;
-            let payer_stock = self.strategic_stockpile(payer, resource);
-            let receiver_stock = self.strategic_stockpile(receiver, resource);
+            let payer_stock = self.strategic_stockpile(payer, Name::new(resource));
+            let receiver_stock = self.strategic_stockpile(receiver, Name::new(resource));
             self.players[payer]
                 .strategic_resources
                 .insert(Name::new(&resource), payer_stock - quantity);
@@ -46404,7 +46407,7 @@ impl Game {
                 .get(&target_key)
                 .is_some_and(|amount| *amount + f64::EPSILON >= target_cost);
             if let Some(resource) = target_resource.as_deref() {
-                let effective_stock = self.strategic_stockpile(pid, resource)
+                let effective_stock = self.strategic_stockpile(pid, Name::new(resource))
                     + if old_resource.as_deref() == Some(resource) {
                         old_commitment
                     } else {
@@ -46422,7 +46425,7 @@ impl Game {
                     .strategic_resource_commitments
                     .remove(&old_key);
                 if let Some(resource) = old_resource.as_deref() {
-                    let stock = self.strategic_stockpile(pid, resource);
+                    let stock = self.strategic_stockpile(pid, Name::new(resource));
                     self.players[pid]
                         .strategic_resources
                         .insert(Name::new(resource), stock + old_commitment);
@@ -46432,7 +46435,7 @@ impl Game {
                 let resource = target_resource
                     .as_deref()
                     .expect("resource cost has a resource");
-                let stock = self.strategic_stockpile(pid, resource);
+                let stock = self.strategic_stockpile(pid, Name::new(resource));
                 self.players[pid]
                     .strategic_resources
                     .insert(Name::new(resource), stock - target_cost);
@@ -46811,7 +46814,7 @@ impl Game {
 
         let free_canals = effect("free_adjacent_canals") as usize;
         if free_canals > 0 {
-            let legal: BTreeSet<Pos> = self.district_sites(cid, "canal").into_iter().collect();
+            let legal: BTreeSet<Pos> = self.district_sites(cid, crate::name!("canal")).into_iter().collect();
             let mut sites: Vec<Pos> = self
                 .nbrs(position)
                 .into_iter()

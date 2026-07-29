@@ -889,7 +889,7 @@ impl StrategicAi {
                         g.cities[city].queue.first(),
                         Some(Item::District { district, .. }) if district == "holy_site"
                     )
-                    || !g.district_sites(*city, "holy_site").is_empty()
+                    || !g.district_sites(*city, crate::name!("holy_site")).is_empty()
             })
     }
 
