@@ -2332,7 +2332,7 @@
        whatever size the window is — a label that gives up width ellipsizes and
        keeps its tooltip, where a figure that gives up width becomes a smaller
        number that is simply wrong. Each breakpoint below moves the label floor
-       only, and keeps 4 labels + 2 figures adding up to what the identity block
+       only, and keeps 5 labels + 2 figures adding up to what the identity block
        has always claimed at that width. */
     --hud-ident-min: 30px; --hud-ident-num-min: 38px;
     /* How much of the flexible width the identity block asks for relative to
@@ -2341,13 +2341,13 @@
        clipped name still reads and a clipped number lies. */
     --hud-identity-bias: 1;
     --hud-identity-column: minmax(
-      calc(var(--hud-ident-min) * 4 + var(--hud-ident-num-min) * 2), 9.804fr);
+      calc(var(--hud-ident-min) * 5 + var(--hud-ident-num-min) * 2), 11.104fr);
     /* Ten cells and the nine gutters between them. */
     --hud-stats-column: minmax(
       calc(var(--hud-stat-min) * 10 + var(--hud-stat-gap) * 9), 10fr);
     --hud-column-gap: 6px;
-    /* Civilization, leader, player and the plan are labels, and their cells
-       ellipsize. Elo and win odds are figures on the taller floor: with no
+    /* Civilization, leader, player, age and the plan are labels, and their
+       cells ellipsize. Elo and win odds are figures on the taller floor: with no
        minimum at all they collapsed on a 1440px screen and rendered "1792" as
        "179" and "11%" as "1" — a truncated number that reads as a different,
        smaller number. Watch-as keeps its fixed track between Leader and
@@ -2358,6 +2358,7 @@
       var(--hud-watch-column) minmax(var(--hud-ident-min), 1.85fr)
       minmax(var(--hud-ident-num-min), 1.017fr)
       minmax(var(--hud-ident-num-min), 1.017fr)
+      minmax(var(--hud-ident-min), 1.3fr)
       minmax(var(--hud-ident-min), 2.035fr);
     --hud-stat-tracks: repeat(10, minmax(var(--hud-stat-min), 1fr));
     --hud-lock-column: 13px; --hud-row-height: 26px; --hud-row-gap: 2px;
@@ -2533,7 +2534,7 @@
   #playerhud .watch-as-link { grid-column: 3; grid-row: 1; align-self: center; justify-self: stretch; }
   #playerhud .diplomacy-civ-link { grid-column: 1; grid-row: 1; }
   #playerhud .diplomacy-leader-link { grid-column: 2; grid-row: 1; }
-  #playerhud .diplomacy-identity-secondary { grid-column: 4 / 8; grid-row: 1; }
+  #playerhud .diplomacy-identity-secondary { grid-column: 4 / 9; grid-row: 1; }
   #playerhud .diplomacy-stats { grid-column: 4; grid-row: 1; }
 
   /* Locking a seat keeps its row in view while the rest of the table scrolls
@@ -2562,18 +2563,18 @@
   #playerhud .watch-as-link {
     width: calc(100% - 2px); height: 22px; margin: 0 1px; font-size: var(--type-micro);
   }
-  /* Every identity fact uses the same six tracks as the heading above it.
+  /* Every identity fact uses the same seven tracks as the heading above it.
      Variable-length names can ellipsize inside their own cell without moving
      ELO, win odds or strategy to a different horizontal position on each row. */
   #playerhud .diplomacy-identity {
     position: relative; min-width: 0; display: grid;
     align-items: stretch; gap: 0; overflow: hidden; padding-block: 0;
   }
-  /* Player, ELO, WIN% and PLAN are four of the identity block's tracks, but
-     they are drawn inside one button that spans all four — so the button has
+  /* Player, ELO, WIN%, AGE and PLAN are five of the identity block's tracks,
+     but they are drawn inside one button that spans all five — so the button has
      to divide itself along exactly the lines its parent already drew.
      `subgrid` is what makes that literal. A copy of the ratios cannot be:
-     the shares here were `1 : .55 : .55 : 1.1`, which is the same proportion
+     the shares here are `1 : .55 : .55 : .7 : 1.1`, which is the same proportion
      the heading uses, and the columns still came apart in two ways that a
      reading of the stylesheet does not show.
      - **Floors.** The heads carry the 30px label floor and the 38px figure
@@ -2585,7 +2586,7 @@
        the heading's list *and* this block's parent — but a copy of the old
        ratios does not hear about it at all. Dragging the ELO/WIN% bar 26px on
        a 1920px screen moved the head 21px and left every figure where it was.
-     With subgrid these four tracks are not equal to the heading's, they are
+     With subgrid these five tracks are not equal to the heading's, they are
      the same tracks, so no drag and no floor can separate them again. */
   #playerhud .diplomacy-identity-secondary {
     grid-template-columns: subgrid;
@@ -2604,12 +2605,17 @@
   #playerhud .diplomacy-player { color: #d9e1dc; font-weight: 750; }
   #playerhud .diplomacy-civ, #playerhud .diplomacy-leader-name,
   #playerhud .diplomacy-player, #playerhud .diplomacy-elo-value,
-  #playerhud .diplomacy-expected-value, #playerhud .diplomacy-strategy .ai-plan {
+  #playerhud .diplomacy-expected-value, #playerhud .diplomacy-age .civ-age,
+  #playerhud .diplomacy-strategy .ai-plan {
     min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
   #playerhud .diplomacy-elo, #playerhud .diplomacy-expected {
     justify-content: flex-end; text-align: right; font-variant-numeric: tabular-nums;
   }
+  #playerhud .diplomacy-age .civ-age { display: block; color: #c7d3ce; font-weight: 850; }
+  #playerhud .diplomacy-age .civ-age.heroic { color: #d7b6ff; }
+  #playerhud .diplomacy-age .civ-age.golden { color: var(--gold-bright); }
+  #playerhud .diplomacy-age .civ-age.dark { color: #b9a3aa; }
   #playerhud .diplomacy-strategy { padding-right: 11px; }
   #playerhud .diplomacy-strategy .ai-plan { display: block; }
   #playerhud .detail-caret {
@@ -2823,8 +2829,8 @@
      together. These are minima rather than percentages: a percentage with a
      300px minimum never actually yields, which is why the identity column used
      to hold its full width while the values it was starving fell to 27px.
-     Every step keeps the four label floors and the two figure floors adding up
-     to what the identity block has always claimed at that width (4a + 76),
+     Every step keeps the five label floors and the two figure floors adding up
+     to what the identity block claims at that width (5a + 76),
      because the enclosing track's own floor is written from exactly that sum.
      Only the floors move here — the shares belong to the viewer now, and a
      breakpoint that rewrote them would undo a dragged column on the next
@@ -2887,7 +2893,7 @@
     }
   }
   @media (max-width: 1100px) {
-    /* Six identity columns plus ten value columns need the map's full width at
+    /* Seven identity columns plus ten value columns need the map's full width at
        this point. The instruments stack as bands across the top, with the
        tracker's paths in columns because there is no height left to stack them. */
     #map-controls-dock { right: 0; }
@@ -2974,10 +2980,10 @@
   /* Ten complete numeric columns have a real minimum width. When a custom or
      phone-sized box cannot supply it, keep a readable type floor and scroll the
      table inside its own panel instead of crushing or spilling its cells.
-     680px keeps 176px of identity, ten 32px values with 2px gutters, and the
+     705px keeps 201px of identity, ten 32px values with 2px gutters, and the
      lock, widened watch action and padding comfortably separated. */
   #playerhud[data-type-size="compact"] .ribbon-stat-heading,
-  #playerhud[data-type-size="compact"] .diplomacy-ribbon { min-width: 680px; }
+  #playerhud[data-type-size="compact"] .diplomacy-ribbon { min-width: 705px; }
   #playerhud[data-type-size="roomy"] {
     grid-template-columns: 168px minmax(0, 1fr);
     --hud-ident-min: 61px; --hud-column-gap: 7px;
@@ -5951,8 +5957,8 @@ const HUD_RESIZE_EDGES = [
 //    and hands exactly that much to the column on its right, so the total the
 //    table asks for never changes. No gesture can push a column off the panel,
 //    open a gap at the end of the row, or make the table start scrolling.
-//    Fourteen of the fifteen bars therefore move their own two columns and
-//    nothing else. The fifteenth is the bar between the identity block and the
+//    All but one of the bars therefore move their own two columns and nothing
+//    else. The final bar is between the identity block and the
 //    ten values, and moving it moves width between those two blocks — so the
 //    columns inside each one take up the slack in their own proportion, which
 //    is what "give the numbers more room" has to mean.
@@ -5974,7 +5980,8 @@ const PLAYER_HUD_COLUMNS = [
   {key:"player", label:"Player", block:"identity", head:3, min:"--hud-ident-min", width:1.85},
   {key:"elo", label:"Elo rating", block:"identity", head:4, min:"--hud-ident-num-min", width:1.017},
   {key:"win", label:"Win odds", block:"identity", head:5, min:"--hud-ident-num-min", width:1.017},
-  {key:"plan", label:"Plan", block:"identity", head:6, min:"--hud-ident-min", width:2.035},
+  {key:"age", label:"Age", block:"identity", head:6, min:"--hud-ident-min", width:1.3},
+  {key:"plan", label:"Plan", block:"identity", head:7, min:"--hud-ident-min", width:2.035},
   ...[["production", "Production"], ["science", "Science"], ["culture", "Culture"],
       ["faith", "Faith"], ["gold", "Gold"], ["military", "Military"], ["cities", "Cities"],
       ["suzerain", "Suzerainty"], ["wonders", "Wonders"], ["score", "Score"]]
@@ -6042,7 +6049,7 @@ function syncPlayerHudColumns(placeGrips = true) {
     `${track(identity[0])} ${track(identity[1])} var(--hud-watch-column) ` +
       identity.slice(2).map(track).join(" "),
     stats.map(track).join(" "),
-    `minmax(calc(var(--hud-ident-min) * 4 + var(--hud-ident-num-min) * 2), ` +
+    `minmax(calc(var(--hud-ident-min) * 5 + var(--hud-ident-num-min) * 2), ` +
       `${total(identity).toFixed(4)}fr)`,
     `minmax(calc(var(--hud-stat-min) * 10 + var(--hud-stat-gap) * 9), ` +
       `${total(stats).toFixed(4)}fr)`,
@@ -6112,9 +6119,9 @@ function playerHudSeamMetrics(seam) {
 // gains, the right one gives up, so the pair's combined share is exactly
 // constant and the total the table asks for never moves.
 //
-// Fourteen of the fifteen seams divide two columns of one block, and there the
+// All but the final seam divide two columns of one block, and there the
 // share a column holds and the width it renders at are proportional — the first
-// guess below lands and the loop exits on its first pass. The fifteenth is the
+// guess below lands and the loop exits on its first pass. The final seam is the
 // seam between the identity block and the values, and it is not proportional:
 // when the value block is sitting on its own floor, share taken out of Plan is
 // partly picked up by the identity columns beside it instead, and a step sized
@@ -6309,6 +6316,7 @@ const RESPONSIVE_TEXT_RULES = [
   {selector:"#playerhud .diplomacy-player", min:9, max:13},
   {selector:"#playerhud .diplomacy-elo-value", min:9, max:13},
   {selector:"#playerhud .diplomacy-expected-value", min:9, max:13},
+  {selector:"#playerhud .diplomacy-age .civ-age", min:9, max:12},
   {selector:"#playerhud .diplomacy-strategy .ai-plan", min:9, max:12},
   // Measured against the cell, not against itself. The figure sits in a grid
   // with place-content:center, so it is sized to its own text: clientWidth and
@@ -23051,9 +23059,9 @@ function drawPlayerHud() {
     `<span>Player stats</span></div>` +
     `<div class="ribbon-stat-heading">` +
     `<span class="diplomacy-identity-head">` +
-    // WIN% and PLAN, not WIN ODDS and AI STRATEGY. These heads clip rather than
+    // WIN%, AGE and PLAN, not WIN ODDS, CURRENT AGE and AI STRATEGY. These heads clip rather than
     // ellipsize, so an overlong one is not shortened but corrupted: "WIN ODDS"
-    // rendered as "WIN ODI" and "AI STRATEGY" as "AI STRATEG". Both of these fit
+    // rendered as "WIN ODI" and "AI STRATEGY" as "AI STRATEG". All three fit
     // whole at every width the masthead supports, and PLAN is the word the rest
     // of the client already uses for this field. The full wording is in the
     // tooltip on each head.
@@ -23065,6 +23073,7 @@ function drawPlayerHud() {
     `<span>PLAYER</span>` +
     `<span class="numeric" title="Elo rating">ELO</span>` +
     `<span class="numeric" title="Elo-implied win odds, per cent">WIN%</span>` +
+    `<span title="Civilization age">AGE</span>` +
     `<span title="AI active strategy">PLAN</span></span>` +
     `<span class="diplomacy-stat-head">` +
     [["production", "PROD", "Production per turn"], ["science", "SCI", "Science per turn"],
@@ -23115,6 +23124,9 @@ function drawPlayerHud() {
         ? ` · ${p.agenda.name}${stance ? ` (${stance} of you)` : ""}: ${p.agenda.description}`
         : "";
       const civTitle = `${empireTitle}${shownStance ? ` · ${leader} ${shownStance} of you` : ""}`;
+      const age = ["heroic", "golden", "normal", "dark"].includes(p.age) ? p.age : "";
+      const ageLabel = age ? titleCase(age) : "—";
+      const ageTitle = age ? `${ageLabel} Age` : "Age unavailable";
       const activeStrategy = strategy
         ? `<span class="ai-plan ${strategy}">${titleCase(strategy)}</span>`
         : `<span class="ai-plan">No active strategy</span>`;
@@ -23209,6 +23221,8 @@ function drawPlayerHud() {
         // twelve per cent shown as the digit one.
         `<span class="diplomacy-identity-field diplomacy-expected" title="Elo-implied win odds">` +
         `<span class="diplomacy-expected-value">${expectPct === null ? "—" : expectPct}</span></span>` +
+        `<span class="diplomacy-identity-field diplomacy-age" title="${ageTitle}">` +
+        `<span class="civ-age ${age || "unknown"}">${ageLabel}</span></span>` +
         `<span class="diplomacy-identity-field diplomacy-strategy">${activeStrategy}</span>` +
         `<span class="detail-caret">${expanded ? "▾" : "▸"}</span></button></span>` +
         `<button class="diplomacy-stats" data-hud-action="watch" data-hud-civ="${p.id}" title="${watchTitle}" aria-label="Watch ${p.civ}">` +
