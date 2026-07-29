@@ -43,6 +43,11 @@ remains 84x54: Flat stores 84x54, while Planet stores the engine's corresponding
 105x44 globe. This removes random shape imbalance without changing the map as
 the inference unit.
 
+The runner will report map counts and descriptive mechanism/outcome summaries
+for each topology so a shape-specific failure stays visible. Only the pooled
+30-map or 120-map gate controls the decision; topology-specific results cannot
+promote, extend, or rescue the treatment.
+
 This is a prospective external-validity correction based only on the deployed
 supervisor contract and archived control saves. The treatment, seats, seed
 ranges, sample sizes, endpoints, thresholds, stop rules, and resource cap are
