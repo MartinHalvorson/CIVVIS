@@ -21594,4 +21594,126 @@ mod tests {
         }
         println!();
     }
+
+    /// Census, not an assertion: where does an empire's production actually go,
+    /// and how much of it would the missing cities have cost?
+    ///
+    /// This is the last open question on the expansion axis, and the axis is
+    /// worth closing properly because #554 measured real headroom there — a
+    /// free Settler while short of the city target more than doubles the win
+    /// rate (23.0% → 52.3%, p=0.0000), the only subsystem grant this harness
+    /// has ever returned HEADROOM for.
+    ///
+    /// Every *decision* mechanism proposed for it has since measured null:
+    ///
+    /// - the expansion window (#562): +0.12 cities, wins unmeasurable
+    /// - production preemption (`docs/EVAL.md` 2026-07-28): cities at end
+    ///   **2.21 vs 2.21**, settlers started 2.46 vs 2.42
+    /// - the settler's own valuation: when a city is free it already picks the
+    ///   settler, and the genuine free-city loss is only **2.6%**
+    /// - capital growth (`docs/OPENINGS.md` §12): every city after the first
+    ///   arrives **later**, monotonically in the dose
+    ///
+    /// That leaves one explanation standing, and it is not a decision at all:
+    /// **the empire cannot afford the settlers.** This measures it directly.
+    /// If the settler share of production is already large and the shortfall
+    /// would cost more than the empire ever produces, the axis is closed to
+    /// decision changes and the oracle's headroom is only reachable by having a
+    /// bigger economy — which #532 measured at 99.5% of its own ceiling.
+    ///
+    /// Run with `cargo test --release production_allocation_census -- --ignored --nocapture`.
+    #[test]
+    #[ignore = "census, not an assertion; run explicitly with --nocapture"]
+    fn production_allocation_census() {
+        for (label, players, width, height) in
+            [("eval 4p 24x16", 4usize, 24i32, 16i32), ("deployment 6p 74x46", 6, 74, 46)]
+        {
+            let mut spent = BTreeMap::<&str, f64>::new();
+            let mut total = 0.0f64;
+            let mut end_cities = 0.0f64;
+            let mut target = 0.0f64;
+            let mut shortfall_cost = 0.0f64;
+            let maps = 6u64;
+
+            for map in 0..maps {
+                let mut game =
+                    Game::new_full(players, width, height, 480_000 + map, 200, 1, false);
+                let mut ais: Vec<AdvancedAi> =
+                    (0..game.players.len()).map(|_| AdvancedAi::new()).collect();
+                game.set_fog_memory(false);
+                let mut prev: BTreeMap<u32, f64> = BTreeMap::new();
+                while game.winner.is_none() && game.turn <= game.max_turns {
+                    let pid = game.current;
+                    ais[pid].take_turn(&mut game, pid);
+                    if game.winner.is_none() && game.current == pid {
+                        let _ = game.apply(pid, &crate::game::Action::EndTurn);
+                    }
+                    if pid != 0 {
+                        continue;
+                    }
+                    // Production is banked per item key, so the turn-over-turn
+                    // rise in a city's yield is what it actually spent, and the
+                    // queue head says on what.
+                    for cid in game.player_city_ids(0) {
+                        let city = &game.cities[&cid];
+                        let yield_now = game.city_yields(cid).production.max(0.0);
+                        let key = match city.queue.first() {
+                            Some(Item::Unit { unit }) if unit.as_str() == "settler" => "settler",
+                            Some(Item::Unit { unit }) => {
+                                if game.rules.units[unit.as_str()].class == "military" {
+                                    "military unit"
+                                } else {
+                                    "civilian unit"
+                                }
+                            }
+                            Some(Item::Formation { .. }) => "military unit",
+                            Some(Item::Building { .. }) => "building",
+                            Some(Item::District { .. }) => "district",
+                            Some(Item::Wonder { .. }) => "wonder",
+                            Some(Item::Project { .. }) => "project",
+                            Some(Item::Product { .. }) => "product",
+                            Some(Item::Repair { .. }) => "repair",
+                            None => "idle",
+                        };
+                        *spent.entry(key).or_default() += yield_now;
+                        total += yield_now;
+                        prev.insert(cid, yield_now);
+                    }
+                }
+                let held = game.player_city_ids(0).len() as f64;
+                end_cities += held;
+                let want = ais[0]
+                    .plan
+                    .as_ref()
+                    .map(|p| p.desired_cities as f64)
+                    .unwrap_or(0.0);
+                target += want;
+                // Civ VI escalates settler cost 80/110/140/...; price the
+                // cities the empire never built at that schedule.
+                let missing = (want - held).max(0.0) as usize;
+                let built = held.max(1.0) as usize;
+                for n in 0..missing {
+                    shortfall_cost += 80.0 + 30.0 * (built + n) as f64;
+                }
+            }
+
+            println!("\n=== production allocation [{label}]: {total:.0} production over {maps} maps ===");
+            let mut rows: Vec<(&&str, &f64)> = spent.iter().collect();
+            rows.sort_by(|a, b| b.1.partial_cmp(a.1).unwrap());
+            for (kind, amount) in rows {
+                println!("  {kind:<14} {amount:>10.0}  ({:>5.1}%)", amount / total.max(1.0) * 100.0);
+            }
+            println!(
+                "  cities held {:.2} against a target of {:.2}",
+                end_cities / maps as f64,
+                target / maps as f64
+            );
+            println!(
+                "  the missing cities would have cost {:.0} production — {:.1}% of everything the empire made",
+                shortfall_cost / maps as f64,
+                shortfall_cost / total.max(1.0) * 100.0
+            );
+        }
+        println!();
+    }
 }
