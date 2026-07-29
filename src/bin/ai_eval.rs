@@ -15,6 +15,7 @@ const Z_95: f64 = 1.959_963_984_540_054;
 const TRIGGER_MIN_SHARE: f64 = 0.30;
 const TRIGGER_MIN_PER_SEAT: f64 = 0.75;
 const TRIGGER_MIN_SEAT_COVERAGE: f64 = 0.25;
+const TRIGGER_MIN_MAP_COVERAGE: f64 = 0.25;
 /// Split a 5% two-sided error budget equally between promotion and retention.
 const ANYTIME_TAIL_ALPHA: f64 = 0.025;
 /// Fixed, pre-declared bets for a finite mixture e-process. At the parity null
@@ -598,6 +599,8 @@ struct Metrics {
     midgame_unanchored_same_reason_transitions: BTreeMap<String, usize>,
     midgame_unanchored_reason_families: BTreeMap<String, usize>,
     midgame_unanchored_reason_family_seats: BTreeMap<String, usize>,
+    midgame_unanchored_reason_family_maps: BTreeMap<String, usize>,
+    map_pairs: usize,
     rush_seats: usize,
     rush_turns: usize,
     /// Reviews summed over every seat this entrant played, so a run can say
@@ -766,6 +769,18 @@ impl Metrics {
                 .or_default() += 1;
         }
     }
+
+    /// One independent map cluster, after unioning the entrant's families
+    /// across all of its seats in both mirrored games.
+    fn record_assessment_map(&mut self, families: BTreeSet<String>) {
+        self.map_pairs += 1;
+        for family in families {
+            *self
+                .midgame_unanchored_reason_family_maps
+                .entry(family)
+                .or_default() += 1;
+        }
+    }
 }
 
 fn target_shares(metrics: &Metrics) -> String {
@@ -804,7 +819,11 @@ fn transition_counts(transitions: &BTreeMap<String, usize>) -> String {
         .join(", ")
 }
 
-fn family_counts(families: &BTreeMap<String, usize>, seats: &BTreeMap<String, usize>) -> String {
+fn family_counts(
+    families: &BTreeMap<String, usize>,
+    seats: &BTreeMap<String, usize>,
+    maps: &BTreeMap<String, usize>,
+) -> String {
     let mut ranked: Vec<(&str, usize)> = families
         .iter()
         .map(|(family, count)| (family.as_str(), *count))
@@ -814,8 +833,9 @@ fn family_counts(families: &BTreeMap<String, usize>, seats: &BTreeMap<String, us
         .into_iter()
         .map(|(family, count)| {
             format!(
-                "{family} {count} across {} seat-games",
-                seats.get(family).copied().unwrap_or(0)
+                "{family} {count} across {} seat-games / {} maps",
+                seats.get(family).copied().unwrap_or(0),
+                maps.get(family).copied().unwrap_or(0),
             )
         })
         .collect::<Vec<_>>()
@@ -853,23 +873,51 @@ fn elective_reason(reason: &str) -> bool {
     )
 }
 
+/// The follow-up is selected before outcomes, from the exact two labels in the
+/// dominant family. Earlier branches in `assess()` take precedence when a
+/// family straddles two elective boundaries. The one remaining elective pair
+/// (best lane versus >=65% progress in that lane) has no preregistered repair
+/// and is deliberately ineligible rather than being interpreted after data.
+fn trigger_intervention(left: &str, right: &str) -> Option<&'static str> {
+    if !elective_reason(left) || !elective_reason(right) {
+        return None;
+    }
+    if left == right {
+        return matches!(
+            left,
+            "already well down its best victory lane" | "its best available victory lane"
+        )
+        .then_some("lane-margin hysteresis");
+    }
+    if [left, right].contains(&"strong enough to take what a neighbour has") {
+        return Some("opportunistic-Conquest threshold hysteresis");
+    }
+    if [left, right].contains(&"short of cities with land still open") {
+        return Some("settlement-availability/city-target margin");
+    }
+    None
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct TriggerGate<'a> {
     family: &'a str,
     occurrences: usize,
     seats: usize,
-    eligible: bool,
+    maps: usize,
+    intervention: Option<&'static str>,
     share: f64,
     per_seat: f64,
     seat_coverage: f64,
+    map_coverage: f64,
 }
 
 impl TriggerGate<'_> {
     fn passes(self) -> bool {
-        self.eligible
+        self.intervention.is_some()
             && self.share >= TRIGGER_MIN_SHARE
             && self.per_seat >= TRIGGER_MIN_PER_SEAT
             && self.seat_coverage >= TRIGGER_MIN_SEAT_COVERAGE
+            && self.map_coverage >= TRIGGER_MIN_MAP_COVERAGE
     }
 }
 
@@ -887,15 +935,23 @@ fn trigger_gate(metrics: &Metrics) -> Option<TriggerGate<'_>> {
         .get(family)
         .copied()
         .unwrap_or(0);
+    let maps = metrics
+        .midgame_unanchored_reason_family_maps
+        .get(family)
+        .copied()
+        .unwrap_or(0);
     let games = metrics.games.max(1) as f64;
+    let map_pairs = metrics.map_pairs.max(1) as f64;
     Some(TriggerGate {
         family,
         occurrences,
         seats,
-        eligible: elective_reason(left) && elective_reason(right),
+        maps,
+        intervention: trigger_intervention(left, right),
         share: occurrences as f64 / metrics.midgame_unanchored_switches.max(1) as f64,
         per_seat: occurrences as f64 / games,
         seat_coverage: seats as f64 / games,
+        map_coverage: maps as f64 / map_pairs,
     })
 }
 
@@ -904,7 +960,7 @@ fn trigger_gate_report(metrics: &Metrics) -> String {
         return "REJECT (no unanchored reason family)".to_string();
     };
     format!(
-        "{}: {} — {}/{} ({:.1}%), {:.2}/seat-game, {}/{} seats ({:.1}%), elective {}",
+        "{}: {} — {}/{} ({:.1}%), {:.2}/seat-game, {}/{} seats ({:.1}%), {}/{} maps ({:.1}%), follow-up {}",
         if gate.passes() { "NOMINATE" } else { "REJECT" },
         gate.family,
         gate.occurrences,
@@ -914,8 +970,53 @@ fn trigger_gate_report(metrics: &Metrics) -> String {
         gate.seats,
         metrics.games,
         100.0 * gate.seat_coverage,
-        if gate.eligible { "yes" } else { "no" },
+        gate.maps,
+        metrics.map_pairs,
+        100.0 * gate.map_coverage,
+        gate.intervention.unwrap_or("none"),
     )
+}
+
+struct TriggerCensusProfile<'a> {
+    challenger: &'a str,
+    control: &'a str,
+    pairs: usize,
+    players: usize,
+    width: i32,
+    height: i32,
+    city_states: usize,
+    turns: u32,
+    speed: &'a str,
+    map_script: MapScript,
+    map_topology: MapTopology,
+    map_poles: MapPoles,
+    randomize_civs: bool,
+    seed: u64,
+    difficulty: &'a str,
+    victories: &'a VictoryConditions,
+}
+
+fn is_frozen_trigger_census(profile: &TriggerCensusProfile<'_>) -> bool {
+    profile.challenger == "advanced_evolved"
+        && profile.control == "advanced"
+        && profile.pairs == 60
+        && profile.players == 8
+        && profile.width == 84
+        && profile.height == 54
+        && profile.city_states == 12
+        && profile.turns == 250
+        && profile.speed == "online"
+        && profile.map_script == MapScript::Continents
+        && profile.map_topology == MapTopology::Planet
+        && profile.map_poles == MapPoles::Poles
+        && profile.randomize_civs
+        && profile.seed == 9_981_000
+        && profile.difficulty == default_difficulty()
+        && VictoryConditions::NAMES
+            .into_iter()
+            .filter(|name| profile.victories.is_enabled(name))
+            .collect::<Vec<_>>()
+            == vec!["science", "culture", "domination"]
 }
 
 fn text(args: &[String], flag: &str, default: &str) -> String {
@@ -1036,6 +1137,27 @@ fn main() {
         eprintln!("unknown difficulty {difficulty:?}");
         std::process::exit(2);
     }
+    // The family tables are useful on every run. A formal intervention verdict
+    // is not: emitting NOMINATE on a small exploratory command would spend the
+    // preregistered decision before the frozen corpus exists.
+    let frozen_trigger_census = is_frozen_trigger_census(&TriggerCensusProfile {
+        challenger: a,
+        control: b,
+        pairs,
+        players,
+        width,
+        height,
+        city_states,
+        turns,
+        speed: &speed,
+        map_script,
+        map_topology,
+        map_poles,
+        randomize_civs,
+        seed,
+        difficulty: &difficulty,
+        victories: &victory_conditions,
+    });
     println!(
         "profile: speed {speed}, map {}, shape {}, poles {}, civilizations {}, victories {}",
         map_script.id(),
@@ -1129,6 +1251,7 @@ fn main() {
                 censuses,
             }
         });
+        let mut pair_family_presence: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
         for (index, result) in played.into_iter().enumerate() {
             let PlayedGame {
                 game,
@@ -1152,6 +1275,15 @@ fn main() {
             // Legacy per-seat win metrics count a game nobody won as zero
             // wins. The paired promotion score above records it as a draw.
             for (pid, name) in seats.iter().enumerate() {
+                pair_family_presence
+                    .entry((*name).to_string())
+                    .or_default()
+                    .extend(
+                        traces[pid]
+                            .midgame_unanchored_reason_families
+                            .keys()
+                            .cloned(),
+                    );
                 if let Some(census) = censuses[pid] {
                     let metrics = totals.get_mut(*name).unwrap();
                     metrics.census.merge(census);
@@ -1164,6 +1296,13 @@ fn main() {
                     targets[pid],
                     &traces[pid],
                 );
+            }
+            if index % 2 == 1 {
+                for (name, metrics) in &mut totals {
+                    metrics.record_assessment_map(
+                        pair_family_presence.remove(name).unwrap_or_default(),
+                    );
+                }
             }
         }
         pair += chunk;
@@ -1455,9 +1594,10 @@ fn main() {
             family_counts(
                 &metrics.midgame_unanchored_reason_families,
                 &metrics.midgame_unanchored_reason_family_seats,
+                &metrics.midgame_unanchored_reason_family_maps,
             ),
         );
-        if name == a {
+        if frozen_trigger_census && name == a {
             println!(
                 "  {name:<11} trigger-scoped experiment gate {}",
                 trigger_gate_report(metrics),
@@ -2097,10 +2237,20 @@ mod tests {
         let mut metrics = Metrics::default();
         metrics.record_assessment_trace(&first);
         metrics.record_assessment_trace(&second);
+        metrics.map_pairs = 2;
+        metrics
+            .midgame_unanchored_reason_family_maps
+            .insert(family.clone(), 2);
+        metrics
+            .midgame_unanchored_reason_family_maps
+            .insert("alpha <-> zeta".to_string(), 1);
 
         assert_eq!(metrics.midgame_unanchored_reason_families[&family], 4);
         assert_eq!(metrics.midgame_unanchored_reason_family_seats[&family], 2);
-        assert_eq!(metrics.midgame_unanchored_reason_transitions[&transition], 4);
+        assert_eq!(
+            metrics.midgame_unanchored_reason_transitions[&transition],
+            4
+        );
         assert_eq!(
             metrics.midgame_unanchored_reason_transition_seats[&transition],
             2
@@ -2116,22 +2266,80 @@ mod tests {
             family_counts(
                 &metrics.midgame_unanchored_reason_families,
                 &metrics.midgame_unanchored_reason_family_seats,
+                &metrics.midgame_unanchored_reason_family_maps,
             ),
             format!(
-                "alpha <-> zeta 4 across 1 seat-games, {family} 4 across 2 seat-games"
+                "alpha <-> zeta 4 across 1 seat-games / 1 maps, {family} 4 across 2 seat-games / 2 maps"
             )
         );
+    }
+
+    #[test]
+    fn assessment_map_coverage_counts_a_family_once_per_independent_map() {
+        let mut metrics = Metrics::default();
+        metrics.record_assessment_map(
+            ["alpha <-> beta", "beta <-> gamma"]
+                .into_iter()
+                .map(str::to_string)
+                .collect(),
+        );
+        metrics.record_assessment_map(
+            ["alpha <-> beta"]
+                .into_iter()
+                .map(str::to_string)
+                .collect(),
+        );
+        assert_eq!(metrics.map_pairs, 2);
+        assert_eq!(
+            metrics.midgame_unanchored_reason_family_maps["alpha <-> beta"],
+            2
+        );
+        assert_eq!(
+            metrics.midgame_unanchored_reason_family_maps["beta <-> gamma"],
+            1
+        );
+    }
+
+    #[test]
+    fn formal_trigger_verdict_requires_the_exact_frozen_profile() {
+        let victories = VictoryConditions::parse("science,culture,domination").unwrap();
+        let difficulty = default_difficulty();
+        let mut profile = TriggerCensusProfile {
+            challenger: "advanced_evolved",
+            control: "advanced",
+            pairs: 60,
+            players: 8,
+            width: 84,
+            height: 54,
+            city_states: 12,
+            turns: 250,
+            speed: "online",
+            map_script: MapScript::Continents,
+            map_topology: MapTopology::Planet,
+            map_poles: MapPoles::Poles,
+            randomize_civs: true,
+            seed: 9_981_000,
+            difficulty: &difficulty,
+            victories: &victories,
+        };
+        assert!(is_frozen_trigger_census(&profile));
+        profile.seed += 1;
+        assert!(!is_frozen_trigger_census(&profile));
+        profile.seed -= 1;
+        profile.pairs = 59;
+        assert!(!is_frozen_trigger_census(&profile));
     }
 
     #[test]
     fn trigger_gate_requires_the_global_dominant_family_to_be_elective() {
         let urgent = reason_family("already at war", "at war and losing ground at home");
         let elective = reason_family(
-            "already well down its best victory lane",
+            "strong enough to take what a neighbour has",
             "its best available victory lane",
         );
         let mut metrics = Metrics {
             games: 4,
+            map_pairs: 4,
             midgame_unanchored_switches: 8,
             ..Metrics::default()
         };
@@ -2142,27 +2350,34 @@ mod tests {
             .midgame_unanchored_reason_family_seats
             .insert(urgent.clone(), 3);
         metrics
+            .midgame_unanchored_reason_family_maps
+            .insert(urgent.clone(), 3);
+        metrics
             .midgame_unanchored_reason_families
             .insert(elective.clone(), 3);
         metrics
             .midgame_unanchored_reason_family_seats
+            .insert(elective.clone(), 2);
+        metrics
+            .midgame_unanchored_reason_family_maps
             .insert(elective, 2);
 
         let gate = trigger_gate(&metrics).unwrap();
         assert_eq!(gate.family, urgent);
-        assert!(!gate.eligible);
+        assert_eq!(gate.intervention, None);
         assert!(!gate.passes(), "an elective runner-up cannot be selected");
     }
 
     #[test]
-    fn trigger_gate_automates_all_three_preregistered_thresholds() {
+    fn trigger_gate_automates_all_four_preregistered_thresholds() {
         let family = reason_family(
-            "already well down its best victory lane",
+            "its best available victory lane",
             "its best available victory lane",
         );
-        let make_metrics = |occurrences, total, seats| {
+        let make_metrics = |occurrences, total, seats, maps| {
             let mut metrics = Metrics {
                 games: 4,
+                map_pairs: 4,
                 midgame_unanchored_switches: total,
                 ..Metrics::default()
             };
@@ -2173,18 +2388,51 @@ mod tests {
                 .midgame_unanchored_reason_family_seats
                 .insert(family.clone(), seats);
             metrics
+                .midgame_unanchored_reason_family_maps
+                .insert(family.clone(), maps);
+            metrics
         };
 
-        assert!(trigger_gate(&make_metrics(3, 10, 1)).unwrap().passes());
-        assert!(!trigger_gate(&make_metrics(2, 10, 1)).unwrap().passes());
-        assert!(!trigger_gate(&make_metrics(2, 4, 1)).unwrap().passes());
-        assert!(!trigger_gate(&make_metrics(3, 10, 0)).unwrap().passes());
+        assert!(trigger_gate(&make_metrics(3, 10, 1, 1)).unwrap().passes());
+        assert!(!trigger_gate(&make_metrics(2, 10, 1, 1)).unwrap().passes());
+        assert!(!trigger_gate(&make_metrics(2, 4, 1, 1)).unwrap().passes());
+        assert!(!trigger_gate(&make_metrics(3, 10, 0, 1)).unwrap().passes());
+        assert!(!trigger_gate(&make_metrics(3, 10, 1, 0)).unwrap().passes());
+    }
+
+    #[test]
+    fn trigger_intervention_mapping_is_total_only_for_preregistered_repairs() {
+        let strong = "strong enough to take what a neighbour has";
+        let short = "short of cities with land still open";
+        let best = "its best available victory lane";
+        let progress = "already well down its best victory lane";
+        assert_eq!(
+            trigger_intervention(strong, short),
+            Some("opportunistic-Conquest threshold hysteresis"),
+            "the earlier Conquest arm owns an overlap with Expansion"
+        );
+        assert_eq!(
+            trigger_intervention(short, best),
+            Some("settlement-availability/city-target margin")
+        );
+        assert_eq!(
+            trigger_intervention(best, best),
+            Some("lane-margin hysteresis")
+        );
+        assert_eq!(
+            trigger_intervention(best, progress),
+            None,
+            "the 65% progress boundary has no frozen repair"
+        );
+        assert_eq!(trigger_intervention("already at war", best), None);
+        assert_eq!(trigger_intervention(strong, "already at war"), None);
     }
 
     #[test]
     fn trigger_gate_breaks_dominant_count_ties_by_family_label() {
         let mut metrics = Metrics {
             games: 4,
+            map_pairs: 4,
             midgame_unanchored_switches: 6,
             ..Metrics::default()
         };
@@ -2194,6 +2442,9 @@ mod tests {
                 .insert(family.to_string(), 3);
             metrics
                 .midgame_unanchored_reason_family_seats
+                .insert(family.to_string(), 2);
+            metrics
+                .midgame_unanchored_reason_family_maps
                 .insert(family.to_string(), 2);
         }
         assert_eq!(trigger_gate(&metrics).unwrap().family, "alpha <-> alpha");

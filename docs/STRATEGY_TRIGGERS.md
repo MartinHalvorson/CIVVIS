@@ -1,6 +1,7 @@
 # Grand-strategy assessment-trigger census
 
-Status: **implementation checkpoint frozen; no trigger data inspected**
+Status: **implementation checkpoint prospectively hardened; no trigger data
+inspected**
 
 ## Why this measurement comes next
 
@@ -67,7 +68,9 @@ will record, for each observed player-turn:
 - unanchored strategy switches whose reason label did not change, grouped by
   `previous strategy -> current strategy`; and
 - for each unanchored reason transition, both occurrence count and the number
-  of seat-games in which it occurred at least once.
+  of seat-games in which it occurred at least once; and
+- for each unordered family, the number of independent map seeds on which at
+  least one champion seat exhibits it across either mirrored game.
 
 For focus selection, the two directions of a reason transition are also
 combined into an **unordered reason-pair family**. A same-reason strategy
@@ -77,10 +80,15 @@ the report.
 
 The evaluator, rather than the analyst, will apply the frozen family decision:
 select the globally dominant family with the same deterministic tie break,
-check its exact elective vocabulary, and print the concentration, occurrences
-per seat-game, seat coverage, and `NOMINATE`/`REJECT` verdict. The documented
-thresholds are constants in that calculation; displayed rounding is never used
-for the comparison.
+check its exact preregistered follow-up, and print the concentration,
+occurrences per seat-game, seat coverage, map coverage, and
+`NOMINATE`/`REJECT` verdict. The formal verdict is emitted only when the
+resolved measurement identity—entrant order, game profile, seed, map count,
+default difficulty, and victory set—matches the frozen command below.
+Execution-only parallelism does not enter that identity because results are
+folded in deterministic order. Other commands may print descriptive family
+tables but cannot spend the decision. The documented thresholds are constants
+in that calculation; displayed rounding is never used for the comparison.
 
 The primary interval is unchanged: Standard turn 60 inclusive through
 Standard turn 180 exclusive, speed-normalized by `Game::standard_duration`.
@@ -93,7 +101,8 @@ Tests must establish that:
 1. a reported reason comes from the assessment that produced the reported
    plan;
 2. reason changes, same-reason strategy changes, unanchored filtering,
-   unordered pairing, and per-seat coverage are counted independently;
+   unordered pairing, per-seat coverage, and per-map coverage are counted
+   independently;
 3. overlapping visible boundaries remain one boundary-accompanied switch;
 4. deterministic ranking breaks count ties by label; and
 5. adding the trace does not change winner, victory type, turn, or existing
@@ -109,16 +118,22 @@ exports that retained reason. Retargeting, reweighting, or returning to the
 adaptive planner clears both cached values. The evaluator reads only the
 report field; it contains no second implementation of the cascade.
 
-The completed aggregation audit is committed at
+The original aggregation audit is committed at
 `dcb9c34c75855243ab7af730bb65348cd72e744f`. It records seat-game coverage for
 ordered unanchored reason changes as well as unordered families, and emits the
 formal nomination gate only for the first, production-champion entrant. The
 stock entrant's trace remains visible as a descriptive control but cannot
 nominate an intervention.
 
+A later static pre-data audit found that seat-games are clustered within maps,
+that the formal verdict was not yet restricted to the frozen command, and that
+two elective reason combinations had no unique follow-up mapping. Before any
+trigger output, the checkpoint was prospectively amended to require independent
+map coverage, frozen-profile verdict gating, and the total mapping below.
+
 The merge through current `origin/main` did not add, remove, or reorder any of
 the fourteen frozen assessment arms above. The exact plan/report invariant
-test passed, as did all 30 `ai_eval` tests covering trace preservation,
+test passed, as did all 33 `ai_eval` tests covering trace preservation,
 aggregation, deterministic ranking, seat coverage, and the automatic gate. No
 primary census command has started and no trigger counts have been read.
 
@@ -141,11 +156,13 @@ ai_eval advanced_evolved advanced --players 8 --width 84 --height 54 \
   --victories science,culture,domination --seed 9981000 --jobs 6
 ```
 
-There are 480 seat-games per entrant. `advanced_evolved` is primary because it
-is the production champion; stock `advanced` is a descriptive anchor. The
-reused seeds are intentional and cannot promote gameplay: this is an
-observer-only localization of a population already selected by the previous
-preregistration. No holdout is opened in this task.
+There are 480 seat-games per entrant clustered within 60 independent map seeds.
+`advanced_evolved` is primary because it is the production champion; stock
+`advanced` is a descriptive anchor. Seat-game occurrence and coverage are
+engineering diagnostics, not independent samples, so map coverage is a
+separate conjunctive gate. The reused seeds are intentional and cannot promote
+gameplay: this is an observer-only localization of a population already
+selected by the previous preregistration. No holdout is opened in this task.
 
 Before starting the run, the implementation commit, command, build profile,
 and absence of concurrent high-core simulations will be recorded. The run
@@ -173,30 +190,40 @@ dominant family is ineligible, no lower-ranked elective family may be selected
 after seeing the result.
 
 An eligible dominant family nominates a single trigger-scoped gameplay
-experiment only if all three conditions hold:
+experiment only if all four conditions hold:
 
 1. it accounts for at least **30%** of the champion's unanchored midgame
    switches;
 2. it occurs at least **0.75 times per champion seat-game**; and
-3. it occurs in at least **25%** of champion seat-games.
+3. it occurs in at least **25%** of champion seat-games; and
+4. it occurs on at least **25%** of independent map seeds (15 of 60), counting
+   a map once if the family appears in either mirrored game.
 
-These gates require concentration, material rate, and breadth separately. A
-large count from a few unstable games is not enough, and several weak families
-cannot be pooled after seeing the data.
+These gates require concentration, material rate, seat breadth, and map breadth
+separately. A large count from a few unstable games or a few correlated maps is
+not enough, and several weak families cannot be pooled after seeing the data.
 
 The intervention scope is frozen by the winning family:
 
 - A same-reason family under `its best available victory lane` or `already well
   down its best victory lane` nominates margin-based lane hysteresis, because
   the broad assessment arm stayed fixed while its argmax changed.
-- A family led by `strong enough to take what a neighbour has` nominates
-  threshold hysteresis around opportunistic Conquest only; assigned lanes,
-  emergencies, active wars, ancient rushes, and victory denial remain exempt.
-- A family involving `short of cities with land still open` nominates only a
-  settlement-availability or city-target margin around that branch. It may not
-  hold an Expansion strategy after the reported city deficit closes.
+- A distinct family containing `strong enough to take what a neighbour has`
+  nominates threshold hysteresis around opportunistic Conquest only; assigned
+  lanes, emergencies, active wars, ancient rushes, and victory denial remain
+  exempt. Because this arm precedes Expansion in `assess()`, it owns the
+  otherwise ambiguous Conquest/Expansion family.
+- A remaining distinct family containing `short of cities with land still
+  open` nominates only a settlement-availability or city-target margin around
+  that branch. It may not hold an Expansion strategy after the reported city
+  deficit closes.
+- The distinct family between `its best available victory lane` and `already
+  well down its best victory lane` is ineligible: it crosses the fixed 65%
+  progress arm, for which no repair was preregistered. Same-reason Conquest or
+  Expansion families are likewise ineligible because those reasons select a
+  fixed strategy and such a switch would violate the observer contract.
 
-If the dominant family is ineligible, or if it fails any of the three gates,
+If the dominant family is ineligible, or if it fails any of the four gates,
 generic and trigger-scoped hysteresis are both rejected on this evidence. The
 next military experiment must improve execution inside a stable
 Conquest/Recovery episode rather than suppress plan changes.
