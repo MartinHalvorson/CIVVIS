@@ -5809,6 +5809,7 @@ real and is not currently reachable by changing a decision.** Anything further
 here should either change what a settler costs, or stop and go elsewhere.
 ||||||| 2dbf641
 
+<<<<<<< HEAD
 ## 2026-07-29 — ★★★★★ the self-improvement loop cannot reach the one axis measured to pay
 
 Read the deployed league roster before spending any more effort on the macro
@@ -5874,3 +5875,105 @@ ratio is small enough to seat, the highest-value change available is to anchor a
 searching agent in the league so the rating system can see it at all. If it is
 not, then every hour spent making the search stronger is spent on an agent that
 cannot ship, and the honest move is to make search *cheaper* rather than better.
+||||||| 6300c2c
+=======
+## 2026-07-29 — ★★★★ what a searching turn costs, and why the first answer was wrong
+
+The entry above established that no searching agent is seated in the deployed
+league and that breeding cannot produce one. The obvious explanation is cost.
+`turn_cost` measures it at the deployment profile: 6 players, 74×46, 9
+city-states, interleaved on the same seeds so both fleets meet the same
+contention on a shared box.
+
+| fleet | ms a game-turn | ratio |
+|---|---|---|
+| all `AdvancedAi` | 13.3 | 1× |
+| **one searching seat among five** | **76.7** | **6.4×** |
+| all `StrategicAi` | 410.0 | 29.2× |
+
+**The first version of this probe measured only the all-searching fleet and
+would have given the wrong recommendation.** It reported 25–31× and concluded
+"too expensive to seat as it stands — make the search cheaper rather than
+better." But nothing seats that way. A league entry is *one* strategy among five
+opponents, so the cost of admitting search is `(5a + s) / 6a`, not `s / a`. The
+configuration that would actually ship costs **6.4×**, which is a deliberate
+trade rather than an impossibility — and the difference between those two
+conclusions is the difference between abandoning the search line and investing in
+it.
+
+That is a general trap worth naming: **measure the configuration that would
+ship, not the one that is convenient to construct.** It is the same failure as
+evaluating at 4p 24×16 and deploying at 6p 74×46, one level down.
+
+**What follows.** Seating a searching agent in the league is affordable. A round
+would take several times as long, which is a real cost for an offline rating
+system that runs continuously, but 76.7 ms a game-turn is about thirteen turns a
+second — the live exhibition paces turns for viewers and reports
+`frames_missed: 0`, so a searching seat is very unlikely to be what a spectator
+would notice. The highest-value change available is therefore to anchor one, so
+the self-improvement loop can rate search against the bred genomes at all.
+
+**Limits.** Three seeds, 100 turns, on a box at load 30–50. The ratio is robust
+to that because the runs are interleaved, but the absolutes are not, and
+early-game turns are cheaper than late ones for both fleets, so a 250-turn game
+would move both numbers up. The category — single digits, not tens — is what
+this establishes.
+
+| claim | status |
+|---|---|
+| an all-searching fleet costs ~29× a scripted one | **established** (n=3) |
+| **seating one searching entry costs ~6.4×** | **established** (n=3) |
+| search is too expensive to seat | **refuted** — that conclusion came from measuring a fleet nobody runs |
+| a searching seat would break the exhibition's frame-per-turn guarantee | **unmeasured**, and unlikely at 13 turns/sec |
+>>>>>>> origin/main
+
+## 2026-07-29 — joint lane/doctrine search: inconclusive at 40 pairs
+
+#572 established that `StrategicAi` judges every lane under the doctrine
+currently in force, that the axes interact in 80% of reviews, and that the joint
+optimum clears the commitment margin in 22.3%. `joint_lane_values` (#589) judges
+each lane at its own best doctrine instead. This is the strength measurement.
+
+`ai_eval strategic_joint strategic --pairs 40 --players 6 --width 74 --height 46
+--speed online --city-states 9 --turns 250` — the deployment profile.
+
+| | |
+|---|---|
+| game-win share | `strategic_joint` 44/80 (**55.0%**) against 36/80 |
+| paired-map score | 55.0%, 95% Wilson CI **39.8%–69.3%** |
+| Elo-equivalent | **+35 (CI −72..+141)** |
+| paired direction | 7 joint / 30 neutral / 3 sequential, exact two-sided **p=0.3438** |
+| terminal-score direction | 14 / 10 / 16, **p=0.8555** |
+
+**Inconclusive.** The point estimate is positive and the interval spans nothing
+useful. Forty pairs was chosen and labelled in advance as a screen rather than a
+confirmation — the convention here is ~120 — and it behaved like one.
+
+Two diagnostics say the comparison is clean rather than confounded:
+
+- **Search exposure is unchanged**: 546/1362 (40%) of `strategic_joint`'s reviews
+  reached the rollouts against 555/1377 (40%) for `strategic`. The change did not
+  alter how often the search runs, so this isolates the ordering rather than the
+  budget. Both agents had 408 reviews answered by the urgent-counter prior and
+  ~408 by irreversible religion.
+- **The mechanism bit**: `strategic_joint` reached a *domination* dominant plan in
+  4 seat-games where `strategic` reached it in 0 — which is the predicted effect,
+  a lane that loses under the incumbent's weights winning under the doctrine it
+  would actually be played with.
+
+**The flag stays off**, and `strategic_joint` ships as an eval-only variant
+alongside `strategic_r20`, `strategic_h80` and the rest.
+
+**Not spending 120 pairs on this now, and the reason is priority rather than
+doubt.** Confirming +35 Elo would cost roughly fifteen hours at this profile, on
+an agent that **no deployed game has ever seated** — and one whose evaluator
+never loads in deployment either. Both of those are wiring defects with a
+precedent-backed fix, and both are worth more than a 2.5×-cost improvement to an
+agent nothing plays. If search is ever seated, this is the first thing to
+re-measure.
+
+| claim | status |
+|---|---|
+| joint search changes which lane is chosen | **established** (domination 4 vs 0) |
+| joint search leaves the search budget alone | **established** (40% exposure both) |
+| joint search wins games | **inconclusive** (+35 Elo, CI −72..+141, p=0.34) |
