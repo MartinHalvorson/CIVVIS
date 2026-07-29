@@ -68,16 +68,22 @@ This third amendment was frozen after the topology implementation but before
 the null at seed 9,982,000 or either treatment seed was run or read. After the
 viewer disconnected, the next automatically rolled production world started
 with nine players on True Start Earth/Flat. Inspection of the already-merged
-supervisor contract (#543) confirmed that every unattended world independently
-draws three axes uniformly:
+supervisor contract (#543) confirmed that every unattended rollover after a
+completed world independently draws three axes uniformly:
 
 - player count from 4, 5, 6, 7, 8, 9, and 10;
 - map script from Land Only, Lakes, Inland Sea, Pangaea, Continents, Small
   Continents, Islands, Water World, and True Start Earth; and
 - topology from Flat and Planet.
 
+The first world after a cold supervisor launch still uses the operator's
+startup flags because no prior world exists to trigger a rollover. It is a
+separate, rare startup stratum rather than one of these draws. This experiment
+targets the repeated rollover population that the supervisor explicitly varies;
+it does not estimate an uptime-dependent mixture of cold starts and rollovers.
+
 The previous fixed eight-player Continents design would therefore estimate the
-treatment in only one of 126 equally likely deployment profiles. The frozen
+treatment in only one of 126 equally likely rollover profiles. The frozen
 batches now use a deterministic space-filling cycle over all 126 profiles. For
 zero-based map offset `i`, the axes are:
 
