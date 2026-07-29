@@ -377,9 +377,11 @@ def play(args: argparse.Namespace) -> int:
             state["score"] = event.get("score", -1)
             state["last_progress"] = time.time()
             if state["turn"] % args.report_every == 0:
+                actions = event.get("actions") or {}
+                summary = " ".join(f"{k}={v}" for k, v in sorted(actions.items()))
                 print(f"[turn {state['turn']:>4}] score={event.get('score')} "
                       f"cities={event.get('cities')} units={event.get('units')} "
-                      f"blocker={event.get('blocker')}")
+                      f"blocker={event.get('blocker')} | {summary}")
         elif kind == "blocked":
             print(f"[turn {event.get('turn')}] blocked on {event.get('blocker')} "
                   f"({event.get('attempts')} attempts)")

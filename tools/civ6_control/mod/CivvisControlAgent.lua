@@ -451,14 +451,83 @@ local function firstOperation(unit, names)
 	return nil;
 end
 
-local function orderSettler(unit)
-	-- Founding somewhere legal on turn one beats holding the perfect site in
-	-- reserve forever, which is what a settler policy that only ever moves
-	-- does. Walking to a better site is a real improvement and a later one.
-	return firstOperation(unit, {
-		"UNITOPERATION_FOUND_CITY",
-		"UNITOPERATION_AUTOMATE_EXPLORE",
-	});
+local function plotDistance(x1, y1, x2, y2)
+	return try(function() return Map.GetPlotDistance(x1, y1, x2, y2); end, 99);
+end
+
+-- Where this settler should walk to found a city.
+--
+-- Cities have to be a few tiles apart, so after the capital every settler is
+-- standing somewhere it cannot found. The first version handled that by
+-- falling back to explore automation, which is why a game reached turn 50 with
+-- six units, one city, and two hundred settler orders: the settlers wandered,
+-- and wandering never becomes a city.
+--
+-- The search is deliberately plain -- land, passable, unowned or ours, far
+-- enough from every city we have, nearest such plot wins. Site *quality* is a
+-- real lever and a separate one; site *existence* is what was missing.
+local function findSettleSite(player, pid, unit)
+	local ux = try(function() return unit:GetX(); end, -1);
+	local uy = try(function() return unit:GetY(); end, -1);
+	if ux < 0 then return nil; end
+
+	local cities = {};
+	eachCity(player, function(city)
+		cities[#cities + 1] = { try(function() return city:GetX(); end, -1),
+		                        try(function() return city:GetY(); end, -1) };
+	end);
+
+	local spacing = cfg.MinCitySpacing or 4;
+	local radius = cfg.SettleSearchRadius or 7;
+	local best, bestScore;
+	for dx = -radius, radius do
+		for dy = -radius, radius do
+			local plot = try(function() return Map.GetPlot(ux + dx, uy + dy); end);
+			if plot ~= nil then
+				local usable = try(function()
+					return (not plot:IsWater()) and (not plot:IsImpassable());
+				end, false);
+				local owner = try(function() return plot:GetOwner(); end, -1);
+				if usable and (owner == -1 or owner == pid) then
+					local px = plot:GetX();
+					local py = plot:GetY();
+					local nearest = 99;
+					for _, city in ipairs(cities) do
+						local d = plotDistance(px, py, city[1], city[2]);
+						if d < nearest then nearest = d; end
+					end
+					if nearest >= spacing then
+						-- Close to the settler, comfortably clear of what we
+						-- already own. Walking a long way to a marginally
+						-- better site costs more turns than the site is worth
+						-- this early.
+						local score = -plotDistance(ux, uy, px, py) + nearest;
+						if bestScore == nil or score > bestScore then
+							best, bestScore = plot, score;
+						end
+					end
+				end
+			end
+		end
+	end
+	return best;
+end
+
+local function orderSettler(player, pid, unit)
+	if canOperate(unit, OP["UNITOPERATION_FOUND_CITY"])
+			and operate(unit, OP["UNITOPERATION_FOUND_CITY"]) then
+		return "found_city";
+	end
+	local plot = findSettleSite(player, pid, unit);
+	if plot ~= nil then
+		local params = {};
+		params[UnitOperationTypes.PARAM_X] = plot:GetX();
+		params[UnitOperationTypes.PARAM_Y] = plot:GetY();
+		if operate(unit, OP["UNITOPERATION_MOVE_TO"], params) then
+			return "move_to_site";
+		end
+	end
+	return firstOperation(unit, { "UNITOPERATION_AUTOMATE_EXPLORE" });
 end
 
 local function orderBuilder(unit)
@@ -488,16 +557,128 @@ local function orderIdle(unit)
 	});
 end
 
-local function orderFor(unit, turn)
+-- --------------------------------------------------------------------- war
+--
+-- A duel on the lowest difficulty ends fastest by conquest: two players, one
+-- enemy capital, and taking it is a Domination victory outright. Score at the
+-- turn limit is the alternative and it is not available -- the simple setup
+-- screen has no max-turns control, so an unattended game otherwise runs to
+-- turn five hundred.
+--
+-- Only civilizations this player has actually met are considered. Reading the
+-- position of a capital we have never seen would win games the controller did
+-- not earn, and a ladder built on that measures nothing.
+
+local warTarget = nil;
+local warDeclared = {};
+
+local function findWarTarget(player, pid)
+	local diplomacy = try(function() return player:GetDiplomacy(); end);
+	if diplomacy == nil then return nil; end
+	local home = try(function() return player:GetCities():GetCapitalCity(); end);
+	local hx = home and try(function() return home:GetX(); end, 0) or 0;
+	local hy = home and try(function() return home:GetY(); end, 0) or 0;
+
+	local best, bestScore;
+	for _, otherId in ipairs(try(function() return PlayerManager.GetAliveMajorIDs(); end, {})) do
+		if otherId ~= pid and try(function() return diplomacy:HasMet(otherId); end, false) then
+			local other = Players[otherId];
+			pcall(function()
+				for _, city in other:GetCities():Members() do
+					local cx = city:GetX();
+					local cy = city:GetY();
+					-- A capital is worth walking further for: taking every
+					-- original capital is what actually ends the game.
+					local capital = try(function() return city:IsCapital(); end, false);
+					local score = -plotDistance(hx, hy, cx, cy) + (capital and 12 or 0);
+					if bestScore == nil or score > bestScore then
+						best = { player = otherId, x = cx, y = cy, capital = capital };
+						bestScore = score;
+					end
+				end
+			end);
+		end
+	end
+	return best;
+end
+
+local function declareWar(player, pid, counts, turn)
+	if cfg.MakeWar == false then return nil; end
+	if turn < (cfg.WarFromTurn or 25) then return nil; end
+	if counts.military < (cfg.WarArmy or 4) then return nil; end
+	local target = warTarget;
+	if target == nil then return nil; end
+	local diplomacy = try(function() return player:GetDiplomacy(); end);
+	if diplomacy == nil then return nil; end
+	if try(function() return diplomacy:IsAtWarWith(target.player); end, false) then
+		warDeclared[target.player] = true;
+		return nil;
+	end
+	if warDeclared[target.player] then return nil; end
+	if not try(function() return diplomacy:CanDeclareWarOn(target.player); end, true) then
+		return nil;
+	end
+	local params = {};
+	params[PlayerOperations.PARAM_PLAYER_ONE] = pid;
+	params[PlayerOperations.PARAM_PLAYER_TWO] = target.player;
+	local ok = pcall(function()
+		UI.RequestPlayerOperation(pid, PlayerOperations.DIPLOMACY_DECLARE_WAR, params);
+	end);
+	if ok then
+		warDeclared[target.player] = true;
+		emit("war", { turn = turn, target = target.player, x = target.x, y = target.y,
+		              capital = target.capital, army = counts.military });
+	end
+	return ok and "war" or nil;
+end
+
+local function atWar(player)
+	local diplomacy = try(function() return player:GetDiplomacy(); end);
+	if diplomacy == nil or warTarget == nil then return false; end
+	return try(function() return diplomacy:IsAtWarWith(warTarget.player); end, false);
+end
+
+-- Walk at the target and let the move become an attack. Civilization VI
+-- resolves a melee unit ordered onto an occupied enemy plot as an attack, so
+-- "advance" and "attack" are the same order; ranged units get their own.
+local function pressAttack(unit)
+	if warTarget == nil then return nil; end
+	local params = {};
+	params[UnitOperationTypes.PARAM_X] = warTarget.x;
+	params[UnitOperationTypes.PARAM_Y] = warTarget.y;
+	if canOperate(unit, OP["UNITOPERATION_RANGE_ATTACK"])
+			and operate(unit, OP["UNITOPERATION_RANGE_ATTACK"], params) then
+		return "range_attack";
+	end
+	if operate(unit, OP["UNITOPERATION_MOVE_TO"], params) then
+		return "advance";
+	end
+	return nil;
+end
+
+local function orderFor(player, pid, unit, turn)
 	local name = unitTypeName(unit);
 	local row = GameInfo.Units[name];
 	if name == "UNIT_SETTLER" then
-		return orderSettler(unit);
+		return orderSettler(player, pid, unit);
 	elseif name == "UNIT_BUILDER" then
 		return orderBuilder(unit);
 	elseif name == "UNIT_SCOUT" then
 		return firstOperation(unit, { "UNITOPERATION_AUTOMATE_EXPLORE" });
 	elseif row ~= nil and (row.Combat or 0) > 0 then
+		-- Damaged units heal first: sending a hurt unit at a city loses it and
+		-- the war with it.
+		local damage = try(function() return unit:GetDamage(); end, 0) or 0;
+		if damage > (cfg.HealBelow or 40) then
+			local healed = firstOperation(unit, { "UNITOPERATION_HEAL",
+			                                      "UNITOPERATION_REST_REPAIR",
+			                                      "UNITOPERATION_FORTIFY" });
+			if healed then return healed; end
+		end
+		if atWar(player) then
+			local pressed = pressAttack(unit);
+			if pressed then return pressed; end
+		end
 		return orderMilitary(unit, turn < (cfg.ExploreUntilTurn or 80));
 	end
 	return nil;
@@ -511,8 +692,15 @@ end
 -- never empties and the same turn is ordered forever. GetFirstReadyUnit is the
 -- same query the shipped interface uses to decide whether units are holding up
 -- the turn, so working it to exhaustion is exactly the human loop.
-local function orderUnits(player, turn)
+-- What the last order pass actually did, by action name. Counting orders is
+-- not enough: "seven units ordered" was true on every turn of a game that
+-- reached turn fifty with one city, because every settler was being told to
+-- explore. The breakdown is what says which.
+local lastActions = {};
+
+local function orderUnits(player, pid, turn)
 	local given, stuck = 0, 0;
+	lastActions = {};
 	local lastId, repeats = nil, 0;
 	for _ = 1, (cfg.MaxUnitOrders or 40) do
 		local unit = try(function() return player:GetUnits():GetFirstReadyUnit(); end);
@@ -527,8 +715,10 @@ local function orderUnits(player, turn)
 		else
 			lastId, repeats = id, 0;
 		end
-		local action = orderFor(unit, turn) or orderIdle(unit);
+		local action = orderFor(player, pid, unit, turn) or orderIdle(unit);
 		if action == nil then stuck = stuck + 1; break; end
+		local key = unitTypeName(unit) .. ":" .. action;
+		lastActions[key] = (lastActions[key] or 0) + 1;
 		given = given + 1;
 	end
 	return given, stuck;
@@ -555,7 +745,14 @@ local function chooseProduction(city, counts, nCities, turn)
 	if counts.scout < 1 and turn < 30 then
 		ladder[#ladder + 1] = { "UNIT_SCOUT", "scout" };
 	end
-	if counts.military < math.max(2, nCities * (cfg.MilitaryPerCity or 1.5)) then
+	-- An army large enough to take a city, not merely to garrison one. The
+	-- floor rises as the war turn approaches, because a declaration made with
+	-- two warriors is a declaration that loses.
+	local wantArmy = math.max(2, nCities * (cfg.MilitaryPerCity or 1.5));
+	if turn >= (cfg.WarFromTurn or 25) - 10 then
+		wantArmy = math.max(wantArmy, (cfg.WarArmy or 4) + 2);
+	end
+	if counts.military < wantArmy then
 		for _, name in ipairs({ "UNIT_SWORDSMAN", "UNIT_ARCHER", "UNIT_SPEARMAN",
 		                        "UNIT_SLINGER", "UNIT_WARRIOR" }) do
 			ladder[#ladder + 1] = { name, "army" };
@@ -601,6 +798,12 @@ local function buildParams(row)
 	return params;
 end
 
+-- What each city was last told to build, and on which turn. Re-sending the
+-- same order every tick is how one game logged two hundred settler requests
+-- in fifty turns: the queue read comes back empty for a few frames after a
+-- request, so the "queue is empty" test fires again and again.
+local lastBuild = {};
+
 local function driveProduction(player, turn)
 	local counts = countUnits(player);
 	local cities = {};
@@ -614,7 +817,10 @@ local function driveProduction(player, turn)
 			local queue = city:GetBuildQueue();
 			return queue and queue:GetCurrentProductionTypeHash() or 0;
 		end, 0);
-		if current == nil or current == 0 then
+		local cityId = try(function() return city:GetID(); end, -1);
+		local remembered = lastBuild[cityId];
+		local fresh = (remembered == nil) or (remembered.turn ~= turn);
+		if (current == nil or current == 0) and fresh then
 			local name, row, why = chooseProduction(city, counts, #cities, turn);
 			if row ~= nil then
 				local params = buildParams(row);
@@ -624,6 +830,7 @@ local function driveProduction(player, turn)
 					end);
 					if ok then
 						issued = issued + 1;
+						lastBuild[cityId] = { turn = turn, item = name };
 						if name == "UNIT_SETTLER" then counts.settler = counts.settler + 1;
 						elseif name == "UNIT_BUILDER" then counts.builder = counts.builder + 1;
 						elseif name == "UNIT_SCOUT" then counts.scout = counts.scout + 1;
@@ -851,7 +1058,7 @@ local function answerBlocker(player, pid, blocker, turn)
 	elseif name == "ENDTURN_BLOCKING_UNITS"
 			or name == "ENDTURN_BLOCKING_UNIT_NEEDS_ORDERS"
 			or name == "ENDTURN_BLOCKING_STACKED_UNITS" then
-		local given = orderUnits(player, turn);
+		local given = orderUnits(player, pid, turn);
 		return given > 0 and "units" or nil;
 	end
 	return nil;
@@ -885,10 +1092,16 @@ local function playTurn(player, pid, turn)
 		civic = chooseCivic(player, pid);
 	end
 	local policies = fillPolicies(player);
+	-- Refresh the war picture once a turn, not once a tick: it walks every
+	-- city of every civilization this player has met.
+	warTarget = findWarTarget(player, pid);
+	local war = declareWar(player, pid, countUnits(player), turn);
 	local builds = driveProduction(player, turn);
-	local ordered, stuck = orderUnits(player, turn);
+	local ordered, stuck = orderUnits(player, pid, turn);
 	emit("turn", {
 		policies = policies,
+		war = war,
+		target = warTarget and (warTarget.capital and "capital" or "city") or nil,
 		turn = turn,
 		score = try(function() return player:GetScore(); end, -1),
 		gold = try(function() return math.floor(player:GetTreasury():GetGoldBalance()); end, -1),
@@ -896,6 +1109,7 @@ local function playTurn(player, pid, turn)
 		units = countUnits(player).total,
 		research = research, civic = civic,
 		builds = builds, ordered = ordered, stuck = stuck,
+		actions = lastActions,
 		blocker = blockerName(currentBlocker(pid)),
 	});
 end
@@ -916,29 +1130,42 @@ local function tick()
 			playTurn(player, pid, turn);
 		end
 
+		-- Answer whatever the game says it is waiting on, then end the turn
+		-- anyway.
+		--
+		-- Waiting for the blocker to clear before ending was the design, and it
+		-- deadlocks: Civilization VI's end-turn blockers are the interface
+		-- telling a person what they could still do, not the engine refusing to
+		-- advance. A policy slot that cannot be filled, a city with nothing it
+		-- can build, a unit that will not take an order -- each of those is a
+		-- notification that comes straight back after it is answered or
+		-- dismissed, and a controller that treats it as a gate sits on the same
+		-- turn until the run times out. Answering and then ending loses at most
+		-- the value of one decision; waiting loses the whole game.
 		local blocker = currentBlocker(pid);
 		local none = try(function() return EndTurnBlockingTypes.NO_ENDTURN_BLOCKING; end, 0);
 		if blocker ~= nil and blocker ~= none then
 			local name = blockerName(blocker);
+			attempts = attempts + 1;
+			local answered;
 			if SOFT_BLOCKERS[name] then
-				-- Give the idle units something to do, then end the turn
-				-- regardless. Waiting for this to clear is waiting forever.
-				orderUnits(player, turn);
+				orderUnits(player, pid, turn);
+				answered = "units";
 			else
-				attempts = attempts + 1;
-				local answered = answerBlocker(player, pid, blocker, turn);
-				if attempts == 1 or attempts % (cfg.BlockerReportEvery or 25) == 0 then
-					emit("blocked", { turn = turn, blocker = name,
-					                  attempts = attempts, answered = answered });
-				end
-				if attempts >= (cfg.MaxBlockedAttempts or 40) then
-					local dropped = dismissBlocker(pid, blocker);
-					emit("dismissed", { turn = turn, blocker = name,
-					                    dismissed = dropped, attempts = attempts });
-					attempts = 0;
-					if not dropped then return; end
-				end
-				return;
+				answered = answerBlocker(player, pid, blocker, turn);
+			end
+			if attempts == 1 or attempts % (cfg.BlockerReportEvery or 25) == 0 then
+				emit("blocked", { turn = turn, blocker = name,
+				                  attempts = attempts, answered = answered });
+			end
+			-- Only if the same blocker has survived a whole turn's worth of
+			-- attempts is the notification dropped, and that is reported as the
+			-- forfeit it is.
+			if attempts >= (cfg.MaxBlockedAttempts or 40) then
+				local dropped = dismissBlocker(pid, blocker);
+				emit("dismissed", { turn = turn, blocker = name,
+				                    dismissed = dropped, attempts = attempts });
+				attempts = 0;
 			end
 		end
 
