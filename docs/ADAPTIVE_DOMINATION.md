@@ -3,6 +3,12 @@
 Status: **preregistered before implementation or focal data**. This branch is
 evaluator-only and changes no shipped AI behavior.
 
+Pre-implementation reproducibility clarification, still before any simulation:
+the first compile audit made the frozen difficulty explicit as Prince and
+clarified that non-focal majors use the champion while city-states, Free Cities,
+and barbarians use Basic. This changes no treatment, population, outcome, seed,
+or decision gate.
+
 ## Why this experiment exists
 
 The production archive shows plenty of war without a civilization converting
@@ -55,9 +61,10 @@ cell the evaluator constructs one base world, clones it, and runs:
   start-of-turn boundary, then the same champion permanently retargeted with
   `AdvancedAi::retarget(VictoryTarget::Domination)`.
 
-All seven non-focal majors and every minor/barbarian use the same compiled
-champion controller in both arms. A qualifying boundary exists only when the
-focal seat currently owns and has kept a city satisfying all of:
+All seven non-focal majors use the same compiled champion controller in both
+arms; every city-state, Free City, and barbarian uses the same stock Basic
+controller in both arms. A qualifying boundary exists only when the focal seat
+currently owns and has kept a city satisfying all of:
 
 1. `occupied_from` names another living or defeated **major** civilization;
 2. `original_owner != focal`;
@@ -119,13 +126,18 @@ and the paired strength share is `sum(treatment utility) / sum(both-arm
 utility)`. The score term is an ordinary consequence of play, not an injected
 reward. Raw wins, victory types, score, and capital outcomes are always printed
 beside the composite so a passing label cannot hide a score-only effect.
+Every map-seat-arm also emits a deterministic `raw` JSON row containing its
+trigger provenance, exact-prefix status, all component outcomes, and utility,
+so the aggregates can be reconstructed from the captured log.
 
-The two seat cells are averaged before inference, making the map seed—not a
-seat or a game—the independent unit. Direction counts likewise compare one
-two-seat treatment mean with its control mean per map. Confidence intervals use
-a deterministic 10,000-resample percentile bootstrap over maps with bootstrap
-seed `0xAD0_107`; exact sign tests drop tied maps. No seat-level pseudo-
-replication is permitted.
+The two seat cells are averaged within each map before inference, making the
+map seed—not a seat or a game—the independent unit. A capital row averages its
+qualifying seat differences and omits a map only when neither seat qualifies;
+strength always averages both seats. Direction counts likewise compare one
+map-row treatment mean with its control mean. Confidence intervals use a
+deterministic 10,000-resample percentile bootstrap over those map rows with
+bootstrap seed `0xAD0_107`; exact sign tests drop tied maps. No seat-level
+pseudo-replication is permitted.
 
 ## Frozen phases and commands
 
@@ -134,7 +146,8 @@ when every option below occurs exactly once, has the canonical raw spelling,
 and no unrecognized or duplicate argument exists. Missing, valueless,
 malformed, default-substituted, or extra arguments are diagnostic-only. In
 particular, a formal command requires explicit `--ai advanced_evolved`,
-`--randomize-civs`, `--jobs 6`, both turn horizons, and the entire map profile.
+`--difficulty prince`, `--randomize-civs`, `--jobs 6`, both turn horizons, and
+the entire map profile.
 
 ### 1. Serialized null
 
@@ -142,6 +155,7 @@ particular, a formal command requires explicit `--ai advanced_evolved`,
 adaptive_domination_eval --phase null --treatment none --ai advanced_evolved \
   --maps 4 --players 8 --width 84 --height 54 --city-states 12 \
   --deployment-turns 250 --observe-turns 320 --speed online \
+  --difficulty prince \
   --map continents --shape planet --poles poles --randomize-civs \
   --victories science,culture,domination --focal-seats 0,7 \
   --seed 10700000 --jobs 6
@@ -158,6 +172,7 @@ adaptive_domination_eval --phase screen \
   --treatment post_conquest_domination --ai advanced_evolved \
   --maps 30 --players 8 --width 84 --height 54 --city-states 12 \
   --deployment-turns 250 --observe-turns 320 --speed online \
+  --difficulty prince \
   --map continents --shape planet --poles poles --randomize-civs \
   --victories science,culture,domination --focal-seats 0,7 \
   --seed 10710000 --jobs 6
@@ -186,6 +201,7 @@ adaptive_domination_eval --phase holdout \
   --treatment post_conquest_domination --ai advanced_evolved \
   --maps 120 --players 8 --width 84 --height 54 --city-states 12 \
   --deployment-turns 250 --observe-turns 320 --speed online \
+  --difficulty prince \
   --map continents --shape planet --poles poles --randomize-civs \
   --victories science,culture,domination --focal-seats 0,7 \
   --seed 10720000 --jobs 6
@@ -195,10 +211,10 @@ The holdout passes only if all terms hold:
 
 1. at least 60 of 240 focal cells qualify with exact-once retargeting and no
    pre-trigger divergence;
-2. the paired mean post-trigger capital-gain difference is at least `+0.15`
-   per qualifying focal cell, its map-bootstrap 95% interval is wholly above
-   zero, and treatment-favorable non-tied map directions pass a two-sided exact
-   sign test at `p < 0.05`;
+2. the paired mean of the within-map qualifying-seat post-trigger capital-gain
+   differences is at least `+0.15`, its map-bootstrap 95% interval is wholly
+   above zero, and treatment-favorable non-tied map directions pass a two-sided
+   exact sign test at `p < 0.05`;
 3. the fraction of qualifying cells that ever reach two foreign Original
    Capitals is at least 10 percentage points above control;
 4. paired strength share is at least 52% with a map-bootstrap 95% lower bound
