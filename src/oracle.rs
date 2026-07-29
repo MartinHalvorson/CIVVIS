@@ -232,10 +232,46 @@ pub enum Grant {
     /// is the field ordinary production accumulates into, so this credits the
     /// empire in the currency the settler would have been paid for in.
     Rebate,
+    /// [`Grant::Expansion`], restricted to Settlers the agent's **own** plan
+    /// was already asking for.
+    ///
+    /// Half of a partition. `Expansion` pays while the seat holds fewer than
+    /// the hardcoded [`EXPANSION_TARGET`], but the agent has a target of its
+    /// own — `StrategicPlan::desired_cities`, which ramps as
+    /// `(3 + turn/standard_duration(90)).min(map_capacity).min(6)` and so asks
+    /// for three cities through the whole opening. `rebate_census` measured
+    /// the stock agent **already holding as many cities as its own plan asked
+    /// for on 47.9% of the turns the grant fires**, so a large share of what
+    /// the grant buys is cities the agent had not decided to want.
+    ///
+    /// That is the one split that reconciles the two results on this axis.
+    /// Raising the target is null (`advanced_wide_opening`, 49.6% over 240
+    /// pairs, #588) and so is paying the settler's price ([`Grant::Rebate`],
+    /// +0.45 cities against the grant's +3.05) — yet the grant itself is worth
+    /// 23.0% to 52.3%. Splitting it says which half of its work carries that:
+    ///
+    /// - **`Wanted` carries it** — the agent's target is fine and it simply
+    ///   cannot execute against it. Price is already excluded, so what is left
+    ///   is the pipeline: empire-wide serialization, the `pop >= 2` floor, and
+    ///   transit.
+    /// - **`Beyond` carries it** — the target is the constraint after all, and
+    ///   raising it measured null only because the pipeline could not deliver
+    ///   the extra cities. That is the combination #588 declined to run.
+    ///
+    /// A seat that has not yet assessed a plan is counted here: it holds its
+    /// capital alone and every target the ramp can produce is at least three,
+    /// so it is unambiguously short of whatever it is about to decide. That
+    /// also keeps the partition exact — every turn `Expansion` would fire is
+    /// claimed by exactly one of the two.
+    ExpansionWanted,
+    /// [`Grant::Expansion`], restricted to Settlers **past** what the agent's
+    /// own plan asked for. The other half of [`Grant::ExpansionWanted`]'s
+    /// partition; the rationale is written there.
+    ExpansionBeyond,
 }
 
 impl Grant {
-    pub const ALL: [Grant; 9] = [
+    pub const ALL: [Grant; 11] = [
         Grant::None,
         Grant::Modernity,
         Grant::Taker,
@@ -245,6 +281,8 @@ impl Grant {
         Grant::Siting,
         Grant::Expansion,
         Grant::Rebate,
+        Grant::ExpansionWanted,
+        Grant::ExpansionBeyond,
     ];
 
     pub fn name(self) -> &'static str {
@@ -258,6 +296,8 @@ impl Grant {
             Grant::Siting => "siting",
             Grant::Expansion => "expansion",
             Grant::Rebate => "rebate",
+            Grant::ExpansionWanted => "expansion_wanted",
+            Grant::ExpansionBeyond => "expansion_beyond",
         }
     }
 
@@ -460,6 +500,45 @@ impl<A: Ai> Oracle<A> {
         let Some(home) = expansion_payout_city(g, pid) else {
             return;
         };
+        let Some(pos) = g.cities.get(&home).map(|city| city.pos) else {
+            return;
+        };
+        g.spawn_unit("settler", pid, pos);
+        self.fired += 1;
+    }
+
+    /// The city count the wrapped agent's own plan is currently asking for.
+    ///
+    /// `None` before the agent has assessed a plan. Callers treat that as
+    /// "short of whatever it is about to decide", which is true by
+    /// construction at that point: the seat holds its capital alone and the
+    /// ramp's own floor is three.
+    fn planned_cities(&self) -> Option<usize> {
+        self.inner.plan_report().map(|plan| plan.desired_cities)
+    }
+
+    /// [`Grant::Expansion`] split on whether the agent's own plan had already
+    /// asked for this city.
+    ///
+    /// `wanted` selects the half: `true` grants only while the seat is short
+    /// of `desired_cities`, `false` only while it is at or above it and still
+    /// under [`EXPANSION_TARGET`]. The two are exhaustive and disjoint over
+    /// every turn `grant_expansion` would fire, so their firing counts sum to
+    /// its own and neither can quietly become the whole grant.
+    fn grant_expansion_split(&mut self, g: &mut Game, pid: usize, wanted: bool) {
+        let Some(home) = expansion_payout_city(g, pid) else {
+            return;
+        };
+        // No plan yet means the seat has not assessed one, which only happens
+        // while it holds the capital alone. Any target the ramp can produce is
+        // at least three, so it is short — the `wanted` half claims the turn.
+        let short = match self.planned_cities() {
+            Some(target) => g.player_city_ids(pid).len() < target,
+            None => true,
+        };
+        if short != wanted {
+            return;
+        }
         let Some(pos) = g.cities.get(&home).map(|city| city.pos) else {
             return;
         };
@@ -670,6 +749,8 @@ impl<A: Ai> Ai for Oracle<A> {
                 Grant::Siting => self.grant_siting(g, pid),
                 Grant::Expansion => self.grant_expansion(g, pid),
                 Grant::Rebate => self.grant_rebate(g, pid),
+                Grant::ExpansionWanted => self.grant_expansion_split(g, pid, true),
+                Grant::ExpansionBeyond => self.grant_expansion_split(g, pid, false),
             }
         }
         self.inner.take_turn(g, pid);
@@ -1174,6 +1255,73 @@ mod tests {
             }
         }
         assert!(rebate.fired() > 0, "the rebate never paid, so the cap is untested");
+    }
+
+    /// `expansion_wanted` and `expansion_beyond` must partition `expansion`:
+    /// on every turn, exactly one of them fires if and only if `expansion`
+    /// does.
+    ///
+    /// A partition is the whole point of the split. If the two overlapped,
+    /// each would carry some of the other's effect and neither result would
+    /// localise anything; if they left a gap, their two effects would not sum
+    /// to the grant they are decomposing and a missing share would look like
+    /// an interaction. All three are driven off clones of one position so the
+    /// comparison is exact rather than statistical.
+    /// ⚠ All three arms are probed off **one** acting oracle. Three separate
+    /// `Oracle`s would each wrap their own `AdvancedAi`, and only the one that
+    /// actually took turns would ever assess a plan — so `planned_cities()`
+    /// would read `None` forever on the other two, the `wanted` half would
+    /// claim every eligible turn by its no-plan fallback, and the partition
+    /// would look perfect while testing nothing.
+    #[test]
+    fn the_expansion_split_partitions_the_expansion_grant() {
+        let mut g = Game::new(4, 28, 18, 8_108, 200, 2);
+        // Plays stock, so the split is measured over the trajectory it is
+        // meant to describe rather than over one the grant already changed.
+        let mut agent = Oracle::new(AdvancedAi::new(), Grant::None);
+        let mut others = AdvancedAi::fleet(&g);
+        let mut ever_wanted = false;
+        let mut ever_beyond = false;
+        let mut ever_whole = false;
+        while g.winner.is_none() && g.turn <= 160 {
+            let pid = g.current;
+            if pid == 0 {
+                let (mut a, mut b, mut c) = (g.clone(), g.clone(), g.clone());
+                let before = agent.fired();
+                agent.grant_expansion(&mut a, 0);
+                let whole = agent.fired() - before;
+                let before = agent.fired();
+                agent.grant_expansion_split(&mut b, 0, true);
+                let wanted = agent.fired() - before;
+                let before = agent.fired();
+                agent.grant_expansion_split(&mut c, 0, false);
+                let beyond = agent.fired() - before;
+
+                assert_eq!(
+                    wanted + beyond,
+                    whole,
+                    "the split does not sum to the whole grant"
+                );
+                assert!(
+                    wanted == 0 || beyond == 0,
+                    "both halves fired on the same turn"
+                );
+                ever_whole |= whole > 0;
+                ever_wanted |= wanted > 0;
+                ever_beyond |= beyond > 0;
+                agent.take_turn(&mut g, pid);
+            } else {
+                others[pid].take_turn(&mut g, pid);
+            }
+            if g.winner.is_none() && g.current == pid {
+                let _ = g.apply(pid, &crate::game::Action::EndTurn);
+            }
+        }
+        assert!(ever_whole, "the whole grant never fired, so nothing is partitioned");
+        assert!(
+            ever_wanted || ever_beyond,
+            "neither half ever fired while the whole grant did"
+        );
     }
 
     /// The grant must be modernization and nothing else: no Gold, no health,
