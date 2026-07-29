@@ -62,6 +62,7 @@ pub const EVAL_ONLY_AIS: [&str; 62] = [
     "advanced_early_score_build",
     "advanced_evolved_blind",
     "advanced_settler_commit",
+    "advanced_expansion_payback",
     "advanced_food_first",
     "advanced_measured_dedication",
     "advanced_lane_reachable",
@@ -736,6 +737,15 @@ pub fn builtin_ai(name: &str, seed: u64) -> Box<dyn Ai> {
             ai.city_strategy = true;
             ai.city_strategy_halt_growth = true;
             ai.city_strategy_expansion_first = false;
+            Box::new(ai)
+        }
+        // Treatment for the expansion-window axis: identical to `advanced`
+        // except the settler gate closes on whether a settler built here and
+        // now would pay for itself, rather than on a flat end-of-game reserve.
+        // See `AdvancedAi::expansion_pays_back` and #554/#559.
+        "advanced_expansion_payback" => {
+            let mut ai = AdvancedAi::new();
+            ai.expansion_pays_back = true;
             Box::new(ai)
         }
         "advanced_lane_reachable" => {
@@ -1472,6 +1482,7 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         ),
         "advanced" => (Vec::new(), "advanced"),
         "advanced_lane_reachable" => (Vec::new(), "advanced_lane_reachable"),
+        "advanced_expansion_payback" => (Vec::new(), "advanced_expansion_payback"),
         "advanced_city_strategy" => (Vec::new(), "advanced_city_strategy"),
         "advanced_city_strategy_emphasis" => (Vec::new(), "advanced_city_strategy_emphasis"),
         "advanced_city_strategy_roles" => (Vec::new(), "advanced_city_strategy_roles"),
@@ -2014,6 +2025,7 @@ mod tests {
                 "advanced_early_score_alarm",
                 "advanced_early_score_build",
                 "advanced_settler_commit",
+                "advanced_expansion_payback",
                 "advanced_banking_dedication",
                 "advanced_city_strategy",
                 "advanced_city_strategy_emphasis",
