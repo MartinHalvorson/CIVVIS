@@ -5080,3 +5080,53 @@ reduces regret on a fresh external profile earns the mirrored gameplay gate.
 | the fixed destination advantage head transfers Standard → Online | **refuted in this sample** |
 | explicit role interactions repair the learner | **refuted on Standard holdout** |
 | the current model should control gameplay | **rejected before A/B** |
+
+## 2026-07-29 — PRE-REGISTRATION: preserve matched doctrine outcomes before overriding a move
+
+The first causal move head averaged four matched doctrine continuations into
+one return before learning. That makes a 2-2 split look like a confident small
+effect, makes the target scale depend on the map profile, and forces the model
+to replace the expert even when its margin is negligible. Its Standard gain
+reversed on Online games. This experiment changes those three properties and
+nothing about gameplay.
+
+**Hypothesis.** A linear pairwise head trained on the sign of every matched
+candidate comparison, with disagreement shrunk toward indifference, will
+transfer better than the mean-return listwise head. Requiring a predicted
+probability of at least **0.70** before replacing the expert will turn weak or
+profile-specific preferences into abstentions instead of regressions.
+
+The target for each unordered candidate pair is fixed before data collection.
+Each of the four doctrine-matched return differences contributes a win, loss,
+or half-win tie. A Jeffreys `Beta(0.5, 0.5)` posterior mean is the logistic
+target, so 4-0, 3-1, and 2-2 evidence becomes 0.90, 0.70, and 0.50. All pairs
+are kept; split evidence explicitly teaches a zero margin. The feature vector
+is the difference of the already-validated 35 destination features. Training
+uses 80 deterministic epochs, batch size 32, rate 0.05, and L2 0.0001. No
+nonlinear terms or external-profile tuning are allowed.
+
+The data and decision rule are also fixed:
+
+- development: **64** four-player 44x28 Standard games, seeds
+  946000-946063, no city-states, four observations at turns 50/75/100/125;
+- untouched external test: **32** six-player 74x46 Online games, seeds
+  947000-947031, six city-states, four observations at turns
+  70/100/130/160;
+- both: three same-unit alternatives, 80-round continuation horizon, four
+  matched doctrine rotations, and zero tolerated integrity failures;
+- the existing hash split holds out 25% of Standard games. The external run is
+  spent only if the 0.70-gated policy has positive held-out return lift over
+  the expert and overrides at least 5% of decisions;
+- after that selection gate, the same fixed model is refit on all Standard
+  games and evaluated once on Online. The existing 40-epoch, temperature-0.01
+  listwise destination head is rerun on the same corpus as the target-control;
+- external success requires positive lift over the expert with a game-macro
+  95% lower confidence bound above zero and at least 5% overrides. Anything
+  weaker is a rejection, not permission to tune the threshold on these maps.
+
+The primary metrics are oracle regret and return lift versus the recorded
+expert, macro-averaged by independent game. Override rate, the fraction of
+overrides with positive mean return, and their matched-doctrine win/loss/tie
+counts diagnose whether abstention worked. No gameplay code or model artifact
+is promoted by this experiment; a passing external result earns a separate,
+mirrored gameplay A/B.
