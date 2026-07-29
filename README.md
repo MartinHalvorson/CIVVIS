@@ -1,6 +1,12 @@
 # CIVVIS
 
-A good bit of vibecoding. Still a bit buggy, apologies for any slop. A whole
+### Notes from Martin:
+
+A good bit of vibecoding. Still a bit buggy, apologies for any slop. 
+
+### The rest is AI generated and maintained:
+
+A whole
 AI-vs-AI game below, first settler to space victory (click for the full video):
 
 [![Spectate mode: a whole AI-vs-AI game on a Planet world of canal-ringed islands — six civilizations settle a globe of hexagons, the camera turns the planet and drops onto the Grand Canals II shelves and channels, Babylon puts the first satellite up on turn 189 and lands on the Moon and Mars, and three expeditions race for another star until Babylon's arrives on turn 282 for the science victory](docs/exhibition.gif)](docs/exhibition.mp4)
