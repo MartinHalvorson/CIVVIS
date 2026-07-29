@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Script-only context: the loader binds the same-named .lua alongside it.
+
+     Write the element open-and-close. A self-closing <Context/> is well-formed
+     XML but binds no script, so the mod applies cleanly, logs no error, and
+     silently never runs. -->
+<Context>
+</Context>

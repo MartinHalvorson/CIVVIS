@@ -2085,6 +2085,58 @@
   .victory-option-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 7px 9px; }
   .victory-option { display: flex; align-items: center; gap: 5px; min-width: 0; color: var(--muted); font-size: var(--type-small); cursor: pointer; }
   .victory-option input { margin: 0; }
+  /* The first setup pass stays short. Less common rules live behind one
+     disclosure at the bottom of each panel, where they remain discoverable
+     without making every new game begin with a wall of switches. */
+  .advanced-settings {
+    grid-column: 1 / -1; width: 100%; margin-top: 2px; overflow: hidden;
+    border: 1px solid var(--line-soft); border-radius: 9px; background: #09131080;
+  }
+  .advanced-settings > summary {
+    min-height: 38px; display: flex; align-items: center; justify-content: space-between;
+    gap: 10px; padding: 10px 11px; color: var(--muted); cursor: pointer;
+    list-style: none; font-size: var(--type-small); font-weight: 850;
+    letter-spacing: .09em; text-transform: uppercase; user-select: none;
+  }
+  .advanced-settings > summary::-webkit-details-marker { display: none; }
+  .advanced-settings > summary::after {
+    content: "+"; flex: 0 0 auto; color: var(--gold); font-size: var(--type-body); line-height: 1;
+  }
+  .advanced-settings[open] > summary { border-bottom: 1px solid var(--line-soft); color: var(--text); }
+  .advanced-settings[open] > summary::after { content: "−"; }
+  .advanced-settings-summary { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+  .advanced-settings-summary small {
+    overflow: hidden; color: var(--faint); font-size: var(--type-label); font-weight: 650;
+    letter-spacing: .02em; text-overflow: ellipsis; text-transform: none; white-space: nowrap;
+  }
+  .advanced-settings-body {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
+    padding: 10px 10px 11px; align-items: end;
+  }
+  .advanced-settings-body > .victory-options,
+  .advanced-settings-body > .mod-options,
+  .advanced-settings-body > .overlay-options,
+  .advanced-settings-body > .setting-row { grid-column: 1 / -1; }
+  .advanced-settings-body > .overlay-options { margin-top: 0; }
+  .advanced-settings-body > .setting-row { margin-top: 2px; }
+  .mod-options {
+    padding: 9px 10px 10px; border: 1px solid var(--line-soft);
+    border-radius: 9px; background: #07100e99;
+  }
+  .mod-help { margin: -1px 0 9px; line-height: 1.4; }
+  .mod-tier + .mod-tier { margin-top: 10px; padding-top: 9px; border-top: 1px solid var(--line-soft); }
+  .mod-tier-title {
+    margin-bottom: 7px; color: var(--gold); font-size: var(--type-label);
+    font-weight: 850; letter-spacing: .08em; text-transform: uppercase;
+  }
+  .mod-option-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 7px 8px; }
+  .mod-option {
+    min-width: 0; display: flex; align-items: flex-start; gap: 6px;
+    color: var(--muted); font-size: var(--type-small); line-height: 1.25; cursor: pointer;
+  }
+  .mod-option input { flex: 0 0 auto; margin: 1px 0 0; }
+  .mod-option span { min-width: 0; }
+  .mod-option small { display: block; margin-top: 1px; color: var(--faint); font-size: var(--type-label); }
 
   /* Tech and civic overlay */
   #pedia {
@@ -2332,7 +2384,7 @@
        whatever size the window is — a label that gives up width ellipsizes and
        keeps its tooltip, where a figure that gives up width becomes a smaller
        number that is simply wrong. Each breakpoint below moves the label floor
-       only, and keeps 4 labels + 2 figures adding up to what the identity block
+       only, and keeps 5 labels + 2 figures adding up to what the identity block
        has always claimed at that width. */
     --hud-ident-min: 30px; --hud-ident-num-min: 38px;
     /* How much of the flexible width the identity block asks for relative to
@@ -2341,13 +2393,13 @@
        clipped name still reads and a clipped number lies. */
     --hud-identity-bias: 1;
     --hud-identity-column: minmax(
-      calc(var(--hud-ident-min) * 4 + var(--hud-ident-num-min) * 2), 9.804fr);
+      calc(var(--hud-ident-min) * 5 + var(--hud-ident-num-min) * 2), 11.104fr);
     /* Ten cells and the nine gutters between them. */
     --hud-stats-column: minmax(
       calc(var(--hud-stat-min) * 10 + var(--hud-stat-gap) * 9), 10fr);
     --hud-column-gap: 6px;
-    /* Civilization, leader, player and the plan are labels, and their cells
-       ellipsize. Elo and win odds are figures on the taller floor: with no
+    /* Civilization, leader, player, age and the plan are labels, and their
+       cells ellipsize. Elo and win odds are figures on the taller floor: with no
        minimum at all they collapsed on a 1440px screen and rendered "1792" as
        "179" and "11%" as "1" — a truncated number that reads as a different,
        smaller number. Watch-as keeps its fixed track between Leader and
@@ -2358,6 +2410,7 @@
       var(--hud-watch-column) minmax(var(--hud-ident-min), 1.85fr)
       minmax(var(--hud-ident-num-min), 1.017fr)
       minmax(var(--hud-ident-num-min), 1.017fr)
+      minmax(var(--hud-ident-min), 1.3fr)
       minmax(var(--hud-ident-min), 2.035fr);
     --hud-stat-tracks: repeat(10, minmax(var(--hud-stat-min), 1fr));
     --hud-lock-column: 13px; --hud-row-height: 26px; --hud-row-gap: 2px;
@@ -2533,7 +2586,7 @@
   #playerhud .watch-as-link { grid-column: 3; grid-row: 1; align-self: center; justify-self: stretch; }
   #playerhud .diplomacy-civ-link { grid-column: 1; grid-row: 1; }
   #playerhud .diplomacy-leader-link { grid-column: 2; grid-row: 1; }
-  #playerhud .diplomacy-identity-secondary { grid-column: 4 / 8; grid-row: 1; }
+  #playerhud .diplomacy-identity-secondary { grid-column: 4 / 9; grid-row: 1; }
   #playerhud .diplomacy-stats { grid-column: 4; grid-row: 1; }
 
   /* Locking a seat keeps its row in view while the rest of the table scrolls
@@ -2562,18 +2615,18 @@
   #playerhud .watch-as-link {
     width: calc(100% - 2px); height: 22px; margin: 0 1px; font-size: var(--type-micro);
   }
-  /* Every identity fact uses the same six tracks as the heading above it.
+  /* Every identity fact uses the same seven tracks as the heading above it.
      Variable-length names can ellipsize inside their own cell without moving
      ELO, win odds or strategy to a different horizontal position on each row. */
   #playerhud .diplomacy-identity {
     position: relative; min-width: 0; display: grid;
     align-items: stretch; gap: 0; overflow: hidden; padding-block: 0;
   }
-  /* Player, ELO, WIN% and PLAN are four of the identity block's tracks, but
-     they are drawn inside one button that spans all four — so the button has
+  /* Player, ELO, WIN%, AGE and PLAN are five of the identity block's tracks,
+     but they are drawn inside one button that spans all five — so the button has
      to divide itself along exactly the lines its parent already drew.
      `subgrid` is what makes that literal. A copy of the ratios cannot be:
-     the shares here were `1 : .55 : .55 : 1.1`, which is the same proportion
+     the shares here are `1 : .55 : .55 : .7 : 1.1`, which is the same proportion
      the heading uses, and the columns still came apart in two ways that a
      reading of the stylesheet does not show.
      - **Floors.** The heads carry the 30px label floor and the 38px figure
@@ -2585,7 +2638,7 @@
        the heading's list *and* this block's parent — but a copy of the old
        ratios does not hear about it at all. Dragging the ELO/WIN% bar 26px on
        a 1920px screen moved the head 21px and left every figure where it was.
-     With subgrid these four tracks are not equal to the heading's, they are
+     With subgrid these five tracks are not equal to the heading's, they are
      the same tracks, so no drag and no floor can separate them again. */
   #playerhud .diplomacy-identity-secondary {
     grid-template-columns: subgrid;
@@ -2604,12 +2657,17 @@
   #playerhud .diplomacy-player { color: #d9e1dc; font-weight: 750; }
   #playerhud .diplomacy-civ, #playerhud .diplomacy-leader-name,
   #playerhud .diplomacy-player, #playerhud .diplomacy-elo-value,
-  #playerhud .diplomacy-expected-value, #playerhud .diplomacy-strategy .ai-plan {
+  #playerhud .diplomacy-expected-value, #playerhud .diplomacy-age .civ-age,
+  #playerhud .diplomacy-strategy .ai-plan {
     min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
   #playerhud .diplomacy-elo, #playerhud .diplomacy-expected {
     justify-content: flex-end; text-align: right; font-variant-numeric: tabular-nums;
   }
+  #playerhud .diplomacy-age .civ-age { display: block; color: #c7d3ce; font-weight: 850; }
+  #playerhud .diplomacy-age .civ-age.heroic { color: #d7b6ff; }
+  #playerhud .diplomacy-age .civ-age.golden { color: var(--gold-bright); }
+  #playerhud .diplomacy-age .civ-age.dark { color: #b9a3aa; }
   #playerhud .diplomacy-strategy { padding-right: 11px; }
   #playerhud .diplomacy-strategy .ai-plan { display: block; }
   #playerhud .detail-caret {
@@ -2823,8 +2881,8 @@
      together. These are minima rather than percentages: a percentage with a
      300px minimum never actually yields, which is why the identity column used
      to hold its full width while the values it was starving fell to 27px.
-     Every step keeps the four label floors and the two figure floors adding up
-     to what the identity block has always claimed at that width (4a + 76),
+     Every step keeps the five label floors and the two figure floors adding up
+     to what the identity block claims at that width (5a + 76),
      because the enclosing track's own floor is written from exactly that sum.
      Only the floors move here — the shares belong to the viewer now, and a
      breakpoint that rewrote them would undo a dragged column on the next
@@ -2887,7 +2945,7 @@
     }
   }
   @media (max-width: 1100px) {
-    /* Six identity columns plus ten value columns need the map's full width at
+    /* Seven identity columns plus ten value columns need the map's full width at
        this point. The instruments stack as bands across the top, with the
        tracker's paths in columns because there is no height left to stack them. */
     #map-controls-dock { right: 0; }
@@ -2974,10 +3032,10 @@
   /* Ten complete numeric columns have a real minimum width. When a custom or
      phone-sized box cannot supply it, keep a readable type floor and scroll the
      table inside its own panel instead of crushing or spilling its cells.
-     680px keeps 176px of identity, ten 32px values with 2px gutters, and the
+     705px keeps 201px of identity, ten 32px values with 2px gutters, and the
      lock, widened watch action and padding comfortably separated. */
   #playerhud[data-type-size="compact"] .ribbon-stat-heading,
-  #playerhud[data-type-size="compact"] .diplomacy-ribbon { min-width: 680px; }
+  #playerhud[data-type-size="compact"] .diplomacy-ribbon { min-width: 705px; }
   #playerhud[data-type-size="roomy"] {
     grid-template-columns: 168px minmax(0, 1fr);
     --hud-ident-min: 61px; --hud-column-gap: 7px;
@@ -3666,10 +3724,10 @@
       </summary>
       <div class="sec settings-sec" id="game-settings">
       <div id="newgame-options">
-        <label class="small">Base game ruleset<select id="baseruleset" style="margin-top:4px">
+        <label class="small game-advanced-setting" data-advanced-order="10">Base game ruleset<select id="baseruleset" style="margin-top:4px">
           <option value="civ6" selected>Civ 6</option>
         </select></label>
-        <label class="small">Leader Pool<select id="leaderpool" style="margin-top:4px">
+        <label class="small game-advanced-setting" data-advanced-order="20">Leader Pool<select id="leaderpool" style="margin-top:4px">
           <option value="civ6" selected>Civ 6 Leaders</option>
           <option value="expanded">Expanded</option>
         </select></label>
@@ -3678,7 +3736,7 @@
           <option value="single">Single player</option>
           <option disabled>Multiplayer · later</option>
         </select></label>
-        <label class="small">Teams<select id="teams" style="margin-top:4px"
+        <label class="small game-advanced-setting" data-advanced-order="30">Teams<select id="teams" style="margin-top:4px"
           title="Permanent pre-game teams. Teammates share sight, pass each other the Eureka for a technology they have not researched, fight the same wars and win together.">
           <option value="ffa" selected>Free-for-all</option>
           <option value="2">2 teams</option>
@@ -3690,7 +3748,7 @@
           <option value="">Random</option>
         </select></label>
         <label class="small human-setting">Difficulty<select id="difficulty" style="margin-top:4px"></select></label>
-        <label class="small">World shape<select id="mapshape" style="margin-top:4px">
+        <label class="small game-advanced-setting" data-advanced-order="40">World shape<select id="mapshape" style="margin-top:4px">
           <option value="flat">Flat</option>
           <option value="planet">Planet</option>
         </select></label>
@@ -3707,7 +3765,7 @@
           <option value="water_world">Water World</option>
           <option value="true_start_earth">True Start Earth</option>
         </select></label>
-        <label class="small">Thermal distribution<select id="mappoles" style="margin-top:4px">
+        <label class="small game-advanced-setting" data-advanced-order="50">Thermal distribution<select id="mappoles" style="margin-top:4px">
           <option value="poles">Hot equator, cold poles</option>
           <option value="randomized">Randomized</option>
         </select></label>
@@ -3719,7 +3777,7 @@
           <option value="10">Large · 10 civs · 15 city-states · 96×60</option>
           <option value="12">Huge · 12 civs · 18 city-states · 106×66</option>
         </select></label>
-        <label class="small">Start era<select id="startera" style="margin-top:4px">
+        <label class="small game-advanced-setting" data-advanced-order="60">Start era<select id="startera" style="margin-top:4px">
           <option value="stone_age" disabled>Stone Age · later</option>
           <option value="ancient" selected>Ancient</option>
         </select></label>
@@ -3739,7 +3797,7 @@
             <button id="savebtn" title="Write a save this server can offer back later">Save</button>
           </div>
         </div>
-        <div class="victory-options" role="group" aria-labelledby="victory-options-title">
+        <div class="victory-options game-advanced-setting" data-advanced-order="80" role="group" aria-labelledby="victory-options-title">
           <h2 id="victory-options-title">Victory conditions</h2>
           <div class="victory-option-grid">
             <label class="victory-option"><input type="checkbox" id="victory-science" checked>Science</label>
@@ -3750,6 +3808,37 @@
             <label class="victory-option"><input type="checkbox" id="victory-score" checked>Score</label>
           </div>
         </div>
+        <label class="small game-advanced-setting" data-advanced-order="70">Future Era<select id="futureera" style="margin-top:4px">
+          <option value="classic" selected>Classic Future Era</option>
+          <option value="martin" disabled>Martin's Future Era · later</option>
+        </select></label>
+        <div class="mod-options game-advanced-setting" data-advanced-order="90"
+             role="group" aria-labelledby="mod-options-title">
+          <h2 id="mod-options-title">Mods</h2>
+          <div class="small mod-help">Tournament defaults are preselected. These choices are saved for the upcoming per-game mod loader; the active server ruleset is unchanged for now.</div>
+          <div class="mod-tier">
+            <div class="mod-tier-title">Civ 6 tournament defaults</div>
+            <div class="mod-option-grid">
+              <label class="mod-option"><input type="checkbox" data-game-mod="bbg" checked><span>Better Balanced Game<small>BBG · balance rules</small></span></label>
+              <label class="mod-option"><input type="checkbox" data-game-mod="bbm" checked><span>Better Balanced Maps<small>BBM · fair starts</small></span></label>
+              <label class="mod-option"><input type="checkbox" data-game-mod="mph" checked><span>Multiplayer Helper<small>MPH · lobby tools</small></span></label>
+              <label class="mod-option"><input type="checkbox" data-game-mod="bsm" checked><span>Better Spectator Mod<small>BSM · observer tools</small></span></label>
+            </div>
+          </div>
+          <div class="mod-tier">
+            <div class="mod-tier-title">Optional</div>
+            <div class="mod-option-grid">
+              <label class="mod-option"><input type="checkbox" data-game-mod="quick-deals"><span>Quick Deals<small>Trade quality of life</small></span></label>
+              <label class="mod-option"><input type="checkbox" data-game-mod="detailed-map-tacks"><span>Detailed Map Tacks<small>Planning tools</small></span></label>
+              <label class="mod-option"><input type="checkbox" data-game-mod="extended-policy-cards"><span>Extended Policy Cards<small>Policy yield previews</small></span></label>
+              <label class="mod-option"><input type="checkbox" data-game-mod="sukritacts-oceans"><span>Sukritact's Oceans<small>Expanded ocean rules</small></span></label>
+            </div>
+          </div>
+        </div>
+        <details class="advanced-settings" id="game-advanced-settings" data-advanced-settings="game">
+          <summary><span class="advanced-settings-summary">Advanced Settings<small id="game-advanced-summary">Rules, eras, victories · 4 of 8 mods</small></span></summary>
+          <div class="advanced-settings-body" id="game-advanced-settings-body"></div>
+        </details>
       </div>
       </div>
     </details>
@@ -3785,7 +3874,7 @@
           </div>
           <label class="setting-row" id="cinema-setting" hidden><span><input type="checkbox" id="cinemachk" checked> Cinema presentation</span><kbd>C</kbd></label>
         </div>
-        <div class="overlay-options" role="group" aria-labelledby="overlay-options-title">
+        <div class="overlay-options display-advanced-setting" data-advanced-order="10" role="group" aria-labelledby="overlay-options-title">
           <h2 id="overlay-options-title">Map overlays</h2>
           <div class="small overlay-layout-help">Drag a title bar to move an overlay; drag any edge or corner to resize. Your layout saves automatically.</div>
           <div class="small overlay-layout-help">In the standings, drag a thin bar in the column heading to divide two columns differently; double-click one to put that pair back. Widths are shares of the panel, so they follow it as the window resizes. ◉ locks a row: it stays in view while the rest of the table scrolls past it. Two seats of the same civilization lock separately, and a lock is remembered into the next game.</div>
@@ -3798,7 +3887,7 @@
           </div>
           <button class="ghost overlay-layout-reset" id="reset-overlay-layout" type="button">Reset overlay positions, sizes &amp; columns</button>
         </div>
-        <div class="overlay-options" id="flat-map-wrap-settings" role="group"
+        <div class="overlay-options display-advanced-setting" data-advanced-order="20" id="flat-map-wrap-settings" role="group"
              aria-labelledby="flat-map-wrap-title">
           <h2 id="flat-map-wrap-title">Flat map wraparound</h2>
           <div class="overlay-option-grid">
@@ -3809,8 +3898,12 @@
         <label class="setting-row"><span><input type="checkbox" id="yieldchk"> Show yields per tile</span><kbd>Y</kbd></label>
         <label class="setting-row"><span><input type="checkbox" id="gridchk"> Show the hex grid</span><kbd>G</kbd></label>
         <label class="setting-row"><span><input type="checkbox" id="reschk"> Show resource icons</span><kbd>Q</kbd></label>
-        <label class="setting-row"><span><input type="checkbox" id="edgepanchk"> Pan when the pointer reaches a map edge</span></label>
-        <label class="setting-row"><span><input type="checkbox" id="artifactchk"> Show artifact sites &amp; shipwrecks</span></label>
+        <label class="setting-row display-advanced-setting" data-advanced-order="30"><span><input type="checkbox" id="edgepanchk"> Pan when the pointer reaches a map edge</span></label>
+        <label class="setting-row display-advanced-setting" data-advanced-order="40"><span><input type="checkbox" id="artifactchk"> Show artifact sites &amp; shipwrecks</span></label>
+        <details class="advanced-settings" id="display-advanced-settings" data-advanced-settings="display">
+          <summary><span class="advanced-settings-summary">Advanced Settings<small>Overlay layout, map edges &amp; archaeology</small></span></summary>
+          <div class="advanced-settings-body" id="display-advanced-settings-body"></div>
+        </details>
       </div>
       </div>
     </details>
@@ -3978,6 +4071,8 @@
 "use strict";
 const SIDEBAR_SECTION_STATE_KEY = "civvis-sidebar-sections-v1";
 const SIDEBAR_COLLAPSED_STATE_KEY = "civvis-sidebar-collapsed-v1";
+const ADVANCED_SETTINGS_STATE_KEY = "civvis-advanced-settings-v1";
+const GAME_MOD_STATE_KEY = "civvis-game-mods-v1";
 function initSidebarSections() {
   let saved = {};
   try { saved = JSON.parse(localStorage.getItem(SIDEBAR_SECTION_STATE_KEY) || "{}"); }
@@ -3992,6 +4087,71 @@ function initSidebarSections() {
   }
 }
 initSidebarSections();
+function initAdvancedSettings() {
+  const moveByOrder = (source, selector, target) => {
+    const nodes = [...source.querySelectorAll(selector)]
+      .sort((first, second) => +(first.dataset.advancedOrder || 0) - +(second.dataset.advancedOrder || 0));
+    for (const node of nodes) target.appendChild(node);
+  };
+
+  // Keep the source order that older clients and the embedded-page contract
+  // understand, then compose the shorter basic pass in the live DOM. Moving
+  // the real controls (rather than cloning them) preserves their ids, values,
+  // delegated change handler and accessibility labels.
+  const game = document.getElementById("newgame-options");
+  const gameAdvanced = document.getElementById("game-advanced-settings");
+  moveByOrder(game, ".game-advanced-setting", document.getElementById("game-advanced-settings-body"));
+  const basic = ["gamemode", "maptype", "leader", "difficulty", "np", "gamespeed"]
+    .map(id => document.getElementById(id).closest("label"));
+  basic.push(document.getElementById("saves-group"));
+  for (const node of basic) gameAdvanced.before(node);
+
+  const display = document.getElementById("display-settings");
+  moveByOrder(display, ".display-advanced-setting", document.getElementById("display-advanced-settings-body"));
+
+  let disclosureState = {};
+  try { disclosureState = JSON.parse(localStorage.getItem(ADVANCED_SETTINGS_STATE_KEY) || "{}"); }
+  catch (_) { disclosureState = {}; }
+  for (const details of document.querySelectorAll("[data-advanced-settings]")) {
+    const key = details.dataset.advancedSettings;
+    if (Object.prototype.hasOwnProperty.call(disclosureState, key))
+      details.open = !!disclosureState[key];
+    details.addEventListener("toggle", () => {
+      disclosureState[key] = details.open;
+      try { localStorage.setItem(ADVANCED_SETTINGS_STATE_KEY, JSON.stringify(disclosureState)); }
+      catch (_) {}
+    });
+  }
+
+  // The repository's current mod loader is process-wide, so this first UI
+  // pass saves a future per-game pack without claiming it changed the running
+  // ruleset. Static checked attributes remain the tournament defaults when no
+  // preference has been saved yet.
+  const modBoxes = [...document.querySelectorAll("[data-game-mod]")];
+  try {
+    const saved = JSON.parse(localStorage.getItem(GAME_MOD_STATE_KEY) || "null");
+    if (Array.isArray(saved)) {
+      const selected = new Set(saved);
+      for (const box of modBoxes) box.checked = selected.has(box.dataset.gameMod);
+    }
+  } catch (_) {}
+  const syncModSummary = () => {
+    const selected = modBoxes.filter(box => box.checked).map(box => box.dataset.gameMod);
+    document.getElementById("game-advanced-summary").textContent =
+      `Rules, eras, victories · ${selected.length} of ${modBoxes.length} mods`;
+    return selected;
+  };
+  syncModSummary();
+  for (const box of modBoxes) box.addEventListener("change", event => {
+    const selected = syncModSummary();
+    try { localStorage.setItem(GAME_MOD_STATE_KEY, JSON.stringify(selected)); }
+    catch (_) {}
+    // These are saved preferences until the per-game loader exists; do not
+    // stage an identical engine setup merely because this future pack changed.
+    event.stopPropagation();
+  });
+}
+initAdvancedSettings();
 // ---------------------------------------------------------------- constants
 const S = 36, SQ3 = Math.sqrt(3);
 const TERRAIN = { grassland:"#5e9440", plains:"#ab9e4e", desert:"#d8c184",
@@ -5951,8 +6111,8 @@ const HUD_RESIZE_EDGES = [
 //    and hands exactly that much to the column on its right, so the total the
 //    table asks for never changes. No gesture can push a column off the panel,
 //    open a gap at the end of the row, or make the table start scrolling.
-//    Fourteen of the fifteen bars therefore move their own two columns and
-//    nothing else. The fifteenth is the bar between the identity block and the
+//    All but one of the bars therefore move their own two columns and nothing
+//    else. The final bar is between the identity block and the
 //    ten values, and moving it moves width between those two blocks — so the
 //    columns inside each one take up the slack in their own proportion, which
 //    is what "give the numbers more room" has to mean.
@@ -5974,7 +6134,8 @@ const PLAYER_HUD_COLUMNS = [
   {key:"player", label:"Player", block:"identity", head:3, min:"--hud-ident-min", width:1.85},
   {key:"elo", label:"Elo rating", block:"identity", head:4, min:"--hud-ident-num-min", width:1.017},
   {key:"win", label:"Win odds", block:"identity", head:5, min:"--hud-ident-num-min", width:1.017},
-  {key:"plan", label:"Plan", block:"identity", head:6, min:"--hud-ident-min", width:2.035},
+  {key:"age", label:"Age", block:"identity", head:6, min:"--hud-ident-min", width:1.3},
+  {key:"plan", label:"Plan", block:"identity", head:7, min:"--hud-ident-min", width:2.035},
   ...[["production", "Production"], ["science", "Science"], ["culture", "Culture"],
       ["faith", "Faith"], ["gold", "Gold"], ["military", "Military"], ["cities", "Cities"],
       ["suzerain", "Suzerainty"], ["wonders", "Wonders"], ["score", "Score"]]
@@ -6042,7 +6203,7 @@ function syncPlayerHudColumns(placeGrips = true) {
     `${track(identity[0])} ${track(identity[1])} var(--hud-watch-column) ` +
       identity.slice(2).map(track).join(" "),
     stats.map(track).join(" "),
-    `minmax(calc(var(--hud-ident-min) * 4 + var(--hud-ident-num-min) * 2), ` +
+    `minmax(calc(var(--hud-ident-min) * 5 + var(--hud-ident-num-min) * 2), ` +
       `${total(identity).toFixed(4)}fr)`,
     `minmax(calc(var(--hud-stat-min) * 10 + var(--hud-stat-gap) * 9), ` +
       `${total(stats).toFixed(4)}fr)`,
@@ -6112,9 +6273,9 @@ function playerHudSeamMetrics(seam) {
 // gains, the right one gives up, so the pair's combined share is exactly
 // constant and the total the table asks for never moves.
 //
-// Fourteen of the fifteen seams divide two columns of one block, and there the
+// All but the final seam divide two columns of one block, and there the
 // share a column holds and the width it renders at are proportional — the first
-// guess below lands and the loop exits on its first pass. The fifteenth is the
+// guess below lands and the loop exits on its first pass. The final seam is the
 // seam between the identity block and the values, and it is not proportional:
 // when the value block is sitting on its own floor, share taken out of Plan is
 // partly picked up by the identity columns beside it instead, and a step sized
@@ -6309,6 +6470,7 @@ const RESPONSIVE_TEXT_RULES = [
   {selector:"#playerhud .diplomacy-player", min:9, max:13},
   {selector:"#playerhud .diplomacy-elo-value", min:9, max:13},
   {selector:"#playerhud .diplomacy-expected-value", min:9, max:13},
+  {selector:"#playerhud .diplomacy-age .civ-age", min:9, max:12},
   {selector:"#playerhud .diplomacy-strategy .ai-plan", min:9, max:12},
   // Measured against the cell, not against itself. The figure sits in a grid
   // with place-content:center, so it is sized to its own text: clientWidth and
@@ -23031,11 +23193,7 @@ function drawPlayerHud() {
   }
   const rankById = new Map(majors.map((p, index) => [p.id, index + 1]));
   const statsByPlayer = new Map(majors.map(p => [p.id, playerHudStats(p, rankById.get(p.id))]));
-  const capitalsByOwner = new Map();
-  for (const city of state.cities || []) {
-    if (city.is_capital && !capitalsByOwner.has(city.owner))
-      capitalsByOwner.set(city.owner, city);
-  }
+  const capitals = capitalIndex();
   const highestByStat = new Map();
   statsByPlayer.forEach(stats => stats.forEach(([kind, , value]) => {
     const numericValue = Number(value) || 0;
@@ -23051,9 +23209,9 @@ function drawPlayerHud() {
     `<span>Player stats</span></div>` +
     `<div class="ribbon-stat-heading">` +
     `<span class="diplomacy-identity-head">` +
-    // WIN% and PLAN, not WIN ODDS and AI STRATEGY. These heads clip rather than
+    // WIN%, AGE and PLAN, not WIN ODDS, CURRENT AGE and AI STRATEGY. These heads clip rather than
     // ellipsize, so an overlong one is not shortened but corrupted: "WIN ODDS"
-    // rendered as "WIN ODI" and "AI STRATEGY" as "AI STRATEG". Both of these fit
+    // rendered as "WIN ODI" and "AI STRATEGY" as "AI STRATEG". All three fit
     // whole at every width the masthead supports, and PLAN is the word the rest
     // of the client already uses for this field. The full wording is in the
     // tooltip on each head.
@@ -23065,6 +23223,7 @@ function drawPlayerHud() {
     `<span>PLAYER</span>` +
     `<span class="numeric" title="Elo rating">ELO</span>` +
     `<span class="numeric" title="Elo-implied win odds, per cent">WIN%</span>` +
+    `<span title="Civilization age">AGE</span>` +
     `<span title="AI active strategy">PLAN</span></span>` +
     `<span class="diplomacy-stat-head">` +
     [["production", "PROD", "Production per turn"], ["science", "SCI", "Science per turn"],
@@ -23081,10 +23240,21 @@ function drawPlayerHud() {
       const color = pcol(p.id);
       const leader = p.leader || "Unknown leader";
       const rank = rankById.get(p.id);
-      const capital = capitalsByOwner.get(p.id);
-      const empireTitle = capital
-        ? `View ${p.civ}'s empire from its capital, ${capital.name}`
-        : `${p.civ} has no capital to view`;
+      // A defeated civilization keeps its faded row and nothing else — but the
+      // capital it founded still stands under whoever took it, so the row's
+      // link goes there rather than going dead with the empire. That ground is
+      // the one place on the map that still remembers them, and it is exactly
+      // what somebody reading a greyed-out row wants to look at.
+      const capital = empireCapitalFrom(capitals, p.id);
+      const capitalTaken = Boolean(capital) && capital.owner !== p.id;
+      const capitalHolder = capitalTaken
+        ? state.players.find(other => other.id === capital.owner) : null;
+      const empireTitle = !capital
+        ? `${p.civ} has no capital to view`
+        : capitalTaken
+        ? `View ${p.civ}'s first capital, ${capital.name}` +
+          (capitalHolder ? ` — now held by ${capitalHolder.civ}` : " — now in other hands")
+        : `View ${p.civ}'s empire from its capital, ${capital.name}`;
       const alliance = p.alliance;
       const strategy = p.ai_strategy || "";
       const strategyText = strategy ? `${titleCase(strategy)} plan` : "";
@@ -23115,6 +23285,9 @@ function drawPlayerHud() {
         ? ` · ${p.agenda.name}${stance ? ` (${stance} of you)` : ""}: ${p.agenda.description}`
         : "";
       const civTitle = `${empireTitle}${shownStance ? ` · ${leader} ${shownStance} of you` : ""}`;
+      const age = ["heroic", "golden", "normal", "dark"].includes(p.age) ? p.age : "";
+      const ageLabel = age ? titleCase(age) : "—";
+      const ageTitle = age ? `${ageLabel} Age` : "Age unavailable";
       const activeStrategy = strategy
         ? `<span class="ai-plan ${strategy}">${titleCase(strategy)}</span>`
         : `<span class="ai-plan">No active strategy</span>`;
@@ -23209,6 +23382,8 @@ function drawPlayerHud() {
         // twelve per cent shown as the digit one.
         `<span class="diplomacy-identity-field diplomacy-expected" title="Elo-implied win odds">` +
         `<span class="diplomacy-expected-value">${expectPct === null ? "—" : expectPct}</span></span>` +
+        `<span class="diplomacy-identity-field diplomacy-age" title="${ageTitle}">` +
+        `<span class="civ-age ${age || "unknown"}">${ageLabel}</span></span>` +
         `<span class="diplomacy-identity-field diplomacy-strategy">${activeStrategy}</span>` +
         `<span class="detail-caret">${expanded ? "▾" : "▸"}</span></button></span>` +
         `<button class="diplomacy-stats" data-hud-action="watch" data-hud-civ="${p.id}" title="${watchTitle}" aria-label="Watch ${p.civ}">` +
@@ -27547,12 +27722,37 @@ function setDirector(on) {
   if (on && (!SPEC || VIEW !== "cinematic")) return;
   setCinemaMode(!!on);
 }
+// Every capital on the map, indexed in one pass the three ways a row can need
+// one. A captured capital keeps both `is_capital` and the `original_owner` that
+// founded it, so `founded` outlives the civilization in it.
+function capitalIndex() {
+  const seat = new Map(), held = new Map(), founded = new Map();
+  for (const city of state?.cities || []) {
+    if (!city.is_capital) continue;
+    if (city.owner === city.original_owner) seat.set(city.owner, city);
+    if (!held.has(city.owner)) held.set(city.owner, city);
+    if (!founded.has(city.original_owner)) founded.set(city.original_owner, city);
+  }
+  return {seat, held, founded};
+}
+// Where a civilization's row points on the map, in falling order of what is
+// still true: the capital it founded and still holds, then any capital it has
+// taken from somebody else, then — for an empire driven off the board — the
+// capital it founded, standing under its conqueror. Only a founding capital
+// nobody has ever seen leaves a row with nowhere to go.
+function empireCapitalFrom(index, pid) {
+  return index.seat.get(pid) || index.held.get(pid) || index.founded.get(pid) || null;
+}
+function empireCapital(pid) {
+  if (!state || !Number.isInteger(pid)) return null;
+  return empireCapitalFrom(capitalIndex(), pid);
+}
 // A civilization's own cell is the stable way into its capital view. It moves
 // the map without changing whose fog of war is being viewed; that distinct
 // transition belongs to Watch as.
 function focusCapital(pid) {
   if (!state) return;
-  const capital = state.cities.find(city => city.owner === pid && city.is_capital);
+  const capital = empireCapital(pid);
   if (!capital) return;
   takeCameraControl();
   centerWorld(capital.pos);
