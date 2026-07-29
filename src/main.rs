@@ -944,6 +944,10 @@ fn main() {
                 seed: arg(&args, "--seed", 1) as u64,
                 threads: arg(&args, "--threads", 8) as usize,
                 dir: arg_text(&args, "--dir", "evolved"),
+                // `--turns` already resolves through `stock_turns(&args)`,
+                // which reads this flag; until now the game itself did not,
+                // so `--speed online` bred truncated Standard games.
+                speed: arg_text(&args, "--speed", &default_speed()),
             });
         }
         "play" => {

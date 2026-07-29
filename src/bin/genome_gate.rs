@@ -166,6 +166,7 @@ fn main() {
             let cfg = EvoCfg {
                 generations: 1, pop: 1, games: chunk, players, width, height,
                 max_turns: turns, seed, threads: 1, dir: String::new(),
+                speed: civvis::game::default_speed(),
             };
             fitness_observations(&champ, std::slice::from_ref(&champ), &cfg, b as u32, chunk)
                 .iter()
@@ -252,6 +253,7 @@ fn main() {
             seed,
             threads: jobs,
             dir: dir.clone(),
+            speed: civvis::game::default_speed(),
         };
         let results = parallel::map(contenders.len(), jobs, move |i| {
             let (index, contender) = &contenders[i];

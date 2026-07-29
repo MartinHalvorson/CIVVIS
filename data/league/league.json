@@ -58,6 +58,25 @@
       "anchor": true
     },
     {
+      "name": "advanced_evolved",
+      "username": "TheHeir",
+      "kind": {
+        "Builtin": {
+          "ai": "advanced_evolved"
+        }
+      },
+      "rating": 1702.6556614094036,
+      "rd": 350.0,
+      "vol": 0.06,
+      "games": 0,
+      "wins": 0,
+      "leader_elo": {},
+      "born_round": 0,
+      "parents": [],
+      "retired": false,
+      "anchor": false
+    },
+    {
       "name": "basic",
       "username": "TrainingWheels",
       "kind": {

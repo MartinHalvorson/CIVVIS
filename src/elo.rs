@@ -38,7 +38,7 @@ pub const BUILTIN_AIS: [&str; 10] = [
 /// tournament ratings. Keeping them out of `BUILTIN_AIS` prevents a control
 /// factory from being pooled into the same player/leader rating key as
 /// its treatment.
-pub const EVAL_ONLY_AIS: [&str; 44] = [
+pub const EVAL_ONLY_AIS: [&str; 49] = [
     "advanced_banking_dedication",
     "advanced_blind_to_leaders",
     "advanced_rush",
@@ -53,6 +53,10 @@ pub const EVAL_ONLY_AIS: [&str; 44] = [
     "advanced_measured_dedication",
     "advanced_lane_reachable",
     "advanced_parallel_settlers",
+    "advanced_settler_first",
+    "advanced_prophet_first",
+    "advanced_league_top",
+    "strategic_cheap",
     "advanced_relief_scoped",
     "strategic_score",
     "strategic_doctrine",
@@ -78,6 +82,7 @@ pub const EVAL_ONLY_AIS: [&str; 44] = [
     "policy_wide",
     "policy_wide_frozen",
     "strategic_warm",
+    "strategic_religion_expand",
     "strategic_cold",
     "strategic_noprophet",
     "strategic_deep_adaptive",
@@ -594,6 +599,82 @@ pub fn builtin_ai(name: &str, seed: u64) -> Box<dyn Ai> {
             ai.refuse_unreachable_lanes = true;
             Box::new(ai)
         }
+        // Treatment for the routing axis: identical to `advanced` except that
+        // the finite Prophet race is tested before the opportunistic war that
+        // currently preempts it on turns 55..120. See
+        // `AdvancedAi::prophet_before_opportunism`.
+        // Upper bound for the expansion-valuation axis: a settler outbids every
+        // other item whenever the five gates permit one at all. This is not a
+        // shippable policy, it is the oracle-ablation question — is there ANY
+        // headroom in what a settler is worth? The gates still bind (one in
+        // flight, stop at the planned target, pop 2, window open), so it means
+        // "beeline to the city target", not "settlers forever".
+        "advanced_settler_first" => {
+            let mut ai = AdvancedAi::new();
+            ai.settler_price = 100.0;
+            Box::new(ai)
+        }
+        // The genome the exhibition actually seats, against the genome the
+        // repository actually evolved. `Session::ai_fleet` seats each civ's
+        // best-rated available strategy from the shipped roster, and the top of
+        // that roster is league-bred `Advanced { weights }` entries — not the
+        // gen-14 champion, which until PR #519 had no entrant at all. Whether a
+        // 1790-rated league genome is genuinely stronger than the champion or
+        // merely better-rated is the question this entrant exists to answer;
+        // `docs/LEAGUE_GENOME_CHALLENGER.md` records the best-rated one losing
+        // 98 Elo when transferred into `strategic_deep`.
+        //
+        // Picks the highest-rated active genome from the SHIPPED roster, so it
+        // is reproducible from the tree rather than from a local league.
+        // The cost-performance frontier of the macro search, which nothing has
+        // measured because nothing was ever cost-bound. Every registered
+        // variant moves the budget UP (`review_every` 20 and 10, `horizon` 80,
+        // the 4x `strategic_deep`); this is the first that moves it down.
+        //
+        // `strategic` measured ~1833 ms per game-turn at the exhibition's own
+        // profile against its ~250 ms budget, so the deployable question is not
+        // "is more search better" — that is settled and yes — but "how much of
+        // the gain survives a search the exhibition could actually run".
+        //
+        // Three knobs, all multiplicative on branch-rounds:
+        //   review_every 40 -> 80   half the reviews
+        //   horizon      40 -> 20   half the rollout
+        //   rotate_lanes           ~7 branches -> ~3
+        // ≈ 9x cheaper. `rotate_lanes` is a recorded NULL for strength, which
+        // is exactly what a cost-bound deployment wants from it.
+        "strategic_cheap" => {
+            let mut ai = crate::strategic::StrategicAi::with_weights(
+                crate::evolve::load_champion("evolved").unwrap_or_default(),
+            );
+            ai.review_every = 80;
+            ai.horizon = 20;
+            ai.rotate_lanes = true;
+            Box::new(ai)
+        }
+        "advanced_league_top" => {
+            let weights = crate::league::shipped_league()
+                .and_then(|league| {
+                    let mut best: Option<(f64, Weights)> = None;
+                    for index in league.active() {
+                        let strategy = &league.strategies[index];
+                        if let crate::league::StrategyKind::Advanced { weights, .. } =
+                            &strategy.kind
+                        {
+                            if best.as_ref().map(|(r, _)| strategy.rating > *r).unwrap_or(true) {
+                                best = Some((strategy.rating, weights.clone()));
+                            }
+                        }
+                    }
+                    best.map(|(_, weights)| weights)
+                })
+                .unwrap_or_default();
+            Box::new(AdvancedAi::with_weights(weights))
+        }
+        "advanced_prophet_first" => {
+            let mut ai = AdvancedAi::new();
+            ai.prophet_before_opportunism = true;
+            Box::new(ai)
+        }
         // Treatment for the relief-radius axis: identical to `advanced` in
         // every other respect, holding only the force groups that could
         // reach a threatened city instead of every group in the empire.
@@ -684,6 +765,18 @@ pub fn builtin_ai(name: &str, seed: u64) -> Box<dyn Ai> {
         "strategic" => Box::new(crate::strategic::StrategicAi::with_weights(
             crate::evolve::load_champion("evolved").unwrap_or_default(),
         )),
+        // Treatment for the assigned-Religion expansion bypass: identical to
+        // `strategic` except that a seat committed to Religion asks the same
+        // "can this lane afford to expand first?" question every other assigned
+        // lane asks — on the acting agent and on every projected branch alike.
+        // See `StrategicAi::set_religion_may_expand`.
+        "strategic_religion_expand" => {
+            let mut ai = crate::strategic::StrategicAi::with_weights(
+                crate::evolve::load_champion("evolved").unwrap_or_default(),
+            );
+            ai.set_religion_may_expand(true);
+            Box::new(ai)
+        }
         "strategic_score" => Box::new(crate::strategic::StrategicAi::score_only_with_weights(
             crate::evolve::load_champion("evolved").unwrap_or_default(),
         )),
@@ -1181,6 +1274,10 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "strategic_h80" => (vec![genome, value(false)], "strategic_h80"),
         "strategic_rot20" => (vec![genome, value(false)], "strategic_rot20"),
         "strategic_warm" => (vec![genome, value(false)], "strategic_warm"),
+        "strategic_religion_expand" => (
+            vec![genome, value(false)],
+            "strategic_religion_expand",
+        ),
         "strategic_cold" => (vec![genome, value(false)], "strategic_cold"),
         "strategic_noprophet" => (vec![genome, value(false)], "strategic_noprophet"),
         "strategic_deep_adaptive" => (vec![genome, value(false)], "strategic_deep_adaptive"),
@@ -1234,6 +1331,10 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "advanced_banking_dedication" => (Vec::new(), "advanced_banking_dedication"),
         "advanced_measured_dedication" => (Vec::new(), "advanced_measured_dedication"),
         "advanced_parallel_settlers" => (Vec::new(), "advanced_parallel_settlers"),
+        "advanced_settler_first" => (Vec::new(), "advanced_settler_first"),
+        "advanced_prophet_first" => (Vec::new(), "advanced_prophet_first"),
+        "advanced_league_top" => (Vec::new(), "advanced_league_top"),
+        "strategic_cheap" => (vec![genome, value(false)], "strategic_cheap"),
         "advanced_blind_to_leaders" => (Vec::new(), "advanced_blind_to_leaders"),
         "advanced_counter_in_lane" => (Vec::new(), "advanced_counter_in_lane"),
         "advanced_counter_stand_down" => (Vec::new(), "advanced_counter_stand_down"),
@@ -1743,7 +1844,7 @@ mod tests {
             // Anything else reaching that state fell through to the
             // catch-all and is claiming to need nothing while quietly
             // needing a net.
-            const SCRIPTED: [&str; 18] = [
+            const SCRIPTED: [&str; 21] = [
                 "advanced",
                 "advanced_blind_to_leaders",
                 "advanced_rush",
@@ -1756,9 +1857,12 @@ mod tests {
                 "advanced_civ_blind",
                 "advanced_food_first",
                 "advanced_lane_reachable",
+                "advanced_league_top",
                 "advanced_measured_dedication",
                 "advanced_parallel_settlers",
+                "advanced_prophet_first",
                 "advanced_relief_scoped",
+                "advanced_settler_first",
                 "advanced_v1",
                 "basic",
                 "random",

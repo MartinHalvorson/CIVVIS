@@ -465,6 +465,114 @@ pub struct AdvancedAi {
     /// 120 `advanced` wins were religious, so the science lane the filter
     /// exists to refuse was rarely the one being contested.
     pub refuse_unreachable_lanes: bool,
+    /// Test the finite Prophet race before the opportunistic war, not after.
+    ///
+    /// **Off by default until measured.** `assess()` reaches
+    /// `religious_opening_viable` only after an arm that fires on a bare power
+    /// ratio — `turn >= 55 && cities >= 2 && my_power > weakest_rival * 1.80 +
+    /// 20.0`. `war_census` records this agent opening its wars at a mean
+    /// **11.5×** advantage, so that test is satisfied many times over whenever
+    /// it is asked, and `religious_opening_viable` hard-stops at turn 120 (180
+    /// once a religion exists). Those two windows overlap on turns 55..120,
+    /// which is the whole of the prophet race.
+    ///
+    /// The arm below already argues its own case: a Prophet is a *finite
+    /// global* slot, and pursuing it occupies one city's production while the
+    /// rest of the empire carries on. An opportunity to attack a weak
+    /// neighbour is not finite in the same way — it is still there ten turns
+    /// later, and this engine converts it into a domination victory in 0 of
+    /// every 48 games measured.
+    ///
+    /// `at_war` keeps its priority either way: a war already running is not an
+    /// opportunity, it is a fact. With the flag off the cascade is
+    /// arithmetically identical to `at_war || A || B` reaching Conquest first,
+    /// so this ships zero behaviour change until the entrant is selected.
+    pub prophet_before_opportunism: bool,
+    /// What a settler is worth against everything else the city could build.
+    ///
+    /// **1.0 by default — the shipped behaviour exactly.** The settler arm of
+    /// `production_value` scores `920.0 + site_value * 4.0`, and **920 is a
+    /// hardcoded literal**: not a gene, so no run of `evolve` has tuned it, and
+    /// not a doctrine lever, so the macro search has never perturbed it.
+    ///
+    /// `expansion_funnel` (`docs/EVAL.md`, 2026-07-28) measured what that
+    /// literal decides. Over 48 seats and 12 full games, the empire was short
+    /// of its own planned city target, permitted a settler, and had a reachable
+    /// site on **3391 seat-turns — 25.8% of all of them — and built something
+    /// else every single time.** The count of turns blocked by having nowhere
+    /// to go was **zero**. Cities end at 4.02 against a planned 5.25, so this
+    /// is not a disagreement about how many cities to want; the agent simply
+    /// never pays for them.
+    ///
+    /// ⚠ The funnel says the settler loses. It does **not** say by how much, so
+    /// any value here is unconstrained by the measurement. Pick one, register
+    /// it, run it once — do not sweep several against the same maps, which is
+    /// the selection bias that dissolved this repository's coordinate-descent
+    /// result on resampling.
+    pub settler_price: f64,
+    /// How much better a candidate must be before a city abandons what it is
+    /// already building. **1.0 by default, which disables preemption entirely
+    /// and reproduces the shipped behaviour exactly.**
+    ///
+    /// `advanced_production` skips any city whose queue is non-empty, so
+    /// `production_value` is consulted only on an idle city — this agent never
+    /// reconsiders a build once started. `expansion_funnel` measured what that
+    /// costs: over 48 seats, on **25.8% of all seat-turns** the empire was
+    /// short of its own planned city target, permitted a settler, had a
+    /// reachable site, and every city was mid-build. The genuine valuation
+    /// loss — a free city choosing something else — is only **2.6%**.
+    ///
+    /// The plan above this re-assesses every 5 turns (`plan_stale`); the queue
+    /// underneath re-assesses never. Switching is close to free here because
+    /// `City::production_progress` banks a paused build by item key, which is
+    /// the Civ 6 rule and the reason a strong human switches to a settler
+    /// routinely.
+    ///
+    /// ⚠ A margin at or below 1.0 means "switch on any improvement", which
+    /// invites oscillation between two nearly equal candidates re-scored every
+    /// turn. That is why the disabled value is 1.0 rather than 0.0: the flag is
+    /// a *ratio*, and the off state is the identity.
+    pub preempt_margin: f64,
+    /// Let an assigned Religion lane expand first, like every other lane.
+    ///
+    /// ⚠⚠ **MEASURED AND REJECTED. Leave it off.** Applied consistently to the
+    /// acting agent and the macro search's branches together
+    /// (`StrategicAi::set_religion_may_expand`, entrant
+    /// `strategic_religion_expand`) it measured **−53 Elo** over 120 mirrored
+    /// maps, sign p=0.0014 against it. Applied to the actor alone it was a null
+    /// end-to-end (4 helped / 7 hurt, p=0.5488). The skipped test turns out to
+    /// be load-bearing: expansion costs value inside the rollout horizon, so
+    /// permitting it makes the religion lane project *worse* and the search
+    /// routes away from the lane it actually converts. See `docs/EVAL.md`,
+    /// 2026-07-28.
+    ///
+    /// Kept reachable, on the `advanced_lane_reachable` precedent, so the axis
+    /// can be re-measured against a longer rollout horizon rather than
+    /// re-derived from scratch — the result depends on a settler not paying
+    /// back before a branch is scored, which is a statement about the window.
+    ///
+    /// **Off by default.** In `assess()` an explicitly targeted
+    /// seat normally asks "can this lane still afford to expand first?" before
+    /// pursuing its target. The Religion arm is the sole exception: a targeted
+    /// seat with no religion yet goes straight to `GrandStrategy::Religion`,
+    /// skipping the expansion test entirely.
+    ///
+    /// Measured with `commit_curve` on the shipped genome, 40 maps at 4p 60×38:
+    /// a seat committed to Religion at turn 0 finishes on **1.68 cities** and
+    /// wins **15.0%**; committed at turn 60 it reaches 2.48 cities and 30.0%;
+    /// the adaptive control reaches **4.10 cities** and 27.5%. Committing to
+    /// this lane does not produce an agent that plays religion well, it
+    /// produces an agent that never expands.
+    ///
+    /// **This is not only about targeted play.** `StrategicAi` projects every
+    /// macro-search branch by calling `retarget`, so each religion branch is
+    /// simulated by a seat that stops expanding — a systematic mis-projection
+    /// of the lane this engine converts best. The macro search is the one
+    /// component here that has ever won Elo, so a fidelity defect in it is
+    /// worth more than the arm it sits in suggests. Compare
+    /// `continue_from_plan`, which was worth +37 Elo for the same class of
+    /// reason: the counterfactual was simulating the wrong thing.
+    pub assigned_religion_may_expand: bool,
     /// Weigh whether a settle site can be held, not only what it yields.
     ///
     /// **Off by default, on measurement.** `settle_value` scores yields,
@@ -760,6 +868,10 @@ impl AdvancedAi {
             force_groups_dirty: false,
             scoped_relief_hold: false,
             refuse_unreachable_lanes: false,
+            prophet_before_opportunism: false,
+            settler_price: 1.0,
+            preempt_margin: 1.0,
+            assigned_religion_may_expand: false,
             defensible_sites: false,
             food_first: 0.0,
             settler_commit: false,
@@ -852,6 +964,30 @@ impl AdvancedAi {
 
     pub fn current_plan(&self) -> Option<&StrategicPlan> {
         self.plan.as_ref()
+    }
+
+    /// Does any city of `pid` currently see somewhere to send a settler?
+    ///
+    /// This mirrors, exactly, the site test inside `production_value`'s settler
+    /// arm — the near ring first, then the whole map once Shipbuilding is in.
+    /// It exists because that arm refuses a settler for five different reasons
+    /// and then, having passed all five, can still lose the production
+    /// argument; "no site" and "out-competed" are different defects with
+    /// different repairs and no external probe can tell them apart.
+    /// `expansion_funnel` uses it for precisely that split.
+    ///
+    /// Diagnostic only: nothing in the agent's own decision path calls it.
+    pub fn any_settle_site(&self, g: &Game, pid: usize) -> bool {
+        g.player_city_ids(pid).into_iter().any(|cid| {
+            let Some(city) = g.cities.get(&cid) else {
+                return false;
+            };
+            self.best_settle_site(g, pid, city.pos, 11).is_some()
+                || (g.players[pid].techs.contains("shipbuilding")
+                    && self
+                        .best_settle_site(g, pid, city.pos, g.map.width + g.map.height)
+                        .is_some())
+        })
     }
 
     pub fn victory_target(&self) -> Option<VictoryTarget> {
@@ -1872,7 +2008,18 @@ impl AdvancedAi {
                 "a neighbour is inside the ancient window and cannot wall in time",
             )
         } else if let Some(target) = active_victory_target {
-            if target == VictoryTarget::Religion && g.players[pid].religion.is_none() {
+            // The assigned-Religion arm is the only one that does not first ask
+            // whether the empire can afford to expand. Measured, that costs the
+            // whole empire: a seat committed to Religion from turn 0 finishes on
+            // **1.68 cities** against the adaptive agent's **4.10**.
+            let may_expand_first = self.assigned_religion_may_expand
+                && cities.len() < desired_cities
+                && has_site
+                && g.turn < g.standard_duration(175);
+            if target == VictoryTarget::Religion
+                && g.players[pid].religion.is_none()
+                && !may_expand_first
+            {
                 (GrandStrategy::Religion, "the religion lane still needs a religion")
             } else if cities.len() < desired_cities && has_site && g.turn < g.standard_duration(175)
             {
@@ -1882,8 +2029,13 @@ impl AdvancedAi {
             }
         } else if let Some((_, counter)) = denial {
             (counter, "countering a rival close to winning")
-        } else if at_war
-            || (g.turn >= 55 && cities.len() >= 2 && my_power > weakest_rival * 1.80 + 20.0)
+        } else if at_war {
+            (GrandStrategy::Conquest, "already at war")
+        } else if self.prophet_before_opportunism && self.religious_opening_viable(g, pid) {
+            // Same arm as the one below, tested one step earlier. See
+            // `prophet_before_opportunism` for why the order is contested.
+            (GrandStrategy::Religion, "a Prophet is a finite race worth entering now")
+        } else if (g.turn >= 55 && cities.len() >= 2 && my_power > weakest_rival * 1.80 + 20.0)
             || (military_civ
                 && g.turn >= 35
                 && cities.len() >= 2
@@ -7233,7 +7385,14 @@ impl AdvancedAi {
         let mut counts = self.counts(g, pid);
         let city_ids = g.player_city_ids(pid);
         for cid in city_ids {
-            if !g.cities[&cid].queue.is_empty() {
+            // What this city is already committed to, and what that is worth
+            // *now*. Without preemption a non-empty queue is skipped outright,
+            // so `production_value` is only ever consulted on an idle city.
+            let committed: Option<(f64, Item)> = g.cities[&cid].queue.first().cloned().map(|item| {
+                let value = self.production_value(g, pid, cid, &item, plan, &counts);
+                (value, item)
+            });
+            if committed.is_some() && self.preempt_margin <= 1.0 {
                 continue;
             }
             let best: Option<(f64, String, Item)> = {
@@ -7271,7 +7430,18 @@ impl AdvancedAi {
                 best
             };
             if let Some((score, _, item)) = best {
-                if score > -1_000.0
+                // Switching is close to free in this engine: `City::production_progress`
+                // banks a paused build's progress by item key, so an abandoned
+                // item resumes where it stopped. The margin is what stops a
+                // city oscillating between two nearly equal candidates.
+                let displaces_commitment = match &committed {
+                    Some((current, current_item)) => {
+                        *current_item != item && score > *current * self.preempt_margin
+                    }
+                    None => true,
+                };
+                if displaces_commitment
+                    && score > -1_000.0
                     && g.apply(
                         pid,
                         &Action::Produce {
@@ -7458,7 +7628,7 @@ impl AdvancedAi {
                     && expansion_open
                     && site.is_some()
                 {
-                    920.0 + site.map(|(_, v)| v * 4.0).unwrap_or(0.0)
+                    (920.0 + site.map(|(_, v)| v * 4.0).unwrap_or(0.0)) * self.settler_price
                 } else {
                     -10_000.0
                 }
@@ -13890,6 +14060,69 @@ mod tests {
             "the filter fired on {refused} turns but the adaptive planner still \
              chose Science as often as before ({science_turns_with} against \
              {science_turns_without}), so refusing the lane changed no decision"
+        );
+    }
+
+    /// The same check for the routing reorder: does the opportunistic war arm
+    /// actually preempt the finite Prophet race in ordinary games?
+    ///
+    /// The whole argument for `prophet_before_opportunism` is that the two
+    /// windows overlap — the power-ratio arm opens at turn 55, and
+    /// `religious_opening_viable` closes at 120. If they never actually
+    /// collide, the reorder is a no-op and evaluating it would measure the
+    /// stock agent under another name, which is exactly the failure the
+    /// expansion-ceiling run paid 240 games to discover.
+    #[test]
+    fn the_prophet_reorder_fires_in_ordinary_games() {
+        let mut preempted = 0usize;
+        let mut differed = 0usize;
+        let mut sampled = 0usize;
+
+        for seed in 0..3u64 {
+            let mut game = Game::new(4, 60, 38, 42_000 + seed, 500, 6);
+            let mut ais = AdvancedAi::fleet(&game);
+            let mut reordered = AdvancedAi::new();
+            reordered.prophet_before_opportunism = true;
+            let stock = AdvancedAi::new();
+            assert!(
+                !stock.prophet_before_opportunism,
+                "the default keeps the shipped order, so this ships no behaviour change"
+            );
+
+            // Only the window where the two arms can collide is informative.
+            while game.winner.is_none() && game.turn <= 130 {
+                let pid = game.current;
+                if pid == 0 && game.turn >= 40 {
+                    sampled += 1;
+                    let with = reordered.assess(&game, 0).strategy;
+                    let without = stock.assess(&game, 0).strategy;
+                    if with != without {
+                        differed += 1;
+                    }
+                    if without == GrandStrategy::Conquest && with == GrandStrategy::Religion {
+                        preempted += 1;
+                    }
+                }
+                ais[pid].take_turn(&mut game, pid);
+                if game.winner.is_none() && game.current == pid {
+                    let _ = game.apply(pid, &Action::EndTurn);
+                }
+            }
+        }
+        assert!(sampled > 100, "only {sampled} turns sampled");
+        assert!(
+            preempted > 0,
+            "across {sampled} sampled turns in the 40..130 window the stock \
+             cascade never chose Conquest where the reorder chooses Religion, \
+             so the two arms do not actually collide and the treatment is a \
+             no-op"
+        );
+        assert_eq!(
+            differed, preempted,
+            "the reorder is supposed to change exactly one thing — an \
+             opportunistic war giving way to the Prophet race. It differed on \
+             {differed} turns but only {preempted} of those were that swap, so \
+             it is moving something else as well"
         );
     }
 
