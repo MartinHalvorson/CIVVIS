@@ -718,6 +718,12 @@
      carries. */
   .diplomacy-elo-value.provisional { opacity: 0.62; }
   .diplomacy-expected { flex: 0 0 auto; color: #8fd6a4; font-weight: 850; }
+  /* The live figure is the one being read; the opening one is context behind it
+     and the arrow is quieter still. Opacity carries that ordering rather than a
+     second hue, because the column already means one thing and a green-against-
+     amber pair in a 48px cell reads as two different measurements. */
+  .diplomacy-expected .odds-start { opacity: .58; }
+  .diplomacy-expected .odds-move { padding: 0 1px; opacity: .45; font-weight: 700; }
   .diplomacy-player { flex: 1 1 auto; color: #d9e1dc; font-weight: 750; }
   /* The mark leads the CIV cell from a gutter of its own. It is emitted on
      every row, empty where there is no stance to report, so that the rank
@@ -2379,37 +2385,40 @@
        without disturbing the shares; and each enclosing track is the exact sum
        of the columns inside it, which is what lets one bar move width out of
        the last identity column and into the first value column. */
-    /* The label floor narrows with the screen; the figure floor does not. Elo
-       and win odds are four digits and a per cent, and 38px is what those need
-       whatever size the window is — a label that gives up width ellipsizes and
-       keeps its tooltip, where a figure that gives up width becomes a smaller
-       number that is simply wrong. Each breakpoint below moves the label floor
-       only, and keeps 5 labels + 2 figures adding up to what the identity block
-       has always claimed at that width. */
-    --hud-ident-min: 30px; --hud-ident-num-min: 38px;
+    /* The label floor narrows with the screen; the figure floors do not. Elo is
+       four digits and 38px is what that needs whatever size the window is — a
+       label that gives up width ellipsizes and keeps its tooltip, where a figure
+       that gives up width becomes a smaller number that is simply wrong. The
+       odds cell carries two per cents and the arrow between them, so it stands
+       on a wider floor of its own: 48px is "100↗100" whole at the fitter's 9px
+       floor. Each breakpoint below moves the label floor only, and keeps
+       5 labels + 2 figure cells adding up to what the identity block claims at
+       that width. */
+    --hud-ident-min: 30px; --hud-ident-num-min: 38px; --hud-ident-odds-min: 48px;
     /* How much of the flexible width the identity block asks for relative to
        the values, over and above the sum of its own columns. A wide panel can
        afford whole names; a narrow one gives the identity up first, because a
        clipped name still reads and a clipped number lies. */
     --hud-identity-bias: 1;
     --hud-identity-column: minmax(
-      calc(var(--hud-ident-min) * 5 + var(--hud-ident-num-min) * 2), 11.104fr);
+      calc(var(--hud-ident-min) * 5 + var(--hud-ident-num-min)
+           + var(--hud-ident-odds-min)), 11.587fr);
     /* Ten cells and the nine gutters between them. */
     --hud-stats-column: minmax(
       calc(var(--hud-stat-min) * 10 + var(--hud-stat-gap) * 9), 10fr);
     --hud-column-gap: 6px;
     /* Civilization, leader, player, age and the plan are labels, and their
-       cells ellipsize. Elo and win odds are figures on the taller floor: with no
-       minimum at all they collapsed on a 1440px screen and rendered "1792" as
-       "179" and "11%" as "1" — a truncated number that reads as a different,
-       smaller number. Watch-as keeps its fixed track between Leader and
-       Player, which is why the bar for that seam is drawn on Leader's edge.
+       cells ellipsize. Elo and the odds pair are figures on the taller floors:
+       with no minimum at all they collapsed on a 1440px screen and rendered
+       "1792" as "179" and "11%" as "1" — a truncated number that reads as a
+       different, smaller number. Watch-as keeps its fixed track between Leader
+       and Player, which is why the bar for that seam is drawn on Leader's edge.
        Its extra four-pixel tail is the visual gutter before Player. */
     --hud-identity-tracks:
       minmax(var(--hud-ident-min), 2.035fr) minmax(var(--hud-ident-min), 1.85fr)
       var(--hud-watch-column) minmax(var(--hud-ident-min), 1.85fr)
       minmax(var(--hud-ident-num-min), 1.017fr)
-      minmax(var(--hud-ident-num-min), 1.017fr)
+      minmax(var(--hud-ident-odds-min), 1.5fr)
       minmax(var(--hud-ident-min), 1.3fr)
       minmax(var(--hud-ident-min), 2.035fr);
     --hud-stat-tracks: repeat(10, minmax(var(--hud-stat-min), 1fr));
@@ -2470,8 +2479,8 @@
      which are integers, while the browser applies text-overflow on any
      sub-pixel overflow at all — so a head the fitter has correctly settled at
      its exact width overflows by a third of a pixel, and `ellipsis` spends a
-     whole character saying so. Measured at 1600px: WIN% in its 38px column
-     renders whole under `clip` and as "WIN…" under `ellipsis`. Every head is
+     whole character saying so. Measured at 1600px: ELO in its 38px column
+     renders whole under `clip` and as "EL…" under `ellipsis`. Every head is
      short enough to stand at its own floor, and each carries a title. */
   .diplomacy-identity-head span {
     min-width: 0; overflow: hidden; padding-inline: 3px;
@@ -2882,7 +2891,7 @@
      300px minimum never actually yields, which is why the identity column used
      to hold its full width while the values it was starving fell to 27px.
      Every step keeps the five label floors and the two figure floors adding up
-     to what the identity block claims at that width (5a + 76),
+     to what the identity block claims at that width (5a + 38 + 48),
      because the enclosing track's own floor is written from exactly that sum.
      Only the floors move here — the shares belong to the viewer now, and a
      breakpoint that rewrote them would undo a dragged column on the next
@@ -6133,7 +6142,10 @@ const PLAYER_HUD_COLUMNS = [
   {key:"leader", label:"Leader", block:"identity", head:1, min:"--hud-ident-min", width:1.85},
   {key:"player", label:"Player", block:"identity", head:3, min:"--hud-ident-min", width:1.85},
   {key:"elo", label:"Elo rating", block:"identity", head:4, min:"--hud-ident-num-min", width:1.017},
-  {key:"win", label:"Win odds", block:"identity", head:5, min:"--hud-ident-num-min", width:1.017},
+  // One column, two figures: the odds this seat started with and the odds it
+  // holds now. They are dragged, saved and measured as a single column because
+  // they are read as a single movement.
+  {key:"win", label:"Win odds", block:"identity", head:5, min:"--hud-ident-odds-min", width:1.5},
   {key:"age", label:"Age", block:"identity", head:6, min:"--hud-ident-min", width:1.3},
   {key:"plan", label:"Plan", block:"identity", head:7, min:"--hud-ident-min", width:2.035},
   ...[["production", "Production"], ["science", "Science"], ["culture", "Culture"],
@@ -6203,8 +6215,8 @@ function syncPlayerHudColumns(placeGrips = true) {
     `${track(identity[0])} ${track(identity[1])} var(--hud-watch-column) ` +
       identity.slice(2).map(track).join(" "),
     stats.map(track).join(" "),
-    `minmax(calc(var(--hud-ident-min) * 5 + var(--hud-ident-num-min) * 2), ` +
-      `${total(identity).toFixed(4)}fr)`,
+    `minmax(calc(var(--hud-ident-min) * 5 + var(--hud-ident-num-min) ` +
+      `+ var(--hud-ident-odds-min)), ${total(identity).toFixed(4)}fr)`,
     `minmax(calc(var(--hud-stat-min) * 10 + var(--hud-stat-gap) * 9), ` +
       `${total(stats).toFixed(4)}fr)`,
   ];
@@ -23122,6 +23134,67 @@ function foundedReligionMarker(player) {
   return player.founded_religion_exists ? "*" : "";
 }
 
+// ── Win odds: what a seat was worth before the game, and what it is worth now ─
+//
+// A whole per cent is all a 26px row can carry, with two exceptions at the ends
+// of the scale, because both roundings would otherwise state something false:
+//
+//  * "0" is reserved for a seat that cannot win — eliminated, or holding no city
+//    and no settler to found one. A seat with two tenths of one per cent still
+//    has a game to play and reads "<1".
+//  * "100" is reserved for a decided result. A seat at 99.7% has not won yet and
+//    reads ">99".
+function oddsPct(value) {
+  if (!Number.isFinite(+value)) return null;
+  const pct = +value * 100;
+  if (pct <= 0) return "0";
+  if (pct < 0.5) return "<1";
+  if (pct >= 100) return "100";
+  if (pct > 99.5) return ">99";
+  return String(Math.round(pct));
+}
+
+// Which way the game has moved this seat. The dead band is deliberate: without
+// it a rounding-sized wobble flips the arrow every turn and the column reads as
+// noise instead of as a story.
+function oddsMovement(player) {
+  const start = +player.odds_start;
+  const now = +player.odds_now;
+  if (!Number.isFinite(start) || !Number.isFinite(now)) return "→";
+  if (now > start * 1.05) return "↗";
+  if (now < start * 0.95) return "↘";
+  return "→";
+}
+
+function playerOddsFigures(player) {
+  const start = oddsPct(player.odds_start);
+  const now = oddsPct(player.odds_now);
+  if (start === null && now === null) {
+    return `<span class="diplomacy-expected-value">—</span>`;
+  }
+  // One ellipsizing element holds the whole pair, which is what the responsive
+  // type fitter measures. Nesting the parts inside it keeps that measurement
+  // intact while letting the opening figure sit back from the live one.
+  return `<span class="diplomacy-expected-value">` +
+    `<span class="odds-start">${start ?? "—"}</span>` +
+    `<span class="odds-move">${oddsMovement(player)}</span>` +
+    `<span class="odds-now">${now ?? "—"}</span></span>`;
+}
+
+function oddsTitle(player) {
+  const start = oddsPct(player.odds_start);
+  const now = oddsPct(player.odds_now);
+  if (start === null && now === null) return "Win odds unavailable";
+  const standing = +player.odds_standing_elo;
+  const handicap = +player.odds_handicap_elo;
+  return `Win odds: ${start ?? "—"}% at the start of the game → ${now ?? "—"}% now` +
+    `${Number.isFinite(handicap) && handicap !== 0
+      ? ` · difficulty ${handicap > 0 ? "+" : ""}${handicap} Elo to this seat` : ""}` +
+    `${Number.isFinite(standing) && standing !== 0
+      ? ` · position ${standing > 0 ? "+" : ""}${standing} Elo against the field` : ""}` +
+    `${+player.odds_now === 0 ? " · out of the game" : ""}`;
+}
+
 function playerHudStats(player, rank) {
   const y = player.yields || {};
   const goldPerTurn = Number.isFinite(+player.gold_per_turn) ? +player.gold_per_turn : +(y.gold || 0);
@@ -23222,7 +23295,7 @@ function drawPlayerHud() {
     `aria-label="Spectator mode: see everyone with full map visibility">All</button>` +
     `<span>PLAYER</span>` +
     `<span class="numeric" title="Elo rating">ELO</span>` +
-    `<span class="numeric" title="Elo-implied win odds, per cent">WIN%</span>` +
+    `<span class="numeric" title="Win odds, per cent: at the start of the game, then now">WIN%</span>` +
     `<span title="Civilization age">AGE</span>` +
     `<span title="AI active strategy">PLAN</span></span>` +
     `<span class="diplomacy-stat-head">` +
@@ -23293,7 +23366,8 @@ function drawPlayerHud() {
         : `<span class="ai-plan">No active strategy</span>`;
       // The themed league handle names the player, while `ai_strategy` is the
       // live grand strategy selected inside this particular match.
-      const expectPct = Number.isFinite(+p.ai_expected) ? Math.round(p.ai_expected * 100) : null;
+      const startPct = oddsPct(p.odds_start);
+      const nowPct = oddsPct(p.odds_now);
       // A seat somebody is playing is a player of its own: this game
       // registered a new one for it rather than lending it an agent's name,
       // so the row says who you are and what you are defending.
@@ -23331,7 +23405,7 @@ function drawPlayerHud() {
         ? `League player ${p.ai_username} (${p.ai_strat_label || "unrated"})` +
           ` · ${eloCiv ? `${p.civ}-specific` : "overall"} ELO ${p.ai_elo} ±${p.ai_elo_rd}` +
           `${eloProvisional ? ` (${provisionalNote})` : ""}` +
-          `${expectPct === null ? "" : ` · expected win chance vs this table ${expectPct}%`}`
+          `${startPct === null ? "" : ` · ${startPct}% to win this table when it sat down`}`
         : `${p.ai_name || "AI player"} · ${eloKnown
             ? `${eloProvisional ? "provisional " : ""}ELO ${eloValue} ±${eloRd}` : "unrated"}` +
           ` · ${strategy ? `${titleCase(strategy)} active strategy` : "no active strategy"}`;
@@ -23380,8 +23454,13 @@ function drawPlayerHud() {
         // because the value ellipsizes rather than shrinks, going one pixel over
         // dropped two characters: "12%" rendered as "1…", a win probability of
         // twelve per cent shown as the digit one.
-        `<span class="diplomacy-identity-field diplomacy-expected" title="Elo-implied win odds">` +
-        `<span class="diplomacy-expected-value">${expectPct === null ? "—" : expectPct}</span></span>` +
+        //
+        // Two figures in one cell, because they are one statement: what this
+        // seat was worth before the game began and what it is worth now. The
+        // arrow between them is the movement, so the direction reads without
+        // subtracting anything and without a second colour.
+        `<span class="diplomacy-identity-field diplomacy-expected" title="${escapeAttr(oddsTitle(p))}">` +
+        playerOddsFigures(p) + `</span>` +
         `<span class="diplomacy-identity-field diplomacy-age" title="${ageTitle}">` +
         `<span class="civ-age ${age || "unknown"}">${ageLabel}</span></span>` +
         `<span class="diplomacy-identity-field diplomacy-strategy">${activeStrategy}</span>` +
@@ -23657,24 +23736,44 @@ function civDossier(p, rank, relation) {
     ? `This player's rating specifically when playing ${p.civ}; each civ keeps its own table`
     : `Overall league rating — not enough rated ${p.civ} games yet for a civ-specific number`;
   const eloRow = row("Elo", dossierEloValue, dossierEloWhy);
-  const expectedRow = Number.isFinite(+p.ai_expected)
-    ? row("Expected wins", `${Math.round(p.ai_expected * 100)}% vs this table`,
-        "Elo-implied mean win probability against the other majors — compare with actual results over time")
-    : "";
+  // Both odds, named and explained. The masthead has room for two figures and
+  // an arrow; this is where the pair says what it is made of — and it is shown
+  // for every seat, the one you are playing included.
+  const dossierHandicap = +p.odds_handicap_elo;
+  const dossierStanding = +p.odds_standing_elo;
+  const startOdds = oddsPct(p.odds_start);
+  const nowOdds = oddsPct(p.odds_now);
+  const oddsRows = startOdds === null ? "" :
+    row("Win odds at start", `${startOdds}% of this table`,
+        "Judged before a tile was drawn: the ratings sitting at this table, the " +
+        "civilizations they drew and what the difficulty setting hands each seat. " +
+        "Nothing on the board moves it, so the finished game can be scored against it" +
+        (Number.isFinite(dossierHandicap) && dossierHandicap !== 0
+          ? ` — difficulty is worth ${dossierHandicap > 0 ? "+" : ""}${dossierHandicap} Elo to this seat`
+          : "")) +
+    row("Win odds now", `${nowOdds ?? "—"}%`,
+        +p.odds_now === 0
+          ? "Out of the game: an empire with no cities and no settler to found one cannot win"
+          : "The same prior corrected by the position on the board — Score, military " +
+            "strength, cities held and the closest victory race — weighted up as the " +
+            "clock runs down" +
+            (Number.isFinite(dossierStanding) && dossierStanding !== 0
+              ? `. This position is worth ${dossierStanding > 0 ? "+" : ""}${dossierStanding} Elo against the living field`
+              : ""));
   const leagueRows = isPerson
     ? row("League player", `${p.player_username} (you)`,
         p.player_rated
           ? "Registered in the rated roster when this game began — the result is filed under this name"
           : "Registered for this game only: nothing is being rated, so the handle goes no further") +
-      eloRow
+      eloRow + oddsRows
     : p.ai_username
     ? row("League player", `${p.ai_username} (${p.ai_strat_label || "unrated"})`,
         "Which league strategy is playing this civilization") +
-      eloRow + expectedRow
+      eloRow + oddsRows
     : p.ai_name
     ? row("AI player", p.ai_name,
         strategy ? `Generated from this AI's ${titleCase(strategy)} strategy` : "Generated for this AI seat") +
-      eloRow + expectedRow
+      eloRow + oddsRows
     : "";
   const strategyBody = leagueRows + (plan
     ? row("Doctrine", `<span class="ai-plan ${plan.strategy}">${titleCase(plan.strategy)}</span>`,

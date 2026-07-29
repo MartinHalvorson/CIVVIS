@@ -424,6 +424,13 @@ fn round_tenth(v: f64) -> f64 {
     (v * 10.0).round() / 10.0
 }
 
+/// Four decimal places, the precision a probability is reported at. A win
+/// chance is read as a percentage, and two decimals would round a seat holding
+/// two tenths of one per cent of the table down to nothing at all.
+fn round_probability(v: f64) -> f64 {
+    (v * 10_000.0).round() / 10_000.0
+}
+
 fn population_milestone(population: i32) -> i32 {
     if population < 4 {
         0
@@ -1988,8 +1995,8 @@ impl Session {
         self.league.as_ref()?.strategies.get(index)
     }
 
-    /// Give every met major the rating it is defending and its share of the
-    /// table's single win.
+    /// Give every met major the rating it is defending and both of its odds of
+    /// winning this game: the ones it sat down with, and the ones it holds now.
     ///
     /// Every major carries a rating, roster or no roster. Most games run
     /// without `--league`, and a column of dashes read as "this build cannot
@@ -1999,34 +2006,40 @@ impl Session {
     /// opponent's is, so an *opponent* in an interactive game carries one
     /// too — subject to the same fog as everything else here: a civ you have
     /// not met is not annotated at all.
+    ///
+    /// The odds themselves are [`crate::odds`]. This is where the ratings live,
+    /// which is why the model is fed from here: the seat's league number, plus
+    /// its civilization's measured edge where that number is not already
+    /// civ-specific, becomes the prior the difficulty setting and the board then
+    /// correct. A game with no roster still gets both figures — every seat is
+    /// then the same provisional 1500, so the start odds are the difficulty
+    /// bargain and the size of the table, which is exactly what they should be.
     fn name_seat_ratings(&self, o: &mut Value) {
         let g = &self.game;
         let rating_of = |pid: usize| {
             crate::league::display_rating(self.seat_entry(pid), &g.players[pid].civ)
         };
-        // Gathered up front, because a seat's expected win share is a
-        // question about the whole table. A seat the league has no row for is
-        // in here too: leaving it out would make the remaining shares add to
-        // one between themselves and quietly claim the unrated seat cannot
-        // win.
-        let seat_elo: std::collections::BTreeMap<usize, f64> = g
-            .players
-            .iter()
-            .filter(|p| p.alive && !p.is_minor && !p.is_barbarian)
-            .map(|p| (p.id, rating_of(p.id).rating))
-            .collect();
-        // One table, one winner: the seats share out a single win rather than
-        // each answering a separate two-player question.
-        let seat_expected: std::collections::BTreeMap<usize, f64> = if seat_elo.len() > 1 {
-            let ratings: Vec<f64> = seat_elo.values().copied().collect();
-            seat_elo
-                .keys()
-                .copied()
-                .zip(crate::elo::win_shares(&ratings))
-                .collect()
-        } else {
-            std::collections::BTreeMap::new()
-        };
+        // The rating each seat brings to the table, before the world touches
+        // it. A seat the league has never heard of is in here at the
+        // provisional base rather than left out: leaving it out would make the
+        // remaining shares add to one between themselves and quietly claim the
+        // unrated seat cannot win.
+        let odds = crate::odds::table(g, |pid| {
+            let shown = rating_of(pid);
+            if shown.civ_specific {
+                // Already a measurement of this player as this civilization.
+                return shown.rating;
+            }
+            // Otherwise the roster still knows something about the civ they
+            // drew, even if this player has never played it.
+            shown.rating
+                + self
+                    .league
+                    .as_ref()
+                    .map_or(0.0, |league| {
+                        crate::odds::civ_edge_elo(league, &g.players[pid].civ)
+                    })
+        });
         let Some(players) = o["players"].as_array_mut() else {
             return;
         };
@@ -2056,8 +2069,17 @@ impl Session {
             player["ai_elo_rd"] = json!(shown.rd.round() as i64);
             player["ai_elo_civ"] = json!(shown.civ_specific);
             player["ai_elo_provisional"] = json!(shown.provisional);
-            if let Some(share) = seat_expected.get(&id) {
-                player["ai_expected"] = json!((share * 100.0).round() / 100.0);
+            if let Some(seat) = odds.get(&id) {
+                // Four decimals, not two. A seat on a Deity table is a
+                // genuine two-tenths of one per cent, and rounding that to
+                // "0.00" would publish "cannot win" for a seat that can.
+                player["odds_start"] = json!(round_probability(seat.start));
+                player["odds_now"] = json!(round_probability(seat.now));
+                // What made the number, so a dossier can say why rather than
+                // asking the reader to trust a percentage.
+                player["odds_prior_elo"] = json!(seat.prior_elo.round() as i64);
+                player["odds_handicap_elo"] = json!(seat.handicap_elo.round() as i64);
+                player["odds_standing_elo"] = json!(seat.standing_elo.round() as i64);
             }
         }
     }
@@ -6938,14 +6960,18 @@ mod tests {
         //
         // Every data column is now a share rather than a pixel count, and each
         // of these two enclosing tracks is the exact *sum* of the columns
-        // inside it — 7 identity columns totalling 11.104 against 10 value
+        // inside it — 7 identity columns totalling 11.587 against 10 value
         // columns of 1. That identity is not decoration: it is what lets the
         // bar between the two blocks move width across itself, and it is the
         // ratio the table uses at every width. Changing one number here without
         // the other silently re-weights the whole masthead.
+        //
+        // The floor is 5 label columns, the ELO figure and the wider odds cell,
+        // which carries two per cents and the arrow between them.
         assert!(EMBEDDED_INDEX.contains(
             "--hud-identity-column: minmax(\n      \
-             calc(var(--hud-ident-min) * 5 + var(--hud-ident-num-min) * 2), 11.104fr);"
+             calc(var(--hud-ident-min) * 5 + var(--hud-ident-num-min)\n           \
+             + var(--hud-ident-odds-min)), 11.587fr);"
         ));
         assert!(EMBEDDED_INDEX.contains(
             "--hud-stats-column: minmax(\n      \
@@ -6955,10 +6981,14 @@ mod tests {
         // them; the shares belong to the viewer. A breakpoint that rewrote a
         // share would undo a dragged column on the next window resize, so no
         // media rule may set either track list or either enclosing track.
-        assert!(EMBEDDED_INDEX.contains("--hud-ident-min: 30px; --hud-ident-num-min: 38px;"));
+        assert!(EMBEDDED_INDEX.contains(
+            "--hud-ident-min: 30px; --hud-ident-num-min: 38px; --hud-ident-odds-min: 48px;"
+        ));
         assert_eq!(EMBEDDED_INDEX.matches("--hud-ident-num-min:").count(), 1,
             "the figure floor is declared once and holds at every width: four \
              digits need the same room on a laptop as on a wall");
+        assert_eq!(EMBEDDED_INDEX.matches("--hud-ident-odds-min:").count(), 1,
+            "and so does the odds pair's own floor");
         assert_eq!(EMBEDDED_INDEX.matches("--hud-identity-column:").count(), 1,
             "the identity track is written once and then only from the column model");
         assert_eq!(EMBEDDED_INDEX.matches("--hud-stats-column:").count(), 1,
@@ -7006,7 +7036,7 @@ mod tests {
         // `clip`, not `ellipsis`: the fitter compares integral scrollWidth with
         // integral clientWidth while the browser applies text-overflow on any
         // sub-pixel overflow, so ellipsis spends a character on a head that
-        // renders whole. Measured at 1600px: WIN% in its 38px column.
+        // renders whole. Measured at 1600px: ELO in its 38px column.
         assert!(EMBEDDED_INDEX.contains(
             "border-left: 1px solid #ffffff10; text-overflow: clip; white-space: nowrap;"
         ));
@@ -9438,11 +9468,14 @@ mod tests {
             .collect();
         assert_eq!(majors.len(), 4);
         let mut shares = 0.0;
+        let mut now_shares = 0.0;
         for player in &majors {
             let elo = player["ai_elo"].as_i64().expect("every major has a rating");
             assert!((800..=2600).contains(&elo), "{elo} is not a rating");
             assert!(player["ai_elo_rd"].as_i64().is_some());
-            shares += player["ai_expected"].as_f64().expect("and a win share");
+            shares += player["odds_start"].as_f64().expect("and start odds");
+            now_shares += player["odds_now"].as_f64().expect("and now odds");
+            assert!(player["odds_prior_elo"].as_i64().is_some());
             // Nobody chose these seats, so the one entrant behind all of them
             // does not get to put its handle on four different civilizations.
             assert!(
@@ -9453,7 +9486,11 @@ mod tests {
         }
         assert!(
             (shares - 1.0).abs() < 0.02,
-            "one table, one winner: shares summed to {shares}"
+            "one table, one winner: start odds summed to {shares}"
+        );
+        assert!(
+            (now_shares - 1.0).abs() < 0.02,
+            "and so does the live answer: now odds summed to {now_shares}"
         );
         // An earned rating, not the base everybody starts from. The check
         // above passes on a provisional 1500 too, which is exactly what the
