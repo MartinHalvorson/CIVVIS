@@ -93,20 +93,58 @@ fn has_arg(args: &[String], key: &str) -> bool {
     args.iter().any(|arg| arg == key)
 }
 
+fn option_value<'a>(args: &'a [String], key: &str) -> Result<Option<&'a str>, String> {
+    let Some(index) = args.iter().position(|arg| arg == key) else {
+        return Ok(None);
+    };
+    match args.get(index + 1).map(String::as_str) {
+        Some(value) if !value.starts_with("--") => Ok(Some(value)),
+        _ => Err(format!("{key} requires a value")),
+    }
+}
+
+fn number_value(args: &[String], key: &str) -> Result<Option<i64>, String> {
+    option_value(args, key)?
+        .map(|value| {
+            value
+                .parse()
+                .map_err(|_| format!("{key} requires an integer value; got {value:?}"))
+        })
+        .transpose()
+}
+
 fn number(args: &[String], key: &str, default: i64) -> i64 {
-    args.iter()
-        .position(|arg| arg == key)
-        .and_then(|index| args.get(index + 1))
-        .and_then(|value| value.parse().ok())
+    number_value(args, key)
+        .unwrap_or_else(|why| {
+            eprintln!("{why}");
+            std::process::exit(2);
+        })
         .unwrap_or(default)
 }
 
 fn text_arg(args: &[String], key: &str, default: &str) -> String {
-    args.iter()
-        .position(|arg| arg == key)
-        .and_then(|index| args.get(index + 1))
-        .cloned()
-        .unwrap_or_else(|| default.to_string())
+    option_value(args, key)
+        .unwrap_or_else(|why| {
+            eprintln!("{why}");
+            std::process::exit(2);
+        })
+        .unwrap_or(default)
+        .to_string()
+}
+
+fn has_exact_value(args: &[String], key: &str, value: &str) -> bool {
+    args.iter().filter(|arg| arg.as_str() == key).count() == 1
+        && args
+            .windows(2)
+            .any(|pair| pair[0] == key && pair[1] == value)
+}
+
+fn has_exact_number(args: &[String], key: &str, value: i64) -> bool {
+    has_exact_value(args, key, &value.to_string())
+}
+
+fn has_exact_flag(args: &[String], key: &str) -> bool {
+    args.iter().filter(|arg| arg.as_str() == key).count() == 1
 }
 
 fn topology_schedule(args: &[String]) -> Result<Vec<MapTopology>, String> {
@@ -732,8 +770,9 @@ fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let null = has_arg(&args, "--null");
     let deployment_mix = has_arg(&args, "--deployment-mix");
+    let explicit_frozen_ai = has_exact_value(&args, "--ai", FROZEN_AI);
     let ai_name = text_arg(&args, "--ai", FROZEN_AI);
-    if ai_name != FROZEN_AI {
+    if has_arg(&args, "--ai") && !explicit_frozen_ai {
         eprintln!("this experiment is frozen for {FROZEN_AI}; got controller {ai_name:?}");
         std::process::exit(2);
     }
@@ -1130,25 +1169,22 @@ fn main() {
     }
 
     let exact_profile = deployment_mix
-        && [
-            "--ai",
-            "--maps",
-            "--seed",
-            "--turns",
-            "--observe-through",
-            "--speed",
-            "--poles",
-            "--victories",
-            "--jobs",
-        ]
-        .iter()
-        .all(|flag| has_arg(&args, flag))
+        && has_exact_flag(&args, "--deployment-mix")
+        && explicit_frozen_ai
         && ai_name == FROZEN_AI
+        && has_exact_number(&args, "--turns", NOMINAL_TURNS as i64)
         && nominal_turns == NOMINAL_TURNS
+        && has_exact_number(&args, "--observe-through", OBSERVE_THROUGH as i64)
         && observe_through == OBSERVE_THROUGH
+        && has_exact_value(&args, "--speed", "online")
         && speed == "online"
+        && has_exact_value(&args, "--poles", "poles")
         && map_poles == MapPoles::Poles
-        && randomize_civs;
+        && has_exact_flag(&args, "--randomize-civs")
+        && randomize_civs
+        && has_exact_value(&args, "--victories", "science,culture,domination")
+        && has_exact_number(&args, "--jobs", 6)
+        && jobs == 6;
 
     if null {
         if exact_mismatches > 0 {
@@ -1158,7 +1194,13 @@ fn main() {
             );
             std::process::exit(3);
         }
-        if exact_profile && maps == NULL_MAPS && seed == NULL_SEED {
+        if exact_profile
+            && has_exact_flag(&args, "--null")
+            && has_exact_number(&args, "--maps", NULL_MAPS as i64)
+            && maps == NULL_MAPS
+            && has_exact_number(&args, "--seed", NULL_SEED as i64)
+            && seed == NULL_SEED
+        {
             println!(
                 "frozen null gate: PASS — all {} matched focal cells reproduced exactly",
                 control.games
@@ -1172,7 +1214,13 @@ fn main() {
         return;
     }
 
-    if exact_profile && maps == SCREEN_MAPS && seed == SCREEN_SEED {
+    if exact_profile
+        && !has_arg(&args, "--null")
+        && has_exact_number(&args, "--maps", SCREEN_MAPS as i64)
+        && maps == SCREEN_MAPS
+        && has_exact_number(&args, "--seed", SCREEN_SEED as i64)
+        && seed == SCREEN_SEED
+    {
         println!(
             "development gate: {}",
             if screen_passes(gate) {
@@ -1181,7 +1229,13 @@ fn main() {
                 "STOP — retain AdvancedAi; do not tune, retry, or inspect the holdout"
             }
         );
-    } else if exact_profile && maps == HOLDOUT_MAPS && seed == HOLDOUT_SEED {
+    } else if exact_profile
+        && !has_arg(&args, "--null")
+        && has_exact_number(&args, "--maps", HOLDOUT_MAPS as i64)
+        && maps == HOLDOUT_MAPS
+        && has_exact_number(&args, "--seed", HOLDOUT_SEED as i64)
+        && seed == HOLDOUT_SEED
+    {
         println!(
             "holdout gate: {}",
             if holdout_passes(gate) {
@@ -1198,6 +1252,55 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn supplied_values_fail_closed_and_numbers_do_not_default() {
+        assert_eq!(option_value(&[], "--speed").unwrap(), None);
+        assert!(option_value(&["--speed".to_string()], "--speed").is_err());
+        assert!(option_value(&["--speed".to_string(), "--maps".to_string()], "--speed").is_err());
+        assert_eq!(
+            number_value(&["--turns".to_string(), "250".to_string()], "--turns").unwrap(),
+            Some(250)
+        );
+        assert!(number_value(
+            &["--turns".to_string(), "not-a-number".to_string()],
+            "--turns"
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn formal_flags_require_one_canonical_raw_value() {
+        let args = [
+            "--ai".to_string(),
+            FROZEN_AI.to_string(),
+            "--turns".to_string(),
+            "250".to_string(),
+            "--deployment-mix".to_string(),
+        ];
+        assert!(has_exact_value(&args, "--ai", FROZEN_AI));
+        assert!(has_exact_number(&args, "--turns", 250));
+        assert!(has_exact_flag(&args, "--deployment-mix"));
+        assert!(!has_exact_number(
+            &["--turns".to_string(), "0250".to_string()],
+            "--turns",
+            250
+        ));
+        assert!(!has_exact_value(
+            &[
+                "--ai".to_string(),
+                FROZEN_AI.to_string(),
+                "--ai".to_string(),
+                FROZEN_AI.to_string(),
+            ],
+            "--ai",
+            FROZEN_AI
+        ));
+        assert!(!has_exact_flag(
+            &["--null".to_string(), "--null".to_string()],
+            "--null"
+        ));
+    }
 
     fn repair_fixture(seed: u64) -> (Game, u32, u32, Vec<Pos>) {
         let mut game = Game::new(2, 20, 14, seed, 20, 0);
