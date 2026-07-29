@@ -1060,3 +1060,135 @@ Advanced result remains evaluator-only until a separately preregistered test
 shows that the policy transfers through the strongest `strategic_deep`
 controller; controller interactions have reversed too many prior policies to
 assume that transfer.
+
+## 19. 2026-07-29 preregistration: let adaptive Expansion reach Advanced production
+
+This follow-up is fixed before either §18's seed 9991500 or the adaptive-plan
+transition census reports a result. It does not reinterpret a failed fires-check.
+It separates two mechanisms that the code currently confounds.
+
+`AdvancedAi::assess` can ask an adaptive empire to reach four, five, and then
+six cities. After the opening book, however, an untargeted adaptive agent calls
+`advanced_production` only for `Recovery`; every other adaptive plan ends by
+calling `BasicAi::cities`. That Basic governor has its own four-city target and
+turn-150 deadline. The six-city target, the fixed/payback expansion window, and
+§18's late-window switch all live in Advanced production. Thus changing an
+Advanced deadline and changing whether adaptive Expansion reaches it are
+distinct interventions.
+
+### Frozen dispatcher treatment
+
+Add a default-off evaluator switch named `advanced_expansion_dispatch`. After
+the four-build opening, it changes only the existing Advanced-production
+dispatcher condition:
+
+```text
+Recovery OR explicit victory target
+```
+
+becomes:
+
+```text
+Recovery OR explicit victory target
+         OR (advanced_expansion_dispatch AND adaptive Expansion)
+```
+
+The existing support-production and `BasicAi::cities` passes still run after
+that call and fill only queues left idle. The treatment does not change
+`production_value`, desired-city cadence, the one-settler limit, site search,
+population gates, production costs, deadline, assigned-target behavior, or
+movement. It does not modify Basic weights. The production call may choose any
+item its already-shipped scoring prefers; that breadth is part of the policy
+being tested and must not be narrowed after results are seen.
+
+`advanced_expansion_complete` composes exactly that dispatcher switch with
+§18's already-frozen `advanced_late_expansion` switch. The four factorial arms
+are therefore:
+
+| arm | dispatcher | late window |
+|---|---|---|
+| stock `advanced` | off | off |
+| `advanced_late_expansion` | off | on |
+| `advanced_expansion_dispatch` | on | off |
+| `advanced_expansion_complete` | on | on |
+
+All switches remain evaluator-only and default off. Instrument cumulative
+successful `Action::Produce` calls made by the newly exposed adaptive-Expansion
+invocation, including the subset that starts Settlers and the turn of each such
+start. Also retain §18's arm-independent count of every successful Advanced
+late-Settler start, so late-only Recovery behavior remains observable. An
+attempted value, an open predicate, or a pre-action queue snapshot is not a
+fire. Unit fixtures must show that stock adaptive Expansion skips Advanced
+production, dispatcher-only enters it while retaining the turn-150 Settler
+cutoff, combined enters it with Settlers eligible through turn 224 and closed
+at turn 225, and assigned victory targets retain their separate cutoff.
+
+### Fixed 2×2 mechanism census
+
+Before reading a win seed, run all four arms on each of eight fresh maps at
+seed 9994000. Every game uses the exact 8p/84x54-requested (105x44 realized),
+12-city-state, Online/250, Continents/Planet/Poles,
+randomized-civilization, Science/Culture/Domination profile. All eight major
+seats use the same arm, yielding 64 major seat-maps per arm. Report actual new
+dispatcher calls, successful production actions, Settlers started before turn
+150, Settlers started during turns 150--224, and final founded cities excluding
+captures, by map and in aggregate.
+
+The combined policy earns an outcome screen only if every prospective term
+passes:
+
+1. dispatcher-only makes at least one successful production action through the
+   new adaptive-Expansion call on at least 16/64 seat-maps and starts a Settler
+   through that call on at least 8/64;
+2. dispatcher-only finishes with at least four more founded cities in aggregate
+   than stock;
+3. combined starts a Settler through that call during turns 150--224 on at
+   least 8/64 seat-maps, and records any Advanced late-Settler start on more
+   seat-maps than late-only; and
+4. combined finishes with at least four more founded cities in aggregate than
+   both dispatcher-only and late-only.
+
+These are interaction gates: (1--2) establish that routing reaches and executes
+the six-city policy; (3--4) establish that the late permission adds execution
+and cities after that route exists. A failure stops the line. No arm, threshold,
+map count, or seed is substituted, and seeds 9994500 onward remain unread.
+
+### Advanced outcome screen and confirmation
+
+Passing all four mechanism terms earns exactly one 120-map comparison:
+
+```text
+ai_eval advanced_expansion_complete advanced --players 8 --width 84 \
+  --height 54 --city-states 12 --pairs 120 --turns 250 --speed online \
+  --map continents --shape planet --poles poles --randomize-civs \
+  --victories science,culture,domination --seed 9994500 --jobs 6
+```
+
+At least 10% of treatment seat-games must record a successful late Settler
+start through the exposed call. The screen advances only if paired win score is
+at least 52%, favorable map directions outnumber adverse directions, paired
+terminal-score share is at least 50%, and the repository's unchanged promotion
+gate does not retain `advanced`. Failure stops without a retry or a component
+arm outcome search.
+
+A complete pass earns one disjoint 240-map confirmation at seed 9995000 on the
+identical profile. The same coverage floor and unchanged win promotion gate
+must pass; terminal score remains diagnostic. This confirms the composed
+Advanced policy but still cannot change a deployed default.
+
+### Strongest-controller transfer
+
+Only that Advanced confirmation earns a new default-off entrant that applies
+the same two switches to every Advanced parent/candidate used by
+`strategic_deep`; no rollout horizon, candidate set, value function, or routing
+rule changes. Compare it with stock `strategic_deep` for 120 maps at seed
+9996000 on the same deployment profile. It advances only with at least 10%
+late-start coverage, paired win score at least 52%, favorable directions greater
+than adverse, terminal-score share at least 50%, and a non-retention verdict
+from the unchanged promotion gate.
+
+One disjoint 240-map confirmation at seed 9997000 is then allowed. Only a pass
+of the same coverage and win gates may enable the composed policy in the
+deployed strongest controller. Advanced confirmation cannot rescue a failed
+transfer, pooled seeds cannot rescue either confirmation, and no result here
+authorizes changing the standalone Advanced default.
