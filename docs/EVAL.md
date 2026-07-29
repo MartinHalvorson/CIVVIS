@@ -4977,3 +4977,106 @@ named.
 | the combined representation ranks same-unit moves | **established** (+15.2 ± 0.6 pp, n=204,198) |
 | the same representation ranks attacks | **unmeasured at useful power** |
 | the imitation artifact improves gameplay | **not claimed; wrong target for that question** |
+
+## 2026-07-29 — ★★★ counterfactual moves expose real regret, but the first advantage head does not transfer
+
+The destination result above answered whether the expert's choice is
+representable. It did not answer whether another destination would have been
+better. `q_counterfactual` now asks that causal question without changing the
+trajectory it observes:
+
+1. clone a real `AdvancedAi` turn and read the successful actions it took;
+2. replay the prefix to the first `move` with another legal destination for the
+   same unit;
+3. branch the exact pre-action game into the chosen move and three evenly
+   sampled same-unit alternatives; and
+4. continue every candidate for 80 rounds with identical policy memory and four
+   matched rotations of the bounded strategic doctrines.
+
+A decided branch returns 1/0. An unresolved branch returns Civilization score
+share among living majors, the same bounded terminal value the shipped
+strategic search uses. Repeating an identical branch is not a replica—the
+engine is deterministic—so one chosen branch is repeated as an integrity test,
+while actual replicas vary opponent doctrine. The tool buffers all rows and
+refuses to write the dataset if an observed prefix or candidate is rejected or
+the repeated outcome differs in winner, turn, scores, or value.
+
+### The causal label is real and replicates across profiles
+
+The Standard corpus is 24 four-player 44×28 games, seeds 944000–944023, with
+four sampled decisions per game at turns 50, 75, 100, and 125. The disjoint
+deployment corpus is 12 six-player 74×46 Online games with six city states,
+seeds 945000–945011, sampled at turns 70, 100, 130, and 160. Both use the same
+80-round horizon, three alternatives, and four doctrine replicas.
+
+| causal-label property | Standard | unseen Online |
+|---|---:|---:|
+| decisions / candidate rows / continuations | 94 / 360 / 1,440 | 48 / 183 / 732 |
+| decisions with candidate spread > 0.005 | **50/94 (53.2%)** | **26/48 (54.2%)** |
+| mean best-minus-worst return | **0.0418** | **0.0201** |
+| expert chose a best-mean candidate | 52/94 (55.3%) | 23/48 (47.9%) |
+| mean oracle regret of expert choice | **0.0182** | **0.0094** |
+| a sibling beat the expert in every replica | 6/94 | 2/48 |
+| mean-return winner tied/won doctrine replicas | 79.3% | 66.7% |
+| branches resolved to victory | 546/1,440 | 153/732 |
+| rejected branches / repeat mismatches / observation errors | **0 / 0 / 0** | **0 / 0 / 0** |
+
+The preregistered emitter gate was 25% of decisions separating by more than
+0.005. Both profiles clear 53%. The expert is not an oracle over its own legal
+moves: it leaves measurable return on the table, and the effect survives the
+larger Online profile. That is the opportunity a stronger move policy may
+eventually capture.
+
+### Fixed Standard-to-Online model gate
+
+`q_advantage_train` fits a listwise distribution over measured returns, not an
+expert-action label. The first model is deliberately linear and low capacity:
+94 decisions do not justify a hidden net with thousands of parameters. All
+Standard decisions train for a fixed 40 epochs at return temperature 0.01.
+Online contributes no gradient or hyperparameter choice; each feature-block
+ablation uses that identical fit and is scored only as external evaluation.
+Regret and uncertainty are macro-averaged by game.
+
+| visible terms | Online model regret | return lift vs chance | return lift vs expert |
+|---|---:|---:|---:|
+| destination (primary) | 0.0122 | **−0.0016 ± 0.0022** | **−0.0028 ± 0.0037** |
+| destination, plan blanked | 0.0112 | −0.0006 ± 0.0021 | −0.0018 ± 0.0035 |
+| explicit plan only | 0.0128 | −0.0022 ± 0.0021 | −0.0034 ± 0.0036 |
+| legacy 13 only | **0.0096** | +0.0010 ± 0.0011 | −0.0002 ± 0.0018 |
+| legacy + destination | 0.0114 | −0.0008 ± 0.0018 | −0.0020 ± 0.0033 |
+
+The primary head reduces regret on its Standard training games from 0.0185 for
+the expert to 0.0125, but that gain reverses out of profile. On Online it picks
+a top-return move 43.8% of the time versus 46.9% chance and 47.9% for the
+expert. Legacy terms are the least bad external block, but they merely tie the
+expert within uncertainty; that is not a promotion.
+
+One capacity hypothesis was tested without spending another external set. The
+destination encoder explicitly says role should change how threat, cohesion,
+and objective progress are interpreted, while a linear head cannot form those
+interactions. On a Standard-only split of 14 training and 10 held-out games,
+the plain model's held-out regret was 0.0058 and its lift over the expert was
++0.0051 ± 0.0045. Appending all 8×27 role-by-destination products **worsened**
+regret to 0.0080 and reduced that lift to +0.0030 ± 0.0032. The capacity
+hypothesis fails its selection test, so no fresh external maps were spent on
+it.
+
+> **Do not integrate either head or spend a gameplay A/B on it.** The causal
+> emitter establishes that better moves exist; it does not establish that the
+> present dataset/model can identify them on deployment games. A gameplay
+> replacement would knowingly select lower-return moves in the only external
+> profile measured.
+
+The next justified learning experiment is more independent games and a target
+that retains replica structure instead of collapsing doctrine outcomes to one
+mean—e.g. a pairwise posterior over the probability that candidate A beats B,
+with a no-override region when doctrine signs disagree. Only a model that
+reduces regret on a fresh external profile earns the mirrored gameplay gate.
+
+| claim | status |
+|---|---|
+| same-unit destinations have different causal continuation returns | **established on both profiles (53% clear the spread gate)** |
+| the expert always chooses the best measured destination | **refuted (55% Standard, 48% Online)** |
+| the fixed destination advantage head transfers Standard → Online | **refuted in this sample** |
+| explicit role interactions repair the learner | **refuted on Standard holdout** |
+| the current model should control gameplay | **rejected before A/B** |
