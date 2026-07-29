@@ -1,6 +1,7 @@
 # Live-league genome transfer
 
-Status: **prospectively registered; neither focal seed has been opened**.
+Status: **development screen failed; confirmation seed `9959000` remains
+unopened and the candidate is not promoted**.
 
 ## Why this candidate
 
@@ -129,3 +130,44 @@ null can retain its queue priority. `ai_eval` folds results in map order and is
 tested byte-identical across job counts, so the amendment changes wall time,
 not the estimand or result. The run must pause if four idle cores are not
 available.
+
+## Result
+
+The fixed seed-`9958000` screen completed all 40 map pairs and 80 games under
+the frozen profile, artifact, binary, and four-job budget. Games averaged 243.3
+turns.
+
+| endpoint | `g44-41` candidate | stock `advanced` |
+|---|---:|---:|
+| game wins | 19 / 80 | 16 / 80 |
+| mean terminal score | 619.5 | 591.9 |
+| mean cities | 6.11 | 5.88 |
+| mean population | 78.4 | 73.3 |
+| mean technologies | 59.8 | 58.3 |
+| mean civics | 44.7 | 43.7 |
+| mean production | 353.6 | 330.1 |
+| mean military | 1,084.7 | 1,001.1 |
+
+The candidate's paired-map win score was **51.9%** (95% Wilson interval
+36.9%--66.5%, Elo-equivalent +13). Map directions were 11 candidate-favored,
+21 neutral, and eight control-favored (`p=0.6476`); the existing verdict was
+`INCONCLUSIVE`. Paired terminal-score share was **51.2%**, with 29 favorable
+and 11 adverse directions (`p=0.0064`). The terminal and economic signals are
+consistent with the live rating nomination, but terminal score is not a
+promotion input and the screen was prospectively gated on wins.
+
+| frozen screen term | result |
+|---|---|
+| 40 complete pairs and exact identity/profile | PASS |
+| paired win score at least 52.5% | **FAIL: 51.9%** |
+| paired terminal-score share at least 50.0% | PASS: 51.2% |
+| candidate total wins not fewer | PASS: 19 vs 16 |
+| candidate-favored directions outnumber adverse | PASS: 11 vs 8 |
+| promotion verdict is not `RETAIN` | PASS: `INCONCLUSIVE` |
+
+One failed term is a failed screen. Per the frozen rule, the experiment stops:
+do not pool these maps with another run, lower the 52.5% threshold, adjust the
+candidate, retry the seed, or open confirmation seed `9959000`. `g44-41`
+remains useful live-league evidence and a reproducible evaluator fixture, but
+this direct test does not support promoting it into another controller or
+default.
