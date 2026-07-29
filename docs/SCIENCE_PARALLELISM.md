@@ -348,6 +348,21 @@ implemented at `e7058a1960fdeedbef94ec2d0e85bbe16411437d`:
   deployment-null profiles, and reproduced all 8 direct/replay focal cells
   exactly. It was not a focal batch and cannot spend a gate.
 
+The fail-closed invocation design was frozen independently at `3588829` and
+then implemented at `a55f555d17f3ceb453ec37eac6d9165c75b60e4a`:
+
+- `cargo test --release --locked --bin science_parallelism_eval -j 1` passed
+  all 10 focused tests, including missing/malformed value rejection, canonical
+  one-occurrence formal flags, the deployment schedule, champion binding, the
+  policy horizon, and treatment mechanics;
+- the rebuilt standalone binary rejected a malformed `--turns nope`, a
+  valueless `--speed`, `--ai advanced`, and
+  `--deployment-mix --players 8` with exit 2 before simulation; and
+- a one-map, one-turn null diagnostic at the pre-existing non-focal seed
+  9,982,999 used one job, selected the first deployment profile, named the
+  embedded generation-14 champion, reproduced both direct/replay focal cells
+  exactly, and emitted only the diagnostic null label. It cannot spend a gate.
+
 Execution audit: immediately before the standalone rebuild, an intended
 conflict check invoked the stale pre-amendment release executable. That binary
 ignored `--deployment-mix`, accepted `--players 8`, and began its default null
