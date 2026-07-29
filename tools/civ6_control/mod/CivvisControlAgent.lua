@@ -455,6 +455,24 @@ local function plotDistance(x1, y1, x2, y2)
 	return try(function() return Map.GetPlotDistance(x1, y1, x2, y2); end, 99);
 end
 
+-- Whether this unit can actually walk there.
+--
+-- Ordering a move to a plot with no route does not fail: the engine accepts it
+-- and then prints `Distance: 2147483647` -- its no-path sentinel -- once per
+-- attempt, forever. A settler aiming across water and an army aiming at a
+-- capital on another continent both do this, and a run that did it for twenty
+-- turns ended with the game gone and nothing in the log but that line.
+local function reachable(unit, x, y)
+	local path = try(function()
+		local index = Map.GetPlotIndex(x, y);
+		return UnitManager.GetMoveToPathEx(unit, index);
+	end);
+	if path == nil or path.plots == nil then return false; end
+	local n = 0;
+	for _ in pairs(path.plots) do n = n + 1; end
+	return n > 1;
+end
+
 -- Where this settler should walk to found a city.
 --
 -- Cities have to be a few tiles apart, so after the capital every settler is
@@ -466,10 +484,25 @@ end
 -- The search is deliberately plain -- land, passable, unowned or ours, far
 -- enough from every city we have, nearest such plot wins. Site *quality* is a
 -- real lever and a separate one; site *existence* is what was missing.
-local function findSettleSite(player, pid, unit)
+-- Sites found this turn, keyed by unit. The search below reads a 15x15 block
+-- of plots through guarded calls, and the order pass runs on every batch of
+-- game-core events, so recomputing it per tick is what took a turn from thirty
+-- seconds to four minutes -- the controller was starving the game it was
+-- playing.
+local siteMemo = { turn = -1, sites = {} };
+
+local function findSettleSite(player, pid, unit, turn)
+	local id = try(function() return unit:GetID(); end, -1);
+	if siteMemo.turn ~= turn then siteMemo = { turn = turn, sites = {} }; end
+	local cached = siteMemo.sites[id];
+	if cached ~= nil then
+		if cached == false then return nil; end
+		return cached;
+	end
+
 	local ux = try(function() return unit:GetX(); end, -1);
 	local uy = try(function() return unit:GetY(); end, -1);
-	if ux < 0 then return nil; end
+	if ux < 0 then siteMemo.sites[id] = false; return nil; end
 
 	local cities = {};
 	eachCity(player, function(city)
@@ -510,21 +543,25 @@ local function findSettleSite(player, pid, unit)
 			end
 		end
 	end
+	siteMemo.sites[id] = best or false;
 	return best;
 end
 
-local function orderSettler(player, pid, unit)
+local function orderSettler(player, pid, unit, turn)
 	if canOperate(unit, OP["UNITOPERATION_FOUND_CITY"])
 			and operate(unit, OP["UNITOPERATION_FOUND_CITY"]) then
 		return "found_city";
 	end
-	local plot = findSettleSite(player, pid, unit);
+	local plot = findSettleSite(player, pid, unit, turn);
 	if plot ~= nil then
-		local params = {};
-		params[UnitOperationTypes.PARAM_X] = plot:GetX();
-		params[UnitOperationTypes.PARAM_Y] = plot:GetY();
-		if operate(unit, OP["UNITOPERATION_MOVE_TO"], params) then
-			return "move_to_site";
+		local px, py = plot:GetX(), plot:GetY();
+		if reachable(unit, px, py) then
+			local params = {};
+			params[UnitOperationTypes.PARAM_X] = px;
+			params[UnitOperationTypes.PARAM_Y] = py;
+			if operate(unit, OP["UNITOPERATION_MOVE_TO"], params) then
+				return "move_to_site";
+			end
 		end
 	end
 	return firstOperation(unit, { "UNITOPERATION_AUTOMATE_EXPLORE" });
@@ -573,6 +610,9 @@ local warTarget = nil;
 local warDeclared = {};
 
 local function findWarTarget(player, pid)
+	-- Reachability is checked per unit at order time, not here: different
+	-- units have different routes, and a path query per candidate city per
+	-- turn is exactly the kind of cost that starves the game.
 	local diplomacy = try(function() return player:GetDiplomacy(); end);
 	if diplomacy == nil then return nil; end
 	local home = try(function() return player:GetCities():GetCapitalCity(); end);
@@ -650,7 +690,8 @@ local function pressAttack(unit)
 			and operate(unit, OP["UNITOPERATION_RANGE_ATTACK"], params) then
 		return "range_attack";
 	end
-	if operate(unit, OP["UNITOPERATION_MOVE_TO"], params) then
+	if reachable(unit, warTarget.x, warTarget.y)
+			and operate(unit, OP["UNITOPERATION_MOVE_TO"], params) then
 		return "advance";
 	end
 	return nil;
@@ -660,7 +701,7 @@ local function orderFor(player, pid, unit, turn)
 	local name = unitTypeName(unit);
 	local row = GameInfo.Units[name];
 	if name == "UNIT_SETTLER" then
-		return orderSettler(player, pid, unit);
+		return orderSettler(player, pid, unit, turn);
 	elseif name == "UNIT_BUILDER" then
 		return orderBuilder(unit);
 	elseif name == "UNIT_SCOUT" then
@@ -804,7 +845,7 @@ end
 -- request, so the "queue is empty" test fires again and again.
 local lastBuild = {};
 
-local function driveProduction(player, turn)
+local function driveProduction(player, turn, force)
 	local counts = countUnits(player);
 	local cities = {};
 	eachCity(player, function(city) cities[#cities + 1] = city; end);
@@ -819,7 +860,10 @@ local function driveProduction(player, turn)
 		end, 0);
 		local cityId = try(function() return city:GetID(); end, -1);
 		local remembered = lastBuild[cityId];
-		local fresh = (remembered == nil) or (remembered.turn ~= turn);
+		-- The memo stops per-tick spam, but when the game says it is *blocked*
+		-- on production the whole point is to try again: an order that was
+		-- refused once must not lock the city out for the rest of the turn.
+		local fresh = force or (remembered == nil) or (remembered.turn ~= turn);
 		if (current == nil or current == 0) and fresh then
 			local name, row, why = chooseProduction(city, counts, #cities, turn);
 			if row ~= nil then
@@ -1002,6 +1046,24 @@ end
 
 -- ---------------------------------------------------------------- the turn
 
+-- How many times each expensive pass may run in one turn.
+--
+-- The controller shares a process with the game it is playing, so a pass that
+-- walks the policy table or tests twenty build items runs *instead of* the
+-- game advancing. Unbounded, they turned a four-second turn into ten minutes:
+-- every batch of game-core events re-ran the lot. Bounded, the same decisions
+-- get made and the game gets its frames back.
+local passes = {};
+
+local function spend(name, limit)
+	if (passes[name] or 0) >= limit then return false; end
+	passes[name] = (passes[name] or 0) + 1;
+	return true;
+end
+
+local ticksSeen = 0;
+local ticksTaken = 0;
+
 local blockerNames = nil;
 
 local function blockerName(id)
@@ -1036,6 +1098,23 @@ local SOFT_BLOCKERS = {
 	ENDTURN_BLOCKING_UNIT_PROMOTION = true,
 	ENDTURN_BLOCKING_CONSIDER_RAZE_CITY = true,
 	ENDTURN_BLOCKING_CONSIDER_DISLOYAL_CITY = true,
+	-- Prompts this controller has no answer for. Listing them is not giving
+	-- up: an unlisted blocker burns forty attempts and then forfeits its
+	-- notification, and each of those attempts re-runs a table scan while the
+	-- game waits. Named here, they cost one order pass and the turn ends.
+	ENDTURN_BLOCKING_COMMEMORATION_AVAILABLE = true,
+	ENDTURN_BLOCKING_GOVERNOR_APPOINTMENT = true,
+	ENDTURN_BLOCKING_GOVERNOR_PROMOTION = true,
+	ENDTURN_BLOCKING_GOVERNOR_IDLE = true,
+	ENDTURN_BLOCKING_GOVERNOR_OPPORTUNITY = true,
+	ENDTURN_BLOCKING_GIVE_INFLUENCE_TOKEN = true,
+	ENDTURN_BLOCKING_CLAIM_GREAT_PERSON = true,
+	ENDTURN_BLOCKING_ARTIFACT = true,
+	ENDTURN_BLOCKING_EMERGENCY_NEEDS_ATTENTION = true,
+	ENDTURN_BLOCKING_WORLD_CONGRESS_LOOK = true,
+	ENDTURN_BLOCKING_WORLD_CONGRESS_SESSION = true,
+	ENDTURN_BLOCKING_SPY_CHOOSE_ESCAPE_ROUTE = true,
+	ENDTURN_BLOCKING_SPY_CHOOSE_DRAGNET_PRIORITY = true,
 };
 
 -- Answer the decision the game says it is waiting on. Returning the name of
@@ -1043,17 +1122,27 @@ local SOFT_BLOCKERS = {
 -- diagnosable: the log says which blocker recurred, not merely that one did.
 local function answerBlocker(player, pid, blocker, turn)
 	local name = blockerName(blocker);
+	-- Every answer below walks a GameInfo table, so each is budgeted. Answering
+	-- twice in a turn is the useful case -- the first attempt can be refused
+	-- while something else settles -- and answering two hundred times is how a
+	-- turn takes ten minutes.
 	if name == "ENDTURN_BLOCKING_RESEARCH" then
+		if not spend("research", cfg.MaxResearchPasses or 2) then return nil; end
 		return chooseResearch(player, pid);
 	elseif name == "ENDTURN_BLOCKING_CIVIC" then
+		if not spend("civic", cfg.MaxCivicPasses or 2) then return nil; end
 		return chooseCivic(player, pid);
 	elseif name == "ENDTURN_BLOCKING_PRODUCTION" then
-		return driveProduction(player, turn) > 0 and "production" or nil;
+		if not spend("production", cfg.MaxProductionPasses or 4) then return nil; end
+		return driveProduction(player, turn, true) > 0 and "production" or nil;
 	elseif name == "ENDTURN_BLOCKING_PANTHEON" then
+		if not spend("pantheon", cfg.MaxPantheonPasses or 2) then return nil; end
 		return choosePantheon(player, pid);
 	elseif name == "ENDTURN_BLOCKING_FILL_CIVIC_SLOT" then
+		if not spend("policies", cfg.MaxPolicyPasses or 2) then return nil; end
 		return fillPolicies(player);
 	elseif name == "ENDTURN_BLOCKING_CONSIDER_GOVERNMENT_CHANGE" then
+		if not spend("government", cfg.MaxGovernmentPasses or 2) then return nil; end
 		return chooseGovernment(player) or "government considered";
 	elseif name == "ENDTURN_BLOCKING_UNITS"
 			or name == "ENDTURN_BLOCKING_UNIT_NEEDS_ORDERS"
@@ -1080,6 +1169,7 @@ end
 local turnsPlayed = 0;
 local lastTurnSeen = -1;
 local attempts = 0;
+
 local inTick = false;
 local finished = false;
 
@@ -1110,6 +1200,7 @@ local function playTurn(player, pid, turn)
 		research = research, civic = civic,
 		builds = builds, ordered = ordered, stuck = stuck,
 		actions = lastActions,
+		ticks_seen = ticksSeen, ticks_taken = ticksTaken,
 		blocker = blockerName(currentBlocker(pid)),
 	});
 end
@@ -1127,6 +1218,7 @@ local function tick()
 			lastTurnSeen = turn;
 			turnsPlayed = turnsPlayed + 1;
 			attempts = 0;
+			passes = {};
 			playTurn(player, pid, turn);
 		end
 
@@ -1149,7 +1241,13 @@ local function tick()
 			attempts = attempts + 1;
 			local answered;
 			if SOFT_BLOCKERS[name] then
-				orderUnits(player, pid, turn);
+				-- Bounded per turn. The order pass is the expensive one, and a
+				-- soft blocker that will not clear -- a unit the engine keeps
+				-- listing as ready -- would otherwise run it on every batch of
+				-- game-core events for the rest of the turn.
+				if spend("soft", cfg.MaxSoftPasses or 3) then
+					orderUnits(player, pid, turn);
+				end
 				answered = "units";
 			else
 				answered = answerBlocker(player, pid, blocker, turn);
@@ -1206,6 +1304,27 @@ local function ensureStarted()
 	started = true;
 
 	pcall(resolveActions);
+
+	-- Try to impose a turn limit from inside the game.
+	--
+	-- The simple Create Game screen has no max-turns control and the Advanced
+	-- Setup one is below the fold of a panel that has to be scrolled, so a game
+	-- started by the harness runs to turn five hundred and a Score victory --
+	-- the cheapest win there is -- never arrives. Whether the engine honours a
+	-- limit set after the game exists is not documented anywhere, so it is set
+	-- and then *read back*, and the readback is what the seat record reports.
+	if (cfg.MaxTurns or 0) > 0 then
+		pcall(function()
+			GameConfiguration.SetMaxTurns(cfg.MaxTurns);
+			GameConfiguration.SetTurnLimitType(TurnLimitTypes.CUSTOM);
+		end);
+		emit("turn_limit", {
+			asked = cfg.MaxTurns,
+			config = try(function() return GameConfiguration.GetMaxTurns(); end, -1),
+			game = try(function() return Game.GetMaxTurns(); end, -1),
+		});
+	end
+
 	pcall(survey);
 	-- The load screen waits on a keypress before the first turn runs, and
 	-- nothing in any log says so -- a harness watching for turn data sees only
@@ -1232,8 +1351,16 @@ end
 -- founded city and an unanswered production prompt, having emitted exactly one
 -- turn record. Orders also resolve over several frames, so one pass at the
 -- bottom of playTurn could not end a turn even if the update did fire.
+-- How many game-core publish batches have arrived, and how many of them this
+-- controller acted on. The event fires many times per frame, and every tick
+-- queries the notification system and the turn state before deciding it has
+-- nothing to do -- so acting on all of them spends the game's own frame budget
+-- on asking whether there is anything to spend it on.
 local function onGameCoreTick()
 	ensureStarted();
+	ticksSeen = ticksSeen + 1;
+	if ticksSeen % (cfg.TickEvery or 16) ~= 0 then return; end
+	ticksTaken = ticksTaken + 1;
 	tick();
 end
 

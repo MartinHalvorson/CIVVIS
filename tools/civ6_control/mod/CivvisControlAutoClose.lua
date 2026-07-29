@@ -61,10 +61,11 @@ end
 -- One screen is already replaced by a DLC, on a criterion true of every run
 -- here: GranColombia_Maya swaps NaturalDisasterPopup for fourteen lines that
 -- add a comet-strike label. Two ReplaceUIScript actions on one context is a
--- race nobody needs to run, so this loads *their* file rather than competing
--- with it -- and their file opens with include("NaturalDisasterPopup"), which
--- is this same pattern, from Firaxis. Whichever action the game honours, the
--- screen keeps everything it does; only the stopwatch is at stake.
+-- race, and the mod that loads later wins it -- measured, eight screens armed
+-- and this one did not. CivvisControl.modinfo now references that mod so this
+-- one loads after it; this then loads *their* file rather than the shipped
+-- one, so their comet-strike label survives. Their file opens with
+-- include("NaturalDisasterPopup"), which is this same pattern, from Firaxis.
 local CHAINED = {
 	NaturalDisasterPopup = "NaturalDisasterPopup_GranColombia_Maya",
 };
@@ -74,7 +75,7 @@ local CHAINED = {
 -- rather than for the include returning.
 local function haveScreen()
 	return type(OnClose) == "function" or type(Close) == "function"
-	       or type(OnContinue) == "function";
+	       or type(OnContinue) == "function" or type(OnClosePopup) == "function";
 end
 
 -- The shipped screen, unchanged and unread. A context's id is the name of the
@@ -83,9 +84,55 @@ end
 if CHAINED[NAME] then pcall(function() include(CHAINED[NAME]); end); end
 if not haveScreen() then pcall(function() include(NAME); end); end
 
+-- InGamePopup is the one context here that renders more than one kind of
+-- thing. Every generic in-game dialog goes through it: "your unit has been
+-- captured", which has a single button and asks nothing, and "raze or keep
+-- this city?", which has two and asks everything. Only the first may be closed
+-- on a timer, so this screen arms per *dialog* rather than per context --
+-- count the buttons as each one opens, and arm only when there is exactly one.
+--
+-- The wrapper has to be re-registered, not just assigned: the shipped
+-- Initialize already handed LuaEvents the original function, and reassigning
+-- the global does not change what the event calls. If the swap cannot be made
+-- cleanly the dialog is simply never armed, which leaves this screen exactly
+-- as it ships.
+local dialogIsAnnouncement = false;
+
+if NAME == "InGamePopup" and type(OnPopupOpen) == "function" then
+	local basePopupOpen = OnPopupOpen;
+	local function countingPopupOpen(id, options)
+		local buttons = 0;
+		if type(options) == "table" then
+			for _, option in ipairs(options) do
+				if option.Type == "Button" then buttons = buttons + 1; end
+			end
+		end
+		dialogIsAnnouncement = (buttons == 1);
+		return basePopupOpen(id, options);
+	end
+	local swapped = pcall(function()
+		LuaEvents.OnRaisePopupInGame.Remove(basePopupOpen);
+		LuaEvents.OnRaisePopupInGame.Add(countingPopupOpen);
+	end);
+	if swapped then OnPopupOpen = countingPopupOpen; end
+end
+
 -- What a click on this screen's own button does. Everything shipped registers
 -- OnClose; the era review is the exception explained at the top.
 local function endScreen()
+	if NAME == "InGamePopup" then
+		-- The shipped Escape path rather than a bare close, so the single
+		-- button's own callback runs. Escape tries CANCEL, then DEFAULT, then
+		-- gives up and closes -- which is exactly what a person pressing it
+		-- would get, and on a one-button dialog there is nothing else it can
+		-- reach.
+		if type(InputHandler) == "function" then
+			InputHandler(KeyEvents.KeyUp, Keys.VK_ESCAPE, 0);
+			return true;
+		end
+		if type(OnClosePopup) == "function" then OnClosePopup(); return true; end
+		return false;
+	end
 	if NAME == "EraReviewPopup" and type(OnContinue) == "function" then
 		OnContinue();
 		return true;
@@ -122,8 +169,18 @@ else
 	local shown = 0;
 	local closes = 0;
 
+	-- What "up" means. Everywhere else it is the context not being hidden, the
+	-- same test the shipped popup manager uses. InGamePopup is *pushed as a
+	-- modal* rather than shown, so it reads the flag the counting wrapper sets
+	-- instead -- which is true only while a one-button dialog is open, and
+	-- that is also the only time this screen may act at all.
+	local function isUp()
+		if NAME == "InGamePopup" then return dialogIsAnnouncement; end
+		return not ContextPtr:IsHidden();
+	end
+
 	local function tick(fDTime)
-		if ContextPtr:IsHidden() then
+		if not isUp() then
 			showing = false;
 			closes = 0;
 			return;
@@ -147,6 +204,7 @@ else
 		closes = closes + 1;
 		local ended = false;
 		pcall(function() ended = endScreen(); end);
+		if NAME == "InGamePopup" then dialogIsAnnouncement = false; end
 		report("autoclose", string.format(',"after":%.2f,"ended":%s', upFor, tostring(ended)));
 		if closes >= GIVE_UP_AFTER then
 			ContextPtr:ClearUpdate();
