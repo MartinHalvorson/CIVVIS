@@ -443,6 +443,7 @@ struct GameResult {
     won: bool,
     victory: Option<String>,
     reported_turn: u32,
+    focal_turns: u64,
     policy_max_turns: u32,
     realized_width: i32,
     realized_height: i32,
@@ -498,9 +499,11 @@ fn play(
     if mode == Mode::Treatment {
         ais[focal].reactor_marginal = true;
     }
+    let mut focal_turns = 0;
 
     while game.winner.is_none() && game.turn <= observe_through {
         let pid = game.current;
+        focal_turns += (pid == focal) as u64;
         run_actor(&mut game, &mut ais[pid], expected_horizon).unwrap_or_else(|why| panic!("{why}"));
     }
     require_policy_horizon(&game, expected_horizon, "terminal")
@@ -534,6 +537,7 @@ fn play(
         } else {
             observe_through
         },
+        focal_turns,
         policy_max_turns: expected_horizon,
         realized_width: game.map.width,
         realized_height: game.map.height,
@@ -597,6 +601,7 @@ struct ArmSummary {
     games: usize,
     wins: usize,
     turns: u64,
+    focal_turns: u64,
     score: i64,
     cities: usize,
     districts: usize,
@@ -617,6 +622,7 @@ impl ArmSummary {
         self.games += 1;
         self.wins += result.won as usize;
         self.turns += result.reported_turn as u64;
+        self.focal_turns += result.focal_turns;
         self.score += result.score;
         self.cities += result.cities;
         self.districts += result.districts;
@@ -643,7 +649,7 @@ impl ArmSummary {
     }
 
     fn conversion_rate(&self) -> f64 {
-        100.0 * self.conversions.total() as f64 / self.turns.max(1) as f64
+        100.0 * self.conversions.total() as f64 / self.focal_turns.max(1) as f64
     }
 
     fn powered_share(&self) -> f64 {
@@ -991,7 +997,7 @@ fn main() {
         control.victories, comparison.victories
     );
     println!(
-        "conversions coal/oil/uranium: {}/{}/{} -> {}/{}/{}; coverage {}/{} -> {}/{} games; rates {:.3} -> {:.3} per 100 focal turns",
+        "conversions coal/oil/uranium: {}/{}/{} -> {}/{}/{}; coverage {}/{} -> {}/{} games; observed focal turns {} -> {}; rates {:.3} -> {:.3} per 100 focal turns",
         control.conversions.coal,
         control.conversions.oil,
         control.conversions.uranium,
@@ -1002,6 +1008,8 @@ fn main() {
         control.games,
         comparison.conversion_games,
         comparison.games,
+        control.focal_turns,
+        comparison.focal_turns,
         control.conversion_rate(),
         comparison.conversion_rate(),
     );
@@ -1239,6 +1247,20 @@ mod tests {
         assert_eq!(stats.nominal_online_production(), 1_450);
         assert_eq!(stats.recommissions, 5);
         assert_eq!(stats.accidents, 3);
+    }
+
+    #[test]
+    fn conversion_rate_uses_exact_observed_focal_actor_turns() {
+        let arm = ArmSummary {
+            turns: 1_000,
+            focal_turns: 40,
+            conversions: ConversionStats {
+                coal: 1,
+                ..ConversionStats::default()
+            },
+            ..ArmSummary::default()
+        };
+        assert_eq!(arm.conversion_rate(), 2.5);
     }
 
     #[test]
