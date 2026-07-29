@@ -31,7 +31,11 @@ import civ6_env as env  # noqa: E402
 
 MOD_SOURCE = Path(__file__).resolve().parent / "mod"
 MOD_NAME = "CivvisControl"
-SCRIPTS = ("CivvisControlSetup.lua", "CivvisControlAgent.lua")
+SCRIPTS = (
+    "CivvisControlSetup.lua",
+    "CivvisControlAgent.lua",
+    "CivvisControlAutoClose.lua",
+)
 
 PRELUDE_HEADER = """-- Prepended by tools/civ6_control/install.py. Do not edit the installed copy.
 --
