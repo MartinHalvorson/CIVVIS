@@ -33564,7 +33564,7 @@ impl Game {
                     .as_ref()
                     .is_some_and(|civ| self.players[pid].civ != *civ)
                     || self.rules.buildings.values().any(|candidate| {
-                        candidate.replaces == Some(Name::new(&building.as_str()))
+                        candidate.replaces == Some(*building)
                             && (candidate.unique_to.as_deref()
                                 == Some(self.players[pid].civ.as_str())
                                 || society_for(candidate).is_some_and(|society| {
@@ -33683,7 +33683,7 @@ impl Game {
                         .as_ref()
                         .is_some_and(|civ| self.players[pid].civ != *civ)
                     || self.rules.districts.values().any(|candidate| {
-                        candidate.replaces == Some(Name::new(&district.as_str()))
+                        candidate.replaces == Some(*district)
                             && candidate.unique_to.as_deref()
                                 == Some(self.players[pid].civ.as_str())
                     })
@@ -33921,7 +33921,7 @@ impl Game {
                     .as_ref()
                     .is_some_and(|civ| self.players[pid].civ != *civ)
                 || self.rules.districts.values().any(|candidate| {
-                    candidate.replaces == Some(Name::new(&name.as_str()))
+                    candidate.replaces == Some(*name)
                         && candidate.unique_to.as_deref() == Some(self.players[pid].civ.as_str())
                 })
             {

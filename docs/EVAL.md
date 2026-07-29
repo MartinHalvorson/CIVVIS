@@ -5578,3 +5578,233 @@ profile produced 8 champion wins (all Science) and 14 stock wins (13 Science,
 1 Culture). What is established is narrower and useful: **routing stability
 does not explain champion strength, because the champion is not more stable.**
 No holdout is run and no gameplay behavior changes.
+
+## 2026-07-29 — the expansion axis: one oracle with headroom, six treatments, and what replicated
+
+`Grant::Expansion` (#554) is **the only subsystem grant this harness has ever
+returned HEADROOM for**. A free Settler while the seat is short of its city
+target, one at a time, stopping at six:
+
+| run | granted | control | McNemar | discordant | fired |
+|---|---|---|---|---|---|
+| `none` (control) | 24/100 | 24/100 | p=1.0000 | 0 | 0 |
+| `treasury` (calibration) | 89/100 | 24/100 | p=0.0000 | 65 | 166.7/game |
+| **expansion, 50 pairs, seed 450000** | **46/100** | 24/100 | **p=0.0007** | 40 | 5.4/game |
+| **expansion, 150 pairs, seed 460000** | **157/300 = 52.3%** | 69/300 = 23.0% | **p=0.0000** | **144** | 5.6/game |
+
+Two disjoint seeds, 400 maps, 184 discordant cells. It carries a seat from well
+below parity (23.0%) to above it (52.3%) where parity is 25%. Every other
+subsystem grant — `ground`, `siting`, `taker`, `modernity`, `attrition` — is
+null.
+
+### What the grant does *not* mean, and my own retraction
+
+#554 claimed it "stops at six — the agent's own `desired_cities` target",
+concluding *the AI cannot afford the empire it already wants*. **That conclusion
+was wrong.** `EXPANSION_TARGET` is a hardcoded 6 in `oracle.rs`;
+`production_allocation_census` (#569) measures `desired_cities` at **3.83** on
+4p/24×16 and **5.00** on 6p/74×46. The grant pushed the empire *above* its own
+plan, so what it measured is that **the target is too low**, not that the target
+is unaffordable.
+
+`production_allocation_census`, 6p/74×46, 75,474 production over 6 maps:
+
+```
+building 26.4%  district 21.7%  civilian 18.0%  project 13.8%
+wonder 11.1%    military 6.1%   settler 2.8%    idle 0.2%
+cities held 4.83 against a target of 5.00
+the missing cities would have cost 67 production — 0.5% of everything made
+```
+
+Affordability is not the constraint at either scale (0.5% deployment, 14.3%
+eval).
+
+### Six treatments, and why five failed for the same reason
+
+| treatment | result |
+|---|---|
+| expansion window → payback (#562) | wins null; **terminal score significant, twice** (below) |
+| production preemption (`preempt_margin`) | cities at end **2.21 vs 2.21**; settlers started 2.46 → 2.42 |
+| settler-specific preemption (#571) | **inert** — settlers 16 vs 16, 23 vs 23 |
+| the settler's own valuation | free-city loss only **2.6%**; it already wins when asked |
+| capital growth (`OPENINGS.md` §12) | every city after the first arrives **later**, monotone in dose |
+| city-target ramp floor (#571) | fires at deployment; **NULL on confirmation** (below) |
+
+**Five of the six worked to deliver the plan's target faster, and the target was
+the thing that was wrong.** That is the single sentence this axis produced.
+
+### `expansion_pays_back` — replicated on economy, never on wins
+
+`expansion_window_open` reserves a flat `standard_duration(50)` for every city
+regardless of what it can build. `expansion_pays_back_for` asks instead whether
+there is time to build the settler at *this city's* production rate, walk it,
+and hold the ground long enough to return its cost.
+
+| run | wins | terminal score | wins resolution |
+|---|---|---|---|
+| 6p/74×46, 120 pairs, seed 490000, 250t | 50.0%, Elo +0 | 56–24, **p=0.0005** | 2 of 120 |
+| 6p/74×46, 120 pairs, seed 491000, **500t** | 51.2%, Elo +9 | 58–30, **p=0.0037** | 23 of 120 |
+
+**Read the resolution column.** At 250 turns only two maps produced a win
+direction, so 50.0% there means *unmeasured*, not *equal*; the 500-turn run
+resolves 23. Across both, the economic gain replicates at p<0.005 and the win
+rate is positive twice and significant neither time. Left off by default.
+
+### A gene sweep that measured a path a live agent never takes
+
+`GENOME.md` records "`city_target` saturates above six", swept at 20 mirrored
+maps a point, with 6/8/10/12 identical to four decimal places, concluding *the
+agent never gets that many cities anyway*.
+
+`city_target` is a **gene**, reached only through `unwrap_or_else` when there is
+no plan. A live `AdvancedAi` reads `plan.desired_cities` and never consults it.
+The sweep measured a fallback path, which is why every value above six was
+byte-identical. The live target is
+`(3 + turn / cadence).min(map_capacity).min(6)` in `assess`.
+
+**Before trusting a gene sweep, check the gene is on the live path.**
+
+### The map scale inverted a reading four times on this axis
+
+| reading | eval 4p 24×16 | deployment 6p 74×46 |
+|---|---|---|
+| settler blocked by "no site" | **44.0%** (sole blocker 401×) | **0.0%** |
+| expansion window shut | 8.3% | **31.2%** |
+| cities held / target | 1.83 / 3.83 | 4.83 / 5.00 |
+| `city_target_floor` 3→6 | **inert** (cities 1.83 → 1.83) | cities 4.83 → **5.33** |
+
+24×16 at four players is 96 tiles per player; 74×46 at six is 567. Every
+expansion instrument added here reports both scales for that reason.
+
+## 2026-07-29 — ★★★★ the macro search chooses its two axes in the wrong order
+
+`StrategicAi` chooses a victory **lane** and a **doctrine**, one after the other.
+`lane_values` projects each lane using `self.weights` — the doctrine currently in
+force — and `doctrine_values` then projects each doctrine under the lane that
+won. That is coordinate descent, and it reaches the joint optimum only when the
+axes do not interact.
+
+They interact. `joint_axes` builds the whole `lane × doctrine` value matrix out
+of the shipped public API (`doctrine_values(g, pid, lane)` *is* one column of
+it), so this measures the search that ships rather than a copy of it. A
+self-check asserts `lane_values` reproduces the matrix row it should: **max
+deviation 0.00e0**.
+
+30 games, 4 players, 44×28, 200 turns, 175 review points.
+
+| quantity | value |
+|---|---|
+| best doctrine depends on the lane | **140/175 (80.0%)** |
+| joint argmax differs from the sequential pick | **113/175 (64.6%)** |
+| — of which the lane differs | 76 (43.4%) |
+| — of which the doctrine differs | 103 (58.9%) |
+| gap clears `DOCTRINE_COMMITMENT_MARGIN` (0.002) | **39/175 (22.3%)** |
+| gap clears `TARGET_COMMITMENT_MARGIN` (0.01) | **20/175 (11.4%)** |
+| value left on the table | mean 0.0039, **max 0.2068** |
+
+**Robust to the starting doctrine**, which is the result that makes the rest
+trustworthy. Swept over all four incumbents: disagreement 62.9–64.6%, clears the
+doctrine margin 33–39, clears the lane margin 14–20. A real agent's doctrine
+drifts, so a probe frozen in one of them measures itself; the sweep costs no
+extra rollouts because the matrix is already built.
+
+So in roughly **one review in five**, joint search would find a cell worth more
+than the margin the agent requires before it will move — and the worst cases are
+twenty times the lane margin. That is an actionable gap for about 2.5× the
+rollouts (28 branches against 11), which is inside the band already measured as
+productive here: doubling the search wins at p=0.0023, quadrupling adds nothing.
+
+**Two false starts, recorded because each would have given the wrong answer:**
+
+- The verdict first keyed on the **disagreement rate**. A pilot disagreed on 100%
+  of reviews while the mean gap was 0.0009 — below the doctrine margin and far
+  below the lane margin — so joint search would have found a better cell every
+  review and committed to almost none of them. Rate is the wrong headline; the
+  actionable share is the decision.
+- The probe sat in `Doctrine::Incumbent` forever, because a probe that never
+  reviews never drifts. I predicted that would *inflate* the gap. It **deflated**
+  it about sevenfold. The direction of a bias is not worth reasoning about when
+  measuring it is free.
+
+**Three limits, before anyone treats this as a win:**
+
+- Trajectories are `AdvancedAi`'s, not `StrategicAi`'s — the probe rides along
+  rather than steering, so the sample is not self-selected. `StrategicAi` is
+  `AdvancedAi` plus lane commitment, so its positions would be *more*
+  lane-specialised, which would plausibly raise interaction rather than lower it.
+- This is the evaluator's own value, and being right about a ranking is a
+  separate question from that ranking winning games. `policy_wide` is the
+  standing reminder: a calibrated evaluator ranked actions catastrophically.
+- 4 players on 44×28 Standard is **not the deployment profile**. Every strength
+  claim in this file that failed to transfer failed exactly here, so the
+  implementation must be validated at 6 players on 74×46 Online before any
+  default changes.
+
+| claim | status |
+|---|---|
+| the two search axes interact | **established** (80.0%, n=175) |
+| coordinate descent misses the joint optimum | **established** (64.6%) |
+| the miss is large enough for the agent to act on | **established** (22.3% over the doctrine margin) |
+| the result depends on the starting doctrine | **refuted** (stable across all four) |
+| joint search wins games | **unmeasured** — needs a deployment-profile paired run |
+
+### `city_target_floor` — the ramp is null, and the first reading was a third false positive
+
+`assess` computes `desired_cities = (3 + turn / cadence).min(map_capacity).min(6)`,
+so the empire wants three cities at the opening. `city_target_floor` starts that
+ramp at six instead. It fires cleanly at deployment scale and does nothing at
+the eval default, where `map_capacity = (2 + land / 55)` caps the target first:
+
+```
+[eval 4p 24x16]        floor=3  cities 1.83  score 106
+[eval 4p 24x16]        floor=6  cities 1.83  score 106
+[deployment 6p 74x46]  floor=3  cities 4.83  score 356
+[deployment 6p 74x46]  floor=6  cities 5.33  score 367
+```
+
+| run | paired score | direction | terminal score | wins resolution |
+|---|---|---|---|---|
+| 6p/74×46, 120 pairs, seed 500000 | 53.3%, Elo +23 | 18–10, p=0.1849 | 61–58, p=0.8546 | 28 of 120 |
+| **6p/74×46, 240 pairs, seed 510000** | **49.6%, Elo −3** | 31–33, **p=0.9007** | 116–117, **p=1.0000** | **64 of 240** |
+
+**The 53.3% did not reproduce.** That is the third apparent gain on this line of
+work to evaporate when confirmed on a seed it was not found on, after a +23 and
+a +20 earlier in the same session. The confirmation has better win resolution
+(64 maps against 28) and its terminal-score direction is 116–117, which is as
+flat as that statistic gets. Left off by default as a recorded entrant.
+
+### The follow-up was fires-checked and declined without an evaluation
+
+The remaining untested cell was `city_target_floor = 6` together with
+`parallel_settlers`. `advanced_parallel_settlers` measured near-inert on its own,
+and its doc explains why — the clause beside it already caps cities-plus-settlers
+at `desired_cities`, so a seat wanting three cities never wants a second settler.
+With the target raised and room on the map, that reasoning no longer applies, and
+six cities serialized through one settler at ~9 turns of production plus a walk
+each is a rate limit no valuation can beat.
+
+```
+[deployment 6p 74x46] floor=3 parallel=false  cities 4.83  score 356
+[deployment 6p 74x46] floor=6 parallel=false  cities 5.33  score 367
+[deployment 6p 74x46] floor=6 parallel=true   cities 5.67  score 368
+```
+
+It fires, and it is **+0.34 cities on top of a +0.50 that measured exactly null
+over 240 maps**. A fires-check exists to decide whether an evaluation is worth
+its compute, and here it says no: the predecessor's larger effect on the same
+metric did not convert, so this one has no path to converting either. Recorded
+rather than run.
+
+### What the axis amounts to
+
+One oracle with large, replicated headroom — free settlers take a seat from
+23.0% to 52.3% — and **seven treatments, none of which reaches it on wins**. The
+oracle removes the settler's cost; every treatment redistributes production the
+empire already had. The two things that did move were economic and did not
+convert: `expansion_pays_back` (terminal score p=0.0005 and p=0.0037 on disjoint
+seeds) and this one (+0.50 cities, null).
+
+That is worth stating plainly for whoever picks this up: **the expansion gap is
+real and is not currently reachable by changing a decision.** Anything further
+here should either change what a settler costs, or stop and go elsewhere.
+||||||| 2dbf641

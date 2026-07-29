@@ -178,6 +178,79 @@ unrecognised blocker is reported by name. A blocker that survives
 logged as forfeited — a far better trade than a run that stops dead, because a
 stopped run reports nothing at all.
 
+### The announcement screens close themselves
+
+End-turn blockers are not the only thing that stops a turn. Civilization VI
+also stops for its own **announcements** — a wonder finishing, an era ending
+with its era score, a technology completing, a Eureka — and those are not
+blockers at all. Each is a full-screen UI context that takes the popup lock,
+and `ExclusivePopupManager:Lock` calls `UI.ReferenceCurrentEvent()`, which
+holds an engine event until the player proceeds. With this controller in the
+seat there is no player to proceed. The announcement stays up over the map,
+which costs twice: the run stops, and whoever is watching the game loses the
+thing they were watching.
+
+`CivvisControlAutoClose.lua` gives each of those screens a stopwatch instead of
+a person. The screen opens, stays up for `AnnouncementSeconds` (2 by default —
+long enough to read, short enough not to sit through), and then ends exactly
+the way its own close button ends it. Nothing about the announcement changes:
+what it says, when it fires, what it locks. Only who finishes it.
+
+Three things about how it is wired are worth keeping:
+
+- **One file serves every screen.** Each `ReplaceUIScript` in
+  `CivvisControl.modinfo` points a context at the same replacement. The
+  replacement asks the context for its own name with `ContextPtr:GetID()`,
+  `include`s the shipped script of that name, and adds the stopwatch on top. No
+  shipped code is copied, so nothing here goes stale when the game updates —
+  and a `LuaReplace` file must also be named in an `ImportFiles` action or it
+  is not in the virtual file system at all, which is the same trap that
+  silently emptied the settings prelude.
+- **`ContextPtr:SetUpdate` *does* tick here**, unlike the script-only context
+  below. These are shipped popup contexts with controls and a layout, which is
+  the difference; the delta it is handed is in seconds, the same clock the
+  shipped `IntroScreen.lua` counts its legally-required logo delay on.
+- **Screens that ask something are deliberately not on the list**: a
+  dedication, a great person, a promotion. Closing a question answers it, and
+  those answers belong to the blocker loop. The one screen on the boundary is
+  the era review, which both reports the era score and leads into the
+  dedication choice — it is *continued* rather than closed, because its Close
+  button skips the dedication and its Continue button raises it.
+
+**This is not a cosmetic problem, and it was measured rather than reasoned
+about.** Ladder run `lad-4` stopped at turn 16 on 2026-07-29 and stayed stopped
+for seventeen minutes. It did not look like a hang: the process was running at
+about a third of a core, and the machine was loaded enough that "it is only
+slow" was the obvious explanation. What ruled that out was the log directory —
+every *game* log froze at the same second while `FiraxisLive.log` kept being
+written, which is a game core that has stopped, not a game core that is
+behind. The screen on top of the map was `NaturalDisasterPopup`: **NATURAL
+DISASTER OCCURRING — MAJOR FLOOD**, waiting for a click that was never coming.
+One Escape into the window closed it and the run moved again within seconds,
+which is the whole causal claim tested end to end. The next run, `lad-5`, was
+stopped on the same screen at turn 12 twenty minutes later, so this is not a
+freak: on Gathering Storm it is the ordinary way an unattended run dies, and it
+dies looking like a slow machine.
+
+That screen also settled a question worth writing down. Gathering Storm's
+`NaturalDisasterPopup` is already replaced by `GranColombia_Maya` on the
+criterion `RuleSetInUse RULESET_EXPANSION_2`, which is true of every run here,
+so pointing a second `ReplaceUIScript` at the same context is a race. The
+replacement it declares is fourteen lines, and it opens with
+`include("NaturalDisasterPopup")` — Firaxis using exactly the pattern above,
+which is the best evidence available that the pattern is right. So this mod
+chains through that file instead of competing with it: whichever
+`ReplaceUIScript` the game honours, the screen keeps everything it does, and
+only the stopwatch is at stake.
+
+A run's `Automation.log` says which screens armed (`autoclose_armed`, one line
+per screen as the game loads) and every screen it has since closed
+(`autoclose`, with how long it was up). The failure that has to be loud is
+`autoclose_unarmed`: a replacement whose `include` did not land leaves the
+context with no shipped code, and that does not look like a broken mod — the
+announcement simply never appears, and the run reads as a quiet game rather
+than a game missing a screen.
+
 ### Two things about the in-game context that fail silently
 
 - **`ContextPtr:SetUpdate` does not tick in a script-only in-game context.**
