@@ -14,6 +14,8 @@ use civvis::setup::{MapPoles, MapScript, MapSize, MapTopology};
 use civvis::strategic::StrategicAi;
 use std::collections::{BTreeMap, HashMap, HashSet};
 
+const NULL_MAPS: usize = 4;
+const NULL_SEED: u64 = 9_971_999;
 const SCREEN_MAPS: usize = 12;
 const SCREEN_SEED: u64 = 9_972_000;
 const CONFIRM_MAPS: usize = 60;
@@ -329,6 +331,10 @@ struct GameResult {
     cities_captured: u32,
     cities_lost: u32,
     census: MechanismCensus,
+    /// Canonical persisted world state for the default-off causal null. The
+    /// treatment batches leave this absent so a 60-map confirmation does not
+    /// retain four complete worlds per map in memory.
+    serialized_game: Option<String>,
 }
 
 fn strategic_deep_treatment(enabled: bool) -> Box<dyn Ai> {
@@ -340,14 +346,21 @@ fn strategic_deep_treatment(enabled: bool) -> Box<dyn Ai> {
     Box::new(ai)
 }
 
-fn controller_fleet(g: &Game, focal: usize, treatment: bool, seed: u64) -> Vec<Box<dyn Ai>> {
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum FocalMode {
+    Stock,
+    CapOff,
+    CapOn,
+}
+
+fn controller_fleet(g: &Game, focal: usize, mode: FocalMode, seed: u64) -> Vec<Box<dyn Ai>> {
     g.players
         .iter()
         .map(|player| {
             if player.is_minor || player.is_barbarian {
                 builtin_ai("basic", seed.wrapping_add(player.id as u64))
-            } else if player.id == focal && treatment {
-                strategic_deep_treatment(true)
+            } else if player.id == focal && mode != FocalMode::Stock {
+                strategic_deep_treatment(mode == FocalMode::CapOn)
             } else {
                 builtin_ai("strategic_deep", seed.wrapping_add(player.id as u64))
             }
@@ -375,14 +388,20 @@ fn observe_city_losses(
     }
 }
 
-fn play(options: GameOptions, focal: usize, treatment: bool, observe_through: u32) -> GameResult {
+fn play(
+    options: GameOptions,
+    focal: usize,
+    mode: FocalMode,
+    observe_through: u32,
+    record_state: bool,
+) -> GameResult {
     let map_seed = options.seed;
     let mut game = Game::new_with(options);
     game.victory_conditions = VictoryConditions::parse("science,culture,domination").unwrap();
     let nominal_limit = game.max_turns;
     assert!(observe_through >= nominal_limit);
     let kinds = recon_kinds(&game);
-    let mut ais = controller_fleet(&game, focal, treatment, map_seed);
+    let mut ais = controller_fleet(&game, focal, mode, map_seed);
     assert_eq!(ais.len(), game.players.len());
     let mut census = MechanismCensus::default();
     census.max_family = active_recon_count(&game, focal);
@@ -518,6 +537,8 @@ fn play(options: GameOptions, focal: usize, treatment: bool, observe_through: u3
     } else {
         observe_through
     };
+    let serialized_game = record_state
+        .then(|| serde_json::to_string(&game).expect("the causal-null world must serialize"));
     GameResult {
         won: game.winner == Some(focal),
         victory: (game.winner == Some(focal))
@@ -548,6 +569,7 @@ fn play(options: GameOptions, focal: usize, treatment: bool, observe_through: u3
             .max(0) as u32,
         cities_lost: lost,
         census,
+        serialized_game,
     }
 }
 
@@ -901,14 +923,33 @@ fn main() {
         eprintln!("unknown map shape {shape_name:?}");
         std::process::exit(2);
     });
-    let maps = number(&args, "--maps", SCREEN_MAPS as i64).max(1) as usize;
+    let null_replay = args.iter().any(|arg| arg == "--null");
+    let maps = number(
+        &args,
+        "--maps",
+        if null_replay {
+            NULL_MAPS as i64
+        } else {
+            SCREEN_MAPS as i64
+        },
+    )
+    .max(1) as usize;
     let turns = number(&args, "--turns", NOMINAL_TURNS as i64).max(1) as u32;
     let observe_through = number(&args, "--observe-through", OBSERVE_THROUGH as i64).max(1) as u32;
     if observe_through < turns {
         eprintln!("--observe-through must be at least --turns");
         std::process::exit(2);
     }
-    let seed = number(&args, "--seed", SCREEN_SEED as i64).max(0) as u64;
+    let seed = number(
+        &args,
+        "--seed",
+        if null_replay {
+            NULL_SEED as i64
+        } else {
+            SCREEN_SEED as i64
+        },
+    )
+    .max(0) as u64;
     let requested_jobs = number(&args, "--jobs", 0);
     let jobs = match requested_jobs {
         requested if requested > 0 => requested as usize,
@@ -935,7 +976,6 @@ fn main() {
         std::process::exit(2);
     }
     let randomize_civs = args.iter().any(|arg| arg == "--randomize-civs");
-    let null_replay = args.iter().any(|arg| arg == "--null");
     let rules = Rules::embedded();
     if !rules.speeds.contains_key(&speed) {
         eprintln!("unknown game speed {speed:?}");
@@ -1034,12 +1074,41 @@ fn main() {
             options.randomize_civs = randomize_civs;
             let seats = [0, profile.players - 1];
             let control = [
-                play(options.clone(), seats[0], false, observe_through),
-                play(options.clone(), seats[1], false, observe_through),
+                play(
+                    options.clone(),
+                    seats[0],
+                    FocalMode::Stock,
+                    observe_through,
+                    null_replay,
+                ),
+                play(
+                    options.clone(),
+                    seats[1],
+                    FocalMode::Stock,
+                    observe_through,
+                    null_replay,
+                ),
             ];
+            let comparison_mode = if null_replay {
+                FocalMode::CapOff
+            } else {
+                FocalMode::CapOn
+            };
             let treatment = [
-                play(options.clone(), seats[0], !null_replay, observe_through),
-                play(options, seats[1], !null_replay, observe_through),
+                play(
+                    options.clone(),
+                    seats[0],
+                    comparison_mode,
+                    observe_through,
+                    null_replay,
+                ),
+                play(
+                    options,
+                    seats[1],
+                    comparison_mode,
+                    observe_through,
+                    null_replay,
+                ),
             ];
             MapResult {
                 profile,
@@ -1241,22 +1310,6 @@ fn main() {
         );
     }
 
-    if null_replay {
-        if exact_mismatches == 0 {
-            println!(
-                "null sanity: PASS — all {} matched stock replays reproduced exactly",
-                control.games
-            );
-        } else {
-            println!(
-                "null sanity: BROKEN — {exact_mismatches}/{} matched stock replays differed",
-                control.games
-            );
-            std::process::exit(3);
-        }
-        return;
-    }
-
     let exact_profile = deployment_mix
         && args.iter().filter(|arg| *arg == "--deployment-mix").count() == 1
         && args.iter().filter(|arg| *arg == "--randomize-civs").count() == 1
@@ -1271,6 +1324,34 @@ fn main() {
         && map_poles == MapPoles::Poles
         && randomize_civs
         && victories == expected_victories;
+
+    if null_replay {
+        if exact_mismatches == 0 {
+            if exact_profile
+                && args.iter().filter(|arg| *arg == "--null").count() == 1
+                && maps == NULL_MAPS
+                && seed == NULL_SEED
+            {
+                println!(
+                    "frozen default-off null: PASS — all {} builtin/custom serialized worlds reproduced exactly",
+                    control.games
+                );
+            } else {
+                println!(
+                    "diagnostic default-off null: PASS — all {} builtin/custom serialized worlds reproduced exactly; no registered gate spent",
+                    control.games
+                );
+            }
+        } else {
+            println!(
+                "default-off null: BROKEN — {exact_mismatches}/{} builtin/custom serialized worlds differed",
+                control.games
+            );
+            std::process::exit(3);
+        }
+        return;
+    }
+
     if exact_profile && maps == SCREEN_MAPS && seed == SCREEN_SEED {
         println!(
             "screen gate: {}",
@@ -1335,6 +1416,10 @@ mod tests {
             assert!(!cycle[..index].contains(profile), "duplicate {profile:?}");
         }
         assert_eq!(
+            deployment_counts(NULL_MAPS, |profile| profile.players),
+            vec![(4, 1), (6, 1), (8, 1), (10, 1)]
+        );
+        assert_eq!(
             deployment_counts(SCREEN_MAPS, |profile| profile.players),
             vec![(4, 2), (6, 2), (8, 2), (10, 2), (5, 2), (7, 1), (9, 1)]
         );
@@ -1351,6 +1436,19 @@ mod tests {
             vec![(MapTopology::Flat, 30), (MapTopology::Planet, 30)]
         );
         assert_eq!(deployment_profile(0), deployment_profile(126));
+    }
+
+    #[test]
+    fn custom_default_off_entrant_is_serialized_world_identical_to_builtin() {
+        let options = GameOptions::new(2, 20, 14, 99_719, 1, 0);
+        let stock = play(options.clone(), 0, FocalMode::Stock, 1, true);
+        let custom_off = play(options, 0, FocalMode::CapOff, 1, true);
+
+        assert!(stock.serialized_game.is_some());
+        assert_eq!(
+            stock, custom_off,
+            "the custom entrant changes persisted world or observer state while the cap is off"
+        );
     }
 
     #[test]

@@ -201,6 +201,34 @@ policy-visible horizon never changes. It reports, by focal arm and paired map:
 The new diagnostics are observer-only and must never enter a game decision.
 Generated output is not committed.
 
+## Frozen default-off null
+
+Before either treatment seed is opened, one four-map causal null at disjoint
+seed `9971999` compares builtin `strategic_deep` with the custom Strategic
+entrant carrying `recon_family_cap = false`:
+
+```text
+recon_family_eval --null --deployment-mix --maps 4 --turns 250 \
+  --observe-through 320 --speed online --poles poles --randomize-civs \
+  --victories science,culture,domination --seed 9971999 --jobs 6
+```
+
+The four maps restart the deployment schedule at offset zero. For both focal
+seats, the builtin and custom-default-off arms must match in the complete
+canonical serialized `Game`, including RNG and action log, as well as every
+reported result and observer census field. Any mismatch stops the study before
+the screen. The runner may print the frozen PASS label only for this exact
+profile; all other null invocations are diagnostic and cannot spend or replace
+it. Neither screen seed `9972000` nor confirmation seed `9973000` may be used
+for a preflight null.
+
+This null amendment was frozen after implementation audit and before any focal
+seed was started or read. It changes no treatment, endpoint, screen,
+confirmation, threshold, map population, or resource limit. It closes the
+instrument gap in which the original runtime null compared stock with stock,
+retained only terminal summaries, and naturally defaulted to the untouched
+screen seed.
+
 ## Fixed development screen
 
 The one allowed screen is 12 maps / 48 games:
