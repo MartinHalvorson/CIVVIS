@@ -261,8 +261,9 @@ failure retains stock gameplay and this negative result.
 ## Invocation integrity, chronology, and resource queue
 
 The runner must fail with exit 2 before constructing a game when any supplied
-numeric or text option is malformed or valueless. A formal label is available
-only when every common option occurs exactly once with the canonical raw value:
+numeric or text option is malformed or valueless, or when any token is not a
+supported option. A formal label is available only when every common option
+occurs exactly once with the canonical raw value:
 `--deployment-mix`, `--ai advanced_evolved`, `--turns 250`,
 `--observe-through 320`, `--speed online`, `--poles poles`,
 `--randomize-civs`, `--victories science,culture,domination`, and `--jobs 6`.
