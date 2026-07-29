@@ -187,10 +187,18 @@ fn run(grants: &[Grant], args: &[String]) {
     // advantage is worth on this exact harness. Every other grant can then be
     // read against it instead of against nothing.
     let difficulty = text(args, "--difficulty", &default_difficulty());
-    if !Rules::embedded().difficulties.contains_key(&difficulty) {
+    if !rules.difficulties.contains_key(&difficulty) {
         eprintln!("unknown difficulty {difficulty:?}");
         std::process::exit(2);
     }
+    println!(
+        "profile: {players}p {width}x{height}, {city_states} city-states, \
+{turns} {speed} turns, seed {seed}, {jobs} jobs, difficulty {difficulty}"
+    );
+    println!(
+        "sampling seats 0 and {}; fixed stock civilizations; Basic city-states/barbarians",
+        players - 1
+    );
 
     // Every map is played from two different seats so a map that simply
     // favours one start cannot be read as evidence about a grant.
@@ -447,7 +455,7 @@ fn run_best_lane(args: &[String]) {
     let discordant = best_only + adaptive_only;
     let p = exact_two_sided(best_only, discordant);
     println!();
-    println!("best-lane oracle   {} cells, {players} players, {turns} turns", cells.len());
+    println!("best-lane oracle   {} cells, {players} players, {turns} {speed} turns", cells.len());
     println!("  adaptive won        {adaptive_wins}/{} = {:.1}%   (parity {:.1}%)",
         cells.len(), 100.0 * adaptive_wins as f64 / n, 100.0 / players as f64);
     println!("  SOME lane won       {best_wins}/{} = {:.1}%",

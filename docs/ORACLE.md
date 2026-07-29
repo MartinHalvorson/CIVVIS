@@ -36,8 +36,8 @@ historical values (`standard`, `advanced`). The best-lane oracle remains an
    least once, and reaches two-sided McNemar `p < 0.05`.
 2. Perfect territorial acquisition remains below useful resolution on that
    profile. `ground` is the focal structural grant because it is the newest
-   completed Standard bound and it acts in the resource-producing layer the
-   positive calibration points toward.
+   completed Standard bound at preregistration and it acts in the
+   resource-producing layer the positive calibration points toward.
 3. `treasury` also remains a positive calibration when the wrapped controller
    is `strategic_deep`. This is a mechanism check for future strongest-agent
    oracle work, not evidence that free resources are a playable policy.
@@ -77,3 +77,35 @@ from this batch.
 No gameplay entrant is promoted by this experiment. Its output decides which
 structural axis deserves a powered policy experiment and makes future oracle
 claims name the controller and game speed they actually measured.
+
+### Online/Advanced result
+
+The fixed screen completed all 24 cells. The command block accidentally omitted
+the explicit `none` arm required by the prose above, so that arm was replayed on
+the same fixed profile and seed before interpreting either treatment. It was
+exactly deterministic. The primary run's shared control and the replayed null
+control both won 0/24 focal cells.
+
+| grant | control won | granted won | helped / hurt / unchanged | exact p | fires | preregistered decision |
+|---|---:|---:|---:|---:|---:|---|
+| `none` | 0/24 | 0/24 | 0 / 0 / 24 | 1.0000 | 0 | sanity check passes |
+| `treasury` | 0/24 | 17/24 | 17 / 0 / 7 | 0.000015 | 3,883 (161.8/game) | calibration passes |
+| `ground` | 0/24 | 5/24 | 5 / 0 / 19 | 0.0625 | 4,028 (167.8/game) | escalation gate fails |
+
+`treasury` demonstrates that the batch can detect a deliberately enormous
+advantage on this profile. `ground` is more interesting than a mechanical null:
+it fired often and all five discordant cells favored the grant. Five is still
+below the fixed minimum of eight, however, so the direction is unresolved and
+the 50-map follow-up is not run. This result is neither evidence of no Online
+territorial headroom nor a license to work on that subsystem. It is a correctly
+stopped screen.
+
+The zero raw control wins do not invalidate the matched comparison, but they do
+make its scope important. `ablate` samples only seats 0 and 5 and leaves
+`GameOptions::randomize_civs` false, so those seats are always Rome and Aztec
+under the stock roster. The geometry, player count, city-state count, speed and
+turn budget match deployment; the civilization roster does not sample the live
+randomized distribution. This implementation also uses the normal Basic
+controller for city-states and barbarians while every major uses the named
+controller. The older Standard oracle used an `AdvancedAi` fleet for every
+player, so the two point patterns cannot isolate a speed interaction.
