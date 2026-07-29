@@ -6,8 +6,11 @@ evaluator-only and changes no shipped AI behavior.
 Pre-implementation reproducibility clarification, still before any simulation:
 the first compile audit made the frozen difficulty explicit as Prince and
 clarified that non-focal majors use the champion while city-states, Free Cities,
-and barbarians use Basic. This changes no treatment, population, outcome, seed,
-or decision gate.
+and barbarians use Basic. A subsequent source audit also preserved the declared
+defeated-major population when it found that elimination clears
+`occupied_from`: the evaluator records a focal `KeepCity` plus that city's exact
+pre-turn owner before the field can be erased. These corrections change no
+treatment, population, outcome, seed, or decision gate.
 
 ## Why this experiment exists
 
@@ -66,18 +69,23 @@ arms; every city-state, Free City, and barbarian uses the same stock Basic
 controller in both arms. A qualifying boundary exists only when the focal seat
 currently owns and has kept a city satisfying all of:
 
-1. `occupied_from` names another living or defeated **major** civilization;
+1. exact conquest provenance names another living or defeated **major**
+   civilization;
 2. `original_owner != focal`;
 3. the city is still owned by the focal seat; and
 4. Domination is enabled.
 
 `occupied_from` is written only by `transfer_city(..., conquest = true)` and
-survives `KeepCity`, so trade, peaceful transfer, founding, Envoy/Suzerain
-control, loyalty accession, and a recapture of the focal seat's own city cannot
-trigger the treatment. Capturing a Free City does not qualify because the
-immediate conquered owner is not a major. The trigger deliberately does not
-require an Original Capital: the hypothesis is that the first *successful
-major conquest* should make subsequent wars aim at capitals.
+survives `KeepCity` in the ordinary case. The engine clears that field when the
+previous owner is eliminated, however, so the observer also records the exact
+pre-turn owner of a city named by a focal `KeepCity` action. It retains that
+evidence only while the focal seat continuously owns the city. Thus trade,
+peaceful transfer, founding, Envoy/Suzerain control, loyalty accession, and a
+recapture of the focal seat's own city cannot trigger the treatment. Capturing
+a Free City does not qualify because the immediate conquered owner is not a
+major. The trigger deliberately does not require an Original Capital: the
+hypothesis is that the first *successful major conquest* should make subsequent
+wars aim at capitals.
 
 The commitment is seat-local and irreversible for the rest of that game. It
 does not disappear if the triggering city is lost, the war ends, or the
@@ -239,7 +247,7 @@ Before any registered seed may run, focused tests must establish:
 1. the compiled champion generation and FNV provenance;
 2. peaceful transfer, founding, city-state capture, Free-City capture, and own-
    city recapture cannot trigger, while keeping a city conquered directly from
-   a major does;
+   a living or thereby-defeated major does;
 3. treatment retargets exactly once and stays committed after peace, plan
    reassessment, and loss of the triggering city;
 4. the control wrapper records the same eligibility boundary without changing

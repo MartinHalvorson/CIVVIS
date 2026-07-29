@@ -385,16 +385,69 @@ struct Observer {
     retargets: usize,
     peak_foreign_capitals: usize,
     post_trigger_peak_foreign_capitals: usize,
+    kept_major_captures: BTreeMap<u32, usize>,
 }
 
 impl Observer {
     fn observe(&mut self, g: &Game, focal: usize) {
+        self.kept_major_captures.retain(|city, _| {
+            g.cities
+                .get(city)
+                .is_some_and(|candidate| candidate.owner == focal)
+        });
         let capitals = foreign_capitals(g, focal);
         self.peak_foreign_capitals = self.peak_foreign_capitals.max(capitals);
         if self.trigger.is_some() {
             self.post_trigger_peak_foreign_capitals =
                 self.post_trigger_peak_foreign_capitals.max(capitals);
         }
+    }
+
+    fn note_kept_captures(
+        &mut self,
+        g: &Game,
+        focal: usize,
+        log_start: usize,
+        captures_before: i64,
+        owners_before: &BTreeMap<u32, (usize, usize)>,
+    ) {
+        if capture_counter(g, focal) <= captures_before {
+            return;
+        }
+        for (seat, action) in g.log.since(log_start) {
+            let Action::KeepCity { city } = action else {
+                continue;
+            };
+            let Some((previous_owner, original_owner)) = owners_before.get(city) else {
+                continue;
+            };
+            if *seat == focal
+                && *original_owner != focal
+                && is_major(g, *previous_owner)
+                && g.cities
+                    .get(city)
+                    .is_some_and(|candidate| candidate.owner == focal)
+            {
+                self.kept_major_captures.insert(*city, *previous_owner);
+            }
+        }
+    }
+
+    fn qualifying_capture(&self, g: &Game, focal: usize) -> Option<(u32, usize)> {
+        qualifying_capture(g, focal)
+            .into_iter()
+            .chain(
+                self.kept_major_captures
+                    .iter()
+                    .filter(|(city, previous_owner)| {
+                        is_major(g, **previous_owner)
+                            && g.cities.get(city).is_some_and(|candidate| {
+                                candidate.owner == focal && candidate.original_owner != focal
+                            })
+                    })
+                    .map(|(city, previous_owner)| (*city, *previous_owner)),
+            )
+            .min()
     }
 
     fn maybe_trigger(
@@ -407,7 +460,7 @@ impl Observer {
         if self.trigger.is_some() || !g.victory_conditions.domination {
             return Ok(false);
         }
-        let Some((city, conquered_from)) = qualifying_capture(g, focal) else {
+        let Some((city, conquered_from)) = self.qualifying_capture(g, focal) else {
             return Ok(false);
         };
         let serialized = serde_json::to_string(g)
@@ -465,10 +518,23 @@ fn advance_one(
     } else {
         false
     };
+    let focal_context = (pid == focal).then(|| {
+        (
+            game.log.len(),
+            capture_counter(game, focal),
+            game.cities
+                .iter()
+                .map(|(city, value)| (*city, (value.owner, value.original_owner)))
+                .collect::<BTreeMap<_, _>>(),
+        )
+    });
     if pid == focal {
         focal_ai.take_turn(game, pid);
     } else {
         support[pid].take_turn(game, pid);
+    }
+    if let Some((log_start, captures_before, owners_before)) = focal_context {
+        observer.note_kept_captures(game, focal, log_start, captures_before, &owners_before);
     }
     if game.winner.is_none() && game.current == pid {
         let _ = game.apply(pid, &Action::EndTurn);
@@ -1455,6 +1521,47 @@ mod tests {
             qualifying_capture(&base, 0),
             None,
             "normally founded cities do not carry conquest provenance"
+        );
+
+        let owners_before = base
+            .cities
+            .iter()
+            .map(|(id, value)| (*id, (value.owner, value.original_owner)))
+            .collect::<BTreeMap<_, _>>();
+        let mut eliminating_capture = base;
+        let log_start = eliminating_capture.log.len();
+        let captures_before = capture_counter(&eliminating_capture, 0);
+        eliminating_capture.cities.get_mut(&city).unwrap().owner = 0;
+        eliminating_capture
+            .cities
+            .get_mut(&city)
+            .unwrap()
+            .occupied_from = None;
+        eliminating_capture.players[1].alive = false;
+        *eliminating_capture.players[0]
+            .counters
+            .entry("captures".into())
+            .or_default() += 1;
+        eliminating_capture.log.push(0, Action::KeepCity { city });
+        let mut observer = Observer::default();
+        observer.note_kept_captures(
+            &eliminating_capture,
+            0,
+            log_start,
+            captures_before,
+            &owners_before,
+        );
+        assert_eq!(
+            observer.qualifying_capture(&eliminating_capture, 0),
+            Some((city, 1))
+        );
+        eliminating_capture.cities.get_mut(&city).unwrap().owner = 2;
+        observer.observe(&eliminating_capture, 0);
+        eliminating_capture.cities.get_mut(&city).unwrap().owner = 0;
+        assert_eq!(
+            observer.qualifying_capture(&eliminating_capture, 0),
+            None,
+            "losing the kept city discards its provenance before a later reacquisition"
         );
     }
 
