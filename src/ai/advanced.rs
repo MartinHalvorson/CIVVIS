@@ -60,6 +60,10 @@ const RUSH_STACK: usize = 2;
 /// at 2 and continuing to build to 4 gets both — the war starts the turn it
 /// can, and the reinforcements walk into a siege already in progress.
 const RUSH_ARMY: usize = 4;
+/// Inner edge of the existing 3..=5 peacetime staging ring. The connected
+/// treatment asks whether a current land melee unit can route to this edge;
+/// it is not a fitted reach threshold.
+const RUSH_STAGING_RANGE: i32 = 3;
 
 /// Local hostile-over-friendly strength at which a city becomes a Bastion and
 /// stops growing. Deliberately the same 0.45 `threatened_city` treats as a
@@ -872,6 +876,14 @@ pub struct AdvancedAi {
     /// Reachable as `advanced_rush`. Paired against `advanced` it isolates the
     /// early-aggression lane and nothing else.
     pub early_rush: bool,
+    /// Restrict `early_rush` to rivals a starting land melee unit can actually
+    /// reach. The reachable set is frozen once all living major capitals have
+    /// been founded, before this treatment can change movement, research,
+    /// production, diplomacy, or war.
+    ///
+    /// Reachable as `advanced_rush_connected`; see `docs/RUSH.md` section 9.
+    pub route_connected_rush: bool,
+    rush_route_targets: Option<BTreeSet<usize>>,
 
     /// Whether a Science or Expansion threat is answered by racing the leader
     /// in that lane instead of by declaring on them.
@@ -1056,6 +1068,8 @@ impl AdvancedAi {
             civ_blind: false,
             deny_leaders: true,
             early_rush: false,
+            route_connected_rush: false,
+            rush_route_targets: None,
             counter_in_lane: false,
             counter_stand_down: false,
             early_score_alarm: false,
@@ -4928,6 +4942,57 @@ impl AdvancedAi {
             .collect()
     }
 
+    /// Freeze the rivals the connected-rush treatment may ever target.
+    ///
+    /// Waiting until every living major has founded its capital prevents seat
+    /// order from deciding which rivals exist. Returning whether the freeze
+    /// happened lets the caller reassess immediately: the same turn is the
+    /// treatment's first opportunity to differ from ordinary `advanced`.
+    fn freeze_rush_route_targets(&mut self, g: &Game, pid: usize) -> bool {
+        if !self.early_rush || !self.route_connected_rush || self.rush_route_targets.is_some() {
+            return false;
+        }
+
+        let Some(majors) = g
+            .players
+            .iter()
+            .filter(|player| player.alive && !player.is_minor && !player.is_barbarian)
+            .map(|player| {
+                g.player_city_ids(player.id)
+                    .into_iter()
+                    .find(|city| g.cities[city].is_capital)
+                    .map(|city| (player.id, g.cities[&city].pos))
+            })
+            .collect::<Option<Vec<_>>>()
+        else {
+            return false;
+        };
+
+        let land_melee: Vec<u32> = g
+            .player_unit_ids(pid)
+            .into_iter()
+            .filter(|unit| {
+                let spec = &g.rules.units[g.units[unit].kind];
+                spec.class == "military"
+                    && spec.is_melee_capable()
+                    && !matches!(spec.domain.as_deref(), Some("sea" | "air"))
+            })
+            .collect();
+        let reachable = majors
+            .into_iter()
+            .filter(|(target, _)| *target != pid)
+            .filter(|(_, capital)| {
+                land_melee.iter().any(|unit| {
+                    g.wdist(g.units[unit].pos, *capital) <= RUSH_STAGING_RANGE
+                        || g.route_step(*unit, *capital, RUSH_STAGING_RANGE).is_some()
+                })
+            })
+            .map(|(target, _)| target)
+            .collect();
+        self.rush_route_targets = Some(reachable);
+        true
+    }
+
     /// Global power answers whether a war is affordable; this answers whether
     /// the army is actually in position to prosecute it. At least one melee
     /// unit is mandatory because ranged and siege units cannot capture a city.
@@ -4968,6 +5033,13 @@ impl AdvancedAi {
             .iter()
             .filter(|player| {
                 player.id != pid && player.alive && !player.is_minor && !player.is_barbarian
+            })
+            .filter(|player| {
+                !self.route_connected_rush
+                    || self
+                        .rush_route_targets
+                        .as_ref()
+                        .is_some_and(|targets| targets.contains(&player.id))
             })
             .filter(|player| self.campaign_target_legal(g, pid, player.id))
             // Not stronger than us. The stack is what makes the rush work, so
@@ -12432,6 +12504,7 @@ impl Ai for AdvancedAi {
         Some(PlanReport {
             strategy: plan.strategy.as_str(),
             victory_target: self.victory_target.map(VictoryTarget::as_str),
+            rush: plan.rush,
             target_player: plan.target_player,
             target_city: plan.target_city,
             threatened_city: plan.threatened_city,
@@ -12476,12 +12549,13 @@ impl AdvancedAi {
             self.base.take_turn(g, pid);
             return;
         }
+        let rush_routes_frozen = self.freeze_rush_route_targets(g, pid);
         let disposition_strategy = active_victory_target
             .map(VictoryTarget::strategy)
             .unwrap_or_else(|| self.victory_focus(g, pid).strategy);
         self.resolve_city_dispositions(g, pid, disposition_strategy);
         self.observe_campaign(g, pid);
-        if self.plan_stale(g, pid) {
+        if rush_routes_frozen || self.plan_stale(g, pid) {
             self.plan = Some(self.assess(g, pid));
         }
         let plan = self.plan.clone().unwrap();
@@ -12719,6 +12793,137 @@ mod tests {
             })
             .expect("test map has a nearby city site");
         game.found_city_for(owner, position, None)
+    }
+
+    /// A small Pangaea on which the shipped rush has exactly one legal victim
+    /// and a starting land melee unit can route to its staging ring.
+    fn connected_rush_fixture() -> Game {
+        for seed in 560_000..560_064 {
+            let mut game = Game::new_full(2, 24, 16, seed, 200, 0, false);
+            for pid in 0..2 {
+                let settler = game
+                    .player_unit_ids(pid)
+                    .into_iter()
+                    .find(|unit| game.units[unit].kind == "settler")
+                    .expect("each major starts with a settler");
+                let position = game.units[&settler].pos;
+                game.found_city_for(pid, position, None);
+                game.remove_unit(settler);
+            }
+            game.current = 0;
+            let mut rush = AdvancedAi::new();
+            rush.early_rush = true;
+            let Some((target, capital)) = rush.early_rush_victim(&game, 0) else {
+                continue;
+            };
+            if target != 1 {
+                continue;
+            }
+            let objective = game.cities[&capital].pos;
+            let connected = game.player_unit_ids(0).into_iter().any(|unit| {
+                let spec = &game.rules.units[game.units[&unit].kind];
+                spec.class == "military"
+                    && spec.is_melee_capable()
+                    && !matches!(spec.domain.as_deref(), Some("sea" | "air"))
+                    && game.wdist(game.units[&unit].pos, objective) > RUSH_STAGING_RANGE
+                    && game
+                        .route_step(unit, objective, RUSH_STAGING_RANGE)
+                        .is_some()
+            });
+            if connected {
+                return game;
+            }
+        }
+        panic!("the fixed seed window needs one route-connected rush fixture")
+    }
+
+    /// Turn the ring immediately outside the selector's staging range into
+    /// water. A pre-embarkation land unit then has no route to any tile within
+    /// the range, while the capital's geometric distance remains unchanged.
+    fn split_capital_from_land_route(game: &mut Game, capital: Pos) {
+        let barrier: BTreeSet<Pos> = game
+            .wdisk(capital, RUSH_STAGING_RANGE + 1)
+            .into_iter()
+            .filter(|position| game.wdist(*position, capital) == RUSH_STAGING_RANGE + 1)
+            .collect();
+        for tile in game.map.tiles.values_mut() {
+            if barrier.contains(&tile.pos) {
+                tile.terrain = crate::name!("ocean");
+                tile.feature = None;
+            }
+        }
+    }
+
+    #[test]
+    fn connected_rush_matches_the_unconditional_plan_on_pangaea() {
+        let game = connected_rush_fixture();
+        let mut unconditional = AdvancedAi::new();
+        unconditional.early_rush = true;
+        let expected = unconditional.assess(&game, 0);
+        assert!(expected.rush, "the fixture must exercise the treatment");
+
+        let mut connected = AdvancedAi::new();
+        connected.early_rush = true;
+        connected.route_connected_rush = true;
+        assert!(connected.freeze_rush_route_targets(&game, 0));
+        assert_eq!(connected.assess(&game, 0), expected);
+    }
+
+    #[test]
+    fn disconnected_rush_stays_on_the_ordinary_plan() {
+        let mut game = connected_rush_fixture();
+        let capital = game.cities[&game.player_city_ids(1)[0]].pos;
+        split_capital_from_land_route(&mut game, capital);
+
+        let mut connected = AdvancedAi::new();
+        connected.early_rush = true;
+        connected.route_connected_rush = true;
+        assert!(connected.freeze_rush_route_targets(&game, 0));
+        assert_eq!(connected.rush_route_targets, Some(BTreeSet::new()));
+
+        let ordinary = AdvancedAi::new().assess(&game, 0);
+        let selected = connected.assess(&game, 0);
+        assert!(!selected.rush);
+        assert_eq!(selected, ordinary);
+    }
+
+    #[test]
+    fn rush_route_targets_are_frozen_after_the_first_complete_capital_state() {
+        let mut game = connected_rush_fixture();
+        let mut connected = AdvancedAi::new();
+        connected.early_rush = true;
+        connected.route_connected_rush = true;
+        assert!(connected.freeze_rush_route_targets(&game, 0));
+        let frozen = connected.rush_route_targets.clone();
+        assert_eq!(frozen, Some(BTreeSet::from([1])));
+
+        for unit in game.player_unit_ids(0) {
+            game.remove_unit(unit);
+        }
+        assert!(!connected.freeze_rush_route_targets(&game, 0));
+        assert_eq!(connected.rush_route_targets, frozen);
+    }
+
+    #[test]
+    fn a_committed_connected_rush_finishes_after_the_route_changes() {
+        let mut game = connected_rush_fixture();
+        let mut connected = AdvancedAi::new();
+        connected.early_rush = true;
+        connected.route_connected_rush = true;
+        assert!(connected.freeze_rush_route_targets(&game, 0));
+
+        let capital = game.cities[&game.player_city_ids(1)[0]].pos;
+        split_capital_from_land_route(&mut game, capital);
+        game.at_war.insert((0, 1));
+        game.turn = RUSH_WINDOW_CLOSES + 1;
+
+        assert_eq!(
+            connected
+                .early_rush_victim(&game, 0)
+                .map(|(target, _)| target),
+            Some(1)
+        );
+        assert!(connected.assess(&game, 0).rush);
     }
 
     #[test]
