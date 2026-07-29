@@ -383,6 +383,49 @@ fn game_weights(samples: &[Sample]) -> Vec<f64> {
         .collect()
 }
 
+fn margin_target_correlation(samples: &[Sample]) -> f64 {
+    let weights = game_weights(samples);
+    let games = samples
+        .iter()
+        .map(|sample| sample.game)
+        .collect::<BTreeSet<_>>()
+        .len()
+        .max(1) as f64;
+    let margin_mean = samples
+        .iter()
+        .zip(&weights)
+        .map(|(sample, weight)| weight * sample.margin)
+        .sum::<f64>()
+        / games;
+    let target_mean = samples
+        .iter()
+        .zip(&weights)
+        .map(|(sample, weight)| weight * sample.target)
+        .sum::<f64>()
+        / games;
+    let covariance = samples
+        .iter()
+        .zip(&weights)
+        .map(|(sample, weight)| {
+            weight * (sample.margin - margin_mean) * (sample.target - target_mean)
+        })
+        .sum::<f64>()
+        / games;
+    let margin_variance = samples
+        .iter()
+        .zip(&weights)
+        .map(|(sample, weight)| weight * (sample.margin - margin_mean).powi(2))
+        .sum::<f64>()
+        / games;
+    let target_variance = samples
+        .iter()
+        .zip(&weights)
+        .map(|(sample, weight)| weight * (sample.target - target_mean).powi(2))
+        .sum::<f64>()
+        / games;
+    covariance / (margin_variance * target_variance).sqrt().max(EPS)
+}
+
 #[derive(Clone, Copy, Debug, Serialize)]
 struct Calibrator {
     margin_mean: f64,
@@ -818,7 +861,12 @@ fn main() {
         CALIBRATION_GAMES,
         "calibration",
     );
-    let calibrator = fit_calibrator(&samples(&model, &calibration.groups), steps, rate, l2);
+    let calibration_samples = samples(&model, &calibration.groups);
+    println!(
+        "calibration margin/target game-weighted correlation: {:+.4}",
+        margin_target_correlation(&calibration_samples)
+    );
+    let calibrator = fit_calibrator(&calibration_samples, steps, rate, l2);
     println!(
         "frozen calibrator: margin mean {:+.6}, stddev {:.6}, slope {:.4}, intercept {:+.4}",
         calibrator.margin_mean, calibrator.margin_stddev, calibrator.slope, calibrator.intercept
@@ -880,8 +928,8 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::{
-        fit_calibrator, game_weights, mask, selection_pass, superiority_target, Calibrator, Report,
-        Sample,
+        fit_calibrator, game_weights, margin_target_correlation, mask, selection_pass,
+        superiority_target, Calibrator, Report, Sample,
     };
 
     #[test]
@@ -917,9 +965,40 @@ mod tests {
             },
         ];
         let fitted = fit_calibrator(&samples, 4_000, 0.05, 0.01);
+        assert!(margin_target_correlation(&samples) > 0.99);
         assert!(fitted.slope > 0.0);
         assert!(fitted.probability(0.02) > 0.70);
         assert!(fitted.probability(-0.02) < 0.30);
+    }
+
+    #[test]
+    fn monotone_calibration_abstains_when_margin_magnitude_is_inverted() {
+        let samples = vec![
+            Sample {
+                game: 1,
+                margin: -0.02,
+                target: 0.9,
+            },
+            Sample {
+                game: 2,
+                margin: -0.01,
+                target: 0.7,
+            },
+            Sample {
+                game: 3,
+                margin: 0.01,
+                target: 0.3,
+            },
+            Sample {
+                game: 4,
+                margin: 0.02,
+                target: 0.1,
+            },
+        ];
+        let fitted = fit_calibrator(&samples, 4_000, 0.05, 0.01);
+        assert!(margin_target_correlation(&samples) < -0.99);
+        assert!(fitted.slope.abs() < 1e-12);
+        assert!((fitted.probability(-0.02) - fitted.probability(0.02)).abs() < 1e-12);
     }
 
     #[test]

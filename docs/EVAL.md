@@ -5264,3 +5264,59 @@ No model enters gameplay from this experiment. A selection failure leaves the
 Online seeds untouched. An external failure ends the line. External success
 would earn a separate mirrored gameplay A/B; it would not itself authorize a
 default policy change.
+
+### Result: rank order survives, but margin magnitude carries no positive confidence signal
+
+The 32 calibration games at seeds 948000-948031 produced 125 decisions, 485
+candidate rows, and 1,940 doctrine continuations. Three scheduled observations
+had no eligible move. There were **zero rejected branches, repeated-branch
+mismatches, or observation errors**. Of the decisions, 71/125 (56.8%) had
+mean-return spread above 0.005, mean spread was 0.0224, mean expert oracle
+regret was 0.0120, and a sibling beat the expert in every doctrine at 13/125.
+
+The frozen ranker again had directional value: its ungated game-macro return
+lift over the expert was +0.0054 ± 0.0045 and regret fell from 0.0119 to 0.0065.
+Its margin magnitude did not carry confidence, however. The preregistered
+monotone fit converged to:
+
+| frozen calibration term | value |
+|---|---:|
+| margin mean / population standard deviation | +0.024259 / 0.035254 |
+| game-weighted margin / target correlation | **-0.0385** |
+| nonnegative Platt slope | **0.0000** |
+| intercept | +0.0292 |
+| calibrated probability, every decision | **0.507** |
+| raw / calibrated Brier | 0.02169 ± 0.00354 / 0.02151 ± 0.00357 |
+| raw / calibrated log loss | 0.69340 / 0.69304 |
+| 0.70 overrides | **0/125** |
+
+Projection to zero is the preregistered monotonicity constraint doing its job:
+on these independent games, larger positive rank margins covary slightly with
+*lower*, not higher, matched-doctrine superiority targets. The intercept learns
+only the base rate. The frozen artifact is 1,169 bytes with SHA-256
+`aa6efe782232907dc01c25c0ad02c136ad7d5c7ebc008eb248bfcc6956eeb134`.
+
+This is a structural preselection failure. A constant probability of 0.507 can
+never clear 0.70, so it has exactly 0% coverage for any possible selection
+outcomes and cannot satisfy the preregistered 5% condition. Generating the
+blind selection set cannot alter a frozen prediction. Seeds 948032-948063
+therefore remain untouched, as do Online seeds 947000-947031. No selection,
+external evaluation, gameplay A/B, or integration was spent.
+
+> **Do not lower the threshold or use margin size as confidence.** The head's
+> ordering continues to find better moves on average, but how far apart its
+> linear scores land is not an out-of-sample measure of reliability. Platt
+> scaling can rescale a monotone signal; it cannot manufacture one.
+
+The next justified learner must predict override reliability from information
+other than the rank margin: candidate state/destination context, the expert
+versus sibling feature difference, and a target for consistent doctrine
+superiority. The completed calibration corpus may serve as development data,
+while seeds 948032-948063 remain a genuinely blind Standard selection set.
+
+| claim | status |
+|---|---|
+| the frozen ranker still improves mean return on new Standard games | **supported (+0.0054 ± 0.0045)** |
+| larger frozen margins imply more reliable superiority | **refuted (monotone slope 0.0000)** |
+| independent Platt scaling creates a selective 0.70 region | **refuted (constant 0.507; zero coverage)** |
+| selection or Online evaluation is warranted | **rejected without spending either corpus** |
