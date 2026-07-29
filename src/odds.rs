@@ -778,7 +778,7 @@ mod tests {
     #[test]
     #[ignore = "plays 24 games to a result"]
     fn the_now_odds_beat_a_uniform_prior_over_played_games() {
-        use crate::ai::{run_game, Ai, BasicAi};
+        use crate::ai::{Ai, BasicAi};
         use crate::game::Action;
 
         const GAMES: u64 = 24;

@@ -9504,6 +9504,46 @@ mod tests {
         }
     }
 
+    /// A seated player is told their own odds, and an unmet rival's are withheld
+    /// along with everything else about them.
+    ///
+    /// This is the fog rule the whole annotation lives under, and the seat it
+    /// matters most for is the viewer's own: somebody playing the game wants to
+    /// know what they were given and where they stand, and `has_met` answers
+    /// true for yourself, so their row is annotated from turn one.
+    #[test]
+    fn a_seated_player_sees_their_own_odds_and_not_an_unmet_rivals() {
+        let mut params = current();
+        params.spectate = false;
+        params.num_players = 4;
+        let session = Session::new(params);
+        let state = session.state();
+        let me = state["player"].as_u64().expect("an interactive game has a seat");
+        let mut unmet = 0;
+        for player in state["players"].as_array().expect("a player list") {
+            let is_major = player["is_minor"] != json!(true) && player["is_barbarian"] != json!(true);
+            if !is_major {
+                continue;
+            }
+            if player["id"] == json!(me) {
+                assert!(
+                    player["odds_start"].as_f64().is_some_and(|odds| odds > 0.0),
+                    "your own seat carries its start odds: {player}"
+                );
+                assert!(player["odds_now"].as_f64().is_some());
+                continue;
+            }
+            if player["met"] == json!(false) {
+                unmet += 1;
+                assert!(
+                    player["odds_start"].is_null() && player["odds_now"].is_null(),
+                    "an unmet rival is not annotated at all: {player}"
+                );
+            }
+        }
+        assert!(unmet > 0, "a fresh interactive game has civilizations still to meet");
+    }
+
     /// The roster that labels an ordinary game is compiled in, so the ratings
     /// on screen are the same wherever the binary was started from.
     ///
