@@ -577,6 +577,31 @@ impl WorldMap {
         out
     }
 
+    /// Every in-map tile exactly `radius` steps from `center`, sorted.
+    ///
+    /// A search that walks outward ring by ring used to ask for the whole disk
+    /// at each radius and throw away everything inside it, which made the walk
+    /// cost the square of the distance it covered — and sorted the disk every
+    /// time. The exploration search does exactly that walk, and this was the
+    /// largest single cost in the engine.
+    ///
+    /// A caller that filters on [`Game::wdist`] gets the same answer either
+    /// way: a disk is the union of its rings, and a tile from an inner ring
+    /// cannot be at the outer ring's distance.
+    pub fn ring(&self, center: Pos, radius: i32) -> Vec<Pos> {
+        if let Some(sphere) = self.sphere() {
+            return sphere.ring(center, radius);
+        }
+        let mut out: Vec<Pos> = hex::ring(center, radius)
+            .into_iter()
+            .map(|pos| hex::canon(pos, self.width))
+            .filter(|pos| self.tiles.contains_key(pos))
+            .collect();
+        out.sort();
+        out.dedup();
+        out
+    }
+
     /// How far the tile is from the equator, from 0 at the equator to 1 at a
     /// pole. Climate bands are painted from this, so it has to follow the
     /// world's real shape rather than its storage rectangle.

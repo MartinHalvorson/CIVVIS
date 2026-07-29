@@ -386,6 +386,27 @@ impl Sphere {
         out
     }
 
+    /// Every tile exactly `radius` steps away.
+    ///
+    /// Within the cached ring radius this is a filter over a table the globe
+    /// already holds; past it there is nothing better than taking the disk.
+    pub fn ring(&self, center: Pos, radius: i32) -> Vec<Pos> {
+        let Some(from) = self.index_of(center) else {
+            return Vec::new();
+        };
+        if radius <= 0 {
+            return vec![center];
+        }
+        if radius <= RING_RADIUS {
+            return self.rings[from as usize]
+                .iter()
+                .filter(|(_, distance)| *distance as i32 == radius)
+                .map(|(pos, _)| *pos)
+                .collect();
+        }
+        self.disk(center, radius)
+    }
+
     fn cached_distance(&self, from: u32, to: u32) -> Option<u16> {
         self.distance_rows[from as usize]
             .get()

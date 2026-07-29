@@ -11957,6 +11957,11 @@ impl Game {
     pub fn wdisk(&self, c: Pos, r: i32) -> Vec<Pos> {
         self.map.disk(c, r)
     }
+
+    /// The world's tiles exactly `r` steps out. See [`WorldMap::ring`].
+    pub fn wring(&self, c: Pos, r: i32) -> Vec<Pos> {
+        self.map.ring(c, r)
+    }
 }
 
 /// Terrain heights for one visibility sweep, indexed by tile.

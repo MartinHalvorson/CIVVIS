@@ -6014,7 +6014,7 @@ impl BasicAi {
             let mut examined = 0;
             while found.is_none() && examined < g.map.tiles.len() {
                 let ring: Vec<Pos> = g
-                    .wdisk(upos, radius)
+                    .wring(upos, radius)
                     .into_iter()
                     .filter(|pos| g.wdist(upos, *pos) == radius)
                     .collect();
