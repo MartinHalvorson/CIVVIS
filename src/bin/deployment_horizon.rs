@@ -17,6 +17,66 @@ const SCREEN_MAPS: usize = 12;
 const SCREEN_SEED: u64 = 9_986_000;
 const CONFIRM_MAPS: usize = 48;
 const CONFIRM_SEED: u64 = 9_987_000;
+const DEPLOYMENT_PLAYERS: [usize; 7] = [4, 6, 8, 10, 5, 7, 9];
+const DEPLOYMENT_SCRIPTS: [MapScript; 9] = [
+    MapScript::LandOnly,
+    MapScript::WaterWorld,
+    MapScript::Continents,
+    MapScript::TrueStartEarth,
+    MapScript::Lakes,
+    MapScript::InlandSea,
+    MapScript::Pangaea,
+    MapScript::SmallContinents,
+    MapScript::Islands,
+];
+const DEPLOYMENT_TOPOLOGIES: [MapTopology; 2] = [MapTopology::Flat, MapTopology::Planet];
+const PROFILE_OVERRIDE_FLAGS: [&str; 6] = [
+    "--players",
+    "--width",
+    "--height",
+    "--city-states",
+    "--map",
+    "--shape",
+];
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct DeploymentProfile {
+    players: usize,
+    width: i32,
+    height: i32,
+    city_states: usize,
+    map_script: MapScript,
+    map_topology: MapTopology,
+}
+
+fn deployment_profile(map: usize) -> DeploymentProfile {
+    let players = DEPLOYMENT_PLAYERS[map % DEPLOYMENT_PLAYERS.len()];
+    let size = MapSize::for_players(players);
+    DeploymentProfile {
+        players,
+        width: size.width,
+        height: size.height,
+        city_states: size.default_city_states,
+        map_script: DEPLOYMENT_SCRIPTS[map % DEPLOYMENT_SCRIPTS.len()],
+        map_topology: DEPLOYMENT_TOPOLOGIES[map % DEPLOYMENT_TOPOLOGIES.len()],
+    }
+}
+
+fn deployment_counts<T: Copy + Eq>(
+    maps: usize,
+    select: impl Fn(DeploymentProfile) -> T,
+) -> Vec<(T, usize)> {
+    let mut counts = Vec::new();
+    for map in 0..maps {
+        let value = select(deployment_profile(map));
+        if let Some((_, count)) = counts.iter_mut().find(|(seen, _)| *seen == value) {
+            *count += 1;
+        } else {
+            counts.push((value, 1));
+        }
+    }
+    counts
+}
 
 fn number(args: &[String], key: &str, default: i64) -> i64 {
     args.iter()
@@ -124,6 +184,52 @@ impl HorizonResult {
     }
 }
 
+#[derive(Clone, Debug)]
+struct ProfiledResult {
+    profile: DeploymentProfile,
+    horizon: HorizonResult,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct StratumSummary {
+    maps: usize,
+    nominal_complete: usize,
+    late_complete: usize,
+    still_censored: usize,
+}
+
+fn summarize_stratum<'a>(results: impl Iterator<Item = &'a ProfiledResult>) -> StratumSummary {
+    let mut summary = StratumSummary::default();
+    for result in results {
+        summary.maps += 1;
+        summary.nominal_complete += result.horizon.nominal_complete() as usize;
+        summary.late_complete += result.horizon.late_complete() as usize;
+        summary.still_censored += result.horizon.still_censored() as usize;
+    }
+    summary
+}
+
+fn axis_values<T: Copy + Eq>(
+    results: &[ProfiledResult],
+    select: impl Fn(DeploymentProfile) -> T,
+) -> Vec<T> {
+    let mut values = Vec::new();
+    for result in results {
+        let value = select(result.profile);
+        if !values.contains(&value) {
+            values.push(value);
+        }
+    }
+    values
+}
+
+fn print_stratum(label: &str, summary: StratumSummary) {
+    println!(
+        "  {label:<22} {:>3} maps; nominal {}, late {}, still censored {}",
+        summary.maps, summary.nominal_complete, summary.late_complete, summary.still_censored,
+    );
+}
+
 /// Run through an external observation bound without ever changing the
 /// policy-visible `Game::max_turns` value.
 fn observe_game(mut game: Game, mut ais: Vec<Box<dyn Ai>>, observe_through: u32) -> HorizonResult {
@@ -200,6 +306,21 @@ fn wilson_95(hits: usize, n: usize) -> (f64, f64) {
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
+    let deployment_mix = args.iter().any(|arg| arg == "--deployment-mix");
+    if deployment_mix {
+        let conflicts = PROFILE_OVERRIDE_FLAGS
+            .iter()
+            .copied()
+            .filter(|flag| args.iter().any(|arg| arg == flag))
+            .collect::<Vec<_>>();
+        if !conflicts.is_empty() {
+            eprintln!(
+                "--deployment-mix derives every world profile; remove conflicting flags: {}",
+                conflicts.join(", ")
+            );
+            std::process::exit(2);
+        }
+    }
     let players = number(&args, "--players", 8).max(2) as usize;
     let size = MapSize::for_players(players);
     let (default_width, default_height) = size.dimensions(Default::default());
@@ -218,7 +339,8 @@ fn main() {
     let jobs = match number(&args, "--jobs", 0) {
         requested if requested > 0 => requested as usize,
         _ => civvis::parallel::default_jobs(),
-    };
+    }
+    .clamp(1, 6);
     let speed = text(&args, "--speed", "online");
     let difficulty = text(&args, "--difficulty", &default_difficulty());
     let map_name = text(&args, "--map", "continents");
@@ -259,19 +381,40 @@ fn main() {
         );
         std::process::exit(3);
     }
-    let (realized_width, realized_height, realized_tiles) =
-        realized_geometry(width, height, map_topology);
     println!("Deployment horizon censoring census");
+    if deployment_mix {
+        let player_batch = deployment_counts(maps, |profile| profile.players)
+            .into_iter()
+            .map(|(players, count)| format!("{players}p={count}"))
+            .collect::<Vec<_>>()
+            .join(",");
+        let script_batch = deployment_counts(maps, |profile| profile.map_script)
+            .into_iter()
+            .map(|(script, count)| format!("{}={count}", script.id()))
+            .collect::<Vec<_>>()
+            .join(",");
+        let topology_batch = deployment_counts(maps, |profile| profile.map_topology)
+            .into_iter()
+            .map(|(topology, count)| format!("{}={count}", topology.id()))
+            .collect::<Vec<_>>()
+            .join(",");
+        println!(
+            "profile: deployment mix; players {player_batch}; scripts {script_batch}; topologies {topology_batch}"
+        );
+    } else {
+        let (realized_width, realized_height, realized_tiles) =
+            realized_geometry(width, height, map_topology);
+        println!(
+            "profile: diagnostic fixed cell: {players}p requested {width}x{height}, realized \
+             {realized_width}x{realized_height} ({realized_tiles} tiles), \
+             {city_states} city-states, map {}, shape {}",
+            map_script.id(),
+            map_topology.id(),
+        );
+    }
     println!(
-        "profile: {players}p requested {width}x{height}, realized \
-         {realized_width}x{realized_height} ({realized_tiles} tiles), \
-         {city_states} city-states, {nominal_turns} nominal turns, observe through \
-         {observe_through}, {speed}, seed {seed}, {jobs} jobs, difficulty {difficulty}"
-    );
-    println!(
-        "world: map {}, shape {}, poles {}, civilizations {}, victories {}",
-        map_script.id(),
-        map_topology.id(),
+        "rules: {nominal_turns} nominal {speed} turns, observe through {observe_through}, poles {}, \
+         civilizations {}, victories {}, seed {seed}, {jobs} jobs, difficulty {difficulty}",
         map_poles.id(),
         if args.iter().any(|arg| arg == "--randomize-civs") {
             "randomized"
@@ -289,17 +432,35 @@ fn main() {
     );
 
     let randomize_civs = args.iter().any(|arg| arg == "--randomize-civs");
-    let results: Vec<HorizonResult> = civvis::parallel::map_reporting(
+    let results: Vec<ProfiledResult> = civvis::parallel::map_reporting(
         maps,
         jobs,
         |map| {
+            let profile = if deployment_mix {
+                deployment_profile(map)
+            } else {
+                DeploymentProfile {
+                    players,
+                    width,
+                    height,
+                    city_states,
+                    map_script,
+                    map_topology,
+                }
+            };
             let map_seed = seed + map as u64;
-            let mut options =
-                GameOptions::new(players, width, height, map_seed, nominal_turns, city_states);
+            let mut options = GameOptions::new(
+                profile.players,
+                profile.width,
+                profile.height,
+                map_seed,
+                nominal_turns,
+                profile.city_states,
+            );
             options.speed = speed.clone();
             options.difficulty = difficulty.clone();
-            options.map_script = map_script;
-            options.map_topology = map_topology;
+            options.map_script = profile.map_script;
+            options.map_topology = profile.map_topology;
             options.map_poles = map_poles;
             options.randomize_civs = randomize_civs;
             let mut game = Game::new_with(options);
@@ -316,75 +477,102 @@ fn main() {
                     builtin_ai(name, map_seed.wrapping_add(player.id as u64))
                 })
                 .collect();
-            observe_game(game, ais, observe_through)
+            ProfiledResult {
+                profile,
+                horizon: observe_game(game, ais, observe_through),
+            }
         },
         |completed, _| eprintln!("progress: {}/{} maps complete", completed + 1, maps),
     );
     assert!(
-        results.iter().all(|result| result.nominal_captures == 1),
+        results
+            .iter()
+            .all(|result| result.horizon.nominal_captures == 1),
         "every game must capture the nominal boundary exactly once"
     );
 
     let nominal_complete = results
         .iter()
-        .filter(|result| result.nominal_complete())
+        .filter(|result| result.horizon.nominal_complete())
         .count();
     let late_complete = results
         .iter()
-        .filter(|result| result.late_complete())
+        .filter(|result| result.horizon.late_complete())
         .count();
     let still_censored = results
         .iter()
-        .filter(|result| result.still_censored())
+        .filter(|result| result.horizon.still_censored())
         .count();
     let finish_turns: Vec<u32> = results
         .iter()
-        .filter_map(|result| result.final_.winner.map(|_| result.final_.observed_turn))
+        .filter_map(|result| {
+            result
+                .horizon
+                .final_
+                .winner
+                .map(|_| result.horizon.final_.observed_turn)
+        })
         .collect();
     let score_leaders = results
         .iter()
-        .filter(|result| result.eventual_winner_nominal_rank() == Some(1))
+        .filter(|result| result.horizon.eventual_winner_nominal_rank() == Some(1))
         .count();
     let resolved = finish_turns.len();
     let nominal_city_mean = results
         .iter()
-        .map(|result| result.nominal.mean_major_cities)
+        .map(|result| result.horizon.nominal.mean_major_cities)
         .sum::<f64>()
         / maps as f64;
     let final_city_mean = results
         .iter()
-        .map(|result| result.final_.mean_major_cities)
+        .map(|result| result.horizon.final_.mean_major_cities)
         .sum::<f64>()
         / maps as f64;
     let mut victory_types: BTreeMap<String, usize> = BTreeMap::new();
     for victory in results
         .iter()
-        .filter_map(|result| result.final_.victory_type.as_deref())
+        .filter_map(|result| result.horizon.final_.victory_type.as_deref())
     {
         *victory_types.entry(victory.to_string()).or_default() += 1;
     }
 
-    println!("\nmap  nominal  final  victory      score-rank@nominal  cities nominal->final");
+    println!(
+        "\nmap  profile                         requested->stored  nominal   final     victory      score-rank@nominal  cities nominal->final"
+    );
     for (map, result) in results.iter().enumerate() {
-        let nominal = if result.nominal_complete() {
-            format!("win@{}", result.nominal.observed_turn)
+        let horizon = &result.horizon;
+        let profile = result.profile;
+        let (stored_width, stored_height, _) =
+            realized_geometry(profile.width, profile.height, profile.map_topology);
+        let profile_label = format!(
+            "{}p/{}/{}",
+            profile.players,
+            profile.map_script.id(),
+            profile.map_topology.id()
+        );
+        let geometry = format!(
+            "{}x{}->{}x{}+{}cs",
+            profile.width, profile.height, stored_width, stored_height, profile.city_states,
+        );
+        let nominal = if horizon.nominal_complete() {
+            format!("win@{}", horizon.nominal.observed_turn)
         } else {
             "censored".to_string()
         };
-        let final_state = if result.final_.winner.is_some() {
-            format!("win@{}", result.final_.observed_turn)
+        let final_state = if horizon.final_.winner.is_some() {
+            format!("win@{}", horizon.final_.observed_turn)
         } else {
             "censored".to_string()
         };
         println!(
-            "{map:>3}  {nominal:<9} {final_state:<9} {:<12} {:>6}              {:>5.2}->{:>5.2}",
-            result.final_.victory_type.as_deref().unwrap_or("none"),
-            result
+            "{map:>3}  {profile_label:<31} {geometry:<18} {nominal:<9} {final_state:<9} {:<12} {:>6}              {:>5.2}->{:>5.2}",
+            horizon.final_.victory_type.as_deref().unwrap_or("none"),
+            horizon
                 .eventual_winner_nominal_rank()
                 .map(|rank| rank.to_string())
                 .unwrap_or_else(|| "-".to_string()),
-            result.nominal.mean_major_cities,
-            result.final_.mean_major_cities,
+            horizon.nominal.mean_major_cities,
+            horizon.final_.mean_major_cities,
         );
     }
     let (lower, upper) = wilson_95(late_complete, maps);
@@ -412,15 +600,47 @@ fn main() {
         victory_types
     );
 
-    let exact_profile = players == 8
-        && width == 84
-        && height == 54
-        && city_states == 12
+    println!("deployment-axis summaries (descriptive only; the decision gate is pooled):");
+    for players in axis_values(&results, |profile| profile.players) {
+        let summary = summarize_stratum(
+            results
+                .iter()
+                .filter(|result| result.profile.players == players),
+        );
+        print_stratum(&format!("players={players}"), summary);
+    }
+    for script in axis_values(&results, |profile| profile.map_script) {
+        let summary = summarize_stratum(
+            results
+                .iter()
+                .filter(|result| result.profile.map_script == script),
+        );
+        print_stratum(&format!("map={}", script.id()), summary);
+    }
+    for topology in axis_values(&results, |profile| profile.map_topology) {
+        let summary = summarize_stratum(
+            results
+                .iter()
+                .filter(|result| result.profile.map_topology == topology),
+        );
+        print_stratum(&format!("shape={}", topology.id()), summary);
+    }
+
+    let exact_profile = deployment_mix
+        && [
+            "--maps",
+            "--seed",
+            "--turns",
+            "--observe-through",
+            "--speed",
+            "--poles",
+            "--victories",
+        ]
+        .iter()
+        .all(|flag| args.iter().any(|arg| arg == flag))
         && nominal_turns == 250
         && observe_through == 320
         && speed == "online"
-        && map_script == MapScript::Continents
-        && map_topology == MapTopology::Planet
         && map_poles == MapPoles::Poles
         && randomize_civs
         && victory_conditions == VictoryConditions::parse("science,culture,domination").unwrap();
@@ -430,7 +650,7 @@ fn main() {
             if late_complete >= 3 {
                 "PASS — run only the fixed seed-9987000 confirmation"
             } else {
-                "STOP — retain the turn-250 convention on this focal cell"
+                "STOP — retain the turn-250 convention"
             }
         );
     } else if exact_profile && maps == CONFIRM_MAPS && seed == CONFIRM_SEED {
@@ -439,7 +659,7 @@ fn main() {
             if late_complete >= 10 && lower > 0.10 {
                 "PASS — production-terminal studies must preserve max_turns and model continuation"
             } else {
-                "STOP — retain the turn-250 convention on this focal cell"
+                "STOP — retain the turn-250 convention"
             }
         );
     } else {
@@ -449,9 +669,13 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
-    use super::{observe_game, percentile, wilson_95, HorizonResult, Snapshot};
+    use super::{
+        deployment_counts, deployment_profile, observe_game, percentile, wilson_95, HorizonResult,
+        Snapshot, CONFIRM_MAPS, DEPLOYMENT_SCRIPTS, DEPLOYMENT_TOPOLOGIES, SCREEN_MAPS,
+    };
     use civvis::ai::{Ai, BasicAi};
     use civvis::game::{Game, VictoryConditions};
+    use civvis::setup::{MapScript, MapTopology};
 
     fn no_victories() -> VictoryConditions {
         VictoryConditions {
@@ -462,6 +686,53 @@ mod tests {
             domination: false,
             score: false,
         }
+    }
+
+    #[test]
+    fn deployment_cycle_is_factorial_and_balances_frozen_batches() {
+        let cycle = (0..126).map(deployment_profile).collect::<Vec<_>>();
+        for (index, profile) in cycle.iter().enumerate() {
+            assert!(
+                !cycle[..index].contains(profile),
+                "profile {profile:?} repeated before the 126-cell cycle closed"
+            );
+        }
+
+        assert_eq!(
+            deployment_counts(SCREEN_MAPS, |profile| profile.players),
+            vec![(4, 2), (6, 2), (8, 2), (10, 2), (5, 2), (7, 1), (9, 1)]
+        );
+        assert_eq!(
+            deployment_counts(CONFIRM_MAPS, |profile| profile.players),
+            vec![(4, 7), (6, 7), (8, 7), (10, 7), (5, 7), (7, 7), (9, 6)]
+        );
+        assert_eq!(
+            deployment_counts(SCREEN_MAPS, |profile| profile.map_script),
+            DEPLOYMENT_SCRIPTS
+                .iter()
+                .enumerate()
+                .map(|(index, script)| (*script, if index < 3 { 2 } else { 1 }))
+                .collect::<Vec<(MapScript, usize)>>()
+        );
+        assert_eq!(
+            deployment_counts(CONFIRM_MAPS, |profile| profile.map_script),
+            DEPLOYMENT_SCRIPTS
+                .iter()
+                .enumerate()
+                .map(|(index, script)| (*script, if index < 3 { 6 } else { 5 }))
+                .collect::<Vec<(MapScript, usize)>>()
+        );
+        assert_eq!(
+            deployment_counts(SCREEN_MAPS, |profile| profile.map_topology),
+            vec![(MapTopology::Flat, 6), (MapTopology::Planet, 6)]
+        );
+        assert_eq!(
+            deployment_counts(CONFIRM_MAPS, |profile| profile.map_topology),
+            DEPLOYMENT_TOPOLOGIES
+                .iter()
+                .map(|topology| (*topology, 24))
+                .collect::<Vec<_>>()
+        );
     }
 
     #[test]
