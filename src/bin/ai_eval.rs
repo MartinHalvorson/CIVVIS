@@ -4,8 +4,9 @@ use civvis::elo::{
     builtin_ai, builtin_provenances, collapsed_entrants, AgentProvenance, ARTIFACT_DIR,
     BUILTIN_AIS, EVAL_ONLY_AIS,
 };
-use civvis::game::{default_difficulty, Action, Game, GameOptions};
+use civvis::game::{default_difficulty, Action, Game, GameOptions, VictoryConditions};
 use civvis::rules::Rules;
+use civvis::setup::{MapPoles, MapScript, MapTopology};
 use civvis::strategic::ReviewCensus;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -604,6 +605,36 @@ fn main() {
     let width = number(&args, "--width", 24).max(8) as i32;
     let height = number(&args, "--height", 16).max(8) as i32;
     let seed = number(&args, "--seed", 4000).max(0) as u64;
+    // The exhibition varies all three world axes and pins its enabled victory
+    // set. An evaluator that cannot name them silently measures a different
+    // game: historically Pangaea/flat/fixed-roster/all-victories, whatever the
+    // command line appeared to say. Keep those historical defaults, but make
+    // the deployment profile expressible and print the resolved values below.
+    let map_name = text(&args, "--map", MapScript::default().id());
+    let map_script = MapScript::from_id(&map_name).unwrap_or_else(|| {
+        eprintln!("unknown map script {map_name:?}");
+        std::process::exit(2);
+    });
+    let shape_name = text(&args, "--shape", MapTopology::default().id());
+    let map_topology = MapTopology::from_id(&shape_name).unwrap_or_else(|| {
+        eprintln!("unknown map shape {shape_name:?}");
+        std::process::exit(2);
+    });
+    let poles_name = text(&args, "--poles", MapPoles::default().id());
+    let map_poles = MapPoles::from_id(&poles_name).unwrap_or_else(|| {
+        eprintln!("unknown thermal distribution {poles_name:?}");
+        std::process::exit(2);
+    });
+    let default_victories = VictoryConditions::NAMES.join(",");
+    let victory_names = text(&args, "--victories", &default_victories);
+    let victory_conditions = VictoryConditions::parse(&victory_names).unwrap_or_else(|why| {
+        eprintln!(
+            "--victories: {why}; choose from {:?}",
+            VictoryConditions::NAMES
+        );
+        std::process::exit(2);
+    });
+    let randomize_civs = args.iter().any(|arg| arg == "--randomize-civs");
     // The difficulty ladder as an external yardstick: the challenger plays
     // the human side of the handicap and its opponents play the AI side, so
     // "beats Emperor" means what a Civ player would expect it to mean.
@@ -614,6 +645,22 @@ fn main() {
         eprintln!("unknown difficulty {difficulty:?}");
         std::process::exit(2);
     }
+    println!(
+        "profile: speed {speed}, map {}, shape {}, poles {}, civilizations {}, victories {}",
+        map_script.id(),
+        map_topology.id(),
+        map_poles.id(),
+        if randomize_civs {
+            "randomized"
+        } else {
+            "fixed"
+        },
+        VictoryConditions::NAMES
+            .into_iter()
+            .filter(|name| victory_conditions.is_enabled(name))
+            .collect::<Vec<_>>()
+            .join(","),
+    );
     let mut totals: BTreeMap<String, Metrics> = [a, b]
         .into_iter()
         .map(|name| (name.to_string(), Metrics::default()))
@@ -663,8 +710,13 @@ fn main() {
                 difficulty: difficulty.clone(),
                 human_seats: challenger_seats,
                 speed: speed.clone(),
+                map_script,
+                map_topology,
+                map_poles,
+                randomize_civs,
                 ..GameOptions::new(players, width, height, game_seed, turns, city_states)
             });
+            game.victory_conditions = victory_conditions;
             let mut ais: Vec<Box<dyn Ai>> = game
                 .players
                 .iter()
