@@ -65,6 +65,10 @@ struct Table {
     score_only: Vec<f64>,
     /// Per-seat final score, the thing the proxy is built out of.
     scores: Vec<f64>,
+    /// Per-seat combat share, kept so the term can be described rather than
+    /// only scored. A term that barely varies between seats cannot be carrying
+    /// information about anything, however it is weighted.
+    combat: Vec<f64>,
     /// Which seat won, if the game was decided.
     winner: Option<usize>,
 }
@@ -108,6 +112,16 @@ fn play(seed: u64, seats: usize, width: i32, height: i32, turns: u32) -> Table {
         proxy.push(50.0 * players * score_share + 12.0 * players * combat_share);
         score_only.push(50.0 * players * score_share);
     }
+    let combat: Vec<f64> = achievements
+        .iter()
+        .map(|value| {
+            if combat_total > 0.0 {
+                value / combat_total
+            } else {
+                0.0
+            }
+        })
+        .collect();
     let winner = game
         .winner
         .and_then(|pid| majors.iter().position(|major| *major == pid));
@@ -115,6 +129,7 @@ fn play(seed: u64, seats: usize, width: i32, height: i32, turns: u32) -> Table {
         proxy,
         score_only,
         scores,
+        combat,
         winner,
     }
 }
@@ -255,6 +270,34 @@ fn main() {
         "\ncombat term: it alone is right in {only_proxy_right} games, score alone in \
          {only_score_right}; {discordant} discordant pairs, exact two-sided p = {p:.4}"
     );
+    // What the term is made of, not just what it scores. A weighted term that
+    // barely varies between seats is noise however it is weighted, and that is
+    // a different objection from "it points the wrong way" -- worth separating,
+    // because it changes whether removing it could cost anything.
+    let mut flat = 0usize;
+    let mut silent = 0usize;
+    let mut spread_sum = 0.0;
+    let mut disagree = 0usize;
+    for table in &decided {
+        let high = table.combat.iter().cloned().fold(0.0f64, f64::max);
+        let low = table.combat.iter().cloned().fold(1.0f64, f64::min);
+        spread_sum += high - low;
+        // Uniform to within a tenth of a share: every seat looks the same.
+        if high - low < 0.10 {
+            flat += 1;
+        }
+        if table.combat.iter().all(|value| *value <= 0.0) {
+            silent += 1;
+        }
+        if leader(&table.combat) != leader(&table.score_only) {
+            disagree += 1;
+        }
+    }
+    println!(
+        "\ncombat_share across seats: mean spread {:.3}, flat (<0.10) in {flat}/{n} games, \
+         all-zero in {silent}/{n}; its leader differs from the score leader in {disagree}/{n}"
+    , spread_sum / n.max(1) as f64);
+
     // The verdict is stated rather than left to the reader, because the whole
     // point is to settle whether the objection to the split survives.
     let rate = proxy_hits as f64 / n.max(1) as f64;
