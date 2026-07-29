@@ -2722,4 +2722,62 @@ mod joint_axis_tests {
         assert!(!ai.joint_axes);
         assert_eq!(ai.doctrine(), Doctrine::Incumbent);
     }
+
+    /// The incumbent doctrine must be the identity on the genome, because the
+    /// whole comparison rests on it: `joint_lane_values` maximises over a set
+    /// that contains the incumbent, so if `Incumbent.apply` perturbed the
+    /// weights the joint value would not be comparable with the sequential one
+    /// and the dominance below would be measuring a different agent.
+    #[test]
+    fn the_incumbent_doctrine_is_the_identity() {
+        let base = Weights::default();
+        assert_eq!(Doctrine::Incumbent.apply(&base), base);
+    }
+
+    /// **The invariant the whole change rests on:** judging a lane at its best
+    /// doctrine can never be worse than judging it at the incumbent's, because
+    /// the incumbent is one of the doctrines maximised over. Any lane where the
+    /// joint value came out *below* the sequential one would mean the maximum
+    /// is not being taken over a superset, and the agent would be choosing
+    /// lanes on numbers that are worse than the ones it already had.
+    ///
+    /// Equality is expected and is not a failure: it is what a position where
+    /// the incumbent is already the best doctrine for that lane looks like.
+    #[test]
+    fn judging_a_lane_at_its_best_doctrine_never_scores_below_the_incumbent() {
+        use crate::ai::Ai;
+        let mut game = crate::game::Game::new(3, 24, 16, 4_242, 60, 0);
+        let mut fleet = crate::ai::AdvancedAi::fleet(&game);
+        // A few turns so the position has something to project from.
+        for _ in 0..24 {
+            if game.winner.is_some() {
+                break;
+            }
+            let pid = game.current;
+            fleet[pid].take_turn(&mut game, pid);
+            if game.winner.is_none() && game.current == pid {
+                let _ = game.apply(pid, &crate::game::Action::EndTurn);
+            }
+        }
+        let mut ai = StrategicAi::with_weights(Weights::default());
+        ai.horizon = 4;
+        let mut branches: Vec<Option<crate::ai::VictoryTarget>> = vec![None];
+        branches.extend(ai.lane_candidates(&game).into_iter().map(Some));
+
+        let joint = ai.joint_lane_values(&game, 0, &branches);
+        let mut strictly_better = 0;
+        for (index, target) in branches.iter().enumerate() {
+            let sequential = ai.rollout(&game, 0, *target);
+            assert!(
+                joint[index].0 >= sequential - 1e-12,
+                "lane {target:?}: joint {} below sequential {sequential}",
+                joint[index].0
+            );
+            strictly_better += (joint[index].0 > sequential + 1e-12) as usize;
+        }
+        // Not asserted as a hard floor -- a position where the incumbent is best
+        // for every lane is legitimate, and pinning a count here would make the
+        // test a map-and-seed lottery rather than a statement about the code.
+        eprintln!("{strictly_better}/{} lanes improved by their own doctrine", branches.len());
+    }
 }
