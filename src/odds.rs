@@ -760,6 +760,98 @@ mod tests {
         assert!((total(&odds, |seat| seat.start) - 2.0).abs() < 1e-9);
     }
 
+    /// Score the live figure against played games, because a probability that
+    /// is never checked is only a decoration.
+    ///
+    /// Twenty-four games are played to a result. At 60% of each one's clock
+    /// every living seat's now odds are recorded, and the whole set is scored
+    /// with a Brier score against what actually happened — squared error
+    /// between the probability and a 1/0 outcome, lower being better. The
+    /// baseline is the only honest one available: the uniform prior that every
+    /// seat at a four-seat table has a quarter of the win, which is also what
+    /// the start odds say about an even table. The model has to beat it, and
+    /// its favourite has to win more often than a random seat would.
+    ///
+    /// Ignored by default: two dozen games to a result is a minute of CPU, far
+    /// too long for the ordinary suite. Run it with
+    /// `cargo test --profile ci --lib odds:: -- --ignored --nocapture`.
+    #[test]
+    #[ignore = "plays 24 games to a result"]
+    fn the_now_odds_beat_a_uniform_prior_over_played_games() {
+        use crate::ai::{run_game, Ai, BasicAi};
+        use crate::game::Action;
+
+        const GAMES: u64 = 24;
+        const PLAYERS: usize = 4;
+        const TURNS: u32 = 220;
+        let mut samples: Vec<(f64, bool)> = Vec::new();
+        let mut favourite_wins = 0_u32;
+        let mut decided = 0_u32;
+        for seed in 0..GAMES {
+            let mut options = GameOptions::new(PLAYERS, 32, 22, 90_000 + seed, TURNS, 2);
+            options.difficulty = "prince".to_string();
+            let mut game = Game::new_with(options);
+            let mut ais = BasicAi::fleet(&game);
+            let sample_at = (TURNS as f64 * 0.6) as u32;
+            let mut sampled: Option<BTreeMap<usize, SeatOdds>> = None;
+            game.set_fog_memory(false);
+            while game.winner.is_none() && game.turn <= game.max_turns {
+                if sampled.is_none() && game.turn >= sample_at {
+                    sampled = Some(table(&game, flat));
+                }
+                let pid = game.current;
+                ais[pid].take_turn(&mut game, pid);
+                if game.winner.is_none() && game.current == pid {
+                    let _ = game.apply(pid, &Action::EndTurn);
+                }
+            }
+            let Some(odds) = sampled else { continue };
+            let winners = game.winning_players();
+            if winners.is_empty() {
+                // No result inside the turn limit: there is nothing to score
+                // this sample against, so it is dropped rather than counted as
+                // everybody having lost.
+                continue;
+            }
+            decided += 1;
+            for (pid, seat) in &odds {
+                samples.push((seat.now, winners.contains(pid)));
+            }
+            let favourite = odds
+                .iter()
+                .max_by(|a, b| a.1.now.total_cmp(&b.1.now))
+                .map(|(pid, _)| *pid)
+                .expect("a table has seats");
+            favourite_wins += u32::from(winners.contains(&favourite));
+        }
+        assert!(decided >= GAMES as u32 / 2, "only {decided} games reached a result");
+        let brier = samples.iter().map(|(p, won)| {
+            let outcome = f64::from(*won);
+            (p - outcome) * (p - outcome)
+        }).sum::<f64>() / samples.len() as f64;
+        let uniform = 1.0 / PLAYERS as f64;
+        let baseline = samples.iter().map(|(_, won)| {
+            let outcome = f64::from(*won);
+            (uniform - outcome) * (uniform - outcome)
+        }).sum::<f64>() / samples.len() as f64;
+        let favourite_rate = f64::from(favourite_wins) / f64::from(decided);
+        println!(
+            "{decided} decided games, {} seat samples: Brier {brier:.4} vs uniform {baseline:.4}, \
+             favourite won {favourite_wins}/{decided} ({:.0}%)",
+            samples.len(),
+            favourite_rate * 100.0
+        );
+        assert!(
+            brier < baseline,
+            "the live odds must beat a flat quarter: {brier:.4} against {baseline:.4}"
+        );
+        assert!(
+            favourite_rate > uniform,
+            "the favourite at 60% of the clock must beat a coin drawn from the table: \
+             {favourite_wins}/{decided}"
+        );
+    }
+
     /// The civilization edge is learned from the roster, weighted by the games
     /// behind it, and shrunk toward nothing when there are few.
     #[test]
