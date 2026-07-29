@@ -17,6 +17,8 @@ const SCREEN_MAPS: usize = 30;
 const SCREEN_SEED: u64 = 9_983_000;
 const HOLDOUT_MAPS: usize = 120;
 const HOLDOUT_SEED: u64 = 9_984_000;
+const NOMINAL_TURNS: u32 = 250;
+const OBSERVE_THROUGH: u32 = 320;
 
 fn number(args: &[String], key: &str, default: i64) -> i64 {
     args.iter()
@@ -208,6 +210,7 @@ struct GameResult {
     won: bool,
     victory: Option<String>,
     reported_turn: u32,
+    policy_max_turns: u32,
     score: i64,
     science_progress: f64,
     science_projects: usize,
@@ -219,8 +222,13 @@ struct GameResult {
     census: TreatmentCensus,
 }
 
-fn play(options: GameOptions, focal: usize, mode: Mode) -> GameResult {
+fn play(options: GameOptions, focal: usize, mode: Mode, observe_through: u32) -> GameResult {
     let mut game = Game::new_with(options);
+    let policy_max_turns = game.max_turns;
+    assert!(
+        observe_through >= policy_max_turns,
+        "external observation turn {observe_through} precedes policy horizon {policy_max_turns}"
+    );
     game.set_fog_memory(false);
     game.victory_conditions = VictoryConditions {
         science: true,
@@ -233,7 +241,11 @@ fn play(options: GameOptions, focal: usize, mode: Mode) -> GameResult {
     let mut ais = AdvancedAi::fleet(&game);
     let mut census = TreatmentCensus::default();
 
-    while game.winner.is_none() && game.turn <= game.max_turns {
+    while game.winner.is_none() && game.turn <= observe_through {
+        assert_eq!(
+            game.max_turns, policy_max_turns,
+            "external continuation changed the policy-visible horizon"
+        );
         let pid = game.current;
         if pid == focal && mode != Mode::Control {
             replay_stock_actions_without_end(&mut game, &mut ais[pid], pid)
@@ -269,6 +281,10 @@ fn play(options: GameOptions, focal: usize, mode: Mode) -> GameResult {
             });
         }
     }
+    assert_eq!(
+        game.max_turns, policy_max_turns,
+        "external continuation changed the policy-visible horizon"
+    );
 
     let city_ids = game.player_city_ids(focal);
     let built_spaceports = city_ids
@@ -306,7 +322,12 @@ fn play(options: GameOptions, focal: usize, mode: Mode) -> GameResult {
         victory: (game.winner == Some(focal))
             .then(|| game.victory_type.clone())
             .flatten(),
-        reported_turn: game.reported_turn(),
+        reported_turn: if game.winner.is_some() {
+            game.reported_turn()
+        } else {
+            observe_through
+        },
+        policy_max_turns,
         score: game.score(focal),
         science_progress: race.science,
         science_projects: race.science_projects,
@@ -488,7 +509,12 @@ fn main() {
     let width = number(&args, "--width", 84).max(8) as i32;
     let height = number(&args, "--height", 54).max(8) as i32;
     let city_states = number(&args, "--city-states", 12).max(0) as usize;
-    let turns = number(&args, "--turns", 320).max(1) as u32;
+    let nominal_turns = number(&args, "--turns", NOMINAL_TURNS as i64).max(1) as u32;
+    let observe_through = number(&args, "--observe-through", OBSERVE_THROUGH as i64).max(1) as u32;
+    if observe_through < nominal_turns {
+        eprintln!("--observe-through must be at least --turns");
+        std::process::exit(2);
+    }
     let seed = number(
         &args,
         "--seed",
@@ -555,7 +581,8 @@ fn main() {
     println!("Adaptive Science Spaceport parallelism evaluator");
     println!(
         "profile: {players}p requested {width}x{height}, stored {}x{}, {city_states} city-states, \
-         {turns} {speed} turns, map {}, shape {}, poles {}, civilizations {}, victories {}",
+         {nominal_turns} policy-visible {speed} turns, observe through {observe_through}, map {}, \
+         shape {}, poles {}, civilizations {}, victories {}",
         stored_dimensions.0,
         stored_dimensions.1,
         map_script.id(),
@@ -601,14 +628,14 @@ fn main() {
                     width,
                     height,
                     seed + map as u64,
-                    turns,
+                    nominal_turns,
                     city_states,
                 )
             };
             let seats = [0, players - 1];
             let control = [
-                play(options.clone(), seats[0], Mode::Control),
-                play(options.clone(), seats[1], Mode::Control),
+                play(options.clone(), seats[0], Mode::Control, observe_through),
+                play(options.clone(), seats[1], Mode::Control, observe_through),
             ];
             let comparison_mode = if null_replay {
                 Mode::ReplayNull
@@ -616,8 +643,8 @@ fn main() {
                 Mode::Treatment
             };
             let comparison = [
-                play(options.clone(), seats[0], comparison_mode),
-                play(options, seats[1], comparison_mode),
+                play(options.clone(), seats[0], comparison_mode, observe_through),
+                play(options, seats[1], comparison_mode, observe_through),
             ];
             MapResult {
                 control,
@@ -787,7 +814,8 @@ fn main() {
         && width == 84
         && height == 54
         && city_states == 12
-        && turns == 320
+        && nominal_turns == NOMINAL_TURNS
+        && observe_through == OBSERVE_THROUGH
         && speed == "online"
         && map_script == MapScript::Continents
         && map_topology == MapTopology::Planet
@@ -929,6 +957,14 @@ mod tests {
         assert_eq!(game.current, 0);
         game.apply(0, &Action::EndTurn).unwrap();
         assert_eq!(game.current, 1);
+    }
+
+    #[test]
+    fn external_observation_preserves_the_policy_horizon() {
+        let options = GameOptions::new(2, 20, 14, 79_202, 1, 0);
+        let result = play(options, 0, Mode::Control, 3);
+        assert_eq!(result.policy_max_turns, 1);
+        assert_eq!(result.reported_turn, 3);
     }
 
     #[test]
