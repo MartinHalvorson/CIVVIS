@@ -21756,7 +21756,7 @@ mod tests {
                 let mut game =
                     Game::new_full(players, width, height, 480_000 + map, 200, 1, false);
                 let mut ais: Vec<AdvancedAi> =
-                    (0..game.players.len()).map(|_| AdvancedAi::new()).collect();
+                    (0..game.players.len()).map(|_| deployed_agent()).collect();
                 let treated = {
                     let mut ai = AdvancedAi::new();
                     ai.expansion_pays_back = true;
@@ -21838,7 +21838,7 @@ mod tests {
                 let mut game =
                     Game::new_full(players, width, height, 480_000 + map, 200, 1, false);
                 let mut ais: Vec<AdvancedAi> =
-                    (0..game.players.len()).map(|_| AdvancedAi::new()).collect();
+                    (0..game.players.len()).map(|_| deployed_agent()).collect();
                 game.set_fog_memory(false);
                 let mut prev: BTreeMap<u32, f64> = BTreeMap::new();
                 while game.winner.is_none() && game.turn <= game.max_turns {
@@ -22010,7 +22010,7 @@ mod tests {
                 let mut game =
                     Game::new_full(players, width, height, 480_000 + map, 200, 1, false);
                 let mut ais: Vec<AdvancedAi> =
-                    (0..game.players.len()).map(|_| AdvancedAi::new()).collect();
+                    (0..game.players.len()).map(|_| deployed_agent()).collect();
                 game.set_fog_memory(false);
                 while game.winner.is_none() && game.turn <= game.max_turns {
                     let pid = game.current;
@@ -22076,6 +22076,23 @@ mod tests {
         println!();
     }
 
+
+    /// The agent a census must measure: the one that ships.
+    ///
+    /// ⚠ `AdvancedAi::new()` carries `Weights::default()`, whose `policy_deck`
+    /// is `PolicyDeck::Legacy` — and `revise_policy_deck` returns before the
+    /// counterfactual scoring on that branch. The evolved champion, embedded in
+    /// the binary since #471 and played by the exhibition, deserializes to
+    /// `PolicyDeck::Live` and behaves differently: it slots
+    /// `charismatic_leader` on 39.4% of turns where the default slots it on
+    /// 0.0%.
+    ///
+    /// #612 measured the default and reported the 0.0% as a property of "the
+    /// agent". Every census here uses this instead, so that cannot recur.
+    fn deployed_agent() -> AdvancedAi {
+        AdvancedAi::with_weights(crate::evolve::load_champion("evolved").unwrap_or_default())
+    }
+
     /// Census, not an assertion: is the envoy gap a resource shortfall or an
     /// allocation failure?
     ///
@@ -22126,7 +22143,7 @@ mod tests {
                     false,
                 );
                 let mut ais: Vec<AdvancedAi> =
-                    (0..game.players.len()).map(|_| AdvancedAi::new()).collect();
+                    (0..game.players.len()).map(|_| deployed_agent()).collect();
                 game.set_fog_memory(false);
                 while game.winner.is_none() && game.turn <= game.max_turns {
                     let pid = game.current;
@@ -22261,7 +22278,7 @@ mod tests {
                     players, width, height, 480_000 + map, 200, city_states, false,
                 );
                 let mut ais: Vec<AdvancedAi> =
-                    (0..game.players.len()).map(|_| AdvancedAi::new()).collect();
+                    (0..game.players.len()).map(|_| deployed_agent()).collect();
                 game.set_fog_memory(false);
                 let mut built_here = BTreeSet::<&str>::new();
                 while game.winner.is_none() && game.turn <= game.max_turns {
