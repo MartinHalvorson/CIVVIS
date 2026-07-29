@@ -21112,4 +21112,162 @@ mod tests {
         );
         println!();
     }
+
+    /// Census, not an assertion: which conjunct actually blocks the settler?
+    ///
+    /// #554 measured that handing a seat a free Settler while it is short of
+    /// its own city target more than doubles its win rate — 23.0% to 52.3% over
+    /// 300 games at p=0.0000, the only subsystem grant this harness has ever
+    /// returned HEADROOM for. Seats target six cities and finish with 2.1–2.8.
+    /// **The agent cannot afford the empire it has already decided it wants.**
+    ///
+    /// That says the cost binds. It does not say *which* cost. The settler
+    /// branch of `production_value` is a five-way conjunction, and any one of
+    /// them turns the item's value into −10,000:
+    ///
+    /// ```text
+    /// city_count + counts.settlers < plan.desired_cities   // target not met
+    ///   && counts.settlers < in_flight_allowed             // serialization
+    ///   && city.pop >= 2                                   // size gate
+    ///   && expansion_open                                  // time window
+    ///   && site.is_some()                                  // somewhere to go
+    /// ```
+    ///
+    /// This counts, over every city-turn where the empire is short of its
+    /// target, which conjuncts were false. A conjunct that never fails cannot
+    /// be the constraint; one that fails almost always is where the settler
+    /// economy actually stalls. Shares sum past 100% because several can fail
+    /// at once, so the last block reports the turns where exactly one did —
+    /// those are the ones a single fix would unblock.
+    ///
+    /// Run with `cargo test --release expansion_funnel_blocker_census -- --ignored --nocapture`.
+    #[test]
+    #[ignore = "census, not an assertion; run explicitly with --nocapture"]
+    fn expansion_funnel_blocker_census() {
+        // ⚠ `ai_eval` defaults to 24x16 at 4 players, which is 96 tiles per
+        // player; the exhibition this engine actually serves runs 74x46 at 6,
+        // which is 567. "No settle site in reach" is exactly the kind of
+        // reading that could be pure map scarcity at the small size, so both
+        // are measured and reported side by side.
+        for (label, players, width, height) in
+            [("eval 4p 24x16", 4usize, 24i32, 16i32), ("deployment 6p 74x46", 6, 74, 46)]
+        {
+            expansion_funnel_at(label, players, width, height);
+        }
+    }
+
+    fn expansion_funnel_at(label: &str, players: usize, width: i32, height: i32) {
+        let mut short_city_turns = 0u64;
+        let mut fail_serial = 0u64;
+        let mut fail_pop = 0u64;
+        let mut fail_window = 0u64;
+        let mut fail_site = 0u64;
+        let mut all_clear = 0u64;
+        let mut sole_serial = 0u64;
+        let mut sole_pop = 0u64;
+        let mut sole_window = 0u64;
+        let mut sole_site = 0u64;
+        let mut settler_turns_when_clear: Vec<f64> = Vec::new();
+
+        for map in 0..8u64 {
+            let mut game =
+                Game::new_full(players, width, height, 480_000 + map, 200, 1, false);
+            let mut ais: Vec<AdvancedAi> =
+                (0..game.players.len()).map(|_| AdvancedAi::new()).collect();
+            game.set_fog_memory(false);
+            while game.winner.is_none() && game.turn <= game.max_turns {
+                let pid = game.current;
+                if pid == 0 {
+                    if let Some(plan) = ais[0].plan.clone() {
+                        let cities = game.player_city_ids(0);
+                        let settlers = game
+                            .player_unit_ids(0)
+                            .into_iter()
+                            .filter(|uid| game.units[uid].kind == "settler")
+                            .count();
+                        if cities.len() + settlers < plan.desired_cities {
+                            let window = AdvancedAi::expansion_window_open(&game);
+                            for cid in cities {
+                                short_city_turns += 1;
+                                let city = &game.cities[&cid];
+                                let pos = city.pos;
+                                let pop = city.pop;
+                                let site = ais[0].best_settle_site(&game, 0, pos, 11).is_some();
+                                // `in_flight_allowed` is 1 for the shipped
+                                // agent, so serialization fails exactly when a
+                                // settler already exists.
+                                let serial_ok = settlers < 1;
+                                let bad = [!serial_ok, pop < 2, !window, !site];
+                                if bad[0] {
+                                    fail_serial += 1;
+                                }
+                                if bad[1] {
+                                    fail_pop += 1;
+                                }
+                                if bad[2] {
+                                    fail_window += 1;
+                                }
+                                if bad[3] {
+                                    fail_site += 1;
+                                }
+                                match bad.iter().filter(|b| **b).count() {
+                                    0 => {
+                                        all_clear += 1;
+                                        // Everything permits a settler. How
+                                        // long would one take to pay for?
+                                        let production =
+                                            game.city_yields(cid).production.max(1.0);
+                                        let cost = game.item_remaining_cost_for_city(
+                                            0,
+                                            cid,
+                                            &Item::Unit {
+                                                unit: "settler".into(),
+                                            },
+                                        );
+                                        settler_turns_when_clear.push(cost / production);
+                                    }
+                                    1 => {
+                                        if bad[0] {
+                                            sole_serial += 1;
+                                        } else if bad[1] {
+                                            sole_pop += 1;
+                                        } else if bad[2] {
+                                            sole_window += 1;
+                                        } else {
+                                            sole_site += 1;
+                                        }
+                                    }
+                                    _ => {}
+                                }
+                            }
+                        }
+                    }
+                }
+                ais[pid].take_turn(&mut game, pid);
+                if game.winner.is_none() && game.current == pid {
+                    let _ = game.apply(pid, &crate::game::Action::EndTurn);
+                }
+            }
+        }
+
+        let pct = |n: u64| n as f64 / short_city_turns.max(1) as f64 * 100.0;
+        println!("\n=== expansion funnel [{label}]: {short_city_turns} city-turns while SHORT of target ===");
+        println!("  a settler already walking (serialization)  {fail_serial:>6}  ({:>5.1}%)", pct(fail_serial));
+        println!("  city below pop 2                           {fail_pop:>6}  ({:>5.1}%)", pct(fail_pop));
+        println!("  expansion window shut                      {fail_window:>6}  ({:>5.1}%)", pct(fail_window));
+        println!("  no settle site in reach                    {fail_site:>6}  ({:>5.1}%)", pct(fail_site));
+        println!("  NOTHING blocking — the settler was allowed {all_clear:>6}  ({:>5.1}%)", pct(all_clear));
+        println!("  turns where EXACTLY ONE conjunct failed (a single fix would unblock these):");
+        println!("    serialization {sole_serial}   pop<2 {sole_pop}   window {sole_window}   no site {sole_site}");
+        if !settler_turns_when_clear.is_empty() {
+            let mut t = settler_turns_when_clear.clone();
+            t.sort_by(f64::total_cmp);
+            println!(
+                "  when allowed, a settler costs a median {:.1} turns of this city's production (p90 {:.1})",
+                t[t.len() / 2],
+                t[t.len() * 9 / 10]
+            );
+        }
+        println!();
+    }
 }
