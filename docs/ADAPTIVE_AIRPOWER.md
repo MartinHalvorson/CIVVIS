@@ -124,8 +124,11 @@ enumerate ordinary legal `Item::Unit` air candidates from
 `Game::producible_items` across owned cities. Rank them by highest
 rules-reported ranged attack strength, then melee defense strength, lowest
 completion turns, lowest city id, and unit name. Apply the best legal
-`Produce` order. The engine pays and commits the real Oil or Aluminum, later
-pays ordinary maintenance, and may reject all candidates.
+`Produce` order. A city already first-queuing an aircraft is ineligible for
+another order; the policy waits for that committed aircraft to complete rather
+than replacing it while trying to commit the second. The engine pays and
+commits the real Oil or Aluminum, later pays ordinary maintenance, and may
+reject all candidates.
 
 The two-unit cap is the unmodified two-slot capacity of the single treatment
 Aerodrome. The evaluator does not order a Hangar, Airport, Airstrip, Carrier,
