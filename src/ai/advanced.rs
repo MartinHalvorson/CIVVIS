@@ -858,9 +858,9 @@ pub struct AdvancedAi {
     /// plant's absolute fuel/climate utility. Because the current plant alone
     /// is illegal, that makes the runner-up attractive immediately after the
     /// best plant finishes and creates a deterministic conversion cycle. The
-    /// evaluator-only `advanced_reactor_marginal` entrant subtracts the exact
-    /// same utility for the current plant and rejects anything that is not a
-    /// strict improvement. See `docs/REACTOR_CONVERSION.md`.
+    /// evaluator-only runner subtracts the exact same utility for the current
+    /// plant and rejects anything that is not a strict improvement. See
+    /// `docs/REACTOR_CONVERSION.md`.
     pub reactor_marginal: bool,
     /// Ignore every by-name civilization signal in the decision layer.
     ///
