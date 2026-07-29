@@ -282,3 +282,29 @@ Validation after implementation remained off the focal seeds:
 
 The exact null at `9987999`, screen at `9988000`, and holdout at `9989000`
 remain unopened and queued behind the older simulator batches.
+
+## Deployment implementation checkpoint
+
+The deployment-population and observer-horizon amendment was frozen and pushed
+independently at `a3d5e62` before source changed. Commit
+`4cd7017afc53bc2c2959431997f8e6ff1d7d17c8` then implemented only that
+amendment. The runner now derives each world with `MapSize::for_players`,
+rejects fixed-profile flags under `--deployment-mix`, prints every axis balance,
+keeps `Game.max_turns` at 250, and observes the unchanged champion worlds
+externally through 320. An unresolved game reports the explicit observation
+bound rather than the engine's already-advanced next-turn counter.
+
+Validation remained off every registered seed:
+
+- all ten focused release tests passed, including all 126 unique joint
+  profiles, exact frozen-batch balances, champion replay, and continuation
+  beyond a one-turn policy horizon without mutating it;
+- the standalone binary rejected `--deployment-mix --players 8` with status 2
+  before constructing a game; and
+- a one-map, one-turn diagnostic null at seed `9987998` derived the expected
+  4-player Land Only/Flat profile, printed nominal/external horizons of 1/1,
+  and reproduced both champion seat replays exactly while refusing a formal
+  gate label.
+
+The amended exact null, screen, and holdout remain unopened. They now require
+the deployment-mix commands and external horizon frozen above.
