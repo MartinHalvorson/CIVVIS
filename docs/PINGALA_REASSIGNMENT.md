@@ -148,8 +148,8 @@ The evaluator reports:
   establishment follow-through, treatment seat-game coverage, and any later
   stock reassignment away from the recorded target;
 - terminal Pingala assignment, establishment, city population, city Science,
-  city Culture, total focal Science per turn, total Culture per turn, and total
-  Great Person points per turn;
+  city Culture, total focal city Science per turn, total focal city Culture per
+  turn, stockpiled Great Person points, and claimed Great People;
 - wins and victory types, finish turn, terminal score, cities, technologies,
   civics, Science-project progress, lifetime Culture and Tourism, military
   power, and terminal Loyalty risk; and
