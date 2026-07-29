@@ -194,6 +194,18 @@ fn median(mut values: Vec<f64>) -> f64 {
     }
 }
 
+fn nominated_endpoint(stats: &[DeltaStats]) -> usize {
+    (1..stats.len())
+        .max_by(|left, right| {
+            stats[*left]
+                .full_mean
+                .partial_cmp(&stats[*right].full_mean)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| right.cmp(left))
+        })
+        .expect("the probe has endpoint candidates")
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     let players = number(&args, "--players", 6).max(2);
@@ -251,6 +263,7 @@ fn main() {
         dir: String::new(),
         speed: speed.clone(),
     };
+    let resolved_deck = base.policy_deck;
     let opponents = vec![base];
     println!(
         "gene objective probe: {} endpoint candidates x {games} paired games; \
@@ -258,7 +271,8 @@ fn main() {
         candidates.len() - 1
     );
     println!(
-        "base/opponents: champion from {artifact}; policy deck {deck_arg}; jobs {jobs}\n"
+        "base/opponents: champion from {artifact}; policy deck request {deck_arg}, resolved {:?}; jobs {jobs}\n",
+        resolved_deck,
     );
     let results = parallel::map_reporting(
         candidates.len(),
@@ -310,7 +324,7 @@ fn main() {
     let mut covered = 0;
     let mut combat_only = 0;
     let mut ratios = Vec::new();
-    println!("\nper-gene incumbent-favorable endpoint (maximum |full delta|):");
+    println!("\nper-gene maximum-response endpoint (maximum |full delta|):");
     println!(
         "{:<20} {:<5} {:>8} {:>8} {:>9} {:>8} {:>12}",
         "gene", "bound", "|score|", "|full|", "score hit", "ratio", "classification"
@@ -368,6 +382,27 @@ fn main() {
     let stranded_pass = combat_only < 6;
     let passed = coverage_pass && retention_pass && stranded_pass;
 
+    let nominated = nominated_endpoint(&endpoint_stats);
+    let nominated_stats = endpoint_stats[nominated];
+    let nominated_wins = results[nominated]
+        .iter()
+        .filter(|observation| observation.won)
+        .count();
+    let incumbent_wins = results[0]
+        .iter()
+        .filter(|observation| observation.won)
+        .count();
+    println!("\nproduction-objective nomination (maximum mean full delta):");
+    println!(
+        "  {}: full {:+.3} +/- {:.3}, score {:+.3} +/- {:.3}, full changed {}/{games}, wins {nominated_wins}/{games} vs incumbent {incumbent_wins}/{games}",
+        candidates[nominated].label,
+        nominated_stats.full_mean,
+        nominated_stats.full_se,
+        nominated_stats.score_mean,
+        nominated_stats.score_se,
+        nominated_stats.full_changed,
+    );
+
     let mut same_pick = 0;
     let mut score_wins = 0;
     let mut full_wins = 0;
@@ -412,12 +447,7 @@ fn main() {
         "  held-out score-share delta, score-only minus full: {heldout_score_delta:+.5} +/- {heldout_score_se:.5}"
     );
     println!(
-        "\nDECISION: {}",
-        if passed {
-            "score retains enough causal military reach to earn an independent objective-selection A/B; no production default changed"
-        } else {
-            "retain the combat term; score alone fails the preregistered military-signal gate"
-        }
+        "\nINTERPRETATION: this is a score/full reach diagnostic; production changes follow the deck-specific preregistered gates in docs/GENE_OBJECTIVE.md"
     );
 }
 
@@ -496,5 +526,25 @@ mod tests {
         ];
         assert_eq!(best_candidate(&results, 0, 2, false), 1);
         assert_eq!(best_candidate(&results, 1, 2, false), 0);
+    }
+
+    #[test]
+    fn production_nomination_maximizes_mean_full_delta() {
+        let stats = [
+            DeltaStats::default(),
+            DeltaStats {
+                full_mean: -10.0,
+                ..DeltaStats::default()
+            },
+            DeltaStats {
+                full_mean: 2.0,
+                ..DeltaStats::default()
+            },
+            DeltaStats {
+                full_mean: 3.0,
+                ..DeltaStats::default()
+            },
+        ];
+        assert_eq!(nominated_endpoint(&stats), 3);
     }
 }

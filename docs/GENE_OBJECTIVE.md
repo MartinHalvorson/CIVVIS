@@ -235,3 +235,224 @@ keeps supplying ordinary production defaults to callers that have no template.
 The probe's explicit `--policy-deck legacy` keeps both recorded mechanism runs
 reproducible while its default `--policy-deck artifact` tests the artifact
 exactly as deployed. Tests pin mutation, crossover, and population alignment.
+
+## Production Live-deck military search — pre-registration, 2026-07-29
+
+The Legacy counterfactual cannot establish which military parameters the
+deployed controller can evolve. The artifact intentionally resolves to Live,
+and the deployment A/B above shows that controller is materially stronger.
+This experiment repeats the endpoint intervention on the production artifact
+and adds a prospectively fixed route from dense fitness to a win-rate change.
+
+The causal code audit makes one prediction before the run. Candidate majors in
+`evolve::make_table` are `AdvancedAi`. Major turns call
+`AdvancedAi::advanced_diplomacy`, not `BasicAi::diplomacy`; the latter is used
+only for minor and barbarian fallback turns. Repository-wide reference search
+finds `war_ratio`, `war_margin`, `peace_ratio`, and `war_min_turn` in the
+Basic diplomacy path, while Advanced diplomacy uses separate hard-coded
+thresholds. Therefore both endpoints of exactly those four genes should make
+zero paired difference for the candidate major. This is a prediction, not a
+post-hoc explanation.
+
+### Discovery
+
+Run every non-incumbent bound intervention and the incumbent through the exact
+production fitness schedule on 24 new maps. This is 41 interventions: one
+champion value already equals its declared bound, so constructing that bound
+would be an identical second incumbent rather than an intervention.
+
+```sh
+cargo run --release --bin gene_objective_probe -- \
+  --policy-deck artifact --players 6 --games 24 --width 74 --height 46 \
+  --speed online --turns 250 --seed 9840000 --jobs 12
+```
+
+The run is valid only if the probe reports that `artifact` resolves to `Live`,
+the champion survives templated gene reconstruction, and both endpoints of the
+four predicted inactive genes change neither score nor full fitness on any map.
+At least 12 of the other 17 military genes must change score on six or more of
+24 maps; otherwise the active search surface is too sparse for endpoint
+selection and this line stops for instrumentation or representation work.
+
+For a possible strength change, nominate exactly one endpoint: the one with
+the largest mean paired change in the current full production objective. The
+fixed discovery gate requires all of:
+
+1. mean full-objective delta is positive by at least two paired standard
+   errors;
+2. mean score-component delta is positive;
+3. full fitness changes on at least 12 of 24 maps; and
+4. the endpoint wins at least as many of the 24 games as the incumbent.
+
+The 41-way discovery comparison is not confirmatory. It only freezes the gene,
+bound, and numeric value for one disjoint test. No runner-up or threshold is
+substituted after seeing the results.
+
+### Disjoint confirmation and gameplay gate
+
+Only after a discovery pass, repeat the complete frozen grid at seed 9,850,000
+with every other option unchanged. The nominated endpoint confirms only if the
+same four conditions pass again when applied to that already-frozen endpoint.
+Its rank among the other endpoints is reported but is not a gate. Any failure
+ends the line without retry.
+
+Only a confirmation pass spends the final evaluation: 120 mirrored maps,
+two directions, six players, 74x46, six city-states, Online speed, 250 turns,
+seed 9,860,000. Both arms load the embedded champion and use the Live deck;
+the treatment alone receives the frozen gene value through `policy_eval`.
+The endpoint earns a champion change only if it wins both directions on more
+maps than it loses both directions with an exact two-sided sign-test p < 0.05.
+Terminal score is diagnostic because wins, not score, own deployment. A pass
+authorizes changing that one embedded champion gene and rerunning the full
+validation; a failure changes no gameplay default.
+
+The combat term remains regardless of this experiment. It already failed its
+own disjoint removal gate, and this study is candidate optimization under the
+objective that actually ships.
+
+### Discovery result — endpoint rejected, representation gap confirmed
+
+The exact seed-9,840,000 run completed against the embedded artifact and
+resolved `artifact` to `Live`. The integrity predictions all passed. Both
+bounds of `war_ratio`, `war_margin`, `peace_ratio`, and `war_min_turn` changed
+neither score nor full fitness on any of the 24 paired maps. Every one of the
+other 17 military genes changed score on at least 6/24 maps, so the failure is
+localized to the four parameters bypassed by `AdvancedAi` rather than a dead
+fitness pipeline.
+
+The prospectively selected endpoint was `rejoin_hp=high`, value 100:
+
+| discovery gate | required | observed | verdict |
+|---|---:|---:|---|
+| mean full-objective delta | positive by at least 2 SE | **+5.673 +/- 4.140** | FAIL |
+| mean score-component delta | positive | **+5.162 +/- 3.124** | PASS |
+| maps with changed full fitness | at least 12/24 | **24/24** | PASS |
+| wins | at least incumbent | **4/24 vs 6/24** | FAIL |
+
+The effect was too uncertain and lost two wins. Per the pre-registration, the
+line stops here: there is no seed-9,850,000 confirmation, no mirrored gameplay
+A/B, and no champion or production-default change. The combat term remains.
+
+This Live result independently reproduces the Legacy mechanism result. Live
+reached 17/21 military genes with median absolute score/full response retention
+of **0.815**, compared with **0.831** and **0.837** on the two Legacy samples;
+all three runs found the same four unreachable genes and no combat-only gene.
+Several endpoint extremes were actively harmful. For example,
+`muster_radius=low` changed full fitness by **-3.688 +/- 1.507** and
+`screen=low` by **-3.407 +/- 1.566**. This is evidence against indiscriminate
+boundary search and for preserving the champion's locally robust interior
+values.
+
+The actionable result is structural. Four of 40 evolved dimensions (10% of
+the genome) cannot tune war or peace for the deployed major controller, while
+`AdvancedAi::advanced_diplomacy` keeps its own ratio, margin, and timing
+thresholds as constants. A follow-up should represent those actual Advanced
+thresholds as backward-compatible genes whose defaults reproduce current
+behavior, then measure their reach before spending another evolution budget.
+The failed `rejoin_hp` endpoint is not a substitute for that experiment.
+
+## Advanced diplomacy genome repair — pre-registration, 2026-07-29
+
+The Live intervention above makes the representation defect prospective rather
+than speculative: three independent samples found exactly the same four dead
+military dimensions, while every other military dimension reached the
+production objective. This experiment replaces those wasted slots with the
+four thresholds the deployed major controller actually reads. It does not add
+capacity or change the incumbent before measurement.
+
+Implementation is deferred until the active owners of `src/ai.rs` and
+`src/ai/advanced.rs` clear. The representation and every numeric choice below
+are fixed before that implementation begins.
+
+### Backward-compatible representation
+
+The genome remains exactly 40 dimensions. The slots currently named
+`war_ratio`, `war_margin`, `peace_ratio`, and `war_min_turn` are retired from
+evolution; those fields remain serialized Basic-AI configuration and
+`Weights::from_vec_like` must preserve them from its template. The same four
+vector slots become new serialized fields used only by
+`AdvancedAi::advanced_diplomacy`:
+
+| new gene | incumbent/default | low bound | high bound | exact consumer |
+|---|---:|---:|---:|---|
+| `advanced_war_ratio` | 1.32 | 0.95 | 1.80 | elective-war power ratio |
+| `advanced_war_margin` | 12 | 0 | 30 | elective-war additive power margin |
+| `advanced_peace_ratio` | 0.62 | 0.35 | 0.90 | outmatched peace-offer ratio |
+| `advanced_war_min_turn` | 35 | 20 | 60 | non-rush elective-war turn floor |
+
+The bounds are not fitted to outcome data. They bracket the current constants
+and deliberately include materially more permissive and more conservative
+policies. The three elective-war genes do not alter ancient-rush, urgent
+victory-denial, or committed-Domination readiness branches. The peace gene
+does not alter Recovery- or stalled-campaign peace offers.
+
+Old champion artifacts omit the new fields, so their Serde defaults must be
+exactly 1.32, 12, 0.62, and 35. Loading the embedded champion, reconstructing
+it from its vector with a template, and running the incumbent must therefore
+reproduce today's Advanced decisions. Tests must also prove that mutation and
+crossover preserve the four retired Basic fields, just as they preserve the
+policy deck. A threshold fixture for each new gene must place the game on both
+sides of the relevant comparison and show that changing only that gene changes
+the intended decision. These are integrity requirements, not strength claims.
+
+### Live causal-reach screen
+
+Add a strict comma-separated `--genes` filter to `gene_objective_probe`; an
+unknown or duplicate name is an error. With the implementation and bounds
+frozen, run only the eight new endpoint interventions plus the incumbent on 24
+fresh common-random-number maps:
+
+```sh
+cargo run --release --bin gene_objective_probe -- \
+  --genes advanced_war_ratio,advanced_war_margin,advanced_peace_ratio,advanced_war_min_turn \
+  --policy-deck artifact --players 6 --games 24 --width 74 --height 46 \
+  --speed online --turns 250 --seed 9870000 --jobs 12
+```
+
+The screen is valid only if `artifact` resolves to Live, the old artifact
+loads the four exact incumbent values above, templated reconstruction is exact,
+and all direct threshold fixtures pass. The behavior-neutral representation
+repair may land only if at least three of the four new genes have an endpoint
+that changes full production fitness on at least 6/24 maps. This improves the
+measured game-level search surface from 0/4 dead-slot genes; a weaker result
+means the replacement is not sufficiently reachable and the gameplay wiring
+is reverted.
+
+Independently, nominate one possible strength candidate: the endpoint with the
+largest mean paired full-objective delta among the eight. It advances only if
+all four discovery conditions hold:
+
+1. mean full-objective delta is positive by at least two paired standard
+   errors;
+2. mean score-component delta is positive;
+3. full fitness changes on at least 12/24 maps; and
+4. the endpoint wins at least as many games as the incumbent.
+
+The reach gate can authorize a behavior-neutral representation repair; it
+cannot authorize changing a champion value. If the strength gate fails, the
+new fields remain at constants that reproduce current play and no runner-up,
+interior value, bound, or seed is substituted.
+
+### Frozen confirmation and outcome gate
+
+Only a discovery strength pass repeats the complete eight-endpoint grid at
+seed 9,871,000 with the same 24-map schedule and unchanged implementation. The
+already nominated endpoint must pass the same four conditions; its new rank is
+reported but is not a gate. Any failure ends candidate promotion.
+
+Only a confirmation pass spends the final 120-map mirrored outcome test:
+
+```sh
+cargo run --release --bin policy_eval -- \
+  --base evolved --treatment live --control live \
+  --gene <frozen-gene> --value <frozen-bound> \
+  --players 6 --maps 120 --width 74 --height 46 --city-states 6 \
+  --speed online --turns 250 --seed 9872000 --jobs 12
+```
+
+Both arms load the same embedded Live champion; the treatment changes only the
+frozen new gene. A champion value changes only if favorable map directions
+outnumber adverse directions and the exact two-sided sign test has `p < 0.05`.
+Terminal score remains diagnostic. A pass changes one champion value, while a
+failure retains all four compatibility constants. Neither outcome changes the
+previously retained combat term.
