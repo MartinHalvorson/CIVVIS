@@ -911,6 +911,57 @@ pub struct AdvancedAi {
     /// instrument change those nulls point at — and it is entirely possible
     /// that an earlier alarm feeding a response worth zero is also worth zero.
     pub early_score_alarm: bool,
+
+    /// Whether the player-targeted World Congress resolutions aim at the empire
+    /// closest to a victory rather than at the empire with the most Diplomatic
+    /// Victory Points.
+    ///
+    /// Every leader-targeting term in [`Self::congress_choice`] resolves its
+    /// target as `diplomatic_leader`. `congress_census` reads what that target
+    /// is worth: over congress sessions of decided games the DVP leader is the
+    /// eventual winner **24.8%** of the time at 4p (base rate 25.0%) and
+    /// **14.4%** at the 6p exhibition profile (base rate 16.7%) — at or below
+    /// chance on both. The score leader is the winner 61% of the time on both.
+    ///
+    /// That matters more here than anywhere else the same mistake appears,
+    /// because the Congress is the **only** counter in this game that is not
+    /// paid for in development: [`Game::resolve_congress`] refunds a losing
+    /// vote in full and a right-outcome/wrong-target vote at half. The whole
+    /// war-shaped counter axis in `docs/COUNTERING_LEADERS.md` measured null
+    /// with its cost showing up as terminal score; a ballot has no such cost.
+    ///
+    /// Three resolutions carry a real, targeted penalty, and this points all
+    /// three at the empire [`Self::victory_denial`] already names:
+    /// `trade_policy` B (a total trade embargo), `migration_treaty` B (−20%
+    /// growth, which today scores **0.0 against any rival**, so the penalty
+    /// can never be aimed at anybody), and `border_control_treaty` B (no tile
+    /// annexation from border growth).
+    ///
+    /// `world_leader` is deliberately left aiming at the diplomatic leader:
+    /// its ±2 moves Diplomatic Victory Points and nothing else, and the census
+    /// finds that veto already lands 95–98.5% of the time with no diplomatic
+    /// victory in 40 games. There is no headroom there to take.
+    ///
+    /// Reachable as `advanced_congress_counter`.
+    pub congress_counter_leader: bool,
+
+    /// Whether a ballot cast *against* the empire closest to a victory is
+    /// backed with bought votes.
+    ///
+    /// `take_turn` weights every ballot by the voter's *own* plan — three votes
+    /// on the Diplomacy plan holding 30 Favor, otherwise one — and never by
+    /// what is at stake. Favor has no sink but votes and deals, and the census
+    /// finds rivals holding enough for a third vote on 289 of 326 ballots at
+    /// the exhibition profile while buying one **zero** times.
+    ///
+    /// Kept apart from [`Self::congress_counter_leader`] because that flag
+    /// changes *where* the counter points and this one changes *how hard* it
+    /// pushes; a combined arm cannot say which half did the work, and this repo
+    /// has had to retract four mechanism stories told off combined arms.
+    ///
+    /// Reachable as `advanced_congress_votes`, and as
+    /// `advanced_congress_counter_hard` with both flags set.
+    pub congress_counter_votes: bool,
 }
 
 impl Default for AdvancedAi {
@@ -1000,6 +1051,8 @@ impl AdvancedAi {
             counter_in_lane: false,
             counter_stand_down: false,
             early_score_alarm: false,
+            congress_counter_leader: false,
+            congress_counter_votes: false,
         }
     }
 
@@ -4310,6 +4363,16 @@ impl AdvancedAi {
             .filter(|player| player.alive && !player.is_minor && !player.is_barbarian)
             .max_by_key(|player| (player.dvp, std::cmp::Reverse(player.id)))
             .map(|player| player.id);
+        // Who a targeted penalty is pointed at. `world_leader` keeps aiming at
+        // the diplomatic leader because its +/-2 moves Diplomatic Victory
+        // Points and nothing else; the resolutions that cost an empire real
+        // yields aim at whoever is actually about to win. See
+        // [`Self::congress_counter_leader`] for what the census measured.
+        let denied = self
+            .congress_counter_leader
+            .then(|| self.victory_denial(g, pid).map(|(rival, _)| rival))
+            .flatten();
+        let counter_target = denied.or(diplomatic_leader);
         let preferred_district = match strategy {
             GrandStrategy::Science => "campus",
             GrandStrategy::Culture => "theater_square",
@@ -4383,10 +4446,21 @@ impl AdvancedAi {
                         }
                     }
                     "trade_policy" => match target_player {
+                        // Outcome B embargoes every inter-civ trade route the
+                        // target has. Against an empire about to win that is
+                        // worth more than a trade slot of our own, which is all
+                        // outcome A on ourselves buys.
+                        Some(target)
+                            if outcome == "B"
+                                && Some(target) == denied
+                                && target != pid =>
+                        {
+                            420.0
+                        }
                         Some(target) if outcome == "A" && target == pid => 260.0,
                         Some(target)
                             if outcome == "B"
-                                && Some(target) == diplomatic_leader
+                                && Some(target) == counter_target
                                 && target != pid =>
                         {
                             150.0
@@ -4450,6 +4524,10 @@ impl AdvancedAi {
                         }
                     }
                     "migration_treaty" => match (outcome, target_player) {
+                        // Outcome B costs its target 20% growth and pushes its
+                        // loyalty. Shipped, it scores 0.0 against every rival,
+                        // so the penalty can never be aimed at anybody.
+                        ("B", Some(target)) if Some(target) == denied && target != pid => 300.0,
                         ("A", Some(target))
                             if target == pid && strategy == GrandStrategy::Expansion =>
                         {
@@ -4462,7 +4540,7 @@ impl AdvancedAi {
                     "public_relations" => match (outcome, target_player) {
                         ("B", Some(target)) if target == pid => 230.0,
                         ("A", Some(target))
-                            if Some(target) == diplomatic_leader && target != pid =>
+                            if Some(target) == counter_target && target != pid =>
                         {
                             150.0
                         }
@@ -4558,6 +4636,12 @@ impl AdvancedAi {
                         }
                     }
                     "border_control_treaty" => match (outcome, target_player) {
+                        // Outcome B stops the target annexing tiles by border
+                        // growth. Shipped, it is aimed by raw territory -- the
+                        // one leader-targeting term in this table that already
+                        // uses something other than Diplomatic Victory Points,
+                        // and still not the empire about to win.
+                        ("B", Some(target)) if Some(target) == denied && target != pid => 400.0,
                         ("A", Some(target)) if target == pid => 300.0,
                         ("B", Some(target)) if target == pid => -240.0,
                         ("B", Some(target)) => {
@@ -5277,7 +5361,27 @@ impl AdvancedAi {
                     continue;
                 }
                 if let Some(choice) = self.congress_choice(g, pid, &resolution, plan.strategy) {
-                    let votes = if plan.strategy == GrandStrategy::Diplomacy
+                    // A ballot aimed at the empire closest to a victory is
+                    // backed with everything the treasury can spare, because a
+                    // losing vote is refunded in full and a right-outcome,
+                    // wrong-target one at half -- an opposition that fails
+                    // costs nothing. Shipped, weight keys off the voter's own
+                    // plan and never off the stakes.
+                    let counters_the_leader = self.congress_counter_votes
+                        && self.victory_denial(g, pid).is_some_and(|(rival, _)| {
+                            let (outcome, target) = Game::congress_choice_parts(&choice);
+                            // Naming the rival is not opposing it: outcome A on
+                            // most of these table entries is the ballot that
+                            // *helps* its target. Only the shapes that carry a
+                            // penalty are worth paying for.
+                            target == rival.to_string()
+                                && match resolution.id.as_str() {
+                                    "public_relations" => outcome == "A",
+                                    _ => outcome == "B",
+                                }
+                        });
+                    let votes = if (plan.strategy == GrandStrategy::Diplomacy
+                        || counters_the_leader)
                         && g.players[pid].diplomatic_favor >= 30.0
                     {
                         3
@@ -20505,6 +20609,183 @@ mod tests {
                 "  median turn walls appeared: {}",
                 first_wall_turn[first_wall_turn.len() / 2]
             );
+        }
+        println!();
+    }
+
+    /// Census, not an assertion: how good are the sites a settler actually
+    /// picks, against the best site it could have picked nearby?
+    ///
+    /// This is the last unmeasured city decision. #532 bounded what a city
+    /// works (89.3% of its food ceiling, 99.5% of its production ceiling),
+    /// #534 bounded what it owns (perfect border growth, p=0.7283) and #542
+    /// bounded where its districts go (p=0.6989). All three are downstream of
+    /// *where the city stands*, and nothing had measured that.
+    ///
+    /// It is measured rather than granted deliberately. An oracle that
+    /// teleports settlers cannot work here: `AdvancedAi` founds only when a
+    /// settler's cached `settler_targets` entry equals its current position,
+    /// so a relocated settler walks back to its old target and never founds.
+    /// The grant would fire forever, suppress the seat's expansion entirely,
+    /// and report a catastrophic loss that measured the harness rather than
+    /// the subsystem. The ratio below asks the same question and cannot lie
+    /// in that direction.
+    ///
+    /// The comparison set is every legal site within eight tiles of the one
+    /// chosen — roughly a settler's remaining walk — judged by the agent's own
+    /// `settle_value`, with the just-founded city excluded from the minimum
+    /// separation rule so the chosen tile competes on equal terms.
+    ///
+    /// Run with `cargo test --release settle_siting_census -- --ignored --nocapture`.
+    #[test]
+    #[ignore = "census, not an assertion; run explicitly with --nocapture"]
+    fn settle_siting_census() {
+        let ai = AdvancedAi::new();
+        let mut ratios: Vec<f64> = Vec::new();
+        let mut near_ratios: Vec<f64> = Vec::new();
+        let mut step_away: Vec<i32> = Vec::new();
+        let mut chosen_was_best = 0u64;
+        let mut founded = 0u64;
+        let mut capital_ratio: Vec<f64> = Vec::new();
+
+        for map in 0..8u64 {
+            let mut game = Game::new_full(4, 24, 16, 470_000 + map, 200, 1, false);
+            let mut ais: Vec<AdvancedAi> =
+                (0..game.players.len()).map(|_| AdvancedAi::new()).collect();
+            game.set_fog_memory(false);
+            let mut known: BTreeSet<u32> = game.player_city_ids(0).into_iter().collect();
+            while game.winner.is_none() && game.turn <= game.max_turns {
+                let pid = game.current;
+                ais[pid].take_turn(&mut game, pid);
+                if game.winner.is_none() && game.current == pid {
+                    let _ = game.apply(pid, &crate::game::Action::EndTurn);
+                }
+                if pid != 0 {
+                    continue;
+                }
+                for cid in game.player_city_ids(0) {
+                    if !known.insert(cid) {
+                        continue;
+                    }
+                    // A city this seat gained by conquest was never sited by
+                    // its settler, so it says nothing about this decision.
+                    let city = &game.cities[&cid];
+                    if city.captured_from.is_some() {
+                        continue;
+                    }
+                    let chosen_pos = city.pos;
+                    let chosen = ai.settle_value(&game, 0, chosen_pos);
+                    // Only ground this seat had actually EXPLORED counts. A
+                    // settler cannot choose a site nobody has seen, and
+                    // scoring it against one would measure the fog rather than
+                    // the decision.
+                    let mut best_at = |radius: i32| {
+                        game.wdisk(chosen_pos, radius)
+                            .into_iter()
+                            .filter(|pos| {
+                                let Some(tile) = game.map.get(*pos) else {
+                                    return false;
+                                };
+                                if !game.players[0].explored.contains(pos) {
+                                    return false;
+                                }
+                                if game.rules.is_water(tile)
+                                    || !game.rules.is_passable(tile)
+                                    || game.tile_is_natural_wonder(tile)
+                                {
+                                    return false;
+                                }
+                                // Every other city still enforces its
+                                // separation; the one just founded must not
+                                // veto its own site.
+                                game.cities
+                                    .values()
+                                    .filter(|other| other.id != cid)
+                                    .all(|other| game.wdist(other.pos, *pos) >= 4)
+                            })
+                            .map(|pos| ai.settle_value(&game, 0, pos))
+                            .fold(chosen, f64::max)
+                    };
+                    // How far away is the better site? `settle_value` does
+                    // not price the walk, so a gap three tiles off is worth
+                    // much less than the same gap one tile off, and the
+                    // distance is what makes the number readable.
+                    let mut best_near_pos = chosen_pos;
+                    let mut best_near_val = chosen;
+                    for pos in game.wdisk(chosen_pos, 3) {
+                        let Some(tile) = game.map.get(pos) else {
+                            continue;
+                        };
+                        if !game.players[0].explored.contains(&pos)
+                            || game.rules.is_water(tile)
+                            || !game.rules.is_passable(tile)
+                            || game.tile_is_natural_wonder(tile)
+                            || !game
+                                .cities
+                                .values()
+                                .filter(|other| other.id != cid)
+                                .all(|other| game.wdist(other.pos, pos) >= 4)
+                        {
+                            continue;
+                        }
+                        let value = ai.settle_value(&game, 0, pos);
+                        if value > best_near_val {
+                            best_near_val = value;
+                            best_near_pos = pos;
+                        }
+                    }
+                    if best_near_pos != chosen_pos {
+                        step_away.push(game.wdist(chosen_pos, best_near_pos));
+                    }
+                    let near = best_at(3);
+                    let best = best_at(8);
+                    founded += 1;
+                    if best <= chosen + 1e-9 {
+                        chosen_was_best += 1;
+                    }
+                    near_ratios.push(chosen / near.max(1e-9));
+                    let ratio = chosen / best.max(1e-9);
+                    ratios.push(ratio);
+                    if known.len() == 1 {
+                        capital_ratio.push(ratio);
+                    }
+                }
+            }
+        }
+
+        ratios.sort_by(f64::total_cmp);
+        let mean = ratios.iter().sum::<f64>() / ratios.len().max(1) as f64;
+        println!("\n=== settle siting census: {founded} cities founded over 8 maps ===");
+        let near_mean = near_ratios.iter().sum::<f64>() / near_ratios.len().max(1) as f64;
+        println!(
+            "  against the best EXPLORED site within 3 tiles: {:.1}%   within 8 tiles: {:.1}%",
+            near_mean * 100.0,
+            mean * 100.0
+        );
+        if !ratios.is_empty() {
+            println!(
+                "  percentiles  p10 {:.1}%   median {:.1}%   p90 {:.1}%   worst {:.1}%",
+                ratios[ratios.len() / 10] * 100.0,
+                ratios[ratios.len() / 2] * 100.0,
+                ratios[ratios.len() * 9 / 10] * 100.0,
+                ratios[0] * 100.0
+            );
+        }
+        println!(
+            "  the chosen site WAS the best available on {chosen_was_best} of {founded} foundings ({:.1}%)",
+            chosen_was_best as f64 / founded.max(1) as f64 * 100.0
+        );
+        step_away.sort_unstable();
+        if !step_away.is_empty() {
+            println!(
+                "  when a better site existed within 3 tiles it was a median {} tile(s) away ({} cases)",
+                step_away[step_away.len() / 2],
+                step_away.len()
+            );
+        }
+        if !capital_ratio.is_empty() {
+            let cap = capital_ratio.iter().sum::<f64>() / capital_ratio.len() as f64;
+            println!("  capitals alone: {:.1}% ({} sampled)", cap * 100.0, capital_ratio.len());
         }
         println!();
     }

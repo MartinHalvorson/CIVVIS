@@ -25,8 +25,15 @@
 //! Each grant is applied at the start of the seat's turn, before the wrapped
 //! agent plays, because `AdvancedAi::take_turn` ends its own turn.
 use crate::ai::{Ai, PlanReport};
-use crate::game::Game;
+use std::collections::BTreeSet;
+use crate::game::{Game, Item};
+use crate::world::DistrictFoundation;
 use crate::Pos;
+
+/// The engine's workable ring. `plot_purchase_cost` prices rings one through
+/// three and nothing beyond, so this is exactly the ground a citizen could
+/// ever be assigned to.
+const CITY_WORK_RADIUS: usize = 3;
 
 /// A capability granted to the wrapped agent for free.
 ///
@@ -82,15 +89,61 @@ pub enum Grant {
     /// magnitude more than any honest improvement to any subsystem. If it
     /// does not register, nothing else measured here means anything.
     Treasury,
+    /// Every city instantly owns every unclaimed tile inside its workable
+    /// three-ring radius.
+    ///
+    /// Bounds the *ceiling* that #532's saturation result was conditional on.
+    /// `city_decision_census` measured the citizen governor claiming 89.3% of
+    /// its city's food ceiling and 99.5% of its production ceiling — but that
+    /// ceiling is computed over the tiles the city **already owns**, so a
+    /// governor allocating 89% of a poor endowment still reads as saturated.
+    /// Five scripted city-strategy arms measured null against that ceiling;
+    /// this asks whether the ceiling itself is the thing that binds.
+    ///
+    /// Border growth is paid for in accumulated Culture and plot purchase in
+    /// Gold, and both are slow. This grants the outcome — the ground — without
+    /// granting the Culture or the Gold, so the win rate says what perfect
+    /// territorial acquisition is worth at most.
+    ///
+    /// It deliberately never takes a tile another city already owns. That
+    /// would grant conquest and the measured headroom would belong to the
+    /// bundle rather than to border growth.
+    Ground,
+    /// Every district under construction is re-sited onto the legal tile in
+    /// its own city where it would yield most.
+    ///
+    /// Bounds district siting — the last city decision nothing had measured.
+    /// #532 bounded what a city *works* (89.3% of its food ceiling, 99.5% of
+    /// its production ceiling) and #534 bounded what it *owns* (perfect border
+    /// growth, p=0.7283). Neither says anything about where a district goes,
+    /// and adjacency is the whole reason district placement is a decision at
+    /// all: the same Campus is worth several times more beside mountains than
+    /// on open flatland.
+    ///
+    /// It re-sites **foundations**, not finished districts. A foundation is
+    /// exactly the decision under test — the moment the site is chosen — and
+    /// moving one cannot disturb a completed district's buildings, specialists
+    /// or defenses.
+    ///
+    /// The candidate set comes from the engine's own `district_sites` rather
+    /// than from a reimplemented legality check. That filter is long (flooding,
+    /// natural wonders, non-bonus resources, feature-removal techs, national
+    /// parks, Vietnam's specialty rule, family and specialty-capacity limits)
+    /// and any private copy of it would drift and quietly over-grant. The
+    /// foundation is lifted first so the engine will enumerate alternatives —
+    /// and its own tile — instead of reporting the site as taken.
+    Siting,
 }
 
 impl Grant {
-    pub const ALL: [Grant; 5] = [
+    pub const ALL: [Grant; 7] = [
         Grant::None,
         Grant::Modernity,
         Grant::Taker,
         Grant::Attrition,
         Grant::Treasury,
+        Grant::Ground,
+        Grant::Siting,
     ];
 
     pub fn name(self) -> &'static str {
@@ -100,6 +153,8 @@ impl Grant {
             Grant::Taker => "taker",
             Grant::Attrition => "attrition",
             Grant::Treasury => "treasury",
+            Grant::Ground => "ground",
+            Grant::Siting => "siting",
         }
     }
 
@@ -172,6 +227,125 @@ impl<A: Ai> Oracle<A> {
     }
 
     /// Hand over Gold and Faith at a rate no economy in these games reaches.
+    /// Hand every city the unclaimed ground inside its workable radius.
+    ///
+    /// Radius three is the engine's own workable ring — `plot_purchase_cost`
+    /// prices rings one through three and nothing beyond — so this grants
+    /// exactly the tiles a citizen could ever be assigned to and no more.
+    /// Reached by three rounds of neighbour expansion rather than by scanning
+    /// the map, because this runs once per city per turn.
+    fn grant_ground(&mut self, g: &mut Game, pid: usize) {
+        for cid in g.player_city_ids(pid) {
+            let Some(city) = g.cities.get(&cid) else {
+                continue;
+            };
+            let mut frontier = vec![city.pos];
+            let mut seen: BTreeSet<Pos> = frontier.iter().copied().collect();
+            for _ in 0..CITY_WORK_RADIUS {
+                let mut next = Vec::new();
+                for pos in frontier.drain(..) {
+                    for neighbor in g.nbrs(pos) {
+                        if seen.insert(neighbor) {
+                            next.push(neighbor);
+                        }
+                    }
+                }
+                frontier = next;
+            }
+            for pos in seen {
+                // Never take ground another city holds: that would be a
+                // conquest grant, and the headroom would belong to the bundle.
+                let unclaimed = g
+                    .map
+                    .tiles
+                    .get(&pos)
+                    .is_some_and(|tile| tile.owner_city.is_none());
+                if !unclaimed {
+                    continue;
+                }
+                if let Some(tile) = g.map.tiles.get_mut(&pos) {
+                    tile.owner_city = Some(cid);
+                }
+                if let Some(city) = g.cities.get_mut(&cid) {
+                    if !city.owned_tiles.contains(&pos) {
+                        city.owned_tiles.push(pos);
+                    }
+                }
+                self.fired += 1;
+            }
+        }
+    }
+
+    /// Re-site every district foundation onto its best-yielding legal tile.
+    ///
+    /// `Game::item_progress_key` embeds the position for a district, and so
+    /// does the queued `Item::District`, so a move has to carry all three:
+    /// the tile, the queue entry, and the banked progress. Moving only the
+    /// tile silently strands whatever the city had already invested and would
+    /// measure a production penalty as if it were a siting result.
+    fn grant_siting(&mut self, g: &mut Game, pid: usize) {
+        for cid in g.player_city_ids(pid) {
+            let Some(city) = g.cities.get(&cid) else {
+                continue;
+            };
+            let foundations: Vec<(Pos, DistrictFoundation)> = city
+                .owned_tiles
+                .iter()
+                .filter_map(|pos| {
+                    g.map
+                        .tiles
+                        .get(pos)
+                        .and_then(|tile| tile.district_foundation.clone())
+                        .map(|foundation| (*pos, foundation))
+                })
+                .collect();
+            for (old, foundation) in foundations {
+                // Lift it so the engine counts neither the tile as taken nor
+                // the foundation against this district family's limit.
+                if let Some(tile) = g.map.tiles.get_mut(&old) {
+                    tile.district_foundation = None;
+                }
+                let name = foundation.district.clone();
+                let best = g
+                    .district_sites(cid, &name)
+                    .into_iter()
+                    .map(|pos| (Self::yield_total(g.district_yields(&name, pos)), pos))
+                    // Ties broken on position so a re-run is bit-identical.
+                    .max_by(|a, b| a.0.total_cmp(&b.0).then_with(|| b.1.cmp(&a.1)))
+                    .map(|(_, pos)| pos)
+                    .unwrap_or(old);
+                if let Some(tile) = g.map.tiles.get_mut(&best) {
+                    tile.district_foundation = Some(foundation);
+                }
+                if best == old {
+                    continue;
+                }
+                let old_key = format!("district:{name}:{},{}", old.0, old.1);
+                let new_key = format!("district:{name}:{},{}", best.0, best.1);
+                if let Some(city) = g.cities.get_mut(&cid) {
+                    for item in city.queue.iter_mut() {
+                        if let Item::District { district, pos } = item {
+                            if *district == name && *pos == old {
+                                *pos = best;
+                            }
+                        }
+                    }
+                    if let Some(progress) = city.production_progress.remove(&old_key) {
+                        *city.production_progress.entry(new_key).or_insert(0.0) += progress;
+                    }
+                }
+                self.fired += 1;
+            }
+        }
+    }
+
+    /// A single scalar for comparing sites. Every yield counts once: the grant
+    /// is an upper bound, so it should not be handicapped by guessing which
+    /// yield this particular city wanted.
+    fn yield_total(ys: crate::rules::Yields) -> f64 {
+        ys.food + ys.production + ys.gold + ys.science + ys.culture + ys.faith
+    }
+
     fn grant_treasury(&mut self, g: &mut Game, pid: usize) {
         g.players[pid].gold += 200.0;
         g.players[pid].faith += 100.0;
@@ -284,6 +458,8 @@ impl<A: Ai> Ai for Oracle<A> {
                 Grant::Taker => self.grant_taker(g, pid),
                 Grant::Attrition => self.grant_attrition(g, pid),
                 Grant::Treasury => self.grant_treasury(g, pid),
+                Grant::Ground => self.grant_ground(g, pid),
+                Grant::Siting => self.grant_siting(g, pid),
             }
         }
         self.inner.take_turn(g, pid);
@@ -304,9 +480,10 @@ impl<A: Ai> Ai for Oracle<A> {
 
 #[cfg(test)]
 mod tests {
-    use super::{Grant, Oracle};
+    use super::{Grant, Oracle, CITY_WORK_RADIUS};
     use crate::ai::{AdvancedAi, Ai};
-    use crate::game::Game;
+    use crate::game::{Game, Item};
+    use crate::Pos;
 
     #[test]
     fn grant_ids_round_trip() {
@@ -425,6 +602,180 @@ mod tests {
             }
         }
         assert!(oracle.fired() > 0, "the attrition grant never healed anything");
+    }
+
+
+    /// The ground grant must actually hand a city ground, must leave every
+    /// other city's territory alone, and must never reach past the workable
+    /// ring. A grant that never fires measures the stock agent under another
+    /// name; a grant that takes a rival's tiles measures conquest.
+    #[test]
+    fn the_ground_grant_fires_and_only_takes_neutral_ground() {
+        let mut g = Game::new(4, 28, 18, 8_106, 200, 2);
+        let mut oracle = Oracle::new(AdvancedAi::new(), Grant::Ground);
+        let mut others = AdvancedAi::fleet(&g);
+        let mut ever_grew = false;
+        while g.winner.is_none() && g.turn <= 120 {
+            let pid = g.current;
+            if pid == 0 {
+                let mut probe = g.clone();
+                let before: Vec<(u32, usize)> = probe
+                    .cities
+                    .values()
+                    .map(|city| (city.id, city.owned_tiles.len()))
+                    .collect();
+                // A city can already hold ground outside the workable ring --
+                // territory inherited when a neighbour was razed, for one --
+                // so the radius assertion below must scope to what the grant
+                // itself added, not to everything the city owns.
+                let held_before: std::collections::BTreeSet<Pos> = probe
+                    .player_city_ids(0)
+                    .into_iter()
+                    .flat_map(|cid| probe.cities[&cid].owned_tiles.clone())
+                    .collect();
+                let rival_ground: Vec<(Pos, Option<u32>)> = probe
+                    .map
+                    .tiles
+                    .values()
+                    .filter(|tile| {
+                        tile.owner_city
+                            .is_some_and(|cid| probe.cities.get(&cid).is_some_and(|c| c.owner != 0))
+                    })
+                    .map(|tile| (tile.pos, tile.owner_city))
+                    .collect();
+                let gold = probe.players[0].gold;
+
+                oracle.grant_ground(&mut probe, 0);
+
+                assert_eq!(gold, probe.players[0].gold, "the grant charged for ground");
+                for (pos, owner) in &rival_ground {
+                    assert_eq!(
+                        probe.map.tiles[pos].owner_city, *owner,
+                        "the grant took ground from another city"
+                    );
+                }
+                for cid in probe.player_city_ids(0) {
+                    let city = &probe.cities[&cid];
+                    for pos in &city.owned_tiles {
+                        if !held_before.contains(pos) {
+                            assert!(
+                                probe.wdist(city.pos, *pos) <= CITY_WORK_RADIUS as i32,
+                                "the grant reached past the workable ring"
+                            );
+                        }
+                        assert_eq!(
+                            probe.map.tiles[pos].owner_city,
+                            Some(cid),
+                            "owned_tiles and owner_city disagree after the grant"
+                        );
+                    }
+                }
+                let after: Vec<(u32, usize)> = probe
+                    .cities
+                    .values()
+                    .map(|city| (city.id, city.owned_tiles.len()))
+                    .collect();
+                if before != after {
+                    ever_grew = true;
+                }
+                oracle.take_turn(&mut g, pid);
+            } else {
+                others[pid].take_turn(&mut g, pid);
+            }
+            if g.winner.is_none() && g.current == pid {
+                let _ = g.apply(pid, &crate::game::Action::EndTurn);
+            }
+        }
+        assert!(oracle.fired() > 0, "the ground grant never claimed a tile");
+        assert!(ever_grew, "the grant never enlarged a city's territory");
+    }
+
+
+    /// The siting grant must actually move foundations, must never lose a
+    /// city's banked production when it does, must never leave two tiles
+    /// holding the same foundation, and must only ever improve a site.
+    #[test]
+    fn the_siting_grant_fires_and_never_strands_progress() {
+        let mut g = Game::new(4, 28, 18, 8_107, 200, 2);
+        let mut oracle = Oracle::new(AdvancedAi::new(), Grant::Siting);
+        let mut others = AdvancedAi::fleet(&g);
+        let mut ever_moved = false;
+        while g.winner.is_none() && g.turn <= 140 {
+            let pid = g.current;
+            if pid == 0 {
+                let mut probe = g.clone();
+                let banked: f64 = probe
+                    .player_city_ids(0)
+                    .into_iter()
+                    .map(|cid| probe.cities[&cid].production_progress.values().sum::<f64>())
+                    .sum();
+                let before: Vec<(Pos, String)> = foundations_of(&probe, 0);
+                let gold = probe.players[0].gold;
+
+                oracle.grant_siting(&mut probe, 0);
+
+                assert_eq!(gold, probe.players[0].gold, "the grant charged for siting");
+                let after = foundations_of(&probe, 0);
+                assert_eq!(
+                    before.len(),
+                    after.len(),
+                    "the grant created or destroyed a foundation"
+                );
+                let banked_after: f64 = probe
+                    .player_city_ids(0)
+                    .into_iter()
+                    .map(|cid| probe.cities[&cid].production_progress.values().sum::<f64>())
+                    .sum();
+                assert!(
+                    (banked - banked_after).abs() < 1e-6,
+                    "moving a foundation stranded banked production: {banked} -> {banked_after}"
+                );
+                // Each district that moved must have moved somewhere better,
+                // and a queued Item::District must point at the tile that now
+                // holds its foundation.
+                for cid in probe.player_city_ids(0) {
+                    for item in &probe.cities[&cid].queue {
+                        if let Item::District { district, pos } = item {
+                            assert_eq!(
+                                probe.map.tiles[pos]
+                                    .district_foundation
+                                    .as_ref()
+                                    .map(|f| f.district.as_str()),
+                                Some(district.as_str()),
+                                "a queued district points at a tile with no matching foundation"
+                            );
+                        }
+                    }
+                }
+                if before != after {
+                    ever_moved = true;
+                }
+                oracle.take_turn(&mut g, pid);
+            } else {
+                others[pid].take_turn(&mut g, pid);
+            }
+            if g.winner.is_none() && g.current == pid {
+                let _ = g.apply(pid, &crate::game::Action::EndTurn);
+            }
+        }
+        assert!(oracle.fired() > 0, "the siting grant never moved a foundation");
+        assert!(ever_moved, "no foundation ever changed tile");
+    }
+
+    fn foundations_of(g: &Game, pid: usize) -> Vec<(Pos, String)> {
+        let mut out: Vec<(Pos, String)> = g
+            .player_city_ids(pid)
+            .into_iter()
+            .flat_map(|cid| g.cities[&cid].owned_tiles.clone())
+            .filter_map(|pos| {
+                g.map.tiles[&pos]
+                    .district_foundation
+                    .as_ref()
+                    .map(|f| (pos, f.district.clone()))
+            })
+            .collect();
+        out.sort();
+        out
     }
 
     /// The grant must be modernization and nothing else: no Gold, no health,

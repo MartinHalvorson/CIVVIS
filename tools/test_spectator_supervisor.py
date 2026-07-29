@@ -238,23 +238,81 @@ class SessionSettingsTests(unittest.TestCase):
             "speed": "standard",
             "leader_pool": "civ6",
         }
-        # Board shape, pacing and victory selection follow the live game. Seat
-        # count and map script are redrawn instead of carried, and the board
-        # size is dropped with the seat count so `civvis play` can size the map
-        # for whatever was drawn. `/state` is fog-of-war trimmed, so the majors
-        # it lists are only the ones the viewing player can see -- deriving
-        # `--players` from them ratcheted the exhibition down game after game
-        # and never recovered.
+        # Climate, pacing and victory selection follow the live game. Seat
+        # count, map script and world shape are redrawn instead of carried, and
+        # the board size is dropped with the seat count so `civvis play` can
+        # size the map for whatever was drawn. `/state` is fog-of-war trimmed,
+        # so the majors it lists are only the ones the viewing player can see --
+        # deriving `--players` from them ratcheted the exhibition down game
+        # after game and never recovered.
         carried = supervisor.session_settings(state, defaults)
         self.assertEqual(
             {key: value for key, value in carried.items()
-             if key not in ("players", "map")},
-            {"turns": 250, "shape": "planet", "poles": "randomized",
+             if key not in ("players", "map", "shape")},
+            {"turns": 250, "poles": "randomized",
              "speed": "online", "leader_pool": "expanded",
              "victories": ["science", "culture", "domination", "score"]},
         )
         self.assertIn(carried["players"], supervisor.SIMULATION_PLAYER_COUNTS)
         self.assertIn(carried["map"], supervisor.MAP_TYPES)
+        self.assertIn(carried["shape"], supervisor.MAP_SHAPES)
+
+    def test_world_shape_is_drawn_for_every_world(self):
+        """A restart must not be able to strand the exhibition on one shape.
+
+        Shape used to follow the finished world, seeded from `--shape`, whose
+        default is Flat. That made Flat an absorbing state: the keeper starts a
+        fresh supervisor whenever it finds none running, that supervisor seats
+        its first world from the flags, and every world after it inherited Flat
+        from the world before. Measured off the archived saves: the 240 worlds
+        from 2026-07-27T23:26Z to 2026-07-29T02:07:40Z were every one of them a
+        globe, the keeper restarted the supervisor at 02:05:54Z, and the ~160
+        worlds since have every one of them been flat -- which took the sky,
+        the Moon, Mars and the expedition off the exhibition entirely, because
+        a sky is something only a Planet world has.
+        """
+        flat_world = {
+            "map": {"script": "pangaea", "shape": "flat", "poles": "poles"},
+            "game_speed": "online",
+            "max_turns": 250,
+        }
+        # Seeded from the flag the keeper actually passes: none, so Flat.
+        flat_defaults = {"players": 6, "turns": 250, "map": "pangaea",
+                         "shape": "flat", "poles": "poles", "speed": "online"}
+        drawn = {
+            supervisor.session_settings(flat_world, flat_defaults)["shape"]
+            for _ in range(200)
+        }
+        self.assertEqual(drawn, set(supervisor.MAP_SHAPES))
+        self.assertEqual(
+            set(supervisor.rolled_simulation_settings(flat_defaults)["shape"]
+                for _ in range(200)),
+            set(supervisor.MAP_SHAPES),
+        )
+
+    def test_a_staged_lobby_choice_still_beats_the_draw(self):
+        """An explicit setup-panel handoff is a choice, not an axis to roll."""
+        staged = {
+            "next_game_settings": {
+                "players": 8,
+                "width": 90,
+                "height": 38,
+                "city_states": 12,
+                "turns": 250,
+                "map": "continents",
+                "speed": "online",
+                "leader_pool": "civ6",
+                "victories": ["science"],
+                "shape": "planet",
+                "poles": "poles",
+            },
+            "map": {"script": "pangaea", "shape": "flat", "poles": "poles"},
+        }
+        for _ in range(20):
+            chosen = supervisor.session_settings(staged, {"turns": 250})
+            self.assertEqual(chosen["shape"], "planet")
+            self.assertEqual(chosen["map"], "continents")
+            self.assertEqual(chosen["players"], 8)
 
     def test_fogged_state_does_not_shrink_the_next_game(self):
         """A trimmed observation must not become the next game's seat count."""
@@ -378,11 +436,14 @@ class SessionSettingsTests(unittest.TestCase):
         rolled = supervisor.session_settings({}, defaults)
         self.assertEqual(
             {key: value for key, value in rolled.items()
-             if key not in ("players", "map", "speed")},
+             if key not in ("players", "map", "shape", "speed")},
             {"turns": 500, "leader_pool": "civ6"},
         )
         self.assertIn(rolled["players"], supervisor.SIMULATION_PLAYER_COUNTS)
         self.assertIn(rolled["map"], supervisor.MAP_TYPES)
+        # A world with nothing to inherit from is still a world with a shape,
+        # and it is drawn like the other two axes rather than left to the flag.
+        self.assertIn(rolled["shape"], supervisor.MAP_SHAPES)
         # Standard was asked for and Online is what the exhibition simulates.
         self.assertEqual(rolled["speed"], "online")
 

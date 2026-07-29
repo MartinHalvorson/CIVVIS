@@ -64,8 +64,9 @@ MAP_SHAPES = ("flat", "planet")
 MAP_POLES = ("poles", "randomized")
 
 # Every world the exhibition simulates is the same *kind* of game: Online
-# speed, an Ancient start, and no teams. Two axes vary between worlds -- how
-# many seats are at the table and what the map is -- and nothing else does.
+# speed, an Ancient start, and no teams. Three axes vary between worlds -- how
+# many seats are at the table, what the map is, and what shape the world is --
+# and nothing else does.
 #
 # Speed and start era are pinned at the launch boundary in `server_command`
 # rather than in the generator below, because the generator is not the only
@@ -87,7 +88,7 @@ SIMULATION_PLAYER_COUNTS = (4, 5, 6, 7, 8, 9, 10)
 
 
 def rolled_simulation_settings(settings: dict[str, Any]) -> dict[str, Any]:
-    """Redraw the two axes that vary between exhibition worlds.
+    """Redraw the three axes that vary between exhibition worlds.
 
     Width, height and city-state counts are *dropped* rather than rolled or
     carried: all three are functions of the seat count, and `civvis play`
@@ -99,6 +100,7 @@ def rolled_simulation_settings(settings: dict[str, Any]) -> dict[str, Any]:
     rolled = dict(settings)
     rolled["players"] = random.choice(SIMULATION_PLAYER_COUNTS)
     rolled["map"] = random.choice(MAP_TYPES)
+    rolled["shape"] = random.choice(MAP_SHAPES)
     for derived in ("width", "height", "city_states"):
         rolled.pop(derived, None)
     return rolled
@@ -899,8 +901,8 @@ def session_settings(state: dict[str, Any], defaults: dict[str, Any]) -> dict[st
     majors in it and feeding that back as the next `--players` ratchets the
     exhibition down and never recovers: a six-player match was observed
     restarting as four, then two, with each smaller game re-confirming the
-    smaller count. Board *shape* may follow the finished game; how many seats
-    it has may not.
+    smaller count. Neither the board's shape nor how many seats it has may
+    follow the finished game; both are drawn fresh for every world.
     """
     selected = normalized_simulation_settings(state.get("next_game_settings"))
     if selected is not None:
@@ -909,11 +911,11 @@ def session_settings(state: dict[str, Any], defaults: dict[str, Any]) -> dict[st
     players = state.get("players") or []
     game_map = state.get("map") or {}
     settings = {
-        # Seat count and map script are redrawn for every world -- they are the
-        # two axes the exhibition varies -- so neither the operator's flags nor
-        # the finished game decides them. The flags still seat the *first*
-        # world of a supervisor's life, because nothing has finished yet for
-        # this branch to run on.
+        # Seat count, map script and world shape are redrawn for every world --
+        # they are the three axes the exhibition varies -- so neither the
+        # operator's flags nor the finished game decides them. The flags still
+        # seat the *first* world of a supervisor's life, because nothing has
+        # finished yet for this branch to run on.
         #
         # The fog-of-war note above is why the finished game is not consulted
         # for a seat count even now: a redraw is a fresh number, but reading
@@ -927,18 +929,33 @@ def session_settings(state: dict[str, Any], defaults: dict[str, Any]) -> dict[st
         if state.get("decided") is not None
         else int(state.get("max_turns") or defaults["turns"]),
         "map": random.choice(MAP_TYPES),
+        # A world's shape is drawn, not inherited, and that is the whole of
+        # this fix. Shape used to follow the finished game, seeded from the
+        # `--shape` flag, whose default is Flat -- so the exhibition could only
+        # ever *lose* the globe. The keeper starts a fresh supervisor whenever
+        # it finds none running, that supervisor seats its first world from the
+        # flags, and from then on every world inherited Flat from the world
+        # before it. Measured off the archived saves, whose globes are the ones
+        # laid out `5f` by `2f + 2`: the 240 worlds from 2026-07-27T23:26Z to
+        # 2026-07-29T02:07:40Z were every one of them a globe, the keeper
+        # restarted the supervisor at 02:05:54Z, and the ~160 worlds since have
+        # every one of them been flat.
+        #
+        # What went with them is not a matter of taste: the sky beyond the
+        # world -- the Moon, Mars, the solar system and the expedition's
+        # destination, and the whole way about that reaches them -- exists on a
+        # Planet world and nowhere else. A drawn shape has no absorbing state:
+        # whatever a restart seats, the next world re-draws.
+        "shape": random.choice(MAP_SHAPES),
         "speed": SIMULATION_SPEED,
         "leader_pool": state.get("leader_pool") or defaults.get("leader_pool", "civ6"),
     }
-    # Shape and climate are independent of the map script. They used to be
-    # omitted here and in `server_command`, so a selected Planet world made it
-    # across the HTTP handoff, then silently relaunched as Flat in the fresh
-    # process. Keep them optional only for compatibility with an older server
-    # that does not report either field yet.
-    shape = game_map.get("shape") or defaults.get("shape")
+    # Climate is independent of the map script. It used to be omitted here and
+    # in `server_command`, so a selected setting made it across the HTTP
+    # handoff, then silently relaunched at the default in the fresh process.
+    # Keep it optional only for compatibility with an older server that does
+    # not report the field yet.
     poles = game_map.get("poles") or defaults.get("poles")
-    if shape in MAP_SHAPES:
-        settings["shape"] = shape
     if poles in MAP_POLES:
         settings["poles"] = poles
     victory_conditions = state.get("victory_conditions")
