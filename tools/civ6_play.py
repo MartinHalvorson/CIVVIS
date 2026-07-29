@@ -206,10 +206,20 @@ def place_game(side: str = "left", fraction: float = 0.5) -> None:
 
 
 def focus_game(side: str = "left", fraction: float = 0.5) -> None:
+    """Raise the game. Deliberately does NOT move it.
+
+    ⚠ Placing the window here broke setup outright. `vision.py` reads the
+    Create Game submenu rows off the screen, and re-placing on every focus pass
+    resized the window between the read and the click — run
+    settler-20260729T233831Z never started a game at all, failing with
+    "no submenu (0 rows)" and "no game window yet" while events.jsonl stayed
+    empty at zero bytes. Menu navigation needs stable geometry; only the
+    in-game loop may move the window.
+    """
+    del side, fraction  # kept for call-site compatibility
     script = ('tell application "System Events" to set frontmost of '
               '(first process whose name contains "Civ6") to true')
     subprocess.run(["osascript", "-e", script], capture_output=True)
-    place_game(side, fraction)
 
 
 def click_at(px: int, py: int) -> None:
@@ -496,7 +506,10 @@ def _play(args: argparse.Namespace) -> int:
         if now - last_focus[0] < args.focus_every:
             return
         last_focus[0] = now
-        focus_game(GAME_SIDE, GAME_FRACTION)
+        focus_game()
+        # Safe here and only here: the game is in play, so there is no menu
+        # being read off the screen for a resize to invalidate.
+        place_game(GAME_SIDE, GAME_FRACTION)
 
     reason = watch.follow(tail, args.timeout, record, stop_when=finished,
                           each_poll=keep_foreground)
