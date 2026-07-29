@@ -33,6 +33,7 @@ const TREATMENT_ID: &str = "post_conquest_domination";
 const EMBEDDED_CHAMPION: &str = include_str!("../../data/evolved/best.json");
 const FROZEN_CHAMPION_GENERATION: u32 = 14;
 const FROZEN_CHAMPION_FNV1A: u64 = 0x40b1_fbb2_a5b8_8bc6;
+const FROZEN_ENGINE_BASE: &str = "b49bb15eeda57969a7d77c5bf0010d91def1e60d";
 const BOOTSTRAP_SAMPLES: usize = 10_000;
 const BOOTSTRAP_SEED: u64 = 0x0ad0_0107;
 
@@ -1217,8 +1218,8 @@ fn main() {
     }
     let _ = frozen_champion_weights();
     println!(
-        "Post-conquest Domination evaluator; embedded advanced_evolved generation {}, fnv1a:{:016x}",
-        FROZEN_CHAMPION_GENERATION, FROZEN_CHAMPION_FNV1A
+        "Post-conquest Domination evaluator; engine base {}; embedded advanced_evolved generation {}, fnv1a:{:016x}",
+        FROZEN_ENGINE_BASE, FROZEN_CHAMPION_GENERATION, FROZEN_CHAMPION_FNV1A
     );
     println!(
         "profile: {} maps x seats {},{} x matched arms = {} games; {}p {}x{}+{}cs; {} / {} / {}; nominal {} {}, observe through {}; seed {}; jobs {}; treatment {:?}",
@@ -1439,6 +1440,10 @@ mod tests {
 
     #[test]
     fn controller_and_registered_commands_are_pinned() {
+        assert_eq!(
+            FROZEN_ENGINE_BASE,
+            "b49bb15eeda57969a7d77c5bf0010d91def1e60d"
+        );
         assert_eq!(fnv1a(EMBEDDED_CHAMPION.as_bytes()), FROZEN_CHAMPION_FNV1A);
         let champion: Champion = serde_json::from_str(EMBEDDED_CHAMPION).unwrap();
         assert_eq!(champion.gen, FROZEN_CHAMPION_GENERATION);

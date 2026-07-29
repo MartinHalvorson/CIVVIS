@@ -9,8 +9,13 @@ clarified that non-focal majors use the champion while city-states, Free Cities,
 and barbarians use Basic. A subsequent source audit also preserved the declared
 defeated-major population when it found that elimination clears
 `occupied_from`: the evaluator records a focal `KeepCity` plus that city's exact
-pre-turn owner before the field can be erased. These corrections change no
-treatment, population, outcome, seed, or decision gate.
+pre-turn owner before the field can be erased. Finally, dependency review found
+that #579's prepared-war policy is explicitly default-off, including in
+`AdvancedAi::with_weights`; merely merging it cannot alter this evaluator's
+controller or eligible population. The experiment therefore freezes its actual
+claim-time engine base `b49bb15` instead of introducing unrelated pre-measurement
+source churn. These corrections change no assigned treatment, actual population,
+outcome, seed, or decision gate.
 
 ## Why this experiment exists
 
@@ -42,19 +47,25 @@ be the largest transition pair. A civilization can therefore win a city, end
 or recover from the local war, and return to the Science race without ever
 treating the conquest as the first move of a Domination campaign.
 
-#579 tests the upstream question: can the AI deliberately create one prepared
-midgame war? This experiment is downstream and conditional on a real conquest:
-**after paying the ordinary costs to conquer and keep one foreign major's city,
-does a persistent Domination commitment turn dispersed captures into capital
-concentration without making the agent weaker?** It neither changes war timing
-nor grants a unit, city, resource, yield, or score.
+#579 tests the complementary upstream question: can an opt-in policy deliberately
+create one prepared midgame war? Its capability remains default-off, so this
+experiment neither merges nor enables it. Instead it isolates the next decision
+on the actual deployed claim-time engine: **after paying the ordinary costs to
+conquer and keep one foreign major's city, does a persistent Domination
+commitment turn dispersed captures into capital concentration without making
+the agent weaker?** It neither changes war timing nor grants a unit, city,
+resource, yield, or score. If both independent mechanisms pass, their
+composition requires a separate factorial or integration test; neither result
+may be silently attributed to the other.
 
 ## Frozen treatment
 
 `post_conquest_domination` wraps the exact deployed generation-14 champion in
 both arms. The weights are compiled from `data/evolved/best.json`; the evaluator
 asserts generation `14` and FNV-1a `40b1fbb2a5b88bc6`. It never consults the
-working directory, `league/`, `evolved/`, or `valuenet.json`.
+working directory, `league/`, `evolved/`, or `valuenet.json`. The engine base is
+the branch's claim-time `origin/main`, commit
+`b49bb15eeda57969a7d77c5bf0010d91def1e60d`.
 
 Each map contributes two independent focal-seat cells, seats 0 and 7. For each
 cell the evaluator constructs one base world, clones it, and runs:
@@ -262,12 +273,11 @@ Before any registered seed may run, focused tests must establish:
 9. CLI/formal-label parsing fails closed on every missing, duplicate,
    malformed, valueless, noncanonical, or extra argument.
 
-Run the focused CI-profile suite, `git diff --check origin/main...`, file-scoped
-`rustfmt`, and `cargo test --profile ci --locked` before the null. This branch
-must merge current `origin/main` through #579 immediately before registered
-measurement. #579 changes the upstream war policy and therefore the eligible
-population; mixing pre- and post-#579 baselines would make the estimand
-ambiguous.
+Run the focused CI-profile suite, `git diff --check`, file-scoped `rustfmt`, and
+`cargo test --profile ci --locked` before the null. Do not merge a later gameplay
+baseline before the registered series: the parent history and evaluator output
+pin `b49bb15`, while #579's prepared-war policy is a separate default-off
+treatment rather than part of this controller.
 
 ## Resource and chronology contract
 
@@ -276,8 +286,8 @@ ambiguous.
 - No registered simulation starts while #561 or another six-core batch is
   active. Earlier already-preregistered shared-host evaluations keep their
   queue priority.
-- No focal run starts before #579 lands and this branch merges that exact
-  gameplay baseline once.
+- No registered run starts after merging or rebasing onto a different gameplay
+  baseline; such a change requires a fresh preregistration and untouched seeds.
 - A smoke may use only a clearly non-focal seed outside all three registered
   ranges and must print `DIAGNOSTIC ONLY`.
 - No result from the live spectator archive is a treatment outcome; it only
