@@ -655,10 +655,13 @@ fn play_pair(
     observe_turns: u32,
 ) -> Result<CellResult, String> {
     let mut control_game = Game::new_with(options.clone());
-    control_game.victory_conditions = victories.clone();
+    control_game.victory_conditions = victories;
     let mut treatment_game = control_game.clone();
     let mut control_ai = pinned_advanced();
-    let mut treatment_ai = pinned_advanced();
+    // Start both arms from one literal controller state. Constructing two
+    // equivalent agents is deterministic today, but cloning makes the causal
+    // contract independent of any future constructor-owned state.
+    let mut treatment_ai = control_ai.clone();
     let mut control_support = support_fleet(&control_game, focal, options.seed);
     let mut treatment_support = support_fleet(&treatment_game, focal, options.seed);
     let mut control_observer = Observer::default();
@@ -1281,7 +1284,7 @@ fn main() {
                 options.clone(),
                 config.focal_seats[0],
                 config.treatment,
-                config.victories.clone(),
+                config.victories,
                 config.observe_turns,
             )
             .unwrap_or_else(|why| panic!("map {map_seed}, seat {}: {why}", config.focal_seats[0]));
@@ -1289,7 +1292,7 @@ fn main() {
                 options,
                 config.focal_seats[1],
                 config.treatment,
-                config.victories.clone(),
+                config.victories,
                 config.observe_turns,
             )
             .unwrap_or_else(|why| panic!("map {map_seed}, seat {}: {why}", config.focal_seats[1]));
