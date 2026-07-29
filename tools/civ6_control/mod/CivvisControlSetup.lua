@@ -168,6 +168,25 @@ local function applyConfiguration()
 		MapConfiguration.SetValue(key, value);
 	end
 
+	-- Pin the leader so every rung is climbed by the same civilization.
+	--
+	-- A random leader changes the whole game — Rome's free monument and road
+	-- on every founding is a different opening from Russia's tundra faith —
+	-- and comparing two attempts across two civilizations compares nothing.
+	-- ⚠ This only takes effect if the FrontEnd/Setup context actually hosts
+	-- the game. On this install it usually does not, and the harness falls
+	-- back to driving the Create Game screen by sight, which leaves the leader
+	-- at whatever that screen defaults to. `seat` reports the leader the game
+	-- actually gave us, so the log says which happened rather than assuming.
+	if cfg.Leader then
+		for _, id in ipairs(GameConfiguration.GetHumanPlayerIDs()) do
+			local ok = pcall(function()
+				PlayerConfigurations[id]:SetLeaderTypeName(cfg.Leader);
+			end);
+			emit("leader", { requested = cfg.Leader, applied = ok, slot = id });
+		end
+	end
+
 	-- Read back rather than report what was asked for. A setter that silently
 	-- rejects a value produces a game at the wrong difficulty, and the whole
 	-- ladder this exists to climb is measured in difficulty.
@@ -176,6 +195,7 @@ local function applyConfiguration()
 			ruleset = cfg.RuleSet, map = cfg.MapScript, size = cfg.MapSize,
 			difficulty = cfg.Difficulty, speed = cfg.GameSpeed,
 			map_seed = cfg.MapSeed, game_seed = cfg.GameSeed,
+			leader = cfg.Leader,
 			max_turns = cfg.MaxTurns, humans = cfg.HumanPlayers or 1,
 		},
 		applied = {
@@ -186,6 +206,10 @@ local function applyConfiguration()
 			speed = try(function() return GameConfiguration.GetGameSpeedType(); end),
 			max_turns = try(function() return GameConfiguration.GetMaxTurns(); end),
 			humans = try(function() return GameConfiguration.GetHumanPlayerCount(); end),
+			leader = try(function()
+				local ids = GameConfiguration.GetHumanPlayerIDs();
+				return ids[1] and PlayerConfigurations[ids[1]]:GetLeaderTypeName() or nil;
+			end),
 			participants = try(function()
 				return GameConfiguration.GetParticipatingPlayerCount();
 			end),

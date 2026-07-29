@@ -73,6 +73,7 @@ def build_config(args: argparse.Namespace) -> dict:
         "MaxTurns": args.max_turns,
         "HumanPlayers": 1,
         "CityTarget": args.city_target,
+        "Leader": args.leader,
         "StartDelayFrames": args.start_delay_frames,
         "TickFrames": args.tick_frames,
     }
@@ -502,6 +503,12 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--seed", type=int, default=424242)
     ap.add_argument("--max-turns", type=int, default=150)
     ap.add_argument("--city-target", type=int, default=6)
+    # Standardise the civilization so two attempts are comparable. Rome's free
+    # monument and road on every founding is a different game from a random
+    # leader's, and a ladder climbed by a different civ each rung measures
+    # nothing. Takes effect only when the setup context hosts the game; the
+    # `seat` event reports the leader actually granted.
+    ap.add_argument("--leader", default="LEADER_TRAJAN")
     ap.add_argument("--survey", action="store_true", default=True)
     ap.add_argument("--no-survey", dest="survey", action="store_false")
     ap.add_argument("--survey-enums", action="store_true",

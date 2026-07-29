@@ -530,11 +530,55 @@ local function findSettleSite(player, pid, unit, turn)
 						if d < nearest then nearest = d; end
 					end
 					if nearest >= spacing then
-						-- Close to the settler, comfortably clear of what we
-						-- already own. Walking a long way to a marginally
-						-- better site costs more turns than the site is worth
-						-- this early.
-						local score = -plotDistance(ux, uy, px, py) + nearest;
+						-- Score the GROUND, not just the geometry.
+						--
+						-- This used to be `-distance + nearest`, which never
+						-- looked at a single yield: any legal tile at the right
+						-- spacing scored the same as a river-grassland start.
+						-- CIVVIS measures settle siting as worth 99.9% of the
+						-- value on offer when it is scored on yields, so the
+						-- shape below is the simulator's: the workable ring
+						-- valued with food ahead of production ahead of gold,
+						-- a real premium on fresh water, a smaller one for the
+						-- coast, and distance charged as the turns it costs to
+						-- walk there rather than as a tiebreak.
+						local food, prod, gold = 0, 0, 0;
+						for rx = -2, 2 do
+							for ry = -2, 2 do
+								local ring = try(function()
+									return Map.GetPlot(px + rx, py + ry);
+								end);
+								if ring ~= nil
+										and plotDistance(px, py, ring:GetX(), ring:GetY()) <= 2 then
+									food = food + (try(function()
+										return ring:GetYield(YieldTypes.YIELD_FOOD);
+									end, 0) or 0);
+									prod = prod + (try(function()
+										return ring:GetYield(YieldTypes.YIELD_PRODUCTION);
+									end, 0) or 0);
+									gold = gold + (try(function()
+										return ring:GetYield(YieldTypes.YIELD_GOLD);
+									end, 0) or 0);
+								end
+							end
+						end
+						local fresh = try(function()
+							return plot:IsFreshWater();
+						end, false) and (cfg.FreshWaterValue or 12) or 0;
+						local coast = try(function()
+							return plot:IsCoastalLand();
+						end, false) and (cfg.CoastValue or 4) or 0;
+						-- A settler covers about a tile a turn in practice, so
+						-- each step of distance is a turn the city does not
+						-- exist. CIVVIS measured that walk at 16.8 turns per
+						-- city and the biggest single win on its whole
+						-- expansion axis was removing it.
+						local walk = plotDistance(ux, uy, px, py)
+							* (cfg.WalkTurnCost or 2.0);
+						local score = (food * (cfg.FoodWeight or 2.0))
+							+ (prod * (cfg.ProductionWeight or 1.5))
+							+ (gold * (cfg.GoldWeight or 0.5))
+							+ fresh + coast - walk;
 						if bestScore == nil or score > bestScore then
 							best, bestScore = plot, score;
 						end
@@ -742,25 +786,44 @@ local lastActions = {};
 local function orderUnits(player, pid, turn)
 	local given, stuck = 0, 0;
 	lastActions = {};
-	local lastId, repeats = nil, 0;
+	-- ⚠ ONE UNCLEARABLE UNIT MUST NOT COST EVERY OTHER UNIT ITS TURN.
+	--
+	-- The previous version `break`ed out of the whole pass the moment a unit
+	-- came back ready twice. `GetFirstReadyUnit` always returns the same first
+	-- one, so a single unit that cannot be cleared ended the pass and every
+	-- other unit stood still. Measured in run settler-20260729T231239Z: turn
+	-- 173, **thirty units**, one city, 1358 unspent Gold, and the only actions
+	-- recorded for the turn were `UNIT_BUILDER:automate` twice. The army never
+	-- moved for the entire game.
+	--
+	-- So a unit that will not clear is *parked* — remembered for the rest of
+	-- this pass and skipped — and the pass keeps going for everybody else.
+	local attempts, parked, parkedCount = {}, {}, 0;
 	for _ = 1, (cfg.MaxUnitOrders or 40) do
 		local unit = try(function() return player:GetUnits():GetFirstReadyUnit(); end);
 		if unit == nil then break; end
 		local id = try(function() return unit:GetID(); end, -1);
-		if id == lastId then
-			repeats = repeats + 1;
-			-- The same unit came back after being given an order. One more try
-			-- with the idle orders, then leave it: a unit that cannot be
-			-- cleared is a reason to end the turn anyway, not to spin.
-			if repeats > 1 then stuck = stuck + 1; break; end
-		else
-			lastId, repeats = id, 0;
+		attempts[id] = (attempts[id] or 0) + 1;
+		if parked[id] then
+			-- The ready list keeps handing back a unit already given up on.
+			-- Nothing further can be ordered through this query, so end the
+			-- pass rather than spin the remaining budget on one unit.
+			break;
 		end
 		local action = orderFor(player, pid, unit, turn) or orderIdle(unit);
-		if action == nil then stuck = stuck + 1; break; end
-		local key = unitTypeName(unit) .. ":" .. action;
-		lastActions[key] = (lastActions[key] or 0) + 1;
-		given = given + 1;
+		if action == nil or attempts[id] > 2 then
+			-- Out of ideas for this one. Try every idle order, then park it.
+			if orderIdle(unit) == nil then
+				parked[id] = true;
+				parkedCount = parkedCount + 1;
+				stuck = stuck + 1;
+			end
+		end
+		if action ~= nil then
+			local key = unitTypeName(unit) .. ":" .. action;
+			lastActions[key] = (lastActions[key] or 0) + 1;
+			given = given + 1;
+		end
 	end
 	return given, stuck;
 end
