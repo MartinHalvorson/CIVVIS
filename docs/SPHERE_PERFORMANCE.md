@@ -1,6 +1,6 @@
 # Planet distance cache-order experiment
 
-Status: **preregistered; baseline frozen before treatment**
+Status: **rejected; treatment reverted after the frozen cold-path gate failed**
 
 ## Evidence and hypothesis
 
@@ -100,4 +100,19 @@ nanoseconds per call:
 | **median** | **17.052521** | **17.738459** | **17.243146** |
 
 These baseline observations were committed before applying or benchmarking
-the cache-order treatment. Treatment result pending.
+the cache-order treatment. The three fresh-process treatment runs produced:
+
+| run | cold local | admitted local | admitted long |
+|---:|---:|---:|---:|
+| 1 | 17.640875 | 3.613000 | 3.594313 |
+| 2 | 20.455834 | 4.107854 | 6.212438 |
+| 3 | 40.062875 | 9.770771 | 6.474708 |
+| **median** | **20.455834** | **4.107854** | **6.212438** |
+
+Using the unrounded reported values, admitted local calls were **4.318181464x**
+as fast as baseline and admitted long calls took **0.360284486x** baseline
+time. Both gates passed. Cold local calls, however, took **1.199578291x**
+baseline time, exceeding the frozen 1.10x ceiling. The experiment therefore
+failed its conjunction of gates and the production lookup reorder was
+reverted. The ignored benchmark remains as a reproducible record; runtime
+behavior is unchanged by this experiment.
