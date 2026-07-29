@@ -207,6 +207,8 @@ The fail-closed invocation design was frozen at `d9b98a4` and implemented at
 was then frozen at `f101fca`, after the first non-focal replay exposed only its
 artifact provenance, and implemented at
 `e5cc7c7ed9a735897a7b5fb6b34efc156143d0f3`.
+The observer-integrity design was frozen at `464c0cf` and implemented at
+`4631bf5`, still before either registered seed range was opened.
 
 - `cargo test --release --locked --bin deployment_horizon -j 1` passed all
   seven focused tests, including fail-closed supplied values, the complete
@@ -221,6 +223,15 @@ artifact provenance, and implemented at
   embedded generation-14 champion, 20/80 search budget, and score-share
   terminal evaluator, preserved `Game.max_turns = 1`, and emitted only the
   diagnostic profile label. It cannot spend a gate.
+- After the observer-integrity implementation, the CI-profile focused suite
+  passed all eight tests. It now also proves exact generation/FNV binding,
+  validates malformed later duplicates and unsupported tokens, and deliberately
+  panics if an agent changes the policy-visible nominal horizon.
+- The release binary rejected an unknown flag, a positional argument, a
+  valueless option, and `--turns 250 --turns nope` with exit 2. A final replay
+  of the same one-map, one-turn diagnostic printed generation 14 and FNV-1a
+  `0x40b1fbb2a5b88bc6`, retained `Game.max_turns = 1`, and again emitted no
+  preregistered gate.
 
 No map from screen seed 9,986,000 or confirmation seed 9,987,000 has been run
 or read.
