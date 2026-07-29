@@ -29,6 +29,7 @@
 //! evolution — while every promoted gain came from more counterfactual rollout.
 //! If no block's randomisation costs anything, that is the whole genome
 //! answering at once, and the conclusion is to stop searching it.
+use civvis::name::Name;
 use civvis::ai::{AdvancedAi, Ai, Weights};
 use civvis::game::{Action, Game};
 use civvis::parallel;

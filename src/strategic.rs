@@ -12,6 +12,7 @@
 //! estimate is deliberately regularized toward score share because the
 //! counterfactual rollout endpoints remain out of distribution for ordinary
 //! self-play trajectories.
+use crate::name::Name;
 use crate::ai::{run_game, AdvancedAi, Ai, PlanReport, VictoryTarget, Weights};
 use crate::evolve::features;
 use crate::game::{Action, ActionFamilies, Game, Item};
@@ -601,7 +602,7 @@ impl StrategicAi {
         };
         let state = g.units.get(&unit)?;
         (state.owner == pid
-            && g.rules.units[state.kind.as_str()].class == "religious")
+            && g.rules.units[state.kind].class == "religious")
             .then_some(unit)
     }
 
@@ -855,14 +856,14 @@ impl StrategicAi {
         }
         let cities = g.player_city_ids(pid);
         let holy_site = cities.iter().any(|city| {
-            g.cities[city].districts.contains_key("holy_site")
+            g.cities[city].districts.contains_key(crate::name!("holy_site"))
                 || matches!(
                     g.cities[city].queue.first(),
                     Some(Item::District { district, .. }) if district == "holy_site"
                 )
         });
         holy_site
-            || player.techs.contains("astrology")
+            || player.techs.contains(&crate::name!("astrology"))
             || player.research.as_deref() == Some("astrology")
             || player.gpp.get("prophet").copied().unwrap_or(0.0) > 0.0
     }
@@ -883,12 +884,12 @@ impl StrategicAi {
         claimed < g.max_religions()
             && cities.len() >= 2
             && cities.iter().any(|city| {
-                g.cities[city].districts.contains_key("holy_site")
+                g.cities[city].districts.contains_key(crate::name!("holy_site"))
                     || matches!(
                         g.cities[city].queue.first(),
                         Some(Item::District { district, .. }) if district == "holy_site"
                     )
-                    || !g.district_sites(*city, "holy_site").is_empty()
+                    || !g.district_sites(*city, crate::name!("holy_site")).is_empty()
             })
     }
 
@@ -1861,7 +1862,7 @@ mod tests {
         let mut science = Game::new(4, 20, 14, 201, 12, 0);
         science.turn = FIRST_REVIEW_TURN;
         let needed = science.rules.techs.len().div_ceil(6);
-        let techs: Vec<String> = science.rules.techs.keys().take(needed).cloned().collect();
+        let techs: Vec<crate::name::Name> = science.rules.techs.keys().take(needed).cloned().collect();
         science.players[1].techs.extend(techs);
         assert_eq!(
             strategic.inferred_rival_target(&science, 1),

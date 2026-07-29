@@ -134,8 +134,8 @@ fn main() {
                     let theaters = cities
                         .iter()
                         .filter(|city| {
-                            game.cities[city].districts.contains_key("theater_square")
-                                || game.cities[city].districts.contains_key("acropolis")
+                            game.cities[city].districts.contains_key(civvis::name!("theater_square"))
+                                || game.cities[city].districts.contains_key(civvis::name!("acropolis"))
                         })
                         .count();
                     let tourist_improvements = cities

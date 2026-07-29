@@ -260,7 +260,7 @@ fn game_options(args: &[String], players: i64, seed: u64) -> GameOptions {
                 .collect();
             for civ in &chosen {
                 if !rules.civs.contains_key(civ) {
-                    let mut known: Vec<&str> = rules.civs.keys().map(String::as_str).collect();
+                    let mut known: Vec<&str> = rules.civs.keys().map(|name| name.as_str()).collect();
                     known.sort_unstable();
                     eprintln!("unknown civilization {civ:?}; choose one of {known:?}");
                     std::process::exit(2);
@@ -359,7 +359,7 @@ fn standings(g: &Game) {
         // and the place where a missing rule hides longest.
         let mut roster: BTreeMap<&str, usize> = BTreeMap::new();
         for unit in g.units.values() {
-            if unit.owner == pid && g.rules.units[unit.kind.as_str()].class == "military" {
+            if unit.owner == pid && g.rules.units[unit.kind].class == "military" {
                 *roster.entry(unit.kind.as_str()).or_default() += 1;
             }
         }
@@ -368,7 +368,7 @@ fn standings(g: &Game) {
         let army: Vec<String> = army
             .iter()
             .map(|(kind, count)| {
-                let stale = if g.unit_is_obsolete(pid, kind) { "*" } else { "" };
+                let stale = if g.unit_is_obsolete(pid, civvis::name::Name::new(kind)) { "*" } else { "" };
                 format!("{count}x{kind}{stale}")
             })
             .collect();
@@ -514,7 +514,7 @@ fn main() {
                             .flat_map(|p| {
                                 g.units.values().filter(move |unit| unit.owner == p.id)
                             })
-                            .filter(|unit| g.rules.units[unit.kind.as_str()].class == "military")
+                            .filter(|unit| g.rules.units[unit.kind].class == "military")
                             .fold((0, 0, 0), |(obsolete, ancient, army), unit| {
                                 (
                                     obsolete + g.unit_is_obsolete(unit.owner, &unit.kind) as i32,

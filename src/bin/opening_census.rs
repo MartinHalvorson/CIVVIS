@@ -62,6 +62,7 @@
 //! is not close to the seat count, the observation is broken, not the agent.
 use std::collections::{BTreeMap, BTreeSet};
 
+use civvis::name::Name;
 use civvis::ai::{AdvancedAi, Ai};
 use civvis::game::{Action, Game, GameOptions, Item};
 use civvis::rules::Yields;
@@ -80,8 +81,8 @@ fn number(args: &[String], flag: &str, default: usize) -> usize {
 fn label(item: &Item) -> String {
     match item {
         Item::Formation { unit, formation } => format!("{unit}^{formation}"),
-        Item::Unit { unit } => unit.clone(),
-        Item::Building { building } => building.clone(),
+        Item::Unit { unit } => unit.to_string(),
+        Item::Building { building } => building.to_string(),
         Item::District { district, .. } => format!("[{district}]"),
         Item::Wonder { wonder, .. } => format!("*{wonder}"),
         Item::Repair { repair, .. } => format!("repair:{repair}"),
@@ -444,8 +445,16 @@ fn main() {
                     civ: game.players[*pid].civ.clone(),
                     ..Seat::default()
                 };
-                seat.known_techs = game.players[*pid].techs.clone();
-                seat.known_civics = game.players[*pid].civics.clone();
+                seat.known_techs = game.players[*pid]
+                    .techs
+                    .iter()
+                    .map(|tech| tech.to_string())
+                    .collect();
+                seat.known_civics = game.players[*pid]
+                    .civics
+                    .iter()
+                    .map(|civic| civic.to_string())
+                    .collect();
                 (*pid, seat)
             })
             .collect();
@@ -699,17 +708,27 @@ fn main() {
                         seat.last_build = Some(name);
                     }
                 }
-                for tech in techs.difference(&seat.known_techs.clone()) {
+                let known_techs: std::collections::BTreeSet<Name> = seat
+                    .known_techs
+                    .iter()
+                    .map(|tech| Name::new(tech))
+                    .collect();
+                for tech in techs.difference(&known_techs) {
                     if seat.techs.len() < depth {
-                        seat.techs.push(tech.clone());
+                        seat.techs.push(tech.to_string());
                     }
-                    seat.known_techs.insert(tech.clone());
+                    seat.known_techs.insert(tech.to_string());
                 }
-                for civic in civics.difference(&seat.known_civics.clone()) {
+                let known_civics: std::collections::BTreeSet<Name> = seat
+                    .known_civics
+                    .iter()
+                    .map(|civic| Name::new(civic))
+                    .collect();
+                for civic in civics.difference(&known_civics) {
                     if seat.civics.len() < depth {
-                        seat.civics.push(civic.clone());
+                        seat.civics.push(civic.to_string());
                     }
-                    seat.known_civics.insert(civic.clone());
+                    seat.known_civics.insert(civic.to_string());
                 }
                 if cities >= 2 && seat.second_city_turn.is_none() {
                     seat.second_city_turn = Some(turn + 1);

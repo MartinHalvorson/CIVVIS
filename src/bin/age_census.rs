@@ -166,7 +166,7 @@ fn main() {
                         .iter()
                         .filter(|(_, spec)| spec.available_in(game.world_era))
                         .map(|(name, _)| {
-                            (name.clone(), game.projected_dedication_score(pid, name))
+                            (name.to_string(), game.projected_dedication_score(pid, name))
                         })
                         .collect();
                     catalogue.sort_by(|left, right| {

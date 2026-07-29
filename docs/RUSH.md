@@ -343,3 +343,190 @@ nameplate, which is what `early_rush_victim` does. The civilizations that
 genuinely resist an ancient rush are the short list with an early defensive
 unique (Greece's hoplite 28/65, Aztec's eagle_warrior 28/65 at no tech cost)
 or a live combat ability (Scythia's `killer_of_cyrus`, Norway's `knarr`).
+
+---
+
+## 8. 2026-07-29 preregistration: the game that ships removes the rush's largest cost
+
+The result above is not a deployment result. It used the deployment's old
+six-player rectangle but otherwise inherited `ai_eval` defaults: Standard
+speed, Pangaea, fixed civilizations, and all six victory conditions. The live
+supervisor now plays Online and enables only Science, Culture, and Domination.
+It varies player count, world type, and topology between games; its currently
+running cell is eight players on 84x54 Continents/Planet with 12 city-states.
+
+That difference is mechanistically important rather than cosmetic. In the
+all-victory result, `advanced_rush` gave up 29 Religious wins (6 versus 35),
+while gaining every Culture, Science, and Domination win in the comparison
+(4/3/2 versus 0/0/0). Religious Victory is disabled in the live game. The
+fixed hypothesis is therefore:
+
+> On the live three-victory game, the completed rush converts its already
+> measured territorial gain into more wins because the victory path it paid
+> for that gain by abandoning is unavailable to either arm.
+
+This is a direct policy A/B, not a score proxy. The first screen uses fresh
+maps and the exact cell currently served by the managed spectator:
+
+```text
+ai_eval advanced_rush advanced --players 8 --width 84 --height 54 \
+  --city-states 12 --pairs 60 --turns 250 --speed online \
+  --map continents --shape planet --poles poles --randomize-civs \
+  --victories science,culture,domination --seed 9960000 --jobs 6
+```
+
+`ai_eval` did not accept the last five profile dimensions when this was
+written. They are added before the run, defaulting to its historical Pangaea,
+flat, polar, fixed-roster, all-victories behaviour. The output must print the
+resolved profile so an omitted flag cannot silently recreate the old test.
+
+### Fixed decision rule
+
+The 60-map screen advances only if all of these hold:
+
+- paired win score is at least 55%;
+- favorable map directions outnumber adverse directions;
+- paired terminal-score share is at least 52%; and
+- the existing promotion gate does not retain `advanced`.
+
+This screen cannot promote a default. Passing earns a disjoint, predeclared
+confirmation at seed 9961000 with at least 240 maps and the same exact profile.
+That confirmation must pass the repository's unchanged win promotion gate;
+terminal score remains diagnostic. A policy change would be conditional on the
+enabled victory set, so the prior all-victory result is not overwritten by a
+different game. It would then need a separately fixed sample across the
+supervisor's varying player-count, map, and topology distribution before being
+called an exhibition-wide gain.
+
+If the screen fails, there is no threshold or seed retry. The next permissible
+hypothesis is a selective rush whose eligibility is fixed from pre-war state
+and whose direct treatment effect is developed and held out by map. No selector
+may be fitted to these 60 outcome maps and then evaluated on the same maps.
+
+### Result: refuted on the live cell
+
+The exact screen completed all 60 maps (120 mirrored games) at seed 9960000.
+It failed every advancement term:
+
+- paired win score was **47.1%** (95% Wilson CI 35.0%..59.5%, Elo-equivalent
+  -20, CI -107..+67), below 55%;
+- map directions were **6 rush-favoured, 42 neutral, 12 advanced-favoured**
+  (two-sided sign p=0.2379), so favourable did not outnumber adverse;
+- paired terminal-score share was **50.4%**, below 52% (31 maps favoured the
+  rush and 29 favoured advanced, p=0.8974); and
+- the unchanged promotion gate was **INCONCLUSIVE**, retaining `advanced`.
+
+The direct outcome also runs opposite the mechanism proposed above:
+`advanced_rush` won 8 games and `advanced` won 15. Every rush victory was
+Science; advanced won 12 Science and 3 Culture games. Removing Religious
+Victory therefore did not expose a hidden conversion of the rush's land into
+live-profile wins. Advanced still won more Science games itself.
+
+The economy diagnostic explains why score could not be used as a substitute
+for winning. Rush seats finished with more cities (6.05 versus 5.35),
+population (75.4 versus 68.9), military units (20.0 versus 16.3), and nominal
+score (571.7 versus 566.0), yet they had fewer civics (5.9 versus 6.8), fewer
+tourists (26.2 versus 29.0), and fewer actual victories. The rush changes the
+shape of the empire without improving victory routing. There is no disjoint
+confirmation and no seed or threshold retry.
+
+#### Evaluation throughput discovered by the screen
+
+The first attempt also exposed a non-gameplay bottleneck on Planet. A
+frequency-21 globe has 4,412 tiles, whose complete exact-distance table is
+about 39 MB, but `Sphere` stopped its shared cache at 512 rows. Once early
+games filled those rows, later recon and tactical movement repeatedly ran A*
+for the same endpoints. A read-only stack sample localized the tail to those
+exact distance calls.
+
+Removing the obsolete row-count ceiling leaves the existing 64 MB byte budget
+in charge: this stock globe may cache every row, while larger globes remain
+bounded. Distance values and AI choices are unchanged. The identical first
+six maps fell from about 77 minutes to **132 seconds** even while contending
+with the obsolete run; the full screen then completed in **1,223 seconds**.
+The evaluator now prints a deterministic progress line after each six-map
+chunk so another long run cannot look hung.
+
+---
+
+## 9. 2026-07-29 preregistration: only march at a capital a land army can reach
+
+The failed screen above is not used to fit a threshold or classify a map. It
+did expose a code-level mismatch between the old evidence and the live world:
+the rush was developed on Pangaea/flat, while the screen was
+Continents/Planet. `early_rush_victim` calls `wdist` and accepts a capital at
+most 16 graph steps away, but graph distance crosses water. It never proves
+that an ancient land unit can route to the victim. A nearby capital on another
+continent can therefore trigger Horseback Riding, a four-melee army, and a
+Conquest plan even though none of those units can arrive.
+
+The fixed hypothesis is:
+
+> The rush is valuable only when its initial army has a real land route to the
+> staging ring. Refusing geometrically close but route-disconnected targets
+> preserves the measured same-continent capability without paying its research
+> and production cost on an overseas war that cannot open in the ancient
+> window.
+
+The treatment is named `advanced_rush_connected`. On the first turn at which
+the agent can inspect all founded major capitals, before it has opened a war,
+it freezes the set of rivals reachable by one of its current land,
+melee-capable units. A rival is eligible when that unit is already within three
+steps of the capital or `route_step(unit, capital, 3)` returns a step. The
+three-step range is the existing staging distance, not a fitted reach
+threshold. The route uses current terrain, traversal technology, and border
+access. This set is never recomputed after the treatment can affect research,
+production, diplomacy, or movement. Once an eligible rush opens, the existing
+lane finishes it even if the route later changes.
+
+Every other rush condition remains unchanged: the 16-tile geometric ceiling,
+unwalled capital, victim-power guard, two-unit finish-capable opening stack,
+four-unit production floor, dedicated siege execution, research order, and
+window close. On a connected Pangaea fixture the new entrant must make the
+same plan as `advanced_rush`; on a split-continent fixture it must remain
+ordinary `advanced`. `ai_eval` must report both the fraction of treatment
+seat-games that ever carried a rush plan and the fraction of observed
+player-turns spent rushing, so a near-control result cannot masquerade as a
+successful selector.
+
+### Fresh development screen
+
+Implementation cannot begin while PR #544 owns the AI and evaluator paths.
+After that ownership clears, the fixed 120-map development screen is:
+
+```text
+ai_eval advanced_rush_connected advanced --players 8 --width 84 --height 54 \
+  --city-states 12 --pairs 120 --turns 250 --speed online \
+  --map continents --shape planet --poles poles --randomize-civs \
+  --victories science,culture,domination --seed 9970000 --jobs 6
+```
+
+None of seeds 9960000..9960059 may be used for implementation choices,
+thresholds, or selector labels. The development screen advances only if all
+of these predeclared conditions hold:
+
+- 10% to 80% of treatment seat-games ever carry a rush plan;
+- paired win score is at least 52%;
+- favourable map directions outnumber adverse directions;
+- paired terminal-score share is at least 50%; and
+- the unchanged promotion gate does not retain `advanced`.
+
+This is a mechanism/development gate and cannot promote the default. Coverage
+below 10% means the treatment is too close to control to evaluate; coverage
+above 80% means route connectivity did not meaningfully select.
+
+### Disjoint holdout
+
+Passing every development term earns one unchanged 240-map holdout at seed
+9971000 with the same profile and selector. The holdout must keep coverage
+inside 10%..80%, have more favourable than adverse directions, retain at least
+50% terminal-score share, and produce **PROMOTE** from the repository's
+unchanged win gate. Only then may the connected selector become the default
+for this exact cell; a separate predeclared sample across the supervisor's
+player-count, map, and topology distribution is still required for an
+exhibition-wide claim.
+
+If development or holdout fails, there is no route threshold, staging range,
+coverage band, or seed retry. The ancient-rush line is retired on this live
+cell, and the next military work returns to mid-game victory routing rather
+than fitting another selector to these outcomes.

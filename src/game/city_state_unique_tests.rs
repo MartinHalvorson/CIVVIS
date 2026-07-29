@@ -1,3 +1,4 @@
+use crate::name::Name;
 use super::*;
 
 fn game_with_capitals(players: usize, seed: u64) -> (Game, Vec<u32>) {
@@ -59,13 +60,13 @@ fn install_district(game: &mut Game, city_id: u32, district: &str) -> Pos {
     tile.feature = None;
     tile.resource = None;
     tile.improvement = None;
-    tile.district = Some(district.to_string());
+    tile.district = Some(Name::new(district));
     tile.pillaged = false;
     game.cities
         .get_mut(&city_id)
         .unwrap()
         .districts
-        .insert(district.to_string(), position);
+        .insert(Name::new(district), position);
     position
 }
 
@@ -105,7 +106,7 @@ fn economic_level_three_shares_unique_suzerain_bonuses_without_relays() {
 fn carthage_mohenjo_daro_and_auckland_modify_their_native_systems() {
     let (mut game, cities) = game_with_capitals(2, 89_002);
     let city = cities[0];
-    game.players[0].civics.insert("foreign_trade".to_string());
+    game.players[0].civics.insert(crate::name!("foreign_trade"));
     let encampment = install_district(&mut game, city, "encampment");
     let carthage = add_city_state(&mut game, "Carthage");
     let base_capacity = game.trade_capacity(0);
@@ -117,7 +118,7 @@ fn carthage_mohenjo_daro_and_auckland_modify_their_native_systems() {
     game.map.tiles.get_mut(&center).unwrap().river_edges = [false; 6];
     for neighbor in game.nbrs(center) {
         let tile = game.map.tiles.get_mut(&neighbor).unwrap();
-        tile.terrain = "grassland".to_string();
+        tile.terrain = crate::name!("grassland");
         tile.feature = None;
         tile.river_edges = [false; 6];
     }
@@ -136,7 +137,7 @@ fn carthage_mohenjo_daro_and_auckland_modify_their_native_systems() {
         .unwrap();
     {
         let tile = game.map.tiles.get_mut(&water).unwrap();
-        tile.terrain = "coast".to_string();
+        tile.terrain = crate::name!("coast");
         tile.feature = None;
         tile.resource = None;
         tile.improvement = None;
@@ -193,7 +194,7 @@ fn hattusa_stockholm_and_vilnius_use_resources_gpp_and_real_adjacency() {
     let city = cities[0];
     let minor = add_city_state(&mut game, "Geneva");
     make_suzerain(&mut game, 0, minor);
-    game.players[0].techs.insert("bronze_working".to_string());
+    game.players[0].techs.insert(crate::name!("bronze_working"));
     for position in game.cities[&city].owned_tiles.clone() {
         game.map.tiles.get_mut(&position).unwrap().resource = None;
     }
@@ -206,7 +207,7 @@ fn hattusa_stockholm_and_vilnius_use_resources_gpp_and_real_adjacency() {
         .get_mut(&city)
         .unwrap()
         .buildings
-        .push("library".to_string());
+        .push(crate::name!("library"));
     let mut without_stockholm = game.clone();
     without_stockholm.players[minor].civ = "Geneva".to_string();
     without_stockholm.process_great_people(0);
@@ -227,25 +228,25 @@ fn hattusa_stockholm_and_vilnius_use_resources_gpp_and_real_adjacency() {
                 && game.map.tiles[position].district.is_none()
         })
         .unwrap();
-    game.map.tiles.get_mut(&theater).unwrap().district = Some("theater_square".to_string());
+    game.map.tiles.get_mut(&theater).unwrap().district = Some(crate::name!("theater_square"));
     game.cities
         .get_mut(&city)
         .unwrap()
         .districts
-        .insert("theater_square".to_string(), theater);
+        .insert(crate::name!("theater_square"), theater);
     let wonder = game
         .nbrs(theater)
         .into_iter()
         .find(|position| *position != game.cities[&city].pos && *position != campus)
         .unwrap();
-    game.map.tiles.get_mut(&wonder).unwrap().wonder = Some("pyramids".to_string());
+    game.map.tiles.get_mut(&wonder).unwrap().wonder = Some(crate::name!("pyramids"));
     install_alliance(&mut game, 0, 1, "research", 2);
     game.players[minor].civ = "Mohenjo-Daro".to_string();
-    let ordinary = game.district_yields("theater_square", theater).culture;
+    let ordinary = game.district_yields(crate::name!("theater_square"), theater).culture;
     assert!(ordinary > 0.0);
     game.players[minor].civ = "Vilnius".to_string();
     assert_close(
-        game.district_yields("theater_square", theater).culture,
+        game.district_yields(crate::name!("theater_square"), theater).culture,
         ordinary * 2.0,
     );
 }
@@ -269,7 +270,7 @@ fn zanzibar_and_kandy_supply_luxuries_relics_and_relic_faith() {
         .get_mut(&city)
         .unwrap()
         .buildings
-        .push("temple".to_string());
+        .push(crate::name!("temple"));
     game.players[0]
         .counters
         .insert("great_work:relic".to_string(), 1);
@@ -287,7 +288,7 @@ fn zanzibar_and_kandy_supply_luxuries_relics_and_relic_faith() {
         .iter()
         .find_map(|(position, tile)| {
             tile.feature.as_ref().and_then(|feature| {
-                game.rules.features[feature.as_str()]
+                game.rules.features[feature]
                     .natural_wonder
                     .then_some((*position, feature.clone()))
             })
@@ -365,29 +366,29 @@ fn suzerains_improve_repair_and_accumulate_city_state_resources() {
         .unwrap();
     {
         let tile = game.map.tiles.get_mut(&resource).unwrap();
-        tile.terrain = "plains".to_string();
+        tile.terrain = crate::name!("plains");
         tile.feature = None;
-        tile.resource = Some("iron".to_string());
+        tile.resource = Some(crate::name!("iron"));
         tile.improvement = None;
         tile.pillaged = false;
     }
     game.players[0]
         .techs
-        .extend(["mining", "bronze_working"].into_iter().map(str::to_string));
+        .extend(["mining", "bronze_working"].into_iter().map(Name::new));
     let builder = game.spawn_test_unit("builder", 0, resource);
 
     assert!(!game
         .valid_improvements(0, resource)
-        .contains(&"mine".to_string()));
+        .contains(&crate::name!("mine")));
     make_suzerain(&mut game, 0, minor);
     assert!(game
         .valid_improvements(0, resource)
-        .contains(&"mine".to_string()));
+        .contains(&crate::name!("mine")));
     game.apply(
         0,
         &Action::Improve {
             unit: builder,
-            improvement: "mine".to_string(),
+            improvement: crate::name!("mine"),
         },
     )
     .unwrap();
@@ -544,7 +545,7 @@ fn valletta_purchases_city_center_and_encampment_buildings_with_discounted_walls
     game.players[0].techs.extend(
         ["pottery", "masonry", "bronze_working"]
             .into_iter()
-            .map(str::to_string),
+            .map(Name::new),
     );
     game.players[0].faith = 1_000.0;
 
@@ -559,13 +560,13 @@ fn valletta_purchases_city_center_and_encampment_buildings_with_discounted_walls
     assert_eq!(game.building_faith_purchase_cost(0, city, "library"), None);
     let purchase = Action::BuyBuilding {
         city,
-        building: "walls".to_string(),
+        building: crate::name!("walls"),
         currency: "faith".to_string(),
     };
     assert!(game.legal_actions(0).contains(&purchase));
     game.apply(0, &purchase).unwrap();
     assert_close(game.players[0].faith, 920.0);
-    assert!(game.cities[&city].buildings.contains(&"walls".to_string()));
+    assert!(game.cities[&city].buildings.contains(&crate::name!("walls")));
     assert_eq!(game.cities[&city].wall_hp, 100);
 
     install_district(&mut game, city, "encampment");
@@ -594,7 +595,7 @@ fn final_patch_envoy_thresholds_follow_active_building_tiers() {
             "chancery",
         ]
         .into_iter()
-        .map(str::to_string),
+        .map(Name::new),
     );
 
     game.players[0].envoys = vec![(scientific, 1)];
@@ -608,7 +609,7 @@ fn final_patch_envoy_thresholds_follow_active_building_tiers() {
         .get_mut(&city)
         .unwrap()
         .pillaged_buildings
-        .insert("library".to_string());
+        .insert(crate::name!("library"));
     assert_close(game.envoy_yields(0, &game.cities[&city]).science, 11.0);
 }
 
@@ -632,7 +633,7 @@ fn trade_envoys_double_each_independent_commercial_and_harbor_tier() {
             "chancery",
         ]
         .into_iter()
-        .map(str::to_string),
+        .map(Name::new),
     );
 
     game.players[0].envoys = vec![(trade, 1)];
@@ -661,14 +662,14 @@ fn production_envoys_obey_unit_and_infrastructure_queues() {
             "chancery",
         ]
         .into_iter()
-        .map(str::to_string),
+        .map(Name::new),
     );
     game.cities.get_mut(&city).unwrap().queue = vec![Item::Unit {
-        unit: "warrior".to_string(),
+        unit: crate::name!("warrior"),
     }];
     assert_close(game.envoy_yields(0, &game.cities[&city]).production, 12.0);
     game.cities.get_mut(&city).unwrap().queue = vec![Item::Building {
-        building: "granary".to_string(),
+        building: crate::name!("granary"),
     }];
     assert_close(game.envoy_yields(0, &game.cities[&city]).production, 0.0);
 
@@ -681,11 +682,11 @@ fn production_envoys_obey_unit_and_infrastructure_queues() {
         "chancery",
     ]
     .into_iter()
-    .map(str::to_string)
+    .map(Name::new)
     .collect();
     assert_close(game.envoy_yields(0, &game.cities[&city]).production, 12.0);
     game.cities.get_mut(&city).unwrap().queue = vec![Item::Unit {
-        unit: "warrior".to_string(),
+        unit: crate::name!("warrior"),
     }];
     assert_close(game.envoy_yields(0, &game.cities[&city]).production, 0.0);
 }
@@ -715,7 +716,7 @@ fn kilwa_scales_total_type_yields_and_matching_production_categories() {
         .get_mut(&host)
         .unwrap()
         .wonders
-        .insert("kilwa_kisiwani".to_string(), host_position);
+        .insert(crate::name!("kilwa_kisiwani"), host_position);
 
     let mut without_kilwa = game.clone();
     without_kilwa
@@ -723,7 +724,7 @@ fn kilwa_scales_total_type_yields_and_matching_production_categories() {
         .get_mut(&host)
         .unwrap()
         .wonders
-        .remove("kilwa_kisiwani");
+        .remove(&Name::new("kilwa_kisiwani"));
     assert_close(
         game.city_yields(host).science,
         without_kilwa.city_yields(host).science * 1.30,
@@ -736,7 +737,7 @@ fn kilwa_scales_total_type_yields_and_matching_production_categories() {
     game.players[first_state].civ = "Kabul".to_string();
     game.players[second_state].civ = "Carthage".to_string();
     let unit = Item::Unit {
-        unit: "warrior".to_string(),
+        unit: crate::name!("warrior"),
     };
     let mut no_production_kilwa = game.clone();
     no_production_kilwa
@@ -744,7 +745,7 @@ fn kilwa_scales_total_type_yields_and_matching_production_categories() {
         .get_mut(&host)
         .unwrap()
         .wonders
-        .remove("kilwa_kisiwani");
+        .remove(&Name::new("kilwa_kisiwani"));
     assert_close(
         game.item_prod_mult(0, host, Some(&unit)),
         no_production_kilwa.item_prod_mult(0, host, Some(&unit)) + 0.30,
@@ -845,7 +846,7 @@ fn brussels_hong_kong_and_muscat_pay_wonders_projects_and_amenities() {
 
     // +15% Production towards wonders.
     let wonder = Item::Wonder {
-        wonder: "pyramids".to_string(),
+        wonder: crate::name!("pyramids"),
         pos: game.cities[&city].pos,
     };
     let before = game.item_prod_mult(0, city, Some(&wonder));
@@ -858,7 +859,7 @@ fn brussels_hong_kong_and_muscat_pay_wonders_projects_and_amenities() {
     // +20% Production towards city projects, and not towards wonders.
     game.players[brussels].civ = "Hong Kong".to_string();
     let project = Item::Project {
-        project: "campus_research_grants".to_string(),
+        project: crate::name!("campus_research_grants"),
     };
     let base = {
         game.players[0].envoys.clear();
@@ -942,9 +943,9 @@ fn mitla_grows_campus_cities_and_taruga_counts_resource_kinds_not_tiles() {
     make_suzerain(&mut game, 0, minor);
 
     // Mitla pays nothing until the city actually has a Campus.
-    assert!(!game.city_has_active_district_family(&game.cities[&city], "campus"));
+    assert!(!game.city_has_active_district_family(&game.cities[&city], crate::name!("campus")));
     install_district(&mut game, city, "campus");
-    assert!(game.city_has_active_district_family(&game.cities[&city], "campus"));
+    assert!(game.city_has_active_district_family(&game.cities[&city], crate::name!("campus")));
 
     // Taruga scales on distinct improved Strategic resources.
     game.players[minor].civ = "Taruga".to_string();
@@ -977,7 +978,7 @@ fn mitla_grows_campus_cities_and_taruga_counts_resource_kinds_not_tiles() {
         let Some(tile) = game.map.tiles.get_mut(pos) else {
             continue;
         };
-        tile.terrain = "grassland".to_string();
+        tile.terrain = crate::name!("grassland");
         tile.hills = false;
         tile.feature = None;
         tile.resource = None;
@@ -996,16 +997,16 @@ fn mitla_grows_campus_cities_and_taruga_counts_resource_kinds_not_tiles() {
     // Two mined Iron is one kind, so one 5% step.
     for pos in &plain[..2] {
         let tile = game.map.tiles.get_mut(pos).unwrap();
-        tile.resource = Some("iron".to_string());
-        tile.improvement = Some(game.rules.resources["iron"].improvement.clone());
+        tile.resource = Some(crate::name!("iron"));
+        tile.improvement = Some(Name::new(&game.rules.resources["iron"].improvement));
     }
     let one_kind = game.city_yields(city).science;
 
     // A second kind is a second step.
     let third = plain[2];
     let tile = game.map.tiles.get_mut(&third).unwrap();
-    tile.resource = Some("niter".to_string());
-    tile.improvement = Some(game.rules.resources["niter"].improvement.clone());
+    tile.resource = Some(crate::name!("niter"));
+    tile.improvement = Some(Name::new(&game.rules.resources["niter"].improvement));
     let two_kinds = game.city_yields(city).science;
     assert!(
         two_kinds > one_kind && one_kind > base,
