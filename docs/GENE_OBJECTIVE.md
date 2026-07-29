@@ -256,8 +256,10 @@ post-hoc explanation.
 
 ### Discovery
 
-Run the same 42 endpoint interventions and incumbent through the exact
-production fitness schedule on 24 new maps:
+Run every non-incumbent bound intervention and the incumbent through the exact
+production fitness schedule on 24 new maps. This is 41 interventions: one
+champion value already equals its declared bound, so constructing that bound
+would be an identical second incumbent rather than an intervention.
 
 ```sh
 cargo run --release --bin gene_objective_probe -- \
@@ -282,7 +284,7 @@ fixed discovery gate requires all of:
 3. full fitness changes on at least 12 of 24 maps; and
 4. the endpoint wins at least as many of the 24 games as the incumbent.
 
-The 42-way discovery comparison is not confirmatory. It only freezes the gene,
+The 41-way discovery comparison is not confirmatory. It only freezes the gene,
 bound, and numeric value for one disjoint test. No runner-up or threshold is
 substituted after seeing the results.
 
@@ -307,3 +309,44 @@ validation; a failure changes no gameplay default.
 The combat term remains regardless of this experiment. It already failed its
 own disjoint removal gate, and this study is candidate optimization under the
 objective that actually ships.
+
+### Discovery result — endpoint rejected, representation gap confirmed
+
+The exact seed-9,840,000 run completed against the embedded artifact and
+resolved `artifact` to `Live`. The integrity predictions all passed. Both
+bounds of `war_ratio`, `war_margin`, `peace_ratio`, and `war_min_turn` changed
+neither score nor full fitness on any of the 24 paired maps. Every one of the
+other 17 military genes changed score on at least 6/24 maps, so the failure is
+localized to the four parameters bypassed by `AdvancedAi` rather than a dead
+fitness pipeline.
+
+The prospectively selected endpoint was `rejoin_hp=high`, value 100:
+
+| discovery gate | required | observed | verdict |
+|---|---:|---:|---|
+| mean full-objective delta | positive by at least 2 SE | **+5.673 +/- 4.140** | FAIL |
+| mean score-component delta | positive | **+5.162 +/- 3.124** | PASS |
+| maps with changed full fitness | at least 12/24 | **24/24** | PASS |
+| wins | at least incumbent | **4/24 vs 6/24** | FAIL |
+
+The effect was too uncertain and lost two wins. Per the pre-registration, the
+line stops here: there is no seed-9,850,000 confirmation, no mirrored gameplay
+A/B, and no champion or production-default change. The combat term remains.
+
+This Live result independently reproduces the Legacy mechanism result. Live
+reached 17/21 military genes with median absolute score/full response retention
+of **0.815**, compared with **0.831** and **0.837** on the two Legacy samples;
+all three runs found the same four unreachable genes and no combat-only gene.
+Several endpoint extremes were actively harmful. For example,
+`muster_radius=low` changed full fitness by **-3.688 +/- 1.507** and
+`screen=low` by **-3.407 +/- 1.566**. This is evidence against indiscriminate
+boundary search and for preserving the champion's locally robust interior
+values.
+
+The actionable result is structural. Four of 40 evolved dimensions (10% of
+the genome) cannot tune war or peace for the deployed major controller, while
+`AdvancedAi::advanced_diplomacy` keeps its own ratio, margin, and timing
+thresholds as constants. A follow-up should represent those actual Advanced
+thresholds as backward-compatible genes whose defaults reproduce current
+behavior, then measure their reach before spending another evolution budget.
+The failed `rejoin_hp` endpoint is not a substitute for that experiment.
