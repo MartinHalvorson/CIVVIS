@@ -5808,3 +5808,69 @@ That is worth stating plainly for whoever picks this up: **the expansion gap is
 real and is not currently reachable by changing a decision.** Anything further
 here should either change what a settler costs, or stop and go elsewhere.
 ||||||| 2dbf641
+
+## 2026-07-29 — ★★★★★ the self-improvement loop cannot reach the one axis measured to pay
+
+Read the deployed league roster before spending any more effort on the macro
+search, and the shape of the problem changes.
+
+```
+/Users/martin/civvis-spectator-src/league/league.json — 61 entries, 19 active
+  Builtin: 7   advanced x5, basic x1, advanced_v1 x1
+  Advanced: 54 (AdvancedAi genome variants)
+  StrategicAi: 0
+```
+
+**No searching agent has ever played a deployed game.** The live exhibition runs
+`civvis play --spectate --supervised --league …`, so its seats come from that
+roster, and every one of them is `AdvancedAi` — either the builtin or a bred
+genome. `StrategicAi` is the only agent in this repository that searches, and it
+is the one whose compute-doubling result (p=0.0023) is the single reproducible
+strength win on record. It never plays.
+
+**And breeding cannot fix that, structurally.** `StrategyKind` has two variants:
+
+```rust
+Builtin { ai: String },          // one of elo::BUILTIN_AIS — "strategic" is in it
+Advanced { weights, target },    // parameterized AdvancedAi
+```
+
+Every offspring the league produces is `Advanced`. The only non-test
+`StrategyKind::Builtin` construction in `src/league.rs` is `register_new_player`,
+which is a *human* seat's auto-play fallback and is hardcoded to `"advanced"`.
+The seven builtin entries in the roster were seeded by hand as anchors.
+
+So the self-improvement loop explores 48-gene variants of a scripted,
+non-searching agent, and no amount of running it can discover search. That is
+worth putting beside three facts already in this file: the genome is a measured
+local optimum on wins, 11 of 48 genes produce zero divergence when driven to
+their bounds, and about a thousand rounds of evolution produced no measurable
+gain. The loop is not failing to climb — it is exhausting a space that was
+already exhausted, and it cannot see the axis next door.
+
+**What this does and does not say about the macro-search work:**
+
+- It does **not** invalidate #572's measurement. The two search axes interact in
+  80% of reviews and coordinate descent misses an actionable joint optimum in
+  22.3% of them, and that is a true statement about `StrategicAi`.
+- It does mean the joint-axis change in #589 improves an agent that is **not
+  deployed**, so no strength claim from it can be a claim about shipped play.
+- It also cuts against deployability directly: `strategic` is plausibly absent
+  because search costs several times a scripted turn, and the joint axis costs
+  2.5x again. Making search better and more expensive moves it further from the
+  roster, not closer.
+
+| claim | status |
+|---|---|
+| no searching agent is seated in the deployed league | **established** (0 of 61) |
+| league breeding can only produce `AdvancedAi` genomes | **established** (`StrategyKind`) |
+| therefore the self-improvement loop cannot discover search | **established** (structural) |
+| `strategic` is *ineligible* | **refuted** — it is in `BUILTIN_AIS`, just unseated |
+| search is unseated *because* of turn cost | **unmeasured** — plausible, not established |
+
+**The next question is a cost measurement, not a strength one.** What does a
+`StrategicAi` turn cost against an `AdvancedAi` turn at 6p 74×46 Online? If the
+ratio is small enough to seat, the highest-value change available is to anchor a
+searching agent in the league so the rating system can see it at all. If it is
+not, then every hour spent making the search stronger is spent on an agent that
+cannot ship, and the honest move is to make search *cheaper* rather than better.
