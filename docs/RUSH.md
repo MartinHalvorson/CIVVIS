@@ -343,3 +343,106 @@ nameplate, which is what `early_rush_victim` does. The civilizations that
 genuinely resist an ancient rush are the short list with an early defensive
 unique (Greece's hoplite 28/65, Aztec's eagle_warrior 28/65 at no tech cost)
 or a live combat ability (Scythia's `killer_of_cyrus`, Norway's `knarr`).
+
+---
+
+## 8. 2026-07-29 preregistration: the game that ships removes the rush's largest cost
+
+The result above is not a deployment result. It used the deployment's old
+six-player rectangle but otherwise inherited `ai_eval` defaults: Standard
+speed, Pangaea, fixed civilizations, and all six victory conditions. The live
+supervisor now plays Online and enables only Science, Culture, and Domination.
+It varies player count, world type, and topology between games; its currently
+running cell is eight players on 84x54 Continents/Planet with 12 city-states.
+
+That difference is mechanistically important rather than cosmetic. In the
+all-victory result, `advanced_rush` gave up 29 Religious wins (6 versus 35),
+while gaining every Culture, Science, and Domination win in the comparison
+(4/3/2 versus 0/0/0). Religious Victory is disabled in the live game. The
+fixed hypothesis is therefore:
+
+> On the live three-victory game, the completed rush converts its already
+> measured territorial gain into more wins because the victory path it paid
+> for that gain by abandoning is unavailable to either arm.
+
+This is a direct policy A/B, not a score proxy. The first screen uses fresh
+maps and the exact cell currently served by the managed spectator:
+
+```text
+ai_eval advanced_rush advanced --players 8 --width 84 --height 54 \
+  --city-states 12 --pairs 60 --turns 250 --speed online \
+  --map continents --shape planet --poles poles --randomize-civs \
+  --victories science,culture,domination --seed 9960000 --jobs 6
+```
+
+`ai_eval` did not accept the last five profile dimensions when this was
+written. They are added before the run, defaulting to its historical Pangaea,
+flat, polar, fixed-roster, all-victories behaviour. The output must print the
+resolved profile so an omitted flag cannot silently recreate the old test.
+
+### Fixed decision rule
+
+The 60-map screen advances only if all of these hold:
+
+- paired win score is at least 55%;
+- favorable map directions outnumber adverse directions;
+- paired terminal-score share is at least 52%; and
+- the existing promotion gate does not retain `advanced`.
+
+This screen cannot promote a default. Passing earns a disjoint, predeclared
+confirmation at seed 9961000 with at least 240 maps and the same exact profile.
+That confirmation must pass the repository's unchanged win promotion gate;
+terminal score remains diagnostic. A policy change would be conditional on the
+enabled victory set, so the prior all-victory result is not overwritten by a
+different game. It would then need a separately fixed sample across the
+supervisor's varying player-count, map, and topology distribution before being
+called an exhibition-wide gain.
+
+If the screen fails, there is no threshold or seed retry. The next permissible
+hypothesis is a selective rush whose eligibility is fixed from pre-war state
+and whose direct treatment effect is developed and held out by map. No selector
+may be fitted to these 60 outcome maps and then evaluated on the same maps.
+
+### Result: refuted on the live cell
+
+The exact screen completed all 60 maps (120 mirrored games) at seed 9960000.
+It failed every advancement term:
+
+- paired win score was **47.1%** (95% Wilson CI 35.0%..59.5%, Elo-equivalent
+  -20, CI -107..+67), below 55%;
+- map directions were **6 rush-favoured, 42 neutral, 12 advanced-favoured**
+  (two-sided sign p=0.2379), so favourable did not outnumber adverse;
+- paired terminal-score share was **50.4%**, below 52% (31 maps favoured the
+  rush and 29 favoured advanced, p=0.8974); and
+- the unchanged promotion gate was **INCONCLUSIVE**, retaining `advanced`.
+
+The direct outcome also runs opposite the mechanism proposed above:
+`advanced_rush` won 8 games and `advanced` won 15. Every rush victory was
+Science; advanced won 12 Science and 3 Culture games. Removing Religious
+Victory therefore did not expose a hidden conversion of the rush's land into
+live-profile wins. Advanced still won more Science games itself.
+
+The economy diagnostic explains why score could not be used as a substitute
+for winning. Rush seats finished with more cities (6.05 versus 5.35),
+population (75.4 versus 68.9), military units (20.0 versus 16.3), and nominal
+score (571.7 versus 566.0), yet they had fewer civics (5.9 versus 6.8), fewer
+tourists (26.2 versus 29.0), and fewer actual victories. The rush changes the
+shape of the empire without improving victory routing. There is no disjoint
+confirmation and no seed or threshold retry.
+
+#### Evaluation throughput discovered by the screen
+
+The first attempt also exposed a non-gameplay bottleneck on Planet. A
+frequency-21 globe has 4,412 tiles, whose complete exact-distance table is
+about 39 MB, but `Sphere` stopped its shared cache at 512 rows. Once early
+games filled those rows, later recon and tactical movement repeatedly ran A*
+for the same endpoints. A read-only stack sample localized the tail to those
+exact distance calls.
+
+Removing the obsolete row-count ceiling leaves the existing 64 MB byte budget
+in charge: this stock globe may cache every row, while larger globes remain
+bounded. Distance values and AI choices are unchanged. The identical first
+six maps fell from about 77 minutes to **132 seconds** even while contending
+with the obsolete run; the full screen then completed in **1,223 seconds**.
+The evaluator now prints a deterministic progress line after each six-map
+chunk so another long run cannot look hung.

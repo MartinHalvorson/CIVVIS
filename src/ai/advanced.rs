@@ -20648,45 +20648,49 @@ mod tests {
     /// `settle_value`, with the just-founded city excluded from the minimum
     /// separation rule so the chosen tile competes on equal terms.
     ///
-    /// ## Three baselines, because the first one was the wrong question
+    /// ## ⚠ RETRACTION: the gap this census originally reported was its own bug
     ///
-    /// The original version of this census scored siting against **raw**
-    /// `settle_value`. That is not the objective this agent pursues:
-    /// `settle_sites` ranks candidates by
-    /// `settle_value - SETTLE_DISTANCE_PENALTY * distance`, so it trades site
-    /// quality for proximity deliberately. Scoring it against a function that
-    /// never charges for the walk measures a preference it never held, and the
-    /// gap it reported was correspondingly overstated.
+    /// The first two versions of this census (#548, #550) scored the chosen
+    /// site **after** the city was founded, and reported that the agent sites
+    /// cities at 62-70% of the best available -- billed as the one unsaturated
+    /// city decision. That was an artifact.
     ///
-    /// The agent's own objective is the honest baseline, and the gap survives
-    /// it: **65.4%**. The third baseline closes the loop by asking what the
-    /// agent's own candidate generator offers from the founded tile itself,
-    /// which excludes any explanation resting on `settle_sites`' filters --
-    /// the `value >= 12.0` floor, foreign-owned ground, four-tile separation.
-    /// That reads **65.9%**, so the filters do not explain it either.
+    /// `settle_value` skips any tile another city owns
+    /// (`if t.owner_city.is_some() && p != pos { continue; }`), and a city
+    /// claims its centre and all six ring-one tiles the instant it is founded.
+    /// Ring one carries full weight in that sum; ring two is discounted to
+    /// 0.45. So founding a city destroys **54.8%** of its own site's measured
+    /// value -- `settle_value_before_and_after_founding` measures exactly that
+    /// -- while rival candidates four or more tiles away keep theirs intact.
+    /// The census was comparing a site stripped of its best tiles against
+    /// rivals that still had theirs.
     ///
-    /// ## What has been refuted
+    /// Scored the turn **before** founding, which is the last moment the site
+    /// is still what the settler was choosing between, the answer inverts:
     ///
-    /// **Target staleness is NOT the cause.** The obvious mechanism -- a
-    /// settler picks a target when it spawns and then walks to it while the
-    /// world changes, since the cached target is only checked for *legality*
-    /// and never re-scored -- was implemented and measured **inert**. Adding a
-    /// per-turn re-score that abandons the target for a site better by a
-    /// margin changed not one founding across these eight maps: identical
-    /// ratio, identical city count, identical best-site count, both with the
-    /// naive comparison and with a like-for-like one that scored the incumbent
-    /// under the same distance discount. It was reverted rather than shipped,
-    /// because a treatment that fires zero times measures the stock agent
-    /// under another name.
+    /// ```text
+    /// against RAW settle_value            3 tiles 99.7%   8 tiles 99.7%
+    /// against the AGENT'S OWN objective   99.9%
+    /// against its OWN settle_sites here   98.8%
+    /// the chosen site WAS the best available on 15 of 17 foundings (88.2%)
+    /// worst case 95.2%; capitals 99.0%
+    /// ```
     ///
-    /// So the better sites are ones the agent's *generator* offers and its
-    /// *search* does not return. The remaining difference between the two is
-    /// `BasicAi::first_reachable_settle_site`, which adds a route check and
-    /// scans in chunks of 40, discarding an entire chunk when no route reaches
-    /// any of it. Either those sites are genuinely unreachable -- in which
-    /// case this census overstates the gap and the axis is closed -- or the
-    /// chunked scan is discarding reachable ground. That is the next question,
-    /// and it should be measured before anything is built.
+    /// **Settle siting is saturated like every other city decision.** The agent
+    /// takes essentially all the value on offer and picks the literal best site
+    /// seven times in eight.
+    ///
+    /// Two things corroborate it rather than resting on this one repair.
+    /// `settle_search_reach_census` shows the site search discards no reachable
+    /// ground: over 158 settler-turns the generator offered only five
+    /// candidates above what the search returned and **none of the five was
+    /// reachable**. And a per-turn re-score of stale targets was built and
+    /// measured **inert** in #550 -- which is what a saturated decision looks
+    /// like from the inside.
+    ///
+    /// The distance-discount baseline stays because it is still the right one:
+    /// `settle_sites` ranks by `settle_value - 0.9 * distance`, so raw
+    /// `settle_value` is not the objective the agent pursues.
     ///
     /// Run with `cargo test --release settle_siting_census -- --ignored --nocapture`.
     #[test]
@@ -20710,6 +20714,25 @@ mod tests {
             let mut known: BTreeSet<u32> = game.player_city_ids(0).into_iter().collect();
             while game.winner.is_none() && game.turn <= game.max_turns {
                 let pid = game.current;
+                // ⚠ Score every tile a settler stands on BEFORE the turn runs.
+                // `settle_value` skips tiles another city owns, and a city
+                // claims its centre and all six ring-one tiles the instant it
+                // is founded -- ring one being the full-weight ring, against
+                // 0.45 for ring two. Measured after the fact, founding a city
+                // destroys 54.8% of its own site's score
+                // (`settle_value_before_and_after_founding`), while rival
+                // candidates four or more tiles away keep theirs intact. The
+                // first version of this census did exactly that and reported a
+                // siting gap that was mostly its own artifact.
+                let mut pre: BTreeMap<Pos, f64> = BTreeMap::new();
+                if pid == 0 {
+                    for uid in game.player_unit_ids(0) {
+                        if game.units[&uid].kind == "settler" {
+                            let pos = game.units[&uid].pos;
+                            pre.insert(pos, ai.settle_value(&game, 0, pos));
+                        }
+                    }
+                }
                 ais[pid].take_turn(&mut game, pid);
                 if game.winner.is_none() && game.current == pid {
                     let _ = game.apply(pid, &crate::game::Action::EndTurn);
@@ -20728,7 +20751,9 @@ mod tests {
                         continue;
                     }
                     let chosen_pos = city.pos;
-                    let chosen = ai.settle_value(&game, 0, chosen_pos);
+                    let Some(chosen) = pre.get(&chosen_pos).copied() else {
+                        continue;
+                    };
                     // Only ground this seat had actually EXPLORED counts. A
                     // settler cannot choose a site nobody has seen, and
                     // scoring it against one would measure the fog rather than
@@ -20894,6 +20919,197 @@ mod tests {
             let cap = capital_ratio.iter().sum::<f64>() / capital_ratio.len() as f64;
             println!("  capitals alone: {:.1}% ({} sampled)", cap * 100.0, capital_ratio.len());
         }
+        println!();
+    }
+
+    /// Census, not an assertion: does the settler's site search discard ground
+    /// it could actually reach?
+    ///
+    /// `settle_siting_census` establishes that the agent founds at ~65% of what
+    /// its own `settle_sites` generator offers from the very tile it chose, and
+    /// that re-scoring a stale target changes nothing. The only machinery
+    /// between the generator and the choice is
+    /// `BasicAi::first_reachable_settle_site`, which walks the value-sorted
+    /// candidate list **in chunks of 40** and skips an entire chunk when
+    /// `route_step_to_any` reaches none of it. Because the list is sorted by
+    /// value descending, one failed probe on the first chunk discards the forty
+    /// best sites at once.
+    ///
+    /// Two readings, and they call for opposite conclusions:
+    ///
+    /// - the skipped sites are genuinely unreachable, so the siting census
+    ///   overstates its gap and the axis closes like the other three; or
+    /// - the chunked scan is throwing away reachable ground, which is a defect.
+    ///
+    /// This asks each better-than-chosen candidate the route question
+    /// **individually**, which is the same question the chunk asks collectively,
+    /// and reports how the two answers differ.
+    ///
+    /// Run with `cargo test --release settle_search_reach_census -- --ignored --nocapture`.
+    #[test]
+    #[ignore = "census, not an assertion; run explicitly with --nocapture"]
+    fn settle_search_reach_census() {
+        let mut settler_turns = 0u64;
+        let mut search_returned_nothing = 0u64;
+        let mut better_offered = 0u64;
+        let mut better_individually_reachable = 0u64;
+        let mut turns_with_a_reachable_better_site = 0u64;
+        let mut best_gap: Vec<f64> = Vec::new();
+
+        for map in 0..8u64 {
+            let mut game = Game::new_full(4, 24, 16, 470_000 + map, 200, 1, false);
+            let mut ais: Vec<AdvancedAi> =
+                (0..game.players.len()).map(|_| AdvancedAi::new()).collect();
+            game.set_fog_memory(false);
+            while game.winner.is_none() && game.turn <= game.max_turns {
+                let pid = game.current;
+                if pid == 0 {
+                    let probe = ais[0].clone();
+                    for uid in game.player_unit_ids(0) {
+                        if game.units[&uid].kind != "settler" {
+                            continue;
+                        }
+                        let from = game.units[&uid].pos;
+                        let candidates = probe.settle_sites(&game, 0, from, 8);
+                        if candidates.is_empty() {
+                            continue;
+                        }
+                        settler_turns += 1;
+                        let returned =
+                            BasicAi::first_reachable_settle_site(&game, uid, &candidates);
+                        let floor = match returned {
+                            Some((_, value)) => value,
+                            None => {
+                                search_returned_nothing += 1;
+                                f64::NEG_INFINITY
+                            }
+                        };
+                        let mut found_one = false;
+                        for (pos, value) in &candidates {
+                            if *value <= floor {
+                                continue;
+                            }
+                            better_offered += 1;
+                            // The same question the chunk asked collectively.
+                            if *pos == from || game.route_step(uid, *pos, 0).is_some() {
+                                better_individually_reachable += 1;
+                                if !found_one {
+                                    found_one = true;
+                                    best_gap.push(value - floor.max(0.0));
+                                }
+                            }
+                        }
+                        if found_one {
+                            turns_with_a_reachable_better_site += 1;
+                        }
+                    }
+                }
+                ais[pid].take_turn(&mut game, pid);
+                if game.winner.is_none() && game.current == pid {
+                    let _ = game.apply(pid, &crate::game::Action::EndTurn);
+                }
+            }
+        }
+
+        best_gap.sort_by(f64::total_cmp);
+        println!("\n=== settle search reach census: {settler_turns} settler-turns over 8 maps ===");
+        println!("  the search returned NOTHING on {search_returned_nothing} of them");
+        println!(
+            "  candidates the generator offered above what the search returned: {better_offered}"
+        );
+        println!(
+            "  of those, INDIVIDUALLY reachable by the same route query: {better_individually_reachable} ({:.1}%)",
+            better_individually_reachable as f64 / better_offered.max(1) as f64 * 100.0
+        );
+        println!(
+            "  settler-turns where a strictly better REACHABLE site was skipped: {turns_with_a_reachable_better_site} ({:.1}%)",
+            turns_with_a_reachable_better_site as f64 / settler_turns.max(1) as f64 * 100.0
+        );
+        if !best_gap.is_empty() {
+            println!(
+                "  when skipped, the value left behind was median {:.1} (p90 {:.1}, max {:.1})",
+                best_gap[best_gap.len() / 2],
+                best_gap[best_gap.len() * 9 / 10],
+                best_gap[best_gap.len() - 1]
+            );
+        }
+        println!();
+    }
+
+    /// Census, not an assertion: is `settle_siting_census` measuring the site
+    /// or measuring the city that was just built on it?
+    ///
+    /// `settle_value` skips any tile another city owns:
+    /// `if t.owner_city.is_some() && p != pos { continue; }`. A city claims its
+    /// centre and all six ring-one tiles the moment it is founded, and ring one
+    /// carries the full weight in that sum while ring two is discounted to
+    /// 0.45. So scoring the chosen site *after* founding strips it of its
+    /// highest-weighted contributions, while rival candidates four or more
+    /// tiles away keep theirs intact.
+    ///
+    /// If that is what `settle_siting_census` measured, its gap is an artifact
+    /// of the measurement rather than a fact about the decision, and the whole
+    /// "settle siting is the one unsaturated city axis" claim falls.
+    ///
+    /// Run with `cargo test --release settle_value_before_and_after_founding -- --ignored --nocapture`.
+    #[test]
+    #[ignore = "census, not an assertion; run explicitly with --nocapture"]
+    fn settle_value_before_and_after_founding() {
+        let scorer = AdvancedAi::new();
+        let mut before_after: Vec<(f64, f64)> = Vec::new();
+
+        for map in 0..8u64 {
+            let mut game = Game::new_full(4, 24, 16, 470_000 + map, 200, 1, false);
+            let mut ais: Vec<AdvancedAi> =
+                (0..game.players.len()).map(|_| AdvancedAi::new()).collect();
+            game.set_fog_memory(false);
+            let mut known: BTreeSet<u32> = game.player_city_ids(0).into_iter().collect();
+            while game.winner.is_none() && game.turn <= game.max_turns {
+                let pid = game.current;
+                // Score every tile a settler is standing on BEFORE the turn
+                // runs, which is the last moment the site is still unowned.
+                let mut pre: BTreeMap<Pos, f64> = BTreeMap::new();
+                if pid == 0 {
+                    for uid in game.player_unit_ids(0) {
+                        if game.units[&uid].kind == "settler" {
+                            let pos = game.units[&uid].pos;
+                            pre.insert(pos, scorer.settle_value(&game, 0, pos));
+                        }
+                    }
+                }
+                ais[pid].take_turn(&mut game, pid);
+                if game.winner.is_none() && game.current == pid {
+                    let _ = game.apply(pid, &crate::game::Action::EndTurn);
+                }
+                if pid != 0 {
+                    continue;
+                }
+                for cid in game.player_city_ids(0) {
+                    if !known.insert(cid) {
+                        continue;
+                    }
+                    let city = &game.cities[&cid];
+                    if city.captured_from.is_some() {
+                        continue;
+                    }
+                    if let Some(before) = pre.get(&city.pos) {
+                        let after = scorer.settle_value(&game, 0, city.pos);
+                        before_after.push((*before, after));
+                    }
+                }
+            }
+        }
+
+        let n = before_after.len().max(1) as f64;
+        let before: f64 = before_after.iter().map(|(b, _)| b).sum::<f64>() / n;
+        let after: f64 = before_after.iter().map(|(_, a)| a).sum::<f64>() / n;
+        println!("\n=== settle_value before and after founding: {} sites ===", before_after.len());
+        println!("  mean settle_value the turn BEFORE the city existed: {before:.1}");
+        println!("  mean settle_value once the city owns its ring one:  {after:.1}");
+        println!(
+            "  founding the city destroys {:.1}% of its own site's measured value",
+            (1.0 - after / before.max(1e-9)) * 100.0
+        );
         println!();
     }
 }

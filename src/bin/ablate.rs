@@ -9,17 +9,19 @@
 //!
 //! ```bash
 //! cargo run --release --bin ablate -- --grant modernity --pairs 60 --players 4
-//! cargo run --release --bin ablate -- --grant all --pairs 40
+//! cargo run --release --bin ablate -- --grant treasury,ground --pairs 40
+//! cargo run --release --bin ablate -- --grant all --ai strategic_deep --speed online
 //! ```
 //!
 //! `--grant none` is the control and must land at parity; if it does not, the
 //! harness is reporting its own noise as headroom.
 use civvis::ai::{AdvancedAi, Ai, VictoryTarget};
+use civvis::elo::{builtin_ai, builtin_provenance, BUILTIN_AIS, EVAL_ONLY_AIS};
 use civvis::game::{default_difficulty, Action, Game, GameOptions};
-use civvis::rules::Rules;
-use std::collections::BTreeSet;
-use civvis::setup::MapSize;
 use civvis::oracle::{Grant, Oracle};
+use civvis::rules::Rules;
+use civvis::setup::MapSize;
+use std::collections::BTreeSet;
 
 fn number(args: &[String], key: &str, default: i64) -> i64 {
     args.iter()
@@ -37,13 +39,52 @@ fn text(args: &[String], key: &str, default: &str) -> String {
         .unwrap_or_else(|| default.to_string())
 }
 
+fn known_ai(name: &str) -> bool {
+    BUILTIN_AIS.contains(&name) || EVAL_ONLY_AIS.contains(&name)
+}
+
+/// Parse one grant, `all`, or a comma-separated set sharing one control.
+fn parse_grants(requested: &str) -> Result<Vec<Grant>, String> {
+    if requested == "all" {
+        return Ok(Grant::ALL.to_vec());
+    }
+    let mut grants = Vec::new();
+    for name in requested.split(',') {
+        if name.is_empty() || name == "all" {
+            return Err(format!("invalid grant list {requested:?}"));
+        }
+        let grant = Grant::from_id(name).ok_or_else(|| format!("unknown grant {name:?}"))?;
+        if !grants.contains(&grant) {
+            grants.push(grant);
+        }
+    }
+    if grants.is_empty() {
+        return Err("grant list is empty".to_string());
+    }
+    Ok(grants)
+}
+
 /// One game. `oracle_seat` is the seat holding the grant; every other major
 /// plays the stock agent. Returns whether the granted seat won, and how many
 /// times its grant fired.
-fn play(options: GameOptions, oracle_seat: usize, grant: Grant) -> (bool, u64) {
+fn play(options: GameOptions, oracle_seat: usize, grant: Grant, ai_name: &str) -> (bool, u64) {
     let mut game = Game::new_with(options);
-    let mut stock = AdvancedAi::fleet(&game);
-    let mut oracle = Oracle::new(AdvancedAi::new(), grant);
+    let mut stock: Vec<Box<dyn Ai>> = game
+        .players
+        .iter()
+        .map(|player| {
+            let name = if player.is_minor || player.is_barbarian {
+                "basic"
+            } else {
+                ai_name
+            };
+            builtin_ai(name, game.seed.wrapping_add(player.id as u64))
+        })
+        .collect();
+    let mut oracle = Oracle::new(
+        builtin_ai(ai_name, game.seed.wrapping_add(oracle_seat as u64)),
+        grant,
+    );
     while game.winner.is_none() && game.turn <= game.max_turns {
         let pid = game.current;
         if pid == oracle_seat {
@@ -119,6 +160,26 @@ fn run(grants: &[Grant], args: &[String]) {
     let height = number(args, "--height", default_height as i64).max(8) as i32;
     let city_states =
         number(args, "--city-states", size.default_city_states as i64).max(0) as usize;
+    let speed = text(args, "--speed", &civvis::game::default_speed());
+    let ai_name = text(args, "--ai", "advanced");
+    if !known_ai(&ai_name) {
+        eprintln!("unknown AI {ai_name:?}; choose a builtin or evaluator-only AI name");
+        std::process::exit(2);
+    }
+    let rules = Rules::embedded();
+    if !rules.speeds.contains_key(&speed) {
+        eprintln!("unknown game speed {speed:?}");
+        std::process::exit(2);
+    }
+    let provenance = builtin_provenance(&ai_name, "evolved");
+    println!("agent: {}", provenance.line());
+    if provenance.degraded() {
+        eprintln!(
+            "refusing to record {ai_name:?}: it resolves to {:?}",
+            provenance.effective
+        );
+        std::process::exit(3);
+    }
     // A grant's p-value says whether a subsystem limits the agent, not by how
     // much. The difficulty ladder supplies the missing scale: the granted seat
     // plays the human side of the handicap and its opponents the AI side, so
@@ -126,10 +187,18 @@ fn run(grants: &[Grant], args: &[String]) {
     // advantage is worth on this exact harness. Every other grant can then be
     // read against it instead of against nothing.
     let difficulty = text(args, "--difficulty", &default_difficulty());
-    if !Rules::embedded().difficulties.contains_key(&difficulty) {
+    if !rules.difficulties.contains_key(&difficulty) {
         eprintln!("unknown difficulty {difficulty:?}");
         std::process::exit(2);
     }
+    println!(
+        "profile: {players}p {width}x{height}, {city_states} city-states, \
+{turns} {speed} turns, seed {seed}, {jobs} jobs, difficulty {difficulty}"
+    );
+    println!(
+        "sampling seats 0 and {}; fixed stock civilizations; Basic city-states/barbarians",
+        players - 1
+    );
 
     // Every map is played from two different seats so a map that simply
     // favours one start cannot be read as evidence about a grant.
@@ -142,9 +211,16 @@ fn run(grants: &[Grant], args: &[String]) {
         .collect();
 
     let options_for = |cell: Cell| {
-        let mut options =
-            GameOptions::new(players, width, height, seed + cell.map as u64, turns, city_states);
+        let mut options = GameOptions::new(
+            players,
+            width,
+            height,
+            seed + cell.map as u64,
+            turns,
+            city_states,
+        );
         options.difficulty = difficulty.clone();
+        options.speed = speed.clone();
         // Only the granted seat sits on the human side of the ladder, so the
         // handicap moves with the grant rather than with the map.
         options.human_seats = BTreeSet::from([cell.seat]);
@@ -157,10 +233,24 @@ fn run(grants: &[Grant], args: &[String]) {
     // averaged over. Comparing a granted seat's raw win rate against 1/players
     // instead would have to carry all of that variance, which at these sample
     // sizes is most of the signal.
-    println!("playing {} control games at difficulty {difficulty}...", cells.len());
-    let control: Vec<bool> = civvis::parallel::map(cells.len(), jobs, |index| {
-        play(options_for(cells[index]), cells[index].seat, Grant::None).0
-    });
+    println!(
+        "playing {} control games: {ai_name}, {speed} speed, difficulty {difficulty}...",
+        cells.len()
+    );
+    let control: Vec<bool> = civvis::parallel::map_reporting(
+        cells.len(),
+        jobs,
+        |index| {
+            play(
+                options_for(cells[index]),
+                cells[index].seat,
+                Grant::None,
+                &ai_name,
+            )
+            .0
+        },
+        |index, _| println!("  control progress {}/{}", index + 1, cells.len()),
+    );
     let control_wins = control.iter().filter(|won| **won).count();
     println!(
         "control: granted seat won {control_wins}/{} = {:.1}% (parity {:.1}%)\n",
@@ -170,9 +260,27 @@ fn run(grants: &[Grant], args: &[String]) {
     );
 
     for &grant in grants {
-        let played = civvis::parallel::map(cells.len(), jobs, |index| {
-            play(options_for(cells[index]), cells[index].seat, grant)
-        });
+        println!("playing {} treatment games for {}...", cells.len(), grant.name());
+        let played = civvis::parallel::map_reporting(
+            cells.len(),
+            jobs,
+            |index| {
+                play(
+                    options_for(cells[index]),
+                    cells[index].seat,
+                    grant,
+                    &ai_name,
+                )
+            },
+            |index, _| {
+                println!(
+                    "  {} progress {}/{}",
+                    grant.name(),
+                    index + 1,
+                    cells.len()
+                )
+            },
+        );
         let treated: Vec<bool> = played.iter().map(|(won, _)| *won).collect();
         let fired: u64 = played.iter().map(|(_, fired)| *fired).sum();
 
@@ -192,17 +300,32 @@ fn run(grants: &[Grant], args: &[String]) {
         let p = exact_two_sided(helped, discordant);
         let n = cells.len() as f64;
 
-        println!("grant {:<10} {pairs} maps x 2 seats, {players} players, {turns} turns",
-            grant.name());
-        println!("  granted seat won    {wins}/{} = {:.1}%   (control {control_wins} = {:.1}%)",
-            cells.len(), 100.0 * wins as f64 / n, 100.0 * control_wins as f64 / n);
-        println!("  matched pairs       grant won where control lost: {helped}; \
-lost where control won: {hurt}; unchanged: {}", cells.len() as u32 - discordant);
+        println!(
+            "grant {:<10} {pairs} maps x 2 seats, {players} players, {turns} {speed} turns, {ai_name}",
+            grant.name()
+        );
+        println!(
+            "  granted seat won    {wins}/{} = {:.1}%   (control {control_wins} = {:.1}%)",
+            cells.len(),
+            100.0 * wins as f64 / n,
+            100.0 * control_wins as f64 / n
+        );
+        println!(
+            "  matched pairs       grant won where control lost: {helped}; \
+lost where control won: {hurt}; unchanged: {}",
+            cells.len() as u32 - discordant
+        );
         println!("  McNemar exact       p={p:.4} over {discordant} discordant cells");
-        println!("  grant fired         {fired} times ({:.1} per game)", fired as f64 / n);
+        println!(
+            "  grant fired         {fired} times ({:.1} per game)",
+            fired as f64 / n
+        );
         if grant != Grant::None && fired == 0 {
-            println!("  WARNING: the grant never fired, so this measured the stock \
-agent under an oracle's name and says nothing about {}", grant.name());
+            println!(
+                "  WARNING: the grant never fired, so this measured the stock \
+agent under an oracle's name and says nothing about {}",
+                grant.name()
+            );
         }
         let verdict = if grant == Grant::None {
             if discordant == 0 {
@@ -281,6 +404,11 @@ fn run_best_lane(args: &[String]) {
     let height = number(args, "--height", default_height as i64).max(8) as i32;
     let city_states =
         number(args, "--city-states", size.default_city_states as i64).max(0) as usize;
+    let speed = text(args, "--speed", &civvis::game::default_speed());
+    if !Rules::embedded().speeds.contains_key(&speed) {
+        eprintln!("unknown game speed {speed:?}");
+        std::process::exit(2);
+    }
 
     let cells: Vec<Cell> = (0..pairs)
         .flat_map(|map| {
@@ -289,8 +417,16 @@ fn run_best_lane(args: &[String]) {
                 .map(move |seat| Cell { map, seat })
         })
         .collect();
-    let options_for = |cell: Cell| {
-        GameOptions::new(players, width, height, seed + cell.map as u64, turns, city_states)
+    let options_for = |cell: Cell| GameOptions {
+        speed: speed.clone(),
+        ..GameOptions::new(
+            players,
+            width,
+            height,
+            seed + cell.map as u64,
+            turns,
+            city_states,
+        )
     };
 
     // One job per (cell, lane) so the whole grid runs across every core
@@ -298,7 +434,7 @@ fn run_best_lane(args: &[String]) {
     let lanes = VictoryTarget::ALL;
     let total = cells.len() * (lanes.len() + 1);
     println!(
-        "playing {total} games: {} cells x ({} lanes + adaptive), {players} players, {turns} turns",
+        "playing {total} games: {} cells x ({} lanes + adaptive), {players} players, {turns} {speed} turns",
         cells.len(),
         lanes.len()
     );
@@ -337,7 +473,7 @@ fn run_best_lane(args: &[String]) {
     let discordant = best_only + adaptive_only;
     let p = exact_two_sided(best_only, discordant);
     println!();
-    println!("best-lane oracle   {} cells, {players} players, {turns} turns", cells.len());
+    println!("best-lane oracle   {} cells, {players} players, {turns} {speed} turns", cells.len());
     println!("  adaptive won        {adaptive_wins}/{} = {:.1}%   (parity {:.1}%)",
         cells.len(), 100.0 * adaptive_wins as f64 / n, 100.0 / players as f64);
     println!("  SOME lane won       {best_wins}/{} = {:.1}%",
@@ -367,6 +503,10 @@ is not a choice worth improving"
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     if text(&args, "--mode", "grants") == "best-lane" {
+        if args.iter().any(|arg| arg == "--ai") {
+            eprintln!("--ai applies only to grant mode; best-lane is an AdvancedAi experiment");
+            std::process::exit(2);
+        }
         println!(
             "Best-lane oracle. Each cell is played once per victory lane with the seat\n\
              committed to it from turn one, and once adaptively. The maximum over lanes is\n\
@@ -377,18 +517,14 @@ fn main() {
         return;
     }
     let requested = text(&args, "--grant", "all");
-    let grants: Vec<Grant> = if requested == "all" {
-        Grant::ALL.to_vec()
-    } else {
-        match Grant::from_id(&requested) {
-            Some(grant) => vec![grant],
-            None => {
-                eprintln!(
-                    "unknown grant {requested:?}; choose from {:?} or all",
-                    Grant::ALL.map(Grant::name)
-                );
-                std::process::exit(2);
-            }
+    let grants = match parse_grants(&requested) {
+        Ok(grants) => grants,
+        Err(error) => {
+            eprintln!(
+                "{error}; choose one or more of {:?}, or all",
+                Grant::ALL.map(Grant::name)
+            );
+            std::process::exit(2);
         }
     };
     println!(
@@ -398,4 +534,28 @@ fn main() {
          playable agent. `none` is the control and must land at parity.\n"
     );
     run(&grants, &args);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{known_ai, parse_grants};
+    use civvis::oracle::Grant;
+
+    #[test]
+    fn comma_separated_grants_share_a_control_without_duplicates() {
+        assert_eq!(
+            parse_grants("treasury,ground,treasury").unwrap(),
+            vec![Grant::Treasury, Grant::Ground]
+        );
+        assert_eq!(parse_grants("all").unwrap(), Grant::ALL);
+        assert!(parse_grants("all,ground").is_err());
+        assert!(parse_grants("treasury,unknown").is_err());
+    }
+
+    #[test]
+    fn deployment_controllers_are_known_ai_names() {
+        assert!(known_ai("advanced"));
+        assert!(known_ai("strategic_deep"));
+        assert!(!known_ai("strategic_typo"));
+    }
 }
