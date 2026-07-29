@@ -87,20 +87,32 @@ if not armed then
 else
 	-- A popup context is hidden except while its popup is up, which is how the
 	-- shipped code itself tests for showing (ExclusivePopupManager checks
-	-- IsHidden before it unlocks). Watching that rather than an event means
-	-- every way a screen can be raised -- a wonder, a second wonder queued
-	-- behind it, a reload restoring one -- is caught by the same test.
-	local remaining = -1;
+	-- IsHidden before it unlocks). Watching that rather than a show handler
+	-- catches every way a screen can be raised -- a wonder, a second wonder
+	-- queued behind it, a reload restoring one -- and clobbers nothing: two of
+	-- these screens already register a show handler of their own.
+	--
+	-- The stopwatch starts on the *change* from down to up, never on merely
+	-- being up. TechCivicCompletedPopup is authored visible and is hidden by
+	-- the popup manager afterwards, so "not hidden" on the first frame of a
+	-- game is not a screen anybody is looking at. Waiting for the edge costs
+	-- nothing -- an update ticks whether or not its context is showing, which
+	-- is how the shipped FiraxisLiveMessaging times its own auto-close -- and
+	-- it makes a wrong guess here cost a screen that does not close rather
+	-- than a screen closed that was never open.
+	local showing = false;
+	local remaining = 0;
 	local shown = 0;
 	local closes = 0;
 
 	local function tick(fDTime)
 		if ContextPtr:IsHidden() then
-			remaining = -1;
+			showing = false;
 			closes = 0;
 			return;
 		end
-		if remaining < 0 then
+		if not showing then
+			showing = true;
 			remaining = SECONDS;
 			shown = 0;
 		end
@@ -112,11 +124,13 @@ else
 		-- Re-armed before the close, not after: a screen with more
 		-- announcements queued behind it stays up, and the next one is owed
 		-- its own two seconds rather than inheriting this one's spent clock.
-		remaining = -1;
+		local upFor = shown;
+		remaining = SECONDS;
+		shown = 0;
 		closes = closes + 1;
 		local ended = false;
 		pcall(function() ended = endScreen(); end);
-		report("autoclose", string.format(',"after":%.2f,"ended":%s', shown, tostring(ended)));
+		report("autoclose", string.format(',"after":%.2f,"ended":%s', upFor, tostring(ended)));
 		if closes >= GIVE_UP_AFTER then
 			ContextPtr:ClearUpdate();
 			report("autoclose_stuck", string.format(',"attempts":%d', closes));
