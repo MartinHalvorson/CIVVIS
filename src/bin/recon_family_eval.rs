@@ -6,13 +6,15 @@
 //! inference unit. `Game::max_turns` stays 250 while the external observer may
 //! continue the same stateful agents through turn 320.
 
-use civvis::ai::Ai;
-use civvis::elo::{builtin_ai, builtin_provenance};
-use civvis::game::{Action, Game, GameOptions, Item, VictoryConditions, default_difficulty};
+use civvis::ai::{Ai, Weights};
+use civvis::elo::builtin_ai;
+use civvis::evolve::Champion;
+use civvis::game::{default_difficulty, Action, Game, GameOptions, Item, VictoryConditions};
 use civvis::rules::Rules;
 use civvis::setup::{MapPoles, MapScript, MapSize, MapTopology};
 use civvis::strategic::StrategicAi;
 use std::collections::{BTreeMap, HashMap, HashSet};
+use std::sync::OnceLock;
 
 const NULL_MAPS: usize = 4;
 const NULL_SEED: u64 = 9_971_999;
@@ -22,6 +24,10 @@ const CONFIRM_MAPS: usize = 60;
 const CONFIRM_SEED: u64 = 9_973_000;
 const NOMINAL_TURNS: u32 = 250;
 const OBSERVE_THROUGH: u32 = 320;
+const FROZEN_AI: &str = "strategic_deep";
+const EMBEDDED_CHAMPION: &str = include_str!("../../data/evolved/best.json");
+const FROZEN_CHAMPION_GENERATION: u32 = 14;
+const FROZEN_CHAMPION_FNV1A: u64 = 0x40b1_fbb2_a5b8_8bc6;
 const DEPLOYMENT_PLAYERS: [usize; 7] = [4, 6, 8, 10, 5, 7, 9];
 const DEPLOYMENT_SCRIPTS: [MapScript; 9] = [
     MapScript::LandOnly,
@@ -43,16 +49,37 @@ const PROFILE_OVERRIDE_FLAGS: [&str; 6] = [
     "--map",
     "--shape",
 ];
-const REQUIRED_GATE_FLAGS: [&str; 8] = [
-    "--maps",
-    "--turns",
-    "--observe-through",
-    "--speed",
-    "--poles",
-    "--victories",
-    "--seed",
-    "--jobs",
-];
+
+const fn fnv1a(bytes: &[u8]) -> u64 {
+    let mut hash = 0xcbf2_9ce4_8422_2325;
+    let mut index = 0;
+    while index < bytes.len() {
+        hash ^= bytes[index] as u64;
+        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+        index += 1;
+    }
+    hash
+}
+
+fn frozen_champion_weights() -> Weights {
+    static WEIGHTS: OnceLock<Weights> = OnceLock::new();
+    WEIGHTS
+        .get_or_init(|| {
+            assert_eq!(
+                fnv1a(EMBEDDED_CHAMPION.as_bytes()),
+                FROZEN_CHAMPION_FNV1A,
+                "data/evolved/best.json changed after the recon-cap controller pin"
+            );
+            let champion: Champion = serde_json::from_str(EMBEDDED_CHAMPION)
+                .expect("the committed advanced_evolved champion must be valid JSON");
+            assert_eq!(
+                champion.gen, FROZEN_CHAMPION_GENERATION,
+                "recon-cap champion generation changed"
+            );
+            champion.weights
+        })
+        .clone()
+}
 
 fn number(args: &[String], key: &str, default: i64) -> i64 {
     let Some(index) = args.iter().position(|arg| arg == key) else {
@@ -76,6 +103,45 @@ fn text(args: &[String], key: &str, default: &str) -> String {
         eprintln!("{key} requires a value");
         std::process::exit(2);
     })
+}
+
+fn flag_once(args: &[String], key: &str) -> bool {
+    args.iter().filter(|arg| arg.as_str() == key).count() == 1
+}
+
+fn value_once(args: &[String], key: &str, expected: &str) -> bool {
+    let positions = args
+        .iter()
+        .enumerate()
+        .filter(|(_, arg)| arg.as_str() == key)
+        .map(|(index, _)| index)
+        .collect::<Vec<_>>();
+    positions.len() == 1 && args.get(positions[0] + 1).map(String::as_str) == Some(expected)
+}
+
+/// Only the byte-for-byte registered invocation may spend a phase. Diagnostic
+/// defaults remain convenient, but a missing, duplicate, noncanonical, or
+/// extra argument cannot inherit an official PASS/STOP label.
+fn registered_profile(args: &[String], null: bool, maps: &str, seed: &str) -> bool {
+    let expected_values = [
+        ("--ai", FROZEN_AI),
+        ("--maps", maps),
+        ("--turns", "250"),
+        ("--observe-through", "320"),
+        ("--speed", "online"),
+        ("--poles", "poles"),
+        ("--victories", "science,culture,domination"),
+        ("--seed", seed),
+        ("--jobs", "6"),
+    ];
+    let expected_len = expected_values.len() * 2 + 2 + usize::from(null);
+    args.len() == expected_len
+        && flag_once(args, "--deployment-mix")
+        && flag_once(args, "--randomize-civs")
+        && flag_once(args, "--null") == null
+        && expected_values
+            .iter()
+            .all(|(key, value)| value_once(args, key, value))
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -337,9 +403,11 @@ struct GameResult {
     serialized_game: Option<String>,
 }
 
-fn strategic_deep_treatment(enabled: bool) -> Box<dyn Ai> {
-    let mut ai =
-        StrategicAi::with_weights(civvis::evolve::load_champion("evolved").unwrap_or_default());
+fn pinned_strategic_deep(enabled: bool) -> Box<dyn Ai> {
+    // The deployed controller currently has no promoted value net. Keep that
+    // score-share behavior explicit so a cwd-local artifact cannot change a
+    // registered arm while leaving the default-off null internally exact.
+    let mut ai = StrategicAi::score_only_with_weights(frozen_champion_weights());
     ai.review_every = 20;
     ai.horizon = 80;
     ai.set_recon_family_cap(enabled);
@@ -359,10 +427,8 @@ fn controller_fleet(g: &Game, focal: usize, mode: FocalMode, seed: u64) -> Vec<B
         .map(|player| {
             if player.is_minor || player.is_barbarian {
                 builtin_ai("basic", seed.wrapping_add(player.id as u64))
-            } else if player.id == focal && mode != FocalMode::Stock {
-                strategic_deep_treatment(mode == FocalMode::CapOn)
             } else {
-                builtin_ai("strategic_deep", seed.wrapping_add(player.id as u64))
+                pinned_strategic_deep(player.id == focal && mode == FocalMode::CapOn)
             }
         })
         .collect()
@@ -956,6 +1022,11 @@ fn main() {
         _ => civvis::parallel::default_jobs(),
     }
     .clamp(1, 6);
+    let ai_name = text(&args, "--ai", FROZEN_AI);
+    if ai_name != FROZEN_AI {
+        eprintln!("this experiment is frozen for {FROZEN_AI}; got controller {ai_name:?}");
+        std::process::exit(2);
+    }
     let speed = text(&args, "--speed", "online");
     let difficulty = text(&args, "--difficulty", &default_difficulty());
     let poles_name = text(&args, "--poles", "poles");
@@ -985,15 +1056,12 @@ fn main() {
         eprintln!("unknown difficulty {difficulty:?}");
         std::process::exit(2);
     }
-    let provenance = builtin_provenance("strategic_deep", "evolved");
-    println!("agent: {}", provenance.line());
-    if provenance.degraded() {
-        eprintln!(
-            "refusing to record strategic_deep: it resolves to {:?}",
-            provenance.effective
-        );
-        std::process::exit(3);
-    }
+    // Assert the embedded controller identity before constructing any game.
+    let _ = frozen_champion_weights();
+    println!(
+        "agent: {FROZEN_AI}; embedded champion generation {FROZEN_CHAMPION_GENERATION}, \
+         fnv1a:{FROZEN_CHAMPION_FNV1A:016x}; score-share evaluator; review 20, horizon 80"
+    );
 
     println!("Recon-family production-cap evaluator");
     if deployment_mix {
@@ -1310,35 +1378,19 @@ fn main() {
         );
     }
 
-    let exact_profile = deployment_mix
-        && args.iter().filter(|arg| *arg == "--deployment-mix").count() == 1
-        && args.iter().filter(|arg| *arg == "--randomize-civs").count() == 1
-        && REQUIRED_GATE_FLAGS
-            .iter()
-            .all(|flag| args.iter().filter(|arg| *arg == flag).count() == 1)
-        && turns == NOMINAL_TURNS
-        && observe_through == OBSERVE_THROUGH
-        && speed == "online"
-        && requested_jobs == 6
-        && difficulty == default_difficulty()
-        && map_poles == MapPoles::Poles
-        && randomize_civs
-        && victories == expected_victories;
-
     if null_replay {
         if exact_mismatches == 0 {
-            if exact_profile
-                && args.iter().filter(|arg| *arg == "--null").count() == 1
-                && maps == NULL_MAPS
+            if maps == NULL_MAPS
                 && seed == NULL_SEED
+                && registered_profile(&args, true, "4", "9971999")
             {
                 println!(
-                    "frozen default-off null: PASS — all {} builtin/custom serialized worlds reproduced exactly",
+                    "frozen default-off null: PASS — all {} pinned/custom serialized worlds reproduced exactly",
                     control.games
                 );
             } else {
                 println!(
-                    "diagnostic default-off null: PASS — all {} builtin/custom serialized worlds reproduced exactly; no registered gate spent",
+                    "diagnostic default-off null: PASS — all {} pinned/custom serialized worlds reproduced exactly; no registered gate spent",
                     control.games
                 );
             }
@@ -1352,7 +1404,10 @@ fn main() {
         return;
     }
 
-    if exact_profile && maps == SCREEN_MAPS && seed == SCREEN_SEED {
+    if maps == SCREEN_MAPS
+        && seed == SCREEN_SEED
+        && registered_profile(&args, false, "12", "9972000")
+    {
         println!(
             "screen gate: {}",
             if screen_passes(facts) {
@@ -1361,7 +1416,10 @@ fn main() {
                 "STOP — retain stock; do not tune, retry, or inspect confirmation"
             }
         );
-    } else if exact_profile && maps == CONFIRM_MAPS && seed == CONFIRM_SEED {
+    } else if maps == CONFIRM_MAPS
+        && seed == CONFIRM_SEED
+        && registered_profile(&args, false, "60", "9973000")
+    {
         println!(
             "confirmation gate: {}",
             if confirmation_passes(facts) {
@@ -1439,7 +1497,38 @@ mod tests {
     }
 
     #[test]
-    fn custom_default_off_entrant_is_serialized_world_identical_to_builtin() {
+    fn controller_and_registered_invocation_are_pinned_exactly() {
+        assert_eq!(fnv1a(EMBEDDED_CHAMPION.as_bytes()), FROZEN_CHAMPION_FNV1A);
+        let champion: Champion = serde_json::from_str(EMBEDDED_CHAMPION).unwrap();
+        assert_eq!(champion.gen, FROZEN_CHAMPION_GENERATION);
+        let _ = frozen_champion_weights();
+
+        let args = "--null --deployment-mix --ai strategic_deep --maps 4 --turns 250 \
+                    --observe-through 320 --speed online --poles poles --randomize-civs \
+                    --victories science,culture,domination --seed 9971999 --jobs 6"
+            .split_whitespace()
+            .map(str::to_string)
+            .collect::<Vec<_>>();
+        assert!(registered_profile(&args, true, "4", "9971999"));
+
+        let mut noncanonical = args.clone();
+        *noncanonical
+            .iter_mut()
+            .find(|arg| arg.as_str() == "250")
+            .unwrap() = "0250".to_string();
+        assert!(!registered_profile(&noncanonical, true, "4", "9971999"));
+
+        let mut duplicate = args.clone();
+        duplicate.extend(["--jobs".to_string(), "6".to_string()]);
+        assert!(!registered_profile(&duplicate, true, "4", "9971999"));
+
+        let mut extra = args;
+        extra.extend(["--difficulty".to_string(), "prince".to_string()]);
+        assert!(!registered_profile(&extra, true, "4", "9971999"));
+    }
+
+    #[test]
+    fn custom_default_off_entrant_is_serialized_world_identical_to_pinned_stock() {
         let options = GameOptions::new(2, 20, 14, 99_719, 1, 0);
         let stock = play(options.clone(), 0, FocalMode::Stock, 1, true);
         let custom_off = play(options, 0, FocalMode::CapOff, 1, true);
