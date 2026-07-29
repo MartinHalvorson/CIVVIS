@@ -38,7 +38,7 @@ pub const BUILTIN_AIS: [&str; 10] = [
 /// tournament ratings. Keeping them out of `BUILTIN_AIS` prevents a control
 /// factory from being pooled into the same player/leader rating key as
 /// its treatment.
-pub const EVAL_ONLY_AIS: [&str; 65] = [
+pub const EVAL_ONLY_AIS: [&str; 64] = [
     "advanced_congress_counter",
     "advanced_congress_votes",
     "advanced_congress_counter_hard",
@@ -70,7 +70,6 @@ pub const EVAL_ONLY_AIS: [&str; 65] = [
     "advanced_parallel_settlers",
     "advanced_settler_first",
     "advanced_prophet_first",
-    "advanced_reactor_marginal",
     "advanced_league_top",
     "strategic_cheap",
     "advanced_relief_scoped",
@@ -761,14 +760,6 @@ pub fn builtin_ai(name: &str, seed: u64) -> Box<dyn Ai> {
         "advanced_lane_reachable" => {
             let mut ai = AdvancedAi::new();
             ai.refuse_unreachable_lanes = true;
-            Box::new(ai)
-        }
-        // Frozen default-off treatment from `docs/REACTOR_CONVERSION.md`:
-        // compare a conversion's target utility with the plant already owned
-        // instead of repeatedly paying for the best legal absolute target.
-        "advanced_reactor_marginal" => {
-            let mut ai = AdvancedAi::new();
-            ai.reactor_marginal = true;
             Box::new(ai)
         }
         // Treatment for the routing axis: identical to `advanced` except that
@@ -1516,7 +1507,6 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "advanced_parallel_settlers" => (Vec::new(), "advanced_parallel_settlers"),
         "advanced_settler_first" => (Vec::new(), "advanced_settler_first"),
         "advanced_prophet_first" => (Vec::new(), "advanced_prophet_first"),
-        "advanced_reactor_marginal" => (Vec::new(), "advanced_reactor_marginal"),
         "advanced_league_top" => (Vec::new(), "advanced_league_top"),
         "strategic_cheap" => (vec![genome, value(false)], "strategic_cheap"),
         "advanced_blind_to_leaders" => (Vec::new(), "advanced_blind_to_leaders"),
@@ -2032,7 +2022,7 @@ mod tests {
             // Anything else reaching that state fell through to the
             // catch-all and is claiming to need nothing while quietly
             // needing a net.
-            const SCRIPTED: [&str; 37] = [
+            const SCRIPTED: [&str; 36] = [
                 "advanced",
                 "advanced_blind_to_leaders",
                 "advanced_rush",
@@ -2064,7 +2054,6 @@ mod tests {
                 "advanced_measured_dedication",
                 "advanced_parallel_settlers",
                 "advanced_prophet_first",
-                "advanced_reactor_marginal",
                 "advanced_relief_scoped",
                 "advanced_settler_first",
                 "advanced_v1",
@@ -2090,6 +2079,17 @@ mod tests {
             }
         }
         fs::remove_dir_all(dir).unwrap();
+    }
+
+    /// The reactor experiment pins generation 14 inside its dedicated runner.
+    /// A public factory once reconstructed this name with default weights,
+    /// silently changing the controller under treatment.
+    #[test]
+    fn reactor_marginal_treatment_stays_private_to_its_pinned_runner() {
+        const NAME: &str = "advanced_reactor_marginal";
+        assert!(!BUILTIN_AIS.contains(&NAME));
+        assert!(!EVAL_ONLY_AIS.contains(&NAME));
+        assert_eq!(builtin_provenance(NAME, "unused").effective, "basic");
     }
 
     #[test]
