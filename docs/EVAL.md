@@ -5381,3 +5381,65 @@ raw/constant/reliability Brier and log loss, probability quantiles, override
 mean-return signs, and doctrine wins/ties/losses. Any development failure keeps
 both blind corpora untouched. Even external success earns a separate mirrored
 gameplay A/B; this experiment changes no game policy.
+
+### Result: absolute context overfits and its confident tail is wrong
+
+The fixed development set contains 201 decisions from 52 independent games:
+the 76 decisions in the prior ranker holdout plus the 125 independent context
+decisions. Five-fold game grouping held out 8/10/14/10/10 games. Every fold
+learned its own normalization, reliability head, and base rate from the other
+games; the held-out base rates ranged from 0.498 to 0.521.
+
+The frozen ranker remains directionally useful across the combined set:
+ungated regret falls from 0.0124 for the expert to 0.0071, a game-macro return
+lift of **+0.0053 ± 0.0031**. The reliability head does not identify that gain:
+
+| out-of-fold metric | raw margin | fold constant | context reliability |
+|---|---:|---:|---:|
+| Brier | 0.02306 | **0.02331** | **0.03014** |
+| log loss | 0.69343 | **0.69394** | **0.70852** |
+| p50 / p90 / p99 / maximum | — | — | 0.515 / 0.636 / 0.735 / 0.762 |
+| 0.70 overrides | 0 | 0 | **4/201 (1.9% game-macro)** |
+| gated return lift vs expert | 0 | 0 | **-0.0003 ± 0.0003** |
+
+All four supposedly confident overrides were nonpositive by mean return: three
+ties and one loss. Across their 16 matched doctrines they recorded zero wins,
+13 ties, and three losses. This is not a threshold near-miss: coverage misses
+the required 5%, Brier is 29% worse than the fold constant, and the direction
+of gated return is negative.
+
+The failure is present in both sources rather than coming from one shifted
+corpus. Reliability Brier is 0.03225 versus a 0.02532 constant on the 76 prior
+holdout decisions, and 0.02882 versus 0.02205 on the 125 independent context
+decisions. The two confident overrides in the latter include the only
+mean-return loss, producing -0.0004 ± 0.0004 lift there. Meanwhile ungated
+ranker lift remains +0.0051 ± 0.0039 and +0.0054 ± 0.0045 respectively.
+
+The full-development fit reduces its own regularized loss from 0.69315 to
+0.67951, with weight L2 norm 0.4624, while out-of-fold log loss rises to
+0.70852. That gap is direct evidence of finite-sample overfit, not a reason to
+increase capacity. The frozen 6,891-byte artifact has SHA-256
+`f4a1361f778ba937e44421046ace48f0be59a07933889301dc391d2c420348b5`.
+
+The out-of-fold gate therefore **fails every condition**. The tool never opened
+a selection file. Standard seeds 948032-948063 and Online seeds
+947000-947031 remain untouched, and no gameplay A/B or integration was spent.
+
+> **Stop tuning this move-override corpus.** Better destinations measurably
+> exist and the frozen ranker finds some of their average value, but 52 games
+> do not support a trustworthy selective residual policy over 105 context
+> terms. Threshold lowering, a hidden layer, or feature selection on these same
+> folds would convert a clean rejection into adaptive overfitting.
+
+A future move learner needs materially more independent labeled games, a
+pretrained or much lower-dimensional representation, and nested selection
+before the preserved seeds are opened. Until then, gameplay work should pivot
+to strategic mechanisms whose hypotheses can be tested directly in mirrored
+full games rather than promoting this unresolved local surrogate.
+
+| claim | status |
+|---|---|
+| frozen destination ordering retains average value across 52 games | **supported (+0.0053 ± 0.0031)** |
+| absolute state/destination context predicts reliable overrides | **refuted out of fold (Brier 0.03014 vs 0.02331)** |
+| the 0.70 tail is safe and sufficiently broad | **refuted (1.9% coverage; 0 wins, 1 loss)** |
+| blind Standard selection or Online evaluation is warranted | **rejected without spending either corpus** |

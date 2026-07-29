@@ -935,6 +935,31 @@ fn main() {
     );
     let oof_predictions = out_of_fold(&development, steps, rate, l2);
     let oof_report = report(&development, &oof_predictions, threshold, "out-of-fold");
+    let mut old_examples = Vec::new();
+    let mut old_predictions = Vec::new();
+    let mut context_examples = Vec::new();
+    let mut context_predictions = Vec::new();
+    for (example, prediction) in development.iter().zip(&oof_predictions) {
+        if example.game < CONTEXT_SEED {
+            old_examples.push(example.clone());
+            old_predictions.push(*prediction);
+        } else {
+            context_examples.push(example.clone());
+            context_predictions.push(*prediction);
+        }
+    }
+    report(
+        &old_examples,
+        &old_predictions,
+        threshold,
+        "out-of-fold prior holdout",
+    );
+    report(
+        &context_examples,
+        &context_predictions,
+        threshold,
+        "out-of-fold independent context",
+    );
     let oof_pass = standard_pass(&oof_report);
     println!(
         "out-of-fold gate: {}",
