@@ -883,26 +883,38 @@ local function driveProduction(player, turn, force)
 			-- because the order never landed, so the city built nothing at all
 			-- for the whole game while the always-available floor sat unused
 			-- below a candidate that could never start.
+			-- ⚠ NO `goto` HERE. Civilization VI's script runtime is Lua 5.1 and
+			-- labels arrived in 5.2, so a `goto continue` loads fine under a
+			-- modern `luac -p` and then silently refuses to compile in the game.
+			-- That is not hypothetical: it cost run settler-20260729T224210Z,
+			-- which sat in a configured game for half an hour emitting only
+			-- `autoclose` events because THIS FILE never loaded. The autoclose
+			-- context lives in a separate file and kept working, which is what
+			-- made it look like a stalled game rather than a broken script.
 			local refused = {};
 			for _ = 1, 6 do
 				local name, row, why = chooseProduction(city, counts, #cities, turn, refused);
 				if row == nil then break; end
 				local params = buildParams(row);
-				if params == nil then refused[name] = true; goto continue; end
-				local ok = pcall(function()
-					CityManager.RequestOperation(city, CityOperationTypes.BUILD, params);
-				end);
-				-- The order is only real if the queue now holds something.
-				local started = try(function()
-					local queue = city:GetBuildQueue();
-					local hash = queue and queue:GetCurrentProductionTypeHash() or 0;
-					return hash ~= nil and hash ~= 0;
-				end, false);
-				emit("build", {
-					turn = turn,
-					city = try(function() return Locale.Lookup(city:GetName()); end, "?"),
-					item = name, reason = why, applied = ok, started = started,
-				});
+				local ok, started = false, false;
+				if params ~= nil then
+					ok = pcall(function()
+						CityManager.RequestOperation(city, CityOperationTypes.BUILD, params);
+					end);
+					-- The order is only real if the queue now holds something.
+					-- `pcall` returning true means the request did not throw, not
+					-- that the game accepted it.
+					started = try(function()
+						local queue = city:GetBuildQueue();
+						local hash = queue and queue:GetCurrentProductionTypeHash() or 0;
+						return hash ~= nil and hash ~= 0;
+					end, false);
+					emit("build", {
+						turn = turn,
+						city = try(function() return Locale.Lookup(city:GetName()); end, "?"),
+						item = name, reason = why, applied = ok, started = started,
+					});
+				end
 				if ok and started then
 					issued = issued + 1;
 					lastBuild[cityId] = { turn = turn, item = name };
@@ -914,7 +926,6 @@ local function driveProduction(player, turn, force)
 					break;
 				end
 				refused[name] = true;
-				::continue::
 			end
 		end
 	end
