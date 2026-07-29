@@ -5195,3 +5195,128 @@ coverage; lowering 0.70 on this corpus is not evidence.
 | the raw pairwise sigmoid reaches a selective 0.70 override region | **refuted (maximum 0.532; 0/76 overrides)** |
 | the fixed head transfers to Online | **not tested; external spend gate failed** |
 | the current head should control gameplay | **rejected before external evaluation or A/B** |
+
+## 2026-07-29 — PRE-REGISTRATION: calibrate ranking confidence on independent games
+
+The replica-aware head above ranked held-out moves in the right direction, but
+its raw score difference was not a calibrated probability: every prediction
+stayed between approximately 0.47 and 0.53. Lowering the override threshold on
+those observed games would spend the selection set twice. This experiment
+instead freezes that ranker and learns only a two-parameter probability map on
+new games before opening another new Standard selection set.
+
+**Hypothesis.** Independent Platt calibration of the frozen pairwise margin
+will identify a nonempty high-confidence tail whose 0.70-gated choices improve
+counterfactual return over the expert on fresh Standard games. If calibration
+only magnifies noise, held-out Brier score or return lift will reject it before
+the untouched Online profile is generated.
+
+The ranker is exactly the destination-only model selected above: seeds
+946000-946063, the existing 25% game-hash holdout, 171 training decisions, 80
+epochs, batch 32, rate 0.05, and L2 0.0001. It is regenerated deterministically
+from that command and then frozen; neither new Standard split contributes a
+ranking gradient. At each decision it selects the highest-scored non-expert
+sibling, retaining enumeration order on a score tie. Its raw margin is sibling
+score minus expert score.
+
+The regenerated frozen artifact is 1,896 bytes with SHA-256
+`2c93f4456b72d1acf548f1994c9ce49569fe158c7b8eb18f4c903b606ce1c463`.
+This pins the actual coefficients, not only their training recipe, before any
+calibration game is generated.
+
+Calibration uses one standardized scalar. The mean and population standard
+deviation of the frozen margins are learned on calibration games only, with a
+1e-6 standard-deviation floor. The target is the same Jeffreys posterior mean
+for that selected sibling against the expert: four matched return differences
+contribute wins, losses, or half-win exact ties to `Beta(0.5, 0.5)`. A
+monotone map `sigmoid(a * standardized_margin + b)` is fitted with full-batch
+gradient descent for 4,000 fixed steps at rate 0.05, L2 0.01 on `a` only, and
+`a` projected to [0, 20]. Every decision receives inverse game decision-count
+weight so one independent game is one calibration unit. There is no threshold
+search: the expert is replaced only at calibrated probability at least 0.70.
+
+The new data are fixed before collection:
+
+- calibration: **32** four-player 44x28 Standard games, seeds
+  948000-948031, no city-states, observations at turns 50/75/100/125;
+- blind Standard selection: **32** otherwise identical games, seeds
+  948032-948063, generated only after the calibrator implementation and
+  parameters are frozen;
+- untouched external test, generated only after a selection pass: **32**
+  six-player 74x46 Online games, seeds 947000-947031, six city-states,
+  observations at turns 70/100/130/160;
+- every corpus uses three same-unit alternatives, an 80-round horizon, the
+  four distinct doctrine rotations, and zero tolerated rejected branches,
+  repeat mismatches, or observation errors. Additional replicas are not
+  repetitions: the emitter has exactly four distinct doctrines.
+
+Selection passes only if all three preregistered conditions hold on seeds
+948032-948063: calibrated Brier score is lower than the frozen raw sigmoid,
+0.70-gated game-macro return lift over the expert is positive, and game-macro
+override coverage is at least 5%. The calibrator and ranker then remain frozen
+for one Online evaluation. External success additionally requires the
+game-macro 95% lower confidence bound on return lift to exceed zero, at least
+5% coverage, and calibrated Brier score below raw. Report oracle regret,
+ungated and gated lift, Brier and log loss, probability quantiles, override
+mean-return signs, and matched-doctrine wins/ties/losses.
+
+No model enters gameplay from this experiment. A selection failure leaves the
+Online seeds untouched. An external failure ends the line. External success
+would earn a separate mirrored gameplay A/B; it would not itself authorize a
+default policy change.
+
+### Result: rank order survives, but margin magnitude carries no positive confidence signal
+
+The 32 calibration games at seeds 948000-948031 produced 125 decisions, 485
+candidate rows, and 1,940 doctrine continuations. Three scheduled observations
+had no eligible move. There were **zero rejected branches, repeated-branch
+mismatches, or observation errors**. Of the decisions, 71/125 (56.8%) had
+mean-return spread above 0.005, mean spread was 0.0224, mean expert oracle
+regret was 0.0120, and a sibling beat the expert in every doctrine at 13/125.
+
+The frozen ranker again had directional value: its ungated game-macro return
+lift over the expert was +0.0054 ± 0.0045 and regret fell from 0.0119 to 0.0065.
+Its margin magnitude did not carry confidence, however. The preregistered
+monotone fit converged to:
+
+| frozen calibration term | value |
+|---|---:|
+| margin mean / population standard deviation | +0.024259 / 0.035254 |
+| game-weighted margin / target correlation | **-0.0385** |
+| nonnegative Platt slope | **0.0000** |
+| intercept | +0.0292 |
+| calibrated probability, every decision | **0.507** |
+| raw / calibrated Brier | 0.02169 ± 0.00354 / 0.02151 ± 0.00357 |
+| raw / calibrated log loss | 0.69340 / 0.69304 |
+| 0.70 overrides | **0/125** |
+
+Projection to zero is the preregistered monotonicity constraint doing its job:
+on these independent games, larger positive rank margins covary slightly with
+*lower*, not higher, matched-doctrine superiority targets. The intercept learns
+only the base rate. The frozen artifact is 1,169 bytes with SHA-256
+`aa6efe782232907dc01c25c0ad02c136ad7d5c7ebc008eb248bfcc6956eeb134`.
+
+This is a structural preselection failure. A constant probability of 0.507 can
+never clear 0.70, so it has exactly 0% coverage for any possible selection
+outcomes and cannot satisfy the preregistered 5% condition. Generating the
+blind selection set cannot alter a frozen prediction. Seeds 948032-948063
+therefore remain untouched, as do Online seeds 947000-947031. No selection,
+external evaluation, gameplay A/B, or integration was spent.
+
+> **Do not lower the threshold or use margin size as confidence.** The head's
+> ordering continues to find better moves on average, but how far apart its
+> linear scores land is not an out-of-sample measure of reliability. Platt
+> scaling can rescale a monotone signal; it cannot manufacture one.
+
+The next justified learner must predict override reliability from information
+other than the rank margin: candidate state/destination context, the expert
+versus sibling feature difference, and a target for consistent doctrine
+superiority. The completed calibration corpus may serve as development data,
+while seeds 948032-948063 remain a genuinely blind Standard selection set.
+
+| claim | status |
+|---|---|
+| the frozen ranker still improves mean return on new Standard games | **supported (+0.0054 ± 0.0045)** |
+| larger frozen margins imply more reliable superiority | **refuted (monotone slope 0.0000)** |
+| independent Platt scaling creates a selective 0.70 region | **refuted (constant 0.507; zero coverage)** |
+| selection or Online evaluation is warranted | **rejected without spending either corpus** |
