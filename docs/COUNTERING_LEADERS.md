@@ -436,7 +436,7 @@ side but never pays a Diplomatic Victory Point. Crediting their voters the
 stock +1 is how this census first read a residual of −124 in 1262; excluding
 them took it to **1 point in 1262**. 47 of 178 sessions at 6p are Emergencies.
 
-### The diplomatic veto is already total — do not build there
+### The diplomatic veto is a heavy brake, and there is little to add to it
 
 | reading | 4p | 6p |
 |---|---|---|
