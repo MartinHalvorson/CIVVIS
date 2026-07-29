@@ -99,8 +99,9 @@ games retain a competing religious use for Faith and are outside the claim.
 
 ## 2026-07-29 development result: stop
 
-The fixed null replay ran first on the exact screen profile. All 60 matched
-seat replays reproduced exactly: both arms won 2/60 games by Culture and
+Both recorded runs used source commit `8ee6e44`. The fixed null replay ran
+first on the exact screen profile. All 60 matched seat replays reproduced
+exactly: both arms won 2/60 games by Culture and
 matched at 574.0 mean score, 2,770.7 terminal Faith, 29.1 tourists, and 5.95
 cities. This clears the evaluator's determinism prerequisite.
 
