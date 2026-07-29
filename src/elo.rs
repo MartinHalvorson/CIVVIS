@@ -2081,6 +2081,17 @@ mod tests {
         fs::remove_dir_all(dir).unwrap();
     }
 
+    /// The reactor experiment pins generation 14 inside its dedicated runner.
+    /// A public factory once reconstructed this name with default weights,
+    /// silently changing the controller under treatment.
+    #[test]
+    fn reactor_marginal_treatment_stays_private_to_its_pinned_runner() {
+        const NAME: &str = "advanced_reactor_marginal";
+        assert!(!BUILTIN_AIS.contains(&NAME));
+        assert!(!EVAL_ONLY_AIS.contains(&NAME));
+        assert_eq!(builtin_provenance(NAME, "unused").effective, "basic");
+    }
+
     #[test]
     fn static_doctrine_challengers_construct_searching_agents() {
         for name in [

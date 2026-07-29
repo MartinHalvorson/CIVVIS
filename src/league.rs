@@ -167,6 +167,15 @@ pub struct Strategy {
     /// era pins the rating scale so numbers stay comparable across rounds.
     #[serde(default)]
     pub anchor: bool,
+    /// Compete in offline league rounds, but do not enter a live exhibition.
+    ///
+    /// League rounds deliberately schedule every active entrant and can pay a
+    /// new controller's compute cost. The exhibition instead selects from the
+    /// same roster while promising a viewer-facing pace. Keeping this bit on
+    /// the identity prevents an unrated expensive agent from buying live
+    /// exposure through a hand-set rating. Old snapshots default to false.
+    #[serde(default)]
+    pub league_only: bool,
     /// A person, registered when they sat down to play. They are rated here
     /// exactly like an agent — that is the whole point of one identity model
     /// — but they are not an entrant: `League::active` leaves them out, so
@@ -194,6 +203,7 @@ impl Strategy {
             parents: Vec::new(),
             retired: false,
             anchor: false,
+            league_only: false,
             human: false,
         }
     }
@@ -225,13 +235,24 @@ pub struct League {
 }
 
 impl League {
-    /// The entrants this league schedules, breeds, retires and seats — the
-    /// agents still competing. Registered people are players in the same
+    /// The entrants this offline league schedules, breeds and retires — the
+    /// agents still competing. Live seating refines this with
+    /// [`Self::exhibition_active`]. Registered people are players in the same
     /// table and are rated by the same arithmetic, but they are never
     /// entrants: nothing may play a game *as* somebody who is not here.
     pub fn active(&self) -> Vec<usize> {
         (0..self.strategies.len())
             .filter(|i| !self.strategies[*i].retired && !self.strategies[*i].human)
+            .collect()
+    }
+
+    /// Active agents whose cost has separately been admitted to the live
+    /// spectator surface. Offline league scheduling continues to use
+    /// [`Self::active`] so a league-only entrant still receives evidence.
+    pub fn exhibition_active(&self) -> Vec<usize> {
+        self.active()
+            .into_iter()
+            .filter(|i| !self.strategies[*i].league_only)
             .collect()
     }
 
@@ -729,6 +750,7 @@ fn founder_username(name: &str) -> Option<&'static str> {
         "advanced" => "JackOfAllTrades",
         "basic" => "TrainingWheels",
         "advanced_v1" => "OldGuard",
+        "strategic" => "DeepThought",
         "evolved-champ" => "Darwin",
         "adv-science" => "TechPriest",
         "adv-culture" => "CultureVulture",
@@ -1351,17 +1373,21 @@ fn seed_league(dir: &str) -> League {
     // rounds produced no measurable gain. The loop is not failing to climb; it
     // cannot see the axis next door.
     //
-    // It costs. Measured at the deployment profile (6p, 74x46, 9 city-states),
-    // one searching seat among five scripted ones runs **6.4x** a game-turn:
-    // 76.7 ms against 13.3. An all-searching fleet is 29x, but nothing seats
-    // that way and quoting it overstates the price about fivefold — a league
-    // entry is one strategy among its opponents. `docs/EVAL.md`, 2026-07-29.
+    // It costs. At the older 6p, 74x46, 9-city-state profile, one searching
+    // seat among five scripted ones measured **6.4x** a game-turn: 76.7 ms
+    // against 13.3. The current live profile is larger and has not been
+    // measured, so this anchor is admitted to offline league rounds but marked
+    // `league_only` below. `docs/EVAL.md`, 2026-07-29.
     //
     // An anchor rather than a competitor: it is a reference point the bred
     // genomes are measured against, and `League::active` never retires one, so
     // a slow start cannot cull the only entry that can answer whether search is
     // worth its cost.
     builtin("strategic", "strategic", true);
+    strategies
+        .last_mut()
+        .expect("the searching anchor was just inserted")
+        .league_only = true;
     for lane in VictoryTarget::ALL {
         strategies.push(Strategy::new(
             &format!("adv-{}", lane.as_str()),
@@ -2105,8 +2131,11 @@ pub fn seat_by_leader_civ_seeded(
     seed: u64,
     top_n: usize,
 ) -> Vec<usize> {
-    let active = league.active();
-    assert!(!active.is_empty(), "league has no active strategies");
+    let active = league.exhibition_active();
+    assert!(
+        !active.is_empty(),
+        "league has no exhibition-eligible strategies"
+    );
     let mut rng = Rng::new(seed ^ 0x5350_4543_4941_4c49);
     let mut used = BTreeSet::new();
     combinations
@@ -2136,8 +2165,11 @@ pub fn seat_by_leader_civ_seeded(
 }
 
 pub fn seat_by_leader_civ(league: &League, combinations: &[(String, String)]) -> Vec<usize> {
-    let active = league.active();
-    assert!(!active.is_empty(), "league has no active strategies");
+    let active = league.exhibition_active();
+    assert!(
+        !active.is_empty(),
+        "league has no exhibition-eligible strategies"
+    );
     let mut used: std::collections::BTreeSet<usize> = std::collections::BTreeSet::new();
     combinations
         .iter()
@@ -2174,6 +2206,9 @@ pub fn make_send_ai(kind: &StrategyKind, seed: u64) -> Box<dyn Ai + Send> {
                     .map(AdvancedAi::with_weights)
                     .unwrap_or_else(AdvancedAi::new),
             ),
+            "strategic" => Box::new(crate::strategic::StrategicAi::with_weights(
+                crate::evolve::load_champion("evolved").unwrap_or_default(),
+            )),
             _ => Box::new(AdvancedAi::new()),
         },
         StrategyKind::Advanced { weights, target } => {
@@ -3997,7 +4032,10 @@ mod tests {
 
 #[cfg(test)]
 mod searching_anchor_tests {
-    use super::{seed_league, StrategyKind};
+    use super::{
+        make_send_ai, seat_by_civ_seeded, seed_league, shipped_league, StrategyKind,
+        BASE_RATING, BASE_RD,
+    };
 
     /// A league that cannot seat a searching agent cannot ever rate one:
     /// breeding only produces `StrategyKind::Advanced`, so anything not in the
@@ -4018,6 +4056,14 @@ mod searching_anchor_tests {
             "it is an anchor: retiring the only searching entry would make the \
              question it exists to answer unanswerable"
         );
+        assert!(searching.league_only);
+        let index = league
+            .strategies
+            .iter()
+            .position(|strategy| strategy.name == "strategic")
+            .unwrap();
+        assert!(league.active().contains(&index));
+        assert!(!league.exhibition_active().contains(&index));
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -4034,5 +4080,86 @@ mod searching_anchor_tests {
             target: None,
         };
         assert!(matches!(bred, StrategyKind::Advanced { .. }));
+    }
+
+    /// The committed roster is an existing league, so changing only
+    /// `seed_league` would leave every deployment on its old search-free
+    /// population. Search is a new identity at the ordinary Glicko prior. It
+    /// remains offline-only until its viewer-facing cost is measured at the
+    /// current production profile.
+    #[test]
+    fn the_shipped_roster_admits_search_as_an_unrated_anchor() {
+        let league = shipped_league().expect("the committed roster parses");
+        let strategic = league
+            .strategies
+            .iter()
+            .find(|s| s.name == "strategic")
+            .expect("the shipped roster contains its searching anchor");
+        let advanced = league
+            .strategies
+            .iter()
+            .find(|s| s.name == "advanced")
+            .expect("the shipped roster retains its scripted anchor");
+
+        assert!(
+            matches!(&strategic.kind, StrategyKind::Builtin { ai } if ai == "strategic")
+        );
+        assert!(strategic.anchor);
+        assert!(!strategic.retired);
+        assert!(strategic.league_only);
+        assert_eq!(strategic.username, "DeepThought");
+        assert_eq!(strategic.rating, BASE_RATING);
+        assert_ne!(strategic.rating, advanced.rating);
+        assert_eq!(strategic.rd, BASE_RD);
+        assert_eq!((strategic.games, strategic.wins), (0, 0));
+        assert!(strategic.leader_elo.is_empty());
+    }
+
+    /// League simulations already use `elo::builtin_ai`; the exhibition has
+    /// a separate `Send` factory. Pin the distinction that matters here so a
+    /// roster row named `strategic` cannot be rated as search offline and
+    /// silently materialized as `AdvancedAi` in the watched game.
+    #[test]
+    fn the_server_factory_materializes_the_searching_agent() {
+        let ai = make_send_ai(
+            &StrategyKind::Builtin {
+                ai: "strategic".to_string(),
+            },
+            7,
+        );
+        assert!(
+            ai.review_census().is_some(),
+            "StrategicAi exposes a macro-review census; AdvancedAi does not"
+        );
+    }
+
+    /// Offline admission must not silently become live admission. Exercise the
+    /// exact selector over a deterministic seed census and prove that the
+    /// league-only search entry cannot enter any watched game through rating
+    /// rank or without-replacement depletion.
+    #[test]
+    fn shipped_seating_excludes_the_unmeasured_searching_seat() {
+        let league = shipped_league().expect("the committed roster parses");
+        let strategic = league
+            .strategies
+            .iter()
+            .position(|s| s.name == "strategic")
+            .expect("the shipped roster contains its searching anchor");
+        let civs: Vec<String> = [
+            "Rome", "Egypt", "Greece", "China", "Sumeria", "Aztec", "Nubia", "Scythia",
+        ]
+        .into_iter()
+        .map(str::to_string)
+        .collect();
+        for seed in 0..256 {
+            let seats = seat_by_civ_seeded(&league, &civs, seed, 3);
+            assert!(!seats.contains(&strategic));
+            assert!(
+                seats
+                    .iter()
+                    .all(|seat| !league.strategies[*seat].league_only),
+                "the exhibition selector returned an offline-only entrant"
+            );
+        }
     }
 }
