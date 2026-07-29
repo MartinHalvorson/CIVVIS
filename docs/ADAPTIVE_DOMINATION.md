@@ -26,6 +26,12 @@ invalidates the cell instead of silently changing what the controller can see.
 This is an assertion over the already-frozen population, not a change to the
 treatment, world, observer horizon, endpoint, seed, or gate.
 
+That amendment was frozen at `168c80b`, implemented at `fb99204`, and checked
+with an adversarial unit controller that changes 250 to 251 plus a one-turn
+default-off diagnostic at nonregistered seed `6199001`. The eight focused tests
+pass; both diagnostic cells preserved exact prefix and terminal worlds. No
+registered seed was generated or read.
+
 ## Why this experiment exists
 
 The production archive shows plenty of war without a civilization converting
@@ -287,7 +293,9 @@ Before any registered seed may run, focused tests must establish:
 8. the composite, raw outcomes, bootstrap, screen gates, and holdout gates match
    fixed hand-calculated fixtures; and
 9. CLI/formal-label parsing fails closed on every missing, duplicate,
-   malformed, valueless, noncanonical, or extra argument.
+   malformed, valueless, noncanonical, or extra argument; and
+10. the policy horizon is invariant at construction, before and after every
+    actor and fallback, and at both terminal arm boundaries.
 
 Run the focused CI-profile suite, `git diff --check`, file-scoped `rustfmt`, and
 `cargo test --profile ci --locked` before the null. Do not merge a later gameplay
