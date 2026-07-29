@@ -38,10 +38,11 @@ pub const BUILTIN_AIS: [&str; 10] = [
 /// tournament ratings. Keeping them out of `BUILTIN_AIS` prevents a control
 /// factory from being pooled into the same player/leader rating key as
 /// its treatment.
-pub const EVAL_ONLY_AIS: [&str; 49] = [
+pub const EVAL_ONLY_AIS: [&str; 50] = [
     "advanced_banking_dedication",
     "advanced_blind_to_leaders",
     "advanced_rush",
+    "advanced_city_strategy",
     "advanced_civ_blind",
     "advanced_counter_in_lane",
     "advanced_counter_stand_down",
@@ -592,6 +593,17 @@ pub fn builtin_ai(name: &str, seed: u64) -> Box<dyn Ai> {
         "advanced_parallel_settlers" => {
             let mut ai = AdvancedAi::new();
             ai.parallel_settlers = true;
+            Box::new(ai)
+        }
+        // Treatment for the city-decision axis: identical to `advanced`
+        // except that it stamps a `CityDirective` on every city each turn, so
+        // the citizen governor can see the empire's lane, the city's own role
+        // and the hostile strength standing next to it. Paired against
+        // `advanced` this isolates the plan-to-tile channel and nothing else.
+        // See `AdvancedAi::city_strategy`.
+        "advanced_city_strategy" => {
+            let mut ai = AdvancedAi::new();
+            ai.city_strategy = true;
             Box::new(ai)
         }
         "advanced_lane_reachable" => {
@@ -1328,6 +1340,7 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         ),
         "advanced" => (Vec::new(), "advanced"),
         "advanced_lane_reachable" => (Vec::new(), "advanced_lane_reachable"),
+        "advanced_city_strategy" => (Vec::new(), "advanced_city_strategy"),
         "advanced_banking_dedication" => (Vec::new(), "advanced_banking_dedication"),
         "advanced_measured_dedication" => (Vec::new(), "advanced_measured_dedication"),
         "advanced_parallel_settlers" => (Vec::new(), "advanced_parallel_settlers"),
@@ -1844,7 +1857,7 @@ mod tests {
             // Anything else reaching that state fell through to the
             // catch-all and is claiming to need nothing while quietly
             // needing a net.
-            const SCRIPTED: [&str; 21] = [
+            const SCRIPTED: [&str; 22] = [
                 "advanced",
                 "advanced_blind_to_leaders",
                 "advanced_rush",
@@ -1854,6 +1867,7 @@ mod tests {
                 "advanced_early_score_build",
                 "advanced_settler_commit",
                 "advanced_banking_dedication",
+                "advanced_city_strategy",
                 "advanced_civ_blind",
                 "advanced_food_first",
                 "advanced_lane_reachable",

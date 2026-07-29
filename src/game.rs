@@ -12820,6 +12820,70 @@ pub struct RememberedCity {
     pub seen_turn: u32,
 }
 
+/// What one city is locally best used for, independent of what the empire is
+/// trying to win. The two axes are deliberately separate: `CityRole` is the
+/// local optimization and [`CityDirective::emphasis`] is the empire's
+/// objective, and a directive carries both so neither silently overrides the
+/// other.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CityRole {
+    /// No local specialization worth naming — the governor's own evidence
+    /// (districts, buildings, the item in the queue) decides alone.
+    #[default]
+    Balanced,
+    /// The empire's workshop: the city that pays for armies, wonders and
+    /// districts. Wants hammers over its own growth.
+    Forge,
+    /// The settler pump. Wants food while the empire is still short of its
+    /// city target, because capital growth is what gates a settler.
+    Breadbasket,
+    /// A city whose specialty districts already earn more than its tiles do.
+    /// Leans further into the yield it is already best at rather than
+    /// spreading thin.
+    Specialist,
+    /// A frontline city under real local pressure. Wants defenses now and
+    /// will not grow into a siege it cannot feed.
+    Bastion,
+}
+
+impl CityRole {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            CityRole::Balanced => "balanced",
+            CityRole::Forge => "forge",
+            CityRole::Breadbasket => "breadbasket",
+            CityRole::Specialist => "specialist",
+            CityRole::Bastion => "bastion",
+        }
+    }
+}
+
+/// What an empire's plan asks of one of its cities this turn.
+///
+/// [`Player::citizen_food_bias`] is one scalar for a whole seat, so every city
+/// hears the same sentence: it cannot say *this* city feeds the war and *that*
+/// one races to Mars. A directive is the per-city channel. It is written by an
+/// agent and never by the engine, and it is folded into
+/// [`Game::citizen_strategy`] **additively** — the local evidence already
+/// there keeps its full weight and the directive tilts the margin, so a plan
+/// can never talk a city into starving itself.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct CityDirective {
+    /// The empire's objective expressed in the governor's own vocabulary:
+    /// extra appetite per yield, added to the shipped weights.
+    pub emphasis: Yields,
+    /// What this city is locally for.
+    pub role: CityRole,
+    /// Local military pressure — hostile military strength within six tiles
+    /// over the friendly strength answering it, so 0.0 is a safe rear city and
+    /// 1.0 is one whose besiegers already match its defenders. Empire-wide
+    /// `at_war` cannot tell those apart; this is what makes the governor
+    /// militarily aware of *where* the city stands.
+    pub pressure: f64,
+}
+
 /// The priorities used by a city's automatic citizen governor.  These are
 /// deliberately observable: agents and the browser can explain why a tile is
 /// being worked instead of treating city yields as a hidden heuristic.
@@ -13349,6 +13413,16 @@ pub struct Player {
     /// currently express.
     #[serde(default)]
     pub citizen_food_bias: f64,
+    /// What this empire's plan asks of each of its cities, keyed by city id.
+    ///
+    /// The per-city counterpart of `citizen_food_bias`, and for the same
+    /// reason: it is per **player** so `ai_eval`'s seat-mirrored arms can
+    /// differ on one map. An empty map is the shipped behaviour and old saves
+    /// default to it. Nothing in the engine writes this — an agent does, once
+    /// per turn, and stale entries for cities it no longer owns are harmless
+    /// because the governor only ever looks up cities that exist.
+    #[serde(default)]
+    pub city_directives: BTreeMap<u32, CityDirective>,
     pub faith: f64,
     /// Gathering Storm strategic-resource stockpiles. Luxuries remain copy
     /// based and are intentionally not represented here.
@@ -13578,6 +13652,7 @@ impl Player {
             gold_per_turn: 0.0,
             bankruptcy_amenity_penalty: 0,
             citizen_food_bias: 0.0,
+            city_directives: BTreeMap::new(),
             faith: 0.0,
             strategic_resources: BTreeMap::new(),
             strategic_resource_shortages: BTreeMap::new(),
@@ -30137,6 +30212,65 @@ impl Game {
             }
         }
 
+        // Everything above is local: the districts standing here, the item in
+        // the queue, the civilization, and one empire-wide `at_war` boolean.
+        // None of it can see what the empire is trying to *win*, so a seat
+        // racing to Mars and a seat feeding a war work the same tiles. A
+        // directive is the channel that carries the plan down to the tile, and
+        // it is additive on purpose — the local evidence keeps its full weight
+        // and the plan tilts the margin.
+        let mut growth_ceiling = f64::INFINITY;
+        if let Some(directive) = player.city_directives.get(&cid) {
+            weights.food += directive.emphasis.food;
+            weights.production += directive.emphasis.production;
+            weights.gold += directive.emphasis.gold;
+            weights.science += directive.emphasis.science;
+            weights.culture += directive.emphasis.culture;
+            weights.faith += directive.emphasis.faith;
+
+            match directive.role {
+                CityRole::Balanced => {}
+                CityRole::Forge => weights.production += 0.70,
+                CityRole::Breadbasket => weights.food += 0.70,
+                // Double down on whatever this city already earns most of,
+                // reusing the specialty vector measured above rather than
+                // guessing a second time.
+                CityRole::Specialist => match focus.as_str() {
+                    "production" => weights.production += 0.55,
+                    "commerce" => weights.gold += 0.55,
+                    "science" => weights.science += 0.55,
+                    "culture" => weights.culture += 0.55,
+                    "faith" => weights.faith += 0.55,
+                    _ => {}
+                },
+                CityRole::Bastion => {
+                    weights.production += 0.90;
+                    weights.food *= 0.70;
+                    // Hold the line at the current population rather than ask
+                    // for a surplus that feeds a citizen the siege is about to
+                    // take back. The food floor below still forbids
+                    // starvation, so this caps growth and never nutrition.
+                    growth_ceiling = 0.0;
+                    if city.queue.is_empty() {
+                        focus = "besieged".to_string();
+                    }
+                }
+            }
+
+            // Military awareness, on its own axis from the role: how hard the
+            // city is being pressed scales the hammer appetite whatever it is
+            // otherwise for, so a Forge two tiles from an enemy army starts
+            // paying for its own defense before the alarm names it a Bastion.
+            // Capped so a hopeless ratio cannot drive the appetite arbitrarily
+            // high.
+            if directive.pressure > 0.0 {
+                weights.production += directive.pressure.min(2.0) * 0.80;
+            }
+            if directive.role != CityRole::Balanced && focus == "balanced" {
+                focus = directive.role.as_str().to_string();
+            }
+        }
+
         let housing_headroom = self.city_housing(city) - city.pop as f64;
         let amenities = self.city_amenity_surplus(city);
         let growth_surplus = if housing_headroom > 1.0 && amenities >= -2 {
@@ -30147,7 +30281,7 @@ impl Game {
             weights.food *= 0.55;
             0.0
         };
-        let food_target = 2.0 * city.pop as f64 + growth_surplus;
+        let food_target = 2.0 * city.pop as f64 + growth_surplus.min(growth_ceiling);
         CitizenStrategy {
             focus,
             weights,
