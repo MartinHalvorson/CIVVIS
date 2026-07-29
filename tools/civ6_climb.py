@@ -53,6 +53,7 @@ def run_attempt(difficulty: str, seed: int, args: argparse.Namespace) -> dict | 
         "--seed", str(seed),
         "--max-turns", str(args.max_turns),
         "--timeout", str(args.timeout),
+        "--lock-wait", str(args.lock_wait),
         "--report-every", str(args.report_every),
     ]
     print(f"\n=== {difficulty} seed {seed} -> {tag} ===", flush=True)
@@ -100,6 +101,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--report-every", type=int, default=10)
     ap.add_argument("--seed", type=int, default=424242)
     ap.add_argument("--between", type=float, default=15.0)
+    ap.add_argument("--lock-wait", type=float, default=3600.0,
+                    help="seconds each attempt waits for another run to finish")
     return climb(ap.parse_args(argv))
 
 
