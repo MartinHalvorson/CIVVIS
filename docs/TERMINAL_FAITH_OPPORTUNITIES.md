@@ -11,7 +11,7 @@ The latest 50 production saves available at preregistration ran from
 `20260729T161608.260324Z-seed-416573342-turn-302-instance-39983`. They are a
 viewer-staged, mixed-revision sample rather than a randomized experiment.
 
-Their 376 surviving major civilizations held mean 4,486.5 and median 3,835.0
+Their 376 surviving major civilizations held mean 4,486.5 and median 3,824.6
 Faith at the terminal snapshot. Of those seats, 258 held at least 2,000 Faith,
 138 held at least 5,000, and 41 held at least 10,000. Non-winners averaged
 4,286.2. Among the 138 seats above 5,000, 131 had reached Cold War and none had
@@ -45,13 +45,22 @@ retry, tune, or revive that treatment.
 The command is:
 
 ```text
-terminal_faith_census --dir target/spectator/results --latest 50
+terminal_faith_census --dir target/spectator/results --latest 50 \
+  --through 20260729T161608.260324Z-seed-416573342-turn-302-instance-39983.save.json
 ```
 
-Files are selected by descending timestamped filename, not filesystem mtime.
-Only `*.save.json` files are eligible. Each selected save is parsed as a
-`Game`; parse failures are counted and make the command exit nonzero after the
-readable files have been summarized.
+Files are selected by descending timestamped filename, not filesystem mtime,
+after excluding names newer than the frozen `--through` boundary. Only
+`*.save.json` files are eligible. Each selected save is parsed as a `Game`;
+parse failures are counted and make the command exit nonzero after the readable
+files have been summarized.
+
+The cutoff was added after the first implementation invocation printed a
+filename banner showing that two newly completed games had shifted the latest
+50 window. That read was excluded immediately; it completed before the
+interrupt signal landed, and its shifted output is exploratory only. The
+hypothesis, coverage threshold, classes, and exact preregistered 50 saves
+remain unchanged.
 
 For each living major, a private clone clears only the terminal `winner` and
 `victory_type` fields and makes that civilization current. It does not advance
@@ -115,3 +124,56 @@ The following do not qualify regardless of prevalence:
 - a class already consumed by an active queued experiment; or
 - a category whose offer exists only after the census mutates anything beyond
   the two terminal guards described above.
+
+## Frozen-sample result
+
+The exact preregistered command read all 50 saves with zero parse failures and
+zero capture-blocked seats. The games ended in 47 Science and three Culture
+victories. Their 376 surviving majors reproduce the motivating balance census:
+mean 4,486.5 Faith, conventional even-sample median 3,824.6, 90th percentile
+10,226.2, with 258 seats at or above 2,000, 138 at or above 5,000, and 41 at or
+above 10,000.
+
+Opportunity coverage among the 258 unblocked seats holding at least 2,000:
+
+| legal Faith class | seats | coverage | reading |
+|---|---:|---:|---|
+| Naturalist / Rock Band | 249 | 96.5% | prior causal line already stopped |
+| religious unit | 203 | 78.7% | legal outlet, but Religious Victory is disabled and the shipped policy deliberately caps the corps |
+| military unit | 1 | 0.4% | below screen |
+| other unit | 0 | 0.0% | below screen |
+| building | 2 | 0.8% | below screen |
+| district | **47** | **18.2%** | qualifies for a separate causal preregistration |
+| Great Person | **50** | **19.4%** | qualifies by prevalence; every offer was a Great General |
+| Pantheon | 0 | 0.0% | below screen |
+
+Only four of the 258 rich seats had no legal Faith action at all. Among the
+138 seats holding at least 5,000, 40 could buy a district (29.0%) and 24 could
+patronize the current Great General (17.4%). Thus the bank is usually
+spendable; the causal question is whether these conversions are worth their
+opportunity cost.
+
+### Priority implied by the census
+
+Faith-purchased districts are the stronger next hypothesis. The legal action
+requires a city already governed by an established Moksha with Divine
+Architect, so a treatment can leave governor selection, promotions, district
+legality, price, and placement untouched. The policy gap is also exact:
+`advanced_gold_spending` scores `BuyDistrict` alongside units and buildings but
+rejects every non-Gold action, while `faith_building_spending` accepts only
+`BuyBuilding`. No shipped pass values a legal Faith district against the live
+grand strategy.
+
+Great General patronage is lower priority. The shipped
+`advanced_great_people` pass already considers Faith patronage, with explicit
+strategy affinity, race-closeness limits, and a reserve. Terminal legality
+therefore shows that a more permissive policy was possible, not that the
+existing decision boundary is missing. The fact that all 50 patronage-capable
+rich seats were offered only a Great General also weakens the case for a
+general liquidation rule.
+
+Per the frozen stop rule, this result licenses only a separate prospective
+Faith-district evaluator. It does not change `AdvancedAi`, revive cross-plan
+Culture spending, or start a simulator job. Any evaluator remains behind the
+already-declared shared-host queue and must carry an exact null, fixed screen,
+disjoint holdout, mechanism coverage, and outcome guardrails of its own.
