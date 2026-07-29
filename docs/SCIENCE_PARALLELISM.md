@@ -123,6 +123,39 @@ The only intentional runtime smoke remains diagnostic seed 9,982,999. The
 execution audit below separately records a terminated stale-binary partial null
 startup that produced no completed map or result.
 
+## Prospective champion-controller amendment
+
+This fourth amendment was frozen before the null at seed 9,982,000 or either
+treatment seed was run or read. A read-only deployment audit found that the
+supervisor is launched with `--league ... --league-record`. Under that contract,
+`Session::ai_fleet` seats the active rating roster; it does not construct
+`AdvancedAi::new()` for every major. The live seed 5,222,428 at the audit point
+contained six adaptive evolved-genome seats, one `advanced_v1` seat, and one
+stock `advanced` seat. The evaluator, however, constructed only the stock
+default-weight fleet. Map sampling had been brought into line with deployment
+while the focal controller had not.
+
+The active league is a moving population whose membership and ratings change
+after every recorded game, so copying that incidental eight-seat table would
+not define a reproducible treatment target. This study instead fixes the
+controller that a successful gameplay change is intended to improve: the
+repository's embedded `advanced_evolved` champion. Every major in both arms
+uses the exact champion weights compiled from `data/evolved/best.json` at the
+tested source commit. City-states and barbarians retain the controller's
+default minor/barbarian path. The runner names the controller and embedded
+champion generation, and a formal frozen batch requires the explicit
+`--ai advanced_evolved` flag.
+
+This is a prospective target-population correction based only on the deployed
+supervisor command, the already-public live roster metadata, and static fleet
+construction. No treatment output, focal seed, endpoint, or outcome informed
+it. The treatment, world-profile schedule, seats, seed ranges, map counts,
+endpoints, thresholds, stop rules, observation horizon, and resource cap are
+unchanged. The earlier one-turn smoke at diagnostic seed 9,982,999 exercised
+the stock-weight replay path and is not evidence for the amended champion
+population; the required frozen null remains unopened and will validate the
+champion replay exactly.
+
 ## Observation and hypothesis
 
 The eight most recent production final saves available on 2026-07-29 (through
@@ -151,11 +184,12 @@ benefits.
 
 ## Treatment
 
-`science_parallelism_eval` will run the shipped adaptive fleet in both arms.
-On a focal treatment turn it will clone the controller, run the stock turn,
-replay every successful logged action except the final `EndTurn`, and retain
-the updated controller state. It may then issue at most one additional legal
-`Produce` order, after which it applies the deferred `EndTurn`.
+`science_parallelism_eval` will run the embedded `advanced_evolved` adaptive
+champion in both arms. On a focal treatment turn it will clone the controller,
+run the stock turn, replay every successful logged action except the final
+`EndTurn`, and retain the updated controller state. It may then issue at most
+one additional legal `Produce` order, after which it applies the deferred
+`EndTurn`.
 
 The order is eligible only when all of these conditions hold:
 
@@ -191,13 +225,14 @@ The fixed deployment population is:
 - Online speed, policy-visible 250-turn limit, externally observed through turn
   320 without changing `Game.max_turns`;
 - Science, Culture, and Domination victories; and
-- stock embedded rules and adaptive fleet from the exact tested commit.
+- stock embedded rules and the embedded `advanced_evolved` champion from the
+  exact tested commit.
 
 Before any treatment batch, a four-map null at seed **9,982,000** (the four
-cross-size profiles named above) must compare a direct stock control with the
-action-log replay arm while applying no added order. All eight matched focal
-cells must be exactly equal. Unit tests must also prove the deterministic
-126-profile schedule and frozen batch balances, deterministic site selection,
+cross-size profiles named above) must compare a direct untreated champion
+control with the action-log replay arm while applying no added order. All eight
+matched focal cells must be exactly equal. Unit tests must also prove the
+deterministic 126-profile schedule and frozen batch balances, deterministic site selection,
 the Moon/Mars 2/3 schedule, no action outside a Science plan, and at most one
 legal order.
 
@@ -209,12 +244,13 @@ threshold or treatment detail may change after a treatment result is read.
 Compile and one-map runtime smokes are diagnostic only and may not be used to
 tune the policy or gate.
 
-The exact frozen invocations must include `--deployment-mix`, `--turns 250`,
-`--observe-through 320`, `--speed online`, `--poles poles`,
-`--randomize-civs`, and `--victories science,culture,domination`, plus the
-phase's frozen map count and seed. Supplying a player count, dimensions,
-city-state count, script, or shape alongside `--deployment-mix` is an error,
-not a new profile.
+The exact frozen invocations must include `--ai advanced_evolved`,
+`--deployment-mix`, `--turns 250`, `--observe-through 320`, `--speed online`,
+`--poles poles`, `--randomize-civs`, and
+`--victories science,culture,domination`, plus the phase's frozen map count and
+seed. Supplying a player count, dimensions, city-state count, script, or shape
+alongside `--deployment-mix` is an error, not a new profile. Any other
+controller name is rejected rather than treated as a new experiment.
 
 ## Endpoints and gates
 
@@ -264,8 +300,11 @@ independent preregistration commit `0d643d3`:
 - a rebuilt standalone binary rejected `--deployment-mix --players 8` with
   exit 2 before simulation; and
 - a four-map, one-turn replay diagnostic at seed 9,982,999 used two jobs and
-  exercised the four null profiles. It reported the expected derived sizes and
-  axis counts and reproduced all 8 direct/replay focal cells exactly.
+  exercised the four null profiles under the then-frozen stock-weight
+  controller. It reported the expected derived sizes and axis counts and
+  reproduced all 8 direct/replay focal cells exactly. The prospective
+  champion-controller amendment above supersedes that controller population,
+  so this smoke is diagnostic history rather than champion-null evidence.
 
 Execution audit: immediately before the standalone rebuild, an intended
 conflict check invoked the stale pre-amendment release executable. That binary
