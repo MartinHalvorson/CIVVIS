@@ -19597,6 +19597,93 @@ function planetTerrainUnderpaint(tile) {
   return isWater(tile) ? "#174b61" : "#747655";
 }
 
+// Cinematic terrain follows the sphere instead of pretending the globe is a
+// flat board seen through a circular mask. A shared vertex is moved along its
+// projected radial normal by the same amount on both adjoining cells, so equal
+// ground still meets exactly; only a real height change opens a side face.
+// Heights are expressed in screen pixels per globe subdivision, which keeps a
+// mountain proportional to its cell at both survey and close zoom.
+function planetTerrainLift(tile, radius) {
+  if (!tile || isWater(tile)) return 0;
+  const unit = Math.max(1.2, Math.min(18,
+    radius / Math.max(1, planetFrequency() * 2.45)));
+  if (tile.terrain === "mountain") return unit;
+  if (tile.hills) return unit * .56;
+  return unit * .20;
+}
+
+function raisedPlanetPoint(point, centerX, centerY, radius, lift) {
+  if (!(lift > 0) || !(radius > 0)) return {x:point.x, y:point.y, z:point.z};
+  const factor = 1 + lift / radius;
+  return {x:centerX + (point.x - centerX) * factor,
+          y:centerY + (point.y - centerY) * factor,
+          z:point.z};
+}
+
+function planetReliefCells(cells, camera, radius, centerX, centerY,
+                           visible, spectator) {
+  if (!MODE.relief || camera.chart || radius < SKY_MARKERS * 1.15) return cells;
+  return cells.map(cell => {
+    // Geometry is information too. An unexplored mountain must not reveal
+    // itself as a raised patch in the fog before its terrain is visible.
+    const known = spectator || visible.has(key(cell.tile.pos));
+    const lift = known ? planetTerrainLift(cell.tile, radius) : 0;
+    return {...cell, reliefLift:lift, basePoints:cell.points,
+      points:cell.points.map(point =>
+        raisedPlanetPoint(point, centerX, centerY, radius, lift)),
+      center:{...cell.center,
+        ...raisedPlanetPoint(cell.center, centerX, centerY, radius, lift)}};
+  });
+}
+
+// Draw only the exposed drop from a higher top to its lower neighbour. Faces
+// are batched by material rather than filled edge by edge: a mature globe can
+// have thousands of cells, while it has only eight terrain materials.
+function drawPlanetReliefSides(cells, radius, centerX, centerY, visible, spectator) {
+  if (!cells.length || !cells[0].basePoints) return;
+  const faces = new Map(), rims = [];
+  for (const cell of cells) {
+    if (!spectator && !visible.has(key(cell.tile.pos))) continue;
+    const high = cell.reliefLift || 0;
+    if (!(high > .1)) continue;
+    for (let side = 0; side < cell.points.length; side++) {
+      const neighbor = TMAP.get(cell.cell?.nbrs[side]);
+      // Unknown ground may not disclose whether a cliff is waiting beyond the
+      // fog frontier. Bring a known face down to the unrevealed surface; this
+      // closes the geometry without borrowing the neighbour's hidden height.
+      const neighborKnown = neighbor &&
+        (spectator || visible.has(key(neighbor.pos)));
+      const low = neighborKnown ? planetTerrainLift(neighbor, radius) : 0;
+      if (high <= low + .1) continue;
+      const next = (side + 1) % cell.points.length;
+      const a = cell.points[side], b = cell.points[next];
+      const lowA = raisedPlanetPoint(cell.basePoints[side], centerX, centerY, radius, low);
+      const lowB = raisedPlanetPoint(cell.basePoints[next], centerX, centerY, radius, low);
+      const group = faces.get(cell.tile.terrain);
+      const face = [a.x, a.y, b.x, b.y, lowB.x, lowB.y, lowA.x, lowA.y];
+      if (group) group.push(face); else faces.set(cell.tile.terrain, [face]);
+      rims.push([a.x, a.y, b.x, b.y]);
+    }
+  }
+  if (!faces.size) return;
+  cx.save();
+  cx.lineJoin = "round";
+  for (const [terrain, group] of faces) {
+    cx.beginPath();
+    for (const [ax, ay, bx, by, cx2, cy2, dx, dy] of group) {
+      cx.moveTo(ax, ay); cx.lineTo(bx, by); cx.lineTo(cx2, cy2);
+      cx.lineTo(dx, dy); cx.closePath();
+    }
+    cx.fillStyle = shade(TERRAIN[terrain] || planetTerrainUnderpaint({terrain}), .46);
+    cx.globalAlpha = .94; cx.fill();
+  }
+  cx.beginPath();
+  for (const [ax, ay, bx, by] of rims) { cx.moveTo(ax, ay); cx.lineTo(bx, by); }
+  cx.strokeStyle = "rgba(255,244,211,.22)"; cx.lineWidth = .7;
+  cx.globalAlpha = 1; cx.stroke();
+  cx.restore();
+}
+
 // The shoreline is the one terrain boundary that should survive the painted
 // blend. Draw it as one continuous surf network after the ground is lit: the
 // dark wet edge seats the land, the blue shelf carries the coast, and the fine
@@ -19714,6 +19801,27 @@ function drawPlanetGround(cells, camera, scale, radius, centerX, centerY,
     }
     cx.restore();
 
+    // Feather the boundary, not the photograph. The blurred pass above makes
+    // adjacent biome colours meet without rebuilding the cell diagram, but by
+    // itself it also turns grass, sand and ice into the same soft wash. A quiet
+    // unfiltered pass restores the atlas' fine material inside each region;
+    // soft-light keeps its hard edge subordinate to the blended colour below.
+    cx.save();
+    cx.beginPath();
+    for (const cell of knownCells) appendPlanetPaintPath(cx, cell, .15);
+    cx.clip();
+    cx.globalCompositeOperation = "soft-light";
+    cx.globalAlpha = MODE.atmosphere ? .42 : .48;
+    for (const [terrain, group] of byTerrain) {
+      const pattern = patterns.get(terrain);
+      if (!pattern) continue;
+      cx.beginPath();
+      for (const cell of group) appendPlanetPaintPath(cx, cell, .20);
+      cx.fillStyle = pattern;
+      cx.fill();
+    }
+    cx.restore();
+
     // Lighting is continuous over the hemisphere, not reset inside every
     // polygon. Painted 2D keeps a gentle wash; Cinematic gives the same sphere
     // a real terminator and a warm shoulder.
@@ -19780,7 +19888,7 @@ function drawPlanetGround(cells, camera, scale, radius, centerX, centerY,
 // marks and Cinematic gets the same forms with deeper occlusion and highlights.
 // These are clipped to the exact five- or six-sided top face, so relief never
 // reintroduces rectangular or hexagonal art at the twelve pentagons.
-function drawPlanetSurfaceDetail(cell) {
+function drawPlanetSurfaceDetail(cell, planetX, planetY) {
   if (!MODE.painted) return;
   const tile = cell.tile;
   const r = planetCellInradius(cell);
@@ -19790,6 +19898,13 @@ function drawPlanetSurfaceDetail(cell) {
   const seed = hash2(tile.pos[0] * 31 + 7, tile.pos[1] * 37 + 11);
   cx.save();
   planetPath(cx, cell.points); cx.clip();
+  // Every mark uses the local tangent plane. Screen-up happened to be right
+  // only at the top of the old disc: mountains along the lower hemisphere all
+  // leaned north and water waves ignored the curve underneath them. Rotate the
+  // existing authored marks so local up points away from the globe's centre.
+  const dx = x - planetX, dy = y - planetY;
+  const radial = Math.hypot(dx, dy);
+  const angle = radial > 1e-4 ? Math.atan2(dy, dx) + Math.PI / 2 : 0;
 
   if (isWater(tile)) {
     if (seed > .48 && r > 2.2) {
@@ -19801,50 +19916,109 @@ function drawPlanetSurfaceDetail(cell) {
       cx.quadraticCurveTo(x, y - r * .18, x + r * .58, y + (seed - .5) * r);
       cx.stroke();
     }
-  } else if (tile.terrain === "mountain" || tile.feature === "volcano") {
-    const peak = r * (tile.feature === "volcano" ? .78 : .92);
-    cx.globalAlpha = .48 + depth * .24;
-    cx.fillStyle = "#18201d";
-    cx.beginPath();
-    cx.moveTo(x - r * .72, y + r * .58);
-    cx.lineTo(x + r * .15, y - peak);
-    cx.lineTo(x + r * .74, y + r * .58);
-    cx.closePath(); cx.fill();
-    cx.fillStyle = tile.feature === "volcano" ? "#d98942" : "#e8e1ca";
-    cx.globalAlpha = .52 + depth * .24;
-    cx.beginPath();
-    cx.moveTo(x + r * .15, y - peak);
-    cx.lineTo(x + r * .08, y + r * .15);
-    cx.lineTo(x + r * .48, y + r * .50);
-    cx.closePath(); cx.fill();
-  } else if (tile.hills) {
-    const mound = cx.createRadialGradient(x - r * .24, y - r * .30, r * .05,
-                                          x, y, r * .95);
-    mound.addColorStop(0, `rgba(255,244,207,${(.16 + depth * .12).toFixed(2)})`);
-    mound.addColorStop(.55, "rgba(255,255,255,0)");
-    mound.addColorStop(1, `rgba(8,12,12,${(.15 + depth * .17).toFixed(2)})`);
-    cx.fillStyle = mound;
-    cx.beginPath(); cx.ellipse(x, y + r * .12, r * .80, r * .58, 0, 0, 7); cx.fill();
   }
 
-  if (tile.feature === "forest" || tile.feature === "jungle") {
+  // Waves are a material direction and stay screen-coherent. Standing
+  // landforms begin here, in the cell's local tangent frame.
+  cx.translate(x, y); cx.rotate(angle);
+
+  if (!isWater(tile) && (tile.terrain === "mountain" || tile.feature === "volcano")) {
+    let atlasDrawn = false;
+    if (tile.feature === "volcano" && ENVIRONMENT_FEATURE_ATLAS_READY && r > 3.2) {
+      const [column, row] = ENVIRONMENT_FEATURE_CELL.volcano;
+      const cw = ENVIRONMENT_FEATURE_ATLAS.naturalWidth / 4;
+      const ch = ENVIRONMENT_FEATURE_ATLAS.naturalHeight / 2;
+      cx.globalAlpha = .66 + depth * .28;
+      cx.drawImage(ENVIRONMENT_FEATURE_ATLAS, column * cw, row * ch, cw, ch,
+                   -r * 1.28, -r * 1.42, r * 2.56, r * 2.52);
+      atlasDrawn = true;
+    } else if (tile.terrain === "mountain" && MOUNTAIN_ATLAS_READY && r > 3.2) {
+      const cw = MOUNTAIN_ATLAS.naturalWidth / 3;
+      const ch = MOUNTAIN_ATLAS.naturalHeight;
+      const column = mountainRockColumn(tile);
+      cx.save();
+      if (seed > .5) cx.scale(-1, 1);
+      cx.globalAlpha = .68 + depth * .27;
+      cx.drawImage(MOUNTAIN_ATLAS, column * cw, 0, cw, ch,
+                   -r * 1.30, -r * 1.24, r * 2.60, r * 2.18);
+      cx.restore();
+      atlasDrawn = true;
+    }
+    if (!atlasDrawn) {
+      const peak = r * (tile.feature === "volcano" ? .78 : .92);
+      cx.globalAlpha = .48 + depth * .24;
+      cx.fillStyle = "#18201d";
+      cx.beginPath();
+      cx.moveTo(-r * .72, r * .58);
+      cx.lineTo(r * .15, -peak);
+      cx.lineTo(r * .74, r * .58);
+      cx.closePath(); cx.fill();
+      cx.fillStyle = tile.feature === "volcano" ? "#d98942" : "#e8e1ca";
+      cx.globalAlpha = .52 + depth * .24;
+      cx.beginPath();
+      cx.moveTo(r * .15, -peak);
+      cx.lineTo(r * .08, r * .15);
+      cx.lineTo(r * .48, r * .50);
+      cx.closePath(); cx.fill();
+    }
+  } else if (!isWater(tile) && tile.hills) {
+    if (MODE.relief) {
+      // The cell itself is already raised in Cinematic. A broad directional
+      // shoulder describes that plane without stamping a plastic dome on top.
+      const shoulder = cx.createLinearGradient(-r, -r, r, r);
+      shoulder.addColorStop(0, "rgba(255,244,207,.24)");
+      shoulder.addColorStop(.48, "rgba(255,255,255,0)");
+      shoulder.addColorStop(1, "rgba(8,12,12,.26)");
+      cx.fillStyle = shoulder; cx.fillRect(-r * 1.4, -r * 1.4, r * 2.8, r * 2.8);
+    } else {
+      const mound = cx.createRadialGradient(-r * .24, -r * .30, r * .05,
+                                            0, 0, r * .95);
+      mound.addColorStop(0, "rgba(255,244,207,.19)");
+      mound.addColorStop(.55, "rgba(255,255,255,0)");
+      mound.addColorStop(1, "rgba(8,12,12,.18)");
+      cx.fillStyle = mound;
+      cx.beginPath(); cx.ellipse(0, r * .12, r * .80, r * .58, 0, 0, 7); cx.fill();
+    }
+  }
+
+  const feature = featureBlendKind(tile.feature);
+  const featureColumn = FEATURE_CELL[feature];
+  if (featureColumn !== undefined && FEATURE_ATLAS_READY && r > 3) {
+    const cw = FEATURE_ATLAS.naturalWidth / 4;
+    const ch = FEATURE_ATLAS.naturalHeight;
+    cx.save();
+    cx.rotate(seed * Math.PI * 2);
+    if (hash2(tile.pos[0] * 13, tile.pos[1] * 17) > .5) cx.scale(-1, 1);
+    cx.globalAlpha = (tile.feature || "").startsWith("burnt_") ? .48 : .76 + depth * .18;
+    cx.drawImage(FEATURE_ATLAS, featureColumn * cw, 0, cw, ch,
+                 -r * 1.42, -r * 1.42, r * 2.84, r * 2.84);
+    cx.restore();
+  } else if (tile.feature === "forest" || tile.feature === "jungle") {
     const jungle = tile.feature === "jungle";
-    const color = jungle ? "#173f2c" : "#234a31";
-    cx.fillStyle = color;
+    cx.fillStyle = jungle ? "#173f2c" : "#234a31";
     cx.globalAlpha = .56 + depth * .20;
     const crown = r * (jungle ? .34 : .29);
-    for (const [dx, dy, size] of [[-.34,.18,.88],[.06,-.18,1.08],[.38,.20,.82]]) {
-      cx.beginPath(); cx.arc(x + dx * r, y + dy * r, crown * size, 0, 7); cx.fill();
+    for (const [fx, fy, size] of [[-.34,.18,.88],[.06,-.18,1.08],[.38,.20,.82]]) {
+      cx.beginPath(); cx.arc(fx * r, fy * r, crown * size, 0, 7); cx.fill();
     }
     cx.fillStyle = "rgba(228,235,190,.22)";
-    cx.beginPath(); cx.arc(x - r * .06, y - r * .31, crown * .46, 0, 7); cx.fill();
+    cx.beginPath(); cx.arc(-r * .06, -r * .31, crown * .46, 0, 7); cx.fill();
   } else if (tile.feature === "ice") {
-    cx.globalAlpha = .52 + depth * .24;
-    cx.fillStyle = "#d9f3f5";
-    cx.beginPath();
-    cx.moveTo(x - r * .68, y + r * .18); cx.lineTo(x - r * .18, y - r * .52);
-    cx.lineTo(x + r * .66, y - r * .12); cx.lineTo(x + r * .18, y + r * .48);
-    cx.closePath(); cx.fill();
+    if (ENVIRONMENT_FEATURE_ATLAS_READY && r > 3) {
+      const [column, row] = ENVIRONMENT_FEATURE_CELL.ice;
+      const cw = ENVIRONMENT_FEATURE_ATLAS.naturalWidth / 4;
+      const ch = ENVIRONMENT_FEATURE_ATLAS.naturalHeight / 2;
+      cx.globalAlpha = .72 + depth * .24;
+      cx.drawImage(ENVIRONMENT_FEATURE_ATLAS, column * cw, row * ch, cw, ch,
+                   -r * 1.40, -r * 1.40, r * 2.80, r * 2.80);
+    } else {
+      cx.globalAlpha = .52 + depth * .24;
+      cx.fillStyle = "#d9f3f5";
+      cx.beginPath();
+      cx.moveTo(-r * .68, r * .18); cx.lineTo(-r * .18, -r * .52);
+      cx.lineTo(r * .66, -r * .12); cx.lineTo(r * .18, r * .48);
+      cx.closePath(); cx.fill();
+    }
   }
   cx.restore();
   cx.globalAlpha = 1;
@@ -20363,7 +20537,10 @@ function drawPlanetMap() {
     drawPlanetChartMarginalia();
   }
 
-  const cells = earthInFrame ? planetCells(camera, scale, centerX, centerY) : [];
+  const baseCells = earthInFrame ? planetCells(camera, scale, centerX, centerY) : [];
+  const cells = planetReliefCells(baseCells, camera, radius, centerX, centerY,
+                                  visible, spectator);
+  drawPlanetReliefSides(cells, radius, centerX, centerY, visible, spectator);
   drawPlanetGround(cells, camera, scale, radius, centerX, centerY, visible, spectator);
   for (const {tile, points, center} of cells)
     PLANET_HIT_CELLS.push({pos:tile.pos, points, z:center.z});
@@ -20399,7 +20576,7 @@ function drawPlanetMap() {
     for (const cell of cells) {
       if ((!spectator && !visible.has(key(cell.tile.pos))) ||
           cell.center.z < (onSheet ?? .04)) continue;
-      drawPlanetSurfaceDetail(cell);
+      drawPlanetSurfaceDetail(cell, centerX, centerY);
     }
   } else if (!empireLens && scale > .42) {
     cx.textAlign = "center"; cx.textBaseline = "middle";
