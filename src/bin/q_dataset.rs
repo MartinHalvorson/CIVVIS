@@ -26,6 +26,8 @@
 //!
 //! ```text
 //! q_dataset --games 40 --players 4 --turns 200 --out evolved/q.csv
+//! q_dataset --games 40 --players 6 --width 74 --height 46 \
+//!   --city-states 6 --turns 250 --speed online --out evolved/q-online.csv
 //! ```
 //!
 //! **How it records without disturbing what it records.** The agent applies its
@@ -50,11 +52,14 @@
 //! *not* taken, labelled with the same return and marked `chosen=0`. A Q head
 //! can be trained on the chosen rows alone; an advantage or a pairwise ranker
 //! needs the siblings, and they cost a `legal_actions` call per decision, so
-//! they are opt-in.
+//! they are opt-in. `--negatives-same-kind` isolates destination geometry from
+//! the coarse action-kind prior. `--negatives-same-actor` is stricter and is
+//! the control a unit-action search needs: it compares destinations or targets
+//! for the same unit, rather than learning which unit the expert activates.
 use civvis::action_space;
 use civvis::ai::{run_game, AdvancedAi};
 use civvis::decision_features::{decision_features, WIDTH as STATE_WIDTH};
-use civvis::game::{Action, Game};
+use civvis::game::{default_speed, Action, Game, GameOptions};
 use civvis::parallel;
 use std::fmt::Write as _;
 use std::fs;
@@ -127,12 +132,18 @@ fn harvest(
     height: i32,
     turns: u32,
     city_states: usize,
+    speed: &str,
     negatives: usize,
     same_kind: bool,
+    same_actor: bool,
 ) -> Harvest {
     // Pass one: play it. Nothing is recorded here beyond the log the engine
     // keeps anyway, so the agents behave exactly as they do in any other run.
-    let mut played = Game::new(seats, width, height, game_id, turns, city_states);
+    let options = GameOptions {
+        speed: speed.to_string(),
+        ..GameOptions::new(seats, width, height, game_id, turns, city_states)
+    };
+    let mut played = Game::new_with(options.clone());
     let mut fleet = AdvancedAi::fleet(&played);
     run_game(&mut played, &mut fleet);
     let label = outcomes(&played, seats);
@@ -142,7 +153,7 @@ fn harvest(
 
     // Pass two: replay the log against a fresh game of the same seed, encoding
     // each action against the position as it stood before it was applied.
-    let mut replay = Game::new(seats, width, height, game_id, turns, city_states);
+    let mut replay = Game::new_with(options);
     replay.set_fog_memory(false);
     let log: Vec<(usize, Action)> = played.log.iter().cloned().collect();
     let mut rows = String::new();
@@ -163,7 +174,15 @@ fn harvest(
         let state = decision_features(&replay, seat);
         let chosen = action_space::features(&replay, seat, &action);
         write_row(
-            &mut rows, game_id, replay.turn, seat, 1, &state, &chosen, won, share,
+            &mut rows,
+            game_id,
+            replay.turn,
+            seat,
+            1,
+            &state,
+            &chosen,
+            won,
+            share,
         );
         decisions += 1;
         winning_rows += (won > 0.5) as usize;
@@ -183,12 +202,19 @@ fn harvest(
             // search prior over sibling moves actually needs. Measured on
             // stride-sampled data, only 103 of 531,892 decisions came out
             // same-kind by chance, which is why this is a switch and not a
-            // filter applied afterwards.
+            // filter applied afterwards. Same-kind actions can still name
+            // different units; `same_actor` removes that second confound.
             let wanted = action_space::kind_name(&action);
+            let wanted_actor = action_space::acting_unit(&action);
             let others: Vec<&Action> = legal
                 .iter()
                 .filter(|candidate| **candidate != action && !matches!(candidate, Action::EndTurn))
                 .filter(|candidate| !same_kind || action_space::kind_name(candidate) == wanted)
+                .filter(|candidate| {
+                    !same_actor
+                        || wanted_actor.is_some()
+                            && action_space::acting_unit(candidate) == wanted_actor
+                })
                 .collect();
             if !others.is_empty() {
                 let stride = (others.len() / negatives.max(1)).max(1);
@@ -201,7 +227,15 @@ fn harvest(
                     let other = others[(start + step * stride) % others.len()];
                     let row = action_space::features(&replay, seat, other);
                     write_row(
-                        &mut rows, game_id, replay.turn, seat, 0, &state, &row, won, share,
+                        &mut rows,
+                        game_id,
+                        replay.turn,
+                        seat,
+                        0,
+                        &state,
+                        &row,
+                        won,
+                        share,
                     );
                     emitted_negatives += 1;
                 }
@@ -264,16 +298,28 @@ fn main() {
     let height = number(&args, "--height", 28) as i32;
     let turns = number(&args, "--turns", 200) as u32;
     let city_states = number(&args, "--city-states", 0);
+    let speed = text(&args, "--speed", &default_speed());
     let negatives = number(&args, "--negatives", 0);
-    let same_kind = args.iter().any(|arg| arg == "--negatives-same-kind");
+    let same_actor = args.iter().any(|arg| arg == "--negatives-same-actor");
+    // An actor can take several kinds of action, but a move-ordering prior is
+    // asked to order destinations within one kind. Actor-only negatives would
+    // put the coarse kind prior back into the measurement, so the stricter flag
+    // implies the existing same-kind control.
+    let same_kind = same_actor || args.iter().any(|arg| arg == "--negatives-same-kind");
     let seed = number(&args, "--seed", 90_000) as u64;
     let jobs = number(&args, "--jobs", parallel::default_jobs());
     let out = text(&args, "--out", "evolved/q_dataset.csv");
 
     println!(
-        "q_dataset: {games} games, {seats} players, {width}x{height}, {turns} turns, \
+        "q_dataset: {games} games, {seats} players, {width}x{height}, {turns} turns, {speed} speed, \
          {negatives} negatives per decision{}, jobs {jobs}",
-        if same_kind { " (same kind only)" } else { "" }
+        if same_actor {
+            " (same kind and actor only)"
+        } else if same_kind {
+            " (same kind only)"
+        } else {
+            ""
+        }
     );
     println!(
         "state {STATE_WIDTH} + action {} = {} features per row",
@@ -289,8 +335,10 @@ fn main() {
             height,
             turns,
             city_states,
+            &speed,
             negatives,
             same_kind,
+            same_actor,
         )
     });
 
@@ -372,10 +420,16 @@ mod tests {
     /// that the case does not arise.
     #[test]
     fn replay_reproduces_the_game_it_records() {
-        let run = harvest(4_242, 3, 24, 16, 40, 0, 0, false);
-        assert_eq!(run.rejected, 0, "replay rejected an action the game applied");
+        let run = harvest(4_242, 3, 24, 16, 40, 0, "standard", 0, false, false);
+        assert_eq!(
+            run.rejected, 0,
+            "replay rejected an action the game applied"
+        );
         assert!(run.agrees, "replay ended on a different score line");
-        assert!(run.decisions > 0, "a 40-turn game made no recordable decision");
+        assert!(
+            run.decisions > 0,
+            "a 40-turn game made no recordable decision"
+        );
     }
 
     /// Every row is the meta block, the state vector, the action vector and the
@@ -386,10 +440,32 @@ mod tests {
     fn rows_are_as_wide_as_the_header_says() {
         let expected = 4 + STATE_WIDTH + action_space::FEATURE_WIDTH + 2;
         assert_eq!(header().trim_end().split(',').count(), expected);
-        let run = harvest(77, 3, 24, 16, 30, 0, 2, false);
+        let run = harvest(77, 3, 24, 16, 30, 0, "standard", 2, false, false);
         for line in run.rows.lines() {
             assert_eq!(line.split(',').count(), expected, "row width: {line:.60}");
         }
         assert!(run.negatives > 0, "--negatives 2 emitted no sibling rows");
+    }
+
+    /// A clean replay only proves the dataset is real when both passes use the
+    /// profile being measured. The exhibition plays Online rather than the
+    /// Standard default that this emitter historically hard-coded.
+    #[test]
+    fn online_replay_reproduces_the_profile_it_records() {
+        let run = harvest(8_181, 3, 24, 16, 40, 0, "online", 1, true, false);
+        assert_eq!(run.rejected, 0);
+        assert!(run.agrees);
+        assert!(run.decisions > 0);
+    }
+
+    /// Same-kind alternatives may still belong to different units. The
+    /// same-actor corpus is the one that can establish destination ordering
+    /// rather than merely learning which unit the expert activates next.
+    #[test]
+    fn same_actor_negatives_exist_in_real_games() {
+        let run = harvest(9_191, 3, 24, 16, 50, 0, "standard", 4, true, true);
+        assert_eq!(run.rejected, 0);
+        assert!(run.agrees);
+        assert!(run.negatives > 0, "no unit had two same-kind legal actions");
     }
 }

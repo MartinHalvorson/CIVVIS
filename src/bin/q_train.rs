@@ -21,13 +21,17 @@
 //!
 //! ```text
 //! q_train --data evolved/q.csv --out evolved/qnet.json --epochs 6
+//! q_train --data evolved/q-standard.csv \
+//!   --eval-data evolved/q-deployment.csv --same-kind --keep geometry
 //! ```
 //!
 //! **Splitting is by game and nothing else.** A per-sample split of the previous
 //! value-net data read 98.8% where a per-game split read 75.0%. Rows inside one
 //! game share an outcome, a map and an opponent set; any split that mixes them
 //! measures memorisation. Games are assigned by hashing the game id, so the same
-//! game lands on the same side every run.
+//! game lands on the same side every run. `--eval-data` is the stronger
+//! profile-transfer test: every decision in the primary file trains and every
+//! decision in the second file validates, so no deployment map leaks into fit.
 //!
 //! **Groups are runs, by the emitter's contract.** `q_dataset` writes a chosen
 //! row and then its negatives, so a group begins at each `chosen=1`. That is
@@ -66,6 +70,17 @@ struct Group {
     rows: Vec<Vec<f32>>,
     game: u64,
     won: f32,
+    /// Kind of the chosen action. With mixed-kind negatives this is still the
+    /// decision being imitated; with `--same-kind` it names every candidate.
+    kind: usize,
+}
+
+struct Loaded {
+    groups: Vec<Group>,
+    columns: usize,
+    width: usize,
+    lines: usize,
+    dropped: usize,
 }
 
 /// Blank the blocks this run is not allowed to see. `state` is the leading 34,
@@ -98,6 +113,91 @@ fn holdout(game: u64, share: f32) -> bool {
     hash = hash.wrapping_mul(0xBF58_476D_1CE4_E5B9);
     hash ^= hash >> 32;
     (hash % 1000) as f32 / 1000.0 < share
+}
+
+/// Read complete decision groups from one emitter file. Training and external
+/// evaluation share this path so masking, same-kind filtering, and schema
+/// checks cannot drift between the two sides of an experiment.
+fn load_groups(path: &str, keep: &str, same_kind: bool) -> Result<Loaded, String> {
+    let file = fs::File::open(path).map_err(|error| format!("cannot read {path}: {error}"))?;
+    let mut reader = BufReader::new(file);
+    let mut head = String::new();
+    reader
+        .read_line(&mut head)
+        .map_err(|error| format!("cannot read header from {path}: {error}"))?;
+    let columns = head.trim_end().split(',').count();
+    if columns <= 6 + civvis::action_space::FEATURE_WIDTH {
+        return Err(format!(
+            "{path}: invalid q_dataset schema with {columns} columns"
+        ));
+    }
+    let width = columns - 6; // game,turn,seat,chosen ... won,score_share
+    let state_block = width - civvis::action_space::FEATURE_WIDTH;
+    let kind_count = civvis::action_space::KINDS.len();
+    let kind_of = |raw: &[f32]| -> usize {
+        (0..kind_count)
+            .find(|kind| raw[state_block + kind] > 0.5)
+            .unwrap_or(usize::MAX)
+    };
+
+    let mut groups = Vec::new();
+    let mut current: Option<Group> = None;
+    let mut current_kinds: Vec<usize> = Vec::new();
+    let mut lines = 0usize;
+    let mut dropped = 0usize;
+    let finish =
+        |group: Group, group_kinds: &[usize], groups: &mut Vec<Group>, dropped: &mut usize| {
+            if group.rows.len() < 2 {
+                return;
+            }
+            if same_kind && group_kinds.windows(2).any(|pair| pair[0] != pair[1]) {
+                *dropped += 1;
+                return;
+            }
+            groups.push(group);
+        };
+
+    for line in reader.lines().map_while(Result::ok) {
+        let fields: Vec<&str> = line.split(',').collect();
+        if fields.len() != columns {
+            continue;
+        }
+        lines += 1;
+        let game: u64 = fields[0].parse().unwrap_or(0);
+        let chosen = fields[3] == "1";
+        let won: f32 = fields[columns - 2].parse().unwrap_or(0.0);
+        let mut row: Vec<f32> = fields[4..columns - 2]
+            .iter()
+            .map(|value| value.parse().unwrap_or(0.0))
+            .collect();
+        let kind = kind_of(&row);
+        mask(&mut row, keep, width);
+        if chosen {
+            if let Some(group) = current.take() {
+                finish(group, &current_kinds, &mut groups, &mut dropped);
+            }
+            current_kinds = vec![kind];
+            current = Some(Group {
+                rows: vec![row],
+                game,
+                won,
+                kind,
+            });
+        } else if let Some(group) = current.as_mut() {
+            group.rows.push(row);
+            current_kinds.push(kind);
+        }
+    }
+    if let Some(group) = current.take() {
+        finish(group, &current_kinds, &mut groups, &mut dropped);
+    }
+    Ok(Loaded {
+        groups,
+        columns,
+        width,
+        lines,
+        dropped,
+    })
 }
 
 struct Net {
@@ -249,15 +349,83 @@ fn score_group(net: &Net, group: &Group, grad: Option<&mut Grad>) -> (f32, f32) 
     (loss, credit)
 }
 
+fn mean_standard_error(values: &[f32]) -> (f32, f32) {
+    if values.is_empty() {
+        return (0.0, 0.0);
+    }
+    let mean = values.iter().sum::<f32>() / values.len() as f32;
+    if values.len() < 2 {
+        return (mean, 0.0);
+    }
+    let variance = values
+        .iter()
+        .map(|value| (*value - mean).powi(2))
+        .sum::<f32>()
+        / (values.len() - 1) as f32;
+    (mean, (variance / values.len() as f32).sqrt())
+}
+
+/// An aggregate top-1 can be carried by cheap non-tactical decisions. Report
+/// each represented kind against its own candidate-count chance rate, so a
+/// move-ordering claim has to be true specifically for moves and attacks.
+fn report_by_kind(net: &Net, groups: &[Group], minimum: usize, label: &str) {
+    let mut hits = vec![Vec::<f32>::new(); civvis::action_space::KINDS.len()];
+    let mut chances = vec![Vec::<f32>::new(); civvis::action_space::KINDS.len()];
+    for group in groups {
+        if group.kind >= hits.len() {
+            continue;
+        }
+        let (_, hit) = score_group(net, group, None);
+        hits[group.kind].push(hit);
+        chances[group.kind].push(1.0 / group.rows.len() as f32);
+    }
+
+    let mut order: Vec<usize> = (0..hits.len())
+        .filter(|kind| hits[*kind].len() >= minimum)
+        .collect();
+    order.sort_by(|left, right| {
+        hits[*right].len().cmp(&hits[*left].len()).then_with(|| {
+            civvis::action_space::KINDS[*left].cmp(civvis::action_space::KINDS[*right])
+        })
+    });
+    println!("{label} by chosen action kind (minimum {minimum} decisions):");
+    println!("  kind                    decisions  chance   top-1        lift");
+    for kind in order {
+        let (top, _) = mean_standard_error(&hits[kind]);
+        let (chance, _) = mean_standard_error(&chances[kind]);
+        let deltas: Vec<f32> = hits[kind]
+            .iter()
+            .zip(&chances[kind])
+            .map(|(hit, chance)| hit - chance)
+            .collect();
+        let (lift, se) = mean_standard_error(&deltas);
+        println!(
+            "  {:<23} {:>9}  {:>5.1}%  {:>6.1}%  {:+6.1} +/- {:>4.1} pp",
+            civvis::action_space::KINDS[kind],
+            hits[kind].len(),
+            100.0 * chance,
+            100.0 * top,
+            100.0 * lift,
+            100.0 * se,
+        );
+    }
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     let data = text(&args, "--data", "evolved/q_dataset.csv");
+    let eval_data = args
+        .iter()
+        .position(|arg| arg == "--eval-data")
+        .and_then(|index| args.get(index + 1))
+        .cloned();
     let out = text(&args, "--out", "evolved/qnet.json");
     let epochs = number(&args, "--epochs", 4);
     let batch = number(&args, "--batch", 64);
     let rate = decimal(&args, "--rate", 0.02);
     let share = decimal(&args, "--holdout", 0.25);
     let cap = number(&args, "--max-groups", 120_000);
+    let kind_min = number(&args, "--kind-min", 100);
     // Which blocks of the row the head may see. The control that matters is
     // `kind`: 77 of the 90 action features are a kind one-hot and the expert's
     // kind distribution is skewed, so a head that learned nothing but "pick a
@@ -276,106 +444,107 @@ fn main() {
     // That is the signal a search prior needs and the coarse prior cannot give.
     let same_kind = args.iter().any(|arg| arg == "--same-kind");
 
-    let file = match fs::File::open(&data) {
-        Ok(file) => file,
+    let loaded = match load_groups(&data, &keep, same_kind) {
+        Ok(loaded) => loaded,
         Err(error) => {
-            eprintln!("cannot read {data}: {error}");
+            eprintln!("{error}");
             std::process::exit(1);
         }
     };
-    let mut reader = BufReader::new(file);
-    let mut head = String::new();
-    let _ = reader.read_line(&mut head);
-    let columns = head.trim_end().split(',').count();
-    let width = columns - 6; // game,turn,seat,chosen ... won,score_share
-    println!("{data}: {columns} columns, {width} features per candidate, keeping {keep}");
-
-    let mut train: Vec<Group> = Vec::new();
-    let mut valid: Vec<Group> = Vec::new();
-    let mut current: Option<Group> = None;
-    let mut lines = 0usize;
-    let state_block = width - civvis::action_space::FEATURE_WIDTH;
-    let kind_count = civvis::action_space::KINDS.len();
-    // Read off the raw row, before `mask` blanks anything.
-    let kind_of = |raw: &[f32]| -> usize {
-        (0..kind_count)
-            .find(|k| raw[state_block + k] > 0.5)
-            .unwrap_or(usize::MAX)
-    };
-    let mut current_kinds: Vec<usize> = Vec::new();
-    let mut dropped = 0usize;
-
-    // A finished group is filed here so the two call sites (mid-loop and the
-    // tail) cannot drift apart on the filter or the split.
-    let mut file = |group: Group, group_kinds: &[usize], train: &mut Vec<Group>, valid: &mut Vec<Group>, dropped: &mut usize| {
-        if group.rows.len() < 2 {
-            return;
-        }
-        if same_kind && group_kinds.windows(2).any(|pair| pair[0] != pair[1]) {
-            *dropped += 1;
-            return;
-        }
-        if holdout(group.game, share) {
-            valid.push(group);
-        } else if train.len() < cap {
-            train.push(group);
-        }
-    };
-
-    for line in reader.lines().map_while(Result::ok) {
-        let fields: Vec<&str> = line.split(',').collect();
-        if fields.len() != columns {
-            continue;
-        }
-        lines += 1;
-        let game: u64 = fields[0].parse().unwrap_or(0);
-        let chosen = fields[3] == "1";
-        let won: f32 = fields[columns - 2].parse().unwrap_or(0.0);
-        let mut row: Vec<f32> = fields[4..columns - 2]
-            .iter()
-            .map(|value| value.parse().unwrap_or(0.0))
-            .collect();
-        let kind = kind_of(&row);
-        mask(&mut row, &keep, width);
-        if chosen {
-            if let Some(group) = current.take() {
-                file(group, &current_kinds, &mut train, &mut valid, &mut dropped);
-            }
-            current_kinds = vec![kind];
-            current = Some(Group {
-                rows: vec![row],
-                game,
-                won,
-            });
-        } else if let Some(group) = current.as_mut() {
-            group.rows.push(row);
-            current_kinds.push(kind);
-        }
-    }
-    if let Some(group) = current.take() {
-        file(group, &current_kinds, &mut train, &mut valid, &mut dropped);
-    }
-    if same_kind {
-        println!("--same-kind: dropped {dropped} mixed-kind decisions");
-    }
-
-    let mean_candidates = train.iter().map(|g| g.rows.len()).sum::<usize>() as f32
-        / train.len().max(1) as f32;
+    let width = loaded.width;
     println!(
-        "{lines} rows -> {} train decisions, {} held-out decisions, {mean_candidates:.2} candidates each",
+        "{data}: {} columns, {width} features per candidate, keeping {keep}",
+        loaded.columns
+    );
+    if same_kind {
+        println!(
+            "--same-kind: dropped {} mixed-kind decisions",
+            loaded.dropped
+        );
+    }
+
+    let source_lines = loaded.lines;
+    let (train, valid, external) = if let Some(path) = eval_data.as_deref() {
+        let evaluated = match load_groups(path, &keep, same_kind) {
+            Ok(loaded) => loaded,
+            Err(error) => {
+                eprintln!("{error}");
+                std::process::exit(1);
+            }
+        };
+        if evaluated.width != width {
+            eprintln!(
+                "q_train: training width {width} does not match external evaluation width {}",
+                evaluated.width
+            );
+            std::process::exit(1);
+        }
+        println!(
+            "external evaluation {path}: {} groups from {} rows{}",
+            evaluated.groups.len(),
+            evaluated.lines,
+            if same_kind {
+                format!(", dropped {} mixed-kind decisions", evaluated.dropped)
+            } else {
+                String::new()
+            }
+        );
+        (
+            loaded.groups.into_iter().take(cap).collect::<Vec<_>>(),
+            evaluated.groups,
+            true,
+        )
+    } else {
+        let mut train = Vec::new();
+        let mut valid = Vec::new();
+        for group in loaded.groups {
+            if holdout(group.game, share) {
+                valid.push(group);
+            } else if train.len() < cap {
+                train.push(group);
+            }
+        }
+        (train, valid, false)
+    };
+
+    let mean_candidates =
+        train.iter().map(|g| g.rows.len()).sum::<usize>() as f32 / train.len().max(1) as f32;
+    let evaluation_label = if external { "external" } else { "held-out" };
+    let train_chance = train
+        .iter()
+        .map(|group| 1.0 / group.rows.len() as f32)
+        .sum::<f32>()
+        / train.len().max(1) as f32;
+    let valid_chance = valid
+        .iter()
+        .map(|group| 1.0 / group.rows.len() as f32)
+        .sum::<f32>()
+        / valid.len().max(1) as f32;
+    println!(
+        "{source_lines} source rows -> {} train decisions, {} {} decisions, {mean_candidates:.2} train candidates each",
         train.len(),
-        valid.len()
+        valid.len(),
+        if external {
+            "external-evaluation"
+        } else {
+            "held-out"
+        },
     );
     println!(
-        "chance top-1 = {:.1}% (one chosen action among {mean_candidates:.2})",
-        100.0 / mean_candidates
+        "exact chance top-1: train {:.1}%, {} {:.1}% (one chosen action among {mean_candidates:.2} mean train candidates)",
+        100.0 * train_chance,
+        evaluation_label,
+        100.0 * valid_chance,
     );
     if train.is_empty() || valid.is_empty() {
-        eprintln!("q_train: need decisions on both sides of the split");
+        eprintln!("q_train: need both training and evaluation decisions");
         std::process::exit(1);
     }
     let won_share = train.iter().filter(|g| g.won > 0.5).count() as f32 / train.len() as f32;
-    println!("train decisions from winning seats: {:.1}%", 100.0 * won_share);
+    println!(
+        "train decisions from winning seats: {:.1}%",
+        100.0 * won_share
+    );
 
     let mut net = Net::new(width, 12_345);
     let mut grad = Grad::zeros(&net);
@@ -418,13 +587,14 @@ fn main() {
             (l + loss, h + hit)
         });
         println!(
-            "epoch {epoch}: train loss {:.4} top-1 {:.1}% | held-out loss {:.4} top-1 {:.1}%",
+            "epoch {epoch}: train loss {:.4} top-1 {:.1}% | {evaluation_label} loss {:.4} top-1 {:.1}%",
             loss_sum / seen as f32,
             100.0 * hits / seen as f32,
             vloss / valid.len() as f32,
             100.0 * vhits / valid.len() as f32
         );
     }
+    report_by_kind(&net, &valid, kind_min, evaluation_label);
 
     // Written in the `ValueNet` shape so the existing loader reads it: the
     // hidden stack is pinned at [64, 32, 1] and only the input width is free.
