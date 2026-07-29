@@ -1,6 +1,7 @@
 # The midgame power-spike appointment
 
-Status: **implemented and locally verified; no focal seed has been read**.
+Status: **implementation checkpoint under semantic integration; no focal seed
+has been read**.
 
 ## Implementation checkpoint
 
@@ -11,13 +12,15 @@ readiness, and same-turn ranged/siege setup plus melee capture. Its lifecycle
 is observable independently from the ordinary five-turn strategy report, and
 the evaluator folds each treatment seat's terminal lifecycle exactly once.
 
-The deterministic mechanism suite covers every obligation below, including
-unique replacements, unavailable resources, quoted upgrade protection across
-all major Gold sinks, compatible wall breach, every preregistered invalidation,
-two-assessment Recovery, constructor inheritance, public JSON, and a real-route
-rejection. The evaluator's lifecycle aggregation, medians, and frozen gate
-classification tests also pass. Full CI and the repository soak remain pending
-until the implementation is checkpointed. The first focal command and all
+The deterministic mechanism suite covers every original obligation below,
+including unique replacements, unavailable resources, quoted upgrade
+protection across all major Gold sinks, compatible wall breach, every
+preregistered invalidation, two-assessment Recovery, constructor inheritance,
+public JSON, and a real-route rejection. The evaluator's lifecycle aggregation,
+medians, and frozen gate classification tests also pass. Stable episode records
+and the clarified raw target-ordering fixture below remain queued behind PR
+#574's already-claimed assessment-observer seam. Full CI and the repository
+soak remain pending until that semantic merge. The first focal command and all
 thresholds below are unchanged and unread.
 
 This is the next military experiment after the ancient-rush line was retired
@@ -72,8 +75,11 @@ fallback. City-states and barbarians remain on `BasicAi`; `RandomAi` remains a
 random control. No minor civilization starts an elective power-spike war.
 
 The state is an inspectable `WarPlan`, separate from the five-turn
-`StrategicPlan`:
+`StrategicPlan`. Every appointment receives a monotonically increasing,
+seat-local episode ID so an abort followed by a replan cannot blend two
+packages into one apparent declaration:
 
+- episode ID;
 - target player and objective city;
 - breakthrough technology and assault unit;
 - the predecessor body, when the assault unit has a direct upgrade path;
@@ -82,10 +88,14 @@ The state is an inspectable `WarPlan`, separate from the five-turn
 - phase (`research`, `mobilize`, `stage`, `strike`, or `exploit`); and
 - the turn on which the appointment was made.
 
-The plan is reported through `PlanReport` and the reasoning journal. An
-experiment must be able to distinguish a plan that was formed, one whose
-technology arrived, one that mobilized, and one that actually declared. A
-terminal snapshot saying only `Conquest` is not exposure evidence.
+The plan is reported through `PlanReport` and the reasoning journal. Its
+lifecycle report retains one record per episode, including formation,
+breakthrough, mobilization, declaration, complete-package status, first
+treated-seat capture, and abort/finish reason. Aggregate counts are folded from
+those records rather than inferred from the final active plan. An experiment
+must be able to distinguish a plan that was formed, one whose technology
+arrived, one that mobilized, and one that actually declared. A terminal
+snapshot saying only `Conquest` is not exposure evidence.
 
 ### 1. Select a target and the minimum excellent unlock together
 
@@ -128,12 +138,16 @@ turn. Production turns use the empire's current city Production and count
 existing, queued, and directly upgradeable predecessor bodies. March turns use
 the slowest required body's movement and the real staging route.
 
-The appointment uses the **least remaining Science path** that meets the
-excellent-unit test. Ties prefer the earlier launch estimate, then higher
-expected damage, then stable unit/target IDs. Target selection minimizes the
-existing campaign cost plus the estimated turns to research, mobilize, and
-march; it therefore chooses the best *attack window*, not simply the weakest
-nameplate. No leader or civilization name receives a target bonus.
+For each candidate target, the appointment first uses that target's **least
+remaining Science path** that meets the excellent-unit test. Ties prefer the
+earlier launch estimate, then higher expected damage, then the stable unit ID.
+Target selection then minimizes one raw objective: the existing rival and city
+campaign cost plus the unscaled estimated turns to research, produce the bodies
+and breach package, and march. Ties use stable target and objective IDs. These
+components are reported and pinned by a deterministic ordering fixture; they
+are not normalized or reweighted after results. The selector therefore chooses
+the best *attack window*, not simply the weakest nameplate. No leader or
+civilization name receives a target bonus.
 
 If no target/unlock pair qualifies, the treatment is exactly ordinary
 `advanced` for that assessment. It may try again after the ordinary five-turn
@@ -249,12 +263,18 @@ ai_eval advanced_timing_attack advanced --players 8 --width 84 --height 54 \
   --victories science,culture,domination --seed 10100000 --jobs 6
 ```
 
-The evaluator must add treatment-only lifecycle diagnostics before this run:
-seat-games with a plan; plans reaching breakthrough/mobilize/declaration;
+The evaluator must add treatment-only lifecycle diagnostics before this run,
+folded once by stable episode ID: seat-games with a plan; plans reaching
+breakthrough/mobilize/declaration;
 median appointment-to-tech, tech-to-declaration, and declaration-to-first
 objective capture; declarations with a complete modern package; objectives
 captured within 10 turns; abort reasons; and treatment player-turn exposure.
 These are mechanism diagnostics and never replace wins.
+
+The capture endpoint is credited only when the treated seat owns the appointed
+city after its own elective declaration. Third-party capture, liberation,
+loyalty transfer, razing by another seat, or any other objective-owner change
+does not count as a treatment capture.
 
 The treatment advances only if every term passes:
 
