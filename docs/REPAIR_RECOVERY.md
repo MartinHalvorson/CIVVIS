@@ -20,6 +20,15 @@ seeds, endpoints, gates, or resource priority. The implementation already had
 both restrictions before any runtime diagnostic; this amendment makes them
 part of the written frozen contract.
 
+The frozen `Q` endpoint means exactly what the original endpoint section says:
+a pillaged improvement on a resource-bearing tile. A post-implementation audit
+found that 238 of the exploratory sample's 247 such tiles satisfy the engine's
+current resource-connection predicate; nine use alternate water improvements
+(Offshore Oil Rig or Fishing Boats) that the single stock-improvement predicate
+does not recognize. Output therefore says **resource-bearing improvements**,
+not “resource connections.” This is a label correction before focal data, not
+a changed count, treatment priority, endpoint, or gate.
+
 ## Observation and causal diagnosis
 
 This study began with an exploratory census of the 20 completed production
@@ -48,8 +57,9 @@ same tile for a different upgrade.
 
 Repairs are legal Builder actions, consume the rest of the unit's movement,
 and consume no Builder charge. Pillage disables the improvement's yields and
-resource connection. This makes one deliberately routed repair crew a narrow,
-honest policy candidate rather than a grant or rules change.
+any resource connection that improvement supplies. This makes one deliberately
+routed repair crew a narrow, honest policy candidate rather than a grant or
+rules change.
 
 **Frozen hypothesis:** reserving at most one focal Builder turn at a time for
 legal, resource-first routing to an owned pillaged improvement will reduce

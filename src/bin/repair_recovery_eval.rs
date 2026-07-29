@@ -2,7 +2,7 @@
 //!
 //! The treatment spends only legal focal-Builder movement. Before the stock
 //! adaptive controller acts, at most one Builder is routed toward an owned
-//! remote pillaged improvement, prioritizing strategic and luxury connections.
+//! remote pillaged improvement, prioritizing strategic and luxury tiles.
 //! Two focal seats are paired within every map; the map is the inference unit.
 use civvis::ai::{AdvancedAi, Ai};
 use civvis::game::{Action, Game, GameOptions, Item, VictoryConditions};
@@ -627,7 +627,7 @@ fn summarize_stratum<'a>(results: impl Iterator<Item = &'a MapResult>) -> Stratu
 fn print_stratum(label: &str, summary: &StratumSummary) {
     let maps = summary.maps.max(1);
     println!(
-        "  {label:<25} {:>3} maps; repaired {}/{} games, {} repairs; debt {}->{}, resource debt {}->{}; score delta {:+.2} (F/N/A {}/{}/{}); wins {}->{}; map win {:.1}%, score share {:.2}%",
+        "  {label:<25} {:>3} maps; repaired {}/{} games, {} repairs; debt {}->{}, resource-bearing {}->{}; score delta {:+.2} (F/N/A {}/{}/{}); wins {}->{}; map win {:.1}%, score share {:.2}%",
         summary.maps,
         summary.comparison.fired_games,
         summary.comparison.games,
@@ -1015,7 +1015,7 @@ fn main() {
         comparison.blocked_attempts,
     );
     println!(
-        "terminal debt: improvements {}->{}, resource connections {}->{}; damaged base yields P {:.0}->{:.0}, F {:.0}->{:.0}, G {:.0}->{:.0}, housing {:.1}->{:.1}",
+        "terminal debt: improvements {}->{}, resource-bearing improvements {}->{}; damaged base yields P {:.0}->{:.0}, F {:.0}->{:.0}, G {:.0}->{:.0}, housing {:.1}->{:.1}",
         control.repair_debt,
         comparison.repair_debt,
         control.resource_debt,
