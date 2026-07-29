@@ -84,7 +84,7 @@
           "ai": "strategic"
         }
       },
-      "rating": 1702.6556614094036,
+      "rating": 1500.0,
       "rd": 350.0,
       "vol": 0.06,
       "games": 0,
@@ -93,7 +93,8 @@
       "born_round": 60,
       "parents": [],
       "retired": false,
-      "anchor": true
+      "anchor": true,
+      "league_only": true
     },
     {
       "name": "basic",
