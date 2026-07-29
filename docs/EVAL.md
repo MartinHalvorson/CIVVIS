@@ -5578,3 +5578,100 @@ profile produced 8 champion wins (all Science) and 14 stock wins (13 Science,
 1 Culture). What is established is narrower and useful: **routing stability
 does not explain champion strength, because the champion is not more stable.**
 No holdout is run and no gameplay behavior changes.
+
+## 2026-07-29 — the expansion axis: one oracle with headroom, six treatments, and what replicated
+
+`Grant::Expansion` (#554) is **the only subsystem grant this harness has ever
+returned HEADROOM for**. A free Settler while the seat is short of its city
+target, one at a time, stopping at six:
+
+| run | granted | control | McNemar | discordant | fired |
+|---|---|---|---|---|---|
+| `none` (control) | 24/100 | 24/100 | p=1.0000 | 0 | 0 |
+| `treasury` (calibration) | 89/100 | 24/100 | p=0.0000 | 65 | 166.7/game |
+| **expansion, 50 pairs, seed 450000** | **46/100** | 24/100 | **p=0.0007** | 40 | 5.4/game |
+| **expansion, 150 pairs, seed 460000** | **157/300 = 52.3%** | 69/300 = 23.0% | **p=0.0000** | **144** | 5.6/game |
+
+Two disjoint seeds, 400 maps, 184 discordant cells. It carries a seat from well
+below parity (23.0%) to above it (52.3%) where parity is 25%. Every other
+subsystem grant — `ground`, `siting`, `taker`, `modernity`, `attrition` — is
+null.
+
+### What the grant does *not* mean, and my own retraction
+
+#554 claimed it "stops at six — the agent's own `desired_cities` target",
+concluding *the AI cannot afford the empire it already wants*. **That conclusion
+was wrong.** `EXPANSION_TARGET` is a hardcoded 6 in `oracle.rs`;
+`production_allocation_census` (#569) measures `desired_cities` at **3.83** on
+4p/24×16 and **5.00** on 6p/74×46. The grant pushed the empire *above* its own
+plan, so what it measured is that **the target is too low**, not that the target
+is unaffordable.
+
+`production_allocation_census`, 6p/74×46, 75,474 production over 6 maps:
+
+```
+building 26.4%  district 21.7%  civilian 18.0%  project 13.8%
+wonder 11.1%    military 6.1%   settler 2.8%    idle 0.2%
+cities held 4.83 against a target of 5.00
+the missing cities would have cost 67 production — 0.5% of everything made
+```
+
+Affordability is not the constraint at either scale (0.5% deployment, 14.3%
+eval).
+
+### Six treatments, and why five failed for the same reason
+
+| treatment | result |
+|---|---|
+| expansion window → payback (#562) | wins null; **terminal score significant, twice** (below) |
+| production preemption (`preempt_margin`) | cities at end **2.21 vs 2.21**; settlers started 2.46 → 2.42 |
+| settler-specific preemption (#571) | **inert** — settlers 16 vs 16, 23 vs 23 |
+| the settler's own valuation | free-city loss only **2.6%**; it already wins when asked |
+| capital growth (`OPENINGS.md` §12) | every city after the first arrives **later**, monotone in dose |
+| city-target ramp floor (#571) | fires at deployment; eval **INCONCLUSIVE**, confirmation pending |
+
+**Five of the six worked to deliver the plan's target faster, and the target was
+the thing that was wrong.** That is the single sentence this axis produced.
+
+### `expansion_pays_back` — replicated on economy, never on wins
+
+`expansion_window_open` reserves a flat `standard_duration(50)` for every city
+regardless of what it can build. `expansion_pays_back_for` asks instead whether
+there is time to build the settler at *this city's* production rate, walk it,
+and hold the ground long enough to return its cost.
+
+| run | wins | terminal score | wins resolution |
+|---|---|---|---|
+| 6p/74×46, 120 pairs, seed 490000, 250t | 50.0%, Elo +0 | 56–24, **p=0.0005** | 2 of 120 |
+| 6p/74×46, 120 pairs, seed 491000, **500t** | 51.2%, Elo +9 | 58–30, **p=0.0037** | 23 of 120 |
+
+**Read the resolution column.** At 250 turns only two maps produced a win
+direction, so 50.0% there means *unmeasured*, not *equal*; the 500-turn run
+resolves 23. Across both, the economic gain replicates at p<0.005 and the win
+rate is positive twice and significant neither time. Left off by default.
+
+### A gene sweep that measured a path a live agent never takes
+
+`GENOME.md` records "`city_target` saturates above six", swept at 20 mirrored
+maps a point, with 6/8/10/12 identical to four decimal places, concluding *the
+agent never gets that many cities anyway*.
+
+`city_target` is a **gene**, reached only through `unwrap_or_else` when there is
+no plan. A live `AdvancedAi` reads `plan.desired_cities` and never consults it.
+The sweep measured a fallback path, which is why every value above six was
+byte-identical. The live target is
+`(3 + turn / cadence).min(map_capacity).min(6)` in `assess`.
+
+**Before trusting a gene sweep, check the gene is on the live path.**
+
+### The map scale inverted a reading four times on this axis
+
+| reading | eval 4p 24×16 | deployment 6p 74×46 |
+|---|---|---|
+| settler blocked by "no site" | **44.0%** (sole blocker 401×) | **0.0%** |
+| expansion window shut | 8.3% | **31.2%** |
+| cities held / target | 1.83 / 3.83 | 4.83 / 5.00 |
+| `city_target_floor` 3→6 | **inert** (cities 1.83 → 1.83) | cities 4.83 → **5.33** |
+
+24×16 at four players is 96 tiles per player; 74×46 at six is 567. Every
+expansion instrument added here reports both scales for that reason.
