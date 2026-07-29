@@ -182,6 +182,31 @@ Passing permits a separate gameplay-integration PR with normal promotion
 tests; this evaluator cannot promote the policy by itself. Failure retains the
 controller and closes the candidate without post-hoc rescue.
 
+## Validation and execution audit
+
+Preregistration commit `deb1475` was pushed before implementation commit
+`7ac1e46`. No frozen seed had been run or read when either commit was made.
+
+- `cargo test --release --locked --bin repair_recovery_eval -j 1` passed all
+  eight focused tests.
+- `cargo clippy --locked --bin repair_recovery_eval -j 1` emitted no warning
+  in the new evaluator; the repository's existing warnings remain outside this
+  claim.
+- The rebuilt release binary rejected `--deployment-mix --players 8` with exit
+  2 before constructing a world.
+- A one-map, one-turn fixed-cell null at diagnostic seed 79,991 reproduced both
+  matched focal cells exactly.
+- A one-map, one-turn fixed-cell treatment-loop smoke at diagnostic seed 79,992
+  completed with no eligible damage and no intervention. It is not evidence
+  for the treatment and cannot alter the frozen design or gate.
+
+An initial attempt to invoke the standalone executable after `cargo test`
+failed immediately with exit 127 because a test harness does not create
+`target/release/repair_recovery_eval`. `cargo build --release` then created the
+binary used for the diagnostics above. No simulation or seed was touched by
+the failed invocation. The null seed 9,995,000 and both treatment ranges remain
+untouched.
+
 ## Resource rule
 
 The evaluator must not begin a large-map batch while another simulator job is
