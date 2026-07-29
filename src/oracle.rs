@@ -268,10 +268,43 @@ pub enum Grant {
     /// own plan asked for. The other half of [`Grant::ExpansionWanted`]'s
     /// partition; the rationale is written there.
     ExpansionBeyond,
+    /// A Settler at the head of the payout city's queue — and the empire pays
+    /// for it in full.
+    ///
+    /// The third member of a decomposition that now spans [`Grant::Expansion`]:
+    ///
+    /// | grant | the decision | the cost | the wait |
+    /// |---|---|---|---|
+    /// | [`Grant::Rebate`] | agent's | **free** | agent's |
+    /// | `ExpansionOrder` | **forced** | agent pays | agent's |
+    /// | [`Grant::Expansion`] | **forced** | **free** | **none** |
+    ///
+    /// `Rebate` gave the cost without the decision and measured null (+0.45
+    /// cities against the grant's +3.05, zero extra Settlers trained). This
+    /// gives the decision without the cost relief, so the pair brackets which
+    /// of the two the grant's 23.0%-to-52.5% actually rests on.
+    ///
+    /// **It survives the agent's turn**, which is what makes it viable at all:
+    /// `advanced_production` skips a city whose queue is non-empty outright at
+    /// the shipped `preempt_margin` of 1.0 (*"without preemption a non-empty
+    /// queue is skipped outright, so `production_value` is only ever consulted
+    /// on an idle city"*), so an order placed before the agent plays is not
+    /// re-decided by it. A fires-check asserts that rather than trusting it.
+    ///
+    /// ⚠ **The `pop >= 2` floor stays in force.** The engine stalls a Settler
+    /// at the head of a city below population two — `city.production` keeps
+    /// accumulating but the item never completes and everything behind it
+    /// waits — so forcing one there would measure a frozen queue and call it a
+    /// decision. This grant declines those turns and lets the floor bind.
+    ///
+    /// Placed through `Action::Produce`, the same path `AdvancedAi` uses, so
+    /// the displaced item's progress is banked by `item_progress_key` exactly
+    /// as it would be if the agent had switched builds itself.
+    ExpansionOrder,
 }
 
 impl Grant {
-    pub const ALL: [Grant; 11] = [
+    pub const ALL: [Grant; 12] = [
         Grant::None,
         Grant::Modernity,
         Grant::Taker,
@@ -283,6 +316,7 @@ impl Grant {
         Grant::Rebate,
         Grant::ExpansionWanted,
         Grant::ExpansionBeyond,
+        Grant::ExpansionOrder,
     ];
 
     pub fn name(self) -> &'static str {
@@ -298,6 +332,7 @@ impl Grant {
             Grant::Rebate => "rebate",
             Grant::ExpansionWanted => "expansion_wanted",
             Grant::ExpansionBeyond => "expansion_beyond",
+            Grant::ExpansionOrder => "expansion_order",
         }
     }
 
@@ -546,6 +581,45 @@ impl<A: Ai> Oracle<A> {
         self.fired += 1;
     }
 
+    /// Order a Settler in the payout city and let the empire pay for it.
+    fn grant_expansion_order(&mut self, g: &mut Game, pid: usize) {
+        let Some(home) = expansion_payout_city(g, pid) else {
+            return;
+        };
+        let settler = Item::Unit {
+            unit: crate::name!("settler"),
+        };
+        let Some(city) = g.cities.get(&home) else {
+            return;
+        };
+        // Already ordered: nothing to force, and re-issuing would churn the
+        // banked progress for no reason.
+        if city.queue.first() == Some(&settler) {
+            return;
+        }
+        // The engine stalls a Settler at the head of a city below population
+        // two. Forcing one there freezes the queue behind it, which is not a
+        // decision and would be counted as one.
+        if city.pop < 2 {
+            return;
+        }
+        if !g.can_produce(pid, home, &settler) {
+            return;
+        }
+        if g
+            .apply(
+                pid,
+                &crate::game::Action::Produce {
+                    city: home,
+                    item: settler,
+                },
+            )
+            .is_ok()
+        {
+            self.fired += 1;
+        }
+    }
+
     /// Pay the capital what a Settler would have cost it, and hand over no
     /// Settler.
     ///
@@ -751,6 +825,7 @@ impl<A: Ai> Ai for Oracle<A> {
                 Grant::Rebate => self.grant_rebate(g, pid),
                 Grant::ExpansionWanted => self.grant_expansion_split(g, pid, true),
                 Grant::ExpansionBeyond => self.grant_expansion_split(g, pid, false),
+                Grant::ExpansionOrder => self.grant_expansion_order(g, pid),
             }
         }
         self.inner.take_turn(g, pid);
@@ -1255,6 +1330,59 @@ mod tests {
             }
         }
         assert!(rebate.fired() > 0, "the rebate never paid, so the cap is untested");
+    }
+
+    /// The ordered Settler must still be at the head of the queue after the
+    /// agent has played its whole turn.
+    ///
+    /// This is the assumption the grant rests on and the one most likely to be
+    /// wrong. `advanced_production` reconsiders a city's build every turn, and
+    /// if it re-decided over the order the grant would be inert and report a
+    /// null for the wrong reason. It does not, because at the shipped
+    /// `preempt_margin` of 1.0 it skips any city whose queue is non-empty —
+    /// but that is a property of code this module does not own, so it is
+    /// asserted rather than assumed.
+    #[test]
+    fn an_ordered_settler_survives_the_agents_own_turn() {
+        let mut g = Game::new(4, 28, 18, 8_108, 200, 2);
+        let mut oracle = Oracle::new(AdvancedAi::new(), Grant::ExpansionOrder);
+        let mut others = AdvancedAi::fleet(&g);
+        let settler = Item::Unit {
+            unit: crate::name!("settler"),
+        };
+        let mut survived = 0usize;
+        let mut overridden = 0usize;
+        while g.winner.is_none() && g.turn <= 160 {
+            let pid = g.current;
+            if pid == 0 {
+                let before = oracle.fired();
+                // The grant runs inside `take_turn`, before the agent plays.
+                let ordered = super::expansion_payout_city(&g, 0);
+                oracle.take_turn(&mut g, pid);
+                if oracle.fired() > before {
+                    let cid = ordered.expect("a payout city, since the grant fired");
+                    if g.cities.get(&cid).and_then(|city| city.queue.first())
+                        == Some(&settler)
+                    {
+                        survived += 1;
+                    } else {
+                        overridden += 1;
+                    }
+                }
+            } else {
+                others[pid].take_turn(&mut g, pid);
+            }
+            if g.winner.is_none() && g.current == pid {
+                let _ = g.apply(pid, &crate::game::Action::EndTurn);
+            }
+        }
+        assert!(oracle.fired() > 0, "the order grant never fired");
+        assert!(
+            survived > overridden,
+            "the agent re-decided over {overridden} of {} orders, so the grant is \
+mostly inert and a null from it would say nothing",
+            survived + overridden
+        );
     }
 
     /// `expansion_wanted` and `expansion_beyond` must partition `expansion`:
