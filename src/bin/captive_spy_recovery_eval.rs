@@ -1349,6 +1349,51 @@ mod tests {
     }
 
     #[test]
+    fn follow_through_census_counts_only_focal_recovered_spies() {
+        let mut state = RecoveryState::default();
+        state.recovered.insert(700);
+        let actions = vec![
+            (0, Action::AssignSpy { spy: 700, city: 10 }),
+            (
+                0,
+                Action::PromoteSpy {
+                    spy: 700,
+                    promotion: civvis::name::Name::new("cat_burglar"),
+                },
+            ),
+            (
+                0,
+                Action::SpyMission {
+                    spy: 700,
+                    mission: "siphon_funds".to_string(),
+                    target: (4, 5),
+                },
+            ),
+            (0, Action::AssignSpy { spy: 701, city: 10 }),
+            (1, Action::AssignSpy { spy: 700, city: 10 }),
+            (
+                0,
+                Action::Trade {
+                    player: 1,
+                    offer: Box::new(DealItems {
+                        gold: 1.0,
+                        ..DealItems::default()
+                    }),
+                    request: Box::new(DealItems::default()),
+                },
+            ),
+        ];
+
+        record_actions(&actions, 0, &mut state);
+
+        assert_eq!(state.census.recovered_spy_actions, 3);
+        assert_eq!(state.census.recovered_assignments, 1);
+        assert_eq!(state.census.recovered_promotions_used, 1);
+        assert_eq!(state.census.recovered_missions, 1);
+        assert_eq!(state.census.total_trade_actions, 1);
+    }
+
+    #[test]
     fn gates_reject_each_missing_mechanism_or_harm() {
         let passing = passing_gate();
         assert!(screen_passes(passing));
