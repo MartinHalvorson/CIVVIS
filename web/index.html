@@ -7507,6 +7507,20 @@ async function fetchJSON(url, opts = {}, timeoutMs = 15000) {
 }
 let firstLoad = true;
 let serverInstance = null;
+// The commit whose HTML, JavaScript and rules this document was served with.
+//
+// Every world the exhibition plays is a new server *process*, so a page that
+// treats "different process" as "different code" replaces the document several
+// times an hour. Almost none of those processes carry anything new: the
+// supervisor logs `known-good spectator build already matches the latest
+// worktree` about fifty times for every rebuild it promotes. Remembering the
+// build this document actually came from is what tells a successor worth
+// reloading for from one this page is already running.
+let documentCommit = null;
+function servesThisDocumentsCode(commit) {
+  return documentCommit !== null && typeof commit === "string" &&
+    commit !== "unknown" && commit === documentCommit;
+}
 let bootBusy = false, bootTimer = null, bootAttempts = 0;
 let supervisorReconnectTimer = null;
 let supervisorReconnectBusy = false;
@@ -7582,12 +7596,15 @@ function waitForSupervisedSuccessor(finishedInstance, finishedSeed) {
       // as soon as its socket exists rather than after an intermittent pause.
       const successor = await fetchJSON("/runtime", {cache: "no-store"}, 500);
       if (supervisedSuccessorChanged(successor, finishedInstance, finishedSeed)) {
-        const sameCode = worldTransitionHandoff?.reusePage === true &&
-          successor.commit && successor.commit !== "unknown" &&
-          successor.commit === state?.server_commit;
+        // Reusing the page used to be the manual restart's private optimism —
+        // `reusePage` is set by that button and by nothing else — so the
+        // exhibition's own boundary, which happens every game and which nobody
+        // clicks, always took the slow route. The condition that actually
+        // matters is not who asked: it is whether the successor is serving the
+        // code this document is already running.
+        const sameCode = servesThisDocumentsCode(successor.commit);
         if (sameCode) {
-          // A manual "restart" deliberately reuses the promoted runtime. Keep
-          // this already-loaded page too: one full successor snapshot is all
+          // Keep this already-loaded page: one full successor snapshot is all
           // it needs, while reloading HTML, rules, and then that same snapshot
           // added another visible half-second to every start.
           //
@@ -8830,6 +8847,10 @@ let specPending = null;  // fetched, not yet drawn
 let specFetching = false;
 let specFetchAbort = null;
 let specFetchGeneration = 0;
+// When this loop last ran at all. Declared here rather than beside the
+// follower that reads it because the frame loop below starts on the line it is
+// written on, and a `let` cannot be read before then.
+let lastSpecFrameAt = Date.now();
 function specFetch() {
   if (!SPEC || specFetching || specPending || worldTransitionPending()) return;
   const generation = specFetchGeneration;
@@ -8856,6 +8877,7 @@ function specFetch() {
 }
 (function specFrame() {
   requestAnimationFrame(specFrame);
+  lastSpecFrameAt = Date.now();
   const st = specPending;
   if (!st) { specFetch(); return; }
   specPending = null;
@@ -8874,6 +8896,130 @@ function specFetch() {
     specFetch();
   }
 })();
+// Take over a replacement server process without replacing this document.
+//
+// Every world is a new process, so this runs at every game boundary and at
+// every mid-game build promotion — on the live exhibition, once or twice a
+// minute. What has to be forgotten is exactly what belonged to the world being
+// left: the tile base a delta would be applied to, the acknowledgement that
+// names it, the selection, and any animation still playing over coordinates
+// that mean nothing on the next map. The page's code, rules and atlases are
+// not world-scoped and are already the successor's own build.
+// Say in this page's own URL which server it is following.
+//
+// That URL is how anything outside the browser knows: civvis-keeper.sh reads
+// `instance=` back and re-points a tab that disagrees with the live `/state`,
+// from AppleScript, where nothing can stage a handoff and every navigation is
+// a full load. Until now the stamp was a side effect of reloading — the URL
+// was built by `reloadForSupervisedWorld` — so a page that stops reloading
+// stops stamping, and the watchdog navigates it for being silent. Measured on
+// the rig before this: a page that adopted three successors in place still
+// looked stale for 167 of 716 samples, all of them the first world, because
+// the document had been opened on a bare `/` and never said otherwise.
+//
+// `replaceState` says it without loading anything.
+function stampFollowedServer(instance, seed) {
+  try {
+    const here = new URL(window.location.href);
+    const wanted = String(instance);
+    const world = seed === undefined || seed === null ? null : String(seed);
+    if (here.searchParams.get("instance") === wanted &&
+        (world === null || here.searchParams.get("game") === world)) return;
+    here.searchParams.set("instance", wanted);
+    if (world !== null) here.searchParams.set("game", world);
+    history.replaceState(history.state, "", here.toString());
+  } catch (e) {}
+}
+function adoptSupervisedSuccessor(instance, seed) {
+  serverInstance = instance;
+  stampFollowedServer(instance, seed);
+  // The successor is here and this page is already on it, so the watcher armed
+  // when the result appeared has nothing left to find.
+  cancelSupervisedSuccessorWatch();
+  // Anything already in flight was addressed to the process that just went
+  // away. Retire its generation so a late answer cannot be adopted as this
+  // world's first frame.
+  specFetchGeneration++;
+  specFetching = false;
+  if (specFetchAbort) {
+    try { specFetchAbort.abort(); } catch (e) {}
+    specFetchAbort = null;
+  }
+  specPending = null;
+  // `have=` must never name a world this server has not heard of, or the
+  // delta it answers with is against a map that no longer exists.
+  tileStore = null;
+  paintedFrame = null;
+  lastSeed2 = null;
+  sel = null;
+  selCity = null;
+  // Let go of the world being left, or the next snapshot is compared against
+  // it. `render` returns as soon as it decides to adopt, before it commits the
+  // state it was given — so a `state` kept here is a world that never advances,
+  // and the seed it holds re-triggers the same decision on every frame. That
+  // is a page frozen on a dead map with its loop running flat out, which is
+  // strictly worse than the reload this replaces. A null state is the ordinary
+  // pre-first-frame condition and every reader already handles it.
+  state = null;
+  resetAnim();
+  specFetch();
+}
+// Keep following the live server when the watch loop above cannot run.
+//
+// That loop is driven by requestAnimationFrame, which is the right clock for
+// painting and the wrong one for staying connected: Chrome suspends rAF
+// entirely in a tab that is hidden, occluded, or not its window's active tab,
+// and the exhibition spends much of its life in exactly that state. A page
+// frozen there does not merely stop drawing — it stops noticing that the world
+// it is pointed at has ended, and it holds a retired process until something
+// outside the browser navigates it.
+//
+// Measured on the live exhibition at two consecutive boundaries before this
+// existed: the tab sat on the dead server for 23s and 18s while the next world
+// ran to turn 144 and turn 81 unwatched, and what recovered it was
+// civvis-refresh.sh setting the tab's URL over AppleScript — a full document
+// load that dropped the viewer into the middle of a game.
+//
+// Timers are throttled in a hidden tab, not stopped, so a slow beat is enough.
+// It asks `/runtime`, which answers from atomics beside the session: a page
+// that cannot paint must never poll `/state`, which takes the simulation mutex
+// and would slow the very turns nobody is watching.
+const FOLLOW_POLL_MS = 2000;
+// How long the painting loop may be silent before this one assumes it is not
+// running. Two animation frames is 33ms on a healthy page; a second and a half
+// is only reached when rAF has genuinely stopped.
+const FOLLOW_IDLE_MS = 1500;
+let followBusy = false;
+async function followLiveServer() {
+  // A page that is painting finds a successor through its own `/state` loop,
+  // and that loop is strictly better informed than this one. Stay out of its
+  // way — and off the network — until it stops.
+  if (!SPEC || followBusy || supervisorReloading || worldTransitionPending()) return;
+  if (serverInstance === null) return;
+  if (Date.now() - lastSpecFrameAt < FOLLOW_IDLE_MS) return;
+  followBusy = true;
+  try {
+    const live = await fetchJSON("/runtime", {cache: "no-store"}, 2000);
+    if (live.server_instance === undefined || live.server_instance === serverInstance) return;
+    if (servesThisDocumentsCode(live.commit))
+      adoptSupervisedSuccessor(live.server_instance, live.seed);
+    else reloadForSupervisedWorld(live.server_instance, live.seed, {
+      finishedInstance: serverInstance, finishedSeed: state?.seed ?? null,
+      summary: "The exhibition is starting its next world",
+    });
+  } catch (e) {
+    // The socket being handed between processes is what a boundary looks like.
+    // The next beat asks again.
+  } finally {
+    followBusy = false;
+  }
+}
+setInterval(followLiveServer, FOLLOW_POLL_MS);
+// Becoming visible again is the one moment this page can act on immediately,
+// and the moment a viewer is most likely to be looking at it.
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) followLiveServer();
+});
 // Watch pace is a whole-turn budget. Lightning is zero, so the server takes no
 // wait at all. A pick also has to outlive the server that received it. Every
 // game is a new process starting at the default second per turn, and the
@@ -9255,6 +9401,17 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
   // binary. Reload once so this tab also picks up the new HTML/JavaScript.
   if (!acceptingSupervisedSuccessor && serverInstance !== null && st.server_instance !== undefined &&
       st.server_instance !== serverInstance) {
+    // Only a successor built from *different* source has anything for this
+    // page to load. When the code matches, replacing the document buys a full
+    // application boot — HTML, rules, atlases, a whole first map — and that
+    // boot is the loading screen a viewer sees cut into the exhibition.
+    // A transition already on screen was raised by a caller that owns the rest
+    // of this handoff — the Restart button and its successor watcher. Leave
+    // that path alone; it reveals its own successor.
+    if (!worldTransitionPending() && servesThisDocumentsCode(st.server_commit)) {
+      adoptSupervisedSuccessor(st.server_instance, st.seed);
+      return;
+    }
     // Two different events arrive here. Mid-game the supervisor has promoted a
     // freshly built binary and resumed this same map, so nothing is being
     // rebuilt and the card must not say so; at a game boundary the ordinary
@@ -9276,13 +9433,35 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
   // leave the completed map painted until a person refreshes the page.
   if (!acceptingSupervisedSuccessor && state && st.supervised && st.seed !== undefined &&
       state.seed !== undefined && st.seed !== state.seed) {
+    // A new world is not new code, and this is the arm that catches a page
+    // coming back from the dark: while it could not paint it kept following
+    // the exhibition's boundaries, so the world it holds is several games old
+    // while the process it is talking to is the live one. Reloading here threw
+    // away the whole application to draw a map this document could already
+    // draw — measured on the rig as the one remaining document replacement,
+    // landing on the viewer at the moment they looked back at the tab.
+    if (!worldTransitionPending() && servesThisDocumentsCode(st.server_commit)) {
+      adoptSupervisedSuccessor(st.server_instance, st.seed);
+      return;
+    }
     reloadForSupervisedWorld(st.server_instance, st.seed, {
       finishedInstance: serverInstance, finishedSeed: state.seed,
       summary: "The exhibition is starting its next world",
     });
     return;
   }
-  if (st.server_instance !== undefined) serverInstance = st.server_instance;
+  if (st.server_instance !== undefined) {
+    serverInstance = st.server_instance;
+    // Including the very first snapshot: a document opened on a bare `/` and
+    // never reloaded would otherwise never name the server it is watching.
+    if (st.supervised) stampFollowedServer(st.server_instance, st.seed);
+  }
+  // The build behind the first snapshot this document ever drew is the build
+  // it was served with. Later servers are compared against that, never against
+  // the previous server, so a run of same-code successors cannot drift.
+  if (documentCommit === null && typeof st.server_commit === "string" &&
+      st.server_commit !== "unknown")
+    documentCommit = st.server_commit;
   const newWorld = !state || st.seed !== state.seed || st.turn < state.turn;
   const viewChanged = !!state && !newWorld && st.view_player !== state.view_player;
   if (newWorld || viewChanged) {

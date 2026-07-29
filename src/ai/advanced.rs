@@ -68,6 +68,13 @@ const RUSH_ARMY: usize = 4;
 /// as a threat.
 const BASTION_PRESSURE: f64 = 0.45;
 
+
+
+/// The per-tile discount `settle_sites` already applies inside the search
+/// radius. Named here because a census that scores siting against raw
+/// `settle_value` is scoring it against an objective the agent never held.
+const SETTLE_DISTANCE_PENALTY: f64 = 0.9;
+
 /// How far above its empire's per-city mean a yield must stand before it names
 /// the city's role. At 1.0 every city would be typed by a coin flip around the
 /// average; 1.15 asks for a real lead, so an empire of interchangeable cities
@@ -20614,6 +20621,278 @@ mod tests {
                 "  median turn walls appeared: {}",
                 first_wall_turn[first_wall_turn.len() / 2]
             );
+        }
+        println!();
+    }
+
+    /// Census, not an assertion: how good are the sites a settler actually
+    /// picks, against the best site it could have picked nearby?
+    ///
+    /// This is the last unmeasured city decision. #532 bounded what a city
+    /// works (89.3% of its food ceiling, 99.5% of its production ceiling),
+    /// #534 bounded what it owns (perfect border growth, p=0.7283) and #542
+    /// bounded where its districts go (p=0.6989). All three are downstream of
+    /// *where the city stands*, and nothing had measured that.
+    ///
+    /// It is measured rather than granted deliberately. An oracle that
+    /// teleports settlers cannot work here: `AdvancedAi` founds only when a
+    /// settler's cached `settler_targets` entry equals its current position,
+    /// so a relocated settler walks back to its old target and never founds.
+    /// The grant would fire forever, suppress the seat's expansion entirely,
+    /// and report a catastrophic loss that measured the harness rather than
+    /// the subsystem. The ratio below asks the same question and cannot lie
+    /// in that direction.
+    ///
+    /// The comparison set is every legal site within eight tiles of the one
+    /// chosen — roughly a settler's remaining walk — judged by the agent's own
+    /// `settle_value`, with the just-founded city excluded from the minimum
+    /// separation rule so the chosen tile competes on equal terms.
+    ///
+    /// ## Three baselines, because the first one was the wrong question
+    ///
+    /// The original version of this census scored siting against **raw**
+    /// `settle_value`. That is not the objective this agent pursues:
+    /// `settle_sites` ranks candidates by
+    /// `settle_value - SETTLE_DISTANCE_PENALTY * distance`, so it trades site
+    /// quality for proximity deliberately. Scoring it against a function that
+    /// never charges for the walk measures a preference it never held, and the
+    /// gap it reported was correspondingly overstated.
+    ///
+    /// The agent's own objective is the honest baseline, and the gap survives
+    /// it: **65.4%**. The third baseline closes the loop by asking what the
+    /// agent's own candidate generator offers from the founded tile itself,
+    /// which excludes any explanation resting on `settle_sites`' filters --
+    /// the `value >= 12.0` floor, foreign-owned ground, four-tile separation.
+    /// That reads **65.9%**, so the filters do not explain it either.
+    ///
+    /// ## What has been refuted
+    ///
+    /// **Target staleness is NOT the cause.** The obvious mechanism -- a
+    /// settler picks a target when it spawns and then walks to it while the
+    /// world changes, since the cached target is only checked for *legality*
+    /// and never re-scored -- was implemented and measured **inert**. Adding a
+    /// per-turn re-score that abandons the target for a site better by a
+    /// margin changed not one founding across these eight maps: identical
+    /// ratio, identical city count, identical best-site count, both with the
+    /// naive comparison and with a like-for-like one that scored the incumbent
+    /// under the same distance discount. It was reverted rather than shipped,
+    /// because a treatment that fires zero times measures the stock agent
+    /// under another name.
+    ///
+    /// So the better sites are ones the agent's *generator* offers and its
+    /// *search* does not return. The remaining difference between the two is
+    /// `BasicAi::first_reachable_settle_site`, which adds a route check and
+    /// scans in chunks of 40, discarding an entire chunk when no route reaches
+    /// any of it. Either those sites are genuinely unreachable -- in which
+    /// case this census overstates the gap and the axis is closed -- or the
+    /// chunked scan is discarding reachable ground. That is the next question,
+    /// and it should be measured before anything is built.
+    ///
+    /// Run with `cargo test --release settle_siting_census -- --ignored --nocapture`.
+    #[test]
+    #[ignore = "census, not an assertion; run explicitly with --nocapture"]
+    fn settle_siting_census() {
+        let ai = AdvancedAi::new();
+        let mut ratios: Vec<f64> = Vec::new();
+        let mut near_ratios: Vec<f64> = Vec::new();
+        let mut step_away: Vec<i32> = Vec::new();
+        let mut discounted_ratios: Vec<f64> = Vec::new();
+        let mut offered_ratios: Vec<f64> = Vec::new();
+        let mut chosen_was_best = 0u64;
+        let mut founded = 0u64;
+        let mut capital_ratio: Vec<f64> = Vec::new();
+
+        for map in 0..8u64 {
+            let mut game = Game::new_full(4, 24, 16, 470_000 + map, 200, 1, false);
+            let mut ais: Vec<AdvancedAi> =
+                (0..game.players.len()).map(|_| AdvancedAi::new()).collect();
+            game.set_fog_memory(false);
+            let mut known: BTreeSet<u32> = game.player_city_ids(0).into_iter().collect();
+            while game.winner.is_none() && game.turn <= game.max_turns {
+                let pid = game.current;
+                ais[pid].take_turn(&mut game, pid);
+                if game.winner.is_none() && game.current == pid {
+                    let _ = game.apply(pid, &crate::game::Action::EndTurn);
+                }
+                if pid != 0 {
+                    continue;
+                }
+                for cid in game.player_city_ids(0) {
+                    if !known.insert(cid) {
+                        continue;
+                    }
+                    // A city this seat gained by conquest was never sited by
+                    // its settler, so it says nothing about this decision.
+                    let city = &game.cities[&cid];
+                    if city.captured_from.is_some() {
+                        continue;
+                    }
+                    let chosen_pos = city.pos;
+                    let chosen = ai.settle_value(&game, 0, chosen_pos);
+                    // Only ground this seat had actually EXPLORED counts. A
+                    // settler cannot choose a site nobody has seen, and
+                    // scoring it against one would measure the fog rather than
+                    // the decision.
+                    let mut best_at = |radius: i32| {
+                        game.wdisk(chosen_pos, radius)
+                            .into_iter()
+                            .filter(|pos| {
+                                let Some(tile) = game.map.get(*pos) else {
+                                    return false;
+                                };
+                                if !game.players[0].explored.contains(pos) {
+                                    return false;
+                                }
+                                if game.rules.is_water(tile)
+                                    || !game.rules.is_passable(tile)
+                                    || game.tile_is_natural_wonder(tile)
+                                {
+                                    return false;
+                                }
+                                // Every other city still enforces its
+                                // separation; the one just founded must not
+                                // veto its own site.
+                                game.cities
+                                    .values()
+                                    .filter(|other| other.id != cid)
+                                    .all(|other| game.wdist(other.pos, *pos) >= 4)
+                            })
+                            .map(|pos| ai.settle_value(&game, 0, pos))
+                            .fold(chosen, f64::max)
+                    };
+                    // How far away is the better site? `settle_value` does
+                    // not price the walk, so a gap three tiles off is worth
+                    // much less than the same gap one tile off, and the
+                    // distance is what makes the number readable.
+                    let mut best_near_pos = chosen_pos;
+                    let mut best_near_val = chosen;
+                    for pos in game.wdisk(chosen_pos, 3) {
+                        let Some(tile) = game.map.get(pos) else {
+                            continue;
+                        };
+                        if !game.players[0].explored.contains(&pos)
+                            || game.rules.is_water(tile)
+                            || !game.rules.is_passable(tile)
+                            || game.tile_is_natural_wonder(tile)
+                            || !game
+                                .cities
+                                .values()
+                                .filter(|other| other.id != cid)
+                                .all(|other| game.wdist(other.pos, pos) >= 4)
+                        {
+                            continue;
+                        }
+                        let value = ai.settle_value(&game, 0, pos);
+                        if value > best_near_val {
+                            best_near_val = value;
+                            best_near_pos = pos;
+                        }
+                    }
+                    if best_near_pos != chosen_pos {
+                        step_away.push(game.wdist(chosen_pos, best_near_pos));
+                    }
+                    let near = best_at(3);
+                    let best = best_at(8);
+                    // ⚠ The comparison above is against RAW `settle_value`,
+                    // which is not the objective this agent actually pursues.
+                    // `settle_sites` ranks candidates by
+                    // `settle_value - 0.9 * distance`, so the agent trades
+                    // site quality for proximity on purpose. Scoring it
+                    // against a function that does not charge for the walk
+                    // measures a preference it never held.
+                    let discounted = game
+                        .wdisk(chosen_pos, 8)
+                        .into_iter()
+                        .filter(|pos| {
+                            let Some(tile) = game.map.get(*pos) else {
+                                return false;
+                            };
+                            game.players[0].explored.contains(pos)
+                                && !game.rules.is_water(tile)
+                                && game.rules.is_passable(tile)
+                                && !game.tile_is_natural_wonder(tile)
+                                && game
+                                    .cities
+                                    .values()
+                                    .filter(|other| other.id != cid)
+                                    .all(|other| game.wdist(other.pos, *pos) >= 4)
+                        })
+                        .map(|pos| {
+                            ai.settle_value(&game, 0, pos)
+                                - game.wdist(chosen_pos, pos) as f64 * SETTLE_DISTANCE_PENALTY
+                        })
+                        .fold(chosen, f64::max);
+                    discounted_ratios.push(chosen / discounted.max(1e-9));
+                    // And now the decisive one: what does the agent's OWN
+                    // candidate generator offer from this very tile? Anything
+                    // the two comparisons above can see that this cannot is
+                    // excluded by `settle_sites`' filters -- the value >= 12.0
+                    // floor, foreign-owned ground, the four-tile separation --
+                    // rather than missed by the choice.
+                    let offered = ai
+                        .settle_sites(&game, 0, chosen_pos, 8)
+                        .into_iter()
+                        .map(|(_, value)| value)
+                        .fold(chosen, f64::max);
+                    offered_ratios.push(chosen / offered.max(1e-9));
+                    founded += 1;
+                    if best <= chosen + 1e-9 {
+                        chosen_was_best += 1;
+                    }
+                    near_ratios.push(chosen / near.max(1e-9));
+                    let ratio = chosen / best.max(1e-9);
+                    ratios.push(ratio);
+                    if known.len() == 1 {
+                        capital_ratio.push(ratio);
+                    }
+                }
+            }
+        }
+
+        ratios.sort_by(f64::total_cmp);
+        let mean = ratios.iter().sum::<f64>() / ratios.len().max(1) as f64;
+        println!("\n=== settle siting census: {founded} cities founded over 8 maps ===");
+        let near_mean = near_ratios.iter().sum::<f64>() / near_ratios.len().max(1) as f64;
+        let disc_mean =
+            discounted_ratios.iter().sum::<f64>() / discounted_ratios.len().max(1) as f64;
+        println!(
+            "  against RAW settle_value  -- within 3 tiles: {:.1}%   within 8 tiles: {:.1}%",
+            near_mean * 100.0,
+            mean * 100.0
+        );
+        let off_mean = offered_ratios.iter().sum::<f64>() / offered_ratios.len().max(1) as f64;
+        println!(
+            "  against the AGENT'S OWN objective (settle_value - {SETTLE_DISTANCE_PENALTY}/tile): {:.1}%",
+            disc_mean * 100.0
+        );
+        println!(
+            "  against what its OWN `settle_sites` generator offers here: {:.1}%",
+            off_mean * 100.0
+        );
+        if !ratios.is_empty() {
+            println!(
+                "  percentiles  p10 {:.1}%   median {:.1}%   p90 {:.1}%   worst {:.1}%",
+                ratios[ratios.len() / 10] * 100.0,
+                ratios[ratios.len() / 2] * 100.0,
+                ratios[ratios.len() * 9 / 10] * 100.0,
+                ratios[0] * 100.0
+            );
+        }
+        println!(
+            "  the chosen site WAS the best available on {chosen_was_best} of {founded} foundings ({:.1}%)",
+            chosen_was_best as f64 / founded.max(1) as f64 * 100.0
+        );
+        step_away.sort_unstable();
+        if !step_away.is_empty() {
+            println!(
+                "  when a better site existed within 3 tiles it was a median {} tile(s) away ({} cases)",
+                step_away[step_away.len() / 2],
+                step_away.len()
+            );
+        }
+        if !capital_ratio.is_empty() {
+            let cap = capital_ratio.iter().sum::<f64>() / capital_ratio.len() as f64;
+            println!("  capitals alone: {:.1}% ({} sampled)", cap * 100.0, capital_ratio.len());
         }
         println!();
     }
