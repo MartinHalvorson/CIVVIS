@@ -1,6 +1,6 @@
 # Planet distance cache-order experiment
 
-Status: **preregistered; microbenchmark baseline not yet read**
+Status: **preregistered; baseline frozen before treatment**
 
 ## Evidence and hypothesis
 
@@ -89,4 +89,15 @@ strength.
 
 ## Result
 
-Pending the committed benchmark and frozen baseline.
+The three fresh-process baseline runs produced these phase medians, in
+nanoseconds per call:
+
+| run | cold local | admitted local | admitted long |
+|---:|---:|---:|---:|
+| 1 | 17.802521 | 17.875625 | 17.243146 |
+| 2 | 17.052521 | 17.738459 | 17.956021 |
+| 3 | 16.354084 | 16.428979 | 16.311729 |
+| **median** | **17.052521** | **17.738459** | **17.243146** |
+
+These baseline observations were committed before applying or benchmarking
+the cache-order treatment. Treatment result pending.
