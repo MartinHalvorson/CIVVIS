@@ -38,13 +38,19 @@ pub const BUILTIN_AIS: [&str; 10] = [
 /// tournament ratings. Keeping them out of `BUILTIN_AIS` prevents a control
 /// factory from being pooled into the same player/leader rating key as
 /// its treatment.
-pub const EVAL_ONLY_AIS: [&str; 52] = [
+pub const EVAL_ONLY_AIS: [&str; 58] = [
     "advanced_banking_dedication",
     "advanced_blind_to_leaders",
     "advanced_rush",
     "advanced_city_strategy",
     "advanced_city_strategy_emphasis",
     "advanced_city_strategy_roles",
+    "advanced_city_strategy_roles_raw",
+    "advanced_city_strategy_raw",
+    "advanced_city_strategy_bastion_only",
+    "advanced_city_strategy_breadbasket_only",
+    "advanced_city_strategy_comparative_only",
+    "advanced_city_strategy_pressure_only",
     "advanced_civ_blind",
     "advanced_counter_in_lane",
     "advanced_counter_stand_down",
@@ -624,6 +630,63 @@ pub fn builtin_ai(name: &str, seed: u64) -> Box<dyn Ai> {
             let mut ai = AdvancedAi::new();
             ai.city_strategy = true;
             ai.city_strategy_emphasis = false;
+            Box::new(ai)
+        }
+        // The frozen pre-repair controls: the role ladder allowed to type a
+        // city comparatively while the empire is still expanding, which is
+        // what the 42.1% and 42.5% results were measured on. Kept so those
+        // numbers stay reproducible now that the repair is the default.
+        // Isolates only the Bastion rung: a locally outmatched city halts growth and wants hammers.
+        "advanced_city_strategy_bastion_only" => {
+            let mut ai = AdvancedAi::new();
+            ai.city_strategy = true;
+            ai.city_strategy_emphasis = false;
+            ai.city_strategy_breadbasket = false;
+            ai.city_strategy_comparative = false;
+            ai.city_strategy_pressure = false;
+            Box::new(ai)
+        }
+        // Isolates only the Breadbasket rung: the best food city feeds settlers while the empire is short.
+        "advanced_city_strategy_breadbasket_only" => {
+            let mut ai = AdvancedAi::new();
+            ai.city_strategy = true;
+            ai.city_strategy_emphasis = false;
+            ai.city_strategy_bastion = false;
+            ai.city_strategy_comparative = false;
+            ai.city_strategy_pressure = false;
+            Box::new(ai)
+        }
+        // Isolates only the comparative rungs, Forge and Specialist.
+        "advanced_city_strategy_comparative_only" => {
+            let mut ai = AdvancedAi::new();
+            ai.city_strategy = true;
+            ai.city_strategy_emphasis = false;
+            ai.city_strategy_bastion = false;
+            ai.city_strategy_breadbasket = false;
+            ai.city_strategy_pressure = false;
+            Box::new(ai)
+        }
+        // Isolates only per-city military pressure, with no role ever assigned.
+        "advanced_city_strategy_pressure_only" => {
+            let mut ai = AdvancedAi::new();
+            ai.city_strategy = true;
+            ai.city_strategy_emphasis = false;
+            ai.city_strategy_bastion = false;
+            ai.city_strategy_breadbasket = false;
+            ai.city_strategy_comparative = false;
+            Box::new(ai)
+        }
+        "advanced_city_strategy_roles_raw" => {
+            let mut ai = AdvancedAi::new();
+            ai.city_strategy = true;
+            ai.city_strategy_emphasis = false;
+            ai.city_strategy_expansion_first = false;
+            Box::new(ai)
+        }
+        "advanced_city_strategy_raw" => {
+            let mut ai = AdvancedAi::new();
+            ai.city_strategy = true;
+            ai.city_strategy_expansion_first = false;
             Box::new(ai)
         }
         "advanced_lane_reachable" => {
@@ -1363,6 +1426,12 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "advanced_city_strategy" => (Vec::new(), "advanced_city_strategy"),
         "advanced_city_strategy_emphasis" => (Vec::new(), "advanced_city_strategy_emphasis"),
         "advanced_city_strategy_roles" => (Vec::new(), "advanced_city_strategy_roles"),
+        "advanced_city_strategy_roles_raw" => (Vec::new(), "advanced_city_strategy_roles_raw"),
+        "advanced_city_strategy_raw" => (Vec::new(), "advanced_city_strategy_raw"),
+        "advanced_city_strategy_bastion_only" => (Vec::new(), "advanced_city_strategy_bastion_only"),
+        "advanced_city_strategy_breadbasket_only" => (Vec::new(), "advanced_city_strategy_breadbasket_only"),
+        "advanced_city_strategy_comparative_only" => (Vec::new(), "advanced_city_strategy_comparative_only"),
+        "advanced_city_strategy_pressure_only" => (Vec::new(), "advanced_city_strategy_pressure_only"),
         "advanced_banking_dedication" => (Vec::new(), "advanced_banking_dedication"),
         "advanced_measured_dedication" => (Vec::new(), "advanced_measured_dedication"),
         "advanced_parallel_settlers" => (Vec::new(), "advanced_parallel_settlers"),
@@ -1879,7 +1948,7 @@ mod tests {
             // Anything else reaching that state fell through to the
             // catch-all and is claiming to need nothing while quietly
             // needing a net.
-            const SCRIPTED: [&str; 24] = [
+            const SCRIPTED: [&str; 30] = [
                 "advanced",
                 "advanced_blind_to_leaders",
                 "advanced_rush",
@@ -1892,6 +1961,12 @@ mod tests {
                 "advanced_city_strategy",
                 "advanced_city_strategy_emphasis",
                 "advanced_city_strategy_roles",
+                "advanced_city_strategy_roles_raw",
+                "advanced_city_strategy_raw",
+                "advanced_city_strategy_bastion_only",
+                "advanced_city_strategy_breadbasket_only",
+                "advanced_city_strategy_comparative_only",
+                "advanced_city_strategy_pressure_only",
                 "advanced_civ_blind",
                 "advanced_food_first",
                 "advanced_lane_reachable",
