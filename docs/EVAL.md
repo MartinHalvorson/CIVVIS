@@ -5895,3 +5895,78 @@ Payments now come off `Oracle::fired()` with eligibility reported beside them.
 — **60x38 at four players**, ~570 tiles per player, i.e. deployment density.
 #554's headroom was never a cramped-24x16 artifact, and the control seat holds
 5.40 cities here rather than the 1.83 seen at the `ai_eval` default.
+
+## 2026-07-29 — the expansion headroom is entirely in cities the agent already wanted
+
+`Grant::Expansion` split on whether the agent's own `StrategicPlan::desired_cities`
+had already asked for the city. The two halves are an exact partition — a test
+asserts `wanted + beyond == whole` and that at most one fires, on every turn,
+probed off one acting oracle.
+
+`ablate --grant none,expansion,expansion_wanted,expansion_beyond --pairs 100
+--players 4 --turns 500 --seed 460000`, 4p 60x38, 200 cells per arm:
+
+| arm | granted seat won | vs control | fires/game | discordant | McNemar |
+|---|---|---|---|---|---|
+| `none` (control) | 46/200 = **23.0%** | — | 0 | **0** | SANITY OK |
+| `expansion` | 105/200 = **52.5%** | +29.5 | 5.6 | 95 | **p=0.0000** |
+| **`expansion_wanted`** | 106/200 = **53.0%** | **+30.0** | **3.3** | 92 | **p=0.0000** |
+| **`expansion_beyond`** | 55/200 = **27.5%** | +4.5 | 2.8 | 41 | **p=0.2110** |
+
+Three integrity checks passed before any of this is readable: the control
+reproduced #554's recorded 23.0% to the digit at the same seed, the `none`
+treatment arm returned **0 discordant cells of 200** (the same game played
+twice is bit-identical, so nothing here is harness noise), and `expansion`
+reproduced its recorded 52.3% at 52.5%.
+
+★★★ **The `wanted` half alone reproduces the whole grant, on 3.3 firings a game
+instead of 5.6.** Settlers past the agent's own target — 2.8 a game, more than
+40% of the gift — buy +4.5 points and do not clear significance.
+
+**So the agent's city target is not the constraint. Its ability to execute
+against the target it already has is.**
+
+That is not merely consistent with #588's null on `advanced_wide_opening`
+(raising the ramp floor from three to six, 49.6% over 240 pairs), it *explains*
+it: raising a target cannot help an agent that is not reaching the one it has.
+The same result retires the follow-up #588 declined — a raised target combined
+with parallel settlers — for the same reason, and on direct evidence rather
+than on an argument from the predecessor's size.
+
+### What this leaves, and what it excludes
+
+Combined with the cost-matched control recorded above, both obvious levers are
+now measured null:
+
+| lever | grant | result |
+|---|---|---|
+| what a settler **costs** | `Rebate` | +0.45 cities, **zero** extra settlers trained |
+| what the agent **wants** | `expansion_beyond` | +4.5 points, p=0.2110 |
+| cities it **already wanted** | `expansion_wanted` | **+30.0 points, p=0.0000** |
+
+So the headroom sits in *delivering* a settler the empire has already decided
+to build and can already afford. Three candidates remain inside that half, and
+none is excluded yet:
+
+1. **the decision** — the settler must win an argmax in `production_value`.
+   Under `Rebate` the payout city's queue stood outright empty on 22.3% of
+   eligible turns and still had a settler at its head on only 3.1%, so the
+   agent re-chose freely and repeatedly and did not choose one.
+   `Grant::ExpansionOrder` tests this directly: a settler forced to the head of
+   the queue, paid for in full.
+2. **the `pop >= 2` floor** — the engine stalls a settler at the head of a city
+   below population two, and every honest treatment so far has left this alone.
+3. **delivery time** — `Grant::Expansion` hands over the unit and *still pays
+   transit*, so transit is inside the +30, not outside it. `docs/OPENINGS.md`
+   measured 0.81 tiles/turn against a shipped `moves` of 2 and concluded "the
+   design's ceiling is the map" — but that was 32x22, and #559 later found "no
+   settle site in reach" to be a pure 24x16 artifact that never fires once at
+   deployment density. `rebate_census` now reports settler transit so the same
+   reading can be taken on a roomy map.
+
+⚠ **On the partition arithmetic.** `wanted` (3.3) + `beyond` (2.8) = 6.1
+against the whole grant's 5.6. The partition is exact *per turn on an identical
+position*, which the unit test asserts; across a whole game the three arms play
+different trajectories once a grant has changed the board, so their firing
+counts are not required to sum. Read the partition as a property of the
+decision rule, not of the totals.
