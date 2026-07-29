@@ -1480,6 +1480,9 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "strategic_cheap" => (vec![genome, value(false)], "strategic_cheap"),
         "advanced_blind_to_leaders" => (Vec::new(), "advanced_blind_to_leaders"),
         "advanced_counter_in_lane" => (Vec::new(), "advanced_counter_in_lane"),
+        "advanced_congress_counter" => (Vec::new(), "advanced_congress_counter"),
+        "advanced_congress_votes" => (Vec::new(), "advanced_congress_votes"),
+        "advanced_congress_counter_hard" => (Vec::new(), "advanced_congress_counter_hard"),
         "advanced_counter_stand_down" => (Vec::new(), "advanced_counter_stand_down"),
         "advanced_early_score_alarm" => (Vec::new(), "advanced_early_score_alarm"),
         "advanced_early_score_build" => (Vec::new(), "advanced_early_score_build"),
@@ -1987,10 +1990,13 @@ mod tests {
             // Anything else reaching that state fell through to the
             // catch-all and is claiming to need nothing while quietly
             // needing a net.
-            const SCRIPTED: [&str; 30] = [
+            const SCRIPTED: [&str; 33] = [
                 "advanced",
                 "advanced_blind_to_leaders",
                 "advanced_rush",
+                "advanced_congress_counter",
+                "advanced_congress_votes",
+                "advanced_congress_counter_hard",
                 "advanced_counter_in_lane",
                 "advanced_counter_stand_down",
                 "advanced_early_score_alarm",
