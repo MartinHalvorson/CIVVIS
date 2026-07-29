@@ -5675,3 +5675,75 @@ byte-identical. The live target is
 
 24×16 at four players is 96 tiles per player; 74×46 at six is 567. Every
 expansion instrument added here reports both scales for that reason.
+
+## 2026-07-29 — ★★★★ the macro search chooses its two axes in the wrong order
+
+`StrategicAi` chooses a victory **lane** and a **doctrine**, one after the other.
+`lane_values` projects each lane using `self.weights` — the doctrine currently in
+force — and `doctrine_values` then projects each doctrine under the lane that
+won. That is coordinate descent, and it reaches the joint optimum only when the
+axes do not interact.
+
+They interact. `joint_axes` builds the whole `lane × doctrine` value matrix out
+of the shipped public API (`doctrine_values(g, pid, lane)` *is* one column of
+it), so this measures the search that ships rather than a copy of it. A
+self-check asserts `lane_values` reproduces the matrix row it should: **max
+deviation 0.00e0**.
+
+30 games, 4 players, 44×28, 200 turns, 175 review points.
+
+| quantity | value |
+|---|---|
+| best doctrine depends on the lane | **140/175 (80.0%)** |
+| joint argmax differs from the sequential pick | **113/175 (64.6%)** |
+| — of which the lane differs | 76 (43.4%) |
+| — of which the doctrine differs | 103 (58.9%) |
+| gap clears `DOCTRINE_COMMITMENT_MARGIN` (0.002) | **39/175 (22.3%)** |
+| gap clears `TARGET_COMMITMENT_MARGIN` (0.01) | **20/175 (11.4%)** |
+| value left on the table | mean 0.0039, **max 0.2068** |
+
+**Robust to the starting doctrine**, which is the result that makes the rest
+trustworthy. Swept over all four incumbents: disagreement 62.9–64.6%, clears the
+doctrine margin 33–39, clears the lane margin 14–20. A real agent's doctrine
+drifts, so a probe frozen in one of them measures itself; the sweep costs no
+extra rollouts because the matrix is already built.
+
+So in roughly **one review in five**, joint search would find a cell worth more
+than the margin the agent requires before it will move — and the worst cases are
+twenty times the lane margin. That is an actionable gap for about 2.5× the
+rollouts (28 branches against 11), which is inside the band already measured as
+productive here: doubling the search wins at p=0.0023, quadrupling adds nothing.
+
+**Two false starts, recorded because each would have given the wrong answer:**
+
+- The verdict first keyed on the **disagreement rate**. A pilot disagreed on 100%
+  of reviews while the mean gap was 0.0009 — below the doctrine margin and far
+  below the lane margin — so joint search would have found a better cell every
+  review and committed to almost none of them. Rate is the wrong headline; the
+  actionable share is the decision.
+- The probe sat in `Doctrine::Incumbent` forever, because a probe that never
+  reviews never drifts. I predicted that would *inflate* the gap. It **deflated**
+  it about sevenfold. The direction of a bias is not worth reasoning about when
+  measuring it is free.
+
+**Three limits, before anyone treats this as a win:**
+
+- Trajectories are `AdvancedAi`'s, not `StrategicAi`'s — the probe rides along
+  rather than steering, so the sample is not self-selected. `StrategicAi` is
+  `AdvancedAi` plus lane commitment, so its positions would be *more*
+  lane-specialised, which would plausibly raise interaction rather than lower it.
+- This is the evaluator's own value, and being right about a ranking is a
+  separate question from that ranking winning games. `policy_wide` is the
+  standing reminder: a calibrated evaluator ranked actions catastrophically.
+- 4 players on 44×28 Standard is **not the deployment profile**. Every strength
+  claim in this file that failed to transfer failed exactly here, so the
+  implementation must be validated at 6 players on 74×46 Online before any
+  default changes.
+
+| claim | status |
+|---|---|
+| the two search axes interact | **established** (80.0%, n=175) |
+| coordinate descent misses the joint optimum | **established** (64.6%) |
+| the miss is large enough for the agent to act on | **established** (22.3% over the doctrine margin) |
+| the result depends on the starting doctrine | **refuted** (stable across all four) |
+| joint search wins games | **unmeasured** — needs a deployment-profile paired run |
