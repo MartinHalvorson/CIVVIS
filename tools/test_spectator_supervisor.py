@@ -264,11 +264,12 @@ class SessionSettingsTests(unittest.TestCase):
         default is Flat. That made Flat an absorbing state: the keeper starts a
         fresh supervisor whenever it finds none running, that supervisor seats
         its first world from the flags, and every world after it inherited Flat
-        from the world before. Measured on 2026-07-29, when the supervisor was
-        restarted at 02:05:54Z: every archived world before that was a globe
-        and every one of the ~160 after it was flat, which took the sky --
-        the Moon, Mars and the expedition -- off the exhibition entirely,
-        because a sky is something only a Planet world has.
+        from the world before. Measured off the archived saves: the 240 worlds
+        from 2026-07-27T23:26Z to 2026-07-29T02:07:40Z were every one of them a
+        globe, the keeper restarted the supervisor at 02:05:54Z, and the ~160
+        worlds since have every one of them been flat -- which took the sky,
+        the Moon, Mars and the expedition off the exhibition entirely, because
+        a sky is something only a Planet world has.
         """
         flat_world = {
             "map": {"script": "pangaea", "shape": "flat", "poles": "poles"},

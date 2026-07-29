@@ -908,9 +908,11 @@ def session_settings(state: dict[str, Any], defaults: dict[str, Any]) -> dict[st
         # ever *lose* the globe. The keeper starts a fresh supervisor whenever
         # it finds none running, that supervisor seats its first world from the
         # flags, and from then on every world inherited Flat from the world
-        # before it. On 2026-07-29 the supervisor was restarted at 02:05:54Z;
-        # every archived world before it was a globe and every one of the ~160
-        # after it was flat.
+        # before it. Measured off the archived saves, whose globes are the ones
+        # laid out `5f` by `2f + 2`: the 240 worlds from 2026-07-27T23:26Z to
+        # 2026-07-29T02:07:40Z were every one of them a globe, the keeper
+        # restarted the supervisor at 02:05:54Z, and the ~160 worlds since have
+        # every one of them been flat.
         #
         # What went with them is not a matter of taste: the sky beyond the
         # world -- the Moon, Mars, the solar system and the expedition's
