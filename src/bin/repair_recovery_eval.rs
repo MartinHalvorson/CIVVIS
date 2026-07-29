@@ -1298,6 +1298,36 @@ mod tests {
     }
 
     #[test]
+    fn equal_tier_and_distance_choose_the_lowest_target_position() {
+        let (mut game, _, builder, owned) = repair_fixture(79_506);
+        let center = game.units[&builder].pos;
+        let mut candidates = owned
+            .iter()
+            .copied()
+            .filter(|position| game.wdist(center, *position) == 1)
+            .filter(|position| game.can_move(builder, *position))
+            .collect::<Vec<_>>();
+        candidates.sort();
+        assert!(candidates.len() >= 2);
+        damage(&mut game, candidates[0], "farm", None);
+        damage(&mut game, candidates[1], "farm", None);
+        assert_eq!(choose_assignment(&game, 0).unwrap().target, candidates[0]);
+    }
+
+    #[test]
+    fn stock_covered_repair_is_not_a_treatment_assignment() {
+        let (mut game, _, builder, owned) = repair_fixture(79_507);
+        let target = owned[0];
+        damage(&mut game, target, "farm", None);
+        game.units.get_mut(&builder).unwrap().pos = target;
+        assert!(choose_assignment(&game, 0).is_none());
+        let before = game.log.len();
+        assert_eq!(repair_crew_step(&mut game, 0), TreatmentCensus::default());
+        assert!(game.map.tiles[&target].pillaged);
+        assert_eq!(game.log.len(), before);
+    }
+
+    #[test]
     fn remote_repair_uses_legal_movement_and_no_charge() {
         let (mut game, _, builder, owned) = repair_fixture(79_501);
         let target = owned[0];

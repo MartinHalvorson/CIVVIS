@@ -2,6 +2,24 @@
 
 Status: **preregistered; no focal seed has been run or read**.
 
+## Prospective candidate-legality clarification
+
+This implementation clarification was frozen after the original preregistration
+but before running or reading any focal seed. A damaged tile already occupied
+by one of the focal empire's Builders is left entirely to the stock controller,
+as is that Builder for the current treatment step. Such a tile is not a remote
+routing problem, and counting its inevitable stock repair as treatment exposure
+would contaminate the mechanism endpoint.
+
+A remote Builder/target pair is eligible only if the Builder has at least one
+currently legal adjacent move that strictly reduces wrapped distance to the
+target. This operationalizes the preregistered promise that an obstacle can
+cause a target to be skipped and that the treatment receives no privileged
+pathfinder. It does not change resource tiers, pair ordering, action limits,
+seeds, endpoints, gates, or resource priority. The implementation already had
+both restrictions before any runtime diagnostic; this amendment makes them
+part of the written frozen contract.
+
 ## Observation and causal diagnosis
 
 This study began with an exploratory census of the 20 completed production
@@ -188,7 +206,8 @@ Preregistration commit `deb1475` was pushed before implementation commit
 `7ac1e46`. No frozen seed had been run or read when either commit was made.
 
 - `cargo test --release --locked --bin repair_recovery_eval -j 1` passed all
-  eight focused tests.
+  ten focused tests, including stock-covered target exclusion and stable
+  equal-tier/equal-distance selection.
 - `cargo clippy --locked --bin repair_recovery_eval -j 1` emitted no warning
   in the new evaluator; the repository's existing warnings remain outside this
   claim.
