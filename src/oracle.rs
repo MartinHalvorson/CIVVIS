@@ -301,10 +301,43 @@ pub enum Grant {
     /// the displaced item's progress is banked by `item_progress_key` exactly
     /// as it would be if the agent had switched builds itself.
     ExpansionOrder,
+    /// [`Grant::Expansion`] with the walk taken out: the same free Settler, plus
+    /// enough movement each turn to reach wherever the agent sent it.
+    ///
+    /// The last unmeasured candidate in the `wanted` half. `Grant::Expansion`
+    /// hands over the unit and **still pays transit**, so transit sits inside
+    /// its +30 rather than outside it, and the gap between this grant and that
+    /// one is what the walk costs.
+    ///
+    /// `docs/OPENINGS.md` measured a Settler covering **0.81 tiles a turn
+    /// against a shipped `moves` of 2** on 32x22, with 70% of its
+    /// standing-still turns holding no destination, and concluded *"the
+    /// design's ceiling is the map"*. But #559 then found "no settle site in
+    /// reach" to be a pure 24x16 artifact that never fires once at deployment
+    /// density, so that conclusion has never been checked on a roomy map. This
+    /// checks it the only way that cannot be argued with: by removing the walk
+    /// and seeing what the win rate does.
+    ///
+    /// **Siting stays the agent's.** Only `moves_left` is topped up; where the
+    /// Settler goes is still its own `best_reachable_settle_site`, which #553
+    /// measured taking 99.9% of the value on offer. So this bounds transit, not
+    /// destination choice — and a Settler that stands still for want of
+    /// anywhere to go is unaffected by it, which is exactly the discrimination
+    /// wanted: if the 70%-no-destination reading transfers to a roomy map, this
+    /// grant is worth little.
+    ///
+    /// ⚠ **Deliberately NOT budget-matched to [`Grant::Expansion`].** A Settler
+    /// that founds sooner frees the `already_walking` slot sooner, so this
+    /// fires more often over a game. That is the effect under test rather than
+    /// a confound — "what is transit worth" includes "how many more cities
+    /// arrive, and sooner" — but it does mean the two arms are not a
+    /// cost-matched pair the way [`Grant::Rebate`] is, and the firing counts
+    /// must be read as part of the result rather than checked for equality.
+    ExpansionSwift,
 }
 
 impl Grant {
-    pub const ALL: [Grant; 12] = [
+    pub const ALL: [Grant; 13] = [
         Grant::None,
         Grant::Modernity,
         Grant::Taker,
@@ -317,6 +350,7 @@ impl Grant {
         Grant::ExpansionWanted,
         Grant::ExpansionBeyond,
         Grant::ExpansionOrder,
+        Grant::ExpansionSwift,
     ];
 
     pub fn name(self) -> &'static str {
@@ -333,6 +367,7 @@ impl Grant {
             Grant::ExpansionWanted => "expansion_wanted",
             Grant::ExpansionBeyond => "expansion_beyond",
             Grant::ExpansionOrder => "expansion_order",
+            Grant::ExpansionSwift => "expansion_swift",
         }
     }
 
@@ -581,6 +616,31 @@ impl<A: Ai> Oracle<A> {
         self.fired += 1;
     }
 
+    /// The expansion grant, plus movement enough that the walk costs nothing.
+    ///
+    /// The top-up is applied to every Settler the seat holds, not only granted
+    /// ones: a Settler the empire built itself pays the same transit, and
+    /// exempting it would measure "free Settlers walk fast" rather than "the
+    /// walk is free".
+    ///
+    /// `SWIFT_MOVES` is far past any map's useful step count, so the Settler is
+    /// limited by its path and its destination rather than by its allowance.
+    /// Movement is topped up before the agent plays, which is when the engine
+    /// has already refreshed it, so the agent sees the allowance it will spend.
+    fn grant_expansion_swift(&mut self, g: &mut Game, pid: usize) {
+        const SWIFT_MOVES: f64 = 64.0;
+        for uid in g.player_unit_ids(pid) {
+            let Some(unit) = g.units.get_mut(&uid) else {
+                continue;
+            };
+            if unit.kind == "settler" && unit.moves_left < SWIFT_MOVES {
+                unit.moves_left = SWIFT_MOVES;
+                self.fired += 1;
+            }
+        }
+        self.grant_expansion(g, pid);
+    }
+
     /// Order a Settler in the payout city and let the empire pay for it.
     fn grant_expansion_order(&mut self, g: &mut Game, pid: usize) {
         let Some(home) = expansion_payout_city(g, pid) else {
@@ -826,6 +886,7 @@ impl<A: Ai> Ai for Oracle<A> {
                 Grant::ExpansionWanted => self.grant_expansion_split(g, pid, true),
                 Grant::ExpansionBeyond => self.grant_expansion_split(g, pid, false),
                 Grant::ExpansionOrder => self.grant_expansion_order(g, pid),
+                Grant::ExpansionSwift => self.grant_expansion_swift(g, pid),
             }
         }
         self.inner.take_turn(g, pid);
@@ -1330,6 +1391,71 @@ mod tests {
             }
         }
         assert!(rebate.fired() > 0, "the rebate never paid, so the cap is untested");
+    }
+
+    /// The swift grant must actually buy transit — checked at **both** map
+    /// scales, because the answer is not the same one.
+    ///
+    /// ⚠ At 28x18 with four players (126 tiles a seat) swift Settlers covered
+    /// **0.74 tiles a turn against the plain grant's 0.98** — *less* ground,
+    /// with 64 movement points in hand. That is not a bug in the grant. It is
+    /// the cramped-map regime #559 identified, where "no settle site in reach"
+    /// is the dominant blocker: a Settler that founds instantly frees the
+    /// `already_walking` slot instantly, the next one spawns into a map whose
+    /// sites are already consumed, and it stands still holding no destination.
+    /// Movement it never needed was replaced by turns it could not use.
+    ///
+    /// So the assertion is made where the grant is meant to act — a roomy map
+    /// at deployment-like density — and the cramped reading is kept above as
+    /// the finding it is. [[civvis-eval-defaults-are-not-the-deployment]] in
+    /// spirit: fires-check both scales on any expansion treatment, because one
+    /// of them will lie to you.
+    #[test]
+    fn the_swift_grant_actually_moves_settlers_further() {
+        fn tiles_per_settler_turn(grant: Grant, width: i32, height: i32) -> (f64, u64) {
+            let mut g = Game::new(4, width, height, 8_108, 200, 2);
+            let mut oracle = Oracle::new(AdvancedAi::new(), grant);
+            let mut others = AdvancedAi::fleet(&g);
+            let mut was: std::collections::BTreeMap<u32, crate::Pos> = Default::default();
+            let (mut tiles, mut turns) = (0i32, 0u64);
+            while g.winner.is_none() && g.turn <= 100 {
+                let pid = g.current;
+                if pid == 0 {
+                    oracle.take_turn(&mut g, pid);
+                    let now: std::collections::BTreeMap<u32, crate::Pos> = g
+                        .player_unit_ids(0)
+                        .into_iter()
+                        .filter_map(|uid| g.units.get(&uid))
+                        .filter(|unit| unit.kind == "settler")
+                        .map(|unit| (unit.id, unit.pos))
+                        .collect();
+                    for (uid, pos) in &now {
+                        if let Some(before) = was.get(uid) {
+                            tiles += g.wdist(*before, *pos).max(0);
+                            turns += 1;
+                        }
+                    }
+                    was = now;
+                } else {
+                    others[pid].take_turn(&mut g, pid);
+                }
+                if g.winner.is_none() && g.current == pid {
+                    let _ = g.apply(pid, &crate::game::Action::EndTurn);
+                }
+            }
+            (tiles as f64 / turns.max(1) as f64, turns)
+        }
+        // 48x30 at four players is 360 tiles a seat, against the cramped
+        // default's 126 and the live exhibition's 567.
+        let (plain, plain_turns) = tiles_per_settler_turn(Grant::Expansion, 48, 30);
+        let (swift, swift_turns) = tiles_per_settler_turn(Grant::ExpansionSwift, 48, 30);
+        assert!(plain_turns > 0 && swift_turns > 0, "no settler turns observed");
+        assert!(
+            swift > plain,
+            "on a roomy map swift Settlers covered {swift:.2} tiles/turn against \
+plain's {plain:.2}, so the grant buys no transit anywhere and there is no point \
+spending an ablation batch on it"
+        );
     }
 
     /// The ordered Settler must still be at the head of the queue after the
