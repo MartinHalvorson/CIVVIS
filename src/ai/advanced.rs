@@ -20612,4 +20612,181 @@ mod tests {
         }
         println!();
     }
+
+    /// Census, not an assertion: how good are the sites a settler actually
+    /// picks, against the best site it could have picked nearby?
+    ///
+    /// This is the last unmeasured city decision. #532 bounded what a city
+    /// works (89.3% of its food ceiling, 99.5% of its production ceiling),
+    /// #534 bounded what it owns (perfect border growth, p=0.7283) and #542
+    /// bounded where its districts go (p=0.6989). All three are downstream of
+    /// *where the city stands*, and nothing had measured that.
+    ///
+    /// It is measured rather than granted deliberately. An oracle that
+    /// teleports settlers cannot work here: `AdvancedAi` founds only when a
+    /// settler's cached `settler_targets` entry equals its current position,
+    /// so a relocated settler walks back to its old target and never founds.
+    /// The grant would fire forever, suppress the seat's expansion entirely,
+    /// and report a catastrophic loss that measured the harness rather than
+    /// the subsystem. The ratio below asks the same question and cannot lie
+    /// in that direction.
+    ///
+    /// The comparison set is every legal site within eight tiles of the one
+    /// chosen — roughly a settler's remaining walk — judged by the agent's own
+    /// `settle_value`, with the just-founded city excluded from the minimum
+    /// separation rule so the chosen tile competes on equal terms.
+    ///
+    /// Run with `cargo test --release settle_siting_census -- --ignored --nocapture`.
+    #[test]
+    #[ignore = "census, not an assertion; run explicitly with --nocapture"]
+    fn settle_siting_census() {
+        let ai = AdvancedAi::new();
+        let mut ratios: Vec<f64> = Vec::new();
+        let mut near_ratios: Vec<f64> = Vec::new();
+        let mut step_away: Vec<i32> = Vec::new();
+        let mut chosen_was_best = 0u64;
+        let mut founded = 0u64;
+        let mut capital_ratio: Vec<f64> = Vec::new();
+
+        for map in 0..8u64 {
+            let mut game = Game::new_full(4, 24, 16, 470_000 + map, 200, 1, false);
+            let mut ais: Vec<AdvancedAi> =
+                (0..game.players.len()).map(|_| AdvancedAi::new()).collect();
+            game.set_fog_memory(false);
+            let mut known: BTreeSet<u32> = game.player_city_ids(0).into_iter().collect();
+            while game.winner.is_none() && game.turn <= game.max_turns {
+                let pid = game.current;
+                ais[pid].take_turn(&mut game, pid);
+                if game.winner.is_none() && game.current == pid {
+                    let _ = game.apply(pid, &crate::game::Action::EndTurn);
+                }
+                if pid != 0 {
+                    continue;
+                }
+                for cid in game.player_city_ids(0) {
+                    if !known.insert(cid) {
+                        continue;
+                    }
+                    // A city this seat gained by conquest was never sited by
+                    // its settler, so it says nothing about this decision.
+                    let city = &game.cities[&cid];
+                    if city.captured_from.is_some() {
+                        continue;
+                    }
+                    let chosen_pos = city.pos;
+                    let chosen = ai.settle_value(&game, 0, chosen_pos);
+                    // Only ground this seat had actually EXPLORED counts. A
+                    // settler cannot choose a site nobody has seen, and
+                    // scoring it against one would measure the fog rather than
+                    // the decision.
+                    let mut best_at = |radius: i32| {
+                        game.wdisk(chosen_pos, radius)
+                            .into_iter()
+                            .filter(|pos| {
+                                let Some(tile) = game.map.get(*pos) else {
+                                    return false;
+                                };
+                                if !game.players[0].explored.contains(pos) {
+                                    return false;
+                                }
+                                if game.rules.is_water(tile)
+                                    || !game.rules.is_passable(tile)
+                                    || game.tile_is_natural_wonder(tile)
+                                {
+                                    return false;
+                                }
+                                // Every other city still enforces its
+                                // separation; the one just founded must not
+                                // veto its own site.
+                                game.cities
+                                    .values()
+                                    .filter(|other| other.id != cid)
+                                    .all(|other| game.wdist(other.pos, *pos) >= 4)
+                            })
+                            .map(|pos| ai.settle_value(&game, 0, pos))
+                            .fold(chosen, f64::max)
+                    };
+                    // How far away is the better site? `settle_value` does
+                    // not price the walk, so a gap three tiles off is worth
+                    // much less than the same gap one tile off, and the
+                    // distance is what makes the number readable.
+                    let mut best_near_pos = chosen_pos;
+                    let mut best_near_val = chosen;
+                    for pos in game.wdisk(chosen_pos, 3) {
+                        let Some(tile) = game.map.get(pos) else {
+                            continue;
+                        };
+                        if !game.players[0].explored.contains(&pos)
+                            || game.rules.is_water(tile)
+                            || !game.rules.is_passable(tile)
+                            || game.tile_is_natural_wonder(tile)
+                            || !game
+                                .cities
+                                .values()
+                                .filter(|other| other.id != cid)
+                                .all(|other| game.wdist(other.pos, pos) >= 4)
+                        {
+                            continue;
+                        }
+                        let value = ai.settle_value(&game, 0, pos);
+                        if value > best_near_val {
+                            best_near_val = value;
+                            best_near_pos = pos;
+                        }
+                    }
+                    if best_near_pos != chosen_pos {
+                        step_away.push(game.wdist(chosen_pos, best_near_pos));
+                    }
+                    let near = best_at(3);
+                    let best = best_at(8);
+                    founded += 1;
+                    if best <= chosen + 1e-9 {
+                        chosen_was_best += 1;
+                    }
+                    near_ratios.push(chosen / near.max(1e-9));
+                    let ratio = chosen / best.max(1e-9);
+                    ratios.push(ratio);
+                    if known.len() == 1 {
+                        capital_ratio.push(ratio);
+                    }
+                }
+            }
+        }
+
+        ratios.sort_by(f64::total_cmp);
+        let mean = ratios.iter().sum::<f64>() / ratios.len().max(1) as f64;
+        println!("\n=== settle siting census: {founded} cities founded over 8 maps ===");
+        let near_mean = near_ratios.iter().sum::<f64>() / near_ratios.len().max(1) as f64;
+        println!(
+            "  against the best EXPLORED site within 3 tiles: {:.1}%   within 8 tiles: {:.1}%",
+            near_mean * 100.0,
+            mean * 100.0
+        );
+        if !ratios.is_empty() {
+            println!(
+                "  percentiles  p10 {:.1}%   median {:.1}%   p90 {:.1}%   worst {:.1}%",
+                ratios[ratios.len() / 10] * 100.0,
+                ratios[ratios.len() / 2] * 100.0,
+                ratios[ratios.len() * 9 / 10] * 100.0,
+                ratios[0] * 100.0
+            );
+        }
+        println!(
+            "  the chosen site WAS the best available on {chosen_was_best} of {founded} foundings ({:.1}%)",
+            chosen_was_best as f64 / founded.max(1) as f64 * 100.0
+        );
+        step_away.sort_unstable();
+        if !step_away.is_empty() {
+            println!(
+                "  when a better site existed within 3 tiles it was a median {} tile(s) away ({} cases)",
+                step_away[step_away.len() / 2],
+                step_away.len()
+            );
+        }
+        if !capital_ratio.is_empty() {
+            let cap = capital_ratio.iter().sum::<f64>() / capital_ratio.len() as f64;
+            println!("  capitals alone: {:.1}% ({} sampled)", cap * 100.0, capital_ratio.len());
+        }
+        println!();
+    }
 }
