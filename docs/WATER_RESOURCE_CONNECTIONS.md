@@ -1,6 +1,6 @@
 # Water resource connections
 
-Status: **deterministic correctness contract frozen before implementation**.
+Status: **implemented and locally validated; merge remains ordered behind #584**.
 
 ## Observation
 
@@ -89,3 +89,42 @@ This task claims only `src/game.rs` and this document. The path overlap with
 distant section and owns an already-frozen evaluator. This fix must not merge
 ahead of or alter #584's measurement boundary without explicit coordination.
 It starts no simulator process and consumes no place in the heavy-job queue.
+
+## Implementation and validation
+
+Commit `01d302f` introduces a single improvement/resource predicate and a
+single live-tile wrapper, then routes each preregistered accounting endpoint
+through them. The production change is confined to `src/game.rs`; placement,
+unlock, yields, accumulation amounts, AI, and simulator code are unchanged.
+
+The regression surface now checks the complete frozen contract:
+
+- every `ImprovementSpec.resources` pair and every nonempty stock
+  `ResourceSpec.improvement` pair satisfies the shared predicate;
+- unrelated improvements remain disconnected, while Industries and
+  Corporations preserve their existing tile-resource identity;
+- Offshore Oil Rigs and Amber Fishing Boats agree between the one-pass census
+  and the per-resource counter;
+- active, pillaged, and Builder-repaired states affect native access, empire
+  Luxuries, destination strategic copies, and stock Oil accumulation exactly
+  once, without spending a Builder charge;
+- Grand Bazaar Luxury amenities and strategic accumulation use the same live
+  connection, including Resource Management and Corporate Libertarianism
+  additions; and
+- the existing Amani/Puppeteer runtime test now exercises an Offshore Oil Rig,
+  covering Foreign Investor and ordinary Suzerainty propagation end to end.
+
+Local release validation on the implementation commit and its documentation
+follow-up:
+
+- `cargo test --release --locked --lib strategic_resource_tests -j1`: 8
+  passed, 0 failed;
+- `cargo test --release --locked --lib
+  amani_executes_messenger_resources_puppeteer_and_emissary -j1`: 1 passed,
+  0 failed; and
+- `cargo test --release --locked --lib -j1 -- --test-threads=1`: 1,173 passed,
+  0 failed, 15 intentionally ignored.
+
+`git diff --check` is clean, and a static scan finds none of the replaced
+default-only predicates in the preregistered call sites. No randomized batch,
+frozen evaluator seed, or additional simulator process was used.
