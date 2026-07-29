@@ -1,5 +1,77 @@
 # CIVVIS
 
+<!-- BEGIN CIV6 LEADER STRATEGY RANKING -->
+## Best strategy for every Civilization VI civilization
+
+League round **465**. This is the canonical 50-civilization Civ VI roster; CIVVIS's
+expanded historical roster is intentionally excluded. For each current
+leader/civilization pair, the table selects the active strategy with the highest settled
+leader-specific Elo.
+
+Refresh after the live league changes:
+
+`python3 tools/update_readme_rankings.py --league league/league.json`
+
+Add `--check` to verify without writing.
+
+| Rank | Civilization | Leader | Best active strategy | Elo (±RD) | Games |
+|---:|---|---|---|---:|---:|
+| 1 | Vietnam | Ba Trieu | `g44-41` (JackKnife) | 1988.9 (±100.3) | 15 |
+| 2 | Macedon | Alexander | `g48-43` (WildCard6) | 1965.4 (±111.6) | 10 |
+| 3 | Gaul | Ambiorix | `advanced_v1` (OldGuard) | 1955.2 (±127.5) | 6 |
+| 4 | Netherlands | Wilhelmina | `g20-21` (Maverick2) | 1951.5 (±98.6) | 14 |
+| 5 | Byzantium | Basil II | `g28-28` (Opportunist3) | 1944.6 (±112.1) | 9 |
+| 6 | France | Catherine de Medici | `g48-44` (FreeSpirit6) | 1941.0 (±114.2) | 9 |
+| 7 | America | Abraham Lincoln | `advanced_v1` (OldGuard) | 1931.3 (±128.4) | 6 |
+| 8 | Arabia | Saladin | `advanced_v1` (OldGuard) | 1923.5 (±120.5) | 8 |
+| 9 | Phoenicia | Dido | `g28-28` (Opportunist3) | 1920.7 (±122.3) | 7 |
+| 10 | Kongo | Mvemba a Nzinga | `advanced_v1` (OldGuard) | 1918.7 (±114.5) | 9 |
+| 11 | Canada | Wilfrid Laurier | `g20-21` (Maverick2) | 1912.6 (±113.6) | 9 |
+| 12 | Sweden | Kristina | `g60-52` (JackKnife2) | 1911.8 (±117.3) | 8 |
+| 13 | Maya | Lady Six Sky | `g56-50` (WildCard10) | 1910.6 (±128.2) | 6 |
+| 14 | Khmer | Jayavarman VII | `g60-52` (JackKnife2) | 1908.6 (±135.1) | 5 |
+| 15 | Scotland | Robert the Bruce | `advanced_v1` (OldGuard) | 1908.0 (±97.3) | 14 |
+| 16 | Inca | Pachacuti | `g48-44` (FreeSpirit6) | 1899.0 (±93.6) | 16 |
+| 17 | Australia | John Curtin | `g20-21` (Maverick2) | 1898.5 (±99.0) | 14 |
+| 18 | Maori | Kupe | `g20-21` (Maverick2) | 1892.8 (±119.4) | 8 |
+| 19 | Germany | Frederick Barbarossa | `g60-52` (JackKnife2) | 1892.4 (±111.9) | 10 |
+| 20 | Japan | Hojo Tokimune | `g44-41` (JackKnife) | 1892.0 (±94.7) | 15 |
+| 21 | Aztec | Montezuma | `g44-41` (JackKnife) | 1890.9 (±80.2) | 14 |
+| 22 | Ottomans | Suleiman | `g60-51` (WildCard11) | 1889.5 (±113.1) | 9 |
+| 23 | Brazil | Pedro II | `g48-43` (WildCard6) | 1884.0 (±127.3) | 6 |
+| 24 | Poland | Jadwiga | `g56-50` (WildCard10) | 1880.9 (±97.8) | 14 |
+| 25 | Norway | Harald Hardrada | `g60-52` (JackKnife2) | 1875.3 (±109.7) | 10 |
+| 26 | Hungary | Matthias Corvinus | `g60-52` (JackKnife2) | 1867.0 (±100.5) | 13 |
+| 27 | Nubia | Amanitore | `g28-28` (Opportunist3) | 1865.2 (±105.1) | 11 |
+| 28 | Indonesia | Gitarja | `advanced_v1` (OldGuard) | 1859.0 (±105.4) | 11 |
+| 29 | England | Victoria | `g44-41` (JackKnife) | 1853.9 (±128.2) | 6 |
+| 30 | India | Gandhi | `g56-50` (WildCard10) | 1853.6 (±128.4) | 6 |
+| 31 | Cree | Poundmaker | `g56-50` (WildCard10) | 1853.1 (±94.4) | 15 |
+| 32 | Ethiopia | Menelik II | `g20-21` (Maverick2) | 1852.5 (±106.6) | 11 |
+| 33 | Zulu | Shaka | `g48-43` (WildCard6) | 1851.6 (±115.6) | 8 |
+| 34 | Korea | Seondeok | `g48-43` (WildCard6) | 1848.6 (±92.9) | 16 |
+| 35 | Mongolia | Genghis Khan | `g60-52` (JackKnife2) | 1848.6 (±103.7) | 11 |
+| 36 | Rome | Trajan | `g56-50` (WildCard10) | 1845.8 (±62.4) | 100 |
+| 37 | Scythia | Tomyris | `g56-50` (WildCard10) | 1845.4 (±66.7) | 25 |
+| 38 | Mapuche | Lautaro | `g20-21` (Maverick2) | 1842.5 (±117.2) | 8 |
+| 39 | Russia | Peter | `g60-51` (WildCard11) | 1836.0 (±112.4) | 9 |
+| 40 | Mali | Mansa Musa | `advanced_v1` (OldGuard) | 1834.6 (±112.0) | 9 |
+| 41 | Babylon | Hammurabi | `g48-44` (FreeSpirit6) | 1825.2 (±107.4) | 10 |
+| 42 | Gran Colombia | Simón Bolívar | `advanced` (JackOfAllTrades) | 1823.1 (±98.1) | 13 |
+| 43 | Persia | Cyrus | `g28-28` (Opportunist3) | 1812.6 (±99.2) | 13 |
+| 44 | Greece | Pericles | `g56-50` (WildCard10) | 1812.1 (±66.8) | 23 |
+| 45 | Georgia | Tamar | `g20-21` (Maverick2) | 1808.1 (±124.5) | 7 |
+| 46 | China | Qin Shi Huang | `g28-28` (Opportunist3) | 1805.7 (±55.2) | 48 |
+| 47 | Spain | Philip II | `advanced_v1` (OldGuard) | 1801.1 (±108.5) | 10 |
+| 48 | Egypt | Cleopatra | `g28-28` (Opportunist3) | 1800.9 (±62.8) | 175 |
+| 49 | Sumeria | Gilgamesh | `advanced_v1` (OldGuard) | 1795.7 (±123.0) | 5 |
+| 50 | Portugal | João III | `g20-21` (Maverick2) | 1789.4 (±129.0) | 6 |
+
+A strategy needs at least 5 games with that exact pair to qualify. “Elo” is the UI name
+for the league's leader/civilization-specific Glicko-2 rating; it only compares
+strategies inside CIVVIS.
+<!-- END CIV6 LEADER STRATEGY RANKING -->
+
 ### Notes from Martin:
 
 A good bit of vibecoding. Still a bit buggy, apologies for any slop. 
