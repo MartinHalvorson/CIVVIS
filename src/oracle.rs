@@ -46,6 +46,10 @@ const EXPANSION_TARGET: usize = 6;
 /// typical reserve untouched and takes only what sits above it.
 const IDLE_RESERVE_TURNS: f64 = 10.0;
 
+/// The engine's floor for suzerainty: `suzerain_of_uncached` requires at least
+/// this many envoys as well as a strict lead over every other major.
+const SUZERAIN_ENVOYS: i64 = 3;
+
 /// A capability granted to the wrapped agent for free.
 ///
 /// Each one is chosen to bound one measured failure, so a null result closes
@@ -190,10 +194,27 @@ pub enum Grant {
     /// A null here is therefore an *informative* null either way, which is not
     /// true of most measurements this harness runs.
     IdleReserve,
+    /// Suzerain of every city-state this empire has met.
+    ///
+    /// Bounds the envoy layer, which nothing in `docs/` has measured. It is the
+    /// direct analogue of `Taker`: that grant puts the piece where perfect play
+    /// would have put it, and this one puts the envoys where perfect play would
+    /// have put them. It grants an *outcome*, not a resource — no extra envoys
+    /// are created anywhere else, and a rival's own envoys are left untouched.
+    ///
+    /// The engine's rule is `envoys >= 3` and strictly more than every other
+    /// major, so this raises the seat to one above the best rival at each met
+    /// city-state and no further. Ties lose under `suzerain_of_uncached`, which
+    /// is why it is `+1` rather than a match.
+    ///
+    /// If this reads large, the envoy layer is high-leverage and worth work,
+    /// and `advanced_envoys` is where that work goes. If it reads null, 48
+    /// city-states are decoration and the axis closes.
+    Suzerain,
 }
 
 impl Grant {
-    pub const ALL: [Grant; 9] = [
+    pub const ALL: [Grant; 10] = [
         Grant::None,
         Grant::Modernity,
         Grant::Taker,
@@ -203,6 +224,7 @@ impl Grant {
         Grant::Siting,
         Grant::Expansion,
         Grant::IdleReserve,
+        Grant::Suzerain,
     ];
 
     pub fn name(self) -> &'static str {
@@ -216,6 +238,7 @@ impl Grant {
             Grant::Siting => "siting",
             Grant::Expansion => "expansion",
             Grant::IdleReserve => "idle_reserve",
+            Grant::Suzerain => "suzerain",
         }
     }
 
@@ -462,6 +485,46 @@ impl<A: Ai> Oracle<A> {
         }
     }
 
+    /// Put this empire one envoy above the best rival at every met city-state.
+    ///
+    /// Reads every rival's standing through `envoys_at`, which includes the
+    /// Amani governor's bonus, so the target is the *effective* count the
+    /// suzerainty rule compares rather than the raw one. Writes the raw list,
+    /// because that is the only thing an agent can normally influence.
+    fn grant_suzerain(&mut self, g: &mut Game, pid: usize) {
+        let minors: Vec<usize> = g
+            .players
+            .iter()
+            .filter(|minor| {
+                minor.is_minor && minor.alive && !minor.is_barbarian && minor.id != pid
+            })
+            .map(|minor| minor.id)
+            .filter(|minor| g.has_met(pid, *minor))
+            .collect();
+        for minor in minors {
+            let best_rival = g
+                .players
+                .iter()
+                .filter(|other| !other.is_minor && other.alive && other.id != pid)
+                .map(|other| g.envoys_at(other.id, minor))
+                .max()
+                .unwrap_or(0);
+            // `>= 3` and a strict lead; a tie is nobody's suzerainty.
+            let want = (best_rival + 1).max(SUZERAIN_ENVOYS);
+            if g.envoys_at(pid, minor) >= want {
+                continue;
+            }
+            let Some(seat) = g.players.get_mut(pid) else {
+                continue;
+            };
+            match seat.envoys.iter_mut().find(|(at, _)| *at == minor) {
+                Some((_, count)) => *count = want,
+                None => seat.envoys.push((minor, want)),
+            }
+            self.fired += 1;
+        }
+    }
+
     fn grant_treasury(&mut self, g: &mut Game, pid: usize) {
         g.players[pid].gold += 200.0;
         g.players[pid].faith += 100.0;
@@ -578,6 +641,7 @@ impl<A: Ai> Ai for Oracle<A> {
                 Grant::Siting => self.grant_siting(g, pid),
                 Grant::Expansion => self.grant_expansion(g, pid),
                 Grant::IdleReserve => self.confiscate_idle_reserve(g, pid),
+                Grant::Suzerain => self.grant_suzerain(g, pid),
             }
         }
         self.inner.take_turn(g, pid);
@@ -1007,6 +1071,74 @@ mod tests {
         }
         assert!(oracle.fired() > 0, "the idle-reserve ablation never took anything");
         assert!(ever_took, "no confiscation was ever observed");
+    }
+
+
+    /// The suzerainty grant must actually take suzerainties, must take them at
+    /// every met city-state, and must not touch a rival's envoys or anything
+    /// else. A grant that also moved Gold would attribute treasury's very large
+    /// headroom to diplomacy.
+    #[test]
+    fn the_suzerain_grant_fires_and_only_moves_its_own_envoys() {
+        let mut g = Game::new(4, 28, 18, 8_110, 200, 4);
+        let mut oracle = Oracle::new(AdvancedAi::new(), Grant::Suzerain);
+        let mut others = AdvancedAi::fleet(&g);
+        let mut ever_gained = false;
+        while g.winner.is_none() && g.turn <= 140 {
+            let pid = g.current;
+            if pid == 0 {
+                let mut probe = g.clone();
+                let gold = probe.players[0].gold;
+                let faith = probe.players[0].faith;
+                let rival_envoys: Vec<Vec<(usize, i64)>> = probe
+                    .players
+                    .iter()
+                    .filter(|p| p.id != 0)
+                    .map(|p| p.envoys.clone())
+                    .collect();
+                let met: Vec<usize> = probe
+                    .players
+                    .iter()
+                    .filter(|m| m.is_minor && m.alive && !m.is_barbarian)
+                    .map(|m| m.id)
+                    .filter(|m| probe.has_met(0, *m))
+                    .collect();
+                let before = met
+                    .iter()
+                    .filter(|m| probe.suzerain_of(**m) == Some(0))
+                    .count();
+
+                oracle.grant_suzerain(&mut probe, 0);
+
+                assert_eq!(gold, probe.players[0].gold, "the grant moved Gold");
+                assert_eq!(faith, probe.players[0].faith, "the grant moved Faith");
+                let rivals_after: Vec<Vec<(usize, i64)>> = probe
+                    .players
+                    .iter()
+                    .filter(|p| p.id != 0)
+                    .map(|p| p.envoys.clone())
+                    .collect();
+                assert_eq!(rival_envoys, rivals_after, "the grant moved a rival's envoys");
+                for minor in &met {
+                    assert_eq!(
+                        probe.suzerain_of(*minor),
+                        Some(0),
+                        "a met city-state was left unclaimed"
+                    );
+                }
+                if !met.is_empty() && before < met.len() {
+                    ever_gained = true;
+                }
+                oracle.take_turn(&mut g, pid);
+            } else {
+                others[pid].take_turn(&mut g, pid);
+            }
+            if g.winner.is_none() && g.current == pid {
+                let _ = g.apply(pid, &crate::game::Action::EndTurn);
+            }
+        }
+        assert!(oracle.fired() > 0, "the suzerain grant never placed an envoy");
+        assert!(ever_gained, "no suzerainty was ever actually gained");
     }
 
     /// The grant must be modernization and nothing else: no Gold, no health,
