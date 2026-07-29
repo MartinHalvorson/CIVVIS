@@ -96,19 +96,27 @@ fn has_arg(args: &[String], key: &str) -> bool {
 }
 
 fn number(args: &[String], key: &str, default: i64) -> i64 {
-    args.iter()
-        .position(|arg| arg == key)
-        .and_then(|index| args.get(index + 1))
-        .and_then(|value| value.parse().ok())
-        .unwrap_or(default)
+    let Some(index) = args.iter().position(|arg| arg == key) else {
+        return default;
+    };
+    let Some(value) = args.get(index + 1) else {
+        eprintln!("{key} requires an integer value");
+        std::process::exit(2);
+    };
+    value.parse().unwrap_or_else(|_| {
+        eprintln!("{key} requires an integer value; got {value:?}");
+        std::process::exit(2);
+    })
 }
 
 fn text(args: &[String], key: &str, default: &str) -> String {
-    args.iter()
-        .position(|arg| arg == key)
-        .and_then(|index| args.get(index + 1))
-        .cloned()
-        .unwrap_or_else(|| default.to_string())
+    let Some(index) = args.iter().position(|arg| arg == key) else {
+        return default.to_string();
+    };
+    args.get(index + 1).cloned().unwrap_or_else(|| {
+        eprintln!("{key} requires a value");
+        std::process::exit(2);
+    })
 }
 
 fn has_exact_value(args: &[String], key: &str, value: &str) -> bool {
@@ -116,6 +124,21 @@ fn has_exact_value(args: &[String], key: &str, value: &str) -> bool {
         && args
             .windows(2)
             .any(|pair| pair[0] == key && pair[1] == value)
+}
+
+fn has_exact_number(args: &[String], key: &str, value: i64) -> bool {
+    args.iter().filter(|arg| arg.as_str() == key).count() == 1
+        && args.windows(2).any(|pair| {
+            pair[0] == key
+                && pair[1]
+                    .parse::<i64>()
+                    .ok()
+                    .is_some_and(|seen| seen == value)
+        })
+}
+
+fn has_exact_flag(args: &[String], key: &str) -> bool {
+    args.iter().filter(|arg| arg.as_str() == key).count() == 1
 }
 
 fn frozen_champion() -> Champion {
@@ -930,25 +953,22 @@ fn main() {
     );
 
     let exact_profile = deployment_mix
-        && [
-            "--ai",
-            "--maps",
-            "--seed",
-            "--turns",
-            "--observe-through",
-            "--speed",
-            "--poles",
-            "--victories",
-        ]
-        .iter()
-        .all(|flag| has_arg(&args, flag))
+        && has_exact_flag(&args, "--deployment-mix")
         && explicit_frozen_ai
         && ai_name == FROZEN_AI
+        && has_exact_number(&args, "--turns", NOMINAL_TURNS as i64)
         && turns == NOMINAL_TURNS
+        && has_exact_number(&args, "--observe-through", OBSERVE_THROUGH as i64)
         && observe_through == OBSERVE_THROUGH
+        && has_exact_value(&args, "--speed", "online")
         && speed == "online"
+        && has_exact_value(&args, "--poles", "poles")
         && map_poles == MapPoles::Poles
-        && randomize_civs;
+        && has_exact_flag(&args, "--randomize-civs")
+        && randomize_civs
+        && has_exact_value(&args, "--victories", "science,culture,domination")
+        && has_exact_number(&args, "--jobs", 6)
+        && jobs == 6;
 
     if null_replay {
         if exact_mismatches > 0 {
@@ -958,7 +978,13 @@ fn main() {
             );
             std::process::exit(3);
         }
-        if exact_profile && maps == NULL_MAPS && seed == NULL_SEED {
+        if exact_profile
+            && has_exact_flag(&args, "--null")
+            && has_exact_number(&args, "--maps", NULL_MAPS as i64)
+            && maps == NULL_MAPS
+            && has_exact_number(&args, "--seed", NULL_SEED as i64)
+            && seed == NULL_SEED
+        {
             println!(
                 "null sanity: PASS — all {} champion seat replays reproduced the result and serialized Game exactly",
                 control.games
@@ -972,7 +998,13 @@ fn main() {
         return;
     }
 
-    if exact_profile && maps == SCREEN_MAPS && seed == SCREEN_SEED {
+    if exact_profile
+        && !has_arg(&args, "--null")
+        && has_exact_number(&args, "--maps", SCREEN_MAPS as i64)
+        && maps == SCREEN_MAPS
+        && has_exact_number(&args, "--seed", SCREEN_SEED as i64)
+        && seed == SCREEN_SEED
+    {
         println!(
             "development gate: {}",
             if screen_passes(gate) {
@@ -981,7 +1013,13 @@ fn main() {
                 "STOP — at least one preregistered term failed; do not tune or retry"
             }
         );
-    } else if exact_profile && maps == HOLDOUT_MAPS && seed == HOLDOUT_SEED {
+    } else if exact_profile
+        && !has_arg(&args, "--null")
+        && has_exact_number(&args, "--maps", HOLDOUT_MAPS as i64)
+        && maps == HOLDOUT_MAPS
+        && has_exact_number(&args, "--seed", HOLDOUT_SEED as i64)
+        && seed == HOLDOUT_SEED
+    {
         println!(
             "holdout gate: {}",
             if holdout_passes(gate) {
@@ -1041,6 +1079,37 @@ mod tests {
             ],
             "--ai",
             FROZEN_AI
+        ));
+    }
+
+    #[test]
+    fn formal_numeric_and_boolean_flags_are_exactly_bound() {
+        let args = [
+            "--turns".to_string(),
+            "250".to_string(),
+            "--deployment-mix".to_string(),
+        ];
+        assert!(has_exact_number(&args, "--turns", 250));
+        assert!(!has_exact_number(&args, "--turns", 320));
+        assert!(has_exact_flag(&args, "--deployment-mix"));
+        assert!(!has_exact_number(
+            &["--turns".to_string(), "nope".to_string()],
+            "--turns",
+            250
+        ));
+        assert!(!has_exact_number(
+            &[
+                "--jobs".to_string(),
+                "6".to_string(),
+                "--jobs".to_string(),
+                "6".to_string(),
+            ],
+            "--jobs",
+            6
+        ));
+        assert!(!has_exact_flag(
+            &["--null".to_string(), "--null".to_string(),],
+            "--null"
         ));
     }
 
