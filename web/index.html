@@ -16757,6 +16757,13 @@ function skyFocusBody() {
   const radius = planetEarthRadius();
   let best = null;
   for (const body of skyKnownWorlds()) {
+    // A star is not something anybody turns. It has no ground — no
+    // `frequency`, so `skyGroundFade` never gives it one — and what it is for
+    // is to be a distance. It is also, at the destination, eleven times its own
+    // planet at the *same catalogue point*, so the largest-disc rule handed it
+    // every grab made on the world beside it: dragging the exoplanet turned an
+    // invisible ball 5,959 pixels wide and the planet never moved.
+    if (body.kind === "star") continue;
     const drawn = Math.max(body.floor || 0, body.size * radius);
     if (drawn < SKY_SURFACE) continue;
     const [px, py] = skyBodyPos(body);

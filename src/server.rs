@@ -10098,6 +10098,14 @@ mod tests {
         // out here is most of the road: the ladder zoomed into empty sky
         // between here and the destination and never showed the destination.
         assert!(EMBEDDED_INDEX.contains("  if (away > 0) ease = Math.max(ease, 1 - span * .35 / away);"));
+        // And a star is not something anybody turns. `skyFocusBody` takes the
+        // largest disc over the stage, and at the destination the star is
+        // eleven times its own planet at the *same catalogue point* — so every
+        // drag made on the exoplanet grabbed the star instead and turned a
+        // ball with no ground on it. Measured on `origin/main`: the grab is
+        // `luyten`, 5,959 pixels wide, and the planet's longitude never moves.
+        // A star has no `frequency`, so `skyGroundFade` never gives it one.
+        assert!(EMBEDDED_INDEX.contains("    if (body.kind === \"star\") continue;"));
 
         // The zoom buttons repeat while held. On the flat board that is a
         // convenience; out here it is the difference between a control and an
