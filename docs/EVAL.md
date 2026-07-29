@@ -4448,3 +4448,45 @@ this document has refuted five of mine.
 ⚠ Neither was launched from this session: the machine is carrying load 36 on 18
 cores with another agent's evaluation running, and a 17-hour job has no business
 joining that queue. Both are pre-registered and ready.
+
+
+## 2026-07-28 — the pooled confirmation was launched and did not finish; what stands, and what does not
+
+The synthesis entry above named a pooled 300-map confirmation of `strategic` at
+the deployment profile as the run that would settle whether the flagship search
+agent is a regression where it ships. It was launched —
+
+```
+ai_eval strategic advanced --players 6 --width 74 --height 46 --city-states 6
+  --pairs 240 --turns 250 --speed online --seed 9100000 --jobs 6
+```
+
+— and **stopped incomplete** when this PR was closed out, at 27 minutes of wall
+against a projected ~6.4 hours (480 games at ~202 s each, ~4.2 effective cores).
+**No result from it is recorded, because none exists.** The log at
+`/Users/martin/strategic-exhibition-240.log` contains only its header.
+
+**So the deployment-profile evidence on `strategic` remains exactly the 60-map
+run**, and its limits are the ones already stated:
+
+```
+paired-map score   43.3%  (95% Wilson CI 31.6%..55.9%)   Elo-equivalent -47
+paired direction   7 for / 38 neutral / 15 against    sign p = 0.1338
+terminal score     44.8%,  7 for / 53 against,  p = 0.0000
+promotion gate     INCONCLUSIVE
+```
+
+**`strategic` is not shown to be a regression at the deployment profile.** The
+win-rate direction is inconclusive at 60 maps; only terminal score is
+significant, and terminal score is not a promotion input. Anyone continuing this
+should treat "the flagship search agent may be a regression where it ships" as
+an **open question with one suggestive 60-map reading**, not as a finding, and
+run the pooled confirmation before acting on it.
+
+The three results that do **not** depend on that run are unaffected and stand:
+
+| finding | status |
+|---|---|
+| the gen-14 genome's edge is bred-profile-specific (deployment CI **excludes +58**, same profile resolves +207) | **established** |
+| `strategic_cheap` is significantly worse where it ships (−63, wins p=0.0018) | **established** |
+| three 4p 24×16 estimates — a strength, a cost, and a sign — failed to transfer | **established** |
