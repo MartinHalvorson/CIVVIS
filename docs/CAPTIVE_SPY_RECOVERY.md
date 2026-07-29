@@ -232,6 +232,11 @@ cargo test --profile ci --locked --bin captive_spy_recovery_eval
 test result: ok. 9 passed; 0 failed; 0 ignored
 ```
 
+Test-only commit `bf39b9f` subsequently pinned the follow-through census: only
+the focal seat's previously recovered Spy ids count, and Assign, Promote,
+Mission, and ordinary Trade actions are classified separately. The focused
+contract is now 10/10 green.
+
 `rustfmt --edition 2021 --check` and `git diff --check` were clean. A normal
 bin-target Clippy pass reported no warning in the new evaluator; the current
 base library still emits its pre-existing migration warnings. Running Clippy
