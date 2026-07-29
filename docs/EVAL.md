@@ -5628,7 +5628,7 @@ eval).
 | settler-specific preemption (#571) | **inert** — settlers 16 vs 16, 23 vs 23 |
 | the settler's own valuation | free-city loss only **2.6%**; it already wins when asked |
 | capital growth (`OPENINGS.md` §12) | every city after the first arrives **later**, monotone in dose |
-| city-target ramp floor (#571) | fires at deployment; eval **INCONCLUSIVE**, confirmation pending |
+| city-target ramp floor (#571) | fires at deployment; **NULL on confirmation** (below) |
 
 **Five of the six worked to deliver the plan's target faster, and the target was
 the thing that was wrong.** That is the single sentence this axis produced.
@@ -5675,3 +5675,63 @@ byte-identical. The live target is
 
 24×16 at four players is 96 tiles per player; 74×46 at six is 567. Every
 expansion instrument added here reports both scales for that reason.
+
+### `city_target_floor` — the ramp is null, and the first reading was a third false positive
+
+`assess` computes `desired_cities = (3 + turn / cadence).min(map_capacity).min(6)`,
+so the empire wants three cities at the opening. `city_target_floor` starts that
+ramp at six instead. It fires cleanly at deployment scale and does nothing at
+the eval default, where `map_capacity = (2 + land / 55)` caps the target first:
+
+```
+[eval 4p 24x16]        floor=3  cities 1.83  score 106
+[eval 4p 24x16]        floor=6  cities 1.83  score 106
+[deployment 6p 74x46]  floor=3  cities 4.83  score 356
+[deployment 6p 74x46]  floor=6  cities 5.33  score 367
+```
+
+| run | paired score | direction | terminal score | wins resolution |
+|---|---|---|---|---|
+| 6p/74×46, 120 pairs, seed 500000 | 53.3%, Elo +23 | 18–10, p=0.1849 | 61–58, p=0.8546 | 28 of 120 |
+| **6p/74×46, 240 pairs, seed 510000** | **49.6%, Elo −3** | 31–33, **p=0.9007** | 116–117, **p=1.0000** | **64 of 240** |
+
+**The 53.3% did not reproduce.** That is the third apparent gain on this line of
+work to evaporate when confirmed on a seed it was not found on, after a +23 and
+a +20 earlier in the same session. The confirmation has better win resolution
+(64 maps against 28) and its terminal-score direction is 116–117, which is as
+flat as that statistic gets. Left off by default as a recorded entrant.
+
+### The follow-up was fires-checked and declined without an evaluation
+
+The remaining untested cell was `city_target_floor = 6` together with
+`parallel_settlers`. `advanced_parallel_settlers` measured near-inert on its own,
+and its doc explains why — the clause beside it already caps cities-plus-settlers
+at `desired_cities`, so a seat wanting three cities never wants a second settler.
+With the target raised and room on the map, that reasoning no longer applies, and
+six cities serialized through one settler at ~9 turns of production plus a walk
+each is a rate limit no valuation can beat.
+
+```
+[deployment 6p 74x46] floor=3 parallel=false  cities 4.83  score 356
+[deployment 6p 74x46] floor=6 parallel=false  cities 5.33  score 367
+[deployment 6p 74x46] floor=6 parallel=true   cities 5.67  score 368
+```
+
+It fires, and it is **+0.34 cities on top of a +0.50 that measured exactly null
+over 240 maps**. A fires-check exists to decide whether an evaluation is worth
+its compute, and here it says no: the predecessor's larger effect on the same
+metric did not convert, so this one has no path to converting either. Recorded
+rather than run.
+
+### What the axis amounts to
+
+One oracle with large, replicated headroom — free settlers take a seat from
+23.0% to 52.3% — and **seven treatments, none of which reaches it on wins**. The
+oracle removes the settler's cost; every treatment redistributes production the
+empire already had. The two things that did move were economic and did not
+convert: `expansion_pays_back` (terminal score p=0.0005 and p=0.0037 on disjoint
+seeds) and this one (+0.50 cities, null).
+
+That is worth stating plainly for whoever picks this up: **the expansion gap is
+real and is not currently reachable by changing a decision.** Anything further
+here should either change what a settler costs, or stop and go elsewhere.
