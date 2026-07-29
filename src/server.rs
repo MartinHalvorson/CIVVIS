@@ -7609,6 +7609,47 @@ mod tests {
         assert!(!EMBEDDED_INDEX.contains("${state.turn}/${maxTurns}"));
     }
 
+    /// A defeated civilization all but disappears from the masthead — its row
+    /// keeps only a faded, greyed-out line — but the one action left on that
+    /// row still has somewhere to go. A capital survives capture with both
+    /// `is_capital` and the `original_owner` that founded it (the same pair
+    /// Domination Victory counts), so the ground an empire began on outlives
+    /// the empire and the link follows it under whoever took it. Before this
+    /// the lookup asked only who *owns* a capital, so every eliminated row
+    /// rendered its link disabled and the map forgot them entirely.
+    #[test]
+    fn browser_points_a_defeated_civilizations_empire_link_at_the_capital_it_founded() {
+        assert!(EMBEDDED_INDEX.contains("function capitalIndex()"));
+        assert!(EMBEDDED_INDEX
+            .contains("if (city.owner === city.original_owner) seat.set(city.owner, city);"));
+        assert!(EMBEDDED_INDEX.contains(
+            "if (!founded.has(city.original_owner)) founded.set(city.original_owner, city);"
+        ));
+        // Falling order of what is still true: own seat, then a captured
+        // capital, then the founding capital in somebody else's hands.
+        assert!(EMBEDDED_INDEX.contains(
+            "return index.seat.get(pid) || index.held.get(pid) || index.founded.get(pid) || null;"
+        ));
+        // The row and the click resolve through the same index, so a link that
+        // renders enabled can never be a click that does nothing.
+        assert!(EMBEDDED_INDEX.contains("const capital = empireCapitalFrom(capitals, p.id);"));
+        assert!(EMBEDDED_INDEX.contains("const capital = empireCapital(pid);"));
+        assert!(!EMBEDDED_INDEX
+            .contains("state.cities.find(city => city.owner === pid && city.is_capital)"));
+        // Only a founding capital nobody has ever seen leaves the link dead,
+        // which is the one case where there is genuinely nowhere to fly.
+        assert!(EMBEDDED_INDEX.contains("${capital ? \"\" : \" disabled\"}"));
+        // The jump is not a surprise: the tooltip names the city and says whose
+        // hands it is in now.
+        assert!(EMBEDDED_INDEX.contains("View ${p.civ}'s first capital, ${capital.name}"));
+        assert!(EMBEDDED_INDEX.contains("now held by ${capitalHolder.civ}"));
+        // The row itself stays faded. Keeping the link is the whole change;
+        // bringing the row back is not.
+        assert!(EMBEDDED_INDEX
+            .contains(".diplomacy-card.dead { opacity: .42; filter: grayscale(.75); }"));
+        assert!(EMBEDDED_INDEX.contains("${p.alive ? \"\" : \"dead\"}"));
+    }
+
     /// The viewer's controls are Civilization VI's, read out of the game's own
     /// `InputConfiguration.xml` (`InputActionDefaultGestures`, plus the rows
     /// the two expansions add). Every pair below is one row of that table, so
