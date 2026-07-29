@@ -1,7 +1,7 @@
 # Reactor conversion without oscillation
 
-Status: **preregistered from production saves and code; implementation is in
-progress on draft PR #622 and no focal seed has been read**.
+Status: **preregistered and implemented on draft PR #622; the exact default-off
+null is queued behind the shared simulator, and no focal seed has been read**.
 
 ## Production observation
 
@@ -109,10 +109,11 @@ Focused tests must establish all of the following before a focal run:
 ## Frozen evaluator
 
 Add an observer/evaluator-only `reactor_conversion_eval`. Each independent map
-is replayed four times: focal seats 0 and 7 under stock `AdvancedAi` and under
-the default-off treatment entrant. All non-focal majors use stock `AdvancedAi`;
-city-states and barbarians use the same minor path in both arms. The two focal
-seats are averaged inside their map, and the map is the only inference unit.
+is replayed four times: focal seats 0 and 7 under the pinned generation-14
+`AdvancedAi` champion and under its default-off treatment entrant. All
+non-focal majors use that same pinned champion; city-states and barbarians use
+the same minor path in both arms. The two focal seats are averaged inside their
+map, and the map is the only inference unit.
 
 Before implementation is committed, the controller and runner integrity are
 bound prospectively. Every major uses the exact committed `advanced_evolved`
@@ -243,9 +244,13 @@ confirmation seed, endpoints, thresholds, stop rules, and map-level inference
 are unchanged.
 
 The default-off treatment and named evaluator entrant were implemented at
-`d63fad7`; the matched runner followed separately at `5d2d5f5`. The focused
-runner contract is 7/7 green, and the underlying marginal-valuation and entrant
-provenance tests pass. A one-map, one-turn, one-job null diagnostic used
+`d63fad7`; the matched runner followed separately at `5d2d5f5`. Before any
+registered run, `f1f10b8` restored the stock expression's exact left-to-right
+floating-point evaluation order and added a fixture where regrouping changes
+the IEEE-754 result, while `b320c93` bound conversion rates to counted focal
+actor turns instead of reported game turns. The focused runner contract is 8/8
+green, and the underlying marginal-valuation, bit-level stock-arithmetic, and
+entrant-provenance tests pass. A one-map, one-turn, one-job null diagnostic used
 nonregistered seed `97590`: it printed generation 14 and FNV-1a
 `0x40b1fbb2a5b88bc6`, realized 105x44 / 4,412 tiles, reproduced both focal
 results and complete serialized terminal Games exactly, and labeled itself
