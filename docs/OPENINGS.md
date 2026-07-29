@@ -961,3 +961,102 @@ a settler that moves 77–81% of its turns at 0.81 tiles a turn against terrain,
 and stands still the rest of the time because there is nowhere left worth
 going. Neither half is a defect with a repair attached. **The expansion
 pipeline is working as designed; the design's ceiling is the map.**
+
+## 18. 2026-07-29 preregistration: give the last city time to exist
+
+§17's closing claim does not transfer to the larger map. #559 repeated the
+settler-conjunct census at 6p/74x46 and found the result invert: a missing site
+blocked **0.0%** of 993 short city-turns, while the expansion window blocked
+31.2% and was the sole failed conjunct 310 times. On that geometry the map is
+not the ceiling. This section fixes the next hypothesis before changing play.
+
+The old valuation and production-preemption routes are not reopened. A settler
+worth 100 times normal was inert because it rarely reached an empty-queue
+decision, and preemption changed queues without buying one additional city.
+Food-first also moved founding cadence in the wrong direction. The remaining
+single intervention supported by the new census is the window itself.
+
+### The timing mismatch
+
+Adaptive expansion currently uses:
+
+```text
+deadline = standard_duration(300)
+             .min(max_turns - standard_duration(50))
+```
+
+On the production Online/250-turn profile, those two deadlines are turn 150
+and turn 225, so the first one closes expansion at turn 150. But the planned
+city target rises on a `standard_duration(90)` cadence: on Online it asks for
+the fourth city at turn 45, fifth at 90, and sixth at **135**. The agent gives
+itself only 15 turns to produce and place the last city it just decided it
+wants. Settler transit alone was measured at roughly 15 turns; unlike costs and
+strategic durations, map movement does not become twice as fast on Online.
+
+The treatment removes only the absolute turn-300 cap:
+
+```text
+deadline = max_turns - standard_duration(50)
+```
+
+Thus the focal Online window is `[150, 225)`, 75 newly eligible turns, while
+the final 25-turn reserve remains closed. The six-city target, one-settler
+serialization, population cost and floor, site requirement, production value,
+queue behavior, route choice, and assigned-victory-lane cutoff all remain
+unchanged. The default remains bit-identical behind an evaluator-only
+`advanced_late_expansion` switch.
+
+### Hypothesis and fires-check
+
+> The absolute cap expires before the sixth-city plan can execute on Online.
+> Removing only that cap will produce and found late settlers often enough to
+> change development, without granting a unit or relaxing any affordability
+> rule.
+
+Implementation starts only after the active owner of the AI/evaluator paths
+clears. Unit fixtures must first establish that the control closes at turn 150,
+the treatment remains open through turn 224 and closes at 225, and assigned
+victory targets retain their separate cutoff.
+
+Before any win evaluation, a fixed matched mechanism census uses eight fresh
+maps at seed 9991500 on the exact 8p/84x54-requested (105x44 realized)
+Continents/Planet, 12-city-state, Online/250, randomized-civilization,
+Science/Culture/Domination profile. It runs one all-control and one
+all-treatment game per map and samples all 64 major seat-maps. The treatment
+earns an A/B only if:
+
+- at least eight seat-maps actually start a Settler during the newly opened
+  turns 150–224; and
+- treatment games finish with at least four more founded cities in aggregate
+  than their matched controls.
+
+The first term proves reach; the second proves the extra permission becomes a
+city rather than a doomed late queue. Failure stops the line without reading a
+win seed.
+
+### Fixed direct-policy screen
+
+Passing the fires-check earns exactly this untouched 120-map screen:
+
+```text
+ai_eval advanced_late_expansion advanced --players 8 --width 84 --height 54 \
+  --city-states 12 --pairs 120 --turns 250 --speed online \
+  --map continents --shape planet --poles poles --randomize-civs \
+  --victories science,culture,domination --seed 9992000 --jobs 6
+```
+
+The evaluator must report the share of treatment seat-games that actually
+start a Settler in the new window. The screen advances only if coverage is at
+least 10%, paired win score is at least 52%, favorable map directions outnumber
+adverse directions, paired terminal-score share is at least 50%, and the
+unchanged promotion gate does not retain `advanced`. This is a development
+screen and cannot promote a default.
+
+Passing every term earns one disjoint 240-map confirmation at seed 9993000 on
+the identical profile. That confirmation must pass the repository's unchanged
+win promotion gate; terminal score and mechanism coverage remain diagnostics.
+There is no seed retry, threshold change, or pooled rescue. Even a confirmed
+Advanced result remains evaluator-only until a separately preregistered test
+shows that the policy transfers through the strongest `strategic_deep`
+controller; controller interactions have reversed too many prior policies to
+assume that transfer.
