@@ -4695,8 +4695,16 @@ expert it imitates.
 | the replay-based emitter reproduces the games it records | **established** (0/60 divergent) |
 | state features cannot rank siblings, by construction | **established** (exactly chance) |
 | mixed-kind ranking is a kind prior, not action discrimination | **established** (kind alone matches the full vector) |
-| geometry discriminates same-kind siblings | **established** (31.8% vs 21.2%, n=60,363) |
+| ~~geometry discriminates same-kind siblings~~ | **REFUTED below** — same-kind negatives can belong to a different unit, and 39-42% of them did. With the actor held fixed the lift is +0.5 ± 0.2 pp. The head learned *which unit acts*, not *where it should go*. |
 | any of this improves play | **unmeasured** — no agent or default changed |
+
+> **Correction (2026-07-29).** The entry above called the same-kind result the
+> signal a unit-action search could order, and marked it established. It was one
+> control short: same *kind* is not same *actor*, and the geometry block carries
+> the acting unit's HP, strength and movement. See "the geometry learned which
+> unit acts, not where it should go" below, which ran that control and dissolved
+> the effect. As a move-ordering prior — the exact use proposed here — the head
+> is worth half a point.
 
 ## 2026-07-29 — ★★★★ the breeding proxy is aligned with winning; its combat term is not
 
@@ -4842,3 +4850,46 @@ neighbor over another.
 | they rank attacks for one unit across profiles | **refuted in this sample** |
 | an Online-trained attack head has a signal | **open** — only two held-out games |
 | integrating the current artifact would improve play | **unsupported; rejected before gameplay A/B** |
+## 2026-07-29 — what the combat term is made of: signal, not noise, pointing elsewhere
+
+Follow-up to the entry above, which established that the 12-point combat share
+costs ~9 points of agreement with the promotion gate (p=0.0074, paired). That
+left an obvious cheap question unanswered: *is the term carrying anything at
+all?* A weighted term that barely varies between seats would be noise however it
+is weighted, and removing noise is free.
+
+Same 120 games, describing the term rather than only scoring it:
+
+| property of `combat_share` across seats | value |
+|---|---|
+| mean spread (max − min) | **0.295** |
+| games where it is flat (spread < 0.10) | **1/120** |
+| games where every seat is zero | **0/120** |
+| games where its leader differs from the score leader | **56/120 (47%)** |
+
+**It is not noise.** It varies substantially in 119 of 120 games, is never
+degenerate, and disagrees with score share about who is ahead in nearly half of
+them. It is a large, well-populated signal about combat achievement — which is
+simply a different quantity from winning.
+
+That cuts both ways and both should be recorded:
+
+- **Removal is not free.** This is real variance, and it is the most plausible
+  candidate for what the war-gene block selects on — a block `gene_probe` already
+  found largely inert. Dropping the term may strand those genes completely.
+- **Retention is not harmless.** The 50:12 weighting contains the disagreement
+  most of the time, but when it does change the proxy's verdict it is wrong 13
+  times in 15.
+
+So the trade is now stated precisely rather than assumed in either direction, and
+the decision still needs the gene-perturbation run: perturb each war gene on one
+seat, play paired games on the same map against the same opponents, and compare
+mean |Δ| in score-only value against |Δ| in full `selection_value`.
+
+| claim | status |
+|---|---|
+| the combat term is degenerate or near-uniform | **refuted** (spread 0.295, flat 1/120) |
+| the combat term carries information distinct from score | **established** (leaders differ 47%) |
+| removing it is free | **refuted** — it is real variance |
+| what that variance is worth to the GA | **unmeasured** — needs the gene perturbation |
+||||||| ea02ec2

@@ -1,8 +1,15 @@
 # CIVVIS
 
-A good bit of vibecoding. Still a bit buggy, apologies for any slop. Real time sim below (click to play video, cut off at 100 turns):
+A good bit of vibecoding. Still a bit buggy, apologies for any slop. A whole
+AI-vs-AI game below, first settler to space victory (click for the full video):
 
-[![Spectate mode: turns 1-100 of an AI-vs-AI exhibition match on a Planet world of lakes and inland seas, recorded in real time — eight civilizations settle a green globe of hexagons, spread from the Ancient era to the Renaissance, and Scythia takes the score victory at the turn cap](docs/exhibition.gif)](docs/exhibition.mp4)
+[![Spectate mode: a whole AI-vs-AI game on a Planet world of canal-ringed islands — six civilizations settle a globe of hexagons, the camera turns the planet and drops onto the Grand Canals II shelves and channels, Babylon puts the first satellite up on turn 189 and lands on the Moon and Mars, and three expeditions race for another star until Babylon's arrives on turn 282 for the science victory](docs/exhibition.gif)](docs/exhibition.mp4)
+
+*Six AI civilizations, Grand Canals II on a globe at Small size, Online speed
+with the turn cap lifted so the space race could finish. Recorded live off the
+spectator's own view — standings, victory tracker and each AI's live plan — with
+the camera flown out to the Moon, Mars and the voyage as each launch happened.
+The waiting is compressed; the camera work is close to real time.*
 
 ## How the AI actually plays
 
