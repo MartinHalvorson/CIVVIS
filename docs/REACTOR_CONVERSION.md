@@ -234,9 +234,24 @@ not start while another process owns six or more simulator cores.
 
 ## Prospective implementation checkpoint
 
-The runner-integrity and controller-binding amendment above was committed on
-draft PR #622 before any evaluator implementation commit, build output, null,
-screen, or confirmation read. It adds only a disjoint default-off null and
+The runner-integrity and controller-binding amendment above was committed as
+`6cd15b9`, endpoint definitions as `eed0293`, and realized geometry as
+`0c217ab`, all before the evaluator implementation commit and before any null,
+screen, or confirmation read. They add only a disjoint default-off null and
 reproducibility/liveness guards; the already-frozen treatment, screen seed,
 confirmation seed, endpoints, thresholds, stop rules, and map-level inference
 are unchanged.
+
+The default-off treatment and named evaluator entrant were implemented at
+`d63fad7`; the matched runner followed separately at `5d2d5f5`. The focused
+runner contract is 7/7 green, and the underlying marginal-valuation and entrant
+provenance tests pass. A one-map, one-turn, one-job null diagnostic used
+nonregistered seed `97590`: it printed generation 14 and FNV-1a
+`0x40b1fbb2a5b88bc6`, realized 105x44 / 4,412 tiles, reproduced both focal
+results and complete serialized terminal Games exactly, and labeled itself
+diagnostic only. Unknown, positional, duplicate, valueless, and wrong-controller
+CLI probes all exit 2 before game construction.
+
+No invocation has used null seed `9975999`, screen seed `9976000`, confirmation
+seed `9977000`, or a map derived from them. The exact null remains behind the
+older registered simulator queue, with #561 retaining the sole six-core slot.
