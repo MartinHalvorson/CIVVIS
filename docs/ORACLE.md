@@ -145,3 +145,94 @@ The useful advance is methodological: future oracle claims can name their
 controller and speed, share one matched control across treatments, refuse a
 silent agent fallback, and expose progress during expensive batches. No
 gameplay behavior changes here.
+
+## 2026-07-29 preregistration: does the expansion ceiling reach the strongest agent?
+
+The first Expansion result is the largest structural ceiling measured in this
+repository: on the Standard/Advanced four-player profile the same focal seat
+won 69/300 untreated cells and 157/300 granted cells, with 144 discordant cells
+and exact `p = 0`. Its interpretation needs one correction before it guides
+work. `Grant::Expansion` does not isolate settler price. At the start of a
+granted turn it creates a free Settler whenever the empire has one to five
+cities and no Settler already walking. It therefore bypasses all of the
+ordinary production decision: the population floor, expansion window,
+build-time site requirement, queue competition, production cost, and population
+cost. It preserves the six-city ceiling, one-at-a-time serialization, transit,
+site choice, and settlement. This is an upper bound on the bundled supply and
+tempo of expansion, not evidence that any one bypassed conjunct is causal.
+
+That distinction matters after #559's census. On 6p/74x46, a missing site never
+blocked the sampled shortfall turns; the expansion window alone blocked 31.2%,
+while 40.4% had no hard blocker and let the Settler compete on value and price.
+Those are two different honest treatments. Before spending an evaluation on
+either, this experiment asks whether the large ceiling survives the controller
+upgrade from `advanced` to the strongest published `strategic_deep` agent.
+
+### Profile and harness change
+
+The exhibition does not have one map cell: after its bootstrap world it samples
+4–10 players, nine map scripts, and both Flat and Planet topology. The focal
+cell here is the same high-cost 8-player Continents/Planet cell used by the
+contemporaneous rush and faith studies. It is one production-relevant cell, not
+an exhibition-wide estimate. With the stock 84x54 size request, Planet resolves
+to the globe's 105x44 storage rectangle (4,412 playable tiles); the evaluator
+must print both requested and realized geometry so that conversion is visible.
+
+Before the run, grant mode in `ablate` gains the profile axes it cannot
+currently express:
+
+- `--map`, `--shape`, and `--poles`;
+- `--randomize-civs`; and
+- `--victories`.
+
+Historical defaults remain Pangaea, Flat, poles, fixed stock civilizations, and
+all victory conditions. Unknown values must fail instead of falling back. The
+best-lane mode is outside this experiment and retains its existing interface.
+
+### Fixed screen
+
+The untouched primary seed and exact command are:
+
+```text
+ablate --grant none,expansion --ai strategic_deep --pairs 6 --players 8 \
+  --width 84 --height 54 --city-states 12 --turns 250 --speed online \
+  --map continents --shape planet --poles poles --randomize-civs \
+  --victories science,culture,domination --seed 9990000 --jobs 6
+```
+
+Six maps sampled from seats 0 and 7 produce 12 matched cells. The shared control
+is played once, then the exact null and Expansion treatments are played against
+it. The null must change 0/12 outcomes. Expansion advances only if it fires,
+produces at least six discordant cells, helps more cells than it hurts, and
+reaches two-sided McNemar `p < 0.05`. With only six discordances, that requires
+6/0; the significance test, rather than a raw win-rate threshold, continues to
+govern larger discordant sets.
+
+This narrow screen reuses the already completed strongest-controller positive
+calibration (Treasury helped 8/12 and hurt 0/12 at `p = 0.0078` on the 6p Online
+cell) instead of spending another 12 strategic games to remeasure a deliberately
+enormous resource advantage. Consequently a failed Expansion screen is a stop,
+not a powered negative bound on this different profile. There is no seed retry
+and no threshold adjustment.
+
+### Gated confirmation and decision
+
+Passing every screen term earns one disjoint confirmation with only the focal
+treatment:
+
+```text
+ablate --grant expansion --ai strategic_deep --pairs 20 --players 8 \
+  --width 84 --height 54 --city-states 12 --turns 250 --speed online \
+  --map continents --shape planet --poles poles --randomize-civs \
+  --victories science,culture,domination --seed 9991000 --jobs 6
+```
+
+The confirmation supports transfer only if the grant fires, helps more cells
+than it hurts, and independently reaches two-sided McNemar `p < 0.05`. A pass
+does not promote a playable agent: the grant is cheating and deliberately
+bundled. It prioritizes separate preregistered tests of the two measured honest
+causes—late expansion eligibility and settler production value—without combining
+them. Failure stops this line on the focal cell and is reported as either
+underresolved, null, harmful, or invalid according to the failed term. Any claim
+about the exhibition mixture would still require a separately fixed stratified
+sample across its varying player counts, scripts, and topologies.
