@@ -160,10 +160,49 @@ pub enum Grant {
     /// the value on offer — so this is a bound on expansion *rate* and not on
     /// siting.
     Expansion,
+    /// What a Settler *costs*, handed to the capital on exactly the schedule
+    /// [`Grant::Expansion`] hands over a Settler — and no Settler.
+    ///
+    /// This is the control [`Grant::Expansion`] never had, and the whole
+    /// expansion programme rests on it. Expansion measured 23.0% → 52.3%
+    /// (400 maps, p=0.0000) and is the only grant here that has ever returned
+    /// headroom, so the repo has spent a dozen pull requests on the expansion
+    /// pipeline. But that grant is not free: it fires ~5.6 times a game and
+    /// each firing is worth a Settler's production *plus* the point of
+    /// population `Game::finish_unit` charges for one. Nothing so far
+    /// separates "this empire needed cities" from "this empire needed
+    /// resources", and every honest treatment on the pipeline — parallel
+    /// settlers, capital food, destination commitment, production preemption,
+    /// a settler priced at 100x, the map-capacity ceiling — has measured null
+    /// or inert. A bundle worth thirty points whose every component is worth
+    /// nothing is exactly what a mis-attributed grant looks like.
+    ///
+    /// So this pays the same price on the same schedule into the same city and
+    /// buys nothing in particular: banked production the empire may spend on
+    /// whatever its own governor ranks first, and the population back.
+    ///
+    /// The two outcomes call for opposite next steps, which is the point:
+    ///
+    /// - **Rebate also wins.** The headroom is generic early economy, not
+    ///   expansion, and the expansion programme is aimed at a symptom. The
+    ///   agent is then free to buy a Settler with the rebate and declines to —
+    ///   which relocates the question from what expansion costs to what the
+    ///   production ranking is doing with an unconstrained budget.
+    /// - **Rebate is null while Expansion wins.** Expansion is genuinely
+    ///   special: cities are worth more than the resources that buy them, the
+    ///   grant is measuring the thing it names, and the pipeline work is
+    ///   correctly aimed.
+    ///
+    /// Deliberately *not* cost-matched by handing over Gold. Gold would route
+    /// the grant through unit purchasing, a separate subsystem with its own
+    /// failure modes, and a null could then belong to either. `city.production`
+    /// is the field ordinary production accumulates into, so this credits the
+    /// empire in the currency the settler would have been paid for in.
+    Rebate,
 }
 
 impl Grant {
-    pub const ALL: [Grant; 8] = [
+    pub const ALL: [Grant; 9] = [
         Grant::None,
         Grant::Modernity,
         Grant::Taker,
@@ -172,6 +211,7 @@ impl Grant {
         Grant::Ground,
         Grant::Siting,
         Grant::Expansion,
+        Grant::Rebate,
     ];
 
     pub fn name(self) -> &'static str {
@@ -184,6 +224,7 @@ impl Grant {
             Grant::Ground => "ground",
             Grant::Siting => "siting",
             Grant::Expansion => "expansion",
+            Grant::Rebate => "rebate",
         }
     }
 
@@ -375,6 +416,32 @@ impl<A: Ai> Oracle<A> {
         ys.food + ys.production + ys.gold + ys.science + ys.culture + ys.faith
     }
 
+    /// The city an expansion grant would pay out of, or `None` when this seat
+    /// is not short of its city target or already has a Settler in flight.
+    ///
+    /// Shared by [`Grant::Expansion`] and its cost-matched control
+    /// [`Grant::Rebate`] so the two cannot fire on different schedules. That
+    /// is not tidiness: the control is only a control if the two grants are
+    /// handed out at the same moments, and two copies of this condition would
+    /// be free to drift apart and quietly turn the comparison into a
+    /// comparison of firing rates.
+    ///
+    /// The capital is taken by lowest id so both grants are deterministic.
+    fn expansion_payout_city(g: &Game, pid: usize) -> Option<u32> {
+        let cities = g.player_city_ids(pid);
+        if cities.is_empty() || cities.len() >= EXPANSION_TARGET {
+            return None;
+        }
+        let already_walking = g
+            .player_unit_ids(pid)
+            .into_iter()
+            .any(|uid| g.units.get(&uid).is_some_and(|unit| unit.kind == "settler"));
+        if already_walking {
+            return None;
+        }
+        cities.iter().copied().min()
+    }
+
     /// Hand the seat a free Settler while it is short of its city target.
     ///
     /// One at a time, which is the engine's own standing constraint on
@@ -383,25 +450,54 @@ impl<A: Ai> Oracle<A> {
     /// six `StrategicPlan::desired_cities` aims at, so the grant stops exactly
     /// where the agent's own appetite stops rather than expanding forever.
     fn grant_expansion(&mut self, g: &mut Game, pid: usize) {
-        let cities = g.player_city_ids(pid);
-        if cities.is_empty() || cities.len() >= EXPANSION_TARGET {
-            return;
-        }
-        let already_walking = g
-            .player_unit_ids(pid)
-            .into_iter()
-            .any(|uid| g.units.get(&uid).is_some_and(|unit| unit.kind == "settler"));
-        if already_walking {
-            return;
-        }
-        // The capital, by lowest id so the grant is deterministic.
-        let Some(home) = cities.iter().copied().min() else {
+        let Some(home) = Self::expansion_payout_city(g, pid) else {
             return;
         };
         let Some(pos) = g.cities.get(&home).map(|city| city.pos) else {
             return;
         };
         g.spawn_unit("settler", pid, pos);
+        self.fired += 1;
+    }
+
+    /// Pay the capital what a Settler would have cost it, and hand over no
+    /// Settler.
+    ///
+    /// Cost-matched to [`Grant::Expansion`] on all three axes that grant
+    /// actually moves: the same firing schedule (`expansion_payout_city`), the
+    /// same city, and the same price — this city's own current Settler cost
+    /// from `item_cost_for_city`, which already carries game speed, cost
+    /// progression and any per-city modifier, plus the point of population
+    /// `Game::finish_unit` charges for a Settler under the same
+    /// `settler_no_population` governor exemption it checks.
+    ///
+    /// `city.production` is the active build's banked progress, so the empire
+    /// receives the payment in the currency it would have paid in and spends
+    /// it on whatever its own governor ranks first — including, if it wants
+    /// one, a Settler. Overflow with an empty queue is the engine's existing
+    /// unassigned-progress case and needs no special handling here.
+    fn grant_rebate(&mut self, g: &mut Game, pid: usize) {
+        let Some(home) = Self::expansion_payout_city(g, pid) else {
+            return;
+        };
+        let settler = Item::Unit {
+            unit: crate::name!("settler"),
+        };
+        let cost = g.item_cost_for_city(pid, home, &settler);
+        // A non-finite or non-positive price means this seat cannot train a
+        // Settler here at all — a Congress ban, say. Paying nothing is the
+        // honest match for that, and firing would be counted as an effect.
+        if !cost.is_finite() || cost <= 0.0 {
+            return;
+        }
+        let keeps_population = g.governor_effect(pid, home, "settler_no_population") > 0.0;
+        let Some(city) = g.cities.get_mut(&home) else {
+            return;
+        };
+        city.production += cost;
+        if !keeps_population {
+            city.pop += 1;
+        }
         self.fired += 1;
     }
 
@@ -520,6 +616,7 @@ impl<A: Ai> Ai for Oracle<A> {
                 Grant::Ground => self.grant_ground(g, pid),
                 Grant::Siting => self.grant_siting(g, pid),
                 Grant::Expansion => self.grant_expansion(g, pid),
+                Grant::Rebate => self.grant_rebate(g, pid),
             }
         }
         self.inner.take_turn(g, pid);
@@ -898,6 +995,91 @@ mod tests {
         }
         assert!(oracle.fired() > 0, "the expansion grant never handed out a settler");
         assert!(ever_granted, "no settler was ever observed being granted");
+    }
+
+    /// The rebate must fire on exactly the turns the expansion grant fires,
+    /// pay exactly a Settler's price into exactly the same city, and hand over
+    /// no unit.
+    ///
+    /// The schedule assertion is the load-bearing one. `rebate` is only a
+    /// control for `expansion` if the two are handed out at the same moments;
+    /// a rebate that fired more often, or on different turns, would turn the
+    /// comparison into a comparison of firing rates and a difference in win
+    /// rate would mean nothing. Both are driven off the same probe game state
+    /// here, so the two calls see identical positions.
+    #[test]
+    fn the_rebate_matches_the_expansion_grants_schedule_and_price() {
+        let mut g = Game::new(4, 28, 18, 8_108, 200, 2);
+        let mut rebate = Oracle::new(AdvancedAi::new(), Grant::Rebate);
+        let mut expansion = Oracle::new(AdvancedAi::new(), Grant::Expansion);
+        let mut others = AdvancedAi::fleet(&g);
+        let mut ever_paid = false;
+        while g.winner.is_none() && g.turn <= 140 {
+            let pid = g.current;
+            if pid == 0 {
+                // Two clones of the same position, so the schedules are
+                // compared on identical inputs rather than on two games that
+                // have already diverged.
+                let mut paid = g.clone();
+                let mut settled = g.clone();
+                let fired_before = rebate.fired();
+                let expansion_fired_before = expansion.fired();
+
+                let units_before = paid.player_unit_ids(0).len();
+                let gold = paid.players[0].gold;
+                let home = Oracle::<AdvancedAi>::expansion_payout_city(&paid, 0);
+                let banked = home.map(|cid| paid.cities[&cid].production);
+                let pop = home.map(|cid| paid.cities[&cid].pop);
+                let price = home.map(|cid| {
+                    paid.item_cost_for_city(
+                        0,
+                        cid,
+                        &Item::Unit {
+                            unit: crate::name!("settler"),
+                        },
+                    )
+                });
+
+                rebate.grant_rebate(&mut paid, 0);
+                expansion.grant_expansion(&mut settled, 0);
+
+                assert_eq!(
+                    rebate.fired() - fired_before,
+                    expansion.fired() - expansion_fired_before,
+                    "the rebate and the expansion grant fired on different turns"
+                );
+                assert_eq!(
+                    units_before,
+                    paid.player_unit_ids(0).len(),
+                    "the rebate handed out a unit"
+                );
+                assert_eq!(gold, paid.players[0].gold, "the rebate moved the treasury");
+
+                if rebate.fired() > fired_before {
+                    ever_paid = true;
+                    let cid = home.expect("a payout city, since the grant fired");
+                    let price = price.expect("a price, since the grant fired");
+                    assert!(price > 0.0, "the rebate paid a non-positive price");
+                    assert!(
+                        (paid.cities[&cid].production - (banked.unwrap() + price)).abs() < 1e-6,
+                        "the rebate banked something other than a settler's cost"
+                    );
+                    assert_eq!(
+                        paid.cities[&cid].pop,
+                        pop.unwrap() + 1,
+                        "the rebate did not return the settler's population"
+                    );
+                }
+                rebate.take_turn(&mut g, pid);
+            } else {
+                others[pid].take_turn(&mut g, pid);
+            }
+            if g.winner.is_none() && g.current == pid {
+                let _ = g.apply(pid, &crate::game::Action::EndTurn);
+            }
+        }
+        assert!(rebate.fired() > 0, "the rebate never paid out");
+        assert!(ever_paid, "no payment was ever observed");
     }
 
     /// The grant must be modernization and nothing else: no Gold, no health,

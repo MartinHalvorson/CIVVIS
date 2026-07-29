@@ -42435,7 +42435,10 @@ impl Game {
             .then_some((city_id, city.owner))
     }
 
-    fn governor_effect(&self, pid: usize, cid: u32, effect: &str) -> f64 {
+    /// `pub(crate)` for `oracle.rs`, which has to reproduce the Settler's
+    /// population charge — including this `settler_no_population` exemption —
+    /// to price a cost-matched grant against the real one.
+    pub(crate) fn governor_effect(&self, pid: usize, cid: u32, effect: &str) -> f64 {
         // Deciding whether a Governor is established walks the roster and the
         // city; no title or promotion granting this makes that moot.
         if !self.rules.effect_index.governors(effect) {
