@@ -33,11 +33,67 @@
 			</Properties>
 			<File>CivvisControlAgent.xml</File>
 		</AddUserInterfaces>
+		<!-- The game's announcement screens hold the world until somebody
+		     dismisses them, and nobody is at the keyboard. Each one below is
+		     pointed at the same replacement, which loads the shipped screen and
+		     gives it a stopwatch; CivvisControlAutoClose.lua says why these
+		     screens and no others.
+
+		     A LuaReplace file must also be imported. A file listed only under
+		     <Files> is not in the virtual file system, so the replacement
+		     resolves to nothing and the screen loses its script altogether:
+		     the same trap that silently emptied the settings prelude. -->
+		<ImportFiles id="CivvisControlAutoCloseFiles">
+			<File>CivvisControlAutoClose.lua</File>
+		</ImportFiles>
+		<ReplaceUIScript id="CivvisControlAutoCloseWonderBuilt">
+			<Properties>
+				<LuaContext>WonderBuiltPopup</LuaContext>
+				<LuaReplace>CivvisControlAutoClose.lua</LuaReplace>
+			</Properties>
+		</ReplaceUIScript>
+		<ReplaceUIScript id="CivvisControlAutoCloseNaturalWonder">
+			<Properties>
+				<LuaContext>NaturalWonderPopup</LuaContext>
+				<LuaReplace>CivvisControlAutoClose.lua</LuaReplace>
+			</Properties>
+		</ReplaceUIScript>
+		<ReplaceUIScript id="CivvisControlAutoCloseEraComplete">
+			<Properties>
+				<LuaContext>EraCompletePopup</LuaContext>
+				<LuaReplace>CivvisControlAutoClose.lua</LuaReplace>
+			</Properties>
+		</ReplaceUIScript>
+		<ReplaceUIScript id="CivvisControlAutoCloseEraReview">
+			<Properties>
+				<LuaContext>EraReviewPopup</LuaContext>
+				<LuaReplace>CivvisControlAutoClose.lua</LuaReplace>
+			</Properties>
+		</ReplaceUIScript>
+		<ReplaceUIScript id="CivvisControlAutoCloseTechCivicCompleted">
+			<Properties>
+				<LuaContext>TechCivicCompletedPopup</LuaContext>
+				<LuaReplace>CivvisControlAutoClose.lua</LuaReplace>
+			</Properties>
+		</ReplaceUIScript>
+		<ReplaceUIScript id="CivvisControlAutoCloseBoostUnlocked">
+			<Properties>
+				<LuaContext>BoostUnlockedPopup</LuaContext>
+				<LuaReplace>CivvisControlAutoClose.lua</LuaReplace>
+			</Properties>
+		</ReplaceUIScript>
+		<ReplaceUIScript id="CivvisControlAutoCloseProjectBuilt">
+			<Properties>
+				<LuaContext>ProjectBuiltPopup</LuaContext>
+				<LuaReplace>CivvisControlAutoClose.lua</LuaReplace>
+			</Properties>
+		</ReplaceUIScript>
 	</InGameActions>
 	<Files>
 		<File>CivvisControlSetup.xml</File>
 		<File>CivvisControlSetup.lua</File>
 		<File>CivvisControlAgent.xml</File>
 		<File>CivvisControlAgent.lua</File>
+		<File>CivvisControlAutoClose.lua</File>
 	</Files>
 </Mod>
