@@ -327,7 +327,9 @@ def play(args: argparse.Namespace) -> int:
     # directory, one log and one process; the second one's install lands in the
     # middle of the first one's game and neither notices.
     if not gamelock.acquire(args.tag, wait_s=args.lock_wait):
-        print(f"another run holds the game: {gamelock.describe()}", file=sys.stderr)
+        foreign = gamelock.foreign_run(args.tag)
+        print(f"another run holds the game: {foreign or gamelock.describe()}",
+              file=sys.stderr)
         return 6
     try:
         return _play(args)

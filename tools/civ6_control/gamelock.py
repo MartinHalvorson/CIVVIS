@@ -25,9 +25,12 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 LOCK = Path.home() / ".civvis-civ6-game.lock"
 
@@ -61,10 +64,42 @@ def describe() -> str:
             f"tag={held.get('tag')} since {held.get('since')}")
 
 
+def foreign_run(tag: str) -> str | None:
+    """A description of somebody else's run in progress, or None.
+
+    The lock only binds harnesses that take it. A run started before the lock
+    existed, or from another checkout, will not -- so this asks the installation
+    itself: if the game is up and the mod installed in it carries a run tag that
+    is not ours, someone else is mid-game and starting now would overwrite their
+    mod between their turns. That is exactly what happened once already, and it
+    reads as the game being flaky rather than as a second writer.
+    """
+    import civ6_env as env  # noqa: PLC0415 - avoids a cycle at import time
+
+    if not env.game_pids():
+        return None
+    config = env.assets_dir() / "DLC" / "CivvisControl" / "config.json"
+    if not config.is_file():
+        return None
+    try:
+        installed = json.loads(config.read_text()).get("RunTag")
+    except (json.JSONDecodeError, OSError):
+        return None
+    if installed in (None, tag):
+        return None
+    return f"a game is running under run tag {installed!r}"
+
+
 def acquire(tag: str, wait_s: float = 0.0, poll_s: float = 15.0) -> bool:
     """Take the lock, optionally waiting. False when someone else holds it."""
     deadline = time.time() + wait_s
     while True:
+        foreign = foreign_run(tag)
+        if foreign is not None:
+            if time.time() >= deadline:
+                return False
+            time.sleep(poll_s)
+            continue
         try:
             LOCK.mkdir()
         except FileExistsError:
@@ -96,7 +131,6 @@ def release(force: bool = False) -> None:
 
 if __name__ == "__main__":
     import argparse
-    import sys
 
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--status", action="store_true")
