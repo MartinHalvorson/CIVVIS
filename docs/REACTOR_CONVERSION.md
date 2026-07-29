@@ -1,7 +1,7 @@
 # Reactor conversion without oscillation
 
-Status: **preregistered from production saves and code; no treatment exists and
-no focal seed has been read**.
+Status: **preregistered from production saves and code; implementation is in
+progress on draft PR #622 and no focal seed has been read**.
 
 ## Production observation
 
@@ -114,6 +114,21 @@ the default-off treatment entrant. All non-focal majors use stock `AdvancedAi`;
 city-states and barbarians use the same minor path in both arms. The two focal
 seats are averaged inside their map, and the map is the only inference unit.
 
+Before implementation is committed, the controller and runner integrity are
+bound prospectively. Every major uses the exact committed `advanced_evolved`
+generation-14 champion embedded from `data/evolved/best.json`, with FNV-1a
+fingerprint `0x40b1fbb2a5b88bc6`; minors retain the Basic path. The runner
+prints and asserts both values. It rejects unknown or positional tokens,
+missing values, malformed values, and every duplicate option occurrence. An
+official phase requires one canonical occurrence of every frozen argument,
+including `--ai advanced_evolved` and `--jobs 6`.
+
+The runner asserts `Game.max_turns = 250` at construction, immediately after
+every controller action, after fallback `EndTurn`, and at the terminal
+boundary. A controller that does not end its live turn receives one ordinary
+fallback `EndTurn`; failure or failure to advance is fatal. These are execution
+contracts, not changes to the treatment, endpoint, screen, or confirmation.
+
 The runner must preserve `Game.max_turns = 250` and continue the same game and
 stateful agents externally through turn 320 or an enabled victory. It must
 assert that the policy-visible horizon never changes. For each arm it reports:
@@ -133,12 +148,30 @@ assert that the policy-visible horizon never changes. For each arm it reports:
 The evaluator must not read its new diagnostics when making any game decision.
 Generated output is not committed.
 
+## Exact default-off null
+
+Before treatment data, one four-map null at seed `9975999` compares the pinned
+controller with the same controller construction path while the marginal flag
+remains off:
+
+```text
+reactor_conversion_eval --null --ai advanced_evolved --maps 4 --players 8 \
+  --width 84 --height 54 --city-states 12 --turns 250 \
+  --observe-through 320 --speed online --map continents --shape planet \
+  --poles poles --randomize-civs --victories science,culture,domination \
+  --seed 9975999 --jobs 6
+```
+
+Both focal seats on all four maps must match in the complete terminal
+serialized `Game` and every reported endpoint: eight exact cells or **STOP**.
+No screen seed may be opened after a null mismatch.
+
 ## Fixed development screen
 
 The one allowed screen is 12 maps / 48 games:
 
 ```text
-reactor_conversion_eval --maps 12 --players 8 --width 84 --height 54 \
+reactor_conversion_eval --ai advanced_evolved --maps 12 --players 8 --width 84 --height 54 \
   --city-states 12 --turns 250 --observe-through 320 --speed online \
   --map continents --shape planet --poles poles --randomize-civs \
   --victories science,culture,domination --seed 9976000 --jobs 6
@@ -162,8 +195,8 @@ the weights, add a cooldown, change the seed, or inspect the confirmation.
 ## Fixed confirmation and decision
 
 A passing screen earns one unchanged 60-map confirmation at seed `9977000`
-(240 games). Every other argument and the treatment remain fixed. Confirmation
-requires every term below:
+(240 games). Every other argument, including `--ai advanced_evolved`, and the
+treatment remain fixed. Confirmation requires every term below:
 
 - stock again has at least 25% focal-game conversion coverage;
 - treatment conversion completions per 100 focal turns remain at most 25% of
@@ -184,3 +217,12 @@ post-result treatment change.
 
 The six-job batches remain behind the shared-host simulation queue. They must
 not start while another process owns six or more simulator cores.
+
+## Prospective implementation checkpoint
+
+The runner-integrity and controller-binding amendment above was committed on
+draft PR #622 before any evaluator implementation commit, build output, null,
+screen, or confirmation read. It adds only a disjoint default-off null and
+reproducibility/liveness guards; the already-frozen treatment, screen seed,
+confirmation seed, endpoints, thresholds, stop rules, and map-level inference
+are unchanged.
