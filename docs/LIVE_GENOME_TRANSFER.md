@@ -59,7 +59,7 @@ run. Immediately before each phase:
 3. verify the two files are byte-identical;
 4. require `ai_eval` provenance to report `advanced_evolved` with a champion
    loaded and `advanced` as scripted, with no collapsed-entrant warning; and
-5. verify no other process owns six or more simulator cores.
+5. verify the host can provide four simulator cores without oversubscription.
 
 A one-map, one-turn diagnostic at seed `9957999` may validate provenance and
 argument realization. It is not strength evidence and may not be pooled with a
@@ -80,7 +80,7 @@ The only screen is 40 maps / 80 games at seed `9958000`:
 target/release/ai_eval advanced_evolved advanced --pairs 40 --players 8 \
   --width 84 --height 54 --city-states 12 --turns 250 --speed online \
   --map continents --shape flat --poles poles --randomize-civs \
-  --victories science,culture,domination --seed 9958000 --jobs 6 \
+  --victories science,culture,domination --seed 9958000 --jobs 4 \
   --artifact-dir evolved --require-artifacts
 ```
 
@@ -115,5 +115,9 @@ it does not automatically replace `data/evolved/best.json`, alter stock
 `AdvancedAi`, change league ratings, or transfer the genome into StrategicAi.
 A failure retains the current shipped behavior and records the negative result.
 
-Both phases remain behind the shared-host simulator queue. `--jobs 6` is fixed;
-the run must pause rather than compete with another six-core batch.
+Both phases use exactly `--jobs 4`. This prospective resource amendment was
+made before any focal seed so the older, already-promised six-core Spaceport
+null can retain its queue priority. `ai_eval` folds results in map order and is
+tested byte-identical across job counts, so the amendment changes wall time,
+not the estimand or result. The run must pause if four idle cores are not
+available.
