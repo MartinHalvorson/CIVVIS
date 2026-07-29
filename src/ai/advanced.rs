@@ -778,6 +778,28 @@ pub struct AdvancedAi {
     ///
     /// Reachable as `advanced_expansion_payback`, paired against `advanced`.
     pub expansion_pays_back: bool,
+    /// Where the city-target ramp starts. **3 by default, the shipped value.**
+    ///
+    /// `assess` computes `desired_cities = (3 + turn / cadence).min(map_capacity).min(6)`
+    /// — the empire wants three cities at the opening and adds roughly one per
+    /// era. #554's oracle handed a seat settlers up to **six** from the start
+    /// and more than doubled its win rate (23.0% to 52.3%, p=0.0000 over 300
+    /// games). The gap between those two numbers is this ramp.
+    ///
+    /// ⚠ **`GENOME.md`'s "`city_target` saturates above six" does not cover
+    /// this.** That sweep moved the `city_target` *gene*, and the gene is only
+    /// reached through `unwrap_or_else` when there is no plan — a live
+    /// `AdvancedAi` reads `plan.desired_cities` and never consults it. The
+    /// sweep measured a fallback path, which is why every value above six came
+    /// back identical to four decimal places.
+    ///
+    /// #569 removed the affordability objection: the missing cities cost 0.5%
+    /// of everything the empire produces. And on the deployment map the empire
+    /// reaches 4.83 of its own 5.00 target, so what limits it is the target,
+    /// not its ability to hit one.
+    ///
+    /// Reachable as `advanced_wide_opening`, paired against `advanced`.
+    pub city_target_floor: usize,
     pub city_strategy: bool,
     /// Ablation halves of `city_strategy`, so the loss above can be attributed
     /// rather than guessed at. Each is meaningless unless `city_strategy` is
@@ -1086,6 +1108,7 @@ impl AdvancedAi {
             settler_stalls: BTreeMap::new(),
             parallel_settlers: false,
             expansion_pays_back: false,
+            city_target_floor: 3,
             city_strategy: false,
             city_strategy_emphasis: true,
             city_strategy_roles: true,
@@ -2331,7 +2354,7 @@ impl AdvancedAi {
         // the cadence with game speed; the old fixed turn-175 cutoff expired
         // before the five-city target even became active on Standard speed.
         let city_cadence = g.standard_duration(90).max(1) as usize;
-        let desired_cities = (3 + g.turn as usize / city_cadence)
+        let desired_cities = (self.city_target_floor + g.turn as usize / city_cadence)
             .min(map_capacity)
             .min(6);
         let mut expansion_origins: Vec<Pos> = cities.iter().map(|cid| g.cities[cid].pos).collect();
@@ -21713,6 +21736,63 @@ mod tests {
                 shortfall_cost / maps as f64,
                 shortfall_cost / total.max(1.0) * 100.0
             );
+        }
+        println!();
+    }
+
+    /// Fires-check for `city_target_floor`, at both map scales.
+    ///
+    /// ⚠ The criterion is the **outcome** — cities at end — not a mechanism
+    /// bucket. `docs/EVAL.md` records the last expansion fires-check choosing
+    /// "the every-city-mid-build bucket must collapse", which the treatment
+    /// could never have moved, so it was unfalsifiable in the helpful
+    /// direction. If cities at end do not rise, nothing else here matters.
+    ///
+    /// Run with `cargo test --release city_target_floor_fires -- --ignored --nocapture`.
+    #[test]
+    #[ignore = "census, not an assertion; run explicitly with --nocapture"]
+    fn city_target_floor_fires() {
+        for (label, players, width, height) in
+            [("eval 4p 24x16", 4usize, 24i32, 16i32), ("deployment 6p 74x46", 6, 74, 46)]
+        {
+            for floor in [3usize, 6] {
+                let mut cities = 0.0f64;
+                let mut target = 0.0f64;
+                let mut score = 0.0f64;
+                let maps = 6u64;
+                for map in 0..maps {
+                    let mut game =
+                        Game::new_full(players, width, height, 480_000 + map, 200, 1, false);
+                    let mut ais: Vec<AdvancedAi> = (0..game.players.len())
+                        .map(|_| {
+                            let mut ai = AdvancedAi::new();
+                            ai.city_target_floor = floor;
+                            ai
+                        })
+                        .collect();
+                    game.set_fog_memory(false);
+                    while game.winner.is_none() && game.turn <= game.max_turns {
+                        let pid = game.current;
+                        ais[pid].take_turn(&mut game, pid);
+                        if game.winner.is_none() && game.current == pid {
+                            let _ = game.apply(pid, &crate::game::Action::EndTurn);
+                        }
+                    }
+                    cities += game.player_city_ids(0).len() as f64;
+                    score += game.score(0) as f64;
+                    target += ais[0]
+                        .plan
+                        .as_ref()
+                        .map(|p| p.desired_cities as f64)
+                        .unwrap_or(0.0);
+                }
+                println!(
+                    "  [{label}] floor={floor}  cities {:.2} / target {:.2}   score {:.0}",
+                    cities / maps as f64,
+                    target / maps as f64,
+                    score / maps as f64
+                );
+            }
         }
         println!();
     }
