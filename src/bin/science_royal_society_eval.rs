@@ -20,14 +20,80 @@ const SCREEN_MAPS: usize = 30;
 const SCREEN_SEED: u64 = 9_988_000;
 const HOLDOUT_MAPS: usize = 120;
 const HOLDOUT_SEED: u64 = 9_989_000;
+const NOMINAL_TURNS: u32 = 250;
+const OBSERVE_THROUGH: u32 = 320;
 const FROZEN_AI: &str = "advanced_evolved";
 const EMBEDDED_CHAMPION: &str = include_str!("../../data/evolved/best.json");
+const DEPLOYMENT_PLAYERS: [usize; 7] = [4, 6, 8, 10, 5, 7, 9];
+const DEPLOYMENT_SCRIPTS: [MapScript; 9] = [
+    MapScript::LandOnly,
+    MapScript::WaterWorld,
+    MapScript::Continents,
+    MapScript::TrueStartEarth,
+    MapScript::Lakes,
+    MapScript::InlandSea,
+    MapScript::Pangaea,
+    MapScript::SmallContinents,
+    MapScript::Islands,
+];
+const DEPLOYMENT_TOPOLOGIES: [MapTopology; 2] = [MapTopology::Flat, MapTopology::Planet];
+const PROFILE_OVERRIDE_FLAGS: [&str; 6] = [
+    "--players",
+    "--width",
+    "--height",
+    "--city-states",
+    "--map",
+    "--shape",
+];
 const REQUIRED_SCIENCE_PROJECTS: [&str; 4] = [
     "launch_earth_satellite",
     "launch_moon_landing",
     "launch_mars_colony",
     "exoplanet_expedition",
 ];
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct DeploymentProfile {
+    players: usize,
+    width: i32,
+    height: i32,
+    city_states: usize,
+    map_script: MapScript,
+    map_topology: MapTopology,
+}
+
+fn deployment_profile(map: usize) -> DeploymentProfile {
+    let players = DEPLOYMENT_PLAYERS[map % DEPLOYMENT_PLAYERS.len()];
+    let size = MapSize::for_players(players);
+    DeploymentProfile {
+        players,
+        width: size.width,
+        height: size.height,
+        city_states: size.default_city_states,
+        map_script: DEPLOYMENT_SCRIPTS[map % DEPLOYMENT_SCRIPTS.len()],
+        map_topology: DEPLOYMENT_TOPOLOGIES[map % DEPLOYMENT_TOPOLOGIES.len()],
+    }
+}
+
+fn deployment_counts<T: Copy + Eq>(
+    maps: usize,
+    select: impl Fn(DeploymentProfile) -> T,
+) -> Vec<(T, usize)> {
+    let mut counts = Vec::new();
+    for map in 0..maps {
+        let value = select(deployment_profile(map));
+        if let Some((_, count)) = counts.iter_mut().find(|(seen, _)| *seen == value) {
+            *count += 1;
+        } else {
+            counts.push((value, 1));
+        }
+    }
+    counts
+}
+
+fn has_arg(args: &[String], key: &str) -> bool {
+    args.iter().any(|arg| arg == key)
+}
 
 fn number(args: &[String], key: &str, default: i64) -> i64 {
     args.iter()
@@ -227,8 +293,11 @@ fn play(
     mode: Mode,
     serialize: bool,
     weights: &Weights,
+    observe_through: u32,
 ) -> Played {
     let mut game = Game::new_with(options);
+    let policy_max_turns = game.max_turns;
+    assert!(observe_through >= policy_max_turns);
     game.set_fog_memory(false);
     game.victory_conditions = VictoryConditions {
         science: true,
@@ -241,7 +310,7 @@ fn play(
     let mut ais = AdvancedAi::fleet_weighted(&game, weights);
     let mut census = ChoiceCensus::default();
 
-    while game.winner.is_none() && game.turn <= game.max_turns {
+    while game.winner.is_none() && game.turn <= observe_through {
         let pid = game.current;
         let before = game.log.len();
         if pid == focal && mode != Mode::Stock {
@@ -273,6 +342,10 @@ fn play(
                 .count() as u32;
         }
     }
+    assert_eq!(
+        game.max_turns, policy_max_turns,
+        "external observation must not change the policy-visible horizon"
+    );
 
     let (science_projects, science_progress) = science_progress(&game, focal);
     let result = GameResult {
@@ -280,7 +353,11 @@ fn play(
         victory: (game.winner == Some(focal))
             .then(|| game.victory_type.clone())
             .flatten(),
-        reported_turn: game.reported_turn(),
+        reported_turn: if game.winner.is_some() {
+            game.reported_turn()
+        } else {
+            observe_through
+        },
         score: game.score(focal),
         faith: game.players[focal].faith,
         cities: game.player_city_ids(focal).len(),
@@ -457,12 +534,42 @@ fn main() {
         std::process::exit(2);
     }
     let champion = frozen_champion();
-    let maps = number(&args, "--maps", SCREEN_MAPS as i64).max(1) as usize;
+    let deployment_mix = has_arg(&args, "--deployment-mix");
+    if deployment_mix {
+        let conflicts = PROFILE_OVERRIDE_FLAGS
+            .iter()
+            .copied()
+            .filter(|flag| has_arg(&args, flag))
+            .collect::<Vec<_>>();
+        if !conflicts.is_empty() {
+            eprintln!(
+                "--deployment-mix derives every world profile; remove conflicting flags: {}",
+                conflicts.join(", ")
+            );
+            std::process::exit(2);
+        }
+    }
+    let null_replay = has_arg(&args, "--null");
+    let maps = number(
+        &args,
+        "--maps",
+        if null_replay {
+            NULL_MAPS as i64
+        } else {
+            SCREEN_MAPS as i64
+        },
+    )
+    .max(1) as usize;
     let players = number(&args, "--players", 8).max(2) as usize;
     let width = number(&args, "--width", 84).max(8) as i32;
     let height = number(&args, "--height", 54).max(8) as i32;
     let city_states = number(&args, "--city-states", 12).max(0) as usize;
-    let turns = number(&args, "--turns", 250).max(1) as u32;
+    let turns = number(&args, "--turns", NOMINAL_TURNS as i64).max(1) as u32;
+    let observe_through = number(&args, "--observe-through", OBSERVE_THROUGH as i64).max(1) as u32;
+    if observe_through < turns {
+        eprintln!("--observe-through must be at least --turns");
+        std::process::exit(2);
+    }
     let seed = number(&args, "--seed", SCREEN_SEED as i64).max(0) as u64;
     let jobs = match number(&args, "--jobs", 0) {
         requested if requested > 0 => requested as usize,
@@ -508,29 +615,53 @@ fn main() {
         );
         std::process::exit(2);
     }
-    let randomize_civs = args.iter().any(|arg| arg == "--randomize-civs");
-    let null_replay = args.iter().any(|arg| arg == "--null");
+    let randomize_civs = has_arg(&args, "--randomize-civs");
     let rules = Rules::embedded();
     if !rules.speeds.contains_key(&speed) {
         eprintln!("unknown game speed {speed:?}");
         std::process::exit(2);
     }
 
-    let stored_dimensions = MapSize::from_dimensions(width, height)
-        .map(|size| size.dimensions(map_topology))
-        .unwrap_or((width, height));
     println!("Royal Society Science evaluator");
     println!(
         "controller: {ai_name}; embedded champion generation {}",
         champion.gen
     );
+    if deployment_mix {
+        let player_batch = deployment_counts(maps, |profile| profile.players)
+            .into_iter()
+            .map(|(players, count)| format!("{players}p={count}"))
+            .collect::<Vec<_>>()
+            .join(",");
+        let script_batch = deployment_counts(maps, |profile| profile.map_script)
+            .into_iter()
+            .map(|(script, count)| format!("{}={count}", script.id()))
+            .collect::<Vec<_>>()
+            .join(",");
+        let topology_batch = deployment_counts(maps, |profile| profile.map_topology)
+            .into_iter()
+            .map(|(topology, count)| format!("{}={count}", topology.id()))
+            .collect::<Vec<_>>()
+            .join(",");
+        println!(
+            "profile: deployment mix; players {player_batch}; scripts {script_batch}; topologies {topology_batch}"
+        );
+    } else {
+        let stored_dimensions = MapSize::from_dimensions(width, height)
+            .map(|size| size.dimensions(map_topology))
+            .unwrap_or((width, height));
+        println!(
+            "profile: diagnostic fixed cell: {players}p requested {width}x{height}, stored {}x{}, \
+             {city_states} city-states, map {}, shape {}",
+            stored_dimensions.0,
+            stored_dimensions.1,
+            map_script.id(),
+            map_topology.id(),
+        );
+    }
     println!(
-        "profile: {players}p requested {width}x{height}, stored {}x{}, {city_states} city-states, \
-         {turns} {speed} turns, map {}, shape {}, poles {}, civilizations {}, victories {}",
-        stored_dimensions.0,
-        stored_dimensions.1,
-        map_script.id(),
-        map_topology.id(),
+        "rules: {turns} nominal {speed} turns, observe through {observe_through}, poles {}, \
+         civilizations {}, victories {}",
         map_poles.id(),
         if randomize_civs {
             "randomized"
@@ -544,8 +675,7 @@ fn main() {
             .join(","),
     );
     println!(
-        "batch: {maps} independent maps x seats 0/{} x control/treatment = {} games; seed {seed}; {jobs} jobs",
-        players - 1,
+        "batch: {maps} independent maps x seats 0/final x control/treatment = {} games; seed {seed}; {jobs} jobs",
         maps * 4
     );
     println!(
@@ -561,19 +691,31 @@ fn main() {
         maps,
         jobs,
         |map| {
-            let options = GameOptions {
-                speed: speed.clone(),
-                map_script,
-                map_topology,
-                map_poles,
-                randomize_civs,
-                ..GameOptions::new(
+            let profile = if deployment_mix {
+                deployment_profile(map)
+            } else {
+                DeploymentProfile {
                     players,
                     width,
                     height,
+                    city_states,
+                    map_script,
+                    map_topology,
+                }
+            };
+            let options = GameOptions {
+                speed: speed.clone(),
+                map_script: profile.map_script,
+                map_topology: profile.map_topology,
+                map_poles,
+                randomize_civs,
+                ..GameOptions::new(
+                    profile.players,
+                    profile.width,
+                    profile.height,
                     seed + map as u64,
                     turns,
-                    city_states,
+                    profile.city_states,
                 )
             };
             let treatment_mode = if null_replay {
@@ -588,6 +730,7 @@ fn main() {
                 Mode::Stock,
                 null_replay,
                 &champion.weights,
+                observe_through,
             );
             let treatment0 = play(
                 options.clone(),
@@ -595,17 +738,19 @@ fn main() {
                 treatment_mode,
                 null_replay,
                 &champion.weights,
+                observe_through,
             );
             let exact0 = !null_replay
                 || (control0.result == treatment0.result
                     && control0.serialized == treatment0.serialized);
-            let last = players - 1;
+            let last = profile.players - 1;
             let control1 = play(
                 options.clone(),
                 last,
                 Mode::Stock,
                 null_replay,
                 &champion.weights,
+                observe_through,
             );
             let treatment1 = play(
                 options,
@@ -613,6 +758,7 @@ fn main() {
                 treatment_mode,
                 null_replay,
                 &champion.weights,
+                observe_through,
             );
             let exact1 = !null_replay
                 || (control1.result == treatment1.result
@@ -783,16 +929,24 @@ fn main() {
         treatment_progress,
     );
 
-    let exact_profile = explicit_frozen_ai
+    let exact_profile = deployment_mix
+        && [
+            "--ai",
+            "--maps",
+            "--seed",
+            "--turns",
+            "--observe-through",
+            "--speed",
+            "--poles",
+            "--victories",
+        ]
+        .iter()
+        .all(|flag| has_arg(&args, flag))
+        && explicit_frozen_ai
         && ai_name == FROZEN_AI
-        && players == 8
-        && width == 84
-        && height == 54
-        && city_states == 12
-        && turns == 250
+        && turns == NOMINAL_TURNS
+        && observe_through == OBSERVE_THROUGH
         && speed == "online"
-        && map_script == MapScript::Continents
-        && map_topology == MapTopology::Planet
         && map_poles == MapPoles::Poles
         && randomize_civs;
 
@@ -891,6 +1045,53 @@ mod tests {
     }
 
     #[test]
+    fn deployment_cycle_is_factorial_and_balances_frozen_batches() {
+        assert_eq!(
+            (0..NULL_MAPS)
+                .map(deployment_profile)
+                .map(|profile| (
+                    profile.players,
+                    profile.width,
+                    profile.height,
+                    profile.city_states,
+                    profile.map_script,
+                    profile.map_topology,
+                ))
+                .collect::<Vec<_>>(),
+            vec![
+                (4, 60, 38, 6, MapScript::LandOnly, MapTopology::Flat),
+                (6, 74, 46, 9, MapScript::WaterWorld, MapTopology::Planet),
+                (8, 84, 54, 12, MapScript::Continents, MapTopology::Flat),
+                (
+                    10,
+                    96,
+                    60,
+                    15,
+                    MapScript::TrueStartEarth,
+                    MapTopology::Planet,
+                ),
+            ]
+        );
+
+        let cycle = (0..126).map(deployment_profile).collect::<Vec<_>>();
+        for (index, profile) in cycle.iter().enumerate() {
+            assert!(
+                !cycle[..index].contains(profile),
+                "deployment profile repeated before offset 126 at {index}: {profile:?}"
+            );
+        }
+        assert_eq!(deployment_profile(126), deployment_profile(0));
+        assert_eq!(
+            deployment_counts(SCREEN_MAPS, |profile| profile.players),
+            vec![(4, 5), (6, 5), (8, 4), (10, 4), (5, 4), (7, 4), (9, 4)]
+        );
+        assert_eq!(
+            deployment_counts(HOLDOUT_MAPS, |profile| profile.map_topology),
+            vec![(MapTopology::Flat, 60), (MapTopology::Planet, 60)]
+        );
+    }
+
+    #[test]
     fn null_action_log_replay_reconstructs_the_stock_turn() {
         let mut stock = Game::new(2, 20, 14, 88_001, 20, 0);
         stock.set_fog_memory(false);
@@ -924,6 +1125,14 @@ mod tests {
             &Weights::default(),
             "the frozen champion must not silently collapse to stock weights"
         );
+    }
+
+    #[test]
+    fn external_observation_preserves_the_policy_horizon() {
+        let champion = frozen_champion();
+        let options = GameOptions::new(2, 20, 14, 88_004, 1, 0);
+        let played = play(options, 0, Mode::Stock, false, &champion.weights, 3);
+        assert_eq!(played.result.reported_turn, 3);
     }
 
     #[test]
