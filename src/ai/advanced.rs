@@ -1330,7 +1330,7 @@ impl AdvancedAi {
             .values()
             .filter(|unit| unit.owner != pid && g.is_at_war(pid, unit.owner))
             .filter(|unit| g.wdist(city.pos, unit.pos) <= 6)
-            .filter(|unit| g.rules.units[unit.kind.as_str()].class == "military")
+            .filter(|unit| g.rules.units[unit.kind].class == "military")
             .map(|unit| crate::game::effective_strength(g.unit_strength(unit, false), unit.hp))
             .sum();
         if hostile <= 0.0 {
@@ -1340,7 +1340,7 @@ impl AdvancedAi {
             + g.units
                 .values()
                 .filter(|unit| unit.owner == pid && g.wdist(city.pos, unit.pos) <= 6)
-                .filter(|unit| g.rules.units[unit.kind.as_str()].class == "military")
+                .filter(|unit| g.rules.units[unit.kind].class == "military")
                 .map(|unit| crate::game::effective_strength(g.unit_strength(unit, true), unit.hp))
                 .sum::<f64>();
         hostile / friendly.max(1.0)
@@ -3522,7 +3522,7 @@ impl AdvancedAi {
             .any(|(first, second)| *first == pid || *second == pid);
         let military = unit_ids
             .iter()
-            .filter(|unit| g.rules.units[g.units[unit].kind.as_str()].class == "military")
+            .filter(|unit| g.rules.units[g.units[unit].kind].class == "military")
             .count();
         let elite_active = g.players[pid].policies.contains("elite_forces");
         let elite_affordable = if elite_active {
@@ -3599,7 +3599,7 @@ impl AdvancedAi {
             .policies
             .iter()
             .filter(|card| {
-                g.rules.policies[card.as_str()].dark_age
+                g.rules.policies[card].dark_age
                     && !desired_set.contains(card.as_str())
             })
             .cloned()
@@ -3739,7 +3739,7 @@ impl AdvancedAi {
             .values()
             .filter(|unit| unit.owner == pid)
             .filter_map(|unit| {
-                let held = &g.rules.units[unit.kind.as_str()];
+                let held = &g.rules.units[unit.kind];
                 let successor = g.rules.units.get(held.upgrade_to.as_deref()?)?;
                 (successor.tech.as_deref() == Some(tech)).then(|| {
                     (successor.strength.max(successor.ranged_attack_strength())
@@ -4506,7 +4506,7 @@ impl AdvancedAi {
                             .values()
                             .filter(|unit| {
                                 unit.owner == pid
-                                    && g.rules.units[unit.kind.as_str()].promotion_class == target
+                                    && g.rules.units[unit.kind].promotion_class == target
                             })
                             .count() as f64;
                         let rival = g
@@ -4514,7 +4514,7 @@ impl AdvancedAi {
                             .values()
                             .filter(|unit| {
                                 unit.owner != pid
-                                    && g.rules.units[unit.kind.as_str()].promotion_class == target
+                                    && g.rules.units[unit.kind].promotion_class == target
                             })
                             .count() as f64;
                         if outcome == "A" {
@@ -4903,7 +4903,7 @@ impl AdvancedAi {
             .into_iter()
             .filter(|uid| {
                 let unit = &g.units[uid];
-                let spec = &g.rules.units[unit.kind.as_str()];
+                let spec = &g.rules.units[unit.kind];
                 spec.class == "military"
                     && !matches!(spec.domain.as_deref(), Some("sea" | "air"))
                     && (spec.is_melee_capable() || spec.has_ranged_attack())
@@ -5011,7 +5011,7 @@ impl AdvancedAi {
                 if city
                     .buildings
                     .iter()
-                    .any(|b| g.rules.buildings[b.as_str()].outer_defense > 0)
+                    .any(|b| g.rules.buildings[b].outer_defense > 0)
                 {
                     return None;
                 }
@@ -5049,7 +5049,7 @@ impl AdvancedAi {
         let units = self.staged_campaign_units(g, pid, target, objective);
         let takers: Vec<u32> = units
             .into_iter()
-            .filter(|uid| g.rules.units[g.units[uid].kind.as_str()].is_melee_capable())
+            .filter(|uid| g.rules.units[g.units[uid].kind].is_melee_capable())
             .collect();
         if takers.len() < RUSH_STACK {
             return false;
@@ -5095,7 +5095,7 @@ impl AdvancedAi {
     ) -> bool {
         let units = self.staged_campaign_units(g, pid, target, objective);
         let has_capturer = units.iter().any(|uid| {
-            g.rules.units[g.units[uid].kind.as_str()].is_melee_capable()
+            g.rules.units[g.units[uid].kind].is_melee_capable()
         });
         let ratio = self.local_strength_ratio(g, &units, &[target], objective);
         let formation_ready = units.len() >= 3 || (units.len() >= 2 && ratio >= 1.60);
@@ -5145,7 +5145,7 @@ impl AdvancedAi {
         let city = g.cities.get(&cid).filter(|city| city.owner == target)?;
         let objective = city.pos;
         let depleted = city.hp <= 0;
-        let spec = &g.rules.units[g.units.get(&uid)?.kind.as_str()];
+        let spec = &g.rules.units[g.units.get(&uid)?.kind];
         if !spec.is_melee_capable() || matches!(spec.domain.as_deref(), Some("sea" | "air")) {
             return None;
         }
@@ -5191,7 +5191,7 @@ impl AdvancedAi {
             .into_iter()
             .filter(|other| *other != uid)
             .filter_map(|other| g.units.get(&other))
-            .filter(|other| g.rules.units[other.kind.as_str()].is_melee_capable())
+            .filter(|other| g.rules.units[other.kind].is_melee_capable())
             .map(|other| other.pos)
             .filter(|pos| g.wdist(*pos, objective) <= 1)
             .collect();
@@ -5256,7 +5256,7 @@ impl AdvancedAi {
             return None;
         }
         let unit = &g.units[&uid];
-        let spec = &g.rules.units[unit.kind.as_str()];
+        let spec = &g.rules.units[unit.kind];
         if !matches!(spec.class.as_str(), "military" | "support")
             || matches!(spec.domain.as_deref(), Some("sea" | "air"))
             || (BasicAi::unit_doctrine(g, uid) == UnitDoctrine::Recon
@@ -6377,7 +6377,7 @@ impl AdvancedAi {
             unit.owner == pid
                 && unit.religion.as_deref() == Some(religion)
                 && unit.charges > 0
-                && g.rules.units[unit.kind.as_str()].religious_spread > 0.0
+                && g.rules.units[unit.kind].religious_spread > 0.0
         });
         active_campaign || g.players[pid].faith >= g.game_speed.scale(2_000.0)
     }
@@ -7005,7 +7005,7 @@ impl AdvancedAi {
             else {
                 continue;
             };
-            if currency != "faith" || g.rules.units[unit.as_str()].class != "military" {
+            if currency != "faith" || g.rules.units[unit].class != "military" {
                 continue;
             }
             let mut after = g.clone();
@@ -7013,7 +7013,7 @@ impl AdvancedAi {
                 continue;
             }
             let cost = (bank - after.players[pid].faith).max(0.0);
-            let spec = &g.rules.units[unit.as_str()];
+            let spec = &g.rules.units[unit];
             let combat = spec
                 .strength
                 .max(spec.ranged_strength)
@@ -7463,7 +7463,7 @@ impl AdvancedAi {
                 .filter(|candidate| {
                     candidate.owner != pid
                         && g.is_at_war(pid, candidate.owner)
-                        && g.rules.units[candidate.kind.as_str()].domain.as_deref() == Some("air")
+                        && g.rules.units[candidate.kind].domain.as_deref() == Some("air")
                 })
                 .count();
             let desired = hostile_aircraft.min(g.player_city_ids(pid).len().div_ceil(2).max(1));
@@ -7571,7 +7571,7 @@ impl AdvancedAi {
                     let wall_levels = city
                         .buildings
                         .iter()
-                        .filter(|building| g.rules.buildings[building.as_str()].outer_defense > 0)
+                        .filter(|building| g.rules.buildings[building].outer_defense > 0)
                         .count();
                     match unit {
                         "battering_ram" if wall_levels == 1 => 760.0,
@@ -7604,7 +7604,7 @@ impl AdvancedAi {
             .filter(|candidate| {
                 candidate.owner == pid
                     && candidate.hp < 100
-                    && g.rules.units[candidate.kind.as_str()].class == "military"
+                    && g.rules.units[candidate.kind].class == "military"
             })
             .count() as f64;
         let heal = spec.effects.get("adjacent_heal").copied().unwrap_or(0.0);
@@ -7654,7 +7654,7 @@ impl AdvancedAi {
             {
                 for item in g.producible_items(pid, city.id) {
                     let Item::Unit { unit } = item else { continue };
-                    if g.rules.units[unit.as_str()].class != "support"
+                    if g.rules.units[&unit].class != "support"
                         || unit == "military_engineer"
                     {
                         continue;
@@ -8854,7 +8854,7 @@ impl AdvancedAi {
         let military_units = g
             .player_unit_ids(pid)
             .into_iter()
-            .filter(|unit| g.rules.units[g.units[unit].kind.as_str()].class == "military")
+            .filter(|unit| g.rules.units[g.units[unit].kind].class == "military")
             .collect::<Vec<_>>();
         let city_is_coastal = g.nbrs(city.pos).into_iter().any(|position| {
             g.map
@@ -8864,7 +8864,7 @@ impl AdvancedAi {
         let military_distance = military_units
             .iter()
             .filter(|unit| {
-                let domain = g.rules.units[g.units[unit].kind.as_str()].domain.as_deref();
+                let domain = g.rules.units[g.units[unit].kind].domain.as_deref();
                 domain != Some("sea") || city_is_coastal
             })
             .map(|unit| g.wdist(g.units[unit].pos, city.pos))
@@ -8872,12 +8872,12 @@ impl AdvancedAi {
             .unwrap_or(core_distance);
         let has_land_force = military_units.iter().any(|unit| {
             !matches!(
-                g.rules.units[g.units[unit].kind.as_str()].domain.as_deref(),
+                g.rules.units[g.units[unit].kind].domain.as_deref(),
                 Some("sea" | "air")
             )
         });
         let has_naval_force = military_units.iter().any(|unit| {
-            g.rules.units[g.units[unit].kind.as_str()].domain.as_deref() == Some("sea")
+            g.rules.units[g.units[unit].kind].domain.as_deref() == Some("sea")
         });
         // With no army yet, value prospective land staging rather than
         // declaring every objective sealed. Once forces exist, only count
@@ -8901,14 +8901,14 @@ impl AdvancedAi {
             .units
             .values()
             .filter(|unit| unit.owner == pid && g.wdist(unit.pos, city.pos) <= 7)
-            .filter(|unit| g.rules.units[unit.kind.as_str()].class == "military")
+            .filter(|unit| g.rules.units[unit.kind].class == "military")
             .map(|unit| crate::game::effective_strength(g.unit_strength(unit, true), unit.hp))
             .sum();
         let hostile_local: f64 = g
             .units
             .values()
             .filter(|unit| unit.owner == city.owner && g.wdist(unit.pos, city.pos) <= 7)
-            .filter(|unit| g.rules.units[unit.kind.as_str()].class == "military")
+            .filter(|unit| g.rules.units[unit.kind].class == "military")
             .map(|unit| crate::game::effective_strength(g.unit_strength(unit, true), unit.hp))
             .sum();
 
@@ -9163,7 +9163,7 @@ impl AdvancedAi {
         }
         if let Some(escort) = g.units[&uid].linked_to.filter(|peer| {
             g.units.get(peer).is_some_and(|escort| {
-                g.rules.units[escort.kind.as_str()].domain.as_deref() == Some("sea")
+                g.rules.units[escort.kind].domain.as_deref() == Some("sea")
             })
         }) {
             if g.wdist(current, target) == 1 {
@@ -9679,7 +9679,7 @@ impl AdvancedAi {
                         .into_iter()
                         .filter(|other| {
                             let other = &g.units[other];
-                            g.rules.units[other.kind.as_str()].class == "religious"
+                            g.rules.units[other.kind].class == "religious"
                                 && other.religion != religion
                         })
                         .map(|other| g.units[&other].hp)
@@ -9696,7 +9696,7 @@ impl AdvancedAi {
             }
         }
 
-        if g.rules.units[unit.kind.as_str()].religious_spread > 0.0 && unit.charges > 0 {
+        if g.rules.units[unit.kind].religious_spread > 0.0 && unit.charges > 0 {
             return self.advanced_missionary_step(g, pid, uid, offensive);
         }
 
@@ -9705,7 +9705,7 @@ impl AdvancedAi {
             .values()
             .filter(|other| {
                 other.owner != pid
-                    && g.rules.units[other.kind.as_str()].class == "religious"
+                    && g.rules.units[other.kind].class == "religious"
                     && other.religion != religion
             })
             .min_by_key(|other| (g.wdist(unit.pos, other.pos), other.id))
@@ -9719,7 +9719,7 @@ impl AdvancedAi {
     }
 
     fn force_domain(g: &Game, uid: u32) -> ForceDomain {
-        if g.rules.units[g.units[&uid].kind.as_str()].domain.as_deref() == Some("sea") {
+        if g.rules.units[g.units[&uid].kind].domain.as_deref() == Some("sea") {
             ForceDomain::Sea
         } else {
             ForceDomain::Land
@@ -9756,7 +9756,7 @@ impl AdvancedAi {
             .filter(|city| {
                 !g.units_at(city.pos).into_iter().any(|unit| {
                     g.units[&unit].owner == pid
-                        && g.rules.units[g.units[&unit].kind.as_str()].class == "military"
+                        && g.rules.units[g.units[&unit].kind].class == "military"
                 })
             })
             .collect();
@@ -9769,7 +9769,7 @@ impl AdvancedAi {
             .player_unit_ids(pid)
             .into_iter()
             .filter(|unit| {
-                let spec = &g.rules.units[g.units[unit].kind.as_str()];
+                let spec = &g.rules.units[g.units[unit].kind];
                 spec.class == "military"
                     && !matches!(spec.domain.as_deref(), Some("sea" | "air"))
                     && g.units[unit].linked_to.is_none()
@@ -9954,7 +9954,7 @@ impl AdvancedAi {
         let mut targets = BTreeSet::new();
         for uid in units {
             let unit = &g.units[uid];
-            let spec = &g.rules.units[unit.kind.as_str()];
+            let spec = &g.rules.units[unit.kind];
             if spec.class != "military" || (!spec.is_melee_capable() && !spec.has_ranged_attack()) {
                 continue;
             }
@@ -9975,7 +9975,7 @@ impl AdvancedAi {
                 let mut attackers = 0;
                 for uid in units {
                     let unit = &g.units[uid];
-                    let spec = &g.rules.units[unit.kind.as_str()];
+                    let spec = &g.rules.units[unit.kind];
                     if spec.class != "military"
                         || (!spec.is_melee_capable() && !spec.has_ranged_attack())
                     {
@@ -10033,7 +10033,7 @@ impl AdvancedAi {
             .iter()
             .filter_map(|uid| {
                 let unit = &g.units[uid];
-                (g.rules.units[unit.kind.as_str()].class == "military").then_some(
+                (g.rules.units[unit.kind].class == "military").then_some(
                     crate::game::effective_strength(g.unit_strength(unit, true), unit.hp),
                 )
             })
@@ -10042,7 +10042,7 @@ impl AdvancedAi {
             .units
             .values()
             .filter(|unit| enemies.contains(&unit.owner) && g.wdist(unit.pos, objective) <= 6)
-            .filter(|unit| g.rules.units[unit.kind.as_str()].class == "military")
+            .filter(|unit| g.rules.units[unit.kind].class == "military")
             .map(|unit| crate::game::effective_strength(g.unit_strength(unit, true), unit.hp))
             .sum::<f64>()
             + g.city_at(objective)
@@ -10081,7 +10081,7 @@ impl AdvancedAi {
             .player_unit_ids(pid)
             .into_iter()
             .filter(|uid| {
-                let spec = &g.rules.units[g.units[uid].kind.as_str()];
+                let spec = &g.rules.units[g.units[uid].kind];
                 // Aircraft receive missions from the air-operations evaluator.
                 // Counting them as land units makes a thin ground army appear
                 // assembled and locally superior even though aircraft cannot
@@ -10151,7 +10151,7 @@ impl AdvancedAi {
                         && g.cities[&city].hp <= 40
                         && g.cities[&city].wall_hp <= 0
                         && units.iter().any(|unit| {
-                            g.rules.units[g.units[unit].kind.as_str()].is_melee_capable()
+                            g.rules.units[g.units[unit].kind].is_melee_capable()
                                 && g.wdist(g.units[unit].pos, target) <= 1
                         })
                 });
@@ -10271,7 +10271,7 @@ impl AdvancedAi {
         let pace = units
             .iter()
             .filter_map(|uid| g.units.get(uid))
-            .map(|unit| g.rules.units[unit.kind.as_str()].moves)
+            .map(|unit| g.rules.units[unit.kind].moves)
             .fold(f64::INFINITY, f64::min);
         let pace = if pace.is_finite() { pace.max(1.0) } else { 1.0 };
         let reach = THREAT_RELIEF_RADIUS + (pace * RELIEF_MARCH_TURNS).round() as i32;
@@ -10290,7 +10290,7 @@ impl AdvancedAi {
         let unit = &g.units[&uid];
         let upos = unit.pos;
         let role = Self::force_role(g, uid);
-        let spec = &g.rules.units[unit.kind.as_str()];
+        let spec = &g.rules.units[unit.kind];
         let target = match group.posture {
             ForcePosture::Muster | ForcePosture::Hold | ForcePosture::Recover => group.anchor,
             ForcePosture::Engage => group.focus_target.unwrap_or(group.objective),
@@ -10345,7 +10345,7 @@ impl AdvancedAi {
                 .values()
                 .filter(|other| enemies.contains(&other.owner))
             {
-                let enemy_spec = &g.rules.units[enemy.kind.as_str()];
+                let enemy_spec = &g.rules.units[enemy.kind];
                 if enemy_spec.class != "military"
                     || (!enemy_spec.is_melee_capable() && !enemy_spec.has_ranged_attack())
                 {
@@ -10471,7 +10471,7 @@ impl AdvancedAi {
             if unit.moves_left <= 0.0 || unit.attacks_left <= 0 {
                 continue;
             }
-            let spec = &position.rules.units[unit.kind.as_str()];
+            let spec = &position.rules.units[unit.kind];
             let distance = position.wdist(unit.pos, victim_pos);
             if spec.domain.as_deref() == Some("air") {
                 if distance <= position.unit_attack_range(unit.id) {
@@ -10550,7 +10550,7 @@ impl AdvancedAi {
             .values()
             .filter(|unit| unit.owner == enemy && !direct_attackers.contains(&unit.id))
             .filter(|unit| {
-                let spec = &position.rules.units[unit.kind.as_str()];
+                let spec = &position.rules.units[unit.kind];
                 spec.class == "military"
                     && spec.domain.as_deref() != Some("air")
                     && position.wdist(unit.pos, victim_pos)
@@ -10649,13 +10649,13 @@ impl AdvancedAi {
         };
         let priority_target = matches!(action, Action::PriorityTarget { .. });
         let attacker = &g.units[&uid];
-        let attacker_spec = &g.rules.units[attacker.kind.as_str()];
+        let attacker_spec = &g.rules.units[attacker.kind];
         let defenders: Vec<(u32, i32, f64, f64, bool, bool)> = g
             .units_at(target)
             .into_iter()
             .filter_map(|unit| {
                 let defender = &g.units[&unit];
-                let spec = &g.rules.units[defender.kind.as_str()];
+                let spec = &g.rules.units[defender.kind];
                 (defender.owner != pid
                     && g.is_at_war(pid, defender.owner)
                     && if priority_target {
@@ -10818,7 +10818,7 @@ impl AdvancedAi {
         plan: &StrategicPlan,
     ) -> f64 {
         let attacker = &g.units[&uid];
-        let attacker_spec = &g.rules.units[attacker.kind.as_str()];
+        let attacker_spec = &g.rules.units[attacker.kind];
         let target_city = g
             .city_at(target)
             .filter(|city| g.cities[city].owner != pid && g.is_at_war(pid, g.cities[city].owner));
@@ -10832,7 +10832,7 @@ impl AdvancedAi {
                     let defender = &g.units[other];
                     defender.owner != pid
                         && g.is_at_war(pid, defender.owner)
-                        && g.rules.units[defender.kind.as_str()].class == "military"
+                        && g.rules.units[defender.kind].class == "military"
                 })
             })
             .flatten();
@@ -10851,7 +10851,7 @@ impl AdvancedAi {
         let mut value = -attacker_loss;
         if let Some(unit) = target_unit {
             let defender = &g.units[&unit];
-            let spec = &g.rules.units[defender.kind.as_str()];
+            let spec = &g.rules.units[defender.kind];
             let role_value = if spec.siege { 70.0 } else { 0.0 }
                 + if spec.is_melee_capable() { 30.0 } else { 0.0 }
                 + if spec.domain.as_deref() == Some("air") {
@@ -10897,7 +10897,7 @@ impl AdvancedAi {
     /// disruption from scattering aircraft out of a disabled air base.
     fn air_pillage_value(&self, g: &Game, pid: usize, uid: u32, target: Pos) -> f64 {
         let attacker = &g.units[&uid];
-        let attacker_spec = &g.rules.units[attacker.kind.as_str()];
+        let attacker_spec = &g.rules.units[attacker.kind];
         let before_tile = &g.map.tiles[&target];
         let before_aircraft: Vec<(u32, f64)> = g
             .units_at(target)
@@ -10905,8 +10905,8 @@ impl AdvancedAi {
             .filter_map(|unit| {
                 let candidate = &g.units[&unit];
                 (candidate.owner != pid
-                    && g.rules.units[candidate.kind.as_str()].domain.as_deref() == Some("air"))
-                .then_some((unit, g.rules.units[candidate.kind.as_str()].cost))
+                    && g.rules.units[candidate.kind].domain.as_deref() == Some("air"))
+                .then_some((unit, g.rules.units[candidate.kind].cost))
             })
             .collect();
         let city_id = before_tile.owner_city;
@@ -10948,7 +10948,7 @@ impl AdvancedAi {
                 value += city
                     .pillaged_buildings
                     .difference(&before_pillaged_buildings)
-                    .map(|building| 80.0 + after.rules.buildings[building.as_str()].cost * 0.32)
+                    .map(|building| 80.0 + after.rules.buildings[building].cost * 0.32)
                     .sum::<f64>();
             }
         }
@@ -10967,9 +10967,9 @@ impl AdvancedAi {
             return f64::NEG_INFINITY;
         };
         let attacker = &g.units[&uid];
-        let attacker_spec = &g.rules.units[attacker.kind.as_str()];
+        let attacker_spec = &g.rules.units[attacker.kind];
         let defender = &g.units[&defender_id];
-        let defender_spec = &g.rules.units[defender.kind.as_str()];
+        let defender_spec = &g.rules.units[defender.kind];
         let mut after = g.clone();
         if after
             .apply(pid, &Action::PriorityTarget { unit: uid, target })
@@ -11154,9 +11154,9 @@ impl AdvancedAi {
                             other.owner == pid
                                 && other.id != uid
                                 && g.wdist(*to, other.pos) <= 1
-                                && g.rules.units[other.kind.as_str()].class == "military"
+                                && g.rules.units[other.kind].class == "military"
                         })
-                        .map(|other| g.rules.units[other.kind.as_str()].cost * 0.035)
+                        .map(|other| g.rules.units[other.kind].cost * 0.035)
                         .sum::<f64>();
                     let objective_distance = objective.map_or(0, |pos| g.wdist(*to, pos));
                     let existing = (unit.air_patrol_pos == Some(*to)) as i32 as f64 * 8.0;
@@ -11180,12 +11180,12 @@ impl AdvancedAi {
             .filter(|other| {
                 other.owner != pid
                     && g.is_at_war(pid, other.owner)
-                    && g.rules.units[other.kind.as_str()].domain.as_deref() == Some("air")
+                    && g.rules.units[other.kind].domain.as_deref() == Some("air")
             })
             .map(|other| {
                 let distance = g.wdist(unit.pos, other.pos);
                 if distance <= g.air_rebase_range(uid) {
-                    80.0 + g.rules.units[other.kind.as_str()].cost * 0.08
+                    80.0 + g.rules.units[other.kind].cost * 0.08
                 } else {
                     0.0
                 }
@@ -11235,7 +11235,7 @@ impl AdvancedAi {
                 let target = &game.units[target];
                 target.owner != pid
                     && game.is_at_war(pid, target.owner)
-                    && game.rules.units[target.kind.as_str()].class == "religious"
+                    && game.rules.units[target.kind].class == "religious"
             })
         };
         let here = g.units[&uid].pos;
@@ -11294,7 +11294,7 @@ impl AdvancedAi {
     ) -> bool {
         let unit = g.units[&uid].clone();
         let rules = std::sync::Arc::clone(&g.rules);
-        let spec = &rules.units[unit.kind.as_str()];
+        let spec = &rules.units[unit.kind];
         let doctrine = BasicAi::unit_doctrine(g, uid);
         let unwanted_settler_adjacent = decline_settlers
             && g.nbrs(unit.pos).into_iter().any(|position| {
@@ -11671,7 +11671,7 @@ impl AdvancedAi {
         let military: Vec<u32> = g
             .player_unit_ids(pid)
             .into_iter()
-            .filter(|uid| g.rules.units[g.units[uid].kind.as_str()].class == "military")
+            .filter(|uid| g.rules.units[g.units[uid].kind].class == "military")
             .collect();
         let max_combinations = military.len().saturating_sub(reserve);
         let mut pairs = Vec::new();
@@ -11719,7 +11719,7 @@ impl AdvancedAi {
             .player_unit_ids(pid)
             .into_iter()
             .filter(|uid| {
-                g.rules.units[g.units[uid].kind.as_str()].class == "support"
+                g.rules.units[g.units[uid].kind].class == "support"
                     && g.units[uid].kind != "military_engineer"
                     && g.units[uid].linked_to.is_none()
             })
@@ -11733,12 +11733,12 @@ impl AdvancedAi {
                     let unit = &g.units[unit];
                     unit.owner == pid
                         && unit.linked_to.is_none()
-                        && g.rules.units[unit.kind.as_str()].class == "military"
+                        && g.rules.units[unit.kind].class == "military"
                 })
                 .max_by_key(|unit| {
                     let unit = &g.units[unit];
                     (
-                        !g.rules.units[unit.kind.as_str()].has_ranged_attack(),
+                        !g.rules.units[unit.kind].has_ranged_attack(),
                         g.unit_strength(unit, true) as i64,
                         std::cmp::Reverse(unit.id),
                     )
@@ -11765,7 +11765,7 @@ impl AdvancedAi {
                 let unit = &g.units[uid];
                 unit.owner == pid
                     && unit.linked_to.is_none()
-                    && g.rules.units[unit.kind.as_str()].domain.as_deref() == Some("sea")
+                    && g.rules.units[unit.kind].domain.as_deref() == Some("sea")
             });
             if let Some(unit) = escort {
                 let _ = g.apply(pid, &Action::LinkUnits { unit, with });
@@ -11783,7 +11783,7 @@ impl AdvancedAi {
             .into_iter()
             .filter_map(|unit| {
                 let defender = &g.units[&unit];
-                let spec = &g.rules.units[defender.kind.as_str()];
+                let spec = &g.rules.units[defender.kind];
                 (defender.owner != pid
                     && g.is_at_war(pid, defender.owner)
                     && spec.class == "military")
@@ -11964,7 +11964,7 @@ impl AdvancedAi {
         let mut ids = g.player_unit_ids(pid);
         ids.sort_by_key(|uid| {
             let u = &g.units[uid];
-            let spec = &g.rules.units[u.kind.as_str()];
+            let spec = &g.rules.units[u.kind];
             let order = match u.kind.as_str() {
                 "settler" => 0,
                 "builder" => 1,
@@ -11986,7 +11986,7 @@ impl AdvancedAi {
                     break;
                 }
                 let kind = g.units[&uid].kind.clone();
-                let class = g.rules.units[kind.as_str()].class.clone();
+                let class = g.rules.units[kind].class.clone();
                 let acted = match kind.as_str() {
                     "settler" => self.advanced_settler_step(g, pid, uid),
                     "builder" => self.advanced_builder_step(g, pid, uid, plan.strategy),
@@ -15900,7 +15900,7 @@ mod tests {
             .unwrap();
         game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
         for unit in game.player_unit_ids(0) {
-            if game.rules.units[game.units[&unit].kind.as_str()].class == "military" {
+            if game.rules.units[game.units[&unit].kind].class == "military" {
                 game.remove_unit(unit);
             }
         }
@@ -15946,7 +15946,7 @@ mod tests {
             .unwrap();
         game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
         for unit in game.player_unit_ids(0) {
-            if game.rules.units[game.units[&unit].kind.as_str()].class == "military" {
+            if game.rules.units[game.units[&unit].kind].class == "military" {
                 game.remove_unit(unit);
             }
         }
@@ -16160,7 +16160,7 @@ mod tests {
         assert!(!army.units.contains(&bomber));
         assert!(ai.force_groups.iter().all(|group| {
             group.units.iter().all(|unit| {
-                game.rules.units[game.units[unit].kind.as_str()]
+                game.rules.units[game.units[unit].kind]
                     .domain
                     .as_deref()
                     != Some("air")
@@ -18739,7 +18739,7 @@ mod tests {
             .find(|uid| !g.available_promotions(*uid).is_empty())
             .or_else(|| {
                 let uid = g.player_unit_ids(0).into_iter().find(|uid| {
-                    !g.rules.units[g.units[uid].kind.as_str()]
+                    !g.rules.units[g.units[uid].kind]
                         .promotion_class
                         .is_empty()
                 })?;
@@ -18787,13 +18787,13 @@ mod tests {
         let before = g
             .player_unit_ids(0)
             .into_iter()
-            .filter(|uid| g.rules.units[g.units[uid].kind.as_str()].class == "military")
+            .filter(|uid| g.rules.units[g.units[uid].kind].class == "military")
             .count();
         AdvancedAi::new().advanced_formations(&mut g, 0);
         let military: Vec<u32> = g
             .player_unit_ids(0)
             .into_iter()
-            .filter(|uid| g.rules.units[g.units[uid].kind.as_str()].class == "military")
+            .filter(|uid| g.rules.units[g.units[uid].kind].class == "military")
             .collect();
         assert!(military.len() < before);
         assert!(military.len() >= 5);
@@ -20315,7 +20315,7 @@ mod tests {
                                 && game.is_at_war(0, unit.owner)
                         })
                         .filter(|unit| game.wdist(city.pos, unit.pos) <= 6)
-                        .filter(|unit| game.rules.units[unit.kind.as_str()].class == "military")
+                        .filter(|unit| game.rules.units[unit.kind].class == "military")
                         .map(|unit| {
                             crate::game::effective_strength(game.unit_strength(unit, false), unit.hp)
                         })
@@ -20326,7 +20326,7 @@ mod tests {
                             .values()
                             .filter(|unit| unit.owner == 0)
                             .filter(|unit| game.wdist(city.pos, unit.pos) <= 6)
-                            .filter(|unit| game.rules.units[unit.kind.as_str()].class == "military")
+                            .filter(|unit| game.rules.units[unit.kind].class == "military")
                             .map(|unit| {
                                 crate::game::effective_strength(
                                     game.unit_strength(unit, true),

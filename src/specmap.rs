@@ -247,6 +247,42 @@ impl<T> std::ops::Index<&String> for SpecMap<T> {
     }
 }
 
+impl<T> std::ops::Index<String> for SpecMap<T> {
+    type Output = T;
+
+    #[inline]
+    fn index(&self, key: String) -> &T {
+        &self[key.as_str()]
+    }
+}
+
+impl<T> std::ops::Index<&&str> for SpecMap<T> {
+    type Output = T;
+
+    #[inline]
+    fn index(&self, key: &&str) -> &T {
+        &self[*key]
+    }
+}
+
+impl<T> std::ops::Index<&&String> for SpecMap<T> {
+    type Output = T;
+
+    #[inline]
+    fn index(&self, key: &&String) -> &T {
+        &self[(*key).as_str()]
+    }
+}
+
+impl<T> std::ops::Index<&&Name> for SpecMap<T> {
+    type Output = T;
+
+    #[inline]
+    fn index(&self, key: &&Name) -> &T {
+        &self[**key]
+    }
+}
+
 impl<T> std::ops::Index<Name> for SpecMap<T> {
     type Output = T;
 

@@ -487,17 +487,17 @@ impl Metrics {
                 "builder" => self.builders += 1.0,
                 "trader" => self.traders += 1.0,
                 "missionary" => self.missionaries += 1.0,
-                _ if g.rules.units[unit.kind.as_str()].class == "support" => {
+                _ if g.rules.units[unit.kind].class == "support" => {
                     self.support_units += 1.0
                 }
                 _ => {}
             }
-            if g.rules.units[unit.kind.as_str()].class == "military" {
+            if g.rules.units[unit.kind].class == "military" {
                 self.military_units += 1.0;
             } else {
                 self.civilian_units += 1.0;
             }
-            if g.rules.units[unit.kind.as_str()].class == "religious" {
+            if g.rules.units[unit.kind].class == "religious" {
                 self.religious_units += 1.0;
             }
         }

@@ -103,7 +103,7 @@ fn named_scientists_grant_exact_buildings_science_and_era_boosts() {
         .difference(&boosts_before_einstein)
         .collect();
     assert_eq!(new_boosts.len(), 1);
-    assert!((5..=6).contains(&game.rules.techs[new_boosts[0].as_str()].era));
+    assert!((5..=6).contains(&game.rules.techs[new_boosts[0]].era));
 
     let active_science = game.city_yields(city).science;
     game.cities
@@ -202,7 +202,7 @@ fn named_engineers_apply_exact_charges_wonder_gates_and_workshop_culture() {
         .difference(&boosts_before)
         .collect();
     assert_eq!(new_boosts.len(), 1);
-    assert_eq!(game.rules.techs[new_boosts[0].as_str()].era, 5);
+    assert_eq!(game.rules.techs[new_boosts[0]].era, 5);
 
     game.cities.get_mut(&city).unwrap().production = 0.0;
     game.cities.get_mut(&city).unwrap().queue = vec![Item::Wonder {

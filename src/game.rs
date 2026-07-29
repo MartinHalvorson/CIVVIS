@@ -5,6 +5,7 @@ use std::cmp::Reverse;
 use std::sync::Arc;
 use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashSet, VecDeque};
 
+use crate::name::Name;
 use crate::rng::Rng;
 use crate::rules::{
     building_yield_effect_key, grant_ability_effect_key, unit_purchase_discount_effect_key,
@@ -3286,7 +3287,7 @@ mod corporation_tests {
             .unwrap();
         game.map.tiles.get_mut(&uncontrolled).unwrap().resource = Some("wine".to_string());
         assert_eq!(game.monopoly_bonuses(0), (5.0, 3.0));
-        game.map.tiles.get_mut(&owned[0]).unwrap().improvement = Some("industry".to_string());
+        game.map.tiles.get_mut(&owned[0]).unwrap().improvement = Some(crate::name!("industry"));
         assert_eq!(game.monopoly_bonuses(0), (5.0, 9.0));
         game.map.tiles.get_mut(&uncontrolled).unwrap().resource = None;
         assert_eq!(game.monopoly_bonuses(0).0, 10.0, "three of four is 75%");
@@ -4012,7 +4013,7 @@ mod belief_runtime_tests {
             "half of seventy techs must include gunpowder: {industrial:?}"
         );
         for unit in &industrial {
-            let spec = &game.rules.units[unit.as_str()];
+            let spec = &game.rules.units[unit];
             assert!(spec.unique_to.is_none());
             assert!(!matches!(spec.domain.as_deref(), Some("sea") | Some("air")));
         }
@@ -5163,7 +5164,7 @@ mod governor_runtime_tests {
             .unwrap();
         {
             let tile = game.map.tiles.get_mut(&water).unwrap();
-            tile.terrain = "coast".to_string();
+            tile.terrain = crate::name!("coast");
             tile.feature = None;
             tile.resource = None;
             tile.improvement = None;
@@ -5176,7 +5177,7 @@ mod governor_runtime_tests {
             .unwrap();
         {
             let tile = game.map.tiles.get_mut(&sea_resource).unwrap();
-            tile.terrain = "coast".to_string();
+            tile.terrain = crate::name!("coast");
             tile.feature = None;
             tile.resource = Some("fish".to_string());
         }
@@ -5708,7 +5709,7 @@ mod governor_runtime_tests {
         assert_eq!(game.unit_max_moves(chariot), base + 1.0);
 
         // Woods, Rainforest and Hills all stop it.
-        game.map.tiles.get_mut(&site).unwrap().feature = Some("forest".to_string());
+        game.map.tiles.get_mut(&site).unwrap().feature = Some(crate::name!("forest"));
         assert_eq!(game.unit_max_moves(chariot), base);
         game.map.tiles.get_mut(&site).unwrap().feature = None;
         game.map.tiles.get_mut(&site).unwrap().hills = true;
@@ -5933,7 +5934,7 @@ mod governor_runtime_tests {
         assert!(game.valid_improvements(0, site).contains(&"lumber_mill".to_string()));
 
         // Woods never needed the civic.
-        game.map.tiles.get_mut(&site).unwrap().feature = Some("forest".to_string());
+        game.map.tiles.get_mut(&site).unwrap().feature = Some(crate::name!("forest"));
         game.players[0].civics.remove("mercantilism");
         assert!(game.valid_improvements(0, site).contains(&"lumber_mill".to_string()));
     }
@@ -6390,7 +6391,7 @@ mod governor_runtime_tests {
                 .is_some_and(|tile| game.rules.is_passable(tile))
                 && !game.units_at(position).iter().any(|unit| {
                     game.units[unit].owner == 1
-                        && game.rules.units[game.units[unit].kind.as_str()].class == "military"
+                        && game.rules.units[game.units[unit].kind].class == "military"
                 })
             {
                 game.spawn_test_unit("warrior", 1, position);
@@ -7821,7 +7822,7 @@ mod espionage_runtime_tests {
         let mission_turn = game.turn;
         let target_center = game.cities[&target].pos;
         let mission = move |kind: &str, target_position: Pos| SpyMission {
-            kind: kind.to_string(),
+            kind: Name::new(kind),
             city: target,
             target: target_position,
             started: mission_turn,
@@ -10656,7 +10657,7 @@ mod district_building_wonder_runtime_tests {
             .into_iter()
             .filter(|uid| {
                 game.units[uid].owner == minor
-                    && game.rules.units[game.units[uid].kind.as_str()].class == "military"
+                    && game.rules.units[game.units[uid].kind].class == "military"
             })
             .collect();
         assert!(
@@ -11470,7 +11471,7 @@ mod district_building_wonder_runtime_tests {
         }
         for neighbor in game.nbrs(position) {
             let tile = game.map.tiles.get_mut(&neighbor).unwrap();
-            tile.terrain = "coast".to_string();
+            tile.terrain = crate::name!("coast");
             tile.feature = None;
             tile.improvement = None;
             tile.district = None;
@@ -12048,7 +12049,7 @@ pub struct VisionCache {
     /// Which wonders exist anywhere in the world. Deciding whether a city may
     /// start one asks this of every wonder in the ruleset, and answering it
     /// from scratch meant walking every city and every tile each time.
-    built_wonders: Option<BTreeSet<String>>,
+    built_wonders: Option<BTreeSet<Name>>,
 }
 
 /// Memoized answers to expensive read-only queries, live only while a
@@ -12135,7 +12136,7 @@ impl VisionCache {
         self.built_wonders = None;
     }
 
-    fn wonders(&mut self, stamp: u64, build: impl FnOnce() -> BTreeSet<String>) -> &BTreeSet<String> {
+    fn wonders(&mut self, stamp: u64, build: impl FnOnce() -> BTreeSet<Name>) -> &BTreeSet<Name> {
         if self.stamp != stamp {
             self.reset(stamp);
         }
@@ -12418,7 +12419,7 @@ fn one_u32() -> u32 {
 pub struct Unit {
     pub id: u32,
     #[serde(rename = "type")]
-    pub kind: String,
+    pub kind: Name,
     pub owner: usize,
     pub pos: Pos,
     pub hp: i32,
@@ -12434,7 +12435,7 @@ pub struct Unit {
     pub level: i32,
     /// Chosen nodes from this unit class's promotion tree.
     #[serde(default)]
-    pub promotions: BTreeSet<String>,
+    pub promotions: BTreeSet<Name>,
     /// Patron Saint grants a second choice after this unit's first promotion.
     #[serde(default)]
     pub extra_first_promotion: bool,
@@ -12716,7 +12717,7 @@ pub struct City {
     pub strategic_resource_commitments: BTreeMap<String, f64>,
     pub border_culture: f64,
     pub hp: i32,
-    pub buildings: Vec<String>,
+    pub buildings: Vec<Name>,
     /// Economic Great Works housed in Stock Exchange/Seaport Product slots.
     /// The resource ID is also the Product's brand/effect identity.
     #[serde(default)]
@@ -12725,13 +12726,13 @@ pub struct City {
     /// such as the Dar-e Mehr use this while old saves safely default to no
     /// retroactive age bonus.
     #[serde(default)]
-    pub building_eras: BTreeMap<String, usize>,
+    pub building_eras: BTreeMap<Name, usize>,
     #[serde(default)]
-    pub pillaged_buildings: BTreeSet<String>,
+    pub pillaged_buildings: BTreeSet<Name>,
     #[serde(default)]
     pub districts: Districts,
     #[serde(default)]
-    pub wonders: BTreeMap<String, Pos>,
+    pub wonders: BTreeMap<Name, Pos>,
     pub owned_tiles: Vec<Pos>,
     pub queue: Vec<Item>,
     pub original_owner: usize,
@@ -13558,7 +13559,7 @@ pub struct Player {
     #[serde(default)]
     pub converted_cities: BTreeSet<u32>,
     #[serde(default)]
-    pub discovered_natural_wonders: BTreeSet<String>,
+    pub discovered_natural_wonders: BTreeSet<Name>,
     #[serde(default)]
     pub governors: Vec<u32>, // city ids with an established governor
     #[serde(default)]
@@ -14987,7 +14988,7 @@ impl From<GameSer> for Game {
             // Preserve a real mid-turn zero so save/load cannot restore an
             // attack that the unit has already spent.
             unit.attacks_left = unit.attacks_left.clamp(0, max_attacks);
-            if unit.religion.is_none() && g.rules.units[unit.kind.as_str()].class == "religious" {
+            if unit.religion.is_none() && g.rules.units[unit.kind].class == "religious" {
                 unit.religion = g.players[unit.owner].religion.clone();
             }
         }
@@ -15361,8 +15362,8 @@ impl Game {
             // buildings granted by setup.
             if g.difficulty_spec().order >= 6 {
                 let state = g.cities.get_mut(&city).unwrap();
-                state.buildings.push("walls".to_string());
-                state.building_eras.insert("walls".to_string(), 0);
+                state.buildings.push(crate::name!("walls"));
+                state.building_eras.insert(crate::name!("walls"), 0);
                 state.wall_hp = 100;
             }
         }
@@ -15462,14 +15463,14 @@ impl Game {
         // Re-spawn rather than rewrite: `spawn_unit` owns charges, religion
         // and the strongest-built counters, so a Musketman that arrives this
         // way is the same unit as one that was trained.
-        let starting: Vec<(u32, usize, Pos, String)> = self
+        let starting: Vec<(u32, usize, Pos, Name)> = self
             .units
             .values()
             .filter(|unit| !self.players[unit.owner].is_barbarian)
-            .map(|unit| (unit.id, unit.owner, unit.pos, unit.kind.clone()))
+            .map(|unit| (unit.id, unit.owner, unit.pos, unit.kind))
             .collect();
         for (uid, owner, pos, kind) in starting {
-            let mut upgraded = kind.clone();
+            let mut upgraded = kind.to_string();
             // The chain is acyclic and every rung is checked against what the
             // owner now knows, so this walks to the newest unit the start era
             // reaches and stops.
@@ -15560,11 +15561,11 @@ impl Game {
     // -------------------------------------------------- difficulty and speed
 
     pub fn difficulty_spec(&self) -> &DifficultySpec {
-        &self.rules.difficulties[self.difficulty.as_str()]
+        &self.rules.difficulties[&self.difficulty]
     }
 
     pub fn speed_spec(&self) -> &SpeedSpec {
-        &self.rules.speeds[self.speed.as_str()]
+        &self.rules.speeds[&self.speed]
     }
 
     pub fn is_human_seat(&self, pid: usize) -> bool {
@@ -16130,7 +16131,7 @@ impl Game {
             return;
         }
         let pos = cands[self.rng.below(cands.len())];
-        self.map.tiles.get_mut(&pos).unwrap().improvement = Some("barbarian_camp".to_string());
+        self.map.tiles.get_mut(&pos).unwrap().improvement = Some(crate::name!("barbarian_camp"));
         self.barb_camps.insert(pos, self.turn + 2);
     }
 
@@ -16599,7 +16600,7 @@ impl Game {
         }
         let position = candidates[rng.below(candidates.len())];
         self.map.tiles.get_mut(&position).unwrap().improvement =
-            Some("meteor_goody".to_string());
+            Some(crate::name!("meteor_goody"));
         self.meteor_strikes += 1;
     }
 
@@ -16615,7 +16616,7 @@ impl Game {
         };
         if !self.barb_camps.contains_key(&pos)
             || Some(owner) == self.barb_pid
-            || self.rules.units[kind.as_str()].class != "military"
+            || self.rules.units[kind].class != "military"
         {
             return false;
         }
@@ -17108,7 +17109,7 @@ impl Game {
         let Some((first, second)) = self.war_sides(owner, enemy) else {
             return;
         };
-        let value = (self.rules.units[unit.kind.as_str()].strength * unit.hp.max(0) as f64 / 100.0)
+        let value = (self.rules.units[unit.kind].strength * unit.hp.max(0) as f64 / 100.0)
             .round() as i64;
         let current_strength = self.military_power(owner).round() as i64;
         let key = pair(first, second);
@@ -17149,7 +17150,7 @@ impl Game {
             .filter_map(|unit| {
                 let candidate = &self.units[&unit];
                 (candidate.owner == owner
-                    && self.rules.units[candidate.kind.as_str()].class == "military")
+                    && self.rules.units[candidate.kind].class == "military")
                     .then_some(candidate)
             })
             .max_by(|first, second| {
@@ -17475,7 +17476,7 @@ impl Game {
 
     pub fn unit_heal_rate(&self, uid: u32) -> i32 {
         let unit = &self.units[&uid];
-        let spec = &self.rules.units[unit.kind.as_str()];
+        let spec = &self.rules.units[unit.kind];
         // Barbarian units never recover passively in Civ VI. They can still
         // receive an immediate healing plunder reward, such as from a Farm.
         if self.players[unit.owner].is_barbarian {
@@ -17541,7 +17542,7 @@ impl Game {
                     .buildings
                     .iter()
                     .filter_map(|name| {
-                        let building = &self.rules.buildings[name.as_str()];
+                        let building = &self.rules.buildings[name];
                         building
                             .district
                             .as_deref()
@@ -18072,7 +18073,7 @@ impl Game {
         if self.players[pid].gold + f64::EPSILON < gold {
             return Err("not enough gold");
         }
-        if let Some(resource) = self.rules.units[target.as_str()]
+        if let Some(resource) = self.rules.units[&target]
             .requires_resource
             .as_deref()
         {
@@ -18092,9 +18093,9 @@ impl Game {
         let (target, gold, resources) = self
             .unit_gold_upgrade_detail(pid, uid)
             .map_err(|why| format!("this unit cannot be upgraded here: {why}"))?;
-        let class = self.rules.units[target.as_str()].promotion_class.clone();
-        let charges = self.rules.units[target.as_str()].charges;
-        let resource = self.rules.units[target.as_str()]
+        let class = self.rules.units[&target].promotion_class.clone();
+        let charges = self.rules.units[&target].charges;
+        let resource = self.rules.units[&target]
             .requires_resource
             .clone();
         self.players[pid].gold -= gold;
@@ -18106,7 +18107,7 @@ impl Game {
                     .insert(resource, (held - resources).max(0.0));
             }
         }
-        let keep: Vec<String> = unit
+        let keep: Vec<Name> = unit
             .promotions
             .iter()
             .filter(|name| {
@@ -18117,10 +18118,10 @@ impl Game {
             })
             .cloned()
             .collect();
-        let from = unit.kind.clone();
+        let from = unit.kind;
         let pos = unit.pos;
         let unit = self.units.get_mut(&uid).unwrap();
-        unit.kind = target.clone();
+        unit.kind = Name::new(&target);
         // Promotions survive within the same promotion class; a successor with
         // its own charge budget starts that budget full.
         unit.promotions = keep.into_iter().collect();
@@ -18133,7 +18134,7 @@ impl Game {
         unit.attacks_left = 0;
         unit.fortified = false;
         unit.fortify_turns = 0;
-        let target_spec = &self.rules.units[target.as_str()];
+        let target_spec = &self.rules.units[&target];
         if target_spec.class == "military" {
             let best = self.players[pid]
                 .counters
@@ -18852,7 +18853,7 @@ impl Game {
                     self.map.get(*position).is_some_and(|tile| {
                         self.rules.is_passable(tile) && !self.rules.is_water(tile)
                     }) && !self.units_at(*position).iter().any(|unit| {
-                        self.rules.units[self.units[unit].kind.as_str()].class == "military"
+                        self.rules.units[self.units[unit].kind].class == "military"
                     })
                 })
                 .take(2)
@@ -18894,11 +18895,11 @@ impl Game {
             }
             "great_work_heist" => self.steal_great_work(spy.owner, defender, city.id),
             "sabotage_production" => {
-                let buildings: Vec<String> = city
+                let buildings: Vec<Name> = city
                     .buildings
                     .iter()
                     .filter(|building| {
-                        self.rules.buildings[building.as_str()]
+                        self.rules.buildings[building]
                             .district
                             .as_deref()
                             .is_some_and(|family| {
@@ -19455,7 +19456,7 @@ impl Game {
         let mut cur = from;
         for _ in 0..40 {
             if let Some(t) = self.map.tiles.get_mut(&cur) {
-                if !self.rules.terrains[t.terrain.as_str()].water {
+                if !self.rules.terrains[t.terrain].water {
                     t.road = t.road.max(level);
                 }
             }
@@ -19768,7 +19769,7 @@ impl Game {
     /// nothing from either in theological combat.
     fn religious_combat_belief_bonus(&self, unit: &Unit) -> f64 {
         let (owner, position) = (unit.owner, unit.pos);
-        let class = self.rules.units[unit.kind.as_str()].class.as_str();
+        let class = self.rules.units[unit.kind].class.as_str();
         if matches!(class, "religious" | "religious_apostle" | "support") {
             return 0.0;
         }
@@ -19923,7 +19924,7 @@ impl Game {
         let can_found_here = |city: &City| {
             self.city_has_district_family(city, "holy_site")
                 || city.wonders.keys().any(|wonder| {
-                    self.rules.wonders[wonder.as_str()]
+                    self.rules.wonders[wonder]
                         .effects
                         .get("religion_founding_site")
                         .copied()
@@ -19969,7 +19970,7 @@ impl Game {
 
     fn do_spread(&mut self, pid: usize, uid: u32) -> Result<(), String> {
         let u = self.own_unit(pid, uid)?;
-        let spread = self.rules.units[u.kind.as_str()].religious_spread;
+        let spread = self.rules.units[u.kind].religious_spread;
         if spread <= 0.0 || u.charges <= 0 || u.moves_left <= 0.0 {
             return Err("religious unit has no spread charges".into());
         }
@@ -20054,7 +20055,7 @@ impl Game {
     }
 
     fn theological_strength(&self, unit: &Unit) -> f64 {
-        let mut strength = self.rules.units[unit.kind.as_str()].religious_strength
+        let mut strength = self.rules.units[unit.kind].religious_strength
             + self.promotion_effect(unit, "religious_strength");
         strength += self.adjacent_friendly_unit_effect(unit, "adjacent_religious_strength");
         strength += self.gov_effects(unit.owner).religious_strength;
@@ -20153,7 +20154,7 @@ impl Game {
             .into_iter()
             .find(|other_id| {
                 let defender = &self.units[other_id];
-                let spec = &self.rules.units[defender.kind.as_str()];
+                let spec = &self.rules.units[defender.kind];
                 defender.owner != pid
                     && spec.class == "religious"
                     && defender
@@ -20229,8 +20230,8 @@ impl Game {
             .religion
             .as_deref()
             .is_some_and(|religion| self.congress_effect_active("world_religion", "B", religion));
-        if self.rules.units[unit.kind.as_str()].class != "military"
-            || self.rules.units[target.kind.as_str()].class != "religious"
+        if self.rules.units[unit.kind].class != "military"
+            || self.rules.units[target.kind].class != "religious"
             || (!self.is_at_war(pid, target.owner) && !congress_condemnation)
             || unit.pos != target.pos
             || unit.moves_left <= 0.0
@@ -20264,7 +20265,7 @@ impl Game {
             .into_iter()
             .filter(|other_id| self.wdist(guru.pos, self.units[other_id].pos) <= 1)
             .filter(|other_id| {
-                self.rules.units[self.units[other_id].kind.as_str()].class == "religious"
+                self.rules.units[self.units[other_id].kind].class == "religious"
                     && self.units[other_id].religion == religion
                     && self.units[other_id].hp < 100
             })
@@ -20833,7 +20834,7 @@ impl Game {
                 if !self.district_is_active(c, d, *position) {
                     continue;
                 }
-                for (kind, points) in &self.rules.districts[d.as_str()].great_person_points {
+                for (kind, points) in &self.rules.districts[d].great_person_points {
                     *city_earn.entry(kind.clone()).or_insert(0.0) += *points;
                     let cultural_alliance_route = self.routes.iter().any(|route| {
                         route.origin == c.id
@@ -20847,7 +20848,8 @@ impl Game {
                     if cultural_alliance_route {
                         *city_earn.entry(kind.clone()).or_insert(0.0) += 1.0;
                     }
-                    if c.wonders.contains_key("oracle") {
+                    if c.wonders
+.contains_key(&crate::name!("oracle")) {
                         *city_earn.entry(kind.clone()).or_insert(0.0) += self.rules.wonders
                             ["oracle"]
                             .effects
@@ -20904,7 +20906,7 @@ impl Game {
                 if c.pillaged_buildings.contains(b) || !self.building_district_is_active(c, b) {
                     continue;
                 }
-                for (kind, points) in &self.rules.buildings[b.as_str()].great_person_points {
+                for (kind, points) in &self.rules.buildings[b].great_person_points {
                     *city_earn.entry(kind.clone()).or_insert(0.0) += *points;
                 }
                 let add = |earn: &mut BTreeMap<String, f64>, kind: &str, amount: f64| {
@@ -21003,7 +21005,7 @@ impl Game {
                 }
             }
             for wonder in c.wonders.keys() {
-                for (kind, points) in &self.rules.wonders[wonder.as_str()].great_person_points {
+                for (kind, points) in &self.rules.wonders[wonder].great_person_points {
                     *city_earn.entry(kind.clone()).or_insert(0.0) += *points;
                 }
             }
@@ -21136,11 +21138,11 @@ impl Game {
                     .map(|(position, _)| *position);
                 if let Some(position) = existing {
                     self.map.tiles.get_mut(&position).unwrap().improvement =
-                        Some("industry".to_string());
+                        Some(crate::name!("industry"));
                 }
             }
         }
-        self.map.tiles.get_mut(&pos).unwrap().improvement = Some("corporation".to_string());
+        self.map.tiles.get_mut(&pos).unwrap().improvement = Some(crate::name!("corporation"));
         self.map.tiles.get_mut(&pos).unwrap().pillaged = false;
         bump(&mut self.players[pid], "corporations");
         Ok(())
@@ -21230,7 +21232,8 @@ impl Game {
                 || self
                     .cities
                     .values()
-                    .any(|city| city.owner == pid && city.wonders.contains_key("stonehenge"));
+                    .any(|city| city.owner == pid && city.wonders
+.contains_key(&crate::name!("stonehenge")));
             if !has_site {
                 return Err("this Great Prophet requires an active Holy Site or Stonehenge".into());
             }
@@ -21529,10 +21532,10 @@ impl Game {
                             candidate.replaces.as_deref() == Some(family)
                                 && candidate.unique_to.as_deref() == Some(civilization)
                         })
-                        .map(|(name, _)| name.clone())
-                        .unwrap_or_else(|| family.to_string());
+                        .map(|(name, _)| Name::new(name))
+                        .unwrap_or_else(|| Name::new(family));
                     let city = self.cities.get_mut(&city_id).unwrap();
-                    city.buildings.push(building.clone());
+                    city.buildings.push(building);
                     city.building_eras.insert(building, self.world_era);
                 }
             }
@@ -21548,7 +21551,7 @@ impl Game {
                     Some(Item::Wonder { wonder, .. }) => wonder.clone(),
                     _ => unreachable!(),
                 };
-                let wonder_spec = &self.rules.wonders[wonder.as_str()];
+                let wonder_spec = &self.rules.wonders[wonder];
                 let wonder_era = wonder_spec
                     .tech
                     .as_deref()
@@ -21610,7 +21613,7 @@ impl Game {
 
     fn great_person_land_units(&self, pid: usize) -> impl Iterator<Item = u32> + '_ {
         self.units.values().filter_map(move |unit| {
-            let spec = &self.rules.units[unit.kind.as_str()];
+            let spec = &self.rules.units[unit.kind];
             (unit.owner == pid
                 && spec.class == "military"
                 && !matches!(spec.domain.as_deref(), Some("sea" | "air")))
@@ -21624,7 +21627,7 @@ impl Game {
     {
         units.max_by_key(|unit| {
             let state = &self.units[unit];
-            let spec = &self.rules.units[state.kind.as_str()];
+            let spec = &self.rules.units[state.kind];
             (
                 (spec.strength + self.unit_formation_bonus(state)).round() as i64,
                 Reverse(*unit),
@@ -21635,7 +21638,7 @@ impl Game {
     fn great_person_promotion_unit(&self, pid: usize) -> Option<u32> {
         self.strongest_great_person_land_unit(self.great_person_land_units(pid).filter(|unit| {
             let state = &self.units[unit];
-            let spec = &self.rules.units[state.kind.as_str()];
+            let spec = &self.rules.units[state.kind];
             spec.earns_xp
                 && !spec.promotion_class.is_empty()
                 && state.level < 8
@@ -21652,7 +21655,7 @@ impl Game {
         self.units
             .values()
             .filter(|unit| {
-                let spec = &self.rules.units[unit.kind.as_str()];
+                let spec = &self.rules.units[unit.kind];
                 let domain_matches = if domain == "sea" {
                     spec.domain.as_deref() == Some("sea")
                 } else {
@@ -21665,7 +21668,7 @@ impl Game {
                     && unit.formation < formation
             })
             .max_by_key(|unit| {
-                let spec = &self.rules.units[unit.kind.as_str()];
+                let spec = &self.rules.units[unit.kind];
                 (
                     (spec.strength + self.unit_formation_bonus(unit)).round() as i64,
                     Reverse(unit.id),
@@ -21687,10 +21690,10 @@ impl Game {
                 candidate.replaces.as_deref() == Some(family)
                     && candidate.unique_to.as_deref() == Some(civilization)
             })
-            .map(|(name, _)| name.clone())
-            .unwrap_or_else(|| family.to_string());
+            .map(|(name, _)| Name::new(name))
+            .unwrap_or_else(|| Name::new(family));
         let city = self.cities.get_mut(&city_id).unwrap();
-        city.buildings.push(building.clone());
+        city.buildings.push(building);
         city.building_eras.insert(building, self.world_era);
     }
 
@@ -21737,7 +21740,8 @@ impl Game {
                     && self.religions_founded() < self.max_religions()
                     && (self.has_great_person_district(pid, "holy_site")
                         || self.cities.values().any(|city| {
-                            city.owner == pid && city.wonders.contains_key("stonehenge")
+                            city.owner == pid && city.wonders
+.contains_key(&crate::name!("stonehenge"))
                         }));
                 if can_found {
                     self.players[pid].prophet_pending = true;
@@ -21748,7 +21752,7 @@ impl Game {
             "general" | "admiral" => {
                 let sea = kind == "admiral";
                 for uid in self.player_unit_ids(pid) {
-                    let spec = &self.rules.units[self.units[&uid].kind.as_str()];
+                    let spec = &self.rules.units[self.units[&uid].kind];
                     if spec.class == "military" && (spec.domain.as_deref() == Some("sea")) == sea {
                         let u = self.units.get_mut(&uid).unwrap();
                         u.level = (u.level + 1).min(8);
@@ -21879,7 +21883,7 @@ impl Game {
                         && self.building_district_is_active(city, building)
                 })
                 .filter(|building| {
-                    self.rules.buildings[building.as_str()]
+                    self.rules.buildings[building]
                         .worship_belief
                         .is_some()
                 })
@@ -21953,7 +21957,8 @@ impl Game {
         if count == 0 {
             return 0.0;
         }
-        let local = if city.wonders.contains_key("kilwa_kisiwani") {
+        let local = if city.wonders
+.contains_key(&crate::name!("kilwa_kisiwani")) {
             self.rules.wonders["kilwa_kisiwani"]
                 .effects
                 .get("suzerain_type_city_bonus_pct")
@@ -22143,14 +22148,14 @@ impl Game {
             .units
             .values()
             .filter(|unit| unit.owner == minor && unit.levied_from.is_none())
-            .filter(|unit| self.rules.units[unit.kind.as_str()].class == "military")
+            .filter(|unit| self.rules.units[unit.kind].class == "military")
             .collect();
         if units.is_empty() {
             return None;
         }
         let base = units
             .iter()
-            .map(|unit| self.rules.units[unit.kind.as_str()].cost)
+            .map(|unit| self.rules.units[unit.kind].cost)
             .sum::<f64>();
         let discount = self.empire_building_sum(pid, |building| {
             building
@@ -22173,7 +22178,7 @@ impl Game {
             .units
             .values()
             .filter(|unit| unit.owner == minor && unit.levied_from.is_none())
-            .filter(|unit| self.rules.units[unit.kind.as_str()].class == "military")
+            .filter(|unit| self.rules.units[unit.kind].class == "military")
             .map(|unit| unit.id)
             .collect();
         self.players[pid].gold -= cost;
@@ -22221,12 +22226,12 @@ impl Game {
                 unit.levied_until = 0;
                 unit.moves_left = 0.0;
                 unit.acted = true;
-                (self.rules.units[unit.kind.as_str()].class.clone(), unit.pos)
+                (self.rules.units[unit.kind].class.clone(), unit.pos)
             };
             let occupied = self.units_at(current_pos).into_iter().any(|other| {
                 other != unit_id
                     && self.units[&other].owner == minor
-                    && self.rules.units[self.units[&other].kind.as_str()].class == class
+                    && self.rules.units[self.units[&other].kind].class == class
             });
             if occupied {
                 // Look outward from where the operative actually stands before
@@ -22245,7 +22250,7 @@ impl Game {
                     self.unit_can_traverse(unit_id, *position)
                         && !self.units_at(*position).into_iter().any(|other| {
                             self.units[&other].owner == minor
-                                && self.rules.units[self.units[&other].kind.as_str()].class == class
+                                && self.rules.units[self.units[&other].kind].class == class
                         })
                 });
                 match free {
@@ -22356,7 +22361,7 @@ impl Game {
             Some(u) => (u.owner, u.kind.clone(), u.xp_bonus_pct),
             None => return 0,
         };
-        let spec = &self.rules.units[kind.as_str()];
+        let spec = &self.rules.units[kind];
         let mut multiplier = 1.0 + self.handicap_xp_pct(owner) / 100.0;
         if self.players[owner].government.as_deref() == Some("oligarchy") {
             multiplier += 0.2;
@@ -22385,7 +22390,7 @@ impl Game {
 
     pub fn promotion_pending(&self, uid: u32) -> bool {
         self.units.get(&uid).is_some_and(|unit| {
-            let spec = &self.rules.units[unit.kind.as_str()];
+            let spec = &self.rules.units[unit.kind];
             let class = &spec.promotion_class;
             let level_cap = if class == "rock_band" { 4 } else { 8 };
             spec.earns_xp
@@ -22428,7 +22433,7 @@ impl Game {
         if unit.moves_left <= 0.0 || !self.promotion_pending(uid) {
             return vec![];
         }
-        let class = self.rules.units[unit.kind.as_str()]
+        let class = self.rules.units[unit.kind]
             .promotion_class
             .as_str();
         let mut available: Vec<String> = self
@@ -22437,12 +22442,12 @@ impl Game {
             .iter()
             .filter(|(name, spec)| {
                 spec.class == class
-                    && !unit.promotions.contains(*name)
+                    && !unit.promotions.iter().any(|held| *held == **name)
                     && (spec.requires.is_empty()
                         || spec
                             .requires
                             .iter()
-                            .any(|req| unit.promotions.contains(req)))
+                            .any(|req| unit.promotions.iter().any(|held| *held == *req)))
             })
             .map(|(name, _)| name.clone())
             .collect();
@@ -22504,7 +22509,7 @@ impl Game {
         };
         if base > 0.0
             && !matches!(
-                self.rules.units[unit.kind.as_str()].domain.as_deref(),
+                self.rules.units[unit.kind].domain.as_deref(),
                 Some("sea" | "air")
             )
         {
@@ -22525,7 +22530,7 @@ impl Game {
         if self
             .units
             .get(&uid)
-            .is_none_or(|unit| !self.rules.units[unit.kind.as_str()].earns_xp)
+            .is_none_or(|unit| !self.rules.units[unit.kind].earns_xp)
         {
             return;
         }
@@ -22567,7 +22572,7 @@ impl Game {
         let Some(unit) = self.units.get(&uid) else {
             return;
         };
-        if !self.rules.units[unit.kind.as_str()].earns_xp {
+        if !self.rules.units[unit.kind].earns_xp {
             return;
         }
         if self.promotion_pending(uid) {
@@ -22579,8 +22584,8 @@ impl Game {
             self.units.get_mut(&uid).unwrap().xp += 1;
             return;
         }
-        let own = self.rules.units[unit.kind.as_str()].strength.max(1.0);
-        let other = self.rules.units[opponent.kind.as_str()].strength.max(1.0);
+        let own = self.rules.units[unit.kind].strength.max(1.0);
+        let other = self.rules.units[opponent.kind].strength.max(1.0);
         let mut relative = other / own;
         if killed_opponent {
             relative *= 2.0;
@@ -22623,7 +22628,7 @@ impl Game {
         let economic = self.city_resource_industry_effects(&self.cities[&cid]);
         match item {
             Some(Item::Unit { unit }) | Some(Item::Formation { unit, .. }) => {
-                let spec = &self.rules.units[unit.as_str()];
+                let spec = &self.rules.units[unit];
                 bonus += self.gov_effects(pid).unit_production_pct / 100.0;
                 if spec.class == "military" {
                     bonus += economic.military_unit_production_pct / 100.0;
@@ -22740,7 +22745,7 @@ impl Game {
                 }
             }
             Some(Item::Building { building }) => {
-                let spec = &self.rules.buildings[building.as_str()];
+                let spec = &self.rules.buildings[building];
                 bonus += economic.building_production_pct / 100.0;
                 let district = spec
                     .district
@@ -22998,7 +23003,7 @@ impl Game {
     }
 
     fn unit_is_embarked_at(&self, unit: &Unit, pos: Pos) -> bool {
-        let domain = self.rules.units[unit.kind.as_str()].domain.as_deref();
+        let domain = self.rules.units[unit.kind].domain.as_deref();
         !matches!(domain, Some("sea" | "air"))
             && unit.kind != "giant_death_robot"
             && self.map.get(pos).is_some_and(|tile| {
@@ -23036,7 +23041,7 @@ impl Game {
         let Some(tile) = self.map.get(pos) else {
             return false;
         };
-        let spec = &self.rules.units[unit.kind.as_str()];
+        let spec = &self.rules.units[unit.kind];
         if spec.domain.as_deref() == Some("air") {
             return false; // aircraft use rebase/strike missions, never tile steps
         }
@@ -23065,7 +23070,7 @@ impl Game {
     /// asks for it once per tile it examines — hence the memo above.
     fn traversal_class_uncached(&self, uid: u32) -> TraversalClass {
         let unit = &self.units[&uid];
-        let spec = &self.rules.units[unit.kind.as_str()];
+        let spec = &self.rules.units[unit.kind];
         let sea = spec.domain.as_deref() == Some("sea");
         let wading_giant = unit.kind == "giant_death_robot";
         // Cartography is the stock gate for every naval and embarked unit.
@@ -23151,7 +23156,7 @@ impl Game {
         let Some(tile) = self.map.get(target) else {
             return false;
         };
-        let sea_unit = self.rules.units[unit.kind.as_str()].domain.as_deref() == Some("sea");
+        let sea_unit = self.rules.units[unit.kind].domain.as_deref() == Some("sea");
         if sea_unit || unit.kind == "giant_death_robot" {
             self.unit_can_traverse(uid, target)
         } else {
@@ -23177,7 +23182,7 @@ impl Game {
     fn government_combat_bonus(&self, u: &Unit, attacking: bool) -> f64 {
         let bonus = self.gov_effects(u.owner).combat_strength;
         match self.players[u.owner].government.as_deref() {
-            Some("oligarchy") if !Self::oligarchy_applies(&self.rules.units[u.kind.as_str()]) => {
+            Some("oligarchy") if !Self::oligarchy_applies(&self.rules.units[u.kind]) => {
                 0.0
             }
             Some("fascism") if !attacking => 0.0,
@@ -23186,7 +23191,7 @@ impl Game {
     }
 
     fn congress_military_strength_bonus(&self, unit: &Unit) -> f64 {
-        let class = self.rules.units[unit.kind.as_str()]
+        let class = self.rules.units[unit.kind]
             .promotion_class
             .as_str();
         if self.congress_effect_active("military_advisory", "A", class) {
@@ -23205,7 +23210,7 @@ impl Game {
     }
 
     fn unit_unembarked_strength(&self, u: &Unit) -> f64 {
-        let mut s = self.rules.units[u.kind.as_str()].strength.max(1.0)
+        let mut s = self.rules.units[u.kind].strength.max(1.0)
             + self.government_combat_bonus(u, true)
             + self.unit_formation_bonus(u)
             + self.promotion_effect(u, "combat_all")
@@ -23213,7 +23218,7 @@ impl Game {
             + self.religious_combat_belief_bonus(u)
             + self.handicap_combat_strength(u.owner);
         if !matches!(
-            self.rules.units[u.kind.as_str()].domain.as_deref(),
+            self.rules.units[u.kind].domain.as_deref(),
             Some("sea" | "air")
         ) {
             s += self.adjacent_friendly_unit_effect(u, "adjacent_combat_strength");
@@ -23230,7 +23235,7 @@ impl Game {
         // alike -- the shipped modifier is a plain strength bonus keyed on the
         // tile the unit is fighting on, not on who started the fight.
         if matches!(
-            self.rules.units[u.kind.as_str()].promotion_class.as_str(),
+            self.rules.units[u.kind].promotion_class.as_str(),
             "light_cavalry" | "heavy_cavalry"
         ) && self.map.get(u.pos).is_some_and(|tile| tile.hills)
             && self.grants_city_state_unique_bonus(u.owner, "Preslav")
@@ -23256,7 +23261,7 @@ impl Game {
         if let Some(minor) = city_state_origin {
             s += self.city_state_envoy_strength(minor);
         }
-        let spec = &self.rules.units[u.kind.as_str()];
+        let spec = &self.rules.units[u.kind];
         if spec.resource_maintenance > 0.0 {
             if let Some(resource) = spec.requires_resource.as_deref() {
                 s -= self.strategic_shortage_penalty(u.owner, resource) as f64;
@@ -23337,12 +23342,12 @@ impl Game {
     }
 
     fn unit_can_fortify(&self, u: &Unit) -> bool {
-        let spec = &self.rules.units[u.kind.as_str()];
+        let spec = &self.rules.units[u.kind];
         spec.class == "military" && spec.domain.as_deref() != Some("sea") && !self.is_embarked(u)
     }
 
     pub fn unit_ranged_strength(&self, u: &Unit) -> f64 {
-        let rs = self.rules.units[u.kind.as_str()].ranged_strength;
+        let rs = self.rules.units[u.kind].ranged_strength;
         if rs <= 0.0 {
             return 0.0;
         }
@@ -23362,7 +23367,7 @@ impl Game {
     }
 
     pub fn unit_bombard_strength(&self, u: &Unit) -> f64 {
-        let bs = self.rules.units[u.kind.as_str()].bombard_strength;
+        let bs = self.rules.units[u.kind].bombard_strength;
         if bs <= 0.0 {
             return 0.0;
         }
@@ -23438,7 +23443,7 @@ impl Game {
             !city.pillaged_buildings.contains(*building)
                 && self.building_district_is_active(city, building)
         }) {
-            let building = &self.rules.buildings[b.as_str()];
+            let building = &self.rules.buildings[b];
             h += building.housing;
             if coastal {
                 h += building
@@ -23472,7 +23477,7 @@ impl Game {
             }
         }
         for wonder in city.wonders.keys() {
-            h += self.rules.wonders[wonder.as_str()].housing;
+            h += self.rules.wonders[wonder].housing;
         }
         h += self.empire_wonder_effect(city.owner, "empire_housing");
         let specialty_districts = self.city_specialty_district_count(city);
@@ -23497,7 +23502,7 @@ impl Game {
             .filter(|building| {
                 !city.pillaged_buildings.contains(*building)
                     && self.building_district_is_active(city, building)
-                    && self.rules.buildings[building.as_str()].outer_defense > 0
+                    && self.rules.buildings[building].outer_defense > 0
             })
             .count() as f64;
         h + government.wall_level_housing * active_wall_levels
@@ -23507,7 +23512,7 @@ impl Game {
         let stamp = self.world_stamp();
         let mut cache = self.vision.borrow_mut();
         cache.wonders(stamp, || {
-            let mut built: BTreeSet<String> = BTreeSet::new();
+            let mut built: BTreeSet<Name> = BTreeSet::new();
             for city in self.cities.values() {
                 built.extend(city.wonders.keys().cloned());
             }
@@ -23518,7 +23523,8 @@ impl Game {
             }
             built
         })
-        .contains(name)
+        .iter()
+        .any(|built| *built == name)
     }
 
     fn empire_building_sum(
@@ -23535,7 +23541,7 @@ impl Game {
                         && self.building_district_is_active(c, building)
                 })
             })
-            .map(|b| f(&self.rules.buildings[b.as_str()]))
+            .map(|b| f(&self.rules.buildings[b]))
             .sum()
     }
 
@@ -23551,7 +23557,7 @@ impl Game {
                 // effect, and deciding whether one's district is standing
                 // means walking the city's districts — far dearer than the
                 // table lookup that rules it out.
-                let value = self.rules.buildings[building.as_str()]
+                let value = self.rules.buildings[building]
                     .effects
                     .get(effect)
                     .copied()?;
@@ -23574,7 +23580,7 @@ impl Game {
             .filter(|city| city.owner == pid)
             .flat_map(|city| city.wonders.keys())
             .map(|wonder| {
-                self.rules.wonders[wonder.as_str()]
+                self.rules.wonders[wonder]
                     .effects
                     .get(effect)
                     .copied()
@@ -23615,7 +23621,7 @@ impl Game {
                 !city.pillaged_buildings.contains(*building)
                     && self.building_district_is_active(city, building)
             })
-            .map(|building| self.rules.buildings[building.as_str()].power)
+            .map(|building| self.rules.buildings[building].power)
             .sum()
     }
 
@@ -23628,7 +23634,7 @@ impl Game {
                     && self.building_district_is_active(city, building)
             })
             .map(|building| {
-                self.rules.buildings[building.as_str()]
+                self.rules.buildings[building]
                     .effects
                     .get("renewable_power_generated")
                     .copied()
@@ -23641,7 +23647,7 @@ impl Game {
                 continue;
             }
             if let Some(improvement) = &tile.improvement {
-                renewable += self.rules.improvements[improvement.as_str()]
+                renewable += self.rules.improvements[improvement]
                     .effects
                     .get("power")
                     .copied()
@@ -23837,7 +23843,7 @@ impl Game {
         city.wonders
             .keys()
             .map(|wonder| {
-                self.rules.wonders[wonder.as_str()]
+                self.rules.wonders[wonder]
                     .effects
                     .get(effect)
                     .copied()
@@ -23883,11 +23889,11 @@ impl Game {
             self.map.tiles.get_mut(&position).unwrap().pillaged = true;
         }
         if let (Some(city_id), Some(district)) = (owner_city, district) {
-            let buildings: Vec<String> = self.cities[&city_id]
+            let buildings: Vec<Name> = self.cities[&city_id]
                 .buildings
                 .iter()
                 .filter(|building| {
-                    let spec = &self.rules.buildings[building.as_str()];
+                    let spec = &self.rules.buildings[building];
                     spec.district
                         .as_deref()
                         .is_some_and(|family| self.district_is_family(&district, family))
@@ -24209,7 +24215,7 @@ impl Game {
             if rng.chance(spec.fertility_chance(severity)) {
                 let tile = self.map.tiles.get_mut(&position).unwrap();
                 if tile.wonder.is_none() && tile.district.is_none() {
-                    tile.feature = Some("volcanic_soil".to_string());
+                    tile.feature = Some(crate::name!("volcanic_soil"));
                 }
             }
         }
@@ -24337,7 +24343,7 @@ impl Game {
             .map
             .tiles
             .iter()
-            .filter(|(_, tile)| spec.terrains.contains(&tile.terrain))
+            .filter(|(_, tile)| spec.terrains.iter().any(|t| tile.terrain == *t))
             .map(|(position, _)| *position)
             .collect();
         if sources.is_empty() {
@@ -24546,11 +24552,11 @@ impl Game {
             let wonder = self.map.tiles[&position].wonder.clone();
             if let Some(city_id) = owner_city {
                 if let Some(district) = district.as_deref() {
-                    let removed_buildings: Vec<String> = self.cities[&city_id]
+                    let removed_buildings: Vec<Name> = self.cities[&city_id]
                         .buildings
                         .iter()
                         .filter(|building| {
-                            self.rules.buildings[building.as_str()]
+                            self.rules.buildings[building]
                                 .district
                                 .as_deref()
                                 .is_some_and(|family| self.district_is_family(district, family))
@@ -24574,11 +24580,11 @@ impl Game {
                         .get_mut(&city_id)
                         .unwrap()
                         .wonders
-                        .remove(&wonder);
+                        .remove(&Name::new(&wonder));
                 }
             }
             let tile = self.map.tiles.get_mut(&position).unwrap();
-            tile.terrain = "coast".to_string();
+            tile.terrain = crate::name!("coast");
             tile.feature = None;
             tile.hills = false;
             tile.resource = None;
@@ -24658,7 +24664,7 @@ impl Game {
         }
         let city = self.cities.get_mut(&city_id).unwrap();
         city.pillaged_buildings
-            .insert("nuclear_power_plant".to_string());
+            .insert(crate::name!("nuclear_power_plant"));
         city.pop = (city.pop - severity.saturating_sub(1) as i32).max(1);
         *self.players[owner]
             .counters
@@ -24733,7 +24739,7 @@ impl Game {
                 {
                     continue;
                 }
-                let spec = &self.rules.buildings[building.as_str()];
+                let spec = &self.rules.buildings[building];
                 let origin = spec
                     .district
                     .as_deref()
@@ -24745,7 +24751,7 @@ impl Game {
                 let group = if !spec.regional_group.is_empty() {
                     spec.regional_group.clone()
                 } else {
-                    spec.replaces.clone().unwrap_or_else(|| building.clone())
+                    spec.replaces.clone().unwrap_or_else(|| building.to_string())
                 };
                 let integrate_this_group = integrate_industry
                     && spec.district.as_deref().is_some_and(|district| {
@@ -24791,7 +24797,7 @@ impl Game {
             .filter(|source| source.owner == city.owner)
         {
             for (wonder, position) in &source.wonders {
-                let spec = &self.rules.wonders[wonder.as_str()];
+                let spec = &self.rules.wonders[wonder];
                 if spec.regional_range > 0 && self.wdist(*position, city.pos) <= spec.regional_range
                 {
                     yields.add(spec.yields);
@@ -24909,7 +24915,7 @@ impl Game {
             }
         }
         for b in &city.buildings {
-            let spec = &self.rules.buildings[b.as_str()];
+            let spec = &self.rules.buildings[b];
             if !city.pillaged_buildings.contains(b)
                 && self.building_district_is_active(city, b)
                 && spec.regional_range <= 0
@@ -24926,7 +24932,7 @@ impl Game {
         supply += self.regional_building_effects(city).1;
         supply += self.regional_wonder_effects(city).1;
         for wonder in city.wonders.keys() {
-            let spec = &self.rules.wonders[wonder.as_str()];
+            let spec = &self.rules.wonders[wonder];
             if spec.regional_range <= 0 && !spec.effects.contains_key("empire_amenity") {
                 supply += spec.amenity;
             }
@@ -24983,7 +24989,7 @@ impl Game {
             supply += per_luxury * luxuries.len() as f64;
         }
         for (wonder, position) in &city.wonders {
-            let spec = &self.rules.wonders[wonder.as_str()];
+            let spec = &self.rules.wonders[wonder];
             if let Some(range) = spec.effects.get("improvement_amenity_range") {
                 supply += self
                     .wdisk(*position, *range as i32)
@@ -25046,7 +25052,7 @@ impl Game {
             .districts
             .iter()
             .filter(|(district, position)| {
-                self.rules.districts[district.as_str()].specialty
+                self.rules.districts[district].specialty
                     && self.district_is_active(city, district, **position)
             })
             .count();
@@ -25099,7 +25105,7 @@ impl Game {
         }
         let garrison = self.units_at(city.pos).into_iter().any(|id| {
             let o = &self.units[&id];
-            o.owner == city.owner && self.rules.units[o.kind.as_str()].class == "military"
+            o.owner == city.owner && self.rules.units[o.kind].class == "military"
         });
         if garrison {
             supply += self.policy_effect(city.owner, "garrison_amenity");
@@ -25404,7 +25410,7 @@ impl Game {
             let melee_on_the_doorstep = self.units.values().any(|unit| {
                 unit.owner == attacker
                     && self.wdist(unit.pos, city_pos) <= 1
-                    && self.rules.units[unit.kind.as_str()].is_melee_capable()
+                    && self.rules.units[unit.kind].is_melee_capable()
             });
             if melee_on_the_doorstep {
                 self.siege.reduced_with_melee_adjacent += 1;
@@ -25459,7 +25465,7 @@ impl Game {
             .iter()
             .flat_map(|c| c.districts.keys())
             .map(|d| {
-                if self.rules.districts[d.as_str()].unique_to.is_some() {
+                if self.rules.districts[d].unique_to.is_some() {
                     4
                 } else {
                     2
@@ -25519,7 +25525,7 @@ impl Game {
             .values()
             .filter(|u| u.owner == pid)
             .map(|u| {
-                (self.rules.units[u.kind.as_str()].strength + self.unit_formation_bonus(u))
+                (self.rules.units[u.kind].strength + self.unit_formation_bonus(u))
                     * u.hp as f64
                     / 100.0
             })
@@ -25739,7 +25745,7 @@ impl Game {
                     .values()
                     .filter(|unit| unit.owner == pid && !unit.free_upkeep)
                     .filter_map(|unit| {
-                        let spec = &self.rules.units[unit.kind.as_str()];
+                        let spec = &self.rules.units[unit.kind];
                         (spec.requires_resource.as_deref() == Some(resource.as_str()))
                             .then_some(spec.resource_maintenance)
                     })
@@ -25899,7 +25905,7 @@ impl Game {
         counts
     }
 
-    fn city_economic_improvement(&self, city: &City) -> Option<(String, bool)> {
+    fn city_economic_improvement(&self, city: &City) -> Option<(Name, bool)> {
         city.owned_tiles.iter().find_map(|position| {
             let tile = &self.map.tiles[position];
             let corporation = match tile.improvement.as_deref() {
@@ -25913,7 +25919,7 @@ impl Game {
         })
     }
 
-    fn city_active_economic_improvement(&self, city: &City) -> Option<(String, bool)> {
+    fn city_active_economic_improvement(&self, city: &City) -> Option<(Name, bool)> {
         self.city_economic_improvement(city).filter(|_| {
             city.owned_tiles.iter().any(|position| {
                 let tile = &self.map.tiles[position];
@@ -25971,7 +25977,7 @@ impl Game {
                     && self.building_district_is_active(city, building)
             })
             .map(|building| {
-                self.rules.buildings[building.as_str()]
+                self.rules.buildings[building]
                     .effects
                     .get("product_slots")
                     .copied()
@@ -26224,7 +26230,7 @@ impl Game {
         };
         let mut u = Unit {
             id: self.next_id,
-            kind: kind.to_string(),
+            kind: Name::new(kind),
             owner,
             pos,
             hp: 100,
@@ -26265,7 +26271,7 @@ impl Game {
             u.xp = u.xp.max(Self::promotion_threshold(u.level));
         }
         if kind == "apostle" && self.empire_wonder_effect(owner, "apostles_gain_martyr") > 0.0 {
-            u.promotions.insert("martyr".to_string());
+            u.promotions.insert(crate::name!("martyr"));
         }
         self.next_id += 1;
         let id = u.id;
@@ -26294,7 +26300,7 @@ impl Game {
                     .filter(|other| {
                         *other != uid
                             && self.units[other].owner == carrier.owner
-                            && self.rules.units[self.units[other].kind.as_str()]
+                            && self.rules.units[self.units[other].kind]
                                 .domain
                                 .as_deref()
                                 == Some("air")
@@ -26418,7 +26424,7 @@ impl Game {
             }
             cost = cost.min(route);
         }
-        if self.rules.units[unit.kind.as_str()].class == "religious"
+        if self.rules.units[unit.kind].class == "religious"
             && unit.religion.as_deref().is_some_and(|religion| {
                 self.religion_belief_effect(religion, "religious_flat_movement") > 0.0
             })
@@ -26917,7 +26923,7 @@ impl Game {
 
     fn unit_base_max_moves_at(&self, uid: u32, pos: Pos) -> f64 {
         let u = &self.units[&uid];
-        let spec = &self.rules.units[u.kind.as_str()];
+        let spec = &self.rules.units[u.kind];
         let tile = &self.map.tiles[&pos];
         let embarked = self.unit_is_embarked_at(u, pos);
         let mut moves = if embarked {
@@ -27005,7 +27011,7 @@ impl Game {
         let Some(linked) = unit.linked_to.and_then(|id| self.units.get(&id)) else {
             return base;
         };
-        let spec = &self.rules.units[unit.kind.as_str()];
+        let spec = &self.rules.units[unit.kind];
         if spec.class != "military" || self.promotion_effect(unit, "escort_mobility") > 0.0 {
             base
         } else {
@@ -27026,7 +27032,7 @@ impl Game {
             .flat_map(|position| self.units_at(position))
             .filter(|other| self.units[other].owner == unit.owner)
             .filter_map(|other| {
-                let support = &self.rules.units[self.units[&other].kind.as_str()];
+                let support = &self.rules.units[self.units[&other].kind];
                 (support.class == "support")
                     .then(|| support.effects.get(effect).copied().unwrap_or(0.0))
             })
@@ -27042,7 +27048,7 @@ impl Game {
             .flat_map(|position| self.units_at(position))
             .filter(|other| *other != unit.id && self.units[other].owner == unit.owner)
             .map(|other| {
-                self.rules.units[self.units[&other].kind.as_str()]
+                self.rules.units[self.units[&other].kind]
                     .effects
                     .get(effect)
                     .copied()
@@ -27072,7 +27078,7 @@ impl Game {
 
     pub fn unit_attack_range(&self, uid: u32) -> i32 {
         let unit = &self.units[&uid];
-        let spec = &self.rules.units[unit.kind.as_str()];
+        let spec = &self.rules.units[unit.kind];
         spec.range.max(1)
             + self.promotion_effect(unit, "range") as i32
             + if spec.siege {
@@ -27087,8 +27093,8 @@ impl Game {
     pub fn air_rebase_range(&self, uid: u32) -> i32 {
         self.units
             .get(&uid)
-            .filter(|unit| self.rules.units[unit.kind.as_str()].domain.as_deref() == Some("air"))
-            .map(|unit| (self.rules.units[unit.kind.as_str()].moves * 2.0).floor() as i32)
+            .filter(|unit| self.rules.units[unit.kind].domain.as_deref() == Some("air"))
+            .map(|unit| (self.rules.units[unit.kind].moves * 2.0).floor() as i32)
             .unwrap_or(0)
     }
 
@@ -27108,7 +27114,7 @@ impl Game {
 
     pub fn unit_sight(&self, uid: u32) -> i32 {
         let unit = &self.units[&uid];
-        let spec = &self.rules.units[unit.kind.as_str()];
+        let spec = &self.rules.units[unit.kind];
         spec.sight + self.promotion_effect(unit, "sight") as i32
     }
 
@@ -27137,7 +27143,7 @@ impl Game {
         let Some(unit) = self.units.get(&uid) else {
             return;
         };
-        let spec = &self.rules.units[unit.kind.as_str()];
+        let spec = &self.rules.units[unit.kind];
         let origin = unit.air_patrol_pos.unwrap_or(unit.pos);
         let sight = self.unit_sight(uid);
         let see_through_woods = self.promotion_effect(unit, "see_through_woods") > 0.0;
@@ -27724,7 +27730,7 @@ impl Game {
             self.update_world_lap(pid);
         }
 
-        let wonders: BTreeSet<String> = newly_explored
+        let wonders: BTreeSet<Name> = newly_explored
             .into_iter()
             .filter_map(|position| self.map.get(position))
             .filter_map(|tile| tile.feature.as_ref())
@@ -27953,7 +27959,7 @@ impl Game {
         if unit.owner == viewer {
             return true;
         }
-        let raider = self.rules.units[unit.kind.as_str()].promotion_class == "naval_raider";
+        let raider = self.rules.units[unit.kind].promotion_class == "naval_raider";
         let camouflaged = self.promotion_effect(unit, "camouflage") > 0.0;
         if !raider && !camouflaged {
             return true;
@@ -27967,12 +27973,12 @@ impl Game {
                 || (raider
                     && self.unit_visible_tiles(other_id).contains(&target)
                     && (other.kind == "destroyer"
-                        || self.rules.units[other.kind.as_str()].promotion_class == "naval_raider"))
+                        || self.rules.units[other.kind].promotion_class == "naval_raider"))
         })
     }
 
     fn exerts_zoc(&self, u: &Unit) -> bool {
-        let spec = &self.rules.units[u.kind.as_str()];
+        let spec = &self.rules.units[u.kind];
         // Embarkation does not remove a land unit's ZOC. Its native domain
         // still limits projection to land tiles, which is handled by the
         // caller when comparing the target tile's domain.
@@ -27986,7 +27992,7 @@ impl Game {
         let Some(unit) = self.units.get(&uid) else {
             return false;
         };
-        let spec = &self.rules.units[unit.kind.as_str()];
+        let spec = &self.rules.units[unit.kind];
         let innate = spec.cavalry
             || spec.promotion_class == "naval_raider"
             || spec.domain.as_deref() == Some("air")
@@ -28000,7 +28006,7 @@ impl Game {
         unit.linked_to
             .and_then(|peer| self.units.get(&peer))
             .is_some_and(|peer| {
-                let peer_spec = &self.rules.units[peer.kind.as_str()];
+                let peer_spec = &self.rules.units[peer.kind];
                 peer_spec.cavalry
                     || peer_spec.promotion_class == "naval_raider"
                     || peer_spec.domain.as_deref() == Some("air")
@@ -28057,7 +28063,7 @@ impl Game {
             return;
         };
         let loses_all_movement = matches!(
-            self.rules.units[unit.kind.as_str()].class.as_str(),
+            self.rules.units[unit.kind].class.as_str(),
             "civilian" | "support"
         );
         let unit = self.units.get_mut(&uid).unwrap();
@@ -28071,7 +28077,7 @@ impl Game {
         self.units.get(&uid).is_some_and(|unit| {
             unit.zoc_stopped
                 && matches!(
-                    self.rules.units[unit.kind.as_str()].class.as_str(),
+                    self.rules.units[unit.kind].class.as_str(),
                     "civilian" | "support"
                 )
         })
@@ -28138,7 +28144,7 @@ impl Game {
                 if o.owner == pid || !self.is_at_war(pid, o.owner) || !self.exerts_zoc(o) {
                     continue;
                 }
-                let o_water = self.rules.units[o.kind.as_str()].domain.as_deref() == Some("sea");
+                let o_water = self.rules.units[o.kind].domain.as_deref() == Some("sea");
                 if (o.kind != "giant_death_robot" && o_water != water) || self.crosses_river(n, pos)
                 {
                     continue;
@@ -28157,7 +28163,7 @@ impl Game {
 
     fn in_enemy_zoc_for(&self, uid: u32, pos: Pos) -> bool {
         let mover = &self.units[&uid];
-        let mover_spec = &self.rules.units[mover.kind.as_str()];
+        let mover_spec = &self.rules.units[mover.kind];
         let Some(t) = self.map.get(pos) else {
             return false;
         };
@@ -28168,7 +28174,7 @@ impl Game {
                 if other.owner == mover.owner {
                     continue;
                 }
-                let other_spec = &self.rules.units[other.kind.as_str()];
+                let other_spec = &self.rules.units[other.kind];
                 let religious_zoc = mover_spec.class == "religious"
                     && other_spec.class == "religious"
                     && mover.religion.is_some()
@@ -28248,7 +28254,7 @@ impl Game {
     /// borders; Rock Bands use Music Censorship instead; Terracotta Army gives
     /// the same exception to Archaeologists.
     fn unit_ignores_closed_borders(&self, unit: &Unit) -> bool {
-        let spec = &self.rules.units[unit.kind.as_str()];
+        let spec = &self.rules.units[unit.kind];
         spec.class == "religious"
             || unit.kind == "trader"
             || unit.kind == "rock_band"
@@ -28290,7 +28296,7 @@ impl Game {
         if !self.unit_can_cross_cliff(uid, from, pos) {
             return false;
         }
-        let spec = &self.rules.units[u.kind.as_str()];
+        let spec = &self.rules.units[u.kind];
         if u.kind == "rock_band"
             && self.map.tiles[&pos]
                 .owner_city
@@ -28310,7 +28316,7 @@ impl Game {
         }
         for oid in self.units_at(pos) {
             let o = &self.units[&oid];
-            let ospec = &self.rules.units[o.kind.as_str()];
+            let ospec = &self.rules.units[o.kind];
             // Based aircraft occupy a slot, not the land/naval stacking layer.
             // A hostile ground unit may enter the base and subsequently
             // pillage it, which triggers forced aircraft scattering.
@@ -28365,7 +28371,7 @@ impl Game {
         forbidden_owner: Option<usize>,
     ) -> bool {
         let unit = &self.units[&uid];
-        let spec = &self.rules.units[unit.kind.as_str()];
+        let spec = &self.rules.units[unit.kind];
         if spec.domain.as_deref() == Some("air") || !self.unit_can_traverse(uid, pos) {
             return false;
         }
@@ -28392,7 +28398,7 @@ impl Game {
                 return true;
             }
             let other = &self.units[&other_id];
-            let other_spec = &self.rules.units[other.kind.as_str()];
+            let other_spec = &self.rules.units[other.kind];
             if other_spec.domain.as_deref() == Some("air") {
                 return true;
             }
@@ -28472,7 +28478,7 @@ impl Game {
                 .filter(|other| {
                     *other != uid
                         && self.units[other].owner == self.units[&uid].owner
-                        && self.rules.units[self.units[other].kind.as_str()]
+                        && self.rules.units[self.units[other].kind]
                             .domain
                             .as_deref()
                             == Some("air")
@@ -28504,7 +28510,7 @@ impl Game {
             .values()
             .filter(|unit| mover.is_none_or(|owner| unit.owner == owner))
             .filter(|unit| {
-                self.rules.units[unit.kind.as_str()].domain.as_deref() != Some("air")
+                self.rules.units[unit.kind].domain.as_deref() != Some("air")
             })
             .filter_map(|unit| {
                 let territory_owner = self.territory_owner_at(unit.pos)?;
@@ -28525,8 +28531,8 @@ impl Game {
         let Some(peer) = unit.linked_to.and_then(|id| self.units.get(&id)) else {
             return false;
         };
-        let spec = &self.rules.units[unit.kind.as_str()];
-        let peer_spec = &self.rules.units[peer.kind.as_str()];
+        let spec = &self.rules.units[unit.kind];
+        let peer_spec = &self.rules.units[peer.kind];
         spec.class == "military"
             && (peer_spec.class != "military"
                 || (spec.domain.as_deref() == Some("sea")
@@ -29063,7 +29069,7 @@ impl Game {
         let built: i32 = city
             .buildings
             .iter()
-            .map(|building| self.rules.buildings[building.as_str()].outer_defense)
+            .map(|building| self.rules.buildings[building].outer_defense)
             .sum();
         if self.tree_effect(city.owner, "urban_defenses") > 0.0 {
             built.max(400)
@@ -29080,7 +29086,7 @@ impl Game {
             .units
             .values()
             .filter(|u| u.owner == owner)
-            .map(|u| self.rules.units[u.kind.as_str()].ranged_strength)
+            .map(|u| self.rules.units[u.kind].ranged_strength)
             .fold(3.0, f64::max);
         let base = self.players[owner]
             .counters
@@ -29111,7 +29117,7 @@ impl Game {
             .units
             .values()
             .filter(|u| u.owner == city.owner)
-            .map(|u| self.rules.units[u.kind.as_str()].strength)
+            .map(|u| self.rules.units[u.kind].strength)
             .fold(20.0, f64::max);
         let strongest_built = self.players[city.owner]
             .counters
@@ -29123,7 +29129,7 @@ impl Game {
             .into_iter()
             .filter_map(|id| {
                 let u = &self.units[&id];
-                (u.owner == city.owner && self.rules.units[u.kind.as_str()].class == "military")
+                (u.owner == city.owner && self.rules.units[u.kind].class == "military")
                     .then(|| self.unit_unembarked_strength(u) - city_state_bonus)
             })
             .fold(0.0, f64::max);
@@ -29134,7 +29140,7 @@ impl Game {
                 * city
                     .buildings
                     .iter()
-                    .filter(|building| self.rules.buildings[building.as_str()].outer_defense > 0)
+                    .filter(|building| self.rules.buildings[building].outer_defense > 0)
                     .count() as f64;
         }
         s += 2.0 * self.city_defense_district_count(city) as f64;
@@ -29155,7 +29161,7 @@ impl Game {
             .units
             .values()
             .filter(|unit| unit.owner == city.owner)
-            .map(|unit| self.rules.units[unit.kind.as_str()].strength)
+            .map(|unit| self.rules.units[unit.kind].strength)
             .fold(20.0, f64::max);
         let strongest_built = self.players[city.owner]
             .counters
@@ -29168,7 +29174,7 @@ impl Game {
                 * city
                     .buildings
                     .iter()
-                    .filter(|building| self.rules.buildings[building.as_str()].outer_defense > 0)
+                    .filter(|building| self.rules.buildings[building].outer_defense > 0)
                     .count() as f64;
         }
         strength += 2.0 * self.city_defense_district_count(city) as f64;
@@ -29232,7 +29238,7 @@ impl Game {
                     let unit = &self.units[&id];
                     unit.owner != owner
                         && self.is_at_war(owner, unit.owner)
-                        && self.rules.units[unit.kind.as_str()].class == "military"
+                        && self.rules.units[unit.kind].class == "military"
                 }) || self.in_enemy_zoc(owner, pos)
             })
     }
@@ -29282,7 +29288,7 @@ impl Game {
     fn city_specialty_district_count(&self, city: &City) -> usize {
         city.districts
             .keys()
-            .filter(|district| self.rules.districts[district.as_str()].specialty)
+            .filter(|district| self.rules.districts[district].specialty)
             .count()
     }
 
@@ -29324,7 +29330,7 @@ impl Game {
             .iter()
             .filter(|(district, position)| self.district_is_active(city, district, **position))
             .map(|(district, _)| {
-                self.rules.districts[district.as_str()]
+                self.rules.districts[district]
                     .effects
                     .get(effect)
                     .copied()
@@ -29348,7 +29354,7 @@ impl Game {
         if !self.district_is_active(city, district, position) {
             return Yields::default();
         }
-        let effects = &self.rules.districts[district.as_str()].effects;
+        let effects = &self.rules.districts[district].effects;
         Yields {
             food: effects.get("building_food").copied().unwrap_or(0.0),
             production: effects.get("building_production").copied().unwrap_or(0.0),
@@ -29495,7 +29501,7 @@ impl Game {
                 .wonders
                 .keys()
                 .map(|wonder| {
-                    self.rules.wonders[wonder.as_str()]
+                    self.rules.wonders[wonder]
                         .effects
                         .get("city_appeal")
                         .copied()
@@ -30079,7 +30085,7 @@ impl Game {
             specialty.add(self.district_yields(name, *pos));
         }
         for name in &city.buildings {
-            specialty.add(self.rules.buildings[name.as_str()].yields);
+            specialty.add(self.rules.buildings[name].yields);
         }
         weights.production += specialty.production * 0.12;
         weights.gold += specialty.gold * 0.12;
@@ -30112,7 +30118,7 @@ impl Game {
                     weights.production += 1.15;
                 }
                 Item::Unit { unit } | Item::Formation { unit, .. } => {
-                    focus = if self.rules.units[unit.as_str()].class == "military" {
+                    focus = if self.rules.units[unit].class == "military" {
                         "military".to_string()
                     } else {
                         "development".to_string()
@@ -30120,7 +30126,7 @@ impl Game {
                     weights.production += if focus == "military" { 1.35 } else { 0.85 };
                 }
                 Item::Building { building } => {
-                    let spec = &self.rules.buildings[building.as_str()];
+                    let spec = &self.rules.buildings[building];
                     focus = if spec.wonder {
                         "wonder"
                     } else {
@@ -30144,7 +30150,7 @@ impl Game {
                     weights.faith += dy.faith * 0.22;
                 }
                 Item::Wonder { wonder, .. } => {
-                    let spec = &self.rules.wonders[wonder.as_str()];
+                    let spec = &self.rules.wonders[wonder];
                     focus = "wonder".to_string();
                     weights.production += 1.75;
                     weights.gold += spec.yields.gold * 0.15;
@@ -30339,14 +30345,14 @@ impl Game {
             for building_name in &city.buildings {
                 if city.pillaged_buildings.contains(building_name)
                     || (city.encampment_pillaged
-                        && self.rules.buildings[building_name.as_str()]
+                        && self.rules.buildings[building_name]
                             .district
                             .as_deref()
                             .is_some_and(|district| self.district_family(district) == "encampment"))
                 {
                     continue;
                 }
-                let building = &self.rules.buildings[building_name.as_str()];
+                let building = &self.rules.buildings[building_name];
                 if building
                     .district
                     .as_deref()
@@ -30483,7 +30489,7 @@ impl Game {
             food += self.district_yields(name, *pos).food;
         }
         for name in &city.buildings {
-            food += self.rules.buildings[name.as_str()].yields.food;
+            food += self.rules.buildings[name].yields.food;
         }
         for route in self.routes.iter().filter(|r| r.origin == cid) {
             if let Some(dest) = self.cities.get(&route.dest) {
@@ -30954,7 +30960,7 @@ impl Game {
             city.wonders
                 .keys()
                 .map(|wonder| {
-                    self.rules.wonders[wonder.as_str()]
+                    self.rules.wonders[wonder]
                         .effects
                         .get(effect)
                         .copied()
@@ -31103,11 +31109,11 @@ impl Game {
             if city.pillaged_buildings.contains(b)
                 || !self.building_district_is_active(city, b)
                 || (city.encampment_pillaged
-                    && self.rules.buildings[b.as_str()].district.as_deref() == Some("encampment"))
+                    && self.rules.buildings[b].district.as_deref() == Some("encampment"))
             {
                 continue;
             }
-            let building = &self.rules.buildings[b.as_str()];
+            let building = &self.rules.buildings[b];
             let mut yields = if building.regional_range > 0 {
                 Yields::default()
             } else {
@@ -31330,7 +31336,7 @@ impl Game {
         }
         ys.add(self.regional_building_effects(city).0);
         for wonder in city.wonders.keys() {
-            let spec = &self.rules.wonders[wonder.as_str()];
+            let spec = &self.rules.wonders[wonder];
             if spec.regional_range <= 0 {
                 ys.add(spec.yields);
             }
@@ -31483,7 +31489,7 @@ impl Game {
                                 .filter(|position| {
                                     self.map.tiles[position].resource.as_ref().is_some_and(
                                         |resource| {
-                                            self.rules.resources[resource.as_str()].class == class
+                                            self.rules.resources[resource].class == class
                                         },
                                     )
                                 })
@@ -31506,7 +31512,7 @@ impl Game {
                                     && self.building_district_is_active(city, building)
                             })
                             .filter(|building| {
-                                self.rules.buildings[building.as_str()]
+                                self.rules.buildings[building]
                                     .district
                                     .as_deref()
                                     .is_some_and(|district| {
@@ -31543,7 +31549,8 @@ impl Game {
                     rys.production +=
                         self.city_building_effect(city, "international_route_production");
                 }
-                if dc.wonders.contains_key("university_of_sankore") {
+                if dc.wonders
+.contains_key(&crate::name!("university_of_sankore")) {
                     if domestic {
                         rys.faith += self.rules.wonders["university_of_sankore"]
                             .effects
@@ -31563,7 +31570,8 @@ impl Game {
                             .unwrap_or(0.0);
                     }
                 }
-                if city.wonders.contains_key("great_zimbabwe") {
+                if city.wonders
+.contains_key(&crate::name!("great_zimbabwe")) {
                     let spec = &self.rules.wonders["great_zimbabwe"];
                     let range = spec
                         .effects
@@ -31585,12 +31593,13 @@ impl Game {
                                     .resource
                                     .as_ref()
                                     .is_some_and(|resource| {
-                                        self.rules.resources[resource.as_str()].class == "bonus"
+                                        self.rules.resources[resource].class == "bonus"
                                     })
                             })
                             .count() as f64;
                 }
-                if !domestic && city.wonders.contains_key("torre_de_belem") {
+                if !domestic && city.wonders
+.contains_key(&crate::name!("torre_de_belem")) {
                     let per_resource = self.rules.wonders["torre_de_belem"]
                         .effects
                         .get("origin_international_luxury_gold")
@@ -31604,7 +31613,7 @@ impl Game {
                                     .resource
                                     .as_ref()
                                     .is_some_and(|resource| {
-                                        self.rules.resources[resource.as_str()].class == "luxury"
+                                        self.rules.resources[resource].class == "luxury"
                                     })
                             })
                             .count() as f64;
@@ -31657,7 +31666,8 @@ impl Game {
         }
         ys.gold += incoming_foreign_routes
             * self.governor_effect(city.owner, city.id, "incoming_foreign_trade_gold");
-        if incoming_routes > 0.0 && city.wonders.contains_key("university_of_sankore") {
+        if incoming_routes > 0.0 && city.wonders
+.contains_key(&crate::name!("university_of_sankore")) {
             ys.science += incoming_routes
                 * self.rules.wonders["university_of_sankore"]
                     .effects
@@ -31741,7 +31751,7 @@ impl Game {
                     continue;
                 }
                 let total = self.district_yields(district, *position);
-                let base = self.rules.districts[district.as_str()].yields;
+                let base = self.rules.districts[district].yields;
                 ys.science += (total.gold - base.gold).max(0.0);
             }
         }
@@ -31750,7 +31760,7 @@ impl Game {
                 .buildings
                 .iter()
                 .filter(|building| {
-                    self.rules.buildings[building.as_str()]
+                    self.rules.buildings[building]
                         .district
                         .as_deref()
                         .is_some_and(|district| self.district_family(district) == "industrial_zone")
@@ -31778,7 +31788,7 @@ impl Game {
             .districts
             .iter()
             .filter(|(district, position)| {
-                self.rules.districts[district.as_str()].specialty
+                self.rules.districts[district].specialty
                     && self.district_is_active(city, district, **position)
             })
             .count() as f64;
@@ -31805,7 +31815,7 @@ impl Game {
             .filter(|building| {
                 !city.pillaged_buildings.contains(*building)
                     && self.building_district_is_active(city, building)
-                    && self.rules.buildings[building.as_str()]
+                    && self.rules.buildings[building]
                         .district
                         .as_deref()
                         .is_some_and(|district| {
@@ -31870,7 +31880,7 @@ impl Game {
             city.wonders
                 .keys()
                 .map(|wonder| {
-                    self.rules.wonders[wonder.as_str()]
+                    self.rules.wonders[wonder]
                         .effects
                         .get(effect)
                         .copied()
@@ -31901,7 +31911,7 @@ impl Game {
             .find(|source| {
                 source
                     .wonders
-                    .contains_key("amundsen_scott_research_station")
+.contains_key(&crate::name!("amundsen_scott_research_station"))
             })
         {
             let required = self.rules.wonders["amundsen_scott_research_station"]
@@ -32198,10 +32208,10 @@ impl Game {
             // route exists. An improvement listing none of the three is
             // unrestricted (governor and appeal specials gate elsewhere).
             let feature_route = t.feature.as_ref().is_some_and(|feature| {
-                spec.feature.contains(feature)
+                spec.feature.iter().any(|want| *feature == *want)
                     || spec
                         .feature_after_civic
-                        .get(feature)
+                        .get(feature.as_str())
                         .is_some_and(|civic| self.players[pid].civics.contains(civic))
             });
             let resource_route = visible_resource.is_some_and(|resource| {
@@ -32211,7 +32221,7 @@ impl Game {
             let unrestricted =
                 spec.terrain.is_empty() && spec.feature.is_empty() && spec.resources.is_empty();
             let sited = unrestricted
-                || spec.terrain.contains(&t.terrain)
+                || spec.terrain.iter().any(|want| t.terrain == *want)
                 || feature_route
                 || resource_route;
             if spec.unbuildable
@@ -32462,14 +32472,14 @@ impl Game {
             let built = city
                 .districts
                 .keys()
-                .filter(|name| self.rules.districts[name.as_str()].specialty)
+                .filter(|name| self.rules.districts[name].specialty)
                 .count()
                 + city
                     .owned_tiles
                     .iter()
                     .filter_map(|position| self.map.tiles[position].district_foundation.as_ref())
                     .filter(|foundation| {
-                        self.rules.districts[foundation.district.as_str()].specialty
+                        self.rules.districts[foundation.district].specialty
                     })
                     .count();
             built >= capacity
@@ -32508,7 +32518,7 @@ impl Game {
             // a Bonus resource is destroyed.
             if t.resource.as_ref().is_some_and(|resource| {
                 !matches!(
-                    self.rules.resources[resource.as_str()].class.as_str(),
+                    self.rules.resources[resource].class.as_str(),
                     "bonus" | "artifact"
                 )
             }) {
@@ -32532,8 +32542,8 @@ impl Game {
                 continue;
             }
             if let Some(resource) = &t.resource {
-                let improvement = &self.rules.resources[resource.as_str()].improvement;
-                if self.rules.improvements[improvement.as_str()]
+                let improvement = &self.rules.resources[resource].improvement;
+                if self.rules.improvements[improvement]
                     .tech
                     .as_ref()
                     .is_some_and(|tech| !self.players[city.owner].techs.contains(tech))
@@ -32677,11 +32687,11 @@ impl Game {
                 || tile
                     .feature
                     .as_ref()
-                    .is_some_and(|feature| self.rules.features[feature.as_str()].natural_wonder)
+                    .is_some_and(|feature| self.rules.features[feature].natural_wonder)
                 || tile.resource.as_ref().is_some_and(|resource| {
                     // A buried Artifact reserves nothing — see `district_sites`.
                     !matches!(
-                        self.rules.resources[resource.as_str()].class.as_str(),
+                        self.rules.resources[resource].class.as_str(),
                         "bonus" | "artifact"
                     )
                 })
@@ -32690,12 +32700,13 @@ impl Game {
             }
             let is_water = self.rules.is_water(tile);
             if is_water != spec.water
-                || (!spec.terrain.is_empty() && !spec.terrain.contains(&tile.terrain))
+                || (!spec.terrain.is_empty()
+                    && !spec.terrain.iter().any(|want| tile.terrain == *want))
                 || (!spec.feature.is_empty()
                     && !tile
                         .feature
                         .as_ref()
-                        .is_some_and(|feature| spec.feature.contains(feature)))
+                        .is_some_and(|feature| spec.feature.iter().any(|want| *feature == *want)))
                 || spec.hills.is_some_and(|hills| tile.hills != hills)
                 || (spec.river && !tile.has_river())
             {
@@ -32749,7 +32760,7 @@ impl Game {
                 !neighbors.iter().any(|neighbor| {
                     self.map
                         .get(*neighbor)
-                        .is_some_and(|candidate| candidate.resource.as_ref() == Some(required))
+                        .is_some_and(|candidate| candidate.resource.as_deref() == Some(required.as_str()))
                 })
             }) {
                 continue;
@@ -32758,7 +32769,7 @@ impl Game {
                 !neighbors.iter().any(|neighbor| {
                     self.map
                         .get(*neighbor)
-                        .is_some_and(|candidate| candidate.improvement.as_ref() == Some(required))
+                        .is_some_and(|candidate| candidate.improvement.as_deref() == Some(required.as_str()))
                 })
             }) {
                 continue;
@@ -32838,12 +32849,12 @@ impl Game {
                 // rather than the 1.5 x 1.5 an extrapolated Corps rate gives.
                 // The resource cost is separate and really does step 2 then 3,
                 // one per unit folded in -- see unit_resource_cost.
-                self.rules.units[unit.as_str()].cost * if *formation >= 2 { 2.0 } else { 1.5 }
+                self.rules.units[unit].cost * if *formation >= 2 { 2.0 } else { 1.5 }
             }
-            Item::Unit { unit } => self.rules.units[unit.as_str()].cost,
-            Item::Building { building } => self.rules.buildings[building.as_str()].cost,
-            Item::District { district, .. } => self.rules.districts[district.as_str()].cost,
-            Item::Wonder { wonder, .. } => self.rules.wonders[wonder.as_str()].cost,
+            Item::Unit { unit } => self.rules.units[unit].cost,
+            Item::Building { building } => self.rules.buildings[building].cost,
+            Item::District { district, .. } => self.rules.districts[district].cost,
+            Item::Wonder { wonder, .. } => self.rules.wonders[wonder].cost,
             Item::Repair { repair, pos } => {
                 if repair == "district" {
                     self.map
@@ -32860,7 +32871,7 @@ impl Game {
                         .unwrap_or(1.0)
                 }
             }
-            Item::Project { project } => self.rules.projects[project.as_str()].cost,
+            Item::Project { project } => self.rules.projects[project].cost,
             Item::Product { .. } => 500.0,
         }
     }
@@ -33115,7 +33126,7 @@ impl Game {
                 .scale(self.district_cost_for_placement(pid, district, false));
         }
         if let Item::Building { building } = item {
-            let spec = &self.rules.buildings[building.as_str()];
+            let spec = &self.rules.buildings[building];
             let district = spec
                 .district
                 .as_deref()
@@ -33142,7 +33153,7 @@ impl Game {
         let mut cost = self.item_cost_for(pid, item);
         let military = match item {
             Item::Unit { unit } | Item::Formation { unit, .. } => {
-                self.rules.units[unit.as_str()].class == "military"
+                self.rules.units[unit].class == "military"
             }
             _ => false,
         };
@@ -33257,7 +33268,7 @@ impl Game {
                 city.strategic_resource_commitments.remove(&key);
                 city.production_progress.remove(&key);
                 if refund > 0.0 {
-                    if let Some(resource) = self.rules.units[unit.as_str()].requires_resource.clone()
+                    if let Some(resource) = self.rules.units[unit].requires_resource.clone()
                     {
                         let held = self.strategic_stockpile(pid, &resource);
                         let capacity = self.strategic_stockpile_capacity(pid);
@@ -33292,7 +33303,7 @@ impl Game {
             Item::Unit { unit } | Item::Formation { unit, .. } => unit,
             _ => return true,
         };
-        let spec = &self.rules.units[unit.as_str()];
+        let spec = &self.rules.units[unit];
         let Some(resource) = spec.requires_resource.clone() else {
             return true;
         };
@@ -33521,7 +33532,7 @@ impl Game {
                 let society_building = society_for(spec).is_some_and(|society| {
                     self.players[pid].secret_society.as_deref() == Some(society)
                 });
-                if city.buildings.contains(building)
+                if city.buildings.iter().any(|built| *built == *building)
                     || !self.unlocked(pid, &spec.tech, &spec.civic)
                     || (!spec.buildable && !society_building)
                     || spec.purchase_only
@@ -33688,7 +33699,7 @@ impl Game {
                 if repair == "district" {
                     tile.pillaged
                 } else {
-                    city.pillaged_buildings.contains(repair)
+                    city.pillaged_buildings.iter().any(|built| *built == *repair)
                         && self.rules.buildings.get(repair).is_some_and(|building| {
                             building.district.as_ref().is_some_and(|family| {
                                 tile.district.as_deref().is_some_and(|district| {
@@ -33859,7 +33870,7 @@ impl Game {
                 });
                 if matches_district {
                     let repair = Item::Repair {
-                        repair: building.clone(),
+                        repair: building.to_string(),
                         pos: *pos,
                     };
                     if self.can_produce(pid, cid, &repair) {
@@ -33877,7 +33888,7 @@ impl Game {
             }
         }
         if let Some((resource, true)) = self.city_active_economic_improvement(city) {
-            let product = Item::Product { product: resource };
+            let product = Item::Product { product: resource.to_string() };
             if self.can_produce(pid, cid, &product) {
                 items.push(product);
             }
@@ -34004,7 +34015,7 @@ impl Game {
         if u.owner != pid || self.noncombat_action_blocked_by_zoc(uid) {
             return Vec::new();
         }
-        let spec = &self.rules.units[u.kind.as_str()];
+        let spec = &self.rules.units[u.kind];
         let mut actions = Vec::new();
         if spec.domain.as_deref() == Some("air") {
             if u.moves_left > 0.0 {
@@ -34132,7 +34143,7 @@ impl Game {
         };
         for uid in unit_order_ids {
             let u = self.units[&uid].clone();
-            let spec = &self.rules.units[u.kind.as_str()];
+            let spec = &self.rules.units[u.kind];
             let embarked = self.is_embarked(&u);
             if self.noncombat_action_blocked_by_zoc(uid) {
                 continue;
@@ -34279,7 +34290,7 @@ impl Game {
             if (u.kind == "builder" || !spec.builds.is_empty()) && u.charges > 0 {
                 for imp in self.valid_improvements(pid, u.pos) {
                     if (u.kind == "builder"
-                        && !self.rules.improvements[imp.as_str()].builder_buildable)
+                        && !self.rules.improvements[&imp].builder_buildable)
                         || (u.kind != "builder" && !spec.builds.contains(&imp))
                     {
                         continue;
@@ -34363,7 +34374,7 @@ impl Game {
                 for target in self.nbrs(u.pos) {
                     let rival = self.units_at(target).into_iter().any(|id| {
                         let other = &self.units[&id];
-                        self.rules.units[other.kind.as_str()].class == "religious"
+                        self.rules.units[other.kind].class == "religious"
                             && other.owner != pid
                             && other.religion.is_some()
                             && u.religion.is_some()
@@ -34378,7 +34389,7 @@ impl Game {
                 for target_unit in self.units_at(u.pos) {
                     let target = &self.units[&target_unit];
                     if target.owner != pid
-                        && self.rules.units[target.kind.as_str()].class == "religious"
+                        && self.rules.units[target.kind].class == "religious"
                         && (self.is_at_war(pid, target.owner)
                             || target.religion.as_deref().is_some_and(|religion| {
                                 self.congress_effect_active("world_religion", "B", religion)
@@ -34512,7 +34523,7 @@ impl Game {
                     }
                     if self.can_link_units(pid, uid, other) {
                         let uid_military =
-                            self.rules.units[self.units[&uid].kind.as_str()].class == "military";
+                            self.rules.units[self.units[&uid].kind].class == "military";
                         let (unit, with) = if uid_military {
                             (uid, other)
                         } else {
@@ -34665,7 +34676,7 @@ impl Game {
                         let o = &self.units[&oid];
                         o.owner != pid
                             && self.is_at_war(pid, o.owner)
-                            && self.rules.units[o.kind.as_str()].class == "military"
+                            && self.rules.units[o.kind].class == "military"
                     });
                     if hit
                         && self.city_at(pos).is_none()
@@ -34695,7 +34706,7 @@ impl Game {
                         let other = &self.units[&id];
                         other.owner != pid
                             && self.is_at_war(pid, other.owner)
-                            && self.rules.units[other.kind.as_str()].class == "military"
+                            && self.rules.units[other.kind].class == "military"
                     });
                     if hit
                         && self.city_at(pos).is_none()
@@ -35190,8 +35201,8 @@ impl Game {
             let unit = &self.units[&oid];
             if unit.owner != pid
                 && self.is_at_war(pid, unit.owner)
-                && self.rules.units[unit.kind.as_str()].class == "military"
-                && self.rules.units[unit.kind.as_str()].domain.as_deref() != Some("air")
+                && self.rules.units[unit.kind].class == "military"
+                && self.rules.units[unit.kind].domain.as_deref() != Some("air")
             {
                 return true;
             }
@@ -35222,7 +35233,7 @@ impl Game {
                 let unit = &self.units[unit];
                 unit.owner != pid
                     && self.is_at_war(pid, unit.owner)
-                    && self.rules.units[unit.kind.as_str()].class == "support"
+                    && self.rules.units[unit.kind].class == "support"
             })
             .collect();
         supports.sort_unstable();
@@ -35231,8 +35242,8 @@ impl Game {
             self.units_at(pos).into_iter().any(|escort| {
                 let escort = &self.units[&escort];
                 escort.owner == owner
-                    && self.rules.units[escort.kind.as_str()].class == "military"
-                    && self.rules.units[escort.kind.as_str()].domain.as_deref() != Some("air")
+                    && self.rules.units[escort.kind].class == "military"
+                    && self.rules.units[escort.kind].domain.as_deref() != Some("air")
             })
         })
     }
@@ -35250,8 +35261,8 @@ impl Game {
                 && self.is_at_war(pid, unit.owner)
                 && ((unit.air_patrol
                     && unit.air_patrol_pos == Some(pos)
-                    && self.rules.units[unit.kind.as_str()].promotion_class == "air_fighter")
-                    || (unit.pos == pos && self.rules.units[unit.kind.as_str()].class == "support"))
+                    && self.rules.units[unit.kind].promotion_class == "air_fighter")
+                    || (unit.pos == pos && self.rules.units[unit.kind].class == "support"))
         })
     }
 
@@ -35262,7 +35273,7 @@ impl Game {
                     && unit.air_patrol_pos == Some(pos)
                     && unit.owner != pid
                     && self.is_at_war(pid, unit.owner)
-                    && self.rules.units[unit.kind.as_str()].promotion_class == "air_fighter"
+                    && self.rules.units[unit.kind].promotion_class == "air_fighter"
             })
     }
 
@@ -35593,7 +35604,7 @@ impl Game {
         let Some(unit) = self.units.get(&uid) else {
             return vec![];
         };
-        let spec = &self.rules.units[unit.kind.as_str()];
+        let spec = &self.rules.units[unit.kind];
         let Some(origin_tile) = self.map.get(unit.pos) else {
             return vec![];
         };
@@ -35632,7 +35643,7 @@ impl Game {
                 let destination = self.city_active_district_family_position(city, "aerodrome")?;
                 (!self.units_at(destination).into_iter().any(|other| {
                     let other = &self.units[&other];
-                    other.owner != pid || self.rules.units[other.kind.as_str()].class == spec.class
+                    other.owner != pid || self.rules.units[other.kind].class == spec.class
                 }))
                 .then_some(destination)
             })
@@ -35673,7 +35684,7 @@ impl Game {
                 .filter(|other| {
                     *other != uid
                         && self.units[other].owner == pid
-                        && self.rules.units[self.units[other].kind.as_str()]
+                        && self.rules.units[self.units[other].kind]
                             .domain
                             .as_deref()
                             == Some("air")
@@ -35783,8 +35794,8 @@ impl Game {
 
     fn matchup_bonus(&self, uid: u32, opponent: &Unit, attacking: bool) -> f64 {
         let u = &self.units[&uid];
-        let spec = &self.rules.units[u.kind.as_str()];
-        let other = &self.rules.units[opponent.kind.as_str()];
+        let spec = &self.rules.units[u.kind];
+        let other = &self.rules.units[opponent.kind];
         let mut bonus = 0.0;
         if self.active_emergencies.iter().any(|emergency| {
             emergency.ends > self.turn
@@ -35897,7 +35908,7 @@ impl Game {
                 .filter(|id| {
                     let ally = &self.units[id];
                     ally.owner == u.owner
-                        && self.rules.units[ally.kind.as_str()].promotion_class
+                        && self.rules.units[ally.kind].promotion_class
                             != spec.promotion_class
                 })
                 .map(|id| self.promotion_effect(&self.units[&id], "adjacent_vs_cavalry"))
@@ -35910,17 +35921,17 @@ impl Game {
         let unit = &self.units[&uid];
         if unit.kind != "eagle_warrior"
             || self.players[opponent.owner].is_barbarian
-            || self.rules.units[opponent.kind.as_str()].class != "military"
+            || self.rules.units[opponent.kind].class != "military"
         {
             return 0.0;
         }
-        let attacker = self.rules.units[unit.kind.as_str()].strength;
-        let defender = self.rules.units[opponent.kind.as_str()].strength;
+        let attacker = self.rules.units[unit.kind].strength;
+        let defender = self.rules.units[opponent.kind].strength;
         (50.0 + (attacker - defender) * 2.5).clamp(0.0, 100.0)
     }
 
     fn promotion_kill_rewards(&mut self, attacker: &Unit, defeated: &Unit) {
-        let defeated_spec = &self.rules.units[defeated.kind.as_str()];
+        let defeated_spec = &self.rules.units[defeated.kind];
         let defeated_era = defeated_spec
             .tech
             .as_ref()
@@ -35936,10 +35947,10 @@ impl Game {
             let pct = self.policy_effect(attacker.owner, "earlier_era_kill_gold_pct");
             self.players[attacker.owner].gold += defeated_spec.strength * pct / 100.0;
         }
-        if self.rules.units[defeated.kind.as_str()].domain.as_deref() == Some("sea") {
+        if self.rules.units[defeated.kind].domain.as_deref() == Some("sea") {
             let pct = self.promotion_effect(attacker, "gold_from_naval_kill_pct");
             if pct > 0.0 {
-                let strength = self.rules.units[defeated.kind.as_str()].strength;
+                let strength = self.rules.units[defeated.kind].strength;
                 self.players[attacker.owner].gold += strength * pct / 100.0;
             }
         }
@@ -36007,7 +36018,7 @@ impl Game {
             .filter(|id| {
                 let u = &self.units[id];
                 u.owner == owner
-                    && self.rules.units[u.kind.as_str()].class == "military"
+                    && self.rules.units[u.kind].class == "military"
                     && !self.is_embarked(u)
                     && !self.crosses_river(u.pos, target)
             })
@@ -36015,7 +36026,7 @@ impl Game {
         let multiplier = self
             .promotion_effect(&self.units[&uid], "flanking_multiplier")
             .max(1.0);
-        let naval_multiplier = if self.rules.units[self.units[&uid].kind.as_str()]
+        let naval_multiplier = if self.rules.units[self.units[&uid].kind]
             .domain
             .as_deref()
             == Some("sea")
@@ -36058,7 +36069,7 @@ impl Game {
             .flat_map(|p| self.units_at(p))
             .filter(|id| {
                 let u = &self.units[id];
-                u.owner == defender.owner && self.rules.units[u.kind.as_str()].class == "military"
+                u.owner == defender.owner && self.rules.units[u.kind].class == "military"
             })
             .count();
         let multiplier = self
@@ -36093,7 +36104,7 @@ impl Game {
             .into_iter()
             .filter(|id| {
                 self.units[id].owner == defender
-                    && self.rules.units[self.units[id].kind.as_str()].class == "military"
+                    && self.rules.units[self.units[id].kind].class == "military"
             })
             .collect();
         for id in garrison {
@@ -36124,7 +36135,7 @@ impl Game {
             return Ok(());
         }
         let attacker = self.units[&uid].clone();
-        let spec = self.rules.units[attacker.kind.as_str()].clone();
+        let spec = self.rules.units[attacker.kind].clone();
         let mut attack_base =
             self.unit_unembarked_strength(&attacker) + self.vs_bonus(pid, self.cities[&cid].owner);
         if embarked && self.promotion_effect(&attacker, "amphibious") == 0.0 {
@@ -36205,7 +36216,7 @@ impl Game {
             return Ok(());
         }
         let attacker = self.units[&uid].clone();
-        let spec = self.rules.units[attacker.kind.as_str()].clone();
+        let spec = self.rules.units[attacker.kind].clone();
         let mut attack_base = self.unit_ranged_attack_strength(&attacker)
             + self.vs_bonus(pid, self.cities[&cid].owner)
             + self.promotion_effect(&attacker, "ranged_vs_district")
@@ -36239,7 +36250,7 @@ impl Game {
 
     fn do_attack(&mut self, pid: usize, uid: u32, target: Pos) -> Result<(), String> {
         let u = self.own_unit(pid, uid)?;
-        let spec = self.rules.units[u.kind.as_str()].clone();
+        let spec = self.rules.units[u.kind].clone();
         if !spec.is_melee_capable() {
             return Err("unit cannot melee attack".into());
         }
@@ -36293,7 +36304,7 @@ impl Game {
             .iter()
             .cloned()
             .filter(|id| {
-                let spec = &self.rules.units[self.units[id].kind.as_str()];
+                let spec = &self.rules.units[self.units[id].kind];
                 spec.class == "military" && spec.domain.as_deref() != Some("air")
             })
             .collect();
@@ -36391,7 +36402,7 @@ impl Game {
             if d_dead {
                 let enemy_military_left = self.units_at(target).into_iter().any(|id| {
                     let o = &self.units[&id];
-                    o.owner != pid && self.rules.units[o.kind.as_str()].class == "military"
+                    o.owner != pid && self.rules.units[o.kind].class == "military"
                 });
                 if !enemy_military_left {
                     let city_blocks = match city_id {
@@ -36504,7 +36515,7 @@ impl Game {
     /// destroyed (they use theological combat/Condemn Heretic instead).
     fn resolve_entered_units(&mut self, uid: u32, pos: Pos) {
         let owner = self.units[&uid].owner;
-        let mover_spec = &self.rules.units[self.units[&uid].kind.as_str()];
+        let mover_spec = &self.rules.units[self.units[&uid].kind];
         let military = mover_spec.class == "military";
         if !military {
             return;
@@ -36521,7 +36532,7 @@ impl Game {
                 continue;
             }
             let kind = self.units[&oid].kind.clone();
-            let class = self.rules.units[kind.as_str()].class.as_str();
+            let class = self.rules.units[kind].class.as_str();
             if can_capture && matches!(kind.as_str(), "builder" | "settler") {
                 affected_owners.insert(self.units[&oid].owner);
                 self.units.get_mut(&oid).unwrap().owner = owner;
@@ -36537,7 +36548,7 @@ impl Game {
 
     fn do_ranged(&mut self, pid: usize, uid: u32, target: Pos) -> Result<(), String> {
         let u = self.own_unit(pid, uid)?;
-        let spec = self.rules.units[u.kind.as_str()].clone();
+        let spec = self.rules.units[u.kind].clone();
         if !spec.has_ranged_attack() {
             return Err("unit has no ranged attack".into());
         }
@@ -36581,7 +36592,7 @@ impl Game {
                 && unit.air_patrol_pos == Some(target)
                 && unit.owner != pid
                 && self.is_at_war(pid, unit.owner)
-                && self.rules.units[unit.kind.as_str()].promotion_class == "air_fighter")
+                && self.rules.units[unit.kind].promotion_class == "air_fighter")
                 .then_some(unit.id)
                 .filter(|unit| self.unit_currently_visible_to(*unit, pid))
         }));
@@ -36598,7 +36609,7 @@ impl Game {
             .iter()
             .cloned()
             .filter(|id| {
-                let spec = &self.rules.units[self.units[id].kind.as_str()];
+                let spec = &self.rules.units[self.units[id].kind];
                 spec.class == "military"
                     && (spec.domain.as_deref() != Some("air")
                         || self.units[id].air_patrol_pos == Some(target))
@@ -36629,7 +36640,7 @@ impl Game {
             let downer = defender.owner;
             self.record_war_unit_participation(&attacker, downer);
             self.record_war_unit_participation(&defender, attacker.owner);
-            let defender_spec = &self.rules.units[defender.kind.as_str()];
+            let defender_spec = &self.rules.units[defender.kind];
             let mut att_base = self.unit_ranged_attack_strength(&self.units[&uid])
                 + self.matchup_bonus(uid, &defender, true)
                 + if defender_spec.domain.as_deref() == Some("sea") {
@@ -36717,7 +36728,7 @@ impl Game {
                     unit.owner == pid
                         && unit.moves_left > 0.0
                         && self.wdist(unit.pos, city_pos) <= 1
-                        && self.rules.units[unit.kind.as_str()].is_melee_capable()
+                        && self.rules.units[unit.kind].is_melee_capable()
                 });
                 if taker_ready {
                     self.siege.depleted_with_a_taker_ready += 1;
@@ -36867,9 +36878,9 @@ impl Game {
             }
         }
         if self.has_ability(pid, "trajans_column") && !is_minor {
-            city.buildings.push("monument".to_string()); // Trajan's Column
+            city.buildings.push(crate::name!("monument")); // Trajan's Column
             city.building_eras
-                .insert("monument".to_string(), self.world_era);
+                .insert(crate::name!("monument"), self.world_era);
         }
         self.city_by_pos.insert(pos, cid);
         let founded = city.name.clone();
@@ -37053,13 +37064,13 @@ impl Game {
                 let feature = removed_feature
                     .clone()
                     .ok_or_else(|| "no feature to clear".to_string())?;
-                for (yield_type, base) in &self.rules.features[feature.as_str()].chop {
+                for (yield_type, base) in &self.rules.features[feature].chop {
                     payouts.push((yield_type.clone(), base * scale));
                 }
                 self.map.tiles.get_mut(&unit.pos).unwrap().feature = None;
             }
             "plant_woods" => {
-                self.map.tiles.get_mut(&unit.pos).unwrap().feature = Some("forest".to_string());
+                self.map.tiles.get_mut(&unit.pos).unwrap().feature = Some(crate::name!("forest"));
             }
             "harvest_resource" => {
                 let resource = self
@@ -37070,7 +37081,7 @@ impl Game {
                     .resource
                     .take()
                     .unwrap();
-                let harvest = self.rules.resources[resource.as_str()]
+                let harvest = self.rules.resources[resource]
                     .harvest
                     .clone()
                     .ok_or_else(|| "that resource cannot be harvested".to_string())?;
@@ -37114,7 +37125,7 @@ impl Game {
         }
         let u = self.own_unit(pid, uid)?;
         let can_build = (u.kind == "builder" && self.rules.improvements[imp].builder_buildable)
-            || self.rules.units[u.kind.as_str()]
+            || self.rules.units[u.kind]
                 .builds
                 .iter()
                 .any(|built| built == imp);
@@ -37135,7 +37146,7 @@ impl Game {
         if let Some(positions) = national_park {
             for position in positions {
                 let tile = self.map.tiles.get_mut(&position).unwrap();
-                tile.improvement = Some("national_park".to_string());
+                tile.improvement = Some(crate::name!("national_park"));
                 tile.pillaged = false;
             }
             bump(&mut self.players[pid], "national_park");
@@ -37148,7 +37159,7 @@ impl Game {
                 t.resource = None;
                 t.improvement = None;
             } else {
-                t.improvement = Some(imp.to_string());
+                t.improvement = Some(Name::new(imp));
             }
             t.pillaged = false;
             if removes {
@@ -37207,7 +37218,7 @@ impl Game {
         if project.starts_with("repair_") {
             return None;
         }
-        let spec = &self.rules.projects[project.as_str()];
+        let spec = &self.rules.projects[project];
         let district = spec.district.as_deref()?;
         std::iter::once(district)
             .chain(spec.alternate_districts.iter().map(String::as_str))
@@ -37419,13 +37430,13 @@ impl Game {
             .iter()
             .filter(|building| !city.pillaged_buildings.contains(*building))
             .filter(|building| {
-                self.rules.buildings[building.as_str()]
+                self.rules.buildings[building]
                     .district
                     .as_deref()
                     .is_some_and(|family| self.district_is_family(district, family))
             })
             .filter_map(|building| {
-                self.rules.buildings[building.as_str()]
+                self.rules.buildings[building]
                     .effects
                     .get("rock_concert_tourism")
                     .copied()
@@ -37660,8 +37671,8 @@ impl Game {
         if self.district_is_family(district, "encampment")
             || self.units_at(pos).iter().any(|id| {
                 self.units[id].owner == city.owner
-                    && self.rules.units[self.units[id].kind.as_str()].class == "military"
-                    && self.rules.units[self.units[id].kind.as_str()]
+                    && self.rules.units[self.units[id].kind].class == "military"
+                    && self.rules.units[self.units[id].kind]
                         .domain
                         .as_deref()
                         != Some("air")
@@ -37809,15 +37820,15 @@ impl Game {
                     .iter()
                     .filter(|building| !self.cities[&cid].pillaged_buildings.contains(*building))
                     .filter(|building| {
-                        self.rules.buildings[building.as_str()]
+                        self.rules.buildings[building]
                             .district
                             .as_ref()
                             .is_some_and(|family| self.district_is_family(&district, family))
                     })
                     .max_by(|a, b| {
-                        self.rules.buildings[a.as_str()]
+                        self.rules.buildings[a]
                             .cost
-                            .partial_cmp(&self.rules.buildings[b.as_str()].cost)
+                            .partial_cmp(&self.rules.buildings[b].cost)
                             .unwrap()
                             .then(a.cmp(b))
                     })
@@ -37845,7 +37856,7 @@ impl Game {
 
     fn do_pillage(&mut self, pid: usize, uid: u32) -> Result<(), String> {
         let unit = self.own_unit(pid, uid)?;
-        let spec = &self.rules.units[unit.kind.as_str()];
+        let spec = &self.rules.units[unit.kind];
         if spec.class != "military"
             || spec.domain.as_deref() == Some("air")
             || self.is_embarked(&unit)
@@ -37909,7 +37920,7 @@ impl Game {
     }
 
     fn can_coastal_raid(&self, pid: usize, unit: &Unit) -> bool {
-        let spec = &self.rules.units[unit.kind.as_str()];
+        let spec = &self.rules.units[unit.kind];
         spec.promotion_class == "naval_raider"
             || (spec.promotion_class == "naval_melee" && self.has_ability(pid, "knarr"))
     }
@@ -37936,7 +37947,7 @@ impl Game {
                                         && self.building_district_is_active(city, building)
                                 })
                                 .map(|building| {
-                                    self.rules.buildings[building.as_str()]
+                                    self.rules.buildings[building]
                                         .effects
                                         .get("air_slots")
                                         .copied()
@@ -37969,7 +37980,7 @@ impl Game {
             .into_iter()
             .filter(|id| {
                 self.units[id].owner == pid
-                    && self.rules.units[self.units[id].kind.as_str()]
+                    && self.rules.units[self.units[id].kind]
                         .domain
                         .as_deref()
                         == Some("air")
@@ -37993,7 +38004,7 @@ impl Game {
             .units_at(pos)
             .into_iter()
             .filter(|unit| {
-                self.rules.units[self.units[unit].kind.as_str()]
+                self.rules.units[self.units[unit].kind]
                     .domain
                     .as_deref()
                     == Some("air")
@@ -38036,7 +38047,7 @@ impl Game {
 
     fn do_air_rebase(&mut self, pid: usize, uid: u32, to: Pos) -> Result<(), String> {
         let unit = self.own_unit(pid, uid)?;
-        let spec = &self.rules.units[unit.kind.as_str()];
+        let spec = &self.rules.units[unit.kind];
         if spec.domain.as_deref() != Some("air")
             || unit.moves_left <= 0.0
             || unit.pos == to
@@ -38056,7 +38067,7 @@ impl Game {
     }
 
     fn unit_anti_air_strength(&self, unit: &Unit) -> f64 {
-        let spec = &self.rules.units[unit.kind.as_str()];
+        let spec = &self.rules.units[unit.kind];
         let governor = if spec.class == "support" {
             self.map.tiles[&unit.pos]
                 .owner_city
@@ -38092,7 +38103,7 @@ impl Game {
     }
 
     fn air_matchup_bonus(&self, unit: &Unit, opponent: &Unit) -> f64 {
-        match self.rules.units[opponent.kind.as_str()]
+        match self.rules.units[opponent.kind]
             .promotion_class
             .as_str()
         {
@@ -38103,8 +38114,8 @@ impl Game {
     }
 
     fn air_strike_unit_bonus(&self, attacker: &Unit, defender: &Unit) -> f64 {
-        let attacker_spec = &self.rules.units[attacker.kind.as_str()];
-        let defender_spec = &self.rules.units[defender.kind.as_str()];
+        let attacker_spec = &self.rules.units[attacker.kind];
+        let defender_spec = &self.rules.units[defender.kind];
         let mut bonus = self.air_matchup_bonus(attacker, defender);
         if defender_spec.domain.as_deref() == Some("sea") {
             bonus += self.promotion_effect(attacker, "air_vs_naval");
@@ -38127,8 +38138,8 @@ impl Game {
     }
 
     fn air_strike_unit_strength(&self, attacker: &Unit, defender: &Unit) -> f64 {
-        let attacker_spec = &self.rules.units[attacker.kind.as_str()];
-        let defender_spec = &self.rules.units[defender.kind.as_str()];
+        let attacker_spec = &self.rules.units[attacker.kind];
+        let defender_spec = &self.rules.units[defender.kind];
         self.unit_ranged_attack_strength(attacker) + self.air_strike_unit_bonus(attacker, defender)
             - if (attacker_spec.bombard_strength > 0.0
                 && defender_spec.domain.as_deref() != Some("sea"))
@@ -38152,7 +38163,7 @@ impl Game {
                 unit.owner != attacker.owner && self.is_at_war(attacker.owner, unit.owner)
             })
             .filter_map(|unit| {
-                let spec = &self.rules.units[unit.kind.as_str()];
+                let spec = &self.rules.units[unit.kind];
                 if spec.domain.as_deref() == Some("air")
                     && spec.promotion_class == "air_fighter"
                     && unit.air_patrol
@@ -38188,7 +38199,7 @@ impl Game {
         for unit in self.units.values().filter(|unit| {
             unit.owner != attacker.owner && self.is_at_war(attacker.owner, unit.owner)
         }) {
-            let spec = &self.rules.units[unit.kind.as_str()];
+            let spec = &self.rules.units[unit.kind];
             if spec.domain.as_deref() == Some("air")
                 && spec.promotion_class == "air_fighter"
                 && unit.air_patrol
@@ -38203,7 +38214,7 @@ impl Game {
                         other.id != unit.id
                             && other.owner == unit.owner
                             && other.air_patrol
-                            && self.rules.units[other.kind.as_str()].promotion_class
+                            && self.rules.units[other.kind].promotion_class
                                 == "air_fighter"
                             && other
                                 .air_patrol_pos
@@ -38227,9 +38238,9 @@ impl Game {
                     .filter(|other| {
                         other.id != unit.id
                             && other.owner == unit.owner
-                            && self.rules.units[other.kind.as_str()].domain.as_deref()
+                            && self.rules.units[other.kind].domain.as_deref()
                                 != Some("air")
-                            && self.rules.units[other.kind.as_str()].anti_air_strength > 0.0
+                            && self.rules.units[other.kind].anti_air_strength > 0.0
                             && self.wdist(other.pos, target) == 1
                     })
                     .count() as f64
@@ -38276,7 +38287,7 @@ impl Game {
             }
 
             if air_interceptor
-                && self.rules.units[current_attacker.kind.as_str()].promotion_class == "air_fighter"
+                && self.rules.units[current_attacker.kind].promotion_class == "air_fighter"
             {
                 fighter_engaged = true;
                 let counter_strength = self.unit_unembarked_strength(&current_attacker)
@@ -38324,7 +38335,7 @@ impl Game {
 
     fn do_air_strike(&mut self, pid: usize, uid: u32, target: Pos) -> Result<(), String> {
         let attacker = self.own_unit(pid, uid)?;
-        let spec = self.rules.units[attacker.kind.as_str()].clone();
+        let spec = self.rules.units[attacker.kind].clone();
         if spec.domain.as_deref() != Some("air")
             || attacker.moves_left <= 0.0
             || attacker.attacks_left <= 0
@@ -38392,8 +38403,8 @@ impl Game {
         } else if let Some(defender_id) = self.units_at(target).into_iter().find(|id| {
             self.units[id].owner != pid
                 && self.is_at_war(pid, self.units[id].owner)
-                && self.rules.units[self.units[id].kind.as_str()].class == "military"
-                && self.rules.units[self.units[id].kind.as_str()]
+                && self.rules.units[self.units[id].kind].class == "military"
+                && self.rules.units[self.units[id].kind]
                     .domain
                     .as_deref()
                     != Some("air")
@@ -38403,7 +38414,7 @@ impl Game {
             self.record_war_unit_participation(&attacker, defender.owner);
             self.record_war_unit_participation(&defender, attacker.owner);
             let anti_air = self.promotion_effect(&defender, "defend_air");
-            let defender_spec = &self.rules.units[defender.kind.as_str()];
+            let defender_spec = &self.rules.units[defender.kind];
             let defense_base = if defender_spec.anti_air_strength > 0.0 {
                 self.unit_anti_air_strength(&defender)
             } else {
@@ -38428,7 +38439,7 @@ impl Game {
         } else if let Some(defender_id) = self.units_at(target).into_iter().find(|id| {
             self.units[id].owner != pid
                 && self.is_at_war(pid, self.units[id].owner)
-                && self.rules.units[self.units[id].kind.as_str()].class == "support"
+                && self.rules.units[self.units[id].kind].class == "support"
                 && self.unit_currently_visible_to(*id, pid)
         }) {
             self.priority_damage_support(pid, uid, defender_id);
@@ -38443,7 +38454,7 @@ impl Game {
 
     fn do_priority_target(&mut self, pid: usize, uid: u32, target: Pos) -> Result<(), String> {
         let attacker = self.own_unit(pid, uid)?;
-        let spec = &self.rules.units[attacker.kind.as_str()];
+        let spec = &self.rules.units[attacker.kind];
         let air = spec.domain.as_deref() == Some("air");
         if !self.unit_has_priority_target(&attacker)
             || attacker.moves_left <= 0.0
@@ -38492,7 +38503,7 @@ impl Game {
 
     fn do_air_pillage(&mut self, pid: usize, uid: u32, target: Pos) -> Result<(), String> {
         let bomber = self.own_unit(pid, uid)?;
-        let spec = &self.rules.units[bomber.kind.as_str()];
+        let spec = &self.rules.units[bomber.kind];
         if spec.domain.as_deref() != Some("air")
             || spec.promotion_class != "air_bomber"
             || bomber.moves_left <= 0.0
@@ -38531,7 +38542,7 @@ impl Game {
 
     fn do_air_patrol(&mut self, pid: usize, uid: u32, to: Pos) -> Result<(), String> {
         let unit = self.own_unit(pid, uid)?;
-        let spec = &self.rules.units[unit.kind.as_str()];
+        let spec = &self.rules.units[unit.kind];
         if spec.domain.as_deref() != Some("air")
             || spec.siege
             || unit.moves_left <= 0.0
@@ -38576,7 +38587,7 @@ impl Game {
         let preserve_feature = self.players[pid].civ == "Vietnam" && spec.specialty;
         let tile = self.map.tiles.get_mut(&pos).unwrap();
         tile.district_foundation = Some(DistrictFoundation {
-            district: district.to_string(),
+            district: Name::new(district),
             cost,
         });
         tile.improvement = None;
@@ -39325,7 +39336,7 @@ impl Game {
         let unit = self.units.get_mut(&uid).unwrap();
         let extra_first_promotion = unit.extra_first_promotion;
         unit.extra_first_promotion = false;
-        unit.promotions.insert(promotion.to_string());
+        unit.promotions.insert(Name::new(promotion));
         unit.charges += extra_charges as i32;
         if rock_band {
             // Concert outcomes raise Cultural Communicator level before the
@@ -39373,10 +39384,10 @@ impl Game {
             || a.moves_left <= 0.0
             || b.moves_left <= 0.0
             || self.wdist(a.pos, b.pos) > 1
-            || self.rules.units[a.kind.as_str()].class != "military"
-            || self.rules.units[a.kind.as_str()].domain.as_deref() == Some("air")
-            || !self.rules.units[a.kind.as_str()].can_formations
-            || !self.rules.units[a.kind.as_str()].can_combine
+            || self.rules.units[a.kind].class != "military"
+            || self.rules.units[a.kind].domain.as_deref() == Some("air")
+            || !self.rules.units[a.kind].can_formations
+            || !self.rules.units[a.kind].can_combine
         {
             return None;
         }
@@ -39433,7 +39444,7 @@ impl Game {
         let Some(unit) = self.units.get(&uid) else {
             return;
         };
-        let spec = &self.rules.units[unit.kind.as_str()];
+        let spec = &self.rules.units[unit.kind];
         if spec.class != "military"
             || spec.domain.as_deref() == Some("air")
             || !spec.can_formations
@@ -39472,8 +39483,8 @@ impl Game {
             return false;
         }
         let (aspec, bspec) = (
-            &self.rules.units[a.kind.as_str()],
-            &self.rules.units[b.kind.as_str()],
+            &self.rules.units[a.kind],
+            &self.rules.units[b.kind],
         );
         let ordinary = (aspec.class == "military"
             && matches!(bspec.class.as_str(), "civilian" | "support" | "religious"))
@@ -39752,7 +39763,7 @@ impl Game {
             .filter_map(|unit| self.units.get(unit))
             .filter(|unit| {
                 unit.owner != pid
-                    && self.rules.units[unit.kind.as_str()].class == "military"
+                    && self.rules.units[unit.kind].class == "military"
             })
             .cloned()
             .collect::<Vec<_>>();
@@ -39989,7 +40000,7 @@ impl Game {
         let military: Vec<u32> = enemies
             .iter()
             .cloned()
-            .filter(|id| self.rules.units[self.units[id].kind.as_str()].class == "military")
+            .filter(|id| self.rules.units[self.units[id].kind].class == "military")
             .collect();
         if military.is_empty() {
             return Err("no enemy military target".into());
@@ -40014,7 +40025,7 @@ impl Game {
             self.unit_strength(&d, true) + self.ranged_defense_bonus(&d, true),
             d.hp,
         ) + self.tile_defense_bonus(target);
-        let naval = self.rules.units[d.kind.as_str()].domain.as_deref() == Some("sea");
+        let naval = self.rules.units[d.kind].domain.as_deref() == Some("sea");
         let emergency_bonus = self.players[pid]
             .counters
             .get(&format!("emergency_city_strike_vs:{}", d.owner))
@@ -40074,7 +40085,7 @@ impl Game {
                 let unit = &self.units[id];
                 unit.owner != pid
                     && self.is_at_war(pid, unit.owner)
-                    && self.rules.units[unit.kind.as_str()].class == "military"
+                    && self.rules.units[unit.kind].class == "military"
                     && self.unit_currently_visible_to(*id, pid)
             })
             .max_by(|a, b| {
@@ -40091,7 +40102,7 @@ impl Game {
             self.unit_strength(&defender, true) + self.ranged_defense_bonus(&defender, false),
             defender.hp,
         ) + self.tile_defense_bonus(target);
-        let naval = self.rules.units[defender.kind.as_str()].domain.as_deref() == Some("sea");
+        let naval = self.rules.units[defender.kind].domain.as_deref() == Some("sea");
         let emergency_bonus = self.players[pid]
             .counters
             .get(&format!("emergency_city_strike_vs:{}", defender.owner))
@@ -40732,12 +40743,12 @@ impl Game {
             2.. => 2.0,
             _ => 1.0,
         };
-        let surcharge = if self.rules.units[unit.kind.as_str()].class == "military" {
+        let surcharge = if self.rules.units[unit.kind].class == "military" {
             self.policy_effect(pid, "unit_maintenance_surcharge")
         } else {
             0.0
         };
-        (self.rules.units[unit.kind.as_str()].maintenance * formation
+        (self.rules.units[unit.kind].maintenance * formation
             - self.policy_effect(pid, "unit_maintenance_discount"))
         .max(0.0)
             + surcharge
@@ -40782,7 +40793,7 @@ impl Game {
                     .filter(|(district, position)| {
                         self.district_is_active(city, district, **position)
                     })
-                    .map(|(district, _)| self.rules.districts[district.as_str()].maintenance)
+                    .map(|(district, _)| self.rules.districts[district].maintenance)
                     .sum::<f64>();
                 let buildings = city
                     .buildings
@@ -40790,7 +40801,7 @@ impl Game {
                     .filter(|building| !city.pillaged_buildings.contains(*building))
                     .filter(|building| self.building_district_is_active(city, building))
                     .map(|building| {
-                        let base = self.rules.buildings[building.as_str()].maintenance;
+                        let base = self.rules.buildings[building].maintenance;
                         if building == "flood_barrier" {
                             base * self.coastal_lowland_tiles(city).len() as f64
                                 * (1 + self.climate_phase / 2) as f64
@@ -41413,7 +41424,7 @@ impl Game {
         transferred_city: u32,
     ) -> Option<Pos> {
         let unit = self.units.get(&unit_id)?;
-        let spec = &self.rules.units[unit.kind.as_str()];
+        let spec = &self.rules.units[unit.kind];
         if spec.domain.as_deref() == Some("air") {
             return self
                 .map
@@ -41448,7 +41459,7 @@ impl Game {
                 self.units_at(**position).into_iter().all(|other_id| {
                     other_id == unit_id
                         || (self.units[&other_id].owner == unit.owner
-                            && self.rules.units[self.units[&other_id].kind.as_str()].class
+                            && self.rules.units[self.units[&other_id].kind].class
                                 != spec.class)
                 })
             })
@@ -41482,7 +41493,7 @@ impl Game {
         // can select the newly relocated carrier as a valid destination.
         units.sort_by_key(|unit| {
             (
-                self.rules.units[self.units[unit].kind.as_str()]
+                self.rules.units[self.units[unit].kind]
                     .domain
                     .as_deref()
                     == Some("air"),
@@ -42571,7 +42582,7 @@ impl Game {
             .filter(|source| source.owner == pid)
             .flat_map(|source| source.wonders.iter())
             .any(|(wonder, position)| {
-                self.rules.wonders[wonder.as_str()]
+                self.rules.wonders[wonder]
                     .effects
                     .get("regional_full_loyalty_range")
                     .is_some_and(|range| self.wdist(*position, cpos) <= *range as i32)
@@ -42677,7 +42688,7 @@ impl Game {
             .into_iter()
             .filter(|uid| {
                 self.units[uid].owner == pid
-                    && self.rules.units[self.units[uid].kind.as_str()].class == "military"
+                    && self.rules.units[self.units[uid].kind].class == "military"
             })
             .map(|uid| self.units[&uid].formation)
             .max();
@@ -42737,7 +42748,7 @@ impl Game {
             .iter()
             .filter(|(district, position)| self.district_is_active(city, district, **position))
             .map(|(district, position)| {
-                let spec = &self.rules.districts[district.as_str()];
+                let spec = &self.rules.districts[district];
                 spec.loyalty
                     + if self.on_foreign_continent(pid, *position) {
                         spec.effects
@@ -42759,7 +42770,7 @@ impl Game {
             .filter(|source| source.owner == pid)
             .flat_map(|source| source.wonders.iter().map(move |(wonder, _)| (source, wonder)))
             .map(|(source, wonder)| {
-                let spec = &self.rules.wonders[wonder.as_str()];
+                let spec = &self.rules.wonders[wonder];
                 if spec.regional_loyalty > 0.0
                     && spec.regional_range > 0
                     && self.wdist(source.pos, cpos) <= spec.regional_range
@@ -43055,7 +43066,7 @@ impl Game {
                     self.map
                         .tiles
                         .values()
-                        .any(|tile| tile.resource.as_ref() == Some(*name))
+                        .any(|tile| tile.resource.as_deref() == Some(name.as_str()))
                 })
                 .map(|(name, _)| name.clone()),
         ));
@@ -43769,7 +43780,7 @@ impl Game {
                     .values()
                     .filter(|unit| {
                         unit.owner == member
-                            && self.rules.units[unit.kind.as_str()].class == "military"
+                            && self.rules.units[unit.kind].class == "military"
                             && self.map.tiles[&unit.pos]
                                 .owner_city
                                 .and_then(|city| self.cities.get(&city))
@@ -44598,7 +44609,8 @@ impl Game {
         } else {
             1.0
         };
-        if kind == "relic" && city.wonders.contains_key("st_basils_cathedral") {
+        if kind == "relic" && city.wonders
+.contains_key(&crate::name!("st_basils_cathedral")) {
             multiplier *= 1.0
                 + self.rules.wonders["st_basils_cathedral"]
                     .effects
@@ -44638,7 +44650,7 @@ impl Game {
                 !city.pillaged_buildings.contains(*building)
                     && self.building_district_is_active(city, building)
             }) {
-                for (kind, count) in &self.rules.buildings[building.as_str()].great_work_slots {
+                for (kind, count) in &self.rules.buildings[building].great_work_slots {
                     slots.extend(std::iter::repeat_n(
                         (city.id, kind.clone()),
                         (*count).max(0) as usize,
@@ -44646,7 +44658,7 @@ impl Game {
                 }
             }
             for wonder in city.wonders.keys() {
-                for (kind, count) in &self.rules.wonders[wonder.as_str()].great_work_slots {
+                for (kind, count) in &self.rules.wonders[wonder].great_work_slots {
                     slots.extend(std::iter::repeat_n(
                         (city.id, kind.clone()),
                         (*count).max(0) as usize,
@@ -44910,7 +44922,8 @@ impl Game {
             let city = &self.cities[&city_id];
             let mut value = works.get("relic").copied().unwrap_or(0) as f64
                 * self.great_work_tourism(pid, "relic");
-            if city.wonders.contains_key("st_basils_cathedral") {
+            if city.wonders
+.contains_key(&crate::name!("st_basils_cathedral")) {
                 value *= 1.0
                     + self.rules.wonders["st_basils_cathedral"]
                         .effects
@@ -45005,7 +45018,8 @@ impl Game {
                     value *=
                         1.0 + self.governor_effect(pid, city.id, "great_work_tourism_pct") / 100.0;
                 }
-                if kind == "relic" && city.wonders.contains_key("st_basils_cathedral") {
+                if kind == "relic" && city.wonders
+.contains_key(&crate::name!("st_basils_cathedral")) {
                     value *= 1.0
                         + self.rules.wonders["st_basils_cathedral"]
                             .effects
@@ -45021,7 +45035,7 @@ impl Game {
                     if !self.district_is_active(city, district, *position) {
                         continue;
                     }
-                    let multiplier = self.rules.districts[district.as_str()]
+                    let multiplier = self.rules.districts[district]
                         .effects
                         .get("tourism_after_flight")
                         .copied()
@@ -45037,7 +45051,7 @@ impl Game {
                 }
             }
             for (wonder, position) in &city.wonders {
-                let spec = &self.rules.wonders[wonder.as_str()];
+                let spec = &self.rules.wonders[wonder];
                 Self::add_tourism_source(
                     &mut tourism,
                     &mut by_tile,
@@ -45049,7 +45063,7 @@ impl Game {
                 !city.pillaged_buildings.contains(*building)
                     && self.building_district_is_active(city, building)
             }) {
-                let spec = &self.rules.buildings[building.as_str()];
+                let spec = &self.rules.buildings[building];
                 let mut building_tourism = spec.effects.get("tourism").copied().unwrap_or(0.0);
                 if self.tree_effect(pid, "wall_tourism") > 0.0 {
                     building_tourism += spec
@@ -45200,7 +45214,8 @@ impl Game {
                     improvement_tourism *=
                         1.0 + self.empire_wonder_effect(pid, "seaside_resort_tourism_pct") / 100.0;
                 }
-                if city.wonders.contains_key("golden_gate_bridge")
+                if city.wonders
+.contains_key(&crate::name!("golden_gate_bridge"))
                     && (improvement_tourism > 0.0 || improvement == "national_park")
                 {
                     improvement_tourism *= 1.0
@@ -45258,7 +45273,7 @@ impl Game {
                         && self.building_district_is_active(city, building)
                 })
                 .map(|building| {
-                    self.rules.buildings[building.as_str()]
+                    self.rules.buildings[building]
                         .effects
                         .get("renewable_power_generated")
                         .copied()
@@ -45567,7 +45582,7 @@ impl Game {
             };
             let moves = self.unit_max_moves(uid) + territory_bonus;
             let attacks = self.unit_max_attacks(uid);
-            let spec = &self.rules.units[kind.as_str()];
+            let spec = &self.rules.units[kind];
             let embarked = self.is_embarked(&self.units[&uid]);
             let heal = if hp < 100
                 && (!acted
@@ -46003,7 +46018,7 @@ impl Game {
             bump(&mut self.players[pid], "barbs_killed");
         } else {
             // Every Dedication that pays for kills excludes Barbarians.
-            if self.rules.units[victim.kind.as_str()].class == "naval" {
+            if self.rules.units[victim.kind].class == "naval" {
                 self.dedication_trigger(pid, "naval_kill", 1);
             }
             match victim.formation {
@@ -46088,7 +46103,7 @@ impl Game {
                 self.units
                     .values()
                     .filter(|u| {
-                        u.owner == pid && self.rules.units[u.kind.as_str()].class == "military"
+                        u.owner == pid && self.rules.units[u.kind].class == "military"
                     })
                     .count() as i64
                     >= n
@@ -46097,7 +46112,7 @@ impl Game {
                 self.units
                     .values()
                     .filter(|u| {
-                        let spec = &self.rules.units[u.kind.as_str()];
+                        let spec = &self.rules.units[u.kind];
                         u.owner == pid
                             && spec.class == "military"
                             && !matches!(spec.domain.as_deref(), Some("sea") | Some("air"))
@@ -46363,8 +46378,8 @@ impl Game {
                 .get(&old_key)
                 .copied()
                 .unwrap_or(0.0);
-            let old_resource = self.rules.units[source].requires_resource.clone();
-            let target_resource = self.rules.units[target.as_str()].requires_resource.clone();
+            let old_resource = self.rules.units[&source].requires_resource.clone();
+            let target_resource = self.rules.units[&target].requires_resource.clone();
             let refundable_credit = if old_resource == target_resource {
                 old_commitment
             } else {
@@ -46699,7 +46714,8 @@ impl Game {
 
         // Apadana includes itself and triggers for each later wonder in the
         // same city, so evaluate it after the new wonder has been inserted.
-        if self.cities[&cid].wonders.contains_key("apadana") {
+        if self.cities[&cid].wonders
+.contains_key(&crate::name!("apadana")) {
             self.players[pid].envoys_free += self.rules.wonders["apadana"]
                 .effects
                 .get("envoys_per_wonder")
@@ -46794,7 +46810,7 @@ impl Game {
             sites.sort();
             for site in sites.into_iter().take(free_canals) {
                 let tile = self.map.tiles.get_mut(&site).unwrap();
-                tile.district = Some("canal".to_string());
+                tile.district = Some(crate::name!("canal"));
                 tile.improvement = None;
                 tile.feature = None;
                 tile.pillaged = false;
@@ -46859,16 +46875,16 @@ impl Game {
                     .map(|(building, _)| building.clone())
                     .collect();
                 candidates.sort_by(|a, b| {
-                    self.rules.buildings[a.as_str()]
+                    self.rules.buildings[a]
                         .cost
-                        .partial_cmp(&self.rules.buildings[b.as_str()].cost)
+                        .partial_cmp(&self.rules.buildings[b].cost)
                         .unwrap()
                         .then(a.cmp(b))
                 });
                 if let Some(building) = candidates.first() {
                     let city = self.cities.get_mut(&city_id).unwrap();
-                    city.buildings.push(building.clone());
-                    city.building_eras.insert(building.clone(), self.world_era);
+                    city.buildings.push(Name::new(building));
+                    city.building_eras.insert(Name::new(building), self.world_era);
                 }
             }
         }
@@ -46898,7 +46914,7 @@ impl Game {
                     self.city_building_effect(&self.cities[&cid], "science_per_unit_cost_pct");
                 self.players[pid].research_overflow +=
                     self.item_cost(item) * science_pct / 100.0;
-                if self.rules.units[unit.as_str()].domain.as_deref() == Some("sea")
+                if self.rules.units[unit].domain.as_deref() == Some("sea")
                     && self.empire_wonder_effect(pid, "duplicate_naval_units") > 0.0
                 {
                     if let Some(second) = self.place_new_unit(unit, pid, pos) {
@@ -46956,15 +46972,15 @@ impl Game {
                 }
                 bump(&mut self.players[pid], &format!("trained:{unit}"));
                 if matches!(
-                    self.rules.units[unit.as_str()].class.as_str(),
+                    self.rules.units[unit].class.as_str(),
                     "military" | "support"
                 ) {
                     let science_pct =
                         self.city_building_effect(&self.cities[&cid], "science_per_unit_cost_pct");
                     self.players[pid].research_overflow +=
-                        self.rules.units[unit.as_str()].cost * science_pct / 100.0;
+                        self.rules.units[unit].cost * science_pct / 100.0;
                 }
-                if self.rules.units[unit.as_str()].domain.as_deref() == Some("sea")
+                if self.rules.units[unit].domain.as_deref() == Some("sea")
                     && self.empire_wonder_effect(pid, "duplicate_naval_units") > 0.0
                 {
                     if let Some(second) = self.place_new_unit(unit, pid, pos) {
@@ -46985,7 +47001,7 @@ impl Game {
                 {
                     return true;
                 }
-                let spec = self.rules.buildings[building.as_str()].clone();
+                let spec = self.rules.buildings[building].clone();
                 if spec.wonder && self.wonder_built(building) {
                     // wonder race lost: drop the item, keep banked production
                     let city = self.cities.get_mut(&cid).unwrap();
@@ -46993,8 +47009,8 @@ impl Game {
                     return false;
                 }
                 let city = self.cities.get_mut(&cid).unwrap();
-                city.buildings.push(building.clone());
-                city.building_eras.insert(building.clone(), self.world_era);
+                city.buildings.push(Name::new(building));
+                city.building_eras.insert(Name::new(building), self.world_era);
                 if spec
                     .effects
                     .get("reactor_accident_risk")
@@ -47038,7 +47054,7 @@ impl Game {
                 if spec.unit_levels > 0 {
                     for uid in self.player_unit_ids(pid) {
                         let mil =
-                            self.rules.units[self.units[&uid].kind.as_str()].class == "military";
+                            self.rules.units[self.units[&uid].kind].class == "military";
                         if mil {
                             let u = self.units.get_mut(&uid).unwrap();
                             u.xp = u.xp.max(Self::promotion_threshold(u.level));
@@ -47071,7 +47087,7 @@ impl Game {
                                     .buildings
                                     .iter()
                                     .filter(|candidate| {
-                                        self.rules.buildings[candidate.as_str()]
+                                        self.rules.buildings[candidate]
                                             .district
                                             .as_deref()
                                             .is_some_and(|family| {
@@ -47098,10 +47114,10 @@ impl Game {
                 if !self.district_sites(cid, district).contains(pos) {
                     return false;
                 }
-                let spec = self.rules.districts[district.as_str()].clone();
+                let spec = self.rules.districts[district].clone();
                 let preserve_feature = self.players[pid].civ == "Vietnam" && spec.specialty;
                 let t = self.map.tiles.get_mut(pos).unwrap();
-                t.district = Some(district.clone());
+                t.district = Some(Name::new(&district));
                 t.district_foundation = None;
                 t.improvement = None;
                 t.pillaged = false;
@@ -47191,7 +47207,7 @@ impl Game {
                 if !self.wonder_sites(cid, wonder).contains(pos) {
                     return false;
                 }
-                let spec = self.rules.wonders[wonder.as_str()].clone();
+                let spec = self.rules.wonders[wonder].clone();
                 self.note(
                     pid,
                     "Cities",
@@ -47199,7 +47215,7 @@ impl Game {
                     Some(*pos),
                 );
                 let tile = self.map.tiles.get_mut(pos).unwrap();
-                tile.wonder = Some(wonder.clone());
+                tile.wonder = Some(Name::new(wonder));
                 tile.improvement = None;
                 tile.pillaged = false;
                 tile.feature = None;
@@ -47207,7 +47223,7 @@ impl Game {
                     .get_mut(&cid)
                     .unwrap()
                     .wonders
-                    .insert(wonder.clone(), *pos);
+                    .insert(Name::new(wonder), *pos);
                 self.add_era_score(pid, 3);
                 if spec
                     .effects
@@ -47217,7 +47233,7 @@ impl Game {
                     > 0.0
                 {
                     for uid in self.player_unit_ids(pid) {
-                        if self.rules.units[self.units[&uid].kind.as_str()].class == "military" {
+                        if self.rules.units[self.units[&uid].kind].class == "military" {
                             let unit = self.units.get_mut(&uid).unwrap();
                             unit.xp = unit.xp.max(Self::promotion_threshold(unit.level));
                         }
@@ -47231,8 +47247,9 @@ impl Game {
                     self.map.tiles.get_mut(pos).unwrap().pillaged = false;
                 } else {
                     let city = self.cities.get_mut(&cid).unwrap();
-                    city.pillaged_buildings.remove(repair);
-                    city.building_eras.insert(repair.clone(), self.world_era);
+                    let repair = Name::new(repair);
+                    city.pillaged_buildings.remove(&repair);
+                    city.building_eras.insert(repair, self.world_era);
                 }
                 true
             }
@@ -47248,7 +47265,7 @@ impl Game {
                     city.encampment_pillaged = false;
                     return true;
                 }
-                let spec = self.rules.projects[project.as_str()].clone();
+                let spec = self.rules.projects[project].clone();
                 if !spec.repeatable && self.players[pid].science_projects.contains(project) {
                     // Another city won this internal project race.
                     return true;
@@ -47299,9 +47316,9 @@ impl Game {
                         .retain(|building| !plants.contains(&building.as_str()));
                     city.building_eras
                         .retain(|building, _| !plants.contains(&building.as_str()));
-                    city.buildings.push(target.to_string());
+                    city.buildings.push(Name::new(target));
                     city.building_eras
-                        .insert(target.to_string(), self.world_era);
+                        .insert(Name::new(target), self.world_era);
                     city.reactor_age = 0;
                 }
                 if project == "launch_earth_satellite" {
@@ -47358,7 +47375,7 @@ impl Game {
     }
 
     fn apply_training_district_effects(&mut self, cid: u32, uid: u32) {
-        let spec = self.rules.units[self.units[&uid].kind.as_str()].clone();
+        let spec = self.rules.units[self.units[&uid].kind].clone();
         if spec.domain.as_deref() == Some("sea") {
             let movement = self.city_district_effect(&self.cities[&cid], "naval_movement");
             self.units.get_mut(&uid).unwrap().bonus_moves += movement;
@@ -47433,9 +47450,9 @@ impl Game {
             .map(|(name, _)| name.clone())
             .collect();
         candidates.sort_by(|a, b| {
-            self.rules.units[b.as_str()]
+            self.rules.units[b]
                 .cost
-                .partial_cmp(&self.rules.units[a.as_str()].cost)
+                .partial_cmp(&self.rules.units[a].cost)
                 .unwrap()
                 .then(a.cmp(b))
         });
@@ -47485,7 +47502,7 @@ impl Game {
             let mut occupied = false;
             for oid in self.units_at(cand) {
                 let o = &self.units[&oid];
-                if o.owner != owner || self.rules.units[o.kind.as_str()].class == spec.class {
+                if o.owner != owner || self.rules.units[o.kind].class == spec.class {
                     occupied = true;
                     break;
                 }
@@ -47620,7 +47637,7 @@ impl Game {
                     // Borders are not drawn toward a resource nobody can see,
                     // and an Antiquity Site stays buried until Natural History.
                     !matches!(
-                        self.rules.resources[resource.as_str()].class.as_str(),
+                        self.rules.resources[resource].class.as_str(),
                         "bonus" | "artifact"
                     )
                 })
@@ -47732,10 +47749,10 @@ impl Game {
                 .map(|(name, _)| name.clone())
                 .unwrap_or_else(|| family.to_string())
         };
-        let converted_buildings: BTreeMap<String, (usize, bool, bool)> = self.cities[&cid]
+        let converted_buildings: BTreeMap<Name, (usize, bool, bool)> = self.cities[&cid]
             .buildings
             .iter()
-            .filter(|building| !defensive_buildings.contains(*building))
+            .filter(|building| !defensive_buildings.iter().any(|kept| *kept == **building))
             .filter_map(|building| {
                 let converted = convert_building(building);
                 let district = self.rules.buildings[&converted]
@@ -47749,7 +47766,7 @@ impl Game {
                         .copied()
                         .unwrap_or(self.world_era);
                     let pillaged = self.cities[&cid].pillaged_buildings.contains(building);
-                    (converted, (era, pillaged, district == "city_center"))
+                    (Name::new(&converted), (era, pillaged, district == "city_center"))
                 })
             })
             .collect();
@@ -47788,7 +47805,7 @@ impl Game {
                 .buildings
                 .iter()
                 .filter(|building| {
-                    let (_, was_pillaged, city_center) = converted_buildings[building.as_str()];
+                    let (_, was_pillaged, city_center) = converted_buildings[building];
                     was_pillaged || (conquest && city_center)
                 })
                 .cloned()
@@ -47810,7 +47827,7 @@ impl Game {
         }
         for (district, position, retained) in &converted_districts {
             let tile = self.map.tiles.get_mut(position).unwrap();
-            tile.district = retained.then(|| district.clone());
+            tile.district = retained.then(|| Name::new(district));
             if !retained {
                 tile.pillaged = false;
             }
@@ -54081,7 +54098,7 @@ mod victory_conditions {
                 .collect();
             for pid in 0..8 {
                 let civ = game.players[pid].civ.clone();
-                if game.rules.civs[civ.as_str()].start_bias.is_none() {
+                if game.rules.civs[civ].start_bias.is_none() {
                     continue;
                 }
                 let mine = crate::mapgen::start_bias_score(&game.rules, &game.map, sites[pid], &civ);
@@ -55272,7 +55289,7 @@ mod victory_conditions {
             g.player_unit_ids(free_cities)
                 .into_iter()
                 .filter(|unit| {
-                    g.rules.units[g.units[unit].kind.as_str()].promotion_class == "melee"
+                    g.rules.units[g.units[unit].kind].promotion_class == "melee"
                 })
                 .count(),
             2

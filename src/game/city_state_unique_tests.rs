@@ -287,7 +287,7 @@ fn zanzibar_and_kandy_supply_luxuries_relics_and_relic_faith() {
         .iter()
         .find_map(|(position, tile)| {
             tile.feature.as_ref().and_then(|feature| {
-                game.rules.features[feature.as_str()]
+                game.rules.features[feature]
                     .natural_wonder
                     .then_some((*position, feature.clone()))
             })

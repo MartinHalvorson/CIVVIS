@@ -3,35 +3,36 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::ops::{Deref, DerefMut};
 
+use crate::name::Name;
 use crate::{hex, Pos};
 
 /// A district site that has been placed but has not finished construction.
 /// Placement locks both the chosen district and its production cost.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct DistrictFoundation {
-    pub district: String,
+    pub district: Name,
     pub cost: f64,
 }
 
 #[derive(Clone, Serialize, Deserialize, PartialEq)]
 pub struct Tile {
     pub pos: Pos,
-    pub terrain: String,
-    pub feature: Option<String>,
+    pub terrain: Name,
+    pub feature: Option<Name>,
     pub hills: bool,
-    pub resource: Option<String>,
-    pub improvement: Option<String>,
+    pub resource: Option<Name>,
+    pub improvement: Option<Name>,
     /// Improvements and ordinary districts stop producing yields while
     /// pillaged. City/Encampment defenses keep their dedicated damage state.
     #[serde(default)]
     pub pillaged: bool,
-    pub district: Option<String>,
+    pub district: Option<Name>,
     /// Placed districts occupy their tile and count against district limits,
     /// but do not grant completed-district yields or abilities.
     #[serde(default)]
     pub district_foundation: Option<DistrictFoundation>,
     #[serde(default)]
-    pub wonder: Option<String>,
+    pub wonder: Option<Name>,
     pub owner_city: Option<u32>,
     #[serde(default)]
     /// River segments on this hex's six edges, in `hex::DIRS` order.
@@ -196,7 +197,7 @@ impl Tile {
     pub fn new(pos: Pos) -> Tile {
         Tile {
             pos,
-            terrain: "ocean".to_string(),
+            terrain: crate::name!("ocean"),
             feature: None,
             hills: false,
             resource: None,

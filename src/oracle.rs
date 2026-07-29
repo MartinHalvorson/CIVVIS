@@ -24,6 +24,7 @@
 //!
 //! Each grant is applied at the start of the seat's turn, before the wrapped
 //! agent plays, because `AdvancedAi::take_turn` ends its own turn.
+use crate::name::Name;
 use crate::ai::{Ai, PlanReport};
 use std::collections::BTreeSet;
 use crate::game::Game;
@@ -192,7 +193,7 @@ impl<A: Ai> Oracle<A> {
                     break;
                 }
                 if let Some(unit) = g.units.get_mut(&uid) {
-                    unit.kind = target;
+                    unit.kind = Name::new(&target);
                 }
                 self.fired += 1;
             }
@@ -323,7 +324,7 @@ impl<A: Ai> Oracle<A> {
                 .values()
                 .filter(|unit| unit.owner == pid)
                 .filter(|unit| {
-                    let spec = &g.rules.units[unit.kind.as_str()];
+                    let spec = &g.rules.units[unit.kind];
                     spec.class == "military" && spec.is_melee_capable()
                 })
                 .filter(|unit| g.wdist(unit.pos, city_pos) > 1)

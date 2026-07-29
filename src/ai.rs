@@ -1095,7 +1095,7 @@ impl Default for BasicAi {
 
 impl BasicAi {
     pub(crate) fn unit_doctrine(g: &Game, uid: u32) -> UnitDoctrine {
-        let spec = &g.rules.units[g.units[&uid].kind.as_str()];
+        let spec = &g.rules.units[g.units[&uid].kind];
         if spec.class == "support" {
             return UnitDoctrine::Support;
         }
@@ -1247,7 +1247,7 @@ impl BasicAi {
             return true;
         }
         let owns_ships = g.units.values().any(|unit| {
-            unit.owner == pid && g.rules.units[unit.kind.as_str()].domain.as_deref() == Some("sea")
+            unit.owner == pid && g.rules.units[unit.kind].domain.as_deref() == Some("sea")
         });
         if owns_ships {
             return true;
@@ -1351,7 +1351,7 @@ impl BasicAi {
 
     pub(crate) fn waterborne(g: &Game, uid: u32) -> bool {
         let unit = &g.units[&uid];
-        g.rules.units[unit.kind.as_str()].domain.as_deref() == Some("sea")
+        g.rules.units[unit.kind].domain.as_deref() == Some("sea")
             || g.map
                 .get(unit.pos)
                 .is_some_and(|tile| g.rules.is_water(tile))
@@ -1539,12 +1539,12 @@ impl BasicAi {
         {
             return false;
         }
-        let domain = g.rules.units[g.units[&uid].kind.as_str()]
+        let domain = g.rules.units[g.units[&uid].kind]
             .domain
             .as_deref()
             .unwrap_or("land");
         let candidates = g.player_unit_ids(pid).into_iter().filter(|other| {
-            let spec = &g.rules.units[g.units[other].kind.as_str()];
+            let spec = &g.rules.units[g.units[other].kind];
             spec.class == "military"
                 && spec.domain.as_deref().unwrap_or("land") == domain
                 && !matches!(
@@ -1597,7 +1597,7 @@ impl BasicAi {
                 UnitDoctrine::Siege => 14.0,
                 UnitDoctrine::Mobile
                     if g.units_at(target).iter().any(|other| {
-                        g.rules.units[g.units[other].kind.as_str()].class != "military"
+                        g.rules.units[g.units[other].kind].class != "military"
                             || g.units[other].hp <= 40
                     }) =>
                 {
@@ -1635,12 +1635,12 @@ impl BasicAi {
                     .iter()
                     .filter(|building| !city.pillaged_buildings.contains(*building))
                     .filter(|building| {
-                        g.rules.buildings[building.as_str()]
+                        g.rules.buildings[building]
                             .district
                             .as_ref()
                             .is_some_and(|family| g.district_family(district) == family)
                     })
-                    .map(|building| g.rules.buildings[building.as_str()].cost as i32)
+                    .map(|building| g.rules.buildings[building].cost as i32)
                     .max()
             })
         {
@@ -1661,7 +1661,7 @@ impl BasicAi {
             return 0;
         };
         let unit = &g.units[&support];
-        let spec = &g.rules.units[unit.kind.as_str()];
+        let spec = &g.rules.units[unit.kind];
         105 + (100 - unit.hp)
             + (spec.cost * 0.18) as i32
             + if spec.anti_air_strength > 0.0 {
@@ -1702,7 +1702,7 @@ impl BasicAi {
                         g.units_at(*target).iter().any(|other| {
                             let other = &g.units[other];
                             other.owner != pid
-                                && g.rules.units[other.kind.as_str()].domain.as_deref()
+                                && g.rules.units[other.kind].domain.as_deref()
                                     == Some("air")
                         })
                     }
@@ -1741,7 +1741,7 @@ impl BasicAi {
                                             other.owner == pid
                                                 && other.id != uid
                                                 && g.wdist(*to, other.pos) <= 1
-                                                && g.rules.units[other.kind.as_str()].class
+                                                && g.rules.units[other.kind].class
                                                     == "military"
                                         })
                                         .count() as i32
@@ -2954,7 +2954,7 @@ impl BasicAi {
                     .units
                     .values()
                     .filter(|unit| unit.owner == minor.id && unit.levied_from.is_none())
-                    .filter(|unit| g.rules.units[unit.kind.as_str()].class == "military")
+                    .filter(|unit| g.rules.units[unit.kind].class == "military")
                     .map(|unit| g.unit_strength(unit, true))
                     .sum::<f64>();
                 Some((
@@ -3071,7 +3071,7 @@ impl BasicAi {
                 "trader" => traders += 1,
                 "battering_ram" | "siege_tower" => siege_support += 1,
                 _ => {
-                    let spec = &g.rules.units[kind.as_str()];
+                    let spec = &g.rules.units[kind];
                     if spec.class == "military" {
                         force += Self::force_weight(g, &kind, front_line);
                         if spec.is_melee_capable() {
@@ -3096,7 +3096,7 @@ impl BasicAi {
                     "trader" => traders += 1,
                     "battering_ram" | "siege_tower" => siege_support += 1,
                     _ => {
-                        let spec = &g.rules.units[unit.as_str()];
+                        let spec = &g.rules.units[unit];
                         if spec.class == "military" {
                             force += Self::force_weight(g, unit, front_line);
                             if spec.is_melee_capable() {
@@ -3169,7 +3169,7 @@ impl BasicAi {
                         siege_support += 1
                     }
                     Item::Unit { unit } => {
-                        let spec = &g.rules.units[unit.as_str()];
+                        let spec = &g.rules.units[unit];
                         if spec.class == "military" {
                             military += 1;
                             if spec.is_melee_capable() {
@@ -3279,7 +3279,7 @@ impl BasicAi {
                                 siege_support += 1
                             }
                             Item::Unit { unit } => {
-                                let spec = &g.rules.units[unit.as_str()];
+                                let spec = &g.rules.units[unit];
                                 if spec.class == "military" {
                                     military += 1;
                                     if spec.is_melee_capable() {
@@ -3348,7 +3348,7 @@ impl BasicAi {
                             siege_support += 1
                         }
                         Item::Unit { unit } => {
-                            let spec = &g.rules.units[unit.as_str()];
+                            let spec = &g.rules.units[unit];
                             if spec.class == "military" {
                                 military += 1;
                                 if spec.is_melee_capable() {
@@ -3433,8 +3433,8 @@ impl BasicAi {
                 if g.players[pid].gold - gold < floor {
                     continue;
                 }
-                let from = &g.rules.units[g.units[&uid].kind.as_str()];
-                let to = &g.rules.units[target.as_str()];
+                let from = &g.rules.units[g.units[&uid].kind];
+                let to = &g.rules.units[target];
                 let gain = to.strength.max(to.ranged_attack_strength())
                     - from.strength.max(from.ranged_attack_strength());
                 // Support and civilian successors carry no combat strength;
@@ -3540,7 +3540,7 @@ impl BasicAi {
         }
         let (total, melee, ranged, raiders, carriers) = Self::naval_counts(g, pid);
         let has_aircraft = g.units.values().any(|unit| {
-            unit.owner == pid && g.rules.units[unit.kind.as_str()].domain.as_deref() == Some("air")
+            unit.owner == pid && g.rules.units[unit.kind].domain.as_deref() == Some("air")
         });
         g.rules
             .units
@@ -4549,7 +4549,7 @@ impl BasicAi {
             // district produced an item the engine refused - which stalled the
             // city outright, because a rejected choice ends its turn.
             let dname = Self::civ_district(g, pid, family);
-            let spec = &g.rules.districts[dname.as_str()];
+            let spec = &g.rules.districts[&dname];
             let unlocked = spec
                 .tech
                 .as_ref()
@@ -4563,7 +4563,7 @@ impl BasicAi {
             if !unlocked {
                 continue;
             }
-            let sites = g.district_sites(cid, &dname);
+            let sites = g.district_sites(cid, dname.as_str());
             if !sites.is_empty() {
                 let best = *sites
                     .iter()
@@ -4777,7 +4777,7 @@ impl BasicAi {
                 let military = g
                     .player_unit_ids(pid)
                     .into_iter()
-                    .filter(|uid| g.rules.units[g.units[uid].kind.as_str()].class == "military")
+                    .filter(|uid| g.rules.units[g.units[uid].kind].class == "military")
                     .count();
                 if military <= reserve {
                     break;
@@ -4802,8 +4802,8 @@ impl BasicAi {
                     if a.pos != b.pos || a.linked_to.is_some() || b.linked_to.is_some() {
                         return false;
                     }
-                    let a_spec = &game.rules.units[a.kind.as_str()];
-                    let b_spec = &game.rules.units[b.kind.as_str()];
+                    let a_spec = &game.rules.units[a.kind];
+                    let b_spec = &game.rules.units[b.kind];
                     let support = (a_spec.class == "support"
                         && a.kind != "military_engineer"
                         && b_spec.class == "military")
@@ -4823,8 +4823,8 @@ impl BasicAi {
                 .into_iter()
                 .find(|action| match action {
                     Action::LinkUnits { unit, with } => {
-                        let a = &g.rules.units[g.units[unit].kind.as_str()];
-                        let b = &g.rules.units[g.units[with].kind.as_str()];
+                        let a = &g.rules.units[g.units[unit].kind];
+                        let b = &g.rules.units[g.units[with].kind];
                         let support = (a.class == "support"
                             && g.units[unit].kind != "military_engineer")
                             || (b.class == "support" && g.units[with].kind != "military_engineer");
@@ -4875,7 +4875,7 @@ impl BasicAi {
             for n in g.nbrs(tile) {
                 for oid in g.units_at(n) {
                     let o = &g.units[&oid];
-                    if g.rules.units[o.kind.as_str()].class != "military" {
+                    if g.rules.units[o.kind].class != "military" {
                         continue;
                     }
                     if o.owner == pid && oid != uid {
@@ -5258,7 +5258,7 @@ impl BasicAi {
         // intentionally unavailable Move action as a failed route.
         if let Some(escort) = g.units[&uid].linked_to.filter(|peer| {
             g.units.get(peer).is_some_and(|escort| {
-                g.rules.units[escort.kind.as_str()].domain.as_deref() == Some("sea")
+                g.rules.units[escort.kind].domain.as_deref() == Some("sea")
             })
         }) {
             if g.wdist(upos, target) == 1 {
@@ -5390,7 +5390,7 @@ impl BasicAi {
             .values()
             .filter(|u| u.owner == pid && u.id != uid)
             .filter(|u| {
-                let spec = &g.rules.units[u.kind.as_str()];
+                let spec = &g.rules.units[u.kind];
                 spec.class == "military" && spec.ranged_strength <= 0.0 && !spec.siege
             })
             .min_by_key(|u| {
@@ -5791,7 +5791,7 @@ impl BasicAi {
             .units_at(pos)
             .into_iter()
             .map(|oid| &g.units[&oid])
-            .filter(|o| g.rules.units[o.kind.as_str()].class == "military")
+            .filter(|o| g.rules.units[o.kind].class == "military")
             .max_by(|a, b| {
                 effective_strength(g.unit_strength(a, true), a.hp)
                     .partial_cmp(&effective_strength(g.unit_strength(b, true), b.hp))
@@ -5850,7 +5850,7 @@ impl BasicAi {
         // doctrine would accept the eventual attack. This keeps scouts and
         // wounded units from shadowing raiders they will never strike.
         let pos = g.units[&uid].pos;
-        let ranged = g.rules.units[g.units[&uid].kind.as_str()].has_ranged_attack();
+        let ranged = g.rules.units[g.units[&uid].kind].has_ranged_attack();
         let my_cities: Vec<Pos> = g
             .cities
             .values()
@@ -5926,7 +5926,7 @@ impl BasicAi {
         enemy_ids: &[usize],
     ) -> Option<Pos> {
         let unit = &g.units[&uid];
-        if g.rules.units[unit.kind.as_str()].domain.as_deref() != Some("sea") {
+        if g.rules.units[unit.kind].domain.as_deref() != Some("sea") {
             return self.nearest_enemy(g, pid, uid, enemy_ids);
         }
         g.units
@@ -5975,7 +5975,7 @@ impl BasicAi {
 
     fn naval_escort_objective(&self, g: &Game, pid: usize, uid: u32) -> Option<Pos> {
         let unit = &g.units[&uid];
-        if g.rules.units[unit.kind.as_str()].domain.as_deref() != Some("sea") {
+        if g.rules.units[unit.kind].domain.as_deref() != Some("sea") {
             return None;
         }
         if let Some(settler) = unit.linked_to.filter(|peer| {
@@ -6076,7 +6076,7 @@ impl BasicAi {
         let Some(tile) = g.map.get(pos) else {
             return false;
         };
-        let sea_unit = g.rules.units[g.units[&uid].kind.as_str()].domain.as_deref() == Some("sea");
+        let sea_unit = g.rules.units[g.units[&uid].kind].domain.as_deref() == Some("sea");
         let water = g.rules.is_water(tile);
         if sea_unit != water {
             return false;
@@ -6114,7 +6114,7 @@ impl BasicAi {
             self.patrol_targets.remove(&uid);
         }
 
-        let domain = g.rules.units[g.units[&uid].kind.as_str()]
+        let domain = g.rules.units[g.units[&uid].kind]
             .domain
             .as_deref()
             .unwrap_or("land")
@@ -6251,7 +6251,7 @@ impl BasicAi {
         }
         let upos = g.units[&uid].pos;
         let rules = std::sync::Arc::clone(&g.rules);
-        let spec = &rules.units[g.units[&uid].kind.as_str()];
+        let spec = &rules.units[g.units[&uid].kind];
         let doctrine = Self::unit_doctrine(g, uid);
         let adjacent_enemy_settler = g.nbrs(upos).into_iter().any(|position| {
             g.units_at(position).into_iter().any(|other| {
@@ -6416,7 +6416,7 @@ impl BasicAi {
         uid: u32,
         decline_settlers: bool,
     ) -> bool {
-        if g.rules.units[g.units[&uid].kind.as_str()].class != "military" {
+        if g.rules.units[g.units[&uid].kind].class != "military" {
             return false;
         }
         let origin = g.units[&uid].pos;
@@ -6443,7 +6443,7 @@ impl BasicAi {
                             "settler" => None,
                             "builder" => Some(2),
                             _ if matches!(
-                                g.rules.units[other.kind.as_str()].class.as_str(),
+                                g.rules.units[other.kind].class.as_str(),
                                 "civilian" | "support"
                             ) => Some(1),
                             _ => None,
@@ -8398,7 +8398,7 @@ mod tests {
         let military: Vec<u32> = g
             .player_unit_ids(0)
             .into_iter()
-            .filter(|uid| g.rules.units[g.units[uid].kind.as_str()].class == "military")
+            .filter(|uid| g.rules.units[g.units[uid].kind].class == "military")
             .collect();
         let mut ai = BasicAi::new();
         ai.units(&mut g, 0);
@@ -8802,10 +8802,10 @@ mod tests {
         let ai = BasicAi::new();
 
         let ranged = ai.combined_arms_unit(&g, 0, cid, 2, 0).unwrap();
-        assert!(g.rules.units[ranged.as_str()].has_ranged_attack());
+        assert!(g.rules.units[ranged].has_ranged_attack());
 
         let melee = ai.combined_arms_unit(&g, 0, cid, 2, 2).unwrap();
-        assert!(!g.rules.units[melee.as_str()].has_ranged_attack());
+        assert!(!g.rules.units[melee].has_ranged_attack());
     }
 
     #[test]

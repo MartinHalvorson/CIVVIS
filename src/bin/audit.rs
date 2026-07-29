@@ -536,7 +536,7 @@ fn audit_turn(g: &Game, history: &mut History, found: &mut Findings, motion: &mu
                 .player_unit_ids(city.owner)
                 .into_iter()
                 .filter(|unit| {
-                    g.rules.units[g.units[unit].kind.as_str()].class == "military"
+                    g.rules.units[g.units[unit].kind].class == "military"
                 })
                 .count();
             if bounded_minor_idle(g.players[city.owner].is_minor, military, &producible) {

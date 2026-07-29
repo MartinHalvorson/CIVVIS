@@ -2412,46 +2412,46 @@ impl Rules {
     }
 
     pub fn tile_yields(&self, t: &Tile) -> Yields {
-        let mut ys = self.terrains[t.terrain.as_str()].yields;
+        let mut ys = self.terrains[t.terrain].yields;
         if t.hills {
             ys.production += 1.0;
         }
         if let Some(f) = &t.feature {
-            ys.add(self.features[f.as_str()].yields);
+            ys.add(self.features[f].yields);
         }
         if let Some(r) = &t.resource {
-            ys.add(self.resources[r.as_str()].yields);
+            ys.add(self.resources[r].yields);
         }
         if let Some(i) = &t.improvement {
-            ys.add(self.improvements[i.as_str()].yields);
+            ys.add(self.improvements[i].yields);
         }
         ys
     }
 
     pub fn is_water(&self, t: &Tile) -> bool {
-        self.terrains[t.terrain.as_str()].water
+        self.terrains[t.terrain].water
     }
 
     pub fn is_passable(&self, t: &Tile) -> bool {
         if let Some(f) = &t.feature {
-            if self.features[f.as_str()].impassable {
+            if self.features[f].impassable {
                 return false;
             }
         }
-        self.terrains[t.terrain.as_str()].passable
+        self.terrains[t.terrain].passable
     }
 
     pub fn move_cost(&self, t: &Tile) -> f64 {
         // Civ 6 movement is additive: terrain cost, +1 for Hills (the
         // database ships Hills as separate terrain rows costing 2), plus the
         // feature's MovementChange.
-        let terrain = &self.terrains[t.terrain.as_str()];
+        let terrain = &self.terrains[t.terrain];
         let mut c = terrain.move_cost;
         if t.hills {
             c += 1.0;
         }
         if let Some(f) = &t.feature {
-            c += self.features[f.as_str()].move_cost;
+            c += self.features[f].move_cost;
         }
         if t.road > 0 && !terrain.water {
             c = 1.0; // every route flattens terrain to at most 1 MP

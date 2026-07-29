@@ -64,7 +64,7 @@ impl BeliefState {
                     pos: unit.pos,
                     turn: g.turn,
                     owner: unit.owner,
-                    kind: unit.kind.clone(),
+                    kind: unit.kind.to_string(),
                     strength: g.unit_strength(unit, false),
                 },
             );

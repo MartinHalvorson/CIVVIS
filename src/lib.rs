@@ -2202,7 +2202,7 @@ mod tests {
             assert!(!spec.leader.is_empty());
             assert!(!spec.ability.is_empty());
             if let Some(uu) = &spec.unique_unit {
-                let us = &g.rules.units[uu.as_str()];
+                let us = &g.rules.units[uu];
                 assert_eq!(
                     us.unique_to.as_deref(),
                     Some(name),

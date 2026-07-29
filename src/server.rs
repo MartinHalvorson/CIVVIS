@@ -19,6 +19,7 @@ use crate::game::{
     Action, Game, GameOptions, LeaderPool, PlayOnMode, VictoryConditions, CIV6_LEADER_POOL,
 };
 use crate::obs::{observation, observation_player_view, observation_spectator};
+use crate::name::Name;
 use crate::rules::Rules;
 use crate::setup::{
     start_era_from_id, start_era_id, BaseRuleset, GameSpeed, MapPoles, MapScript, MapSize,
@@ -223,7 +224,7 @@ struct ChronicleSnapshot {
     turn: u32,
     cities: BTreeMap<u32, ChronicleCity>,
     districts: BTreeMap<Pos, ChronicleDistrict>,
-    buildings: BTreeMap<(u32, String), usize>,
+    buildings: BTreeMap<(u32, Name), usize>,
     wonders: BTreeMap<String, usize>,
     religions: Vec<Option<String>>,
     governments: Vec<Option<String>>,
@@ -265,7 +266,7 @@ impl ChronicleWar {
 
 struct ChronicleState {
     districts: BTreeSet<String>,
-    buildings: BTreeSet<String>,
+    buildings: BTreeSet<Name>,
     population_milestones: Vec<i32>,
     wars: BTreeMap<(usize, usize), ChronicleWar>,
 }
@@ -304,7 +305,7 @@ impl ChronicleSnapshot {
                 }
             }
             for wonder in city.wonders.keys() {
-                wonders.insert(wonder.clone(), city.owner);
+                wonders.insert(wonder.to_string(), city.owner);
             }
             combat_owners
                 .entry(city.pos)
@@ -314,7 +315,7 @@ impl ChronicleSnapshot {
         let military_units = game
             .units
             .values()
-            .filter(|unit| game.rules.units[unit.kind.as_str()].class == "military")
+            .filter(|unit| game.rules.units[unit.kind].class == "military")
             .map(|unit| {
                 combat_owners
                     .entry(unit.pos)
@@ -402,7 +403,7 @@ fn completed_districts(game: &Game) -> BTreeSet<String> {
         .collect()
 }
 
-fn completed_buildings(game: &Game) -> BTreeSet<String> {
+fn completed_buildings(game: &Game) -> BTreeSet<Name> {
     game.cities
         .values()
         .flat_map(|city| city.buildings.iter())
@@ -8732,7 +8733,7 @@ mod tests {
             .units
             .values()
             .find(|unit| {
-                unit.owner == 1 && game.rules.units[unit.kind.as_str()].class == "military"
+                unit.owner == 1 && game.rules.units[unit.kind].class == "military"
             })
             .map(|unit| unit.id)
             .expect("player two starts with a military unit");

@@ -601,7 +601,7 @@ impl StrategicAi {
         };
         let state = g.units.get(&unit)?;
         (state.owner == pid
-            && g.rules.units[state.kind.as_str()].class == "religious")
+            && g.rules.units[state.kind].class == "religious")
             .then_some(unit)
     }
 
