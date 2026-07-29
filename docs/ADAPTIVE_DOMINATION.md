@@ -58,6 +58,12 @@ resource, yield, or score. If both independent mechanisms pass, their
 composition requires a separate factorial or integration test; neither result
 may be silently attributed to the other.
 
+This is specifically a test of the generation-14 `AdvancedAi` policy layer.
+The stronger measured `strategic_deep` controller wraps that layer in periodic
+macro search and can retarget it again, so this experiment does not establish
+transfer through that wrapper. A passing holdout may license a separate
+strongest-controller integration test; it cannot skip one.
+
 ## Frozen treatment
 
 `post_conquest_domination` wraps the exact deployed generation-14 champion in
