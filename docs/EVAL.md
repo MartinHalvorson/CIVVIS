@@ -6018,3 +6018,91 @@ position*, which the unit test asserts; across a whole game the three arms play
 different trajectories once a grant has changed the board, so their firing
 counts are not required to sum. Read the partition as a property of the
 decision rule, not of the totals.
+
+## 2026-07-29 — the expansion constraint is the walk, and the ladder reads multiplicatively
+
+Four batches, all at `--players 4 --turns 500 --seed 460000` on 60x38, each
+with the shared `none` control reproducing **23.0%** and the `none` treatment
+arm returning **0 discordant cells** of 200.
+
+### The decomposition of `Grant::Expansion` is complete
+
+| candidate | grant | granted seat won | McNemar | verdict |
+|---|---|---|---|---|
+| what a settler **costs** | `rebate` | +0.45 cities, **0** extra settlers trained | — | null |
+| what the agent **wants** | `expansion_beyond` | 27.5% | p=0.2110, 41 cells | null |
+| the **decision** | `expansion_order` | **24.0%** | **p=0.8991, 62 cells** | null |
+| cities it already wanted | `expansion_wanted` | **53.0%** | p=0.0000, 92 cells | HEADROOM |
+| the **walk** | `expansion_swift` | **59.5%** | **p=0.0000, 82-9** | **HEADROOM** |
+
+`expansion_swift` is the plain grant plus enough `moves_left` to reach wherever
+the agent already chose to go, so its increment over `expansion`'s 52.5% is
+**+7.0 points of pure transit** on top of +29.5. It is the largest single-grant
+number on this axis.
+
+★★★ **Read the five together and the axis is tempo, nothing else.** `rebate`
+gave the production and the population back and the city still had to queue and
+finish a Settler — null. `expansion_order` forced a Settler to the head of the
+queue and the city still had to pay and wait a median 9.1 turns — null, on 62
+discordant cells, which is a powered null and not a shrug. What pays is the city
+existing *sooner*: the granted Settler skips the build, and `swift` skips the
+walk as well. **Nothing about price, appetite, or willingness moves this axis.**
+
+That also closes the last live reading from #588 and #569. The city target is
+not the constraint (`expansion_beyond`), affordability is not the constraint
+(`rebate`), and the production ranking's refusal to queue a Settler is not the
+constraint either (`expansion_order`).
+
+### The difficulty ladder, and a correction
+
+`--grant expansion` at each rung, 50 pairs a level (100 cells), same seed:
+
+| difficulty | control | expansion | additive | **ratio** | McNemar | fires/game |
+|---|---|---|---|---|---|---|
+| prince (3) | 23.0% | 52.5% | +29.5 | **2.3x** | p=0.0000 | 5.6 |
+| king (4) | 14.0% | 41.0% | +27.0 | **2.9x** | **p=0.0000** | 5.7 |
+| emperor (5) | 4.0% | 8.0% | +4.0 | **2.0x** | p=0.3438 | 6.3 |
+| immortal (6) | 1.0% | 3.0% | +2.0 | **3.0x** | p=0.6250 | 6.5 |
+| deity (7) | 0.0% | 1.0% | +1.0 | — | p=0.5000 | 7.2 |
+
+**The agent breaks between King and Emperor** — 14.0% to 4.0%. That is the
+number this document asked for on 2026-07-22 and nobody had produced: it stays
+competitive through King and collapses at Emperor.
+
+⚠ **Correction to an earlier reading in this session.** The collapsing *additive*
+gap was first written up as the expansion headroom failing to transfer up the
+ladder. That is wrong in the way that matters. **The ratio is stable at 2-3x at
+every rung**, and an additive gap must shrink when the base goes to zero. The
+grant is as valuable at Immortal as at Prince; what changes is the base it
+multiplies. The grant also fires *more* as difficulty rises (5.6 to 7.2), so
+none of this is the treatment going inert.
+
+★ **The consequence is the useful part.** A 3x multiplier on a 4% base is 12%,
+against a parity of 25%. **No single perfect subsystem can clear Emperor** —
+several have to compose. That is what `Grant::Compound` is for, and it is why
+the interesting rung is Emperor rather than Deity, where a 0% base cannot
+resolve a multiplicative effect at all.
+
+### The routing headroom survives the shipped genome
+
+`ablate --mode best-lane --pairs 25 --seed 430000`, 50 cells, 350 games. The
+recorded routing result was dated 2026-07-26, one day before the gen-14 genome
+was embedded in `0a5afd5`, so it was measured on an agent playing
+`Weights::default()`. Re-measured on the shipped agent:
+
+| arm | won |
+|---|---|
+| adaptive | **32.0%** |
+| **some lane** | **76.0%** (p=0.0000 over 24 discordant cells) |
+| committed Religion | 60.0% |
+| committed Diplomacy | **42.0%** |
+| Science / Culture / Domination / Score | **0/50 each** |
+
+It reproduces and is **larger** than the pre-genome reading. Two lanes now beat
+adapting rather than one — Diplomacy at 42% is new, and the city-state work in
+#602 is the obvious candidate. **Four of six lanes still never win**, so the
+agent is still spending planning turns on lanes that cannot convert at this
+player count and turn budget.
+
+So two headrooms are confirmed on the shipped agent: **transit** (+36.5 over
+control) and **routing** (adaptive 32% against a 76% ceiling).
