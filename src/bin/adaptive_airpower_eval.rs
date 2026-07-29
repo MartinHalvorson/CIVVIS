@@ -427,13 +427,18 @@ fn aircraft_better(candidate: AircraftCandidate, old: AircraftCandidate) -> bool
         == Ordering::Less
 }
 
-fn airpower_order(g: &Game, pid: usize, strategy: Option<&str>) -> Option<AirpowerOrder> {
+fn airpower_order(
+    g: &Game,
+    pid: usize,
+    strategy: Option<&str>,
+    airbase_already_ordered: bool,
+) -> Option<AirpowerOrder> {
     if strategy != Some("conquest") || !g.players[pid].techs.contains(&Name::new("flight")) {
         return None;
     }
     let bases = aerodrome_counts(g, pid);
     if bases.built + bases.queued == 0 {
-        if !air_unit_unlocked_and_funded(g, pid) {
+        if airbase_already_ordered || !air_unit_unlocked_and_funded(g, pid) {
             return None;
         }
         let mut best: Option<AirbaseCandidate> = None;
@@ -725,7 +730,7 @@ fn play(
             let resource_ready = air_unit_unlocked_and_funded(&game, pid);
             census.resource_ready_turns +=
                 (strategy == Some("conquest") && flight && resource_ready) as u32;
-            if let Some(order) = airpower_order(&game, pid, strategy) {
+            if let Some(order) = airpower_order(&game, pid, strategy, census.airbase_orders > 0) {
                 let resource_before = match order.stage {
                     OrderStage::Aircraft(unit) => game.rules.units[&unit]
                         .requires_resource
@@ -1808,8 +1813,8 @@ mod tests {
     #[test]
     fn treatment_bootstraps_one_real_airbase_then_a_sequential_two_unit_wing() {
         let mut game = airpower_fixture();
-        assert!(airpower_order(&game, 0, Some("science")).is_none());
-        let base = airpower_order(&game, 0, Some("conquest")).unwrap();
+        assert!(airpower_order(&game, 0, Some("science"), false).is_none());
+        let base = airpower_order(&game, 0, Some("conquest"), false).unwrap();
         assert_eq!(base.stage, OrderStage::Airbase);
         let Action::Produce {
             city,
@@ -1828,11 +1833,15 @@ mod tests {
         )
         .unwrap();
         assert!(
-            airpower_order(&game, 0, Some("conquest")).is_none(),
+            airpower_order(&game, 0, Some("conquest"), false).is_none(),
             "a queued airbase must prevent a duplicate treatment base"
         );
 
         game.cities.get_mut(&city).unwrap().queue.clear();
+        assert!(
+            airpower_order(&game, 0, Some("conquest"), true).is_none(),
+            "a displaced treatment queue must not authorize a second airbase"
+        );
         game.cities
             .get_mut(&city)
             .unwrap()
@@ -1840,14 +1849,14 @@ mod tests {
             .insert(district, pos);
         game.map.tiles.get_mut(&pos).unwrap().district = Some(district);
         game.map.tiles.get_mut(&pos).unwrap().district_foundation = None;
-        let aircraft = airpower_order(&game, 0, Some("conquest")).unwrap();
+        let aircraft = airpower_order(&game, 0, Some("conquest"), true).unwrap();
         assert_eq!(
             aircraft.stage,
             OrderStage::Aircraft(Name::new("jet_bomber"))
         );
         game.apply(0, &aircraft.action).unwrap();
         assert!(
-            airpower_order(&game, 0, Some("conquest")).is_none(),
+            airpower_order(&game, 0, Some("conquest"), true).is_none(),
             "one airbase cannot queue the second aircraft over the first"
         );
     }
