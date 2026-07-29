@@ -71,9 +71,10 @@ improve game strength without reducing reliable power.
 
 ## Frozen treatment
 
-A later implementation PR may add a default-off
-`advanced_reactor_marginal` evaluator entrant. It must not change shipped
-`AdvancedAi` while this experiment is running.
+A later implementation PR may add a default-off treatment private to the
+pinned evaluator runner. It must not add a public factory whose controller can
+drift from the evaluator, or change shipped `AdvancedAi` while this experiment
+is running.
 
 For a coal, oil, or uranium conversion candidate, the treatment will:
 
@@ -243,14 +244,16 @@ reproducibility/liveness guards; the already-frozen treatment, screen seed,
 confirmation seed, endpoints, thresholds, stop rules, and map-level inference
 are unchanged.
 
-The default-off treatment and named evaluator entrant were implemented at
-`d63fad7`; the matched runner followed separately at `5d2d5f5`. Before any
+The default-off treatment was implemented at `d63fad7`; the matched runner
+followed separately at `5d2d5f5`. A transient public entrant constructed
+default weights instead of the runner's pinned generation-14 genome, so it was
+removed before any registered seed was opened. Before any
 registered run, `f1f10b8` restored the stock expression's exact left-to-right
 floating-point evaluation order and added a fixture where regrouping changes
 the IEEE-754 result, while `b320c93` bound conversion rates to counted focal
 actor turns instead of reported game turns. The focused runner contract is 8/8
-green, and the underlying marginal-valuation, bit-level stock-arithmetic, and
-entrant-provenance tests pass. A one-map, one-turn, one-job null diagnostic used
+green, and the underlying marginal-valuation and bit-level stock-arithmetic
+tests pass. A one-map, one-turn, one-job null diagnostic used
 nonregistered seed `97590`: it printed generation 14 and FNV-1a
 `0x40b1fbb2a5b88bc6`, realized 105x44 / 4,412 tiles, reproduced both focal
 results and complete serialized terminal Games exactly, and labeled itself
@@ -258,5 +261,5 @@ diagnostic only. Unknown, positional, duplicate, valueless, and wrong-controller
 CLI probes all exit 2 before game construction.
 
 No invocation has used null seed `9975999`, screen seed `9976000`, confirmation
-seed `9977000`, or a map derived from them. The exact null remains behind the
-older registered simulator queue, with #561 retaining the sole six-core slot.
+seed `9977000`, or a map derived from them. The exact null remains next in the
+registered simulator queue.
