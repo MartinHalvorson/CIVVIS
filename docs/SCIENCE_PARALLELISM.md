@@ -153,8 +153,9 @@ it. The treatment, world-profile schedule, seats, seed ranges, map counts,
 endpoints, thresholds, stop rules, observation horizon, and resource cap are
 unchanged. The earlier one-turn smoke at diagnostic seed 9,982,999 exercised
 the stock-weight replay path and is not evidence for the amended champion
-population; the required frozen null remains unopened and will validate the
-champion replay exactly.
+population. After implementation, the same non-focal seed was replayed for one
+turn under the champion solely to validate mechanics; the required frozen null
+remains unopened and will validate the full-horizon champion replay exactly.
 
 ## Observation and hypothesis
 
@@ -305,6 +306,19 @@ independent preregistration commit `0d643d3`:
   reproduced all 8 direct/replay focal cells exactly. The prospective
   champion-controller amendment above supersedes that controller population,
   so this smoke is diagnostic history rather than champion-null evidence.
+
+The champion-controller design was frozen independently at `2a14f26` and then
+implemented at `e7058a1960fdeedbef94ec2d0e85bbe16411437d`:
+
+- `cargo test --release --locked --bin science_parallelism_eval -j 1` passed
+  all 8 focused tests, including exact loading/application of the committed
+  champion weights;
+- the rebuilt standalone binary rejected `--ai advanced` with exit 2 before
+  constructing a game; and
+- a four-map, one-turn null diagnostic at seed 9,982,999 used one job, reported
+  `advanced_evolved` embedded champion generation 14, exercised all four
+  deployment-null profiles, and reproduced all 8 direct/replay focal cells
+  exactly. It was not a focal batch and cannot spend a gate.
 
 Execution audit: immediately before the standalone rebuild, an intended
 conflict check invoked the stale pre-amendment release executable. That binary
