@@ -385,10 +385,38 @@ pub enum Grant {
     /// and `advanced_envoys` is where that work goes. If it reads null, 48
     /// city-states are decoration and the axis closes.
     Suzerain,
+    /// Every subsystem grant at once.
+    ///
+    /// The question the ladder forced. At Prince, `Expansion` is worth **+29.5
+    /// points** (23.0% to 52.5%, 95 discordant cells, p=0.0000). At Deity the
+    /// same grant on the same maps and seed is worth **+1.0 point** on two
+    /// discordant cells — and it is not inert there, it fires **7.2 times a
+    /// game against Prince's 5.6**. A perfect subsystem stops mattering once
+    /// the opposition is strong.
+    ///
+    /// One reading is that the seat at Deity is behind on *every* subsystem at
+    /// once, so relieving one changes nothing. This tests that directly:
+    /// relieve them all. It is the only grant here not trying to isolate
+    /// anything — it is an upper bound on the whole modelled agent.
+    ///
+    /// - **Compound moves Deity off the floor** — the subsystems are jointly
+    ///   sufficient and the work is additive, so the collapse at Deity is a
+    ///   floor effect rather than a transfer failure.
+    /// - **Compound is still ~0 at Deity** — perfecting every subsystem this
+    ///   harness models does not beat the handicap, and the rest of the gap is
+    ///   in something nobody has instrumented (tactics, timing, diplomacy) or
+    ///   in the handicap itself. Either way the roadmap should stop pricing
+    ///   work against single-subsystem oracles measured at Prince.
+    ///
+    /// **Excludes [`Grant::Treasury`]**, the instrument's calibration rather
+    /// than a subsystem — folding in an unearned pile of Gold would make a win
+    /// unreadable. **Excludes the expansion splits and [`Grant::Rebate`]**,
+    /// which are subsets or controls of `Expansion` and would double-count it.
+    Compound,
 }
 
 impl Grant {
-    pub const ALL: [Grant; 15] = [
+    pub const ALL: [Grant; 16] = [
         Grant::None,
         Grant::Modernity,
         Grant::Taker,
@@ -404,6 +432,7 @@ impl Grant {
         Grant::ExpansionSwift,
         Grant::IdleReserve,
         Grant::Suzerain,
+        Grant::Compound,
     ];
 
     pub fn name(self) -> &'static str {
@@ -423,6 +452,7 @@ impl Grant {
             Grant::ExpansionSwift => "expansion_swift",
             Grant::IdleReserve => "idle_reserve",
             Grant::Suzerain => "suzerain",
+            Grant::Compound => "compound",
         }
     }
 
@@ -887,6 +917,28 @@ impl<A: Ai> Oracle<A> {
         }
     }
 
+    /// Apply every subsystem grant to the same seat on the same turn.
+    ///
+    /// Order is fixed and deliberate rather than alphabetical: ground before
+    /// siting, because `grant_siting` re-sites onto the best legal tile and
+    /// `grant_ground` is what makes the good tiles legal to begin with; and
+    /// expansion last, so a Settler granted this turn is not immediately
+    /// re-sited or counted against a city that does not exist yet.
+    ///
+    /// `self.fired` accumulates across all of them, so a compound run's firing
+    /// count is a sum over grants and is NOT comparable to any single grant's.
+    /// The harness only uses it to prove the treatment happened at all.
+    fn grant_compound(&mut self, g: &mut Game, pid: usize) {
+        self.grant_modernity(g, pid);
+        self.grant_attrition(g, pid);
+        self.grant_taker(g, pid);
+        self.grant_ground(g, pid);
+        self.grant_siting(g, pid);
+        self.confiscate_idle_reserve(g, pid);
+        self.grant_suzerain(g, pid);
+        self.grant_expansion(g, pid);
+    }
+
     fn grant_treasury(&mut self, g: &mut Game, pid: usize) {
         g.players[pid].gold += 200.0;
         g.players[pid].faith += 100.0;
@@ -990,8 +1042,13 @@ impl<A: Ai> Oracle<A> {
     }
 }
 
-impl<A: Ai> Ai for Oracle<A> {
-    fn take_turn(&mut self, g: &mut Game, pid: usize) {
+impl<A: Ai> Oracle<A> {
+    /// Apply the grant and nothing else.
+    ///
+    /// Split out of `take_turn` so a test can ask "would this grant have fired
+    /// here" without also advancing the agent — which would move the position
+    /// out from under the question.
+    fn apply_grant(&mut self, g: &mut Game, pid: usize) {
         if g.winner.is_none() && !g.players[pid].is_barbarian && !g.players[pid].is_minor {
             match self.grant {
                 Grant::None => {}
@@ -1009,8 +1066,15 @@ impl<A: Ai> Ai for Oracle<A> {
                 Grant::ExpansionSwift => self.grant_expansion_swift(g, pid),
                 Grant::IdleReserve => self.confiscate_idle_reserve(g, pid),
                 Grant::Suzerain => self.grant_suzerain(g, pid),
+                Grant::Compound => self.grant_compound(g, pid),
             }
         }
+    }
+}
+
+impl<A: Ai> Ai for Oracle<A> {
+    fn take_turn(&mut self, g: &mut Game, pid: usize) {
+        self.apply_grant(g, pid);
         self.inner.take_turn(g, pid);
     }
 
@@ -1513,6 +1577,68 @@ mod tests {
             }
         }
         assert!(rebate.fired() > 0, "the rebate never paid, so the cap is untested");
+    }
+
+    /// The compound grant must actually apply every component, not silently
+    /// become one of them.
+    ///
+    /// A composite is the easiest kind of treatment to get wrong without
+    /// noticing: if one component's precondition never holds, the run measures
+    /// the others under a name that promises all of them, and a null reads as
+    /// "perfecting everything is worth nothing" when it means "one grant was
+    /// switched off". So this asserts each component fires at least once
+    /// within the same game, checked one at a time against a solo oracle on
+    /// the identical position.
+    #[test]
+    fn the_compound_grant_applies_every_component() {
+        let components = [
+            Grant::Modernity,
+            Grant::Attrition,
+            Grant::Taker,
+            Grant::Ground,
+            Grant::Siting,
+            Grant::IdleReserve,
+            Grant::Suzerain,
+            Grant::Expansion,
+        ];
+        let mut g = Game::new(4, 28, 18, 8_108, 200, 2);
+        let mut compound = Oracle::new(AdvancedAi::new(), Grant::Compound);
+        let mut others = AdvancedAi::fleet(&g);
+        let mut ever: std::collections::BTreeMap<&str, bool> =
+            components.iter().map(|c| (c.name(), false)).collect();
+        while g.winner.is_none() && g.turn <= 120 {
+            let pid = g.current;
+            if pid == 0 {
+                // Each component is applied to its own clone of the same
+                // position, so "did it fire here" is asked of every one of
+                // them under identical conditions.
+                for component in components {
+                    let mut probe = g.clone();
+                    let mut solo = Oracle::new(AdvancedAi::new(), component);
+                    solo.apply_grant(&mut probe, 0);
+                    if solo.fired() > 0 {
+                        ever.insert(component.name(), true);
+                    }
+                }
+                compound.take_turn(&mut g, pid);
+            } else {
+                others[pid].take_turn(&mut g, pid);
+            }
+            if g.winner.is_none() && g.current == pid {
+                let _ = g.apply(pid, &crate::game::Action::EndTurn);
+            }
+        }
+        assert!(compound.fired() > 0, "the compound grant never fired at all");
+        let silent: Vec<&str> = ever
+            .iter()
+            .filter(|(_, fired)| !**fired)
+            .map(|(name, _)| *name)
+            .collect();
+        assert!(
+            silent.is_empty(),
+            "these components never fired in this game, so a compound result \
+would not be about them: {silent:?}"
+        );
     }
 
     /// The swift grant must actually buy transit — checked at **both** map
