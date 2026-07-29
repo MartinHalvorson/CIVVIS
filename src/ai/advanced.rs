@@ -778,6 +778,28 @@ pub struct AdvancedAi {
     ///
     /// Reachable as `advanced_expansion_payback`, paired against `advanced`.
     pub expansion_pays_back: bool,
+    /// Where the city-target ramp starts. **3 by default, the shipped value.**
+    ///
+    /// `assess` computes `desired_cities = (3 + turn / cadence).min(map_capacity).min(6)`
+    /// — the empire wants three cities at the opening and adds roughly one per
+    /// era. #554's oracle handed a seat settlers up to **six** from the start
+    /// and more than doubled its win rate (23.0% to 52.3%, p=0.0000 over 300
+    /// games). The gap between those two numbers is this ramp.
+    ///
+    /// ⚠ **`GENOME.md`'s "`city_target` saturates above six" does not cover
+    /// this.** That sweep moved the `city_target` *gene*, and the gene is only
+    /// reached through `unwrap_or_else` when there is no plan — a live
+    /// `AdvancedAi` reads `plan.desired_cities` and never consults it. The
+    /// sweep measured a fallback path, which is why every value above six came
+    /// back identical to four decimal places.
+    ///
+    /// #569 removed the affordability objection: the missing cities cost 0.5%
+    /// of everything the empire produces. And on the deployment map the empire
+    /// reaches 4.83 of its own 5.00 target, so what limits it is the target,
+    /// not its ability to hit one.
+    ///
+    /// Reachable as `advanced_wide_opening`, paired against `advanced`.
+    pub city_target_floor: usize,
     pub city_strategy: bool,
     /// Ablation halves of `city_strategy`, so the loss above can be attributed
     /// rather than guessed at. Each is meaningless unless `city_strategy` is
@@ -1086,6 +1108,7 @@ impl AdvancedAi {
             settler_stalls: BTreeMap::new(),
             parallel_settlers: false,
             expansion_pays_back: false,
+            city_target_floor: 3,
             city_strategy: false,
             city_strategy_emphasis: true,
             city_strategy_roles: true,
@@ -2331,7 +2354,7 @@ impl AdvancedAi {
         // the cadence with game speed; the old fixed turn-175 cutoff expired
         // before the five-city target even became active on Standard speed.
         let city_cadence = g.standard_duration(90).max(1) as usize;
-        let desired_cities = (3 + g.turn as usize / city_cadence)
+        let desired_cities = (self.city_target_floor + g.turn as usize / city_cadence)
             .min(map_capacity)
             .min(6);
         let mut expansion_origins: Vec<Pos> = cities.iter().map(|cid| g.cities[cid].pos).collect();
@@ -3417,6 +3440,35 @@ impl AdvancedAi {
         }
     }
 
+    /// Whether replacing one active card with another can fit in the current
+    /// typed and wildcard policy slots. This mirrors the engine's set-level
+    /// seating rule before either action is applied: probing by actually
+    /// unslotting a card writes a real action even when the candidate then
+    /// fails and the old card is restored.
+    fn policy_swap_fits(g: &Game, pid: usize, current: &Name, candidate: &str) -> bool {
+        let slots = g.gov_slots(pid);
+        let (mut military, mut economic, mut diplomatic, mut wildcard) =
+            (0i64, 0i64, 0i64, 0i64);
+        let mut count = |card: &str| match g.rules.policies[card].slot.as_str() {
+            "military" => military += 1,
+            "economic" => economic += 1,
+            "diplomatic" => diplomatic += 1,
+            _ => wildcard += 1,
+        };
+        for card in g.players[pid]
+            .policies
+            .iter()
+            .filter(|card| *card != current)
+        {
+            count(card);
+        }
+        count(candidate);
+        let overflow = (military - slots.military).max(0)
+            + (economic - slots.economic).max(0)
+            + (diplomatic - slots.diplomatic).max(0);
+        overflow + wildcard <= slots.wildcard
+    }
+
     /// Reassess policy cards as the civic tree advances instead of treating
     /// the first cards which filled a government as permanent.  Each plan has
     /// a complete late-game portfolio, while temporary Dark Age cards are
@@ -3735,6 +3787,7 @@ impl AdvancedAi {
                 .policies
                 .iter()
                 .filter(|current| !desired_set.contains(current.as_str()))
+                .filter(|current| Self::policy_swap_fits(g, pid, current, card))
                 .cloned()
                 .collect();
             replaceable.sort_by(|first, second| {
@@ -18224,6 +18277,113 @@ mod tests {
     }
 
     #[test]
+    fn policy_reassessment_only_executes_swaps_that_can_fit() {
+        let install = |game: &mut Game, government: &str, policies: &[&str]| {
+            let settler = game
+                .player_unit_ids(0)
+                .into_iter()
+                .find(|unit| game.units[unit].kind == "settler")
+                .unwrap();
+            game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+            game.players[0].government = Some(government.to_string());
+            game.players[0].policies = policies.iter().map(|card| Name::new(*card)).collect();
+        };
+
+        // Fascism plus Big Ben seats six Military cards by spending both
+        // wildcard slots, two Economic cards, and one Diplomatic card. The
+        // remaining Conquest card is Diplomatic, so removing Rationalism
+        // cannot make Gunboat Diplomacy fit: the free Economic slot does not
+        // relieve either Military overflow slot. Probing that impossible swap
+        // used to emit an Unslot/Slot pair which restored the exact same state.
+        let mut blocked = Game::new(2, 24, 16, 79_102, 250, 0);
+        install(
+            &mut blocked,
+            "fascism",
+            &[
+                "lightning_warfare",
+                "total_war",
+                "propaganda",
+                "levee_en_masse",
+                "force_modernization",
+                "logistics",
+                "five_year_plan",
+                "rationalism",
+                "cryptography",
+            ],
+        );
+        let city = blocked.player_city_ids(0)[0];
+        let position = blocked.cities[&city].pos;
+        blocked
+            .cities
+            .get_mut(&city)
+            .unwrap()
+            .wonders
+            .insert(crate::name!("big_ben"), position);
+        blocked.players[0]
+            .civics
+            .extend([crate::name!("ideology"), crate::name!("the_enlightenment")]);
+        let policies_before = blocked.players[0].policies.clone();
+        let log_before = blocked.log.len();
+
+        AdvancedAi::new().strategic_policies(&mut blocked, 0, GrandStrategy::Conquest);
+
+        assert_eq!(blocked.players[0].policies, policies_before);
+        assert_eq!(
+            blocked
+                .log
+                .since(log_before)
+                .filter(|(_, action)| matches!(
+                    action,
+                    Action::SlotPolicy { .. } | Action::UnslotPolicy { .. }
+                ))
+                .count(),
+            0,
+            "an impossible replacement must not be executed and undone"
+        );
+
+        // A different typed card can still be the right replacement. Here an
+        // extra Economic card occupies Autocracy's wildcard slot. Removing it
+        // frees that wildcard for Logistics, so the exact set-fit check must
+        // allow the cross-type Rationalism -> Logistics swap.
+        let mut valid = Game::new(2, 24, 16, 79_103, 250, 0);
+        install(
+            &mut valid,
+            "autocracy",
+            &[
+                "lightning_warfare",
+                "five_year_plan",
+                "rationalism",
+                "cryptography",
+            ],
+        );
+        valid.players[0]
+            .civics
+            .extend([
+                crate::name!("ideology"),
+                crate::name!("mercantilism"),
+                crate::name!("the_enlightenment"),
+            ]);
+        let log_before = valid.log.len();
+
+        AdvancedAi::new().strategic_policies(&mut valid, 0, GrandStrategy::Conquest);
+
+        assert!(valid.players[0].policies.contains(&crate::name!("logistics")));
+        assert!(!valid.players[0].policies.contains(&crate::name!("rationalism")));
+        assert_eq!(
+            valid
+                .log
+                .since(log_before)
+                .filter(|(_, action)| matches!(
+                    action,
+                    Action::SlotPolicy { .. } | Action::UnslotPolicy { .. }
+                ))
+                .count(),
+            2,
+            "one valid replacement is one Unslot followed by one Slot"
+        );
+    }
+
+    #[test]
     fn dark_age_policies_follow_strategy_and_never_close_live_expansion() {
         let mut game = Game::new(2, 24, 16, 79_101, 250, 0);
         let settler = game
@@ -21713,6 +21873,166 @@ mod tests {
                 shortfall_cost / maps as f64,
                 shortfall_cost / total.max(1.0) * 100.0
             );
+        }
+        println!();
+    }
+
+    /// Fires-check for `city_target_floor`, at both map scales.
+    ///
+    /// ⚠ The criterion is the **outcome** — cities at end — not a mechanism
+    /// bucket. `docs/EVAL.md` records the last expansion fires-check choosing
+    /// "the every-city-mid-build bucket must collapse", which the treatment
+    /// could never have moved, so it was unfalsifiable in the helpful
+    /// direction. If cities at end do not rise, nothing else here matters.
+    ///
+    /// Run with `cargo test --release city_target_floor_fires -- --ignored --nocapture`.
+    #[test]
+    #[ignore = "census, not an assertion; run explicitly with --nocapture"]
+    fn city_target_floor_fires() {
+        for (label, players, width, height) in
+            [("eval 4p 24x16", 4usize, 24i32, 16i32), ("deployment 6p 74x46", 6, 74, 46)]
+        {
+            for floor in [3usize, 6] {
+                let mut cities = 0.0f64;
+                let mut target = 0.0f64;
+                let mut score = 0.0f64;
+                let maps = 6u64;
+                for map in 0..maps {
+                    let mut game =
+                        Game::new_full(players, width, height, 480_000 + map, 200, 1, false);
+                    let mut ais: Vec<AdvancedAi> = (0..game.players.len())
+                        .map(|_| {
+                            let mut ai = AdvancedAi::new();
+                            ai.city_target_floor = floor;
+                            ai
+                        })
+                        .collect();
+                    game.set_fog_memory(false);
+                    while game.winner.is_none() && game.turn <= game.max_turns {
+                        let pid = game.current;
+                        ais[pid].take_turn(&mut game, pid);
+                        if game.winner.is_none() && game.current == pid {
+                            let _ = game.apply(pid, &crate::game::Action::EndTurn);
+                        }
+                    }
+                    cities += game.player_city_ids(0).len() as f64;
+                    score += game.score(0) as f64;
+                    target += ais[0]
+                        .plan
+                        .as_ref()
+                        .map(|p| p.desired_cities as f64)
+                        .unwrap_or(0.0);
+                }
+                println!(
+                    "  [{label}] floor={floor}  cities {:.2} / target {:.2}   score {:.0}",
+                    cities / maps as f64,
+                    target / maps as f64,
+                    score / maps as f64
+                );
+            }
+        }
+        println!();
+    }
+
+    /// Census, not an assertion: how much of its treasury does an empire never
+    /// spend?
+    ///
+    /// The `ablate` harness's calibration grant hands a seat 200 Gold and 100
+    /// Faith a turn and wins **89 of 100** — by a wide margin the largest
+    /// effect any grant has produced, against `ground`, `siting`, `taker`,
+    /// `modernity` and `attrition` all null and `expansion` at 52.3%. That
+    /// grant is not a subsystem and proves nothing on its own; it is the
+    /// instrument's proof that it can detect an advantage.
+    ///
+    /// But it does raise a question nothing in `docs/` has asked: the treasury
+    /// is evidently worth an enormous amount, so **does this agent use the one
+    /// it already has?** A balance sitting idle is capital earning nothing, and
+    /// unlike expansion it costs no production to deploy.
+    ///
+    /// Reported as *turns of income held*, because an absolute balance is not
+    /// interpretable on its own — 300 Gold is prudent at 5 gold per turn and
+    /// dead weight at 40.
+    ///
+    /// Run with `cargo test --release idle_treasury_census -- --ignored --nocapture`.
+    #[test]
+    #[ignore = "census, not an assertion; run explicitly with --nocapture"]
+    fn idle_treasury_census() {
+        for (label, players, width, height) in
+            [("eval 4p 24x16", 4usize, 24i32, 16i32), ("deployment 6p 74x46", 6, 74, 46)]
+        {
+            let mut gold_samples: Vec<f64> = Vec::new();
+            let mut faith_samples: Vec<f64> = Vec::new();
+            let mut gpt_samples: Vec<f64> = Vec::new();
+            let mut gold_turns_held: Vec<f64> = Vec::new();
+            let mut peak_gold = 0.0f64;
+            let maps = 6u64;
+
+            for map in 0..maps {
+                let mut game =
+                    Game::new_full(players, width, height, 480_000 + map, 200, 1, false);
+                let mut ais: Vec<AdvancedAi> =
+                    (0..game.players.len()).map(|_| AdvancedAi::new()).collect();
+                game.set_fog_memory(false);
+                while game.winner.is_none() && game.turn <= game.max_turns {
+                    let pid = game.current;
+                    ais[pid].take_turn(&mut game, pid);
+                    if game.winner.is_none() && game.current == pid {
+                        let _ = game.apply(pid, &crate::game::Action::EndTurn);
+                    }
+                    if pid != 0 {
+                        continue;
+                    }
+                    let gold = game.players[0].gold;
+                    let faith = game.players[0].faith;
+                    // Income, not balance: what the empire earns each turn is
+                    // the yardstick a balance has to be read against.
+                    let gpt = game
+                        .player_city_ids(0)
+                        .into_iter()
+                        .map(|cid| game.city_yields(cid).gold)
+                        .sum::<f64>()
+                        .max(0.1);
+                    gold_samples.push(gold);
+                    faith_samples.push(faith);
+                    gpt_samples.push(gpt);
+                    gold_turns_held.push(gold / gpt);
+                    peak_gold = peak_gold.max(gold);
+                }
+            }
+
+            let mean = |v: &Vec<f64>| v.iter().sum::<f64>() / v.len().max(1) as f64;
+            let median = |v: &Vec<f64>| {
+                let mut c = v.clone();
+                c.sort_by(f64::total_cmp);
+                c[c.len() / 2]
+            };
+            println!("\n=== idle treasury [{label}]: {} seat-turns ===", gold_samples.len());
+            println!(
+                "  Gold held      mean {:.0}   median {:.0}   peak {:.0}",
+                mean(&gold_samples),
+                median(&gold_samples),
+                peak_gold
+            );
+            println!("  Gold income    mean {:.1}/turn", mean(&gpt_samples));
+            println!(
+                "  ★ Gold held as TURNS OF INCOME   mean {:.1}   median {:.1}",
+                mean(&gold_turns_held),
+                median(&gold_turns_held)
+            );
+            println!(
+                "  Faith held     mean {:.0}   median {:.0}",
+                mean(&faith_samples),
+                median(&faith_samples)
+            );
+            // The mean sits far above the median, so the distribution has a
+            // tail and the tail is where any real waste lives. A seat holding
+            // thirty turns of income is not keeping a prudent reserve.
+            for cut in [10.0f64, 30.0, 60.0] {
+                let share = gold_turns_held.iter().filter(|t| **t > cut).count() as f64
+                    / gold_turns_held.len().max(1) as f64
+                    * 100.0;
+                println!("    seat-turns holding more than {cut:>4.0} turns of income: {share:>5.1}%");
+            }
         }
         println!();
     }

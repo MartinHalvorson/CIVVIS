@@ -66,12 +66,19 @@ class LogTail:
 
 
 def follow(tail: LogTail, timeout_s: float, on_event, poll_s: float = 2.0,
-           stop_when=None) -> str:
+           stop_when=None, each_poll=None) -> str:
     """Pump events to ``on_event`` until ``stop_when`` says so or time runs out.
 
     Returns a short reason string. The game exiting is reported as its own
     reason rather than as a timeout: a crashed run and a slow run need
     different responses, and a timeout hides which happened.
+
+    ``each_poll`` runs once per poll and is what keeps the game in the
+    foreground. macOS throttles a background application to almost no frames,
+    and this controller's turn loop runs off game-core events, which are tied
+    to frames -- so a browser window taking focus stops the game dead. That
+    looked exactly like a machine under load, and cost a run that sat on turn
+    15 for ten minutes with nothing wrong in any log.
     """
     deadline = time.time() + timeout_s
     while time.time() < deadline:
@@ -83,6 +90,8 @@ def follow(tail: LogTail, timeout_s: float, on_event, poll_s: float = 2.0,
             for event in tail.poll():
                 on_event(event)
             return "game exited"
+        if each_poll is not None:
+            each_poll()
         time.sleep(poll_s)
     return "timeout"
 

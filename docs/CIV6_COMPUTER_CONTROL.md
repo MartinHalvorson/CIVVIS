@@ -120,6 +120,44 @@ first turn. Three outcomes, all distinguishable: no game at all (the context
 never ran), a game marked `ok` (it ran and configured), a game carrying an
 error (it ran, failed to configure, and hosted anyway).
 
+### One run at a time, and the game must stay in front
+
+Two constraints on *running* this, both found by a run that looked broken and
+was not:
+
+- **The installation is a single writer resource, and nothing enforced it.**
+  Two sessions ran the ladder against this install at once. The second one's
+  mod install landed between the first one's turns, so the first was reading
+  events from a mod it had not installed, under a run tag it had never used;
+  its games exited without warning because the other harness stopped them. It
+  reads exactly like a flaky game. `tools/civ6_control/gamelock.py` now holds a
+  lock for the duration of a run and refuses to start rather than interleave.
+  A lock whose holder is no longer running is treated as stale and taken over.
+- **macOS throttles a background application to almost no frames.** The turn
+  loop runs off game-core events, which are tied to frames, so a browser taking
+  focus stops the game dead -- a run sat on turn 15 for ten minutes with
+  nothing wrong in any log. `civ6_play.py` raises the game window every few
+  seconds for the whole run.
+
+### The controller shares the game's frame budget
+
+Every pass this makes runs *instead of* the game advancing, and
+`Events.GameCoreEventPublishComplete` fires many times per frame. Acting on all
+of them, with a settle-site search that reads a 15x15 block of plots and a
+policy pass that walks the whole policy table per open slot, took a turn from
+about three seconds to over ten minutes. Measured at turn 20 of one game: 2,720
+event batches arrived and the controller acted on 170.
+
+So: the tick is throttled, each expensive pass has a per-turn budget, and
+settle sites are found once per settler per turn and remembered. The turn
+record carries `ticks_taken/ticks_seen` so this stays measurable rather than
+becoming folklore.
+
+Moves are checked for a route before they are issued. Ordering a unit to a plot
+it cannot reach does not fail -- the engine accepts it and prints its no-path
+sentinel, `Distance: 2147483647`, once per attempt, forever. A settler aiming
+across water and an army aiming at a capital on another continent both do it.
+
 ## How the controller plays
 
 The turn loop is built around the game's own **end-turn blockers** rather than
@@ -139,6 +177,108 @@ unrecognised blocker is reported by name. A blocker that survives
 `MaxBlockedAttempts` is dismissed through `NotificationManager.Dismiss` and
 logged as forfeited — a far better trade than a run that stops dead, because a
 stopped run reports nothing at all.
+
+### The announcement screens close themselves
+
+End-turn blockers are not the only thing that stops a turn. Civilization VI
+also stops for its own **announcements** — a wonder finishing, an era ending
+with its era score, a technology completing, a Eureka — and those are not
+blockers at all. Each is a full-screen UI context that takes the popup lock,
+and `ExclusivePopupManager:Lock` calls `UI.ReferenceCurrentEvent()`, which
+holds an engine event until the player proceeds. With this controller in the
+seat there is no player to proceed. The announcement stays up over the map,
+which costs twice: the run stops, and whoever is watching the game loses the
+thing they were watching.
+
+`CivvisControlAutoClose.lua` gives each of those screens a stopwatch instead of
+a person. The screen opens, stays up for `AnnouncementSeconds` (2 by default —
+long enough to read, short enough not to sit through), and then ends exactly
+the way its own close button ends it. Nothing about the announcement changes:
+what it says, when it fires, what it locks. Only who finishes it.
+
+Three things about how it is wired are worth keeping:
+
+- **One file serves every screen.** Each `ReplaceUIScript` in
+  `CivvisControl.modinfo` points a context at the same replacement. The
+  replacement asks the context for its own name with `ContextPtr:GetID()`,
+  `include`s the shipped script of that name, and adds the stopwatch on top. No
+  shipped code is copied, so nothing here goes stale when the game updates —
+  and a `LuaReplace` file must also be named in an `ImportFiles` action or it
+  is not in the virtual file system at all, which is the same trap that
+  silently emptied the settings prelude.
+- **`ContextPtr:SetUpdate` *does* tick here**, unlike the script-only context
+  below. These are shipped popup contexts with controls and a layout, which is
+  the difference; the delta it is handed is in seconds, the same clock the
+  shipped `IntroScreen.lua` counts its legally-required logo delay on.
+- **Screens that ask something are deliberately not on the list**: a
+  dedication, a great person, a promotion. Closing a question answers it, and
+  those answers belong to the blocker loop. The one screen on the boundary is
+  the era review, which both reports the era score and leads into the
+  dedication choice — it is *continued* rather than closed, because its Close
+  button skips the dedication and its Continue button raises it.
+
+**This is not a cosmetic problem, and it was measured rather than reasoned
+about.** Ladder run `lad-4` stopped at turn 16 on 2026-07-29 and stayed stopped
+for seventeen minutes. It did not look like a hang: the process was running at
+about a third of a core, and the machine was loaded enough that "it is only
+slow" was the obvious explanation. What ruled that out was the log directory —
+every *game* log froze at the same second while `FiraxisLive.log` kept being
+written, which is a game core that has stopped, not a game core that is
+behind. The screen on top of the map was `NaturalDisasterPopup`: **NATURAL
+DISASTER OCCURRING — MAJOR FLOOD**, waiting for a click that was never coming.
+One Escape into the window closed it and the run moved again within seconds,
+which is the whole causal claim tested end to end. The next run, `lad-5`, was
+stopped on the same screen at turn 12 twenty minutes later, so this is not a
+freak: on Gathering Storm it is the ordinary way an unattended run dies, and it
+dies looking like a slow machine.
+
+That screen also settled a question worth writing down. Gathering Storm's
+`NaturalDisasterPopup` is already replaced by `GranColombia_Maya` on the
+criterion `RuleSetInUse RULESET_EXPANSION_2`, which is true of every run here,
+so pointing a second `ReplaceUIScript` at the same context is a race. The
+replacement it declares is fourteen lines, and it opens with
+`include("NaturalDisasterPopup")` — Firaxis using exactly the pattern above,
+which is the best evidence available that the pattern is right.
+
+**The race is real, and the later mod wins it.** The first attempt chained
+through their file and hoped the race did not matter. It did: a verification
+game on 2026-07-29 armed eight screens and not that one, with no
+`autoclose_unarmed` line to go with it — the replacement had simply never been
+loaded, because `GranColombia_Maya` sorts after `CivvisControl`. The fix is a
+`<References>` entry naming that mod, which is soft (it orders the load when
+the mod is present and is ignored when it is not) and is the same tag
+`GranColombia_Maya` itself uses to sit after Expansion2. Loading last also
+means the chained include picks up their comet-strike label rather than
+discarding it.
+
+**One more screen is a different shape.** Not every stopper is a popup
+context: `PopupDialogInGame` sends every generic dialog through
+`LuaEvents.OnRaisePopupInGame` to the `InGamePopup` context, which calls
+`UIManager:PushModal` and whose input handler eats all input ("popups are
+blocking!"). That context renders both **UNIT CAPTURED**, which has one button
+and asks nothing, and **raze or keep this city**, which has two and asks
+everything. So `InGamePopup` alone arms per *dialog* rather than per context:
+the open is wrapped, the buttons are counted, and the stopwatch runs only when
+there is exactly one. The wrapper has to be re-registered with `LuaEvents`
+rather than merely assigned, because the shipped `Initialize` already handed
+the event its own function; if that swap cannot be made, the dialog is never
+armed and the screen behaves exactly as it ships. Closing goes through the
+shipped Escape handler rather than a bare close, so the one button's own
+callback runs.
+
+A run's `Automation.log` says which screens armed (`autoclose_armed`, one line
+per screen as the game loads) and every screen it has since closed
+(`autoclose`, with how long it was up). The failure that has to be loud is
+`autoclose_unarmed`: a replacement whose `include` did not land leaves the
+context with no shipped code, and that does not look like a broken mod — the
+announcement simply never appears, and the run reads as a quiet game rather
+than a game missing a screen.
+
+Measured on the verification run (`autoclose-verify`, 2026-07-29):
+`TechCivicCompletedPopup` closed itself after 2.01s, 2.17s and 2.58s and
+`BoostUnlockedPopup` after 2.20s and 2.23s, each `ended:true`, with the game
+playing on through all of them. The overshoot past 2.00 is one frame at the
+frame rate a loaded machine was managing, not drift.
 
 ### Two things about the in-game context that fail silently
 
