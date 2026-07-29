@@ -154,3 +154,22 @@ outcome.
 No seed `9988000` or `9989000` map was generated or read before this document
 was committed. The implementation, null replay, latest-main merge, and full CI
 suite all precede any focal run.
+
+## Implementation checkpoint
+
+Commit `a147e1b` implements the frozen design in the new
+`science_royal_society_eval` binary. Before this checkpoint was recorded:
+
+- its six focused CI-profile tests passed, including exact stock-turn replay,
+  the treatment boundary, map-level scoring, Science-progress accounting, and
+  the screen/holdout gates;
+- Clippy passed for the binary and its tests (the checkout retains unrelated
+  pre-existing warnings elsewhere in the crate);
+- a one-map, two-player, five-turn diagnostic at non-focal seed `9987998`
+  reproduced both matched stock games exactly through null action-log replay;
+  and
+- no preregistered null, screen, or holdout seed had been generated or read.
+
+The exact four-map null remains queued behind the older six-core experiments.
+It will run only after merging the then-current `origin/main`, and its result
+will be recorded before the development screen is permitted to start.
