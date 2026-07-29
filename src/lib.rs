@@ -17,6 +17,7 @@ pub mod mapgen;
 pub mod name;
 pub mod neural;
 pub mod obs;
+pub mod odds;
 pub mod oracle;
 pub mod parallel;
 
