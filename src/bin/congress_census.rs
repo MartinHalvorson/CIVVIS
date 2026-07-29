@@ -151,6 +151,13 @@ struct Counts {
     /// Resolutions carrying a targeted penalty that actually passed, and how
     /// many landed on the empire that went on to win the game.
     penalties_passed: u64,
+
+    /// Every denial firing, keyed by the counter-strategy the layer asked for.
+    /// `rival_victory_pressure` scores the diplomacy lane as `dvp * 5`, and the
+    /// veto holds peak DVP at 14-16, which is 70-80 against a bar of 78 — so a
+    /// phantom diplomatic threat can outrank a real one and take the alarm.
+    denials_by_counter: BTreeMap<&'static str, u64>,
+    denials_on_winner_by_counter: BTreeMap<&'static str, u64>,
 }
 
 impl Counts {
@@ -181,6 +188,12 @@ impl Counts {
         self.ballots_aimed += other.ballots_aimed;
         self.votes_bought += other.votes_bought;
         self.penalties_passed += other.penalties_passed;
+        for (lane, count) in &other.denials_by_counter {
+            *self.denials_by_counter.entry(lane).or_default() += count;
+        }
+        for (lane, count) in &other.denials_on_winner_by_counter {
+            *self.denials_on_winner_by_counter.entry(lane).or_default() += count;
+        }
     }
 }
 
@@ -262,6 +275,10 @@ fn main() {
         let mut dvp_prev: Vec<i64> = game.players.iter().map(|p| p.dvp).collect();
         let mut aim: Vec<(usize, usize, usize)> = Vec::new();
         let mut penalised: Vec<usize> = Vec::new();
+        // Denial firings, sampled rather than read every turn: the question is
+        // the shape of the distribution, and `denial_target` is the expensive
+        // call in this loop.
+        let mut firings: Vec<(&'static str, usize)> = Vec::new();
         // `rival_pressure` reads nothing from the planner it is asked of, so
         // one probe answers for every seat.
         let probe = AdvancedAi::new();
@@ -284,6 +301,18 @@ fn main() {
             peak_era = peak_era.max(game.world_era);
             for pid in majors.iter().copied() {
                 peak_dvp = peak_dvp.max(game.players[pid].dvp);
+            }
+
+            // What the denial layer is asking for, and about whom.
+            if turn.is_multiple_of(10) {
+                for observer in majors.iter().copied() {
+                    if !game.players[observer].alive {
+                        continue;
+                    }
+                    if let Some((rival, counter)) = fleet[observer].denial_target(&game, observer) {
+                        firings.push((counter.as_str(), rival));
+                    }
+                }
             }
 
             // A session that is no longer the one being voted on has resolved,
@@ -515,6 +544,13 @@ fn main() {
             dvp_prev = game.players.iter().map(|p| p.dvp).collect();
         }
 
+        for (lane, rival) in &firings {
+            *counts.denials_by_counter.entry(lane).or_default() += 1;
+            if game.winner == Some(*rival) {
+                *counts.denials_on_winner_by_counter.entry(lane).or_default() += 1;
+            }
+        }
+
         MapReading {
             winner: game.winner,
             victory_type: game.victory_type.clone().unwrap_or_else(|| "none".into()),
@@ -715,4 +751,27 @@ fn main() {
         "  of those, landing on the eventual winner        {penalties_on_winner} of {penalties} ({:.1}%, base {base:.1}%)",
         100.0 * penalties_on_winner as f64 / penalties.max(1) as f64
     );
+
+    // `rival_victory_pressure` scores the diplomacy lane at `dvp * 5` and takes
+    // the max over lanes, while the veto holds peak DVP at 14-16 -- which is
+    // 70-80 against a denial bar of 78. So a rival who cannot win a diplomatic
+    // victory can still outrank one who is about to win a real one, and take
+    // the alarm with them.
+    let firings: u64 = totals.denials_by_counter.values().sum();
+    println!(
+        "\nwhat the denial layer asks for, over {firings} sampled firings \
+         (base rate {base:.1}%):"
+    );
+    for (lane, count) in &totals.denials_by_counter {
+        let on_winner = totals
+            .denials_on_winner_by_counter
+            .get(lane)
+            .copied()
+            .unwrap_or(0);
+        println!(
+            "  {lane:<10} {count:>6}  {:>5.1}% of firings   named empire won {:>5.1}%",
+            100.0 * *count as f64 / firings.max(1) as f64,
+            100.0 * on_winner as f64 / (*count).max(1) as f64
+        );
+    }
 }
