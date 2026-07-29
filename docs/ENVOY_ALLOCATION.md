@@ -12,13 +12,15 @@ within each map and gives every map equal weight. This correction was made
 from code/protocol review alone, without outcome data.
 
 Second protocol amendment, also before any registered seed is run or read:
-code review established that Civvis performs its score tiebreak on the wrap
-past `Game.max_turns`, so a 250-turn world cannot be observed to turn 320
-without changing rollover semantics. The frozen study now ends at the
-authentic turn-250 rollover. The same review also removed no-immediate sends
-from the routing gate: a 1-to-2 setup send or defensive margin can be optimal.
-That classification remains descriptive, while only a positive conserved-
-stock gap may nominate allocation work.
+review removed no-immediate sends from the routing gate because a 1-to-2 setup
+send or defensive margin can be optimal. That classification remains
+descriptive, while only a positive conserved-stock gap may nominate allocation
+work. The same review questioned the turn-320 rollover. Direct engine inspection
+and a deterministic crossing test established that `do_end_turn` attempts the
+score tiebreak after turn 250, but `set_winner` rejects it when score is disabled:
+the unmodified world advances with `max_turns = 250`, no winner, and its normal
+next-seat state. The original external turn-320 observation contract therefore
+remains frozen.
 
 ## Question and correction
 
@@ -70,11 +72,11 @@ map offset `i`:
 
 `MapSize::for_players` derives dimensions and city-state counts. Civilizations
 are randomized. Poles, Online speed, and Science/Culture/Domination victories
-are fixed. Every game retains `Game.max_turns = 250` and runs through its
-authentic final turn or an earlier enabled victory. On the wrap past turn 250,
-the shipped engine performs its score tiebreak even though score is not an
-early enabled victory lane; that terminal result is part of the unattended
-population. The binary asserts that the horizon never changes.
+are fixed. Every game retains `Game.max_turns = 250` while unchanged stateful
+controllers are observed externally through turn 320 or an enabled victory.
+Because score is disabled, the shipped `set_winner` gate vetoes the attempted
+turn-limit tiebreak and the normal rollover proceeds; no cap or world transition
+is edited. The binary asserts that the policy-visible horizon never changes.
 
 Each map uses focal seats zero and the final major. Other seats keep the same
 committed champion controller. The map, not the two seats or repeated turns,
@@ -140,11 +142,12 @@ Before reading the census seed, four deployment-cycle maps at seed `10032999`
 compare direct champion play with the replay observer disabled. For both focal
 seats, all eight matched cells must reproduce the terminal result, serialized
 `Game`, focal plan report, and lifetime strategy census exactly or the study
-stops. The comparison includes the turn-250-to-terminal rollover.
+stops. The comparison includes crossing turn 250 and continuing to the frozen
+external observation boundary.
 
 ```text
 envoy_allocation_census --null --deployment-mix --maps 4 --turns 250 \
-  --observe-through 250 --speed online --poles poles --randomize-civs \
+  --observe-through 320 --speed online --poles poles --randomize-civs \
   --victories science,culture,domination --ai advanced_evolved \
   --seed 10032999 --jobs 6
 ```
@@ -159,7 +162,7 @@ at seed `10033000`:
 
 ```text
 envoy_allocation_census --deployment-mix --maps 30 --turns 250 \
-  --observe-through 250 --speed online --poles poles --randomize-civs \
+  --observe-through 320 --speed online --poles poles --randomize-civs \
   --victories science,culture,domination --ai advanced_evolved \
   --seed 10033000 --jobs 6
 ```
