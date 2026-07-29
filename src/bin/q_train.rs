@@ -5,8 +5,8 @@
 //! legal in it, can a head trained on `q_dataset` rows pick the action
 //! `AdvancedAi` actually took? With `--negatives 4` each decision is one chosen
 //! action against four that were not, so **20% is chance**. A head that cannot
-//! beat 20% on held-out games has shown that the 124-dimensional encoding does
-//! not carry the expert's decision, and no downstream use of it — prior, Q,
+//! beat chance on held-out games has shown that the encoding does not carry the
+//! expert's decision, and no downstream use of it — prior, Q,
 //! advantage — can work. That costs one training run to find out instead of a
 //! 120-map tournament, which is why it is the first thing run.
 //!
@@ -23,6 +23,8 @@
 //! q_train --data evolved/q.csv --out evolved/qnet.json --epochs 6
 //! q_train --data evolved/q-standard.csv \
 //!   --eval-data evolved/q-deployment.csv --same-kind --keep geometry
+//! q_train --data evolved/q-standard.csv \
+//!   --eval-data evolved/q-deployment.csv --same-kind --keep destination
 //! ```
 //!
 //! **Splitting is by game and nothing else.** A per-sample split of the previous
@@ -85,11 +87,14 @@ struct Loaded {
 }
 
 /// Blank the blocks this run is not allowed to see. `state` is the leading 34,
-/// then the action block: its first 77 are the kind one-hot and the remaining 13
-/// are the geometry (target tile, HP, distance, treasury, plot cost).
+/// then action kind, the legacy thirteen scalars, and the appended destination
+/// block. `legacy-geometry` and `destination` are the pre-registered ablation:
+/// both read the same rows, labels, candidates, and split.
 fn mask(row: &mut [f32], keep: &str, width: usize) {
     let state = width - civvis::action_space::FEATURE_WIDTH;
     let kinds = civvis::action_space::KINDS.len();
+    let legacy = state + kinds;
+    let destination = legacy + civvis::action_space::LEGACY_NUMERIC_WIDTH;
     let blank = |row: &mut [f32], from: usize, to: usize| {
         for value in row.iter_mut().take(to.min(width)).skip(from) {
             *value = 0.0;
@@ -103,6 +108,11 @@ fn mask(row: &mut [f32], keep: &str, width: usize) {
             blank(row, state + kinds, width);
         }
         "geometry" => blank(row, 0, state + kinds),
+        "legacy-geometry" => {
+            blank(row, 0, legacy);
+            blank(row, destination, width);
+        }
+        "destination" => blank(row, 0, destination),
         _ => {}
     }
 }
@@ -133,6 +143,12 @@ fn load_groups(path: &str, keep: &str, same_kind: bool) -> Result<Loaded, String
         ));
     }
     let width = columns - 6; // game,turn,seat,chosen ... won,score_share
+    if width < civvis::action_space::FEATURE_WIDTH {
+        return Err(format!(
+            "{path}: {width} candidate features are narrower than the current action schema {}",
+            civvis::action_space::FEATURE_WIDTH
+        ));
+    }
     let state_block = width - civvis::action_space::FEATURE_WIDTH;
     let kind_count = civvis::action_space::KINDS.len();
     let kind_of = |raw: &[f32]| -> usize {
@@ -476,12 +492,12 @@ fn main() {
     let share = decimal(&args, "--holdout", 0.25);
     let cap = number(&args, "--max-groups", 120_000);
     let kind_min = number(&args, "--kind-min", 100);
-    // Which blocks of the row the head may see. The control that matters is
-    // `kind`: 77 of the 90 action features are a kind one-hot and the expert's
-    // kind distribution is skewed, so a head that learned nothing but "pick a
-    // move" would still score well above chance. If `kind` reaches the same
-    // top-1 as `all`, the state and the geometry are carrying nothing and the
-    // ranker is a kind prior in a costume.
+    // Which blocks of the row the head may see. `legacy-geometry` preserves
+    // the thirteen terms that failed the same-actor external gate;
+    // `destination` isolates the new terrain, force-field, role, and explicit
+    // plan-progress block. `geometry` exposes both. On same-actor groups the
+    // kind and actor context are constant, so only destination differences can
+    // move the ranking.
     let keep = text(&args, "--keep", "all");
     // Keep only decisions whose candidates are all the same kind of action.
     //
@@ -708,7 +724,7 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
-    use super::{accuracy_summary, AccuracyTotals};
+    use super::{accuracy_summary, mask, AccuracyTotals};
     use std::collections::BTreeMap;
 
     /// A game with nine decisions must not outweigh a game with one decision.
@@ -740,5 +756,29 @@ mod tests {
         assert!((top - 0.5).abs() < 1e-6);
         assert!(lift.abs() < 1e-6);
         assert!((se - 0.5).abs() < 1e-6);
+    }
+
+    #[test]
+    fn feature_ablation_separates_legacy_from_destination_geometry() {
+        let state = civvis::decision_features::WIDTH;
+        let kinds = civvis::action_space::KINDS.len();
+        let legacy = civvis::action_space::LEGACY_NUMERIC_WIDTH;
+        let width = state + civvis::action_space::FEATURE_WIDTH;
+        let destination = state + kinds + legacy;
+
+        let mut only_destination = vec![1.0; width];
+        mask(&mut only_destination, "destination", width);
+        assert!(only_destination[..destination].iter().all(|value| *value == 0.0));
+        assert!(only_destination[destination..].iter().all(|value| *value == 1.0));
+
+        let mut only_legacy = vec![1.0; width];
+        mask(&mut only_legacy, "legacy-geometry", width);
+        assert!(only_legacy[..state + kinds]
+            .iter()
+            .all(|value| *value == 0.0));
+        assert!(only_legacy[state + kinds..destination]
+            .iter()
+            .all(|value| *value == 1.0));
+        assert!(only_legacy[destination..].iter().all(|value| *value == 0.0));
     }
 }

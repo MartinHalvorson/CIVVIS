@@ -57,10 +57,12 @@
 //! the control a unit-action search needs: it compares destinations or targets
 //! for the same unit, rather than learning which unit the expert activates.
 use civvis::action_space;
-use civvis::ai::{run_game, AdvancedAi};
+use civvis::ai::{AdvancedAi, Ai};
 use civvis::decision_features::{decision_features, WIDTH as STATE_WIDTH};
 use civvis::game::{default_speed, Action, Game, GameOptions};
 use civvis::parallel;
+use civvis::Pos;
+use std::collections::BTreeMap;
 use std::fmt::Write as _;
 use std::fs;
 use std::io::Write as _;
@@ -85,6 +87,9 @@ fn text(args: &[String], flag: &str, default: &str) -> String {
 struct Harvest {
     rows: String,
     decisions: usize,
+    /// Decisions for which AdvancedAi exposed at least one high-level spatial
+    /// objective. The destination block records zeroes when no plan exists.
+    planned: usize,
     negatives: usize,
     wins: usize,
     turns: u32,
@@ -104,6 +109,41 @@ struct Harvest {
     /// Cheaper than comparing whole states and it catches a silent divergence
     /// that still applied cleanly.
     agrees: bool,
+}
+
+type TurnObjectives = BTreeMap<(u32, usize), Vec<Pos>>;
+
+/// Play with the same loop as `ai::run_game`, while retaining the plan each
+/// AdvancedAi reports for the actions it took that turn. The action log remains
+/// the authoritative trajectory; this side table supplies strategic context
+/// that is not game state and therefore cannot be recovered by replay alone.
+fn run_game_with_objectives(g: &mut Game, ais: &mut [AdvancedAi]) -> TurnObjectives {
+    g.set_fog_memory(false);
+    let mut objectives = TurnObjectives::new();
+    while g.winner.is_none() && g.turn <= g.max_turns {
+        let turn = g.turn;
+        let pid = g.current;
+        ais[pid].take_turn(g, pid);
+        let mut positions = Vec::new();
+        if let Some(report) = ais[pid].plan_report() {
+            positions.extend(report.forces.into_iter().map(|force| force.objective));
+            for city in [report.threatened_city, report.target_city]
+                .into_iter()
+                .flatten()
+            {
+                if let Some(city) = g.cities.get(&city) {
+                    positions.push(city.pos);
+                }
+            }
+        }
+        positions.sort_unstable();
+        positions.dedup();
+        objectives.insert((turn, pid), positions);
+        if g.winner.is_none() && g.current == pid {
+            let _ = g.apply(pid, &Action::EndTurn);
+        }
+    }
+    objectives
 }
 
 /// The outcome a decision is labelled with.
@@ -145,7 +185,7 @@ fn harvest(
     };
     let mut played = Game::new_with(options.clone());
     let mut fleet = AdvancedAi::fleet(&played);
-    run_game(&mut played, &mut fleet);
+    let objectives = run_game_with_objectives(&mut played, &mut fleet);
     let label = outcomes(&played, seats);
     let finished = played.winner.is_some();
     let played_turns = played.turn;
@@ -158,6 +198,7 @@ fn harvest(
     let log: Vec<(usize, Action)> = played.log.iter().cloned().collect();
     let mut rows = String::new();
     let mut decisions = 0usize;
+    let mut planned = 0usize;
     let mut emitted_negatives = 0usize;
     let mut rejected = 0usize;
     let mut winning_rows = 0usize;
@@ -172,7 +213,12 @@ fn harvest(
         }
         let (won, share) = label[seat];
         let state = decision_features(&replay, seat);
-        let chosen = action_space::features(&replay, seat, &action);
+        let objectives = objectives
+            .get(&(replay.turn, seat))
+            .map(Vec::as_slice)
+            .unwrap_or(&[]);
+        let context = action_space::FeatureContext::new(&replay, seat, objectives);
+        let chosen = action_space::features_with_context(&replay, seat, &action, &context);
         write_row(
             &mut rows,
             game_id,
@@ -185,6 +231,7 @@ fn harvest(
             share,
         );
         decisions += 1;
+        planned += !objectives.is_empty() as usize;
         winning_rows += (won > 0.5) as usize;
 
         if negatives > 0 {
@@ -225,7 +272,8 @@ fn harvest(
                 let start = (picker >> 33) as usize % others.len();
                 for step in 0..negatives.min(others.len()) {
                     let other = others[(start + step * stride) % others.len()];
-                    let row = action_space::features(&replay, seat, other);
+                    let row =
+                        action_space::features_with_context(&replay, seat, other, &context);
                     write_row(
                         &mut rows,
                         game_id,
@@ -249,6 +297,7 @@ fn harvest(
     Harvest {
         rows,
         decisions,
+        planned,
         negatives: emitted_negatives,
         wins,
         turns: played_turns,
@@ -356,6 +405,7 @@ fn main() {
     };
     let _ = file.write_all(header().as_bytes());
     let mut decisions = 0usize;
+    let mut planned = 0usize;
     let mut negative_rows = 0usize;
     let mut winning_seats = 0usize;
     let mut finished = 0usize;
@@ -366,6 +416,7 @@ fn main() {
     for harvest in &harvests {
         let _ = file.write_all(harvest.rows.as_bytes());
         decisions += harvest.decisions;
+        planned += harvest.planned;
         negative_rows += harvest.negatives;
         winning_seats += harvest.wins;
         finished += harvest.finished as usize;
@@ -380,6 +431,10 @@ fn main() {
         "wrote {out}: {decisions} chosen rows, {negative_rows} negatives, \
          {} rows total",
         decisions + negative_rows
+    );
+    println!(
+        "plan context: {planned}/{decisions} decisions ({:.1}%) carry at least one spatial objective",
+        100.0 * planned as f64 / decisions.max(1) as f64
     );
     println!(
         "games: {games}, {finished} decided by victory, average {:.0} turns",
