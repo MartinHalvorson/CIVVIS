@@ -148,6 +148,15 @@ assert that the policy-visible horizon never changes. For each arm it reports:
 The evaluator must not read its new diagnostics when making any game decision.
 Generated output is not committed.
 
+For the frozen safety endpoints, powered-city share is the pooled share of
+owned terminal cities with positive Power demand whose full demand is met;
+cities with no powered building are outside that denominator, and an arm with
+no demanding city has share 100%. A resource-shortage record is one unpaid
+fuel unit in the terminal `strategic_resource_shortages` values, summed across
+resources and focal seats. Conversion and recommission counts come only from
+the engine's cumulative `project:*` counters, and reactor accidents from its
+cumulative `reactor_accident:*` counters.
+
 ## Exact default-off null
 
 Before treatment data, one four-map null at seed `9975999` compares the pinned
