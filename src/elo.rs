@@ -38,7 +38,7 @@ pub const BUILTIN_AIS: [&str; 10] = [
 /// tournament ratings. Keeping them out of `BUILTIN_AIS` prevents a control
 /// factory from being pooled into the same player/leader rating key as
 /// its treatment.
-pub const EVAL_ONLY_AIS: [&str; 62] = [
+pub const EVAL_ONLY_AIS: [&str; 63] = [
     "advanced_congress_counter",
     "advanced_congress_votes",
     "advanced_congress_counter_hard",
@@ -2012,7 +2012,7 @@ mod tests {
             // Anything else reaching that state fell through to the
             // catch-all and is claiming to need nothing while quietly
             // needing a net.
-            const SCRIPTED: [&str; 34] = [
+            const SCRIPTED: [&str; 35] = [
                 "advanced",
                 "advanced_blind_to_leaders",
                 "advanced_rush",
