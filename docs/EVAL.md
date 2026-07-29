@@ -5443,3 +5443,85 @@ full games rather than promoting this unresolved local surrogate.
 | absolute state/destination context predicts reliable overrides | **refuted out of fold (Brier 0.03014 vs 0.02331)** |
 | the 0.70 tail is safe and sufficiently broad | **refuted (1.9% coverage; 0 wins, 1 loss)** |
 | blind Standard selection or Online evaluation is warranted | **rejected without spending either corpus** |
+
+## 2026-07-29 — preregistration: what actually changes the adaptive strategy?
+
+The route-connected ancient-rush test (#557) closes that opening-policy line:
+the treatment made larger empires and armies but lost the paired outcome screen,
+and its frozen route test selected 94.2% of seat-games. Military work therefore
+returns to the midgame, but the evaluator currently hides the state that chooses
+midgame behavior. `ai_eval` traces only `PlanReport.victory_target`; an adaptive
+`AdvancedAi` has no assigned target, so it is printed as `adaptive` on every
+turn with zero switches even while `PlanReport.strategy` moves among Expansion,
+Recovery, Conquest, and the enabled victory lanes.
+
+That missing observation matters because the existing churn result cannot by
+itself justify hysteresis. The same 2026-07-28 evidence wave later established
+that its headline routing oracle used the fallback genome, not the embedded
+champion, and that hard commitment suppressed expansion. Before changing a
+decision, this experiment asks whether the champion's midgame switches are
+ordinary responses to visible state boundaries or strategy changes with no
+such boundary.
+
+### Frozen measurement
+
+`PlanTrace` will retain its existing assigned-target and ancient-rush metrics
+unchanged and add a separate observer-only trace of `PlanReport.strategy`.
+For every observed player-turn it will record:
+
+- the strategy label;
+- whether the seat is at war with a living major civilization;
+- whether the reported plan has a threatened city; and
+- whether the seat has fewer cities than the plan's reported `desired_cities`.
+
+A **strategy switch** is a change of strategy label between adjacent observed
+turns for one seat. A switch is **boundary-accompanied** when at least one of
+those three booleans changes on the same observation; the three components are
+also counted separately and may overlap. “Unanchored” means only “none of these
+plan-visible boundaries changed,” not “irrational”: rival victory denial,
+military power, or victory progress can still explain it and are deliberately
+not guessed from the label.
+
+The primary interval is the speed-normalized midgame from Standard turn 60
+(inclusive) through Standard turn 180 (exclusive), which is Online turns
+40–119 under the shipped duration table. The output will report all-game and
+midgame strategy shares, switches per seat-game, unanchored midgame switches,
+boundary counts, and the midgame transition matrix. Existing outcome,
+promotion, target, and rush calculations must remain byte-for-byte invariant
+for a fixed run.
+
+The frozen run is:
+
+```text
+ai_eval advanced_evolved advanced --players 8 --width 84 --height 54 \
+  --city-states 12 --pairs 60 --turns 250 --speed online \
+  --map continents --shape planet --poles poles --randomize-civs \
+  --victories science,culture,domination --seed 9981000 --jobs 6
+```
+
+This compares the embedded gen-14 champion with the stock-weight anchor on the
+production spectator's exact game profile. Mirroring balances seats and the 60
+map seeds are fresh. Strategy diagnostics are observational and do not enter
+the promotion verdict.
+
+### Frozen reading
+
+Top-level commitment instability remains a live intervention candidate only if
+the `advanced_evolved` seats satisfy **both** conditions:
+
+1. at least 1.0 unanchored midgame strategy switch per seat-game; and
+2. at least 50% of their midgame switches are unanchored.
+
+Otherwise, do not add generic hysteresis: the next military experiment must
+operate inside a stable Conquest/Recovery episode (campaign routing, staging,
+or post-war conversion), or first expose a missing trigger if the switch table
+shows one dominant unobserved transition.
+
+A narrower mechanism claim — that routing stability helps explain any champion
+strength — requires **all** of: the champion's unanchored midgame switch rate is
+at least 25% below stock `advanced`; its paired-map score is at least 52%; and
+champion-favored map directions exceed stock-favored directions. If any term
+fails, the genome comparison is descriptive and no outcome attribution is made.
+There is no holdout and no gameplay promotion in this task: it adds the missing
+measurement, records the frozen screen once, and selects the next falsifiable
+midgame mechanism.
