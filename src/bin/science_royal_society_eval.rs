@@ -23,6 +23,8 @@ const HOLDOUT_SEED: u64 = 9_989_000;
 const NOMINAL_TURNS: u32 = 250;
 const OBSERVE_THROUGH: u32 = 320;
 const FROZEN_AI: &str = "advanced_evolved";
+const FROZEN_CHAMPION_GENERATION: u32 = 14;
+const FROZEN_CHAMPION_FNV1A: u64 = 0x40b1_fbb2_a5b8_8bc6;
 const EMBEDDED_CHAMPION: &str = include_str!("../../data/evolved/best.json");
 const DEPLOYMENT_PLAYERS: [usize; 7] = [4, 6, 8, 10, 5, 7, 9];
 const DEPLOYMENT_SCRIPTS: [MapScript; 9] = [
@@ -45,12 +47,41 @@ const PROFILE_OVERRIDE_FLAGS: [&str; 6] = [
     "--map",
     "--shape",
 ];
+const FLAG_OPTIONS: [&str; 3] = ["--null", "--deployment-mix", "--randomize-civs"];
+const VALUE_OPTIONS: [&str; 15] = [
+    "--maps",
+    "--players",
+    "--width",
+    "--height",
+    "--city-states",
+    "--turns",
+    "--observe-through",
+    "--seed",
+    "--jobs",
+    "--speed",
+    "--map",
+    "--shape",
+    "--poles",
+    "--victories",
+    "--ai",
+];
 const REQUIRED_SCIENCE_PROJECTS: [&str; 4] = [
     "launch_earth_satellite",
     "launch_moon_landing",
     "launch_mars_colony",
     "exoplanet_expedition",
 ];
+
+const fn fnv1a(bytes: &[u8]) -> u64 {
+    let mut hash = 0xcbf2_9ce4_8422_2325;
+    let mut index = 0;
+    while index < bytes.len() {
+        hash ^= bytes[index] as u64;
+        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+        index += 1;
+    }
+    hash
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct DeploymentProfile {
@@ -95,28 +126,74 @@ fn has_arg(args: &[String], key: &str) -> bool {
     args.iter().any(|arg| arg == key)
 }
 
+fn validate_args(args: &[String]) -> Result<(), String> {
+    let mut index = 0;
+    while index < args.len() {
+        let argument = args[index].as_str();
+        if FLAG_OPTIONS.contains(&argument) {
+            index += 1;
+        } else if VALUE_OPTIONS.contains(&argument) {
+            match args.get(index + 1).map(String::as_str) {
+                Some(value) if !value.starts_with("--") => index += 2,
+                _ => return Err(format!("{argument} requires a value")),
+            }
+        } else {
+            return Err(format!("unsupported argument {argument:?}"));
+        }
+    }
+    Ok(())
+}
+
+/// Validate every supplied occurrence. A malformed duplicate must not hide
+/// behind an earlier valid value and accidentally reach a diagnostic run.
+fn option_values<'a>(args: &'a [String], key: &str) -> Result<Vec<&'a str>, String> {
+    let mut values = Vec::new();
+    for (index, argument) in args.iter().enumerate() {
+        if argument != key {
+            continue;
+        }
+        match args.get(index + 1).map(String::as_str) {
+            Some(value) if !value.starts_with("--") => values.push(value),
+            _ => return Err(format!("{key} requires a value")),
+        }
+    }
+    Ok(values)
+}
+
+fn option_value<'a>(args: &'a [String], key: &str) -> Result<Option<&'a str>, String> {
+    Ok(option_values(args, key)?.into_iter().next())
+}
+
+fn number_value(args: &[String], key: &str) -> Result<Option<i64>, String> {
+    let values = option_values(args, key)?;
+    let mut parsed = Vec::with_capacity(values.len());
+    for value in values {
+        parsed.push(
+            value
+                .parse::<i64>()
+                .map_err(|_| format!("{key} requires an integer value; got {value:?}"))?,
+        );
+    }
+    Ok(parsed.into_iter().next())
+}
+
 fn number(args: &[String], key: &str, default: i64) -> i64 {
-    let Some(index) = args.iter().position(|arg| arg == key) else {
-        return default;
-    };
-    let Some(value) = args.get(index + 1) else {
-        eprintln!("{key} requires an integer value");
-        std::process::exit(2);
-    };
-    value.parse().unwrap_or_else(|_| {
-        eprintln!("{key} requires an integer value; got {value:?}");
-        std::process::exit(2);
-    })
+    number_value(args, key)
+        .unwrap_or_else(|why| {
+            eprintln!("{why}");
+            std::process::exit(2);
+        })
+        .unwrap_or(default)
 }
 
 fn text(args: &[String], key: &str, default: &str) -> String {
-    let Some(index) = args.iter().position(|arg| arg == key) else {
-        return default.to_string();
-    };
-    args.get(index + 1).cloned().unwrap_or_else(|| {
-        eprintln!("{key} requires a value");
-        std::process::exit(2);
-    })
+    option_value(args, key)
+        .unwrap_or_else(|why| {
+            eprintln!("{why}");
+            std::process::exit(2);
+        })
+        .unwrap_or(default)
+        .to_string()
 }
 
 fn has_exact_value(args: &[String], key: &str, value: &str) -> bool {
@@ -127,14 +204,7 @@ fn has_exact_value(args: &[String], key: &str, value: &str) -> bool {
 }
 
 fn has_exact_number(args: &[String], key: &str, value: i64) -> bool {
-    args.iter().filter(|arg| arg.as_str() == key).count() == 1
-        && args.windows(2).any(|pair| {
-            pair[0] == key
-                && pair[1]
-                    .parse::<i64>()
-                    .ok()
-                    .is_some_and(|seen| seen == value)
-        })
+    has_exact_value(args, key, &value.to_string())
 }
 
 fn has_exact_flag(args: &[String], key: &str) -> bool {
@@ -142,8 +212,18 @@ fn has_exact_flag(args: &[String], key: &str) -> bool {
 }
 
 fn frozen_champion() -> Champion {
-    serde_json::from_str(EMBEDDED_CHAMPION)
-        .expect("the committed advanced_evolved champion must be valid JSON")
+    assert_eq!(
+        fnv1a(EMBEDDED_CHAMPION.as_bytes()),
+        FROZEN_CHAMPION_FNV1A,
+        "data/evolved/best.json changed after the Royal Society preregistration"
+    );
+    let champion: Champion = serde_json::from_str(EMBEDDED_CHAMPION)
+        .expect("the committed advanced_evolved champion must be valid JSON");
+    assert_eq!(
+        champion.gen, FROZEN_CHAMPION_GENERATION,
+        "Royal Society evaluator champion generation changed"
+    );
+    champion
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -215,9 +295,22 @@ fn replay_stock_turn(
     census: &mut ChoiceCensus,
 ) -> Result<(), String> {
     let mut observed = game.clone();
+    let policy_max_turns = game.max_turns;
+    if observed.max_turns != policy_max_turns {
+        return Err(format!(
+            "stock seat {pid} clone changed policy horizon from {policy_max_turns} to {}",
+            observed.max_turns
+        ));
+    }
     let before = observed.log.len();
     let mut actor = ai.clone();
     actor.take_turn(&mut observed, pid);
+    if observed.max_turns != policy_max_turns {
+        return Err(format!(
+            "stock seat {pid} changed policy horizon from {policy_max_turns} to {}",
+            observed.max_turns
+        ));
+    }
     let science = science_plan(&actor);
     let mut actions: Vec<(usize, Action)> = observed.log.since(before).cloned().collect();
     census.opportunities += count_opportunities(&actions, pid, science);
@@ -225,6 +318,11 @@ fn replay_stock_turn(
     let ended = actions
         .last()
         .is_some_and(|(owner, action)| *owner == pid && matches!(action, Action::EndTurn));
+    if !ended && observed.winner.is_none() {
+        return Err(format!(
+            "stock seat {pid} did not finish its trace with EndTurn"
+        ));
+    }
     if ended {
         actions.pop();
     }
@@ -334,6 +432,10 @@ fn play(
     let mut census = ChoiceCensus::default();
 
     while game.winner.is_none() && game.turn <= observe_through {
+        assert_eq!(
+            game.max_turns, policy_max_turns,
+            "external continuation changed the policy-visible horizon"
+        );
         let pid = game.current;
         let before = game.log.len();
         if pid == focal && mode != Mode::Stock {
@@ -352,9 +454,19 @@ fn play(
                 census.opportunities += count_opportunities(&actions, pid, science_plan(&ais[pid]));
             }
         }
+        assert_eq!(
+            game.max_turns, policy_max_turns,
+            "controller changed the policy-visible horizon"
+        );
         if game.winner.is_none() && game.current == pid {
-            let _ = game.apply(pid, &Action::EndTurn);
+            game.apply(pid, &Action::EndTurn).unwrap_or_else(|why| {
+                panic!("turn {} seat {pid}: EndTurn failed: {why}", game.turn)
+            });
         }
+        assert_eq!(
+            game.max_turns, policy_max_turns,
+            "turn progression changed the policy-visible horizon"
+        );
         if pid == focal {
             census.contributions += game
                 .log
@@ -367,7 +479,7 @@ fn play(
     }
     assert_eq!(
         game.max_turns, policy_max_turns,
-        "external observation must not change the policy-visible horizon"
+        "external continuation changed the policy-visible horizon"
     );
 
     let (science_projects, science_progress) = science_progress(&game, focal);
@@ -550,6 +662,10 @@ fn holdout_passes(gate: GateInputs) -> bool {
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
+    if let Err(why) = validate_args(&args) {
+        eprintln!("{why}");
+        std::process::exit(2);
+    }
     let explicit_frozen_ai = has_exact_value(&args, "--ai", FROZEN_AI);
     let ai_name = text(&args, "--ai", FROZEN_AI);
     if args.iter().any(|arg| arg == "--ai") && !explicit_frozen_ai {
@@ -647,8 +763,9 @@ fn main() {
 
     println!("Royal Society Science evaluator");
     println!(
-        "controller: {ai_name}; embedded champion generation {}",
-        champion.gen
+        "controller: {ai_name}; embedded champion generation {}; FNV-1a {:#018x}",
+        champion.gen,
+        fnv1a(EMBEDDED_CHAMPION.as_bytes())
     );
     if deployment_mix {
         let player_batch = deployment_counts(maps, |profile| profile.players)
@@ -1039,6 +1156,10 @@ fn main() {
 mod tests {
     use super::*;
 
+    fn strings(values: &[&str]) -> Vec<String> {
+        values.iter().map(|value| (*value).to_string()).collect()
+    }
+
     fn produce(building: &str, city: u32) -> Action {
         Action::Produce {
             city,
@@ -1058,6 +1179,42 @@ mod tests {
             royal_society_replacement(&produce("national_history_museum", 17), false).is_none()
         );
         assert!(royal_society_replacement(&produce("war_department", 17), true).is_none());
+    }
+
+    #[test]
+    fn supplied_values_fail_closed_and_numbers_do_not_default() {
+        assert_eq!(option_value(&[], "--speed").unwrap(), None);
+        assert!(option_value(&["--speed".to_string()], "--speed").is_err());
+        assert!(option_value(&["--speed".to_string(), "--maps".to_string()], "--speed").is_err());
+        assert_eq!(
+            number_value(&["--turns".to_string(), "250".to_string()], "--turns").unwrap(),
+            Some(250)
+        );
+        assert!(number_value(
+            &["--turns".to_string(), "not-a-number".to_string()],
+            "--turns"
+        )
+        .is_err());
+        assert!(number_value(
+            &strings(&["--turns", "250", "--turns", "not-a-number"]),
+            "--turns"
+        )
+        .is_err());
+        assert!(option_value(
+            &strings(&["--speed", "online", "--speed", "--jobs", "1"]),
+            "--speed"
+        )
+        .is_err());
+        assert!(validate_args(&strings(&["--unknown"])).is_err());
+        assert!(validate_args(&strings(&["positional"])).is_err());
+        assert!(validate_args(&strings(&["--maps"])).is_err());
+        assert!(validate_args(&strings(&[
+            "--maps",
+            "1",
+            "--deployment-mix",
+            "--randomize-civs"
+        ]))
+        .is_ok());
     }
 
     #[test]
@@ -1092,6 +1249,11 @@ mod tests {
         assert!(has_exact_number(&args, "--turns", 250));
         assert!(!has_exact_number(&args, "--turns", 320));
         assert!(has_exact_flag(&args, "--deployment-mix"));
+        assert!(!has_exact_number(
+            &["--turns".to_string(), "0250".to_string()],
+            "--turns",
+            250
+        ));
         assert!(!has_exact_number(
             &["--turns".to_string(), "nope".to_string()],
             "--turns",
@@ -1187,7 +1349,8 @@ mod tests {
         let champion = frozen_champion();
         let game = Game::new(2, 20, 14, 88_003, 1, 0);
         let ais = AdvancedAi::fleet_weighted(&game, &champion.weights);
-        assert!(champion.gen > 0);
+        assert_eq!(champion.gen, FROZEN_CHAMPION_GENERATION);
+        assert_eq!(fnv1a(EMBEDDED_CHAMPION.as_bytes()), FROZEN_CHAMPION_FNV1A);
         assert_eq!(ais[0].weights(), &champion.weights);
         assert_ne!(
             ais[0].weights(),
