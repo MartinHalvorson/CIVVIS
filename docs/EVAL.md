@@ -1017,7 +1017,6 @@ threaded batch equal the serial ones.
 The practical consequence: the twenty-map runs in the entries above were
 never a considered choice of sample size. Re-run anything worth deciding at
 a hundred maps or more.
-||||||| b07a0ea
 
 ## 2026-07-26 — the cadence effect is real; two corrections to get there
 
@@ -1415,6 +1414,150 @@ re-running, unchanged, once siege conversion moves — which is the point of
 keeping it rather than reverting it. The census attribution fix lands
 regardless: it was reporting 61% where the truth is 34%, and that number is
 what made this look like the biggest available lever in the first place.
+
+## 2026-07-26 — three free military superpowers, all worth nothing
+
+Oracle ablation: hand one seat a free, cheating version of one subsystem and
+play it against stock agents on matched cells — same map, same seat, once with
+the grant and once without — then run McNemar's exact test over the cells the
+grant changed. The maximum over such grants is an upper bound on everything
+any amount of honest work on that subsystem could ever be worth.
+
+`ablate --grant all --pairs 50 --players 4 --turns 500 --seed 420000`, 60x38/6,
+100 cells per grant:
+
+| grant | fired/game | helped | hurt | McNemar p | verdict |
+|---|---|---|---|---|---|
+| `none` (control) | 0 | 0 | 0 | 1.0000 | **0 discordant of 100** |
+| `modernity` — every unit free at the top of its upgrade chain, every turn | 92.4 | 16 | 16 | 1.0000 | no headroom |
+| `taker` — a melee unit placed beside every enemy city | 476.8 | 15 | 13 | 0.8506 | no headroom |
+| `attrition` — every unit starts each turn at full health | 111.5 | 11 | 14 | 0.6900 | no headroom |
+| **`treasury`** — 200 Gold and 100 Faith per turn | 147.7 | **62** | **0** | **0.0000** | **headroom** |
+
+**The calibration is what licenses reading the rest.** A null is otherwise
+ambiguous between "this subsystem does not limit the agent" and "this
+instrument cannot resolve anything", and those call for opposite next steps.
+`treasury` is not a subsystem and is not realistic — it hands over more Gold in
+ten turns than these empires accumulate in a game. At the same 100 cells where
+the military grants produced 16/16, 15/13 and 11/14, it produced **62 to 0**.
+The instrument detects an advantage. The military grants are not one.
+
+The control returning **0 discordant cells out of 100** is the other half: the
+same game played twice is bit-identical, so none of the above is harness noise.
+It reproduced 26/100 across two independent runs.
+
+**Military capability is not on the critical path in this simulator.** That
+contradicts `AI_GAPS.md` item 4 — "the single biggest per-system win
+available" — which its own re-sequencing admits had never been measured. It has
+now been measured three ways, each an upper bound, each null. It is consistent
+with everything else on record: 0 of 48 games ended in domination, 60% ended
+diplomatic and 27% religious, while the agent spent 26% of its turns planning
+Conquest and 21% in Recovery.
+
+What this does **not** say. `treasury` grants a currency, not a decision, so it
+shows the agent converts resources into wins efficiently — not that its
+economic decisions are poor. What it relocates is the question: the leverage is
+in the economy, and the open part is whether the *generation* of that economy
+is what the agent is bad at. That is also where `ProductionSearchAi` failed
+(9 maps to 21), diagnosed at the time as a horizon shorter than the decision's
+payoff rather than as production not mattering. Those two findings now point the
+same way.
+
+Power: ~30 discordant cells resolves roughly a 70/30 split. A real 60/40 effect
+would not have been detected, so these are "worth less than this run can
+resolve", not "exactly zero". The calibration bounds how much that matters —
+whatever the military grants are worth, it is a small fraction of what the
+economy is worth.
+
+
+## 2026-07-26 — the agent picks the wrong thing to play for, by 30 points
+
+The three capability grants said this agent is not limited by what it can do.
+The other half of the question is whether it is limited by what it chooses to
+do. `ablate --mode best-lane` answers it: each cell is played once per victory
+lane with the seat committed to that lane from turn one, and once adaptively.
+The maximum over lanes is an oracle no agent could implement — it needs the
+result before the decision — so the gap to the adaptive agent bounds the whole
+of victory routing, search and priors included.
+
+`--mode best-lane --pairs 25 --players 4 --turns 500 --seed 420000`, 50 cells,
+350 games:
+
+| policy | wins | share |
+|---|---|---|
+| adaptive (the shipped agent) | 14/50 | 28.0% |
+| **committed Religion** | **29/50** | **58.0%** |
+| committed Diplomacy | 20/50 | 40.0% |
+| committed Science | 0/50 | 0.0% |
+| committed Culture | 0/50 | 0.0% |
+| committed Domination | 0/50 | 0.0% |
+| committed Score | 0/50 | 0.0% |
+| best lane per cell (oracle) | 38/50 | 76.0% |
+
+25 cells where some lane won and adaptive lost, 1 the other way, McNemar exact
+**p=0.0000**.
+
+**The headline is not the oracle.** "Some lane won 76%" is a maximum over six
+correlated runs and is optimistic by construction. The load-bearing number is a
+single fixed policy: **committing to Religion from turn one wins 58% against
+28% for adapting**, on the same 50 cells, at 25% parity. That is not a max over
+anything. The agent gives up roughly thirty points by deciding for itself.
+
+Read with the ablation, the picture is consistent and narrow: capability is
+not the constraint (three free military superpowers, all null, against a
+calibration that scored 62-0), and *routing* is, by a very large margin.
+
+**Four of the six lanes never win.** Committed Science, Culture, Domination and
+Score won 0 of 50 each. For Science that is arithmetic rather than weakness:
+`docs/AI_GUIDE.md` records unassisted science victories landing on turns 1021
+and 940, and these games stop at 500. Any agent that routes toward one of
+those four at this player count and turn budget has already lost, which is
+what the adaptive agent spends much of its time doing — 26% of its turns
+planning Conquest across 48 games that produced no domination victory at all.
+
+Caveats. Only one seat commits while three adapt, so 58% is "committing beats
+adapting", not "religion is unconditionally strongest" — if every seat
+committed they would contest the same prophet slots. The result is specific to
+4 players, 500 turns, this map profile and all six conditions enabled. And a
+single fixed lane is not the fix: it is the evidence that the routing decision
+is worth an enormous amount and is currently being made badly.
+
+
+## 2026-07-26 — the expansion ceiling is not what limits expansion
+
+The oracle ablation put the leverage in the economy, and city count is the
+largest single multiplier on one, so the obvious suspect was the hardcoded
+`.min(6)` sitting on top of a `map_capacity` that reaches 9. Across 48
+six-player games the agent finished on 6.4 cities per empire, apparently
+resting on that ceiling.
+
+`ai_eval advanced_wide advanced --pairs 120 --players 4 --width 60 --height 38
+--city-states 6 --turns 500 --seed 520000`, where `advanced_wide` lets
+`map_capacity` decide:
+
+- 120/240 against 120/240, paired-map score 50.0%, Elo-equivalent +0
+- **0 maps favoured either side, 120 neutral, sign p=1.0000**
+- every diagnostic identical to the digit — cities 4.86 vs 4.86, score 519.4 vs
+  519.4, settlers 0.18 vs 0.18
+
+Identical diagnostics mean the same games were played. The treatment was inert,
+and the arithmetic says why: `desired_cities` is `(3 + turn/90).min(capacity)
+.min(ceiling)`, so the ceiling first binds past turn ~450, these games average
+323 turns, and at 323 the target is 6 while the agent reaches **4.86**. It
+never arrives at its own target, so raising the target cannot matter. The 6.4
+that motivated this came from six-player games running to ~405 turns and did
+not transfer to the four-player profile.
+
+**What it relocates.** Expansion is limited by execution rather than by
+ambition: the agent wants six cities and settles five. Whatever binds sits in
+settler production, site availability, or the expansion window.
+
+**And a process note worth more than the result.** Every grant in `oracle.rs`
+carries a test asserting it actually fires, because a treatment that does
+nothing produces a null for the wrong reason — two of those tests caught
+exactly that during development. That discipline was not applied here, and a
+240-game run bought what one line of arithmetic would have said first. A
+treatment needs a fires-check before it needs an evaluation.
 
 
 ## 2026-07-26 — strategic_deep promoted on a pre-registered 300-map run

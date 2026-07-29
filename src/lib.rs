@@ -16,6 +16,7 @@ pub mod league;
 pub mod mapgen;
 pub mod neural;
 pub mod obs;
+pub mod oracle;
 pub mod parallel;
 
 

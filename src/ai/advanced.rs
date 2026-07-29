@@ -23,6 +23,41 @@ const THREAT_RELIEF_RADIUS: i32 = 6;
 /// side of the map keeps prosecuting its own campaign.
 const RELIEF_MARCH_TURNS: f64 = 3.0;
 
+/// Turn the ancient-rush window shuts, after which ordinary campaign rules
+/// resume. `rush_census` finds the first walled capital at turn 80 and 43% of
+/// empires holding `masonry` by then; 60 leaves the lane a margin on the wrong
+/// side of that and keeps it honestly *ancient*.
+const RUSH_WINDOW_CLOSES: u32 = 60;
+/// Tiles a rush will march. Measured capital separations on 6p 74x46 run a
+/// median 13 and a p90 17, so 16 covers roughly nine seats in ten while
+/// refusing the marches that cannot arrive before the window shuts.
+const RUSH_REACH: i32 = 16;
+/// Melee units the stack needs before it opens, and the floor the standing
+/// army is raised to while a rush is planned.
+///
+/// Two is what the siege actually needs: two melee units placed three apart
+/// seal a six-neighbour ring, and the readiness gate
+/// (`early_rush_stack_ready`) separately asks the engine's own damage curve
+/// whether the staged force can finish the city before it dies — so the count
+/// does not have to carry that job. Measured against 3 and 4 on 12 maps, 2
+/// took the most cities (12/12) and killed the most empires.
+///
+/// ⚠ `RUSH_REACH` was swept to 11 and measured clearly worse — first war
+/// slipped turn 34 to 51 and blows by turn 60 fell 17.9 to 4.9 — because the
+/// median capital separation is 13, so a shorter reach leaves most seats with
+/// no legal victim at all. Do not tighten it.
+const RUSH_STACK: usize = 2;
+/// Melee the empire keeps *building* while a rush is on, as distinct from the
+/// stack that opens it.
+///
+/// These two numbers want opposite things and were one constant for too long.
+/// Raising the opening stack to 3 converted better (14 of 24 games saw an
+/// empire killed, against 10) but declared twelve turns later, which is the
+/// wrong trade inside a window: the median kill slipped turn 47 to 56. Opening
+/// at 2 and continuing to build to 4 gets both — the war starts the turn it
+/// can, and the reinforcements walk into a siege already in progress.
+const RUSH_ARMY: usize = 4;
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum GrandStrategy {
     Expansion,
@@ -214,6 +249,10 @@ pub struct StrategicPlan {
     pub threatened_city: Option<u32>,
     pub desired_cities: usize,
     pub assessed_turn: u32,
+    /// Whether this plan is an ancient rush. Carried on the plan rather than
+    /// re-derived, because the production valuation runs it for every
+    /// candidate item in every city and `early_rush_victim` walks the world.
+    pub rush: bool,
 }
 
 /// Movement domain for a coordinated force. The same planner operates on
@@ -682,6 +721,42 @@ pub struct AdvancedAi {
     /// wrong.
     pub deny_leaders: bool,
 
+    /// Whether the empire will open an **ancient rush**: pick the nearest
+    /// weak neighbour before the walls go up, march a small stack to their
+    /// capital, and declare only once it is already adjacent.
+    ///
+    /// Every number this lane uses was measured on this engine by
+    /// `rush_census` (12 six-player 74x46 games, seed 900000) rather than
+    /// carried over from Civ 6 intuition, because the two disagree sharply:
+    ///
+    /// - **No capital anywhere carries a wall before turn 80** (0% at turns
+    ///   20-60, 8.3% at 80), and no empire holds `masonry` at turn 50. The
+    ///   walled-city problem that dominates siege design simply does not
+    ///   exist inside this window.
+    /// - **Capitals sit at `city_strength` 17.2 at turn 50 with a mean
+    ///   garrison of 0.7** — they are, on average, empty. A Monte Carlo over
+    ///   the engine's own `damage`/`city_strength` formulas puts two warriors
+    ///   at 100% capture against that profile and four at 100% even when the
+    ///   defender pulls its whole field army home.
+    /// - The nearest rival capital is a median 13 tiles away (p90 17), which
+    ///   is 9 and 12 turns of marching. That march, not the army, is the
+    ///   binding cost.
+    ///
+    /// The timing rule is the point of the lane. The defender only prioritises
+    /// `walls` once `threatened` fires, and `threatened_city` requires hostile
+    /// units within 6 tiles *while already at war*. Walls cost 80 production
+    /// against an early city's handful per turn. So a declaration issued from
+    /// an already-adjacent stack cannot be answered, while the same
+    /// declaration issued at marching distance hands the victim ten turns of
+    /// warning. `advanced` cannot express this at all: `assess` withholds
+    /// `Conquest` until turn 55 for all but five hardcoded civilizations, and
+    /// `advanced_war_declaration` carries a hard `turn < 35` floor — both
+    /// after the window this lane plays in.
+    ///
+    /// Reachable as `advanced_rush`. Paired against `advanced` it isolates the
+    /// early-aggression lane and nothing else.
+    pub early_rush: bool,
+
     /// Whether a Science or Expansion threat is answered by racing the leader
     /// in that lane instead of by declaring on them.
     ///
@@ -804,6 +879,7 @@ impl AdvancedAi {
             parallel_settlers: false,
             civ_blind: false,
             deny_leaders: true,
+            early_rush: false,
             counter_in_lane: false,
             counter_stand_down: false,
             early_score_alarm: false,
@@ -991,7 +1067,15 @@ impl AdvancedAi {
         if unavailable_victory_plan && !useful_religious_opening {
             return true;
         }
-        if g.turn.saturating_sub(plan.assessed_turn) >= 5 {
+        // A rush is re-read every turn. The five-turn cadence is right for a
+        // plan measured in eras, but the rush's whole decision — "is the stack
+        // staged and can it finish?" — becomes true on one specific turn, and
+        // waiting up to four more to notice spends them out of a window that
+        // shuts. Measured: early campaigns declare at a median turn 36 and
+        // kill 14 turns later, so the target lands at 50 rather than 54 on
+        // this alone.
+        let cadence = if plan.rush { 1 } else { 5 };
+        if g.turn.saturating_sub(plan.assessed_turn) >= cadence {
             return true;
         }
         if let Some(target) = plan.target_player {
@@ -1891,6 +1975,9 @@ impl AdvancedAi {
         let basil_tagma_timing = g.has_ability(pid, "taxis")
             && (g.players[pid].religion.is_some()
                 || g.players[pid].civics.contains("divine_right"));
+        // The ancient rush is a *window*, not a preference, so it is decided
+        // beside the other timing arm rather than among the victory lanes.
+        let rush_victim = self.early_rush_victim(g, pid);
         let victory = self.victory_focus(g, pid);
         // Target selection needs the same public culture-race totals as
         // victory denial. Build them once for the assessment instead of
@@ -1915,6 +2002,11 @@ impl AdvancedAi {
             (GrandStrategy::Conquest, "an emergency objective is standing")
         } else if basil_tagma_timing {
             (GrandStrategy::Conquest, "Tagma timing is live")
+        } else if rush_victim.is_some() {
+            (
+                GrandStrategy::Conquest,
+                "a neighbour is inside the ancient window and cannot wall in time",
+            )
         } else if let Some(target) = active_victory_target {
             // The assigned-Religion arm is the only one that does not first ask
             // whether the empire can afford to expand. Measured, that costs the
@@ -1988,6 +2080,10 @@ impl AdvancedAi {
         let target_player = if let Some(emergency) = &emergency_objective {
             Some(emergency.target)
         } else if wartime_rivals.is_empty() {
+            // The rush already chose, on nearness and weakness, and the
+            // generic value sort would happily re-aim the column at a richer
+            // rival two weeks' march away.
+            rush_victim.map(|(target, _)| target).or_else(|| {
             forced_target.or_else(|| {
                 denial
                     .filter(|(rival, _)| self.campaign_target_legal(g, pid, *rival))
@@ -2030,6 +2126,7 @@ impl AdvancedAi {
                             .map(|(rival, _)| rival)
                     })
             })
+            })
         } else {
             wartime_rivals
                 .iter()
@@ -2054,6 +2151,16 @@ impl AdvancedAi {
         };
         let target_city = emergency_objective
             .map(|emergency| emergency.city)
+            // The rush aims at the capital and nothing else. A capital is the
+            // one city whose loss can end a small neighbour outright, it is
+            // where `city_strength`'s palace +3 is paid for by having the
+            // whole empire's defence in one place, and the generic
+            // `campaign_city_value` sort would otherwise send the column at
+            // whichever border town scored best.
+            .or_else(|| {
+                rush_victim.filter(|(target, _)| target_player == Some(*target))
+                    .map(|(_, capital)| capital)
+            })
             .or_else(|| {
                 target_player.and_then(|target| {
                     g.cities
@@ -2100,6 +2207,10 @@ impl AdvancedAi {
             threatened_city,
             desired_cities,
             assessed_turn: g.turn,
+            // Only a plan that actually aims at the victim is a rush. If
+            // something later in target selection re-aimed the campaign, the
+            // production bonus must not follow it.
+            rush: rush_victim.is_some_and(|(victim, _)| target_player == Some(victim)),
         }
     }
 
@@ -2491,6 +2602,24 @@ impl AdvancedAi {
                     && !g.players[pid].techs.contains("astrology") =>
                 {
                     Some("astrology")
+                }
+                // An ancient rush rides. `rush_census` measures **0% of
+                // empires holding `horseback_riding` at turn 50**, so the
+                // stack is warriors — and a warrior attacking the measured
+                // capital takes 28 damage a blow and dies on its fourth,
+                // having dealt 134 of the 200 needed. That is the whole
+                // reason a war declared at turn 30 does not take a city until
+                // turn 53: the stack trades itself, and the next one has to be
+                // built and marched all over again.
+                //
+                // A horseman is strength 36 for 80 production against a
+                // warrior's 20 for 40 — it takes 15 a blow instead of 28, so
+                // it survives the siege rather than paying for it — and it has
+                // **4 movement against 2**, which halves the nine-to-twelve
+                // turn march that is the lane's other binding cost. At 195
+                // science it is also cheaper to reach than iron working's 225.
+                _ if plan.rush && !g.players[pid].techs.contains("horseback_riding") => {
+                    Some("horseback_riding")
                 }
                 _ if science_commitment => [
                     "rocketry",
@@ -4432,6 +4561,168 @@ impl AdvancedAi {
     /// Global power answers whether a war is affordable; this answers whether
     /// the army is actually in position to prosecute it. At least one melee
     /// unit is mandatory because ranged and siege units cannot capture a city.
+    /// The neighbour an ancient rush should open on, and their capital.
+    ///
+    /// Returns `None` unless every measured precondition holds, because the
+    /// whole value of the lane is that it plays a window rather than a
+    /// preference. See `early_rush` for where each number comes from.
+    fn early_rush_victim(&self, g: &Game, pid: usize) -> Option<(usize, u32)> {
+        if !self.early_rush {
+            return None;
+        }
+        // A war already running is not re-opened every turn, and dropping the
+        // lane at `RUSH_WINDOW_CLOSES` mid-siege abandons the campaign with
+        // the stack on the ring: melee adjacent to the objective fell to zero
+        // at turn 80 for exactly this reason. The window governs **opening** a
+        // rush; finishing one is governed by the war.
+        let already_committed = g.players.iter().any(|player| {
+            player.id != pid
+                && player.alive
+                && !player.is_minor
+                && !player.is_barbarian
+                && g.is_at_war(pid, player.id)
+        });
+        if g.turn >= RUSH_WINDOW_CLOSES && !already_committed {
+            return None;
+        }
+        let mine: Vec<Pos> = g
+            .player_city_ids(pid)
+            .into_iter()
+            .map(|cid| g.cities[&cid].pos)
+            .collect();
+        if mine.is_empty() {
+            return None;
+        }
+        let my_power = g.military_power(pid);
+        g.players
+            .iter()
+            .filter(|player| {
+                player.id != pid && player.alive && !player.is_minor && !player.is_barbarian
+            })
+            .filter(|player| self.campaign_target_legal(g, pid, player.id))
+            // Not stronger than us. The stack is what makes the rush work, so
+            // this is a floor against opening on somebody who can answer it,
+            // not the 1.32-plus-12 superiority `advanced` waits for.
+            //
+            // It is a test for *opening* a war, not for continuing one. Once
+            // the war is running, losing this test would switch the whole lane
+            // off mid-campaign — dropping the army floor and handing the
+            // column's objective back to the empire-global `threatened_city` —
+            // which is the campaign abandoning itself at exactly the moment
+            // the victim starts fighting back.
+            // ⚠ Tightened to `* 0.85` — "genuinely weaker, not merely
+            // comparable" — and measured clearly worse: early wars fell 33 to
+            // 14, the median declaration slipped turn 32 to 47, and kills
+            // slipped 47 to 70. Early empires are *all* near-parity because
+            // they all field one or two units, so a superiority test does not
+            // select weak victims, it just postpones the rush out of its own
+            // window. What makes the rush work is the staged stack against an
+            // unwalled capital, which is what the readiness gate checks.
+            .filter(|player| {
+                g.is_at_war(pid, player.id)
+                    || g.military_power(player.id) <= my_power * 1.15 + 5.0
+            })
+            .filter_map(|player| {
+                // The capital while they have one, otherwise whatever is
+                // left. Wiping a neighbour means taking *every* city, and a
+                // rush that stops the moment the palace falls leaves a
+                // one-city rump alive — which is the difference between a
+                // capture and an elimination.
+                let capital = g
+                    .player_city_ids(player.id)
+                    .into_iter()
+                    .find(|cid| g.cities[cid].is_capital)
+                    .or_else(|| {
+                        g.player_city_ids(player.id)
+                            .into_iter()
+                            .min_by_key(|cid| {
+                                let pos = g.cities[cid].pos;
+                                (mine.iter().map(|own| g.wdist(*own, pos)).min().unwrap_or(i32::MAX), *cid)
+                            })
+                    })?;
+                let city = &g.cities[&capital];
+                // The window is defined by the walls, so test the walls rather
+                // than trusting the turn number. `rush_census` reports 0%
+                // walled capitals through turn 60, but a modded ruleset, a
+                // faster speed, or a defender who reacted would all show up
+                // here and close the lane honestly.
+                if city
+                    .buildings
+                    .iter()
+                    .any(|b| g.rules.buildings[b.as_str()].outer_defense > 0)
+                {
+                    return None;
+                }
+                let reach = mine.iter().map(|pos| g.wdist(*pos, city.pos)).min()?;
+                (reach <= RUSH_REACH).then_some((player.id, capital, reach))
+            })
+            // Nearest first: the march is the binding cost, not the siege.
+            // Break ties on the weaker army, then on id so the choice is
+            // deterministic across a mirrored pair.
+            .min_by(|a, b| {
+                a.2.cmp(&b.2)
+                    .then(
+                        g.military_power(a.0)
+                            .total_cmp(&g.military_power(b.0)),
+                    )
+                    .then(a.0.cmp(&b.0))
+            })
+            .map(|(target, capital, _)| (target, capital))
+    }
+
+    /// Whether the stack standing off the victim's capital is the size the
+    /// engine's own combat math says takes it.
+    ///
+    /// A Monte Carlo over `damage`, `effective_strength` and `city_strength`
+    /// against the measured turn-50 capital (strength 17.2, mean garrison 0.7,
+    /// no walls) puts two melee units at 100% and one at 0%. Four is the
+    /// figure that still reads 100% when the defender pulls its entire field
+    /// army home — the case this lane cannot rule out, since it declares
+    /// three tiles from the victim's capital.
+    fn early_rush_stack_ready(&self, g: &Game, pid: usize, target: usize, cid: u32) -> bool {
+        let Some(city) = g.cities.get(&cid) else {
+            return false;
+        };
+        let objective = city.pos;
+        let units = self.staged_campaign_units(g, pid, target, objective);
+        let takers: Vec<u32> = units
+            .into_iter()
+            .filter(|uid| g.rules.units[g.units[uid].kind.as_str()].is_melee_capable())
+            .collect();
+        if takers.len() < RUSH_STACK {
+            return false;
+        }
+        // Counting takers is not the same as being able to finish, and the
+        // difference cost this lane twenty turns. War was declared at turn 30
+        // on two warriors and the first city did not fall until turn 54: a
+        // warrior against the measured capital takes 28 damage a blow and dies
+        // on its fourth, having dealt 134 of the 200 needed. The stack traded
+        // itself and the next one had to be built and marched all over again.
+        //
+        // So ask the engine's own combat math whether this force can take the
+        // city *before it dies*, using the same `damage` curve the fight will
+        // use. `30 * exp((att - def) / 25)` per blow each way, `100 / incoming`
+        // blows survived.
+        let defense = g.city_strength(cid);
+        let deliverable: f64 = takers
+            .iter()
+            .filter_map(|uid| g.units.get(uid))
+            .map(|unit| {
+                let attack = crate::game::effective_strength(
+                    g.unit_strength(unit, false),
+                    unit.hp,
+                );
+                let out = 30.0 * ((attack - defense) / 25.0).exp();
+                let incoming = (30.0 * ((defense - attack) / 25.0).exp()).max(1.0);
+                let blows = (unit.hp as f64 / incoming).floor().max(1.0);
+                out * blows
+            })
+            .sum();
+        // The city's pool, plus a turn of the 20 HP/turn it regenerates
+        // whenever the ring is not fully sealed.
+        deliverable >= city.hp as f64 + 20.0
+    }
+
     fn campaign_staged_for_war(
         &self,
         g: &Game,
@@ -4448,6 +4739,135 @@ impl AdvancedAi {
         let formation_ready = units.len() >= 3 || (units.len() >= 2 && ratio >= 1.60);
         let minimum_ratio = if committed_domination { 0.90 } else { 1.05 };
         formation_ready && has_capturer && ratio + 1e-9 >= minimum_ratio
+    }
+
+    /// Drive one melee unit of an ancient rush directly at the objective
+    /// capital, bypassing the force-group heuristics entirely.
+    ///
+    /// Four separate attempts to make those heuristics conduct a siege made
+    /// things measurably worse (see the rejected notes on `focus_target` and
+    /// on the `relieving`/`Muster` postures). They are tuned for a field
+    /// campaign between comparable armies, and a rush is not that: it is four
+    /// melee units against an unwalled capital holding a garrison of 0.7,
+    /// inside a window that shuts.
+    ///
+    /// The routine is the Monte Carlo's own recipe, in order:
+    ///
+    /// 1. **Walk into a depleted city.** An ordinary ranged attack cannot take
+    ///    a city below 1 HP, so a city at 0 was opened by a Bombard and is
+    ///    standing open for whoever steps in.
+    /// 2. **Attack from the ring** if already on it.
+    /// 3. **Take a free ring tile.** Every melee unit on the ring both adds a
+    ///    blow and helps seal the siege, and an unsealed city heals 20 HP a
+    ///    turn — which is what actually defeated this lane before: the stack
+    ///    reached the 3-5 tile staging ring at full strength (measured max 4)
+    ///    while the city's own ring never held more than two.
+    ///
+    /// Returns `None` when this unit is not part of a live rush, leaving the
+    /// ordinary wartime behaviour untouched.
+    fn rush_siege_step(
+        &mut self,
+        g: &mut Game,
+        pid: usize,
+        uid: u32,
+        plan: &StrategicPlan,
+    ) -> Option<bool> {
+        if !plan.rush {
+            return None;
+        }
+        let target = plan.target_player?;
+        if !g.is_at_war(pid, target) {
+            return None;
+        }
+        let cid = plan.target_city?;
+        let city = g.cities.get(&cid).filter(|city| city.owner == target)?;
+        let objective = city.pos;
+        let depleted = city.hp <= 0;
+        let spec = &g.rules.units[g.units.get(&uid)?.kind.as_str()];
+        if !spec.is_melee_capable() || matches!(spec.domain.as_deref(), Some("sea" | "air")) {
+            return None;
+        }
+        let here = g.units[&uid].pos;
+
+        if g.wdist(here, objective) <= 1 {
+            if depleted && g.can_move(uid, objective) {
+                // The city is open. Walking in *is* the capture.
+                return Some(g.apply(pid, &Action::Move { unit: uid, to: objective }).is_ok());
+            }
+            let attacked = g
+                .apply(
+                    pid,
+                    &Action::Attack {
+                        unit: uid,
+                        target: objective,
+                    },
+                )
+                .is_ok();
+            if attacked {
+                return Some(true);
+            }
+            // Out of moves this turn: hold the ring rather than give it up.
+            // A vacated ring tile is 20 HP a turn handed back.
+            return Some(self.base.fortify_or_stop(g, pid, uid));
+        }
+
+        // Close on a free ring tile — but *which* ring tile decides whether
+        // this is a siege or a queue.
+        //
+        // `district_under_siege` needs every passable neighbour of the city
+        // occupied or covered by our zone of control, and a city that is not
+        // besieged heals 20 HP a turn. A ZOC unit covers its own ring tile
+        // plus both ring-neighbours, three of six, so **two units placed three
+        // apart seal the ring and two units side by side do not**. Routing to
+        // the nearest free tile bunches them, which is why an unsealed capital
+        // took 23 turns to fall against a Monte Carlo estimate of three.
+        //
+        // So prefer the free tile furthest from the ones we already hold, and
+        // only then the one we can reach.
+        let held: Vec<Pos> = g
+            .player_unit_ids(pid)
+            .into_iter()
+            .filter(|other| *other != uid)
+            .filter_map(|other| g.units.get(&other))
+            .filter(|other| g.rules.units[other.kind.as_str()].is_melee_capable())
+            .map(|other| other.pos)
+            .filter(|pos| g.wdist(*pos, objective) <= 1)
+            .collect();
+        let mut ring: Vec<Pos> = g
+            .wdisk(objective, 1)
+            .into_iter()
+            .filter(|pos| {
+                *pos != objective
+                    && g.unit_can_traverse(uid, *pos)
+                    && g.units_at(*pos).iter().all(|other| {
+                        g.units.get(other).is_some_and(|other| other.owner != pid)
+                    })
+            })
+            .collect();
+        if ring.is_empty() {
+            return None;
+        }
+        // Spread first, then nearness to us, then position for determinism.
+        ring.sort_by_key(|pos| {
+            let spread = held
+                .iter()
+                .map(|other| g.wdist(*pos, *other))
+                .min()
+                .unwrap_or(i32::MAX);
+            (std::cmp::Reverse(spread), g.wdist(here, *pos), pos.0, pos.1)
+        });
+        // Walk the preference order: the best tile may be unroutable this
+        // turn, and giving up on it would leave the unit standing still.
+        for goal in ring.iter().take(3) {
+            let goals: HashSet<Pos> = std::iter::once(*goal).collect();
+            if let Some(next) = g
+                .route_step_to_any(uid, &goals)
+                .filter(|pos| g.can_move(uid, *pos))
+            {
+                return Some(g.apply(pid, &Action::Move { unit: uid, to: next }).is_ok());
+            }
+        }
+        None
     }
 
     /// Redirect an otherwise idle field unit to the active conquest front.
@@ -4685,11 +5105,19 @@ impl AdvancedAi {
         let emergency_target = g
             .emergency_objective(pid)
             .is_some_and(|objective| objective.target == target);
+        // An ancient rush is the same decision taken earlier and on smaller
+        // numbers, so it waives the two gates that are calendar rather than
+        // condition — the turn-35 floor and the second city — and keeps every
+        // gate that is about the war itself. It is still subject to
+        // `close_enough`, to a staged stack, and to the peace deadline.
+        let rushing = self
+            .early_rush_victim(g, pid)
+            .is_some_and(|(victim, _)| victim == target);
         if plan.strategy != GrandStrategy::Conquest
             || major_wars > 0
-            || g.turn < 35
+            || (!rushing && g.turn < 35)
             || g.turn < self.peace_until
-            || g.player_city_ids(pid).len() < 2
+            || (!rushing && g.player_city_ids(pid).len() < 2)
             || g.is_at_war(pid, target)
             || (!emergency_target && !self.campaign_target_legal(g, pid, target))
         {
@@ -4712,11 +5140,21 @@ impl AdvancedAi {
         // threshold that authorizes a Surprise War, waiting for superiority
         // guarantees that the rival gets the final uncontested turns.
         let urgent_denial = self.urgent_victory_threat(g, target);
-        let ready = urgent_denial || if committed_domination {
-            my_power >= target_power * 0.85 && my_power >= 30.0
-        } else {
-            my_power > target_power * 1.32 + 12.0
-        };
+        // `my_power > target_power * 1.32 + 12` is an empire-wide comparison,
+        // and at turn 40 both empires are three or four units, so the `+ 12`
+        // alone can outweigh the whole ratio. What decides an ancient siege is
+        // not the empires' totals but how many takers are standing at the
+        // objective, which is exactly what `early_rush_stack_ready` counts.
+        let ready = urgent_denial
+            || if rushing {
+                plan.target_city
+                    .and_then(|city| g.cities.get(&city))
+                    .is_some_and(|city| self.early_rush_stack_ready(g, pid, target, city.id))
+            } else if committed_domination {
+                my_power >= target_power * 0.85 && my_power >= 30.0
+            } else {
+                my_power > target_power * 1.32 + 12.0
+            };
         let staged = plan
             .target_city
             .and_then(|city| g.cities.get(&city))
@@ -4726,7 +5164,10 @@ impl AdvancedAi {
                     pid,
                     target,
                     city.pos,
-                    committed_domination,
+                    // A staged rush stack is already at the objective and has
+                    // counted its own takers, so hold it to the domination
+                    // ratio rather than the elective-war one.
+                    committed_domination || rushing,
                 )
             });
         if close_enough && ready && staged {
@@ -7145,6 +7586,17 @@ impl AdvancedAi {
             GrandStrategy::Recovery => 2 * city_count,
             _ => city_count,
         };
+        // A rush is fought out of one or two cities, so `2 * city_count` asks
+        // for two units when the siege needs four and the census measures it
+        // fielding 2.5 melee at turn 50 with 1.1 of them anywhere near the
+        // objective. Ask for the stack plus one left at home; the lane shuts
+        // itself at `RUSH_WINDOW_CLOSES`, so this cannot become a standing
+        // military appetite.
+        let desired_military = if plan.rush {
+            desired_military.max(RUSH_ARMY)
+        } else {
+            desired_military
+        };
         let raw = match item {
             Item::Unit { unit } if unit == "settler" => {
                 let site = self.best_settle_site(g, pid, city.pos, 11).or_else(|| {
@@ -7406,6 +7858,24 @@ impl AdvancedAi {
                         }
                         + if spec.siege && counts.siege == 0 && plan.target_city.is_some() {
                             95.0
+                        } else {
+                            0.0
+                        }
+                        // The rush wants melee, cheaply, now. Ranged units are
+                        // measured at roughly half a melee unit's damage per
+                        // production against a city (a flat -17 attacking one),
+                        // they exert no zone of control so they cannot help
+                        // seal the siege ring that stops a city healing 20 a
+                        // turn, and they can never land the capturing blow.
+                        // Siege is worth nothing inside a window in which no
+                        // capital has walls.
+                        + if plan.rush
+                            && !naval
+                            && !aircraft
+                            && force_gap > 0.0
+                            && spec.is_melee_capable()
+                        {
+                            240.0
                         } else {
                             0.0
                         }
@@ -8975,6 +9445,27 @@ impl AdvancedAi {
         anchor: Pos,
         enemies: &[usize],
     ) -> Pos {
+        // An ancient rush keeps its objective. `threatened_city` outranks
+        // `target_city` here and is an empire-wide fact, so the turn the
+        // victim's counter-raid puts any city of ours under pressure the whole
+        // column re-aims — homeward, or at whatever hostile unit is nearest
+        // that city. Measured: melee standing adjacent to a rival capital runs
+        // at **0.03 per civilization** at turn 50 while 1.01 sits on the
+        // staging ring three to five tiles out. The stack marches, declares,
+        // and then never closes the last three tiles.
+        //
+        // Trading a city for their capital is the whole bet of a rush, and it
+        // is a bet the census says pays: their capital is unwalled and holds a
+        // garrison of 0.7, ours is not the one under threat yet.
+        let rush_objective = plan
+            .rush
+            .then(|| plan.target_city.and_then(|cid| g.cities.get(&cid)))
+            .flatten();
+        if domain == ForceDomain::Land {
+            if let Some(city) = rush_objective {
+                return city.pos;
+            }
+        }
         let threatened_enemy = plan.threatened_city.and_then(|cid| {
             let city = g.cities.get(&cid)?;
             g.units
@@ -9248,6 +9739,13 @@ impl AdvancedAi {
             units.sort_unstable();
             let anchor = Self::force_anchor(g, &units);
             let objective = self.domain_objective(g, pid, plan, domain, anchor, &enemies);
+            // ⚠ MEASURED AND REJECTED: pinning `focus_target` to the objective
+            // city for a rush, on the theory that the first defender met
+            // otherwise pulls the column off the capital. It made things
+            // worse — blows on cities by turn 60 fell 6.1 to 2.9, first
+            // capture slipped turn 65 to 86 — and the city's own ring still
+            // never held more than two. A rush that walks past the defenders
+            // to stand on the ring is a rush that gets killed on the ring.
             let focus_target = self.force_focus_target(g, &units, &enemies, plan);
             let muster_radius = self.base.w.muster_radius.round().max(1.0) as i32;
             let readiness = units
@@ -9291,6 +9789,13 @@ impl AdvancedAi {
             let relieving = plan.threatened_city.is_some_and(|city| {
                 !self.scoped_relief_hold || Self::can_relieve(g, &units, anchor, city)
             });
+            // ⚠ MEASURED AND REJECTED: letting a rush ignore `relieving` and
+            // `Muster` — on the theory that a stack sized against one
+            // undefended capital should never stand still — made it *worse*.
+            // Over the same 12 maps, captures fell 9/12 to 6/12 and the median
+            // first capture slipped from turn 79 to 96. The two standing-still
+            // postures are load-bearing even for a rush; do not retry this
+            // without a different mechanism.
             let posture = if average_hp <= self.base.w.withdraw_hp + 10.0 {
                 ForcePosture::Recover
             } else if (focus_target.is_some()
@@ -10508,6 +11013,14 @@ impl AdvancedAi {
             self.rebuild_force_groups(g, pid, plan);
             self.force_groups_dirty = false;
         }
+        // A live rush executes its own siege. See `rush_siege_step`: the
+        // general force-group heuristics assemble the stack correctly and then
+        // will not put it on the city's ring, and four attempts to make them
+        // do so each measured worse.
+        if let Some(acted) = self.rush_siege_step(g, pid, uid, plan) {
+            self.force_groups_dirty = true;
+            return acted;
+        }
         let group = self
             .force_groups
             .iter()
@@ -11581,6 +12094,12 @@ impl AdvancedAi {
             self.plan = Some(self.assess(g, pid));
         }
         let plan = self.plan.clone().unwrap();
+        // Production for a Conquest plan without an assigned victory target
+        // runs through `BasicAi::cities`, not `advanced_production`, so the
+        // rush has to raise the standing-army floor there or it plans a war it
+        // never builds an army for. Rewritten every turn, including back to
+        // zero the turn the window shuts.
+        self.base.rush_military_floor = if plan.rush { RUSH_ARMY } else { 0 };
         if self.food_first != 0.0 {
             // Want food only while short of the target. Past it the extra
             // food buys nothing this treatment is arguing for, and the
@@ -11831,6 +12350,7 @@ mod tests {
             threatened_city: None,
             desired_cities: 4,
             assessed_turn: game.turn,
+            rush: false,
         };
         let ai = AdvancedAi::targeting(VictoryTarget::Domination);
 
@@ -12053,6 +12573,7 @@ mod tests {
             threatened_city: None,
             desired_cities: 4,
             assessed_turn: g.turn,
+            rush: false,
         };
         let objective =
             AdvancedAi::new().domain_objective(&g, 0, &plan, ForceDomain::Sea, anchor, &[1]);
@@ -12089,6 +12610,7 @@ mod tests {
             threatened_city: None,
             desired_cities: 4,
             assessed_turn: g.turn,
+            rush: false,
         };
         let objective =
             AdvancedAi::new().domain_objective(&g, 0, &plan, ForceDomain::Sea, approach, &[1]);
@@ -12160,6 +12682,7 @@ mod tests {
             threatened_city: None,
             desired_cities: 3,
             assessed_turn: 0,
+            rush: false,
         };
 
         let mut science_game = Game::new(2, 24, 16, 77, 80, 0);
@@ -12372,6 +12895,7 @@ mod tests {
             threatened_city: None,
             desired_cities: 4,
             assessed_turn: game.turn,
+            rush: false,
         };
         let expires = game.turn + 10;
         let deal = |give_gold, request_gold, friendship, peace| DiplomaticDeal {
@@ -12448,6 +12972,7 @@ mod tests {
             threatened_city: None,
             desired_cities: 2,
             assessed_turn: game.turn,
+            rush: false,
         };
         let mut defender = AdvancedAi::new();
         defender.major_war_since = Some(60);
@@ -12472,6 +12997,7 @@ mod tests {
             threatened_city: None,
             desired_cities: 2,
             assessed_turn: game.turn,
+            rush: false,
         };
         let mut refused = game.clone();
         let mut conqueror = AdvancedAi::new();
@@ -12515,6 +13041,7 @@ mod tests {
             threatened_city: None,
             desired_cities: 4,
             assessed_turn: game.turn,
+            rush: false,
         };
         let ai = AdvancedAi::targeting(VictoryTarget::Science);
         assert!(game.legal_actions(0).iter().any(|action| {
@@ -12570,6 +13097,7 @@ mod tests {
             threatened_city: None,
             desired_cities: 3,
             assessed_turn: game.turn,
+            rush: false,
         };
         let ai = AdvancedAi::new();
         ai.strategic_governors(&mut game, 0, &plan);
@@ -12614,6 +13142,7 @@ mod tests {
             threatened_city: None,
             desired_cities: 3,
             assessed_turn,
+            rush: false,
         };
         let ai = AdvancedAi::new();
         ai.strategic_governors(&mut game, 0, &plan(GrandStrategy::Expansion));
@@ -12673,6 +13202,7 @@ mod tests {
                 threatened_city: None,
                 desired_cities: 3,
                 assessed_turn: game.turn,
+                rush: false,
             };
             AdvancedAi::new().strategic_governors(&mut game, 0, &plan);
             assert!(
@@ -12798,6 +13328,7 @@ mod tests {
             threatened_city: None,
             desired_cities: 3,
             assessed_turn: game.turn,
+            rush: false,
         });
         assert!(
             stale_ai.plan_stale(&game, 0),
@@ -13012,6 +13543,7 @@ mod tests {
             threatened_city: None,
             desired_cities: 3,
             assessed_turn: game.turn,
+            rush: false,
         };
         let mut ai = AdvancedAi::targeting(VictoryTarget::Domination);
 
@@ -13200,6 +13732,7 @@ mod tests {
             threatened_city: None,
             desired_cities: 4,
             assessed_turn: game.turn,
+            rush: false,
         });
         assert!(!ai.plan_stale(&game, 0));
 
@@ -13708,6 +14241,7 @@ mod tests {
             threatened_city: None,
             desired_cities: 3,
             assessed_turn: opening.turn,
+            rush: false,
         });
         assert!(!opening_ai.plan_stale(&opening, 0));
         assert_ne!(
@@ -13730,6 +14264,7 @@ mod tests {
             threatened_city: None,
             desired_cities: 3,
             assessed_turn: game.turn,
+            rush: false,
         });
         assert!(targeted.plan_stale(&game, 0));
 
@@ -13846,6 +14381,7 @@ mod tests {
             threatened_city: None,
             desired_cities: 3,
             assessed_turn: game.turn,
+            rush: false,
         };
         ai.advanced_research(&mut game, 0, &plan);
         assert_eq!(game.players[0].research.as_deref(), Some("rocketry"));
@@ -13896,6 +14432,7 @@ mod tests {
             threatened_city: None,
             desired_cities: 3,
             assessed_turn: game.turn,
+            rush: false,
         };
 
         assert!(ai.diplomatic_science_backup(&game, 0, &plan));
@@ -13923,6 +14460,7 @@ mod tests {
             threatened_city: None,
             desired_cities: 3,
             assessed_turn: 1,
+            rush: false,
         };
         let ai = AdvancedAi::new();
 
@@ -14008,6 +14546,7 @@ mod tests {
             threatened_city: None,
             desired_cities: 3,
             assessed_turn: game.turn,
+            rush: false,
         };
 
         AdvancedAi::new().advanced_research(&mut game, 0, &plan);
@@ -14812,6 +15351,7 @@ mod tests {
             threatened_city: None,
             desired_cities: 3,
             assessed_turn: game.turn,
+            rush: false,
         };
         assert!(
             ai.production_value(&game, 0, cities[0], &duplicate, &plan, &ai.counts(&game, 0))
@@ -14862,6 +15402,7 @@ mod tests {
             threatened_city: None,
             desired_cities: 3,
             assessed_turn: game.turn,
+            rush: false,
         };
         let seowon = Item::District {
             district: "seowon".to_string(),
@@ -14925,6 +15466,7 @@ mod tests {
             threatened_city: None,
             desired_cities: 3,
             assessed_turn: game.turn,
+            rush: false,
         };
         let ai = AdvancedAi::new();
         let counts = ai.counts(&game, 0);
@@ -14989,6 +15531,7 @@ mod tests {
             threatened_city: None,
             desired_cities: 1,
             assessed_turn: game.turn,
+            rush: false,
         };
         let ai = AdvancedAi::targeting(VictoryTarget::Science);
         let counts = ai.counts(&game, 0);
@@ -15041,6 +15584,7 @@ mod tests {
             threatened_city: None,
             desired_cities: 1,
             assessed_turn: game.turn,
+            rush: false,
         });
 
         ai.take_turn(&mut game, 0);
@@ -15081,6 +15625,7 @@ mod tests {
             threatened_city: None,
             desired_cities: 3,
             assessed_turn: game.turn,
+            rush: false,
         };
         let mut ai = AdvancedAi::new();
         ai.base.book_pos = 4;
@@ -15124,6 +15669,7 @@ mod tests {
             threatened_city: None,
             desired_cities: 3,
             assessed_turn: game.turn,
+            rush: false,
         };
         let ai = AdvancedAi::targeting(VictoryTarget::Domination);
         let counts = ai.counts(&game, 0);
@@ -15158,6 +15704,7 @@ mod tests {
             threatened_city: None,
             desired_cities: 3,
             assessed_turn: game.turn,
+            rush: false,
         };
         let mut ai = AdvancedAi::targeting(VictoryTarget::Domination);
         ai.base.book_pos = 4;
@@ -15210,6 +15757,7 @@ mod tests {
             threatened_city: None,
             desired_cities: 3,
             assessed_turn: game.turn,
+            rush: false,
         };
         let mut ai = AdvancedAi::targeting(VictoryTarget::Domination);
 
@@ -15280,6 +15828,7 @@ mod tests {
             threatened_city: None,
             desired_cities: 3,
             assessed_turn: game.turn,
+            rush: false,
         };
         ai.rebuild_force_groups(&game, 0, &plan);
         let order = ai
@@ -15414,6 +15963,7 @@ mod tests {
                 threatened_city: Some(city),
                 desired_cities: 3,
                 assessed_turn: game.turn,
+                rush: false,
             };
             let mut ai = AdvancedAi::targeting(VictoryTarget::Domination);
             ai.scoped_relief_hold = true;
@@ -15457,6 +16007,7 @@ mod tests {
             threatened_city: Some(city),
             desired_cities: 3,
             assessed_turn: game.turn,
+            rush: false,
         };
         let mut ai = AdvancedAi::targeting(VictoryTarget::Domination);
         assert!(!ai.scoped_relief_hold, "the shipped default must be unchanged");
@@ -15517,6 +16068,7 @@ mod tests {
             threatened_city: None,
             desired_cities: 3,
             assessed_turn: game.turn,
+            rush: false,
         };
         let ai = AdvancedAi::targeting(VictoryTarget::Domination);
 
@@ -15584,6 +16136,7 @@ mod tests {
             threatened_city: None,
             desired_cities: 3,
             assessed_turn: game.turn,
+            rush: false,
         };
 
         assert_eq!(
@@ -15633,6 +16186,7 @@ mod tests {
             threatened_city: None,
             desired_cities: 3,
             assessed_turn: game.turn,
+            rush: false,
         };
 
         assert_eq!(
@@ -15699,6 +16253,7 @@ mod tests {
             threatened_city: None,
             desired_cities: 3,
             assessed_turn: game.turn,
+            rush: false,
         };
         let mut ai = AdvancedAi::targeting(VictoryTarget::Domination);
 
@@ -15786,6 +16341,7 @@ mod tests {
             threatened_city: None,
             desired_cities: 4,
             assessed_turn: game.turn,
+            rush: false,
         };
         let mut ai = AdvancedAi::new();
         assert!(!ai.base.has_practical_settle_site(&game, 0));
@@ -15847,6 +16403,7 @@ mod tests {
             threatened_city: None,
             desired_cities: 1,
             assessed_turn: game.turn,
+            rush: false,
         };
         let mut ai = AdvancedAi::new();
         assert!(ai.base.has_practical_settle_site(&game, 0));
@@ -15893,6 +16450,7 @@ mod tests {
             threatened_city: None,
             desired_cities: 3,
             assessed_turn: game.turn,
+            rush: false,
         };
         let mut ai = AdvancedAi::targeting(VictoryTarget::Domination);
 
@@ -15987,6 +16545,7 @@ mod tests {
             threatened_city: None,
             desired_cities: 4,
             assessed_turn: game.turn,
+            rush: false,
         };
         let capture = Action::Attack {
             unit: attacker,
@@ -16073,6 +16632,7 @@ mod tests {
             threatened_city: None,
             desired_cities: 3,
             assessed_turn: game.turn,
+            rush: false,
         };
         let ai = AdvancedAi::targeting(VictoryTarget::Culture);
         ai.advanced_production(&mut game, 0, &plan);
@@ -16114,6 +16674,7 @@ mod tests {
             threatened_city: None,
             desired_cities: 3,
             assessed_turn: game.turn,
+            rush: false,
         };
         let counts = EmpireCounts::default();
         let ai = AdvancedAi::new();
@@ -16185,6 +16746,7 @@ mod tests {
             threatened_city: None,
             desired_cities: 3,
             assessed_turn: game.turn,
+            rush: false,
         };
         let ai = AdvancedAi::targeting(VictoryTarget::Science);
         let counts = ai.counts(&game, 0);
@@ -16266,6 +16828,7 @@ mod tests {
             threatened_city: None,
             desired_cities: 3,
             assessed_turn: game.turn,
+            rush: false,
         };
         let ai = AdvancedAi::new();
         let safe = ai.district_project_value(&game, 0, city, "bread_and_circuses", &plan);
@@ -16718,6 +17281,7 @@ mod tests {
             threatened_city: None,
             desired_cities: 1,
             assessed_turn: game.turn,
+            rush: false,
         };
         let ai = AdvancedAi::targeting(VictoryTarget::Science);
 
@@ -16779,6 +17343,7 @@ mod tests {
             threatened_city: None,
             desired_cities: 1,
             assessed_turn: game.turn,
+            rush: false,
         };
 
         assert!(AdvancedAi::targeting(VictoryTarget::Science)
@@ -16816,6 +17381,7 @@ mod tests {
             threatened_city: None,
             desired_cities: 2,
             assessed_turn: game.turn,
+            rush: false,
         };
         let units_before = game.player_unit_ids(0).len();
         let buildings_before = game
@@ -16894,6 +17460,7 @@ mod tests {
             threatened_city: None,
             desired_cities: 1,
             assessed_turn: game.turn,
+            rush: false,
         });
 
         ai.take_turn(&mut game, 0);
@@ -17246,6 +17813,7 @@ mod tests {
             threatened_city: None,
             desired_cities: 2,
             assessed_turn: game.turn,
+            rush: false,
         };
         let ai = AdvancedAi::new();
 
@@ -17434,6 +18002,7 @@ mod tests {
             threatened_city: None,
             desired_cities: 1,
             assessed_turn: game.turn,
+            rush: false,
         };
         let before_units = game.player_unit_ids(0).len();
         let ai = AdvancedAi::new();
@@ -17955,6 +18524,7 @@ mod tests {
             threatened_city: None,
             desired_cities: 4,
             assessed_turn: g.turn,
+            rush: false,
         };
         let mut ai = AdvancedAi::new();
         ai.rebuild_force_groups(&g, 0, &plan);
@@ -18139,6 +18709,7 @@ mod tests {
             threatened_city: None,
             desired_cities: 4,
             assessed_turn: g.turn,
+            rush: false,
         };
         let mut ai = AdvancedAi::new();
         ai.rebuild_force_groups(&g, 0, &plan);
@@ -18283,6 +18854,7 @@ mod tests {
             threatened_city: None,
             desired_cities: 4,
             assessed_turn: g.turn,
+            rush: false,
         };
         assert!(ai.advanced_military_step(&mut g, 0, attacker, &plan));
         assert!(!g.units.contains_key(&safe_defender));
@@ -18544,6 +19116,7 @@ mod tests {
             threatened_city: None,
             desired_cities: 4,
             assessed_turn: g.turn,
+            rush: false,
         };
         let mut ai = AdvancedAi::new();
         ai.rebuild_force_groups(&g, 0, &plan);
@@ -18613,6 +19186,7 @@ mod tests {
             threatened_city: None,
             desired_cities: 3,
             assessed_turn: vote_game.turn,
+            rush: false,
         };
         let mut ai = AdvancedAi::targeting(VictoryTarget::Science);
         ai.advanced_diplomacy(&mut vote_game, 2, &plan);
@@ -18900,6 +19474,7 @@ mod tests {
             threatened_city: None,
             desired_cities: 4,
             assessed_turn: game.turn,
+            rush: false,
         };
         let mut ai = AdvancedAi::new();
 
@@ -18954,6 +19529,7 @@ mod tests {
             threatened_city: None,
             desired_cities: 3,
             assessed_turn: game.turn,
+            rush: false,
         };
         AdvancedAi::targeting(VictoryTarget::Science).advanced_spies(&mut game, 0, &plan);
         assert!(game.spies.contains_key(&spy), "the agent survives the raze");
@@ -19012,6 +19588,7 @@ mod tests {
             threatened_city: None,
             desired_cities: 3,
             assessed_turn: game.turn,
+            rush: false,
         };
 
         AdvancedAi::targeting(VictoryTarget::Science).advanced_spies(&mut game, 0, &plan);
@@ -19045,6 +19622,7 @@ mod tests {
             threatened_city: None,
             desired_cities: 4,
             assessed_turn: game.turn,
+            rush: false,
         };
         let ai = AdvancedAi::new();
         ai.byzantium_tagma_production(&mut game, 0, &plan);

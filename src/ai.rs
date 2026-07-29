@@ -1072,6 +1072,16 @@ pub struct BasicAi {
     /// whereabouts are remembered here, and a unit found circling is priced
     /// out of the tiles it has already proved are worthless.
     unit_motion: BTreeMap<u32, UnitMotion>,
+    /// Melee units the ancient-rush lane wants in hand, or 0 when no rush is
+    /// running. Set once a turn by `AdvancedAi` from its strategic plan.
+    ///
+    /// The standing-army target is `mil_per_city * n_cities`, and
+    /// `mil_per_city` defaults to 1.0 — so a two-city empire wants two
+    /// military units, which is what `rush_census` measures it fielding
+    /// (2.5 melee at turn 50, 1.1 of them near any rival capital). A siege
+    /// needs four. Without this floor the rush plans a war it never builds
+    /// the army for, which is the failure the census caught.
+    pub(crate) rush_military_floor: usize,
     /// Where this agent tells an observer what it is doing. Off unless a
     /// spectator attached one; see [`crate::reasoning`].
     pub(crate) journal: Journal,
@@ -1851,6 +1861,7 @@ impl BasicAi {
             settler_targets: HashMap::new(),
             last_path_step_from: RefCell::new(HashMap::new()),
             unit_motion: BTreeMap::new(),
+            rush_military_floor: 0,
             journal: Journal::default(),
         }
     }
@@ -1869,6 +1880,7 @@ impl BasicAi {
             settler_targets: HashMap::new(),
             last_path_step_from: RefCell::new(HashMap::new()),
             unit_motion: BTreeMap::new(),
+            rush_military_floor: 0,
             journal: Journal::default(),
         }
     }
@@ -4323,8 +4335,25 @@ impl BasicAi {
                 .or_else(|| self.upkeep_free_recovery_item(g, pid, cid));
         }
         let can_add_military = !self.minor || military < Self::minor_military_budget(g, pid);
-        if can_add_military && (military as f64) < self.w.mil_per_city * n_cities as f64 {
-            if let Some(m) = self.combined_arms_unit(g, pid, cid, melee, ranged) {
+        // An ancient rush needs a stack, not a garrison. While one is planned
+        // the floor is the stack size rather than `mil_per_city * n_cities`,
+        // and the units must be melee: only melee can land the capturing blow,
+        // only melee exerts the zone of control that seals a siege ring, and a
+        // land ranged unit attacking a city takes a flat -17 strength.
+        let rushing = !self.minor && !self.barb && self.rush_military_floor > 0;
+        let military_floor = if rushing {
+            (self.w.mil_per_city * n_cities as f64).max(self.rush_military_floor as f64)
+        } else {
+            self.w.mil_per_city * n_cities as f64
+        };
+        if can_add_military && (military as f64) < military_floor {
+            let picked = if rushing && melee < self.rush_military_floor {
+                self.best_military(g, pid, cid, Some(false))
+                    .or_else(|| self.combined_arms_unit(g, pid, cid, melee, ranged))
+            } else {
+                self.combined_arms_unit(g, pid, cid, melee, ranged)
+            };
+            if let Some(m) = picked {
                 return Some(Item::Unit { unit: m });
             }
         }
