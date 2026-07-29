@@ -215,6 +215,38 @@ enormous resource advantage. Consequently a failed Expansion screen is a stop,
 not a powered negative bound on this different profile. There is no seed retry
 and no threshold adjustment.
 
+### Prospective clustered-inference amendment
+
+At 2026-07-29 16:28 UTC, after the fixed screen had completed 10/12 control
+games but before it printed a control summary or began either the null or
+Expansion arm, a preflight audit identified that the two focal seat-cells on
+one map share a generated world. Treating all 12 cells as mutually independent
+would therefore make the screen's McNemar value anti-conservative whenever the
+two seats move together. No control aggregate or treatment outcome had been
+printed or inspected when this amendment was written.
+
+The already-running screen remains byte-for-byte unchanged at frozen binary
+head `8ed75b4`. Its original cell-level gate remains only a deliberately cheap
+resource-allocation screen: passage can earn the disjoint confirmation, but the
+screen's cell-level `p` is not itself a population-level transfer claim. Before
+any confirmation, `ablate` additionally collapses each map's two seats into one
+direction: helped when treatment wins more of the two seats than control, hurt
+when it wins fewer, and unchanged on a tie. It reports an exact two-sided sign
+test across discordant maps, restoring the independently generated map as the
+inference unit. This changes no world, seed, seat, controller, treatment,
+endpoint, or resource rule.
+
+This also narrows the older calibration language. The Online/Advanced
+Treasury result had 17 helped and zero hurt cells, so even worst-case pairing
+places those changes on at least nine wholly positive maps (`p <= 0.0039`);
+its sensitivity conclusion survives clustering. The 8/0 `strategic_deep`
+Treasury aggregate can occupy only four to six positive maps, however, whose
+two-sided map-level values range from 0.1250 to 0.03125. Because the old log
+did not retain cell identities, that architecture calibration is now treated
+as sensitivity rationale rather than confirmed map-level inference. No
+playable policy was promoted from it, and a focal Expansion transfer claim now
+requires the disjoint clustered confirmation below.
+
 ### Gated confirmation and decision
 
 Passing every screen term earns one disjoint confirmation with only the focal
@@ -228,11 +260,14 @@ ablate --grant expansion --ai strategic_deep --pairs 20 --players 8 \
 ```
 
 The confirmation supports transfer only if the grant fires, helps more cells
-than it hurts, and independently reaches two-sided McNemar `p < 0.05`. A pass
-does not promote a playable agent: the grant is cheating and deliberately
-bundled. It prioritizes separate preregistered tests of the two measured honest
-causes—late expansion eligibility and settler production value—without combining
-them. Failure stops this line on the focal cell and is reported as either
-underresolved, null, harmful, or invalid according to the failed term. Any claim
-about the exhibition mixture would still require a separately fixed stratified
-sample across its varying player counts, scripts, and topologies.
+than it hurts, independently reaches cell-level two-sided McNemar `p < 0.05`,
+helps more maps than it hurts, and independently reaches map-level two-sided
+sign-test `p < 0.05`. The map-level condition is additive and cannot rescue a
+failed original condition. A pass does not promote a playable agent: the grant
+is cheating and deliberately bundled. It prioritizes separate preregistered
+tests of the two measured honest causes—late expansion eligibility and settler
+production value—without combining them. Failure stops this line on the focal
+cell and is reported as either underresolved, null, harmful, or invalid
+according to the failed term. Any claim about the exhibition mixture would
+still require a separately fixed stratified sample across its varying player
+counts, scripts, and topologies.

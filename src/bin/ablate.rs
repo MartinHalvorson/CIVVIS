@@ -202,6 +202,33 @@ struct Cell {
     seat: usize,
 }
 
+/// Collapse the two focal seats on each shared world seed into one independent
+/// map direction. A map helps when the treatment wins more of its two focal
+/// seats than control, hurts when it wins fewer, and is otherwise unchanged.
+///
+/// The cell-level McNemar statistic remains useful as a sensitive screen, but
+/// its two seats share a generated world and cannot support an independent-
+/// cell confirmation claim. This sign statistic restores the map as the
+/// inference unit without pretending the two-seat cluster has a known
+/// correlation structure.
+fn map_cluster_directions(treated: &[bool], control: &[bool]) -> (u32, u32, u32) {
+    assert_eq!(treated.len(), control.len());
+    assert_eq!(treated.len() % 2, 0);
+    let mut helped = 0;
+    let mut hurt = 0;
+    let mut unchanged = 0;
+    for (with, without) in treated.chunks_exact(2).zip(control.chunks_exact(2)) {
+        let with_wins = with.iter().filter(|won| **won).count();
+        let without_wins = without.iter().filter(|won| **won).count();
+        match with_wins.cmp(&without_wins) {
+            std::cmp::Ordering::Greater => helped += 1,
+            std::cmp::Ordering::Less => hurt += 1,
+            std::cmp::Ordering::Equal => unchanged += 1,
+        }
+    }
+    (helped, hurt, unchanged)
+}
+
 fn run(grants: &[Grant], args: &[String]) {
     let pairs = number(args, "--pairs", 40).max(1) as usize;
     let players = number(args, "--players", 4).max(2) as usize;
@@ -384,6 +411,9 @@ fn run(grants: &[Grant], args: &[String]) {
         }
         let discordant = helped + hurt;
         let p = exact_two_sided(helped, discordant);
+        let (map_helped, map_hurt, map_unchanged) = map_cluster_directions(&treated, &control);
+        let map_discordant = map_helped + map_hurt;
+        let map_p = exact_two_sided(map_helped, map_discordant);
         let n = cells.len() as f64;
 
         println!(
@@ -403,6 +433,10 @@ lost where control won: {hurt}; unchanged: {}",
         );
         println!("  McNemar exact       p={p:.4} over {discordant} discordant cells");
         println!(
+            "  map-cluster sign    treatment won more seats on {map_helped} maps, fewer on \
+{map_hurt}, tied on {map_unchanged}; p={map_p:.4} over {map_discordant} discordant maps"
+        );
+        println!(
             "  grant fired         {fired} times ({:.1} per game)",
             fired as f64 / n
         );
@@ -413,7 +447,7 @@ agent under an oracle's name and says nothing about {}",
                 grant.name()
             );
         }
-        let verdict = if grant == Grant::None {
+        let cell_verdict = if grant == Grant::None {
             if discordant == 0 {
                 "SANITY OK — the null grant reproduced the control exactly, so \
 the harness is deterministic and adds nothing of its own"
@@ -432,7 +466,21 @@ than this run can resolve"
             "HARMFUL — free perfection here loses, so the grant is \
 mis-specified rather than the subsystem being fine"
         };
-        println!("  verdict             {verdict}");
+        println!("  cell verdict        {cell_verdict}");
+        let map_verdict = if grant == Grant::None {
+            if map_discordant == 0 {
+                "MAP SANITY OK — the null grant reproduced every map cluster"
+            } else {
+                "MAP SANITY BROKEN — the null grant changed at least one map cluster"
+            }
+        } else if map_p >= 0.05 {
+            "CLUSTERED INCONCLUSIVE — independently generated maps do not resolve headroom"
+        } else if map_helped > map_hurt {
+            "CLUSTERED HEADROOM — the positive direction survives map-level inference"
+        } else {
+            "CLUSTERED HARMFUL — the adverse direction survives map-level inference"
+        };
+        println!("  map verdict         {map_verdict}");
         println!();
     }
 }
@@ -624,7 +672,10 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
-    use super::{known_ai, parse_grant_profile, parse_grants, realized_geometry};
+    use super::{
+        exact_two_sided, known_ai, map_cluster_directions, parse_grant_profile, parse_grants,
+        realized_geometry,
+    };
     use civvis::game::VictoryConditions;
     use civvis::oracle::Grant;
     use civvis::setup::{MapPoles, MapScript, MapTopology};
@@ -697,5 +748,18 @@ mod tests {
         assert!(parse_grant_profile(&args(&["--shape", "torus"])).is_err());
         assert!(parse_grant_profile(&args(&["--poles", "temperate"])).is_err());
         assert!(parse_grant_profile(&args(&["--victories", "economic"])).is_err());
+    }
+
+    #[test]
+    fn map_cluster_inference_collapses_both_seats_before_testing() {
+        let control = [false, false, true, true, false, true, false, false];
+        let treated = [true, true, false, false, true, false, false, false];
+        assert_eq!(map_cluster_directions(&treated, &control), (1, 1, 2));
+
+        let all_control = [false; 12];
+        let all_treated = [true; 12];
+        let (helped, hurt, unchanged) = map_cluster_directions(&all_treated, &all_control);
+        assert_eq!((helped, hurt, unchanged), (6, 0, 0));
+        assert!((exact_two_sided(helped, helped + hurt) - 0.03125).abs() < f64::EPSILON);
     }
 }
