@@ -28,7 +28,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent / "civ6_control"))
 import civ6_env as env  # noqa: E402
 from civ6_control import install as modinstall  # noqa: E402
-from civ6_control import launcher, vision, watch  # noqa: E402
+from civ6_control import gamelock, launcher, vision, watch  # noqa: E402
 
 RUN_ROOT = Path.home() / "civvis-civ6-runs" / "control"
 
@@ -323,6 +323,19 @@ def press_escape(times: int = 2) -> bool:
 
 
 def play(args: argparse.Namespace) -> int:
+    # One run at a time against this installation. Two harnesses share one mod
+    # directory, one log and one process; the second one's install lands in the
+    # middle of the first one's game and neither notices.
+    if not gamelock.acquire(args.tag, wait_s=args.lock_wait):
+        print(f"another run holds the game: {gamelock.describe()}", file=sys.stderr)
+        return 6
+    try:
+        return _play(args)
+    finally:
+        gamelock.release()
+
+
+def _play(args: argparse.Namespace) -> int:
     config = build_config(args)
     run_dir = RUN_ROOT / args.tag
     run_dir.mkdir(parents=True, exist_ok=True)
@@ -396,7 +409,9 @@ def play(args: argparse.Namespace) -> int:
                 summary = " ".join(f"{k}={v}" for k, v in sorted(actions.items()))
                 print(f"[turn {state['turn']:>4}] score={event.get('score')} "
                       f"cities={event.get('cities')} units={event.get('units')} "
-                      f"blocker={event.get('blocker')} | {summary}")
+                      f"blocker={event.get('blocker')} "
+                      f"ticks={event.get('ticks_taken')}/{event.get('ticks_seen')} "
+                      f"| {summary}")
         elif kind == "blocked":
             print(f"[turn {event.get('turn')}] blocked on {event.get('blocker')} "
                   f"({event.get('attempts')} attempts)")
@@ -413,7 +428,21 @@ def play(args: argparse.Namespace) -> int:
         return 5
     print("in a configured game; the agent holds the seat from here")
 
-    reason = watch.follow(tail, args.timeout, record, stop_when=finished)
+    # Hold the foreground for the whole game. Anything else taking focus --
+    # a browser, another agent's automation -- throttles the game to almost no
+    # frames, and the turn loop runs off game-core events, so the run stops
+    # without a single log line saying why.
+    last_focus = [0.0]
+
+    def keep_foreground() -> None:
+        now = time.time()
+        if now - last_focus[0] < args.focus_every:
+            return
+        last_focus[0] = now
+        focus_game()
+
+    reason = watch.follow(tail, args.timeout, record, stop_when=finished,
+                          each_poll=keep_foreground)
     events.close()
 
     outcome = state["outcome"] or {}
@@ -482,6 +511,10 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--load-wait", type=float, default=90.0)
     ap.add_argument("--timeout", type=float, default=7200.0)
     ap.add_argument("--report-every", type=int, default=5)
+    ap.add_argument("--lock-wait", type=float, default=0.0,
+                    help="seconds to wait for another run to finish")
+    ap.add_argument("--focus-every", type=float, default=15.0,
+                    help="seconds between raising the game window (0 disables)")
     ap.add_argument("--status", action="store_true")
     args = ap.parse_args(argv)
 
