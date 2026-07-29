@@ -48,6 +48,7 @@ def run_attempt(difficulty: str, seed: int, args: argparse.Namespace) -> dict | 
         sys.executable, "-u", str(PLAY),
         "--tag", tag,
         "--difficulty", difficulty,
+        "--map", args.map,
         "--map-size", args.map_size,
         "--speed", args.speed,
         "--seed", str(seed),
@@ -55,6 +56,10 @@ def run_attempt(difficulty: str, seed: int, args: argparse.Namespace) -> dict | 
         "--timeout", str(args.timeout),
         "--lock-wait", str(args.lock_wait),
         "--report-every", str(args.report_every),
+        "--city-target", str(args.city_target),
+        "--war-from-turn", str(args.war_from_turn),
+        "--war-army", str(args.war_army),
+        "--military-per-city", str(args.military_per_city),
     ]
     print(f"\n=== {difficulty} seed {seed} -> {tag} ===", flush=True)
     subprocess.run(command, check=False)
@@ -94,6 +99,14 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--attempts", type=int, default=3,
                     help="attempts per rung before the campaign stops")
     ap.add_argument("--only", help="play one rung rather than climbing")
+    # Pangaea, not Continents: on a Duel Continents map the rival can start on
+    # its own landmass, and `reachable()` is a land query — an unreachable
+    # capital makes domination impossible no matter how good the army is.
+    ap.add_argument("--map", default="Pangaea.lua")
+    ap.add_argument("--city-target", type=int, default=3)
+    ap.add_argument("--war-from-turn", type=int, default=25)
+    ap.add_argument("--war-army", type=int, default=4)
+    ap.add_argument("--military-per-city", type=float, default=1.5)
     ap.add_argument("--map-size", default="MAPSIZE_DUEL")
     ap.add_argument("--speed", default="GAMESPEED_ONLINE")
     ap.add_argument("--max-turns", type=int, default=120)

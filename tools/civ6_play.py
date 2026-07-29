@@ -73,6 +73,12 @@ def build_config(args: argparse.Namespace) -> dict:
         "MaxTurns": args.max_turns,
         "HumanPlayers": 1,
         "CityTarget": args.city_target,
+        # Domination on a Duel map is the only victory reachable inside a
+        # hundred-odd turns — an unassisted science win lands past turn 900 —
+        # so the war knobs are exposed rather than left at their Lua defaults.
+        "WarFromTurn": args.war_from_turn,
+        "WarArmy": args.war_army,
+        "MilitaryPerCity": args.military_per_city,
         "Leader": args.leader,
         "StartDelayFrames": args.start_delay_frames,
         "TickFrames": args.tick_frames,
@@ -582,6 +588,11 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--window-side", choices=["left", "right", "none"],
                     default="left")
     ap.add_argument("--window-frac", type=float, default=0.5)
+    # Taking a walled capital needs a real army, not a garrison. Four units is
+    # the Lua default and is thin for a capture even at Settler.
+    ap.add_argument("--war-from-turn", type=int, default=25)
+    ap.add_argument("--war-army", type=int, default=4)
+    ap.add_argument("--military-per-city", type=float, default=1.5)
     ap.add_argument("--survey", action="store_true", default=True)
     ap.add_argument("--no-survey", dest="survey", action="store_false")
     ap.add_argument("--survey-enums", action="store_true",
