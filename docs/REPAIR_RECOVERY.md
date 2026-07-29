@@ -56,8 +56,9 @@ roster metadata, and static fleet construction. No focal seed, repair outcome,
 or treatment output informed it. The repair policy, deployment-world schedule,
 seats, seeds, sample sizes, endpoints, gates, stop rules, horizon, and resource
 cap are unchanged. Earlier one-turn diagnostics exercised stock weights and
-remain audit history rather than champion evidence; the required frozen null
-is still unopened.
+remain audit history rather than champion evidence. After implementation, the
+same non-focal null seed was replayed for one turn under the champion solely to
+validate mechanics; the required full-horizon frozen null is still unopened.
 
 ## Observation and causal diagnosis
 
@@ -262,6 +263,19 @@ Preregistration commit `deb1475` was pushed before implementation commit
   The champion-controller amendment supersedes that controller population, so
   neither diagnostic is champion evidence or can alter the frozen design or
   gate.
+
+The champion-controller design was frozen independently at `96d8859` and then
+implemented at `7fb4441d4667cec39eb94677a7b09ae61330f0b5`:
+
+- `cargo test --release --locked --bin repair_recovery_eval -j 1` passed all
+  11 focused tests, including exact loading/application of the committed
+  champion weights;
+- the rebuilt standalone binary rejected `--ai advanced` with exit 2 before
+  constructing a game; and
+- a four-map, one-turn null diagnostic at seed 79,991 used one job, reported
+  `advanced_evolved` embedded champion generation 14, exercised all four
+  deployment-null profiles, and reproduced all 8 matched focal cells exactly.
+  It was not a focal batch and cannot spend a gate.
 
 An initial attempt to invoke the standalone executable after `cargo test`
 failed immediately with exit 127 because a test harness does not create
