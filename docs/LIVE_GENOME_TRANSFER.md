@@ -65,6 +65,14 @@ A one-map, one-turn diagnostic at seed `9957999` may validate provenance and
 argument realization. It is not strength evidence and may not be pooled with a
 focal phase.
 
+That diagnostic completed before either focal seed was opened. The release
+binary SHA-256 was
+`ac0ad1a994f2144769536afc1f3d104ac3178a46e024d0c2ac1a14a2f6ba5b47`.
+It reported `advanced_evolved: loaded best.json`, `advanced: scripted, no
+artifacts required`, the exact frozen world axes below, and one complete map
+pair. Both one-turn worlds were neutral on wins and terminal score, as expected;
+those values are diagnostic only.
+
 The current spectator profile is frozen as eight majors, 84x54, twelve
 city-states, Online speed, Continents, Flat topology, Poles, randomized Civ VI
 leaders/civilizations, policy-visible turn limit 250, and Science/Culture/
