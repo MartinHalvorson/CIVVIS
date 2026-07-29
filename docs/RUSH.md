@@ -530,3 +530,36 @@ If development or holdout fails, there is no route threshold, staging range,
 coverage band, or seed retry. The ancient-rush line is retired on this live
 cell, and the next military work returns to mid-game victory routing rather
 than fitting another selector to these outcomes.
+
+### Development result: RETIRE the ancient-rush line on this cell
+
+The implementation was frozen and pushed as `cb817ba` before seed 9970000 was
+read. The exact command above then completed all 120 maps / 240 mirrored games
+(960 seat-games per entrant), averaging 245.8 turns:
+
+| frozen development term | observed | result |
+|---|---:|---|
+| Treatment seat-games ever rushing | 904/960 = **94.2%** | **FAIL**; required 10%..80% |
+| Paired win score | **47.7%** (95% CI 39.0%..56.6%, Elo -16) | **FAIL**; required at least 52% |
+| Map directions | **21** connected-rush / 70 neutral / **29** advanced | **FAIL**; favorable had to outnumber adverse |
+| Paired terminal-score share | **51.0%** | pass |
+| Unchanged promotion gate | **INCONCLUSIVE** | pass; it did not retain `advanced` |
+
+The conjunction failed, so the seed-9971000 holdout was not run. There is no
+coverage-band, staging-range, route-threshold, or seed retry.
+
+The mechanism result is useful despite the rejection. A real ancient land
+route barely selected on this Continents/Planet cell: 94.2% of treatment
+seat-games carried a rush at least once, although only 19.3% of their observed
+player-turns were rushing. The route-connected arm again built a materially
+larger empire than `advanced` -- 6.06 versus 5.29 cities, 76.2 versus 67.8
+population, 20.3 versus 17.2 military units, and score 577.2 versus 557.1 --
+yet won fewer focal seats, 32 versus 43. Its 24 Science and 8 Culture wins
+trailed the control's 38 Science and 5 Culture wins overall.
+
+So unreachable overseas capitals were not the dominant reason the old rush
+failed to convert land into victories. Restricting the rush to an initial land
+route preserves its expansion and army effect, but still diverts enough
+research, production, and strategic attention to lose the victory race. This
+is the preregistered stopping point for ancient-rush selectors on the live
+cell; subsequent military work returns to mid-game victory routing.
