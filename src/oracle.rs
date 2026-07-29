@@ -36,6 +36,11 @@ use crate::Pos;
 /// ever be assigned to.
 const CITY_WORK_RADIUS: usize = 3;
 
+/// The city count the expansion grant stops at — the same six
+/// `StrategicPlan::desired_cities` aims at, so the grant removes the cost of
+/// the agent's own appetite rather than inventing a larger one.
+const EXPANSION_TARGET: usize = 6;
+
 /// A capability granted to the wrapped agent for free.
 ///
 /// Each one is chosen to bound one measured failure, so a null result closes
@@ -134,10 +139,31 @@ pub enum Grant {
     /// foundation is lifted first so the engine will enumerate alternatives —
     /// and its own tile — instead of reporting the site as taken.
     Siting,
+    /// A free Settler whenever the seat is below its city target and has none
+    /// in flight.
+    ///
+    /// Bounds **expansion**, which every other city measurement is conditional
+    /// on. #532/#534/#542/#553 bound what a city works, owns, builds districts
+    /// on and stands on — all *per city*, and all saturated or null. None of
+    /// them asks whether the empire has enough cities in the first place, and
+    /// the evals say it does not: seats finish four-player games holding
+    /// **2.1 to 2.8** cities while `StrategicPlan::desired_cities` targets six.
+    ///
+    /// A settler costs production and a point of population, and needs
+    /// `pop >= 2` to build at all, so expansion is paid for out of exactly the
+    /// early economy that is also paying for everything else. This grants the
+    /// settler without the cost, so the win rate says what perfect expansion
+    /// tempo is worth at most.
+    ///
+    /// It grants only the unit. Where to settle is still the agent's decision,
+    /// walked by its own settler logic — which #553 measured taking 99.9% of
+    /// the value on offer — so this is a bound on expansion *rate* and not on
+    /// siting.
+    Expansion,
 }
 
 impl Grant {
-    pub const ALL: [Grant; 7] = [
+    pub const ALL: [Grant; 8] = [
         Grant::None,
         Grant::Modernity,
         Grant::Taker,
@@ -145,6 +171,7 @@ impl Grant {
         Grant::Treasury,
         Grant::Ground,
         Grant::Siting,
+        Grant::Expansion,
     ];
 
     pub fn name(self) -> &'static str {
@@ -156,6 +183,7 @@ impl Grant {
             Grant::Treasury => "treasury",
             Grant::Ground => "ground",
             Grant::Siting => "siting",
+            Grant::Expansion => "expansion",
         }
     }
 
@@ -347,6 +375,36 @@ impl<A: Ai> Oracle<A> {
         ys.food + ys.production + ys.gold + ys.science + ys.culture + ys.faith
     }
 
+    /// Hand the seat a free Settler while it is short of its city target.
+    ///
+    /// One at a time, which is the engine's own standing constraint on
+    /// expansion rate, so this removes the *cost* of a settler without also
+    /// removing the serialization. The target is `EXPANSION_TARGET`, the same
+    /// six `StrategicPlan::desired_cities` aims at, so the grant stops exactly
+    /// where the agent's own appetite stops rather than expanding forever.
+    fn grant_expansion(&mut self, g: &mut Game, pid: usize) {
+        let cities = g.player_city_ids(pid);
+        if cities.is_empty() || cities.len() >= EXPANSION_TARGET {
+            return;
+        }
+        let already_walking = g
+            .player_unit_ids(pid)
+            .into_iter()
+            .any(|uid| g.units.get(&uid).is_some_and(|unit| unit.kind == "settler"));
+        if already_walking {
+            return;
+        }
+        // The capital, by lowest id so the grant is deterministic.
+        let Some(home) = cities.iter().copied().min() else {
+            return;
+        };
+        let Some(pos) = g.cities.get(&home).map(|city| city.pos) else {
+            return;
+        };
+        g.spawn_unit("settler", pid, pos);
+        self.fired += 1;
+    }
+
     fn grant_treasury(&mut self, g: &mut Game, pid: usize) {
         g.players[pid].gold += 200.0;
         g.players[pid].faith += 100.0;
@@ -461,6 +519,7 @@ impl<A: Ai> Ai for Oracle<A> {
                 Grant::Treasury => self.grant_treasury(g, pid),
                 Grant::Ground => self.grant_ground(g, pid),
                 Grant::Siting => self.grant_siting(g, pid),
+                Grant::Expansion => self.grant_expansion(g, pid),
             }
         }
         self.inner.take_turn(g, pid);
@@ -481,7 +540,7 @@ impl<A: Ai> Ai for Oracle<A> {
 
 #[cfg(test)]
 mod tests {
-    use super::{Grant, Oracle, CITY_WORK_RADIUS};
+    use super::{Grant, Oracle, CITY_WORK_RADIUS, EXPANSION_TARGET};
     use crate::ai::{AdvancedAi, Ai};
     use crate::game::{Game, Item};
     use crate::Pos;
@@ -777,6 +836,68 @@ mod tests {
             .collect();
         out.sort();
         out
+    }
+
+
+    /// The expansion grant must actually hand out Settlers, must hand out
+    /// exactly one at a time, must stop at the target, and must grant nothing
+    /// else. A grant that quietly also moved the treasury would attribute
+    /// treasury's headroom to expansion.
+    #[test]
+    fn the_expansion_grant_fires_and_grants_only_settlers() {
+        let mut g = Game::new(4, 28, 18, 8_108, 200, 2);
+        let mut oracle = Oracle::new(AdvancedAi::new(), Grant::Expansion);
+        let mut others = AdvancedAi::fleet(&g);
+        let mut ever_granted = false;
+        while g.winner.is_none() && g.turn <= 140 {
+            let pid = g.current;
+            if pid == 0 {
+                let mut probe = g.clone();
+                let gold = probe.players[0].gold;
+                let faith = probe.players[0].faith;
+                let before: Vec<u32> = probe.player_unit_ids(0);
+                let settlers_before = probe
+                    .player_unit_ids(0)
+                    .into_iter()
+                    .filter(|uid| probe.units[uid].kind == "settler")
+                    .count();
+                let cities = probe.player_city_ids(0).len();
+
+                oracle.grant_expansion(&mut probe, 0);
+
+                assert_eq!(gold, probe.players[0].gold, "the grant moved the treasury");
+                assert_eq!(faith, probe.players[0].faith, "the grant moved Faith");
+                let after: Vec<u32> = probe.player_unit_ids(0);
+                let added = after.len() - before.len();
+                assert!(added <= 1, "the grant handed out {added} units at once");
+                if added == 1 {
+                    ever_granted = true;
+                    assert!(
+                        settlers_before == 0,
+                        "the grant stacked a second settler on a seat that had one"
+                    );
+                    assert!(
+                        cities < EXPANSION_TARGET,
+                        "the grant fired at or above its own target"
+                    );
+                    let fresh: Vec<u32> =
+                        after.iter().copied().filter(|uid| !before.contains(uid)).collect();
+                    assert_eq!(fresh.len(), 1);
+                    assert_eq!(
+                        probe.units[&fresh[0]].kind, "settler",
+                        "the grant handed out something other than a settler"
+                    );
+                }
+                oracle.take_turn(&mut g, pid);
+            } else {
+                others[pid].take_turn(&mut g, pid);
+            }
+            if g.winner.is_none() && g.current == pid {
+                let _ = g.apply(pid, &crate::game::Action::EndTurn);
+            }
+        }
+        assert!(oracle.fired() > 0, "the expansion grant never handed out a settler");
+        assert!(ever_granted, "no settler was ever observed being granted");
     }
 
     /// The grant must be modernization and nothing else: no Gold, no health,
