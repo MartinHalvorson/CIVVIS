@@ -4633,3 +4633,212 @@ The three results that do **not** depend on that run are unaffected and stand:
 | the gen-14 genome's edge is bred-profile-specific (deployment CI **excludes +58**, same profile resolves +207) | **established** |
 | `strategic_cheap` is significantly worse where it ships (−63, wins p=0.0018) | **established** |
 | three 4p 24×16 estimates — a strength, a cost, and a sign — failed to transfer | **established** |
+
+## 2026-07-29 — ★★★ what the action encoding can and cannot rank
+
+`policy_wide` lost 313 Elo because a net fit to outcomes encodes correlation and
+an argmax over siblings optimises whichever correlate is cheapest to move. The
+prescription recorded then was Q or advantage on **returns for actions actually
+taken**, and nothing in the repository emitted that data. `q_dataset` now does,
+and `q_train` fits a ranker over it — *which action was taken*, not what the
+outcome was, because a head asked that question has no correlate to chase.
+
+The dataset is built by replaying `game.log` against a fresh game of the same
+seed, so it records without disturbing what it records. That replay is checked
+rather than assumed: 60 games, **0 rejected applications, 0 divergent score
+lines**, 2.66M rows. A run that diverges exits without claiming the file.
+
+Held-out top-1, split **by game**.
+
+**Mixed-kind negatives** (125,623 held-out decisions, chance 20.0%):
+
+| features | top-1 |
+|---|---|
+| state only (34) | **20.0%** — exactly chance |
+| kind one-hot only (77) | 54.4% |
+| geometry only (13) | 54.2% |
+| all (124) | 54.0% |
+
+The full vector is no better than the kind one-hot alone. What is learned here is
+that the expert moves more often than it fortifies — true, and useless for
+choosing *which* move. State landing on exactly chance is both the metric's
+sanity check and `policy_wide`'s failure reproduced from the other side: every
+candidate in a decision shares one state vector, so state can only tie.
+
+**Same-kind negatives** (60,363 held-out decisions, chance 21.2%):
+
+| features | top-1 |
+|---|---|
+| kind one-hot only | 22.6% — chance, as it must be when the one-hot is constant |
+| **geometry only (13)** | **31.8%** |
+| all (124) | 31.3% |
+
+So the thirteen geometry terms *do* discriminate siblings, by half again over
+chance, on unseen games. That is the signal a move-ordering prior needs — and it
+is a **prior for a unit-action search that does not exist yet**, not a policy.
+`StrategicAi` searches victory lanes, not unit actions, so there is nothing in
+the tree today for this to order. Read as a greedy policy its ceiling is the
+expert it imitates.
+
+**Two corrections, each of which changed a conclusion:**
+
+- The within-kind control was first run on stride-sampled data, where only **103
+  of 531,892** decisions were same-kind by chance. It reported 22.1% and meant
+  nothing. `--negatives-same-kind` exists because of that.
+- Tie credit is `1/k`. `max_by` returns the *last* maximum, so a head that cannot
+  separate candidates read **0.0%** where the honest answer is chance — which
+  made structural blindness look like a trained anti-preference and inverted the
+  first reading of which feature block carried the signal.
+
+| claim | status |
+|---|---|
+| the replay-based emitter reproduces the games it records | **established** (0/60 divergent) |
+| state features cannot rank siblings, by construction | **established** (exactly chance) |
+| mixed-kind ranking is a kind prior, not action discrimination | **established** (kind alone matches the full vector) |
+| geometry discriminates same-kind siblings | **established** (31.8% vs 21.2%, n=60,363) |
+| any of this improves play | **unmeasured** — no agent or default changed |
+
+## 2026-07-29 — ★★★★ the breeding proxy is aligned with winning; its combat term is not
+
+`evolve` selects on `50*P*score_share + 12*P*combat_share` and promotes on wins.
+That split has been called a defect (including by me, three times) on the grounds
+that the search operator climbs one hill while the gate stands on another. It was
+never measured, so `proxy_align` measures it: play whole games with the stock
+fleet, rebuild `selection_value` exactly as `eval_game_observation` does, and ask
+how often the seat the proxy would pick is the seat that won.
+
+120 games, 4 players, 44×28, 200 turns; all 120 decided by victory.
+
+| objective | leader is the winner | 95% CI |
+|---|---|---|
+| chance | 25.0% | — |
+| `selection_value` (shipped) | 104/120 = **86.7%** | 79.4–91.6% |
+| score share alone | 115/120 = **95.8%** | 90.6–98.2% |
+
+Mean Spearman between the proxy's ordering of the table and the ordering by final
+score: **0.917**.
+
+**The objection does not stand.** At 86.7% against a 25% baseline the proxy is
+strongly aligned with winning, and the dense-signal/sparse-gate split is sound
+engineering rather than a misalignment.
+
+**But the combat term is dragging it, significantly.** The two objectives are
+read on the same games, so the comparison is paired: the combat term makes the
+proxy right where score alone was wrong in **2** games, and wrong where score
+alone was right in **13**. Fifteen discordant pairs, exact two-sided sign test
+**p = 0.0074**.
+
+So the 12-point combat share is not a free extra signal. It costs about nine
+points of agreement with the gate, and dropping it would make selection propose
+candidates the SPRT is more likely to accept.
+
+**Two limits on that recommendation, stated rather than buried:**
+
+- This measures the proxy *within a table*, on games between identical stock
+  agents. `evolve` uses it to rank *different genomes* across paired games, which
+  is not the same question. An objective that cannot pick the winner in front of
+  it is a weaker instrument for ranking genomes, but this run does not measure
+  the second thing directly.
+- The combat term is plausibly the only thing giving the war genes anything to
+  select on, and `gene_probe` already found much of that block inert. Removing it
+  may buy alignment at the cost of making those genes fully dead. That side of
+  the trade is **unmeasured**.
+
+| claim | status |
+|---|---|
+| the breeding proxy is aligned with winning | **established** (86.7% vs 25%, n=120) |
+| the split between dense selection and sparse gate is a defect | **refuted** |
+| the combat term reduces agreement with the gate | **established** (p=0.0074, paired) |
+| dropping it would improve evolution's throughput | **untested** — it follows, but it is not measured |
+| dropping it would strand the war genes | **unmeasured** |
+
+## 2026-07-29 — ★★★ the geometry learned which unit acts, not where it should go
+
+The action-ranking entry above established 31.8% top-1 against 21.2% chance on
+same-kind alternatives and called that the signal a unit-action search could
+order. **That conclusion was one control short.** Two moves can have the same
+kind and belong to different units. The thirteen geometry terms include the
+acting unit's HP, strength and movement, so the head can identify *which unit*
+`AdvancedAi` activates without learning anything about *which destination* is
+best for that unit.
+
+Two changes make that distinction measurable:
+
+- `q_dataset --negatives-same-actor` restricts every negative to the chosen
+  action's kind **and** unit. It implies the same-kind filter, so the kind prior
+  cannot return through the side door.
+- `q_train --eval-data` trains on one complete corpus and evaluates on another.
+  Its per-kind uncertainty is macro-averaged by game; thousands of correlated
+  decisions from one trajectory no longer manufacture a tiny error bar.
+
+The emitter now also honors `--speed` on both the played game and its replay.
+Before this, requesting the six-player Online profile still recorded Standard
+games — the same profile mismatch that erased every promoted gain earlier in
+this file.
+
+### Pre-registered profile-transfer test
+
+Training: eight 4-player, 44×28, 200-turn Standard games, seeds 920000–920007.
+External evaluation: eight 6-player, 74×46, 250-turn Online games with six city
+states, seeds 930000–930007. Both used four negatives per decision. All sixteen
+games ended in victory; both replays had **zero rejected actions and zero score
+divergences**.
+
+With same-kind negatives, the earlier result transfers strongly to the unseen
+deployment profile:
+
+| chosen kind | decisions | unseen games | chance | top-1 | game-macro lift |
+|---|---:|---:|---:|---:|---:|
+| all | 294,027 | 8 | 21.8% | 33.3% | **+11.5 ± 0.3 pp** |
+| move | 216,313 | 8 | 20.1% | 33.5% | **+13.5 ± 0.4 pp** |
+| fortify | 13,047 | 8 | 32.0% | 64.7% | **+32.6 ± 1.6 pp** |
+| ranged | 1,516 | 8 | 38.3% | 43.1% | +4.8 ± 2.4 pp |
+| attack | 602 | 8 | 43.4% | 50.8% | +7.4 ± 3.5 pp |
+
+This reproduces the aggregate finding and rules out Standard-to-Online domain
+shift as its explanation.
+
+Then hold the actor fixed. The number of emitted negatives falls from 222,294
+to 134,846 in the Standard corpus and from 1,115,620 to 651,035 in the Online
+corpus: **39–42% of the supposedly sibling alternatives belonged to another
+unit.** On the controlled corpus the result disappears:
+
+| chosen kind | decisions | unseen games | chance | top-1 | game-macro lift |
+|---|---:|---:|---:|---:|---:|
+| all | 209,525 | 8 | 26.8% | 27.3% | **+0.5 ± 0.2 pp** |
+| move | 204,198 | 8 | 26.4% | 26.9% | **+0.5 ± 0.2 pp** |
+| improve | 3,549 | 8 | 40.2% | 40.2% | 0.0 ± 0.0 pp |
+| promote | 791 | 8 | 45.3% | 45.3% | 0.0 ± 0.0 pp |
+| ranged | 741 | 8 | 44.3% | 39.9% | −4.4 ± 2.2 pp |
+| attack | 246 | 8 | 47.2% | 44.3% | −2.8 ± 2.3 pp |
+
+The state-only control lands at exact chance for every kind, confirming that
+tie credit and the grouped evaluator are behaving as designed.
+
+### What remains open
+
+Training and holding out inside the Online corpus gives move only +1.0 points.
+Attack reads +10.0 points, but on **80 decisions from two held-out games**; that
+is a lead for a fresh disjoint corpus, not evidence. It cannot rescue the model
+that failed on all eight external games.
+
+The mechanism is visible in the encoder. Once actor and kind are fixed, HP,
+strength, moves left, treasury and Faith are constants. Adjacent move targets
+usually share the remaining ownership, enemy-presence and distance flags. The
+vector contains no destination terrain, local force field, route progress or
+plan-relative geometry, so it has almost nothing with which to choose one empty
+neighbor over another.
+
+> **Do not wire this ranker into gameplay.** It learned activation order, not
+> destination or target order, and its honest ceiling is still the expert it
+> imitates. The next representation must make a target's spatial neighborhood
+> and progress toward the active objective visible, then pass this same-actor,
+> external-profile gate before a unit-action search spends a rollout on it.
+
+| claim | status |
+|---|---|
+| the Standard-trained ranker transfers to Online games | **established**, for choosing an actor |
+| the 13 geometry terms rank moves for one unit | **refuted** (+0.5 ± 0.2 pp) |
+| they rank attacks for one unit across profiles | **refuted in this sample** |
+| an Online-trained attack head has a signal | **open** — only two held-out games |
+| integrating the current artifact would improve play | **unsupported; rejected before gameplay A/B** |

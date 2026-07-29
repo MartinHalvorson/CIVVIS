@@ -225,7 +225,10 @@ pub fn features(g: &Game, pid: usize, action: &Action) -> Vec<f32> {
     row
 }
 
-fn acting_unit(action: &Action) -> Option<u32> {
+/// Unit whose activation an action consumes, when the action belongs to one.
+/// Exposed so policy datasets can distinguish alternative destinations for the
+/// same unit from the separate decision of which unit to activate next.
+pub fn acting_unit(action: &Action) -> Option<u32> {
     match action {
         Action::Move { unit, .. }
         | Action::MoveTo { unit, .. }
