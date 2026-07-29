@@ -729,6 +729,7 @@ fn founder_username(name: &str) -> Option<&'static str> {
         "advanced" => "JackOfAllTrades",
         "basic" => "TrainingWheels",
         "advanced_v1" => "OldGuard",
+        "strategic" => "DeepThought",
         "evolved-champ" => "Darwin",
         "adv-science" => "TechPriest",
         "adv-culture" => "CultureVulture",
@@ -2174,6 +2175,9 @@ pub fn make_send_ai(kind: &StrategyKind, seed: u64) -> Box<dyn Ai + Send> {
                     .map(AdvancedAi::with_weights)
                     .unwrap_or_else(AdvancedAi::new),
             ),
+            "strategic" => Box::new(crate::strategic::StrategicAi::with_weights(
+                crate::evolve::load_champion("evolved").unwrap_or_default(),
+            )),
             _ => Box::new(AdvancedAi::new()),
         },
         StrategyKind::Advanced { weights, target } => {
@@ -3997,7 +4001,9 @@ mod tests {
 
 #[cfg(test)]
 mod searching_anchor_tests {
-    use super::{seed_league, StrategyKind};
+    use super::{
+        make_send_ai, seat_by_civ_seeded, seed_league, shipped_league, StrategyKind, BASE_RD,
+    };
 
     /// A league that cannot seat a searching agent cannot ever rate one:
     /// breeding only produces `StrategyKind::Advanced`, so anything not in the
@@ -4034,5 +4040,86 @@ mod searching_anchor_tests {
             target: None,
         };
         assert!(matches!(bred, StrategyKind::Advanced { .. }));
+    }
+
+    /// The committed roster is an existing league, so changing only
+    /// `seed_league` would leave every deployed game on its old search-free
+    /// population. The shipped entry starts from the scripted anchor's point
+    /// rating but carries maximum uncertainty and no borrowed result history;
+    /// league games, not an imported head-to-head Elo, decide its value.
+    #[test]
+    fn the_shipped_roster_admits_search_as_an_unrated_anchor() {
+        let league = shipped_league().expect("the committed roster parses");
+        let strategic = league
+            .strategies
+            .iter()
+            .find(|s| s.name == "strategic")
+            .expect("the shipped roster contains its searching anchor");
+        let advanced = league
+            .strategies
+            .iter()
+            .find(|s| s.name == "advanced")
+            .expect("the shipped roster retains its scripted anchor");
+
+        assert!(
+            matches!(&strategic.kind, StrategyKind::Builtin { ai } if ai == "strategic")
+        );
+        assert!(strategic.anchor);
+        assert!(!strategic.retired);
+        assert_eq!(strategic.username, "DeepThought");
+        assert_eq!(strategic.rating, advanced.rating);
+        assert_eq!(strategic.rd, BASE_RD);
+        assert_eq!((strategic.games, strategic.wins), (0, 0));
+        assert!(strategic.leader_elo.is_empty());
+    }
+
+    /// League simulations already use `elo::builtin_ai`; the exhibition has
+    /// a separate `Send` factory. Pin the distinction that matters here so a
+    /// roster row named `strategic` cannot be rated as search offline and
+    /// silently materialized as `AdvancedAi` in the watched game.
+    #[test]
+    fn the_server_factory_materializes_the_searching_agent() {
+        let ai = make_send_ai(
+            &StrategyKind::Builtin {
+                ai: "strategic".to_string(),
+            },
+            7,
+        );
+        assert!(
+            ai.review_census().is_some(),
+            "StrategicAi exposes a macro-review census; AdvancedAi does not"
+        );
+    }
+
+    /// Admission has to create observations, not just a row. Exercise the
+    /// exact top-three, without-replacement seating rule the server uses over
+    /// a deterministic seed census. One roster entry can occupy at most one
+    /// seat, and its neutral point prior should make it reachable without
+    /// forcing it into every watched game.
+    #[test]
+    fn shipped_seating_samples_at_most_one_searching_seat() {
+        let league = shipped_league().expect("the committed roster parses");
+        let strategic = league
+            .strategies
+            .iter()
+            .position(|s| s.name == "strategic")
+            .expect("the shipped roster contains its searching anchor");
+        let civs: Vec<String> = [
+            "Rome", "Egypt", "Greece", "China", "Sumeria", "Aztec", "Nubia", "Scythia",
+        ]
+        .into_iter()
+        .map(str::to_string)
+        .collect();
+        let mut exposed_games = 0;
+        for seed in 0..256 {
+            let seats = seat_by_civ_seeded(&league, &civs, seed, 3);
+            let searching_seats = seats.iter().filter(|seat| **seat == strategic).count();
+            assert!(searching_seats <= 1);
+            exposed_games += usize::from(searching_seats == 1);
+        }
+        assert!(
+            exposed_games > 0 && exposed_games < 256,
+            "search needs sampled league evidence, not zero exposure or forced exposure: {exposed_games}/256"
+        );
     }
 }
