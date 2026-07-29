@@ -6,17 +6,22 @@
 //! `Produce(NationalHistoryMuseum)` with `Produce(RoyalSociety)` in the same
 //! city. Every map is replayed from seats 0 and N-1 with and without the
 //! treatment, and inference is aggregated by map.
-use civvis::ai::{AdvancedAi, Ai};
+use civvis::ai::{AdvancedAi, Ai, Weights};
+use civvis::evolve::Champion;
 use civvis::game::{Action, Game, GameOptions, Item, VictoryConditions};
 use civvis::name::Name;
 use civvis::rules::Rules;
 use civvis::setup::{MapPoles, MapScript, MapSize, MapTopology};
 use std::collections::BTreeMap;
 
+const NULL_MAPS: usize = 4;
+const NULL_SEED: u64 = 9_987_999;
 const SCREEN_MAPS: usize = 30;
 const SCREEN_SEED: u64 = 9_988_000;
 const HOLDOUT_MAPS: usize = 120;
 const HOLDOUT_SEED: u64 = 9_989_000;
+const FROZEN_AI: &str = "advanced_evolved";
+const EMBEDDED_CHAMPION: &str = include_str!("../../data/evolved/best.json");
 const REQUIRED_SCIENCE_PROJECTS: [&str; 4] = [
     "launch_earth_satellite",
     "launch_moon_landing",
@@ -38,6 +43,18 @@ fn text(args: &[String], key: &str, default: &str) -> String {
         .and_then(|index| args.get(index + 1))
         .cloned()
         .unwrap_or_else(|| default.to_string())
+}
+
+fn has_exact_value(args: &[String], key: &str, value: &str) -> bool {
+    args.iter().filter(|arg| arg.as_str() == key).count() == 1
+        && args
+            .windows(2)
+            .any(|pair| pair[0] == key && pair[1] == value)
+}
+
+fn frozen_champion() -> Champion {
+    serde_json::from_str(EMBEDDED_CHAMPION)
+        .expect("the committed advanced_evolved champion must be valid JSON")
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -204,7 +221,13 @@ struct Played {
     serialized: Option<String>,
 }
 
-fn play(options: GameOptions, focal: usize, mode: Mode, serialize: bool) -> Played {
+fn play(
+    options: GameOptions,
+    focal: usize,
+    mode: Mode,
+    serialize: bool,
+    weights: &Weights,
+) -> Played {
     let mut game = Game::new_with(options);
     game.set_fog_memory(false);
     game.victory_conditions = VictoryConditions {
@@ -215,7 +238,7 @@ fn play(options: GameOptions, focal: usize, mode: Mode, serialize: bool) -> Play
         domination: true,
         score: false,
     };
-    let mut ais = AdvancedAi::fleet(&game);
+    let mut ais = AdvancedAi::fleet_weighted(&game, weights);
     let mut census = ChoiceCensus::default();
 
     while game.winner.is_none() && game.turn <= game.max_turns {
@@ -427,6 +450,13 @@ fn holdout_passes(gate: GateInputs) -> bool {
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
+    let explicit_frozen_ai = has_exact_value(&args, "--ai", FROZEN_AI);
+    let ai_name = text(&args, "--ai", FROZEN_AI);
+    if args.iter().any(|arg| arg == "--ai") && !explicit_frozen_ai {
+        eprintln!("this experiment is frozen for {FROZEN_AI}; got controller {ai_name:?}");
+        std::process::exit(2);
+    }
+    let champion = frozen_champion();
     let maps = number(&args, "--maps", SCREEN_MAPS as i64).max(1) as usize;
     let players = number(&args, "--players", 8).max(2) as usize;
     let width = number(&args, "--width", 84).max(8) as i32;
@@ -491,6 +521,10 @@ fn main() {
         .unwrap_or((width, height));
     println!("Royal Society Science evaluator");
     println!(
+        "controller: {ai_name}; embedded champion generation {}",
+        champion.gen
+    );
+    println!(
         "profile: {players}p requested {width}x{height}, stored {}x{}, {city_states} city-states, \
          {turns} {speed} turns, map {}, shape {}, poles {}, civilizations {}, victories {}",
         stored_dimensions.0,
@@ -519,7 +553,7 @@ fn main() {
         if null_replay {
             "NULL action-log replay (no substitution)"
         } else {
-            "on a stock Science turn, replace National History Museum with Royal Society"
+            "on an untreated champion Science turn, replace National History Museum with Royal Society"
         }
     );
 
@@ -548,14 +582,38 @@ fn main() {
                 Mode::RoyalSociety
             };
 
-            let control0 = play(options.clone(), 0, Mode::Stock, null_replay);
-            let treatment0 = play(options.clone(), 0, treatment_mode, null_replay);
+            let control0 = play(
+                options.clone(),
+                0,
+                Mode::Stock,
+                null_replay,
+                &champion.weights,
+            );
+            let treatment0 = play(
+                options.clone(),
+                0,
+                treatment_mode,
+                null_replay,
+                &champion.weights,
+            );
             let exact0 = !null_replay
                 || (control0.result == treatment0.result
                     && control0.serialized == treatment0.serialized);
             let last = players - 1;
-            let control1 = play(options.clone(), last, Mode::Stock, null_replay);
-            let treatment1 = play(options, last, treatment_mode, null_replay);
+            let control1 = play(
+                options.clone(),
+                last,
+                Mode::Stock,
+                null_replay,
+                &champion.weights,
+            );
+            let treatment1 = play(
+                options,
+                last,
+                treatment_mode,
+                null_replay,
+                &champion.weights,
+            );
             let exact1 = !null_replay
                 || (control1.result == treatment1.result
                     && control1.serialized == treatment1.serialized);
@@ -725,23 +783,9 @@ fn main() {
         treatment_progress,
     );
 
-    if null_replay {
-        if exact_mismatches == 0 {
-            println!(
-                "null sanity: PASS — all {} matched seat replays reproduced the result and serialized Game exactly",
-                control.games
-            );
-        } else {
-            println!(
-                "null sanity: BROKEN — {exact_mismatches}/{} matched seat replays differed",
-                control.games
-            );
-            std::process::exit(3);
-        }
-        return;
-    }
-
-    let exact_profile = players == 8
+    let exact_profile = explicit_frozen_ai
+        && ai_name == FROZEN_AI
+        && players == 8
         && width == 84
         && height == 54
         && city_states == 12
@@ -751,6 +795,29 @@ fn main() {
         && map_topology == MapTopology::Planet
         && map_poles == MapPoles::Poles
         && randomize_civs;
+
+    if null_replay {
+        if exact_mismatches > 0 {
+            println!(
+                "null sanity: BROKEN — {exact_mismatches}/{} matched seat replays differed",
+                control.games
+            );
+            std::process::exit(3);
+        }
+        if exact_profile && maps == NULL_MAPS && seed == NULL_SEED {
+            println!(
+                "null sanity: PASS — all {} champion seat replays reproduced the result and serialized Game exactly",
+                control.games
+            );
+        } else {
+            println!(
+                "diagnostic null: all {} champion seat replays matched exactly; no preregistered null gate applies",
+                control.games
+            );
+        }
+        return;
+    }
+
     if exact_profile && maps == SCREEN_MAPS && seed == SCREEN_SEED {
         println!(
             "development gate: {}",
@@ -766,7 +833,7 @@ fn main() {
             if holdout_passes(gate) {
                 "PASS — a separate gameplay integration PR is permitted"
             } else {
-                "RETAIN AdvancedAi — no gameplay integration"
+                "RETAIN advanced_evolved — no gameplay integration"
             }
         );
     } else {
@@ -802,11 +869,34 @@ mod tests {
     }
 
     #[test]
+    fn formal_controller_flag_requires_one_explicit_champion_value() {
+        let args = ["--ai".to_string(), FROZEN_AI.to_string()];
+        assert!(has_exact_value(&args, "--ai", FROZEN_AI));
+        assert!(!has_exact_value(&["--ai".to_string()], "--ai", FROZEN_AI));
+        assert!(!has_exact_value(
+            &["--ai".to_string(), "advanced".to_string()],
+            "--ai",
+            FROZEN_AI
+        ));
+        assert!(!has_exact_value(
+            &[
+                "--ai".to_string(),
+                FROZEN_AI.to_string(),
+                "--ai".to_string(),
+                FROZEN_AI.to_string(),
+            ],
+            "--ai",
+            FROZEN_AI
+        ));
+    }
+
+    #[test]
     fn null_action_log_replay_reconstructs_the_stock_turn() {
         let mut stock = Game::new(2, 20, 14, 88_001, 20, 0);
         stock.set_fog_memory(false);
         let mut replay = stock.clone();
-        let mut stock_ai = AdvancedAi::new();
+        let weights = frozen_champion().weights;
+        let mut stock_ai = AdvancedAi::with_weights(weights);
         let mut replay_ai = stock_ai.clone();
         stock_ai.take_turn(&mut stock, 0);
         let mut census = ChoiceCensus::default();
@@ -820,6 +910,20 @@ mod tests {
             serde_json::to_string(&stock).unwrap()
         );
         assert_eq!(replay_ai.plan_report(), stock_ai.plan_report());
+    }
+
+    #[test]
+    fn frozen_controller_uses_the_committed_champion_weights() {
+        let champion = frozen_champion();
+        let game = Game::new(2, 20, 14, 88_003, 1, 0);
+        let ais = AdvancedAi::fleet_weighted(&game, &champion.weights);
+        assert!(champion.gen > 0);
+        assert_eq!(ais[0].weights(), &champion.weights);
+        assert_ne!(
+            ais[0].weights(),
+            &Weights::default(),
+            "the frozen champion must not silently collapse to stock weights"
+        );
     }
 
     #[test]
