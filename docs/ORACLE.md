@@ -253,6 +253,39 @@ still directionally robust under every possible within-map pairing, but future
 runs print the exact map-level sign test rather than asking readers to recover
 that bound from aggregate cells.
 
+#### Sensitivity audit of retained aggregate results
+
+The old logs retained helped, hurt, and unchanged cell totals but not which two
+cells shared a map. A finite sensitivity audit can still enumerate every
+two-cell partition consistent with those totals. In the table below, the
+“possible map `p`” interval spans all such partitions; it is not a confidence
+interval and does not recover the missing identities.
+
+| result | helped / hurt cells | possible map `p` | conclusion after clustering audit |
+|---|---:|---:|---|
+| Modernity, seed 420000 | 16 / 16 | 0.1516–1.0000 | null survives every partition |
+| Taker, seed 420000 | 15 / 13 | 0.1153–1.0000 | null survives every partition |
+| Attrition, seed 420000 | 11 / 14 | 0.0963–1.0000 | null survives every partition |
+| Treasury, seed 420000 | 62 / 0 | <0.000001 throughout | positive calibration survives |
+| best lane, seed 420000 | 25 / 1 | <0.0019 throughout | routing ceiling survives for the fallback agent |
+| Expansion, seed 450000 | 31 / 9 | <0.000001–0.2296 | first screen alone is indeterminate |
+| Expansion, seed 460000 | 116 / 28 | <0.000001–0.0017 | disjoint confirmation survives every partition |
+| Online/Advanced Treasury | 17 / 0 | 0.0005–0.0039 | calibration survives |
+| Online/Advanced Ground | 5 / 0 | 0.0625–0.2500 | stopped screen remains stopped |
+| Online/`strategic_deep` Treasury | 8 / 0 | 0.03125–0.1250 | architecture calibration is indeterminate |
+| IdleReserve, seed 450000 | 6 / 12 | 0.03125–1.0000 | aggregate cannot distinguish null from harm |
+| IdleReserve, seed 460000 | 41 / 27 | 0.00013–1.0000 | aggregate can support either map direction |
+
+This preserves the load-bearing Expansion finding because its 150-map
+confirmation is positive under every admissible clustering, even though the
+smaller first screen is not. It also preserves the military nulls: their most
+favorable possible map partitions still miss 0.05. Conversely, the merged
+IdleReserve label cannot be recovered from its aggregate cells. Its directions
+reverse across seeds at the cell level, but without map identities neither run
+supports a map-level null or effect claim. Treat that axis as unresolved unless
+the original per-cell records are recovered or the preregistered comparison is
+replayed with map-cluster output.
+
 ### Gated confirmation and decision
 
 Passing every screen term earns one disjoint confirmation with only the focal
