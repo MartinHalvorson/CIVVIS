@@ -1859,6 +1859,28 @@ mod tests {
             airpower_order(&game, 0, Some("conquest"), true).is_none(),
             "one airbase cannot queue the second aircraft over the first"
         );
+
+        let first_kind = match aircraft.stage {
+            OrderStage::Aircraft(unit) => unit,
+            OrderStage::Airbase => unreachable!(),
+        };
+        let first_key = item_progress_key(&Item::Unit { unit: first_kind });
+        let existing = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "warrior")
+            .unwrap();
+        game.units.get_mut(&existing).unwrap().kind = first_kind;
+        let city_state = game.cities.get_mut(&city).unwrap();
+        city_state.queue.clear();
+        city_state.strategic_resource_commitments.remove(&first_key);
+        let second = airpower_order(&game, 0, Some("conquest"), true).unwrap();
+        assert_eq!(second.stage, OrderStage::Aircraft(first_kind));
+        game.apply(0, &second.action).unwrap();
+        assert!(
+            airpower_order(&game, 0, Some("conquest"), true).is_none(),
+            "one living and one queued aircraft must close the two-unit cap"
+        );
     }
 
     #[test]
