@@ -26160,7 +26160,9 @@ impl Game {
 
     // -------------------------------------------------------- unit helpers
 
-    fn spawn_unit(&mut self, kind: &str, owner: usize, pos: Pos) -> u32 {
+    /// `pub(crate)` for `oracle.rs`, which places units directly the same way
+    /// `relocate` was widened for it. Nothing outside the crate can reach it.
+    pub(crate) fn spawn_unit(&mut self, kind: &str, owner: usize, pos: Pos) -> u32 {
         let spec = &self.rules.units[kind];
         if spec.class == "military" {
             let best = self.players[owner]
