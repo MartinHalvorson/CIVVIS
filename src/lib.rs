@@ -14,6 +14,7 @@ pub mod game;
 pub mod hex;
 pub mod league;
 pub mod mapgen;
+pub mod name;
 pub mod neural;
 pub mod obs;
 pub mod oracle;

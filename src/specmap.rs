@@ -17,6 +17,8 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
+use crate::name::Name;
+
 const EMPTY: u32 = u32::MAX;
 
 #[derive(Clone, Debug)]
@@ -24,6 +26,11 @@ pub struct SpecMap<T> {
     keys: Vec<String>,
     values: Vec<T>,
     table: Vec<u32>,
+    /// Entry index by [`Name::id`], so a caller holding an interned name
+    /// answers its lookup with one array read — no hash, no string compare.
+    /// Sized to the largest id this table holds; an id past the end simply
+    /// names something that is not in it.
+    by_id: Vec<u32>,
 }
 
 /// A multiply-shift hash over whole eight-byte words. Ruleset keys are short
@@ -53,6 +60,7 @@ impl<T> Default for SpecMap<T> {
             keys: Vec::new(),
             values: Vec::new(),
             table: Vec::new(),
+            by_id: Vec::new(),
         }
     }
 }
@@ -84,6 +92,40 @@ impl<T> SpecMap<T> {
             }
             self.table[slot] = index as u32;
         }
+        // Interning every key here is what lets `Index<Name>` skip the hash
+        // entirely. It costs one registry lock per entry, and reindexing
+        // happens when a ruleset is loaded or a mod patches it — never in play.
+        let ids: Vec<u32> = self.keys.iter().map(|key| Name::new(key).id()).collect();
+        let span = ids.iter().copied().max().map_or(0, |top| top as usize + 1);
+        self.by_id = vec![EMPTY; span];
+        for (index, id) in ids.into_iter().enumerate() {
+            self.by_id[id as usize] = index as u32;
+        }
+    }
+
+    /// Position of an interned key: one array read, no hashing and no string
+    /// comparison.
+    #[inline]
+    fn position_of(&self, key: Name) -> Option<usize> {
+        match self.by_id.get(key.id() as usize) {
+            Some(&index) if index != EMPTY => Some(index as usize),
+            _ => None,
+        }
+    }
+
+    #[inline]
+    pub fn get_interned(&self, key: Name) -> Option<&T> {
+        self.position_of(key).map(|index| &self.values[index])
+    }
+
+    #[inline]
+    pub fn get_interned_mut(&mut self, key: Name) -> Option<&mut T> {
+        self.position_of(key).map(|index| &mut self.values[index])
+    }
+
+    #[inline]
+    pub fn contains_name(&self, key: Name) -> bool {
+        self.position_of(key).is_some()
     }
 
     #[inline]
@@ -174,6 +216,7 @@ impl<T> SpecMap<T> {
         self.keys.clear();
         self.values.clear();
         self.table.clear();
+        self.by_id.clear();
     }
 
     pub fn iter(&self) -> impl DoubleEndedIterator<Item = (&String, &T)> + ExactSizeIterator {
@@ -201,6 +244,25 @@ impl<T> std::ops::Index<&String> for SpecMap<T> {
     #[inline]
     fn index(&self, key: &String) -> &T {
         &self[key.as_str()]
+    }
+}
+
+impl<T> std::ops::Index<Name> for SpecMap<T> {
+    type Output = T;
+
+    #[inline]
+    fn index(&self, key: Name) -> &T {
+        self.get_interned(key)
+            .unwrap_or_else(|| panic!("no ruleset entry named {:?}", key.as_str()))
+    }
+}
+
+impl<T> std::ops::Index<&Name> for SpecMap<T> {
+    type Output = T;
+
+    #[inline]
+    fn index(&self, key: &Name) -> &T {
+        &self[*key]
     }
 }
 
@@ -234,6 +296,7 @@ impl<T> From<BTreeMap<String, T>> for SpecMap<T> {
             keys: Vec::with_capacity(entries.len()),
             values: Vec::with_capacity(entries.len()),
             table: Vec::new(),
+            by_id: Vec::new(),
         };
         for (key, value) in entries {
             map.keys.push(key);
