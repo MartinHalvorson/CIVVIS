@@ -66,9 +66,10 @@
 //! `docs/EVAL.md` records two conclusions from this evaluator that inverted at
 //! 120 maps in opposite directions, and 20-map runs on it are anti-evidence.
 use civvis::ai::{AdvancedAi, Ai, PolicyDeck, Weights};
-use std::process::exit;
-use civvis::game::{Action, Game};
+use civvis::evolve::load_champion;
+use civvis::game::{default_speed, Action, Game, GameOptions};
 use civvis::parallel;
+use std::process::exit;
 
 fn text(args: &[String], flag: &str, default: &str) -> String {
     args.iter()
@@ -128,15 +129,19 @@ fn play(
     height: i32,
     seed: u64,
     turns: u32,
+    city_states: usize,
+    speed: &str,
     treated: usize,
     arms: (PolicyDeck, PolicyDeck),
     gene: Option<(usize, f64)>,
+    base: &Weights,
 ) -> (Option<bool>, f64, f64) {
-    let mut game = Game::new(players, width, height, seed, turns, 0);
-    let mut treat_w = Weights {
-        policy_deck: arms.0,
-        ..Weights::default()
-    };
+    let mut game = Game::new_with(GameOptions {
+        speed: speed.to_string(),
+        ..GameOptions::new(players, width, height, seed, turns, city_states)
+    });
+    let mut treat_w = base.clone();
+    treat_w.policy_deck = arms.0;
     // A single-gene arm, so a genome change can be decided on WINS. The score
     // share that nominates a value is a selection proxy; `docs/EVAL.md` is
     // explicit that wins and score measure different things, and a change that
@@ -149,10 +154,8 @@ fn play(
         treat_w = Weights::from_vec(&v);
         treat_w.policy_deck = deck;
     }
-    let control_w = Weights {
-        policy_deck: arms.1,
-        ..Weights::default()
-    };
+    let mut control_w = base.clone();
+    control_w.policy_deck = arms.1;
     let mut treatment: Vec<AdvancedAi> = AdvancedAi::fleet_weighted(&game, &treat_w);
     let mut control: Vec<AdvancedAi> = AdvancedAi::fleet_weighted(&game, &control_w);
     let is_treated = |pid: usize| pid % 2 == treated;
@@ -195,12 +198,29 @@ fn main() {
     let maps = number(&args, "--maps", 120);
     let width = number(&args, "--width", 24) as i32;
     let height = number(&args, "--height", 16) as i32;
+    let city_states = number(&args, "--city-states", 0);
     // Standard speed's stock budget. `docs/EVAL.md`: a short cap does not
     // shorten a game, it changes the answer -- at 250 turns most games end on
     // the cap as score victories and three victory types never occur at all.
     let turns = number(&args, "--turns", 500) as u32;
     let seed0 = number(&args, "--seed", 300_000) as u64;
     let jobs = number(&args, "--jobs", parallel::default_jobs());
+    let speed = text(&args, "--speed", &default_speed());
+
+    let artifact = args
+        .iter()
+        .position(|arg| arg == "--base")
+        .and_then(|index| args.get(index + 1));
+    let (base, source) = match artifact {
+        Some(dir) => match load_champion(dir) {
+            Some(weights) => (weights, format!("champion from {dir}")),
+            None => {
+                eprintln!("policy_eval: no valid best.json in {dir:?}");
+                exit(2);
+            }
+        },
+        None => (Weights::default(), "Weights::default()".to_string()),
+    };
 
     let treat_name = text(&args, "--treatment", "live");
     let control_name = text(&args, "--control", "legacy");
@@ -230,13 +250,39 @@ fn main() {
     };
     println!(
         "policy_eval: {treat_name} vs {control_name}, {maps} maps x 2 directions, \
-         {players}p {width}x{height}, {turns} turns, seed {seed0}"
+         {players}p {width}x{height}, {city_states} city-states, {speed}, \
+         {turns} turns, seed {seed0}"
     );
+    println!("  base weights: {source}");
 
     let results = parallel::map(maps, jobs, move |index| {
         let seed = seed0 + index as u64;
-        let a = play(players, width, height, seed, turns, 0, arms, gene);
-        let b = play(players, width, height, seed, turns, 1, arms, gene);
+        let a = play(
+            players,
+            width,
+            height,
+            seed,
+            turns,
+            city_states,
+            &speed,
+            0,
+            arms,
+            gene,
+            &base,
+        );
+        let b = play(
+            players,
+            width,
+            height,
+            seed,
+            turns,
+            city_states,
+            &speed,
+            1,
+            arms,
+            gene,
+            &base,
+        );
         (a, b)
     });
 

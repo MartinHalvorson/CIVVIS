@@ -143,3 +143,52 @@ If the confirmation passes, production selection becomes
 parity value and therefore the separately calibrated 65-point screen, while
 not affecting genome rankings. Champion promotion remains outcome-only and is
 unchanged. Any failure retains the current combat term.
+
+### Confirmation result — combat retained
+
+The disjoint seed-9,810,000 grid reproduced the causal mechanism almost
+exactly: 17/21 score-responsive genes, median response retention **0.837**, no
+combat-only genes, and the same four entirely unreachable war-declaration
+genes. The objective-selection result did not reproduce at the required power:
+
+| confirmation gate | required | observed | verdict |
+|---|---:|---:|---|
+| objectives choose differently | at least 4/24 maps | **7/24** | PASS |
+| held-out score-share gain | positive by at least 2 SE | **+0.00315 +/- 0.00351** | FAIL |
+| held-out wins | score-only at least full | **4 vs 4** | PASS |
+
+The direction remained positive but was smaller than its uncertainty. Per the
+pre-registration, `FitnessObservation::selection_value` is unchanged and the
+combat term remains. The supported conclusion is about representation, not a
+new objective: score alone reaches the active military genome, while the four
+war-declaration parameters are dead under both dense signals on two disjoint
+deployment samples.
+
+## Champion policy-default repair
+
+The integrity failure changes runtime behavior, not only the probe. The
+generation-14 artifact omits `policy_deck`, so before this repair every
+`advanced_evolved` or Strategic agent loaded the off-by-default Live deck.
+`Weights::default`, every vector-reconstructed child, and the documented
+production controller use Legacy. The shipped champion and its first child
+therefore differed on a non-gene dimension before mutation touched anything.
+
+The fix makes the Serde/enum default agree with `Weights::default` at Legacy.
+This is the deck already measured against Live over 120 small-profile mirrored
+maps: 18 directions for Live, 15 for Legacy, sign p=0.7283, terminal score flat.
+The repair removes a measured-null evaluator and restores mutation integrity,
+but that old result is not a deployment-profile result.
+
+### Deployment A/B pre-registration — 2026-07-29
+
+Run the existing symmetric policy evaluator with the embedded champion as both
+arms' base, changing only Legacy (treatment, repaired behavior) versus Live
+(control, pre-repair behavior): 120 maps, two directions, six players, 74x46,
+six city-states, Online speed, 250 turns, seed 9,820,000, 12 jobs.
+
+Legacy is retained unless the paired map-direction sign test is significant
+against it at p < 0.05. That asymmetric rule is deliberate and fixed before
+the run: Legacy is the documented default, preserves vector mutation exactly,
+and removes policy-evaluation cost; Live needs evidence of strength to justify
+silently re-entering through an old artifact. Wins decide, with terminal score
+reported only as diagnosis.
