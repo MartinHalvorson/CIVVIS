@@ -659,3 +659,32 @@ Two things follow, and the second is bigger than this treatment.
    a dead heat whether or not it works. That is not a fact about this
    treatment; it is a fact about the harness, and the dogpile table earlier on
    this page is about a mechanism of exactly that shape.
+
+### The experiment that would settle this axis, and why it is not in this PR
+
+Both congress arms measure *the AI's* ability to land a penalty on the leader.
+Neither answers the prior question: **is a World Congress penalty worth
+anything to anybody?** If it is not, no improvement in aiming one can matter,
+and the seating problem above stops being interesting.
+
+`src/oracle.rs` is the right instrument and the recipe is already established
+here — grant a seat a capability it cannot fail at, and the win gap is an upper
+bound on all honest work on that capability. The grant to add is **immunity**:
+each turn, drop from `Game::active_congress_effects` every effect whose
+`(resolution, outcome, target)` penalises the granted seat, so the Congress can
+never bind it. `trade_policy` B, `migration_treaty` B and
+`border_control_treaty` B are the three that bite. Matched cells and McNemar,
+with the `treasury` calibration and a `none` control, exactly as the existing
+grants do it.
+
+**It is deliberately not in this PR.** `src/oracle.rs` is claimed by an open
+draft (#534, "Ask the oracle what a city could own") which was running
+`ablate --grant ground` while this was written. `docs/VERSION_CONTROL.md`
+requires that overlap be coordinated in the older PR first, and a second writer
+adding a `Grant` variant to the same enum is the line-level collision
+`collaboration-policy` exists to catch.
+
+Expected power is the limit to plan for, not the code: ~30 discordant cells
+resolves roughly a 70/30 split, so a real 60/40 effect would not be detected,
+and the honest phrasing of a null there is "worth less than this run can
+resolve".
