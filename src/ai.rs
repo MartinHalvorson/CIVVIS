@@ -1203,6 +1203,10 @@ pub struct BasicAi {
     /// Like the rush floor, this is rewritten by `AdvancedAi` every turn and
     /// remains zero for BasicAI, city-states, barbarians, and the control arm.
     pub(crate) strategic_military_floor: usize,
+    /// Gold committed by a higher strategic layer. The ordinary city buyer
+    /// adds this to its own peace/war reserve, so delegating production back
+    /// to `BasicAi` cannot spend a target-specific upgrade bill.
+    pub(crate) strategic_gold_reserve: f64,
     /// Where this agent tells an observer what it is doing. Off unless a
     /// spectator attached one; see [`crate::reasoning`].
     pub(crate) journal: Journal,
@@ -1981,6 +1985,7 @@ impl BasicAi {
             unit_motion: BTreeMap::new(),
             rush_military_floor: 0,
             strategic_military_floor: 0,
+            strategic_gold_reserve: 0.0,
             journal: Journal::default(),
         }
     }
@@ -2001,6 +2006,7 @@ impl BasicAi {
             unit_motion: BTreeMap::new(),
             rush_military_floor: 0,
             strategic_military_floor: 0,
+            strategic_gold_reserve: 0.0,
             journal: Journal::default(),
         }
     }
@@ -3536,6 +3542,18 @@ impl BasicAi {
     /// stop at a treasury floor so the ordinary purchase passes still have
     /// something to spend.
     pub(crate) fn upgrade_units(g: &mut Game, pid: usize) {
+        Self::upgrade_units_with_reserve(g, pid, 0.0);
+    }
+
+    /// Run ordinary army modernization while preserving an additional
+    /// caller-owned treasury commitment. Advanced appointments use this for
+    /// predecessors that still need to reach friendly territory before their
+    /// quoted upgrade can execute.
+    pub(crate) fn upgrade_units_with_reserve(
+        g: &mut Game,
+        pid: usize,
+        additional_reserve: f64,
+    ) {
         if g.players[pid].is_barbarian {
             return;
         }
@@ -3543,7 +3561,7 @@ impl BasicAi {
             .players
             .iter()
             .any(|p| p.id != pid && p.alive && !p.is_barbarian && g.is_at_war(pid, p.id));
-        let floor = if at_war { 30.0 } else { 120.0 };
+        let floor = if at_war { 30.0 } else { 120.0 } + additional_reserve.max(0.0);
         loop {
             let mut best: Option<(f64, f64, u32)> = None;
             for uid in g.player_unit_ids(pid) {
@@ -3814,14 +3832,13 @@ impl BasicAi {
         unit: &str,
         reserve: f64,
     ) -> bool {
-        let price = match g.rules.units.get(unit) {
-            Some(spec) => spec.cost * 4.0,
-            None => return false,
-        };
-        if g.players[pid].gold + 1e-9 < price + reserve {
-            return false;
-        }
         for cid in city_ids {
+            let Some(price) = g.unit_purchase_cost(pid, *cid, unit, "gold") else {
+                continue;
+            };
+            if g.players[pid].gold + 1e-9 < price + reserve {
+                continue;
+            }
             if !g.can_produce(
                 pid,
                 *cid,
@@ -3875,7 +3892,9 @@ impl BasicAi {
                     {
                         continue;
                     }
-                    let price = spec.cost * 4.0;
+                    let Some(price) = g.unit_purchase_cost(pid, *cid, name, "gold") else {
+                        continue;
+                    };
                     if price > budget + 1e-9
                         || !g.can_produce(pid, *cid, &Item::Unit { unit: name.clone() })
                     {
@@ -4121,7 +4140,7 @@ impl BasicAi {
             40.0 + 10.0 * n_cities as f64
         } else {
             100.0 + 25.0 * n_cities as f64
-        };
+        } + self.strategic_gold_reserve.max(0.0);
         let want_ranged = melee > ranged;
 
         // A threatened empire converts cash into defenders before pursuing
@@ -9112,7 +9131,7 @@ mod tests {
             .unwrap();
         g.apply(0, &Action::FoundCity { unit: settler }).unwrap();
         let cid = g.player_city_ids(0)[0];
-        let ai = BasicAi::new();
+        let mut ai = BasicAi::new();
 
         // One city keeps 125 gold and spends 200 on its missing builder.
         g.players[0].gold = 325.0;
@@ -9138,6 +9157,17 @@ mod tests {
                 .count(),
             builders
         );
+
+        // A higher-level commitment is additive to the ordinary 125 Gold
+        // peacetime floor. The same missing Builder may use only the surplus.
+        ai.strategic_gold_reserve = 75.0;
+        let price = g.unit_purchase_cost(0, cid, "builder", "gold").unwrap();
+        g.players[0].gold = 200.0 + price - 1.0;
+        assert!(!ai.spend_gold(&mut g, 0, &[cid], 0, 0, 0, 1, 1, 0));
+        assert_eq!(g.players[0].gold, 200.0 + price - 1.0);
+        g.players[0].gold = 200.0 + price;
+        assert!(ai.spend_gold(&mut g, 0, &[cid], 0, 0, 0, 1, 1, 0));
+        assert_eq!(g.players[0].gold, 200.0);
     }
 
     #[test]

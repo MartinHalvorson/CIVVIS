@@ -1155,9 +1155,14 @@ impl StrategicAi {
                     let mut agent =
                         AdvancedAi::with_weights_and_target(weights.clone(), target);
                     agent.assigned_religion_may_expand = self.branch_religion_may_expand;
+                    agent.timed_war = self.inner.timed_war;
                     Box::new(agent) as Box<dyn Ai>
                 }
-                None => Box::new(AdvancedAi::with_weights(weights.clone())) as Box<dyn Ai>,
+                None => {
+                    let mut agent = AdvancedAi::with_weights(weights.clone());
+                    agent.timed_war = self.inner.timed_war;
+                    Box::new(agent) as Box<dyn Ai>
+                }
             };
         }
         let mut inner = self.inner.clone();
@@ -1747,6 +1752,11 @@ mod tests {
         assert!(strategic.timed_war_enabled());
         let branch = strategic.branch_agent(None, &Weights::default());
         assert!(branch.timed_war_enabled());
+        strategic.continue_from_plan = false;
+        for target in [None, Some(VictoryTarget::Domination)] {
+            let branch = strategic.branch_agent(target, &Weights::default());
+            assert!(branch.timed_war_enabled());
+        }
     }
 
     #[test]

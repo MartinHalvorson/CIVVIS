@@ -1521,10 +1521,13 @@ impl AdvancedAi {
     }
 
     fn breach_ready(g: &Game, pid: usize, war: &WarPlan) -> bool {
-        let Some(required) = &war.breach_unit else {
-            return true;
-        };
         let Some(city) = g.cities.get(&war.objective_city) else {
+            return false;
+        };
+        if Self::wall_levels(g, city) == 0 {
+            return true;
+        }
+        let Some(required) = &war.breach_unit else {
             return false;
         };
         g.units.values().any(|unit| {
@@ -1595,6 +1598,11 @@ impl AdvancedAi {
         self.base.strategic_military_floor = self.war_plan.as_ref().map_or(0, |war| {
             war.required_bodies + usize::from(war.breach_unit.is_some())
         });
+    }
+
+    fn sync_war_commitments(&mut self, g: &Game, pid: usize) {
+        self.sync_war_military_floor();
+        self.base.strategic_gold_reserve = self.war_upgrade_reserve(g, pid);
     }
 
     fn planned_war_upgrades(&mut self, g: &mut Game, pid: usize) -> usize {
@@ -2177,6 +2185,7 @@ impl AdvancedAi {
             .entry(reason.to_string())
             .or_default() += 1;
         self.base.strategic_military_floor = 0;
+        self.base.strategic_gold_reserve = 0.0;
         self.plan = None;
         think!(self.journal(), Military, Strategy,
                "Power-spike appointment aborted";
@@ -2190,6 +2199,7 @@ impl AdvancedAi {
             return;
         };
         self.base.strategic_military_floor = 0;
+        self.base.strategic_gold_reserve = 0.0;
         self.plan = None;
         think!(self.journal(), Military, Strategy,
                "Power-spike appointment complete";
@@ -2354,7 +2364,33 @@ impl AdvancedAi {
             }
         }
 
-        let mut changed = false;
+        // Walls can rise or fall while research is in flight. Keep the named
+        // support package synchronized with the live objective whenever a
+        // compatible body is already reusable or newly trainable. If no such
+        // body exists, readiness remains false rather than declaring through
+        // a wall with the appointment's old `None` value.
+        let breach_changed = {
+            let war = self.war_plan.as_ref().unwrap();
+            if war.declaration_turn.is_some() {
+                false
+            } else {
+                let replacement = g
+                    .cities
+                    .get(&war.objective_city)
+                    .and_then(|city| self.choose_breach_unit(g, pid, city));
+                if replacement
+                    .as_ref()
+                    .is_some_and(|replacement| replacement != &war.breach_unit)
+                {
+                    self.war_plan.as_mut().unwrap().breach_unit = replacement.unwrap();
+                    true
+                } else {
+                    false
+                }
+            }
+        };
+
+        let mut changed = breach_changed;
         let tech_owned = {
             let war = self.war_plan.as_ref().unwrap();
             g.players[pid].techs.contains(&war.breakthrough_tech)
@@ -14125,7 +14161,7 @@ impl AdvancedAi {
         // never builds an army for. Rewritten every turn, including back to
         // zero the turn the window shuts.
         self.base.rush_military_floor = if plan.rush { RUSH_ARMY } else { 0 };
-        self.sync_war_military_floor();
+        self.sync_war_commitments(g, pid);
         // Before anything spends this turn, tell each city what the empire
         // wants of it. Production, governors and the citizen governor all read
         // the same plan afterwards, so what a city builds and what its
@@ -14149,6 +14185,7 @@ impl AdvancedAi {
         // Gold action and before a predecessor can move out of friendly land.
         self.planned_war_upgrades(g, pid);
         self.sync_war_plan(g, pid);
+        self.sync_war_commitments(g, pid);
         if self.victory_planning {
             let denied_rival = plan
                 .target_player
@@ -14191,6 +14228,7 @@ impl AdvancedAi {
         }
         self.strategic_policies(g, pid, plan.strategy);
         self.advanced_diplomacy(g, pid, &plan);
+        self.sync_war_commitments(g, pid);
         self.advanced_spies(g, pid, &plan);
         self.byzantium_tagma_production(g, pid, &plan);
 
@@ -14257,7 +14295,8 @@ impl AdvancedAi {
         if self.victory_planning {
             self.advanced_command_actions(g, pid, &plan);
         }
-        BasicAi::upgrade_units(g, pid);
+        let upgrade_reserve = self.war_upgrade_reserve(g, pid);
+        BasicAi::upgrade_units_with_reserve(g, pid, upgrade_reserve);
         self.advanced_units(g, pid, &plan);
         // A city capture happens inside unit movement. Reconcile immediately
         // so the objective is never left pinned for another five-turn cadence.
@@ -14679,6 +14718,34 @@ mod tests {
     }
 
     #[test]
+    fn timed_war_upgrade_bill_survives_generic_army_modernization() {
+        let (mut game, mut ai, war) = legion_war_fixture();
+        for unit in game.player_unit_ids(0) {
+            game.remove_unit(unit);
+        }
+        let home = game.cities[&game.player_city_ids(0)[0]].pos;
+        for _ in 0..war.required_bodies {
+            game.spawn_test_unit("warrior", 0, home);
+        }
+        let unrelated = game.spawn_test_unit("slinger", 0, home);
+        game.players[0].techs.insert(crate::name!("archery"));
+        ai.war_plan = Some(war);
+
+        let bill = ai.war_upgrade_reserve(&game, 0);
+        let (_, unrelated_quote, _) = game
+            .unit_upgrade_price(0, "slinger")
+            .expect("Archery should expose the unrelated Slinger upgrade");
+        game.players[0].gold = 120.0 + bill + unrelated_quote - 1.0;
+        let before = game.players[0].gold;
+
+        BasicAi::upgrade_units_with_reserve(&mut game, 0, bill);
+
+        assert_eq!(game.units[&unrelated].kind, crate::name!("slinger"));
+        assert!((game.players[0].gold - before).abs() < 1e-9);
+        assert!((ai.war_upgrade_reserve(&game, 0) - bill).abs() < 1e-9);
+    }
+
+    #[test]
     fn timed_war_queued_modern_bodies_still_need_material_but_not_upgrade_gold() {
         let (mut game, mut ai, war) = legion_war_fixture();
         let city = game.player_city_ids(0)[0];
@@ -14748,6 +14815,10 @@ mod tests {
             .push(crate::name!("walls"));
         game.cities.get_mut(&objective).unwrap().wall_hp = 100;
         assert_eq!(ai.choose_breach_unit(&game, 0, &game.cities[&objective]), None);
+        assert!(
+            !AdvancedAi::breach_ready(&game, 0, &war),
+            "walls built after appointment must create a live breach requirement"
+        );
 
         game.players[0].techs.insert(crate::name!("masonry"));
         let breach = ai
@@ -14755,14 +14826,31 @@ mod tests {
             .flatten()
             .expect("Masonry makes the wall-compatible ram trainable");
         assert_eq!(breach, crate::name!("battering_ram"));
-        war.breach_unit = Some(breach.clone());
+        ai.war_plan = Some(war.clone());
+        assert!(ai.sync_war_plan(&game, 0));
+        war = ai.war_plan.clone().unwrap();
+        assert_eq!(war.breach_unit, Some(breach.clone()));
         ai.war_plan = Some(war.clone());
         ai.sync_war_military_floor();
         assert_eq!(ai.base.strategic_military_floor, 5);
         assert!(!AdvancedAi::breach_ready(&game, 0, &war));
         let home = game.cities[&game.player_city_ids(0)[0]].pos;
-        game.spawn_test_unit(&breach, 0, home);
+        let ram = game.spawn_test_unit(&breach, 0, home);
         assert!(AdvancedAi::breach_ready(&game, 0, &war));
+
+        game.remove_unit(ram);
+        game.cities
+            .get_mut(&objective)
+            .unwrap()
+            .buildings
+            .retain(|building| building != "walls");
+        game.cities.get_mut(&objective).unwrap().wall_hp = 0;
+        assert!(
+            AdvancedAi::breach_ready(&game, 0, &war),
+            "a destroyed wall must release an obsolete breach requirement"
+        );
+        assert!(ai.sync_war_plan(&game, 0));
+        assert_eq!(ai.war_plan.as_ref().unwrap().breach_unit, None);
     }
 
     #[test]
