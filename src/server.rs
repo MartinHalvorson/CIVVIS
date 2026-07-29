@@ -6935,15 +6935,14 @@ mod tests {
         //
         // Every data column is now a share rather than a pixel count, and each
         // of these two enclosing tracks is the exact *sum* of the columns
-        // inside it — 6 identity columns totalling 9.804 against 10 value
+        // inside it — 7 identity columns totalling 11.104 against 10 value
         // columns of 1. That identity is not decoration: it is what lets the
         // bar between the two blocks move width across itself, and it is the
-        // ratio origin/main rendered (1fr against 1.02fr) to the tenth of a
-        // pixel at 1280, 1600, 1920 and 2400. Changing one number here without
+        // ratio the table uses at every width. Changing one number here without
         // the other silently re-weights the whole masthead.
         assert!(EMBEDDED_INDEX.contains(
             "--hud-identity-column: minmax(\n      \
-             calc(var(--hud-ident-min) * 4 + var(--hud-ident-num-min) * 2), 9.804fr);"
+             calc(var(--hud-ident-min) * 5 + var(--hud-ident-num-min) * 2), 11.104fr);"
         ));
         assert!(EMBEDDED_INDEX.contains(
             "--hud-stats-column: minmax(\n      \
@@ -6970,8 +6969,8 @@ mod tests {
             "the value heads and the value cells are the same ten tracks");
         assert_eq!(EMBEDDED_INDEX.matches("grid-template-columns: var(--hud-identity-tracks);").count(), 2,
             "the identity heads and the identity cells are the same tracks");
-        // Player, ELO, WIN% and PLAN are drawn inside one button spanning four
-        // of those tracks, so that button divides itself with `subgrid` — the
+        // Player, ELO, WIN%, AGE and PLAN are drawn inside one button spanning
+        // five of those tracks, so that button divides itself with `subgrid` — the
         // same tracks, not a copy of their ratios. A copy is what shipped
         // before, and it came apart in both directions a copy can: it carried
         // `minmax(0, …)` where the heads carry the 30px label floor and the
@@ -6981,7 +6980,7 @@ mod tests {
         // the head 21px and left the figures where they were.
         assert!(EMBEDDED_INDEX.contains(
             "#playerhud .diplomacy-identity-secondary {\n    grid-template-columns: subgrid;\n  }"
-        ), "the four identity columns inside one button are the parent's own tracks");
+        ), "the five identity columns inside one button are the parent's own tracks");
         assert!(!EMBEDDED_INDEX.contains("minmax(0, .55fr) minmax(0, .55fr)"),
             "a second copy of the identity ratios is exactly what subgrid replaced");
         // The rows carry a 1px border that says allied, at war or defeated, and
