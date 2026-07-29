@@ -4892,4 +4892,88 @@ mean |Δ| in score-only value against |Δ| in full `selection_value`.
 | the combat term carries information distinct from score | **established** (leaders differ 47%) |
 | removing it is free | **refuted** — it is real variance |
 | what that variance is worth to the GA | **unmeasured** — needs the gene perturbation |
-||||||| ea02ec2
+
+## 2026-07-29 — ★★★★ destination context makes one unit's move learnable
+
+The same-actor control above reduced the old geometry head to +0.5 points and
+identified the missing information before a policy was allowed to use it. This
+is the pre-registered follow-up: preserve the games, seeds, profiles, candidate
+sampling, optimizer, external evaluation and game-macro uncertainty, and change
+only what the action row can say about a destination.
+
+The thirteen legacy scalars remain an exact prefix. Thirty-five appended terms
+describe:
+
+- the acting unit's role, so exposure and spacing can mean different things to
+  a scout, vanguard, ranged unit, siege train, support, religious unit or
+  civilian;
+- target movement cost, defense, water/route/development state and base yields;
+- nearby friendly support, visible hostile attack coverage and target exchange
+  margin;
+- progress toward known foreign cities, home, and unexplored frontier; and
+- distance and progress toward the spatial objectives `AdvancedAi` already
+  reports from its force groups, threatened city and campaign target.
+
+The high-level objectives are captured once per AI turn and attached to every
+candidate in that turn. They contain no chosen action, absolute coordinate,
+movement direction or rank. The encoder selects the objective nearest the
+acting unit *before* comparing destinations, so it cannot switch goals to make
+one candidate look good. This is hierarchical context, not a copy of the
+expert's final answer.
+
+### Exact external-profile rerun
+
+Training is the same eight 4-player, 44×28, 200-turn Standard games and seeds
+920000–920007. External evaluation is the same eight 6-player, 74×46, 250-turn
+Online games with six city states and seeds 930000–930007. All sixteen games
+ended in victory. The emitter reproduced the previous corpus counts exactly:
+67,032/134,846 Standard chosen/negative rows and 314,813/651,035 Online rows,
+with **zero rejected replay actions and zero score divergences**. Explicit plan
+context was present for 98.4% and 98.7% of chosen decisions respectively.
+
+Every row below is trained on Standard and evaluated only on the eight unseen
+Online games. Candidates have the same action kind and acting unit. Chance is
+the exact mean `1 / candidates` for each game, not `1 / mean(candidates)`.
+
+| visible feature block | move top-1 | chance | game-macro lift |
+|---|---:|---:|---:|
+| legacy 13 only | 26.7% | 26.4% | +0.3 ± 0.2 pp |
+| explicit plan only | 35.8% | 26.4% | **+9.4 ± 1.0 pp** |
+| destination, explicit plan blanked | 39.7% | 26.4% | **+13.3 ± 0.5 pp** |
+| destination only | 41.2% | 26.4% | **+14.8 ± 0.7 pp** |
+| legacy + destination | **41.7%** | 26.4% | **+15.2 ± 0.6 pp** |
+| all state and action terms | 41.4% | 26.4% | +14.9 ± 0.6 pp |
+
+The result is not just the explicit objective leaking through a side channel.
+Plan progress by itself transfers, and the destination block with those three
+terms blanked transfers independently. Combining them adds another 1.9 points.
+Conversely, giving the model the shared state vector does not help: every
+candidate in a decision sees the same state, and the additional nonlinear
+context slightly reduces the external top-1.
+
+This establishes movement representation, not combat or strength. The unseen
+set has 204,198 move decisions but only 741 ranged and 246 attack decisions.
+The destination-only attack lift is +2.8 ± 6.1 points and ranged is +3.9 ± 2.0;
+neither supports a claim. `improve` and `promote` remain exactly at chance
+because the action row still does not encode which improvement or promotion is
+named.
+
+> **The representation gate is now passed for one-unit movement. Do not turn
+> the imitation head into a gameplay policy.** Its target is still the action
+> the current expert took, so its ceiling is that expert and replacing the
+> expert cannot establish an improvement. The supported next experiment is a
+> counterfactual return emitter: branch the chosen move and same-actor
+> alternatives from the identical state, continue each branch, train Q or
+> advantage on those returns, then spend a gameplay A/B only if that head
+> predicts held-out branch outcomes. Destination ranking can order those
+> rollouts; outcome labels are what can make their result stronger than the
+> script it imitates.
+
+| claim | status |
+|---|---|
+| legacy geometry ranks destinations for one unit | **refuted again** (+0.3 ± 0.2 pp) |
+| explicit strategic objectives transfer across profiles | **established** (+9.4 ± 1.0 pp) |
+| target terrain/local-force geometry transfers without the explicit plan | **established** (+13.3 ± 0.5 pp) |
+| the combined representation ranks same-unit moves | **established** (+15.2 ± 0.6 pp, n=204,198) |
+| the same representation ranks attacks | **unmeasured at useful power** |
+| the imitation artifact improves gameplay | **not claimed; wrong target for that question** |

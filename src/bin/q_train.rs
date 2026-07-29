@@ -95,6 +95,8 @@ fn mask(row: &mut [f32], keep: &str, width: usize) {
     let kinds = civvis::action_space::KINDS.len();
     let legacy = state + kinds;
     let destination = legacy + civvis::action_space::LEGACY_NUMERIC_WIDTH;
+    let plan = destination + civvis::action_space::PLAN_OFFSET;
+    let plan_end = plan + civvis::action_space::PLAN_WIDTH;
     let blank = |row: &mut [f32], from: usize, to: usize| {
         for value in row.iter_mut().take(to.min(width)).skip(from) {
             *value = 0.0;
@@ -113,6 +115,14 @@ fn mask(row: &mut [f32], keep: &str, width: usize) {
             blank(row, destination, width);
         }
         "destination" => blank(row, 0, destination),
+        "destination-no-plan" => {
+            blank(row, 0, destination);
+            blank(row, plan, plan_end);
+        }
+        "plan" => {
+            blank(row, 0, plan);
+            blank(row, plan_end, width);
+        }
         _ => {}
     }
 }
@@ -495,9 +505,10 @@ fn main() {
     // Which blocks of the row the head may see. `legacy-geometry` preserves
     // the thirteen terms that failed the same-actor external gate;
     // `destination` isolates the new terrain, force-field, role, and explicit
-    // plan-progress block. `geometry` exposes both. On same-actor groups the
-    // kind and actor context are constant, so only destination differences can
-    // move the ranking.
+    // plan-progress block. `destination-no-plan` and `plan` decompose its
+    // mechanism. `geometry` exposes old and new. On same-actor groups the kind
+    // and actor context are constant, so only destination differences can move
+    // the ranking.
     let keep = text(&args, "--keep", "all");
     // Keep only decisions whose candidates are all the same kind of action.
     //
@@ -765,6 +776,8 @@ mod tests {
         let legacy = civvis::action_space::LEGACY_NUMERIC_WIDTH;
         let width = state + civvis::action_space::FEATURE_WIDTH;
         let destination = state + kinds + legacy;
+        let plan = destination + civvis::action_space::PLAN_OFFSET;
+        let plan_end = plan + civvis::action_space::PLAN_WIDTH;
 
         let mut only_destination = vec![1.0; width];
         mask(&mut only_destination, "destination", width);
@@ -780,5 +793,18 @@ mod tests {
             .iter()
             .all(|value| *value == 1.0));
         assert!(only_legacy[destination..].iter().all(|value| *value == 0.0));
+
+        let mut no_plan = vec![1.0; width];
+        mask(&mut no_plan, "destination-no-plan", width);
+        assert!(no_plan[..destination].iter().all(|value| *value == 0.0));
+        assert!(no_plan[plan..plan_end].iter().all(|value| *value == 0.0));
+        assert!(no_plan[destination..plan].iter().all(|value| *value == 1.0));
+        assert!(no_plan[plan_end..].iter().all(|value| *value == 1.0));
+
+        let mut only_plan = vec![1.0; width];
+        mask(&mut only_plan, "plan", width);
+        assert!(only_plan[..plan].iter().all(|value| *value == 0.0));
+        assert!(only_plan[plan..plan_end].iter().all(|value| *value == 1.0));
+        assert!(only_plan[plan_end..].iter().all(|value| *value == 0.0));
     }
 }

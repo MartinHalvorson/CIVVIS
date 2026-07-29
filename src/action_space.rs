@@ -44,6 +44,12 @@ pub const LEGACY_NUMERIC_WIDTH: usize = 13;
 /// Target terrain, role, local-force, and plan-progress terms appended after
 /// [`LEGACY_NUMERIC_WIDTH`].
 pub const DESTINATION_WIDTH: usize = 35;
+/// Actor-role prefix inside the destination block.
+pub const DESTINATION_ROLE_WIDTH: usize = 8;
+/// Explicit objective terms inside the destination block: present, distance,
+/// and progress from the actor's current tile to the candidate.
+pub const PLAN_OFFSET: usize = DESTINATION_ROLE_WIDTH;
+pub const PLAN_WIDTH: usize = 3;
 
 /// Width of one action's feature row: kind one-hot, the legacy numeric block,
 /// then the destination-aware block described in [`features_with_context`].

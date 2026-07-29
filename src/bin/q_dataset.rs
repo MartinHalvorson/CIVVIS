@@ -39,6 +39,14 @@
 //! a Q head is asked to score. Replay costs no AI thinking, so the second pass
 //! is a small fraction of the first.
 //!
+//! A strategic objective is agent state rather than game state, so it cannot be
+//! reconstructed from the action log. The first pass therefore retains one
+//! small side-table entry per player-turn from `AdvancedAi::plan_report`: force
+//! objectives, the threatened city, and the campaign target. It contains no
+//! selected action. Replay supplies that same high-level context to the chosen
+//! row and every sibling, which is the hierarchy an eventual unit-action
+//! search will have at inference time.
+//!
 //! **Rows are grouped by game and the group is emitted, because splitting this
 //! by row is a trap this repository has already fallen into**: a per-sample
 //! split of the value-net data reported 98.8% accuracy where a per-game split
