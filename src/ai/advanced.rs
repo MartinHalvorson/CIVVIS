@@ -727,9 +727,36 @@ pub struct AdvancedAi {
     /// a human can read and defend, which is the property that the value-net
     /// arms in this repo lacked when an argmax found the cheapest correlate to
     /// maximise. Off by default and reachable as the `advanced_city_strategy`
-    /// entrant, paired against `advanced`, until an eval in the deployment
-    /// configuration says otherwise.
+    /// entrant, paired against `advanced`.
+    ///
+    /// ⚠ **The first screen LOST**: 42.5% paired over 120 maps at seed 411000,
+    /// Elo-equivalent −53, exact sign p=0.0014 against, terminal score 45.0%
+    /// at p=0.0000 resting on all 120 maps. Plan commitment was identical in
+    /// both arms (100% adaptive, 0.00 switches), so nothing was rerouted — the
+    /// treatment simply built a uniformly smaller empire: cities 2.18 against
+    /// 2.76, food 36.9 against 45.5, pop 13.4 against 16.7.
+    ///
+    /// `city_strategy_emphasis` and `city_strategy_roles` decompose that.
     pub city_strategy: bool,
+    /// Ablation halves of `city_strategy`, so the loss above can be attributed
+    /// rather than guessed at. Each is meaningless unless `city_strategy` is
+    /// also on; together they are the full treatment.
+    ///
+    /// The hypothesis they test: the **emphasis** carries the whole deficit,
+    /// because it applies a lane's yield appetite from turn 1 at full strength
+    /// in every city, and `docs/OPENINGS.md` establishes that capital growth
+    /// gates every settler. Religion — the dominant lane in the screen — raises
+    /// faith 0.90 → 1.40, a +56% relative jump, applied exactly when the empire
+    /// cannot afford to look away from food. Roles and pressure, by contrast,
+    /// only ever ask for food or hammers.
+    ///
+    /// If the emphasis-only arm reproduces the loss and the roles-only arm does
+    /// not, the fix is a phase gate: the empire's objective does not get to
+    /// speak until expansion is finished. If instead roles-only carries it, the
+    /// role ladder is wrong and the emphasis is exonerated — which would refute
+    /// the paragraph above.
+    pub city_strategy_emphasis: bool,
+    pub city_strategy_roles: bool,
     /// Ignore every by-name civilization signal in the decision layer.
     ///
     /// An **ablation**, not a strategy. `docs/GENOME.md`'s rule is that a null
@@ -928,6 +955,8 @@ impl AdvancedAi {
             settler_stalls: BTreeMap::new(),
             parallel_settlers: false,
             city_strategy: false,
+            city_strategy_emphasis: true,
+            city_strategy_roles: true,
             civ_blind: false,
             deny_leaders: true,
             early_rush: false,
@@ -1292,7 +1321,11 @@ impl AdvancedAi {
             }
             return;
         }
-        let emphasis = Self::lane_emphasis(plan.strategy);
+        let emphasis = if self.city_strategy_emphasis {
+            Self::lane_emphasis(plan.strategy)
+        } else {
+            Yields::default()
+        };
         let short = cities.len() < plan.desired_cities;
 
         let mut totals = Yields::default();
@@ -1312,7 +1345,10 @@ impl AdvancedAi {
             // `BASTION_PRESSURE` is the same 0.45 `threatened_city` treats as
             // a locally competitive hostile force, so the city's own governor
             // and the empire's recovery alarm agree on what a threat is.
-            let role = if pressure >= BASTION_PRESSURE || plan.threatened_city == Some(cid) {
+            let pressure = if self.city_strategy_roles { pressure } else { 0.0 };
+            let role = if !self.city_strategy_roles {
+                CityRole::Balanced
+            } else if pressure >= BASTION_PRESSURE || plan.threatened_city == Some(cid) {
                 CityRole::Bastion
             } else if short && ys.food >= mean_food * ROLE_MARGIN {
                 CityRole::Breadbasket

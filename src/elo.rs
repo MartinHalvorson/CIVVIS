@@ -38,11 +38,13 @@ pub const BUILTIN_AIS: [&str; 10] = [
 /// tournament ratings. Keeping them out of `BUILTIN_AIS` prevents a control
 /// factory from being pooled into the same player/leader rating key as
 /// its treatment.
-pub const EVAL_ONLY_AIS: [&str; 50] = [
+pub const EVAL_ONLY_AIS: [&str; 52] = [
     "advanced_banking_dedication",
     "advanced_blind_to_leaders",
     "advanced_rush",
     "advanced_city_strategy",
+    "advanced_city_strategy_emphasis",
+    "advanced_city_strategy_roles",
     "advanced_civ_blind",
     "advanced_counter_in_lane",
     "advanced_counter_stand_down",
@@ -604,6 +606,24 @@ pub fn builtin_ai(name: &str, seed: u64) -> Box<dyn Ai> {
         "advanced_city_strategy" => {
             let mut ai = AdvancedAi::new();
             ai.city_strategy = true;
+            Box::new(ai)
+        }
+        // The two ablation halves of `advanced_city_strategy`, which lost its
+        // first screen at 42.5% over 120 maps. Emphasis-only carries the
+        // empire's lane into the tiles and nothing else; roles-only carries
+        // the local role ladder and per-city military pressure and nothing
+        // else. Paired against `advanced` they attribute that loss instead of
+        // leaving it to be guessed at.
+        "advanced_city_strategy_emphasis" => {
+            let mut ai = AdvancedAi::new();
+            ai.city_strategy = true;
+            ai.city_strategy_roles = false;
+            Box::new(ai)
+        }
+        "advanced_city_strategy_roles" => {
+            let mut ai = AdvancedAi::new();
+            ai.city_strategy = true;
+            ai.city_strategy_emphasis = false;
             Box::new(ai)
         }
         "advanced_lane_reachable" => {
@@ -1341,6 +1361,8 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "advanced" => (Vec::new(), "advanced"),
         "advanced_lane_reachable" => (Vec::new(), "advanced_lane_reachable"),
         "advanced_city_strategy" => (Vec::new(), "advanced_city_strategy"),
+        "advanced_city_strategy_emphasis" => (Vec::new(), "advanced_city_strategy_emphasis"),
+        "advanced_city_strategy_roles" => (Vec::new(), "advanced_city_strategy_roles"),
         "advanced_banking_dedication" => (Vec::new(), "advanced_banking_dedication"),
         "advanced_measured_dedication" => (Vec::new(), "advanced_measured_dedication"),
         "advanced_parallel_settlers" => (Vec::new(), "advanced_parallel_settlers"),
@@ -1857,7 +1879,7 @@ mod tests {
             // Anything else reaching that state fell through to the
             // catch-all and is claiming to need nothing while quietly
             // needing a net.
-            const SCRIPTED: [&str; 22] = [
+            const SCRIPTED: [&str; 24] = [
                 "advanced",
                 "advanced_blind_to_leaders",
                 "advanced_rush",
@@ -1868,6 +1890,8 @@ mod tests {
                 "advanced_settler_commit",
                 "advanced_banking_dedication",
                 "advanced_city_strategy",
+                "advanced_city_strategy_emphasis",
+                "advanced_city_strategy_roles",
                 "advanced_civ_blind",
                 "advanced_food_first",
                 "advanced_lane_reachable",
