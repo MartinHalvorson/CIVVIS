@@ -15,6 +15,7 @@
 //!   freely, and a query that consumes RNG would make merely opening a panel
 //!   change the game.
 
+use crate::name::Name;
 use super::*;
 
 /// One outstanding request, as stored on the civilization that owes it.
@@ -91,7 +92,7 @@ impl Game {
     /// Military units `pid` could train today, by the gates the production
     /// legality check reads. A quest that names a unit the civilization cannot
     /// reach is not a quest, it is a dead entry.
-    fn quest_unit_candidates(&self, pid: usize) -> Vec<String> {
+    fn quest_unit_candidates(&self, pid: usize) -> Vec<Name> {
         let civ = self.players[pid].civ.as_str();
         self.rules
             .units
@@ -104,11 +105,11 @@ impl Game {
             .filter(|(_, spec)| {
                 spec.tech
                     .as_deref()
-                    .is_none_or(|tech| self.players[pid].techs.contains(tech))
+                    .is_none_or(|tech| self.players[pid].techs.contains(&Name::new(tech)))
                     && spec
                         .civic
                         .as_deref()
-                        .is_none_or(|civic| self.players[pid].civics.contains(civic))
+                        .is_none_or(|civic| self.players[pid].civics.contains(&Name::new(civic)))
             })
             // A unit whose successor is already available is not what the
             // city-state would ask for, and the queue would modernize it away.
@@ -118,7 +119,7 @@ impl Game {
     }
 
     /// Specialty district families `pid` has unlocked but not yet built.
-    fn quest_district_candidates(&self, pid: usize) -> Vec<String> {
+    fn quest_district_candidates(&self, pid: usize) -> Vec<Name> {
         let built: BTreeSet<&str> = self
             .cities
             .values()
@@ -137,11 +138,11 @@ impl Game {
             .filter(|(_, spec)| {
                 spec.tech
                     .as_deref()
-                    .is_none_or(|tech| self.players[pid].techs.contains(tech))
+                    .is_none_or(|tech| self.players[pid].techs.contains(&Name::new(tech)))
                     && spec
                         .civic
                         .as_deref()
-                        .is_none_or(|civic| self.players[pid].civics.contains(civic))
+                        .is_none_or(|civic| self.players[pid].civics.contains(&Name::new(civic)))
             })
             .filter(|(name, _)| !built.contains(name.as_str()))
             .map(|(name, _)| name.clone())
@@ -150,7 +151,7 @@ impl Game {
 
     /// Technologies with an unearned Eureka. A quest can only ask for a boost
     /// that is still available to trigger.
-    fn quest_tech_candidates(&self, pid: usize) -> Vec<String> {
+    fn quest_tech_candidates(&self, pid: usize) -> Vec<Name> {
         let player = &self.players[pid];
         self.rules
             .techs
@@ -161,7 +162,7 @@ impl Game {
             .collect()
     }
 
-    fn quest_civic_candidates(&self, pid: usize) -> Vec<String> {
+    fn quest_civic_candidates(&self, pid: usize) -> Vec<Name> {
         let player = &self.players[pid];
         self.rules
             .civics
@@ -227,6 +228,14 @@ impl Game {
                 .into_iter()
                 .min_by_key(|name| Self::quest_key(pid, minor, era, 0, name))
         };
+        // The interned half of the same draw. Quest targets are stored as text,
+        // so a chosen name is spelled out once here rather than at each caller.
+        let pick_name = |candidates: Vec<Name>| -> Option<String> {
+            candidates
+                .into_iter()
+                .min_by_key(|name| Self::quest_key(pid, minor, era, 0, name))
+                .map(|name| name.to_string())
+        };
         let mut out = Vec::new();
         // A quest already satisfied is not offered: the game does not pay an
         // Envoy for something that was done before it was asked for.
@@ -259,19 +268,19 @@ impl Game {
                 camps,
             ));
         }
-        if let Some(unit) = pick(self.quest_unit_candidates(pid)) {
+        if let Some(unit) = pick_name(self.quest_unit_candidates(pid)) {
             let quest = new("train_unit_type", unit, None, 0);
             if !self.quest_done(pid, minor, &quest) {
                 offer(quest);
             }
         }
-        if let Some(district) = pick(self.quest_district_candidates(pid)) {
+        if let Some(district) = pick_name(self.quest_district_candidates(pid)) {
             offer(new("zone_district_type", district, None, 0));
         }
-        if let Some(tech) = pick(self.quest_tech_candidates(pid)) {
+        if let Some(tech) = pick_name(self.quest_tech_candidates(pid)) {
             offer(new("trigger_tech_boost", tech, None, 0));
         }
-        if let Some(civic) = pick(self.quest_civic_candidates(pid)) {
+        if let Some(civic) = pick_name(self.quest_civic_candidates(pid)) {
             offer(new("trigger_civic_boost", civic, None, 0));
         }
         if let Some(kind) = pick(self.quest_great_person_candidates(pid)) {
@@ -321,8 +330,8 @@ impl Game {
                 .filter(|city| city.owner == pid)
                 .flat_map(|city| city.districts.keys())
                 .any(|district| self.district_family(district) == quest.target),
-            "trigger_tech_boost" => player.boosted_techs.contains(&quest.target),
-            "trigger_civic_boost" => player.boosted_civics.contains(&quest.target),
+            "trigger_tech_boost" => player.boosted_techs.contains(&Name::new(&quest.target)),
+            "trigger_civic_boost" => player.boosted_civics.contains(&Name::new(&quest.target)),
             "recruit_great_person_class" => {
                 player.gp_claimed.get(&quest.target).copied().unwrap_or(0) > quest.mark
             }

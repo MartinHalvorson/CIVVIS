@@ -324,7 +324,7 @@ impl ChronicleSnapshot {
                 (unit.id, unit.owner)
             })
             .collect();
-        let tree_era = |nodes: &BTreeSet<String>, technology: bool| {
+        let tree_era = |nodes: &BTreeSet<Name>, technology: bool| {
             nodes
                 .iter()
                 .filter_map(|node| {
@@ -2155,11 +2155,11 @@ impl Session {
                                 player["research_boosted"] = json!(seat
                                     .research
                                     .as_ref()
-                                    .is_some_and(|tech| seat.boosted_techs.contains(tech)));
+                                    .is_some_and(|tech| seat.boosted_techs.contains(&Name::new(tech))));
                                 player["civic_boosted"] = json!(seat
                                     .civic
                                     .as_ref()
-                                    .is_some_and(|civic| seat.boosted_civics.contains(civic)));
+                                    .is_some_and(|civic| seat.boosted_civics.contains(&Name::new(civic))));
                             }
                         }
                     }
@@ -4038,7 +4038,7 @@ mod tests {
             .map(|pid| generated_ai_name(42, pid, Some("science")))
             .collect();
         let unique: std::collections::BTreeSet<&str> =
-            science.iter().map(String::as_str).collect();
+            science.iter().map(|name| name.as_str()).collect();
         assert_eq!(unique.len(), science.len());
         assert!(science.iter().all(|name| ["Quantum", "Stellar", "Orbital", "Theory"]
             .iter()

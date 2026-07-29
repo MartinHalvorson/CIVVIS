@@ -54,7 +54,7 @@ fn purchased_missionary_adopts_the_city_majority_religion() {
         0,
         &Action::Buy {
             city,
-            unit: "missionary".to_string(),
+            unit: crate::name!("missionary"),
             formation: 0,
             currency: "faith".to_string(),
         },
@@ -87,7 +87,7 @@ fn founder_purchase_still_prefers_the_city_majority() {
         0,
         &Action::Buy {
             city,
-            unit: "missionary".to_string(),
+            unit: crate::name!("missionary"),
             formation: 0,
             currency: "faith".to_string(),
         },

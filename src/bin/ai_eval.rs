@@ -544,8 +544,8 @@ fn number(args: &[String], flag: &str, default: i64) -> i64 {
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    let a = args.first().map(String::as_str).unwrap_or("advanced");
-    let b = args.get(1).map(String::as_str).unwrap_or("basic");
+    let a = args.first().map(|name| name.as_str()).unwrap_or("advanced");
+    let b = args.get(1).map(|name| name.as_str()).unwrap_or("basic");
     assert_ne!(a, b, "choose two different AIs");
     for name in [a, b] {
         assert!(

@@ -353,7 +353,7 @@ fn stalled_settler_context(g: &Game, id: u32) -> String {
         legal_sites.len(),
         reachable,
         exhaustive_step,
-        g.players[pid].techs.contains("shipbuilding"),
+        g.players[pid].techs.contains(&civvis::name!("shipbuilding")),
         unit.linked_to,
     )
 }
@@ -977,10 +977,10 @@ mod tests {
     fn bounded_city_state_garrisons_are_not_reported_as_idle_production() {
         let units = vec![
             Item::Unit {
-                unit: "builder".to_string(),
+                unit: civvis::name!("builder"),
             },
             Item::Unit {
-                unit: "warrior".to_string(),
+                unit: civvis::name!("warrior"),
             },
         ];
         assert!(bounded_minor_idle(true, 3, &units));
@@ -989,7 +989,7 @@ mod tests {
 
         let mut investment = units;
         investment.push(Item::Project {
-            project: "campus_research_grants".to_string(),
+            project: civvis::name!("campus_research_grants"),
         });
         assert!(!bounded_minor_idle(true, 3, &investment));
     }

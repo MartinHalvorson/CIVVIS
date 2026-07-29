@@ -387,7 +387,7 @@ fn suzerains_improve_repair_and_accumulate_city_state_resources() {
         0,
         &Action::Improve {
             unit: builder,
-            improvement: "mine".to_string(),
+            improvement: crate::name!("mine"),
         },
     )
     .unwrap();
@@ -559,7 +559,7 @@ fn valletta_purchases_city_center_and_encampment_buildings_with_discounted_walls
     assert_eq!(game.building_faith_purchase_cost(0, city, "library"), None);
     let purchase = Action::BuyBuilding {
         city,
-        building: "walls".to_string(),
+        building: crate::name!("walls"),
         currency: "faith".to_string(),
     };
     assert!(game.legal_actions(0).contains(&purchase));
@@ -664,11 +664,11 @@ fn production_envoys_obey_unit_and_infrastructure_queues() {
         .map(str::to_string),
     );
     game.cities.get_mut(&city).unwrap().queue = vec![Item::Unit {
-        unit: "warrior".to_string(),
+        unit: crate::name!("warrior"),
     }];
     assert_close(game.envoy_yields(0, &game.cities[&city]).production, 12.0);
     game.cities.get_mut(&city).unwrap().queue = vec![Item::Building {
-        building: "granary".to_string(),
+        building: crate::name!("granary"),
     }];
     assert_close(game.envoy_yields(0, &game.cities[&city]).production, 0.0);
 
@@ -685,7 +685,7 @@ fn production_envoys_obey_unit_and_infrastructure_queues() {
     .collect();
     assert_close(game.envoy_yields(0, &game.cities[&city]).production, 12.0);
     game.cities.get_mut(&city).unwrap().queue = vec![Item::Unit {
-        unit: "warrior".to_string(),
+        unit: crate::name!("warrior"),
     }];
     assert_close(game.envoy_yields(0, &game.cities[&city]).production, 0.0);
 }
@@ -736,7 +736,7 @@ fn kilwa_scales_total_type_yields_and_matching_production_categories() {
     game.players[first_state].civ = "Kabul".to_string();
     game.players[second_state].civ = "Carthage".to_string();
     let unit = Item::Unit {
-        unit: "warrior".to_string(),
+        unit: crate::name!("warrior"),
     };
     let mut no_production_kilwa = game.clone();
     no_production_kilwa
@@ -845,7 +845,7 @@ fn brussels_hong_kong_and_muscat_pay_wonders_projects_and_amenities() {
 
     // +15% Production towards wonders.
     let wonder = Item::Wonder {
-        wonder: "pyramids".to_string(),
+        wonder: crate::name!("pyramids"),
         pos: game.cities[&city].pos,
     };
     let before = game.item_prod_mult(0, city, Some(&wonder));
@@ -858,7 +858,7 @@ fn brussels_hong_kong_and_muscat_pay_wonders_projects_and_amenities() {
     // +20% Production towards city projects, and not towards wonders.
     game.players[brussels].civ = "Hong Kong".to_string();
     let project = Item::Project {
-        project: "campus_research_grants".to_string(),
+        project: crate::name!("campus_research_grants"),
     };
     let base = {
         game.players[0].envoys.clear();

@@ -10,6 +10,7 @@
 //! for the ones an author knows about. This is that, for our data: run it with
 //! `civvis validate`, and see `docs/UNCIV_LESSONS.md` for the lineage.
 
+use crate::name::Name;
 use crate::specmap::SpecMap;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -107,17 +108,17 @@ impl<'a> Check<'a> {
         &mut self,
         subject: &str,
         field: &str,
-        values: &[String],
+        values: &[Name],
         catalogue: &SpecMap<T>,
         catalogue_name: &str,
     ) {
         for value in values {
-            self.reference(subject, field, Some(value), catalogue, catalogue_name);
+            self.reference(subject, field, Some(&value.to_string()), catalogue, catalogue_name);
         }
     }
 
     /// Every catalogue entry may be gated behind a technology and a civic.
-    fn gates(&mut self, subject: &str, tech: Option<&String>, civic: Option<&String>) {
+    fn gates(&mut self, subject: &str, tech: Option<&Name>, civic: Option<&Name>) {
         let techs = &self.rules.techs;
         let civics = &self.rules.civics;
         if let Some(tech) = tech {
@@ -401,7 +402,7 @@ fn trees(check: &mut Check) {
                         break;
                     }
                     if seen.insert(prerequisite.clone()) {
-                        frontier.push(prerequisite.clone());
+                        frontier.push(Name::new(&prerequisite));
                     }
                 }
             }
@@ -710,7 +711,7 @@ fn people(check: &mut Check) {
         let subject = format!("governors/{id}");
         for (promotion_id, promotion) in &spec.promotions {
             for prerequisite in &promotion.requires {
-                if !spec.promotions.contains_key(prerequisite) {
+                if !spec.promotions.contains_key(prerequisite.as_str()) {
                     check.error(
                         format!("{subject}/{promotion_id}"),
                         format!("requires {prerequisite:?}, which this governor does not offer"),

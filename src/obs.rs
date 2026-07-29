@@ -3,6 +3,7 @@
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, BTreeSet};
 
+use crate::name::Name;
 use crate::game::{
     City, Game, Item, RememberedCity, DIPLOMATIC_VICTORY_POINTS, EXOPLANET_DESTINATION,
     EXOPLANET_TARGETS,
@@ -59,7 +60,7 @@ pub const EXOPLANET_EYE: &str = "launch_earth_satellite";
 /// a book.
 pub fn knows_globe(p: &crate::game::Player) -> bool {
     p.went_around
-        || GLOBE_TECHS.iter().any(|tech| p.techs.contains(*tech))
+        || GLOBE_TECHS.iter().any(|tech| p.techs.contains(&Name::new(tech)))
         || p.great_people.iter().any(|id| id.as_str() == GLOBE_GREAT_PERSON)
 }
 
@@ -85,7 +86,7 @@ pub const OUTER_SYSTEM_GREAT_PERSON: &str = "isaac_newton";
 /// there is no system to put them in yet.
 pub fn sees_outer_system(p: &crate::game::Player) -> bool {
     knows_globe(p)
-        && (OUTER_SYSTEM_TECHS.iter().any(|tech| p.techs.contains(*tech))
+        && (OUTER_SYSTEM_TECHS.iter().any(|tech| p.techs.contains(&Name::new(tech)))
             || p.great_people
                 .iter()
                 .any(|id| id.as_str() == OUTER_SYSTEM_GREAT_PERSON)
@@ -447,7 +448,7 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
             "research_progress": round1(p.research_progress),
             // A spectator watches from above the world rather than inside it,
             // so it is never the party that has to find north.
-            "found_north": omniscient || p.techs.contains(NORTH_TECH),
+            "found_north": omniscient || p.techs.contains(&Name::new(NORTH_TECH)),
             "north_tech": NORTH_TECH,
             // Whether this people's knowledge has ever run the whole way round
             // the world, which is how a civilization finds out that it does
@@ -1180,7 +1181,7 @@ fn revealed_resources(g: &Game, pid: usize, omniscient: bool) -> BTreeSet<&str> 
                 g.resource_visible_to(pid, resource)
             }
         })
-        .map(String::as_str)
+        .map(|name| name.as_str())
         .collect()
 }
 
@@ -1632,7 +1633,7 @@ mod tests {
         game.apply(
             0,
             &crate::game::Action::AppointGovernor {
-                governor: "pingala".to_string(),
+                governor: crate::name!("pingala"),
                 city: city_id,
             },
         )

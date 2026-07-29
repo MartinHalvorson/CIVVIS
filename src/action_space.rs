@@ -10,6 +10,7 @@
 //! indices and feature rows. The kind mask says which of the [`KINDS`]
 //! categories are available at all, which is what a hierarchical policy
 //! (choose kind, then choose among that kind's actions) needs.
+use crate::name::Name;
 use crate::game::{effective_strength, Action, Game};
 use crate::Pos;
 

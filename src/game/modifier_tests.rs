@@ -76,7 +76,7 @@ fn per_unit_purchase_discount_is_shared_by_quotes_actions_and_execution() {
     game.players[0].gold = discounted;
     let action = Action::Buy {
         city,
-        unit: "warrior".to_string(),
+        unit: crate::name!("warrior"),
         formation: 0,
         currency: "gold".to_string(),
     };
@@ -92,7 +92,7 @@ fn theocracy_faith_purchase_quote_applies_its_discount_once() {
     let base = game.item_cost_for(
         0,
         &Item::Unit {
-            unit: "warrior".to_string(),
+            unit: crate::name!("warrior"),
         },
     );
     assert_eq!(
@@ -149,17 +149,17 @@ fn products_and_corporations_apply_all_economic_effect_families() {
 
     game.cities.get_mut(&city).unwrap().products = vec!["citrus".to_string()];
     let warrior = Item::Unit {
-        unit: "warrior".to_string(),
+        unit: crate::name!("warrior"),
     };
     let military = game.item_prod_mult(0, city, Some(&warrior));
     game.cities.get_mut(&city).unwrap().products = vec!["furs".to_string()];
     let builder = Item::Unit {
-        unit: "builder".to_string(),
+        unit: crate::name!("builder"),
     };
     let civilian = game.item_prod_mult(0, city, Some(&builder));
     game.cities.get_mut(&city).unwrap().products = vec!["gypsum".to_string()];
     let monument = Item::Building {
-        building: "monument".to_string(),
+        building: crate::name!("monument"),
     };
     let building = game.item_prod_mult(0, city, Some(&monument));
     assert!(military >= 1.30);

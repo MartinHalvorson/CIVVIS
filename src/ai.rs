@@ -1,5 +1,6 @@
 //! Scripted AIs (mirrors civvis/ai/). BasicAi reads full state (no fog) —
 //! sparring partner, not a fair-play agent.
+use crate::name::Name;
 use crate::game::{effective_strength, Action, ActionFamilies, Game, Item};
 use crate::reasoning::{plain, Journal};
 use crate::rng::Rng;
@@ -376,7 +377,7 @@ pub(crate) fn choose_dedications(g: &mut Game, pid: usize, choice: DedicationCho
         }
         let mut progressed = false;
         for dedication in offered {
-            if g.apply(pid, &Action::ChooseDedication { dedication }).is_ok() {
+            if g.apply(pid, &Action::ChooseDedication { dedication: Name::new(&dedication) }).is_ok() {
                 progressed = true;
                 break;
             }
@@ -414,14 +415,14 @@ fn revise_policy_deck(g: &mut Game, pid: usize, w: &Weights) {
                 let _ = g.apply(
                     pid,
                     &Action::SlotPolicy {
-                        policy: card.to_string(),
+                        policy: Name::new(card),
                     },
                 );
             }
         }
         return;
     }
-    let held: Vec<String> = g.players[pid].policies.iter().cloned().collect();
+    let held: Vec<Name> = g.players[pid].policies.iter().cloned().collect();
     if held.len() as i64 >= total && g.turn % POLICY_REVIEW_EVERY != 0 {
         return;
     }
@@ -438,7 +439,7 @@ fn revise_policy_deck(g: &mut Game, pid: usize, w: &Weights) {
             .unwrap_or(POLICY_PRIORITY.len())
     };
 
-    let mut scored: Vec<(f64, usize, String, String)> = Vec::new();
+    let mut scored: Vec<(f64, usize, String, Name)> = Vec::new();
     for card in &candidates {
         let slot = match g.rules.policies.get(card) {
             Some(spec) => spec.slot.clone(),
@@ -449,7 +450,7 @@ fn revise_policy_deck(g: &mut Game, pid: usize, w: &Weights) {
             g.players[pid].policies.remove(card);
         }
         let without = empire_reading(g, pid, w);
-        g.players[pid].policies.insert(card.clone());
+        g.players[pid].policies.insert(*card);
         let with = empire_reading(g, pid, w);
         if !incumbent {
             g.players[pid].policies.remove(card);
@@ -462,7 +463,7 @@ fn revise_policy_deck(g: &mut Game, pid: usize, w: &Weights) {
         } else {
             0.0
         };
-        scored.push((gain + hysteresis, rank(card), slot, card.clone()));
+        scored.push((gain + hysteresis, rank(card), slot, *card));
     }
 
     scored.sort_by(|a, b| {
@@ -474,7 +475,7 @@ fn revise_policy_deck(g: &mut Game, pid: usize, w: &Weights) {
 
     let mut room = [slots.military, slots.economic, slots.diplomatic];
     let mut wildcard = slots.wildcard;
-    let mut target: std::collections::BTreeSet<String> = Default::default();
+    let mut target: std::collections::BTreeSet<Name> = Default::default();
     for (_, _, slot, card) in &scored {
         let kind = match slot.as_str() {
             "military" => 0,
@@ -484,10 +485,10 @@ fn revise_policy_deck(g: &mut Game, pid: usize, w: &Weights) {
         };
         if kind < 3 && room[kind] > 0 {
             room[kind] -= 1;
-            target.insert(card.clone());
+            target.insert(*card);
         } else if wildcard > 0 {
             wildcard -= 1;
-            target.insert(card.clone());
+            target.insert(*card);
         }
     }
 
@@ -498,12 +499,7 @@ fn revise_policy_deck(g: &mut Game, pid: usize, w: &Weights) {
     }
     for card in &target {
         if !g.players[pid].policies.contains(card) {
-            let _ = g.apply(
-                pid,
-                &Action::SlotPolicy {
-                    policy: card.clone(),
-                },
-            );
+            let _ = g.apply(pid, &Action::SlotPolicy { policy: *card });
         }
     }
     // Floor: whatever the assignment above left empty, fill the way this code
@@ -514,7 +510,7 @@ fn revise_policy_deck(g: &mut Game, pid: usize, w: &Weights) {
             let _ = g.apply(
                 pid,
                 &Action::SlotPolicy {
-                    policy: card.to_string(),
+                    policy: Name::new(card),
                 },
             );
         }
@@ -1173,10 +1169,10 @@ impl BasicAi {
     /// to buy. Replacement Markets and Banks count as their base families.
     fn economic_research_goal(g: &Game, pid: usize) -> Option<&'static str> {
         let player = &g.players[pid];
-        if Self::has_building_family(g, pid, "market") && !player.techs.contains("banking") {
+        if Self::has_building_family(g, pid, "market") && !player.techs.contains(&crate::name!("banking")) {
             return Some("banking");
         }
-        if Self::has_building_family(g, pid, "bank") && !player.techs.contains("economics") {
+        if Self::has_building_family(g, pid, "bank") && !player.techs.contains(&crate::name!("economics")) {
             return Some("economics");
         }
         None
@@ -1184,9 +1180,9 @@ impl BasicAi {
 
     fn research_step_toward(
         g: &Game,
-        avail: &[String],
+        avail: &[Name],
         goal: Option<&str>,
-    ) -> Option<String> {
+    ) -> Option<Name> {
         goal.and_then(|goal| {
             avail
                 .iter()
@@ -1208,7 +1204,7 @@ impl BasicAi {
         })
     }
 
-    fn civic_step_toward(g: &Game, avail: &[String], goal: Option<&str>) -> Option<String> {
+    fn civic_step_toward(g: &Game, avail: &[Name], goal: Option<&str>) -> Option<Name> {
         goal.and_then(|goal| {
             avail
                 .iter()
@@ -1280,7 +1276,7 @@ impl BasicAi {
             return None;
         }
         let player = &g.players[pid];
-        if !player.techs.contains("sailing") {
+        if !player.techs.contains(&crate::name!("sailing")) {
             return Some("sailing");
         }
         // Past Sailing the naval chain gets expensive, and it overrides every
@@ -1292,10 +1288,10 @@ impl BasicAi {
         if !Self::naval_ambitions(g, pid) {
             return None;
         }
-        if !player.techs.contains("shipbuilding") {
+        if !player.techs.contains(&crate::name!("shipbuilding")) {
             return Some("shipbuilding");
         }
-        if !player.techs.contains("celestial_navigation")
+        if !player.techs.contains(&crate::name!("celestial_navigation"))
             && (g.turn >= 30 || g.player_city_ids(pid).len() >= 2)
         {
             return Some("celestial_navigation");
@@ -1306,7 +1302,7 @@ impl BasicAi {
             .values()
             .any(|unit| unit.owner == pid && unit.kind == "settler");
         if has_ocean
-            && !player.techs.contains("cartography")
+            && !player.techs.contains(&crate::name!("cartography"))
             && (g.turn >= 55 || g.player_city_ids(pid).len() >= 3 || has_expansion_unit)
         {
             return Some("cartography");
@@ -1325,8 +1321,8 @@ impl BasicAi {
                     .into_iter()
                     .any(|cid| Self::city_is_coastal(g, cid)))
         });
-        if naval_war && player.techs.contains("cartography") {
-            if !player.techs.contains("square_rigging") {
+        if naval_war && player.techs.contains(&crate::name!("cartography")) {
+            if !player.techs.contains(&crate::name!("square_rigging")) {
                 return Some("square_rigging");
             }
             // After the first dedicated naval-ranged unlock, pursue later
@@ -1341,7 +1337,7 @@ impl BasicAi {
                 ("lasers", "nuclear_fission"),
                 ("telecommunications", "computers"),
             ] {
-                if player.techs.contains(prerequisite) && !player.techs.contains(goal) {
+                if player.techs.contains(&Name::new(prerequisite)) && !player.techs.contains(&Name::new(goal)) {
                     return Some(goal);
                 }
             }
@@ -1463,7 +1459,7 @@ impl BasicAi {
             "trade" => "currency",
             _ => return None,
         };
-        (!g.players[pid].techs.contains(goal)).then_some(goal)
+        (!g.players[pid].techs.contains(&Name::new(goal))).then_some(goal)
     }
 
     pub(crate) fn desired_navy(g: &Game, pid: usize) -> usize {
@@ -1472,7 +1468,7 @@ impl BasicAi {
             .into_iter()
             .filter(|cid| Self::city_is_coastal(g, *cid))
             .count();
-        if coastal_cities == 0 || !g.players[pid].techs.contains("sailing") {
+        if coastal_cities == 0 || !g.players[pid].techs.contains(&crate::name!("sailing")) {
             return 0;
         }
         let mut desired = 1;
@@ -1484,7 +1480,7 @@ impl BasicAi {
                     .is_some_and(|tile| g.rules.is_water(tile))
         });
         if settlers_at_sea
-            || (g.players[pid].techs.contains("shipbuilding")
+            || (g.players[pid].techs.contains(&crate::name!("shipbuilding"))
                 && g.units
                     .values()
                     .any(|unit| unit.owner == pid && unit.kind == "settler"))
@@ -1507,7 +1503,7 @@ impl BasicAi {
         });
         if naval_war {
             desired = desired.max(coastal_cities.saturating_add(1).max(2));
-        } else if g.players[pid].techs.contains("cartography") && coastal_cities >= 2 {
+        } else if g.players[pid].techs.contains(&crate::name!("cartography")) && coastal_cities >= 2 {
             desired = desired.max(2);
         }
         desired
@@ -2294,7 +2290,7 @@ impl BasicAi {
                         .any(|building| building == "walls")
                 });
                 let defensive_goal =
-                    (!has_walls && !g.players[pid].techs.contains("masonry")).then_some("masonry");
+                    (!has_walls && !g.players[pid].techs.contains(&crate::name!("masonry"))).then_some("masonry");
                 let pick = Self::research_step_toward(g, &avail, defensive_goal)
                     .or_else(|| {
                         Self::research_step_toward(g, &avail, Self::minor_tech_goal(g, pid))
@@ -2306,27 +2302,27 @@ impl BasicAi {
                         TECH_PRIORITY
                             .iter()
                             .find(|tech| avail.iter().any(|candidate| candidate == *tech))
-                            .map(|tech| tech.to_string())
+                            .map(|tech| Name::new(tech))
                     })
-                    .unwrap_or_else(|| avail[0].clone());
-                let _ = g.apply(pid, &Action::Research { tech: pick });
+                    .unwrap_or_else(|| avail[0]);
+                let _ = g.apply(pid, &Action::Research { tech: Name::new(&pick) });
             }
         }
         if g.players[pid].civic.is_none() {
             let avail = g.available_civics(pid);
             if !avail.is_empty() {
                 let cultural_goal = (g.cs_type(&g.players[pid].civ) == "cultural"
-                    && !g.players[pid].civics.contains("drama_poetry"))
+                    && !g.players[pid].civics.contains(&crate::name!("drama_poetry")))
                 .then_some("drama_poetry");
                 let pick = Self::civic_step_toward(g, &avail, cultural_goal)
                     .or_else(|| {
                         CIVIC_PRIORITY
                             .iter()
                             .find(|civic| avail.iter().any(|candidate| candidate == *civic))
-                            .map(|civic| civic.to_string())
+                            .map(|civic| Name::new(civic))
                     })
-                    .unwrap_or_else(|| avail[0].clone());
-                let _ = g.apply(pid, &Action::Civic { civic: pick });
+                    .unwrap_or_else(|| avail[0]);
+                let _ = g.apply(pid, &Action::Civic { civic: Name::new(&pick) });
             }
         }
     }
@@ -2361,10 +2357,10 @@ impl BasicAi {
                         TECH_PRIORITY
                             .iter()
                             .find(|t| avail.iter().any(|a| a == *t))
-                            .map(|t| t.to_string())
+                            .map(|t| Name::new(t))
                     })
-                    .unwrap_or_else(|| avail[0].clone());
-                let _ = g.apply(pid, &Action::Research { tech: pick });
+                    .unwrap_or_else(|| avail[0]);
+                let _ = g.apply(pid, &Action::Research { tech: Name::new(&pick) });
             }
         }
         if g.players[pid].civic.is_none() {
@@ -2373,9 +2369,9 @@ impl BasicAi {
                 let pick = CIVIC_PRIORITY
                     .iter()
                     .find(|c| avail.iter().any(|a| a == *c))
-                    .map(|c| c.to_string())
-                    .unwrap_or_else(|| avail[0].clone());
-                let _ = g.apply(pid, &Action::Civic { civic: pick });
+                    .map(|c| Name::new(c))
+                    .unwrap_or_else(|| avail[0]);
+                let _ = g.apply(pid, &Action::Civic { civic: Name::new(&pick) });
             }
         }
         // Great People are not awarded automatically when the points cross
@@ -2399,7 +2395,7 @@ impl BasicAi {
                             let _ = g.apply(
                                 pid,
                                 &Action::Government {
-                                    government: gname.to_string(),
+                                    government: Name::new(gname),
                                 },
                             );
                         }
@@ -2418,7 +2414,7 @@ impl BasicAi {
             let _ = g.apply(
                 pid,
                 &Action::ChooseSecretSociety {
-                    society: society.to_string(),
+                    society: Name::new(society),
                 },
             );
         }
@@ -2437,7 +2433,7 @@ impl BasicAi {
                 if g.apply(
                     pid,
                     &Action::ChoosePantheon {
-                        belief: b.to_string(),
+                        belief: Name::new(b),
                     },
                 )
                 .is_ok()
@@ -2488,8 +2484,8 @@ impl BasicAi {
                     if g.apply(
                         pid,
                         &Action::FoundReligion {
-                            follower: follower.clone(),
-                            founder: founder.clone(),
+                            follower: Name::new(&follower),
+                            founder: Name::new(&founder),
                         },
                     )
                     .is_ok()
@@ -2526,7 +2522,7 @@ impl BasicAi {
                     if g.apply(
                         pid,
                         &Action::AppointGovernor {
-                            governor: governor.to_string(),
+                            governor: Name::new(governor),
                             city: c,
                         },
                     )
@@ -2559,8 +2555,8 @@ impl BasicAi {
             if g.apply(
                 pid,
                 &Action::PromoteGovernor {
-                    governor,
-                    promotion,
+                    governor: Name::new(&governor),
+                    promotion: Name::new(&promotion),
                 },
             )
             .is_err()
@@ -2788,12 +2784,12 @@ impl BasicAi {
                                         .choices
                                         .iter()
                                         .find(|choice| choice.starts_with("A:"))
-                                        .map(String::as_str),
+                                        .map(|name| name.as_str()),
                                     "deforestation_treaty" => resolution
                                         .choices
                                         .iter()
                                         .find(|choice| choice.starts_with("A:"))
-                                        .map(String::as_str),
+                                        .map(|name| name.as_str()),
                                     _ => None,
                                 }?;
                                 resolution
@@ -2814,7 +2810,7 @@ impl BasicAi {
                 let _ = g.apply(
                     pid,
                     &Action::CongressVote {
-                        resolution: resolution.id,
+                        resolution: Name::new(&resolution.id),
                         choice,
                         votes,
                     },
@@ -2851,8 +2847,8 @@ impl BasicAi {
                     && g.players[pid].grievances.get(other).copied().unwrap_or(0.0) < 50.0
             }) {
                 let alliance = if g.are_friends(pid, partner)
-                    && g.players[pid].civics.contains("civil_service")
-                    && g.players[partner].civics.contains("civil_service")
+                    && g.players[pid].civics.contains(&crate::name!("civil_service"))
+                    && g.players[partner].civics.contains(&crate::name!("civil_service"))
                     && g.alliance_with(pid, partner).is_none()
                 {
                     let kinds = ["economic", "cultural", "military", "religious", "research"];
@@ -2882,7 +2878,7 @@ impl BasicAi {
                         player: partner,
                         give_gold: 0.0,
                         request_gold: 0.0,
-                        open_borders: g.players[pid].civics.contains("early_empire"),
+                        open_borders: g.players[pid].civics.contains(&crate::name!("early_empire")),
                         friendship: true,
                         peace: false,
                         alliance,
@@ -3253,11 +3249,11 @@ impl BasicAi {
                     }
                     let item = if name == "monument" {
                         Item::Building {
-                            building: name.to_string(),
+                            building: Name::new(name),
                         }
                     } else {
                         Item::Unit {
-                            unit: name.to_string(),
+                            unit: Name::new(name),
                         }
                     };
                     if g.apply(
@@ -3375,7 +3371,7 @@ impl BasicAi {
                 pid,
                 &Action::Buy {
                     city: city_ids[0],
-                    unit: "builder".to_string(),
+                    unit: crate::name!("builder"),
                     formation: 0,
                     currency: "faith".to_string(),
                 },
@@ -3397,7 +3393,7 @@ impl BasicAi {
                             pid,
                             &Action::Buy {
                                 city: *cid,
-                                unit: "missionary".to_string(),
+                                unit: crate::name!("missionary"),
                                 formation: 0,
                                 currency: "faith".to_string(),
                             },
@@ -3528,13 +3524,13 @@ impl BasicAi {
             }
             let power = spec.strength.max(spec.ranged_attack_strength());
             if best.as_ref().map(|(b, _)| power > *b).unwrap_or(true) {
-                best = Some((power, name.clone()));
+                best = Some((power, name.to_string()));
             }
         }
         best.map(|(_, n)| n)
     }
 
-    fn best_naval_unit(&self, g: &Game, pid: usize, cid: u32) -> Option<String> {
+    fn best_naval_unit(&self, g: &Game, pid: usize, cid: u32) -> Option<Name> {
         if !Self::city_is_coastal(g, cid) {
             return None;
         }
@@ -3676,7 +3672,7 @@ impl BasicAi {
                     pid,
                     cid,
                     &Item::Unit {
-                        unit: unit.to_string(),
+                        unit: Name::new(unit),
                     },
                 )
             {
@@ -3706,7 +3702,7 @@ impl BasicAi {
                 pid,
                 *cid,
                 &Item::Unit {
-                    unit: unit.to_string(),
+                    unit: Name::new(unit),
                 },
             ) {
                 continue;
@@ -3715,7 +3711,7 @@ impl BasicAi {
                 pid,
                 &Action::Buy {
                     city: *cid,
-                    unit: unit.to_string(),
+                    unit: Name::new(unit),
                     formation: 0,
                     currency: "gold".to_string(),
                 },
@@ -3773,7 +3769,7 @@ impl BasicAi {
                         }
                     };
                     if replace {
-                        best = Some((power, price, name.clone(), *cid));
+                        best = Some((power, price, name.to_string(), *cid));
                     }
                 }
             }
@@ -3787,7 +3783,7 @@ impl BasicAi {
             pid,
             &Action::Buy {
                 city,
-                unit,
+                unit: Name::new(&unit),
                 formation: 0,
                 currency: "gold".to_string(),
             },
@@ -3888,7 +3884,7 @@ impl BasicAi {
                     }
                 };
                 if replace {
-                    best = Some((efficiency, value, price, building.clone(), *cid));
+                    best = Some((efficiency, value, price, building.to_string(), *cid));
                 }
             }
         }
@@ -3899,7 +3895,7 @@ impl BasicAi {
             pid,
             &Action::BuyBuilding {
                 city,
-                building,
+                building: Name::new(&building),
                 currency: "gold".to_string(),
             },
         )
@@ -4088,7 +4084,7 @@ impl BasicAi {
     ) -> Option<Item> {
         if Self::should_add_trader(g, pid, traders) {
             let trader = Item::Unit {
-                unit: "trader".to_string(),
+                unit: crate::name!("trader"),
             };
             if g.can_produce(pid, cid, &trader) {
                 return Some(trader);
@@ -4141,7 +4137,7 @@ impl BasicAi {
             })
             .filter_map(|(district, pos)| {
                 let item = Item::District {
-                    district: district.to_string(),
+                    district: Name::new(district),
                     pos,
                 };
                 g.can_produce(pid, cid, &item).then_some((
@@ -4237,7 +4233,7 @@ impl BasicAi {
             .into_iter()
             .filter_map(|pos| {
                 let item = Item::District {
-                    district: district.clone(),
+                    district: Name::new(&district),
                     pos,
                 };
                 g.can_produce(pid, cid, &item).then_some((
@@ -4298,7 +4294,7 @@ impl BasicAi {
         if self.minor {
             for project in ["repair_outer_defenses", "repair_encampment"] {
                 let repair = Item::Project {
-                    project: project.to_string(),
+                    project: Name::new(project),
                 };
                 if g.can_produce(pid, cid, &repair) {
                     return Some(repair);
@@ -4322,7 +4318,7 @@ impl BasicAi {
         if self.minor && !emergency_defense {
             for building in ["walls", "medieval_walls", "renaissance_walls"] {
                 let wall = Item::Building {
-                    building: building.to_string(),
+                    building: Name::new(building),
                 };
                 if g.can_produce(pid, cid, &wall) {
                     return Some(wall);
@@ -4354,12 +4350,12 @@ impl BasicAi {
                 self.combined_arms_unit(g, pid, cid, melee, ranged)
             };
             if let Some(m) = picked {
-                return Some(Item::Unit { unit: m });
+                return Some(Item::Unit { unit: Name::new(&m) });
             }
         }
         if !self.minor && can_add_military && siege_support == 0 && melee >= 2 {
             if let Some(unit) = self.siege_support_unit(g, pid, cid) {
-                return Some(Item::Unit { unit });
+                return Some(Item::Unit { unit: Name::new(&unit) });
             }
         }
         if !self.minor && !self.barb {
@@ -4372,10 +4368,10 @@ impl BasicAi {
                                 if g.district_family(district) == "spaceport"
                         ))
             });
-            if !has_spaceport && g.players[pid].techs.contains("rocketry") {
+            if !has_spaceport && g.players[pid].techs.contains(&crate::name!("rocketry")) {
                 if let Some(pos) = g.district_sites(cid, "spaceport").into_iter().next() {
                     let item = Item::District {
-                        district: "spaceport".to_string(),
+                        district: crate::name!("spaceport"),
                         pos,
                     };
                     if g.can_produce(pid, cid, &item) {
@@ -4384,7 +4380,7 @@ impl BasicAi {
                 }
             }
             let spy = Item::Unit {
-                unit: "spy".to_string(),
+                unit: crate::name!("spy"),
             };
             if g.can_produce(pid, cid, &spy) {
                 return Some(spy);
@@ -4432,7 +4428,7 @@ impl BasicAi {
         let naval = Self::naval_counts(g, pid).0;
         if can_add_military && naval < Self::desired_navy(g, pid) {
             if let Some(unit) = self.best_naval_unit(g, pid, cid) {
-                return Some(Item::Unit { unit });
+                return Some(Item::Unit { unit: Name::new(&unit) });
             }
         }
         if !self.minor
@@ -4444,14 +4440,14 @@ impl BasicAi {
             && self.has_practical_settle_site(g, pid)
         {
             return Some(Item::Unit {
-                unit: "settler".to_string(),
+                unit: crate::name!("settler"),
             });
         }
         if (builders as f64) < self.w.builder_per_city * n_cities as f64
             && Self::has_builder_work(g, pid)
         {
             return Some(Item::Unit {
-                unit: "builder".to_string(),
+                unit: crate::name!("builder"),
             });
         }
         if !self.minor
@@ -4460,12 +4456,12 @@ impl BasicAi {
                 pid,
                 cid,
                 &Item::Unit {
-                    unit: "trader".to_string(),
+                    unit: crate::name!("trader"),
                 },
             )
         {
             return Some(Item::Unit {
-                unit: "trader".to_string(),
+                unit: crate::name!("trader"),
             });
         }
         if self.minor {
@@ -4493,7 +4489,7 @@ impl BasicAi {
                     .then(a.cmp(b))
             }) {
                 let item = Item::District {
-                    district: harbor.clone(),
+                    district: Name::new(&harbor),
                     pos,
                 };
                 if g.can_produce(pid, cid, &item) {
@@ -4574,7 +4570,7 @@ impl BasicAi {
                     })
                     .unwrap();
                 let item = Item::District {
-                    district: dname.clone(),
+                    district: Name::new(&dname),
                     pos: best,
                 };
                 // Never hand back something the engine will reject: a refused
@@ -4603,7 +4599,7 @@ impl BasicAi {
                 }
             }
         }
-        let mut buildable: Vec<(i64, String)> = g
+        let mut buildable: Vec<(i64, Name)> = g
             .rules
             .buildings
             .iter()
@@ -4613,16 +4609,16 @@ impl BasicAi {
                         pid,
                         cid,
                         &Item::Building {
-                            building: (*b).clone(),
+                            building: **b,
                         },
                     )
             })
-            .map(|(b, s)| (s.cost as i64, b.clone()))
+            .map(|(b, s)| (s.cost as i64, *b))
             .collect();
         if !buildable.is_empty() {
             buildable.sort();
             return Some(Item::Building {
-                building: buildable[0].1.clone(),
+                building: Name::new(&buildable[0].1),
             });
         }
         // developed cities turn to wonders
@@ -4668,14 +4664,14 @@ impl BasicAi {
         can_add_military
             .then(|| self.combined_arms_unit(g, pid, cid, melee, ranged))
             .flatten()
-            .map(|m| Item::Unit { unit: m })
+            .map(|m| Item::Unit { unit: Name::new(&m) })
     }
 
     /// Pick a real placed wonder rather than treating it as an ordinary
     /// building. `producible_items` supplies fully validated sites; filtering
     /// globally queued names keeps two cities from entering the same race.
     fn cheapest_available_wonder(g: &Game, pid: usize, cid: u32) -> Option<Item> {
-        let queued: HashSet<String> = g
+        let queued: HashSet<Name> = g
             .cities
             .values()
             .filter_map(|city| match city.queue.first() {
@@ -4766,12 +4762,12 @@ impl BasicAi {
                 pid,
                 &Action::Promote {
                     unit: uid,
-                    promotion,
+                    promotion: Name::new(&promotion),
                 },
             );
         }
 
-        if g.players[pid].civics.contains("nationalism") {
+        if g.players[pid].civics.contains(&crate::name!("nationalism")) {
             let reserve = (g.player_city_ids(pid).len() + 3).max(5);
             loop {
                 let military = g
@@ -5110,8 +5106,8 @@ impl BasicAi {
     }
 
     fn has_practical_settle_site(&self, g: &Game, pid: usize) -> bool {
-        let shipbuilding = g.players[pid].techs.contains("shipbuilding");
-        let cartography = g.players[pid].techs.contains("cartography");
+        let shipbuilding = g.players[pid].techs.contains(&crate::name!("shipbuilding"));
+        let cartography = g.players[pid].techs.contains(&crate::name!("cartography"));
         // Before embarkation, a city only commits to a site close enough to
         // survive an ordinary settlement race. Existing settlers still use
         // the full path search below, but producing one for a site more than
@@ -5465,7 +5461,7 @@ impl BasicAi {
     /// replacement where it has one, otherwise the stock district. The engine
     /// blocks the base district for civilizations with a replacement, exactly
     /// as it does for unique units.
-    pub(crate) fn civ_district(g: &Game, pid: usize, family: &str) -> String {
+    pub(crate) fn civ_district(g: &Game, pid: usize, family: &str) -> Name {
         let civ = g.players[pid].civ.as_str();
         g.rules
             .districts
@@ -5474,7 +5470,7 @@ impl BasicAi {
                 spec.replaces.as_deref() == Some(family) && spec.unique_to.as_deref() == Some(civ)
             })
             .map(|(name, _)| name.clone())
-            .unwrap_or_else(|| family.to_string())
+            .unwrap_or_else(|| Name::new(family))
     }
 
     /// The building this city should start in place of `family`: the stock
@@ -5484,7 +5480,7 @@ impl BasicAi {
     /// than proposing something the engine will refuse.
     fn civ_building(g: &Game, pid: usize, cid: u32, family: &str) -> Option<Item> {
         let base = Item::Building {
-            building: family.to_string(),
+            building: Name::new(family),
         };
         if g.can_produce(pid, cid, &base) {
             return Some(base);
@@ -5504,12 +5500,12 @@ impl BasicAi {
     /// strategic resource or connect a luxury, and paving Iron or Wine over
     /// with a Farm forfeits that permanently. Otherwise take the most
     /// valuable yield, weighted the way the rest of this AI values output.
-    fn best_improvement(g: &Game, pos: Pos, options: &[String]) -> Option<String> {
+    fn best_improvement(g: &Game, pos: Pos, options: &[Name]) -> Option<Name> {
         let resource = g.map.get(pos).and_then(|tile| tile.resource.clone());
         options
             .iter()
             .max_by(|a, b| {
-                let score = |name: &String| {
+                let score = |name: &Name| {
                     let spec = &g.rules.improvements[name];
                     let works_resource = resource
                         .as_ref()
@@ -5566,7 +5562,7 @@ impl BasicAi {
                 .apply(pid, &Action::RepairImprovement { unit: uid })
                 .is_ok();
         }
-        let imps: Vec<String> = g
+        let imps: Vec<Name> = g
             .valid_improvements(pid, upos)
             .into_iter()
             .filter(|improvement| g.rules.improvements[improvement].builder_buildable)
@@ -5577,7 +5573,7 @@ impl BasicAi {
                     pid,
                     &Action::Improve {
                         unit: uid,
-                        improvement,
+                        improvement: Name::new(&improvement),
                     },
                 )
                 .is_ok();
@@ -5696,7 +5692,7 @@ impl BasicAi {
                     pid,
                     &Action::Improve {
                         unit: uid,
-                        improvement: "national_park".to_string(),
+                        improvement: crate::name!("national_park"),
                     },
                 )
                 .is_ok();
@@ -5737,7 +5733,7 @@ impl BasicAi {
                     pid,
                     &Action::Improve {
                         unit: uid,
-                        improvement,
+                        improvement: Name::new(&improvement),
                     },
                 )
                 .is_ok();
@@ -7162,7 +7158,7 @@ mod tests {
         game.apply(
             0,
             &Action::AppointGovernor {
-                governor: "victor".to_string(),
+                governor: crate::name!("victor"),
                 city: first,
             },
         )
@@ -7447,7 +7443,7 @@ mod tests {
         assert_eq!(
             item,
             Item::Building {
-                building: "walls".to_string()
+                building: crate::name!("walls")
             }
         );
     }
@@ -7584,7 +7580,7 @@ mod tests {
             .districts
             .insert("campus".to_string(), campus);
         let grants = Item::Project {
-            project: "campus_research_grants".to_string(),
+            project: crate::name!("campus_research_grants"),
         };
         assert!(g.can_produce(0, city, &grants));
 
@@ -9121,7 +9117,7 @@ mod tests {
             }
         }
         let settler_item = Item::Unit {
-            unit: "settler".to_string(),
+            unit: crate::name!("settler"),
         };
         assert!(game.can_produce(0, city, &settler_item));
         let mut ai = BasicAi::new();
@@ -9181,7 +9177,7 @@ mod tests {
         let city = game.player_city_ids(0)[0];
         game.cities.get_mut(&city).unwrap().pop = 4;
         let settler_item = Item::Unit {
-            unit: "settler".to_string(),
+            unit: crate::name!("settler"),
         };
         game.apply(
             0,
@@ -9261,7 +9257,7 @@ mod tests {
         assert_eq!(
             ai.pick_item(&g, 0, cid, 1, 0, 0, 0, 0, 4, 2, 2),
             Some(Item::Building {
-                building: "market".to_string()
+                building: crate::name!("market")
             })
         );
         g.cities
@@ -9294,7 +9290,7 @@ mod tests {
         assert_eq!(
             ai.pick_item(&g, 0, cid, 1, 0, 0, 0, 0, 4, 2, 2),
             Some(Item::Unit {
-                unit: "trader".to_string()
+                unit: crate::name!("trader")
             })
         );
     }
@@ -9311,7 +9307,7 @@ mod tests {
         g.players[0].civics.insert("foreign_trade".to_string());
         let city = g.player_city_ids(0)[0];
         let trader = Item::Unit {
-            unit: "trader".to_string(),
+            unit: crate::name!("trader"),
         };
         assert!(g.trade_capacity(0) > 0);
         assert!(g.can_produce(0, city, &trader));
@@ -9446,7 +9442,7 @@ mod tests {
             &Action::Produce {
                 city: cid,
                 item: Item::Building {
-                    building: "monument".to_string(),
+                    building: crate::name!("monument"),
                 },
             },
         )
@@ -9455,7 +9451,7 @@ mod tests {
 
         let purchase = Action::BuyBuilding {
             city: cid,
-            building: "monument".to_string(),
+            building: crate::name!("monument"),
             currency: "gold".to_string(),
         };
         let cost = g
@@ -9565,7 +9561,7 @@ mod tests {
         assert_eq!(
             ram,
             Item::Unit {
-                unit: "battering_ram".to_string()
+                unit: crate::name!("battering_ram")
             }
         );
 
@@ -9575,7 +9571,7 @@ mod tests {
         assert_eq!(
             tower,
             Item::Unit {
-                unit: "siege_tower".to_string()
+                unit: crate::name!("siege_tower")
             }
         );
 
@@ -9616,7 +9612,7 @@ mod tests {
         assert_eq!(
             item,
             Item::Building {
-                building: "amphitheater".to_string()
+                building: crate::name!("amphitheater")
             }
         );
     }
@@ -9630,7 +9626,7 @@ mod tests {
             0,
             &Action::Buy {
                 city: home,
-                unit: "battering_ram".to_string(),
+                unit: crate::name!("battering_ram"),
                 formation: 0,
                 currency: "gold".to_string(),
             },
@@ -9723,7 +9719,7 @@ mod tests {
             .buildings
             .push("royal_society".to_string());
         g.cities.get_mut(&city).unwrap().queue = vec![Item::Project {
-            project: "launch_earth_satellite".to_string(),
+            project: crate::name!("launch_earth_satellite"),
         }];
         let builder = g.spawn_test_unit("builder", 0, g.cities[&city].pos);
         g.units.get_mut(&builder).unwrap().charges = 3;
@@ -9811,7 +9807,7 @@ mod tests {
             .buildings
             .push("royal_society".to_string());
         g.cities.get_mut(&city).unwrap().queue = vec![Item::Project {
-            project: "launch_earth_satellite".to_string(),
+            project: crate::name!("launch_earth_satellite"),
         }];
         let builder = g.spawn_test_unit("builder", 0, g.cities[&city].pos);
         g.units.get_mut(&builder).unwrap().charges = 3;
@@ -9946,7 +9942,7 @@ mod tests {
         }
         game.players[0].techs.insert("engineering".to_string());
         let aqueduct = Item::District {
-            district: "aqueduct".to_string(),
+            district: crate::name!("aqueduct"),
             pos: site,
         };
         game.cities.get_mut(&city).unwrap().queue = vec![aqueduct.clone()];

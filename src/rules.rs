@@ -2,6 +2,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::rng::Rng;
+use crate::name::Name;
 use crate::specmap::SpecMap;
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, OnceLock};
@@ -111,7 +112,7 @@ pub struct FeaturePlacement {
     /// Base terrains the wonder can stand on. `mountain` covers every coloured
     /// `TERRAIN_*_MOUNTAIN` variant, which CIVVIS spells as one terrain.
     #[serde(default)]
-    pub terrain: Vec<String>,
+    pub terrain: Vec<Name>,
     /// `Some(true)` for the hills-only wonders (the Cliffs of Dover),
     /// `Some(false)` for the flat-only ones (Crater Lake, Pantanal, Yosemite,
     /// the Dead Sea, Lake Retba, the Giant's Causeway), `None` when the shipped
@@ -130,18 +131,18 @@ pub struct FeaturePlacement {
     /// `Coast` column for the shore wonders and `Feature_AdjacentTerrains` for
     /// the peaks, which must not be walled in by their own mountain range.
     #[serde(default)]
-    pub adjacent_terrain: Vec<String>,
+    pub adjacent_terrain: Vec<Name>,
     /// No neighbour may be one of these. Carries `NoCoast` as `coast`.
     #[serde(default)]
-    pub not_adjacent_terrain: Vec<String>,
+    pub not_adjacent_terrain: Vec<Name>,
     /// At least one neighbour must carry one of these features (Yosemite wants
     /// Woods, Ik-Kil wants Rainforest).
     #[serde(default)]
-    pub adjacent_feature: Vec<String>,
+    pub adjacent_feature: Vec<Name>,
     /// `Feature_NotNearFeatures`: no neighbour may carry one of these. Every
     /// shipped row names Sea Ice, keeping the water wonders out of the pack.
     #[serde(default)]
-    pub avoid_feature: Vec<String>,
+    pub avoid_feature: Vec<Name>,
     /// `NoAdjacentFeatures`: no neighbour may carry *any* feature.
     #[serde(default)]
     pub no_adjacent_features: bool,
@@ -206,15 +207,15 @@ pub struct ResourceSpec {
     pub class: String,
     /// Strategic and archaeological resources remain hidden until this node.
     #[serde(default)]
-    pub tech: Option<String>,
+    pub tech: Option<Name>,
     #[serde(default)]
-    pub civic: Option<String>,
+    pub civic: Option<Name>,
     #[serde(default)]
     pub yields: Yields,
     #[serde(default)]
-    pub terrain: Vec<String>,
+    pub terrain: Vec<Name>,
     #[serde(default)]
-    pub feature: Vec<String>,
+    pub feature: Vec<Name>,
     /// Some(true) for hills-only spawns (Sheep), Some(false) for flat-only
     /// (Wheat, Rice, Maize, Bananas), None when either form works.
     #[serde(default)]
@@ -275,7 +276,7 @@ pub struct HarvestSpec {
     pub yield_type: String,
     pub amount: f64,
     #[serde(default)]
-    pub tech: Option<String>,
+    pub tech: Option<Name>,
 }
 
 /// Additional Standard-speed spoils from a pillage modifier. Non-healing
@@ -291,7 +292,7 @@ pub struct PillageReward {
 #[derive(Clone, Serialize, Deserialize)]
 pub struct ImprovementSpec {
     #[serde(default)]
-    pub tech: Option<String>,
+    pub tech: Option<Name>,
     /// `PlunderType` and `PlunderAmount`: which yield pillaging this pays and
     /// how much. Gold and heal pay 50, Science, Culture and Faith pay 25.
     #[serde(default)]
@@ -299,21 +300,21 @@ pub struct ImprovementSpec {
     #[serde(default)]
     pub plunder_amount: f64,
     #[serde(default)]
-    pub civic: Option<String>,
+    pub civic: Option<Name>,
     #[serde(default)]
     pub yields: Yields,
     #[serde(default)]
     pub housing: f64,
     #[serde(default)]
-    pub terrain: Vec<String>,
+    pub terrain: Vec<Name>,
     #[serde(default)]
-    pub feature: Vec<String>,
+    pub feature: Vec<Name>,
     /// Features the improvement may also sit on once a civic is unlocked --
     /// Gathering Storm opens the Lumber Mill to Rainforest at Mercantilism.
     #[serde(default)]
     pub feature_after_civic: BTreeMap<String, String>,
     #[serde(default)]
-    pub resources: Vec<String>,
+    pub resources: Vec<Name>,
     #[serde(default)]
     pub resource_only: bool,
     #[serde(default)]
@@ -402,7 +403,7 @@ pub struct UnitSpec {
     #[serde(default = "dsight")]
     pub sight: i32,
     #[serde(default)]
-    pub tech: Option<String>,
+    pub tech: Option<Name>,
     #[serde(default)]
     pub requires_resource: Option<String>,
     /// Strategic material paid once when construction or purchase starts.
@@ -414,7 +415,7 @@ pub struct UnitSpec {
     #[serde(default)]
     pub domain: Option<String>,
     #[serde(default)]
-    pub civic: Option<String>,
+    pub civic: Option<Name>,
     #[serde(default)]
     pub unique_to: Option<String>, // civ that alone may build this unit
     #[serde(default)]
@@ -440,7 +441,7 @@ pub struct UnitSpec {
     /// Improvements this specialist can construct (builders use the whole
     /// ordinary improvement catalog; engineers/archaeologists are explicit).
     #[serde(default)]
-    pub builds: Vec<String>,
+    pub builds: Vec<Name>,
     /// The unit this one becomes when upgraded for Gold, from the shipped
     /// `UnitUpgrades` table. A civilization's unique replacement stands in for
     /// the base unit whenever it owns one.
@@ -489,9 +490,9 @@ pub struct DistrictSpec {
     #[serde(default)]
     pub maintenance: f64,
     #[serde(default)]
-    pub tech: Option<String>,
+    pub tech: Option<Name>,
     #[serde(default)]
-    pub civic: Option<String>,
+    pub civic: Option<Name>,
     #[serde(default)]
     pub yields: Yields,
     /// Yield of one citizen assigned as a specialist in this district.
@@ -532,7 +533,7 @@ pub struct DistrictSpec {
     /// IDs of district families that cannot coexist in the same city (for
     /// example Entertainment Complex and Water Park).
     #[serde(default)]
-    pub excludes: Vec<String>,
+    pub excludes: Vec<Name>,
     /// Placement rule interpreted by `Game::district_sites`.
     #[serde(default)]
     pub placement: String,
@@ -554,9 +555,9 @@ pub struct BuildingSpec {
     #[serde(default = "default_true")]
     pub buildable: bool,
     #[serde(default)]
-    pub tech: Option<String>,
+    pub tech: Option<Name>,
     #[serde(default)]
-    pub civic: Option<String>,
+    pub civic: Option<Name>,
     #[serde(default)]
     pub district: Option<String>,
     #[serde(default)]
@@ -581,15 +582,15 @@ pub struct BuildingSpec {
     pub replaces: Option<String>,
     /// Buildings that must already exist in this city.
     #[serde(default)]
-    pub requires: Vec<String>,
+    pub requires: Vec<Name>,
     /// At least one member of this list must exist. Replacement-family
     /// matching applies, so a unique replacement satisfies a base entry.
     #[serde(default)]
-    pub requires_any: Vec<String>,
+    pub requires_any: Vec<Name>,
     /// Mutually exclusive buildings in the same tier or Government Plaza
     /// choice.
     #[serde(default)]
-    pub excludes: Vec<String>,
+    pub excludes: Vec<Name>,
     #[serde(default)]
     pub power: f64,
     #[serde(default)]
@@ -627,9 +628,9 @@ pub struct BuildingSpec {
 pub struct WonderSpec {
     pub cost: f64,
     #[serde(default)]
-    pub tech: Option<String>,
+    pub tech: Option<Name>,
     #[serde(default)]
-    pub civic: Option<String>,
+    pub civic: Option<Name>,
     #[serde(default)]
     pub yields: Yields,
     #[serde(default)]
@@ -649,9 +650,9 @@ pub struct WonderSpec {
     #[serde(default)]
     pub great_person_points: BTreeMap<String, f64>,
     #[serde(default)]
-    pub requires_buildings: Vec<String>,
+    pub requires_buildings: Vec<Name>,
     #[serde(default)]
-    pub requires_any_buildings: Vec<String>,
+    pub requires_any_buildings: Vec<Name>,
     #[serde(default)]
     pub adjacent_district: Option<String>,
     #[serde(default)]
@@ -659,9 +660,9 @@ pub struct WonderSpec {
     #[serde(default)]
     pub adjacent_improvement: Option<String>,
     #[serde(default)]
-    pub terrain: Vec<String>,
+    pub terrain: Vec<Name>,
     #[serde(default)]
-    pub feature: Vec<String>,
+    pub feature: Vec<Name>,
     #[serde(default)]
     pub hills: Option<bool>,
     #[serde(default)]
@@ -699,7 +700,7 @@ pub struct GreatPersonSpec {
 pub struct GovernorPromotionSpec {
     pub tier: i32,
     #[serde(default)]
-    pub requires: Vec<String>,
+    pub requires: Vec<Name>,
     #[serde(default)]
     pub effects: BTreeMap<String, f64>,
 }
@@ -723,15 +724,15 @@ pub struct ProjectSpec {
     #[serde(default)]
     pub cost_progression_max_pct: f64,
     #[serde(default)]
-    pub tech: Option<String>,
+    pub tech: Option<Name>,
     #[serde(default)]
-    pub civic: Option<String>,
+    pub civic: Option<Name>,
     #[serde(default)]
     pub district: Option<String>,
     #[serde(default)]
-    pub alternate_districts: Vec<String>,
+    pub alternate_districts: Vec<Name>,
     #[serde(default)]
-    pub requires: Vec<String>,
+    pub requires: Vec<Name>,
     #[serde(default)]
     pub requires_buildings: Vec<String>,
     #[serde(default)]
@@ -771,7 +772,7 @@ pub struct TechSpec {
     pub cost: f64,
     /// Zero-based historical era: Ancient through Future.
     pub era: usize,
-    pub requires: Vec<String>,
+    pub requires: Vec<Name>,
     /// Gathering Storm asks the game core to draw this node's prerequisites
     /// when the game is created instead of shipping fixed prerequisite rows.
     #[serde(default)]
@@ -803,15 +804,15 @@ pub struct TechSpec {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct TreeLayoutEntry {
     pub cost: f64,
-    pub requires: Vec<String>,
+    pub requires: Vec<Name>,
 }
 
 /// Gathering Storm randomizes the Future-era technology and civic graphs once
 /// per game. Both trees are global to the match, never per-player.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct FutureTreeLayout {
-    pub techs: BTreeMap<String, TreeLayoutEntry>,
-    pub civics: BTreeMap<String, TreeLayoutEntry>,
+    pub techs: BTreeMap<Name, TreeLayoutEntry>,
+    pub civics: BTreeMap<Name, TreeLayoutEntry>,
 }
 
 impl FutureTreeLayout {
@@ -896,7 +897,7 @@ pub struct PolicySlots {
 #[derive(Clone, Serialize, Deserialize)]
 pub struct GovSpec {
     #[serde(default)]
-    pub civic: Option<String>,
+    pub civic: Option<Name>,
     #[serde(default)]
     pub influence_per_turn: f64,
     #[serde(default)]
@@ -916,7 +917,7 @@ pub struct GovSpec {
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
 pub struct StartBias {
     #[serde(default)]
-    pub terrain: Vec<String>,
+    pub terrain: Vec<Name>,
     /// Every shipped terrain row for this civilization is a Hills variant, so
     /// the bias is really "hills", not the base terrain underneath it.
     #[serde(default)]
@@ -924,7 +925,7 @@ pub struct StartBias {
     #[serde(default)]
     pub terrain_tier: i32,
     #[serde(default)]
-    pub feature: Vec<String>,
+    pub feature: Vec<Name>,
     #[serde(default)]
     pub feature_tier: i32,
     #[serde(default)]
@@ -998,7 +999,7 @@ pub struct BeliefsData {
 pub struct PolicySpec {
     pub slot: String, // military | economic | diplomatic | wildcard
     #[serde(default)]
-    pub civic: Option<String>,
+    pub civic: Option<Name>,
     #[serde(default)]
     pub replaces: Option<String>, // unlocking this obsoletes the named card
     #[serde(default)]
@@ -1052,7 +1053,7 @@ pub struct PromotionSpec {
     pub class: String,
     pub tier: i32,
     #[serde(default)]
-    pub requires: Vec<String>,
+    pub requires: Vec<Name>,
     #[serde(default)]
     pub effects: BTreeMap<String, f64>,
     #[serde(default)]
@@ -1402,7 +1403,7 @@ fn effect_key_set<'a>(keys: impl Iterator<Item = &'a String>) -> SpecMap<()> {
     set
 }
 
-fn shuffle_strings(values: &mut [String], rng: &mut Rng) {
+fn shuffle_strings(values: &mut [Name], rng: &mut Rng) {
     for index in (1..values.len()).rev() {
         let other = rng.below(index + 1);
         values.swap(index, other);
@@ -1413,10 +1414,10 @@ fn shuffle_strings(values: &mut [String], rng: &mut Rng) {
 /// that gives every node on both sides an edge. This is the shape the shipped
 /// Future trees expose: no branch is orphaned and no breakthrough is free.
 fn connect_random_layers(
-    parents: &[String],
-    children: &[String],
+    parents: &[Name],
+    children: &[Name],
     rng: &mut Rng,
-    requirements: &mut BTreeMap<String, Vec<String>>,
+    requirements: &mut BTreeMap<Name, Vec<Name>>,
 ) -> Result<(), String> {
     if parents.is_empty() || children.is_empty() {
         return Err("a randomized research column is empty".to_string());
@@ -1442,8 +1443,8 @@ fn random_tree_layout(
     kind: &str,
     tree: &SpecMap<TechSpec>,
     rng: &mut Rng,
-) -> Result<BTreeMap<String, TreeLayoutEntry>, String> {
-    let randomized: Vec<String> = tree
+) -> Result<BTreeMap<Name, TreeLayoutEntry>, String> {
+    let randomized: Vec<Name> = tree
         .iter()
         .filter(|(_, spec)| spec.random_prereqs)
         .map(|(name, _)| name.clone())
@@ -1507,14 +1508,14 @@ fn random_tree_layout(
     // A previous-era leaf is a node with no fixed child. Every one feeds the
     // first randomized column, just as every visible Information-era branch
     // reaches the Future-era samples shipped by the game.
-    let fixed_parents: BTreeSet<String> = tree
+    let fixed_parents: BTreeSet<Name> = tree
         .iter()
         .filter(|(_, spec)| !spec.random_prereqs)
         .flat_map(|(_, spec)| spec.requires.iter().cloned())
         .collect();
-    let previous_leaves: Vec<String> = tree
+    let previous_leaves: Vec<Name> = tree
         .iter()
-        .filter(|(name, spec)| spec.era == previous_era && !fixed_parents.contains(*name))
+        .filter(|(name, spec)| spec.era == previous_era && !fixed_parents.contains(name))
         .map(|(name, _)| name.clone())
         .collect();
     if previous_leaves.is_empty() {
@@ -1533,7 +1534,7 @@ fn random_tree_layout(
         2 + rng.below(regular.len() - 2)
     };
     let (first, second) = regular.split_at(first_len);
-    let mut requirements: BTreeMap<String, Vec<String>> = randomized
+    let mut requirements: BTreeMap<Name, Vec<Name>> = randomized
         .iter()
         .map(|name| (name.clone(), Vec::new()))
         .collect();
@@ -1543,12 +1544,12 @@ fn random_tree_layout(
     let terminal = terminals.pop().unwrap();
     if let Some(gateway) = gateways.pop() {
         requirements.insert(gateway.clone(), second.to_vec());
-        requirements.insert(terminal.clone(), vec![gateway]);
+        requirements.insert(terminal, vec![gateway]);
     } else {
         requirements.insert(terminal.clone(), second.to_vec());
     }
 
-    let first: BTreeSet<&str> = first.iter().map(String::as_str).collect();
+    let first: BTreeSet<&str> = first.iter().map(|name| name.as_str()).collect();
     let mut layout = BTreeMap::new();
     for name in randomized {
         let spec = &tree[&name];
@@ -1570,14 +1571,14 @@ fn random_tree_layout(
 fn apply_tree_layout(
     kind: &str,
     tree: &mut SpecMap<TechSpec>,
-    layout: &BTreeMap<String, TreeLayoutEntry>,
+    layout: &BTreeMap<Name, TreeLayoutEntry>,
 ) -> Result<(), String> {
-    let expected: BTreeSet<String> = tree
+    let expected: BTreeSet<Name> = tree
         .iter()
         .filter(|(_, spec)| spec.random_prereqs)
         .map(|(name, _)| name.clone())
         .collect();
-    let actual: BTreeSet<String> = layout.keys().cloned().collect();
+    let actual: BTreeSet<Name> = layout.keys().cloned().collect();
     if expected != actual {
         return Err(format!(
             "saved randomized {kind} nodes do not match the active ruleset"
@@ -1595,15 +1596,15 @@ fn apply_tree_layout(
         .map(|spec| spec.era)
         .max()
         .ok_or_else(|| format!("saved randomized {kind} tree has no preceding era"))?;
-    let fixed_parents: BTreeSet<&str> = tree
+    let fixed_parents: BTreeSet<Name> = tree
         .iter()
         .filter(|(_, spec)| !spec.random_prereqs)
-        .flat_map(|(_, spec)| spec.requires.iter().map(String::as_str))
+        .flat_map(|(_, spec)| spec.requires.iter().copied())
         .collect();
-    let previous_leaves: BTreeSet<String> = tree
+    let previous_leaves: BTreeSet<Name> = tree
         .iter()
         .filter(|(name, spec)| {
-            spec.era == previous_era && !fixed_parents.contains(name.as_str())
+            spec.era == previous_era && !fixed_parents.contains(*name)
         })
         .map(|(name, _)| name.clone())
         .collect();
@@ -1652,7 +1653,7 @@ fn apply_tree_layout(
                 entry.cost
             ));
         }
-        let unique: BTreeSet<&str> = entry.requires.iter().map(String::as_str).collect();
+        let unique: BTreeSet<&str> = entry.requires.iter().map(|name| name.as_str()).collect();
         if unique.len() != entry.requires.len() {
             return Err(format!(
                 "saved randomized {kind} {name:?} repeats a prerequisite"
@@ -1672,13 +1673,13 @@ fn apply_tree_layout(
         ));
     }
 
-    let validate_layer = |children: &BTreeSet<String>,
-                          parents: &BTreeSet<String>,
+    let validate_layer = |children: &BTreeSet<Name>,
+                          parents: &BTreeSet<Name>,
                           label: &str|
      -> Result<(), String> {
         let mut used = BTreeSet::new();
         for child in children {
-            let requires: BTreeSet<String> = layout[child].requires.iter().cloned().collect();
+            let requires: BTreeSet<Name> = layout[child].requires.iter().cloned().collect();
             if requires.is_empty() || !requires.is_subset(parents) {
                 return Err(format!(
                     "saved randomized {kind} {label} node {child:?} has prerequisites outside the preceding column"
@@ -1697,9 +1698,9 @@ fn apply_tree_layout(
     validate_layer(&second, &first, "second-column")?;
 
     let terminal = terminals.pop().unwrap();
-    let terminal_requires: BTreeSet<String> = layout[&terminal].requires.iter().cloned().collect();
+    let terminal_requires: BTreeSet<Name> = layout[&terminal].requires.iter().cloned().collect();
     if let Some(gateway) = gateways.pop() {
-        let gateway_requires: BTreeSet<String> =
+        let gateway_requires: BTreeSet<Name> =
             layout[&gateway].requires.iter().cloned().collect();
         if gateway_requires != second || terminal_requires != BTreeSet::from([gateway]) {
             return Err(format!(
@@ -1714,7 +1715,7 @@ fn apply_tree_layout(
 
     for (name, entry) in layout {
         let spec = tree
-            .get_mut(name)
+            .get_interned_mut(*name)
             .expect("the randomized tree entry was just checked");
         spec.cost = entry.cost;
         spec.requires = entry.requires.clone();
@@ -1727,7 +1728,7 @@ fn ancestry(nodes: &SpecMap<TechSpec>) -> SpecMap<BTreeSet<String>> {
     let mut ancestry: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
     for (name, spec) in nodes.iter() {
         let mut reached: BTreeSet<String> = BTreeSet::new();
-        let mut pending: Vec<&str> = spec.requires.iter().map(String::as_str).collect();
+        let mut pending: Vec<&str> = spec.requires.iter().map(|name| name.as_str()).collect();
         while let Some(node) = pending.pop() {
             // A node several paths reach is only followed once, which is also
             // what keeps a malformed cyclic tree from spinning here.
@@ -1735,10 +1736,10 @@ fn ancestry(nodes: &SpecMap<TechSpec>) -> SpecMap<BTreeSet<String>> {
                 continue;
             }
             if let Some(parent) = nodes.get(node) {
-                pending.extend(parent.requires.iter().map(String::as_str));
+                pending.extend(parent.requires.iter().map(|name| name.as_str()));
             }
         }
-        ancestry.insert(name.clone(), reached);
+        ancestry.insert(name.to_string(), reached);
     }
     SpecMap::from(ancestry)
 }
@@ -1751,7 +1752,7 @@ fn effect_sources(nodes: &SpecMap<TechSpec>) -> SpecMap<Vec<(String, f64)>> {
             sources
                 .entry(effect.clone())
                 .or_default()
-                .push((name.clone(), *value));
+                .push((name.to_string(), *value));
         }
     }
     SpecMap::from(sources)
@@ -1826,7 +1827,7 @@ pub struct DisasterSpec {
     pub radius: Vec<i32>,
     /// Terrains a storm of this class forms over.
     #[serde(default)]
-    pub terrains: Vec<String>,
+    pub terrains: Vec<Name>,
 }
 
 impl DisasterSpec {
@@ -1977,7 +1978,7 @@ fn resolve_modifiers(
             return Ok(spec.clone());
         }
         let Some(spec) = source.get(name) else {
-            let owner = stack.last().map(String::as_str).unwrap_or("ruleset");
+            let owner = stack.last().map(|name| name.as_str()).unwrap_or("ruleset");
             return Err(format!("modifier {owner} attaches missing modifier {name}"));
         };
         if let Some(start) = stack.iter().position(|entry| entry == name) {
@@ -2301,11 +2302,11 @@ impl Rules {
             &index.governors,
         ] {
             for key in family.keys() {
-                any.insert(key.clone(), ());
+                any.insert(key.to_string(), ());
             }
         }
         for key in self.tech_effects.keys().chain(self.civic_effects.keys()) {
-            any.insert(key.clone(), ());
+            any.insert(key.to_string(), ());
         }
         // Split the three namespaced families back into the selectors they
         // name. A selector may not itself contain a colon — the modifier
@@ -2338,11 +2339,11 @@ impl Rules {
     /// documentation from drifting into three separate catalogs.
     fn index_tree_unlocks(&mut self) {
         let mut indexed: Vec<(bool, String, TreeUnlock)> = Vec::new();
-        let mut add = |kind: &str, id: &str, tech: &Option<String>, civic: &Option<String>| {
+        let mut add = |kind: &str, id: &str, tech: &Option<Name>, civic: &Option<Name>| {
             if let Some(node) = tech {
                 indexed.push((
                     true,
-                    node.clone(),
+                    node.to_string(),
                     TreeUnlock {
                         kind: kind.to_string(),
                         id: id.to_string(),
@@ -2352,7 +2353,7 @@ impl Rules {
             if let Some(node) = civic {
                 indexed.push((
                     false,
-                    node.clone(),
+                    node.to_string(),
                     TreeUnlock {
                         kind: kind.to_string(),
                         id: id.to_string(),
@@ -2632,7 +2633,7 @@ mod tests {
         expected: &str,
         era_counts: [usize; 9],
     ) {
-        let actual: BTreeSet<&str> = tree.keys().map(String::as_str).collect();
+        let actual: BTreeSet<&str> = tree.keys().map(|name| name.as_str()).collect();
         let expected: BTreeSet<&str> = expected.split_whitespace().collect();
         assert_eq!(actual, expected);
 
@@ -2707,7 +2708,7 @@ mod tests {
         let previous: BTreeSet<&str> = previous.iter().copied().collect();
         let first_parents: BTreeSet<&str> = first
             .iter()
-            .flat_map(|name| tree[*name].requires.iter().map(String::as_str))
+            .flat_map(|name| tree[*name].requires.iter().map(|name| name.as_str()))
             .collect();
         assert_eq!(first_parents, previous);
         for name in &first {
@@ -2720,7 +2721,7 @@ mod tests {
 
         let second_parents: BTreeSet<&str> = second
             .iter()
-            .flat_map(|name| tree[*name].requires.iter().map(String::as_str))
+            .flat_map(|name| tree[*name].requires.iter().map(|name| name.as_str()))
             .collect();
         assert_eq!(second_parents, first);
         for name in &second {
@@ -3157,7 +3158,7 @@ mod tests {
                         "government" => rules.governments[&unlock.id].civic.as_ref(),
                         other => panic!("{node} indexes unknown unlock kind {other}"),
                     };
-                    assert_eq!(gate.map(String::as_str), Some(node.as_str()));
+                    assert_eq!(gate.map(|name| name.as_str()), Some(node.as_str()));
                 }
             }
         }
@@ -3173,7 +3174,7 @@ mod tests {
             rules
                 .districts
                 .keys()
-                .map(String::as_str)
+                .map(|name| name.as_str())
                 .collect::<BTreeSet<_>>(),
             expected(DISTRICTS)
         );
@@ -3181,7 +3182,7 @@ mod tests {
             rules
                 .buildings
                 .keys()
-                .map(String::as_str)
+                .map(|name| name.as_str())
                 .collect::<BTreeSet<_>>(),
             expected(BUILDINGS)
         );
@@ -3189,7 +3190,7 @@ mod tests {
             rules
                 .wonders
                 .keys()
-                .map(String::as_str)
+                .map(|name| name.as_str())
                 .collect::<BTreeSet<_>>(),
             expected(WONDERS)
         );

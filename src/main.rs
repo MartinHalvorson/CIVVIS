@@ -260,7 +260,7 @@ fn game_options(args: &[String], players: i64, seed: u64) -> GameOptions {
                 .collect();
             for civ in &chosen {
                 if !rules.civs.contains_key(civ) {
-                    let mut known: Vec<&str> = rules.civs.keys().map(String::as_str).collect();
+                    let mut known: Vec<&str> = rules.civs.keys().map(|name| name.as_str()).collect();
                     known.sort_unstable();
                     eprintln!("unknown civilization {civ:?}; choose one of {known:?}");
                     std::process::exit(2);

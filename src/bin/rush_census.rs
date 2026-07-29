@@ -133,19 +133,19 @@ fn snapshot(g: &Game, majors: &[usize]) -> Snapshot {
         }
         s.capitals += 1;
         let player = &g.players[pid];
-        if player.techs.contains("horseback_riding") {
+        if player.techs.contains(&civvis::name!("horseback_riding")) {
             s.horseback += 1;
         }
-        if player.techs.contains("iron_working") {
+        if player.techs.contains(&civvis::name!("iron_working")) {
             s.iron += 1;
         }
-        if player.techs.contains("masonry") {
+        if player.techs.contains(&civvis::name!("masonry")) {
             s.masonry += 1;
         }
-        if player.civics.contains("craftsmanship") {
+        if player.civics.contains(&civvis::name!("craftsmanship")) {
             s.craftsmanship += 1;
         }
-        if player.civics.contains("political_philosophy") {
+        if player.civics.contains(&civvis::name!("political_philosophy")) {
             s.political_philosophy += 1;
         }
         s.military += g

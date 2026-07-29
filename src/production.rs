@@ -98,6 +98,7 @@
 //!    hundred. Searches are rate-limited by turn and to one city, which
 //!    keeps the whole feature in the same cost class as the search that is
 //!    already known to pay for itself.
+use crate::name::Name;
 use crate::ai::{AdvancedAi, Ai, PlanReport, VictoryTarget, Weights};
 use crate::evolve::features;
 use crate::game::{Action, Game, Item};

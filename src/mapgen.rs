@@ -2842,7 +2842,7 @@ pub fn generate_with_script(
         }
         if rng.chance(0.13) {
             let hills = wm.tiles[&pos].hills;
-            let valid: Vec<String> = rules
+            let valid: Vec<Name> = rules
                 .resources
                 .iter()
                 .filter(|(_, s)| {
@@ -3333,7 +3333,7 @@ fn wonder_terrain_bit(terrain: &str) -> u32 {
     }
 }
 
-fn wonder_terrain_mask(terrains: &[String]) -> u32 {
+fn wonder_terrain_mask(terrains: &[Name]) -> u32 {
     terrains
         .iter()
         .fold(0, |mask, terrain| mask | wonder_terrain_bit(terrain))
@@ -5609,7 +5609,7 @@ fn place_strategic_quotas(
     // over, and enough on a large map that the deposits are not all in one
     // empire's borders.
     let quota = (num_major_spawns + 1).max(land.len() / 90);
-    let strategics: Vec<String> = rules
+    let strategics: Vec<Name> = rules
         .resources
         .iter()
         .filter(|(_, spec)| spec.class == "strategic")
@@ -5682,7 +5682,7 @@ fn place_artifact_quotas(
     reserved: &BTreeSet<Pos>,
     rng: &mut Rng,
 ) {
-    let artifacts: Vec<String> = rules
+    let artifacts: Vec<Name> = rules
         .resources
         .iter()
         .filter(|(_, spec)| spec.class == "artifact")

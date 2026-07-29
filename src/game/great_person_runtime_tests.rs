@@ -186,7 +186,7 @@ fn named_engineers_apply_exact_charges_wonder_gates_and_workshop_culture() {
     assert!(!game.retired_great_people.contains("imhotep"));
 
     game.cities.get_mut(&city).unwrap().queue = vec![Item::Wonder {
-        wonder: "pyramids".to_string(),
+        wonder: crate::name!("pyramids"),
         pos: wonder_site,
     }];
     assert_eq!(recruit_current_engineer(&mut game), "imhotep");
@@ -206,7 +206,7 @@ fn named_engineers_apply_exact_charges_wonder_gates_and_workshop_culture() {
 
     game.cities.get_mut(&city).unwrap().production = 0.0;
     game.cities.get_mut(&city).unwrap().queue = vec![Item::Wonder {
-        wonder: "eiffel_tower".to_string(),
+        wonder: crate::name!("eiffel_tower"),
         pos: wonder_site,
     }];
     assert_eq!(game.current_great_person("engineer").unwrap().1.era, 4);
@@ -259,7 +259,7 @@ fn immediate_great_people_require_stock_activation_sites_and_complete_work_capac
         })
         .unwrap();
     game.cities.get_mut(&city).unwrap().queue = vec![Item::Wonder {
-        wonder: "pyramids".to_string(),
+        wonder: crate::name!("pyramids"),
         pos: wonder_site,
     }];
     let engineer_cost = game.gp_cost(0, "engineer");
@@ -526,7 +526,7 @@ fn named_admirals_apply_exact_unit_trade_building_and_flanking_effects() {
     assert_eq!(game.units[&formation_ship].formation, 1);
 
     let quadrireme = Item::Unit {
-        unit: "quadrireme".to_string(),
+        unit: crate::name!("quadrireme"),
     };
     let quadriremes = game
         .units

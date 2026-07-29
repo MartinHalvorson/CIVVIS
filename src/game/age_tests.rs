@@ -299,11 +299,11 @@ fn leaving_a_dark_age_takes_the_card_back_out_of_its_slot() {
 
     assert_eq!(game.players[0].age, "heroic");
     assert!(
-        !game.players[0].policies.contains("twilight_valor"),
+        !game.players[0].policies.contains(&crate::name!("twilight_valor")),
         "the Dark Age card goes back when the Dark Age does"
     );
     assert!(
-        game.players[0].policies.contains("discipline"),
+        game.players[0].policies.contains(&crate::name!("discipline")),
         "ordinary cards stay slotted"
     );
 }

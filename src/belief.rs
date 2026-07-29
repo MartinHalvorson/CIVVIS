@@ -12,6 +12,7 @@
 //! it to value scouting as information gain is the next step.
 use std::collections::BTreeMap;
 
+use crate::name::Name;
 use crate::game::Game;
 use crate::obs::visibility;
 use crate::Pos;

@@ -166,7 +166,7 @@ mod tests {
         assert_eq!(marathon.speed_cost_mult(), 3.0);
         assert_eq!(online.speed_cost_mult(), 0.5);
         let item = crate::game::Item::Unit {
-            unit: "warrior".to_string(),
+            unit: crate::name!("warrior"),
         };
         assert_eq!(
             marathon.item_cost(&item),
@@ -267,7 +267,7 @@ mod tests {
         g.apply(
             0,
             &Action::SlotPolicy {
-                policy: "urban_planning".to_string(),
+                policy: crate::name!("urban_planning"),
             },
         )
         .unwrap();
@@ -278,7 +278,7 @@ mod tests {
         g.apply(
             0,
             &Action::Government {
-                government: "chiefdom".to_string(),
+                government: crate::name!("chiefdom"),
             },
         )
         .unwrap();
@@ -298,7 +298,7 @@ mod tests {
             .apply(
                 0,
                 &Action::Government {
-                    government: "autocracy".to_string(),
+                    government: crate::name!("autocracy"),
                 },
             )
             .is_err());
@@ -979,7 +979,7 @@ mod tests {
             0,
             cid,
             &crate::game::Item::Wonder {
-                wonder: "pyramids".to_string(),
+                wonder: crate::name!("pyramids"),
                 pos: wonder_pos,
             }
         ));
@@ -1056,7 +1056,7 @@ mod tests {
             0,
             &Action::Improve {
                 unit: builder,
-                improvement: "farm".to_string(),
+                improvement: crate::name!("farm"),
             },
         )
         .unwrap();
@@ -1293,7 +1293,7 @@ mod tests {
         g.apply(
             0,
             &Action::Government {
-                government: "chiefdom".to_string(),
+                government: crate::name!("chiefdom"),
             },
         )
         .unwrap();
@@ -1301,7 +1301,7 @@ mod tests {
         g.apply(
             0,
             &Action::SlotPolicy {
-                policy: "urban_planning".to_string(),
+                policy: crate::name!("urban_planning"),
             },
         )
         .unwrap();
@@ -1312,7 +1312,7 @@ mod tests {
             .apply(
                 0,
                 &Action::SlotPolicy {
-                    policy: "god_king".to_string()
+                    policy: crate::name!("god_king")
                 }
             )
             .is_err());
@@ -1320,7 +1320,7 @@ mod tests {
         g.apply(
             0,
             &Action::SlotPolicy {
-                policy: "discipline".to_string(),
+                policy: crate::name!("discipline"),
             },
         )
         .unwrap();
@@ -1331,14 +1331,14 @@ mod tests {
         g.apply(
             0,
             &Action::Government {
-                government: "oligarchy".to_string(),
+                government: crate::name!("oligarchy"),
             },
         )
         .unwrap();
         g.apply(
             0,
             &Action::SlotPolicy {
-                policy: "god_king".to_string(),
+                policy: crate::name!("god_king"),
             },
         )
         .unwrap();
@@ -1348,7 +1348,7 @@ mod tests {
         g.apply(
             0,
             &Action::Government {
-                government: "chiefdom".to_string(),
+                government: crate::name!("chiefdom"),
             },
         )
         .unwrap();
@@ -1480,7 +1480,7 @@ mod tests {
             .unwrap()
             .queue
             .push(crate::game::Item::Wonder {
-                wonder: "pyramids".to_string(),
+                wonder: crate::name!("pyramids"),
                 pos: ring[3],
             });
         let wonder = g.citizen_strategy(cid);
@@ -1705,12 +1705,12 @@ mod tests {
         match g.players[minor].civ.as_str() {
             "Kabul" | "Carthage" | "Valletta" => {
                 g.cities.get_mut(&cap).unwrap().queue = vec![crate::game::Item::Unit {
-                    unit: "warrior".to_string(),
+                    unit: crate::name!("warrior"),
                 }];
             }
             "Auckland" => {
                 g.cities.get_mut(&cap).unwrap().queue = vec![crate::game::Item::Building {
-                    building: "granary".to_string(),
+                    building: crate::name!("granary"),
                 }];
             }
             _ => {}
@@ -1784,7 +1784,7 @@ mod tests {
             .apply(
                 0,
                 &Action::ChoosePantheon {
-                    belief: "fertility_rites".to_string()
+                    belief: crate::name!("fertility_rites")
                 }
             )
             .is_err());
@@ -1792,7 +1792,7 @@ mod tests {
         g.apply(
             0,
             &Action::ChoosePantheon {
-                belief: "fertility_rites".to_string(),
+                belief: crate::name!("fertility_rites"),
             },
         )
         .unwrap();
@@ -1800,7 +1800,7 @@ mod tests {
             .apply(
                 0,
                 &Action::ChoosePantheon {
-                    belief: "divine_spark".to_string()
+                    belief: crate::name!("divine_spark")
                 }
             )
             .is_err());
@@ -1820,8 +1820,8 @@ mod tests {
         g.apply(
             0,
             &Action::FoundReligion {
-                follower: "choral_music".to_string(),
-                founder: "tithe".to_string(),
+                follower: crate::name!("choral_music"),
+                founder: crate::name!("tithe"),
             },
         )
         .unwrap();
@@ -2176,7 +2176,7 @@ mod tests {
         g.apply(
             0,
             &Action::CongressVote {
-                resolution: "world_leader".to_string(),
+                resolution: crate::name!("world_leader"),
                 choice: "A:0".to_string(),
                 votes: 1,
             },
@@ -2239,21 +2239,21 @@ mod tests {
             greece,
             cid,
             &Item::Unit {
-                unit: "hoplite".to_string()
+                unit: crate::name!("hoplite")
             }
         ));
         assert!(!g.can_produce(
             greece,
             cid,
             &Item::Unit {
-                unit: "spearman".to_string()
+                unit: crate::name!("spearman")
             }
         ));
         assert!(!g.can_produce(
             greece,
             cid,
             &Item::Unit {
-                unit: "legion".to_string()
+                unit: crate::name!("legion")
             }
         ));
         // Greece: Plato's Republic grants an extra wildcard slot
@@ -2261,7 +2261,7 @@ mod tests {
         g.apply(
             greece,
             &Action::Government {
-                government: "chiefdom".to_string(),
+                government: crate::name!("chiefdom"),
             },
         )
         .unwrap();
@@ -2278,7 +2278,7 @@ mod tests {
         g.apply(
             china,
             &Action::Research {
-                tech: "pottery".to_string(),
+                tech: crate::name!("pottery"),
             },
         )
         .unwrap();

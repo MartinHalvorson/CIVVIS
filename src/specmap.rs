@@ -23,7 +23,7 @@ const EMPTY: u32 = u32::MAX;
 
 #[derive(Clone, Debug)]
 pub struct SpecMap<T> {
-    keys: Vec<String>,
+    keys: Vec<Name>,
     values: Vec<T>,
     table: Vec<u32>,
     /// Entry index by [`Name::id`], so a caller holding an interned name
@@ -95,7 +95,7 @@ impl<T> SpecMap<T> {
         // Interning every key here is what lets `Index<Name>` skip the hash
         // entirely. It costs one registry lock per entry, and reindexing
         // happens when a ruleset is loaded or a mod patches it — never in play.
-        let ids: Vec<u32> = self.keys.iter().map(|key| Name::new(key).id()).collect();
+        let ids: Vec<u32> = self.keys.iter().map(|key| key.id()).collect();
         let span = ids.iter().copied().max().map_or(0, |top| top as usize + 1);
         self.by_id = vec![EMPTY; span];
         for (index, id) in ids.into_iter().enumerate() {
@@ -140,7 +140,7 @@ impl<T> SpecMap<T> {
             if index == EMPTY {
                 return None;
             }
-            if self.keys[index as usize] == key {
+            if self.keys[index as usize] == *key {
                 return Some(index as usize);
             }
             slot = (slot + 1) & mask;
@@ -163,6 +163,7 @@ impl<T> SpecMap<T> {
     }
 
     pub fn insert(&mut self, key: String, value: T) -> Option<T> {
+        let key = Name::new(&key);
         match self.keys.binary_search(&key) {
             Ok(index) => Some(std::mem::replace(&mut self.values[index], value)),
             Err(index) => {
@@ -196,7 +197,7 @@ impl<T> SpecMap<T> {
         self.reindex();
     }
 
-    pub fn keys(&self) -> impl DoubleEndedIterator<Item = &String> + ExactSizeIterator {
+    pub fn keys(&self) -> impl DoubleEndedIterator<Item = &Name> + ExactSizeIterator {
         self.keys.iter()
     }
 
@@ -208,7 +209,7 @@ impl<T> SpecMap<T> {
         self.values.iter_mut()
     }
 
-    pub fn iter_mut(&mut self) -> impl Iterator<Item = (&String, &mut T)> {
+    pub fn iter_mut(&mut self) -> impl Iterator<Item = (&Name, &mut T)> {
         self.keys.iter().zip(self.values.iter_mut())
     }
 
@@ -219,7 +220,7 @@ impl<T> SpecMap<T> {
         self.by_id.clear();
     }
 
-    pub fn iter(&self) -> impl DoubleEndedIterator<Item = (&String, &T)> + ExactSizeIterator {
+    pub fn iter(&self) -> impl DoubleEndedIterator<Item = (&Name, &T)> + ExactSizeIterator {
         self.keys.iter().zip(self.values.iter())
     }
 
@@ -303,8 +304,8 @@ impl<T> std::ops::Index<&Name> for SpecMap<T> {
 }
 
 impl<'a, T> IntoIterator for &'a SpecMap<T> {
-    type Item = (&'a String, &'a T);
-    type IntoIter = std::iter::Zip<std::slice::Iter<'a, String>, std::slice::Iter<'a, T>>;
+    type Item = (&'a Name, &'a T);
+    type IntoIter = std::iter::Zip<std::slice::Iter<'a, Name>, std::slice::Iter<'a, T>>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.keys.iter().zip(self.values.iter())
@@ -335,7 +336,7 @@ impl<T> From<BTreeMap<String, T>> for SpecMap<T> {
             by_id: Vec::new(),
         };
         for (key, value) in entries {
-            map.keys.push(key);
+            map.keys.push(Name::new(&key));
             map.values.push(value);
         }
         map.reindex();
@@ -371,7 +372,7 @@ mod tests {
         map.insert("warrior".to_string(), 1);
         map.insert("archer".to_string(), 2);
         map.insert("slinger".to_string(), 3);
-        let keys: Vec<&str> = map.keys().map(String::as_str).collect();
+        let keys: Vec<&str> = map.keys().map(|name| name.as_str()).collect();
         assert_eq!(keys, ["archer", "slinger", "warrior"]);
         assert_eq!(map.values().copied().collect::<Vec<_>>(), [2, 3, 1]);
     }
