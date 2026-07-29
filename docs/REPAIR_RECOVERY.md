@@ -60,6 +60,34 @@ remain audit history rather than champion evidence. After implementation, the
 same non-focal null seed was replayed for one turn under the champion solely to
 validate mechanics; the required full-horizon frozen null is still unopened.
 
+## Prospective fail-closed invocation amendment
+
+This invocation-integrity amendment was frozen before the null at seed
+9,995,000 or either treatment seed was run or read. A static command-path audit
+found that a supplied numeric option with no parseable value silently fell back
+to its default. The formal-profile classifier also checked presence or resolved
+values rather than exact multiplicity and raw phase bindings. A malformed,
+duplicated, or default-substituted command could therefore receive a registered
+decision label. The defect was found without reading any focal output; all
+three registered seed ranges remain unopened.
+
+The runner must now exit 2 before constructing a game whenever a supplied
+numeric or text option lacks a usable value. A registered invocation requires
+each common option exactly once with its canonical raw value:
+`--deployment-mix`, `--ai advanced_evolved`, `--turns 250`,
+`--observe-through 320`, `--speed online`, `--poles poles`,
+`--randomize-civs`, `--victories science,culture,domination`, and `--jobs 6`.
+Each phase must also bind its exact `--maps` and `--seed`; the null must contain
+`--null` exactly once and both treatment phases must omit it. Defaults,
+noncanonical numeric spellings, and duplicated flags may run only as clearly
+labelled diagnostics and cannot receive a frozen null, development, or holdout
+decision label.
+
+This prospective correction derives only from source and the already-frozen
+command contract. It changes no controller, treatment, deployment profile,
+seat, seed, sample size, endpoint, threshold, stop rule, horizon, or resource
+cap.
+
 ## Observation and causal diagnosis
 
 This study began with an exploratory census of the 20 completed production
