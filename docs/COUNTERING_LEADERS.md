@@ -392,3 +392,138 @@ stands as written. If it holds, then the thing that counters a leader in this
 engine is an *earlier* alarm answered by a *war* — the combination this
 investigation spent most of its length arguing against — and the page will need
 rewriting from the dogpile table down.
+
+## The counter that is not paid for in development
+
+Everything above is a *war-shaped* counter, and the mechanism the nulls settled
+on is a cost: "nothing is recovered by not fighting because the alternative use
+of the resources is not being made either", with the bill showing up as
+terminal score (44 map-directions to 65, sign p=0.055) and 18% more gold held.
+
+The World Congress is the one counter in this engine that has no such bill.
+`Game::resolve_congress` refunds a vote on a losing outcome **in full**, and a
+vote on the winning outcome but the wrong target at **half**. Diplomatic Favor
+has no sink but votes and deals. An empire can therefore oppose a leader, be
+wrong, and pay nothing — which is not true of a single arm on this page.
+
+`congress_census` measures it. Diagnostic only: it never changes a decision,
+and no agent can name it.
+
+### Where the twenty points come from
+
+A diplomatic victory needs 20 Diplomatic Victory Points, and three things award
+them: the stock **+1 for an exact prediction** (any voter backing the winning
+outcome *and* target, on any resolution), **`world_leader`** (+2 to its target
+on outcome A, −2 on B), and wonders/techs carrying
+`diplomatic_victory_points`.
+
+| source | 4p 60×38, 6 CS, 24 maps | 6p 74×46, 9 CS, 16 maps |
+|---|---|---|
+| **exact prediction** | **1088 — 99.5%** | **1261 — 99.9%** |
+| `world_leader` A | 4 — 0.4% | 0 — 0.0% |
+| wonders/techs | 1 — 0.1% | 1 — 0.1% |
+| `world_leader` B | −160 | −136 |
+
+The lane is not won by the diplomacy resolution; it is won by voting with the
+majority, over and over. `congress_choice` ends `base + observed(choice) *
+35.0` — a bandwagon term worth 35 per vote already cast — so ballots converge,
+the whole table predicts exactly, and the whole table collects +1. Mean final
+DVP per major is 10.4 and 12.4; median *peak* is 14 and 16 of the 20 needed.
+
+⚠ **Special Sessions award nothing.** They resolve down
+`resolve_emergency_session`, which convenes a coalition and refunds the losing
+side but never pays a Diplomatic Victory Point. Crediting their voters the
+stock +1 is how this census first read a residual of −124 in 1262; excluding
+them took it to **1 point in 1262**. 47 of 178 sessions at 6p are Emergencies.
+
+### The diplomatic veto is already total — do not build there
+
+| reading | 4p | 6p |
+|---|---|---|
+| `world_leader` resolutions | 82 | 68 |
+| leader denied −2 | **95.1%** | **98.5%** |
+| leader gained +2 | 1.2% | 0.0% |
+| votes cast on the leader | 3 A / 310 B | **0 A / 393 B** |
+| rival ballots opposing / abstaining | 231 / 0 | 326 / 0 |
+| **diplomatic victories** | **0 of 24** | **0 of 16** |
+
+Opposition is unanimous, free, and never loses. **"Counter the diplomatic
+victory harder" has no headroom available to take.**
+
+Note the leader supplies some of those B votes itself — 393 against 326 rival
+ballots over 67 resolutions is the leader opposing itself every time. That is
+**not a bug**. B carries the vote regardless, so B:self collects the +1
+prediction and nets −1, where A:self predicts wrongly and nets −2.
+
+### The congress is aimed at an empire that cannot win
+
+Every leader-targeting term in `congress_choice` — `world_leader` B,
+`trade_policy` B, `public_relations` A — resolves its target as
+`diplomatic_leader`, the empire holding the most Diplomatic Victory Points.
+Read over congress sessions of decided games:
+
+| instrument | 4p (214 sessions, base 25.0%) | 6p (181 sessions, base 16.7%) |
+|---|---|---|
+| **dvp leader is the eventual winner** | **24.8%** | **14.4%** |
+| score leader is the eventual winner | 61.2% | 60.8% |
+| pressure leader is the eventual winner | 54.2% | 43.6% |
+| dvp and score leader agree | 28.0% | 19.9% |
+
+**At the base rate on one profile and below chance on the other.** This is the
+same shape as the instrument table further up this page — score predicts, the
+victory meters do not — but it costs more here, because this is the one lever
+that is free to pull.
+
+Three resolutions carry a *targeted* penalty, and all three are mis-aimed:
+
+- **`trade_policy` B** — a total trade embargo on its target. Aimed at the DVP
+  leader, and usually beaten by A-on-ourselves (260) anyway.
+- **`migration_treaty` B** — −20% growth and loyalty pressure. Scores **0.0
+  against every rival**, so the penalty can never be aimed at anybody at all.
+- **`border_control_treaty` B** — no tile annexation from border growth. Aimed
+  by raw territory: the only one of the three already using something other
+  than Diplomatic Victory Points, and still not the empire about to win.
+
+And nobody pays for a vote: rivals held enough Favor for a *third* vote on 289
+of 326 ballots at the exhibition profile and bought one **zero** times, because
+`take_turn` weights a ballot by the voter's own plan and never by the stakes.
+
+### What was built
+
+`advanced_congress_counter` (`congress_counter_leader`, default off) points
+those three resolutions at the empire `victory_denial` already names.
+`world_leader` is deliberately left alone — its ±2 moves Diplomatic Victory
+Points and nothing else, and the veto above is already at 98.5%.
+
+`advanced_congress_votes` (`congress_counter_votes`) is the decomposition arm:
+shipped aim, but a ballot opposing the named empire is backed with the second
+and third vote. `advanced_congress_counter_hard` sets both.
+
+Fires-check first — 12 maps, 4p 60×38, 6 city-states, seed 983000,
+`congress_census --arm`:
+
+| arm | ballots naming own denial target | ballots with a bought vote | targeted penalties passed | landed on the eventual winner |
+|---|---|---|---|---|
+| `ship` | 2.5% (19/773) | 0.6% (5) | 7 — 0.58/game | 4/7 — 57.1% |
+| **`counter`** | **7.3%** (58/794) | 0.8% (6) | **17 — 1.42/game** | **12/17 — 70.6%** |
+| `votes` | 2.5% (19/773) | **1.9%** (15) | 7 — 0.58/game | 4/7 — 57.1% |
+| `hard` | 7.7% (60/776) | **7.2%** (56) | 17 — 1.42/game | 12/17 — 70.6% |
+
+Base rate 25.0%.
+
+**`counter` fires**: it nearly triples both the aimed ballots and the penalties
+that actually pass, and lands them on the eventual winner 70.6% of the time.
+
+**★ The vote-weight lever is inert, and this retired it without an eval.**
+`votes` triples the bought votes against `ship` and then reproduces the aimed
+ballots, the penalty count and the landing rate *exactly* — 19/773, 7, 4/7.
+`hard` against `counter` is the same: nine times the bought votes, an identical
+17 and 12/17. **Extra votes flip no resolution in either aim**, because the
+bandwagon term makes ballots converge and winning margins are wide, so one
+voter's extra two votes cannot carry an outcome. `advanced_congress_votes` and
+`advanced_congress_counter_hard` are recorded here rather than evaluated.
+
+Pre-registration for the surviving arm:
+`/Users/martin/civvis-congress-counter-preregistration.md`, written before the
+run, predicting **wins null at 48–52%**. Both of its fires-check predictions
+held, the second more strongly than it was written.
