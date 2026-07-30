@@ -2146,7 +2146,20 @@ local function chooseProduction(city, counts, nCities, turn, refused)
 	-- satisfied, so production never gets past it. One ram at 65 production beats
 	-- the fifteenth Warrior at 40, because without it every extra warrior is another
 	-- unit that dies without breaking anything.
-	if warTarget ~= nil and (counts.siege or 0) < (cfg.SiegeUnits or 2) then
+	-- ⚠ FOUR, NOT TWO — the rams are the breach and they die. Measured on run
+	-- 083136Z, 53 turns into a verified war (`at_war = True`) against a CAPITAL:
+	-- eight rams built, 26 `siege_up` positioning orders, and `siege = 0` alive at
+	-- turn 141 with no capture. The floor already rebuilds them (eight from a floor
+	-- of two is four replacements), so the problem is not that they stop coming — it
+	-- is that fewer than two are alive at any moment, and walls halve melee damage
+	-- while the city heals between turns, so a breach needs rams PRESENT.
+	--
+	-- ⚠ A support unit has no combat strength and the city bombards it, so more rams
+	-- means more rams dying; this buys concurrency, not survival. The deeper fix is
+	-- to escort them or to stop parking half the army on approach tiles (`surround`
+	-- 47 against `advance` 46 at the same turn) — neither is attempted here, because
+	-- one change at a time is the rule while pairing is unavailable.
+	if warTarget ~= nil and (counts.siege or 0) < (cfg.SiegeUnits or 4) then
 		ladder[#ladder + 1] = { "UNIT_BATTERING_RAM", "siege" };
 	end
 	-- ★★ A PURE MELEE ARMY CANNOT REDUCE A CITY, only walk into one.
