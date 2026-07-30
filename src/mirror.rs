@@ -729,6 +729,10 @@ pub struct StateCity {
     pub capital: bool,
     #[serde(default)]
     pub defense: f64,
+    /// Current loyalty, 0-100. Below ~50 and falling, the city is on its way to
+    /// revolting to whoever is pressing on it.
+    #[serde(default = "unknown_strength")]
+    pub loyalty: f64,
 }
 
 /// One unit as Civilization VI reported it, in OFFSET coordinates.
@@ -1067,6 +1071,15 @@ pub fn rebuild_from_state(
             if let Some(built) = game.cities.get_mut(&cid) {
                 if city.pop > 0 {
                     built.pop = city.pop;
+                }
+                // ★★★ WITHOUT THIS CIVVIS CANNOT SEE A CITY ABOUT TO REVOLT. Run
+                // civvis-20260730T170738Z was ELIMINATED at turn 80 with its capital at
+                // loyalty 5.07 and falling — and the mirror was reporting a healthy
+                // city, because loyalty never crossed. Disabling governors (they
+                // segfault the Game Core) removed the +8 that would have held it, so
+                // the seat needs to weigh loyalty itself and could not even read it.
+                if city.loyalty >= 0.0 {
+                    built.loyalty = city.loyalty;
                 }
                 // ★★★★ WHAT THE CITY ALREADY HAS. Without this a city reads as empty
                 // forever and CIVVIS re-orders the same development every turn:
@@ -1419,6 +1432,9 @@ impl LiveMirror {
                 if let Some(live) = self.game.cities.get_mut(cid) {
                     if city.pop > 0 {
                         live.pop = city.pop;
+                    }
+                    if city.loyalty >= 0.0 {
+                        live.loyalty = city.loyalty;
                     }
                     for civ6 in &city.buildings {
                         let name = civ6
