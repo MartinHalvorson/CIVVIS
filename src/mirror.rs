@@ -825,6 +825,33 @@ pub fn state_from_events(
     best
 }
 
+
+/// Civilization VI's node name as CIVVIS spells it, or None if CIVVIS has no such node.
+///
+/// ⚠ THE TWO RULESETS DISAGREE ON ARTICLES. Civ 6's `TECH_THE_WHEEL` is CIVVIS's
+/// `wheel`, so a straight prefix-strip produced `the_wheel`, which does not exist, and
+/// **a completed technology silently failed to cross** — CIVVIS planned as though the
+/// seat had never researched it. The mod hits the mirror image of this going the other
+/// way and solves it by trimming; this trims the leading article.
+///
+/// Only ever removes, so it cannot invent a node: whatever it returns was already in
+/// CIVVIS's own ruleset.
+fn civvis_node_name<T>(
+    table: &crate::specmap::SpecMap<T>,
+    civ6: &str,
+    prefix: &str,
+) -> Option<String> {
+    let base = civ6.strip_prefix(prefix).unwrap_or(civ6).to_ascii_lowercase();
+    if table.contains_key(&base) {
+        return Some(base);
+    }
+    let without_article = base.strip_prefix("the_")?;
+    if table.contains_key(without_article) {
+        return Some(without_article.to_string());
+    }
+    None
+}
+
 /// What a reconstruction produced, including what it could NOT translate.
 ///
 /// ⚠ `unmapped` is not decoration. A Civilization VI unit type with no CIVVIS
@@ -1048,19 +1075,27 @@ pub fn rebuild_from_state(
     // ⚠ Names that do not exist in the CIVVIS ruleset are counted, not ignored —
     // a silently dropped tech is a capability CIVVIS will not use and nobody sees.
     for civ6 in &state.techs {
-        let name = civ6.strip_prefix("TECH_").unwrap_or(civ6).to_ascii_lowercase();
-        if game.rules.techs.contains_key(&name) {
-            game.players[0].techs.insert(crate::name::Name::new(&name));
-        } else if !unmapped.contains(civ6) {
-            unmapped.push(civ6.clone());
+        match civvis_node_name(&game.rules.techs, civ6, "TECH_") {
+            Some(name) => {
+                game.players[0].techs.insert(crate::name::Name::new(&name));
+            }
+            None => {
+                if !unmapped.contains(civ6) {
+                    unmapped.push(civ6.clone());
+                }
+            }
         }
     }
     for civ6 in &state.civics {
-        let name = civ6.strip_prefix("CIVIC_").unwrap_or(civ6).to_ascii_lowercase();
-        if game.rules.civics.contains_key(&name) {
-            game.players[0].civics.insert(crate::name::Name::new(&name));
-        } else if !unmapped.contains(civ6) {
-            unmapped.push(civ6.clone());
+        match civvis_node_name(&game.rules.civics, civ6, "CIVIC_") {
+            Some(name) => {
+                game.players[0].civics.insert(crate::name::Name::new(&name));
+            }
+            None => {
+                if !unmapped.contains(civ6) {
+                    unmapped.push(civ6.clone());
+                }
+            }
         }
     }
 
@@ -1286,14 +1321,12 @@ impl LiveMirror {
             self.game.players[0].gold = state.gold as f64;
         }
         for civ6 in &state.techs {
-            let name = civ6.strip_prefix("TECH_").unwrap_or(civ6).to_ascii_lowercase();
-            if self.game.rules.techs.contains_key(&name) {
+            if let Some(name) = civvis_node_name(&self.game.rules.techs, civ6, "TECH_") {
                 self.game.players[0].techs.insert(crate::name::Name::new(&name));
             }
         }
         for civ6 in &state.civics {
-            let name = civ6.strip_prefix("CIVIC_").unwrap_or(civ6).to_ascii_lowercase();
-            if self.game.rules.civics.contains_key(&name) {
+            if let Some(name) = civvis_node_name(&self.game.rules.civics, civ6, "CIVIC_") {
                 self.game.players[0].civics.insert(crate::name::Name::new(&name));
             }
         }
