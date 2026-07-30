@@ -447,6 +447,14 @@ end
 local function stackCensus(player)
 	local perPlot = {};
 	eachUnit(player, function(unit)
+		-- ⚠ MILITARY ONLY. Civilians share a plot with a garrison legally and
+		-- constantly — a settler waiting in the capital, a builder passing
+		-- through — so counting every unit reported `pile = 4` for one defender
+		-- and three civilians and made a healthy empire look like the bug the
+		-- operator originally reported. One military unit per tile is the rule
+		-- this measures.
+		local row = GameInfo.Units[unitTypeName(unit)];
+		if row == nil or (row.Combat or 0) <= 0 then return; end
 		local x = try(function() return unit:GetX(); end, -1);
 		local y = try(function() return unit:GetY(); end, -1);
 		if x >= 0 then
