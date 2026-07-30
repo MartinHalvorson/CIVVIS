@@ -4155,9 +4155,49 @@ local function applyOrders(player, pid, turn, rows)
 		if not ordered[index] then runOrder(index, row); end
 	end
 
+	-- ★★★★ UNITS CIVVIS DID NOT MENTION GO TO THE GAME'S OWN EXPLORE AUTOMATION.
+	--
+	-- ⚠ BE HONEST ABOUT WHAT THIS IS: it is a policy, and therefore a decision. It is
+	-- here because the alternative is also a decision — a unit nobody ordered stands
+	-- still — and standing still is what made domination unreachable. Measured at turn
+	-- 21 of run civvis-20260730T132023Z: three units alive and the FURTHEST was **1
+	-- tile** from the capital. Across whole games `met` stalls at 1-2 of 3 rivals, ZERO
+	-- rival cities are ever seen, and an army of 20+ has nothing it can attack.
+	--
+	-- What it deliberately does NOT do is choose a destination. `AUTOMATE_EXPLORE` is
+	-- Civilization VI's own automation, so the game picks where to go; this only decides
+	-- that an idle unit should be doing something. Every unit CIVVIS actually assigns is
+	-- untouched, and the count is reported separately as `explored` so a run's telemetry
+	-- never presents this as CIVVIS's work.
+	local explored = 0;
+	if cfg.ExploreUnassigned ~= false then
+		local mentioned = {};
+		for _, row in ipairs(rows) do
+			if tostring(row.kind or "") == "unit" then
+				mentioned[tonumber(row.subject) or -1] = true;
+			end
+		end
+		eachUnit(player, function(unit)
+			local id = try(function() return unit:GetID(); end, -1);
+			if id == -1 or mentioned[id] then return; end
+			local name = unitTypeName(unit);
+			-- Civilians cannot explore, and a settler that wanders is a settler that
+			-- never founds — this project has already paid for both.
+			if name == "UNIT_SETTLER" or name == "UNIT_BUILDER"
+					or name == "UNIT_TRADER" then
+				return;
+			end
+			if operate(unit, OP["UNITOPERATION_AUTOMATE_EXPLORE"], {}) then
+				explored = explored + 1;
+			end
+		end);
+	end
+
 	emit("orders", {
 		turn = turn, source = "civvis", seen = #rows,
 		applied = applied, refused = refused, by = byKind, refusals = whyNot,
+		-- Not part of `applied`: these are units CIVVIS said nothing about.
+		explored = explored,
 	});
 
 	-- ⚠⚠ A CIVVIS TURN MUST STILL EMIT A `turn` RECORD. The full one lives at the

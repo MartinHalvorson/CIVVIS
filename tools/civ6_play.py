@@ -177,6 +177,10 @@ def build_config(args: argparse.Namespace) -> dict:
         # built-ins run and the turn is recorded `fallback`, so a brain that is slow
         # or absent costs decision quality rather than progress.
         "CivvisDecides": args.civvis_decides,
+        # Hand units CIVVIS gave no order to over to the game's own explore
+        # automation. A policy, and counted separately as `explored` so it is never
+        # mistaken for CIVVIS's work — see the note in the mod.
+        "ExploreUnassigned": args.explore_unassigned,
         # ⚠ Polling, not spinning. A `DB.Query` per tick pinned the game at 139% CPU
         # and starved the log flush that carries the board out, deadlocking the loop
         # on turn 2 of run civvis-20260730T110209Z. These are all counted in POLLS.
@@ -919,6 +923,9 @@ def main(argv: list[str] | None = None) -> int:
                     help="SQLite file offered to the mod via ATTACH as the inbound channel")
     ap.add_argument("--tile-export-every", type=int, default=25,
                     help="turns between map exports (turn 1 always exports)")
+    ap.add_argument("--no-explore-unassigned", dest="explore_unassigned",
+                    action="store_false", default=True,
+                    help="leave units CIVVIS did not order standing still")
     ap.add_argument("--civvis-decides", action="store_true", default=False,
                     help="CIVVIS makes every decision; the mod only actuates")
     ap.add_argument("--governor-appoint", action="store_true", default=False,

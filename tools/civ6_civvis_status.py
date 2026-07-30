@@ -84,7 +84,12 @@ def main() -> int:
     applied = sum(o.get("applied", 0) for o in orders)
     refused = sum(o.get("refused", 0) for o in orders)
     pct = (100 * applied // seen) if seen else 0
+    explored = sum(o.get("explored", 0) or 0 for o in orders)
     print(f"  orders: applied {applied}/{seen} ({pct}%)  refused {refused}")
+    # Kept apart from `applied` on purpose: these are units CIVVIS said nothing about,
+    # handed to Civ 6's own explore automation. Reporting them inside `applied` would
+    # credit CIVVIS with orders it never gave.
+    print(f"  explored by game automation (not CIVVIS's orders): {explored}")
 
     by = Counter()
     for order in orders:
