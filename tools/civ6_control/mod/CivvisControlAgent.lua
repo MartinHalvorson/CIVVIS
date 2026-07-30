@@ -376,18 +376,44 @@ local function unitTypeName(unit)
 	end, "?");
 end
 
+-- ⚠⚠ THE pcall GOES INSIDE THE LOOP.
+--
+-- This is the bug that hid every other unit bug in this file. With one pcall
+-- wrapped around the whole walk, the FIRST callback that throws abandons the
+-- rest of the roster — silently, because pcall reports nothing. Two things then
+-- happen at once and neither looks like the cause:
+--
+-- * `countUnits` stops early, so the telemetry reports `units=2` while the
+--   empire has ten. Every "is the army big enough" decision reads that number.
+-- * pass 2 of `orderUnits` stops early, so the units after the throwing one get
+--   NO ORDER AT ALL and stand where they were built. That is the "units are
+--   stuck in cities" the operator kept seeing at turns 50, 75 and 100 of runs
+--   settler-20260730T013057Z and T014005Z, and it is why it survived the
+--   GetFirstReadyUnit fix, the reachable fix and the garrison fix: none of them
+--   were ever reached.
+--
+-- Per-iteration pcall costs nothing and makes one bad unit cost one unit.
 local function eachUnit(player, fn)
 	pcall(function()
-		for _, unit in player:GetUnits():Members() do fn(unit); end
+		for _, unit in player:GetUnits():Members() do
+			pcall(function() fn(unit); end);
+		end
 	end);
 end
 
 local function eachCity(player, fn)
 	pcall(function()
-		for _, city in player:GetCities():Members() do fn(city); end
+		for _, city in player:GetCities():Members() do
+			pcall(function() fn(city); end);
+		end
 	end);
 end
 
+-- Pure. ⚠ An `upgradeUnit` call had been spliced into the military branch here,
+-- so *counting* the army issued upgrade orders — and its `return better` skipped
+-- the increment, so an upgrading unit was never counted as military. Counting
+-- runs more than once a turn and feeds the war threshold; it must not act.
+-- Upgrading belongs in `orderFor`, which is where it now lives.
 local function countUnits(player)
 	local counts = { settler = 0, builder = 0, military = 0, scout = 0, total = 0 };
 	eachUnit(player, function(unit)
@@ -401,9 +427,6 @@ local function countUnits(player)
 		elseif name == "UNIT_SCOUT" then
 			counts.scout = counts.scout + 1;
 		elseif row ~= nil and (row.Combat or 0) > 0 then
-		-- Cheaper than losing the unit and rebuilding it a tier late.
-		local better = upgradeUnit(unit);
-		if better then return better; end
 			counts.military = counts.military + 1;
 		end
 	end);
@@ -543,15 +566,6 @@ local committedSite = {};
 -- was 4 moves to 15 SKIP_TURNs — the chosen site simply could not be reached,
 -- and re-offering it every turn was the whole failure.
 local refusedSite = {};
--- Which city each unit is the garrison of, kept across turns.
---
--- ⚠ Without this the assignment oscillates. thinnestCity counts defenders, so
--- with two units and two cities a warrior sent to the second city leaves the
--- capital on zero, is ordered home next turn, which empties the second city
--- again. It shuttles forever and looks exactly like two warriors parked in the
--- capital — which is what was observed just before turn 50 of run
--- settler-20260730T013057Z. A garrison is only a garrison if it stays.
-local garrisonOf = {};
 local findSettleSite;
 
 findSettleSite = function(player, pid, unit, turn)
@@ -740,41 +754,154 @@ local function orderBuilder(unit)
 	return firstOperation(unit, { "UNITOPERATION_BUILD_IMPROVEMENT" });
 end
 
--- Which of our cities has the fewest defenders standing on or beside it.
+-- ⚠⚠ A GARRISON POST IS A PLOT, CLAIMED BY EXACTLY ONE UNIT.
 --
--- ⚠ Without this every idle unit fortifies wherever it was built, which is the
--- capital, and the empire ends up with a pile of units on one hill and outlying
--- cities naked. Observed directly: ten units alive at turn 75 with the only
--- orders being FORTIFY and ALERT, all at home. Spreading them is free — they
--- were going to stand still anyway — and it is what stops a border city being
--- lost to the first raider that wanders past.
-local function thinnestCity(player, unit)
-	local best, bestCount;
+-- The version before this posted a unit to a *city* and called it home once
+-- `plotDistance <= 1`. Both halves of that were the stack:
+--
+-- * A unit built in the capital is already at distance 0, so it fortified in the
+--   city centre and never took a step.
+-- * Once two units stood anywhere in the ring, `thinnestCity` refused to post a
+--   third, so every later unit got no post and fell through to FORTIFY exactly
+--   where it stood — the capital again.
+--
+-- Civilization VI permits any number of units to stack on a city centre, so
+-- nothing in the engine ever pushed back. Five units on one plot, reported from
+-- the screen at turns 50, 75 and 100.
+--
+-- Claiming plots makes it impossible by construction: two units cannot hold one
+-- post, and standing still is only licensed ON one's own post.
+local function postKey(x, y) return x .. ":" .. y; end
+
+local garrisonPost = {};    -- unit id -> { x, y, key }
+local postClaims = {};      -- "x:y"  -> unit id
+
+local function releasePost(id)
+	local post = garrisonPost[id];
+	if post == nil then return; end
+	if postClaims[post.key] == id then postClaims[post.key] = nil; end
+	garrisonPost[id] = nil;
+end
+
+local function standable(x, y)
+	local plot = try(function() return Map.GetPlot(x, y); end);
+	if plot == nil then return false; end
+	return try(function()
+		return (not plot:IsWater()) and (not plot:IsImpassable());
+	end, false);
+end
+
+-- ⚠ A dead unit's claim would hold its plot forever and the empire slowly runs
+-- out of anywhere to stand. Rebuild from the living once a turn.
+local function sweepPosts(player)
+	local alive = {};
+	eachUnit(player, function(unit)
+		local id = try(function() return unit:GetID(); end, -1);
+		if id >= 0 then alive[id] = true; end
+	end);
+	for id in pairs(garrisonPost) do
+		if not alive[id] then releasePost(id); end
+	end
+end
+
+-- The defensive posts of one city: the centre first, because the fortified unit
+-- in the centre is the one that actually holds the place, then the ring outward
+-- so the rest watch the approaches instead of joining the pile.
+local function postsOf(city)
+	local cx = try(function() return city:GetX(); end, -1);
+	local cy = try(function() return city:GetY(); end, -1);
+	local out = {};
+	if cx < 0 then return out; end
+	if standable(cx, cy) then
+		out[#out + 1] = { x = cx, y = cy, key = postKey(cx, cy) };
+	end
+	for dx = -1, 1 do
+		for dy = -1, 1 do
+			if not (dx == 0 and dy == 0) and standable(cx + dx, cy + dy) then
+				out[#out + 1] = { x = cx + dx, y = cy + dy,
+				                  key = postKey(cx + dx, cy + dy) };
+			end
+		end
+	end
+	return out;
+end
+
+-- The nearest free post, filling the thinnest city first so a border city is not
+-- left naked while the capital collects a crowd.
+local function claimPost(player, unit)
+	local id = try(function() return unit:GetID(); end, -1);
+	if id < 0 then return nil; end
 	local ux = try(function() return unit:GetX(); end, -1);
 	local uy = try(function() return unit:GetY(); end, -1);
+	local cap = cfg.GarrisonPerCity or 2;
+	local best, bestRank;
 	eachCity(player, function(city)
-		local cx = try(function() return city:GetX(); end, -1);
-		local cy = try(function() return city:GetY(); end, -1);
-		if cx < 0 then return; end
-		local near = 0;
-		eachUnit(player, function(other)
-			local row = GameInfo.Units[unitTypeName(other)];
-			if row ~= nil and (row.Combat or 0) > 0 then
-				local ox = try(function() return other:GetX(); end, -1);
-				local oy = try(function() return other:GetY(); end, -1);
-				if ox >= 0 and plotDistance(ox, oy, cx, cy) <= 1 then
-					near = near + 1;
+		local posts = postsOf(city);
+		local held, free = 0, {};
+		for i = 1, #posts do
+			if postClaims[posts[i].key] ~= nil then
+				held = held + 1;
+			else
+				free[#free + 1] = posts[i];
+			end
+		end
+		for i = 1, #free do
+			if held + i > cap then break; end
+			-- Thinnest city dominates; walking distance breaks the tie.
+			local rank = held * 1000 + plotDistance(ux, uy, free[i].x, free[i].y);
+			if bestRank == nil or rank < bestRank then best, bestRank = free[i], rank; end
+		end
+	end);
+	if best ~= nil then
+		garrisonPost[id] = best;
+		postClaims[best.key] = id;
+	end
+	return best;
+end
+
+-- Every city post is taken and this unit is surplus. It still may not stand on
+-- top of somebody: step to the emptiest neighbouring plot instead. Fortifying in
+-- place is precisely the behaviour being removed.
+local function stepAside(player, unit)
+	local id = try(function() return unit:GetID(); end, -2);
+	local ux = try(function() return unit:GetX(); end, -1);
+	local uy = try(function() return unit:GetY(); end, -1);
+	if ux < 0 then return nil; end
+	local taken = {};
+	eachUnit(player, function(other)
+		local oid = try(function() return other:GetID(); end, -3);
+		if oid ~= id then
+			local ox = try(function() return other:GetX(); end, -1);
+			local oy = try(function() return other:GetY(); end, -1);
+			if ox >= 0 then taken[postKey(ox, oy)] = true; end
+		end
+	end);
+	if not taken[postKey(ux, uy)] then return nil; end   -- already alone
+	local best, bestCrowd;
+	for dx = -1, 1 do
+		for dy = -1, 1 do
+			local x, y = ux + dx, uy + dy;
+			local key = postKey(x, y);
+			if not (dx == 0 and dy == 0) and standable(x, y)
+					and not taken[key] and postClaims[key] == nil then
+				local crowd = 0;
+				for ax = -1, 1 do
+					for ay = -1, 1 do
+						if taken[postKey(x + ax, y + ay)] then crowd = crowd + 1; end
+					end
+				end
+				if bestCrowd == nil or crowd < bestCrowd then
+					best, bestCrowd = { x = x, y = y }, crowd;
 				end
 			end
-		end);
-		-- Prefer the thinnest city, and among equals the nearest one, so units
-		-- do not cross the empire past a city that needed them.
-		local worse = bestCount == nil or near < bestCount
-			or (near == bestCount and best ~= nil
-				and plotDistance(ux, uy, cx, cy) < plotDistance(ux, uy, best.x, best.y));
-		if worse then best, bestCount = { x = cx, y = cy }, near; end
-	end);
-	return best, bestCount;
+		end
+	end
+	if best == nil then return nil; end
+	local params = {};
+	params[UnitOperationTypes.PARAM_X] = best.x;
+	params[UnitOperationTypes.PARAM_Y] = best.y;
+	if operate(unit, OP["UNITOPERATION_MOVE_TO"], params) then return "disperse"; end
+	return nil;
 end
 
 local function orderMilitary(unit, stillExploring, player)
@@ -788,38 +915,44 @@ local function orderMilitary(unit, stillExploring, player)
 		local healed = firstOperation(unit, { "UNITOPERATION_HEAL" });
 		if healed then return healed; end
 	end
-	if player ~= nil then
-		local id = try(function() return unit:GetID(); end, -1);
-		local ux = try(function() return unit:GetX(); end, -1);
-		local uy = try(function() return unit:GetY(); end, -1);
-		-- Keep a standing assignment. Only pick a new one if this unit has none
-		-- or the city it was posted to has stopped being ours.
-		local post = garrisonOf[id];
-		if post ~= nil then
-			local mine = false;
-			eachCity(player, function(city)
-				local cx = try(function() return city:GetX(); end, -1);
-				local cy = try(function() return city:GetY(); end, -1);
-				if cx == post.x and cy == post.y then mine = true; end
-			end);
-			if not mine then garrisonOf[id] = nil; post = nil; end
-		end
-		if post == nil then
-			local city, count = thinnestCity(player, unit);
-			if city ~= nil and (count or 0) < (cfg.GarrisonPerCity or 2) then
-				garrisonOf[id] = { x = city.x, y = city.y };
-				post = garrisonOf[id];
-			end
-		end
-		if post ~= nil and plotDistance(ux, uy, post.x, post.y) > 1 then
-			local params = {};
-			params[UnitOperationTypes.PARAM_X] = post.x;
-			params[UnitOperationTypes.PARAM_Y] = post.y;
-			if operate(unit, OP["UNITOPERATION_MOVE_TO"], params) then
-				return "garrison";
-			end
-		end
+	if player == nil then
+		return firstOperation(unit, {
+			"UNITOPERATION_FORTIFY", "UNITOPERATION_ALERT",
+		});
 	end
+	local id = try(function() return unit:GetID(); end, -1);
+	local ux = try(function() return unit:GetX(); end, -1);
+	local uy = try(function() return unit:GetY(); end, -1);
+
+	-- Drop a post that has stopped belonging to a city of ours.
+	local post = garrisonPost[id];
+	if post ~= nil then
+		local mine = false;
+		eachCity(player, function(city)
+			local cx = try(function() return city:GetX(); end, -1);
+			local cy = try(function() return city:GetY(); end, -1);
+			if cx >= 0 and plotDistance(cx, cy, post.x, post.y) <= 1 then mine = true; end
+		end);
+		if not mine then releasePost(id); post = nil; end
+	end
+	if post == nil then post = claimPost(player, unit); end
+
+	if post ~= nil then
+		if ux == post.x and uy == post.y then
+			return firstOperation(unit, {
+				"UNITOPERATION_FORTIFY", "UNITOPERATION_ALERT",
+			});
+		end
+		local params = {};
+		params[UnitOperationTypes.PARAM_X] = post.x;
+		params[UnitOperationTypes.PARAM_Y] = post.y;
+		if operate(unit, OP["UNITOPERATION_MOVE_TO"], params) then
+			return "garrison";
+		end
+		releasePost(id);   -- unreachable for now; do not hoard the plot
+	end
+	local aside = stepAside(player, unit);
+	if aside then return aside; end
 	return firstOperation(unit, {
 		"UNITOPERATION_FORTIFY", "UNITOPERATION_ALERT",
 	});
@@ -1041,6 +1174,13 @@ local function orderFor(player, pid, unit, turn)
 	elseif name == "UNIT_SCOUT" then
 		return firstOperation(unit, { "UNITOPERATION_AUTOMATE_EXPLORE" });
 	elseif row ~= nil and (row.Combat or 0) > 0 then
+		-- Upgrading is cheaper than losing the unit and rebuilding it a tier
+		-- late, and an un-upgraded army is why strength read 78 against 357 in
+		-- 1100 AD. This is the only place it belongs: it is an ORDER, and it
+		-- consumes the unit's turn, so it must be reached through orderFor and
+		-- never from countUnits.
+		local better = upgradeUnit(unit);
+		if better then return better; end
 		-- Damaged units heal first: sending a hurt unit at a city loses it and
 		-- the war with it.
 		local damage = try(function() return unit:GetDamage(); end, 0) or 0;
@@ -1080,6 +1220,7 @@ local function orderUnits(player, pid, turn)
 	local given, stuck = 0, 0;
 	lastActions = {};
 	local ordered, attempts = {}, {};
+	sweepPosts(player);
 
 	local function give(unit, id)
 		local action = orderFor(player, pid, unit, turn) or orderIdle(unit);
