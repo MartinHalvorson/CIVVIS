@@ -307,13 +307,18 @@ metadata.
 The continuous league has a different selection contract from its spectator
 ladder. Glicko continues to rate full placement because that is useful for
 matchmaking and display, but genome parents, niche elites, and retirement are
-ordered first by 95% Wilson bounds on **outright wins**. Placement rating only
-breaks an equal win-bound tie. This prevents a safe second-place specialist
-from breeding merely because placement compressed a large difference in who
-actually won, while keeping a two-game lucky streak behind a settled winner.
-The `strategic_deep_league` transfer control reads that same ordering when it
-chooses a generalist genome, so evaluation and breeding cannot diverge on the
-objective by accident.
+ordered first by 95% Wilson bounds on **outright wins at the current table
+size**. Placement rating only breaks an equal win-bound tie. A two-player win
+rate is not compared as though its parity rate matched a six- or eight-player
+table. The roster checkpoints games and wins by seat count; old rosters recover
+the retained raw portion from `matches.csv`, preserve unreconstructable prior
+games only in the all-history totals, and show both in `--standings`. This
+prevents a safe second-place specialist from breeding because placement
+compressed who won, a duel-heavy entrant from breeding because its wins were
+easier to obtain, and a two-game lucky streak from outranking a settled winner.
+The `strategic_deep_league` transfer control uses the same conservative
+outright-win objective on the committed snapshot; the fixed-profile tournament
+below remains the instrument for a fully standardized longitudinal comparison.
 The standalone `evolve` fitness above still uses its cheaper score/combat proxy;
 its separate promotion gate remains the point where wins decide shipment.
 

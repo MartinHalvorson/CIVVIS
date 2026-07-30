@@ -6151,3 +6151,54 @@ does not choose. The auditor had equated “engine-legal” with “on this poli
 action surface.” It now treats only a repair, building, repair project, or the
 city-state's own district family as actionable infrastructure; the exact rerun
 removes all 16 false symptoms without changing gameplay.
+
+## 2026-07-30 — ★★★★ win selection is now conditioned on table size
+
+The first win-selected league fix still compared one mixed lifetime win rate.
+That is not a stable objective when the history contains different table
+sizes: parity is 50% in a duel, 25% with four players, and 12.5% with eight.
+An entrant could therefore become a “proven winner” merely by having more of
+its evidence come from smaller tables. The current round's manifest already
+fixes its player count, but selection discarded that identity after rating.
+
+Every newly rated seat now checkpoints `(games, wins)` under its exact table
+size. Parent ordering, strongest-niche choice, niche-elite protection, and
+retirement use the Wilson bound for the **current manifest's player count**;
+the placement rating remains only the exact tie-break. The manifest, rather
+than a worker's local flags, also supplies the selection player count during
+distributed finalization.
+
+Long-lived rosters are migrated from retained `matches.csv` rows before the
+next idle update. The migration accepts both historical `player@civ` rows and
+the current `player@leader@civ@rank` form, rejects an ambiguous or malformed
+log rather than guessing, and labels the standings as retained evidence.
+Older aggregate games that predate the log remain in the public totals but are
+not assigned a fictional table size. If no retained row exists for the current
+size, selection explicitly falls back to that legacy aggregate until direct
+profile evidence arrives.
+
+Read-only replay of the production roster's 822 retained games changes the
+conservative order materially. These are the active evolvable parents; bounds
+are lower 95% Wilson bounds on outright wins:
+
+| entrant | mixed all-history evidence | mixed lower | retained 6p evidence | 6p lower |
+|---|---:|---:|---:|---:|
+| `advanced_evolved` | 33/99 | **24.8%** | 4/18 | 9.0% |
+| `advanced` | 162/714 | 19.8% | 7/27 | 13.2% |
+| `g28-28` | 141/748 | 16.2% | **12/33** | **22.2%** |
+| `g48-44` | 106/605 | 14.7% | 4/20 | 8.1% |
+| `g676-58` | 7/57 | 6.1% | **5/12** | **19.3%** |
+
+The mixed statistic would breed `advanced_evolved`, then `advanced`, then
+`g28-28`; a six-player round instead has direct evidence for `g28-28`, then
+the diplomatic `g676-58`, then `advanced`. This is not a claim that 12 games
+settle the second entry—the Wilson penalty is why its lower bound is 19.3%
+rather than its 41.7% point rate. It is a demonstration that the discarded
+context changed the decision the breeder makes. A four-player round reads its
+separate four-player evidence and can make a different, reproducible choice.
+
+This still does not combine different maps, speeds, or opponent pools into a
+causal head-to-head estimate. It fixes the largest mathematical mismatch in
+raw win probability and makes the remaining context visible in the checkpoint
+instead of irreversibly blending it. The anchored tournament remains the
+instrument for a fully fixed longitudinal Elo profile.
