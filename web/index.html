@@ -4405,17 +4405,71 @@ const RES_BADGE_R = 8.2 * RES_BADGE_K;
 // small; at this size it decides whether the badge leans into the next hex.
 const RES_BADGE_SEAT = 1 - (RES_BADGE_R + 1.2) / (S * SQ3 / 2);
 const ARTIFACT_RESOURCES = new Set(["antiquity_site", "shipwreck"]);
-// One compact silhouette per unit in data/units.json. The value is a drawing
-// vocabulary entry, not a Unicode character, so a platform font cannot turn a
-// crossbowman into a bullseye or a trebuchet into a meteor. Every ruleset unit
-// owns a distinct vocabulary entry: a civilization replacement must remain
-// distinguishable from the ordinary unit it replaces on the command map.
 // Units that cannot fight — captured rather than killed, and the things an
 // empire has to escort. They carry their own plate shape so a glance separates
 // an army from what it is protecting.
 const CIVILIAN_UNITS = new Set(["settler", "builder", "trader", "naturalist",
   "archaeologist", "rock_band", "spy", "missionary", "apostle", "guru",
   "inquisitor"]);
+// The command map uses Civilization VI's own unit glyphs. Their order is the
+// order of the cells in civ6-unit-flags.png and is kept beside the renderer so
+// a missing ruleset unit cannot silently borrow another unit's picture.
+const CIV6_UNIT_ICON_TYPES = [
+  "aircraft_carrier", "anti_air_gun", "apostle", "archaeologist", "archer",
+  "artillery", "at_crew", "battering_ram", "battleship", "biplane",
+  "bombard", "bomber", "builder", "caravel", "catapult", "cavalry",
+  "courser", "crossbowman", "crouching_tiger", "cuirassier", "destroyer",
+  "drone", "eagle_warrior", "field_cannon", "fighter", "frigate", "galley",
+  "giant_death_robot", "guru", "heavy_chariot", "helicopter", "hoplite",
+  "horseman", "infantry", "inquisitor", "ironclad", "jet_bomber",
+  "jet_fighter", "knight", "legion", "line_infantry", "machine_gun",
+  "man_at_arms", "maryannu_chariot_archer", "mechanized_infantry", "medic",
+  "military_engineer", "missile_cruiser", "missionary", "mobile_sam",
+  "modern_armor", "modern_at", "musketman", "naturalist",
+  "nuclear_submarine", "observation_balloon", "pike_and_shot", "pikeman",
+  "pitati_archer", "privateer", "quadrireme", "ranger", "rock_band",
+  "rocket_artillery", "saka_horse_archer", "scout", "settler", "siege_tower",
+  "skirmisher", "slinger", "spearman", "spec_ops", "spy", "submarine",
+  "supply_convoy", "swordsman", "tagma", "tank", "trader", "trebuchet",
+  "war_cart", "warrior", "warrior_monk"
+];
+const CIV6_UNIT_ICON_INDEX = new Map(
+  CIV6_UNIT_ICON_TYPES.map((type, index) => [type, index]));
+const CIV6_UNIT_ICON_CELL = 64, CIV6_UNIT_ICON_COLUMNS = 12;
+const CIV6_UNIT_ICON_ATLAS = new Image();
+const CIV6_UNIT_ICON_CACHE = new Map();
+let CIV6_UNIT_ICON_ATLAS_READY = false;
+CIV6_UNIT_ICON_ATLAS.onload = () => {
+  CIV6_UNIT_ICON_ATLAS_READY = true;
+  CIV6_UNIT_ICON_CACHE.clear();
+  if (state) { draw(); drawMini(); }
+};
+CIV6_UNIT_ICON_ATLAS.src = "/assets/civ6-unit-flags.png";
+
+function civ6UnitIconSprite(type, color) {
+  const index = CIV6_UNIT_ICON_INDEX.get(type);
+  if (!CIV6_UNIT_ICON_ATLAS_READY || index === undefined) return null;
+  const cacheKey = `${index}|${color}`;
+  if (CIV6_UNIT_ICON_CACHE.has(cacheKey)) return CIV6_UNIT_ICON_CACHE.get(cacheKey);
+  const sprite = document.createElement("canvas");
+  sprite.width = sprite.height = CIV6_UNIT_ICON_CELL;
+  const g = sprite.getContext("2d");
+  const sx = (index % CIV6_UNIT_ICON_COLUMNS) * CIV6_UNIT_ICON_CELL;
+  const sy = Math.floor(index / CIV6_UNIT_ICON_COLUMNS) * CIV6_UNIT_ICON_CELL;
+  g.drawImage(CIV6_UNIT_ICON_ATLAS, sx, sy,
+              CIV6_UNIT_ICON_CELL, CIV6_UNIT_ICON_CELL,
+              0, 0, CIV6_UNIT_ICON_CELL, CIV6_UNIT_ICON_CELL);
+  // The atlas is a white alpha mask. Tinting once per jersey colour keeps the
+  // official shape while making a busy map cost only one drawImage per unit.
+  g.globalCompositeOperation = "source-in";
+  g.fillStyle = color;
+  g.fillRect(0, 0, CIV6_UNIT_ICON_CELL, CIV6_UNIT_ICON_CELL);
+  CIV6_UNIT_ICON_CACHE.set(cacheKey, sprite);
+  return sprite;
+}
+
+// Canvas-drawn fallbacks cover the first frame while the local atlas loads and
+// make an asset-load failure visible without making the map unusable.
 const UNIT_PICTOGRAM = {
   // civilians & specialists
   settler:"camp", builder:"hammer", trader:"caravan", naturalist:"leaf",
@@ -15409,6 +15463,12 @@ const UI_K = () => 1 / Math.min(1, Math.max(cam.scale, 0.5));
 // cells. The floor is derived from token diameter / hex width.
 const COMMAND_UNIT_K = () => 1 / Math.min(1, Math.max(cam.scale,
   (2 * 10.5) / (S * SQ3)));
+// The Civ VI atlas cells carry breathing room around each silhouette. Preserve
+// the authored survey size through zoom 1, then spend that room as the camera
+// closes in: at maximum zoom the glyph fills nearly a third more of its token
+// without changing the token footprint or crowding the zoomed-out map.
+const COMMAND_UNIT_ICON_K = () => 1 + .32 * Math.max(0, Math.min(1,
+  (cam.scale - 1) / 2.2));
 
 // Civ 6 hangs a small flag off each unit carrying its icon, because a drawn
 // figure at map scale reads as "somebody's soldier" and nothing more. Same
@@ -15588,6 +15648,11 @@ function pictogramCannon(kind, color) {
 }
 
 function drawUnitPictogram(type, x, y, size, color = "#f0ead8") {
+  const official = civ6UnitIconSprite(type, color);
+  if (official) {
+    cx.drawImage(official, x - size / 2, y - size / 2, size, size);
+    return;
+  }
   const kind = UNIT_PICTOGRAM[type] || "shield";
   cx.save();
   cx.translate(x, y); cx.scale(size / 24, size / 24);
@@ -22249,7 +22314,7 @@ function draw() {
       else cx.arc(x, y, rr, 0, 7);
       cx.stroke();
       drawUnitPictogram(u.embarked ? "galley" : u.type, x, y,
-                        rr * 1.45, tokenInk);
+                        rr * 1.45 * COMMAND_UNIT_ICON_K(), tokenInk);
       cx.globalAlpha = 1;
     }
     // chunky health bar — sized against zoom so it stays readable far out, and
@@ -30787,6 +30852,10 @@ boot();
 // compete with the simulation for an entire core at Lightning pace. Human
 // turns retain 60fps; spectators need no more than 30fps between 10Hz states.
 let lastIdleDraw = 0, drawCost = 8;
+// Leave the other half of the main thread to state delivery, UI work and the
+// simulation sharing this machine. This is a share, rather than a magic
+// multiplier, so the scheduling promise and the arithmetic cannot drift apart.
+const MAX_ANIMATION_PAINT_SHARE = .5;
 function animTick(now) {
   requestAnimationFrame(animTick);
   if (!state) return;
@@ -30809,7 +30878,7 @@ function animTick(now) {
   // 130ms rather than every 33, so the view degrades to a slower picture
   // instead of to a stalled one.
   const floor = active ? (SPEC ? 32 : 16) : MODE.idle;
-  const cadence = Math.max(floor, drawCost * 1.15);
+  const cadence = Math.max(floor, drawCost / MAX_ANIMATION_PAINT_SHARE);
   if ((active || MODE.idle) && now - lastIdleDraw > cadence) {
     lastIdleDraw = now;
     const t0 = performance.now();
