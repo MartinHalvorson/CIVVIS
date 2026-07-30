@@ -1751,6 +1751,28 @@ local function chooseProduction(city, counts, nCities, turn, refused)
 	if turn >= (cfg.WarFromTurn or 25) - 10 then
 		wantArmy = math.max(wantArmy, (cfg.WarArmy or 4) + 2);
 	end
+	-- ★★★ A BATTERING RAM, AND IT MUST COME BEFORE THE ARMY.
+	--
+	-- This is the last broken link in the chain find -> declare -> besiege ->
+	-- BREAK THE WALL -> capture. Ancient Walls halve melee damage and the city
+	-- repairs between turns, so melee alone cannot take a walled city: one run fed
+	-- **165 assault orders** into a wall and went from 26 units to 7, another logged
+	-- 82 advances and 83 surrounds and never broke anything.
+	--
+	-- ⚠ I previously reported this entry as added and it WAS NOT IN THE CODE. The
+	-- support dispatch in `orderFor` and the `counts.siege` bucket both went in; the
+	-- one line that puts a ram in a build queue did not, so nothing ever asked for
+	-- one. Two runs then declared war with no ram and I misread the cause as Masonry
+	-- never being researched — true, but downstream of this.
+	--
+	-- ⚠ ORDER IS LOAD-BEARING. Below the army block this is unreachable:
+	-- `wantArmy` is `MilitaryPerCity * cities` (15 at three cities) and is never
+	-- satisfied, so production never gets past it. One ram at 65 production beats
+	-- the fifteenth Warrior at 40, because without it every extra warrior is another
+	-- unit that dies without breaking anything.
+	if warTarget ~= nil and (counts.siege or 0) < (cfg.SiegeUnits or 2) then
+		ladder[#ladder + 1] = { "UNIT_BATTERING_RAM", "siege" };
+	end
 	if counts.military < wantArmy then
 		-- ⚠ MELEE FIRST. A ranged unit can bombard a city forever and never
 		-- take it — only a melee unit captures, by moving onto the plot. Run
@@ -2674,6 +2696,10 @@ local function playTurn(player, pid, turn)
 		research = research, civic = civic,
 		builds = builds, ordered = ordered, stuck = stuck,
 		worst_stack = worstStack, piles = piles,
+		-- ★ The ram fires-check. `siege` staying 0 while `target` is set means no
+		-- wall will ever break, whatever the ladder claims to queue. Reported every
+		-- turn precisely because I once believed the entry existed when it did not.
+		siege = countUnits(player).siege,
 		-- Which brain is choosing city sites. `plan_sites` staying at zero while a
 		-- plan is configured means CIVVIS is NOT deciding, whatever the config says.
 		plan_sites = planFires.plan,
