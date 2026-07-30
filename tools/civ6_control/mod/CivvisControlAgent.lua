@@ -1897,6 +1897,34 @@ end
 local function chooseResearch(player, pid)
 	local techs = try(function() return player:GetTechs(); end);
 	if techs == nil then return nil; end
+	-- ★ WAR NEEDS SPECIFIC TECHS, AND CHEAPEST-FIRST NEVER REACHES THEM.
+	--
+	-- `UNIT_BATTERING_RAM` requires TECH_MASONRY, and the ram is the only thing that
+	-- lets melee through Ancient Walls. Measured on run settler-20260730T052930Z:
+	-- war declared on a capital at turn 38, 82 advances and 83 surrounds logged, and
+	-- **no ram ever built** because Masonry was never researched. The army went 10
+	-- units to 6 hitting a wall it could not break. The same gap keeps the army in
+	-- the Bronze Age: cheapest-first is a fine default and a poor war plan.
+	--
+	-- So while a war target exists, these come first if they can be researched. Only
+	-- three, all Ancient, all cheap: the wall-breaker and the two melee upgrades.
+	local wanted = { "TECH_MASONRY", "TECH_BRONZE_WORKING", "TECH_IRON_WORKING" };
+	if warTarget ~= nil then
+		for _, name in ipairs(wanted) do
+			local row = GameInfo.Technologies[name];
+			if row ~= nil
+					and try(function() return techs:CanResearch(row.Index); end, false) then
+				local params = {};
+				params[PlayerOperations.PARAM_TECH_TYPE] =
+					try(function() return techs:GetResearchPath(row.Hash); end) or row.Hash;
+				params[PlayerOperations.PARAM_INSERT_MODE] = PlayerOperations.VALUE_EXCLUSIVE;
+				local ok = pcall(function()
+					UI.RequestPlayerOperation(pid, PlayerOperations.RESEARCH, params);
+				end);
+				if ok then return name .. ":war"; end
+			end
+		end
+	end
 	local best, bestCost;
 	for row in GameInfo.Technologies() do
 		if try(function() return techs:CanResearch(row.Index); end, false) then
