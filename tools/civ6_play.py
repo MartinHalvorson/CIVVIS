@@ -863,10 +863,30 @@ def _play(args: argparse.Namespace) -> int:
     # it cannot say what is on screen. One screen (`DiplomacyDealView`) was already
     # found and fixed this way; the rest are invisible without a picture. Every large
     # bug in this project was found in the event stream or in a screenshot.
-    if reason.startswith("stalled"):
-        shot = run_dir / "stalled.png"
+    # ★★★★★ A STALL IS RECOVERABLE, AND GIVING UP ON THE FIRST ONE THROWS RUNS AWAY.
+    #
+    # `autoclose_stuck` fires ONCE per screen: the shim calls ClearUpdate and never
+    # retries. So the harness's dialogue-click rescue runs once too — and it WORKS,
+    # measured on run civvis-20260730T185710Z, where turns 112 and 113 followed
+    # immediately after "dialogue clicks sent". When the same leader screen returns
+    # later, nothing dismisses it, nobody reports it, and the run dies at turn 120 with
+    # three healthy cities.
+    #
+    # So on a stall: photograph it, try the rescue that already works, and keep
+    # watching. Bounded, because a rescue that never rescues must not loop forever.
+    stall_rescues = 0
+    while reason.startswith("stalled") and stall_rescues < args.stall_rescues:
+        stall_rescues += 1
+        shot = run_dir / f"stalled-{stall_rescues}.png"
         screenshot(shot)
-        print(f"stalled — screen photographed to {shot}", flush=True)
+        print(f"stalled — photographed to {shot}; rescue attempt {stall_rescues}",
+              flush=True)
+        dismiss_leader_dialogue()
+        reason = watch.follow(tail, args.timeout, record, stop_when=finished,
+                              each_poll=keep_foreground, poll_s=poll_s,
+                              stall_s=args.stall_seconds)
+        if not reason.startswith("stalled"):
+            print(f"recovered from stall after {stall_rescues} attempt(s)", flush=True)
     events.close()
 
     outcome = state["outcome"] or {}
@@ -969,6 +989,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--no-automate-stuck-builders", dest="automate_stuck_builders",
                     action="store_false", default=True,
                     help="leave a builder idle when CIVVIS's improvement is refused")
+    ap.add_argument("--stall-rescues", type=int, default=3,
+                    help="times to try dismissing a blocking screen before giving up")
     ap.add_argument("--stall-seconds", type=float, default=240.0,
                     help="give up on a run that has emitted nothing for this long")
     ap.add_argument("--civvis-decides", action="store_true", default=False,
