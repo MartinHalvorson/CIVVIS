@@ -129,6 +129,7 @@ local function haveScreen()
 		or type(OnButton1) == "function"           -- ChooseArtifact
 		or type(ReleaseEventLock) == "function"    -- WorldCongressBetweenTurns
 		or type(CloseFocusedState) == "function"   -- DiplomacyActionView
+		or type(OnRefuseDeal) == "function"        -- DiplomacyDealView
 		or type(ExitConversationMode) == "function"
 		or type(OnHide) == "function"
 		or type(InputHandler) == "function";
@@ -224,6 +225,26 @@ local function endScreen(attempt)
 	-- `Close()` does not dismiss a cinema either. `CloseFocusedState` is the one
 	-- entry point that handles all three states (open popup, conversation, cinema)
 	-- and it is what the shipped Escape key calls, so it is what we call.
+	-- ★★★★★ THE DEAL SCREEN CLOSES BY REFUSING, AND NOTHING ELSE SHUTS IT.
+	--
+	-- `DiplomacyDealView` is another civilization proposing a trade. It exposes no
+	-- `OnClose`/`Close`, and `CloseFocusedState` does not dismiss it either — measured:
+	-- twenty attempts, every one reporting `ended: false`, then `autoclose_stuck`, and
+	-- the game held there until the harness gave up. That is now the DOMINANT way runs
+	-- die: the governor segfault is fixed, and the last three attempts ended in stalls
+	-- at t87, t184 and t95, the best of them holding FOUR cities and score 139.
+	--
+	-- The shipped screen's own exit is `OnRefuseDeal(bForceClose)` — declining is what
+	-- closing this screen means, and `true` forces it shut rather than waiting on the
+	-- other player. Tried FIRST, because it is the specific answer and the generic ones
+	-- demonstrably do nothing here.
+	--
+	-- ⚠ This declines every offered deal. That is a decision, and the honest defence is
+	-- that the alternative measured is not "consider the deal" but "the run ends".
+	if type(OnRefuseDeal) == "function"
+			and pcall(function() OnRefuseDeal(true); end) then
+		return true;
+	end
 	if (attempt or 1) <= 6 and type(CloseFocusedState) == "function"
 			and pcall(function() CloseFocusedState(true); end) then
 		return true;
