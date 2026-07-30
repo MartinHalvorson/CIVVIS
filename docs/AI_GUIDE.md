@@ -14,7 +14,7 @@ Keep deployment, builtins, and evaluator arms separate when describing the AI:
 | surface | controller in a normal checkout |
 |---|---|
 | major civilization, no seated league | stock `AdvancedAi` |
-| supervised exhibition | rank-weighted sample from that leader/civilization's top three live-eligible roster entries; currently scripted `AdvancedAi` variants and baselines |
+| supervised exhibition | rank-weighted sample from the current table size's top three conservative outright winners; leader/civilization placement rating breaks equal win bounds |
 | city-state or barbarian | `BasicAi` |
 | human-seat auto-play | selected live roster entry, with scripted builtin fallbacks |
 | `neural` / `policy` | `BasicAi` / champion-weight `AdvancedAi` fallback because no value net ships |
@@ -304,18 +304,23 @@ records training and holdout progress, and `dataset.csv` feeds value training.
 Old checkpoints load with defaults for newly introduced genes and validation
 metadata.
 
-The continuous league has a different selection contract from its spectator
-ladder. Glicko continues to rate full placement because that is useful for
-matchmaking and display, but genome parents, niche elites, and retirement are
-ordered first by 95% Wilson bounds on **outright wins at the current table
-size**. Placement rating only breaks an equal win-bound tie. A two-player win
-rate is not compared as though its parity rate matched a six- or eight-player
-table. The roster checkpoints games and wins by seat count; old rosters recover
-the retained raw portion from `matches.csv`, preserve unreconstructable prior
-games only in the all-history totals, and show both in `--standings`. This
-prevents a safe second-place specialist from breeding because placement
-compressed who won, a duel-heavy entrant from breeding because its wins were
-easier to obtain, and a two-game lucky streak from outranking a settled winner.
+The continuous league and live exhibition have a different **selection**
+contract from the placement ladder. Glicko continues to rate full placement
+because that is useful for matchmaking and display, but genome parents, niche
+elites, retirement, and live seeded seating are ordered first by 95% Wilson
+bounds on **outright wins at the current table size**. A
+leader/civilization's placement rating breaks an equal live win bound. A
+two-player win rate is not compared as though its parity rate matched a six-
+or eight-player table. The roster checkpoints games and wins by seat count;
+old rosters recover the retained raw portion from `matches.csv`, preserve
+unreconstructable prior games only in the all-history totals, and show both in
+`--standings`. Live seating requires enough exact evidence to fill its entire
+top-three sample; a new or unmigrated roster otherwise retains the old
+placement-only pool rather than mixing two objectives mid-table. This prevents
+a safe second-place specialist from breeding or being exhibited because
+placement compressed who won, a duel-heavy entrant from winning selection
+because its wins were easier to obtain, and a two-game lucky streak from
+outranking a settled winner.
 The `strategic_deep_league` transfer control uses the same conservative
 outright-win objective on the committed snapshot; the fixed-profile tournament
 below remains the instrument for a fully standardized longitudinal comparison.

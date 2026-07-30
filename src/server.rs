@@ -1487,11 +1487,12 @@ impl Shared {
 
 impl Session {
     /// Seat AIs plus each seat's league identity. With a roster to seat from,
-    /// each major gets a rank-weighted sample from its leader/civilization's
-    /// top three live-eligible strategies (`league::seat_by_civ_seeded`), with
-    /// repeats avoided while possible. Otherwise majors run the default
-    /// hierarchical AI, which the league rates as its "advanced" entrant, so
-    /// a loaded roster can still label those seats with an elo.
+    /// each major gets a rank-weighted sample from the top three proven winners
+    /// for this table size (`league::seat_by_civ_seeded`), with its exact
+    /// leader/civilization placement rating breaking win-bound ties and repeats
+    /// avoided while possible. Otherwise majors run the default hierarchical
+    /// AI, which the league rates as its "advanced" entrant, so a loaded roster
+    /// can still label those seats with an elo.
     ///
     /// A seat somebody is playing is never seated from the roster. Whoever is
     /// at the keyboard is their own player — `register_human_players` gives
@@ -1513,9 +1514,15 @@ impl Session {
             if seat_from_roster && !l.exhibition_active().is_empty() {
                 let civs: Vec<String> =
                     majors.iter().map(|id| game.players[*id].civ.clone()).collect();
+                let table_size = game
+                    .players
+                    .iter()
+                    .filter(|player| !player.is_minor && !player.is_barbarian)
+                    .count();
                 for (id, pick) in majors.iter().zip(crate::league::seat_by_civ_seeded(
                     l,
                     &civs,
+                    table_size,
                     game.seed,
                     3,
                 )) {
