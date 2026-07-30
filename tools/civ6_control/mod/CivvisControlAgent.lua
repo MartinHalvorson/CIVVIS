@@ -669,6 +669,20 @@ local settlePlan = nil;
 local planFires = { plan = 0, search = 0, offered = 0 };
 
 local function planSite(player, pid, unit)
+	-- ⚠ A PLAN SITE THE ENGINE HAS REFUSED MUST BE SKIPPED, or the plan is a trap.
+	--
+	-- Replacing the old "taken on offer" bookkeeping with board-derived occupancy
+	-- removed the only escape hatch: with ZERO cities nothing is occupied, so the
+	-- top-ranked site is offered every turn forever. If the settler cannot path
+	-- there it walks for the whole game. Run settler-20260730T053416Z reached turn 50
+	-- with **cities = 0** and one settler still trudging — worse than having no plan
+	-- at all.
+	--
+	-- `orderSettler` already records a refusal in `refusedSite[id]` when the engine
+	-- declines the move. Honouring it here is what lets the plan fall down its own
+	-- ranking instead of dying on its first entry.
+	local unitId = try(function() return unit:GetID(); end, -1);
+	local refused = refusedSite[unitId] or {};
 	if settlePlan == nil then
 		settlePlan = {};
 		local raw = cfg.SettlePlan;
@@ -705,7 +719,7 @@ local function planSite(player, pid, unit)
 	for i = 1, #settlePlan do
 		local site = settlePlan[i];
 		local key = site.x .. ":" .. site.y;
-		local tooClose = false;
+		local tooClose = refused[key] == true;
 		for j = 1, #occupied do
 			if plotDistance(occupied[j].x, occupied[j].y, site.x, site.y) < spacing then
 				tooClose = true;
@@ -730,7 +744,20 @@ findSettleSite = function(player, pid, unit, turn)
 	-- spacing against our own cities and distance; the hand-rolled search below is
 	-- the fallback for ground the plan does not cover (a map it never saw, or every
 	-- planned site already used).
-	local planned, planKey = planSite(player, pid, unit);
+	-- ⚠⚠ THE PLAN MUST NEVER BE ABLE TO STOP US FOUNDING A CITY.
+	--
+	-- It has now broken two runs. Advice that can starve the empire is not advice,
+	-- and a settle plan is a nicety next to having any city at all: run
+	-- settler-20260730T053416Z sat at **cities = 0 through turn 80** with one settler
+	-- walking at a site it could not reach.
+	--
+	-- So the plan is abandoned outright if it has not produced a capital by
+	-- `PlanGiveUpTurn`. CIVVIS keeps the decision when CIVVIS is working; the
+	-- hand-rolled search takes over the moment the plan is demonstrably not.
+	local planUsable = turn < (cfg.PlanGiveUpTurn or 25)
+		or cityCount(player) > 0;
+	local planned, planKey = nil, nil;
+	if planUsable then planned, planKey = planSite(player, pid, unit); end
 	if planned ~= nil then
 		planFires.plan = planFires.plan + 1;
 		emit("settle_choice", {
