@@ -80,6 +80,109 @@ pub enum Doctrine {
     Militarize,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct AxisChoice {
+    target: Option<VictoryTarget>,
+    doctrine: Doctrine,
+    value: f64,
+}
+
+/// Reproduce the shipped sequential decision from one complete value matrix,
+/// then replace it only when the joint optimum clears the margin for every
+/// axis it would change. This makes joint search a narrow correction for
+/// coordinate descent: sub-threshold disagreements remain bit-identical to
+/// the cheaper policy.
+fn choose_joint_axes(
+    lanes: &[Option<VictoryTarget>],
+    values: &[Vec<f64>],
+    incumbent: Doctrine,
+) -> (AxisChoice, AxisChoice) {
+    assert_eq!(lanes.len(), values.len());
+    assert!(!lanes.is_empty());
+    assert!(values.iter().all(|row| row.len() == Doctrine::ALL.len()));
+    let incumbent_index = Doctrine::ALL
+        .iter()
+        .position(|doctrine| *doctrine == incumbent)
+        .expect("the incumbent doctrine is in Doctrine::ALL");
+    let base_index = Doctrine::ALL
+        .iter()
+        .position(|doctrine| *doctrine == Doctrine::Incumbent)
+        .expect("the evolved base genome is in Doctrine::ALL");
+    let adaptive_index = lanes
+        .iter()
+        .position(Option::is_none)
+        .expect("the adaptive lane is always projected");
+
+    // Lane first under the evolved base genome, exactly as `rollout` and
+    // `choose_rollout_target` do. The acting inner agent may currently carry
+    // another doctrine, but the shipped lane pass deliberately projects
+    // `self.weights`; only the second coordinate compares the active doctrine.
+    let mut best_target: Option<usize> = None;
+    for (index, target) in lanes.iter().enumerate() {
+        if target.is_some()
+            && best_target.is_none_or(|best| {
+                values[index][base_index] > values[best][base_index]
+            })
+        {
+            best_target = Some(index);
+        }
+    }
+    let sequential_lane = best_target
+        .filter(|index| {
+            values[*index][base_index]
+                > values[adaptive_index][base_index] + TARGET_COMMITMENT_MARGIN
+        })
+        .unwrap_or(adaptive_index);
+
+    // Doctrine second under that lane, exactly as `review_doctrine` does.
+    let mut best_doctrine = 0usize;
+    for doctrine in 1..Doctrine::ALL.len() {
+        if values[sequential_lane][doctrine] > values[sequential_lane][best_doctrine] {
+            best_doctrine = doctrine;
+        }
+    }
+    let sequential_doctrine = if values[sequential_lane][best_doctrine]
+        > values[sequential_lane][incumbent_index] + DOCTRINE_COMMITMENT_MARGIN
+    {
+        best_doctrine
+    } else {
+        incumbent_index
+    };
+    let sequential = AxisChoice {
+        target: lanes[sequential_lane],
+        doctrine: Doctrine::ALL[sequential_doctrine],
+        value: values[sequential_lane][sequential_doctrine],
+    };
+
+    let mut joint_lane = 0usize;
+    let mut joint_doctrine = 0usize;
+    for lane in 0..lanes.len() {
+        for doctrine in 0..Doctrine::ALL.len() {
+            if values[lane][doctrine] > values[joint_lane][joint_doctrine] {
+                joint_lane = lane;
+                joint_doctrine = doctrine;
+            }
+        }
+    }
+    let joint = AxisChoice {
+        target: lanes[joint_lane],
+        doctrine: Doctrine::ALL[joint_doctrine],
+        value: values[joint_lane][joint_doctrine],
+    };
+    let required = if joint.target != sequential.target {
+        TARGET_COMMITMENT_MARGIN
+    } else if joint.doctrine != sequential.doctrine {
+        DOCTRINE_COMMITMENT_MARGIN
+    } else {
+        return (sequential, sequential);
+    };
+    if joint.value > sequential.value + required {
+        (joint, sequential)
+    } else {
+        (sequential, sequential)
+    }
+}
+
 impl Doctrine {
     pub const ALL: [Doctrine; 4] = [
         Doctrine::Incumbent,
@@ -168,6 +271,13 @@ pub struct ReviewCensus {
     pub urgent_counter: u32,
     pub irreversible_religion: u32,
     pub rollouts: u32,
+    /// Rollout reviews that evaluated the full lane × doctrine matrix.
+    pub joint_reviews: u32,
+    /// Joint decisions that cleared the relevant commitment margin and
+    /// replaced what coordinate descent would have chosen.
+    pub joint_overrides: u32,
+    pub joint_lane_overrides: u32,
+    pub joint_doctrine_overrides: u32,
 }
 
 impl ReviewCensus {
@@ -181,6 +291,10 @@ impl ReviewCensus {
         self.urgent_counter += other.urgent_counter;
         self.irreversible_religion += other.irreversible_religion;
         self.rollouts += other.rollouts;
+        self.joint_reviews += other.joint_reviews;
+        self.joint_overrides += other.joint_overrides;
+        self.joint_lane_overrides += other.joint_lane_overrides;
+        self.joint_doctrine_overrides += other.joint_doctrine_overrides;
     }
 
     fn record(&mut self, path: ReviewPath) {
@@ -335,6 +449,16 @@ pub struct StrategicAi {
     /// `strategic_doctrine` entrant turns it on, which makes the two an
     /// exact paired A/B of the second axis alone.
     pub doctrine_search: bool,
+    /// Evaluate lane and doctrine as one decision instead of coordinate
+    /// descent. The evaluator-only `strategic_joint` entrant turns it on.
+    ///
+    /// **Measured neutral and not promoted.** At the 6p 74×46 Online
+    /// deployment profile, 20 mirrored maps split exactly one game each:
+    /// 20/40 wins per arm, +0 Elo-equivalent (95% -148..+148). The joint
+    /// choice replaced coordinate descent in only 10/268 eligible reviews
+    /// while evaluating 28 branches instead of 11. The interval is wide, but
+    /// there is no evidence to buy that extra rollout work; leave it off.
+    pub joint_axis_search: bool,
     /// Project every branch together and stop as soon as they separate,
     /// instead of running each for a fixed count of rounds.
     ///
@@ -491,6 +615,7 @@ impl StrategicAi {
             model_rival_lanes: false,
             trust_religious_prior: true,
             doctrine_search: false,
+            joint_axis_search: false,
             defer_periodic_on_interrupt: true,
             terminal_tempo: false,
             religious_finish_search: false,
@@ -1280,6 +1405,25 @@ impl StrategicAi {
             .collect()
     }
 
+    fn joint_axis_values(
+        &self,
+        g: &Game,
+        pid: usize,
+    ) -> (Vec<Option<VictoryTarget>>, Vec<Vec<f64>>) {
+        let mut lanes = vec![None];
+        lanes.extend(self.lane_candidates(g).into_iter().map(Some));
+        let values = lanes
+            .iter()
+            .map(|target| {
+                self.doctrine_values(g, pid, *target)
+                    .into_iter()
+                    .map(|(_, value)| value)
+                    .collect()
+            })
+            .collect();
+        (lanes, values)
+    }
+
     /// The play style currently in force.
     pub fn doctrine(&self) -> Doctrine {
         self.doctrine
@@ -1505,6 +1649,41 @@ impl StrategicAi {
         }
     }
 
+    fn prior_review(&self, g: &Game, pid: usize) -> Option<(Option<VictoryTarget>, ReviewPath)> {
+        if Self::duel_religious_race(g, pid) {
+            return Some((Some(VictoryTarget::Religion), ReviewPath::DuelReligion));
+        }
+        if let Some(counter) = self.urgent_counter_target(g, pid) {
+            return Some((Some(counter), ReviewPath::UrgentCounter));
+        }
+        if self.trust_religious_prior && Self::viable_religious_commitment(g, pid) {
+            return Some((
+                Some(VictoryTarget::Religion),
+                ReviewPath::IrreversibleReligion,
+            ));
+        }
+        None
+    }
+
+    fn review_joint_detailed(
+        &self,
+        g: &Game,
+        pid: usize,
+    ) -> (Option<VictoryTarget>, Doctrine, ReviewPath, bool, bool) {
+        if let Some((target, path)) = self.prior_review(g, pid) {
+            return (target, self.doctrine, path, false, false);
+        }
+        let (lanes, values) = self.joint_axis_values(g, pid);
+        let (choice, sequential) = choose_joint_axes(&lanes, &values, self.doctrine);
+        (
+            choice.target,
+            choice.doctrine,
+            ReviewPath::Rollouts,
+            choice.target != sequential.target,
+            choice.doctrine != sequential.doctrine,
+        )
+    }
+
     /// Compare the adaptive parent with every enabled victory lane. Deterministic:
     /// rollouts are seed-free clones and ties keep declaration order; an explicit
     /// lane must clear the adaptive value by `TARGET_COMMITMENT_MARGIN`.
@@ -1519,17 +1698,12 @@ impl StrategicAi {
     /// value with entirely different provenance, and only the second one is
     /// evidence about the search or the evaluator.
     pub fn review_detailed(&self, g: &Game, pid: usize) -> (Option<VictoryTarget>, ReviewPath) {
-        if Self::duel_religious_race(g, pid) {
-            return (Some(VictoryTarget::Religion), ReviewPath::DuelReligion);
+        if self.joint_axis_search {
+            let (target, _, path, _, _) = self.review_joint_detailed(g, pid);
+            return (target, path);
         }
-        if let Some(counter) = self.urgent_counter_target(g, pid) {
-            return (Some(counter), ReviewPath::UrgentCounter);
-        }
-        if self.trust_religious_prior && Self::viable_religious_commitment(g, pid) {
-            return (
-                Some(VictoryTarget::Religion),
-                ReviewPath::IrreversibleReligion,
-            );
+        if let Some(prior) = self.prior_review(g, pid) {
+            return prior;
         }
         let mut branches: Vec<Option<VictoryTarget>> = vec![None];
         branches.extend(self.lane_candidates(g).into_iter().map(Some));
@@ -1626,11 +1800,35 @@ impl Ai for StrategicAi {
             // Public victory threats are cheap to inspect every turn and may
             // end the game before the next expensive six-lane review. Reuse
             // the already-computed counter rather than running rollouts.
-            let (target, path) = match counter {
-                Some((_, target)) => (Some(target), ReviewPath::UrgentCounter),
-                None => self.review_detailed(g, pid),
-            };
+            let (target, path, joint_doctrine, joint_lane_override, joint_doctrine_override) =
+                match counter {
+                    Some((_, target)) => {
+                        (Some(target), ReviewPath::UrgentCounter, None, false, false)
+                    }
+                    None if self.joint_axis_search => {
+                        let (target, doctrine, path, lane_override, doctrine_override) =
+                            self.review_joint_detailed(g, pid);
+                        (
+                            target,
+                            path,
+                            Some(doctrine),
+                            lane_override,
+                            doctrine_override,
+                        )
+                    }
+                    None => {
+                        let (target, path) = self.review_detailed(g, pid);
+                        (target, path, None, false, false)
+                    }
+                };
             self.census.record(path);
+            if self.joint_axis_search && path == ReviewPath::Rollouts {
+                self.census.joint_reviews += 1;
+                self.census.joint_lane_overrides += u32::from(joint_lane_override);
+                self.census.joint_doctrine_overrides += u32::from(joint_doctrine_override);
+                self.census.joint_overrides +=
+                    u32::from(joint_lane_override || joint_doctrine_override);
+            }
             // Advance the cursor on every projected review, not only when
             // the challenger was adopted, so each lane comes up for
             // examination on a fixed cycle rather than a lucky one.
@@ -1642,8 +1840,16 @@ impl Ai for StrategicAi {
             // forced or the game is nearly decided; spending four more
             // rollouts there buys a play style for a position that has
             // stopped asking the question.
-            if self.doctrine_search && path == ReviewPath::Rollouts {
-                let doctrine = self.review_doctrine(g, pid, target);
+            let doctrine = if path != ReviewPath::Rollouts {
+                None
+            } else if let Some(doctrine) = joint_doctrine {
+                Some(doctrine)
+            } else if self.doctrine_search {
+                Some(self.review_doctrine(g, pid, target))
+            } else {
+                None
+            };
+            if let Some(doctrine) = doctrine {
                 if doctrine != self.doctrine {
                     self.doctrine = doctrine;
                     self.doctrine_switches += 1;
@@ -1711,7 +1917,7 @@ impl ConversionValue {
 
 #[cfg(test)]
 mod tests {
-    use super::{Doctrine, StrategicAi, FIRST_REVIEW_TURN};
+    use super::{choose_joint_axes, Doctrine, StrategicAi, FIRST_REVIEW_TURN};
     use crate::ai::{run_game, Ai, BasicAi, VictoryTarget, Weights};
     use crate::game::{Action, Game};
     use crate::valuenet::ValueNet;
@@ -2140,8 +2346,65 @@ mod tests {
     fn doctrine_search_is_off_by_default() {
         let plain = StrategicAi::new();
         assert!(!plain.doctrine_search);
+        assert!(!plain.joint_axis_search);
         assert_eq!(plain.doctrine(), Doctrine::Incumbent);
         assert_eq!(plain.doctrine_switches(), 0);
+    }
+
+    #[test]
+    fn joint_search_recovers_an_interacting_lane_and_doctrine() {
+        let lanes = vec![
+            None,
+            Some(VictoryTarget::Science),
+            Some(VictoryTarget::Domination),
+        ];
+        let values = vec![
+            vec![0.50, 0.50, 0.50, 0.50],
+            vec![0.52, 0.53, 0.51, 0.50],
+            vec![0.49, 0.50, 0.50, 0.56],
+        ];
+
+        let (choice, sequential) = choose_joint_axes(&lanes, &values, Doctrine::Incumbent);
+        assert_eq!(choice.target, Some(VictoryTarget::Domination));
+        assert_eq!(choice.doctrine, Doctrine::Militarize);
+        assert_eq!(choice.value, 0.56);
+        assert_eq!(sequential.target, Some(VictoryTarget::Science));
+        assert_eq!(sequential.doctrine, Doctrine::Expand);
+    }
+
+    #[test]
+    fn joint_search_keeps_the_sequential_choice_below_the_lane_margin() {
+        let lanes = vec![
+            None,
+            Some(VictoryTarget::Science),
+            Some(VictoryTarget::Domination),
+        ];
+        let values = vec![
+            vec![0.50, 0.50, 0.50, 0.50],
+            vec![0.52, 0.53, 0.51, 0.50],
+            vec![0.49, 0.50, 0.50, 0.539],
+        ];
+
+        let (choice, sequential) = choose_joint_axes(&lanes, &values, Doctrine::Incumbent);
+        assert_eq!(choice.target, Some(VictoryTarget::Science));
+        assert_eq!(choice.doctrine, Doctrine::Expand);
+        assert_eq!(choice.value, 0.53);
+        assert_eq!(choice, sequential);
+    }
+
+    #[test]
+    fn joint_comparator_reproduces_the_base_genome_lane_pass_after_a_doctrine_switch() {
+        let lanes = vec![None, Some(VictoryTarget::Domination)];
+        // Under the evolved base genome (column 0), Domination loses to the
+        // adaptive lane. Under the currently active Expand doctrine (column
+        // 1) it wins. The shipped coordinate descent uses column 0 for its
+        // lane pass, then compares doctrines on that selected lane.
+        let values = vec![vec![0.50, 0.10, 0.09, 0.08], vec![0.49, 0.30, 0.20, 0.10]];
+
+        let (choice, sequential) = choose_joint_axes(&lanes, &values, Doctrine::Expand);
+        assert_eq!(sequential.target, None);
+        assert_eq!(sequential.doctrine, Doctrine::Incumbent);
+        assert_eq!(choice, sequential);
     }
 
     /// With the axis on, a real game must reach the doctrine search and the

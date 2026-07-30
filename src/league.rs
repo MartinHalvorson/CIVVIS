@@ -1,5 +1,5 @@
 //! Glicko-2 strategy league: persistent skill ratings for high-level AI
-//! strategies, with periodic selection so strong strategies breed offspring
+//! strategies, with periodic selection so proven winners breed offspring
 //! and confidently weak ones retire.
 //!
 //! `civvis league` plays rating periods ("rounds") of multiplayer games
@@ -40,8 +40,8 @@ const BASE_VOL: f64 = 0.06;
 /// System constant: how much volatility can move per period. 0.5 is the
 /// conservative end of Glickman's recommended 0.3..1.2.
 const TAU: f64 = 0.5;
-/// Selection uses a two-sided 95% confidence bound rather than treating a
-/// noisy point estimate as settled skill.
+/// Rating and evolutionary selection use two-sided 95% confidence bounds
+/// rather than treating noisy point estimates as settled skill.
 const SELECTION_Z: f64 = 1.96;
 /// A leader/civilization-specific rating starts at the player's global
 /// strength, with extra uncertainty for the unmeasured combination effect.
@@ -52,7 +52,7 @@ const MIN_GAMES_TO_RETIRE: u32 = 20;
 const MAX_RD_TO_RETIRE: f64 = 110.0;
 /// Immutable work/result protocol. Bump this whenever a binary can no longer
 /// execute a pending round exactly as an older binary would.
-const WORK_SCHEMA_VERSION: u32 = 3;
+const WORK_SCHEMA_VERSION: u32 = 4;
 /// A dead simulator's game becomes available again after this lease. Duplicate
 /// execution is harmless because results have deterministic IDs and publish
 /// with create-if-absent semantics.
@@ -357,6 +357,8 @@ impl Default for LeagueCfg {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 struct WorkConfig {
     league_seed: u64,
+    /// Effective merged rule data, not merely the display names of mods.
+    rules_fingerprint: String,
     players_per_game: usize,
     width: i32,
     height: i32,
@@ -371,6 +373,9 @@ impl From<&LeagueCfg> for WorkConfig {
     fn from(cfg: &LeagueCfg) -> Self {
         Self {
             league_seed: cfg.seed,
+            rules_fingerprint: crate::rules::Rules::embedded()
+                .source_fingerprint()
+                .to_string(),
             players_per_game: cfg.players_per_game,
             width: cfg.width,
             height: cfg.height,
@@ -499,6 +504,32 @@ fn lower_confidence(s: &Strategy) -> f64 {
 
 fn upper_confidence(s: &Strategy) -> f64 {
     s.rating + SELECTION_Z * s.rd
+}
+
+/// Wilson bounds for the objective evolution actually cares about: winning
+/// the table. Placement Glicko remains the spectator ladder and matchup model,
+/// but controlled CIVVIS runs have shown it can compress a 3.6x win-rate gap
+/// into seven rating points. A noisy point win rate would merely replace one
+/// selection error with another, so breeding and retirement use opposite 95%
+/// bounds and leave an unplayed genome at [0, 1].
+fn win_confidence(s: &Strategy, upper: bool) -> f64 {
+    if s.games == 0 {
+        return f64::from(upper);
+    }
+    let n = f64::from(s.games);
+    let p = f64::from(s.wins) / n;
+    let z2 = SELECTION_Z * SELECTION_Z;
+    let centre = p + z2 / (2.0 * n);
+    let margin = SELECTION_Z * (p * (1.0 - p) / n + z2 / (4.0 * n * n)).sqrt();
+    ((centre + if upper { margin } else { -margin }) / (1.0 + z2 / n)).clamp(0.0, 1.0)
+}
+
+pub(crate) fn win_lower_confidence(s: &Strategy) -> f64 {
+    win_confidence(s, false)
+}
+
+fn win_upper_confidence(s: &Strategy) -> f64 {
+    win_confidence(s, true)
 }
 
 /// One rating period for one player. `results` are (opponent, score, weight)
@@ -641,10 +672,14 @@ fn target_for_niche(niche: usize) -> Option<String> {
         .map(|target| target.as_str().to_string())
 }
 
-fn conservative_order(league: &League, indices: &mut [usize]) {
+fn breeding_order(league: &League, indices: &mut [usize]) {
     indices.sort_by(|a, b| {
-        lower_confidence(&league.strategies[*b])
-            .total_cmp(&lower_confidence(&league.strategies[*a]))
+        win_lower_confidence(&league.strategies[*b])
+            .total_cmp(&win_lower_confidence(&league.strategies[*a]))
+            .then_with(|| {
+                lower_confidence(&league.strategies[*b])
+                    .total_cmp(&lower_confidence(&league.strategies[*a]))
+            })
             .then_with(|| {
                 league.strategies[*b]
                     .rating
@@ -661,9 +696,9 @@ const DIVERSITY_BIRTH_PERIOD: usize = 3;
 /// Pick the evolutionary niche to breed into. An unoccupied niche is always
 /// repopulated first, and one birth in `DIVERSITY_BIRTH_PERIOD` goes to the
 /// thinnest niche; every other birth refines the niche whose best active member
-/// is conservatively strongest. Ties rotate by selection generation, so missing
-/// lanes are restored deterministically and repeated selection does not always
-/// favour the enum's first lane.
+/// has the strongest conservative win probability. Ties rotate by selection
+/// generation, so missing lanes are restored deterministically and repeated
+/// selection does not always favour the enum's first lane.
 ///
 /// Spending *every* birth on the least populated niche starves the winner. A
 /// niche is thin precisely when its members keep getting retired for losing,
@@ -674,11 +709,19 @@ const DIVERSITY_BIRTH_PERIOD: usize = 3;
 /// overtook the built-in defaults.
 fn next_niche(league: &League, cfg: &LeagueCfg, birth: usize) -> usize {
     let mut counts = [0usize; EVOLUTION_NICHES];
-    let mut strength = [f64::NEG_INFINITY; EVOLUTION_NICHES];
+    let mut win_strength = [f64::NEG_INFINITY; EVOLUTION_NICHES];
+    let mut rating_strength = [f64::NEG_INFINITY; EVOLUTION_NICHES];
     for i in league.active() {
         if let Some(niche) = evolution_niche(&league.strategies[i].kind) {
             counts[niche] += 1;
-            strength[niche] = strength[niche].max(lower_confidence(&league.strategies[i]));
+            let win = win_lower_confidence(&league.strategies[i]);
+            let rating = lower_confidence(&league.strategies[i]);
+            if win > win_strength[niche]
+                || (win == win_strength[niche] && rating > rating_strength[niche])
+            {
+                win_strength[niche] = win;
+                rating_strength[niche] = rating;
+            }
         }
     }
     let least = *counts.iter().min().unwrap();
@@ -690,7 +733,10 @@ fn next_niche(league: &League, cfg: &LeagueCfg, birth: usize) -> usize {
     }
     rotated
         .reduce(|best, niche| {
-            if strength[niche] > strength[best] {
+            if win_strength[niche] > win_strength[best]
+                || (win_strength[niche] == win_strength[best]
+                    && rating_strength[niche] > rating_strength[best])
+            {
                 niche
             } else {
                 best
@@ -699,7 +745,7 @@ fn next_niche(league: &League, cfg: &LeagueCfg, birth: usize) -> usize {
         .unwrap()
 }
 
-/// Protect one conservatively best active genome in every represented niche.
+/// Protect one conservatively best winning genome in every represented niche.
 /// This is the live quality-diversity archive: duplicates can still be culled,
 /// but selection cannot silently erase an entire victory strategy again.
 fn niche_elites(league: &League) -> std::collections::BTreeSet<usize> {
@@ -713,7 +759,7 @@ fn niche_elites(league: &League) -> std::collections::BTreeSet<usize> {
     candidates
         .iter_mut()
         .filter_map(|niche| {
-            conservative_order(league, niche);
+            breeding_order(league, niche);
             niche.first().copied()
         })
         .collect()
@@ -1155,6 +1201,8 @@ fn validate_manifest(manifest: &RoundManifest, league: &League) -> io::Result<()
         || manifest.engine != work_engine()
         || manifest.round != league.round
         || manifest.strategies != league.strategies
+        || manifest.config.rules_fingerprint
+            != crate::rules::Rules::embedded().source_fingerprint()
         || manifest.config.players_per_game < 2
         || manifest.config.width <= 0
         || manifest.config.height <= 0
@@ -1728,6 +1776,42 @@ struct Outcome {
     victory: String,
 }
 
+/// Put a finished set of player ids into the league's canonical competition
+/// order and retain score ties. An engine-declared winner is always alone at
+/// rank zero even when another seat has the same (or a higher) score.
+///
+/// Batch workers and the live spectator recorder share this helper so the two
+/// ingestion paths cannot quietly assign different pairwise results to the
+/// same terminal game.
+pub(crate) fn competition_ranking<F>(
+    mut players: Vec<usize>,
+    winner: Option<usize>,
+    score: F,
+) -> (Vec<usize>, Vec<u32>)
+where
+    F: Fn(usize) -> i64,
+{
+    players.sort_by_key(|pid| {
+        (
+            winner != Some(*pid),
+            std::cmp::Reverse(score(*pid)),
+            *pid,
+        )
+    });
+    let mut ranks = Vec::with_capacity(players.len());
+    for (place, pid) in players.iter().copied().enumerate() {
+        let same_as_previous = place > 0
+            && (winner == Some(pid)) == (winner == Some(players[place - 1]))
+            && score(pid) == score(players[place - 1]);
+        ranks.push(if same_as_previous {
+            ranks[place - 1]
+        } else {
+            place as u32
+        });
+    }
+    (players, ranks)
+}
+
 fn game_options_for_job(cfg: &WorkConfig, job: &WorkJob) -> GameOptions {
     let mut options = GameOptions::new(
         cfg.players_per_game,
@@ -1763,19 +1847,11 @@ fn play_job(manifest: &RoundManifest, job: &WorkJob, worker: &str) -> StoredOutc
         .collect();
     run_game(&mut game, &mut ais);
 
-    let mut ranked: Vec<usize> = (0..cfg.players_per_game).collect();
-    ranked.sort_by_key(|pid| (game.winner != Some(*pid), -game.score(*pid), *pid));
-    let mut ranks = Vec::with_capacity(ranked.len());
-    for (place, pid) in ranked.iter().copied().enumerate() {
-        let same_as_previous = place > 0
-            && (game.winner == Some(pid)) == (game.winner == Some(ranked[place - 1]))
-            && game.score(pid) == game.score(ranked[place - 1]);
-        ranks.push(if same_as_previous {
-            ranks[place - 1]
-        } else {
-            place as u32
-        });
-    }
+    let (ranked, ranks) = competition_ranking(
+        (0..cfg.players_per_game).collect(),
+        game.winner,
+        |pid| game.score(pid),
+    );
     StoredOutcome {
         schema_version: WORK_SCHEMA_VERSION,
         engine: manifest.engine.clone(),
@@ -1939,19 +2015,6 @@ fn apply_round(league: &mut League, outcomes: &[Outcome], age_idle: bool) {
     }
 }
 
-/// Rate one finished game as its own rating period and persist it, so a
-/// server playing rated seats actually moves the table instead of showing a
-/// snapshot forever.
-///
-/// `placements` is (player/strategy id, civilization) ordered winner first,
-/// then by score. The active ruleset resolves the matching leader. The roster
-/// is re-read from `dir` and seats are resolved by stable strategy id
-/// rather than by the index the caller seated from: a live server holds its
-/// league in memory for the length of a game, and writing that stale copy
-/// back would undo any result recorded in the meantime. Returns the updated
-/// league, or `None` if the roster is unreadable or no longer holds every
-/// name (a retired or renamed entrant leaves the game unrated rather than
-/// rating the wrong strategy).
 /// Register a new player in the roster on disk, so the game they are about to
 /// play is rated as theirs. Returns the roster they are now part of and their
 /// index in it.
@@ -1974,14 +2037,56 @@ pub fn register_player(dir: &str) -> Option<(League, usize)> {
     Some((league, index))
 }
 
-pub fn record_game(
+/// Exact terminal evidence for one rated live seat. `rank` is a competition
+/// rank in finish order (0, 1, 1, 3 for a tie); `won` records the engine's
+/// declared winner separately from score placement.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LiveGameSeat {
+    pub strategy: String,
+    pub leader: String,
+    pub civilization: String,
+    pub rank: u32,
+    pub won: bool,
+}
+
+fn valid_live_game_seats(seats: &[LiveGameSeat]) -> bool {
+    if seats.len() < 2
+        || seats.first().is_none_or(|seat| seat.rank != 0)
+        || seats.iter().any(|seat| {
+            seat.strategy.trim().is_empty()
+                || seat.leader.trim().is_empty()
+                || seat.civilization.trim().is_empty()
+        })
+        || seats.iter().enumerate().skip(1).any(|(place, seat)| {
+            seat.rank != seats[place - 1].rank && seat.rank != place as u32
+        })
+    {
+        return false;
+    }
+    let winners = seats.iter().filter(|seat| seat.won).count();
+    winners <= 1
+        && (winners == 0
+            || (seats[0].won
+                && seats[0].rank == 0
+                && seats.iter().skip(1).all(|seat| !seat.won && seat.rank > 0)))
+}
+
+/// Rate exact live-game evidence into the latest roster on disk.
+///
+/// This is the live equivalent of a distributed [`StoredOutcome`]: score ties,
+/// declared victory, and the exact leader/civilization identity all survive.
+/// The roster is re-read from `dir` and seats are resolved by stable strategy
+/// id rather than by the index held when the game started, so a long game
+/// cannot overwrite a concurrent update with a stale roster. Malformed or
+/// stale evidence leaves the roster untouched.
+pub fn record_ranked_game(
     dir: &str,
-    placements: &[(String, String)],
+    seats: &[LiveGameSeat],
     seed: u64,
     turn: u32,
     victory: &str,
 ) -> Option<League> {
-    if placements.len() < 2 {
+    if !valid_live_game_seats(seats) {
         return None;
     }
     let worker = default_worker_id();
@@ -1993,28 +2098,36 @@ pub fn record_game(
     if manifest_path(dir, league.round).exists() {
         return None;
     }
-    let seats: Option<Vec<usize>> = placements
+    let placements: Option<Vec<usize>> = seats
         .iter()
-        .map(|(name, _)| league.strategies.iter().position(|s| &s.name == name))
+        .map(|seat| {
+            league
+                .strategies
+                .iter()
+                .position(|strategy| strategy.name == seat.strategy)
+        })
         .collect();
     let outcome = Outcome {
-        placements: seats?,
-        leaders: placements
+        placements: placements?,
+        leaders: seats.iter().map(|seat| seat.leader.clone()).collect(),
+        civs: seats
             .iter()
-            .map(|(_, civilization)| default_leader(civilization))
+            .map(|seat| seat.civilization.clone())
             .collect(),
-        civs: placements.iter().map(|(_, civ)| civ.clone()).collect(),
-        // The live-server API supplies a strict placement list. Engine-run
-        // league rounds retain score ties in `Outcome::ranks`.
-        ranks: (0..placements.len() as u32).collect(),
-        won: (0..placements.len()).map(|place| place == 0).collect(),
+        ranks: seats.iter().map(|seat| seat.rank).collect(),
+        won: seats.iter().map(|seat| seat.won).collect(),
         seed,
         turn,
         victory: victory.to_string(),
     };
-    let names: Vec<String> = placements
+    let names: Vec<String> = seats
         .iter()
-        .map(|(name, civ)| format!("{name}@{}@{civ}", default_leader(civ)))
+        .map(|seat| {
+            format!(
+                "{}@{}@{}@{}",
+                seat.strategy, seat.leader, seat.civilization, seat.rank
+            )
+        })
         .collect();
     let round = league.round;
     let calibration_before = league.calibration.clone();
@@ -2033,9 +2146,14 @@ pub fn record_game(
             names.join("|")
         )],
     );
-    let rating_lines: Vec<String> = placements
+    let rating_lines: Vec<String> = seats
         .iter()
-        .filter_map(|(name, _)| league.strategies.iter().find(|s| &s.name == name))
+        .filter_map(|seat| {
+            league
+                .strategies
+                .iter()
+                .find(|strategy| strategy.name == seat.strategy)
+        })
         .map(|s| {
             format!(
                 "{},{},{:.1},{:.1},{:.4},{},{}",
@@ -2053,10 +2171,37 @@ pub fn record_game(
     Some(league)
 }
 
+/// Compatibility adapter for callers that only have a strict placement list.
+/// The first row is treated as the declared winner and leaders are resolved
+/// from the active ruleset. New engine-facing code should call
+/// [`record_ranked_game`] so it cannot discard ties.
+pub fn record_game(
+    dir: &str,
+    placements: &[(String, String)],
+    seed: u64,
+    turn: u32,
+    victory: &str,
+) -> Option<League> {
+    let seats: Vec<LiveGameSeat> = placements
+        .iter()
+        .enumerate()
+        .map(|(rank, (strategy, civilization))| LiveGameSeat {
+            strategy: strategy.clone(),
+            leader: default_leader(civilization),
+            civilization: civilization.clone(),
+            rank: rank as u32,
+            won: rank == 0,
+        })
+        .collect();
+    record_ranked_game(dir, &seats, seed, turn, victory)
+}
+
 /// Quality-diversity selection: restore or refine the least-represented
-/// victory niche using its conservative historical archive plus a strong
-/// active parent, then retire the confidently weakest non-elite strategies.
-/// Anchors, niche elites, and under-measured strategies are never retired.
+/// victory niche using its conservative win-selected archive plus a strong
+/// active parent, then retire the least likely winners among settled,
+/// non-elite strategies. Placement Glicko breaks equal win-bound ties but no
+/// longer defines the breeding objective. Anchors, niche elites, and
+/// under-measured strategies are never retired.
 fn evolve_league(
     league: &mut League,
     cfg: &LeagueCfg,
@@ -2068,7 +2213,7 @@ fn evolve_league(
         .into_iter()
         .filter(|i| genome_of(&league.strategies[*i].kind).is_some())
         .collect();
-    conservative_order(league, &mut parents);
+    breeding_order(league, &mut parents);
     let pool = (parents.len() / 2).max(1).min(parents.len());
     let mut born = Vec::new();
     if !parents.is_empty() {
@@ -2082,7 +2227,7 @@ fn evolve_league(
                 .filter(|(_, strategy)| evolution_niche(&strategy.kind) == Some(niche))
                 .map(|(i, _)| i)
                 .collect();
-            conservative_order(league, &mut archive);
+            breeding_order(league, &mut archive);
             let archive_pool = (archive.len() / 2).max(1).min(archive.len());
             let pa = if archive.is_empty() {
                 parents[rng.below(pool)]
@@ -2140,8 +2285,12 @@ fn evolve_league(
                     && s.rd <= MAX_RD_TO_RETIRE
             })
             .min_by(|a, b| {
-                upper_confidence(&league.strategies[*a])
-                    .total_cmp(&upper_confidence(&league.strategies[*b]))
+                win_upper_confidence(&league.strategies[*a])
+                    .total_cmp(&win_upper_confidence(&league.strategies[*b]))
+                    .then_with(|| {
+                        upper_confidence(&league.strategies[*a])
+                            .total_cmp(&upper_confidence(&league.strategies[*b]))
+                    })
                     .then_with(|| {
                         league.strategies[*a]
                             .rating
@@ -2569,8 +2718,12 @@ fn try_finalize_round(
             let names: Vec<String> = outcome
                 .placements
                 .iter()
+                .zip(&outcome.leaders)
                 .zip(&outcome.civs)
-                .map(|(name, civ)| format!("{name}@{civ}"))
+                .zip(&outcome.ranks)
+                .map(|(((name, leader), civ), rank)| {
+                    format!("{name}@{leader}@{civ}@{rank}")
+                })
                 .collect();
             format!(
                 "{round},{},{},{},{}",
@@ -3061,6 +3214,23 @@ mod tests {
     }
 
     #[test]
+    fn live_and_batch_ranking_keep_the_winner_unique_and_other_ties_equal() {
+        // Player 2 won despite a lower score. Players 0 and 1 have equal
+        // scores and must remain a draw after the winner is lifted above them.
+        let scores = [40, 40, 10, 5];
+        let (players, ranks) =
+            competition_ranking(vec![0, 1, 2, 3], Some(2), |pid| scores[pid]);
+        assert_eq!(players, vec![2, 0, 1, 3]);
+        assert_eq!(ranks, vec![0, 1, 1, 3]);
+
+        // Without a declared winner, the best score can itself be tied.
+        let (players, ranks) =
+            competition_ranking(vec![0, 1, 2, 3], None, |pid| scores[pid]);
+        assert_eq!(players, vec![0, 1, 2, 3]);
+        assert_eq!(ranks, vec![0, 0, 2, 3]);
+    }
+
+    #[test]
     fn winners_gain_and_losers_lose() {
         let mut league = League {
             round: 0,
@@ -3260,7 +3430,7 @@ mod tests {
         );
         let matches = fs::read_to_string(Path::new(dir).join("matches.csv")).unwrap();
         assert_eq!(matches.lines().count(), 3, "header plus one row per game");
-        assert!(matches.contains("a@Trajan@Rome|b@Cleopatra@Egypt"));
+        assert!(matches.contains("a@Trajan@Rome@0|b@Cleopatra@Egypt@1"));
         let calibration = fs::read_to_string(Path::new(dir).join("calibration.csv")).unwrap();
         assert_eq!(calibration.lines().count(), 3);
         assert!(calibration.starts_with("round,comparisons,brier,log_loss,"));
@@ -3272,6 +3442,73 @@ mod tests {
         ];
         assert!(record_game(dir, &unknown, 7, 140, "score").is_none());
         assert_eq!(load_league(dir).unwrap().round, 14);
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn live_recording_preserves_exact_leaders_winners_and_score_ties() {
+        let dir = std::env::temp_dir().join(format!(
+            "civvis-league-live-ties-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let dir = dir.to_str().unwrap();
+        let _ = fs::remove_dir_all(dir);
+        let builtin = |ai: &str| StrategyKind::Builtin { ai: ai.into() };
+        save_league(
+            dir,
+            &League {
+                round: 4,
+                strategies: vec![
+                    Strategy::new("a", builtin("advanced"), 0),
+                    Strategy::new("b", builtin("basic"), 0),
+                    Strategy::new("c", builtin("basic"), 0),
+                ],
+                calibration: Calibration::default(),
+            },
+        );
+        let seats = vec![
+            LiveGameSeat {
+                strategy: "a".into(),
+                leader: "Live Leader".into(),
+                civilization: "Rome".into(),
+                rank: 0,
+                won: true,
+            },
+            LiveGameSeat {
+                strategy: "b".into(),
+                leader: "Pericles".into(),
+                civilization: "Greece".into(),
+                rank: 1,
+                won: false,
+            },
+            LiveGameSeat {
+                strategy: "c".into(),
+                leader: "Cleopatra".into(),
+                civilization: "Egypt".into(),
+                rank: 1,
+                won: false,
+            },
+        ];
+        let rated = record_ranked_game(dir, &seats, 17, 144, "science").expect("rated");
+        assert_eq!(rated.round, 5);
+        assert!(rated.strategies[0].rating > BASE_RATING);
+        assert!(
+            (rated.strategies[1].rating - rated.strategies[2].rating).abs() < 1e-12,
+            "tied seats moved differently: {} vs {}",
+            rated.strategies[1].rating,
+            rated.strategies[2].rating,
+        );
+        assert!(rated.strategies[0].leader_elo["Live Leader"].contains_key("Rome"));
+        let matches = fs::read_to_string(Path::new(dir).join("matches.csv")).unwrap();
+        assert!(matches.contains(
+            "a@Live Leader@Rome@0|b@Pericles@Greece@1|c@Cleopatra@Egypt@1"
+        ));
+
+        let mut invalid = seats;
+        invalid[1].rank = 2;
+        assert!(record_ranked_game(dir, &invalid, 18, 145, "science").is_none());
+        assert_eq!(load_league(dir).unwrap().round, 5);
         let _ = fs::remove_dir_all(dir);
     }
 
@@ -3431,6 +3668,10 @@ mod tests {
             ..LeagueCfg::default()
         };
         let manifest = build_manifest(&league, &cfg);
+        assert_eq!(
+            manifest.config.rules_fingerprint,
+            crate::rules::Rules::embedded().source_fingerprint()
+        );
         assert_eq!(manifest.config.speed, "online");
         assert_eq!(manifest.config.max_turns, 250);
         let options = game_options_for_job(&manifest.config, &manifest.jobs[0]);
@@ -3440,6 +3681,9 @@ mod tests {
         let mut invalid_speed = manifest.clone();
         invalid_speed.config.speed = "faster-than-light".into();
         assert!(validate_manifest(&invalid_speed, &league).is_err());
+        let mut invalid_rules = manifest.clone();
+        invalid_rules.config.rules_fingerprint = "fnv1a64:0000000000000000".into();
+        assert!(validate_manifest(&invalid_rules, &league).is_err());
         assert_eq!(manifest.jobs.len(), 4);
         assert!(manifest
             .jobs
@@ -3591,17 +3835,17 @@ mod tests {
     }
 
     #[test]
-    fn breeding_uses_conservative_skill_instead_of_noisy_point_rating() {
+    fn breeding_uses_conservative_wins_before_placement_rating() {
         let mut league = League {
             round: 4,
             strategies: Vec::new(),
             calibration: Calibration::default(),
         };
-        for (name, rating, rd) in [
-            ("noisy-leader", 1900.0, 200.0),
-            ("proven-first", 1800.0, 30.0),
-            ("proven-second", 1700.0, 30.0),
-            ("settled-fourth", 1600.0, 30.0),
+        for (name, rating, rd, games, wins) in [
+            ("noisy-leader", 1900.0, 200.0, 4, 2),
+            ("proven-first", 1800.0, 30.0, 40, 22),
+            ("proven-second", 1700.0, 30.0, 40, 20),
+            ("settled-fourth", 1600.0, 30.0, 40, 15),
         ] {
             let mut s = Strategy::new(
                 name,
@@ -3613,6 +3857,8 @@ mod tests {
             );
             s.rating = rating;
             s.rd = rd;
+            s.games = games;
+            s.wins = wins;
             league.strategies.push(s);
         }
         ensure_usernames(&mut league);
@@ -3631,6 +3877,32 @@ mod tests {
             .parents
             .iter()
             .all(|p| p == "proven-first" || p == "proven-second"));
+    }
+
+    #[test]
+    fn win_selection_bounds_protect_uncertain_results() {
+        let fresh = Strategy::new(
+            "fresh",
+            StrategyKind::Advanced {
+                weights: Weights::default(),
+                target: None,
+            },
+            0,
+        );
+        assert_eq!(win_lower_confidence(&fresh), 0.0);
+        assert_eq!(win_upper_confidence(&fresh), 1.0);
+
+        let mut lucky = fresh.clone();
+        lucky.games = 2;
+        lucky.wins = 2;
+        let mut proven = fresh;
+        proven.games = 100;
+        proven.wins = 70;
+        assert!(
+            win_lower_confidence(&proven) > win_lower_confidence(&lucky),
+            "two lucky wins must not outrank a settled 70% winner"
+        );
+        assert!(win_upper_confidence(&lucky) > win_upper_confidence(&proven));
     }
 
     #[test]
@@ -3843,6 +4115,42 @@ mod tests {
             .map(|s| s.name.as_str())
             .collect();
         assert_eq!(retired_names, vec!["confidently-low"]);
+    }
+
+    #[test]
+    fn retirement_uses_win_ceiling_before_placement_rating() {
+        let mut league = League {
+            round: 4,
+            strategies: Vec::new(),
+            calibration: Calibration::default(),
+        };
+        for (name, rating, wins, anchor) in [
+            ("safe-nonwinner", 1800.0, 0, false),
+            ("lower-rated-winner", 1300.0, 10, false),
+            ("reference", 1500.0, 8, true),
+        ] {
+            let mut strategy = Strategy::new(
+                name,
+                StrategyKind::Builtin {
+                    ai: "random".into(),
+                },
+                0,
+            );
+            strategy.rating = rating;
+            strategy.rd = 30.0;
+            strategy.games = 40;
+            strategy.wins = wins;
+            strategy.anchor = anchor;
+            league.strategies.push(strategy);
+        }
+        ensure_usernames(&mut league);
+        let cfg = LeagueCfg {
+            max_pop: 2,
+            ..LeagueCfg::default()
+        };
+        let mut rng = Rng::new(40);
+        let (_, retired) = evolve_league(&mut league, &cfg, &mut rng);
+        assert_eq!(retired, vec![league.strategies[0].username.clone()]);
     }
 
     /// Usernames are themed to the lane, unique, stable for founders, and

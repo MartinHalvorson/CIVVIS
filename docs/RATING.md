@@ -2,8 +2,9 @@
 
 `civvis rating` is the measurement layer under the strategy league. It exists
 because a rating that nobody audits is a number, not a measurement — and when
-the recorded exhibition ratings were audited, they turned out to carry no
-information at all.
+one confounded historical exhibition slice was audited, its ratings carried no
+information at all. Current results are profile-dependent rather than a blanket
+failure; the corrected replay and its seat-count breakdown appear below.
 
 ```bash
 civvis rating --dir league/                  # rate a history, print the table
@@ -16,6 +17,41 @@ civvis rating --dir league/ --seats 6        # restrict to one table size
 Every number `--backtest` prints is out of sample. Each system forecasts a
 game, is scored, and only then is told what happened, exactly as it would run
 live. Nothing below asks to be taken on trust.
+
+Winner log loss uses the same categorical target as the rating update. A
+unique winner has target mass one; an exact tie divides that mass equally
+among all co-winners. Its log score is therefore the mean of the co-winners'
+log probabilities. Averaging their forecast probabilities before taking the
+log is not equivalent: it would reward a model that confidently selects just
+one member of a tie. The uniform reference remains `ln(seats)` for either
+case, so a uniform forecast—including a fully tied table—has exactly zero
+information. Regression tests pin both properties.
+
+> **Implementation correction (2026-07-30).** The original batched update
+> summed per-observation posterior mean shifts and therefore applied the prior
+> variance once per placement stage. The implementation now accumulates
+> Gaussian natural parameters and applies the final posterior variance once.
+> The qualitative audit and raw-history findings below still identify the
+> right experiment defects. The historical tables below retain the numbers
+> recorded with each experiment; the current corrected replay is reported
+> separately here rather than silently rewriting them.
+
+On the live runtime history available when the correction landed (822 games
+through round 697), `--backtest` evaluates the last 70% strictly out of sample:
+
+| seats | evaluated games | Glicko-2 info/game | corrected staged + civ |
+| ---: | ---: | ---: | ---: |
+| 4 | 127 | **+0.1612** | +0.1505 |
+| 6 | 37 | +0.2074 | **+0.2477** |
+| 8 | 365 | −0.0141 | **+0.0104** |
+| mixed (4–8, mean 7.0) | 576 | +0.0521 | **+0.0608** |
+
+The old update scored +0.0632 nats/game on that same mixed replay; the
+correction removes 0.0024 nats/game of optimistic movement while preserving
+the small measured advantage over Glicko. It does not establish a universal
+replacement: Glicko remains better on this four-seat slice, the six-seat slice
+is small, and the eight-seat history barely carries signal for either system.
+That profile dependence is why `--seats` exists.
 
 ## What the audit found
 
@@ -116,10 +152,18 @@ Each side moves in proportion to how uncertain it already is. A settled civ
 edge barely budges while an unrated newcomer absorbs the surprise — the
 behaviour you want, and one a separate per-civ rating table cannot produce.
 
-Everything a game contributes is accumulated as a mean shift and a precision
-gain *against the beliefs held before the game*, then committed at once. So
-the update does not depend on the order seats are visited in, a tie moves
-nobody, and two games in the same period commute.
+Everything a game contributes is accumulated as a Gaussian natural score
+(`innovation / noise`) and a precision gain *against the beliefs held before
+the game*. All stage likelihoods for one seat are first collapsed into a single
+effective observation of its `player + civ` strength, then the Kalman split is
+applied once. The final posterior variance converts the score into one mean
+shift. Summing each observation's posterior mean shift would apply the prior
+variance repeatedly; marginalizing the same civ uncertainty once per stage
+would also pretend the context were newly drawn each time. Both errors make a
+game with more placement stages spuriously decisive. Closed-form tests now
+cover repeated observations with and without a civ context. The corrected
+update does not depend on the order seats are visited in, a tie moves nobody,
+and observations have diminishing rather than linear influence.
 
 Other properties worth knowing:
 
@@ -183,8 +227,13 @@ worth knowing that the tool reports this rather than hiding it.
 
 `--backtest` and `--stages` read `matches.csv` from a league directory, which
 records every finished game as `round,seed,turns,victory,placements` with
-placements in finishing order as `name@Civ|name@Civ|...`. Anything the rest of
-the pipeline adds after the civ is preserved, so richer histories still load.
+new placements encoded as `player@leader@civ@rank`. Both batch workers and live
+spectator games now write the same exact competition ranks, so score ties
+survive either ingestion path. Splitting from the right permits an email-style
+player identity to contain `@`. Both historical writers remain readable: batch
+`player@civ` rows infer rank from finishing order, while live
+`player@leader@civ` rows now separate the leader from the civilization instead
+of incorrectly treating `leader@civ` as one unseen civ context.
 
 See [LEAGUE.md](LEAGUE.md) for the league that produces those games and the
 Glicko-2 system this one is measured against.

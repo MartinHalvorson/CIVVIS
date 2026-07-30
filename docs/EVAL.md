@@ -14,7 +14,8 @@ and seed set.
 
 ```bash
 civvis soak --games 12 --players 4 --turns 350 --start-seed 100
-civvis tournament --ais advanced,basic,random --games 30 --players 4 --turns 250 --quiet
+civvis tournament --ais advanced-20260730=advanced,advanced_v1,basic-20260730=basic,random-20260730=random \
+  --games 40 --players 4 --quiet
 victory_eval --games 2 --players 2       # all six targets, stock turn limits
 ai_eval advanced basic --pairs 100 --seed 4000   # paired, low-variance
 ai_eval advanced basic --pairs 100 --difficulty emperor   # against the ladder
@@ -5716,6 +5717,15 @@ expansion instrument added here reports both scales for that reason.
 
 ## 2026-07-29 — ★★★★ the macro search chooses its two axes in the wrong order
 
+> **Correction, 2026-07-30:** this diagnostic reconstructed the first step
+> with the doctrine then in force. The shipped lane pass actually projects the
+> unchanged evolved base genome (`self.weights`, `Doctrine::Incumbent`) and
+> consults the active doctrine only in the second-step commitment comparison.
+> The 64.6% disagreement and 22.3% actionable-miss figures below therefore
+> describe the wrong comparator and are retracted. The corrected implementation
+> is pinned by a regression test and the deployment-profile paired run later in
+> this log replaces the gameplay conclusion.
+
 `StrategicAi` chooses a victory **lane** and a **doctrine**, one after the other.
 `lane_values` projects each lane using `self.weights` — the doctrine currently in
 force — and `doctrine_values` then projects each doctrine under the lane that
@@ -5894,3 +5904,250 @@ this establishes.
 | **seating one searching entry costs ~6.4×** | **established** (n=3) |
 | search is too expensive to seat | **refuted** — that conclusion came from measuring a fleet nobody runs |
 | a searching seat would break the exhibition's frame-per-turn guarantee | **unmeasured**, and unlikely at 13 turns/sec |
+
+## 2026-07-30 — ★★★★ the first replayable, anchored Elo baseline
+
+The tracked Elo file was not a baseline. It was a schema-2, 1000-centred toy
+ledger from one game in which `advanced` and `basic` each controlled two seats.
+Those cloned seats were counted as independent evidence, every
+player/civilization combination started over, and no map, speed, turn limit, K,
+or raw result survived. Appending to it could not produce a longitudinal
+measurement.
+
+Schema 3 now makes the experiment explicit and replayable:
+
+- the primary row is one player identity across every civilization draw;
+- exact player/leader/civilization rows are diagnostics and inherit that
+  player's current prior;
+- a protocol records the ordered controller roles, table size, dimensions,
+  full turn limit, city-states, speed, map script/shape/poles, active mods, K,
+  and a fixed rating anchor;
+- mutable controllers enter under dated identities while frozen
+  `advanced_v1` remains the connected control;
+- every scored table is retained under a deterministic event id, sorted into
+  one canonical update order, and replayed on load to verify the aggregates;
+- rerunning a seed is idempotent, a changed result under the same id is an
+  error, concurrent checkpoint arrival cannot change the final table, and
+  keyed events cannot mix K values or unkeyed history;
+- persistent tournaments reject duplicate identities, effective-controller
+  aliases, degraded learned entrants, cloned seats, a missing controller role,
+  malformed numeric flags, and any profile mismatch.
+
+The anchor is literal rather than documentary. After every Elo update all rows
+move by the same translation that returns `advanced_v1` to 1500. Pairwise gaps
+and expected scores are unchanged. What changes is cross-generation meaning:
+repeatedly introducing a fresh weak controller at 1500 can no longer inflate a
+new challenger while leaving an older inactive challenger on another scale.
+
+Canonical command, protocol v1:
+
+```bash
+civvis tournament \
+  --ais advanced-20260730=advanced,advanced_v1,basic-20260730=basic,random-20260730=random \
+  --games 40 --players 4 --seed 0 --quiet
+civvis tournament --standings
+```
+
+Profile: 4 players, 60×38, Standard 500 turns, six city-states, Pangaea,
+flat/poles, stock rules fingerprint `fnv1a64:3423bd46da2b8cd7`, K=24; ordered
+controller roles are `advanced`, `advanced_v1`, `basic`, `random`. Every
+entrant drew each of Rome, Greece, Egypt, and China ten times. The fingerprint
+is computed from the fully merged JSON, so changing stock data or editing a
+mod without renaming it now forces a different ledger; engine/scoring changes
+still require an explicit protocol bump.
+
+| immutable player | anchored Elo | direct Elo vs anchor | games | wins |
+|---|---:|---:|---:|---:|
+| `advanced-20260730` | **1588.5** | **1708.2** (95% 1588.7–1841.0; pair 31/40, 62.5–87.7%) | 40 | 29 |
+| `advanced_v1` (fixed anchor) | **1500.0** | — | 40 | 8 |
+| `basic-20260730` | 1431.4 | 1314.8 (95% 1187.3–1431.0; pair 10/40, 14.2–40.2%) | 40 | 3 |
+| `random-20260730` | 1174.1 | 736.6 (95% −∞–1093.0; pair 0/40, 0.0–8.8%) | 40 | 0 |
+
+This establishes a reproducible +88.5 Elo gap for the July 30 advanced
+controller over the frozen legacy control on one named multiplayer profile. It
+also gives an order-independent +208.2 direct performance gap from their 31/40
+pair score; its 95% Wilson interval is 62.5–87.7%, which transforms
+monotonically to 1588.7–1841.0 Elo. The difference is
+expected because the incremental K=24 path has only 40 updates and is not a
+batch maximum-likelihood fit. The direct-anchor result at an equal game count
+is therefore the longitudinal baseline; the incremental number remains useful
+for continuously updated ordering. Neither turns 40 correlated multiplayer
+worlds into a narrow confidence interval, and both remain an internal CIVVIS
+scale rather than a human or Firaxis calibration. Future controllers need a
+new identity and the same protocol; a material rules or scoring change needs a
+new protocol rather than being mixed into this file.
+
+## 2026-07-30 — the contextual rating update was overconfident
+
+The staged Gaussian updater summed each observation's *posterior mean shift*.
+That applies the prior variance once for every placement stage, and repeatedly
+marginalizes the same civilization uncertainty as though it were a fresh draw.
+The fix accumulates likelihood natural score and precision for each
+player/civilization seat, collapses the repeated stages, and applies the final
+posterior variance once. Closed-form tests now cover a plain repeated
+observation, a shared context, order invariance, and diminishing evidence.
+
+Strictly out-of-sample replay on the available live history (822 games through
+round 697; last 70% scored):
+
+| seats | evaluated games | Glicko-2 info/game | corrected staged + civ |
+|---:|---:|---:|---:|
+| 4 | 127 | **+0.1612** | +0.1505 |
+| 6 | 37 | +0.2074 | **+0.2477** |
+| 8 | 365 | −0.0141 | **+0.0104** |
+| mixed, mean 7.0 | 576 | +0.0521 | **+0.0608** |
+
+The old update scored +0.0632 nats/game on that same mixed replay. Correcting
+it removes 0.0024 nats/game of optimistic movement while retaining a small
++0.0087 advantage over Glicko on the mixed slice. The four-seat slice favors
+Glicko, the six-seat slice is small, and neither system extracts much from the
+eight-seat history. The honest conclusion is profile dependence, not that one
+estimator universally replaced the other.
+
+## 2026-07-30 — ★★★ the league now breeds winners, not safe placers
+
+The league needs two legitimate but different numbers. Its public Glicko ladder
+ranks full placement; evolution is supposed to produce the agent most likely to
+win. Until this change, one `conservative_order` drove parent choice, niche
+strength, niche elites, and retirement from `rating ± 1.96·rd`. The `wins`
+counter printed beside it did not affect breeding at all.
+
+That is not a theoretical distinction in this roster. A completed controlled
+run recorded above found the placement leader `g56-50` **−108 win-Elo** against
+the embedded champion. Another found a 3.6× win-rate difference compressed to
+7.2 placement-rating points. Selecting harder on the same placement estimate
+cannot recover an objective the estimate does not measure.
+
+Evolution now uses the lower 95% Wilson bound on outright win rate for parents,
+best-niche choice, and protected niche elites. Retirement uses the upper bound,
+so an uncertain newcomer remains protected; placement Glicko breaks only an
+exact win-bound tie. Two wins in two games do not outrank a settled 70% winner
+in the regression test.
+
+Applied read-only to the committed roster, the parent order changes as follows:
+
+| win-selected rank | entrant | wins/games | lower 95% win bound | placement Elo |
+|---:|---|---:|---:|---:|
+| 1 | `g20-21` | 82/216 | **31.8%** | 1790.8 |
+| 2 | `g28-28` | 61/170 | **29.1%** | 1766.0 |
+| 3 | `advanced_v1` | 111/331 | **28.7%** | 1754.6 |
+| 4 | `advanced` | 91/331 | 23.0% | 1702.7 |
+| 5 | `g44-41` | 26/84 | 22.1% | 1753.2 |
+| 8 | `g56-50` | 4/21 | **7.7%** | **1823.3** |
+
+The highest placement point estimate therefore stops being the second breeding
+choice on four wins of evidence; the two well-sampled winning genomes become
+the first two. This does not prove their children will improve, and raw win
+rate assumes the league keeps entrants on the same table-size distribution.
+It does align the self-improvement loop's selection pressure with its stated
+goal. Glicko remains unchanged for prediction, seating, and the viewer-facing
+ladder rather than being forced to serve two incompatible objectives. The
+`strategic_deep_league` transfer entrant now consumes this same win-first
+ordering; it no longer quietly switches back to placement Glicko when choosing
+which generalist genome to put under macro search.
+
+## 2026-07-30 — live league games no longer invent a strict finish order
+
+Distributed league results already retained the engine winner and competition
+ranks, so equal scores were Glicko draws. The spectator recorder instead sorted
+the same terminal state and passed only `(strategy, civilization)` rows to a
+legacy adapter. That adapter assigned ranks `0, 1, 2, ...`: every live score tie
+became an arbitrary pairwise win for the lower player id, and the leader was
+re-derived later rather than retained from the game that actually ran.
+
+Batch and live ingestion now share one competition-ranking function. The live
+API carries strategy, exact leader, civilization, rank, and declared-winner
+status into the same `Outcome`; malformed ranks fail before the roster lock is
+mutated. A regression pins a declared low-score winner above two equal-score
+losers, verifies that the tied players receive identical Glicko movement, and
+checks the exact `player@leader@civ@rank` audit row. The compatibility adapter
+remains for callers that truly have only a strict list, but the engine no longer
+uses it.
+
+## 2026-07-30 — corrected joint macro search is neutral at deployment scale
+
+The July 29 interaction probe reconstructed sequential search incorrectly: it
+chose the lane under the doctrine currently in force. The live policy has
+always chosen its lane under the unchanged evolved base genome and considered
+the active doctrine only in the second step. `choose_joint_axes` now reproduces
+that exact order, with a regression in which a prior doctrine switch would
+make the old comparator choose a different lane. The full-matrix treatment is
+therefore a test of joint optimization against the policy that actually ships.
+
+Pre-registered deployment-profile command:
+
+```bash
+cargo run --profile ci --locked --bin ai_eval -- \
+  strategic_joint strategic_doctrine --pairs 20 --players 6 \
+  --width 74 --height 46 --turns 250 --city-states 9 \
+  --speed online --seed 7320000 --jobs 10
+```
+
+The 20 maps produced 40 games averaging 213.3 turns. Every mirrored map split
+one game each: **20/40 wins per arm, 50.0% paired score, +0 Elo-equivalent**
+(95% Wilson **−148 to +148**), zero favorable directions either way, and
+two-sided sign p=1.0000. Terminal score leaned only 50.4%; five maps favored
+joint, one favored sequential, and fourteen tied (p=0.2188). No promotion
+evidence crossed at any point.
+
+The mechanism did fire, but rarely. Joint search reached 268 rollout reviews
+and replaced the exact sequential choice in **10 (3.7%)**; all ten changed the
+lane and nine also changed doctrine. Only 42% of all reviews reached rollouts,
+because urgent counters and irreversible religious commitments correctly
+answered the others before macro search. A joint review evaluates 28
+lane × doctrine branches instead of the sequential policy's 11. The feature
+therefore spends roughly 2.5× the branch work at the reviews where it can act,
+for no resolved win gain in this sample.
+
+This is not proof of exact parity—the interval is wide—but it is enough to
+reject promotion. `joint_axis_search` remains off in every production entrant;
+`strategic_joint` stays as an evaluator-only control so a larger future run can
+accumulate evidence without rebuilding the experiment. The corrected result
+also replaces the retracted 64.6%/22.3% diagnostic above: interaction in an
+internal value matrix is not gameplay strength, and the exact shipped
+comparator matters before either number is interpretable.
+
+## 2026-07-30 — the deployment audit now measures the deployment
+
+`audit` previously constructed every game through `Game::new`, so a command
+that said `--turns 250` was still a truncated **Standard-speed** game. Its war
+checks also hard-coded ten raw turns, falsely reporting legal Online peace
+after the rules had scaled the ten-Standard-turn duration to eight. The harness
+now accepts `--speed`, derives the default turn limit from that speed, constructs
+`GameOptions`, and applies `Game::standard_duration` to duration invariants.
+Invalid nonpositive counts and undersized maps are rejected or bounded rather
+than wrapping through integer casts.
+
+The motion census is now split by controller role. That makes a rated major's
+rate comparable across maps with different city-state and barbarian
+populations, whose intentionally bounded jobs have very different idle shapes.
+Exact rerun:
+
+```bash
+cargo run --profile ci --locked --bin audit -- \
+  --games 2 --players 6 --width 74 --height 46 --turns 250 \
+  --city-states 9 --speed online --start-seed 7330000 --quiet
+```
+
+| controller role | unit-turns | livelock | idle field | fortified picket |
+|---|---:|---:|---:|---:|
+| rated majors | 53,100 | **0.49%** | 18.96% | 7.75% |
+| city-states | 19,315 | 0.38% | 26.05% | 28.01% |
+| barbarians | 17,625 | **3.31%** | 6.10% | 75.26% |
+| all | 90,040 | 1.02% | 17.97% | 25.31% |
+
+Both games completed with **zero rule violations**. The attribution changes the
+gameplay reading: most remaining circling belongs to barbarians, while the
+rated controllers spend only one unit-turn in 204 in a confirmed loop. Raising
+the global anti-livelock penalty from the blended 1.02% headline would optimize
+the wrong population and risk damaging productive major movement. No tactical
+constant changed. Future AI work should use the `major` line as its baseline
+and treat the other roles as separate controllers.
+
+Attribution also localized all 16 “city builds nothing” reports to
+city-states. Each had reached its bounded garrison and exposed only general
+districts or repeatable projects that its deliberately specialized governor
+does not choose. The auditor had equated “engine-legal” with “on this policy's
+action surface.” It now treats only a repair, building, repair project, or the
+city-state's own district family as actionable infrastructure; the exact rerun
+removes all 16 false symptoms without changing gameplay.

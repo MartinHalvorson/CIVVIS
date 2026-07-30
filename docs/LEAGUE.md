@@ -2,8 +2,9 @@
 
 `civvis league` maintains a **persistent, distributed rated pool of high-level
 AI strategies** and searches it for improvements for as long as simulators keep
-running: strategies earn uncertainty-aware Glicko-2 ratings on mirrored games,
-high-rated ones breed offspring, and confidently weak ones retire. Multiple
+running: strategies earn uncertainty-aware Glicko-2 placement ratings on
+mirrored games, proven winners breed offspring, and strategies with a settled
+low win ceiling retire. Multiple
 machines can safely contribute to the same league without a separate
 coordinator. It answers two questions the one-shot
 `tournament` command cannot: *how strong is each strategy, with an
@@ -46,7 +47,9 @@ simulation/selection flags and league-work protocol/build; an incompatible
 binary refuses a pending manifest instead of contaminating its evidence. The
 first worker to reach a new round
 writes an immutable manifest containing the exact roster, genomes, game speed,
-settings, maps, seats, and job IDs. Workers then:
+settings, effective merged-rules fingerprint, maps, seats, and job IDs. Work
+protocol v4 refuses a worker whose stock or modded rule content differs even
+when a mod kept the same display name. Workers then:
 
 1. atomically claim unplayed games, up to their local `--jobs` capacity;
 2. simulate without holding the league lock;
@@ -108,9 +111,11 @@ paired design removes much of the spawn, civ, and first-move variance. A
 requested `--games` count is rounded up to finish the final `--players`-game
 mirror series.
 
-A batch game decomposes into pairwise results by placement: equal engine
-scores are draws, while a declared victory always outranks score. Those
-correlated comparisons receive total weight one per player per game; a
+A finished game decomposes into pairwise results by placement: equal engine
+scores are draws, while a declared victory always outranks score. Batch
+workers and the live spectator recorder use the same competition-rank helper,
+so neither starting-seat order nor a different ingestion path can break a tie.
+The correlated comparisons receive total weight one per player per game; a
 four-player finish no longer masquerades as three independent observations
 and make RD falsely precise. The whole round updates at once as one
 Glicko-2 rating period (start 1500, RD 350, vol 0.06, tau 0.5; the
@@ -194,9 +199,10 @@ at the moment of recording and seats are matched by strategy *name*, so
 a game long enough to outlive a concurrent update writes its result on
 top rather than reverting it. A live exhibition is deliberately left unrated
 while a distributed manifest is pending, because injecting a one-game period
-would invalidate the in-flight roster snapshot. Results also append to `matches.csv`,
-`ratings.csv`, and `calibration.csv` beside `league.json`. The live-server API
-supplies a strict placement list, so only batch rounds can retain score ties.
+would invalidate the in-flight roster snapshot. Results also append to
+`matches.csv`, `ratings.csv`, and `calibration.csv` beside `league.json`. Each
+match row retains player, exact leader, civilization, and competition rank,
+including live score ties.
 
 A snapshot of a finished league lives in the repo at `data/league/`
 (see its README for provenance) and is compiled into the binary, so any
@@ -228,28 +234,30 @@ Every `--evolve-every` rounds (default 4):
   deterministically between selection generations. One parent comes from the
   top half of that niche's full historical archive when it exists (otherwise
   the active pool), and the other from the top half of active genome carriers;
-  both pools rank by conservative 95% skill (`rating - 1.96 × RD`). Thus a
+  both pools rank first by the lower 95% Wilson bound on **outright win rate**;
+  conservative placement Glicko (`rating - 1.96 × RD`) breaks a tie. Thus a
   retired specialist can seed a better successor without re-entering the
-  schedule, while a strong generalist contributes broadly useful genes. A
+  schedule, while a proven generalist contributes broadly useful genes. A
   child is a uniform crossover plus bounded mutation (the same operators
   `civvis evolve` uses), is assigned the selected niche, and enters at
   1500 ± 350 to earn its place.
-- **Retire** strategies with the lowest optimistic 95% bound
-  (`rating + 1.96 × RD`) until the active roster is back
-  under `--pop`, but only with evidence: never anchors, never anyone with
-  fewer than 20 games or RD above 110, and never the conservatively strongest
-  active genome in a represented niche. Weaker duplicates remain eligible, so
-  this preserves strategic coverage without freezing improvement. Retired
-  strategies keep their history and genomes in the archive; only scheduling
-  stops.
+- **Retire** strategies with the lowest optimistic 95% Wilson win bound until
+  the active roster is back under `--pop`; `rating + 1.96 × RD` breaks a tie.
+  Retirement still requires evidence: never anchors, never anyone with fewer
+  than 20 games or placement RD above 110, and never the conservatively
+  strongest winning genome in a represented niche. Weaker duplicates remain
+  eligible, so this preserves strategic coverage without freezing improvement.
+  Retired strategies keep their history and genomes in the archive; only
+  scheduling stops.
 
 This explicit niche archive matters in practice: an unconstrained league can
 rate generalists highly enough that they become nearly every parent, after
 which probabilistic lane inheritance makes specialists rarer still. The
 committed 60-round snapshot exhibited that feedback loop — all evolved active
 strategies were generalists and every victory-lane specialist had retired.
-Quality-diversity selection makes rating strength and strategic breadth joint
-objectives instead of asking a single scalar leaderboard to provide both.
+Quality-diversity selection makes winning and strategic breadth joint
+objectives instead of asking a placement ladder to serve as a breeding
+objective too. Glicko remains the public ladder and matchup predictor.
 
 The fixed anchors (`advanced`, `basic`, and the offline-only `strategic`) are
 never retired, which pins the scale and keeps the otherwise-unreachable search
@@ -270,9 +278,12 @@ across hundreds of rounds even after every non-anchor founder has been replaced.
 - `calibration.csv` — per-round and cumulative pairwise prediction count,
   Brier score, and log loss.
 - `matches.csv` — every game: round, seed, end turn, victory type,
-  placements.
+  placements. New rows encode each seat as `player@leader@civ@rank`, so batch
+  score ties and the full leader/civilization identity survive replay; the
+  rating tool remains compatible with both older row shapes.
 - `work/round-N/manifest.json` — immutable roster, game speed, settings,
-  mirrored schedule, and job IDs for one rating period.
+  effective-rules fingerprint, mirrored schedule, and job IDs for one rating
+  period.
 - `work/round-N/results/*.json` — immutable, validated match evidence. These
   files make rating changes auditable and safely deduplicate late workers.
 - `work/round-N/finalized.json` — the period's commit summary, births, and

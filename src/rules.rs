@@ -1246,6 +1246,10 @@ fn dstandard_turns() -> u32 {
 
 #[derive(Clone)]
 pub struct Rules {
+    /// Deterministic fingerprint of the effective source JSON before derived
+    /// indexes are built. Tournament evidence binds to this so changing a
+    /// stock rule or a mod's contents cannot silently reuse an old baseline.
+    source_fingerprint: String,
     pub terrains: SpecMap<TerrainSpec>,
     pub features: SpecMap<FeatureSpec>,
     pub resources: SpecMap<ResourceSpec>,
@@ -2108,6 +2112,13 @@ static ACTIVE: OnceLock<Rules> = OnceLock::new();
 static SHARED: OnceLock<Arc<Rules>> = OnceLock::new();
 
 impl Rules {
+    /// Stable identity of the effective rules data. The algorithm name is
+    /// part of the value so a future fingerprint upgrade is an explicit
+    /// protocol change rather than an accidental mismatch.
+    pub fn source_fingerprint(&self) -> &str {
+        &self.source_fingerprint
+    }
+
     /// The active ruleset — shipped data unless mods were installed.
     pub fn embedded() -> Rules {
         ACTIVE.get_or_init(Rules::shipped).clone()
@@ -2201,6 +2212,18 @@ impl Rules {
 
     /// Build a ruleset from raw JSON, one value per entry in [`DATA_FILES`].
     pub fn from_values(mut files: BTreeMap<String, serde_json::Value>) -> Result<Rules, String> {
+        // BTreeMap and serde_json's default sorted object map make this byte
+        // representation stable across processes. FNV-1a is used as a compact
+        // change detector, not as a security boundary.
+        let encoded = serde_json::to_vec(&files)
+            .map_err(|error| format!("cannot fingerprint ruleset: {error}"))?;
+        let mut fingerprint = 0xcbf29ce484222325u64;
+        for byte in encoded {
+            fingerprint ^= u64::from(byte);
+            fingerprint = fingerprint.wrapping_mul(0x100000001b3);
+        }
+        let source_fingerprint = format!("fnv1a64:{fingerprint:016x}");
+
         fn take<T: serde::de::DeserializeOwned>(
             files: &mut BTreeMap<String, serde_json::Value>,
             name: &str,
@@ -2215,6 +2238,7 @@ impl Rules {
             expand_modifier_attachments(name, value, &modifiers)?;
         }
         let mut rules = Rules {
+            source_fingerprint,
             terrains: take(&mut files, "terrains")?,
             features: take(&mut files, "features")?,
             resources: take(&mut files, "resources")?,
@@ -2521,6 +2545,19 @@ mod tests {
     use super::*;
     use serde_json::json;
     use std::collections::BTreeSet;
+
+    #[test]
+    fn rules_fingerprint_is_stable_and_content_sensitive() {
+        let stock = Rules::shipped();
+        let repeated = Rules::shipped();
+        assert_eq!(stock.source_fingerprint(), repeated.source_fingerprint());
+        assert!(stock.source_fingerprint().starts_with("fnv1a64:"));
+
+        let mut changed = Rules::shipped_values();
+        changed.get_mut("speeds").unwrap()["standard"]["turns"] = json!(499);
+        let changed = Rules::from_values(changed).unwrap();
+        assert_ne!(stock.source_fingerprint(), changed.source_fingerprint());
+    }
 
     const TECHS: &str = "
         pottery animal_husbandry mining sailing astrology irrigation archery writing masonry

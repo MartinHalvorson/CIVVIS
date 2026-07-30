@@ -217,11 +217,18 @@ change the sampled `AdvancedAi` games, often because the live hierarchical path
 bypasses the `BasicAi` consumer. Silence on a finite sample is not proof of
 global inertness.
 
-Evolution has another objective problem. Score share is cheap and correlated
-with winning, but controlled changes have improved score significantly without
-changing wins. Direct win-rate selection is valid but too noisy for a cheap
-per-genome fitness estimate. The current breeder therefore remains a research
-loop, not evidence of continuous live self-improvement.
+Standalone evolution still has an objective problem. Score share is cheap and
+correlated with winning, but controlled changes have improved score
+significantly without changing wins. Direct win-rate selection is too noisy for
+its cheap per-genome fitness estimate, so its separate win-based promotion gate
+remains essential.
+
+The continuous league no longer shares that mistake: parent choice, niche
+elites, and retirement now use conservative Wilson bounds on outright wins,
+with placement Glicko only breaking a tie. On the committed roster this drops
+the 1823-rated, 4/21-win `g56-50` from second in the breeding order to eighth and
+puts the well-sampled `g20-21` and `g28-28` first. That aligns the objective; it
+does not yet establish that the next offspring generation improves.
 
 ### 7. Search is not live-validated and is materially more expensive
 
@@ -232,10 +239,15 @@ keeps it as a `league_only` anchor so the league can compare against an axis
 breeding cannot create without putting that unresolved cost/strength trade into
 the exhibition.
 
-The latest structural probe also finds that sequential lane-then-doctrine
-search misses the joint evaluator optimum often enough to clear its commitment
-margin. Whether joint search wins games, especially on live profiles, is still
-unmeasured.
+The original structural probe overstated joint-search headroom because it
+reconstructed the lane pass under the doctrine in force; the live lane pass
+uses the unchanged base genome. Against that corrected comparator, a
+deployment-profile run on 20 mirrored 6p 74×46 Online maps split **every map**:
+20/40 wins per arm, +0 Elo-equivalent (95% −148 to +148). Joint search changed
+only 10/268 eligible rollout reviews (3.7%) while evaluating 28 branches rather
+than the sequential policy's 11. That interval does not prove parity, but it
+does not justify buying the extra rollout compute. The treatment remains an
+evaluator-only control and production stays sequential.
 
 ### 8. Internal ratings are not external strength
 
@@ -243,6 +255,13 @@ League Glicko and tournament Elo compare agents inside CIVVIS. Difficulty
 handicaps test how the same internal controller responds to bonuses; they do not
 calibrate it against a human or Firaxis' AI. The separate Civilization VI Lua
 controller has no recorded completed ladder attempt in `CIV6_LADDER.md`.
+
+The fixed-profile, fixed-anchor tournament ledger now gives internal versions a
+replayable longitudinal baseline: compare the order-independent direct Elo and
+its pair-score interval against `advanced_v1` at the same game count and under
+the profile-bound `advanced / advanced_v1 / basic / random` controller roles.
+That fixes an internal measurement problem; it does not supply the missing
+external rung.
 
 Claims such as “world-class,” “superhuman,” or “three times stronger” are not
 supported. The defensible form is always: agent A beat agent B, on a named
@@ -257,8 +276,10 @@ profile, under a named decision rule.
    correlate.
 3. Require a profile matrix that covers the rotating exhibition before a
    strength label or live promotion. Keep artifact provenance mandatory.
-4. Evaluate joint macro decisions and structural oracle headroom at the profile
-   that would ship before buying more rollout compute.
+4. Pursue structural oracle headroom at the profile that would ship. Keep the
+   corrected joint-macro arm reproducible, but require substantially more
+   evidence before spending 28 branches where 11 produced the same measured
+   wins.
 5. Add external calibration: completed games against Firaxis' AI and humans,
    with settings and logs retained.
 

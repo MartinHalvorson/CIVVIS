@@ -1286,6 +1286,16 @@ fn main() {
                     census.irreversible_religion
                 ),
             }
+            if census.joint_reviews > 0 {
+                println!(
+                    "  {name:<11} joint overrides {}/{} rollout reviews ({:.1}%); lane {}, doctrine {}",
+                    census.joint_overrides,
+                    census.joint_reviews,
+                    100.0 * census.joint_overrides as f64 / census.joint_reviews as f64,
+                    census.joint_lane_overrides,
+                    census.joint_doctrine_overrides,
+                );
+            }
         }
         if [a, b]
             .iter()
