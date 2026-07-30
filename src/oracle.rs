@@ -36,9 +36,14 @@ use crate::Pos;
 /// ever be assigned to.
 const CITY_WORK_RADIUS: usize = 3;
 
-/// The city count the expansion grant stops at — the same six
-/// `StrategicPlan::desired_cities` aims at, so the grant removes the cost of
-/// the agent's own appetite rather than inventing a larger one.
+/// The city count the expansion grant stops at.
+///
+/// This is an oracle ceiling, not a claim about the live plan. `AdvancedAi`
+/// computes a dynamic `desired_cities` that averaged 3.83 on the small
+/// evaluation profile and 5.00 on the measured 6p/74x46 profile; granting six
+/// cities can therefore exceed the policy's own target. The oracle measures
+/// expansion headroom, including a too-low target, rather than affordability
+/// of the existing plan alone.
 const EXPANSION_TARGET: usize = 6;
 
 /// Turns of Gold income a seat may keep under `Grant::IdleReserve`. Generous by
@@ -148,15 +153,16 @@ pub enum Grant {
     /// foundation is lifted first so the engine will enumerate alternatives —
     /// and its own tile — instead of reporting the site as taken.
     Siting,
-    /// A free Settler whenever the seat is below its city target and has none
-    /// in flight.
+    /// A free Settler whenever the seat is below the fixed six-city oracle
+    /// ceiling and has none in flight.
     ///
     /// Bounds **expansion**, which every other city measurement is conditional
     /// on. #532/#534/#542/#553 bound what a city works, owns, builds districts
     /// on and stands on — all *per city*, and all saturated or null. None of
-    /// them asks whether the empire has enough cities in the first place, and
-    /// the evals say it does not: seats finish four-player games holding
-    /// **2.1 to 2.8** cities while `StrategicPlan::desired_cities` targets six.
+    /// them asks whether the empire has enough cities in the first place. The
+    /// live plan has a dynamic target, measured at 3.83 on the small profile
+    /// and 5.00 on a large six-player profile; the oracle can therefore grant
+    /// beyond the plan as well as remove Settler cost and population cost.
     ///
     /// A settler costs production and a point of population, and needs
     /// `pop >= 2` to build at all, so expansion is paid for out of exactly the
@@ -166,8 +172,8 @@ pub enum Grant {
     ///
     /// It grants only the unit. Where to settle is still the agent's decision,
     /// walked by its own settler logic — which #553 measured taking 99.9% of
-    /// the value on offer — so this is a bound on expansion *rate* and not on
-    /// siting.
+    /// the value on offer — so this is a bound on expansion target and *rate*,
+    /// not on siting.
     Expansion,
     /// Confiscate every Gold above ten turns of income, every turn.
     ///
@@ -450,9 +456,8 @@ impl<A: Ai> Oracle<A> {
     ///
     /// One at a time, which is the engine's own standing constraint on
     /// expansion rate, so this removes the *cost* of a settler without also
-    /// removing the serialization. The target is `EXPANSION_TARGET`, the same
-    /// six `StrategicPlan::desired_cities` aims at, so the grant stops exactly
-    /// where the agent's own appetite stops rather than expanding forever.
+    /// removing the serialization. `EXPANSION_TARGET` is an oracle ceiling,
+    /// not the live plan's dynamic appetite; see the constant's documentation.
     fn grant_expansion(&mut self, g: &mut Game, pid: usize) {
         let cities = g.player_city_ids(pid);
         if cities.is_empty() || cities.len() >= EXPANSION_TARGET {

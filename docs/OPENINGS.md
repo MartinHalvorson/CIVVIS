@@ -1,5 +1,10 @@
 # Openings: what each civilization actually plays
 
+> **Scope note (2026-07-30).** This is a chronological experiment record.
+> “Deployment” and “strongest” below refer to each study's fixed profile and
+> source-profile search leader, not to today's rotating exhibition. No search
+> entrant is currently live-eligible.
+
 The scripted opening has been bounded twice and the ordering layers around it
 once. `docs/GENOME.md` records all three:
 
@@ -1176,19 +1181,19 @@ identical profile. The same coverage floor and unchanged win promotion gate
 must pass; terminal score remains diagnostic. This confirms the composed
 Advanced policy but still cannot change a deployed default.
 
-### Strongest-controller transfer
+### `strategic_deep` controller transfer
 
 Only that Advanced confirmation earns a new default-off entrant that applies
 the same two switches to every Advanced parent/candidate used by
 `strategic_deep`; no rollout horizon, candidate set, value function, or routing
 rule changes. Compare it with stock `strategic_deep` for 120 maps at seed
-9996000 on the same deployment profile. It advances only with at least 10%
+9996000 on the same fixed profile. It advances only with at least 10%
 late-start coverage, paired win score at least 52%, favorable directions greater
 than adverse, terminal-score share at least 50%, and a non-retention verdict
 from the unchanged promotion gate.
 
 One disjoint 240-map confirmation at seed 9997000 is then allowed. Only a pass
-of the same coverage and win gates may enable the composed policy in the
-deployed strongest controller. Advanced confirmation cannot rescue a failed
+of the same coverage and win gates may enable the composed policy in the tested
+`strategic_deep` controller. Advanced confirmation cannot rescue a failed
 transfer, pooled seeds cannot rescue either confirmation, and no result here
 authorizes changing the standalone Advanced default.

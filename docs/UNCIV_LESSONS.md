@@ -93,11 +93,11 @@ Civ VIS had neither. That was a real hole in two directions at once:
 
 - **For the player.** Every game was one fixed difficulty, so there was no way for
   Martin to pick a level.
-- **For the AI track.** [AI_GAPS.md](AI_GAPS.md) gap 9 is eval calibration, and Elo
-  between our own bots is a closed system — it says a bot is 130 points better than
-  another bot, and nothing about whether either is any good. A difficulty ladder is an
-  *external* yardstick: "beats Emperor, loses to Immortal" is a claim a Civ player can
-  read.
+- **For the AI track.** [AI_GAPS.md](AI_GAPS.md) identifies calibration as an
+  open gap, and Elo between our own bots is a closed system. A difficulty
+  ladder is a useful internal stress test for how the controller responds to
+  known handicaps. It is **not** external calibration: the opponents are still
+  CIVVIS controllers, not humans or Firaxis' AI.
 
 We take Unciv's data shape but not Unciv's numbers, because we have a better source —
 Civ VI ships its own handicap scaling in `Leaders.xml`
@@ -112,11 +112,12 @@ aggressive/declareWar/loyal/expansion…) plus branch priorities, and
 `NextTurnAutomation` weights its decisions by it. The effect is that AI civs
 feel like *someone* rather than like the same bot in different colours.
 
-Civ VIS had the machinery — `BasicAi` carries 29 GA-tuned weights, `AdvancedAi`
-picks grand strategies — but every major civ ran identical weights, so Trajan
-and Cleopatra played the same game. Civ VI also ships the content Unciv had to
-invent: `Leaders.xml` assigns each leader a historical agenda and a set of
-preference traits, and all eight of ours now carry theirs.
+Civ VIS had the machinery — the shared `Weights` surface (now a 40-gene vector)
+steers `BasicAi` and parts of `AdvancedAi`, while `AdvancedAi` picks grand
+strategies — but every major civ ran identical weights, so Trajan and Cleopatra
+played the same game. Civ VI also ships the content Unciv had to invent:
+`Leaders.xml` assigns each leader a historical agenda and a set of preference
+traits, and every leader in the shipped roster carries an agenda.
 
 An **agenda** is an opinion, from -30 to +30, about how another civilization is
 behaving, and they come in two shapes:

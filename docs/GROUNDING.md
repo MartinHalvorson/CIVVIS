@@ -242,15 +242,15 @@ Two things do survive, both smaller:
 **The standings rank on point estimates and ignore their own uncertainty.**
 WildCard10 is 1823 ± 50 on 21 games; Maverick2 is 1791 ± 31 on 216. Those
 intervals overlap heavily, so "WildCard10 is the top strategy" is not something
-its own rating deviation supports. This is not cosmetic: `civvis play --league`
-seats each civ with its *best-rated* strategy and the exhibition HUD converts
-those ratings into win chances, so a newcomer whose rating has not converged
-changes which strategies play and what a spectator is told. Ranking on a
-conservative bound (rating − k·RD) rather than the point estimate would fix it,
-and is the standard treatment.
+its own rating deviation supports. This was not cosmetic in the server measured
+here: it seated each civilization with its point-estimate leader. The current
+exhibition instead makes a rank-weighted choice among the top three
+live-eligible entries and avoids repeats where possible. The HUD labels the
+selected entry with its own rating and uncertainty; a provisional estimate is
+not presented as settled.
 
-**The committed snapshot and the run log do not reconcile.** Of the 54
-strategies in `data/league/league.json`, 33 — including the entire top nine —
+**The committed snapshot and the run log did not reconcile.** In the
+54-strategy snapshot audited here, 33 — including the entire top nine —
 appear in *no* game in the `matches.csv` produced by the league worktree, even
 though the snapshot credits them with 21 to 216 games each. The likeliest
 explanation is simply that the two files come from different runs (the memory

@@ -809,7 +809,7 @@ fn main() {
     // set. An evaluator that cannot name them silently measures a different
     // game: historically Pangaea/flat/fixed-roster/all-victories, whatever the
     // command line appeared to say. Keep those historical defaults, but make
-    // the deployment profile expressible and print the resolved values below.
+    // the deployment axes expressible and print the resolved values below.
     let map_name = text(&args, "--map", MapScript::default().id());
     let map_script = MapScript::from_id(&map_name).unwrap_or_else(|| {
         eprintln!("unknown map script {map_name:?}");

@@ -76,7 +76,10 @@ strategies inside CIVVIS.
 
 A good bit of vibecoding. Still a bit buggy, apologies for any slop. 
 
-### The rest is AI generated and maintained:
+### The rest of the project is AI-generated and maintained:
+
+That note is about authorship. The game-playing agents below are local Civ
+controllers; CIVVIS does not call an LLM or a hosted model while a game runs.
 
 A whole
 AI-vs-AI game below, first settler to space victory (click for the full video):
@@ -89,149 +92,124 @@ spectator's own view — standings, victory tracker and each AI's live plan — 
 the camera flown out to the Moon, Mars and the voyage as each launch happened.
 The waiting is compressed; the camera work is close to real time.*
 
-## How the AI actually plays
+## How CivVis uses AI
 
-Every civilization in that clip is an agent. There are six of them in the
-codebase, arranged as a ladder, and each rung was built to fix a specific
-weakness in the one below it. What follows is what each one is, where it runs,
-and — the part that matters — how well it actually works, because most of these
-have been measured against each other and two of the fancier ones lose.
+Every civilization in the clip is controlled locally by Rust code. There is no
+runtime LLM, prompt, model API, or generated move commentary. The plan and
+reasoning panels expose deterministic records emitted by the same controllers
+that choose the moves.
 
-### The ladder
+The agents are a set of production controllers, baselines, and experiments—not
+a six-rung strength ladder:
 
-**`RandomAi`** — picks uniformly from `legal_actions`. It exists as the zero
-point of the scale and nothing else. It wins about **5%** of games in a
-four-player tournament where parity is 25%.
+| controller | actual role |
+|---|---|
+| `RandomAi` | uniform legal-action baseline for tests and tournaments |
+| `BasicAi` | cheap deterministic controller for city-states and barbarians; also a fallback and explicit entrant |
+| `AdvancedAi` | stateful scripted controller for major civilizations; the stock default and the parent of most league strategies |
+| `NeuralAi` | experimental `BasicAi` whose war decision can use rollout endpoints scored by a value net |
+| `StrategicAi` | experimental `AdvancedAi` wrapper that rolls out victory-lane commitments; it can run without a value net |
+| `PolicyAi` | experimental one-ply value-net action selector with `AdvancedAi` fallback |
+| `ProductionSearchAi` | evaluator-only production rollout retained as a negative result |
 
-**`BasicAi`** — a deterministic lightweight heuristic agent: expand, build,
-defend, take the obviously good action now. It runs every **city-state and
-barbarian** in a normal game, so it is on screen constantly even when no major
-civilization is using it. Around **19%** in the same tournament. It reads full
-state and does not honour fog, which makes it a sparring partner rather than a
-fair-play opponent.
+`Oracle<Ai>` is a diagnostic wrapper that grants a subsystem for free to
+measure headroom. It is deliberately impossible to select as a rated player.
+The many additional names accepted by `ai_eval` are controls and treatments
+built from these controllers, not more deployed AI architectures.
 
-**`AdvancedAi`** — the workhorse, and the agent playing every major civilization
-in the video. This is where nearly all of the actual Civ-playing intelligence
-lives. It is *stateful and hierarchical*: it carries persistent grand strategy, a
-victory plan, campaigns, force groups, settlement plans, builder queues and a
-threat model between turns, and everything else is subordinated to that plan.
-Research, civics, policy cards, government, Secret Societies, diplomacy,
-production, spending, religion, trade routes, envoys, Congress ballots and unit
-orders are all steered by the same medium-term goal rather than decided
-independently each turn.
+### What actually runs
 
-It also reads the public victory race for every rival and reacts to it: an
-imminent science or score win becomes a military-denial target, a culture lead
-triggers defensive Culture and Tourism investment, a religious lead is met with
-theological pressure or military denial, a diplomatic lead redirects Favor and
-envoys. Economic plans persist for five turns to stop strategic thrashing,
-interrupted early by a surprise war, a newly threatened city, or a rival about to
-win.
+- Without a league, major civilizations use stock `AdvancedAi`; city-states
+  and barbarians use `BasicAi`.
+- The supervised exhibition defaults to `--league auto`. For each
+  leader/civilization it makes a rank-weighted choice among the top three
+  live-eligible strategies, avoiding repeats while the roster allows, from a
+  mutable copy of the shipped roster. Those strategies are `AdvancedAi`
+  variants plus the scripted baseline entries. The roster's `strategic` search
+  agent is an offline anchor marked `league_only`, so it is not offered to
+  exhibition or auto-play seats.
+- Human auto-play hands that seat to a selected live roster strategy, or to one
+  of `advanced`, `advanced_evolved`, `advanced_v1`, and `basic` when no roster
+  is available.
+- The repository ships and embeds `data/evolved/best.json`, the current
+  40-gene `AdvancedAi` champion. It does **not** ship `valuenet.json`.
+  Consequently `neural` resolves to `BasicAi`, `policy` resolves to
+  champion-weight `AdvancedAi`, and `strategic` keeps its score-share rollouts
+  but has no learned evaluator in a normal checkout. `ai_eval` prints this
+  provenance and can refuse missing artifacts.
 
-**`AdvancedAi` is roughly three times as strong as `BasicAi`** and is the
-benchmark everything else is measured against. `advanced_v1` is the pre-upgrade
-version, frozen on purpose as a regression control.
+The Civilization VI integrations are separate systems. The grounding mod can
+export the economic subset of a league genome into the real game, but Firaxis'
+AI still handles tactics and everything the export does not cover. The newer
+computer-control mod is an independent Lua heuristic controller, not the Rust
+`AdvancedAi`; its difficulty ladder currently records no completed attempt.
 
-**`NeuralAi`** — `BasicAi` play with one decision upgraded. War declarations are
-decided AlphaZero-style-in-miniature: clone the game, roll each branch forward
-with fast scripted agents, and let a trained value net judge the resulting
-positions. It is the proof that lookahead works in this engine, and its scope is
-deliberately one decision type.
+### Where it works well
 
-**`StrategicAi`** — the one agent that genuinely searches. Every `review_every`
-turns it simulates staying adaptive *and* committing to each enabled victory lane
-for `horizon` rounds, with rivals played by `AdvancedAi`, and commits to a lane
-only when the targeted policy beats its adaptive parent by a real margin.
-Positions are judged by the trained value net when one exists on disk, and by
-score share otherwise. Three priors can answer before the rollouts ever run — a
-public victory threat, irreversible Prophet investment, and duel geometry —
-because a short economic rollout cannot discover those in time.
+`AdvancedAi` is the useful game-playing core. It keeps persistent victory,
+campaign, force-group, settlement, builder, city-role, and threat state, then
+coordinates research, civics, policies, diplomacy, production, spending,
+religion, trade, envoys, Congress, and unit orders around that state. It is not
+purely greedy: tactical attacks use cloned positions and a bounded forcing-reply
+extension before the agent commits.
 
-**`PolicyAi`** — the learned net used as the policy rather than as an advisor.
-Each turn it scores the legal action set by applying every candidate to a clone
-and evaluating the resulting position, then commits the best improvement. That is
-one-ply net-guided search over the real action space. Without a trained net on
-disk it falls back to `AdvancedAi` rather than playing badly.
+The best-established scripted regression result compares `advanced` with its
+frozen predecessor: on the recorded six-player 74×46, six-city-state Online
+benchmark, `advanced` measured **+207 Elo-equivalent** against `advanced_v1`
+and passed the promotion gate. Exact end-to-end tests also make the agent
+complete every victory type without injected progress. Those tests establish
+rules and planning coverage; they are not evidence of human-level play.
 
-### How they are trained and rated
+The evaluation machinery is another genuine strength. Runs are seeded,
+seat-mirrored, profile-labelled, provenance-checked, and gated on wins. That
+machinery has caught silent artifact fallbacks, evaluator blindness, proxy
+optimisation, underpowered comparisons, and map-profile overfitting before the
+experimental agents reached live play.
 
-Three separate loops, which are easy to confuse:
+Rollout search is useful research machinery. On the small four-player Standard
+benchmark, `strategic_deep` beat its lower-compute parent by about +45
+Elo-equivalent in a pre-registered run. That is evidence for search on that
+profile, not a universal ranking and not a live-deployment result.
 
-- **`civvis evolve`** — a genetic algorithm over the **48-gene `Weights` vector**
-  that parameterises `AdvancedAi`'s strategy and combat doctrine. Each genome
-  plays the reigning champion on shared maps; a challenger is promoted only on a
-  sequential probability ratio test *plus* no regression on fixed holdout maps.
-  Note the split, which is deliberate and load-bearing: **breeding consumes score
-  share and combat-achievement share, while champion promotion depends only on
-  wins.**
-- **`civvis league`** — a persistent Glicko-2 league over named strategies,
-  including parameterised `AdvancedAi` variants. Each round is one rating period;
-  every finished game decomposes into pairwise results by placement. Strong
-  strategies breed, confidently weak ones retire. Glicko-2 rather than Elo
-  because the roster churns, and a newborn strategy needs to converge quickly
-  without being culled on a small sample.
-- **`civvis tournament` / `ai_eval`** — fixed head-to-head evaluation. Elo per
-  `(player, leader, civilization)` combination, with multiplayer games scored as
-  pairwise results at `K/(n-1)` scaling.
+### Where it is failing
 
-### How good is it, really
+- **Fair information:** `BasicAi` and `AdvancedAi` inspect the full `Game`, so
+  they see through fog. The HTTP observation and `obs_tensor` are fog-honest,
+  but the production controllers do not use them.
+- **Learned control:** no trained model ships, and no Rust controller consumes
+  the spatial PyTorch checkpoint produced by `train_spatial.py`. A historical
+  25-feature state-value net could predict outcomes, but that does not make it
+  a causal action evaluator.
+- **Tactical value policy:** the 25-feature policy could not see 96% of its
+  candidates. A 34-feature version made actions visible, then fell to **14.2%**
+  against `advanced` (about **−313 Elo**) because its argmax maximized a
+  correlate of winning—enemy contact—rather than the consequence of the move.
+  Freezing the two contact features restored exact parity, confirming the
+  failure mechanism rather than producing a useful policy.
+- **Production search:** `ProductionSearchAi` scored **45.0%** against the
+  scripted governor and lost significantly by paired-map direction. Extending
+  its horizon from 40 to 200 barely changed its choices; the problem is the
+  proxy objective, not insufficient lookahead.
+- **Generalization:** the embedded evolved genome measured +58 on the small
+  four-player Standard profile and **−9, inconclusive**, on the recorded
+  six-player 74×46, six-city-state Online benchmark. `strategic` moved from
+  +117 on the former to **−47, inconclusive on wins**, on the latter; the
+  completed 300-map confirmation does not exist. A cheaper search variant
+  reversed from +16 to a significant **−63**. Search and evolution results
+  must therefore travel with their exact profile.
+- **Optimization surface:** `Weights` has 40 active genes; policy appetites and
+  policy-deck/dedication choices stored in the same struct are not genes. Several
+  genes are bypassed on common `AdvancedAi` paths, and inexpensive score-share
+  improvements have repeatedly failed to produce more wins.
+- **External strength:** internal Elo/Glicko ratings compare CIVVIS strategies
+  only. There is no completed human or Firaxis-AI calibration, so “best” means
+  best inside a named CIVVIS test or league population.
 
-Tournament, 30 games × 4 players × 250 turns, parity = 25%:
-
-| agent | Elo | win rate |
-|---|---|---|
-| `advanced` | 1154.5 | **56%** |
-| `basic` | 1022.4 | 19% |
-| `random` | 823.1 | 5% |
-
-Head-to-head against `advanced`, which is the honest test:
-
-| matchup | result | verdict |
-|---|---|---|
-| `advanced` vs `basic` | 66% | a real, large gap |
-| `strategic` vs `advanced` | 54–56% | above parity, inside the noise band at n=50 |
-| `policy` vs `advanced` | 40–42% | **the learned policy is worse than the scripted one** |
-
-That last row is the important one and it is not a typo. Using the value net as
-the policy loses to hand-written heuristics, even after the net was retrained on
-GPU and verified genuinely predictive — validation BCE **0.3685** against
-**0.5623** for a constant predictor. The net knows things; the agent built on it
-does not yet convert that into wins.
-
-Two caveats that should travel with every number above:
-
-- **Elo between our own bots is a closed system.** It says one bot is 130 points
-  better than another bot. It says nothing about how either would do against a
-  human or against Firaxis' AI.
-- **Against a real handicap the gap shows.** A challenger taking 58.3% of seats
-  at Prince takes **16.7% at Deity**, where the opposition gets +80% Production
-  and Gold and +32% Science. Beating our own baseline is not the same as playing
-  well.
-
-### What is known to be broken
-
-Documented rather than hidden, because it is the most useful part of the record:
-
-- **A quarter of the genome is inert.** Driving each gene to both ends of its own
-  bounds, **11 of 48 genes produce zero divergence** over 12 trials — the playing
-  agent never consults them.
-- **The learned components are inert where it counts.** The value net is
-  well-calibrated and yet never changes a lane choice; `PolicyAi` scores unit
-  actions using 25 *empire-level* features that an individual move cannot change,
-  so its computed gain is exactly zero on 96% of the candidates it clones.
-- **Search is under-provisioned, and it is the one thing measured to pay.**
-  `StrategicAi` reaches its rollouts about 1.5 times per seat per game — half its
-  reviews are answered by the cheap priors. Doubling its compute, either as twice
-  the reviews or twice the horizon, wins significantly more maps at 120-map power
-  (p=0.0023 and p=0.0025). Quadrupling does not help further.
-- **Evaluation config is not deployment config.** Results measured at 4 players on
-  a small map do not transfer to the 6-player exhibition on a large one: one
-  change measured at +16 in the eval harness came back at −63 in the deployment
-  configuration.
-
-The short version: the agent that plays well is the scripted one, the only
-intervention with a reproducible win is *more search*, and every learned
-component so far is either wired to a decision it cannot change or evaluated in a
-configuration that does not predict the real one. `docs/AI_GAPS.md` keeps the
-ranked list of what is missing; `docs/EVAL.md` keeps the runs behind every number
-on this page.
+The live exhibition now rotates through 4–10 major civilizations and stock map
+sizes, so it has no single deployment profile and there is no defensible
+profile-independent “strongest agent.” See [AI_GUIDE](docs/AI_GUIDE.md) for the
+implementation map, [AI_GAPS](docs/AI_GAPS.md) for the current assessment,
+[EVAL](docs/EVAL.md) for the chronological evidence, and
+[LEAGUE](docs/LEAGUE.md) for seating and ratings. [GROUNDING](docs/GROUNDING.md)
+and [CIV6_COMPUTER_CONTROL](docs/CIV6_COMPUTER_CONTROL.md) document the two
+real-game bridges.

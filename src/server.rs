@@ -115,10 +115,10 @@ pub struct Params {
     /// transition after a completed spectator game.
     pub supervised: bool,
     /// League directory to seat major players from (`civvis play --league`):
-    /// each civ gets its best-rated strategies and the HUD shows per-player
-    /// elo. `None` still annotates elo when a `league/` dir exists, because
-    /// the default fleet below IS the league's "advanced" entrant — but the
-    /// AIs themselves are unchanged.
+    /// each civ samples its top three live-eligible strategies with 3:2:1 rank
+    /// weights, and the HUD shows per-player Elo. `None` still annotates Elo
+    /// when a `league/` dir exists, because the default fleet below IS the
+    /// league's "advanced" entrant — but the AIs themselves are unchanged.
     pub league_dir: Option<String>,
     /// Rate the finished game into `league_dir` (`--league-record`). Off by
     /// default because the shipped `data/league` roster is a committed
@@ -1491,11 +1491,12 @@ impl Shared {
 }
 
 impl Session {
-    /// Seat AIs plus each seat's league identity. With a roster to seat
-    /// from, every major civ is played by its best-rated available
-    /// strategy (`league::seat_by_civ`); otherwise majors run the default
-    /// hierarchical AI, which the league rates as its "advanced" entrant,
-    /// so a loaded roster can still label those seats with an elo.
+    /// Seat AIs plus each seat's league identity. With a roster to seat from,
+    /// each major gets a rank-weighted sample from its leader/civilization's
+    /// top three live-eligible strategies (`league::seat_by_civ_seeded`), with
+    /// repeats avoided while possible. Otherwise majors run the default
+    /// hierarchical AI, which the league rates as its "advanced" entrant, so
+    /// a loaded roster can still label those seats with an elo.
     ///
     /// A seat somebody is playing is never seated from the roster. Whoever is
     /// at the keyboard is their own player — `register_human_players` gives
@@ -1681,8 +1682,8 @@ impl Session {
             )
         });
         game.victory_conditions = params.victory_conditions;
-        // Paired and multiplayer evaluation make the hierarchical agent the
-        // strongest built-in default. Minors/barbarians retain the cheaper
+        // The hierarchical agent is the stock major-civilization default when
+        // no league strategy is seated. Minors/barbarians retain the cheaper
         // baseline because they do not need empire-level planning.
         let (mut league, seat_from_roster) = Self::load_params_league(&params);
         let (mut ais, mut seat_strategy) = Self::ai_fleet(&game, league.as_ref(), seat_from_roster);
@@ -3123,7 +3124,8 @@ fn auto_step_loop(sh: Arc<Shared>) {
         // this same gate, so a page arriving while the loop waited for some
         // *other* viewer could not get in — and a restart, whose whole job is
         // to put a new page in front of a new world, is exactly that arrival.
-        // Measured on a 74x46 six-player exhibition: 0 turns in 25 seconds.
+        // Measured on a recorded 74x46 six-player profile: 0 turns in 25
+        // seconds.
         // A re-check under the gate is as atomic as waiting inside it was,
         // because seating happens under the gate too.
         let simulation_frame_gate = loop {
@@ -4693,8 +4695,8 @@ mod tests {
     /// The stepper used to hold the frame gate across `wait_for_turn_frame`,
     /// and seating a viewer needs that same gate — so an arriving page was
     /// locked out for exactly as long as whoever was already watching took to
-    /// draw. Measured on a 74x46 six-player exhibition, that was 4.5s of veil
-    /// on every restart against 0.05s once the wait moved outside the gate.
+    /// draw. Measured on a recorded 74x46 six-player profile, that was 4.5s of
+    /// veil on every restart against 0.05s once the wait moved outside the gate.
     /// Worse, the restarting page gave up at its own timeout and retried,
     /// seating itself as a viewer owed a frame it then never painted, and the
     /// successor stopped stepping altogether: 0 turns in 25 seconds.

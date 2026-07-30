@@ -1,5 +1,9 @@
 # Does the GA need combat score to evolve war?
 
+> **Profile note (2026-07-30).** “Deployment” in this dated experiment names
+> its fixed six-player 74×46 Online comparison. The live exhibition now rotates
+> through 4–10 seats and matching stock profiles.
+
 ## Pre-registration — 2026-07-29
 
 `FitnessObservation::selection_value` ranks genomes by scaled Civilization
@@ -19,7 +23,8 @@ map seeds, candidate seats, turn budgets, opponents, and speed through
 - the combat component, `12 * players * combat_share`; and
 - their sum, which is the production selection objective.
 
-The primary run uses the deployment profile rather than the evaluator default:
+The primary run uses the recorded six-seat comparison rather than the evaluator
+default:
 six players, 74x46, Online speed, a 250-turn base budget, 24 common-seed games
 per candidate, and seed 9,800,000. As in production evolution, every third game
 gets twice the base turn budget. The embedded shipped champion is both the
@@ -131,7 +136,7 @@ gate and does not change production.
 ## Confirmation pre-registration — 2026-07-29
 
 Replicate the complete endpoint grid and leave-one-map-out selection procedure
-on 24 disjoint deployment-profile maps at seed 9,810,000. All candidates,
+on 24 disjoint comparison-profile maps at seed 9,810,000. All candidates,
 thresholds, game options, and the fixed Legacy-deck integrity tests remain
 unchanged.
 

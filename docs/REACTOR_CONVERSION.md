@@ -6,7 +6,7 @@ null is queued behind the shared simulator, and no focal seed has been read**.
 ## Production observation
 
 The latest 50 completed production saves available on 2026-07-29, through
-`20260729T124923.092707Z`, are one homogeneous deployment cell: eight major
+`20260729T124923.092707Z`, were one homogeneous then-live cell: eight major
 civilizations, Continents, Planet topology, Poles, Online speed, a
 policy-visible turn limit of 250, and external continuation until an enabled
 victory. They ended in 48 Science and two Culture victories at a mean turn of

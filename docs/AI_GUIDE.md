@@ -3,6 +3,44 @@
 The engine exists so you can develop advanced AI strategies against a
 Civ-6-like game without a UI in the loop.
 
+## Runtime status
+
+CIVVIS does not use a language model at runtime. Its game agents are local Rust
+controllers, and the observer's plan/reasoning feed is a deterministic journal
+of their decisions rather than generated prose.
+
+Keep deployment, builtins, and evaluator arms separate when describing the AI:
+
+| surface | controller in a normal checkout |
+|---|---|
+| major civilization, no seated league | stock `AdvancedAi` |
+| supervised exhibition | rank-weighted sample from that leader/civilization's top three live-eligible roster entries; currently scripted `AdvancedAi` variants and baselines |
+| city-state or barbarian | `BasicAi` |
+| human-seat auto-play | selected live roster entry, with scripted builtin fallbacks |
+| `neural` / `policy` | `BasicAi` / champion-weight `AdvancedAi` fallback because no value net ships |
+| `strategic` | champion-weight `StrategicAi` using score-share rollouts; offline `league_only` anchor, not an exhibition seat |
+
+The shipped tree contains and embeds `data/evolved/best.json`; it contains no
+`valuenet.json`. `builtin_provenance` and `ai_eval` report the effective
+controller after those fallbacks. The exhibition supervisor uses `--league
+auto`, seeds a mutable runtime roster from `data/league`, and excludes
+`league_only` entries from live seating. Without a league, the server uses
+stock `AdvancedAi` for every non-human major.
+
+There are seven concrete `Ai` implementations: `RandomAi`, `BasicAi`,
+`AdvancedAi`, `NeuralAi`, `StrategicAi`, `PolicyAi`, and
+`ProductionSearchAi`. They are not a linear strength ladder.
+`ProductionSearchAi` is a retained negative result, while the generic
+`Oracle<A>` wrapper is diagnostic-only and cannot be selected as a rated
+entrant.
+
+The real Civilization VI tooling does not transplant this controller whole.
+`tools/civ6_strategy.py` exports the economic subset of a parameterized league
+strategy while Firaxis' AI handles the rest. `tools/civ6_control` is a separate
+Lua heuristic seat controller. Its generated ladder currently contains no
+completed attempt; neither bridge is external strength evidence for
+`AdvancedAi`.
+
 ## In-process Rust agents
 
 Implement the `Ai` trait; you get the full `Game` API (`legal_actions`,
@@ -24,8 +62,9 @@ let mut ais = AdvancedAi::fleet(&g);
 run_game(&mut g, &mut ais);
 ```
 
-`AdvancedAi` is the default major-civilization agent. It maintains persistent
-grand strategy, victory, campaign, force-group, settlement, builder, and threat
+`AdvancedAi` is the default major-civilization agent when no league strategy
+is seated. It maintains persistent grand strategy, victory, campaign,
+force-group, settlement, builder, and threat
 state; coordinates research, civics, policies, governments, Secret Societies,
 diplomacy, production, spending, religion, trade, and unit orders; and falls
 back to the stable city governor for routine production. `advanced_v1`
@@ -238,8 +277,11 @@ independent-unit AI.
 
 ## Genetic strategy evolution
 
-`Weights` is a complete genome for the advanced agent. Alongside economy,
-diplomacy, production, and exchange evaluation, it includes command radius,
+`Weights::to_vec` exposes a 40-gene search surface for part of the advanced
+agent. It is not a complete encoding of the policy: research ordering, city
+roles, many strategic gates, policy-deck mode, and dedication choice remain
+hand-written or live outside the vector. Alongside economy, diplomacy,
+production, and exchange evaluation, the vector includes command radius,
 muster radius/readiness, cohesion, focus fire, screening, role spacing,
 objective pressure, local-superiority caution, and withdraw/rejoin thresholds.
 
@@ -355,10 +397,11 @@ a turn is roughly eight times the cost of a move — it settles every city's
 yields and refreshes every seat's map — so a search that ends turns deep in a
 line costs far more per node than one that does not.
 
-Actions are plain JSON dicts identical to what `legal_actions` returns —
-feed them straight into LLM tool-calling or an RL policy. One process per
-concurrent game; in-process Rust agents remain the fast path for self-play at
-scale. On an Apple M5 Max, the current release Advanced-v2 workload measured
+Actions are plain JSON dicts identical to what `legal_actions` returns, so an
+external client can feed them to LLM tool-calling or an RL policy. No in-tree
+agent currently does so. One process per concurrent game; in-process Rust
+agents remain the fast path for self-play at scale. On an Apple M5 Max, the
+current release Advanced-v2 workload measured
 1,173 turns/sec for `benchmark --games 100 --turns 100 --jobs 1` (two players,
 20×14, one game at a time). A batch that leaves `--jobs` alone plays across
 every core and reaches several times that. Throughput varies materially with
@@ -368,61 +411,53 @@ describe a much smaller historical rules workload.
 ## Machine-learning surfaces
 
 - `civvis::obs_tensor::obs_tensor(&game, pid)` renders a fog-honest spatial
-  observation: 25 named `f32` feature planes over the full wrapped map plus
-  a named global scalar vector (own empire exact, per-rival public facts).
-  Same visibility contract as the JSON protocol (`obs::visibility`), so a
-  net trained on it never sees hidden state.
-- `civvis selfplay --games 200 --out <dir>` plays full games and exports
-  those tensors plus outcome labels (`planes.f32`, `globals.f32`,
-  `labels.f32`, `meta.json`); `python tools/train_spatial.py <dir>` trains a
-  wrap-aware residual CNN value net on them (CUDA when available).
-- `civvis evolve` appends value-net training rows to `evolved/dataset.csv`
-  during SPRT confirmation games; `python tools/train_valuenet.py` trains
-  the 25→64→32→1 net (CUDA via torch when present, NumPy fallback) and
-  writes `evolved/valuenet.json` for `NeuralAi` plus the Rust parity
-  fixture.
-- `civvis::strategic::StrategicAi` (builtin `strategic`) picks its victory
-  lane by rolling each lane forward and judging the resulting position —
-  the first macro-search rung above the scripted agents.
-- Builtin `strategic_deep` is the same agent with four times the search
-  compute, split across both of its axes: it reviews every 20 turns rather
-  than 40 and projects 80 rounds rather than 40. It is the strongest agent
-  measured here and the only one promoted through the gate.
+  observation: 25 named `f32` feature planes over the wrapped map plus named
+  public/global scalars. `civvis selfplay` exports these tensors and outcome
+  labels, and `tools/train_spatial.py` trains a wrap-aware PyTorch model.
+  Nothing in the Rust runtime loads that checkpoint yet.
+- `evolve::features` is a different representation: 25 full-state empire
+  aggregates. `tools/train_valuenet.py` can fit a 25→64→32→1 state-value MLP
+  and write `evolved/valuenet.json`. That artifact is local/generated, not
+  committed or embedded.
+- `decision_features` widens the scalar input to 34 terms and raises measured
+  action visibility from 44.5% to 86.1%. `action_space` supplies stable IDs for
+  all 77 action variants plus contextual destination features. These are
+  useful offline data surfaces; neither is a live learned policy.
+- `NeuralAi` uses a 25-wide value net only to compare scripted war rollouts.
+  `PolicyAi` applies legal tactical actions to clones and greedily scores the
+  resulting states. `StrategicAi` rolls out adaptive and victory-lane branches,
+  blending a compatible net at 25% when one exists and using score share when
+  it does not.
 
-  Its evidence is a pre-registered 300-map run at a fresh seed — size and
-  decision rule fixed in writing beforehand, because the gate's Wilson
-  interval is a fixed-n statistic and stopping when it happens to clear
-  would be optional stopping. Result: 339/600 games (56.5%), **56 mirrored
-  maps to 17**, sign p=0.0000, an anytime e-process of 3.14e4 crossing at
-  map 127, Wilson 50.8%..62.0%, Elo-equivalent +45 (CI +6..+85), and
-  `promotion gate: PASS` under the unmodified gate. Two earlier disjoint
-  sets add 240 maps at 53 to 15, for 540 independent maps at 109 to 32.
+### Current evidence, with scope
 
-  Against the scripted default rather than its own parent it is also
-  ahead: 136/240 games, 22 mirrored maps to 6, sign p=0.0037, e=89. The
-  measured ordering is `strategic_deep` > `strategic` > `advanced`,
-  consistent across every pairing. Note that `strategic` itself has never
-  been shown to beat `advanced` at adequate power — it leans ahead 20 maps
-  to 10 at p=0.0987, which is not a result.
+No agent has a profile-independent “strongest” result. The exhibition rotates
+through 4–10 seats and matching stock map sizes, while much of the research was
+run at four players on a 24×16 Standard map.
 
-  Each doubling on its own clears the anytime-valid evidence but not the
-  effect interval; only together do they clear both. Spending the same 4×
-  on frequency alone (`strategic_r10`) is the weakest arm measured, so it
-  is the product of the axes that pays rather than the total.
+| comparison | measured profile | result | interpretation |
+|---|---|---|---|
+| `advanced` vs `advanced_v1` | 6p, 74×46, 6 city-states, Online | **+207**, gate PASS | robust scripted improvement on that recorded comparison profile |
+| `advanced_evolved` vs `advanced` | same | −9, inconclusive | small-profile genome gain did not transfer |
+| `strategic` vs `advanced` | same, 60 maps | −47, wins inconclusive | open; the planned 300-map confirmation did not finish |
+| `strategic_cheap` vs `advanced` | same | **−63**, retain `advanced` | cheap search regressed |
+| `strategic_deep` vs `strategic` | 4p, 24×16, Standard | **+45**, gate PASS | deeper search won on its source benchmark only |
+| `policy_wide` vs `advanced` | 4p benchmark | **−313**, 14.2% | outcome correlation was harmful when greedily maximized |
+| `production` vs `advanced` | 4p benchmark | 45.0%, sign p=0.0428 | scripted governor retained |
 
-  `strategic` is unchanged and is the frozen control for measuring further
-  search changes, the way `advanced_v1` is for `advanced`. Four times the
-  macro-search compute is also a real cost, so batch callers (soak, league,
-  fleet) should adopt it deliberately rather than inherit it.
+The learned-policy diagnosis is causal, not just a bad score. The original
+25-wide policy was unchanged by 96% of tactical candidates. The 34-wide policy
+could distinguish them, but selected moves that increased enemy contact—a
+correlate of strong attacking positions in the training games—while losing
+material. Freezing those two contact inputs restored exact parity. A predictive
+state value is therefore not an action value, and calibration alone does not
+license an argmax over interventions.
 
-  Two cautions that generalize beyond this agent. Nothing below about a
-  hundred maps of `ai_eval --players 4` is a result here — the same
-  measurements at twenty maps said the opposite twice, in opposite
-  directions — and since `--jobs` landed, a hundred maps is one run of
-  roughly half an hour. And the gate can decline overwhelming evidence:
-  `strategic_r20` reached an e-value of 19,720 over 400 maps, 46 map
-  directions to 12, and still read INCONCLUSIVE because its 54.2% effect
-  needs about 540 maps for the Wilson bound to clear.
+Search remains valuable as a counterfactual laboratory, and one searching seat
+was measured at about 6.4× the game-turn cost of an all-scripted six-seat fleet
+on a 74×46 map with nine city-states (three early-game seeds). Its live strength
+across the rotating exhibition profiles is unmeasured, which is why the shipped
+roster keeps `strategic` as an offline-only anchor.
 - Ranked AI-strength roadmap and current status: `docs/AI_GAPS.md`.
   Recorded eval baselines and the regression battery: `docs/EVAL.md`.
 

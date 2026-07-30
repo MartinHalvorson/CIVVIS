@@ -636,7 +636,7 @@ pub struct Weights {
     /// Which deck this strategy holds.
     ///
     /// **Not a gene.** Deliberately absent from `to_vec`/`from_vec`/`bounds`,
-    /// so the GA can neither read nor breed it and the genome stays 48 wide.
+    /// so the GA can neither read nor breed it and the genome stays 40 wide.
     /// It rides on `Weights` for one reason: `AdvancedAi::with_weights` already
     /// carries a genome into the inner `BasicAi`, so an eval arm costs no
     /// change to `src/ai/advanced.rs` or `src/elo.rs`. Set it in a harness;
@@ -646,7 +646,7 @@ pub struct Weights {
     /// How this strategy picks its Dedication at an age transition.
     ///
     /// **Not a gene**, for the same reasons as `policy_deck`: absent from
-    /// `to_vec`/`from_vec`/`bounds`, so the genome stays 48 wide.
+    /// `to_vec`/`from_vec`/`bounds`, so the genome stays 40 wide.
     #[serde(default)]
     pub dedication_choice: DedicationChoice,
 }
@@ -703,7 +703,7 @@ pub enum PolicyDeck {
     /// Cards valued by slotting them and reading the empire either side.
     ///
     /// Old champion artifacts predate this non-gene field. They deserialize
-    /// to Live for compatibility, and a deployment-profile A/B showed that
+    /// to Live for compatibility, and a recorded six-seat A/B showed that
     /// changing them to Legacy loses significantly (12 map directions for,
     /// 26 against, p=0.0336). Gene-vector children preserve their template's
     /// non-gene policy through `Weights::from_vec_like`.

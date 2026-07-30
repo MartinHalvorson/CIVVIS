@@ -2,8 +2,8 @@
 
 `civvis rating` is the measurement layer under the strategy league. It exists
 because a rating that nobody audits is a number, not a measurement — and when
-the exhibition's ratings were audited, they turned out to carry no information
-at all.
+the recorded exhibition ratings were audited, they turned out to carry no
+information at all.
 
 ```bash
 civvis rating --dir league/                  # rate a history, print the table
@@ -19,7 +19,7 @@ live. Nothing below asks to be taken on trust.
 
 ## What the audit found
 
-Replaying the live exhibition's own match history through the rating system
+Replaying the recorded exhibition match history through the rating system
 the league runs today:
 
 | rating system | winner LL | info/game | pair LL |
@@ -61,10 +61,10 @@ observations under two fake ones. This system weights stage `k` by a geometric
 **The best decay is a property of the league, not a constant**, which is why
 `--sweep` exists instead of a hard-coded number. On that fresh 6-player league
 it peaks near 0.1 — almost "rate only who won" — worth 0.591 nats per game
-against 0.551 at the default and 0.459 with flat weights. On the exhibition's
-4-seat games it peaks near 0.7 and is nearly flat across the range. 0.5 ships
-because it is close to the better end of both; sweep before trusting it on a
-new league.
+against 0.551 at the default and 0.459 with flat weights. On the recorded
+4-seat exhibition games it peaks near 0.7 and is nearly flat across the range.
+0.5 ships because it is close to the better end of both; sweep before trusting
+it on a new league.
 
 ### A seat is not just a strategy
 

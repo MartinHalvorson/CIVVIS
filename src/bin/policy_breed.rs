@@ -14,7 +14,7 @@
 //! says nothing about the best point in it. Nobody has ever bred them.
 //!
 //! Why this is better conditioned than `civvis evolve`. The whole-genome GA
-//! searches 48 genes against a *churning* population, and about a thousand
+//! searches 40 genes against a *churning* population, and about a thousand
 //! rounds of it produced no measurable gain (`docs/RATING.md`). Here the
 //! search space is 8 genes and the opponent is **fixed** at a strength that
 //! has been measured, so a fitness difference means what it says.

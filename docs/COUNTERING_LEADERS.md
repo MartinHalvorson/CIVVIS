@@ -1,5 +1,9 @@
 # Countering the victory leader
 
+> **Profile note (2026-07-30).** “Deployment” below names the recorded
+> six-player 74×46, nine-city-state comparison profile used by this study. The
+> current exhibition rotates through 4–10 seats and matching stock profiles.
+
 If somebody is about to win, everybody else should try to stop them. The AI
 already believes this: `victory_denial` names the rival closest to a victory
 and hands back a counter-strategy, and `urgent_victory_threat` lets a terminal
@@ -38,9 +42,10 @@ Diagnostic only: nothing reads it, and no agent can name it.
 
 ## Measure where it runs
 
-**The first four readings of this investigation were taken off the deployment
-path and several of them reversed.** They ran at 24×16 with no city-states.
-The exhibition seats 6 players on 74×46 with 9 (`server.rs` size profile:
+**The first four readings of this investigation were taken off the target
+profile and several of them reversed.** They ran at 24×16 with no city-states.
+The recorded comparison used 6 players on 74×46 with 9 city-states (the stock
+size table in `server.rs` is:
 2→44×26/3, 4→60×38/6, 6→74×46/9, 8→84×54/12, 10→96×60/15, 12→106×66/18) —
 **567 tiles per empire against 64**.
 

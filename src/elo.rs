@@ -537,7 +537,8 @@ pub fn builtin_ai(name: &str, seed: u64) -> Box<dyn Ai> {
         // about to win. Paired against `advanced` this is what the whole
         // denial response is worth. See `docs/COUNTERING_LEADERS.md`, which
         // measures the layer as a near-perfect predictor of the winner, no
-        // deterrent, and a real cost in development at deployment scale.
+        // deterrent, and a real cost in development on its recorded large
+        // profile.
         "advanced_blind_to_leaders" => {
             let mut ai = AdvancedAi::new();
             ai.deny_leaders = false;
@@ -570,8 +571,8 @@ pub fn builtin_ai(name: &str, seed: u64) -> Box<dyn Ai> {
         // except that a Science or Expansion threat is answered by racing the
         // leader in that lane rather than by declaring on them. The alarm is
         // unchanged; only what it asks for changes. See
-        // `docs/COUNTERING_LEADERS.md`: at deployment scale one or two
-        // belligerents wins 4.4% and 10.7% of seats against a 16.7% base.
+        // `docs/COUNTERING_LEADERS.md`: on its recorded large profile, one or
+        // two belligerents wins 4.4% and 10.7% of seats against a 16.7% base.
         "advanced_counter_in_lane" => {
             let mut ai = AdvancedAi::new();
             ai.counter_in_lane = true;
@@ -600,7 +601,7 @@ pub fn builtin_ai(name: &str, seed: u64) -> Box<dyn Ai> {
         // empire `victory_denial` names instead of at the empire holding the
         // most Diplomatic Victory Points. `congress_census` measures that
         // shipped target as the eventual winner 24.8% of the time at 4p
-        // (base 25.0%) and 14.4% at the 6p exhibition profile (base 16.7%),
+        // (base 25.0%) and 14.4% at the recorded 6p profile (base 16.7%),
         // against 61% for the score leader on both. Unlike every arm in
         // `docs/COUNTERING_LEADERS.md`, this response is not paid for in
         // development: `resolve_congress` refunds a losing vote in full.
@@ -777,13 +778,12 @@ pub fn builtin_ai(name: &str, seed: u64) -> Box<dyn Ai> {
             ai.settler_price = 100.0;
             Box::new(ai)
         }
-        // The genome the exhibition actually seats, against the genome the
-        // repository actually evolved. `Session::ai_fleet` seats each civ's
-        // best-rated available strategy from the shipped roster, and the top of
-        // that roster is league-bred `Advanced { weights }` entries — not the
-        // gen-14 champion, which until PR #519 had no entrant at all. Whether a
-        // 1790-rated league genome is genuinely stronger than the champion or
-        // merely better-rated is the question this entrant exists to answer;
+        // A high-rated league genome against the genome the repository evolved.
+        // The exhibition now samples each civ's top three eligible entries, so
+        // this is a reproducible diagnostic from the shipped roster rather than
+        // a claim that every live seat uses this genome. Whether a 1790-rated
+        // league genome is genuinely stronger than the champion or merely
+        // better-rated is the question this entrant exists to answer;
         // `docs/LEAGUE_GENOME_CHALLENGER.md` records the best-rated one losing
         // 98 Elo when transferred into `strategic_deep`.
         //
@@ -794,10 +794,11 @@ pub fn builtin_ai(name: &str, seed: u64) -> Box<dyn Ai> {
         // variant moves the budget UP (`review_every` 20 and 10, `horizon` 80,
         // the 4x `strategic_deep`); this is the first that moves it down.
         //
-        // `strategic` measured ~1833 ms per game-turn at the exhibition's own
-        // profile against its ~250 ms budget, so the deployable question is not
-        // "is more search better" — that is settled and yes — but "how much of
-        // the gain survives a search the exhibition could actually run".
+        // At the measured 6p/74x46 profile, one searching seat among five
+        // scripted ones cost 76.7 ms per game-turn versus 13.3 for the
+        // all-scripted fleet (6.4x). Search strength across the rotating live
+        // profiles remains open, so the deployable question is how much gain
+        // survives at a justified budget and profile.
         //
         // Three knobs, all multiplicative on branch-rounds:
         //   review_every 40 -> 80   half the reviews
@@ -1000,8 +1001,9 @@ pub fn builtin_ai(name: &str, seed: u64) -> Box<dyn Ai> {
         }
         // The macro search with four times the compute, split across both
         // of its axes: reviews every 20 turns instead of 40, projected 80
-        // rounds instead of 40. The strongest configuration measured —
-        // Promoted on a pre-registered 300-map run at a fresh seed:
+        // rounds instead of 40. The strongest configuration measured on the
+        // 4p, 24x16, Standard source benchmark — promoted on a pre-registered
+        // 300-map run at a fresh seed:
         // 56 mirrored maps to 17, sign p=0.0000, e-process 3.14e4 crossing
         // at map 127, Wilson 50.8%..62.0% clearing parity — `promotion
         // gate: PASS` under the unmodified gate. With the two earlier
@@ -1089,8 +1091,8 @@ pub fn builtin_ai(name: &str, seed: u64) -> Box<dyn Ai> {
             ai.religious_checkmate_search = true;
             Box::new(ai)
         }
-        // Static genome challengers for the strongest measured search
-        // budget. Unlike `strategic_doctrine`, these do not ask a noisy
+        // Static genome challengers for the strongest search budget measured
+        // on that source benchmark. Unlike `strategic_doctrine`, these do not
         // per-review rollout to choose a play style. Each applies one bounded
         // Doctrine perturbation for the whole game, so a paired evaluation
         // measures whether that policy itself is stronger.
@@ -1131,7 +1133,7 @@ pub fn builtin_ai(name: &str, seed: u64) -> Box<dyn Ai> {
             ai.horizon = 80;
             Box::new(ai)
         }
-        // The same opponent-model treatment on the strongest measured macro
+        // The same opponent-model treatment on the deepest promoted macro
         // search, isolating whether better branch fidelity still helps when
         // each review already spends the promoted 20x80 budget.
         "strategic_deep_rivals" => {
