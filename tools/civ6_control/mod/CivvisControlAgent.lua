@@ -2497,7 +2497,10 @@ local function chooseEnvoy(player, pid, turn)
 	--    failure mode is running out of units. Gold is checked against the
 	--    engine's own quote; `CanLevyMilitary` already refuses a levy that is
 	--    still on cooldown.
-	if levyOp ~= nil then
+	-- ⚠ Each mutation has its OWN flag so the crash can be isolated one variable
+	-- at a time. Never re-enable all three at once — that is how three runs were
+	-- spent learning only that "something in chooseEnvoy" faults.
+	if levyOp ~= nil and cfg.EnvoyLevy ~= false then
 		local purse = try(function()
 			return math.floor(player:GetTreasury():GetGoldBalance());
 		end, 0) or 0;
@@ -2524,7 +2527,7 @@ local function chooseEnvoy(player, pid, turn)
 	--    we do not already hold. Ties go to the one we have most invested in, so
 	--    a part-built claim finishes instead of a new one starting.
 	local placed, target = 0, nil;
-	if giveOp ~= nil and canGive and tokens > 0 then
+	if giveOp ~= nil and canGive and tokens > 0 and cfg.EnvoyPlace ~= false then
 		local best = nil;
 		for _, minor in ipairs(seen) do
 			if minor.takes and not minor.ours then
@@ -2557,11 +2560,17 @@ local function chooseEnvoy(player, pid, turn)
 
 	-- 3. Clear the prompt whatever happened. This is the line that ends the
 	--    turn, and skipping it is what left a run wedged for ten minutes.
-	pcall(function()
-		if not influence:IsGivingTokensConsidered() then
-			influence:SetGivingTokensConsidered(true);
-		end
-	end);
+	--    ⚠ It is also a PRIME SUSPECT for the game-core segfault: it writes a
+	--    flag the shipped code only ever writes from the CityStates screen's own
+	--    context, and the fault is delayed by 6-9 turns, which fits desynced
+	--    bookkeeping better than a bad operation request.
+	if cfg.EnvoyConsider ~= false then
+		pcall(function()
+			if not influence:IsGivingTokensConsidered() then
+				influence:SetGivingTokensConsidered(true);
+			end
+		end);
+	end
 
 	envoyTally.placed = envoyTally.placed + placed;
 	envoyTally.suzerainties = suzerainties;
@@ -2614,11 +2623,21 @@ local SOFT_BLOCKERS = {
 	ENDTURN_BLOCKING_GOVERNOR_PROMOTION = true,
 	ENDTURN_BLOCKING_GOVERNOR_IDLE = true,
 	ENDTURN_BLOCKING_GOVERNOR_OPPORTUNITY = true,
-	-- ⚠ GIVE_INFLUENCE_TOKEN IS NO LONGER HERE either, and it was the worst one
-	-- left: 44 firings in a 106-turn run, the top blocker by count. Listing it
-	-- did not even buy the cheap turn-end the comment above promises, because
-	-- force-skipping never clears this prompt -- the run wedged on it for ten
-	-- minutes at turn 106. `answerBlocker` now calls `chooseEnvoy`.
+	-- ⚠⚠ GIVE_INFLUENCE_TOKEN IS BACK HERE, AND THE REASON MATTERS. Answering it
+	-- with `chooseEnvoy` CRASHES THE GAME CORE. On one fixed seed (425255), same
+	-- flags, same everything:
+	--     envoy_events = 0  ->  t92, t106      no crash
+	--     envoy_events = 1  ->  t44, t47, t45  EXC_BAD_ACCESS each time
+	-- Three fresh SIGSEGVs in `GameCore_XP2.dll` on the `Game Core` thread, 6-9
+	-- turns AFTER the single envoy was placed — a delayed fault, so corrupted
+	-- state rather than a bad immediate call. Civ 6 does segfault on its own
+	-- (there is a pre-envoy crash at t25), but 3-for-3 against 0-for-2 on the
+	-- SAME SEED is a controlled comparison, not a coincidence.
+	-- Set `EnvoyEnabled` to re-enable and isolate which mutation does it:
+	-- `GIVE_INFLUENCE_TOKEN` from a gameplay context, or the
+	-- `SetGivingTokensConsidered` write. Until then the known-stable skip stands,
+	-- and the ten-minute wedge is the lesser of the two failures.
+	ENDTURN_BLOCKING_GIVE_INFLUENCE_TOKEN = true,
 	ENDTURN_BLOCKING_CLAIM_GREAT_PERSON = true,
 	ENDTURN_BLOCKING_ARTIFACT = true,
 	ENDTURN_BLOCKING_EMERGENCY_NEEDS_ATTENTION = true,
@@ -2653,6 +2672,10 @@ local function answerBlocker(player, pid, blocker, turn)
 		if not spend("dedication", cfg.MaxDedicationPasses or 2) then return nil; end
 		return chooseDedication(player, pid);
 	elseif name == "ENDTURN_BLOCKING_GIVE_INFLUENCE_TOKEN" then
+		-- ⚠ OFF BY DEFAULT because it crashes the game core: 3 SIGSEGVs in 3 runs
+		-- on a seed that reached t92/t106 without it. See SOFT_BLOCKERS. Turning
+		-- this on is an experiment, not a fix — isolate ONE mutation at a time.
+		if not cfg.EnvoyEnabled then return nil; end
 		-- One pass is enough: `chooseEnvoy` places every held token and then
 		-- sets the considered flag, so a second call has nothing left to do.
 		if not spend("envoy", cfg.MaxEnvoyPasses or 1) then return nil; end
