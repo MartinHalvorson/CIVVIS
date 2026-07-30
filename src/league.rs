@@ -1,5 +1,5 @@
 //! Glicko-2 strategy league: persistent skill ratings for high-level AI
-//! strategies, with periodic selection so strong strategies breed offspring
+//! strategies, with periodic selection so proven winners breed offspring
 //! and confidently weak ones retire.
 //!
 //! `civvis league` plays rating periods ("rounds") of multiplayer games
@@ -40,8 +40,8 @@ const BASE_VOL: f64 = 0.06;
 /// System constant: how much volatility can move per period. 0.5 is the
 /// conservative end of Glickman's recommended 0.3..1.2.
 const TAU: f64 = 0.5;
-/// Selection uses a two-sided 95% confidence bound rather than treating a
-/// noisy point estimate as settled skill.
+/// Rating and evolutionary selection use two-sided 95% confidence bounds
+/// rather than treating noisy point estimates as settled skill.
 const SELECTION_Z: f64 = 1.96;
 /// A leader/civilization-specific rating starts at the player's global
 /// strength, with extra uncertainty for the unmeasured combination effect.
@@ -501,6 +501,32 @@ fn upper_confidence(s: &Strategy) -> f64 {
     s.rating + SELECTION_Z * s.rd
 }
 
+/// Wilson bounds for the objective evolution actually cares about: winning
+/// the table. Placement Glicko remains the spectator ladder and matchup model,
+/// but controlled CIVVIS runs have shown it can compress a 3.6x win-rate gap
+/// into seven rating points. A noisy point win rate would merely replace one
+/// selection error with another, so breeding and retirement use opposite 95%
+/// bounds and leave an unplayed genome at [0, 1].
+fn win_confidence(s: &Strategy, upper: bool) -> f64 {
+    if s.games == 0 {
+        return f64::from(upper);
+    }
+    let n = f64::from(s.games);
+    let p = f64::from(s.wins) / n;
+    let z2 = SELECTION_Z * SELECTION_Z;
+    let centre = p + z2 / (2.0 * n);
+    let margin = SELECTION_Z * (p * (1.0 - p) / n + z2 / (4.0 * n * n)).sqrt();
+    ((centre + if upper { margin } else { -margin }) / (1.0 + z2 / n)).clamp(0.0, 1.0)
+}
+
+fn win_lower_confidence(s: &Strategy) -> f64 {
+    win_confidence(s, false)
+}
+
+fn win_upper_confidence(s: &Strategy) -> f64 {
+    win_confidence(s, true)
+}
+
 /// One rating period for one player. `results` are (opponent, score, weight)
 /// with opponents at their PRE-period values, score 1/0.5/0. Pairwise results
 /// from one multiplayer game sum to one effective observation instead of
@@ -641,10 +667,14 @@ fn target_for_niche(niche: usize) -> Option<String> {
         .map(|target| target.as_str().to_string())
 }
 
-fn conservative_order(league: &League, indices: &mut [usize]) {
+fn breeding_order(league: &League, indices: &mut [usize]) {
     indices.sort_by(|a, b| {
-        lower_confidence(&league.strategies[*b])
-            .total_cmp(&lower_confidence(&league.strategies[*a]))
+        win_lower_confidence(&league.strategies[*b])
+            .total_cmp(&win_lower_confidence(&league.strategies[*a]))
+            .then_with(|| {
+                lower_confidence(&league.strategies[*b])
+                    .total_cmp(&lower_confidence(&league.strategies[*a]))
+            })
             .then_with(|| {
                 league.strategies[*b]
                     .rating
@@ -661,9 +691,9 @@ const DIVERSITY_BIRTH_PERIOD: usize = 3;
 /// Pick the evolutionary niche to breed into. An unoccupied niche is always
 /// repopulated first, and one birth in `DIVERSITY_BIRTH_PERIOD` goes to the
 /// thinnest niche; every other birth refines the niche whose best active member
-/// is conservatively strongest. Ties rotate by selection generation, so missing
-/// lanes are restored deterministically and repeated selection does not always
-/// favour the enum's first lane.
+/// has the strongest conservative win probability. Ties rotate by selection
+/// generation, so missing lanes are restored deterministically and repeated
+/// selection does not always favour the enum's first lane.
 ///
 /// Spending *every* birth on the least populated niche starves the winner. A
 /// niche is thin precisely when its members keep getting retired for losing,
@@ -674,11 +704,19 @@ const DIVERSITY_BIRTH_PERIOD: usize = 3;
 /// overtook the built-in defaults.
 fn next_niche(league: &League, cfg: &LeagueCfg, birth: usize) -> usize {
     let mut counts = [0usize; EVOLUTION_NICHES];
-    let mut strength = [f64::NEG_INFINITY; EVOLUTION_NICHES];
+    let mut win_strength = [f64::NEG_INFINITY; EVOLUTION_NICHES];
+    let mut rating_strength = [f64::NEG_INFINITY; EVOLUTION_NICHES];
     for i in league.active() {
         if let Some(niche) = evolution_niche(&league.strategies[i].kind) {
             counts[niche] += 1;
-            strength[niche] = strength[niche].max(lower_confidence(&league.strategies[i]));
+            let win = win_lower_confidence(&league.strategies[i]);
+            let rating = lower_confidence(&league.strategies[i]);
+            if win > win_strength[niche]
+                || (win == win_strength[niche] && rating > rating_strength[niche])
+            {
+                win_strength[niche] = win;
+                rating_strength[niche] = rating;
+            }
         }
     }
     let least = *counts.iter().min().unwrap();
@@ -690,7 +728,10 @@ fn next_niche(league: &League, cfg: &LeagueCfg, birth: usize) -> usize {
     }
     rotated
         .reduce(|best, niche| {
-            if strength[niche] > strength[best] {
+            if win_strength[niche] > win_strength[best]
+                || (win_strength[niche] == win_strength[best]
+                    && rating_strength[niche] > rating_strength[best])
+            {
                 niche
             } else {
                 best
@@ -699,7 +740,7 @@ fn next_niche(league: &League, cfg: &LeagueCfg, birth: usize) -> usize {
         .unwrap()
 }
 
-/// Protect one conservatively best active genome in every represented niche.
+/// Protect one conservatively best winning genome in every represented niche.
 /// This is the live quality-diversity archive: duplicates can still be culled,
 /// but selection cannot silently erase an entire victory strategy again.
 fn niche_elites(league: &League) -> std::collections::BTreeSet<usize> {
@@ -713,7 +754,7 @@ fn niche_elites(league: &League) -> std::collections::BTreeSet<usize> {
     candidates
         .iter_mut()
         .filter_map(|niche| {
-            conservative_order(league, niche);
+            breeding_order(league, niche);
             niche.first().copied()
         })
         .collect()
@@ -2057,9 +2098,11 @@ pub fn record_game(
 }
 
 /// Quality-diversity selection: restore or refine the least-represented
-/// victory niche using its conservative historical archive plus a strong
-/// active parent, then retire the confidently weakest non-elite strategies.
-/// Anchors, niche elites, and under-measured strategies are never retired.
+/// victory niche using its conservative win-selected archive plus a strong
+/// active parent, then retire the least likely winners among settled,
+/// non-elite strategies. Placement Glicko breaks equal win-bound ties but no
+/// longer defines the breeding objective. Anchors, niche elites, and
+/// under-measured strategies are never retired.
 fn evolve_league(
     league: &mut League,
     cfg: &LeagueCfg,
@@ -2071,7 +2114,7 @@ fn evolve_league(
         .into_iter()
         .filter(|i| genome_of(&league.strategies[*i].kind).is_some())
         .collect();
-    conservative_order(league, &mut parents);
+    breeding_order(league, &mut parents);
     let pool = (parents.len() / 2).max(1).min(parents.len());
     let mut born = Vec::new();
     if !parents.is_empty() {
@@ -2085,7 +2128,7 @@ fn evolve_league(
                 .filter(|(_, strategy)| evolution_niche(&strategy.kind) == Some(niche))
                 .map(|(i, _)| i)
                 .collect();
-            conservative_order(league, &mut archive);
+            breeding_order(league, &mut archive);
             let archive_pool = (archive.len() / 2).max(1).min(archive.len());
             let pa = if archive.is_empty() {
                 parents[rng.below(pool)]
@@ -2143,8 +2186,12 @@ fn evolve_league(
                     && s.rd <= MAX_RD_TO_RETIRE
             })
             .min_by(|a, b| {
-                upper_confidence(&league.strategies[*a])
-                    .total_cmp(&upper_confidence(&league.strategies[*b]))
+                win_upper_confidence(&league.strategies[*a])
+                    .total_cmp(&win_upper_confidence(&league.strategies[*b]))
+                    .then_with(|| {
+                        upper_confidence(&league.strategies[*a])
+                            .total_cmp(&upper_confidence(&league.strategies[*b]))
+                    })
                     .then_with(|| {
                         league.strategies[*a]
                             .rating
@@ -3598,17 +3645,17 @@ mod tests {
     }
 
     #[test]
-    fn breeding_uses_conservative_skill_instead_of_noisy_point_rating() {
+    fn breeding_uses_conservative_wins_before_placement_rating() {
         let mut league = League {
             round: 4,
             strategies: Vec::new(),
             calibration: Calibration::default(),
         };
-        for (name, rating, rd) in [
-            ("noisy-leader", 1900.0, 200.0),
-            ("proven-first", 1800.0, 30.0),
-            ("proven-second", 1700.0, 30.0),
-            ("settled-fourth", 1600.0, 30.0),
+        for (name, rating, rd, games, wins) in [
+            ("noisy-leader", 1900.0, 200.0, 4, 2),
+            ("proven-first", 1800.0, 30.0, 40, 22),
+            ("proven-second", 1700.0, 30.0, 40, 20),
+            ("settled-fourth", 1600.0, 30.0, 40, 15),
         ] {
             let mut s = Strategy::new(
                 name,
@@ -3620,6 +3667,8 @@ mod tests {
             );
             s.rating = rating;
             s.rd = rd;
+            s.games = games;
+            s.wins = wins;
             league.strategies.push(s);
         }
         ensure_usernames(&mut league);
@@ -3638,6 +3687,32 @@ mod tests {
             .parents
             .iter()
             .all(|p| p == "proven-first" || p == "proven-second"));
+    }
+
+    #[test]
+    fn win_selection_bounds_protect_uncertain_results() {
+        let fresh = Strategy::new(
+            "fresh",
+            StrategyKind::Advanced {
+                weights: Weights::default(),
+                target: None,
+            },
+            0,
+        );
+        assert_eq!(win_lower_confidence(&fresh), 0.0);
+        assert_eq!(win_upper_confidence(&fresh), 1.0);
+
+        let mut lucky = fresh.clone();
+        lucky.games = 2;
+        lucky.wins = 2;
+        let mut proven = fresh;
+        proven.games = 100;
+        proven.wins = 70;
+        assert!(
+            win_lower_confidence(&proven) > win_lower_confidence(&lucky),
+            "two lucky wins must not outrank a settled 70% winner"
+        );
+        assert!(win_upper_confidence(&lucky) > win_upper_confidence(&proven));
     }
 
     #[test]
@@ -3850,6 +3925,42 @@ mod tests {
             .map(|s| s.name.as_str())
             .collect();
         assert_eq!(retired_names, vec!["confidently-low"]);
+    }
+
+    #[test]
+    fn retirement_uses_win_ceiling_before_placement_rating() {
+        let mut league = League {
+            round: 4,
+            strategies: Vec::new(),
+            calibration: Calibration::default(),
+        };
+        for (name, rating, wins, anchor) in [
+            ("safe-nonwinner", 1800.0, 0, false),
+            ("lower-rated-winner", 1300.0, 10, false),
+            ("reference", 1500.0, 8, true),
+        ] {
+            let mut strategy = Strategy::new(
+                name,
+                StrategyKind::Builtin {
+                    ai: "random".into(),
+                },
+                0,
+            );
+            strategy.rating = rating;
+            strategy.rd = 30.0;
+            strategy.games = 40;
+            strategy.wins = wins;
+            strategy.anchor = anchor;
+            league.strategies.push(strategy);
+        }
+        ensure_usernames(&mut league);
+        let cfg = LeagueCfg {
+            max_pop: 2,
+            ..LeagueCfg::default()
+        };
+        let mut rng = Rng::new(40);
+        let (_, retired) = evolve_league(&mut league, &cfg, &mut rng);
+        assert_eq!(retired, vec![league.strategies[0].username.clone()]);
     }
 
     /// Usernames are themed to the lane, unique, stable for founders, and

@@ -217,11 +217,18 @@ change the sampled `AdvancedAi` games, often because the live hierarchical path
 bypasses the `BasicAi` consumer. Silence on a finite sample is not proof of
 global inertness.
 
-Evolution has another objective problem. Score share is cheap and correlated
-with winning, but controlled changes have improved score significantly without
-changing wins. Direct win-rate selection is valid but too noisy for a cheap
-per-genome fitness estimate. The current breeder therefore remains a research
-loop, not evidence of continuous live self-improvement.
+Standalone evolution still has an objective problem. Score share is cheap and
+correlated with winning, but controlled changes have improved score
+significantly without changing wins. Direct win-rate selection is too noisy for
+its cheap per-genome fitness estimate, so its separate win-based promotion gate
+remains essential.
+
+The continuous league no longer shares that mistake: parent choice, niche
+elites, and retirement now use conservative Wilson bounds on outright wins,
+with placement Glicko only breaking a tie. On the committed roster this drops
+the 1823-rated, 4/21-win `g56-50` from second in the breeding order to eighth and
+puts the well-sampled `g20-21` and `g28-28` first. That aligns the objective; it
+does not yet establish that the next offspring generation improves.
 
 ### 7. Search is not live-validated and is materially more expensive
 

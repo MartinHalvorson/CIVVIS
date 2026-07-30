@@ -304,6 +304,16 @@ records training and holdout progress, and `dataset.csv` feeds value training.
 Old checkpoints load with defaults for newly introduced genes and validation
 metadata.
 
+The continuous league has a different selection contract from its spectator
+ladder. Glicko continues to rate full placement because that is useful for
+matchmaking and display, but genome parents, niche elites, and retirement are
+ordered first by 95% Wilson bounds on **outright wins**. Placement rating only
+breaks an equal win-bound tie. This prevents a safe second-place specialist
+from breeding merely because placement compressed a large difference in who
+actually won, while keeping a two-game lucky streak behind a settled winner.
+The standalone `evolve` fitness above still uses its cheaper score/combat proxy;
+its separate promotion gate remains the point where wins decide shipment.
+
 ## Elo tournaments
 
 ```bash
@@ -372,6 +382,13 @@ aggregates cannot recover games that were never stored and say so explicitly in
 the leaderboard; start a fresh path for a fully auditable baseline. A keyed
 history also has one canonical order, and every raw event's K must match the
 bound profile.
+
+The leaderboard additionally derives a **direct performance Elo** for every
+player co-seated with the fixed anchor. It converts that player's aggregate
+pair score into the usual 400-point logistic scale, with a Jeffreys half-result
+on each side so finite undefeated samples remain finite. This diagnostic is
+order-independent and is recomputed from raw evidence; the incremental
+K-factor Elo remains the primary continuously updated rating.
 
 Entrants use a seeded round-robin seat schedule instead of independent random
 sampling. Across one complete cycle, every fixed civilization seat sees every

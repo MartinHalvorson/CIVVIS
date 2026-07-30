@@ -2525,6 +2525,34 @@ pub fn leaderboard(pool: &EloPool) -> String {
             100.0 * rating.wins as f64 / rating.games.max(1) as f64,
         ));
     }
+    if let Some(anchor) = pool
+        .profile
+        .as_ref()
+        .and_then(|profile| profile.rating_anchor.as_deref())
+    {
+        let mut performance = direct_anchor_performance(pool, anchor);
+        performance.sort_by(|left, right| {
+            right
+                .1
+                .total_cmp(&left.1)
+                .then_with(|| left.0.cmp(&right.0))
+        });
+        if !performance.is_empty() {
+            out.push_str(&format!(
+                "\nDirect performance Elo vs {anchor} (order-independent, Jeffreys-smoothed):\n"
+            ));
+            for (player, elo, score, games) in performance {
+                out.push_str(&format!(
+                    "  {:<24} {:7.1}   pair-score={:>5.1}/{:<4} ({:>4.1}%)\n",
+                    player,
+                    elo,
+                    score,
+                    games,
+                    100.0 * score / games as f64,
+                ));
+            }
+        }
+    }
     out.push_str("\nElo by player × leader × civilization:\n");
     let mut rows: Vec<(&RatingKey, &Rating)> = pool.ratings.iter().collect();
     rows.sort_by(|(key_a, a), (key_b, b)| {
@@ -2549,13 +2577,69 @@ pub fn leaderboard(pool: &EloPool) -> String {
     out
 }
 
+/// Maximum-likelihood-style performance ratings directly against the fixed
+/// control, derived from raw games rather than the order-sensitive K-factor
+/// path. A Jeffreys half-result on each side keeps an undefeated or winless
+/// finite sample finite without pretending it was observed.
+fn direct_anchor_performance(
+    pool: &EloPool,
+    anchor: &str,
+) -> Vec<(String, f64, f64, usize)> {
+    let mut evidence = BTreeMap::<String, (f64, usize)>::new();
+    for game in &pool.history {
+        let anchor_seats: Vec<&RatedPlayer> = game
+            .players
+            .iter()
+            .filter(|seat| seat.key.player == anchor)
+            .collect();
+        if anchor_seats.is_empty() {
+            continue;
+        }
+        let opponents: BTreeSet<&str> = game
+            .players
+            .iter()
+            .map(|seat| seat.key.player.as_str())
+            .filter(|player| *player != anchor)
+            .collect();
+        for opponent in opponents {
+            let opponent_seats: Vec<&RatedPlayer> = game
+                .players
+                .iter()
+                .filter(|seat| seat.key.player == opponent)
+                .collect();
+            let mut score = 0.0;
+            let mut comparisons = 0usize;
+            for challenger in &opponent_seats {
+                for control in &anchor_seats {
+                    score += head_to_head_score(challenger, control);
+                    comparisons += 1;
+                }
+            }
+            let result = score / comparisons.max(1) as f64;
+            let aggregate = evidence.entry(opponent.to_string()).or_default();
+            aggregate.0 += result;
+            aggregate.1 += 1;
+        }
+    }
+    evidence
+        .into_iter()
+        .filter_map(|(player, (score, games))| {
+            (games > 0).then(|| {
+                let odds = (score + 0.5) / (games as f64 - score + 0.5);
+                let elo = pool.base_rating + 400.0 * odds.log10();
+                (player, elo, score, games)
+            })
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
-        builtin_ai, builtin_provenance, collapsed_entrants, expected, league_generalist,
-        scheduled_seats, seat_schedule, win_shares, EloPool, RatedPlayer, RatingKey, TourneyCfg,
-        TournamentProfile, BUILTIN_AIS, CHAMPION_FILE, ELO_SCHEMA_VERSION, EVAL_ONLY_AIS,
-        ELO_BASE_RATING, DEFAULT_RATINGS_PATH, VALUENET_FILE,
+        builtin_ai, builtin_provenance, collapsed_entrants, direct_anchor_performance, expected,
+        league_generalist, scheduled_seats, seat_schedule, win_shares, EloPool, RatedPlayer,
+        RatingKey, TourneyCfg, TournamentProfile, BUILTIN_AIS, CHAMPION_FILE,
+        DEFAULT_RATINGS_PATH, ELO_BASE_RATING, ELO_SCHEMA_VERSION, EVAL_ONLY_AIS, VALUENET_FILE,
     };
     use crate::rng::Rng;
     use std::collections::BTreeMap;
@@ -2892,6 +2976,19 @@ mod tests {
         assert!((anchored.overall["Control"].elo - 1500.0).abs() < 1e-12);
         assert!((anchored.overall["Challenger"].elo - 1512.0).abs() < 1e-12);
         assert!((anchored.overall["Novice"].elo - 1476.0).abs() < 1e-12);
+
+        let direct = direct_anchor_performance(&anchored, "Control");
+        let challenger = direct
+            .iter()
+            .find(|(player, _, _, _)| player == "Challenger")
+            .unwrap();
+        let novice = direct
+            .iter()
+            .find(|(player, _, _, _)| player == "Novice")
+            .unwrap();
+        assert_eq!((challenger.2, challenger.3), (1.0, 1));
+        assert_eq!((novice.2, novice.3), (0.0, 1));
+        assert!(challenger.1 > 1500.0 && novice.1 < 1500.0);
     }
 
     #[test]

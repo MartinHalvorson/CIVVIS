@@ -5942,15 +5942,18 @@ Profile: 4 players, 60×38, Standard 500 turns, six city-states, Pangaea,
 flat/poles, stock rules, K=24. Every entrant drew each of Rome, Greece, Egypt,
 and China ten times.
 
-| immutable player | anchored Elo | games | wins |
-|---|---:|---:|---:|
-| `advanced-20260730` | **1588.5** | 40 | 29 |
-| `advanced_v1` (fixed anchor) | **1500.0** | 40 | 8 |
-| `basic-20260730` | 1431.4 | 40 | 3 |
-| `random-20260730` | 1174.1 | 40 | 0 |
+| immutable player | anchored Elo | direct Elo vs anchor | games | wins |
+|---|---:|---:|---:|---:|
+| `advanced-20260730` | **1588.5** | **1708.2** (31/40 pair score) | 40 | 29 |
+| `advanced_v1` (fixed anchor) | **1500.0** | — | 40 | 8 |
+| `basic-20260730` | 1431.4 | 1314.8 (10/40) | 40 | 3 |
+| `random-20260730` | 1174.1 | 736.6 (0/40) | 40 | 0 |
 
 This establishes a reproducible +88.5 Elo gap for the July 30 advanced
 controller over the frozen legacy control on one named multiplayer profile. It
+also gives an order-independent +208.2 direct performance gap from their 31/40
+pair score; the difference is expected because the incremental K=24 path has
+only 40 updates and is not a batch maximum-likelihood fit. It
 does not turn 40 correlated multiplayer worlds into a narrow confidence
 interval, and it remains an internal CIVVIS scale rather than a human or
 Firaxis calibration. Future controllers need a new identity and the same
@@ -5983,3 +5986,42 @@ it removes 0.0024 nats/game of optimistic movement while retaining a small
 Glicko, the six-seat slice is small, and neither system extracts much from the
 eight-seat history. The honest conclusion is profile dependence, not that one
 estimator universally replaced the other.
+
+## 2026-07-30 — ★★★ the league now breeds winners, not safe placers
+
+The league needs two legitimate but different numbers. Its public Glicko ladder
+ranks full placement; evolution is supposed to produce the agent most likely to
+win. Until this change, one `conservative_order` drove parent choice, niche
+strength, niche elites, and retirement from `rating ± 1.96·rd`. The `wins`
+counter printed beside it did not affect breeding at all.
+
+That is not a theoretical distinction in this roster. A completed controlled
+run recorded above found the placement leader `g56-50` **−108 win-Elo** against
+the embedded champion. Another found a 3.6× win-rate difference compressed to
+7.2 placement-rating points. Selecting harder on the same placement estimate
+cannot recover an objective the estimate does not measure.
+
+Evolution now uses the lower 95% Wilson bound on outright win rate for parents,
+best-niche choice, and protected niche elites. Retirement uses the upper bound,
+so an uncertain newcomer remains protected; placement Glicko breaks only an
+exact win-bound tie. Two wins in two games do not outrank a settled 70% winner
+in the regression test.
+
+Applied read-only to the committed roster, the parent order changes as follows:
+
+| win-selected rank | entrant | wins/games | lower 95% win bound | placement Elo |
+|---:|---|---:|---:|---:|
+| 1 | `g20-21` | 82/216 | **31.8%** | 1790.8 |
+| 2 | `g28-28` | 61/170 | **29.1%** | 1766.0 |
+| 3 | `advanced_v1` | 111/331 | **28.7%** | 1754.6 |
+| 4 | `advanced` | 91/331 | 23.0% | 1702.7 |
+| 5 | `g44-41` | 26/84 | 22.1% | 1753.2 |
+| 8 | `g56-50` | 4/21 | **7.7%** | **1823.3** |
+
+The highest placement point estimate therefore stops being the second breeding
+choice on four wins of evidence; the two well-sampled winning genomes become
+the first two. This does not prove their children will improve, and raw win
+rate assumes the league keeps entrants on the same table-size distribution.
+It does align the self-improvement loop's selection pressure with its stated
+goal. Glicko remains unchanged for prediction, seating, and the viewer-facing
+ladder rather than being forced to serve two incompatible objectives.
