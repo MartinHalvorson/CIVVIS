@@ -67,6 +67,8 @@ const EMBEDDED_WORLD_WONDER_ATLAS: &[u8] =
 const EMBEDDED_MOUNTAIN_ATLAS: &[u8] = include_bytes!("../web/assets/mountain-atlas.png");
 const EMBEDDED_HIDDEN_MAP_MONSTERS: &[u8] =
     include_bytes!("../web/assets/hidden-map-monsters.png");
+const EMBEDDED_CIV6_UNIT_FLAGS: &[u8] =
+    include_bytes!("../web/assets/civ6-unit-flags.png");
 
 /// The agents that exist in every build, whether or not a league snapshot is
 /// on disk, with the handle the leaderboards give them. `make_send_ai`
@@ -2617,6 +2619,11 @@ fn hidden_map_monsters() -> Vec<u8> {
         .unwrap_or_else(|_| EMBEDDED_HIDDEN_MAP_MONSTERS.to_vec())
 }
 
+fn civ6_unit_flags() -> Vec<u8> {
+    std::fs::read("web/assets/civ6-unit-flags.png")
+        .unwrap_or_else(|_| EMBEDDED_CIV6_UNIT_FLAGS.to_vec())
+}
+
 /// Where a single-player game keeps its own saves, relative to the process's
 /// working directory. Files are named `*.save.json`, which `.gitignore`
 /// already covers, so a game played inside a checkout leaves the tree clean.
@@ -3395,6 +3402,9 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
         ("GET", "/assets/hidden-map-monsters.png") => {
             respond(stream, "200 OK", "image/png", &hidden_map_monsters());
         }
+        ("GET", "/assets/civ6-unit-flags.png") => {
+            respond(stream, "200 OK", "image/png", &civ6_unit_flags());
+        }
         // A lock-free identity probe for supervised process handoffs. The
         // browser used to fetch the multi-megabyte `/state` document here and
         // could queue behind an AI step for its entire three-second timeout.
@@ -4046,8 +4056,8 @@ mod tests {
         chronicle_world_events, final_countdown_ms, held_frame, new_game_params, query_value,
         request_path, save_path, seat_delay_ms, strategy_roster, tile_mark, ChronicleSnapshot,
         ChronicleState, FrameDelivery, Params,
-        Session, Shared, SpectatorFrame, EMBEDDED_CINEMATIC_3D, EMBEDDED_INDEX,
-        RESULT_COUNTDOWN_MS,
+        Session, Shared, SpectatorFrame, EMBEDDED_CINEMATIC_3D, EMBEDDED_CIV6_UNIT_FLAGS,
+        EMBEDDED_INDEX, RESULT_COUNTDOWN_MS,
         EMBEDDED_HIDDEN_MAP_MONSTERS, EMBEDDED_WORLD_WONDER_ATLAS, SAVE_DIR, STATE_LONG_POLL,
         VIEWER_ACTIVE,
     };
@@ -7945,6 +7955,39 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("Cinematic3D.draw({"));
         assert!(EMBEDDED_INDEX.contains("specular glints travel"));
         assert!(EMBEDDED_INDEX.contains("cx.lineDashOffset = dash.length"));
+    }
+
+    #[test]
+    fn strategic_units_use_a_complete_civ6_icon_atlas() {
+        assert!(EMBEDDED_CIV6_UNIT_FLAGS.starts_with(b"\x89PNG\r\n\x1a\n"));
+        assert!(EMBEDDED_CIV6_UNIT_FLAGS.len() > 50_000);
+        assert!(
+            EMBEDDED_INDEX.contains("CIV6_UNIT_ICON_ATLAS.src = \"/assets/civ6-unit-flags.png\"")
+        );
+
+        let ids = EMBEDDED_INDEX
+            .split("const CIV6_UNIT_ICON_TYPES = [")
+            .nth(1)
+            .and_then(|tail| tail.split("];\nconst CIV6_UNIT_ICON_INDEX").next())
+            .expect("ordered Civilization VI unit icon IDs");
+        let rules = crate::rules::Rules::embedded();
+        assert_eq!(ids.matches('"').count() / 2, rules.units.len());
+        for unit in rules.units.keys() {
+            assert!(
+                ids.contains(&format!("\"{unit}\"")),
+                "unit {unit} has no Civilization VI icon cell"
+            );
+        }
+
+        let renderer = EMBEDDED_INDEX
+            .split("function drawUnitPictogram")
+            .nth(1)
+            .and_then(|tail| tail.split("function drawUnitFormationBadge").next())
+            .expect("strategic unit pictogram renderer");
+        assert!(renderer.contains("const official = civ6UnitIconSprite(type, color)"));
+        assert!(renderer.contains("cx.drawImage(official"));
+        assert!(EMBEDDED_INDEX.contains("const COMMAND_UNIT_ICON_K = () => 1 + .32"));
+        assert!(EMBEDDED_INDEX.contains("rr * 1.45 * COMMAND_UNIT_ICON_K(), tokenInk"));
     }
 
     #[test]
