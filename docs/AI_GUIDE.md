@@ -316,11 +316,13 @@ old rosters recover the retained raw portion from `matches.csv`, preserve
 unreconstructable prior games only in the all-history totals, and show both in
 `--standings`. Live seating requires enough exact evidence to fill its entire
 top-three sample; a new or unmigrated roster otherwise retains the old
-placement-only pool rather than mixing two objectives mid-table. This prevents
-a safe second-place specialist from breeding or being exhibited because
-placement compressed who won, a duel-heavy entrant from winning selection
-because its wins were easier to obtain, and a two-game lucky streak from
-outranking a settled winner.
+placement-only policy. Once that evidence bar is met, seating exhausts the
+exact-profile entrants before falling back to unprofiled placement candidates,
+so removing the first pick cannot switch the next seat back to a different
+objective. This prevents a safe second-place specialist from breeding or being
+exhibited because placement compressed who won, a duel-heavy entrant from
+winning selection because its wins were easier to obtain, and a two-game lucky
+streak from outranking a settled winner.
 The `strategic_deep_league` transfer control uses the same conservative
 outright-win objective on the committed snapshot; the fixed-profile tournament
 below remains the instrument for a fully standardized longitudinal comparison.
