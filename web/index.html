@@ -4386,9 +4386,9 @@ const RES_BADGE_SEAT = 1 - (RES_BADGE_R + 1.2) / (S * SQ3 / 2);
 const ARTIFACT_RESOURCES = new Set(["antiquity_site", "shipwreck"]);
 // One compact silhouette per unit in data/units.json. The value is a drawing
 // vocabulary entry, not a Unicode character, so a platform font cannot turn a
-// crossbowman into a bullseye or a trebuchet into a meteor. Closely related
-// replacements deliberately share their weapon while truly different machines
-// keep different outlines.
+// crossbowman into a bullseye or a trebuchet into a meteor. Every ruleset unit
+// owns a distinct vocabulary entry: a civilization replacement must remain
+// distinguishable from the ordinary unit it replaces on the command map.
 // Units that cannot fight — captured rather than killed, and the things an
 // empire has to escort. They carry their own plate shape so a glance separates
 // an army from what it is protecting.
@@ -4436,8 +4436,8 @@ const UNIT_PICTOGRAM = {
   nuclear_submarine:"nuclear_submarine", aircraft_carrier:"carrier",
   // civilization uniques
   legion:"gladius_shield", hoplite:"hoplon_spear", eagle_warrior:"macuahuitl",
-  war_cart:"war_cart", pitati_archer:"bow", maryannu_chariot_archer:"chariot_bow",
-  saka_horse_archer:"horse_bow", crouching_tiger:"crossbow", tagma:"horse_lance"
+  war_cart:"war_cart", pitati_archer:"pitati_bow", maryannu_chariot_archer:"chariot_bow",
+  saka_horse_archer:"horse_bow", crouching_tiger:"tiger_cannon", tagma:"horse_cross_lance"
 };
 const BLDG_ICON = { monument:"🗿", granary:"🌾", walls:"🧱", medieval_walls:"🧱",
                     shrine:"⛩", library:"📜", market:"⚖", barracks:"🛡",
@@ -7179,6 +7179,16 @@ function lightness(hex) {
   const n = parseInt(hex.slice(1), 16);
   return (0.2126 * ((n >> 16) & 255) + 0.7152 * ((n >> 8) & 255)
           + 0.0722 * (n & 255)) / 255;
+}
+// Command tokens are ownership colour plus type ink. Some real Civ VI primary
+// jerseys are near-black (as are barbarians and city-states), so fixed black
+// ink erases the very pictogram the token exists to carry. Prefer the jersey's
+// partner when it has useful contrast, then fall back to map-ink dark or cream.
+function unitTokenInk(owner) {
+  const primaryLight = lightness(pcol(owner));
+  const partner = pcol2(owner);
+  if (Math.abs(primaryLight - lightness(partner)) >= .34) return partner;
+  return primaryLight < .48 ? "#f0ead8" : "#10151d";
 }
 // A civilization's jersey pair, darker first. Jersey order is which colour is
 // "primary", which says nothing about which is light: Rome is purple on yellow
@@ -15372,6 +15382,12 @@ function unitPad() {
 // Status marks keep their on-screen size as the map zooms out, so a unit's
 // state stays readable at the scale you actually survey an empire at.
 const UI_K = () => 1 / Math.min(1, Math.max(cam.scale, 0.5));
+// Strategic's unit *is* its token, not a figure with a small annotation. Hold
+// that token at authored size through ordinary survey zoom; once a whole hex
+// is only one token wide, let both shrink together instead of covering adjacent
+// cells. The floor is derived from token diameter / hex width.
+const COMMAND_UNIT_K = () => 1 / Math.min(1, Math.max(cam.scale,
+  (2 * 10.5) / (S * SQ3)));
 
 // Civ 6 hangs a small flag off each unit carrying its icon, because a drawn
 // figure at map scale reads as "somebody's soldier" and nothing more. Same
@@ -15404,6 +15420,16 @@ function pictogramBow(kind, color) {
     cx.lineWidth = 1.2;
     cx.beginPath(); cx.moveTo(-3,0); cx.lineTo(9,0); cx.stroke();
     cx.beginPath(); cx.moveTo(9,0); cx.lineTo(6,-2); cx.lineTo(6,2); cx.closePath(); cx.fill();
+    if (kind === "pitati_bow") {
+      // The Pitati keeps the readable bow family, but a three-feather tail
+      // separates it from the ordinary archer even at the smallest token.
+      cx.lineWidth = 1.15;
+      cx.beginPath();
+      cx.moveTo(-2,0); cx.lineTo(-6,-4);
+      cx.moveTo(-2,0); cx.lineTo(-7,0);
+      cx.moveTo(-2,0); cx.lineTo(-6,4);
+      cx.stroke();
+    }
   }
 }
 
@@ -15417,10 +15443,17 @@ function pictogramHorse(kind, color) {
   cx.lineTo(-7,9); cx.closePath(); cx.fill();
   cx.lineWidth = 1.2;
   cx.beginPath(); cx.moveTo(-7,4); cx.quadraticCurveTo(-11,0,-9,-4); cx.stroke();
-  if (kind === "horse_lance") {
+  if (kind === "horse_lance" || kind === "horse_cross_lance") {
     cx.lineWidth = 1.3; cx.beginPath(); cx.moveTo(-3,1); cx.lineTo(10,-9); cx.stroke();
-  } else if (kind === "horse_sword" || kind === "horse_sabre") {
+    if (kind === "horse_cross_lance") {
+      cx.lineWidth = 1.15;
+      cx.beginPath(); cx.moveTo(4,-8); cx.lineTo(8,-3); cx.stroke();
+    }
+  } else if (kind === "horse_sword") {
     cx.lineWidth = 1.4; cx.beginPath(); cx.moveTo(-1,0); cx.lineTo(6,-8); cx.stroke();
+  } else if (kind === "horse_sabre") {
+    cx.lineWidth = 1.4; cx.beginPath();
+    cx.moveTo(-1,0); cx.quadraticCurveTo(7,-3,7,-9); cx.stroke();
   } else if (kind === "horse_rifle") {
     cx.lineWidth = 1.5; cx.beginPath(); cx.moveTo(-3,-2); cx.lineTo(8,-5); cx.stroke();
   } else if (kind === "horse_bow") {
@@ -15435,7 +15468,11 @@ function pictogramShip(kind, color) {
     cx.beginPath(); cx.ellipse(0,2,10,4,0,0,7); cx.fill();
     cx.fillRect(-2,-4,5,4); cx.fillRect(0,-7,1.5,4);
     if (kind === "nuclear_submarine") {
-      cx.globalAlpha = .5; cx.beginPath(); cx.arc(-5,2,2,0,7); cx.fill(); cx.globalAlpha = 1;
+      // Cut a reactor port through the otherwise solid hull. Tinting a mark on
+      // top of a solid same-colour silhouette changed no pixels at all.
+      cx.globalCompositeOperation = "destination-out";
+      cx.beginPath(); cx.arc(-5,2,1.8,0,7); cx.fill();
+      cx.globalCompositeOperation = "source-over";
     }
     return;
   }
@@ -15457,6 +15494,16 @@ function pictogramShip(kind, color) {
     }
     cx.closePath(); cx.fill();
     if (kind === "privateer") { cx.globalAlpha=.55; cx.beginPath(); cx.arc(3,-5,1.7,0,7); cx.fill(); cx.globalAlpha=1; }
+    if (kind === "quadrireme") {
+      cx.lineWidth = .85;
+      cx.beginPath();
+      for (const ox of [-7,-3,1,5]) { cx.moveTo(ox,5); cx.lineTo(ox-2,10); }
+      cx.stroke();
+    } else if (kind === "frigate") {
+      cx.lineWidth = .9;
+      cx.beginPath(); cx.moveTo(-6,1); cx.lineTo(-6,-7); cx.stroke();
+      cx.beginPath(); cx.moveTo(-5,-6); cx.lineTo(-1,-3); cx.lineTo(-5,-2); cx.closePath(); cx.fill();
+    }
   } else {
     cx.fillRect(-2,-5,7,5);
     cx.lineWidth = 1.25;
@@ -15466,6 +15513,12 @@ function pictogramShip(kind, color) {
     }
     if (kind === "missile_cruiser") {
       for (const dx of [-4,-1,2]) { cx.beginPath(); cx.moveTo(dx,-3); cx.lineTo(dx+1,-9); cx.stroke(); }
+    } else if (kind === "destroyer") {
+      cx.beginPath(); cx.moveTo(-3,-4); cx.lineTo(-1,-9); cx.lineTo(2,-4); cx.stroke();
+      cx.beginPath(); cx.moveTo(-8,-2); cx.lineTo(-10,-6); cx.stroke();
+    } else if (kind === "ironclad") {
+      cx.lineWidth = 1.3;
+      cx.beginPath(); cx.arc(-4,-3,3,Math.PI,0); cx.stroke();
     }
   }
   if (carrier) {
@@ -15520,7 +15573,7 @@ function drawUnitPictogram(type, x, y, size, color = "#f0ead8") {
   cx.lineCap = "round"; cx.lineJoin = "round";
   cx.strokeStyle = color; cx.fillStyle = color; cx.lineWidth = 1.6;
 
-  if (["bow","crossbow"].includes(kind)) {
+  if (["bow","crossbow","pitati_bow"].includes(kind)) {
     pictogramBow(kind, color); cx.restore(); return;
   }
   if (kind.startsWith("horse")) {
@@ -15622,29 +15675,50 @@ function drawUnitPictogram(type, x, y, size, color = "#f0ead8") {
     case "rifle":
     case "suppressed_rifle":
     case "musket":
-    case "long_rifle":
-      cx.lineWidth=2.2; cx.beginPath(); cx.moveTo(-9,6); cx.lineTo(7,-5); cx.stroke();
+    case "long_rifle": {
+      const muzzle = kind === "long_rifle" ? [10,-7] : [7,-5];
+      cx.lineWidth=2.2; cx.beginPath(); cx.moveTo(-9,6); cx.lineTo(...muzzle); cx.stroke();
       cx.lineWidth=1.2; cx.beginPath(); cx.moveTo(-5,3); cx.lineTo(-1,8); cx.lineTo(2,5); cx.stroke();
       if (kind === "suppressed_rifle") { cx.lineWidth=3; cx.beginPath(); cx.moveTo(6,-5); cx.lineTo(10,-8); cx.stroke(); }
-      if (kind === "musket" || kind === "long_rifle") { cx.lineWidth=.8; cx.beginPath(); cx.moveTo(3,-2); cx.lineTo(0,-8); cx.stroke(); } break;
+      if (kind === "musket") { cx.lineWidth=.8; cx.beginPath(); cx.moveTo(3,-2); cx.lineTo(0,-8); cx.stroke(); }
+      if (kind === "long_rifle") {
+        cx.lineWidth = .9; cx.beginPath();
+        cx.moveTo(3,-2); cx.lineTo(0,-8); cx.moveTo(7,-5); cx.lineTo(6,-9); cx.stroke();
+      }
+      break;
+    }
     case "axe":
       cx.save(); cx.rotate(.55); cx.fillRect(-1,-8,2,17); cx.beginPath(); cx.moveTo(0,-7); cx.quadraticCurveTo(8,-8,7,-1); cx.lineTo(0,-2); cx.closePath(); cx.fill(); cx.restore(); break;
     case "sword":
       cx.beginPath(); cx.moveTo(0,-10); cx.lineTo(2,4); cx.lineTo(0,7); cx.lineTo(-2,4); cx.closePath(); cx.fill();
       cx.fillRect(-6,4,12,2); cx.fillRect(-1,6,2,5); break;
     case "sword_shield":
-    case "gladius_shield":
       cx.beginPath(); cx.moveTo(-8,-7); cx.lineTo(1,-5); cx.lineTo(0,5); cx.lineTo(-5,9); cx.lineTo(-9,5); cx.closePath(); cx.stroke();
       cx.save(); cx.translate(5,0); cx.scale(.7,.7); cx.beginPath(); cx.moveTo(0,-10); cx.lineTo(2,4); cx.lineTo(0,7); cx.lineTo(-2,4); cx.closePath(); cx.fill(); cx.fillRect(-5,4,10,2); cx.restore(); break;
+    case "gladius_shield":
+      cx.beginPath(); cx.roundRect(-9,-8,9,16,4); cx.stroke();
+      cx.lineWidth = .9; cx.beginPath(); cx.moveTo(-4.5,-7); cx.lineTo(-4.5,7); cx.stroke();
+      cx.save(); cx.translate(5,0); cx.scale(.65,.65); cx.beginPath(); cx.moveTo(0,-9); cx.lineTo(2,4); cx.lineTo(0,7); cx.lineTo(-2,4); cx.closePath(); cx.fill(); cx.fillRect(-5,4,10,2); cx.restore(); break;
     case "rifle_helmet":
       cx.lineWidth=2; cx.beginPath(); cx.moveTo(-8,7); cx.lineTo(8,-5); cx.stroke();
       cx.beginPath(); cx.arc(-3,-4,5,Math.PI,0); cx.lineTo(3,-3); cx.lineTo(-9,-3); cx.closePath(); cx.fill(); break;
     case "ifv":
+      cx.beginPath(); cx.roundRect(-10,1,20,7,3); cx.stroke();
+      cx.beginPath(); cx.roundRect(-7,-5,14,6,2); cx.fill();
+      cx.fillRect(5,-8,2,-3);
+      cx.globalCompositeOperation = "destination-out";
+      for (const dx of [-3,1,5]) { cx.beginPath(); cx.arc(dx,-2,1,0,7); cx.fill(); }
+      cx.globalCompositeOperation = "source-over";
+      cx.lineWidth=.7; for (const dx of [-6,-2,2,6]) { cx.beginPath(); cx.arc(dx,5,1.5,0,7); cx.stroke(); } break;
     case "tank":
     case "modern_tank":
       cx.beginPath(); cx.roundRect(-10,1,20,7,3); cx.stroke();
       cx.beginPath(); cx.roundRect(-6,-4,11,6,2); cx.fill();
-      cx.lineWidth=kind==="modern_tank"?2.6:2; cx.beginPath(); cx.moveTo(3,-3); cx.lineTo(11,-7); cx.stroke();
+      cx.lineWidth=kind==="modern_tank"?2.8:2; cx.beginPath(); cx.moveTo(3,-3); cx.lineTo(11,-7); cx.stroke();
+      if (kind === "modern_tank") {
+        cx.lineWidth = 1;
+        cx.beginPath(); cx.moveTo(-8,1); cx.lineTo(-3,-4); cx.lineTo(2,1); cx.stroke();
+      }
       cx.lineWidth=.7; for (const dx of [-6,-2,2,6]) { cx.beginPath(); cx.arc(dx,5,1.5,0,7); cx.stroke(); } break;
     case "pike_musket":
       cx.lineWidth=1.4; cx.beginPath(); cx.moveTo(-9,9); cx.lineTo(6,-9); cx.moveTo(-6,3); cx.lineTo(9,-4); cx.stroke(); break;
@@ -15663,6 +15737,11 @@ function drawUnitPictogram(type, x, y, size, color = "#f0ead8") {
       cx.beginPath(); cx.moveTo(-8,-4); cx.lineTo(4,-4); cx.lineTo(7,3); cx.lineTo(-7,3); cx.closePath(); cx.stroke();
       pictogramWheel(-4,7,3,color); pictogramWheel(5,7,3,color);
       cx.beginPath(); cx.moveTo(7,1); cx.lineTo(11,-4); cx.stroke();
+      if (kind === "war_cart") {
+        cx.lineWidth = 1.2;
+        cx.beginPath(); cx.moveTo(-8,-4); cx.lineTo(-8,-9); cx.lineTo(4,-9); cx.lineTo(4,-4); cx.stroke();
+        cx.beginPath(); cx.moveTo(7,0); cx.lineTo(11,0); cx.moveTo(9,-3); cx.lineTo(9,3); cx.stroke();
+      }
       if (kind === "chariot_bow") { cx.save(); cx.translate(-2,-7); cx.scale(.45,.45); pictogramBow("bow",color); cx.restore(); } break;
     case "sling":
       cx.lineWidth=1.5; cx.beginPath(); cx.moveTo(-8,7); cx.quadraticCurveTo(0,-2,5,-7); cx.stroke();
@@ -15671,6 +15750,18 @@ function drawUnitPictogram(type, x, y, size, color = "#f0ead8") {
       cx.lineWidth=2.6; cx.beginPath(); cx.moveTo(-8,-3); cx.lineTo(9,-5); cx.stroke();
       cx.beginPath(); cx.roundRect(-6,-6,7,6,1); cx.fill();
       cx.lineWidth=1.5; cx.beginPath(); cx.moveTo(-1,0); cx.lineTo(-7,9); cx.moveTo(1,0); cx.lineTo(7,9); cx.stroke(); break;
+    case "tiger_cannon":
+      // A striped tiger-head muzzle: this is a ranged replacement, but it must
+      // not collapse back into the crossbowman's icon it replaces in the tree.
+      cx.beginPath();
+      cx.moveTo(-8,-5); cx.lineTo(-5,-9); cx.lineTo(-2,-6);
+      cx.quadraticCurveTo(0,-8,2,-6); cx.lineTo(5,-9); cx.lineTo(8,-5);
+      cx.lineTo(7,5); cx.quadraticCurveTo(0,10,-7,5); cx.closePath(); cx.stroke();
+      cx.beginPath(); cx.arc(-3,-1,1.25,0,7); cx.arc(3,-1,1.25,0,7); cx.fill();
+      cx.lineWidth = 1; cx.beginPath();
+      cx.moveTo(-5,-5); cx.lineTo(-2,-3); cx.moveTo(5,-5); cx.lineTo(2,-3);
+      cx.moveTo(-4,4); cx.lineTo(-1,3); cx.moveTo(4,4); cx.lineTo(1,3); cx.stroke();
+      cx.beginPath(); cx.arc(0,4,2.2,0,7); cx.stroke(); break;
     case "catapult":
       pictogramWheel(-6,7,3,color); pictogramWheel(5,7,3,color);
       cx.beginPath(); cx.moveTo(-8,4); cx.lineTo(5,4); cx.lineTo(-1,-5); cx.closePath(); cx.stroke();
@@ -20761,10 +20852,26 @@ function drawPlanetMap() {
   for (const unit of empireLens ? [] : state.units) {
     const cell = cellByKey.get(key(unit.pos));
     if (!cell || cell.center.z < (onSheet ?? .025)) continue;
-    const r = Math.max(3.5, Math.min(7, 4.5 * Math.sqrt(scale)));
-    cx.fillStyle = pcol(unit.owner); cx.strokeStyle = sel?.id === unit.id ? "#fff2a8" : "#10151d";
+    // A coloured dot answers only "whose unit?". Strategic is the command-map
+    // view, so keep its tokens large enough to carry the same type pictogram as
+    // the flat map. Painted globes retain the quieter army dot; their figures
+    // take over once the camera is close enough to make them useful.
+    const commandToken = !MODE.painted;
+    const r = commandToken
+      ? Math.max(7.2, Math.min(10.5, 7.8 * Math.sqrt(scale)))
+      : Math.max(3.5, Math.min(7, 4.5 * Math.sqrt(scale)));
+    const ux = cell.center.x + r * .7, uy = cell.center.y + r * .6;
+    const civilian = CIVILIAN_UNITS.has(unit.type);
+    const tokenInk = unitTokenInk(unit.owner);
+    cx.fillStyle = pcol(unit.owner); cx.strokeStyle = sel?.id === unit.id ? "#fff2a8" : tokenInk;
     cx.lineWidth = sel?.id === unit.id ? 2.3 : 1.2;
-    cx.beginPath(); cx.arc(cell.center.x + r * .7, cell.center.y + r * .6, r, 0, 7); cx.fill(); cx.stroke();
+    cx.beginPath();
+    if (commandToken && civilian) cx.roundRect(ux - r, uy - r, r * 2, r * 2, r * .42);
+    else cx.arc(ux, uy, r, 0, 7);
+    cx.fill(); cx.stroke();
+    if (commandToken)
+      drawUnitPictogram(unit.embarked ? "galley" : unit.type, ux, uy,
+                        r * 1.48, tokenInk);
   }
   for (const tack of empireLens ? [] : tacks) {
     const cell = cellByKey.get(key(tack));
@@ -22078,7 +22185,7 @@ function draw() {
     // it would otherwise stand on, which is the figure's size.
     const us = unitScale();
     y += 12 * us * inTown;
-    const rr = 10.5;
+    const rr = 10.5 * (beau ? 1 : COMMAND_UNIT_K());
     if (beau) {
       drawCinematicSubjectMarker(u, x, y, now);
       drawUnitBase(u, x, y);
@@ -22113,14 +22220,15 @@ function draw() {
       else cx.arc(x, y, rr, 0, 7);
       cx.fill();
       cx.restore();
-      cx.strokeStyle = u.fortified ? "#f4f8ff" : "#10151d";
+      const tokenInk = unitTokenInk(u.owner);
+      cx.strokeStyle = u.fortified ? "#f4f8ff" : tokenInk;
       cx.lineWidth = u.fortified ? 2.6 : 1.6;
       cx.beginPath();
       if (civ) cx.roundRect(x - rr, y - rr, rr * 2, rr * 2, 5);
       else cx.arc(x, y, rr, 0, 7);
       cx.stroke();
       drawUnitPictogram(u.embarked ? "galley" : u.type, x, y,
-                        rr * 1.45, "#10151d");
+                        rr * 1.45, tokenInk);
       cx.globalAlpha = 1;
     }
     // chunky health bar — sized against zoom so it stays readable far out, and
@@ -22130,7 +22238,11 @@ function draw() {
     if (u.hp < 100) {
       const bw = 24 * us / Math.min(1, Math.max(cam.scale, 0.45));
       const bh = 4.5 * us / Math.min(1, Math.max(cam.scale, 0.55));
-      const by = y - 18 * us;
+      // The command token grows at survey zoom; keep its health strip above
+      // the rim instead of laying it across the pictogram it is meant to name.
+      const by = beau
+        ? y - 18 * us
+        : y - rr - 5 * COMMAND_UNIT_K();
       const frac = u.hp / 100;
       const fc2 = frac > 0.5 ? "#4fd45c" : (frac > 0.25 ? "#f0b429" : "#f04f3f");
       cx.fillStyle = "#10151dd8";
