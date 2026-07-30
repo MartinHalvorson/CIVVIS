@@ -80,6 +80,11 @@ def build_config(args: argparse.Namespace) -> dict:
         "WarArmy": args.war_army,
         "MilitaryPerCity": args.military_per_city,
         "ExploreUntilTurn": args.explore_until_turn,
+        # Domination on a four-civ map needs ALL THREE enemy original capitals.
+        # A score victory at the turn limit needs only to be ahead, and warring
+        # actively costs cities — one run went 4 cities to 3 while besieging.
+        # So peace is a real strategy here, not a concession, and it is one flag.
+        "MakeWar": args.make_war,
         "AnnouncementSeconds": args.announcement_seconds,
         "EraAnnouncementSeconds": args.era_announcement_seconds,
         "Leader": args.leader,
@@ -597,6 +602,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--war-army", type=int, default=4)
     ap.add_argument("--military-per-city", type=float, default=1.5)
     ap.add_argument("--explore-until-turn", type=int, default=12)
+    ap.add_argument("--make-war", dest="make_war", action="store_true", default=True)
+    ap.add_argument("--no-war", dest="make_war", action="store_false")
     ap.add_argument("--announcement-seconds", type=float, default=1.0)
     ap.add_argument("--era-announcement-seconds", type=float, default=0.5)
     ap.add_argument("--survey", action="store_true", default=True)
