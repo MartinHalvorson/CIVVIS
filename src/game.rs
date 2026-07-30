@@ -7125,6 +7125,7 @@ mod strategic_resource_tests {
                 }
             }
         }
+        game.record_contact(0, 1);
         game
     }
 
@@ -7319,6 +7320,9 @@ mod strategic_resource_tests {
     #[test]
     fn strategic_trade_is_an_immediate_permanent_stockpile_transfer() {
         let mut game = strategic_game();
+        for player in 0..game.players.len() {
+            game.players[player].met.clear();
+        }
         game.players[0]
             .strategic_resources
             .insert(crate::name!("iron"), 30.0);
@@ -7329,6 +7333,10 @@ mod strategic_resource_tests {
             ..DealItems::default()
         };
 
+        assert!(game.do_trade(0, 1, &iron, &payment).is_err());
+        assert_eq!(game.strategic_stockpile(0, crate::name!("iron")), 30.0);
+        assert_eq!(game.strategic_stockpile(1, crate::name!("iron")), 0.0);
+        game.record_contact(0, 1);
         game.do_trade(0, 1, &iron, &payment).unwrap();
         assert_eq!(game.strategic_stockpile(0, crate::name!("iron")), 20.0);
         assert_eq!(game.strategic_stockpile(1, crate::name!("iron")), 10.0);
@@ -11576,11 +11584,13 @@ mod district_building_wonder_runtime_tests {
             .wonders
             .insert(crate::name!("great_bath"), position);
 
+        let score_before = game.players[0].era_score;
         game.resolve_flood(&[position]);
         assert!(!game.map.tiles[&position].pillaged);
         assert_eq!(game.map.tiles[&position].disaster_faith, 1.0);
         game.resolve_flood(&[position]);
         assert_eq!(game.map.tiles[&position].disaster_faith, 2.0);
+        assert_eq!(game.players[0].era_score, score_before + 2);
 
         game.cities
             .get_mut(&city)
@@ -11891,9 +11901,14 @@ pub const GOVERNMENT_BASE_ANARCHY_TURNS: u32 = 2;
 /// standard speed before either signatory may declare war again.
 const PEACE_TREATY_TURNS: u32 = 10;
 /// Shipped `Eras_XP1.GameEraMinimumTurns`: every era is held open this many
-/// standard turns before the next one may begin, whatever the leader has
+/// standard turns before the next one may begin, whatever the field has
 /// researched. It is the same 40 for every era in the table.
 const ERA_MINIMUM_TURNS: u32 = 40;
+/// Shipped `Eras_XP1.GameEraMaximumTurns`: every standard-speed world era
+/// closes by its sixtieth turn.
+const ERA_MAXIMUM_TURNS: u32 = 60;
+/// Shipped `NEXT_ERA_TURN_COUNTDOWN` warning after the field median advances.
+const NEXT_ERA_COUNTDOWN_TURNS: u32 = 10;
 /// Shipped `DIPLOMACY_WAR_MIN_TURNS`: a war runs ten turns before either side
 /// may sue for peace. Declaring is a commitment, not a gesture.
 const WAR_MIN_TURNS: u32 = 10;
@@ -13639,7 +13654,7 @@ pub struct Player {
     /// Amenity in *every* city this civilization owns.
     #[serde(default)]
     pub war_weariness: f64,
-    /// Ages already lived through. `THRESHOLD_SHIFT_PER_PAST_DARK_AGE` is -10
+    /// Ages already lived through. `THRESHOLD_SHIFT_PER_PAST_DARK_AGE` is -5
     /// and `_PER_PAST_GOLDEN_AGE` is +5, so a civilization that has struggled
     /// finds the next Normal Age easier to reach and one that has prospered
     /// finds it harder.
@@ -13753,7 +13768,7 @@ impl Player {
             era_score: 0,
             era_score_baseline: 0,
             normal_age_threshold: 12,
-            golden_age_threshold: 24,
+            golden_age_threshold: 26,
             dedications: BTreeSet::new(),
             dedication_choices: 0,
             era_triggers: BTreeMap::new(),
@@ -14692,6 +14707,9 @@ pub struct Game {
     /// Turn `world_era` last changed. Shipped `Eras_XP1.GameEraMinimumTurns`
     /// holds an era open for 40 standard turns before the next one may start.
     pub world_era_since: u32,
+    /// Turn on which the active next-era countdown expires.
+    #[serde(default)]
+    pub world_era_countdown_end: Option<u32>,
     /// Irreversible Gathering Storm climate phase, from 0 (pre-warming) to 7.
     pub climate_phase: u8,
     /// Meteor showers landed so far - the Apocalypse pack budgets a fixed
@@ -14791,6 +14809,11 @@ const DISASTER_FERTILITY_CAP: f64 = 3.0;
 
 /// The world era Heartbeat of Steam starts paying for buildings in.
 const INDUSTRIAL_ERA: usize = 4;
+const MEDIEVAL_ERA: usize = 2;
+const RENAISSANCE_ERA: usize = 3;
+const MODERN_ERA: usize = 5;
+const ATOMIC_ERA: usize = 6;
+const FUTURE_ERA: usize = 8;
 
 /// Gathering Storm's default disaster intensity: the middle of the five.
 pub const DEFAULT_DISASTER_INTENSITY: u8 = 2;
@@ -14875,6 +14898,8 @@ struct GameSer {
     world_era: usize,
     #[serde(default)]
     world_era_since: u32,
+    #[serde(default)]
+    world_era_countdown_end: Option<u32>,
     #[serde(default)]
     climate_phase: u8,
     #[serde(default)]
@@ -14977,6 +15002,7 @@ impl From<GameSer> for Game {
             routes: s.routes,
             world_era: s.world_era,
             world_era_since: s.world_era_since,
+            world_era_countdown_end: s.world_era_countdown_end,
             climate_phase: s.climate_phase,
             meteor_strikes: s.meteor_strikes,
             disaster_intensity: s.disaster_intensity,
@@ -15127,6 +15153,7 @@ impl From<Game> for GameSer {
             routes: g.routes,
             world_era: g.world_era,
             world_era_since: g.world_era_since,
+            world_era_countdown_end: g.world_era_countdown_end,
             climate_phase: g.climate_phase,
             meteor_strikes: g.meteor_strikes,
             disaster_intensity: g.disaster_intensity,
@@ -15312,6 +15339,7 @@ impl Game {
             routes: Vec::new(),
             world_era: start_era,
             world_era_since: 0,
+            world_era_countdown_end: None,
             climate_phase: 0,
             meteor_strikes: 0,
             disaster_intensity,
@@ -16395,9 +16423,8 @@ impl Game {
             Some("goody_hut") => {
                 self.map.tiles.get_mut(&pos).unwrap().improvement = None;
                 self.roll_goody_reward(owner, uid, pos);
-                // MOMENT_GOODY_HUT_TRIGGERED, +1, from the Ancient era on and
-                // never obsolete. Only a major banks Era Score.
-                if !self.players[owner].is_minor {
+                // MOMENT_GOODY_HUT_TRIGGERED is Ancient-only.
+                if !self.players[owner].is_minor && self.world_era == 0 {
                     self.add_era_score(owner, 1);
                 }
             }
@@ -16685,7 +16712,13 @@ impl Game {
             let loot = self.promotion_effect(&self.units[&uid], "coastal_raid_gold");
             self.players[owner].gold += self.game_speed.scale(loot);
         }
-        self.add_era_score(owner, self.barbarian_camp_era_score());
+        let base = self.barbarian_camp_era_score();
+        let near_city = base > 0
+            && self
+                .cities
+                .values()
+                .any(|city| city.owner == owner && self.wdist(city.pos, pos) <= 6);
+        self.add_era_score(owner, base + i64::from(near_city));
         if self.has_ability(owner, "epic_quest") {
             // Epic Quest: a full tribal village reward for the cleared camp.
             self.roll_goody_reward(owner, uid, pos);
@@ -18728,10 +18761,23 @@ impl Game {
     }
 
     fn level_up_spy(&mut self, spy_id: u32) {
+        let mut mastered = None;
         if let Some(spy) = self.spies.get_mut(&spy_id) {
             if spy.level < 3 && !Self::spy_needs_promotion(spy) {
                 spy.level += 1;
+                if spy.level == 3 {
+                    mastered = Some(spy.owner);
+                }
             }
+        }
+        if let Some(owner) = mastered {
+            let master_spies = self.players[owner]
+                .counters
+                .entry("master_spies".to_string())
+                .or_insert(0);
+            let score = if *master_spies == 0 { 2 } else { 1 };
+            *master_spies += 1;
+            self.add_era_score(owner, score);
         }
     }
 
@@ -19573,8 +19619,41 @@ impl Game {
         // Only a route that ran its course counts as completed; the other
         // paths into `recall_trade_routes` are war, embargo and city transfer.
         let completed = expired.len() as i64;
+        for route in &expired {
+            self.note_completed_trade_route_moments(pid, route);
+        }
         self.recall_trade_routes(expired);
         self.dedication_trigger(pid, "trade_route", completed);
+    }
+
+    fn note_completed_trade_route_moments(&mut self, pid: usize, route: &TradeRoute) {
+        let Some(destination_owner) = self.cities.get(&route.dest).map(|city| city.owner) else {
+            return;
+        };
+        if destination_owner == pid
+            || self.players[destination_owner].is_minor
+            || self.players[destination_owner].is_barbarian
+        {
+            return;
+        }
+        let post_key = format!("trading_post_in:{destination_owner}");
+        if !self.players[pid].counters.contains_key(&post_key) {
+            self.players[pid].counters.insert(post_key, 1);
+            self.add_era_score(pid, 1);
+        }
+        let every_other_major = self.players.iter().filter(|player| {
+            player.id != pid
+                && player.alive
+                && !player.is_minor
+                && !player.is_barbarian
+        }).all(|player| {
+            self.players[pid]
+                .counters
+                .contains_key(&format!("trading_post_in:{}", player.id))
+        });
+        if every_other_major {
+            self.first_historic_moment(pid, "trading_posts_in_every_civilization", 3, 5);
+        }
     }
 
     /// Cancel routes without destroying their Traders. Normal completion,
@@ -19922,12 +20001,13 @@ impl Game {
                 }
             }
         }
-        // MOMENT_PANTHEON_FOUNDED is 1, _FIRST_IN_WORLD is 2.
-        let first_in_world = !self
-            .players
-            .iter()
-            .any(|other| other.id != pid && other.pantheon.is_some());
-        self.add_era_score(pid, if first_in_world { 2 } else { 1 });
+        if self.world_era < 2 {
+            let first_in_world = !self
+                .players
+                .iter()
+                .any(|other| other.id != pid && other.pantheon.is_some());
+            self.add_era_score(pid, if first_in_world { 2 } else { 1 });
+        }
         Ok(())
     }
 
@@ -20397,6 +20477,7 @@ impl Game {
         }
         self.remove_unit(uid);
         bump(&mut self.players[pid], "inquisition");
+        self.first_historic_moment(pid, "inquisition_launched", 1, 2);
         Ok(())
     }
 
@@ -20433,7 +20514,9 @@ impl Game {
             return Err("belief already taken".into());
         }
         self.players[pid].religion_beliefs.push(belief.to_string());
-        self.add_era_score(pid, 1);
+        if self.players[pid].religion_beliefs.len() == 4 {
+            self.first_historic_moment(pid, "religion_fully_developed", 3, 4);
+        }
         self.remove_unit(uid);
         Ok(())
     }
@@ -20615,6 +20698,13 @@ impl Game {
                 continue;
             }
             self.dedication_trigger(founder, "city_converted", 1);
+            let owner = self.cities[cid].owner;
+            if owner != founder && self.is_at_war(founder, owner) {
+                self.add_era_score(founder, 3);
+            }
+            if owner != founder && self.players[owner].holy_city == Some(*cid) {
+                self.add_era_score(founder, 4);
+            }
         }
     }
 
@@ -21368,7 +21458,8 @@ impl Game {
             .ok_or_else(|| "no Great Person of that type is currently available".to_string())?;
         self.validate_great_person_activation(pid, kind, &spec)?;
         let points = self.players[pid].gpp.get(kind).copied().unwrap_or(0.0);
-        let missing = (self.gp_cost(pid, kind) - points).max(0.0);
+        let cost = self.gp_cost(pid, kind);
+        let missing = (cost - points).max(0.0);
         match patronage {
             None if missing > 0.0 => return Err("not enough Great Person points".into()),
             Some("gold") => {
@@ -21400,9 +21491,10 @@ impl Game {
             .gp_claimed
             .entry(kind.to_string())
             .or_insert(0) += 1;
-        // MOMENT_GREAT_PERSON_CREATED_GAME_ERA and _PAST_ERA are both 1. Only
-        // the two patronage-over-half moments pay 3, and neither is modelled.
-        self.add_era_score(pid, 1);
+        self.add_era_score(
+            pid,
+            if patronage.is_some() && missing > cost / 2.0 { 3 } else { 1 },
+        );
         self.dedication_trigger(pid, "great_person", 1);
         bump(&mut self.players[pid], "great_people");
         let activations = spec.charges
@@ -21522,6 +21614,7 @@ impl Game {
                     if formation == 1 {
                         bump(&mut self.players[pid], "corps");
                     }
+                    self.note_formation_moment(pid, unit);
                 }
             }
         }
@@ -22154,6 +22247,11 @@ impl Game {
         if !self.can_send_envoy(pid, minor) {
             return Err("invalid city-state".into());
         }
+        let old_suzerain = self.suzerain_of_uncached(minor);
+        let canceled_levy = old_suzerain.is_some_and(|owner| {
+            owner != pid
+                && self.units.values().any(|unit| unit.levied_from == Some(minor))
+        });
         // Diplomatic League reacts to the first envoy actually sent; Amani's
         // virtual Envoys do not consume that one-time trigger.
         let existing = self.raw_envoys_at(pid, minor);
@@ -22163,7 +22261,7 @@ impl Game {
             0
         };
         let different_government_bonus = self
-            .suzerain_of(minor)
+            .suzerain_of_uncached(minor)
             .filter(|leader| *leader != pid)
             .filter(|leader| self.players[*leader].government != self.players[pid].government)
             .map(|_| self.policy_effect(pid, "different_government_envoy_bonus") as i64)
@@ -22191,6 +22289,18 @@ impl Game {
         if existing > 0 && leads {
             if let Some(city) = self.player_city_ids(minor).first().copied() {
                 self.expand_borders(city);
+            }
+        }
+        let new_suzerain = self.suzerain_of_uncached(minor);
+        if new_suzerain == Some(pid) && old_suzerain != Some(pid) {
+            if self.world_era < MEDIEVAL_ERA {
+                self.first_historic_moment(pid, &format!("first_suzerain:{minor}"), 0, 2);
+            }
+            if canceled_levy {
+                self.add_era_score(pid, 2);
+            }
+            if old_suzerain.is_some_and(|owner| self.is_at_war(pid, owner)) {
+                self.add_era_score(pid, 2);
             }
         }
         Ok(())
@@ -22256,6 +22366,18 @@ impl Game {
             unit.moves_left = 0.0;
             unit.acted = true;
         }
+        let near_enemy = self.player_city_ids(minor).into_iter().any(|city_id| {
+            let city = &self.cities[&city_id];
+            self.cities.values().any(|enemy| {
+                enemy.owner != pid
+                    && self.players[enemy.owner].alive
+                    && !self.players[enemy.owner].is_minor
+                    && !self.players[enemy.owner].is_barbarian
+                    && self.is_at_war(pid, enemy.owner)
+                    && self.wdist(city.pos, enemy.pos) <= 6
+            })
+        });
+        self.add_era_score(pid, if near_enemy { 2 } else { 1 });
         Ok(())
     }
 
@@ -23673,6 +23795,9 @@ impl Game {
     }
 
     fn add_era_score(&mut self, pid: usize, amount: i64) {
+        if amount <= 0 || pid >= self.players.len() {
+            return;
+        }
         let bonus = if amount >= 2 && self.empire_wonder_effect(pid, "historic_moment_bonus") > 0.0
         {
             self.empire_wonder_effect(pid, "historic_moment_bonus") as i64
@@ -23680,6 +23805,226 @@ impl Game {
             0
         };
         self.players[pid].era_score += amount + bonus;
+    }
+
+    fn first_historic_moment(
+        &mut self,
+        pid: usize,
+        key: &str,
+        ordinary_score: i64,
+        world_first_score: i64,
+    ) -> bool {
+        if pid >= self.players.len()
+            || self.players[pid].is_minor
+            || self.players[pid].is_barbarian
+            || self.players[pid].is_free_city
+        {
+            return false;
+        }
+        let counter = format!("historic_moment:{key}");
+        if self.players[pid].counters.contains_key(&counter) {
+            return false;
+        }
+        let first_in_world = !self.players.iter().any(|other| {
+            other.id != pid
+                && !other.is_minor
+                && !other.is_barbarian
+                && !other.is_free_city
+                && other.counters.contains_key(&counter)
+        });
+        self.players[pid].counters.insert(counter, 1);
+        self.add_era_score(
+            pid,
+            if first_in_world {
+                world_first_score
+            } else {
+                ordinary_score
+            },
+        );
+        first_in_world
+    }
+
+    fn repeatable_world_first_moment(
+        &mut self,
+        pid: usize,
+        key: &str,
+        ordinary_score: i64,
+        world_first_score: i64,
+    ) -> bool {
+        if pid >= self.players.len()
+            || self.players[pid].is_minor
+            || self.players[pid].is_barbarian
+            || self.players[pid].is_free_city
+        {
+            return false;
+        }
+        let counter = format!("historic_moment:{key}");
+        let first_in_world = !self.players.iter().any(|other| {
+            !other.is_minor
+                && !other.is_barbarian
+                && !other.is_free_city
+                && other.counters.contains_key(&counter)
+        });
+        *self.players[pid].counters.entry(counter).or_insert(0) += 1;
+        self.add_era_score(
+            pid,
+            if first_in_world {
+                world_first_score
+            } else {
+                ordinary_score
+            },
+        );
+        first_in_world
+    }
+
+    fn note_unit_created_moments(&mut self, pid: usize, unit: &str) {
+        if pid >= self.players.len()
+            || !self.cities.values().any(|city| city.owner == pid)
+            || !self.rules.units.contains_key(unit)
+        {
+            return;
+        }
+        let spec = self.rules.units[unit].clone();
+        if spec
+            .unique_to
+            .as_deref()
+            .is_some_and(|civilization| civilization == self.players[pid].civ)
+        {
+            self.first_historic_moment(pid, &format!("unique_unit:{unit}"), 4, 4);
+        }
+        match spec.domain.as_deref() {
+            Some("air") => {
+                self.first_historic_moment(pid, "first_air_unit", 3, 5);
+            }
+            Some("sea") => {
+                self.first_historic_moment(pid, "first_sea_unit", 2, 3);
+            }
+            _ => {}
+        }
+        if let Some(resource) = spec.requires_resource {
+            self.first_historic_moment(
+                pid,
+                &format!("first_unit_using_resource:{resource}"),
+                1,
+                2,
+            );
+        }
+    }
+
+    fn note_formation_moment(&mut self, pid: usize, uid: u32) {
+        let Some(unit) = self.units.get(&uid) else {
+            return;
+        };
+        let formation = unit.formation;
+        let naval = self.rules.units[unit.kind].domain.as_deref() == Some("sea");
+        let (name, available) = match (naval, formation) {
+            (false, 1) => ("corps", self.world_era < 5),
+            (false, 2) => ("army", self.world_era < 6),
+            (true, 1) => ("fleet", true),
+            (true, 2) => ("armada", true),
+            _ => return,
+        };
+        if available {
+            self.first_historic_moment(pid, &format!("formation:{name}"), 1, 2);
+        }
+    }
+
+    fn note_district_completed_moments(&mut self, pid: usize, district: &str, pos: Pos) {
+        let spec = self.rules.districts[district].clone();
+        if spec
+            .unique_to
+            .as_deref()
+            .is_some_and(|civilization| civilization == self.players[pid].civ)
+        {
+            self.first_historic_moment(pid, &format!("unique_district:{district}"), 4, 4);
+        }
+        let family = self.district_family(Name::new(district));
+        if family == "canal" {
+            self.first_historic_moment(pid, "canal_district", 2, 2);
+        }
+        if family == "neighborhood" {
+            self.first_historic_moment(
+                pid,
+                "neighborhood_district",
+                2,
+                if self.world_era < 5 { 3 } else { 2 },
+            );
+        }
+        // Historic Moments use the district's *starting* adjacency. Percentage
+        // modifiers from policy cards, governors, and alliances are therefore
+        // deliberately excluded from this total.
+        let mut adjacency = Yields::default();
+        for source in self.district_adjacency_sources(Name::new(district), pos) {
+            if source.percent == 0.0 {
+                adjacency.add(source.yields);
+            }
+        }
+        let value = match family.as_str() {
+            "campus" => adjacency.science,
+            "holy_site" => adjacency.faith,
+            "commercial_hub" | "harbor" => adjacency.gold,
+            "theater_square" => adjacency.culture,
+            "industrial_zone" => adjacency.production,
+            _ => 0.0,
+        };
+        if Self::district_historic_moment_threshold(&family)
+            .is_some_and(|threshold| value >= threshold)
+        {
+            self.first_historic_moment(pid, &format!("high_adjacency:{family}"), 3, 3);
+        }
+    }
+
+    fn district_historic_moment_threshold(family: &str) -> Option<f64> {
+        match family {
+            "campus" | "holy_site" | "theater_square" => Some(3.0),
+            "commercial_hub" | "harbor" | "industrial_zone" => Some(4.0),
+            _ => None,
+        }
+    }
+
+    fn note_building_completed_moments(&mut self, pid: usize, building: &str) {
+        let spec = self.rules.buildings[building].clone();
+        if spec
+            .unique_to
+            .as_deref()
+            .is_some_and(|civilization| civilization == self.players[pid].civ)
+        {
+            self.first_historic_moment(pid, &format!("unique_building:{building}"), 4, 4);
+        }
+        for (terminal, family) in [
+            ("airport", "aerodrome"),
+            ("military_academy", "encampment"),
+            ("stadium", "entertainment_complex"),
+            ("aquatics_center", "water_park"),
+        ] {
+            if self.building_is_family(Name::new(building), Name::new(terminal)) {
+                self.first_historic_moment(pid, &format!("full_district:{family}"), 3, 3);
+            }
+        }
+    }
+
+    fn wonder_historic_moment_score(&self, wonder: &str) -> i64 {
+        if self.wonder_era(wonder) >= self.world_era {
+            4
+        } else {
+            3
+        }
+    }
+
+    fn note_project_founded_moment(&mut self, pid: usize, project: &str) {
+        match project {
+            "manhattan_project" | "operation_ivy" => self.add_era_score(pid, 2),
+            "launch_earth_satellite"
+            | "launch_moon_landing"
+            | "launch_mars_colony"
+            | "exoplanet_expedition" => {
+                let first_in_world = !self.players.iter().any(|other| {
+                    other.id != pid && other.science_projects.contains(project)
+                });
+                self.add_era_score(pid, if first_in_world { 4 } else { 2 });
+            }
+            _ => {}
+        }
     }
 
     pub fn city_power_demand(&self, city: &City) -> f64 {
@@ -24005,6 +24350,7 @@ impl Game {
     /// Great Bath prevent damage; every Great Bath-mitigated flood permanently
     /// adds its data-defined Faith to each affected floodplain tile.
     pub fn resolve_flood(&mut self, positions: &[Pos]) {
+        let mut protected_by_infrastructure = BTreeSet::new();
         for position in positions.iter().copied() {
             let Some(tile) = self.map.get(position) else {
                 continue;
@@ -24021,8 +24367,14 @@ impl Game {
             };
             let city = &self.cities[&city_id];
             let great_bath = self.city_wonder_effect(city, "flood_immunity") > 0.0;
-            let protected = great_bath || self.city_disaster_protected(city, "flood_protection");
+            let district_protection = self.city_district_effect(city, "flood_protection") > 0.0;
+            let protected = great_bath
+                || district_protection
+                || self.governor_effect(city.owner, city.id, "disaster_immunity") > 0.0;
             if protected {
+                if great_bath || district_protection {
+                    protected_by_infrastructure.insert(city.owner);
+                }
                 if great_bath {
                     let faith = self.city_wonder_effect(city, "mitigated_flood_faith");
                     self.map.tiles.get_mut(&position).unwrap().disaster_faith += faith;
@@ -24030,6 +24382,9 @@ impl Game {
             } else {
                 self.damage_disaster_tile(position, 20);
             }
+        }
+        for owner in protected_by_infrastructure {
+            self.add_era_score(owner, 1);
         }
     }
 
@@ -24526,19 +24881,28 @@ impl Game {
     /// active Flood Barrier protects all such tiles in its city.
     pub fn resolve_coastal_flooding(&mut self) {
         let city_ids: Vec<u32> = self.cities.keys().copied().collect();
+        let mut protected_by_barrier = BTreeSet::new();
         for city_id in city_ids {
-            let protected = self
+            let lowlands = self.coastal_lowland_tiles(&self.cities[&city_id]);
+            let barrier = self
                 .city_building_effect(&self.cities[&city_id], "protect_coastal_lowlands")
-                > 0.0
+                > 0.0;
+            let protected = barrier
                 || self.governor_effect(self.cities[&city_id].owner, city_id, "disaster_immunity")
                     > 0.0;
             if protected {
+                if barrier && !lowlands.is_empty() {
+                    protected_by_barrier.insert(self.cities[&city_id].owner);
+                }
                 continue;
             }
-            for position in self.coastal_lowland_tiles(&self.cities[&city_id]) {
+            for position in lowlands {
                 self.map.tiles.get_mut(&position).unwrap().flooded = true;
                 self.damage_disaster_tile(position, 20);
             }
+        }
+        for owner in protected_by_barrier {
+            self.add_era_score(owner, 1);
         }
     }
 
@@ -24584,8 +24948,16 @@ impl Game {
             .filter(|(_, tile)| tile.coastal_lowland == band && !tile.submerged)
             .map(|(position, _)| *position)
             .collect();
+        let mut protected_by_barrier = BTreeSet::new();
         for position in positions {
             if self.lowland_has_barrier(position) {
+                if let Some(owner) = self.map.tiles[&position]
+                    .owner_city
+                    .and_then(|city| self.cities.get(&city))
+                    .map(|city| city.owner)
+                {
+                    protected_by_barrier.insert(owner);
+                }
                 continue;
             }
             self.map.tiles.get_mut(&position).unwrap().flooded = true;
@@ -24593,6 +24965,9 @@ impl Game {
             if let Some(city) = self.city_at(position) {
                 self.cities.get_mut(&city).unwrap().pop = (self.cities[&city].pop - 1).max(1);
             }
+        }
+        for owner in protected_by_barrier {
+            self.add_era_score(owner, 1);
         }
     }
 
@@ -26348,6 +26723,7 @@ impl Game {
         self.occ.entry(pos).or_default().push(id);
         self.units.insert(id, u);
         self.reveal(owner, pos, sight);
+        self.note_unit_created_moments(owner, kind);
         id
     }
 
@@ -27792,6 +28168,25 @@ impl Game {
             return;
         }
 
+        let continents: BTreeSet<usize> = newly_explored
+            .iter()
+            .filter_map(|position| self.map.get(*position).and_then(|tile| tile.continent))
+            .collect();
+        let has_founded_city = self.cities.values().any(|city| city.owner == pid);
+        for continent in continents {
+            let key = format!("discovered_continent:{continent}");
+            if self.players[pid].counters.contains_key(&key) {
+                continue;
+            }
+            self.players[pid].counters.insert(key, 1);
+            // Initial visibility establishes a home continent without
+            // manufacturing a discovery moment before the capital exists.
+            if has_founded_city {
+                self.first_historic_moment(pid, &format!("continent:{continent}"), 0, 4);
+                self.dedication_trigger(pid, "continent_or_wonder", 1);
+            }
+        }
+
         // Only ground nobody had seen can close the ring, so this is asked on
         // the turns exploring actually got somewhere rather than on every
         // refresh behind every move.
@@ -27800,8 +28195,8 @@ impl Game {
         }
 
         let wonders: BTreeSet<Name> = newly_explored
-            .into_iter()
-            .filter_map(|position| self.map.get(position))
+            .iter()
+            .filter_map(|position| self.map.get(*position))
             .filter_map(|tile| tile.feature.as_ref())
             .filter(|feature| {
                 self.rules
@@ -27888,6 +28283,7 @@ impl Game {
             return;
         }
         self.players[pid].went_around = true;
+        self.first_historic_moment(pid, "circumnavigation", 3, 5);
         self.note_important(
             pid,
             "World",
@@ -36456,6 +36852,8 @@ impl Game {
                 && capture_chance > 0.0
                 && self.rng.uniform(0.0, 100.0) < capture_chance;
             if d_dead {
+                self.note_underdog_kill(pid, &attacker, &d);
+                self.note_great_person_assisted_kill(pid, &attacker);
                 self.record_kill(pid, Some(&attacker.kind), &d);
                 self.promotion_kill_rewards(&attacker, &d);
                 self.remove_unit(did);
@@ -36466,6 +36864,7 @@ impl Game {
             }
             if attacker_dead {
                 if self.units.contains_key(&uid) {
+                    self.note_underdog_kill(downer, &d, &attacker);
                     self.record_kill(downer, Some(&d.kind), &attacker);
                     self.remove_unit(uid);
                     self.on_unit_lost(pid);
@@ -36754,6 +37153,8 @@ impl Game {
                 self.award_unit_combat_xp(did, &attacker, true, false, false);
             }
             if defender_dead {
+                self.note_underdog_kill(pid, &attacker, &defender);
+                self.note_great_person_assisted_kill(pid, &attacker);
                 self.record_kill(pid, Some(&attacker.kind), &defender);
                 self.promotion_kill_rewards(&attacker, &defender);
                 if self.has_ability(pid, "killer_of_cyrus") {
@@ -36958,6 +37359,13 @@ impl Game {
         self.city_by_pos.insert(pos, cid);
         let founded = city.name.clone();
         self.cities.insert(cid, city);
+        if is_capital {
+            if let Some(continent) = self.map.tiles[&pos].continent {
+                self.players[pid]
+                    .counters
+                    .insert(format!("discovered_continent:{continent}"), 1);
+            }
+        }
         self.reveal(pid, pos, 3);
         self.note(pid, "Cities", format!("founded {founded}"), Some(pos));
         if !is_minor {
@@ -36966,71 +37374,90 @@ impl Game {
         cid
     }
 
-    /// The `MOMENT_CITY_BUILT_*` family, all +1 and all stackable — the shipped
-    /// game pays a city for every unusual thing about where it stands, and a
-    /// well-sited city commonly earns two or three at once.
-    ///
-    /// Modelled here: on Desert, on Snow, on Tundra, next to a floodable river,
-    /// next to a volcano, next to a natural wonder, and next to another
-    /// civilization's city. `MOMENT_CITY_BUILT_NEW_CONTINENT` is +2 and
-    /// `MOMENT_CITY_BUILT_BECAME_LARGEST_CIV_BY_MARGIN` +3; the first is here,
-    /// the second needs a population comparison this call site cannot see.
     fn note_city_founding_moments(&mut self, pid: usize, pos: Pos) {
         let Some(tile) = self.map.get(pos) else {
             return;
         };
         let terrain = tile.terrain.clone();
-        let mut earned = 0;
-        if terrain.starts_with("desert") {
-            earned += 1;
+        if terrain.starts_with("desert")
+            || terrain.starts_with("snow")
+            || terrain.starts_with("tundra")
+        {
+            self.add_era_score(pid, 1);
         }
-        if terrain.starts_with("snow") {
-            earned += 1;
-        }
-        if terrain.starts_with("tundra") {
-            earned += 1;
-        }
-        if tile.has_river() {
-            earned += 1;
-        }
-        // A neighbourhood is read once, so the three adjacency moments share a
-        // single walk of the surrounding tiles.
-        let mut volcano = false;
-        let mut natural_wonder = false;
-        for neighbour in hex::neighbors(pos) {
-            let Some(near) = self.map.get(neighbour) else {
-                continue;
-            };
-            if near.feature.as_deref() == Some("volcano") {
-                volcano = true;
-            }
-            if near
-                .feature
-                .as_deref()
-                .is_some_and(|feature| self.rules.features.get(feature).is_some_and(|spec| spec.natural_wonder))
-            {
-                natural_wonder = true;
-            }
+        let (floodable_river, volcano, natural_wonder) = {
+            let nearby: Vec<&crate::world::Tile> = self
+                .map
+                .tiles
+                .values()
+                .filter(|near| self.wdist(near.pos, pos) <= 2)
+                .collect();
+            (
+                nearby.iter().any(|near| {
+                    near.has_river()
+                        && matches!(
+                            near.feature.as_deref(),
+                            Some(
+                                "floodplains"
+                                    | "grassland_floodplains"
+                                    | "plains_floodplains"
+                            )
+                        )
+                }),
+                nearby
+                    .iter()
+                    .any(|near| near.feature.as_deref() == Some("volcano")),
+                nearby
+                    .iter()
+                    .any(|near| self.tile_is_natural_wonder(near)),
+            )
+        };
+        if floodable_river {
+            self.add_era_score(pid, 1);
         }
         if volcano {
-            earned += 1;
+            self.add_era_score(pid, 1);
         }
         if natural_wonder {
-            earned += 1;
+            self.add_era_score(pid, 3);
         }
         if self
             .cities
             .values()
-            .any(|other| other.owner != pid && self.wdist(other.pos, pos) <= 5)
+            .any(|other| {
+                other.owner != pid
+                    && !self.players[other.owner].is_minor
+                    && !self.players[other.owner].is_barbarian
+                    && self.wdist(other.pos, pos) <= 5
+            })
         {
-            earned += 1;
+            self.add_era_score(pid, 1);
         }
         if self.on_foreign_continent(pid, pos) {
-            // MOMENT_CITY_BUILT_NEW_CONTINENT is worth 2.
-            earned += 2;
+            if let Some(continent) = self.map.tiles[&pos].continent {
+                self.first_historic_moment(
+                    pid,
+                    &format!("settlement_on_continent:{continent}"),
+                    2,
+                    2,
+                );
+            }
         }
-        if earned > 0 {
-            self.add_era_score(pid, earned);
+        let city_count = self.player_city_ids(pid).len();
+        let largest_other = self
+            .players
+            .iter()
+            .filter(|player| {
+                player.id != pid
+                    && player.alive
+                    && !player.is_minor
+                    && !player.is_barbarian
+            })
+            .map(|player| self.player_city_ids(player.id).len())
+            .max()
+            .unwrap_or(0);
+        if city_count >= largest_other.saturating_add(3) {
+            self.first_historic_moment(pid, "largest_civilization_by_three_cities", 3, 3);
         }
     }
 
@@ -37216,6 +37643,9 @@ impl Game {
         }
         let removes = self.rules.improvements[imp].removes_feature;
         let excavates_artifact = matches!(imp, "archaeological_dig" | "shipwreck_excavation");
+        let improvement_position = u.pos;
+        let improved_disaster_fertility = self.map.tiles[&improvement_position].disaster_food > 0.0
+            || self.map.tiles[&improvement_position].disaster_production > 0.0;
         if let Some(positions) = national_park {
             for position in positions {
                 let tile = self.map.tiles.get_mut(&position).unwrap();
@@ -37223,6 +37653,7 @@ impl Game {
                 tile.pillaged = false;
             }
             bump(&mut self.players[pid], "national_park");
+            self.repeatable_world_first_moment(pid, "national_park_created", 3, 4);
         } else {
             let t = self.map.tiles.get_mut(&u.pos).unwrap();
             // Excavation consumes the Antiquity Site/Shipwreck and immediately
@@ -37257,7 +37688,34 @@ impl Game {
                 .collect();
             let origin = civs[self.rng.below(civs.len().max(1))].clone();
             self.grant_great_work(pid, "artifact", era, &origin);
+            self.add_era_score(pid, 1);
+            if imp == "shipwreck_excavation" {
+                self.first_historic_moment(pid, "shipwreck_excavated", 2, 3);
+            }
             self.dedication_trigger(pid, "artifact", 1);
+        } else if national_park.is_none() {
+            if self.rules.improvements[imp]
+                .unique_to
+                .as_deref()
+                .is_some_and(|civilization| civilization == self.players[pid].civ)
+            {
+                self.first_historic_moment(pid, &format!("unique_improvement:{imp}"), 4, 4);
+            }
+            match imp {
+                "mountain_tunnel" => {
+                    self.first_historic_moment(pid, "mountain_tunnel", 2, 3);
+                }
+                "seaside_resort" => {
+                    self.first_historic_moment(pid, "seaside_resort", 2, 3);
+                }
+                "wind_farm" | "solar_farm" | "offshore_wind_farm" | "geothermal_plant" => {
+                    self.first_historic_moment(pid, "renewable_improvement", 2, 3);
+                }
+                _ => {}
+            }
+            if improved_disaster_fertility {
+                self.first_historic_moment(pid, "disaster_fertility_improved", 1, 1);
+            }
         }
         if self.units[&uid].charges <= 0 {
             self.remove_unit(uid);
@@ -37378,6 +37836,30 @@ impl Game {
     /// gated on Steam Power (Routes_XP2 PrereqTech), free of build charges
     /// (BuildWithUnitChargeCost 0), and costing 1 Iron and 1 Coal per tile
     /// (Route_ResourceCosts).
+    fn has_railroad_city_connection(&self, pid: usize) -> bool {
+        let city_positions: BTreeSet<Pos> = self
+            .cities
+            .values()
+            .filter(|city| city.owner == pid && self.map.tiles[&city.pos].road >= 5)
+            .map(|city| city.pos)
+            .collect();
+        for start in &city_positions {
+            let mut seen = BTreeSet::from([*start]);
+            let mut queue = VecDeque::from([*start]);
+            while let Some(position) = queue.pop_front() {
+                if position != *start && city_positions.contains(&position) {
+                    return true;
+                }
+                for neighbor in self.nbrs(position) {
+                    if self.map.tiles[&neighbor].road >= 5 && seen.insert(neighbor) {
+                        queue.push_back(neighbor);
+                    }
+                }
+            }
+        }
+        false
+    }
+
     fn do_build_railroad(&mut self, pid: usize, uid: u32) -> Result<(), String> {
         if !self.can_build_railroad(pid, uid) {
             return Err("cannot lay a railroad here".to_string());
@@ -37390,6 +37872,9 @@ impl Game {
         let pos = self.units[&uid].pos;
         self.map.tiles.get_mut(&pos).unwrap().road = 5;
         self.units.get_mut(&uid).unwrap().moves_left = 0.0;
+        if self.has_railroad_city_connection(pid) {
+            self.first_historic_moment(pid, "railroad_city_connection", 2, 3);
+        }
         Ok(())
     }
 
@@ -37648,6 +38133,7 @@ impl Game {
         self.players[pid]
             .counters
             .insert(format!("rock_concert_tier:{uid}"), tier as i64);
+        self.first_historic_moment(pid, "rock_concert", 2, 3);
 
         let nearby_pct = self.promotion_effect(&band, "rock_nearby_tourism_pct") / 100.0;
         if nearby_pct > 0.0 {
@@ -38505,6 +38991,8 @@ impl Game {
             self.award_unit_combat_xp(uid, &defender, true, true, killed);
             if killed {
                 let weapon = self.units[&uid].kind.clone();
+                self.note_underdog_kill(pid, &attacker, &defender);
+                self.note_great_person_assisted_kill(pid, &attacker);
                 self.record_kill(pid, Some(&weapon), &defender);
                 self.remove_unit(defender_id);
                 self.on_unit_lost(defender.owner);
@@ -39055,6 +39543,7 @@ impl Game {
         if formation == 1 {
             bump(&mut self.players[pid], "corps");
         }
+        self.note_formation_moment(pid, placed);
         if rock_band {
             bump(&mut self.players[pid], "purchased:rock_band");
         }
@@ -39406,29 +39895,35 @@ impl Game {
                 .copied()
                 .unwrap_or(0.0);
         let rock_band = unit.kind == "rock_band";
-        let unit = self.units.get_mut(&uid).unwrap();
-        let extra_first_promotion = unit.extra_first_promotion;
-        unit.extra_first_promotion = false;
-        unit.promotions.insert(Name::new(promotion));
-        unit.charges += extra_charges as i32;
-        if rock_band {
-            // Concert outcomes raise Cultural Communicator level before the
-            // newly earned promotion is chosen. Consuming the choice must not
-            // raise it a second time; the initial promotion likewise leaves a
-            // new band at level 1.
-            unit.xp = 0;
-        } else {
-            unit.level = (unit.level + 1).min(8);
-            if extra_first_promotion {
-                unit.xp = unit.xp.max(Self::promotion_threshold(unit.level));
+        let distinguished = {
+            let unit = self.units.get_mut(&uid).unwrap();
+            let extra_first_promotion = unit.extra_first_promotion;
+            unit.extra_first_promotion = false;
+            unit.promotions.insert(Name::new(promotion));
+            unit.charges += extra_charges as i32;
+            if rock_band {
+                // Concert outcomes raise Cultural Communicator level before the
+                // newly earned promotion is chosen. Consuming the choice must not
+                // raise it a second time; the initial promotion likewise leaves a
+                // new band at level 1.
+                unit.xp = 0;
+            } else {
+                unit.level = (unit.level + 1).min(8);
+                if extra_first_promotion {
+                    unit.xp = unit.xp.max(Self::promotion_threshold(unit.level));
+                }
             }
+            unit.hp = (unit.hp + 50).min(100);
+            unit.moves_left = 0.0;
+            unit.attacks_left = 0;
+            unit.acted = true;
+            unit.fortified = false;
+            unit.fortify_turns = 0;
+            !rock_band && unit.level == 4
+        };
+        if distinguished {
+            self.add_era_score(pid, 1);
         }
-        unit.hp = (unit.hp + 50).min(100);
-        unit.moves_left = 0.0;
-        unit.attacks_left = 0;
-        unit.acted = true;
-        unit.fortified = false;
-        unit.fortify_turns = 0;
         Ok(())
     }
 
@@ -39505,6 +40000,7 @@ impl Game {
         if formation == 1 {
             bump(&mut self.players[pid], "corps");
         }
+        self.note_formation_moment(pid, survivor);
         Ok(())
     }
 
@@ -39537,6 +40033,7 @@ impl Game {
             if old == 0 && target == 1 {
                 bump(&mut self.players[pid], "corps");
             }
+            self.note_formation_moment(pid, uid);
         }
     }
 
@@ -40387,6 +40884,9 @@ impl Game {
         if self.players[pid].is_minor {
             return Err("city-states do not declare war independently".into());
         }
+        if !self.has_met(pid, other) {
+            return Err("cannot declare war before contact".into());
+        }
         if self.is_at_war(pid, other) {
             return Err("already at war".into());
         }
@@ -40511,6 +41011,12 @@ impl Game {
         other: usize,
         casus_belli: &str,
     ) -> Result<(), String> {
+        // Some casus-belli predicates inspect the target before `start_war`
+        // gets a chance to validate it. Keep the action boundary both
+        // panic-free and contact-honest.
+        if other >= self.players.len() || !self.has_met(pid, other) {
+            return Err("invalid war target".into());
+        }
         let valid = match casus_belli {
             "formal_war" => self.players[pid]
                 .denounced_until
@@ -40553,13 +41059,16 @@ impl Game {
         } else {
             50.0
         };
-        self.start_war(pid, other, grievances)
+        self.start_war(pid, other, grievances)?;
+        self.add_era_score(pid, 2);
+        Ok(())
     }
 
     fn do_denounce(&mut self, pid: usize, other: usize) -> Result<(), String> {
         if other == pid
             || other >= self.players.len()
             || !self.players[other].alive
+            || !self.has_met(pid, other)
             || self.players[other].is_barbarian
             || self.players[pid].is_barbarian
             || self.is_at_war(pid, other)
@@ -40596,6 +41105,7 @@ impl Game {
         if other == pid
             || other >= self.players.len()
             || !self.players[other].alive
+            || !self.has_met(pid, other)
             || self.players[other].is_minor
             || self.players[other].is_barbarian
             || self.players[pid].is_minor
@@ -41382,6 +41892,7 @@ impl Game {
             || to >= self.players.len()
             || !self.players[from].alive
             || !self.players[to].alive
+            || !self.has_met(from, to)
             || self.players[from].is_minor
             || self.players[to].is_minor
             || self.players[from].is_barbarian
@@ -42558,6 +43069,9 @@ impl Game {
         );
         self.players[pid].governor_titles_spent += 1;
         self.sync_governor_cities(pid);
+        if self.players[pid].governor_roster.len() == self.rules.governors.len() {
+            self.first_historic_moment(pid, "all_governors_appointed", 1, 1);
+        }
         Ok(())
     }
 
@@ -42626,6 +43140,25 @@ impl Game {
             .promotions
             .insert(promotion.to_string());
         self.players[pid].governor_titles_spent += 1;
+        if self.world_era < MODERN_ERA {
+            let fully_promoted = self.players[pid]
+                .governor_roster
+                .get(governor)
+                .is_some_and(|state| {
+                    self.rules.governors[governor]
+                        .promotions
+                        .keys()
+                        .all(|promotion| state.promotions.contains(promotion))
+                });
+            if fully_promoted {
+                self.first_historic_moment(
+                    pid,
+                    &format!("governor_fully_promoted:{governor}"),
+                    1,
+                    1,
+                );
+            }
+        }
         Ok(())
     }
 
@@ -42994,6 +43527,7 @@ impl Game {
                 }
                 Flip::Join(cid, new_owner) => {
                     self.transfer_city(cid, new_owner, false);
+                    self.add_era_score(new_owner, 2);
                     let city = self.cities.get_mut(&cid).unwrap();
                     city.loyalty = 100.0;
                     city.captured_from = None;
@@ -43449,6 +43983,7 @@ impl Game {
                     if self.victory_eligible(target) {
                         if winning_outcome == "A" {
                             self.players[target].dvp += 2;
+                            self.add_era_score(target, 2);
                         } else {
                             self.players[target].dvp = self.players[target].dvp.saturating_sub(2);
                         }
@@ -43914,9 +44449,13 @@ impl Game {
                 };
                 *self.players[*member].counters.entry(key).or_insert(0) +=
                     if emergency.kind == "city_state" { 1 } else { 5 };
+                if self.world_era < MODERN_ERA {
+                    self.add_era_score(*member, 3);
+                }
             }
         } else {
             self.players[emergency.target].diplomatic_favor += 200.0;
+            self.add_era_score(emergency.target, 4);
             if emergency.kind == "city_state" {
                 *self.players[emergency.target]
                     .counters
@@ -43976,12 +44515,21 @@ impl Game {
     }
 
     fn era_from_progress(&self) -> usize {
-        self.players
+        let mut eras: Vec<usize> = self.players
             .iter()
-            .filter(|p| !p.is_minor)
+            .filter(|player| {
+                player.alive
+                    && !player.is_minor
+                    && !player.is_barbarian
+                    && !player.is_free_city
+            })
             .map(|player| self.player_era(player.id))
-            .max()
-            .unwrap_or(0)
+            .collect();
+        if eras.is_empty() {
+            return self.start_era;
+        }
+        eras.sort_unstable();
+        eras[eras.len() / 2]
     }
 
     pub fn available_dedications(&self, pid: usize) -> Vec<Name> {
@@ -44014,6 +44562,9 @@ impl Game {
         else {
             return;
         };
+        if pop == 10 && self.world_era >= MODERN_ERA {
+            return;
+        }
         let key = format!("city_size:{size}");
         if self.players[pid].counters.contains_key(&key) {
             return;
@@ -44042,6 +44593,15 @@ impl Game {
             // Chiefdom is the starting government and names no moment.
             _ => return,
         };
+        let obsolete_era = match tier {
+            1 => MEDIEVAL_ERA,
+            2 => RENAISSANCE_ERA,
+            3 => ATOMIC_ERA,
+            _ => FUTURE_ERA,
+        };
+        if self.world_era >= obsolete_era {
+            return;
+        }
         let key = format!("government_tier:{tier}");
         if self.players[pid].counters.contains_key(&key) {
             return;
@@ -44191,7 +44751,9 @@ impl Game {
             .filter_map(|spec| spec.triggers.get(trigger))
             .sum();
         if earned > 0 {
-            self.add_era_score(pid, earned * count);
+            // Dedications are not Historic Moments, so Taj Mahal does not
+            // increase their score.
+            self.players[pid].era_score += earned * count;
         }
     }
 
@@ -44213,8 +44775,8 @@ impl Game {
     /// from a Dark Age to the Golden threshold produces a Heroic Age and
     /// three simultaneous dedication choices.
     /// Era Score needed to avoid a Dark Age, from the shipped
-    /// `THRESHOLD_SHIFT_*` parameters: `_PER_CITY` 3, counted past the first
-    /// city the base already covers, `_PER_PAST_DARK_AGE` -10 and
+    /// `THRESHOLD_SHIFT_*` parameters: `_PER_CITY` 1, including the first
+    /// city, `_PER_PAST_DARK_AGE` -5 and
     /// `_PER_PAST_GOLDEN_AGE` +5. The last two make ages self-correcting — a
     /// civilization that has struggled finds Normal easier to reach next time,
     /// one that has prospered finds it harder.
@@ -44223,38 +44785,45 @@ impl Game {
     /// and `_PER_MISSING_AMENITY` all ship as 0, so there is nothing to model
     /// for them.
     fn normal_age_threshold(era: usize, cities: i64, past_dark: i64, past_golden: i64) -> i64 {
-        (12 + 3 * era as i64 + 3 * (cities - 1) - 10 * past_dark + 5 * past_golden).max(6)
+        14 + if era == 0 { -3 } else { 0 } + cities - 5 * past_dark + 5 * past_golden
+    }
+
+    fn golden_age_threshold(era: usize, cities: i64, past_dark: i64, past_golden: i64) -> i64 {
+        28 + if era == 0 { -3 } else { 0 } + cities - 5 * past_dark + 5 * past_golden
     }
 
     fn process_eras(&mut self) {
+        if self.world_era + 1 >= ERA_NAMES.len() {
+            return;
+        }
         let progress_era = self.era_from_progress();
-        if progress_era <= self.world_era {
-            return;
-        }
-        // Shipped `Eras_XP1.GameEraMinimumTurns` is 40 for every era, scaled by
-        // speed. Without that floor the world era tracks the single most
-        // advanced civilization with nothing holding it back, and a leader who
-        // opens two eras in consecutive turns gives the whole table an age it
-        // had no turns to bank Era Score in. Measured before this: the 10th
-        // percentile of the gap between age transitions was **one turn**, and
-        // 79% of all transitions were Dark.
-        //
-        // Only the floor is modelled. `GameEraMaximumTurns` (60) would force
-        // the world era forward past what anybody has researched, which reaches
-        // much further into wonder eligibility, Dark Age card windows and
-        // unit obsolescence than the evidence here justifies.
         let minimum = self.game_speed.scale_turns(ERA_MINIMUM_TURNS);
-        if self.turn.saturating_sub(self.world_era_since) < minimum {
+        let maximum = self.game_speed.scale_turns(ERA_MAXIMUM_TURNS);
+        let countdown = self.game_speed.scale_turns(NEXT_ERA_COUNTDOWN_TURNS);
+        if self.world_era_countdown_end.is_none() {
+            let minimum_end = self.world_era_since.saturating_add(minimum);
+            let maximum_end = self.world_era_since.saturating_add(maximum);
+            if progress_era > self.world_era {
+                self.world_era_countdown_end = Some(
+                    self.turn
+                        .saturating_add(countdown)
+                        .clamp(minimum_end, maximum_end),
+                );
+            } else if self.turn.saturating_add(countdown) >= maximum_end {
+                self.world_era_countdown_end = Some(maximum_end);
+            }
+        }
+        let Some(end) = self.world_era_countdown_end else {
+            return;
+        };
+        if self.turn < end {
             return;
         }
-        // A late unlock can put the leader several columns ahead of the
-        // world's current age (for example after restoring an older save or
-        // receiving a rules-driven research grant). Each intervening era is
-        // still a real age with its own thresholds and Dedication choice, so
-        // never collapse all of those transitions into one.
-        let era = self.world_era.saturating_add(1).min(progress_era);
+        let previous_world_era = self.world_era;
+        let era = self.world_era + 1;
         self.world_era = era;
         self.world_era_since = self.turn;
+        self.world_era_countdown_end = None;
         let majors: Vec<usize> = self
             .players
             .iter()
@@ -44283,12 +44852,22 @@ impl Game {
             let normal = if player.normal_age_threshold > 0 {
                 player.normal_age_threshold
             } else {
-                12 + 3 * era.saturating_sub(1) as i64 + 2 * (cities - 1)
+                Self::normal_age_threshold(
+                    previous_world_era,
+                    cities,
+                    player.past_dark_ages,
+                    player.past_golden_ages,
+                )
             };
             let golden = if player.golden_age_threshold > normal {
                 player.golden_age_threshold
             } else {
-                normal + 12 + cities
+                Self::golden_age_threshold(
+                    previous_world_era,
+                    cities,
+                    player.past_dark_ages,
+                    player.past_golden_ages,
+                )
             };
             let previous = player.age.clone();
             player.age = if player.era_score >= golden && previous == "dark" {
@@ -44308,7 +44887,7 @@ impl Game {
             // about to be chosen, and the new one starts its own tally.
             player.last_era_triggers = std::mem::take(&mut player.era_triggers);
             // The age just entered counts toward the next threshold: shipped
-            // THRESHOLD_SHIFT_PER_PAST_DARK_AGE -10 and
+            // THRESHOLD_SHIFT_PER_PAST_DARK_AGE -5 and
             // _PER_PAST_GOLDEN_AGE +5 make ages self-correcting, so a
             // civilization that has struggled finds Normal easier to reach
             // next time and one that has prospered finds it harder. Heroic
@@ -44324,7 +44903,12 @@ impl Game {
                 player.past_dark_ages,
                 player.past_golden_ages,
             );
-            player.golden_age_threshold = player.normal_age_threshold + 12 + cities;
+            player.golden_age_threshold = Self::golden_age_threshold(
+                era,
+                cities,
+                player.past_dark_ages,
+                player.past_golden_ages,
+            );
         }
         // A Dark Age card is a loan against the age that offered it. Climbing
         // out of the Dark Age — or simply leaving the eras that card belongs
@@ -46075,6 +46659,47 @@ impl Game {
 
     /// Record a combat kill with the detail the Eureka triggers ask about:
     /// what did the killing, what died, and whether it was a Barbarian.
+    fn note_underdog_kill(&mut self, pid: usize, attacker: &Unit, victim: &Unit) {
+        if self.rules.units[attacker.kind].class != "military"
+            || self.rules.units[victim.kind].class != "military"
+        {
+            return;
+        }
+        if attacker.formation < victim.formation {
+            self.add_era_score(pid, 1);
+        }
+        if victim.promotions.len() >= attacker.promotions.len().saturating_add(2) {
+            self.add_era_score(pid, 3);
+        }
+    }
+
+    /// Great People are recruited and retired immediately in this rules
+    /// model, so they cannot physically stand beside a battle. Preserve the
+    /// shipped Moment's useful semantics by letting each recruited General or
+    /// Admiral oversee one future offensive in its matching domain.
+    fn note_great_person_assisted_kill(&mut self, pid: usize, attacker: &Unit) {
+        if self.rules.units[attacker.kind].class != "military" {
+            return;
+        }
+        let kind = match self.rules.units[attacker.kind].domain.as_deref() {
+            Some("sea") => "admiral",
+            Some("air") => return,
+            _ => "general",
+        };
+        let person = self.players[pid].great_people.iter().find(|person| {
+            self.rules
+                .great_people
+                .get(person)
+                .is_some_and(|spec| spec.kind == kind)
+                && !self.players[pid]
+                    .counters
+                    .contains_key(&format!("historic_moment:assisted_kill:{person}"))
+        });
+        if let Some(person) = person.cloned() {
+            self.first_historic_moment(pid, &format!("assisted_kill:{person}"), 2, 2);
+        }
+    }
+
     fn record_kill(&mut self, pid: usize, weapon: Option<&str>, victim: &Unit) {
         bump(&mut self.players[pid], "kills");
         if let Some(kind) = weapon {
@@ -46998,6 +47623,7 @@ impl Game {
                 if *formation == 1 {
                     bump(&mut self.players[pid], "corps");
                 }
+                self.note_formation_moment(pid, placed);
                 true
             }
             Item::Unit { unit } => {
@@ -47094,6 +47720,7 @@ impl Game {
                     city.reactor_age = 0;
                 }
                 self.note_dedicated_building(pid, building, &spec);
+                self.note_building_completed_moments(pid, building);
                 if spec
                     .district
 
@@ -47122,7 +47749,7 @@ impl Game {
                     }
                 }
                 if spec.wonder {
-                    self.add_era_score(pid, 3);
+                    self.add_era_score(pid, self.wonder_historic_moment_score(building));
                 }
                 if spec.unit_levels > 0 {
                     for uid in self.player_unit_ids(pid) {
@@ -47208,6 +47835,7 @@ impl Game {
                 // The City Center is placed at founding rather than built, so
                 // it never reaches this path.
                 self.dedication_trigger(pid, "district", 1);
+                self.note_district_completed_moments(pid, district, *pos);
                 if self.district_is_family(district, crate::name!("aerodrome")) {
                     self.dedication_trigger(pid, "aerodrome", 1);
                 }
@@ -47297,7 +47925,7 @@ impl Game {
                     .unwrap()
                     .wonders
                     .insert(Name::new(wonder), *pos);
-                self.add_era_score(pid, 3);
+                self.add_era_score(pid, self.wonder_historic_moment_score(wonder));
                 if spec
                     .effects
                     .get("promote_all_current_units")
@@ -47347,6 +47975,7 @@ impl Game {
                     bump(&mut self.players[pid], &format!("project:{project}"));
                 } else {
                     self.players[pid].science_projects.insert(project.to_string());
+                    self.note_project_founded_moment(pid, project);
                 }
                 for (kind, points) in self.project_completion_gpp_awards(pid, cid, project.as_str())
                 {
@@ -47732,6 +48361,19 @@ impl Game {
 
     fn transfer_city(&mut self, cid: u32, new_owner: usize, conquest: bool) {
         let old = self.cities[&cid].owner;
+        let original_owner = self.cities[&cid].original_owner;
+        let original_capital = self.cities[&cid].is_capital;
+        if old != new_owner
+            && !self.players[new_owner].is_minor
+            && !self.players[new_owner].is_barbarian
+            && !self.players[new_owner].is_free_city
+        {
+            if original_owner == new_owner {
+                self.add_era_score(new_owner, 2);
+            } else if original_capital {
+                self.add_era_score(new_owner, 4);
+            }
+        }
         {
             let (name, pos, capital, pop) = {
                 let city = &self.cities[&cid];
@@ -48010,7 +48652,18 @@ impl Game {
 
     fn capture_rewards(&mut self, conqueror: usize, defeated: usize, grievances: f64) {
         bump(&mut self.players[conqueror], "captures");
-        self.add_era_score(conqueror, 2);
+        if !self.players[defeated].is_minor
+            && !self.players[defeated].is_barbarian
+            && !self.players[defeated].is_free_city
+            && !self.cities.values().any(|other| other.owner == defeated)
+        {
+            self.first_historic_moment(
+                conqueror,
+                &format!("civilization_defeated:{defeated}"),
+                5,
+                5,
+            );
+        }
         if defeated != conqueror && !self.players[defeated].is_barbarian {
             self.add_grievances(defeated, conqueror, grievances);
         }
@@ -48787,6 +49440,7 @@ mod team_tests {
     #[test]
     fn declaring_and_ending_war_moves_both_complete_teams() {
         let mut game = team_game(4, vec![Some(0), Some(0), Some(1), Some(1)], 88_002);
+        game.record_contact(0, 2);
         game.do_declare_war(0, 2).unwrap();
         for attacker in [0, 1] {
             for defender in [2, 3] {
@@ -49342,9 +49996,10 @@ mod visibility_tests {
     }
 
     /// Diplomacy needs somebody to conduct it with. Every act on the panel is
-    /// withheld until contact, and a war is contact by itself.
+    /// withheld until contact; only belligerents pulled into an existing war
+    /// by a team or defensive pact are introduced by that war itself.
     #[test]
-    fn diplomacy_waits_for_contact_and_a_declaration_supplies_it() {
+    fn diplomacy_waits_for_contact_before_a_declaration() {
         let (mut game, center) = controlled_game(63_102);
         game.spawn_unit("warrior", 0, center);
         game.spawn_unit("warrior", 1, along(&game, center, 9));
@@ -49369,8 +50024,54 @@ mod visibility_tests {
         assert!(game.is_at_war(0, 1));
         assert!(
             game.has_met(1, 0),
-            "nobody learns who they are fighting from the battlefield"
+            "the prewar contact remains mutual"
         );
+    }
+
+    /// `legal_actions` is a discovery aid, not the authority boundary: every
+    /// controller ultimately submits an `Action` directly to `Game::apply`.
+    /// Hidden civilizations must therefore be rejected by the handlers too,
+    /// without leaving a grievance, offer, or war behind.
+    #[test]
+    fn direct_bilateral_diplomacy_cannot_bypass_contact() {
+        let (mut game, center) = controlled_game(63_103);
+        game.spawn_unit("warrior", 0, center);
+        game.spawn_unit("warrior", 1, along(&game, center, 9));
+        game.refresh_all_visibility();
+        assert!(!game.has_met(0, 1));
+
+        let actions = [
+            Action::DeclareWar { player: 1 },
+            Action::DeclareWarWithCasusBelli {
+                player: 1,
+                casus_belli: "golden_age_war".to_string(),
+            },
+            Action::Denounce { player: 1 },
+            Action::ProposeDeal {
+                player: 1,
+                give_gold: 0.0,
+                request_gold: 0.0,
+                open_borders: false,
+                friendship: true,
+                peace: false,
+                alliance: None,
+            },
+        ];
+        for action in actions {
+            let mut attempt = game.clone();
+            assert!(
+                attempt.apply(0, &action).is_err(),
+                "hidden diplomacy was accepted: {action:?}"
+            );
+            assert!(!attempt.is_at_war(0, 1));
+            assert!(attempt.pending_deals.is_empty());
+            assert!(attempt.players[0].denounced_until.is_empty());
+            assert!(attempt.players[0].grievances.is_empty());
+            assert!(attempt.players[1].grievances.is_empty());
+        }
+
+        game.record_contact(0, 1);
+        assert!(game.apply(0, &Action::Denounce { player: 1 }).is_ok());
     }
 
     #[test]
@@ -54338,9 +55039,13 @@ mod victory_conditions {
         g.world_era = 3;
         g.players[0].civics.clear();
         g.players[0].techs.insert(crate::name!("smart_materials"));
-        // An era is held open for its shipped 40-turn minimum before the next
-        // one may start, so stand far enough into this one to leave it.
+        g.players[1].techs.insert(crate::name!("smart_materials"));
+        // Half the living majors reaching the next era starts the shipped
+        // ten-turn warning; the transition itself follows at its end.
         g.turn = 40;
+        g.process_eras();
+        assert_eq!(g.world_era, 3);
+        g.turn = 50;
         g.process_eras();
         assert_eq!(
             g.world_era, 4,
@@ -55866,10 +56571,12 @@ mod victory_conditions {
         g.turn = 30;
         g.process_congress();
         assert!(g.congress.is_some(), "the session remains open for voting");
+        let score_before = g.players[0].era_score;
         g.do_congress_vote(0, "world_leader", "A:0", 1).unwrap();
         g.turn = 35;
         g.process_congress();
         assert_eq!(g.players[0].dvp, DIPLOMATIC_VICTORY_POINTS);
+        assert_eq!(g.players[0].era_score, score_before + 2);
         assert_eq!(g.winner, Some(0));
         assert_eq!(g.victory_type.as_deref(), Some("diplomatic"));
     }
@@ -56014,6 +56721,7 @@ mod victory_conditions {
 
         g.active_congress_effects
             .push(effect("public_relations", "A", "0"));
+        g.record_contact(0, 1);
         g.do_denounce(0, 1).unwrap();
         assert_eq!(g.players[1].grievances[&0], 50.0);
 
@@ -56331,22 +57039,19 @@ mod victory_conditions {
 
     #[test]
     fn past_ages_shift_the_next_threshold_by_the_shipped_amounts() {
-        // THRESHOLD_SHIFT_PER_CITY 3, _PER_PAST_DARK_AGE -10,
+        // THRESHOLD_SHIFT_PER_CITY 1, _PER_PAST_DARK_AGE -5,
         // _PER_PAST_GOLDEN_AGE +5.
         let t = Game::normal_age_threshold;
         assert_eq!(t(1, 1, 0, 0), 15);
-        // Each extra city past the first raises it by three.
-        assert_eq!(t(1, 4, 0, 0), 15 + 9);
-        // A past Dark Age makes the next Normal Age ten points easier...
-        assert_eq!(t(1, 4, 1, 0), 15 + 9 - 10);
-        // ...but never past the floor of six: 24 - 20 would be 4.
-        assert_eq!(t(1, 4, 2, 0), 6);
-        assert_eq!(t(1, 1, 1, 0), 6);
+        // Each extra city past the first raises it by one.
+        assert_eq!(t(1, 4, 0, 0), 18);
+        // A past Dark Age makes the next Normal Age five points easier.
+        assert_eq!(t(1, 4, 1, 0), 13);
         // ...and a past Golden Age makes it five points harder.
-        assert_eq!(t(1, 4, 0, 1), 15 + 9 + 5);
-        assert_eq!(t(1, 4, 1, 2), 15 + 9 - 10 + 10);
-        // The threshold never drops below six however dark the history.
-        assert_eq!(t(1, 1, 9, 0), 6);
+        assert_eq!(t(1, 4, 0, 1), 23);
+        assert_eq!(t(1, 4, 1, 2), 23);
+        // Ancient alone carries the shipped -3 EraScoreThresholdShift.
+        assert_eq!(t(0, 1, 0, 0), 12);
     }
 
     #[test]
@@ -58680,8 +59385,11 @@ mod district_mechanics {
         game.players[0].age = "dark".to_string();
         game.players[0].era_score = game.players[0].golden_age_threshold;
         game.players[0].techs.insert(crate::name!("horseback_riding"));
-        // An era is held open for its shipped 40-turn minimum.
+        game.players[1].techs.insert(crate::name!("horseback_riding"));
+        // Half the majors reaching Classical starts the ten-turn warning.
         game.turn = 40;
+        game.process_eras();
+        game.turn = 50;
         game.process_eras();
         assert_eq!(game.players[0].age, "heroic");
         assert_eq!(game.players[0].dedication_choices, 3);
@@ -58759,6 +59467,7 @@ mod district_mechanics {
         routed.turn = routed.players[0].alliances[&1].ends;
         routed.players[0].civics.insert(crate::name!("civil_service"));
         routed.players[1].civics.insert(crate::name!("civil_service"));
+        routed.record_contact(0, 1);
         routed
             .do_propose_deal(0, 1, 0.0, 0.0, false, true, false, Some("economic"))
             .unwrap();
@@ -59081,6 +59790,7 @@ mod district_mechanics {
     #[test]
     fn denouncement_unlocks_formal_war_and_alliances_level_each_turn() {
         let mut game = Game::new_full(2, 24, 16, 88_103, 100, 0, false);
+        game.record_contact(0, 1);
         game.do_denounce(0, 1).unwrap();
         game.turn += 5;
         game.do_declare_war_with_casus_belli(0, 1, "formal_war")
@@ -59361,6 +60071,7 @@ mod district_mechanics {
     #[test]
     fn a_pending_offer_cannot_settle_a_war_before_its_minimum_turns() {
         let mut game = Game::new_full(2, 18, 10, 79_021, 200, 0, false);
+        game.record_contact(0, 1);
         game.do_declare_war(0, 1).unwrap();
         game.players[0].gold = 100.0;
         let earliest = game
@@ -59607,6 +60318,7 @@ mod district_mechanics {
     fn the_war_ledger_records_a_declaration_its_cost_and_its_peace() {
         let mut game = emergency_game_with_capitals(3, 5_505, 300);
         game.turn = 40;
+        game.record_contact(0, 1);
         let opening_strength = [game.military_power(0).round() as i64, game.military_power(1).round() as i64];
         game.do_declare_war(0, 1).unwrap();
 
@@ -59730,6 +60442,7 @@ mod district_mechanics {
     fn war_strength_is_unit_only_and_saw_action_counts_distinct_units() {
         let mut game = emergency_game_with_capitals(2, 5_510, 300);
         game.turn = 40;
+        game.record_contact(0, 1);
         let start = game.military_power(0).round() as i64;
         game.do_declare_war(0, 1).unwrap();
 
@@ -59920,6 +60633,7 @@ mod district_mechanics {
     fn a_defensive_alliance_is_one_conflict_with_an_early_exit() {
         let mut game = emergency_game_with_capitals(3, 5_506, 300);
         game.turn = 40;
+        game.record_contact(0, 1);
         let alliance = AllianceState {
             kind: "military".to_string(),
             points: 0.0,
@@ -59975,6 +60689,7 @@ mod district_mechanics {
     fn a_peace_treaty_binds_for_the_shipped_ten_turns() {
         let mut game = emergency_game_with_capitals(2, 5_505, 300);
         game.turn = 20;
+        game.record_contact(0, 1);
         game.do_declare_war(0, 1).unwrap();
         game.turn = 25;
         assert!(
@@ -60018,6 +60733,8 @@ mod district_mechanics {
     fn defensive_alliances_do_not_reopen_a_front_inside_its_peace_treaty() {
         let mut game = emergency_game_with_capitals(3, 5_506, 300);
         game.turn = 20;
+        game.record_contact(0, 1);
+        game.record_contact(0, 2);
         game.do_declare_war(0, 1).unwrap();
         game.turn = 30;
         game.do_make_peace(0, 1).unwrap();
@@ -60051,6 +60768,7 @@ mod district_mechanics {
     fn a_conquest_closes_the_war_it_ended() {
         let mut game = emergency_game_with_capitals(2, 5_505, 300);
         game.turn = 30;
+        game.record_contact(0, 1);
         game.do_declare_war(0, 1).unwrap();
         let capital = game.player_city_ids(1)[0];
         game.turn = 44;
@@ -60097,6 +60815,7 @@ mod district_mechanics {
         }
         assert_eq!(game.suzerain_of(city_state), Some(1));
 
+        game.record_contact(0, 1);
         game.do_declare_war(0, 1).unwrap();
         assert!(
             game.is_at_war(0, city_state),
@@ -60203,6 +60922,7 @@ mod district_mechanics {
     fn a_captured_city_is_recorded_with_what_ranks_it() {
         let mut game = emergency_game_with_capitals(2, 5_507, 300);
         game.turn = 30;
+        game.record_contact(0, 1);
         game.do_declare_war(0, 1).unwrap();
         let capital = game.player_city_ids(1)[0];
         game.cities.get_mut(&capital).unwrap().pop = 7;

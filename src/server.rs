@@ -424,6 +424,13 @@ fn round_tenth(v: f64) -> f64 {
     (v * 10.0).round() / 10.0
 }
 
+/// Four decimal places, the precision a probability is reported at. A win
+/// chance is read as a percentage, and two decimals would round a seat holding
+/// two tenths of one per cent of the table down to nothing at all.
+fn round_probability(v: f64) -> f64 {
+    (v * 10_000.0).round() / 10_000.0
+}
+
 fn population_milestone(population: i32) -> i32 {
     if population < 4 {
         0
@@ -1350,6 +1357,26 @@ impl Shared {
         if !base.supervised {
             return Err("fresh-code launches require the spectator supervisor".into());
         }
+        // Bind the request to the world the page offered to replace. A result
+        // countdown or an old tab can outlive that process, and the same port
+        // then belongs to a healthy successor. Before this check, its delayed
+        // POST was accepted by the successor and the supervisor killed a game
+        // that had only run for a few turns. Both values are lock-free so the
+        // restart control still works while an AI turn holds the session.
+        let expected = request
+            .get("replace_world")
+            .ok_or_else(|| "replace_world is required".to_string())?;
+        let expected_seed = expected["seed"]
+            .as_u64()
+            .ok_or_else(|| "replace_world.seed must be an integer".to_string())?;
+        let expected_instance = expected["server_instance"]
+            .as_u64()
+            .ok_or_else(|| "replace_world.server_instance must be an integer".to_string())?;
+        if expected_seed != self.current_seed.load(Ordering::Relaxed)
+            || expected_instance != process_identity() as u64
+        {
+            return Err("the world changed before the restart began".into());
+        }
         let mode = request["mode"]
             .as_str()
             .ok_or_else(|| "mode must be restart or fresh_code".to_string())?;
@@ -1458,7 +1485,7 @@ impl Session {
                 .filter(|p| !p.is_minor && !p.is_barbarian && !game.is_human_seat(p.id))
                 .map(|p| p.id)
                 .collect();
-            if seat_from_roster && !l.active().is_empty() {
+            if seat_from_roster && !l.exhibition_active().is_empty() {
                 let civs: Vec<String> =
                     majors.iter().map(|id| game.players[*id].civ.clone()).collect();
                 for (id, pick) in majors.iter().zip(crate::league::seat_by_civ_seeded(
@@ -1988,8 +2015,8 @@ impl Session {
         self.league.as_ref()?.strategies.get(index)
     }
 
-    /// Give every met major the rating it is defending and its share of the
-    /// table's single win.
+    /// Give every met major the rating it is defending and both of its odds of
+    /// winning this game: the ones it sat down with, and the ones it holds now.
     ///
     /// Every major carries a rating, roster or no roster. Most games run
     /// without `--league`, and a column of dashes read as "this build cannot
@@ -1999,34 +2026,40 @@ impl Session {
     /// opponent's is, so an *opponent* in an interactive game carries one
     /// too — subject to the same fog as everything else here: a civ you have
     /// not met is not annotated at all.
+    ///
+    /// The odds themselves are [`crate::odds`]. This is where the ratings live,
+    /// which is why the model is fed from here: the seat's league number, plus
+    /// its civilization's measured edge where that number is not already
+    /// civ-specific, becomes the prior the difficulty setting and the board then
+    /// correct. A game with no roster still gets both figures — every seat is
+    /// then the same provisional 1500, so the start odds are the difficulty
+    /// bargain and the size of the table, which is exactly what they should be.
     fn name_seat_ratings(&self, o: &mut Value) {
         let g = &self.game;
         let rating_of = |pid: usize| {
             crate::league::display_rating(self.seat_entry(pid), &g.players[pid].civ)
         };
-        // Gathered up front, because a seat's expected win share is a
-        // question about the whole table. A seat the league has no row for is
-        // in here too: leaving it out would make the remaining shares add to
-        // one between themselves and quietly claim the unrated seat cannot
-        // win.
-        let seat_elo: std::collections::BTreeMap<usize, f64> = g
-            .players
-            .iter()
-            .filter(|p| p.alive && !p.is_minor && !p.is_barbarian)
-            .map(|p| (p.id, rating_of(p.id).rating))
-            .collect();
-        // One table, one winner: the seats share out a single win rather than
-        // each answering a separate two-player question.
-        let seat_expected: std::collections::BTreeMap<usize, f64> = if seat_elo.len() > 1 {
-            let ratings: Vec<f64> = seat_elo.values().copied().collect();
-            seat_elo
-                .keys()
-                .copied()
-                .zip(crate::elo::win_shares(&ratings))
-                .collect()
-        } else {
-            std::collections::BTreeMap::new()
-        };
+        // The rating each seat brings to the table, before the world touches
+        // it. A seat the league has never heard of is in here at the
+        // provisional base rather than left out: leaving it out would make the
+        // remaining shares add to one between themselves and quietly claim the
+        // unrated seat cannot win.
+        let odds = crate::odds::table(g, |pid| {
+            let shown = rating_of(pid);
+            if shown.civ_specific {
+                // Already a measurement of this player as this civilization.
+                return shown.rating;
+            }
+            // Otherwise the roster still knows something about the civ they
+            // drew, even if this player has never played it.
+            shown.rating
+                + self
+                    .league
+                    .as_ref()
+                    .map_or(0.0, |league| {
+                        crate::odds::civ_edge_elo(league, &g.players[pid].civ)
+                    })
+        });
         let Some(players) = o["players"].as_array_mut() else {
             return;
         };
@@ -2056,8 +2089,17 @@ impl Session {
             player["ai_elo_rd"] = json!(shown.rd.round() as i64);
             player["ai_elo_civ"] = json!(shown.civ_specific);
             player["ai_elo_provisional"] = json!(shown.provisional);
-            if let Some(share) = seat_expected.get(&id) {
-                player["ai_expected"] = json!((share * 100.0).round() / 100.0);
+            if let Some(seat) = odds.get(&id) {
+                // Four decimals, not two. A seat on a Deity table is a
+                // genuine two-tenths of one per cent, and rounding that to
+                // "0.00" would publish "cannot win" for a seat that can.
+                player["odds_start"] = json!(round_probability(seat.start));
+                player["odds_now"] = json!(round_probability(seat.now));
+                // What made the number, so a dossier can say why rather than
+                // asking the reader to trust a percentage.
+                player["odds_prior_elo"] = json!(seat.prior_elo.round() as i64);
+                player["odds_handicap_elo"] = json!(seat.handicap_elo.round() as i64);
+                player["odds_standing_elo"] = json!(seat.standing_elo.round() as i64);
             }
         }
     }
@@ -2324,11 +2366,12 @@ impl Session {
     /// Hand seat 0 to a named strategy, so auto-play runs *that* agent rather
     /// than whichever one the fleet happened to build for the seat.
     ///
-    /// A name is matched against the league roster first — by entrant name or
-    /// by the handle the leaderboards show — and then against the built-in
-    /// agents, so a build with no roster on disk still has something to hand
-    /// the seat to. An unknown name is an error rather than a silent fallback:
-    /// a player who picked a strategy and got a different one has been lied to.
+    /// A name is matched against the live-eligible league roster first — by
+    /// entrant name or by the handle the leaderboards show — and then against
+    /// the built-in agents, so a build with no roster on disk still has
+    /// something to hand the seat to. An unknown or league-only name is an
+    /// error rather than a silent fallback: a player who picked a strategy and
+    /// got a different one has been lied to.
     pub fn seat_strategy_at(&mut self, seat: usize, name: &str) -> Result<(), String> {
         if name.is_empty() || self.autoplay_strategy.as_deref() == Some(name) {
             return Ok(());
@@ -2341,7 +2384,7 @@ impl Session {
                 roster
                     .strategies
                     .iter()
-                    .find(|s| s.name == name || s.username == name)
+                    .find(|s| !s.league_only && (s.name == name || s.username == name))
                     .map(|s| s.kind.clone())
             })
             .or_else(|| {
@@ -2808,12 +2851,14 @@ fn simulation_settings(params: &Params) -> Value {
 
 /// The agents a person can hand their seat to, strongest first.
 ///
-/// With a league roster on disk this is every entrant still competing, with
-/// the rating it is defending, so the choice is between *our* strategies and
-/// not between adjectives. An entrant that has not played a rated game yet is
-/// marked provisional rather than shown as an authoritative 1500. Without a
-/// roster the list falls back to the built-in agents, because a control with
-/// nothing in it is worse than one with four honest entries.
+/// With a league roster on disk this is every live-eligible entrant still
+/// competing, with the rating it is defending, so the choice is between *our*
+/// strategies and not between adjectives. Offline-only entrants stay on the
+/// rating schedule without becoming an offer this server cannot yet afford.
+/// An entrant that has not played a rated game yet is marked provisional
+/// rather than shown as an authoritative 1500. Without a roster the list falls
+/// back to the built-in agents, because a control with nothing in it is worse
+/// than one with four honest entries.
 fn strategy_roster(session: &Session) -> Value {
     let mut rows: Vec<Value> = Vec::new();
     if let Some(roster) = session.roster.as_ref() {
@@ -2822,7 +2867,7 @@ fn strategy_roster(session: &Session) -> Value {
         let mut active: Vec<&crate::league::Strategy> = roster
             .strategies
             .iter()
-            .filter(|s| !s.retired && !s.human)
+            .filter(|s| !s.retired && !s.human && !s.league_only)
             .collect();
         active.sort_by(|a, b| b.rating.total_cmp(&a.rating));
         rows.extend(active.into_iter().map(|s| {
@@ -6629,6 +6674,22 @@ mod tests {
             "setWorldTransitionStage(Date.now() - watchStartedAt < HANDOFF_QUIET_MS"
         ));
         assert!(EMBEDDED_INDEX.contains("await settingsStageChain.catch(() => {})"));
+        // A result timer belongs to one exact world. Background-tab timer
+        // throttling can let it wake after the supervisor has already put a
+        // successor on the same port, so both the firing edge and the server
+        // request carry that original process/seed identity.
+        assert!(EMBEDDED_INDEX.contains("let finaleCountdownWorld = null;"));
+        assert!(EMBEDDED_INDEX.contains("if (finaleCountdownTimer === null) return;"));
+        assert!(EMBEDDED_INDEX.contains(
+            "state.server_instance !== finaleCountdownWorld.serverInstance"
+        ));
+        assert!(EMBEDDED_INDEX.contains("state.seed !== finaleCountdownWorld.seed"));
+        assert!(EMBEDDED_INDEX.contains("const finishedInstance = handoff.finishedInstance;"));
+        assert!(EMBEDDED_INDEX.contains("const finishedSeed = handoff.finishedSeed;"));
+        assert!(EMBEDDED_INDEX.contains("replace_world: {"));
+        assert!(EMBEDDED_INDEX.contains(
+            "server_instance: finishedInstance, seed: finishedSeed"
+        ));
         assert!(EMBEDDED_INDEX.contains("specFetching || specPending || worldTransitionPending()"));
         assert!(EMBEDDED_INDEX.contains("specFetchAbort?.abort()"));
         assert!(EMBEDDED_INDEX.contains("worldTransitionHandoff.supervised"));
@@ -6935,14 +6996,18 @@ mod tests {
         //
         // Every data column is now a share rather than a pixel count, and each
         // of these two enclosing tracks is the exact *sum* of the columns
-        // inside it — 7 identity columns totalling 11.104 against 10 value
+        // inside it — 7 identity columns totalling 11.387 against 10 value
         // columns of 1. That identity is not decoration: it is what lets the
         // bar between the two blocks move width across itself, and it is the
         // ratio the table uses at every width. Changing one number here without
         // the other silently re-weights the whole masthead.
+        //
+        // The floor is 5 label columns, the ELO figure and the wider odds cell,
+        // which carries two per cents and the arrow between them.
         assert!(EMBEDDED_INDEX.contains(
             "--hud-identity-column: minmax(\n      \
-             calc(var(--hud-ident-min) * 5 + var(--hud-ident-num-min) * 2), 11.104fr);"
+             calc(var(--hud-ident-min) * 5 + var(--hud-ident-num-min)\n           \
+             + var(--hud-ident-odds-min)), 11.387fr);"
         ));
         assert!(EMBEDDED_INDEX.contains(
             "--hud-stats-column: minmax(\n      \
@@ -6952,10 +7017,14 @@ mod tests {
         // them; the shares belong to the viewer. A breakpoint that rewrote a
         // share would undo a dragged column on the next window resize, so no
         // media rule may set either track list or either enclosing track.
-        assert!(EMBEDDED_INDEX.contains("--hud-ident-min: 30px; --hud-ident-num-min: 38px;"));
+        assert!(EMBEDDED_INDEX.contains(
+            "--hud-ident-min: 30px; --hud-ident-num-min: 38px; --hud-ident-odds-min: 48px;"
+        ));
         assert_eq!(EMBEDDED_INDEX.matches("--hud-ident-num-min:").count(), 1,
             "the figure floor is declared once and holds at every width: four \
              digits need the same room on a laptop as on a wall");
+        assert_eq!(EMBEDDED_INDEX.matches("--hud-ident-odds-min:").count(), 1,
+            "and so does the odds pair's own floor");
         assert_eq!(EMBEDDED_INDEX.matches("--hud-identity-column:").count(), 1,
             "the identity track is written once and then only from the column model");
         assert_eq!(EMBEDDED_INDEX.matches("--hud-stats-column:").count(), 1,
@@ -7003,7 +7072,7 @@ mod tests {
         // `clip`, not `ellipsis`: the fitter compares integral scrollWidth with
         // integral clientWidth while the browser applies text-overflow on any
         // sub-pixel overflow, so ellipsis spends a character on a head that
-        // renders whole. Measured at 1600px: WIN% in its 38px column.
+        // renders whole. Measured at 1600px: ELO in its 38px column.
         assert!(EMBEDDED_INDEX.contains(
             "border-left: 1px solid #ffffff10; text-overflow: clip; white-space: nowrap;"
         ));
@@ -8304,6 +8373,10 @@ mod tests {
             .request_supervised_new_game(&json!({
                 "mode": "fresh_code",
                 "paused": false,
+                "replace_world": {
+                    "server_instance": std::process::id(),
+                    "seed": original_seed,
+                },
                 "num_players": 4,
                 "map_script": "continents",
                 "game_speed": "quick",
@@ -8365,11 +8438,21 @@ mod tests {
         params.spectate = true;
         params.supervised = true;
         let shared = shared_for(Session::new(params));
+        let seed = shared
+            .current_seed
+            .load(std::sync::atomic::Ordering::Relaxed);
 
         let turn_in_flight = shared.session.lock().unwrap();
         let started = Instant::now();
         shared
-            .request_supervised_new_game(&json!({"mode": "restart", "paused": false}))
+            .request_supervised_new_game(&json!({
+                "mode": "restart",
+                "paused": false,
+                "replace_world": {
+                    "server_instance": std::process::id(),
+                    "seed": seed,
+                },
+            }))
             .expect("a restart is accepted mid-turn");
         let accepted = started.elapsed();
 
@@ -8383,6 +8466,47 @@ mod tests {
             "the restart waited {accepted:?} on a turn it exists to abandon"
         );
         drop(turn_in_flight);
+    }
+
+    /// A browser can keep a result callback queued while the supervisor swaps
+    /// the listening socket to a successor. The callback is allowed to retire
+    /// only the process and seed it was created for, never the active world it
+    /// happens to reach later on the same port.
+    #[test]
+    fn a_stale_supervised_restart_cannot_replace_the_successor_world() {
+        let mut params = current();
+        params.spectate = true;
+        params.supervised = true;
+        let shared = shared_for(Session::new(params));
+        let seed = shared
+            .current_seed
+            .load(std::sync::atomic::Ordering::Relaxed);
+        let instance = std::process::id() as u64;
+
+        for request in [
+            json!({"mode": "restart", "paused": false}),
+            json!({
+                "mode": "restart",
+                "paused": false,
+                "replace_world": {"server_instance": instance, "seed": seed + 1},
+            }),
+            json!({
+                "mode": "restart",
+                "paused": false,
+                "replace_world": {"server_instance": instance + 1, "seed": seed},
+            }),
+        ] {
+            assert!(shared.request_supervised_new_game(&request).is_err());
+        }
+
+        assert!(shared.pending_new_game_request().is_none());
+        assert!(!shared.paused.load(std::sync::atomic::Ordering::Relaxed));
+        assert_eq!(
+            shared
+                .current_seed
+                .load(std::sync::atomic::Ordering::Relaxed),
+            seed
+        );
     }
 
     #[test]
@@ -8423,8 +8547,16 @@ mod tests {
         assert_eq!(state["supervised"], json!(true));
         assert!(!state["legal_actions"].as_array().unwrap().is_empty());
 
-        assert!(shared_for(session)
-            .request_supervised_new_game(&json!({"mode": "restart", "paused": false}))
+        let shared = shared_for(session);
+        assert!(shared
+            .request_supervised_new_game(&json!({
+                "mode": "restart",
+                "paused": false,
+                "replace_world": {
+                    "server_instance": std::process::id(),
+                    "seed": 8,
+                },
+            }))
             .is_ok());
     }
 
@@ -9277,6 +9409,10 @@ mod tests {
             .collect();
         assert!(names.contains(&"advanced"), "the default agent is offerable");
         assert!(
+            !names.contains(&"strategic"),
+            "a league-only search entrant is not a live auto-play offer"
+        );
+        assert!(
             names.len() >= 4,
             "a roster with nothing in it is not a choice: {names:?}"
         );
@@ -9296,6 +9432,11 @@ mod tests {
         // The seat starts as the person's own. Nothing is seated until
         // somebody asks, and then it stays seated.
         assert_eq!(session.seated_strategy_name(0), Some("player"));
+        assert_eq!(
+            session.seat_strategy_at(0, "strategic"),
+            Err("no strategy named strategic".to_string()),
+            "a direct request must not bypass the live-eligibility boundary"
+        );
         session
             .seat_strategy_at(0, "basic")
             .expect("a built-in agent is always available");
@@ -9426,11 +9567,14 @@ mod tests {
             .collect();
         assert_eq!(majors.len(), 4);
         let mut shares = 0.0;
+        let mut now_shares = 0.0;
         for player in &majors {
             let elo = player["ai_elo"].as_i64().expect("every major has a rating");
             assert!((800..=2600).contains(&elo), "{elo} is not a rating");
             assert!(player["ai_elo_rd"].as_i64().is_some());
-            shares += player["ai_expected"].as_f64().expect("and a win share");
+            shares += player["odds_start"].as_f64().expect("and start odds");
+            now_shares += player["odds_now"].as_f64().expect("and now odds");
+            assert!(player["odds_prior_elo"].as_i64().is_some());
             // Nobody chose these seats, so the one entrant behind all of them
             // does not get to put its handle on four different civilizations.
             assert!(
@@ -9441,7 +9585,11 @@ mod tests {
         }
         assert!(
             (shares - 1.0).abs() < 0.02,
-            "one table, one winner: shares summed to {shares}"
+            "one table, one winner: start odds summed to {shares}"
+        );
+        assert!(
+            (now_shares - 1.0).abs() < 0.02,
+            "and so does the live answer: now odds summed to {now_shares}"
         );
         // An earned rating, not the base everybody starts from. The check
         // above passes on a provisional 1500 too, which is exactly what the
@@ -9453,6 +9601,46 @@ mod tests {
                 "the shipped roster has games behind it"
             );
         }
+    }
+
+    /// A seated player is told their own odds, and an unmet rival's are withheld
+    /// along with everything else about them.
+    ///
+    /// This is the fog rule the whole annotation lives under, and the seat it
+    /// matters most for is the viewer's own: somebody playing the game wants to
+    /// know what they were given and where they stand, and `has_met` answers
+    /// true for yourself, so their row is annotated from turn one.
+    #[test]
+    fn a_seated_player_sees_their_own_odds_and_not_an_unmet_rivals() {
+        let mut params = current();
+        params.spectate = false;
+        params.num_players = 4;
+        let session = Session::new(params);
+        let state = session.state();
+        let me = state["player"].as_u64().expect("an interactive game has a seat");
+        let mut unmet = 0;
+        for player in state["players"].as_array().expect("a player list") {
+            let is_major = player["is_minor"] != json!(true) && player["is_barbarian"] != json!(true);
+            if !is_major {
+                continue;
+            }
+            if player["id"] == json!(me) {
+                assert!(
+                    player["odds_start"].as_f64().is_some_and(|odds| odds > 0.0),
+                    "your own seat carries its start odds: {player}"
+                );
+                assert!(player["odds_now"].as_f64().is_some());
+                continue;
+            }
+            if player["met"] == json!(false) {
+                unmet += 1;
+                assert!(
+                    player["odds_start"].is_null() && player["odds_now"].is_null(),
+                    "an unmet rival is not annotated at all: {player}"
+                );
+            }
+        }
+        assert!(unmet > 0, "a fresh interactive game has civilizations still to meet");
     }
 
     /// The roster that labels an ordinary game is compiled in, so the ratings

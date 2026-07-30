@@ -11,6 +11,7 @@ fn game_with_capitals(seed: u64) -> Game {
         game.found_city_for(pid, game.units[&settler].pos, None);
         game.remove_unit(settler);
     }
+    game.record_contact(0, 1);
     game
 }
 

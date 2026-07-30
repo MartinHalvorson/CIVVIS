@@ -718,6 +718,12 @@
      carries. */
   .diplomacy-elo-value.provisional { opacity: 0.62; }
   .diplomacy-expected { flex: 0 0 auto; color: #8fd6a4; font-weight: 850; }
+  /* The live figure is the one being read; the opening one is context behind it
+     and the arrow is quieter still. Opacity carries that ordering rather than a
+     second hue, because the column already means one thing and a green-against-
+     amber pair in a 48px cell reads as two different measurements. */
+  .diplomacy-expected .odds-start { opacity: .58; }
+  .diplomacy-expected .odds-move { padding: 0 1px; opacity: .45; font-weight: 700; }
   .diplomacy-player { flex: 1 1 auto; color: #d9e1dc; font-weight: 750; }
   /* The mark leads the CIV cell from a gutter of its own. It is emitted on
      every row, empty where there is no stance to report, so that the rank
@@ -2379,37 +2385,40 @@
        without disturbing the shares; and each enclosing track is the exact sum
        of the columns inside it, which is what lets one bar move width out of
        the last identity column and into the first value column. */
-    /* The label floor narrows with the screen; the figure floor does not. Elo
-       and win odds are four digits and a per cent, and 38px is what those need
-       whatever size the window is — a label that gives up width ellipsizes and
-       keeps its tooltip, where a figure that gives up width becomes a smaller
-       number that is simply wrong. Each breakpoint below moves the label floor
-       only, and keeps 5 labels + 2 figures adding up to what the identity block
-       has always claimed at that width. */
-    --hud-ident-min: 30px; --hud-ident-num-min: 38px;
+    /* The label floor narrows with the screen; the figure floors do not. Elo is
+       four digits and 38px is what that needs whatever size the window is — a
+       label that gives up width ellipsizes and keeps its tooltip, where a figure
+       that gives up width becomes a smaller number that is simply wrong. The
+       odds cell carries two per cents and the arrow between them, so it stands
+       on a wider floor of its own: 48px is "100↗100" whole at the fitter's 9px
+       floor. Each breakpoint below moves the label floor only, and keeps
+       5 labels + 2 figure cells adding up to what the identity block claims at
+       that width. */
+    --hud-ident-min: 30px; --hud-ident-num-min: 38px; --hud-ident-odds-min: 48px;
     /* How much of the flexible width the identity block asks for relative to
        the values, over and above the sum of its own columns. A wide panel can
        afford whole names; a narrow one gives the identity up first, because a
        clipped name still reads and a clipped number lies. */
     --hud-identity-bias: 1;
     --hud-identity-column: minmax(
-      calc(var(--hud-ident-min) * 5 + var(--hud-ident-num-min) * 2), 11.104fr);
+      calc(var(--hud-ident-min) * 5 + var(--hud-ident-num-min)
+           + var(--hud-ident-odds-min)), 11.387fr);
     /* Ten cells and the nine gutters between them. */
     --hud-stats-column: minmax(
       calc(var(--hud-stat-min) * 10 + var(--hud-stat-gap) * 9), 10fr);
     --hud-column-gap: 6px;
     /* Civilization, leader, player, age and the plan are labels, and their
-       cells ellipsize. Elo and win odds are figures on the taller floor: with no
-       minimum at all they collapsed on a 1440px screen and rendered "1792" as
-       "179" and "11%" as "1" — a truncated number that reads as a different,
-       smaller number. Watch-as keeps its fixed track between Leader and
-       Player, which is why the bar for that seam is drawn on Leader's edge.
+       cells ellipsize. Elo and the odds pair are figures on the taller floors:
+       with no minimum at all they collapsed on a 1440px screen and rendered
+       "1792" as "179" and "11%" as "1" — a truncated number that reads as a
+       different, smaller number. Watch-as keeps its fixed track between Leader
+       and Player, which is why the bar for that seam is drawn on Leader's edge.
        Its extra four-pixel tail is the visual gutter before Player. */
     --hud-identity-tracks:
       minmax(var(--hud-ident-min), 2.035fr) minmax(var(--hud-ident-min), 1.85fr)
       var(--hud-watch-column) minmax(var(--hud-ident-min), 1.85fr)
       minmax(var(--hud-ident-num-min), 1.017fr)
-      minmax(var(--hud-ident-num-min), 1.017fr)
+      minmax(var(--hud-ident-odds-min), 1.3fr)
       minmax(var(--hud-ident-min), 1.3fr)
       minmax(var(--hud-ident-min), 2.035fr);
     --hud-stat-tracks: repeat(10, minmax(var(--hud-stat-min), 1fr));
@@ -2470,8 +2479,8 @@
      which are integers, while the browser applies text-overflow on any
      sub-pixel overflow at all — so a head the fitter has correctly settled at
      its exact width overflows by a third of a pixel, and `ellipsis` spends a
-     whole character saying so. Measured at 1600px: WIN% in its 38px column
-     renders whole under `clip` and as "WIN…" under `ellipsis`. Every head is
+     whole character saying so. Measured at 1600px: ELO in its 38px column
+     renders whole under `clip` and as "EL…" under `ellipsis`. Every head is
      short enough to stand at its own floor, and each carries a title. */
   .diplomacy-identity-head span {
     min-width: 0; overflow: hidden; padding-inline: 3px;
@@ -2882,7 +2891,7 @@
      300px minimum never actually yields, which is why the identity column used
      to hold its full width while the values it was starving fell to 27px.
      Every step keeps the five label floors and the two figure floors adding up
-     to what the identity block claims at that width (5a + 76),
+     to what the identity block claims at that width (5a + 38 + 48),
      because the enclosing track's own floor is written from exactly that sum.
      Only the floors move here — the shares belong to the viewer now, and a
      breakpoint that rewrote them would undo a dragged column on the next
@@ -6133,7 +6142,10 @@ const PLAYER_HUD_COLUMNS = [
   {key:"leader", label:"Leader", block:"identity", head:1, min:"--hud-ident-min", width:1.85},
   {key:"player", label:"Player", block:"identity", head:3, min:"--hud-ident-min", width:1.85},
   {key:"elo", label:"Elo rating", block:"identity", head:4, min:"--hud-ident-num-min", width:1.017},
-  {key:"win", label:"Win odds", block:"identity", head:5, min:"--hud-ident-num-min", width:1.017},
+  // One column, two figures: the odds this seat started with and the odds it
+  // holds now. They are dragged, saved and measured as a single column because
+  // they are read as a single movement.
+  {key:"win", label:"Win odds", block:"identity", head:5, min:"--hud-ident-odds-min", width:1.3},
   {key:"age", label:"Age", block:"identity", head:6, min:"--hud-ident-min", width:1.3},
   {key:"plan", label:"Plan", block:"identity", head:7, min:"--hud-ident-min", width:2.035},
   ...[["production", "Production"], ["science", "Science"], ["culture", "Culture"],
@@ -6203,8 +6215,8 @@ function syncPlayerHudColumns(placeGrips = true) {
     `${track(identity[0])} ${track(identity[1])} var(--hud-watch-column) ` +
       identity.slice(2).map(track).join(" "),
     stats.map(track).join(" "),
-    `minmax(calc(var(--hud-ident-min) * 5 + var(--hud-ident-num-min) * 2), ` +
-      `${total(identity).toFixed(4)}fr)`,
+    `minmax(calc(var(--hud-ident-min) * 5 + var(--hud-ident-num-min) ` +
+      `+ var(--hud-ident-odds-min)), ${total(identity).toFixed(4)}fr)`,
     `minmax(calc(var(--hud-stat-min) * 10 + var(--hud-stat-gap) * 9), ` +
       `${total(stats).toFixed(4)}fr)`,
   ];
@@ -7848,11 +7860,19 @@ let finaleCountdownTimer = null;
 // finale cannot re-arm itself on the next poll, and cleared when the screen
 // goes away so a later result in the same world gets its own countdown.
 let finaleCountdownResult = null;
+// Process and seed are the authority behind that result. A throttled timer can
+// wake after the supervisor has already put a successor on the same port; it
+// must never turn that old finale into a restart of the new, active world.
+let finaleCountdownWorld = null;
 
 function armFinaleCountdown(signature) {
   if (SPEC || finaleCountdownResult === signature) return;
   cancelFinaleCountdown();
   finaleCountdownResult = signature;
+  finaleCountdownWorld = {
+    serverInstance: state?.server_instance ?? null,
+    seed: state?.seed ?? null,
+  };
   finaleCountdownDeadline = Date.now() + FINALE_RESTART_SECONDS * 1000;
   // Sub-second ticks so the number on the button is never a second stale, and
   // so a throttled background tab cannot overshoot the start by a whole tick.
@@ -7861,10 +7881,24 @@ function armFinaleCountdown(signature) {
 }
 
 function tickFinaleCountdown() {
+  // A gesture or play-on action may cancel an interval whose callback was
+  // already queued. Clearing the timer is the authority; that queued callback
+  // no longer owns a restart.
+  if (finaleCountdownTimer === null) return;
   const button = document.getElementById("finale-restart");
   // The result screen was replaced or dismissed under the countdown. Nothing
   // is left to count, and an interval with no button never stops on its own.
   if (!button) { cancelFinaleCountdown(); return; }
+  // Re-check at the firing edge, not only when the timer was armed. Browser
+  // timers are deliberately throttled in a background tab, so this callback
+  // may run after a process handoff and after the new world has begun. The
+  // successor is not an answer to the old result screen.
+  if (SPEC || !state || !finaleCountdownWorld ||
+      state.server_instance !== finaleCountdownWorld.serverInstance ||
+      state.seed !== finaleCountdownWorld.seed) {
+    clearFinaleCountdown();
+    return;
+  }
   const left = Math.max(0, Math.ceil((finaleCountdownDeadline - Date.now()) / 1000));
   button.textContent = `${FINALE_RESTART_LABEL} (${left})`;
   if (left > 0) return;
@@ -7884,6 +7918,7 @@ function cancelFinaleCountdown() {
 function clearFinaleCountdown() {
   cancelFinaleCountdown();
   finaleCountdownResult = null;
+  finaleCountdownWorld = null;
 }
 
 for (const gesture of ["pointerdown", "keydown", "wheel"])
@@ -19585,6 +19620,93 @@ function planetTerrainUnderpaint(tile) {
   return isWater(tile) ? "#174b61" : "#747655";
 }
 
+// Cinematic terrain follows the sphere instead of pretending the globe is a
+// flat board seen through a circular mask. A shared vertex is moved along its
+// projected radial normal by the same amount on both adjoining cells, so equal
+// ground still meets exactly; only a real height change opens a side face.
+// Heights are expressed in screen pixels per globe subdivision, which keeps a
+// mountain proportional to its cell at both survey and close zoom.
+function planetTerrainLift(tile, radius) {
+  if (!tile || isWater(tile)) return 0;
+  const unit = Math.max(1.2, Math.min(18,
+    radius / Math.max(1, planetFrequency() * 2.45)));
+  if (tile.terrain === "mountain") return unit;
+  if (tile.hills) return unit * .56;
+  return unit * .20;
+}
+
+function raisedPlanetPoint(point, centerX, centerY, radius, lift) {
+  if (!(lift > 0) || !(radius > 0)) return {x:point.x, y:point.y, z:point.z};
+  const factor = 1 + lift / radius;
+  return {x:centerX + (point.x - centerX) * factor,
+          y:centerY + (point.y - centerY) * factor,
+          z:point.z};
+}
+
+function planetReliefCells(cells, camera, radius, centerX, centerY,
+                           visible, spectator) {
+  if (!MODE.relief || camera.chart || radius < SKY_MARKERS * 1.15) return cells;
+  return cells.map(cell => {
+    // Geometry is information too. An unexplored mountain must not reveal
+    // itself as a raised patch in the fog before its terrain is visible.
+    const known = spectator || visible.has(key(cell.tile.pos));
+    const lift = known ? planetTerrainLift(cell.tile, radius) : 0;
+    return {...cell, reliefLift:lift, basePoints:cell.points,
+      points:cell.points.map(point =>
+        raisedPlanetPoint(point, centerX, centerY, radius, lift)),
+      center:{...cell.center,
+        ...raisedPlanetPoint(cell.center, centerX, centerY, radius, lift)}};
+  });
+}
+
+// Draw only the exposed drop from a higher top to its lower neighbour. Faces
+// are batched by material rather than filled edge by edge: a mature globe can
+// have thousands of cells, while it has only eight terrain materials.
+function drawPlanetReliefSides(cells, radius, centerX, centerY, visible, spectator) {
+  if (!cells.length || !cells[0].basePoints) return;
+  const faces = new Map(), rims = [];
+  for (const cell of cells) {
+    if (!spectator && !visible.has(key(cell.tile.pos))) continue;
+    const high = cell.reliefLift || 0;
+    if (!(high > .1)) continue;
+    for (let side = 0; side < cell.points.length; side++) {
+      const neighbor = TMAP.get(cell.cell?.nbrs[side]);
+      // Unknown ground may not disclose whether a cliff is waiting beyond the
+      // fog frontier. Bring a known face down to the unrevealed surface; this
+      // closes the geometry without borrowing the neighbour's hidden height.
+      const neighborKnown = neighbor &&
+        (spectator || visible.has(key(neighbor.pos)));
+      const low = neighborKnown ? planetTerrainLift(neighbor, radius) : 0;
+      if (high <= low + .1) continue;
+      const next = (side + 1) % cell.points.length;
+      const a = cell.points[side], b = cell.points[next];
+      const lowA = raisedPlanetPoint(cell.basePoints[side], centerX, centerY, radius, low);
+      const lowB = raisedPlanetPoint(cell.basePoints[next], centerX, centerY, radius, low);
+      const group = faces.get(cell.tile.terrain);
+      const face = [a.x, a.y, b.x, b.y, lowB.x, lowB.y, lowA.x, lowA.y];
+      if (group) group.push(face); else faces.set(cell.tile.terrain, [face]);
+      rims.push([a.x, a.y, b.x, b.y]);
+    }
+  }
+  if (!faces.size) return;
+  cx.save();
+  cx.lineJoin = "round";
+  for (const [terrain, group] of faces) {
+    cx.beginPath();
+    for (const [ax, ay, bx, by, cx2, cy2, dx, dy] of group) {
+      cx.moveTo(ax, ay); cx.lineTo(bx, by); cx.lineTo(cx2, cy2);
+      cx.lineTo(dx, dy); cx.closePath();
+    }
+    cx.fillStyle = shade(TERRAIN[terrain] || planetTerrainUnderpaint({terrain}), .46);
+    cx.globalAlpha = .94; cx.fill();
+  }
+  cx.beginPath();
+  for (const [ax, ay, bx, by] of rims) { cx.moveTo(ax, ay); cx.lineTo(bx, by); }
+  cx.strokeStyle = "rgba(255,244,211,.22)"; cx.lineWidth = .7;
+  cx.globalAlpha = 1; cx.stroke();
+  cx.restore();
+}
+
 // The shoreline is the one terrain boundary that should survive the painted
 // blend. Draw it as one continuous surf network after the ground is lit: the
 // dark wet edge seats the land, the blue shelf carries the coast, and the fine
@@ -19702,6 +19824,27 @@ function drawPlanetGround(cells, camera, scale, radius, centerX, centerY,
     }
     cx.restore();
 
+    // Feather the boundary, not the photograph. The blurred pass above makes
+    // adjacent biome colours meet without rebuilding the cell diagram, but by
+    // itself it also turns grass, sand and ice into the same soft wash. A quiet
+    // unfiltered pass restores the atlas' fine material inside each region;
+    // soft-light keeps its hard edge subordinate to the blended colour below.
+    cx.save();
+    cx.beginPath();
+    for (const cell of knownCells) appendPlanetPaintPath(cx, cell, .15);
+    cx.clip();
+    cx.globalCompositeOperation = "soft-light";
+    cx.globalAlpha = MODE.atmosphere ? .42 : .48;
+    for (const [terrain, group] of byTerrain) {
+      const pattern = patterns.get(terrain);
+      if (!pattern) continue;
+      cx.beginPath();
+      for (const cell of group) appendPlanetPaintPath(cx, cell, .20);
+      cx.fillStyle = pattern;
+      cx.fill();
+    }
+    cx.restore();
+
     // Lighting is continuous over the hemisphere, not reset inside every
     // polygon. Painted 2D keeps a gentle wash; Cinematic gives the same sphere
     // a real terminator and a warm shoulder.
@@ -19768,7 +19911,7 @@ function drawPlanetGround(cells, camera, scale, radius, centerX, centerY,
 // marks and Cinematic gets the same forms with deeper occlusion and highlights.
 // These are clipped to the exact five- or six-sided top face, so relief never
 // reintroduces rectangular or hexagonal art at the twelve pentagons.
-function drawPlanetSurfaceDetail(cell) {
+function drawPlanetSurfaceDetail(cell, planetX, planetY) {
   if (!MODE.painted) return;
   const tile = cell.tile;
   const r = planetCellInradius(cell);
@@ -19778,6 +19921,13 @@ function drawPlanetSurfaceDetail(cell) {
   const seed = hash2(tile.pos[0] * 31 + 7, tile.pos[1] * 37 + 11);
   cx.save();
   planetPath(cx, cell.points); cx.clip();
+  // Every mark uses the local tangent plane. Screen-up happened to be right
+  // only at the top of the old disc: mountains along the lower hemisphere all
+  // leaned north and water waves ignored the curve underneath them. Rotate the
+  // existing authored marks so local up points away from the globe's centre.
+  const dx = x - planetX, dy = y - planetY;
+  const radial = Math.hypot(dx, dy);
+  const angle = radial > 1e-4 ? Math.atan2(dy, dx) + Math.PI / 2 : 0;
 
   if (isWater(tile)) {
     if (seed > .48 && r > 2.2) {
@@ -19789,50 +19939,109 @@ function drawPlanetSurfaceDetail(cell) {
       cx.quadraticCurveTo(x, y - r * .18, x + r * .58, y + (seed - .5) * r);
       cx.stroke();
     }
-  } else if (tile.terrain === "mountain" || tile.feature === "volcano") {
-    const peak = r * (tile.feature === "volcano" ? .78 : .92);
-    cx.globalAlpha = .48 + depth * .24;
-    cx.fillStyle = "#18201d";
-    cx.beginPath();
-    cx.moveTo(x - r * .72, y + r * .58);
-    cx.lineTo(x + r * .15, y - peak);
-    cx.lineTo(x + r * .74, y + r * .58);
-    cx.closePath(); cx.fill();
-    cx.fillStyle = tile.feature === "volcano" ? "#d98942" : "#e8e1ca";
-    cx.globalAlpha = .52 + depth * .24;
-    cx.beginPath();
-    cx.moveTo(x + r * .15, y - peak);
-    cx.lineTo(x + r * .08, y + r * .15);
-    cx.lineTo(x + r * .48, y + r * .50);
-    cx.closePath(); cx.fill();
-  } else if (tile.hills) {
-    const mound = cx.createRadialGradient(x - r * .24, y - r * .30, r * .05,
-                                          x, y, r * .95);
-    mound.addColorStop(0, `rgba(255,244,207,${(.16 + depth * .12).toFixed(2)})`);
-    mound.addColorStop(.55, "rgba(255,255,255,0)");
-    mound.addColorStop(1, `rgba(8,12,12,${(.15 + depth * .17).toFixed(2)})`);
-    cx.fillStyle = mound;
-    cx.beginPath(); cx.ellipse(x, y + r * .12, r * .80, r * .58, 0, 0, 7); cx.fill();
   }
 
-  if (tile.feature === "forest" || tile.feature === "jungle") {
+  // Waves are a material direction and stay screen-coherent. Standing
+  // landforms begin here, in the cell's local tangent frame.
+  cx.translate(x, y); cx.rotate(angle);
+
+  if (!isWater(tile) && (tile.terrain === "mountain" || tile.feature === "volcano")) {
+    let atlasDrawn = false;
+    if (tile.feature === "volcano" && ENVIRONMENT_FEATURE_ATLAS_READY && r > 3.2) {
+      const [column, row] = ENVIRONMENT_FEATURE_CELL.volcano;
+      const cw = ENVIRONMENT_FEATURE_ATLAS.naturalWidth / 4;
+      const ch = ENVIRONMENT_FEATURE_ATLAS.naturalHeight / 2;
+      cx.globalAlpha = .66 + depth * .28;
+      cx.drawImage(ENVIRONMENT_FEATURE_ATLAS, column * cw, row * ch, cw, ch,
+                   -r * 1.28, -r * 1.42, r * 2.56, r * 2.52);
+      atlasDrawn = true;
+    } else if (tile.terrain === "mountain" && MOUNTAIN_ATLAS_READY && r > 3.2) {
+      const cw = MOUNTAIN_ATLAS.naturalWidth / 3;
+      const ch = MOUNTAIN_ATLAS.naturalHeight;
+      const column = mountainRockColumn(tile);
+      cx.save();
+      if (seed > .5) cx.scale(-1, 1);
+      cx.globalAlpha = .68 + depth * .27;
+      cx.drawImage(MOUNTAIN_ATLAS, column * cw, 0, cw, ch,
+                   -r * 1.30, -r * 1.24, r * 2.60, r * 2.18);
+      cx.restore();
+      atlasDrawn = true;
+    }
+    if (!atlasDrawn) {
+      const peak = r * (tile.feature === "volcano" ? .78 : .92);
+      cx.globalAlpha = .48 + depth * .24;
+      cx.fillStyle = "#18201d";
+      cx.beginPath();
+      cx.moveTo(-r * .72, r * .58);
+      cx.lineTo(r * .15, -peak);
+      cx.lineTo(r * .74, r * .58);
+      cx.closePath(); cx.fill();
+      cx.fillStyle = tile.feature === "volcano" ? "#d98942" : "#e8e1ca";
+      cx.globalAlpha = .52 + depth * .24;
+      cx.beginPath();
+      cx.moveTo(r * .15, -peak);
+      cx.lineTo(r * .08, r * .15);
+      cx.lineTo(r * .48, r * .50);
+      cx.closePath(); cx.fill();
+    }
+  } else if (!isWater(tile) && tile.hills) {
+    if (MODE.relief) {
+      // The cell itself is already raised in Cinematic. A broad directional
+      // shoulder describes that plane without stamping a plastic dome on top.
+      const shoulder = cx.createLinearGradient(-r, -r, r, r);
+      shoulder.addColorStop(0, "rgba(255,244,207,.24)");
+      shoulder.addColorStop(.48, "rgba(255,255,255,0)");
+      shoulder.addColorStop(1, "rgba(8,12,12,.26)");
+      cx.fillStyle = shoulder; cx.fillRect(-r * 1.4, -r * 1.4, r * 2.8, r * 2.8);
+    } else {
+      const mound = cx.createRadialGradient(-r * .24, -r * .30, r * .05,
+                                            0, 0, r * .95);
+      mound.addColorStop(0, "rgba(255,244,207,.19)");
+      mound.addColorStop(.55, "rgba(255,255,255,0)");
+      mound.addColorStop(1, "rgba(8,12,12,.18)");
+      cx.fillStyle = mound;
+      cx.beginPath(); cx.ellipse(0, r * .12, r * .80, r * .58, 0, 0, 7); cx.fill();
+    }
+  }
+
+  const feature = featureBlendKind(tile.feature);
+  const featureColumn = FEATURE_CELL[feature];
+  if (featureColumn !== undefined && FEATURE_ATLAS_READY && r > 3) {
+    const cw = FEATURE_ATLAS.naturalWidth / 4;
+    const ch = FEATURE_ATLAS.naturalHeight;
+    cx.save();
+    cx.rotate(seed * Math.PI * 2);
+    if (hash2(tile.pos[0] * 13, tile.pos[1] * 17) > .5) cx.scale(-1, 1);
+    cx.globalAlpha = (tile.feature || "").startsWith("burnt_") ? .48 : .76 + depth * .18;
+    cx.drawImage(FEATURE_ATLAS, featureColumn * cw, 0, cw, ch,
+                 -r * 1.42, -r * 1.42, r * 2.84, r * 2.84);
+    cx.restore();
+  } else if (tile.feature === "forest" || tile.feature === "jungle") {
     const jungle = tile.feature === "jungle";
-    const color = jungle ? "#173f2c" : "#234a31";
-    cx.fillStyle = color;
+    cx.fillStyle = jungle ? "#173f2c" : "#234a31";
     cx.globalAlpha = .56 + depth * .20;
     const crown = r * (jungle ? .34 : .29);
-    for (const [dx, dy, size] of [[-.34,.18,.88],[.06,-.18,1.08],[.38,.20,.82]]) {
-      cx.beginPath(); cx.arc(x + dx * r, y + dy * r, crown * size, 0, 7); cx.fill();
+    for (const [fx, fy, size] of [[-.34,.18,.88],[.06,-.18,1.08],[.38,.20,.82]]) {
+      cx.beginPath(); cx.arc(fx * r, fy * r, crown * size, 0, 7); cx.fill();
     }
     cx.fillStyle = "rgba(228,235,190,.22)";
-    cx.beginPath(); cx.arc(x - r * .06, y - r * .31, crown * .46, 0, 7); cx.fill();
+    cx.beginPath(); cx.arc(-r * .06, -r * .31, crown * .46, 0, 7); cx.fill();
   } else if (tile.feature === "ice") {
-    cx.globalAlpha = .52 + depth * .24;
-    cx.fillStyle = "#d9f3f5";
-    cx.beginPath();
-    cx.moveTo(x - r * .68, y + r * .18); cx.lineTo(x - r * .18, y - r * .52);
-    cx.lineTo(x + r * .66, y - r * .12); cx.lineTo(x + r * .18, y + r * .48);
-    cx.closePath(); cx.fill();
+    if (ENVIRONMENT_FEATURE_ATLAS_READY && r > 3) {
+      const [column, row] = ENVIRONMENT_FEATURE_CELL.ice;
+      const cw = ENVIRONMENT_FEATURE_ATLAS.naturalWidth / 4;
+      const ch = ENVIRONMENT_FEATURE_ATLAS.naturalHeight / 2;
+      cx.globalAlpha = .72 + depth * .24;
+      cx.drawImage(ENVIRONMENT_FEATURE_ATLAS, column * cw, row * ch, cw, ch,
+                   -r * 1.40, -r * 1.40, r * 2.80, r * 2.80);
+    } else {
+      cx.globalAlpha = .52 + depth * .24;
+      cx.fillStyle = "#d9f3f5";
+      cx.beginPath();
+      cx.moveTo(-r * .68, r * .18); cx.lineTo(-r * .18, -r * .52);
+      cx.lineTo(r * .66, -r * .12); cx.lineTo(r * .18, r * .48);
+      cx.closePath(); cx.fill();
+    }
   }
   cx.restore();
   cx.globalAlpha = 1;
@@ -20351,7 +20560,10 @@ function drawPlanetMap() {
     drawPlanetChartMarginalia();
   }
 
-  const cells = earthInFrame ? planetCells(camera, scale, centerX, centerY) : [];
+  const baseCells = earthInFrame ? planetCells(camera, scale, centerX, centerY) : [];
+  const cells = planetReliefCells(baseCells, camera, radius, centerX, centerY,
+                                  visible, spectator);
+  drawPlanetReliefSides(cells, radius, centerX, centerY, visible, spectator);
   drawPlanetGround(cells, camera, scale, radius, centerX, centerY, visible, spectator);
   for (const {tile, points, center} of cells)
     PLANET_HIT_CELLS.push({pos:tile.pos, points, z:center.z});
@@ -20387,7 +20599,7 @@ function drawPlanetMap() {
     for (const cell of cells) {
       if ((!spectator && !visible.has(key(cell.tile.pos))) ||
           cell.center.z < (onSheet ?? .04)) continue;
-      drawPlanetSurfaceDetail(cell);
+      drawPlanetSurfaceDetail(cell, centerX, centerY);
     }
   } else if (!empireLens && scale > .42) {
     cx.textAlign = "center"; cx.textBaseline = "middle";
@@ -23122,6 +23334,67 @@ function foundedReligionMarker(player) {
   return player.founded_religion_exists ? "*" : "";
 }
 
+// ── Win odds: what a seat was worth before the game, and what it is worth now ─
+//
+// A whole per cent is all a 26px row can carry, with two exceptions at the ends
+// of the scale, because both roundings would otherwise state something false:
+//
+//  * "0" is reserved for a seat that cannot win — eliminated, or holding no city
+//    and no settler to found one. A seat with two tenths of one per cent still
+//    has a game to play and reads "<1".
+//  * "100" is reserved for a decided result. A seat at 99.7% has not won yet and
+//    reads ">99".
+function oddsPct(value) {
+  if (!Number.isFinite(+value)) return null;
+  const pct = +value * 100;
+  if (pct <= 0) return "0";
+  if (pct < 0.5) return "<1";
+  if (pct >= 100) return "100";
+  if (pct > 99.5) return ">99";
+  return String(Math.round(pct));
+}
+
+// Which way the game has moved this seat. The dead band is deliberate: without
+// it a rounding-sized wobble flips the arrow every turn and the column reads as
+// noise instead of as a story.
+function oddsMovement(player) {
+  const start = +player.odds_start;
+  const now = +player.odds_now;
+  if (!Number.isFinite(start) || !Number.isFinite(now)) return "→";
+  if (now > start * 1.05) return "↗";
+  if (now < start * 0.95) return "↘";
+  return "→";
+}
+
+function playerOddsFigures(player) {
+  const start = oddsPct(player.odds_start);
+  const now = oddsPct(player.odds_now);
+  if (start === null && now === null) {
+    return `<span class="diplomacy-expected-value">—</span>`;
+  }
+  // One ellipsizing element holds the whole pair, which is what the responsive
+  // type fitter measures. Nesting the parts inside it keeps that measurement
+  // intact while letting the opening figure sit back from the live one.
+  return `<span class="diplomacy-expected-value">` +
+    `<span class="odds-start">${start ?? "—"}</span>` +
+    `<span class="odds-move">${oddsMovement(player)}</span>` +
+    `<span class="odds-now">${now ?? "—"}</span></span>`;
+}
+
+function oddsTitle(player) {
+  const start = oddsPct(player.odds_start);
+  const now = oddsPct(player.odds_now);
+  if (start === null && now === null) return "Win odds unavailable";
+  const standing = +player.odds_standing_elo;
+  const handicap = +player.odds_handicap_elo;
+  return `Win odds: ${start ?? "—"}% at the start of the game → ${now ?? "—"}% now` +
+    `${Number.isFinite(handicap) && handicap !== 0
+      ? ` · difficulty ${handicap > 0 ? "+" : ""}${handicap} Elo to this seat` : ""}` +
+    `${Number.isFinite(standing) && standing !== 0
+      ? ` · position ${standing > 0 ? "+" : ""}${standing} Elo against the field` : ""}` +
+    `${+player.odds_now === 0 ? " · out of the game" : ""}`;
+}
+
 function playerHudStats(player, rank) {
   const y = player.yields || {};
   const goldPerTurn = Number.isFinite(+player.gold_per_turn) ? +player.gold_per_turn : +(y.gold || 0);
@@ -23222,7 +23495,7 @@ function drawPlayerHud() {
     `aria-label="Spectator mode: see everyone with full map visibility">All</button>` +
     `<span>PLAYER</span>` +
     `<span class="numeric" title="Elo rating">ELO</span>` +
-    `<span class="numeric" title="Elo-implied win odds, per cent">WIN%</span>` +
+    `<span class="numeric" title="Win odds, per cent: at the start of the game, then now">WIN%</span>` +
     `<span title="Civilization age">AGE</span>` +
     `<span title="AI active strategy">PLAN</span></span>` +
     `<span class="diplomacy-stat-head">` +
@@ -23293,7 +23566,8 @@ function drawPlayerHud() {
         : `<span class="ai-plan">No active strategy</span>`;
       // The themed league handle names the player, while `ai_strategy` is the
       // live grand strategy selected inside this particular match.
-      const expectPct = Number.isFinite(+p.ai_expected) ? Math.round(p.ai_expected * 100) : null;
+      const startPct = oddsPct(p.odds_start);
+      const nowPct = oddsPct(p.odds_now);
       // A seat somebody is playing is a player of its own: this game
       // registered a new one for it rather than lending it an agent's name,
       // so the row says who you are and what you are defending.
@@ -23331,7 +23605,7 @@ function drawPlayerHud() {
         ? `League player ${p.ai_username} (${p.ai_strat_label || "unrated"})` +
           ` · ${eloCiv ? `${p.civ}-specific` : "overall"} ELO ${p.ai_elo} ±${p.ai_elo_rd}` +
           `${eloProvisional ? ` (${provisionalNote})` : ""}` +
-          `${expectPct === null ? "" : ` · expected win chance vs this table ${expectPct}%`}`
+          `${startPct === null ? "" : ` · ${startPct}% to win this table when it sat down`}`
         : `${p.ai_name || "AI player"} · ${eloKnown
             ? `${eloProvisional ? "provisional " : ""}ELO ${eloValue} ±${eloRd}` : "unrated"}` +
           ` · ${strategy ? `${titleCase(strategy)} active strategy` : "no active strategy"}`;
@@ -23380,8 +23654,13 @@ function drawPlayerHud() {
         // because the value ellipsizes rather than shrinks, going one pixel over
         // dropped two characters: "12%" rendered as "1…", a win probability of
         // twelve per cent shown as the digit one.
-        `<span class="diplomacy-identity-field diplomacy-expected" title="Elo-implied win odds">` +
-        `<span class="diplomacy-expected-value">${expectPct === null ? "—" : expectPct}</span></span>` +
+        //
+        // Two figures in one cell, because they are one statement: what this
+        // seat was worth before the game began and what it is worth now. The
+        // arrow between them is the movement, so the direction reads without
+        // subtracting anything and without a second colour.
+        `<span class="diplomacy-identity-field diplomacy-expected" title="${escapeAttr(oddsTitle(p))}">` +
+        playerOddsFigures(p) + `</span>` +
         `<span class="diplomacy-identity-field diplomacy-age" title="${ageTitle}">` +
         `<span class="civ-age ${age || "unknown"}">${ageLabel}</span></span>` +
         `<span class="diplomacy-identity-field diplomacy-strategy">${activeStrategy}</span>` +
@@ -23657,24 +23936,44 @@ function civDossier(p, rank, relation) {
     ? `This player's rating specifically when playing ${p.civ}; each civ keeps its own table`
     : `Overall league rating — not enough rated ${p.civ} games yet for a civ-specific number`;
   const eloRow = row("Elo", dossierEloValue, dossierEloWhy);
-  const expectedRow = Number.isFinite(+p.ai_expected)
-    ? row("Expected wins", `${Math.round(p.ai_expected * 100)}% vs this table`,
-        "Elo-implied mean win probability against the other majors — compare with actual results over time")
-    : "";
+  // Both odds, named and explained. The masthead has room for two figures and
+  // an arrow; this is where the pair says what it is made of — and it is shown
+  // for every seat, the one you are playing included.
+  const dossierHandicap = +p.odds_handicap_elo;
+  const dossierStanding = +p.odds_standing_elo;
+  const startOdds = oddsPct(p.odds_start);
+  const nowOdds = oddsPct(p.odds_now);
+  const oddsRows = startOdds === null ? "" :
+    row("Win odds at start", `${startOdds}% of this table`,
+        "Judged before a tile was drawn: the ratings sitting at this table, the " +
+        "civilizations they drew and what the difficulty setting hands each seat. " +
+        "Nothing on the board moves it, so the finished game can be scored against it" +
+        (Number.isFinite(dossierHandicap) && dossierHandicap !== 0
+          ? ` — difficulty is worth ${dossierHandicap > 0 ? "+" : ""}${dossierHandicap} Elo to this seat`
+          : "")) +
+    row("Win odds now", `${nowOdds ?? "—"}%`,
+        +p.odds_now === 0
+          ? "Out of the game: an empire with no cities and no settler to found one cannot win"
+          : "The same prior corrected by the position on the board — Score, military " +
+            "strength, cities held and the closest victory race — weighted up as the " +
+            "clock runs down" +
+            (Number.isFinite(dossierStanding) && dossierStanding !== 0
+              ? `. This position is worth ${dossierStanding > 0 ? "+" : ""}${dossierStanding} Elo against the living field`
+              : ""));
   const leagueRows = isPerson
     ? row("League player", `${p.player_username} (you)`,
         p.player_rated
           ? "Registered in the rated roster when this game began — the result is filed under this name"
           : "Registered for this game only: nothing is being rated, so the handle goes no further") +
-      eloRow
+      eloRow + oddsRows
     : p.ai_username
     ? row("League player", `${p.ai_username} (${p.ai_strat_label || "unrated"})`,
         "Which league strategy is playing this civilization") +
-      eloRow + expectedRow
+      eloRow + oddsRows
     : p.ai_name
     ? row("AI player", p.ai_name,
         strategy ? `Generated from this AI's ${titleCase(strategy)} strategy` : "Generated for this AI seat") +
-      eloRow + expectedRow
+      eloRow + oddsRows
     : "";
   const strategyBody = leagueRows + (plan
     ? row("Doctrine", `<span class="ai-plan ${plan.strategy}">${titleCase(plan.strategy)}</span>`,
@@ -30058,11 +30357,16 @@ async function startNewSimulation() {
     sel = null; selCity = null;
     clearTimeout(specTimer);
     if (supervised) {
-      const finishedInstance = state.server_instance;
-      const finishedSeed = state.seed;
+      // Use the identity captured before the settings write above. The port
+      // may belong to a successor by the time this POST runs; that server must
+      // reject a request created for the world it replaced.
+      const finishedInstance = handoff.finishedInstance;
+      const finishedSeed = handoff.finishedSeed;
       const requested = await fetchJSON("/supervisor-new", { method: "POST",
         headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({...payload, mode: "restart"}) });
+        body: JSON.stringify({...payload, mode: "restart", replace_world: {
+          server_instance: finishedInstance, seed: finishedSeed,
+        }}) });
       if (requested.error) throw new Error(requested.error);
       const respawn = document.getElementById("respawn");
       if (respawn) respawn.textContent = "restarting sim on existing code";
