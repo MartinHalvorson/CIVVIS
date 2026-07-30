@@ -774,6 +774,19 @@ local function pressAttack(unit)
 			and operate(unit, OP["UNITOPERATION_RANGE_ATTACK"], params) then
 		return "range_attack";
 	end
+	-- A ranged unit that cannot shoot the city yet should close the distance,
+	-- but it must never be the thing standing on the objective: it cannot
+	-- capture, and a ranged unit parked on the approach blocks the melee that
+	-- can. Fortifying in place beside the target is more useful than shuffling.
+	local row = GameInfo.Units[unitTypeName(unit)];
+	local ranged = row ~= nil and (row.RangedCombat or 0) > 0;
+	if ranged and plotDistance(try(function() return unit:GetX(); end, 0),
+			try(function() return unit:GetY(); end, 0),
+			warTarget.x, warTarget.y) <= 2 then
+		local held = firstOperation(unit, { "UNITOPERATION_FORTIFY",
+		                                   "UNITOPERATION_ALERT" });
+		if held then return held; end
+	end
 	-- ⚠ NO `reachable` GATE ON THE ATTACK MOVE.
 	--
 	-- In Civilization VI a melee unit captures a city by moving ONTO it, so
@@ -923,8 +936,16 @@ local function chooseProduction(city, counts, nCities, turn, refused)
 		wantArmy = math.max(wantArmy, (cfg.WarArmy or 4) + 2);
 	end
 	if counts.military < wantArmy then
-		for _, name in ipairs({ "UNIT_SWORDSMAN", "UNIT_ARCHER", "UNIT_SPEARMAN",
-		                        "UNIT_SLINGER", "UNIT_WARRIOR" }) do
+		-- ⚠ MELEE FIRST. A ranged unit can bombard a city forever and never
+		-- take it — only a melee unit captures, by moving onto the plot. Run
+		-- settler-20260730T004226Z declared war on a capital at turn 65 and by
+		-- turn 107 had logged 518 archer advances and 31 range attacks without
+		-- a single capture, because the army it had built could not capture
+		-- anything. Swordsman needs Iron and is often unavailable, so the
+		-- melee that is always buildable comes before the ranged that is
+		-- always tempting.
+		for _, name in ipairs({ "UNIT_SWORDSMAN", "UNIT_SPEARMAN", "UNIT_WARRIOR",
+		                        "UNIT_ARCHER", "UNIT_SLINGER" }) do
 			ladder[#ladder + 1] = { name, "army" };
 		end
 	end
