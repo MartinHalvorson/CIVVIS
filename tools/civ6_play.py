@@ -91,6 +91,10 @@ def build_config(args: argparse.Namespace) -> dict:
         # attackers means a siege that never resolves.
         "AssaultWidth": args.assault_width,
         "SettlersInFlight": args.settlers_in_flight,
+        # Two defenders a city is enough at Settler. Beyond that, production
+        # spent on units that stand still is production not spent on the
+        # districts and buildings that score is actually made of.
+        "GarrisonPerCity": args.garrison_per_city,
         "AnnouncementSeconds": args.announcement_seconds,
         "EraAnnouncementSeconds": args.era_announcement_seconds,
         "Leader": args.leader,
@@ -612,6 +616,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--no-war", dest="make_war", action="store_false")
     ap.add_argument("--assault-width", type=int, default=2)
     ap.add_argument("--settlers-in-flight", type=int, default=1)
+    ap.add_argument("--garrison-per-city", type=int, default=2)
     ap.add_argument("--announcement-seconds", type=float, default=1.0)
     ap.add_argument("--era-announcement-seconds", type=float, default=0.5)
     ap.add_argument("--survey", action="store_true", default=True)

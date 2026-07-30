@@ -659,13 +659,71 @@ local function orderBuilder(unit)
 	return firstOperation(unit, { "UNITOPERATION_BUILD_IMPROVEMENT" });
 end
 
-local function orderMilitary(unit, stillExploring)
+-- Which of our cities has the fewest defenders standing on or beside it.
+--
+-- ⚠ Without this every idle unit fortifies wherever it was built, which is the
+-- capital, and the empire ends up with a pile of units on one hill and outlying
+-- cities naked. Observed directly: ten units alive at turn 75 with the only
+-- orders being FORTIFY and ALERT, all at home. Spreading them is free — they
+-- were going to stand still anyway — and it is what stops a border city being
+-- lost to the first raider that wanders past.
+local function thinnestCity(player, unit)
+	local best, bestCount;
+	local ux = try(function() return unit:GetX(); end, -1);
+	local uy = try(function() return unit:GetY(); end, -1);
+	eachCity(player, function(city)
+		local cx = try(function() return city:GetX(); end, -1);
+		local cy = try(function() return city:GetY(); end, -1);
+		if cx < 0 then return; end
+		local near = 0;
+		eachUnit(player, function(other)
+			local row = GameInfo.Units[unitTypeName(other)];
+			if row ~= nil and (row.Combat or 0) > 0 then
+				local ox = try(function() return other:GetX(); end, -1);
+				local oy = try(function() return other:GetY(); end, -1);
+				if ox >= 0 and plotDistance(ox, oy, cx, cy) <= 1 then
+					near = near + 1;
+				end
+			end
+		end);
+		-- Prefer the thinnest city, and among equals the nearest one, so units
+		-- do not cross the empire past a city that needed them.
+		local worse = bestCount == nil or near < bestCount
+			or (near == bestCount and best ~= nil
+				and plotDistance(ux, uy, cx, cy) < plotDistance(ux, uy, best.x, best.y));
+		if worse then best, bestCount = { x = cx, y = cy }, near; end
+	end);
+	return best, bestCount;
+end
+
+local function orderMilitary(unit, stillExploring, player)
 	if stillExploring then
 		local acted = firstOperation(unit, { "UNITOPERATION_AUTOMATE_EXPLORE" });
 		if acted then return acted; end
 	end
+	-- Heal first: a damaged garrison is not a garrison.
+	local damage = try(function() return unit:GetDamage(); end, 0) or 0;
+	if damage > 0 then
+		local healed = firstOperation(unit, { "UNITOPERATION_HEAL" });
+		if healed then return healed; end
+	end
+	if player ~= nil then
+		local city, count = thinnestCity(player, unit);
+		if city ~= nil and (count or 0) < (cfg.GarrisonPerCity or 2) then
+			local ux = try(function() return unit:GetX(); end, -1);
+			local uy = try(function() return unit:GetY(); end, -1);
+			if plotDistance(ux, uy, city.x, city.y) > 1 then
+				local params = {};
+				params[UnitOperationTypes.PARAM_X] = city.x;
+				params[UnitOperationTypes.PARAM_Y] = city.y;
+				if operate(unit, OP["UNITOPERATION_MOVE_TO"], params) then
+					return "garrison";
+				end
+			end
+		end
+	end
 	return firstOperation(unit, {
-		"UNITOPERATION_HEAL", "UNITOPERATION_FORTIFY", "UNITOPERATION_ALERT",
+		"UNITOPERATION_FORTIFY", "UNITOPERATION_ALERT",
 	});
 end
 
@@ -891,7 +949,7 @@ local function orderFor(player, pid, unit, turn)
 		-- Exploring is how the army evaporates: units 6 -> 4 -> 3 across turns
 		-- 20/40/100 of run settler-20260729T235910Z, wandering into barbarians
 		-- while the war threshold was never reached. Default is now early.
-		return orderMilitary(unit, turn < (cfg.ExploreUntilTurn or 12));
+		return orderMilitary(unit, turn < (cfg.ExploreUntilTurn or 12), player);
 	end
 	return nil;
 end
