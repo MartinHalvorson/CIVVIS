@@ -1338,6 +1338,20 @@ end
 
 local warTarget = nil;
 
+-- The army we had at the start of this turn, and whether it is enough to assault.
+--
+-- ★★★ THE ARMY IS DESTROYED BY ITS OWN SIEGE. Across every run that reached a wall
+-- the pattern is identical: attack every turn, lose a unit a turn, never stop.
+-- settler-20260730T054547Z went 15 units to 8 to 4 to 3 while the capital held, and
+-- an earlier run went 26 to 7. Each melee strike on a defended city trades badly, so
+-- attacking below strength does not chip the city down — it feeds the city.
+--
+-- A person stops, rebuilds, and returns in force. `assaultReady` is that: below the
+-- threshold the army holds and garrisons while production replaces losses, and the
+-- assault resumes only when there is enough of it to matter.
+local armyNow = 0;
+local assaultReady = false;
+
 -- How many military units are out looking for the enemy this turn.
 --
 -- ★ THE REASON NO WAR EVER STARTED. `findWarTarget` requires a rival city plot to
@@ -1477,6 +1491,15 @@ end
 
 local function pressAttack(unit, turn)
 	if warTarget == nil then return nil; end
+	-- ⚠ Support units still move up: a ram in position is what makes the NEXT
+	-- assault work, and it takes no return fire on an approach tile.
+	local row = GameInfo.Units[unitTypeName(unit)];
+	local isSupport = row ~= nil and (row.Combat or 0) <= 0;
+	if not assaultReady and not isSupport then
+		-- Hold rather than trickle in. Returning nil sends this unit down to
+		-- `orderMilitary`, which garrisons it and keeps it alive to attack later.
+		return nil;
+	end
 	if assault.turn ~= turn then
 		assault = { turn = turn, onTarget = 0, taken = {} };
 	end
@@ -2700,6 +2723,10 @@ local function playTurn(player, pid, turn)
 	exportTiles(player, pid, turn);
 	local builds = driveProduction(player, turn);
 	local ordered, stuck = orderUnits(player, pid, turn);
+	-- Refreshed before any unit is ordered, so the whole army agrees this turn about
+	-- whether it is strong enough to attack.
+	armyNow = countUnits(player).military;
+	assaultReady = armyNow >= (cfg.AssaultMin or 8);
 	local worstStack, piles = stackCensus(player);
 	local rivalTop, metCount = rivalBest(player, pid);
 	local ourScore = try(function() return player:GetScore(); end, -1);
@@ -2725,6 +2752,9 @@ local function playTurn(player, pid, turn)
 		-- wall will ever break, whatever the ladder claims to queue. Reported every
 		-- turn precisely because I once believed the entry existed when it did not.
 		siege = countUnits(player).siege,
+		-- Whether the army was allowed to attack this turn, and how big it was.
+		army = armyNow,
+		assaulting = assaultReady,
 		-- Which brain is choosing city sites. `plan_sites` staying at zero while a
 		-- plan is configured means CIVVIS is NOT deciding, whatever the config says.
 		plan_sites = planFires.plan,
