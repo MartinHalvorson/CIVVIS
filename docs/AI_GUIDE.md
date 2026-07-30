@@ -372,11 +372,15 @@ from hiding a moving control, while allowing candidate-only code to evolve.
 
 Schema 3 binds a ledger to the complete rating profile: an explicit experiment
 protocol version, a deterministic fingerprint of the fully merged rules JSON,
-ordered controller roster, table size, dimensions, turn limit, city-state
-count, speed, map script/shape/poles, active mods, and K. The readable mod names
-say what was loaded; the fingerprint binds their actual content, so editing a
-mod in place cannot reuse its old scale. A later run with any different field
-is rejected with a request to use another `--ratings` path. Versioned player
+a readable contract for every fixed lobby default, ordered controller roster,
+table size, dimensions, turn limit, city-state count, speed, map
+script/shape/poles, active mods, and K. The setup contract records Civ6 rules,
+an Ancient start, Prince difficulty, barbarians, disaster intensity 2, no game
+modes, the Civ6 leader pool, deterministic stock civilization fill, no humans,
+free-for-all teams, and all six victory types. The readable mod names say what
+was loaded; the fingerprint binds their actual content, so editing a mod in
+place cannot reuse its old scale. A later run with any different field is
+rejected with a request to use another `--ratings` path. Versioned player
 identities may change while their ordered controller roles remain `advanced,
 advanced_v1, basic, random`; this is what lets a new challenger join without
 quietly changing its multiplayer controls. Bump the protocol when engine

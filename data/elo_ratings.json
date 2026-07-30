@@ -4,6 +4,7 @@
   "profile": {
     "protocol_version": 1,
     "rules_fingerprint": "fnv1a64:3423bd46da2b8cd7",
+    "setup_contract": "base=civ6;era=0;difficulty=prince;barbarians=true;disasters=2;modes=none;leader-pool=civ6;civilizations=stock-fill;randomize-civs=false;human-seats=none;teams=free-for-all;victories=science+culture+religious+diplomatic+domination+score",
     "rating_anchor": "advanced_v1",
     "controller_roster": [
       "advanced",

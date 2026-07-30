@@ -16,7 +16,7 @@ use std::time::Duration;
 use serde::{Deserialize, Serialize};
 
 use crate::ai::{AdvancedAi, Ai, BasicAi, RandomAi, Weights};
-use crate::game::{default_speed, Action, Game, GameOptions};
+use crate::game::{default_speed, Action, Game, GameOptions, VictoryConditions};
 use crate::rng::Rng;
 use crate::rules::Rules;
 use crate::setup::{MapPoles, MapScript, MapSize, MapTopology};
@@ -117,6 +117,86 @@ pub const DEFAULT_RATINGS_PATH: &str = "data/elo_ratings.json";
 const LEAGUE_SNAPSHOT_DIR: &str = "data/league";
 const LEAGUE_SNAPSHOT_FILE: &str = "data/league/league.json";
 
+/// Schema 3 existed before `setup_contract` was serialized. Those files were
+/// all created under this exact lobby contract, so their migration value must
+/// remain historical even after a future protocol deliberately changes the
+/// live defaults.
+const SCHEMA3_LEGACY_SETUP_CONTRACT: &str = "base=civ6;era=0;difficulty=prince;barbarians=true;disasters=2;modes=none;leader-pool=civ6;civilizations=stock-fill;randomize-civs=false;human-seats=none;teams=free-for-all;victories=science+culture+religious+diplomatic+domination+score";
+
+fn schema3_legacy_setup_contract() -> String {
+    SCHEMA3_LEGACY_SETUP_CONTRACT.to_string()
+}
+
+/// Outcome-affecting tournament settings that are fixed by the harness rather
+/// than exposed in [`TourneyCfg`]. Derive the string from the same defaults
+/// [`play_tournament`] constructs so changing one cannot silently append a
+/// different experiment to an existing ledger.
+fn tournament_setup_contract(cfg: &TourneyCfg) -> String {
+    let options = GameOptions::new(
+        cfg.players_per_game,
+        cfg.width,
+        cfg.height,
+        0,
+        cfg.max_turns,
+        cfg.num_city_states,
+    );
+    let modes = if options.game_modes.is_empty() {
+        "none".to_string()
+    } else {
+        options
+            .game_modes
+            .iter()
+            .cloned()
+            .collect::<Vec<_>>()
+            .join("+")
+    };
+    let civilizations = if options.civs.is_empty() {
+        "stock-fill".to_string()
+    } else {
+        options.civs.join("+")
+    };
+    let human_seats = if options.human_seats.is_empty() {
+        "none".to_string()
+    } else {
+        options
+            .human_seats
+            .iter()
+            .map(usize::to_string)
+            .collect::<Vec<_>>()
+            .join("+")
+    };
+    let teams = if options.teams.is_empty() {
+        "free-for-all".to_string()
+    } else {
+        options
+            .teams
+            .iter()
+            .map(|team| team.map_or_else(|| "none".to_string(), |team| team.to_string()))
+            .collect::<Vec<_>>()
+            .join("+")
+    };
+    let victories = VictoryConditions::NAMES
+        .into_iter()
+        .filter(|victory| VictoryConditions::default().is_enabled(victory))
+        .collect::<Vec<_>>()
+        .join("+");
+    format!(
+        "base={};era={};difficulty={};barbarians={};disasters={};modes={};leader-pool={};civilizations={};randomize-civs={};human-seats={};teams={};victories={}",
+        options.base_ruleset.id(),
+        options.start_era,
+        options.difficulty,
+        options.barbarians,
+        options.disaster_intensity,
+        modes,
+        options.leader_pool.id(),
+        civilizations,
+        options.randomize_civs,
+        human_seats,
+        teams,
+        victories,
+    )
+}
+
 /// Conservatively strongest *winning* active, untargeted genome in the
 /// committed outcome-rated league. Lane specialists answer a different
 /// question; this challenger isolates whether the same win-selected generalist
@@ -216,6 +296,11 @@ pub struct TournamentProfile {
     /// Fingerprint of the fully merged stock + mod rules JSON. Mod names are
     /// retained below for readability; this value binds their actual content.
     pub rules_fingerprint: String,
+    /// Lobby settings fixed by the tournament harness rather than exposed
+    /// in `TourneyCfg`. Older schema-3 ledgers deserialize to the historical
+    /// defaults, then write this contract explicitly on their next checkpoint.
+    #[serde(default = "schema3_legacy_setup_contract")]
+    pub setup_contract: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rating_anchor: Option<String>,
     /// Ordered controller roles in the tournament. Immutable player identities
@@ -241,6 +326,7 @@ impl TournamentProfile {
         Self {
             protocol_version: ELO_PROTOCOL_VERSION,
             rules_fingerprint: Rules::embedded().source_fingerprint().to_string(),
+            setup_contract: tournament_setup_contract(cfg),
             rating_anchor: cfg.rating_anchor.clone(),
             controller_roster: cfg.controller_roster.clone(),
             players_per_game: cfg.players_per_game,
@@ -264,6 +350,7 @@ impl TournamentProfile {
             && self.rules_fingerprint["fnv1a64:".len()..]
                 .bytes()
                 .all(|byte| byte.is_ascii_hexdigit())
+            && !self.setup_contract.trim().is_empty()
             && self
                 .rating_anchor
                 .as_ref()
@@ -303,9 +390,10 @@ impl TournamentProfile {
             self.controller_roster.join(",")
         };
         format!(
-            "protocol v{}, rules={}, {}p {}x{}, {} turns, {} city-states, {}, {}/{}/{}, mods={}, K={}, anchor={}, controllers={}",
+            "protocol v{}, rules={}, setup={}, {}p {}x{}, {} turns, {} city-states, {}, {}/{}/{}, mods={}, K={}, anchor={}, controllers={}",
             self.protocol_version,
             self.rules_fingerprint,
+            self.setup_contract,
             self.players_per_game,
             self.width,
             self.height,
@@ -3246,6 +3334,36 @@ mod tests {
         rules_changed.rules_fingerprint = "fnv1a64:0000000000000000".to_string();
         let error = pool.bind_profile(rules_changed).unwrap_err();
         assert!(error.to_string().contains("rating profile mismatch"));
+
+        let mut setup_changed = pool.profile.clone().unwrap();
+        setup_changed.setup_contract = "difficulty=deity".to_string();
+        let error = pool.bind_profile(setup_changed).unwrap_err();
+        assert!(error.to_string().contains("rating profile mismatch"));
+    }
+
+    #[test]
+    fn persistent_elo_pins_every_implicit_lobby_default() {
+        assert_eq!(
+            super::tournament_setup_contract(&TourneyCfg::default()),
+            super::SCHEMA3_LEGACY_SETUP_CONTRACT
+        );
+    }
+
+    #[test]
+    fn old_schema_three_profiles_migrate_to_the_historical_lobby() {
+        let mut encoded =
+            serde_json::to_value(TournamentProfile::from_cfg(&TourneyCfg::default())).unwrap();
+        encoded
+            .as_object_mut()
+            .unwrap()
+            .remove("setup_contract");
+
+        let migrated: TournamentProfile = serde_json::from_value(encoded).unwrap();
+
+        assert_eq!(
+            migrated.setup_contract,
+            super::SCHEMA3_LEGACY_SETUP_CONTRACT
+        );
     }
 
     #[test]

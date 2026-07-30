@@ -6264,3 +6264,23 @@ at the start still uses the complete legacy placement policy. The regression
 sweeps 128 seeds with exactly three profiled strategies plus a higher-rated
 unprofiled strategy: the first three seats must always be the three winners,
 and the fallback must appear fourth.
+
+## 2026-07-30 — persistent Elo now pins the implicit lobby too
+
+The schema-3 tournament profile already pinned rules content, map geometry,
+speed, turn limit, city-state count, controller roles, mods, and K. The harness
+also inherited outcome-affecting defaults from `GameOptions`: Civ6 rules, an
+Ancient start, Prince difficulty, barbarians, disaster intensity 2, no modes,
+the Civ6 leader pool, deterministic stock civilization fill, no human seats,
+free-for-all teams, and every victory type. A later default change could
+therefore have appended a different experiment to the same ledger without a
+profile mismatch.
+
+The profile now carries a readable `setup_contract` derived from the same
+`GameOptions` defaults used to construct each tournament game. Profile equality
+rejects any contract change, and a pinned regression forces deliberate protocol
+review when one of those defaults moves. Existing schema-3 files deserialize to
+the known historical contract for compatibility; the canonical 40-game ledger
+writes it explicitly. Raw-game replay continues to reproduce the same aggregate
+and anchored ratings, so this closes an identity gap without changing the
+baseline experiment.
