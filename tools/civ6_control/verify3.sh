@@ -1,4 +1,10 @@
 #!/bin/zsh
+# ⚠⚠ A RUNNING MONITOR DOES NOT PICK UP EDITS TO THIS FILE. The heredoc below is read when
+# the process starts, so a monitor launched before a change keeps running the OLD code. That
+# bit once: after recalibrating CHECK 2 to MaxTargetRatio 1.3, the live monitor kept printing
+# "FAIL - still attacking someone stronger" at ratio 1.65 with ZERO wars declared — which is
+# the veto WORKING. Stale tooling reporting a failure is indistinguishable from a real one, so
+# TaskStop and relaunch the monitor after editing this script.
 # Verify the THREE unverified changes, each by the count that can falsify it —
 # not by a boolean, and not by the fact that the code shipped.
 #
