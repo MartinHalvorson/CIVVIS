@@ -126,6 +126,11 @@ def build_config(args: argparse.Namespace) -> dict:
         # run held a war from turn 88 to 198 against a civ that grew 1 -> 10 visible
         # cities, eliminated another civ mid-war, and finished 1066 to our 203.
         "StrengthWeight": args.strength_weight,
+        # Ceiling on the army target. Without one it is nCities * MilitaryPerCity —
+        # 25 at five cities, never reached — and every development entry below the army
+        # block in the ladder is dead code. A 203-turn game built 7 monuments, 7
+        # granaries and ZERO districts, and scored 203 against 1088.
+        "ArmyCap": args.army_cap,
         # ★ Maximum tiles from our NEAREST existing city that a new city may be
         # founded. Loyalty support comes from our own nearby population, so beyond
         # this the city cannot be held at any price: run 071729Z founded (42,17)
@@ -843,6 +848,7 @@ def main(argv: list[str] | None = None) -> int:
     # which is what makes it a usable control arm for the near-window A/B.
     ap.add_argument("--plan-near-window", type=int, default=6)
     ap.add_argument("--strength-weight", type=int, default=20)
+    ap.add_argument("--army-cap", type=int, default=18)
     ap.add_argument("--max-empire-distance", type=int, default=6)
     ap.add_argument("--garrison-per-city", type=int, default=2)
     ap.add_argument("--export-state", action="store_true", default=False)

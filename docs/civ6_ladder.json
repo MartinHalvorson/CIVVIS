@@ -181,6 +181,20 @@
       "utc": "2026-07-30T07:05:31Z",
       "victory": null,
       "won": false
+    },
+    {
+      "configured": true,
+      "difficulty": "DIFFICULTY_SETTLER",
+      "map_size": "MAPSIZE_TINY",
+      "reason": "stalled: no event for 600s",
+      "score": 203,
+      "seed": 426268,
+      "speed": "GAMESPEED_ONLINE",
+      "tag": "settler-20260730T083136Z",
+      "turns": 203,
+      "utc": "2026-07-30T08:52:10Z",
+      "victory": null,
+      "won": false
     }
   ],
   "wins": {}

@@ -2162,7 +2162,33 @@ local function chooseProduction(city, counts, nCities, turn, refused)
 	-- An army large enough to take a city, not merely to garrison one. The
 	-- floor rises as the war turn approaches, because a declaration made with
 	-- two warriors is a declaration that loses.
-	local wantArmy = math.max(2, nCities * (cfg.MilitaryPerCity or 1.5));
+	-- ★★★★★ A SATISFIABLE ARMY TARGET, or everything below it is dead code AGAIN.
+	--
+	-- This was `nCities * MilitaryPerCity` with no ceiling: 25 at five cities, and runs
+	-- typically field 10-18, so it is never met. The seven development entries below the
+	-- army block were therefore unreachable for the whole of a 203-turn game:
+	--
+	--     build reasons: army 88, expand 26, grow 14, improve 9, siege 8, ranged 5,
+	--                    scout 4, defend 2        <-- `develop` NEVER FIRES
+	--     built: 71 warriors, 26 settlers, 19 spearmen, 7 monuments, 7 granaries,
+	--            and ZERO districts, campuses, libraries, commercial hubs or theatres
+	--
+	-- That is the score gap: 203 against 1088. Score comes from population, districts
+	-- and buildings, and the empire was building none of the last two.
+	--
+	-- ⚠ THIS IS THE THIRD TIME THIS EXACT CLASS HAS BITTEN — the battering ram and the
+	-- ranged floor were both unreachable below this same gate — and the second time I
+	-- have fixed it only halfway: hoisting the builder, monument and granary above the
+	-- army left the other seven entries exactly where they were. "Never put anything you
+	-- need below an open-ended target" also means: check nothing ELSE is down there.
+	--
+	-- An army needs to be big enough to FIGHT, which is a fixed quantity (`WarArmy`,
+	-- and `assaultReady`'s AssaultMin), not a multiple that grows with the empire
+	-- forever. Capped, the ladder reaches development once the army is adequate, and
+	-- falls back to rebuilding whenever losses drop it below the cap.
+	local wantArmy = math.max(2, math.min(
+		nCities * (cfg.MilitaryPerCity or 1.5),
+		cfg.ArmyCap or ((cfg.WarArmy or 4) + 6)));
 	if turn >= (cfg.WarFromTurn or 25) - 10 then
 		wantArmy = math.max(wantArmy, (cfg.WarArmy or 4) + 2);
 	end
