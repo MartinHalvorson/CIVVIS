@@ -6246,3 +6246,21 @@ is better supported rather than causally guaranteed stronger. The display
 ladder intentionally remains placement Glicko; a spectator can still see who
 usually finishes well without that statistic silently deciding which AI is
 supposed to win the exhibition.
+
+## 2026-07-30 — live winner pools remain win-selected after seat one
+
+The first live implementation checked whether the **currently unused** pool
+still contained three exact profiles before every seat. With exactly three
+profiled entrants, seat one correctly sampled them, but removing its pick left
+only two; seat two then reverted to placement and could admit an unprofiled
+high placer before the two remaining known winners. That contradicted both the
+selection objective and the stated “while comparable choices remain” contract.
+
+Readiness is now decided once from the full live roster. A ready table samples
+only exact-profile entrants until they are exhausted, shrinking 3:2:1 to 2:1
+and then 1 as no-repeat seating consumes them. Only an unavoidable later seat
+may fall back to unprofiled placement. A roster with fewer than three profiles
+at the start still uses the complete legacy placement policy. The regression
+sweeps 128 seeds with exactly three profiled strategies plus a higher-rated
+unprofiled strategy: the first three seats must always be the three winners,
+and the fallback must appear fourth.

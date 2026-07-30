@@ -2566,6 +2566,14 @@ pub fn seat_by_leader_civ_seeded(
     );
     let mut rng = Rng::new(seed ^ 0x5350_4543_4941_4c49);
     let mut used = BTreeSet::new();
+    let requested_pool = top_n.max(1).min(active.len());
+    let win_profile_ready = active
+        .iter()
+        .filter(|candidate| {
+            exact_win_lower_confidence_for(&league.strategies[**candidate], table_size).is_some()
+        })
+        .count()
+        >= requested_pool;
     combinations
         .iter()
         .map(|(leader, civ)| {
@@ -2578,26 +2586,33 @@ pub fn seat_by_leader_civ_seeded(
             } else {
                 active.clone()
             };
-            let sample_size = top_n.max(1).min(pool.len());
-            let comparable_winners = pool
+            let exact_pool: Vec<usize> = pool
                 .iter()
+                .copied()
                 .filter(|candidate| {
-                    exact_win_lower_confidence_for(&league.strategies[**candidate], table_size)
+                    exact_win_lower_confidence_for(&league.strategies[*candidate], table_size)
                         .is_some()
                 })
-                .count()
-                >= sample_size;
+                .collect();
+            let use_win_evidence = win_profile_ready && !exact_pool.is_empty();
+            if use_win_evidence {
+                // Readiness belongs to the roster, not the shrinking unused
+                // pool. Once a table switches objectives, exhaust every
+                // profiled winner before an unprofiled placement fallback.
+                pool = exact_pool;
+            }
+            let sample_size = top_n.max(1).min(pool.len());
             pool.sort_by(|a, b| {
                 let ea = display_elo_for(&league.strategies[*a], leader, civ).0;
                 let eb = display_elo_for(&league.strategies[*b], leader, civ).0;
-                let win_order = if comparable_winners {
+                let win_order = if use_win_evidence {
                     exact_win_lower_confidence_for(&league.strategies[*b], table_size)
-                        .unwrap_or(f64::NEG_INFINITY)
+                        .expect("the win-evidence pool contains only exact profiles")
                         .total_cmp(&exact_win_lower_confidence_for(
                             &league.strategies[*a],
                             table_size,
                         )
-                        .unwrap_or(f64::NEG_INFINITY))
+                        .expect("the win-evidence pool contains only exact profiles"))
                 } else {
                     std::cmp::Ordering::Equal
                 };
@@ -3866,6 +3881,47 @@ mod tests {
             !seen.contains(&0),
             "the placement leader is outside the proven-winning pool"
         );
+    }
+
+    #[test]
+    fn seeded_seating_exhausts_a_ready_win_pool_before_placement_fallback() {
+        let mut league = League {
+            round: 0,
+            strategies: (0..4)
+                .map(|index| {
+                    Strategy::new(
+                        &format!("candidate-{index}"),
+                        StrategyKind::Builtin {
+                            ai: "advanced".into(),
+                        },
+                        0,
+                    )
+                })
+                .collect(),
+            calibration: Calibration::default(),
+        };
+        for (index, strategy) in league.strategies.iter_mut().enumerate() {
+            strategy.rating = 1_900.0 - index as f64 * 100.0;
+            if index > 0 {
+                strategy.wins_by_table_size.insert(
+                    4,
+                    WinEvidence {
+                        games: 40,
+                        wins: [0, 8, 20, 15][index],
+                    },
+                );
+            }
+        }
+        let civs = vec!["Byzantium".into(); 4];
+        for seed in 0..128 {
+            let seats = seat_by_civ_seeded(&league, &civs, 4, seed, 3);
+            assert_eq!(
+                seats[..3].iter().copied().collect::<BTreeSet<_>>(),
+                BTreeSet::from([1, 2, 3]),
+                "seed {seed} admitted the unprofiled placement leader before exhausting exact winners: {seats:?}"
+            );
+            assert_eq!(seats[3], 0);
+        }
     }
 
     #[test]
