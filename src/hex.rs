@@ -91,7 +91,15 @@ pub fn distance(a: Pos, b: Pos) -> i32 {
 }
 
 pub fn disk(c: Pos, radius: i32) -> Vec<Pos> {
-    let mut out = Vec::new();
+    if radius < 0 {
+        return Vec::new();
+    }
+    // A radius-r hex disk contains exactly 1 + 3r(r + 1) cells.  These
+    // short-lived vectors are built throughout movement, combat, yields, and
+    // visibility; reserving the known size avoids each one's growth copies.
+    let radius_usize = radius as usize;
+    let cells = 1 + 3 * radius_usize * (radius_usize + 1);
+    let mut out = Vec::with_capacity(cells);
     for dq in -radius..=radius {
         let lo = (-radius).max(-dq - radius);
         let hi = radius.min(-dq + radius);

@@ -26866,6 +26866,27 @@ impl Game {
                 }
             }
         }
+        // Resource control is queried for every luxury below.  Build each
+        // player's connected holdings once rather than walking all of their
+        // city tiles again for every resource and every foreign player.
+        let connected: Vec<BTreeMap<&str, i32>> = (0..self.players.len())
+            .map(|player| self.connected_resource_census(player))
+            .collect();
+        let controlled = |player: usize, resource: &str| {
+            if !self.resource_visible_to(player, resource) {
+                return 0;
+            }
+            connected[player].get(resource).copied().unwrap_or_default()
+                + minors[player]
+                    .iter()
+                    .map(|minor| {
+                        connected[*minor]
+                            .get(resource)
+                            .copied()
+                            .unwrap_or_default()
+                    })
+                    .sum::<i32>()
+        };
         for (resource, spec) in &self.rules.resources {
             if spec.class != "luxury" {
                 continue;
@@ -26874,14 +26895,14 @@ impl Game {
                 .get(resource.as_str())
                 .copied()
                 .unwrap_or_default();
-            let controlled = self.controlled_resource_count_via(pid, resource, &minors[pid]);
-            if total <= 0 || controlled * 100 < total * 60 {
+            let player_controlled = controlled(pid, resource);
+            if total <= 0 || player_controlled * 100 < total * 60 {
                 continue;
             }
             monopolies += 1;
-            gold += if controlled >= total {
+            gold += if player_controlled >= total {
                 25.0
-            } else if controlled * 100 >= total * 75 {
+            } else if player_controlled * 100 >= total * 75 {
                 10.0
             } else {
                 5.0
@@ -26894,11 +26915,7 @@ impl Game {
                         && player.alive
                         && !player.is_minor
                         && !player.is_barbarian
-                        && self.controlled_resource_count_via(
-                            player.id,
-                            resource,
-                            &minors[player.id],
-                        ) == 0
+                        && controlled(player.id, resource) == 0
                 })
                 .count() as f64;
             let developed = self.cities.values().any(|city| {
@@ -26912,8 +26929,9 @@ impl Game {
                             )
                     })
             });
-            tourism_percent +=
-                controlled as f64 * foreign_noncontrollers * if developed { 3.0 } else { 1.0 };
+            tourism_percent += player_controlled as f64
+                * foreign_noncontrollers
+                * if developed { 3.0 } else { 1.0 };
         }
         if monopolies > 0 {
             let partners = self
@@ -36243,6 +36261,23 @@ impl Game {
         if !capture_actions.is_empty() && !capture_actions.contains(action) {
             return Err("resolve the captured city's fate first".into());
         }
+        // An ordinary unit step cannot alter connected resources, ownership,
+        // resource-reveal prerequisites, or Suzerain status. A tribal village
+        // is the exception: its reward may complete a technology and reveal a
+        // luxury. Epic Quest makes a cleared Barbarian Outpost grant the same
+        // reward, so remember either site before `do_move` removes it.
+        let monopoly_control_may_change = match action {
+            Action::Move { to, .. } => {
+                self.barb_camps.contains_key(to)
+                    || self.map.get(*to).is_some_and(|tile| {
+                        matches!(
+                            tile.improvement.as_deref(),
+                            Some("goody_hut" | "meteor_goody" | "barbarian_camp")
+                        )
+                    })
+            }
+            _ => true,
+        };
         let blocked_unit = match action {
             Action::Move { unit, .. }
             | Action::MoveTo { unit, .. }
@@ -36454,7 +36489,9 @@ impl Game {
             }
         };
         if r.is_ok() {
-            self.note_first_monopoly_moments();
+            if monopoly_control_may_change {
+                self.note_first_monopoly_moments();
+            }
             // The war infobox is live during a turn, not only after End Turn.
             // Refresh after actions that can damage, create, transfer, upgrade,
             // or otherwise change the unit-only military total.
