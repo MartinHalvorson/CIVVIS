@@ -919,7 +919,8 @@ impl RatingModel for ContextualRating {
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Metrics {
     pub games: u64,
-    /// Negative log likelihood of the seat that actually won. Compare
+    /// Negative log likelihood of the winner, or the mean negative log
+    /// likelihood of every co-winner for an exactly tied result. Compare
     /// against `ln(players per game)`.
     pub win_log_loss: f64,
     /// How often the highest-rated seat was the one that won.
@@ -972,6 +973,22 @@ impl MetricSums {
     }
 }
 
+/// Proper logarithmic score for a fractional categorical target. A tied block
+/// assigns equal target mass to every member, so its loss is the mean of their
+/// individual negative log probabilities—not the negative log of their mean
+/// probability. The latter would let a model put everything on one tied seat
+/// without being penalized for assigning zero to the others.
+fn fractional_log_score(probs: &[f64], outcomes: &[usize]) -> f64 {
+    if outcomes.is_empty() {
+        return 1e-12f64.ln();
+    }
+    outcomes
+        .iter()
+        .map(|index| probs[*index].clamp(1e-12, 1.0).ln())
+        .sum::<f64>()
+        / outcomes.len() as f64
+}
+
 fn score_game(sums: &mut MetricSums, model: &dyn RatingModel, m: &MatchRecord) {
     // A history stores seats in finishing order, so scoring them in that
     // order would let a model that breaks ties by position look clairvoyant.
@@ -997,10 +1014,10 @@ fn score_game(sums: &mut MetricSums, model: &dyn RatingModel, m: &MatchRecord) {
     };
     let best = seats.iter().map(|s| s.rank).min().unwrap_or(0);
     let winners: Vec<usize> = (0..n).filter(|i| seats[*i].rank == best).collect();
-    // A tie for first is scored as the mass the model put on any of them.
-    let mass: f64 = winners.iter().map(|i| probs[*i]).sum::<f64>() / winners.len() as f64;
+    // Match the equal fractional target used by the rating update itself.
+    let log_score = fractional_log_score(&probs, &winners);
     sums.games += 1;
-    sums.win_ll -= mass.clamp(1e-12, 1.0).ln();
+    sums.win_ll -= log_score;
     sums.uniform_ll += (n as f64).ln();
     sums.uniform_hits += winners.len() as f64 / n as f64;
     for (i, p) in probs.iter().enumerate() {
@@ -1075,18 +1092,18 @@ pub fn fit_stage_weights(history: &[MatchRecord], burn_in: f64) -> Vec<f64> {
                     break;
                 }
                 let probs = model.stage_probabilities(&beliefs, &remaining);
-                let mass: f64 = remaining
+                let tied_slots: Vec<usize> = remaining
                     .iter()
                     .enumerate()
                     .filter(|(_, idx)| group.contains(idx))
-                    .map(|(slot, _)| probs[slot])
-                    .sum::<f64>()
-                    / group.len() as f64;
-                let uniform = (remaining.len() as f64).ln() - (group.len() as f64).ln();
+                    .map(|(slot, _)| slot)
+                    .collect();
+                let log_score = fractional_log_score(&probs, &tied_slots);
+                let uniform = (remaining.len() as f64).ln();
                 if info.len() <= k {
                     info.resize(k + 1, (0.0, 0));
                 }
-                info[k].0 += uniform + mass.clamp(1e-12, 1.0).ln();
+                info[k].0 += uniform + log_score;
                 info[k].1 += 1;
                 remaining.retain(|i| !group.contains(i));
             }
@@ -1194,7 +1211,7 @@ pub fn backtest_report(rows: &[BacktestRow], seats: f64) -> String {
     );
     let _ = writeln!(
         out,
-        "  winner LL:  negative log likelihood of the seat that won; \
+        "  winner LL:  negative log likelihood of the winner(s); \
          {:.4} = knowing nothing",
         first.uniform_log_loss
     );
@@ -1366,6 +1383,24 @@ pub fn rotate_seating(players: usize, civs: usize, game: u64) -> Vec<usize> {
 mod tests {
     use super::*;
 
+    struct FixedForecast(Vec<f64>);
+
+    impl RatingModel for FixedForecast {
+        fn name(&self) -> &str {
+            "fixed forecast"
+        }
+
+        fn forecast(&self, _seats: &[Seat]) -> Vec<f64> {
+            self.0.clone()
+        }
+
+        fn pair(&self, _a: &Seat, _b: &Seat) -> f64 {
+            0.5
+        }
+
+        fn observe(&mut self, _m: &MatchRecord) {}
+    }
+
     fn seat(player: &str, civ: &str, rank: u32) -> Seat {
         Seat {
             player: player.into(),
@@ -1384,6 +1419,44 @@ mod tests {
                 .collect(),
             ..MatchRecord::default()
         }
+    }
+
+    #[test]
+    fn tied_winners_use_a_proper_fractional_log_score() {
+        let tied = MatchRecord {
+            seats: vec![
+                seat("a", "Rome", 0),
+                seat("b", "Egypt", 0),
+                seat("c", "Greece", 2),
+            ],
+            ..MatchRecord::default()
+        };
+        let mut biased = FixedForecast(vec![0.90, 0.09, 0.01]);
+        let scored = evaluate(&mut biased, std::slice::from_ref(&tied), 0.0);
+        let expected = -(0.90f64.ln() + 0.09f64.ln()) / 2.0;
+        assert!((scored.win_log_loss - expected).abs() < 1e-12);
+
+        let mut uniform = UniformModel;
+        let scored = evaluate(&mut uniform, &[tied], 0.0);
+        assert!((scored.win_log_loss - 3.0f64.ln()).abs() < 1e-12);
+        assert!(scored.information.abs() < 1e-12);
+    }
+
+    #[test]
+    fn a_uniform_full_tie_has_zero_fitted_stage_information() {
+        let history: Vec<MatchRecord> = (0..20)
+            .map(|_| MatchRecord {
+                seats: vec![
+                    seat("a", "Rome", 0),
+                    seat("b", "Egypt", 0),
+                    seat("c", "Greece", 0),
+                ],
+                ..MatchRecord::default()
+            })
+            .collect();
+        let information = fit_stage_weights(&history, 0.0);
+        assert_eq!(information.len(), 1);
+        assert!(information[0].abs() < 1e-12, "{information:?}");
     }
 
     #[test]

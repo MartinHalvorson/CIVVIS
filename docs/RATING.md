@@ -18,6 +18,15 @@ Every number `--backtest` prints is out of sample. Each system forecasts a
 game, is scored, and only then is told what happened, exactly as it would run
 live. Nothing below asks to be taken on trust.
 
+Winner log loss uses the same categorical target as the rating update. A
+unique winner has target mass one; an exact tie divides that mass equally
+among all co-winners. Its log score is therefore the mean of the co-winners'
+log probabilities. Averaging their forecast probabilities before taking the
+log is not equivalent: it would reward a model that confidently selects just
+one member of a tie. The uniform reference remains `ln(seats)` for either
+case, so a uniform forecast—including a fully tied table—has exactly zero
+information. Regression tests pin both properties.
+
 > **Implementation correction (2026-07-30).** The original batched update
 > summed per-observation posterior mean shifts and therefore applied the prior
 > variance once per placement stage. The implementation now accumulates
