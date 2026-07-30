@@ -62,6 +62,7 @@ def run_attempt(difficulty: str, seed: int, args: argparse.Namespace) -> dict | 
         "--military-per-city", str(args.military_per_city),
         "--explore-until-turn", str(args.explore_until_turn),
         *([] if args.make_war else ["--no-war"]),
+        "--assault-width", str(args.assault_width),
     ]
     print(f"\n=== {difficulty} seed {seed} -> {tag} ===", flush=True)
     subprocess.run(command, check=False)
@@ -112,6 +113,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--explore-until-turn", type=int, default=12)
     ap.add_argument("--make-war", dest="make_war", action="store_true", default=True)
     ap.add_argument("--no-war", dest="make_war", action="store_false")
+    ap.add_argument("--assault-width", type=int, default=2)
     ap.add_argument("--map-size", default="MAPSIZE_DUEL")
     ap.add_argument("--speed", default="GAMESPEED_ONLINE")
     ap.add_argument("--max-turns", type=int, default=120)

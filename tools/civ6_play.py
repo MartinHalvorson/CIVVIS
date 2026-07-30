@@ -85,6 +85,11 @@ def build_config(args: argparse.Namespace) -> dict:
         # actively costs cities — one run went 4 cities to 3 while besieging.
         # So peace is a real strategy here, not a concession, and it is one flag.
         "MakeWar": args.make_war,
+        # How many units are aimed at the city plot each turn. Each MOVE_TO onto
+        # an enemy city is an attack that bounces back unless it captures, so
+        # this is attacks per turn — and a city heals between turns, so too few
+        # attackers means a siege that never resolves.
+        "AssaultWidth": args.assault_width,
         "AnnouncementSeconds": args.announcement_seconds,
         "EraAnnouncementSeconds": args.era_announcement_seconds,
         "Leader": args.leader,
@@ -604,6 +609,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--explore-until-turn", type=int, default=12)
     ap.add_argument("--make-war", dest="make_war", action="store_true", default=True)
     ap.add_argument("--no-war", dest="make_war", action="store_false")
+    ap.add_argument("--assault-width", type=int, default=2)
     ap.add_argument("--announcement-seconds", type=float, default=1.0)
     ap.add_argument("--era-announcement-seconds", type=float, default=0.5)
     ap.add_argument("--survey", action="store_true", default=True)
