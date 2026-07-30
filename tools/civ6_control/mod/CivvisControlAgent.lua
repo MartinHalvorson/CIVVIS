@@ -476,7 +476,8 @@ end
 -- runs more than once a turn and feeds the war threshold; it must not act.
 -- Upgrading belongs in `orderFor`, which is where it now lives.
 local function countUnits(player)
-	local counts = { settler = 0, builder = 0, military = 0, scout = 0, siege = 0, total = 0 };
+	local counts = { settler = 0, builder = 0, military = 0, scout = 0, siege = 0,
+	                 ranged = 0, total = 0 };
 	eachUnit(player, function(unit)
 		local name = unitTypeName(unit);
 		local row = GameInfo.Units[name];
@@ -493,6 +494,11 @@ local function countUnits(player)
 			counts.siege = counts.siege + 1;
 		elseif row ~= nil and (row.Combat or 0) > 0 then
 			counts.military = counts.military + 1;
+			-- Ranged counts as military AND as ranged: a siege needs both kinds and
+			-- the ladder has to be able to tell them apart.
+			if (row.RangedCombat or 0) > 0 then
+				counts.ranged = counts.ranged + 1;
+			end
 		end
 	end);
 	return counts;
@@ -1772,6 +1778,25 @@ local function chooseProduction(city, counts, nCities, turn, refused)
 	-- unit that dies without breaking anything.
 	if warTarget ~= nil and (counts.siege or 0) < (cfg.SiegeUnits or 2) then
 		ladder[#ladder + 1] = { "UNIT_BATTERING_RAM", "siege" };
+	end
+	-- ★★ A PURE MELEE ARMY CANNOT REDUCE A CITY, only walk into one.
+	--
+	-- Melee-first is right for CAPTURE and wrong for the phase before it. Measured
+	-- on run settler-20260730T054547Z: rams built and in position, **118 warrior
+	-- advances**, the capital never fell, and the army sat at 8 units because every
+	-- attacker trades badly against a city and dies. The roster had ZERO ranged units
+	-- — the melee-first ladder always finds Warrior buildable, so Archer is never
+	-- reached.
+	--
+	-- Ranged bombards from range 2 and takes no return fire, so it reduces the city
+	-- while melee stays alive to capture. ⚠ A floor, not a preference: an
+	-- ARCHER-ONLY army is the opposite failure and this project has already had it —
+	-- 518 archer advances and 31 range attacks with zero captures, because ranged
+	-- cannot take a plot. Two or three archers alongside the melee, then melee again.
+	if warTarget ~= nil and (counts.ranged or 0) < (cfg.RangedFloor or 3) then
+		for _, name in ipairs({ "UNIT_ARCHER", "UNIT_SLINGER" }) do
+			ladder[#ladder + 1] = { name, "ranged" };
+		end
 	end
 	if counts.military < wantArmy then
 		-- ⚠ MELEE FIRST. A ranged unit can bombard a city forever and never
