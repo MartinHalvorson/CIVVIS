@@ -511,3 +511,71 @@ pub fn rebuild_game(snapshot: &Snapshot, players: usize, seed: u64) -> crate::ga
     }
     game
 }
+
+/// The seat's own cities, in the order they appear in the stream.
+///
+/// Read from `state` events, which the mod emits only under `--export-state`.
+pub fn own_cities_from_events(path: &std::path::Path) -> Vec<(i32, i32)> {
+    let Ok(raw) = std::fs::read_to_string(path) else {
+        return Vec::new();
+    };
+    let mut seen = std::collections::BTreeSet::new();
+    let mut order = Vec::new();
+    for line in raw.lines() {
+        if !line.contains("\"state\"") {
+            continue;
+        }
+        let Ok(value) = serde_json::from_str::<serde_json::Value>(line) else {
+            continue;
+        };
+        let Some(cities) = value.get("cities").and_then(|c| c.as_array()) else {
+            continue;
+        };
+        for city in cities {
+            let x = city.get("x").and_then(|v| v.as_i64());
+            let y = city.get("y").and_then(|v| v.as_i64());
+            if let (Some(x), Some(y)) = (x, y) {
+                let pos = (x as i32, y as i32);
+                if seen.insert(pos) {
+                    order.push(pos);
+                }
+            }
+        }
+    }
+    order
+}
+
+/// Rebuild the map AND place the seat's cities on it.
+///
+/// ⚠ Without the cities, every score that reads spacing or owned territory is
+/// evaluated against an empty world. Measured consequence: CIVVIS's settle ranking
+/// put its best site two tiles from the real capital, which Civilization VI
+/// forbids outright (`CITY_MIN_RANGE` is 3). A comparison drawn from that would
+/// have blamed the agent for a gap this reconstruction created.
+pub fn rebuild_with_empire(
+    snapshot: &Snapshot,
+    cities: &[(i32, i32)],
+    players: usize,
+    seed: u64,
+) -> (crate::game::Game, usize) {
+    let mut game = rebuild_game(snapshot, players, seed);
+    let mut placed = 0;
+    for pos in cities {
+        // A city can only stand on ground the mirror actually has. An unrevealed
+        // plot is ocean here, and placing on water would be a fiction of its own.
+        if !snapshot.is_revealed(*pos) {
+            continue;
+        }
+        let is_water = game
+            .map
+            .get(*pos)
+            .map(|tile| game.rules.is_water(tile))
+            .unwrap_or(true);
+        if is_water {
+            continue;
+        }
+        game.place_city(0, *pos, None);
+        placed += 1;
+    }
+    (game, placed)
+}

@@ -9191,6 +9191,27 @@ impl AdvancedAi {
             - liberation_value
     }
 
+    /// CIVVIS's own ranking of where to put the next city, exposed so the real
+    /// Civilization VI controller can ask the simulator instead of approximating
+    /// it in Lua.
+    ///
+    /// The Lua agent carries a hand-rolled settle score — ring yields, a
+    /// fresh-water premium, distance charged as turns of walking — written to
+    /// resemble this one. Nobody has ever checked whether the two AGREE, so
+    /// nobody knows whether the approximation costs anything. `civvis advise`
+    /// answers that, and answering it is the precondition for the much larger job
+    /// of actuating CIVVIS's choices through the game's UI (the mod has no inbound
+    /// channel: no `io`, and config is install-time only).
+    pub fn settle_ranking(
+        &self,
+        g: &Game,
+        pid: usize,
+        from: Pos,
+        radius: i32,
+    ) -> Vec<(Pos, f64)> {
+        self.settle_sites(g, pid, from, radius)
+    }
+
     fn settle_sites(&self, g: &Game, pid: usize, from: Pos, radius: i32) -> Vec<(Pos, f64)> {
         let mut sites = Vec::new();
         let distance_penalty = if radius > 12 { 0.45 } else { 0.9 };

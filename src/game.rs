@@ -36849,6 +36849,17 @@ impl Game {
         Ok(())
     }
 
+    /// Place a city for `pid` at `pos`.
+    ///
+    /// Public so a mirrored game can be given the empire it is mirroring.
+    /// `mirror::rebuild_game` rebuilds the MAP; without the cities, every score
+    /// that reads spacing or owned territory is evaluated against an empty world —
+    /// which made CIVVIS's settle ranking recommend plots two tiles from the real
+    /// capital, illegal at Civilization VI's own `CITY_MIN_RANGE` of 3.
+    pub fn place_city(&mut self, pid: usize, pos: Pos, name: Option<String>) -> u32 {
+        self.found_city_for(pid, pos, name)
+    }
+
     pub(crate) fn found_city_for(&mut self, pid: usize, pos: Pos, name: Option<String>) -> u32 {
         let p_civ = self.players[pid].civ.clone();
         let is_minor = self.players[pid].is_minor;
