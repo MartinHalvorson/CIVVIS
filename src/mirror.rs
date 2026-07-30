@@ -1191,6 +1191,13 @@ pub fn rebuild_from_state(
         if owner < game.players.len() {
             game.players[owner].met.insert(0);
         }
+        // See `LiveMirror::sync`: a war CIVVIS cannot see is a war it will not fight.
+        let bond = if 0 < owner { (0, owner) } else { (owner, 0) };
+        if rival.at_war {
+            game.at_war.insert(bond);
+        } else {
+            game.at_war.remove(&bond);
+        }
         if rival.can_declare && !rival.at_war {
             game.players[0].denounced_until.insert(owner, game.turn + 1);
         }
@@ -1531,6 +1538,27 @@ impl LiveMirror {
             self.game.players[0].met.insert(owner);
             if owner < self.game.players.len() {
                 self.game.players[owner].met.insert(0);
+            }
+            // ★★★★★ TELL CIVVIS IT IS AT WAR. This is the last link in the chain, and
+            // without it CIVVIS FORGETS THE WAR IT DECLARED, every single turn.
+            //
+            // Measured on the deepest healthy run: CIVVIS declared war on Civ 6 player 3
+            // at turn 85 on its own judgement, our military 451 against their 200, their
+            // CAPITAL visible at (45,10) nine tiles from one of our cities — and the
+            // army milled around at home for seventy turns. Its journal said exactly
+            // why: "Holding off war with Egypt | no city of theirs is within 18 tiles of
+            // one of mine". It was planning a FRESH campaign against a different,
+            // distant civilization, because the reconstruction reported `at_war = false`
+            // for everyone and a war it cannot see is a war it cannot prosecute.
+            //
+            // `at_war` was exported by the mod from the start and simply never applied —
+            // the same shape as the unpopulated `met` set, the invisible buildings and
+            // the phantom settler.
+            let bond = if 0 < owner { (0, owner) } else { (owner, 0) };
+            if rival.at_war {
+                self.game.at_war.insert(bond);
+            } else {
+                self.game.at_war.remove(&bond);
             }
             if rival.can_declare && !rival.at_war {
                 self.game.players[0].denounced_until.insert(owner, self.game.turn + 1);
