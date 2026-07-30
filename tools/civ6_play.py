@@ -528,8 +528,15 @@ def dismiss_leader_dialogue(clicks: int = 4) -> bool:
     # An accepted deal can cede cities, gold per turn or a peace treaty, and a peace
     # treaty ends the war that domination depends on — the only victory route still
     # open. Refusing an unseen offer costs nothing; accepting one can cost the game.
+    # ⚠ THREE DIFFERENT SHAPES, and missing the third cost a run 457 seconds.
+    #   * a trade proposal puts Accept/Refuse near the TOP
+    #   * a single-button leader ("That's a shame." / Goodbye) sits at ~0.91 DOWN
+    #   * a three-option conversation stack sits around 0.68-0.73
+    # The stack positions miss the single-button variant completely. Verified by
+    # hand: 0.172/0.913 recovered a run that had been stuck for 457s.
     targets = [
         ("refuse deal", 0.222, 0.174),
+        ("goodbye only", 0.172, 0.913),
         ("dialogue stack", 0.14, 0.73),
         ("dialogue stack (2nd)", 0.14, 0.68),
     ]
