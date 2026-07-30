@@ -16,7 +16,7 @@ in a game whose settings marker proves it was the game the run configured.
 | 7 | Immortal | — | | | |
 | 8 | Deity | — | | | |
 
-Attempts recorded: 8.
+Attempts recorded: 10.
 
 ## Every attempt
 
@@ -30,3 +30,5 @@ Attempts recorded: 8.
 | `settler-20260730T044823Z` | Settler | yes | game exited | 45 | 62 | 2026-07-30T04:50:21Z |
 | `settler-20260730T053757Z` | Settler | yes | game exited | 25 | 46 | 2026-07-30T05:39:45Z |
 | `settler-20260730T061300Z` | Settler | yes | stalled: no event for 600s | 106 | 83 | 2026-07-30T06:35:46Z |
+| `settler-20260730T064203Z` | Settler | yes | game exited | 44 | 71 | 2026-07-30T06:44:33Z |
+| `settler-20260730T064448Z` | Settler | yes | game exited | 47 | 70 | 2026-07-30T06:47:16Z |

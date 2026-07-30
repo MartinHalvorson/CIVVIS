@@ -111,6 +111,34 @@
       "utc": "2026-07-30T06:35:46Z",
       "victory": null,
       "won": false
+    },
+    {
+      "configured": true,
+      "difficulty": "DIFFICULTY_SETTLER",
+      "map_size": "MAPSIZE_TINY",
+      "reason": "game exited",
+      "score": 71,
+      "seed": 425255,
+      "speed": "GAMESPEED_ONLINE",
+      "tag": "settler-20260730T064203Z",
+      "turns": 44,
+      "utc": "2026-07-30T06:44:33Z",
+      "victory": null,
+      "won": false
+    },
+    {
+      "configured": true,
+      "difficulty": "DIFFICULTY_SETTLER",
+      "map_size": "MAPSIZE_TINY",
+      "reason": "game exited",
+      "score": 70,
+      "seed": 425255,
+      "speed": "GAMESPEED_ONLINE",
+      "tag": "settler-20260730T064448Z",
+      "turns": 47,
+      "utc": "2026-07-30T06:47:16Z",
+      "victory": null,
+      "won": false
     }
   ],
   "wins": {}
