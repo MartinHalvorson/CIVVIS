@@ -693,6 +693,18 @@ end
 local warTarget = nil;
 local warDeclared = {};
 
+-- How many units have already been aimed at the target plot this turn, and
+-- which approach tiles are taken.
+--
+-- ⚠ Civilization VI allows ONE military unit per tile. Ordering the whole army
+-- at a single city plot therefore builds a traffic jam, not an assault: the
+-- front unit blocks the rest and the column backs up along the border. Observed
+-- directly on turn 93 of run settler-20260730T004826Z — a line of units strung
+-- along a river west of Ulundi, every one with full movement, none attacking,
+-- 518 advances logged and no capture. Only a couple of units can usefully be on
+-- the objective; the rest need their own ground to stand on.
+local assault = { turn = -1, onTarget = 0, taken = {} };
+
 local function findWarTarget(player, pid)
 	-- Reachability is checked per unit at order time, not here: different
 	-- units have different routes, and a path query per candidate city per
@@ -765,8 +777,37 @@ end
 -- Walk at the target and let the move become an attack. Civilization VI
 -- resolves a melee unit ordered onto an occupied enemy plot as an attack, so
 -- "advance" and "attack" are the same order; ranged units get their own.
-local function pressAttack(unit)
+-- A free tile next to the target that nobody has been sent to yet.
+local function approachTile(unit)
+	local best, bestDist;
+	local ux = try(function() return unit:GetX(); end, -1);
+	local uy = try(function() return unit:GetY(); end, -1);
+	for dx = -1, 1 do
+		for dy = -1, 1 do
+			local x, y = warTarget.x + dx, warTarget.y + dy;
+			local key = x .. ":" .. y;
+			if not (dx == 0 and dy == 0) and not assault.taken[key] then
+				local plot = try(function() return Map.GetPlot(x, y); end);
+				local usable = plot ~= nil and try(function()
+					return (not plot:IsWater()) and (not plot:IsImpassable());
+				end, false);
+				if usable then
+					local d = plotDistance(ux, uy, x, y);
+					if bestDist == nil or d < bestDist then
+						best, bestDist = { x = x, y = y, key = key }, d;
+					end
+				end
+			end
+		end
+	end
+	return best;
+end
+
+local function pressAttack(unit, turn)
 	if warTarget == nil then return nil; end
+	if assault.turn ~= turn then
+		assault = { turn = turn, onTarget = 0, taken = {} };
+	end
 	local params = {};
 	params[UnitOperationTypes.PARAM_X] = warTarget.x;
 	params[UnitOperationTypes.PARAM_Y] = warTarget.y;
@@ -800,10 +841,28 @@ local function pressAttack(unit)
 	-- MOVE_TO fails harmlessly when the target genuinely cannot be pathed to,
 	-- so attempting it unconditionally costs nothing and is strictly safer than
 	-- a gate that can be wrong in the one position that matters.
-	if operate(unit, OP["UNITOPERATION_MOVE_TO"], params) then
-		return "advance";
+	-- Only the first couple of units are aimed at the city itself. In this
+	-- build MOVE_TO onto the plot *is* the capture, so those are the ones that
+	-- can take it; everybody else gets their own approach tile and waits their
+	-- turn rather than forming a column that blocks the assault.
+	if assault.onTarget < (cfg.AssaultWidth or 2) then
+		if operate(unit, OP["UNITOPERATION_MOVE_TO"], params) then
+			assault.onTarget = assault.onTarget + 1;
+			return "advance";
+		end
 	end
-	return nil;
+	local spot = approachTile(unit);
+	if spot ~= nil then
+		local near = {};
+		near[UnitOperationTypes.PARAM_X] = spot.x;
+		near[UnitOperationTypes.PARAM_Y] = spot.y;
+		if operate(unit, OP["UNITOPERATION_MOVE_TO"], near) then
+			assault.taken[spot.key] = true;
+			return "surround";
+		end
+	end
+	-- Nowhere useful to stand. Holding position beats shuffling into the queue.
+	return firstOperation(unit, { "UNITOPERATION_FORTIFY", "UNITOPERATION_ALERT" });
 end
 
 local function orderFor(player, pid, unit, turn)
@@ -826,7 +885,7 @@ local function orderFor(player, pid, unit, turn)
 			if healed then return healed; end
 		end
 		if atWar(player) then
-			local pressed = pressAttack(unit);
+			local pressed = pressAttack(unit, turn);
 			if pressed then return pressed; end
 		end
 		-- Exploring is how the army evaporates: units 6 -> 4 -> 3 across turns
