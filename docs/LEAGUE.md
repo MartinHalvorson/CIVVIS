@@ -11,14 +11,20 @@ uncertainty bar, accumulated across runs* — and *what does an even stronger
 strategy look like*.
 
 ```bash
-civvis league                      # play 10 rounds (resumes league/ if present)
-civvis league --rounds 50 --games 16 --players 4 --seed 1
+civvis league                      # 10 Standard-speed rounds; resumes league/
+civvis league --rounds 50 --games 16 --players 6 --speed online --seed 1
 civvis league --standings          # print the table without playing
 ```
 
 Each invocation continues from the current checkpoint. More invocations, CPU
 cores, or machines mean more claimed games and therefore faster rating and
 selection—not independent leagues that must be reconciled later.
+
+`--speed` changes both the game rules and, unless `--turns` overrides it, the
+natural turn budget for that speed. It defaults to `standard` for compatibility.
+Use `--speed online` when the league is meant to improve the Online-speed
+spectator agent: profile-specific gains have not transferred reliably between
+the two speeds.
 
 ## Continuous multi-machine workers
 
@@ -37,8 +43,8 @@ Run the same command as `render-02`, `render-03`, and so on. `--dir` and
 simulation/selection flags and league-work protocol/build; an incompatible
 binary refuses a pending manifest instead of contaminating its evidence. The
 first worker to reach a new round
-writes an immutable manifest containing the exact roster, genomes, settings,
-maps, seats, and job IDs. Workers then:
+writes an immutable manifest containing the exact roster, genomes, game speed,
+settings, maps, seats, and job IDs. Workers then:
 
 1. atomically claim unplayed games, up to their local `--jobs` capacity;
 2. simulate without holding the league lock;
@@ -253,8 +259,8 @@ across hundreds of rounds even after every non-anchor founder has been replaced.
   Brier score, and log loss.
 - `matches.csv` — every game: round, seed, end turn, victory type,
   placements.
-- `work/round-N/manifest.json` — immutable roster, settings, mirrored schedule,
-  and job IDs for one rating period.
+- `work/round-N/manifest.json` — immutable roster, game speed, settings,
+  mirrored schedule, and job IDs for one rating period.
 - `work/round-N/results/*.json` — immutable, validated match evidence. These
   files make rating changes auditable and safely deduplicate late workers.
 - `work/round-N/finalized.json` — the period's commit summary, births, and
@@ -266,10 +272,10 @@ across resumed invocations and worker counts (round RNGs derive from
 
 ## Reading results honestly
 
-- **Use the natural game length** (default `--turns 250`). At a 150-turn
-  cap most games end as truncated score victories, which structurally
-  favors score-lane strategies; the first 20-round trial run showed
-  exactly that collapse.
+- **Use the natural game length** (500 turns at Standard speed, 250 at Online).
+  A shorter `--turns` cap makes games end as truncated score victories and
+  structurally favors score-lane strategies; the first 20-round trial run
+  showed exactly that collapse.
 - A rating is only as settled as its RD: 1800 ± 90 vs 1700 ± 35 is not a
   confident gap. The known `advanced` vs `basic` separation (~90-120
   points) is a sanity check any healthy league should reproduce.
