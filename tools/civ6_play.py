@@ -562,7 +562,7 @@ def bootstrap_game(tail: watch.LogTail, on_event, run_dir: Path,
     return False
 
 
-def dismiss_leader_dialogue(clicks: int = 4) -> bool:
+def dismiss_leader_dialogue(clicks: int = 6) -> bool:
     """Click through a leader conversation's dialogue options until it closes.
 
     ⚠ THIS IS THE FOURTH APPROACH TO THIS SCREEN AND THE FIRST ONE THAT WORKS.
@@ -620,9 +620,18 @@ def dismiss_leader_dialogue(clicks: int = 4) -> bool:
     #   * a three-option conversation stack sits around 0.68-0.73
     # The stack positions miss the single-button variant completely. Verified by
     # hand: 0.172/0.913 recovered a run that had been stuck for 457s.
+    # ⚠ FOUR SHAPES NOW. A TWO-option first-contact screen sits between the bands
+    # already covered and was missed by all of them. Measured off `stalled-3.png`
+    # (run civvis-20260730T192135Z, turn 175, Cyrus): window (864,33,864,542), the
+    # two options at roughly (1011,492) and (1011,519) — fy 0.847 and 0.897, where
+    # the nearest existing target was 0.913 and the stack pair sat at 0.73/0.68.
+    # Thirty-five pixels of miss cost a run holding FIVE cities and score 209, the
+    # best of the day.
     targets = [
         ("refuse deal", 0.222, 0.174),
         ("goodbye only", 0.172, 0.913),
+        ("two-option (lower)", 0.170, 0.897),
+        ("two-option (upper)", 0.170, 0.847),
         ("dialogue stack", 0.14, 0.73),
         ("dialogue stack (2nd)", 0.14, 0.68),
     ]
