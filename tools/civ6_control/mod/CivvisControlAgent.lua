@@ -1705,6 +1705,73 @@ local function exportState(player, pid, turn)
 	});
 end
 
+
+-- The map itself, in chunks, on a slow cadence.
+--
+-- A `Game` cannot be reconstructed from cities and units alone — every decision
+-- CIVVIS makes is about ground. So the terrain, features, resources, ownership
+-- and revealed state have to cross too.
+--
+-- ⚠ This is the one genuinely expensive emit in the mod. A Tiny map is roughly
+-- 1,100 plots; scanning them every turn is precisely the pattern that once took
+-- a turn from three seconds to over ten minutes. So it runs every
+-- `TileExportEvery` turns (default 25), and splits the map across several lines
+-- so no single log record is unbounded. Terrain does not change often; what
+-- changes fast is ownership and revelation, and 25 turns is well inside the
+-- window where those still matter.
+local function exportTiles(player, pid, turn)
+	if cfg.ExportState ~= true then return; end
+	local every = cfg.TileExportEvery or 25;
+	if turn % every ~= 0 then return; end
+	local width = try(function() return Map.GetGridSize(); end, 0) or 0;
+	local height = 0;
+	pcall(function() width, height = Map.GetGridSize(); end);
+	if width <= 0 or height <= 0 then return; end
+
+	local chunk, chunks, index = {}, 0, 0;
+	local function flush()
+		if #chunk == 0 then return; end
+		chunks = chunks + 1;
+		emit("tiles", {
+			turn = turn, width = width, height = height,
+			chunk = chunks, plots = chunk,
+		});
+		chunk = {};
+	end
+
+	for y = 0, height - 1 do
+		for x = 0, width - 1 do
+			local plot = try(function() return Map.GetPlot(x, y); end);
+			if plot ~= nil then
+				local revealed = try(function()
+					return plot:IsRevealed();
+				end, false);
+				-- Unrevealed ground is deliberately sent as a hole rather than
+				-- as its true terrain: the mirror must not know more than the
+				-- seat does, or the simulator would plan on stolen information.
+				if revealed then
+					index = index + 1;
+					chunk[index] = {
+						x = x, y = y,
+						t = try(function() return plot:GetTerrainType(); end, -1),
+						f = try(function() return plot:GetFeatureType(); end, -1),
+						r = try(function() return plot:GetResourceType(); end, -1),
+						o = try(function() return plot:GetOwner(); end, -1),
+						w = try(function() return plot:IsWater(); end, false),
+						i = try(function() return plot:IsImpassable(); end, false),
+						fw = try(function() return plot:IsFreshWater(); end, false),
+					};
+					if index >= (cfg.TileChunk or 250) then
+						flush(); index = 0;
+					end
+				end
+			end
+		end
+	end
+	flush();
+	emit("tiles_done", { turn = turn, chunks = chunks, width = width, height = height });
+end
+
 local function playTurn(player, pid, turn)
 	local research, civic;
 	if try(function() return player:GetTechs():GetResearchingTech(); end, -1) < 0 then
@@ -1719,6 +1786,7 @@ local function playTurn(player, pid, turn)
 	warTarget = findWarTarget(player, pid);
 	local war = declareWar(player, pid, countUnits(player), turn);
 	exportState(player, pid, turn);
+	exportTiles(player, pid, turn);
 	local builds = driveProduction(player, turn);
 	local ordered, stuck = orderUnits(player, pid, turn);
 	emit("turn", {
