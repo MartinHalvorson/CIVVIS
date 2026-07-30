@@ -152,6 +152,23 @@ fn decide(
     war_from_plan: bool,
 ) -> String {
     let before = mirror_state.game.log.len();
+    // ⚠ MEASURE LEGALITY BEFORE THE TURN IS TAKEN. Asking afterwards reported
+    // `all_legal = 0` — the enumeration short-circuits once the seat has acted — which
+    // would have been read as "CIVVIS cannot declare war" when it only meant "I asked
+    // at the wrong moment".
+    let (pre_all_legal, pre_war_legal) = {
+        let legal = mirror_state.game.legal_actions(0);
+        let wars = legal
+            .iter()
+            .filter(|a| {
+                matches!(
+                    a,
+                    Action::DeclareWar { .. } | Action::DeclareWarWithCasusBelli { .. }
+                )
+            })
+            .count();
+        (legal.len(), wars)
+    };
     ai.take_turn(&mut mirror_state.game, 0);
 
     let mut orders: Vec<Order> = Vec::new();
@@ -267,6 +284,48 @@ fn decide(
     // Does the engine still SEE our roster? `player_unit_ids` answers from a memo,
     // and on a persistent game a stale memo would hand CIVVIS an army that no longer
     // matches the one in `units` — a mismatch that produces no error anywhere.
+    // ⚠ Is war even LEGAL in CIVVIS's model? Its journal says "campaign aimed at Egypt,
+    // not yet at war" while our power is 156 against 20 — so either it is choosing not
+    // to, or the action is not on the table. Those are opposite problems.
+    {
+        let has_met = mirror_state.game.has_met(0, 1);
+        note_bits.push(format!(
+            "pre_all_legal={pre_all_legal} pre_war_legal={pre_war_legal} has_met01={has_met}"
+        ));
+        let legal = mirror_state
+            .game
+            .legal_actions(0)
+            .into_iter()
+            .filter(|a| {
+                matches!(
+                    a,
+                    Action::DeclareWar { .. } | Action::DeclareWarWithCasusBelli { .. }
+                )
+            })
+            .count();
+        let minors: Vec<String> = mirror_state
+            .game
+            .players
+            .iter()
+            .map(|p| format!("{}:{}", p.id, if p.is_minor { "minor" } else { "major" }))
+            .collect();
+        let g = &mirror_state.game;
+        note_bits.push(format!(
+            "p1 alive={} at_war={} friends={} allied={} treaty={:?} denounced={:?}",
+            g.players.get(1).map(|p| p.alive).unwrap_or(false),
+            g.is_at_war(0, 1),
+            g.are_friends(0, 1),
+            g.are_allied(0, 1),
+            g.peace_treaty_until(0, 1),
+            g.players[0].denounced_until.get(&1),
+        ));
+        note_bits.push(format!(
+            "war_legal={} met={:?} players=[{}]",
+            legal,
+            mirror_state.game.players[0].met,
+            minors.join(",")
+        ));
+    }
     note_bits.push(format!(
         "roster={} ",
         mirror_state.game.player_unit_ids(0).len()

@@ -1111,6 +1111,11 @@ pub fn rebuild_from_state(
         }
         // Same as `LiveMirror::sync`: Civilization VI's own `CanDeclareWarOn` is the
         // permission, and CIVVIS's Formal War wait cannot mature here.
+        // See `LiveMirror::sync`: without this, war is not a legal action at all.
+        game.players[0].met.insert(owner);
+        if owner < game.players.len() {
+            game.players[owner].met.insert(0);
+        }
         if rival.can_declare && !rival.at_war {
             game.players[0].denounced_until.insert(owner, game.turn + 1);
         }
@@ -1431,6 +1436,26 @@ impl LiveMirror {
             // enough back that the Formal War option is open. This mirrors a real
             // permission the seat holds; it does not invent one. When Civ 6 says no,
             // nothing is set and CIVVIS is correctly unable to declare.
+            // ★★★★★ TELL CIVVIS WE HAVE MET THEM. This is the whole reason no war was
+            // ever declared.
+            //
+            // `legal_actions` gates its ENTIRE diplomacy block on `has_met(pid, o.id)`,
+            // which reads `players[viewer].met` — a set this reconstruction never
+            // populated. So `Action::DeclareWar` was never even a LEGAL action, and
+            // CIVVIS could not have declared war however much it wanted to.
+            //
+            // Measured at turn 184 of run civvis-20260730T142203Z: `can_declare: true`,
+            // **our military 163 against their 46**, three of their cities visible —
+            // and no declaration. Nothing in CIVVIS's judgement was wrong; the option
+            // did not exist.
+            //
+            // ⚠ Only rivals in `state.rivals` are inserted, and the mod exports a rival
+            // ONLY once `HasMet` is true, so this cannot hand CIVVIS contact the seat
+            // has not earned.
+            self.game.players[0].met.insert(owner);
+            if owner < self.game.players.len() {
+                self.game.players[owner].met.insert(0);
+            }
             if rival.can_declare && !rival.at_war {
                 self.game.players[0].denounced_until.insert(owner, self.game.turn + 1);
             } else {

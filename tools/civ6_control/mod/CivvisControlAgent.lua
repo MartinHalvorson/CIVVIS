@@ -4003,6 +4003,23 @@ local function resolveType(table_, name)
 		local alt = prefix .. "THE_" .. rest;
 		if table_[alt] ~= nil then return table_[alt], alt; end
 	end
+	-- ⚠ CIVVIS'S NAMES CARRY WORDS CIV 6 DROPS. `government_plaza` is Civ 6's
+	-- `DISTRICT_GOVERNMENT`; `theater_square` is `DISTRICT_THEATER`. Measured on run
+	-- civvis-20260730T142203Z: **117 refused `DISTRICT_GOVERNMENT_PLAZA`** and 8
+	-- `DISTRICT_THEATER_SQUARE` — 125 production orders thrown away on spelling.
+	--
+	-- Trimming trailing words is general where a hand-written pair list is not, and it
+	-- only ever SHORTENS, so it cannot invent a name: whatever it lands on had to
+	-- already exist in the game's own table.
+	local trimmed = name;
+	while true do
+		local shorter = string.match(trimmed, "^(.+)_[^_]+$");
+		if shorter == nil or shorter == prefix or #shorter <= #(prefix or "") then
+			break;
+		end
+		if table_[shorter] ~= nil then return table_[shorter], shorter; end
+		trimmed = shorter;
+	end
 	return nil, name;
 end
 
