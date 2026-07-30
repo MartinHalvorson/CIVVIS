@@ -25,8 +25,11 @@ recorded.
 `strategic` is `league_only`: offline rounds schedule every active entrant and
 can therefore rate it from the clean prior, while the live exhibition excludes
 it until a separate current-profile turn-cost gate establishes that one search
-seat fits the viewer-facing pace. This changes only the committed clean-start
-snapshot; it does not mutate an existing repo-root `league/` runtime directory.
+seat fits the viewer-facing pace. The supervisor marks its `--league auto`
+runtime copy as managed. On an idle load, required controller families missing
+from an older managed copy are appended at fresh-entrant uncertainty; existing
+ratings, records, lineage, and roster order are preserved. A pending distributed
+round defers reconciliation until its immutable manifest has finalized.
 
 To refresh it, run a league (`civvis league --rounds N --dir league`) and copy
 `league/league.json` here. The repo-root `league/` directory stays gitignored
