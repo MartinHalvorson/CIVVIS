@@ -700,6 +700,11 @@ local settlePlan = nil;
 -- picked it, `search` means the hand-rolled Lua score did. An evaluation of
 -- CIVVIS-as-decider is meaningless until `plan_sites` is non-zero.
 local planFires = { plan = 0, search = 0, offered = 0 };
+-- Is the loyalty-reach penalty starving the settle search? `capped` counts legal
+-- sites rejected for being out of support range, `in_reach` the ones inside it.
+-- ⚠ A single number could not answer this: `capped` alone rises on a big map with
+-- plenty of near ground, and `in_reach` alone cannot show what was given up.
+local siteCap = { capped = 0, in_reach = 0 };
 
 local function planSite(player, pid, unit)
 	-- ⚠ A PLAN SITE THE ENGINE HAS REFUSED MUST BE SKIPPED, or the plan is a trap.
@@ -966,10 +971,30 @@ findSettleSite = function(player, pid, unit, turn)
 				-- Nothing charged distance from the EMPIRE. `nearest` was computed
 				-- and then only ever compared against the minimum spacing.
 				--
-				-- A hard cap rather than a penalty, because the failure is a cliff:
-				-- inside support range the city holds, outside it dies in four turns.
-				local reach = cfg.MaxEmpireDistance or 6;
-				if nearest >= spacing and (nearest <= reach or #cities == 0) then
+					-- ⚠ A PENALTY, NOT A HARD CAP — deliberately, and I wrote it as a cap
+					-- first. A cap is authority, and three regressions this session came
+					-- from a mechanism handed a decision with no recourse when it was wrong:
+					-- the settle plan starved the empire to ZERO cities through turn 90 in
+					-- exactly that way. On a Tiny map shared with three rivals the 3..6 band
+					-- can hold no legal ground at all, and a cap would then strand the
+					-- settler for the whole game.
+					--
+					-- A penalty this large behaves AS a cap whenever anything in reach
+					-- exists — no in-reach site can lose to an out-of-reach one — and
+					-- degrades to "the least bad far site" when nothing is in reach. A city
+					-- that revolts in four turns is a poor trade; a settler that never founds
+					-- anything is a total loss.
+					--
+					-- Both branches counted (`capped` against `in_reach`) so that "the cap is
+					-- starving the search" is visible rather than inferred.
+					local reach = cfg.MaxEmpireDistance or 6;
+					local outOfReach = (#cities > 0 and nearest > reach);
+					if nearest >= spacing then
+						if outOfReach then
+							siteCap.capped = siteCap.capped + 1;
+						else
+							siteCap.in_reach = siteCap.in_reach + 1;
+						end
 						-- Score the GROUND, not just the geometry.
 						--
 						-- This used to be `-distance + nearest`, which never
@@ -1018,7 +1043,11 @@ findSettleSite = function(player, pid, unit, turn)
 						local score = (food * (cfg.FoodWeight or 2.0))
 							+ (prod * (cfg.ProductionWeight or 1.5))
 							+ (gold * (cfg.GoldWeight or 0.5))
-							+ fresh + coast - walk;
+							+ fresh + coast - walk
+							-- Out of loyalty support range: dominate every yield
+							-- term so an in-reach site always wins, without
+							-- making the site illegal.
+							- (outOfReach and (cfg.OutOfReachPenalty or 1000) or 0);
 						if bestScore == nil or score > bestScore then
 							best, bestScore = plot, score;
 						end
@@ -3177,6 +3206,7 @@ local function playTurn(player, pid, turn)
 		-- and `worst_loyalty_rate` are the level and slide of the weakest city.
 		-- Both a level and a RATE, because a city at 40 and climbing is safe while
 		-- one at 60 and dropping 8 a turn is lost in three turns.
+		sites_capped = siteCap.capped, sites_in_reach = siteCap.in_reach,
 		flipping = loyaltyWatch.flipping,
 		worst_loyalty = loyaltyWatch.worst,
 		worst_loyalty_rate = loyaltyWatch.worst_rate,
