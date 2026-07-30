@@ -4121,6 +4121,34 @@ local function applyOrder(player, pid, row, turn)
 			params[UnitOperationTypes.PARAM_Y] = y;
 			return operate(unit, OP["UNITOPERATION_RANGE_ATTACK"], params), verb;
 		end
+		-- ★★★★★ IMPROVE — the order whose absence made CIVVIS build builders forever.
+		--
+		-- CIVVIS tells a builder to improve the tile it stands on; that order was not
+		-- translated, so no tile was ever improved, so the mirror kept showing an
+		-- undeveloped empire and CIVVIS kept ordering another builder. Measured on run
+		-- civvis-20260730T134000Z: **22 `UNIT_BUILDER` orders by turn 31** with one
+		-- military unit alive. Exporting improvements was necessary but not sufficient —
+		-- there were none to export.
+		--
+		-- Params copied from the shipped `UnitPanel.lua`: the unit's OWN tile plus the
+		-- improvement hash. `x`/`y` carry the target and default to where it stands.
+		if verb == "IMPROVE" or string.sub(verb, 1, 8) == "IMPROVE:" then
+			-- The improvement name rides in the verb as `IMPROVE:IMPROVEMENT_FARM`,
+			-- because the order row has no spare column for it. No name means "build
+			-- whatever this tile allows", which is what the shipped button does.
+			local wanted = string.match(verb, "^IMPROVE:(.+)$");
+			local row2 = wanted ~= nil and GameInfo.Improvements[wanted] or nil;
+			local params = {};
+			params[UnitOperationTypes.PARAM_X] = x or try(function() return unit:GetX(); end, -1);
+			params[UnitOperationTypes.PARAM_Y] = y or try(function() return unit:GetY(); end, -1);
+			-- Without a named improvement the engine picks what the tile allows, which
+			-- is what a human gets from the "build improvement" button.
+			if row2 ~= nil then
+				params[UnitOperationTypes.PARAM_IMPROVEMENT_TYPE] = row2.Hash;
+			end
+			return operate(unit, OP["UNITOPERATION_BUILD_IMPROVEMENT"], params),
+			       wanted or "IMPROVE";
+		end
 		if verb == "UPGRADE" then
 			return commandUnit(unit, CMD["UNITCOMMAND_UPGRADE"], {}), verb;
 		end

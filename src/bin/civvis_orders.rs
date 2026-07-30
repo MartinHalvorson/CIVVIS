@@ -311,6 +311,20 @@ fn translate(
             verb: Some("FOUND_CITY".to_string()),
             pos: None,
         }),
+        // A builder improving the tile it stands on. Dropping this is what kept the
+        // mirror looking undeveloped and made CIVVIS order builder after builder.
+        Action::Improve { unit, improvement } => civ6_of.get(unit).map(|civ6| Order {
+            kind: "unit",
+            subject: Some(*civ6),
+            verb: Some("IMPROVE".to_string()),
+            pos: None,
+        })
+        .map(|mut order| {
+            // The improvement name rides in `verb` alongside the operation, because the
+            // order row has no spare column; the mod splits them.
+            order.verb = Some(format!("IMPROVE:IMPROVEMENT_{}", improvement.as_str().to_ascii_uppercase()));
+            order
+        }),
         Action::Fortify { unit } => civ6_of.get(unit).map(|civ6| Order {
             kind: "unit",
             subject: Some(*civ6),
