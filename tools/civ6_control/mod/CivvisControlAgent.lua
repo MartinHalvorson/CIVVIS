@@ -1002,6 +1002,54 @@ end
 -- doing that per turn per unit is precisely the cost that starves the game;
 -- `exportTiles` scans on the same principle. The answer barely moves between
 -- sweeps because borders do not.
+-- Whether THIS SEAT has revealed a plot.
+--
+-- ★★ SUSPECTED CAUSE OF "NO WAR, EVER". `plot:IsRevealed()` takes no player
+-- argument, and a gameplay context has no "local player" to resolve against, so
+-- it may answer false for every plot on the map. Every honesty gate in this file
+-- was built on it: `findWarTarget` needs a revealed rival city, `enemyGround`
+-- needs a revealed owned plot, and `exportTiles` sends only revealed plots. If the
+-- call always says false then war is impossible by construction — which is exactly
+-- what the log shows: run settler-20260730T031023Z reached turn 229 having MET ALL
+-- THREE rivals with `target = None` on every single turn.
+--
+-- So this tries the player-explicit table first and falls back to the plot method,
+-- and EMITS which one answered. I am not going to assert which API is right on a
+-- build where three previous API guesses were wrong; the event stream can say.
+--
+-- ⚠ FAILS OPEN if neither works, and says so. A gate that cannot be evaluated and
+-- quietly answers "not revealed" is what disabled war silently for every game ever
+-- played. A run whose stream carries `revealed_api: none` is NOT a valid
+-- measurement of fog-honest play and must not be reported as one.
+local revealedHow = nil;
+
+local function noteRevealedApi(how)
+	if revealedHow ~= nil then return; end
+	revealedHow = how;
+	emit("revealed_api", { how = how });
+end
+
+local function plotRevealed(pid, x, y)
+	local viaTable = try(function()
+		return PlayersVisibility[pid]:IsRevealed(x, y);
+	end);
+	if viaTable ~= nil then
+		noteRevealedApi("PlayersVisibility");
+		return viaTable == true;
+	end
+	local viaPlot = try(function()
+		local plot = Map.GetPlot(x, y);
+		if plot == nil then return nil; end
+		return plot:IsRevealed();
+	end);
+	if viaPlot ~= nil then
+		noteRevealedApi("plot");
+		return viaPlot == true;
+	end
+	noteRevealedApi("none");
+	return true;
+end
+
 local enemyGroundMemo = { turn = -1, pos = nil };
 
 local function enemyGround(player, pid, turn)
@@ -1033,11 +1081,13 @@ local function enemyGround(player, pid, turn)
 	local best, bestDist;
 	for y = 0, height - 1 do
 		for x = 0, width - 1 do
-			local owner = try(function()
-				local plot = Map.GetPlot(x, y);
-				if plot == nil or not plot:IsRevealed() then return -1; end
-				return plot:GetOwner();
-			end, -1);
+			local owner = -1;
+			if plotRevealed(pid, x, y) then
+				owner = try(function()
+					local plot = Map.GetPlot(x, y);
+					return plot ~= nil and plot:GetOwner() or -1;
+				end, -1);
+			end
 			if owner ~= nil and met[owner] then
 				local d = plotDistance(hx, hy, x, y);
 				if bestDist == nil or d < bestDist then
@@ -1193,10 +1243,7 @@ local function findWarTarget(player, pid)
 					-- rival owns, so the target could be a capital this seat had
 					-- never laid eyes on. Meeting a civilization does not reveal
 					-- its empire. Require the plot to be revealed to us.
-					local seen = try(function()
-						local plot = Map.GetPlot(cx, cy);
-						return plot ~= nil and plot:IsRevealed();
-					end, false);
+					local seen = plotRevealed(pid, cx, cy);
 					-- A capital is worth walking further for: taking every
 					-- original capital is what actually ends the game.
 					local capital = try(function() return city:IsCapital(); end, false);
@@ -2231,10 +2278,7 @@ local function exportState(player, pid, turn)
 					-- scouted. Gate on the plot being revealed to us.
 					local cx = city:GetX();
 					local cy = city:GetY();
-					local seen = try(function()
-						local plot = Map.GetPlot(cx, cy);
-						return plot ~= nil and plot:IsRevealed();
-					end, false);
+					local seen = plotRevealed(pid, cx, cy);
 					if seen then
 						theirCities[#theirCities + 1] = {
 							x = cx, y = cy,
@@ -2322,9 +2366,7 @@ local function exportTiles(player, pid, turn)
 		for x = 0, width - 1 do
 			local plot = try(function() return Map.GetPlot(x, y); end);
 			if plot ~= nil then
-				local revealed = try(function()
-					return plot:IsRevealed();
-				end, false);
+				local revealed = plotRevealed(pid, x, y);
 				-- Unrevealed ground is deliberately sent as a hole rather than
 				-- as its true terrain: the mirror must not know more than the
 				-- seat does, or the simulator would plan on stolen information.

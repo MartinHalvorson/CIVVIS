@@ -51,6 +51,7 @@ KNOWN_GLOBALS = {
     "GameConfiguration", "GameEffects", "GameInfo", "GameplayEvents", "Input",
     "Locale", "LuaEvents", "Map", "MapConfiguration", "ModUserData",
     "NotificationManager", "PlayerConfigurations", "PlayerManager", "Players",
+    "PlayersVisibility",
     "RevealedState", "UI", "UILens", "UnitCommandTypes", "UnitManager",
     "UnitOperationTypes", "YieldTypes",
     # Context-scoped engine globals, present in every UI script.
