@@ -633,7 +633,68 @@ local committedSite = {};
 local refusedSite = {};
 local findSettleSite;
 
+-- CIVVIS's own ranking of where the next city goes, baked in at install time.
+--
+-- ★ THIS IS CIVVIS PROVIDING THE DECISION, which is the architecture asked for.
+-- The route is indirect because it has to be: the mod cannot read a file at
+-- runtime (no `io` in this sandbox) and FireTuner does not answer — with a live
+-- game and the correct log path, seven plausible framings on ports 4318/4319
+-- executed nothing. Config baked at install time is the only inbound channel that
+-- works, and it is sufficient here because the world is a function of the SEED:
+-- `civvis-advise --plan` reads one run's exported map, ranks the ground with
+-- `AdvancedAi::settle_ranking`, and the next run on that same seed follows it.
+--
+-- Measured reason to bother: on run settler-20260730T034143Z the agent's own
+-- choices sat at CIVVIS ranks 25/48, 10/25 and 4/15 — middling ground by CIVVIS's
+-- reckoning, on the axis CIVVIS's oracle work calls its biggest lever.
+--
+-- ⚠ The plan is ADVICE, not an order. A site is taken only if the engine agrees it
+-- is legal for this settler right now; anything refused falls through to the
+-- hand-rolled search. A plan that disagreed with the live game would otherwise
+-- strand settlers exactly the way `committedSite` was built to prevent.
+local settlePlan = nil;
+local planTaken = {};
+
+local function planSite(player, pid, unit)
+	if settlePlan == nil then
+		settlePlan = {};
+		local raw = cfg.SettlePlan;
+		if type(raw) == "table" then
+			for i = 1, #raw do
+				local entry = raw[i];
+				if type(entry) == "table" and entry.x ~= nil and entry.y ~= nil then
+					settlePlan[#settlePlan + 1] = { x = entry.x, y = entry.y };
+				end
+			end
+		end
+	end
+	if #settlePlan == 0 then return nil; end
+	for i = 1, #settlePlan do
+		local site = settlePlan[i];
+		local key = site.x .. ":" .. site.y;
+		if not planTaken[key] then
+			-- Legality is not asserted here. `orderSettler` already asks the
+			-- engine to FOUND_CITY or MOVE_TO and honours a refusal, and this
+			-- project has been burned repeatedly by gates that answered wrongly
+			-- in exactly the position that mattered. Offer the plot; let the
+			-- engine be the judge.
+			local plot = try(function() return Map.GetPlot(site.x, site.y); end);
+			if plot ~= nil then return plot, key; end
+		end
+	end
+	return nil;
+end
+
 findSettleSite = function(player, pid, unit, turn)
+	-- CIVVIS first. Its ranking already accounts for ring yields, fresh water,
+	-- spacing against our own cities and distance; the hand-rolled search below is
+	-- the fallback for ground the plan does not cover (a map it never saw, or every
+	-- planned site already used).
+	local planned, planKey = planSite(player, pid, unit);
+	if planned ~= nil then
+		planTaken[planKey] = true;
+		return planned;
+	end
 	local id = try(function() return unit:GetID(); end, -1);
 	if siteMemo.turn ~= turn then siteMemo = { turn = turn, sites = {} }; end
 	local cached = siteMemo.sites[id];

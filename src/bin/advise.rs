@@ -49,6 +49,16 @@ fn main() {
         eprintln!("usage: civvis-advise --mirror <run-dir> [--radius N]");
         std::process::exit(2);
     };
+    // `--plan <file>`: write CIVVIS's ranking as JSON for the installer to bake
+    // into the mod's config.
+    //
+    // ⚠ THIS IS THE ONLY INBOUND CHANNEL THAT EXISTS. The mod cannot read a file
+    // at runtime (no `io`) and FireTuner does not answer: with a live game and the
+    // correct log path, seven plausible framings on ports 4318/4319 executed
+    // nothing. Config baked at install time is what is left, and it works because
+    // the world is a function of the seed — plan a map once, replay it with the
+    // same seed, and the plan still describes that map.
+    let plan_out = arg_text(&args, "--plan");
     let radius: i32 = arg_text(&args, "--radius")
         .and_then(|value| value.parse().ok())
         .unwrap_or(8);
@@ -158,6 +168,34 @@ fn main() {
                  assumed. This is the case for actuating CIVVIS's choice."
             }
         );
+    }
+    if let Some(path) = plan_out {
+        // Plan from the empire as it stands, which is what the next founding faces.
+        let (game, _) = mirror::rebuild_with_empire(&snapshot, &founded, 4, 1);
+        let from = capital.unwrap_or((snapshot.width / 2, snapshot.height / 2));
+        let sites: Vec<serde_json::Value> = ai
+            .settle_ranking(&game, 0, from, radius)
+            .into_iter()
+            .filter(|(pos, _)| snapshot.is_revealed(*pos))
+            .take(24)
+            .map(|((x, y), score)| {
+                serde_json::json!({ "x": x, "y": y, "score": score })
+            })
+            .collect();
+        let doc = serde_json::json!({
+            "seed_world": format!("{}x{}", snapshot.width, snapshot.height),
+            "from_turn": snapshot.turn,
+            "revealed": snapshot.revealed_count(),
+            "origin": [from.0, from.1],
+            "sites": sites,
+        });
+        std::fs::write(&path, serde_json::to_string_pretty(&doc).unwrap())
+            .unwrap_or_else(|error| {
+                eprintln!("cannot write {path}: {error}");
+                std::process::exit(2);
+            });
+        println!("wrote {} CIVVIS-ranked sites to {path}", doc["sites"].as_array().unwrap().len());
+        println!();
     }
     println!();
     println!("⚠ Read with care: the mirror carries the map and the seat's cities, not");

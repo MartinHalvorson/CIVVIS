@@ -50,6 +50,24 @@ def utc_stamp() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+def load_settle_plan(path: str | None) -> list[dict] | None:
+    """CIVVIS's ranked sites, or None when the agent should use its own search."""
+    if not path:
+        return None
+    try:
+        doc = json.loads(Path(path).read_text())
+    except Exception as error:
+        print(f"cannot read settle plan {path}: {error}", file=sys.stderr)
+        return None
+    sites = [
+        {"x": int(site["x"]), "y": int(site["y"])}
+        for site in doc.get("sites", [])
+        if "x" in site and "y" in site
+    ]
+    print(f"settle plan: {len(sites)} CIVVIS-ranked sites from {path}")
+    return sites or None
+
+
 def build_config(args: argparse.Namespace) -> dict:
     return {
         "RunTag": args.tag,
@@ -98,6 +116,12 @@ def build_config(args: argparse.Namespace) -> dict:
         # Mirror the board into the log once a turn so CIVVIS can be the engine
         # that decides. Off by default: it is the largest emit in the mod.
         "ExportState": args.export_state,
+        # CIVVIS's own settle ranking, produced by `civvis-advise --plan` from a
+        # previous run's exported map. Baked in because the mod has no runtime
+        # inbound channel: no `io`, and FireTuner answered none of seven framings
+        # against a live game. Valid only for the SEED it was planned on — the
+        # world is a function of the seed, so the same seed is the same map.
+        "SettlePlan": load_settle_plan(args.settle_plan),
         "AnnouncementSeconds": args.announcement_seconds,
         "EraAnnouncementSeconds": args.era_announcement_seconds,
         "Leader": args.leader,
@@ -714,6 +738,9 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--settlers-in-flight", type=int, default=1)
     ap.add_argument("--garrison-per-city", type=int, default=2)
     ap.add_argument("--export-state", action="store_true", default=False)
+    ap.add_argument("--settle-plan", default=None,
+                    help="JSON from `civvis-advise --plan`: CIVVIS decides where "
+                         "cities go. Only valid for the seed it was planned on.")
     ap.add_argument("--window-vfrac", type=float, default=1.0,
                     help="share of screen height for the game window; 0.5 puts "
                          "it in a quadrant so CIVVIS can own the other half")
