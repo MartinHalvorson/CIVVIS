@@ -109,6 +109,17 @@ def build_config(args: argparse.Namespace) -> dict:
         # attackers means a siege that never resolves.
         "AssaultWidth": args.assault_width,
         "SettlersInFlight": args.settlers_in_flight,
+        # How many of CIVVIS's top-ranked settle sites the settler may choose the
+        # NEAREST of. 1 reproduces the old behaviour exactly — always the highest
+        # ranked unoccupied plot — which makes it the control arm.
+        #
+        # Measured over twelve runs at window 1: 484 `move_to_site` orders against
+        # 48 `found_city`, about ten turns of walking per city. One settler in
+        # flight at one city per ~15 turns caps the empire at 3-4 over the ~100
+        # turns a run actually survives, and the observed median IS 3. That
+        # arithmetic starves the army, which is why war is declared in only 19 of
+        # 47 runs and no capital has ever been taken.
+        "PlanNearWindow": args.plan_near_window,
         # Two defenders a city is enough at Settler. Beyond that, production
         # spent on units that stand still is production not spent on the
         # districts and buildings that score is actually made of.
@@ -816,6 +827,9 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--no-war", dest="make_war", action="store_false")
     ap.add_argument("--assault-width", type=int, default=2)
     ap.add_argument("--settlers-in-flight", type=int, default=1)
+    # 1 = the shipped behaviour (always CIVVIS's top-ranked unoccupied site),
+    # which is what makes it a usable control arm for the near-window A/B.
+    ap.add_argument("--plan-near-window", type=int, default=6)
     ap.add_argument("--garrison-per-city", type=int, default=2)
     ap.add_argument("--export-state", action="store_true", default=False)
     ap.add_argument("--settle-plan", default=None,

@@ -722,6 +722,40 @@ local function planSite(player, pid, unit)
 		local cy = try(function() return city:GetY(); end, -1);
 		if cx >= 0 then occupied[#occupied + 1] = { x = cx, y = cy }; end
 	end);
+	-- ★★★★★ NEAREST OF THE GOOD ONES, NOT SIMPLY THE BEST ONE.
+	--
+	-- This loop used to return the FIRST unoccupied site in plan order, and the plan
+	-- is CIVVIS's value ranking computed FROM THE CAPITAL (`advise.rs` passes
+	-- `from = capital`). So every settler, wherever it was built, was sent to the
+	-- globally top-ranked plot — often clean across the empire.
+	--
+	-- Measured cost of that, over twelve runs: **484 `move_to_site` orders against 48
+	-- `found_city` orders — about TEN TURNS OF WALKING PER CITY.** With one settler
+	-- in flight that is one city per ~15 turns, and over the ~100-turn horizon a run
+	-- actually gets ([[civvis-civ6-runs-never-finish]]) it caps the empire at 3-4
+	-- cities. The observed median is 3. That arithmetic, not any broken mechanism, is
+	-- what starves the army (`wantArmy = MilitaryPerCity x cities`), which is why war
+	-- is declared in only 19 of 47 runs, which is why no capital is ever taken.
+	--
+	-- ⚠ RAISING `SettlersInFlight` DOES NOT FIX IT AND WAS ALREADY REFUTED: run
+	-- 010409Z ordered SEVENTEEN settlers, walked 166 times and founded 2 cities. More
+	-- settlers walking the same long distances buys walking. The travel time is the
+	-- constraint, so cut the travel.
+	--
+	-- ⚠ CIVVIS STILL DECIDES WHICH GROUND IS GOOD — that is the operator's
+	-- architecture and this must not quietly become a hand-rolled scorer. What
+	-- changes is only the choice AMONG comparably good ground: take the top
+	-- `PlanNearWindow` sites CIVVIS offers, and let the settler that has to do the
+	-- walking pick the closest of them.
+	--
+	-- It also agrees with CIVVIS's own measurement: civilian MOVEMENT was the largest
+	-- single grant on its expansion axis (`expansion_swift`, 59.5%) while settler COST
+	-- measured null. Distance-to-site is that same quantity from the other end.
+	local window = cfg.PlanNearWindow or 6;
+	local ux = try(function() return unit:GetX(); end, -1);
+	local uy = try(function() return unit:GetY(); end, -1);
+	local best, bestKey, bestRank, bestDist = nil, nil, -1, nil;
+	local considered = 0;
 	for i = 1, #settlePlan do
 		local site = settlePlan[i];
 		local key = site.x .. ":" .. site.y;
@@ -739,8 +773,33 @@ local function planSite(player, pid, unit)
 			-- in exactly the position that mattered. Offer the plot; let the
 			-- engine be the judge.
 			local plot = try(function() return Map.GetPlot(site.x, site.y); end);
-			if plot ~= nil then return plot, key; end
+			if plot ~= nil then
+				-- ⚠ Distance from the SETTLER, not from the capital. A settler
+				-- built in the third city is the one that has to walk.
+				local dist = 0;
+				if ux >= 0 then
+					dist = plotDistance(ux, uy, site.x, site.y);
+				end
+				if best == nil or dist < bestDist then
+					best, bestKey, bestRank, bestDist = plot, key, i, dist;
+				end
+				considered = considered + 1;
+				-- The window keeps this a tie-break among CIVVIS's best ground
+				-- rather than a licence to settle anywhere near. Without it the
+				-- nearest legal plot on the whole map wins and the ranking is
+				-- discarded.
+				if considered >= window then break; end
+			end
 		end
+	end
+	if best ~= nil then
+		-- Both numbers, because "a plan site was chosen" reads green whether the
+		-- window saved a walk or changed nothing. `rank` says how far down
+		-- CIVVIS's ranking the choice was; `dist` is the walk it now faces.
+		planFires.near_rank = (planFires.near_rank or 0) + bestRank;
+		planFires.near_dist = (planFires.near_dist or 0) + (bestDist or 0);
+		planFires.near_n = (planFires.near_n or 0) + 1;
+		return best, bestKey, bestRank, bestDist;
 	end
 	return nil;
 end
@@ -762,14 +821,22 @@ findSettleSite = function(player, pid, unit, turn)
 	-- hand-rolled search takes over the moment the plan is demonstrably not.
 	local planUsable = turn < (cfg.PlanGiveUpTurn or 25)
 		or cityCount(player) > 0;
-	local planned, planKey = nil, nil;
-	if planUsable then planned, planKey = planSite(player, pid, unit); end
+	local planned, planKey, planRank, planDist = nil, nil, nil, nil;
+	if planUsable then
+		planned, planKey, planRank, planDist = planSite(player, pid, unit);
+	end
 	if planned ~= nil then
 		planFires.plan = planFires.plan + 1;
 		emit("settle_choice", {
 			source = "plan",
 			x = try(function() return planned:GetX(); end, -1),
 			y = try(function() return planned:GetY(); end, -1),
+			-- `rank` is how far down CIVVIS's ranking this choice sat and `dist`
+			-- is the walk it faces. Together they price the near-window: rank
+			-- rising while dist falls is the trade working, rank rising while
+			-- dist does NOT fall means the window is only losing value.
+			rank = planRank,
+			dist = planDist,
 			turn = turn,
 		});
 		return planned;
@@ -2985,6 +3052,13 @@ local function playTurn(player, pid, turn)
 		plan_sites = planFires.plan,
 		own_sites = planFires.search,
 		plan_offered = planFires.offered,
+		-- The near-window's price and its payoff, as running totals. Divide by
+		-- `near_n` for the means. ⚠ Both are needed: `near_rank` alone says only
+		-- that value was given up, `near_dist` alone says only that walks are
+		-- short. The trade is good when dist falls faster than rank rises.
+		near_rank = planFires.near_rank or 0,
+		near_dist = planFires.near_dist or 0,
+		near_n = planFires.near_n or 0,
 		actions = lastActions,
 		ticks_seen = ticksSeen, ticks_taken = ticksTaken,
 		blocker = blockerName(currentBlocker(pid)),

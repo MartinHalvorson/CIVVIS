@@ -64,6 +64,7 @@ def run_attempt(difficulty: str, seed: int, args: argparse.Namespace) -> dict | 
         *([] if args.make_war else ["--no-war"]),
         "--assault-width", str(args.assault_width),
         "--settlers-in-flight", str(args.settlers_in_flight),
+        "--plan-near-window", str(args.plan_near_window),
         "--garrison-per-city", str(args.garrison_per_city),
         *(["--export-state"] if args.export_state else []),
         *(["--settle-plan", args.settle_plan] if args.settle_plan else []),
@@ -137,6 +138,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--no-war", dest="make_war", action="store_false")
     ap.add_argument("--assault-width", type=int, default=2)
     ap.add_argument("--settlers-in-flight", type=int, default=1)
+    ap.add_argument("--plan-near-window", type=int, default=6)
     ap.add_argument("--garrison-per-city", type=int, default=2)
     ap.add_argument("--export-state", action="store_true", default=False)
     ap.add_argument("--settle-plan", default=None)
