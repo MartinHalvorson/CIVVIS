@@ -417,6 +417,33 @@ end
 -- nothing either way. This counts what the complaint actually describes — how
 -- many of our units share one plot — so the next occurrence shows up in the
 -- stream instead of in a screenshot.
+-- The best score among civilizations we have met, and whether we lead it.
+--
+-- ★ THE NUMBER A SCORE VICTORY TURNS ON, and it was invisible. Score at the turn
+-- limit is the reachable victory here — VICTORY_SCORE is EnabledByDefault in the
+-- shipped Victories table — but the telemetry only ever showed OUR score, so
+-- "score 98 at turn 94" could equally be a comfortable lead or a rout. Rival
+-- score already existed in `exportState`, which is off by default, so no run had
+-- it.
+--
+-- ⚠ Only civilizations we have MET. Reading the score of a civilization we have
+-- never encountered is knowledge the seat has not earned, and a decision taken on
+-- it would make the run worthless as a measurement.
+local function rivalBest(player, pid)
+	local diplomacy = try(function() return player:GetDiplomacy(); end);
+	if diplomacy == nil then return nil, 0; end
+	local best, met = nil, 0;
+	for _, otherId in ipairs(try(function() return PlayerManager.GetAliveMajorIDs(); end, {})) do
+		if otherId ~= pid
+				and try(function() return diplomacy:HasMet(otherId); end, false) then
+			met = met + 1;
+			local score = try(function() return Players[otherId]:GetScore(); end, -1) or -1;
+			if score >= 0 and (best == nil or score > best) then best = score; end
+		end
+	end
+	return best, met;
+end
+
 local function stackCensus(player)
 	local perPlot = {};
 	eachUnit(player, function(unit)
@@ -2150,12 +2177,20 @@ local function playTurn(player, pid, turn)
 	local builds = driveProduction(player, turn);
 	local ordered, stuck = orderUnits(player, pid, turn);
 	local worstStack, piles = stackCensus(player);
+	local rivalTop, metCount = rivalBest(player, pid);
+	local ourScore = try(function() return player:GetScore(); end, -1);
 	emit("turn", {
 		policies = policies,
 		war = war,
 		target = warTarget and (warTarget.capital and "capital" or "city") or nil,
 		turn = turn,
-		score = try(function() return player:GetScore(); end, -1),
+		score = ourScore,
+		rival_best = rivalTop,
+		met = metCount,
+		-- Positive means we would win a score victory at the turn limit against
+		-- everyone we have met. This is the number that decides the reachable
+		-- victory, and until now the log showed only our own half of it.
+		lead = (rivalTop ~= nil and ourScore >= 0) and (ourScore - rivalTop) or nil,
 		gold = try(function() return math.floor(player:GetTreasury():GetGoldBalance()); end, -1),
 		cities = cityCount(player),
 		units = countUnits(player).total,
