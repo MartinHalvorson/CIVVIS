@@ -107,13 +107,21 @@ def busy() -> str | None:
 
 
 def outcome_of(tag: str) -> dict:
-    """Read the run's own summary, falling back to its last turn record."""
+    """The run's own summary, MERGED with what its event stream says.
+
+    ⚠ THIS USED TO RETURN THE SUMMARY AND STOP. The summary has no `cities`, so every
+    ledger row read `cities: None` — the one column that would have shown the empire
+    growing from 1 to 4 was blank for the whole day, and comparisons fell back to
+    reading individual runs by hand. Preferring one source over the other loses
+    whatever only the other one holds; take both.
+    """
+    merged: dict = {}
     summary = RUN_ROOT / tag / "summary.json"
     if summary.exists():
         try:
-            return json.loads(summary.read_text())
+            merged = json.loads(summary.read_text())
         except ValueError:
-            pass
+            merged = {}
     events = RUN_ROOT / tag / "events.jsonl"
     last_turn, seat, victory = None, None, None
     if events.exists():
@@ -129,16 +137,24 @@ def outcome_of(tag: str) -> dict:
                 seat = event
             elif kind in ("victory", "defeat", "gameover"):
                 victory = event
-    return {
+    from_events = {
         "tag": tag,
         "last_turn": (last_turn or {}).get("turn"),
         "last_score": (last_turn or {}).get("score"),
         "rival_best": (last_turn or {}).get("rival_best"),
+        "lead": (last_turn or {}).get("lead"),
         "cities": (last_turn or {}).get("cities"),
+        "army": (last_turn or {}).get("army"),
+        "met": (last_turn or {}).get("met"),
         "seat": seat,
         "victory": victory,
-        "outcome": None,
     }
+    # The event stream wins where it has an answer; the summary keeps `reason` and
+    # anything else only it records.
+    for key, value in from_events.items():
+        if value is not None or key not in merged:
+            merged[key] = value
+    return merged
 
 
 def won(record: dict) -> bool:
