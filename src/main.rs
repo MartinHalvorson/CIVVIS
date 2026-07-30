@@ -1186,6 +1186,8 @@ mod tests {
     fn a_settled_war_leaves_the_live_map_and_must_still_be_counted() {
         let mut game = Game::new(2, 24, 16, 5150, 400, 0);
         game.current = 0;
+        game.players[0].met.insert(1);
+        game.players[1].met.insert(0);
         game.apply(0, &Action::DeclareWar { player: 1 }).unwrap();
         assert_eq!(game.wars.len(), 1, "the declaration must open a war");
         assert!(game.concluded_wars.is_empty());

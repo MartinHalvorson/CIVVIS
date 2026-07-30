@@ -144,12 +144,22 @@ because they selected a leader they have not played before.
 `civvis play --spectate --league league/` seats every major civ with its
 best-rated available strategy (distinct specialists per leader/civ) and the
 spectator HUD lists, per player: **civ, league username + strategy, its
-elo** (exact leader/civ rating after game one, ±RD on hover) **and the elo-implied
-expected win chance** against the table — compare against who actually
-wins to audit the ratings over time. That last number is a share of the
-one win a table has to give (`elo::win_shares`), so the seats sum to
-100%; averaging the pairwise expectations instead would put every seat
-near 50% and could never be checked against a winner. Without
+elo** (exact leader/civ rating after game one, ±RD on hover) **and two win
+odds** — the odds this seat had before a tile was drawn, and the odds it holds
+right now. Both are shares of the one win a table has to give
+(`elo::win_shares`), so the seats sum to 100%; averaging the pairwise
+expectations instead would put every seat near 50% and could never be
+checked against a winner.
+
+The **start** figure is the pregame prediction: the ratings at this table, the
+edge the roster has measured for the civilizations they drew, and what the
+difficulty setting hands each seat. Nothing on the board moves it, which is what
+makes it auditable — compare it against who actually wins over many games. The
+**now** figure corrects that prior with the position each empire has built
+(Score, military strength, cities held, the closest victory race), weighted up
+as the clock runs down, and drops to zero for a seat that is out of the game.
+Both come from `crate::odds`, which documents every coefficient and what
+calibrates it. Without
 `--league`, a `league/` dir in the working directory still labels the
 default fleet with the "advanced" entrant's elo; the AIs themselves are
 unchanged.
@@ -179,8 +189,13 @@ nothing is ever recorded into it. The spectator
 supervisor (`tools/spectator_supervisor.py`) defaults to `--league auto`,
 which seeds a runtime copy of that snapshot at the repo-root `league/`
 path (gitignored) and records into it — the committed snapshot is the
-starting position, not a file the exhibition rewrites. Delete that
-directory to start again from the snapshot. Pass `--league off` to run
+starting position, not a file the exhibition rewrites. That runtime carries a
+managed-roster marker, so a later build can append newly required builtin
+controller families that the long-lived copy predates. Admission never resets
+an existing identity or its evidence, and it waits for any current distributed
+round manifest to finalize before changing membership. Explicitly named league
+directories have no marker and retain their exact experimental roster. Delete
+that directory to start again from the snapshot. Pass `--league off` to run
 the exhibition unrated, `--no-league-record` to seat rated players
 without moving their ratings, or `--league <dir>` to use a live local
 league instead.
@@ -218,9 +233,10 @@ strategies were generalists and every victory-lane specialist had retired.
 Quality-diversity selection makes rating strength and strategic breadth joint
 objectives instead of asking a single scalar leaderboard to provide both.
 
-The two anchors (`advanced`, `basic`) are never retired, which pins the
-scale: a league leader's margin over `advanced` is comparable across
-hundreds of rounds even after every founder has been replaced.
+The fixed anchors (`advanced`, `basic`, and the offline-only `strategic`) are
+never retired, which pins the scale and keeps the otherwise-unreachable search
+controller measurable: a league leader's margin over `advanced` is comparable
+across hundreds of rounds even after every non-anchor founder has been replaced.
 
 ## State on disk (`--dir`, default `league/`, gitignored)
 
@@ -228,6 +244,9 @@ hundreds of rounds even after every founder has been replaced.
   aggregate rating, leader/civ ratings, RD, volatility, record, lineage
   (`parents`), and status. The single source of truth; delete it to start a
   fresh league.
+- `.civvis-managed-roster` — present only on the supervisor's mutable
+  `--league auto` copy; opts that roster into required builtin admission while
+  leaving explicitly constructed comparison pools untouched.
 - `ratings.csv` — per-round rating history of active strategies (for
   plotting progress over time).
 - `calibration.csv` — per-round and cumulative pairwise prediction count,

@@ -1,0 +1,2672 @@
+{
+ "generic": [
+  [
+   "#e57574",
+   "#780001",
+   "PLAYERCOLOR_PINK"
+  ],
+  [
+   "#79e077",
+   "#181818",
+   "PLAYERCOLOR_LIGHT_GREEN"
+  ],
+  [
+   "#74a3f3",
+   "#181818",
+   "PLAYERCOLOR_LIGHT_BLUE"
+  ],
+  [
+   "#aeaeae",
+   "#181818",
+   "PLAYERCOLOR_GRAY"
+  ],
+  [
+   "#eae19d",
+   "#181818",
+   "PLAYERCOLOR_LIGHT_YELLOW"
+  ],
+  [
+   "#004fce",
+   "#f9f9f9",
+   "PLAYERCOLOR_MIDDLE_BLUE"
+  ],
+  [
+   "#ca1415",
+   "#f9f9f9",
+   "PLAYERCOLOR_RED"
+  ],
+  [
+   "#ffb23c",
+   "#181818",
+   "PLAYERCOLOR_LIGHT_BROWN"
+  ],
+  [
+   "#7dece3",
+   "#181818",
+   "PLAYERCOLOR_CYAN_AND_GRAY"
+  ],
+  [
+   "#750073",
+   "#f9f9f9",
+   "PLAYERCOLOR_DARK_MAGENTA"
+  ],
+  [
+   "#ff8112",
+   "#181818",
+   "PLAYERCOLOR_LIGHT_ORANGE"
+  ],
+  [
+   "#156c30",
+   "#f9f9f9",
+   "PLAYERCOLOR_GREEN_AND_WHITE"
+  ],
+  [
+   "#6d00cd",
+   "#7dece3",
+   "PLAYERCOLOR_MIDDLE_PURPLE"
+  ],
+  [
+   "#f9f9f9",
+   "#ca1415",
+   "PLAYERCOLOR_WHITE"
+  ],
+  [
+   "#61bf22",
+   "#181818",
+   "PLAYERCOLOR_BLACK_AND_GREEN"
+  ],
+  [
+   "#012a6c",
+   "#f9f9f9",
+   "PLAYERCOLOR_DARK_INDIGO_AND_WHITE"
+  ],
+  [
+   "#535353",
+   "#eae19d",
+   "PLAYERCOLOR_DARK_GRAY"
+  ],
+  [
+   "#f7d801",
+   "#012a6c",
+   "PLAYERCOLOR_YELLOW"
+  ],
+  [
+   "#014f51",
+   "#ffb23c",
+   "PLAYERCOLOR_DARK_CYAN_AND_LEMON"
+  ],
+  [
+   "#780001",
+   "#eae19d",
+   "PLAYERCOLOR_DARK_RED_AND_CREAM"
+  ],
+  [
+   "#783d02",
+   "#f9f9f9",
+   "PLAYERCOLOR_DARK_ORANGE"
+  ],
+  [
+   "#00c09b",
+   "#780001",
+   "PLAYERCOLOR_MIDDLE_CYAN"
+  ],
+  [
+   "#b780e6",
+   "#370065",
+   "PLAYERCOLOR_PURPLE"
+  ]
+ ],
+ "jerseys": {
+  "America": {
+   "civilization": "CIVILIZATION_AMERICA",
+   "leader": "LEADER_T_ROOSEVELT",
+   "pairs": [
+    [
+     "#012a6c",
+     "#f9f9f9"
+    ],
+    [
+     "#ca1415",
+     "#f9f9f9"
+    ],
+    [
+     "#f9f9f9",
+     "#012a6c"
+    ],
+    [
+     "#012a6c",
+     "#ca1415"
+    ]
+   ],
+   "source": "civ6"
+  },
+  "Arabia": {
+   "civilization": "CIVILIZATION_ARABIA",
+   "leader": "LEADER_SALADIN",
+   "pairs": [
+    [
+     "#f7d801",
+     "#156c30"
+    ],
+    [
+     "#156c30",
+     "#79e077"
+    ],
+    [
+     "#79e077",
+     "#181818"
+    ],
+    [
+     "#867202",
+     "#61bf22"
+    ]
+   ],
+   "source": "civ6"
+  },
+  "Argentina": {
+   "pairs": [
+    [
+     "#74a3f3",
+     "#eae19d"
+    ],
+    [
+     "#eae19d",
+     "#74a3f3"
+    ],
+    [
+     "#012a6c",
+     "#eae19d"
+    ],
+    [
+     "#867202",
+     "#74a3f3"
+    ]
+   ],
+   "source": "palette",
+   "tokens": [
+    "BLUE_LT",
+    "YELLOW_LT"
+   ]
+  },
+  "Armenia": {
+   "pairs": [
+    [
+     "#780001",
+     "#ffb23c"
+    ],
+    [
+     "#ffb23c",
+     "#780001"
+    ],
+    [
+     "#e57574",
+     "#ffb23c"
+    ],
+    [
+     "#783d02",
+     "#780001"
+    ]
+   ],
+   "source": "palette",
+   "tokens": [
+    "RED_DK",
+    "ORANGE_LT"
+   ]
+  },
+  "Ashanti": {
+   "pairs": [
+    [
+     "#f7d801",
+     "#783d02"
+    ],
+    [
+     "#783d02",
+     "#f7d801"
+    ],
+    [
+     "#867202",
+     "#783d02"
+    ],
+    [
+     "#ffb23c",
+     "#f7d801"
+    ]
+   ],
+   "source": "palette",
+   "tokens": [
+    "YELLOW_MD",
+    "ORANGE_DK"
+   ]
+  },
+  "Assyria": {
+   "pairs": [
+    [
+     "#783d02",
+     "#7dece3"
+    ],
+    [
+     "#7dece3",
+     "#783d02"
+    ],
+    [
+     "#ffb23c",
+     "#7dece3"
+    ],
+    [
+     "#014f51",
+     "#783d02"
+    ]
+   ],
+   "source": "palette",
+   "tokens": [
+    "ORANGE_DK",
+    "AQUA_LT"
+   ]
+  },
+  "Australia": {
+   "civilization": "CIVILIZATION_AUSTRALIA",
+   "leader": "LEADER_JOHN_CURTIN",
+   "pairs": [
+    [
+     "#156c30",
+     "#f7d801"
+    ],
+    [
+     "#f9f9f9",
+     "#ff8112"
+    ],
+    [
+     "#012a6c",
+     "#f9f9f9"
+    ],
+    [
+     "#f9f9f9",
+     "#012a6c"
+    ]
+   ],
+   "source": "civ6"
+  },
+  "Austria": {
+   "pairs": [
+    [
+     "#ca1415",
+     "#aeaeae"
+    ],
+    [
+     "#aeaeae",
+     "#ca1415"
+    ],
+    [
+     "#780001",
+     "#aeaeae"
+    ],
+    [
+     "#181818",
+     "#ca1415"
+    ]
+   ],
+   "source": "palette",
+   "tokens": [
+    "RED_MD",
+    "WHITE_MD2"
+   ]
+  },
+  "Axum": {
+   "pairs": [
+    [
+     "#156c30",
+     "#eae19d"
+    ],
+    [
+     "#eae19d",
+     "#156c30"
+    ],
+    [
+     "#79e077",
+     "#eae19d"
+    ],
+    [
+     "#867202",
+     "#156c30"
+    ]
+   ],
+   "source": "palette",
+   "tokens": [
+    "GREEN_DK",
+    "YELLOW_LT"
+   ]
+  },
+  "Aztec": {
+   "civilization": "CIVILIZATION_AZTEC",
+   "leader": "LEADER_MONTEZUMA",
+   "pairs": [
+    [
+     "#7dece3",
+     "#780001"
+    ],
+    [
+     "#780001",
+     "#7dece3"
+    ],
+    [
+     "#ff8112",
+     "#014f51"
+    ],
+    [
+     "#014f51",
+     "#ff8112"
+    ]
+   ],
+   "source": "civ6"
+  },
+  "Babylon": {
+   "civilization": "CIVILIZATION_BABYLON_STK",
+   "leader": "LEADER_HAMMURABI",
+   "pairs": [
+    [
+     "#74a3f3",
+     "#012a6c"
+    ],
+    [
+     "#eae19d",
+     "#012a6c"
+    ],
+    [
+     "#012a6c",
+     "#f9f9f9"
+    ],
+    [
+     "#012a6c",
+     "#f7d801"
+    ]
+   ],
+   "source": "civ6"
+  },
+  "Bactria": {
+   "pairs": [
+    [
+     "#156c30",
+     "#ffb23c"
+    ],
+    [
+     "#ffb23c",
+     "#156c30"
+    ],
+    [
+     "#79e077",
+     "#ffb23c"
+    ],
+    [
+     "#783d02",
+     "#156c30"
+    ]
+   ],
+   "source": "palette",
+   "tokens": [
+    "GREEN_DK",
+    "ORANGE_LT"
+   ]
+  },
+  "Bengal": {
+   "pairs": [
+    [
+     "#156c30",
+     "#ca1415"
+    ],
+    [
+     "#ca1415",
+     "#156c30"
+    ],
+    [
+     "#79e077",
+     "#ca1415"
+    ],
+    [
+     "#780001",
+     "#156c30"
+    ]
+   ],
+   "source": "palette",
+   "tokens": [
+    "GREEN_DK",
+    "RED_MD"
+   ]
+  },
+  "Benin": {
+   "pairs": [
+    [
+     "#750073",
+     "#ffb23c"
+    ],
+    [
+     "#ffb23c",
+     "#750073"
+    ],
+    [
+     "#ff99ff",
+     "#ffb23c"
+    ],
+    [
+     "#783d02",
+     "#750073"
+    ]
+   ],
+   "source": "palette",
+   "tokens": [
+    "MAGENTA_DK",
+    "ORANGE_LT"
+   ]
+  },
+  "Bohemia": {
+   "pairs": [
+    [
+     "#aeaeae",
+     "#ca1415"
+    ],
+    [
+     "#ca1415",
+     "#aeaeae"
+    ],
+    [
+     "#181818",
+     "#ca1415"
+    ],
+    [
+     "#780001",
+     "#aeaeae"
+    ]
+   ],
+   "source": "palette",
+   "tokens": [
+    "WHITE_MD2",
+    "RED_MD"
+   ]
+  },
+  "Brazil": {
+   "civilization": "CIVILIZATION_BRAZIL",
+   "leader": "LEADER_PEDRO",
+   "pairs": [
+    [
+     "#61bf22",
+     "#f7d801"
+    ],
+    [
+     "#61bf22",
+     "#012a6c"
+    ],
+    [
+     "#f7d801",
+     "#156c30"
+    ],
+    [
+     "#012a6c",
+     "#79e077"
+    ]
+   ],
+   "source": "civ6"
+  },
+  "Buganda": {
+   "pairs": [
+    [
+     "#ff99ff",
+     "#156c30"
+    ],
+    [
+     "#156c30",
+     "#ff99ff"
+    ],
+    [
+     "#750073",
+     "#156c30"
+    ],
+    [
+     "#79e077",
+     "#ff99ff"
+    ]
+   ],
+   "source": "palette",
+   "tokens": [
+    "MAGENTA_LT",
+    "GREEN_DK"
+   ]
+  },
+  "Bulgaria": {
+   "pairs": [
+    [
+     "#61bf22",
+     "#f9f9f9"
+    ],
+    [
+     "#f9f9f9",
+     "#61bf22"
+    ],
+    [
+     "#156c30",
+     "#f9f9f9"
+    ],
+    [
+     "#181818",
+     "#61bf22"
+    ]
+   ],
+   "source": "palette",
+   "tokens": [
+    "GREEN_MD",
+    "WHITE_LT"
+   ]
+  },
+  "Burma": {
+   "pairs": [
+    [
+     "#f7d801",
+     "#61bf22"
+    ],
+    [
+     "#61bf22",
+     "#f7d801"
+    ],
+    [
+     "#867202",
+     "#61bf22"
+    ],
+    [
+     "#156c30",
+     "#f7d801"
+    ]
+   ],
+   "source": "palette",
+   "tokens": [
+    "YELLOW_MD",
+    "GREEN_MD"
+   ]
+  },
+  "Byzantium": {
+   "civilization": "CIVILIZATION_BYZANTIUM",
+   "leader": "LEADER_BASIL",
+   "pairs": [
+    [
+     "#370065",
+     "#eae19d"
+    ],
+    [
+     "#780001",
+     "#f7d801"
+    ],
+    [
+     "#f7d801",
+     "#780001"
+    ],
+    [
+     "#6d00cd",
+     "#f7d801"
+    ]
+   ],
+   "source": "civ6"
+  },
+  "Canada": {
+   "civilization": "CIVILIZATION_CANADA",
+   "leader": "LEADER_LAURIER",
+   "pairs": [
+    [
+     "#f9f9f9",
+     "#ca1415"
+    ],
+    [
+     "#ca1415",
+     "#f9f9f9"
+    ],
+    [
+     "#780001",
+     "#e57574"
+    ],
+    [
+     "#e57574",
+     "#780001"
+    ]
+   ],
+   "source": "civ6"
+  },
+  "Catalonia": {
+   "pairs": [
+    [
+     "#eae19d",
+     "#ca1415"
+    ],
+    [
+     "#ca1415",
+     "#eae19d"
+    ],
+    [
+     "#867202",
+     "#ca1415"
+    ],
+    [
+     "#780001",
+     "#eae19d"
+    ]
+   ],
+   "source": "palette",
+   "tokens": [
+    "YELLOW_LT",
+    "RED_MD"
+   ]
+  },
+  "Champa": {
+   "pairs": [
+    [
+     "#750073",
+     "#eae19d"
+    ],
+    [
+     "#eae19d",
+     "#750073"
+    ],
+    [
+     "#ff99ff",
+     "#eae19d"
+    ],
+    [
+     "#867202",
+     "#750073"
+    ]
+   ],
+   "source": "palette",
+   "tokens": [
+    "MAGENTA_DK",
+    "YELLOW_LT"
+   ]
+  },
+  "China": {
+   "civilization": "CIVILIZATION_CHINA",
+   "leader": "LEADER_QIN",
+   "pairs": [
+    [
+     "#156c30",
+     "#f9f9f9"
+    ],
+    [
+     "#ca1415",
+     "#f7d801"
+    ],
+    [
+     "#f7d801",
+     "#ca1415"
+    ],
+    [
+     "#f7d801",
+     "#012a6c"
+    ]
+   ],
+   "source": "civ6"
+  },
+  "Chola": {
+   "pairs": [
+    [
+     "#e57574",
+     "#867202"
+    ],
+    [
+     "#867202",
+     "#e57574"
+    ],
+    [
+     "#780001",
+     "#867202"
+    ],
+    [
+     "#eae19d",
+     "#e57574"
+    ]
+   ],
+   "source": "palette",
+   "tokens": [
+    "RED_LT",
+    "YELLOW_DK"
+   ]
+  },
+  "Comanche": {
+   "pairs": [
+    [
+     "#e57574",
+     "#181818"
+    ],
+    [
+     "#181818",
+     "#e57574"
+    ],
+    [
+     "#780001",
+     "#181818"
+    ],
+    [
+     "#f9f9f9",
+     "#e57574"
+    ]
+   ],
+   "source": "palette",
+   "tokens": [
+    "RED_LT",
+    "WHITE_DK"
+   ]
+  },
+  "Cree": {
+   "civilization": "CIVILIZATION_CREE",
+   "leader": "LEADER_POUNDMAKER",
+   "pairs": [
+    [
+     "#012a6c",
+     "#61bf22"
+    ],
+    [
+     "#61bf22",
+     "#012a6c"
+    ],
+    [
+     "#74a3f3",
+     "#f7d801"
+    ],
+    [
+     "#61bf22",
+     "#f7d801"
+    ]
+   ],
+   "source": "civ6"
+  },
+  "Denmark": {
+   "pairs": [
+    [
+     "#780001",
+     "#f9f9f9"
+    ],
+    [
+     "#f9f9f9",
+     "#780001"
+    ],
+    [
+     "#e57574",
+     "#f9f9f9"
+    ],
+    [
+     "#181818",
+     "#780001"
+    ]
+   ],
+   "source": "palette",
+   "tokens": [
+    "RED_DK",
+    "WHITE_LT"
+   ]
+  },
+  "Egypt": {
+   "civilization": "CIVILIZATION_EGYPT",
+   "leader": "LEADER_CLEOPATRA",
+   "pairs": [
+    [
+     "#014f51",
+     "#eae19d"
+    ],
+    [
+     "#eae19d",
+     "#6d00cd"
+    ],
+    [
+     "#eae19d",
+     "#014f51"
+    ],
+    [
+     "#6d00cd",
+     "#eae19d"
+    ]
+   ],
+   "source": "civ6"
+  },
+  "England": {
+   "civilization": "CIVILIZATION_ENGLAND",
+   "leader": "LEADER_VICTORIA",
+   "pairs": [
+    [
+     "#ca1415",
+     "#f9f9f9"
+    ],
+    [
+     "#f9f9f9",
+     "#ca1415"
+    ],
+    [
+     "#012a6c",
+     "#ca1415"
+    ],
+    [
+     "#ca1415",
+     "#012a6c"
+    ]
+   ],
+   "source": "civ6"
+  },
+  "Ethiopia": {
+   "civilization": "CIVILIZATION_ETHIOPIA",
+   "leader": "LEADER_MENELIK",
+   "pairs": [
+    [
+     "#f7d801",
+     "#156c30"
+    ],
+    [
+     "#156c30",
+     "#f7d801"
+    ],
+    [
+     "#ca1415",
+     "#f7d801"
+    ],
+    [
+     "#156c30",
+     "#ca1415"
+    ]
+   ],
+   "source": "civ6"
+  },
+  "Finland": {
+   "pairs": [
+    [
+     "#004fce",
+     "#f9f9f9"
+    ],
+    [
+     "#f9f9f9",
+     "#004fce"
+    ],
+    [
+     "#012a6c",
+     "#f9f9f9"
+    ],
+    [
+     "#181818",
+     "#004fce"
+    ]
+   ],
+   "source": "palette",
+   "tokens": [
+    "BLUE_MD",
+    "WHITE_LT"
+   ]
+  },
+  "France": {
+   "civilization": "CIVILIZATION_FRANCE",
+   "leader": "LEADER_CATHERINE_DE_MEDICI",
+   "pairs": [
+    [
+     "#004fce",
+     "#eae19d"
+    ],
+    [
+     "#f9f9f9",
+     "#867202"
+    ],
+    [
+     "#f9f9f9",
+     "#004fce"
+    ],
+    [
+     "#012a6c",
+     "#ca1415"
+    ]
+   ],
+   "source": "civ6"
+  },
+  "Gaul": {
+   "civilization": "CIVILIZATION_GAUL",
+   "leader": "LEADER_AMBIORIX",
+   "pairs": [
+    [
+     "#156c30",
+     "#7dece3"
+    ],
+    [
+     "#eae19d",
+     "#156c30"
+    ],
+    [
+     "#783d02",
+     "#ff8112"
+    ],
+    [
+     "#ff8112",
+     "#eae19d"
+    ]
+   ],
+   "source": "civ6"
+  },
+  "Georgia": {
+   "civilization": "CIVILIZATION_GEORGIA",
+   "leader": "LEADER_TAMAR",
+   "pairs": [
+    [
+     "#f9f9f9",
+     "#ff8112"
+    ],
+    [
+     "#f9f9f9",
+     "#ca1415"
+    ],
+    [
+     "#780001",
+     "#f9f9f9"
+    ],
+    [
+     "#f7d801",
+     "#181818"
+    ]
+   ],
+   "source": "civ6"
+  },
+  "Germany": {
+   "civilization": "CIVILIZATION_GERMANY",
+   "leader": "LEADER_BARBAROSSA",
+   "pairs": [
+    [
+     "#aeaeae",
+     "#181818"
+    ],
+    [
+     "#f7d801",
+     "#181818"
+    ],
+    [
+     "#ca1415",
+     "#f9f9f9"
+    ],
+    [
+     "#f7d801",
+     "#ca1415"
+    ]
+   ],
+   "source": "civ6"
+  },
+  "Ghana": {
+   "pairs": [
+    [
+     "#f7d801",
+     "#780001"
+    ],
+    [
+     "#780001",
+     "#f7d801"
+    ],
+    [
+     "#867202",
+     "#780001"
+    ],
+    [
+     "#e57574",
+     "#f7d801"
+    ]
+   ],
+   "source": "palette",
+   "tokens": [
+    "YELLOW_MD",
+    "RED_DK"
+   ]
+  },
+  "Gran Colombia": {
+   "civilization": "CIVILIZATION_GRAN_COLOMBIA",
+   "leader": "LEADER_SIMON_BOLIVAR",
+   "pairs": [
+    [
+     "#012a6c",
+     "#f7d801"
+    ],
+    [
+     "#012a6c",
+     "#ca1415"
+    ],
+    [
+     "#ca1415",
+     "#012a6c"
+    ],
+    [
+     "#eae19d",
+     "#780001"
+    ]
+   ],
+   "source": "civ6"
+  },
+  "Great Zimbabwe": {
+   "pairs": [
+    [
+     "#79e077",
+     "#181818"
+    ],
+    [
+     "#181818",
+     "#79e077"
+    ],
+    [
+     "#156c30",
+     "#181818"
+    ],
+    [
+     "#f9f9f9",
+     "#79e077"
+    ]
+   ],
+   "source": "palette",
+   "tokens": [
+    "GREEN_LT",
+    "WHITE_DK"
+   ]
+  },
+  "Greece": {
+   "civilization": "CIVILIZATION_GREECE",
+   "leader": "LEADER_PERICLES",
+   "pairs": [
+    [
+     "#74a3f3",
+     "#f9f9f9"
+    ],
+    [
+     "#f9f9f9",
+     "#74a3f3"
+    ],
+    [
+     "#74a3f3",
+     "#012a6c"
+    ],
+    [
+     "#012a6c",
+     "#74a3f3"
+    ]
+   ],
+   "source": "civ6"
+  },
+  "Gujarat": {
+   "pairs": [
+    [
+     "#ff8112",
+     "#00c09b"
+    ],
+    [
+     "#00c09b",
+     "#ff8112"
+    ],
+    [
+     "#783d02",
+     "#00c09b"
+    ],
+    [
+     "#014f51",
+     "#ff8112"
+    ]
+   ],
+   "source": "palette",
+   "tokens": [
+    "ORANGE_MD",
+    "AQUA_MD"
+   ]
+  },
+  "Hungary": {
+   "civilization": "CIVILIZATION_HUNGARY",
+   "leader": "LEADER_MATTHIAS_CORVINUS",
+   "pairs": [
+    [
+     "#156c30",
+     "#ff8112"
+    ],
+    [
+     "#f9f9f9",
+     "#156c30"
+    ],
+    [
+     "#156c30",
+     "#ca1415"
+    ],
+    [
+     "#156c30",
+     "#f9f9f9"
+    ]
+   ],
+   "source": "civ6"
+  },
+  "Inca": {
+   "civilization": "CIVILIZATION_INCA",
+   "leader": "LEADER_PACHACUTI",
+   "pairs": [
+    [
+     "#783d02",
+     "#f7d801"
+    ],
+    [
+     "#ffb23c",
+     "#014f51"
+    ],
+    [
+     "#f7d801",
+     "#783d02"
+    ],
+    [
+     "#014f51",
+     "#ffb23c"
+    ]
+   ],
+   "source": "civ6"
+  },
+  "India": {
+   "civilization": "CIVILIZATION_INDIA",
+   "leader": "LEADER_GANDHI",
+   "pairs": [
+    [
+     "#370065",
+     "#00c09b"
+    ],
+    [
+     "#00c09b",
+     "#370065"
+    ],
+    [
+     "#156c30",
+     "#ffb23c"
+    ],
+    [
+     "#ffb23c",
+     "#156c30"
+    ]
+   ],
+   "source": "civ6"
+  },
+  "Indonesia": {
+   "civilization": "CIVILIZATION_INDONESIA",
+   "leader": "LEADER_GITARJA",
+   "pairs": [
+    [
+     "#780001",
+     "#00c09b"
+    ],
+    [
+     "#00c09b",
+     "#780001"
+    ],
+    [
+     "#ca1415",
+     "#f9f9f9"
+    ],
+    [
+     "#012a6c",
+     "#00c09b"
+    ]
+   ],
+   "source": "civ6"
+  },
+  "Ireland": {
+   "pairs": [
+    [
+     "#61bf22",
+     "#ff8112"
+    ],
+    [
+     "#ff8112",
+     "#61bf22"
+    ],
+    [
+     "#156c30",
+     "#ff8112"
+    ],
+    [
+     "#783d02",
+     "#61bf22"
+    ]
+   ],
+   "source": "palette",
+   "tokens": [
+    "GREEN_MD",
+    "ORANGE_MD"
+   ]
+  },
+  "Israel": {
+   "pairs": [
+    [
+     "#f9f9f9",
+     "#74a3f3"
+    ],
+    [
+     "#74a3f3",
+     "#f9f9f9"
+    ],
+    [
+     "#181818",
+     "#74a3f3"
+    ],
+    [
+     "#012a6c",
+     "#f9f9f9"
+    ]
+   ],
+   "source": "palette",
+   "tokens": [
+    "WHITE_LT",
+    "BLUE_LT"
+   ]
+  },
+  "Japan": {
+   "civilization": "CIVILIZATION_JAPAN",
+   "leader": "LEADER_HOJO",
+   "pairs": [
+    [
+     "#f9f9f9",
+     "#780001"
+    ],
+    [
+     "#780001",
+     "#f9f9f9"
+    ],
+    [
+     "#004fce",
+     "#f9f9f9"
+    ],
+    [
+     "#f9f9f9",
+     "#004fce"
+    ]
+   ],
+   "source": "civ6"
+  },
+  "Kalinga": {
+   "pairs": [
+    [
+     "#ffb23c",
+     "#370065"
+    ],
+    [
+     "#370065",
+     "#ffb23c"
+    ],
+    [
+     "#783d02",
+     "#370065"
+    ],
+    [
+     "#b780e6",
+     "#ffb23c"
+    ]
+   ],
+   "source": "palette",
+   "tokens": [
+    "ORANGE_LT",
+    "PURPLE_DK"
+   ]
+  },
+  "Kazakh": {
+   "pairs": [
+    [
+     "#00c09b",
+     "#f7d801"
+    ],
+    [
+     "#f7d801",
+     "#00c09b"
+    ],
+    [
+     "#014f51",
+     "#f7d801"
+    ],
+    [
+     "#867202",
+     "#00c09b"
+    ]
+   ],
+   "source": "palette",
+   "tokens": [
+    "AQUA_MD",
+    "YELLOW_MD"
+   ]
+  },
+  "Khmer": {
+   "civilization": "CIVILIZATION_KHMER",
+   "leader": "LEADER_JAYAVARMAN",
+   "pairs": [
+    [
+     "#750073",
+     "#ff8112"
+    ],
+    [
+     "#012a6c",
+     "#eae19d"
+    ],
+    [
+     "#783d02",
+     "#ff8112"
+    ],
+    [
+     "#ff8112",
+     "#750073"
+    ]
+   ],
+   "source": "civ6"
+  },
+  "Kongo": {
+   "civilization": "CIVILIZATION_KONGO",
+   "leader": "LEADER_MVEMBA",
+   "pairs": [
+    [
+     "#f7d801",
+     "#ca1415"
+    ],
+    [
+     "#ca1415",
+     "#f7d801"
+    ],
+    [
+     "#79e077",
+     "#783d02"
+    ],
+    [
+     "#783d02",
+     "#79e077"
+    ]
+   ],
+   "source": "civ6"
+  },
+  "Korea": {
+   "civilization": "CIVILIZATION_KOREA",
+   "leader": "LEADER_SEONDEOK",
+   "pairs": [
+    [
+     "#ca1415",
+     "#74a3f3"
+    ],
+    [
+     "#74a3f3",
+     "#ca1415"
+    ],
+    [
+     "#ff8112",
+     "#f9f9f9"
+    ],
+    [
+     "#f9f9f9",
+     "#ff8112"
+    ]
+   ],
+   "source": "civ6"
+  },
+  "Lithuania": {
+   "pairs": [
+    [
+     "#867202",
+     "#ca1415"
+    ],
+    [
+     "#ca1415",
+     "#867202"
+    ],
+    [
+     "#eae19d",
+     "#ca1415"
+    ],
+    [
+     "#780001",
+     "#867202"
+    ]
+   ],
+   "source": "palette",
+   "tokens": [
+    "YELLOW_DK",
+    "RED_MD"
+   ]
+  },
+  "Lydia": {
+   "pairs": [
+    [
+     "#eae19d",
+     "#780001"
+    ],
+    [
+     "#780001",
+     "#eae19d"
+    ],
+    [
+     "#867202",
+     "#780001"
+    ],
+    [
+     "#e57574",
+     "#eae19d"
+    ]
+   ],
+   "source": "palette",
+   "tokens": [
+    "YELLOW_LT",
+    "RED_DK"
+   ]
+  },
+  "Macedon": {
+   "civilization": "CIVILIZATION_MACEDON",
+   "leader": "LEADER_ALEXANDER",
+   "pairs": [
+    [
+     "#aeaeae",
+     "#f7d801"
+    ],
+    [
+     "#012a6c",
+     "#f7d801"
+    ],
+    [
+     "#ca1415",
+     "#f7d801"
+    ],
+    [
+     "#f7d801",
+     "#012a6c"
+    ]
+   ],
+   "source": "civ6"
+  },
+  "Madagascar": {
+   "pairs": [
+    [
+     "#ff00ff",
+     "#156c30"
+    ],
+    [
+     "#156c30",
+     "#ff00ff"
+    ],
+    [
+     "#750073",
+     "#156c30"
+    ],
+    [
+     "#79e077",
+     "#ff00ff"
+    ]
+   ],
+   "source": "palette",
+   "tokens": [
+    "MAGENTA_MD",
+    "GREEN_DK"
+   ]
+  },
+  "Majapahit": {
+   "pairs": [
+    [
+     "#e57574",
+     "#f9f9f9"
+    ],
+    [
+     "#f9f9f9",
+     "#e57574"
+    ],
+    [
+     "#780001",
+     "#f9f9f9"
+    ],
+    [
+     "#181818",
+     "#e57574"
+    ]
+   ],
+   "source": "palette",
+   "tokens": [
+    "RED_LT",
+    "WHITE_LT"
+   ]
+  },
+  "Mali": {
+   "civilization": "CIVILIZATION_MALI",
+   "leader": "LEADER_MANSA_MUSA",
+   "pairs": [
+    [
+     "#780001",
+     "#eae19d"
+    ],
+    [
+     "#eae19d",
+     "#780001"
+    ],
+    [
+     "#867202",
+     "#f9f9f9"
+    ],
+    [
+     "#867202",
+     "#79e077"
+    ]
+   ],
+   "source": "civ6"
+  },
+  "Manchuria": {
+   "pairs": [
+    [
+     "#867202",
+     "#181818"
+    ],
+    [
+     "#181818",
+     "#867202"
+    ],
+    [
+     "#eae19d",
+     "#181818"
+    ],
+    [
+     "#f9f9f9",
+     "#867202"
+    ]
+   ],
+   "source": "palette",
+   "tokens": [
+    "YELLOW_DK",
+    "WHITE_DK"
+   ]
+  },
+  "Maori": {
+   "civilization": "CIVILIZATION_MAORI",
+   "leader": "LEADER_KUPE",
+   "pairs": [
+    [
+     "#ca1415",
+     "#7dece3"
+    ],
+    [
+     "#7dece3",
+     "#ca1415"
+    ],
+    [
+     "#00c09b",
+     "#7dece3"
+    ],
+    [
+     "#783d02",
+     "#eae19d"
+    ]
+   ],
+   "source": "civ6"
+  },
+  "Mapuche": {
+   "civilization": "CIVILIZATION_MAPUCHE",
+   "leader": "LEADER_LAUTARO",
+   "pairs": [
+    [
+     "#004fce",
+     "#7dece3"
+    ],
+    [
+     "#f7d801",
+     "#780001"
+    ],
+    [
+     "#eae19d",
+     "#783d02"
+    ],
+    [
+     "#74a3f3",
+     "#012a6c"
+    ]
+   ],
+   "source": "civ6"
+  },
+  "Maratha": {
+   "pairs": [
+    [
+     "#ff8112",
+     "#370065"
+    ],
+    [
+     "#370065",
+     "#ff8112"
+    ],
+    [
+     "#783d02",
+     "#370065"
+    ],
+    [
+     "#b780e6",
+     "#ff8112"
+    ]
+   ],
+   "source": "palette",
+   "tokens": [
+    "ORANGE_MD",
+    "PURPLE_DK"
+   ]
+  },
+  "Maya": {
+   "civilization": "CIVILIZATION_MAYA",
+   "leader": "LEADER_LADY_SIX_SKY",
+   "pairs": [
+    [
+     "#74a3f3",
+     "#014f51"
+    ],
+    [
+     "#014f51",
+     "#74a3f3"
+    ],
+    [
+     "#156c30",
+     "#eae19d"
+    ],
+    [
+     "#ffb23c",
+     "#014f51"
+    ]
+   ],
+   "source": "civ6"
+  },
+  "Media": {
+   "pairs": [
+    [
+     "#6d00cd",
+     "#7dece3"
+    ],
+    [
+     "#7dece3",
+     "#6d00cd"
+    ],
+    [
+     "#370065",
+     "#7dece3"
+    ],
+    [
+     "#014f51",
+     "#6d00cd"
+    ]
+   ],
+   "source": "palette",
+   "tokens": [
+    "PURPLE_MD",
+    "AQUA_LT"
+   ]
+  },
+  "Mongolia": {
+   "civilization": "CIVILIZATION_MONGOLIA",
+   "leader": "LEADER_GENGHIS_KHAN",
+   "pairs": [
+    [
+     "#780001",
+     "#ff8112"
+    ],
+    [
+     "#ff8112",
+     "#780001"
+    ],
+    [
+     "#eae19d",
+     "#780001"
+    ],
+    [
+     "#780001",
+     "#f7d801"
+    ]
+   ],
+   "source": "civ6"
+  },
+  "Morocco": {
+   "pairs": [
+    [
+     "#780001",
+     "#61bf22"
+    ],
+    [
+     "#61bf22",
+     "#780001"
+    ],
+    [
+     "#e57574",
+     "#61bf22"
+    ],
+    [
+     "#156c30",
+     "#780001"
+    ]
+   ],
+   "source": "palette",
+   "tokens": [
+    "RED_DK",
+    "GREEN_MD"
+   ]
+  },
+  "Muisca": {
+   "pairs": [
+    [
+     "#eae19d",
+     "#156c30"
+    ],
+    [
+     "#156c30",
+     "#eae19d"
+    ],
+    [
+     "#867202",
+     "#156c30"
+    ],
+    [
+     "#79e077",
+     "#eae19d"
+    ]
+   ],
+   "source": "palette",
+   "tokens": [
+    "YELLOW_LT",
+    "GREEN_DK"
+   ]
+  },
+  "Nepal": {
+   "pairs": [
+    [
+     "#ca1415",
+     "#012a6c"
+    ],
+    [
+     "#012a6c",
+     "#ca1415"
+    ],
+    [
+     "#780001",
+     "#012a6c"
+    ],
+    [
+     "#74a3f3",
+     "#ca1415"
+    ]
+   ],
+   "source": "palette",
+   "tokens": [
+    "RED_MD",
+    "BLUE_DK"
+   ]
+  },
+  "Netherlands": {
+   "civilization": "CIVILIZATION_NETHERLANDS",
+   "leader": "LEADER_WILHELMINA",
+   "pairs": [
+    [
+     "#ff8112",
+     "#004fce"
+    ],
+    [
+     "#ff8112",
+     "#f9f9f9"
+    ],
+    [
+     "#ff8112",
+     "#ffb23c"
+    ],
+    [
+     "#ff8112",
+     "#780001"
+    ]
+   ],
+   "source": "civ6"
+  },
+  "Norway": {
+   "civilization": "CIVILIZATION_NORWAY",
+   "leader": "LEADER_HARDRADA",
+   "pairs": [
+    [
+     "#012a6c",
+     "#ca1415"
+    ],
+    [
+     "#ca1415",
+     "#012a6c"
+    ],
+    [
+     "#ca1415",
+     "#f7d801"
+    ],
+    [
+     "#f7d801",
+     "#ca1415"
+    ]
+   ],
+   "source": "civ6"
+  },
+  "Novgorod": {
+   "pairs": [
+    [
+     "#014f51",
+     "#f7d801"
+    ],
+    [
+     "#f7d801",
+     "#014f51"
+    ],
+    [
+     "#7dece3",
+     "#f7d801"
+    ],
+    [
+     "#867202",
+     "#014f51"
+    ]
+   ],
+   "source": "palette",
+   "tokens": [
+    "AQUA_DK",
+    "YELLOW_MD"
+   ]
+  },
+  "Nubia": {
+   "civilization": "CIVILIZATION_NUBIA",
+   "leader": "LEADER_AMANITORE",
+   "pairs": [
+    [
+     "#eae19d",
+     "#783d02"
+    ],
+    [
+     "#783d02",
+     "#eae19d"
+    ],
+    [
+     "#f9f9f9",
+     "#783d02"
+    ],
+    [
+     "#783d02",
+     "#f9f9f9"
+    ]
+   ],
+   "source": "civ6"
+  },
+  "Numidia": {
+   "pairs": [
+    [
+     "#783d02",
+     "#eae19d"
+    ],
+    [
+     "#eae19d",
+     "#783d02"
+    ],
+    [
+     "#ffb23c",
+     "#eae19d"
+    ],
+    [
+     "#867202",
+     "#783d02"
+    ]
+   ],
+   "source": "palette",
+   "tokens": [
+    "ORANGE_DK",
+    "YELLOW_LT"
+   ]
+  },
+  "Ottomans": {
+   "civilization": "CIVILIZATION_OTTOMAN",
+   "leader": "LEADER_SULEIMAN",
+   "pairs": [
+    [
+     "#f9f9f9",
+     "#156c30"
+    ],
+    [
+     "#ca1415",
+     "#f9f9f9"
+    ],
+    [
+     "#156c30",
+     "#f9f9f9"
+    ],
+    [
+     "#156c30",
+     "#e57574"
+    ]
+   ],
+   "source": "civ6"
+  },
+  "Oyo": {
+   "pairs": [
+    [
+     "#b780e6",
+     "#867202"
+    ],
+    [
+     "#867202",
+     "#b780e6"
+    ],
+    [
+     "#370065",
+     "#867202"
+    ],
+    [
+     "#eae19d",
+     "#b780e6"
+    ]
+   ],
+   "source": "palette",
+   "tokens": [
+    "PURPLE_LT",
+    "YELLOW_DK"
+   ]
+  },
+  "Parthia": {
+   "pairs": [
+    [
+     "#014f51",
+     "#ffb23c"
+    ],
+    [
+     "#ffb23c",
+     "#014f51"
+    ],
+    [
+     "#7dece3",
+     "#ffb23c"
+    ],
+    [
+     "#783d02",
+     "#014f51"
+    ]
+   ],
+   "source": "palette",
+   "tokens": [
+    "AQUA_DK",
+    "ORANGE_LT"
+   ]
+  },
+  "Persia": {
+   "civilization": "CIVILIZATION_PERSIA",
+   "leader": "LEADER_CYRUS",
+   "pairs": [
+    [
+     "#b780e6",
+     "#780001"
+    ],
+    [
+     "#780001",
+     "#b780e6"
+    ],
+    [
+     "#ca1415",
+     "#f7d801"
+    ],
+    [
+     "#00c09b",
+     "#780001"
+    ]
+   ],
+   "source": "civ6"
+  },
+  "Phoenicia": {
+   "civilization": "CIVILIZATION_PHOENICIA",
+   "leader": "LEADER_DIDO",
+   "pairs": [
+    [
+     "#6d00cd",
+     "#74a3f3"
+    ],
+    [
+     "#6d00cd",
+     "#f9f9f9"
+    ],
+    [
+     "#370065",
+     "#ffb23c"
+    ],
+    [
+     "#f9f9f9",
+     "#370065"
+    ]
+   ],
+   "source": "civ6"
+  },
+  "Poland": {
+   "civilization": "CIVILIZATION_POLAND",
+   "leader": "LEADER_JADWIGA",
+   "pairs": [
+    [
+     "#780001",
+     "#e57574"
+    ],
+    [
+     "#f9f9f9",
+     "#e57574"
+    ],
+    [
+     "#012a6c",
+     "#f9f9f9"
+    ],
+    [
+     "#f9f9f9",
+     "#012a6c"
+    ]
+   ],
+   "source": "civ6"
+  },
+  "Portugal": {
+   "civilization": "CIVILIZATION_PORTUGAL",
+   "leader": "LEADER_JOAO_III",
+   "pairs": [
+    [
+     "#f9f9f9",
+     "#012a6c"
+    ],
+    [
+     "#61bf22",
+     "#780001"
+    ],
+    [
+     "#012a6c",
+     "#f9f9f9"
+    ],
+    [
+     "#780001",
+     "#f7d801"
+    ]
+   ],
+   "source": "civ6"
+  },
+  "Prussia": {
+   "pairs": [
+    [
+     "#181818",
+     "#aeaeae"
+    ],
+    [
+     "#aeaeae",
+     "#181818"
+    ],
+    [
+     "#f9f9f9",
+     "#aeaeae"
+    ]
+   ],
+   "source": "palette",
+   "tokens": [
+    "WHITE_DK",
+    "WHITE_MD2"
+   ]
+  },
+  "Pueblo": {
+   "pairs": [
+    [
+     "#ffb23c",
+     "#014f51"
+    ],
+    [
+     "#014f51",
+     "#ffb23c"
+    ],
+    [
+     "#783d02",
+     "#014f51"
+    ],
+    [
+     "#7dece3",
+     "#ffb23c"
+    ]
+   ],
+   "source": "palette",
+   "tokens": [
+    "ORANGE_LT",
+    "AQUA_DK"
+   ]
+  },
+  "Romania": {
+   "pairs": [
+    [
+     "#004fce",
+     "#ca1415"
+    ],
+    [
+     "#ca1415",
+     "#004fce"
+    ],
+    [
+     "#012a6c",
+     "#ca1415"
+    ],
+    [
+     "#780001",
+     "#004fce"
+    ]
+   ],
+   "source": "palette",
+   "tokens": [
+    "BLUE_MD",
+    "RED_MD"
+   ]
+  },
+  "Rome": {
+   "civilization": "CIVILIZATION_ROME",
+   "leader": "LEADER_TRAJAN",
+   "pairs": [
+    [
+     "#6d00cd",
+     "#f7d801"
+    ],
+    [
+     "#780001",
+     "#f7d801"
+    ],
+    [
+     "#f7d801",
+     "#370065"
+    ],
+    [
+     "#6d00cd",
+     "#f9f9f9"
+    ]
+   ],
+   "source": "civ6"
+  },
+  "Russia": {
+   "civilization": "CIVILIZATION_RUSSIA",
+   "leader": "LEADER_PETER_GREAT",
+   "pairs": [
+    [
+     "#f7d801",
+     "#181818"
+    ],
+    [
+     "#f9f9f9",
+     "#004fce"
+    ],
+    [
+     "#004fce",
+     "#f9f9f9"
+    ],
+    [
+     "#012a6c",
+     "#e57574"
+    ]
+   ],
+   "source": "civ6"
+  },
+  "Scotland": {
+   "civilization": "CIVILIZATION_SCOTLAND",
+   "leader": "LEADER_ROBERT_THE_BRUCE",
+   "pairs": [
+    [
+     "#f9f9f9",
+     "#004fce"
+    ],
+    [
+     "#004fce",
+     "#f9f9f9"
+    ],
+    [
+     "#f7d801",
+     "#ca1415"
+    ],
+    [
+     "#f7d801",
+     "#004fce"
+    ]
+   ],
+   "source": "civ6"
+  },
+  "Scythia": {
+   "civilization": "CIVILIZATION_SCYTHIA",
+   "leader": "LEADER_TOMYRIS",
+   "pairs": [
+    [
+     "#ffb23c",
+     "#780001"
+    ],
+    [
+     "#783d02",
+     "#f9f9f9"
+    ],
+    [
+     "#780001",
+     "#eae19d"
+    ],
+    [
+     "#783d02",
+     "#eae19d"
+    ]
+   ],
+   "source": "civ6"
+  },
+  "Serbia": {
+   "pairs": [
+    [
+     "#012a6c",
+     "#e57574"
+    ],
+    [
+     "#e57574",
+     "#012a6c"
+    ],
+    [
+     "#74a3f3",
+     "#e57574"
+    ],
+    [
+     "#780001",
+     "#012a6c"
+    ]
+   ],
+   "source": "palette",
+   "tokens": [
+    "BLUE_DK",
+    "RED_LT"
+   ]
+  },
+  "Siam": {
+   "pairs": [
+    [
+     "#ca1415",
+     "#004fce"
+    ],
+    [
+     "#004fce",
+     "#ca1415"
+    ],
+    [
+     "#780001",
+     "#004fce"
+    ],
+    [
+     "#012a6c",
+     "#ca1415"
+    ]
+   ],
+   "source": "palette",
+   "tokens": [
+    "RED_MD",
+    "BLUE_MD"
+   ]
+  },
+  "Sioux": {
+   "pairs": [
+    [
+     "#370065",
+     "#aeaeae"
+    ],
+    [
+     "#aeaeae",
+     "#370065"
+    ],
+    [
+     "#b780e6",
+     "#aeaeae"
+    ],
+    [
+     "#181818",
+     "#370065"
+    ]
+   ],
+   "source": "palette",
+   "tokens": [
+    "PURPLE_DK",
+    "WHITE_MD2"
+   ]
+  },
+  "Sogdiana": {
+   "pairs": [
+    [
+     "#7dece3",
+     "#370065"
+    ],
+    [
+     "#370065",
+     "#7dece3"
+    ],
+    [
+     "#014f51",
+     "#370065"
+    ],
+    [
+     "#b780e6",
+     "#7dece3"
+    ]
+   ],
+   "source": "palette",
+   "tokens": [
+    "AQUA_LT",
+    "PURPLE_DK"
+   ]
+  },
+  "Songhai": {
+   "pairs": [
+    [
+     "#867202",
+     "#7dece3"
+    ],
+    [
+     "#7dece3",
+     "#867202"
+    ],
+    [
+     "#eae19d",
+     "#7dece3"
+    ],
+    [
+     "#014f51",
+     "#867202"
+    ]
+   ],
+   "source": "palette",
+   "tokens": [
+    "YELLOW_DK",
+    "AQUA_LT"
+   ]
+  },
+  "Spain": {
+   "civilization": "CIVILIZATION_SPAIN",
+   "leader": "LEADER_PHILIP_II",
+   "pairs": [
+    [
+     "#ca1415",
+     "#f7d801"
+    ],
+    [
+     "#f7d801",
+     "#ca1415"
+    ],
+    [
+     "#ca1415",
+     "#012a6c"
+    ],
+    [
+     "#012a6c",
+     "#ca1415"
+    ]
+   ],
+   "source": "civ6"
+  },
+  "Sumeria": {
+   "civilization": "CIVILIZATION_SUMERIA",
+   "leader": "LEADER_GILGAMESH",
+   "pairs": [
+    [
+     "#012a6c",
+     "#ff8112"
+    ],
+    [
+     "#012a6c",
+     "#7dece3"
+    ],
+    [
+     "#ff8112",
+     "#012a6c"
+    ],
+    [
+     "#012a6c",
+     "#b780e6"
+    ]
+   ],
+   "source": "civ6"
+  },
+  "Swahili": {
+   "pairs": [
+    [
+     "#00c09b",
+     "#780001"
+    ],
+    [
+     "#780001",
+     "#00c09b"
+    ],
+    [
+     "#014f51",
+     "#780001"
+    ],
+    [
+     "#e57574",
+     "#00c09b"
+    ]
+   ],
+   "source": "palette",
+   "tokens": [
+    "AQUA_MD",
+    "RED_DK"
+   ]
+  },
+  "Sweden": {
+   "civilization": "CIVILIZATION_SWEDEN",
+   "leader": "LEADER_KRISTINA",
+   "pairs": [
+    [
+     "#74a3f3",
+     "#f7d801"
+    ],
+    [
+     "#f7d801",
+     "#012a6c"
+    ],
+    [
+     "#004fce",
+     "#f9f9f9"
+    ],
+    [
+     "#f9f9f9",
+     "#012a6c"
+    ]
+   ],
+   "source": "civ6"
+  },
+  "Switzerland": {
+   "pairs": [
+    [
+     "#ca1415",
+     "#181818"
+    ],
+    [
+     "#181818",
+     "#ca1415"
+    ],
+    [
+     "#780001",
+     "#181818"
+    ],
+    [
+     "#f9f9f9",
+     "#ca1415"
+    ]
+   ],
+   "source": "palette",
+   "tokens": [
+    "RED_MD",
+    "WHITE_DK"
+   ]
+  },
+  "Tibet": {
+   "pairs": [
+    [
+     "#ca1415",
+     "#eae19d"
+    ],
+    [
+     "#eae19d",
+     "#ca1415"
+    ],
+    [
+     "#780001",
+     "#eae19d"
+    ],
+    [
+     "#867202",
+     "#ca1415"
+    ]
+   ],
+   "source": "palette",
+   "tokens": [
+    "RED_MD",
+    "YELLOW_LT"
+   ]
+  },
+  "Timurids": {
+   "pairs": [
+    [
+     "#00c09b",
+     "#181818"
+    ],
+    [
+     "#181818",
+     "#00c09b"
+    ],
+    [
+     "#014f51",
+     "#181818"
+    ],
+    [
+     "#f9f9f9",
+     "#00c09b"
+    ]
+   ],
+   "source": "palette",
+   "tokens": [
+    "AQUA_MD",
+    "WHITE_DK"
+   ]
+  },
+  "Tuareg": {
+   "pairs": [
+    [
+     "#74a3f3",
+     "#783d02"
+    ],
+    [
+     "#783d02",
+     "#74a3f3"
+    ],
+    [
+     "#012a6c",
+     "#783d02"
+    ],
+    [
+     "#ffb23c",
+     "#74a3f3"
+    ]
+   ],
+   "source": "palette",
+   "tokens": [
+    "BLUE_LT",
+    "ORANGE_DK"
+   ]
+  },
+  "Ukraine": {
+   "pairs": [
+    [
+     "#004fce",
+     "#f7d801"
+    ],
+    [
+     "#f7d801",
+     "#004fce"
+    ],
+    [
+     "#012a6c",
+     "#f7d801"
+    ],
+    [
+     "#867202",
+     "#004fce"
+    ]
+   ],
+   "source": "palette",
+   "tokens": [
+    "BLUE_MD",
+    "YELLOW_MD"
+   ]
+  },
+  "Venice": {
+   "pairs": [
+    [
+     "#780001",
+     "#f7d801"
+    ],
+    [
+     "#f7d801",
+     "#780001"
+    ],
+    [
+     "#e57574",
+     "#f7d801"
+    ],
+    [
+     "#867202",
+     "#780001"
+    ]
+   ],
+   "source": "palette",
+   "tokens": [
+    "RED_DK",
+    "YELLOW_MD"
+   ]
+  },
+  "Vietnam": {
+   "civilization": "CIVILIZATION_VIETNAM",
+   "leader": "LEADER_LADY_TRIEU",
+   "pairs": [
+    [
+     "#f7d801",
+     "#750073"
+    ],
+    [
+     "#f7d801",
+     "#783d02"
+    ],
+    [
+     "#ca1415",
+     "#f7d801"
+    ],
+    [
+     "#f7d801",
+     "#181818"
+    ]
+   ],
+   "source": "civ6"
+  },
+  "Zulu": {
+   "civilization": "CIVILIZATION_ZULU",
+   "leader": "LEADER_SHAKA",
+   "pairs": [
+    [
+     "#783d02",
+     "#f9f9f9"
+    ],
+    [
+     "#156c30",
+     "#eae19d"
+    ],
+    [
+     "#f9f9f9",
+     "#783d02"
+    ],
+    [
+     "#61bf22",
+     "#181818"
+    ]
+   ],
+   "source": "civ6"
+  }
+ },
+ "palette": {
+  "AQUA_DK": "#014f51",
+  "AQUA_LT": "#7dece3",
+  "AQUA_MD": "#00c09b",
+  "BLUE_DK": "#012a6c",
+  "BLUE_LT": "#74a3f3",
+  "BLUE_MD": "#004fce",
+  "GREEN_DK": "#156c30",
+  "GREEN_LT": "#79e077",
+  "GREEN_MD": "#61bf22",
+  "MAGENTA_DK": "#750073",
+  "MAGENTA_LT": "#ff99ff",
+  "MAGENTA_MD": "#ff00ff",
+  "ORANGE_DK": "#783d02",
+  "ORANGE_LT": "#ffb23c",
+  "ORANGE_MD": "#ff8112",
+  "PURPLE_DK": "#370065",
+  "PURPLE_LT": "#b780e6",
+  "PURPLE_MD": "#6d00cd",
+  "RED_DK": "#780001",
+  "RED_LT": "#e57574",
+  "RED_MD": "#ca1415",
+  "WHITE_DK": "#181818",
+  "WHITE_LT": "#f9f9f9",
+  "WHITE_MD": "#535353",
+  "WHITE_MD2": "#aeaeae",
+  "YELLOW_DK": "#867202",
+  "YELLOW_LT": "#eae19d",
+  "YELLOW_MD": "#f7d801"
+ }
+}

@@ -77,6 +77,26 @@
       "anchor": false
     },
     {
+      "name": "strategic",
+      "username": "DeepThought",
+      "kind": {
+        "Builtin": {
+          "ai": "strategic"
+        }
+      },
+      "rating": 1500.0,
+      "rd": 350.0,
+      "vol": 0.06,
+      "games": 0,
+      "wins": 0,
+      "leader_elo": {},
+      "born_round": 60,
+      "parents": [],
+      "retired": false,
+      "anchor": true,
+      "league_only": true
+    },
+    {
       "name": "basic",
       "username": "TrainingWheels",
       "kind": {
