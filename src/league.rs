@@ -61,6 +61,10 @@ const LOCK_LEASE_SECONDS: u64 = 5 * 60;
 const LOCK_RETRIES: usize = 2_400;
 const WORKER_ACTIVE_SECONDS: u64 = 2 * 60;
 const WORKER_DISCOVERY_MILLIS: u64 = 250;
+/// Marks a runtime roster whose controller-family membership follows the
+/// shipped default. The spectator supervisor creates it only for `--league
+/// auto`; explicitly named and hand-built experimental pools remain exact.
+const MANAGED_ROSTER_MARKER: &str = ".civvis-managed-roster";
 
 /// How a seat materializes an `Ai`.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -748,6 +752,7 @@ fn username_pool(lane: Option<&str>) -> &'static [&'static str] {
 fn founder_username(name: &str) -> Option<&'static str> {
     Some(match name {
         "advanced" => "JackOfAllTrades",
+        "advanced_evolved" => "TheHeir",
         "basic" => "TrainingWheels",
         "advanced_v1" => "OldGuard",
         "strategic" => "DeepThought",
@@ -1345,9 +1350,9 @@ fn validate_result(
 // ---------------------------------------------------------------------------
 // League lifecycle.
 
-/// Founding roster: anchor reference agents, the six fixed victory lanes
-/// (the "particular higher-level strategies" the league exists to compare),
-/// and the GA champion if one has been evolved on this machine.
+/// Founding roster: anchor reference agents, the embedded champion, the six
+/// fixed victory lanes (the "particular higher-level strategies" the league
+/// exists to compare), and a local GA champion if one exists on this machine.
 fn seed_league(dir: &str) -> League {
     let mut strategies = Vec::new();
     let mut builtin = |name: &str, ai: &str, anchor: bool| {
@@ -1360,6 +1365,9 @@ fn seed_league(dir: &str) -> League {
         strategies.push(s);
     };
     builtin("advanced", "advanced", true);
+    // The embedded champion is a distinct identity. Calling the stock agent
+    // `advanced_evolved` would reinterpret all of `advanced`'s history.
+    builtin("advanced_evolved", "advanced_evolved", false);
     builtin("basic", "basic", true);
     builtin("advanced_v1", "advanced_v1", false);
     // The only agent here that searches, and the only one this roster could not
@@ -1420,7 +1428,25 @@ fn seed_league(dir: &str) -> League {
 
 pub fn load_league(dir: &str) -> Option<League> {
     let raw = fs::read_to_string(Path::new(dir).join("league.json")).ok()?;
-    Some(parse_league(&raw)?)
+    let mut league = parse_league(&raw)?;
+    reconcile_idle_managed_roster(dir, &mut league);
+    Some(league)
+}
+
+/// Read a roster while its state lock is held, persisting any safe managed
+/// roster migration before the caller can snapshot or mutate it.
+fn load_league_for_update(dir: &str) -> io::Result<Option<League>> {
+    let raw = match fs::read_to_string(Path::new(dir).join("league.json")) {
+        Ok(raw) => raw,
+        Err(error) if error.kind() == ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(error),
+    };
+    let mut league = parse_league(&raw)
+        .ok_or_else(|| io::Error::new(ErrorKind::InvalidData, "invalid league.json"))?;
+    if reconcile_idle_managed_roster(dir, &mut league) {
+        save_league_checked(dir, &league)?;
+    }
+    Ok(Some(league))
 }
 
 fn parse_league(raw: &str) -> Option<League> {
@@ -1428,6 +1454,94 @@ fn parse_league(raw: &str) -> Option<League> {
     migrate_legacy_leader_ratings(&mut league);
     ensure_usernames(&mut league);
     Some(league)
+}
+
+/// Append controller families that a managed long-lived roster predates.
+///
+/// Names are stable rating identities, so an existing row is never replaced,
+/// re-rated, or reset. The one policy migration is an exact builtin
+/// `strategic` row: it is kept as a non-retiring offline anchor because its
+/// measured cost is outside the live exhibition budget. A same-name custom
+/// row of any other kind is left untouched rather than silently reinterpreted.
+fn reconcile_required_entrants(league: &mut League) -> bool {
+    let mut changed = false;
+    let advanced_rating = league
+        .strategies
+        .iter()
+        .find(|strategy| {
+            strategy.name == "advanced"
+                && !strategy.human
+                && matches!(&strategy.kind, StrategyKind::Builtin { ai } if ai == "advanced")
+        })
+        .map(|strategy| strategy.rating)
+        .unwrap_or(BASE_RATING);
+
+    if !league
+        .strategies
+        .iter()
+        .any(|strategy| strategy.name == "advanced_evolved")
+    {
+        let mut evolved = Strategy::new(
+            "advanced_evolved",
+            StrategyKind::Builtin {
+                ai: "advanced_evolved".to_string(),
+            },
+            league.round,
+        );
+        // Match the committed snapshot's conservative prior: the control's
+        // point estimate, but a newborn RD and no imported results.
+        evolved.rating = advanced_rating;
+        league.strategies.push(evolved);
+        changed = true;
+    }
+
+    match league
+        .strategies
+        .iter_mut()
+        .find(|strategy| strategy.name == "strategic")
+    {
+        Some(strategy)
+            if !strategy.human
+                && matches!(&strategy.kind, StrategyKind::Builtin { ai } if ai == "strategic") =>
+        {
+            if !strategy.anchor {
+                strategy.anchor = true;
+                changed = true;
+            }
+            if !strategy.league_only {
+                strategy.league_only = true;
+                changed = true;
+            }
+        }
+        Some(_) => {}
+        None => {
+            let mut strategic = Strategy::new(
+                "strategic",
+                StrategyKind::Builtin {
+                    ai: "strategic".to_string(),
+                },
+                league.round,
+            );
+            strategic.anchor = true;
+            strategic.league_only = true;
+            league.strategies.push(strategic);
+            changed = true;
+        }
+    }
+
+    if changed {
+        ensure_usernames(league);
+    }
+    changed
+}
+
+/// A distributed round is an immutable promise about its exact roster. Defer
+/// admission until that round finalizes; the next round number has no manifest
+/// yet and can persist the new entrants before constructing one.
+fn reconcile_idle_managed_roster(dir: &str, league: &mut League) -> bool {
+    Path::new(dir).join(MANAGED_ROSTER_MARKER).exists()
+        && !manifest_path(dir, league.round).exists()
+        && reconcile_required_entrants(league)
 }
 
 /// The committed roster, compiled into the binary.
@@ -1836,7 +1950,7 @@ fn apply_round(league: &mut League, outcomes: &[Outcome], age_idle: bool) {
 pub fn register_player(dir: &str) -> Option<(League, usize)> {
     let worker = default_worker_id();
     let _lock = acquire_league_lock(dir, &worker).ok()?;
-    let mut league = load_league(dir)?;
+    let mut league = load_league_for_update(dir).ok()??;
     if manifest_path(dir, league.round).exists() {
         return None;
     }
@@ -1857,7 +1971,7 @@ pub fn record_game(
     }
     let worker = default_worker_id();
     let _lock = acquire_league_lock(dir, &worker).ok()?;
-    let mut league = load_league(dir)?;
+    let mut league = load_league_for_update(dir).ok()??;
     // A distributed round snapshots this exact roster and rating period.
     // Mixing an ad-hoc exhibition into it would invalidate already-running
     // jobs, so leave that game unrated and let the batch finish intact.
@@ -2374,7 +2488,7 @@ fn try_finalize_round(
     expected_manifest: &RoundManifest,
 ) -> io::Result<Option<FinalizedRound>> {
     let _lock = acquire_league_lock(&cfg.dir, &cfg.worker_id)?;
-    let mut league = load_league(&cfg.dir).ok_or_else(|| {
+    let mut league = load_league_for_update(&cfg.dir)?.ok_or_else(|| {
         io::Error::new(
             ErrorKind::NotFound,
             format!("missing {}/league.json", cfg.dir),
@@ -2583,7 +2697,7 @@ pub fn try_run_league(cfg: &LeagueCfg) -> io::Result<League> {
     }
     let initial = {
         let _lock = acquire_league_lock(&cfg.dir, &cfg.worker_id)?;
-        match load_league(&cfg.dir) {
+        match load_league_for_update(&cfg.dir)? {
             Some(league) => league,
             None => {
                 let league = seed_league(&cfg.dir);
@@ -2606,7 +2720,7 @@ pub fn try_run_league(cfg: &LeagueCfg) -> io::Result<League> {
     while latest.round < target_round {
         let manifest = {
             let _lock = acquire_league_lock(&cfg.dir, &cfg.worker_id)?;
-            latest = load_league(&cfg.dir).ok_or_else(|| {
+            latest = load_league_for_update(&cfg.dir)?.ok_or_else(|| {
                 io::Error::new(ErrorKind::NotFound, "league disappeared while working")
             })?;
             if latest.round >= target_round {
@@ -4033,9 +4147,30 @@ mod tests {
 #[cfg(test)]
 mod searching_anchor_tests {
     use super::{
-        make_send_ai, seat_by_civ_seeded, seed_league, shipped_league, StrategyKind,
-        BASE_RATING, BASE_RD,
+        ensure_usernames, load_league, load_league_for_update, make_send_ai, manifest_path,
+        parse_league, save_league, seat_by_civ_seeded, seed_league, shipped_league, Calibration,
+        League, Strategy, StrategyKind, BASE_RATING, BASE_RD, BASE_VOL, MANAGED_ROSTER_MARKER,
     };
+
+    fn temp_roster(label: &str) -> std::path::PathBuf {
+        std::env::temp_dir().join(format!(
+            "civvis-{label}-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ))
+    }
+
+    fn builtin(name: &str, ai: &str, born_round: u32) -> Strategy {
+        Strategy::new(
+            name,
+            StrategyKind::Builtin { ai: ai.to_string() },
+            born_round,
+        )
+    }
+
+    fn mark_managed(dir: &std::path::Path) {
+        std::fs::write(dir.join(MANAGED_ROSTER_MARKER), "managed\n").unwrap();
+    }
 
     /// A league that cannot seat a searching agent cannot ever rate one:
     /// breeding only produces `StrategyKind::Advanced`, so anything not in the
@@ -4064,7 +4199,269 @@ mod searching_anchor_tests {
             .unwrap();
         assert!(league.active().contains(&index));
         assert!(!league.exhibition_active().contains(&index));
+        let evolved = league
+            .strategies
+            .iter()
+            .find(|strategy| strategy.name == "advanced_evolved")
+            .expect("the founding roster can play the embedded champion");
+        assert!(
+            matches!(&evolved.kind, StrategyKind::Builtin { ai } if ai == "advanced_evolved")
+        );
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The production roster is intentionally long-lived, so shipping a new
+    /// snapshot alone cannot admit a controller family to it. Reconciliation
+    /// appends fresh identities while preserving every field of earned state in
+    /// the pre-existing rows and is idempotent once persisted.
+    #[test]
+    fn an_idle_managed_legacy_roster_admits_required_families_once() {
+        let dir = temp_roster("managed-roster-admission");
+        let _ = std::fs::remove_dir_all(&dir);
+        let mut advanced = builtin("advanced", "advanced", 0);
+        advanced.rating = 1762.5;
+        advanced.rd = 61.0;
+        advanced.games = 567;
+        advanced.wins = 124;
+        advanced.anchor = true;
+        let genome = Strategy::new(
+            "g44-41",
+            StrategyKind::Advanced {
+                weights: crate::ai::Weights::default(),
+                target: None,
+            },
+            44,
+        );
+        let mut legacy = League {
+            round: 560,
+            strategies: vec![advanced, genome],
+            calibration: Calibration {
+                comparisons: 91,
+                brier_sum: 17.25,
+                log_loss_sum: 49.5,
+            },
+        };
+        legacy.strategies[1].rating = 1769.5;
+        legacy.strategies[1].games = 515;
+        legacy.strategies[1].wins = 98;
+        legacy.strategies[1].parents = vec!["g40-36".into(), "g40-37".into()];
+        ensure_usernames(&mut legacy);
+        save_league(dir.to_str().unwrap(), &legacy);
+        mark_managed(&dir);
+
+        let migrated = load_league_for_update(dir.to_str().unwrap())
+            .unwrap()
+            .expect("managed roster loads");
+        assert_eq!(
+            &migrated.strategies[..legacy.strategies.len()],
+            legacy.strategies.as_slice(),
+            "existing identities and all of their evidence stay exact"
+        );
+        assert_eq!(migrated.round, legacy.round);
+        assert_eq!(migrated.calibration, legacy.calibration);
+
+        let evolved = migrated
+            .strategies
+            .iter()
+            .find(|strategy| strategy.name == "advanced_evolved")
+            .expect("the embedded champion is now reachable");
+        assert!(
+            matches!(&evolved.kind, StrategyKind::Builtin { ai } if ai == "advanced_evolved")
+        );
+        assert_eq!(evolved.username, "TheHeir");
+        assert_eq!(evolved.rating, legacy.strategies[0].rating);
+        assert_eq!((evolved.rd, evolved.vol), (BASE_RD, BASE_VOL));
+        assert_eq!((evolved.games, evolved.wins), (0, 0));
+        assert_eq!(evolved.born_round, legacy.round);
+        assert!(evolved.leader_elo.is_empty());
+
+        let strategic = migrated
+            .strategies
+            .iter()
+            .find(|strategy| strategy.name == "strategic")
+            .expect("the search controller is now reachable offline");
+        assert_eq!(strategic.username, "DeepThought");
+        assert_eq!((strategic.rating, strategic.rd), (BASE_RATING, BASE_RD));
+        assert_eq!((strategic.games, strategic.wins), (0, 0));
+        assert_eq!(strategic.born_round, legacy.round);
+        assert!(strategic.anchor && strategic.league_only);
+
+        let raw = std::fs::read_to_string(dir.join("league.json")).unwrap();
+        let persisted: League = serde_json::from_str(&raw).unwrap();
+        assert_eq!(persisted, migrated, "the locked update reaches disk first");
+        let second = load_league_for_update(dir.to_str().unwrap())
+            .unwrap()
+            .unwrap();
+        assert_eq!(second, migrated, "a second load appends nothing");
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    /// Old runtimes can contain float spellings produced by an earlier JSON
+    /// serializer. Migration may normalize their text representation, but a
+    /// parse-save-parse cycle must retain the exact Rust rating state.
+    #[test]
+    fn admission_preserves_legacy_serialized_numeric_state() {
+        let dir = temp_roster("managed-roster-numerics");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let raw = r#"{
+          "round": 562,
+          "strategies": [{
+            "name": "advanced",
+            "username": "JackOfAllTrades",
+            "kind": {"Builtin": {"ai": "advanced"}},
+            "rating": 1755.8682262438044,
+            "rd": 61.05494996696509,
+            "vol": 0.061206005756091156,
+            "games": 569,
+            "wins": 124,
+            "leader_elo": {},
+            "born_round": 0,
+            "parents": [],
+            "retired": false,
+            "anchor": true
+          }],
+          "calibration": {
+            "comparisons": 13384,
+            "brier_sum": 3438.454453447317,
+            "log_loss_sum": 9474.673775847437
+          }
+        }"#;
+        std::fs::write(dir.join("league.json"), raw).unwrap();
+        mark_managed(&dir);
+        let before = parse_league(raw).unwrap();
+
+        let migrated = load_league_for_update(dir.to_str().unwrap())
+            .unwrap()
+            .unwrap();
+        assert_eq!(migrated.round, before.round);
+        assert_eq!(migrated.calibration, before.calibration);
+        assert_eq!(migrated.strategies[0], before.strategies[0]);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    /// An immutable distributed manifest snapshots the complete roster. Even
+    /// a correct admission must wait rather than invalidate already-running
+    /// work; removing that current-round promise opens the migration boundary.
+    #[test]
+    fn a_pending_round_defers_managed_roster_admission() {
+        let dir = temp_roster("managed-roster-manifest");
+        let _ = std::fs::remove_dir_all(&dir);
+        let mut legacy = League {
+            round: 27,
+            strategies: vec![builtin("advanced", "advanced", 0)],
+            calibration: Calibration::default(),
+        };
+        ensure_usernames(&mut legacy);
+        save_league(dir.to_str().unwrap(), &legacy);
+        mark_managed(&dir);
+        let manifest = manifest_path(dir.to_str().unwrap(), legacy.round);
+        std::fs::create_dir_all(manifest.parent().unwrap()).unwrap();
+        std::fs::write(&manifest, "{}\n").unwrap();
+
+        let deferred = load_league_for_update(dir.to_str().unwrap())
+            .unwrap()
+            .unwrap();
+        assert_eq!(deferred, legacy);
+        let raw = std::fs::read_to_string(dir.join("league.json")).unwrap();
+        assert_eq!(serde_json::from_str::<League>(&raw).unwrap(), legacy);
+
+        std::fs::remove_file(manifest).unwrap();
+        let admitted = load_league_for_update(dir.to_str().unwrap())
+            .unwrap()
+            .unwrap();
+        assert_eq!(admitted.strategies.len(), legacy.strategies.len() + 2);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    /// Explicit pools are scientific inputs in their own right. Absence of
+    /// the supervisor marker means load exactly what their author specified.
+    #[test]
+    fn an_unmanaged_experimental_roster_keeps_exact_membership() {
+        let dir = temp_roster("unmanaged-roster");
+        let _ = std::fs::remove_dir_all(&dir);
+        let mut pool = League {
+            round: 8,
+            strategies: vec![builtin("control", "advanced", 0)],
+            calibration: Calibration::default(),
+        };
+        ensure_usernames(&mut pool);
+        save_league(dir.to_str().unwrap(), &pool);
+        assert_eq!(load_league(dir.to_str().unwrap()).unwrap(), pool);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    /// Names are rating identities, not aliases for whichever controller a
+    /// later build expects. A managed but hand-edited collision therefore
+    /// stays visible for an operator to resolve and is never overwritten.
+    #[test]
+    fn a_same_name_custom_identity_is_never_reinterpreted() {
+        let dir = temp_roster("managed-roster-collision");
+        let _ = std::fs::remove_dir_all(&dir);
+        let custom_evolved = Strategy::new(
+            "advanced_evolved",
+            StrategyKind::Advanced {
+                weights: crate::ai::Weights::default(),
+                target: Some("culture".into()),
+            },
+            5,
+        );
+        let mut pool = League {
+            round: 11,
+            strategies: vec![
+                builtin("advanced", "advanced", 0),
+                custom_evolved,
+                builtin("strategic", "basic", 3),
+            ],
+            calibration: Calibration::default(),
+        };
+        ensure_usernames(&mut pool);
+        save_league(dir.to_str().unwrap(), &pool);
+        mark_managed(&dir);
+
+        let loaded = load_league_for_update(dir.to_str().unwrap())
+            .unwrap()
+            .unwrap();
+        assert_eq!(loaded, pool);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    /// The search row briefly shipped before its live cost boundary did. Fix
+    /// only those policy bits on the exact builtin identity; its rating record
+    /// remains evidence and cannot be reset during the safety migration.
+    #[test]
+    fn an_existing_search_identity_becomes_an_offline_anchor_without_reset() {
+        let dir = temp_roster("managed-search-policy");
+        let _ = std::fs::remove_dir_all(&dir);
+        let mut strategic = builtin("strategic", "strategic", 60);
+        strategic.rating = 1642.0;
+        strategic.rd = 88.0;
+        strategic.games = 73;
+        strategic.wins = 29;
+        let mut league = League {
+            round: 90,
+            strategies: vec![
+                builtin("advanced", "advanced", 0),
+                builtin("advanced_evolved", "advanced_evolved", 60),
+                strategic.clone(),
+            ],
+            calibration: Calibration::default(),
+        };
+        ensure_usernames(&mut league);
+        strategic.username = league.strategies[2].username.clone();
+        save_league(dir.to_str().unwrap(), &league);
+        mark_managed(&dir);
+
+        let migrated = load_league_for_update(dir.to_str().unwrap())
+            .unwrap()
+            .unwrap();
+        let actual = &migrated.strategies[2];
+        let mut expected = strategic;
+        expected.anchor = true;
+        expected.league_only = true;
+        assert_eq!(actual, &expected);
+        assert_eq!(migrated.strategies.len(), league.strategies.len());
+        std::fs::remove_dir_all(dir).unwrap();
     }
 
     /// Breeding cannot produce one, which is why the roster must. This pins the
