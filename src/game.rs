@@ -6,6 +6,7 @@ use std::sync::Arc;
 use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashSet, VecDeque};
 
 use crate::name::{AsName, Name};
+use crate::parallel::WorkPool;
 use crate::rng::Rng;
 use crate::rules::{
     building_yield_effect_key, grant_ability_effect_key, unit_purchase_discount_effect_key,
@@ -12408,6 +12409,32 @@ impl VisionCache {
             }
         }
     }
+
+    /// Fold worker-local sight answers back into the authoritative cache.
+    ///
+    /// Every worker starts from a clone of the same final position. Ignore a
+    /// cache that never advanced to that position's stamp (a seat with no
+    /// sight sources can legitimately leave it untouched), then merge the
+    /// flat unit vectors in stable ID order through `put`.
+    fn merge_current(&mut self, other: VisionCache, stamp: u64) {
+        if other.stamp != stamp {
+            return;
+        }
+        if self.stamp != stamp {
+            self.reset(stamp);
+        }
+        for ((unit, key), seen) in other
+            .units
+            .into_iter()
+            .zip(other.keys)
+            .zip(other.seen)
+        {
+            self.put(stamp, unit, key, seen);
+        }
+        if let Some(wonders) = other.built_wonders {
+            self.built_wonders = Some(wonders);
+        }
+    }
 }
 
 /// Everything about a mover that decides which tiles it could ever stand
@@ -12630,6 +12657,12 @@ struct VisibilityBatch {
     refresh_all: bool,
     refresh_teams: BTreeSet<usize>,
 }
+
+/// Below this many total seats, cloning the final position for worker-local
+/// visibility caches costs more than the ray sweeps it replaces. Paired
+/// release runs were neutral at 20 seats and positive at 50; keep ordinary
+/// games on the already cache-efficient serial path.
+const PARALLEL_VISIBILITY_MIN_PLAYERS: usize = 32;
 
 impl Clone for VisibilityBatch {
     fn clone(&self) -> Self {
@@ -28394,11 +28427,26 @@ impl Game {
         &mut self,
         actions: impl FnOnce(&mut Game) -> R,
     ) -> R {
+        self.with_deferred_visibility_pool(None, actions)
+    }
+
+    /// Coalesce a turn like [`Game::with_deferred_visibility`], computing
+    /// each seat's final sight on persistent workers before publishing any of
+    /// it. Contacts, discoveries, historic moments, and fog memory remain on
+    /// the simulation thread in the original player order.
+    pub(crate) fn with_deferred_visibility_pool<R>(
+        &mut self,
+        pool: Option<&WorkPool>,
+        actions: impl FnOnce(&mut Game) -> R,
+    ) -> R {
         self.visibility_batch.depth += 1;
         let result = actions(self);
         self.visibility_batch.depth -= 1;
         if self.visibility_batch.depth == 0 {
-            self.flush_deferred_visibility();
+            match pool {
+                Some(pool) => self.flush_deferred_visibility_parallel(pool),
+                None => self.flush_deferred_visibility(),
+            }
         }
         result
     }
@@ -28413,6 +28461,23 @@ impl Game {
         let teams = std::mem::take(&mut self.visibility_batch.refresh_teams);
         for pid in teams {
             self.refresh_team_visibility(pid);
+        }
+    }
+
+    fn flush_deferred_visibility_parallel(&mut self, pool: &WorkPool) {
+        if pool.threads() == 1 || self.players.len() < PARALLEL_VISIBILITY_MIN_PLAYERS {
+            self.flush_deferred_visibility();
+            return;
+        }
+        if self.visibility_batch.refresh_all {
+            self.visibility_batch.refresh_all = false;
+            self.visibility_batch.refresh_teams.clear();
+            self.refresh_all_visibility_parallel(pool);
+            return;
+        }
+        let teams = std::mem::take(&mut self.visibility_batch.refresh_teams);
+        for pid in teams {
+            self.refresh_team_visibility_parallel(pid, pool);
         }
     }
 
@@ -28757,6 +28822,59 @@ impl Game {
         }
     }
 
+    /// Compute current sight from one immutable final position, then publish
+    /// each result serially. Worker game clones retain their inherited vision
+    /// caches, and the newly filled entries are merged back before returning.
+    fn refresh_visibility_parallel(
+        &mut self,
+        players: Vec<usize>,
+        memory_world: u64,
+        pool: &WorkPool,
+    ) {
+        if players.is_empty() {
+            return;
+        }
+        let count = players.len();
+        let active = pool.threads().min(count);
+        let states = (0..active).map(|_| self.clone()).collect::<Vec<_>>();
+        let players = Arc::new(players);
+        let worker_players = Arc::clone(&players);
+        let mut computed = pool.map_stateful(count, states, move |game, indices| {
+            let mut results = indices
+                .map(|index| {
+                    let visible = game.player_vision_now(worker_players[index]);
+                    (index, (visible, None))
+                })
+                .collect::<Vec<_>>();
+            if let Some((_, (_, cache))) = results.last_mut() {
+                *cache = Some(game.vision.into_inner());
+            }
+            results
+        });
+
+        let vision_stamp = self.world_stamp();
+        for (_, cache) in &mut computed {
+            if let Some(cache) = cache.take() {
+                self.vision
+                    .borrow_mut()
+                    .merge_current(cache, vision_stamp);
+            }
+        }
+        for (pid, (visible, _)) in players.iter().copied().zip(computed) {
+            self.record_contacts_in_sight(pid, &visible);
+            self.refresh_visibility_snapshot_with_world(pid, &visible, memory_world);
+        }
+    }
+
+    fn refresh_all_visibility_parallel(&mut self, pool: &WorkPool) {
+        let memory_world = if self.track_fog_memory {
+            self.memory_world_stamp()
+        } else {
+            self.snapshot_world_stamp(0)
+        };
+        self.refresh_visibility_parallel((0..self.players.len()).collect(), memory_world, pool);
+    }
+
     fn refresh_team_visibility(&mut self, pid: usize) {
         let members = self.team_members(pid);
         let memory_world = if self.track_fog_memory {
@@ -28770,6 +28888,20 @@ impl Game {
                 self.refresh_player_visibility_via(member, &mut heights, memory_world);
             }
         }
+    }
+
+    fn refresh_team_visibility_parallel(&mut self, pid: usize, pool: &WorkPool) {
+        let members = self
+            .team_members(pid)
+            .into_iter()
+            .filter(|member| self.players[*member].alive)
+            .collect();
+        let memory_world = if self.track_fog_memory {
+            self.memory_world_stamp()
+        } else {
+            self.snapshot_world_stamp(pid)
+        };
+        self.refresh_visibility_parallel(members, memory_world, pool);
     }
 
     /// Permanently exchange the newest last-seen map state among players who
@@ -35023,6 +35155,181 @@ impl Game {
                     .map(|_| Action::UpgradeUnit { unit })
             })
             .collect()
+    }
+
+    /// Cities whose purchase menus may be enumerated independently.
+    ///
+    /// A pending capture replaces the whole legal-action space, just as it
+    /// does in [`legal_actions_within`]. Keeping that gate here lets the AI
+    /// distribute only city-local work without first paying for the full
+    /// empire action list it intends to discard.
+    pub(crate) fn purchase_action_city_ids(&self, pid: usize) -> Vec<u32> {
+        if self.winner.is_some()
+            || self.current != pid
+            || !self.pending_city_capture_actions(pid).is_empty()
+        {
+            Vec::new()
+        } else {
+            self.player_city_ids(pid)
+        }
+    }
+
+    /// Purchase actions contributed by one city, separated into the stock
+    /// PURCHASES block and the later EMPIRE block.
+    ///
+    /// The two vectors must stay separate: callers flatten every city's first
+    /// vector before any city's second vector, reproducing the order of
+    /// `legal_actions_within(PURCHASES | EMPIRE)` after non-purchase actions
+    /// are filtered away. That stable order is an AI tie-break input.
+    pub(crate) fn legal_purchase_actions_for_city(
+        &self,
+        pid: usize,
+        cid: u32,
+    ) -> (Vec<Action>, Vec<Action>) {
+        let p = &self.players[pid];
+        let mut purchases = Vec::new();
+        let mut plots = self
+            .wdisk(self.cities[&cid].pos, 3)
+            .into_iter()
+            .filter_map(|position| {
+                self.plot_purchase_cost(pid, cid, position)
+                    .map(|cost| (position, cost))
+            })
+            .collect::<Vec<_>>();
+        plots.sort_unstable_by_key(|(position, _)| *position);
+        for (pos, cost) in plots {
+            if p.gold + f64::EPSILON >= cost {
+                purchases.push(Action::BuyPlot {
+                    city: cid,
+                    pos,
+                    cost,
+                });
+            }
+        }
+
+        let producible = self.producible_items(pid, cid);
+        for item in &producible {
+            let Item::Building { building } = item else {
+                continue;
+            };
+            if self
+                .building_gold_purchase_cost(pid, cid, building)
+                .is_some_and(|cost| p.gold + f64::EPSILON >= cost)
+            {
+                purchases.push(Action::BuyBuilding {
+                    city: cid,
+                    building: Name::new(building),
+                    currency: "gold".to_string(),
+                });
+            }
+        }
+
+        let faith_districts = self.governor_effect(pid, cid, "faith_purchase_districts") > 0.0;
+        let gold_districts = self.governor_effect(pid, cid, "gold_purchase_districts") > 0.0;
+        if faith_districts || gold_districts {
+            for item in &producible {
+                let Item::District { district, pos } = item else {
+                    continue;
+                };
+                if self.map.tiles[pos].district_foundation.is_some() {
+                    continue;
+                }
+                let cost = self
+                    .game_speed
+                    .scale(self.district_cost_for_placement(pid, district, true))
+                    * 4.0;
+                if faith_districts && p.faith + f64::EPSILON >= cost {
+                    purchases.push(Action::BuyDistrict {
+                        city: cid,
+                        district: Name::new(district),
+                        pos: *pos,
+                        currency: "faith".to_string(),
+                    });
+                }
+                if gold_districts && p.gold + f64::EPSILON >= cost {
+                    purchases.push(Action::BuyDistrict {
+                        city: cid,
+                        district: Name::new(district),
+                        pos: *pos,
+                        currency: "gold".to_string(),
+                    });
+                }
+            }
+        }
+
+        for unit in self.rules.units.keys() {
+            for formation in 0..=2 {
+                for (currency, bank) in [("gold", p.gold), ("faith", p.faith)] {
+                    if self
+                        .unit_purchase_cost_for_formation(
+                            pid, cid, unit, formation, currency,
+                        )
+                        .is_some_and(|cost| bank + f64::EPSILON >= cost)
+                    {
+                        purchases.push(Action::Buy {
+                            city: cid,
+                            unit: Name::new(unit),
+                            formation,
+                            currency: currency.to_string(),
+                        });
+                    }
+                }
+            }
+        }
+
+        let mut empire = Vec::new();
+        if !p.is_minor {
+            for unit in ["missionary", "apostle", "guru", "inquisitor"] {
+                if self
+                    .unit_purchase_cost(pid, cid, unit, "faith")
+                    .is_some_and(|cost| p.faith + f64::EPSILON >= cost)
+                {
+                    empire.push(Action::Buy {
+                        city: cid,
+                        unit: Name::new(unit),
+                        formation: 0,
+                        currency: "faith".to_string(),
+                    });
+                }
+            }
+            for building in self.rules.buildings.keys() {
+                if self
+                    .building_faith_purchase_cost(pid, cid, building)
+                    .is_some_and(|cost| p.faith + f64::EPSILON >= cost)
+                {
+                    empire.push(Action::BuyBuilding {
+                        city: cid,
+                        building: Name::new(building),
+                        currency: "faith".to_string(),
+                    });
+                }
+            }
+        }
+        (purchases, empire)
+    }
+
+    /// Purchase-only projection of
+    /// `legal_actions_within(PURCHASES | EMPIRE)`, in identical relative
+    /// order and under one query-memo scope.
+    pub(crate) fn legal_purchase_actions(&self, pid: usize) -> Vec<Action> {
+        let city_ids = self.purchase_action_city_ids(pid);
+        let _memo = self.query_memo();
+        let per_city = city_ids
+            .into_iter()
+            .map(|cid| self.legal_purchase_actions_for_city(pid, cid))
+            .collect::<Vec<_>>();
+        let mut actions = Vec::new();
+        actions.extend(
+            per_city
+                .iter()
+                .flat_map(|(purchases, _)| purchases.iter().cloned()),
+        );
+        actions.extend(
+            per_city
+                .into_iter()
+                .flat_map(|(_, empire)| empire.into_iter()),
+        );
+        actions
     }
 
     /// Every action `pid` could legally take right now.
@@ -51247,6 +51554,7 @@ mod visibility_tests {
         immediate.spawn_unit("warrior", 1, enemy);
         immediate.refresh_all_visibility();
         let mut deferred = immediate.clone();
+        let mut parallel = immediate.clone();
 
         let play = |game: &mut Game| {
             game.apply(
@@ -51269,17 +51577,35 @@ mod visibility_tests {
         };
         play(&mut immediate);
         deferred.with_deferred_visibility(play);
+        let pool = WorkPool::new(4);
+        parallel.visibility_batch.depth += 1;
+        play(&mut parallel);
+        parallel.visibility_batch.depth -= 1;
+        assert!(parallel.visibility_batch.refresh_all);
+        parallel.visibility_batch.refresh_all = false;
+        parallel.visibility_batch.refresh_teams.clear();
+        parallel.refresh_all_visibility_parallel(&pool);
 
         assert_eq!(
             serde_json::to_value(&deferred).unwrap(),
             serde_json::to_value(&immediate).unwrap(),
             "coalescing may change when visibility is derived, never the game or fog memory published at the seat boundary"
         );
+        assert_eq!(
+            serde_json::to_value(&parallel).unwrap(),
+            serde_json::to_value(&immediate).unwrap(),
+            "parallel sight computation must publish the same game and fog memory"
+        );
         for pid in 0..immediate.players.len() {
             assert_eq!(
                 crate::obs::observation(&deferred, pid),
                 crate::obs::observation(&immediate, pid),
                 "seat {pid} must receive the same observation"
+            );
+            assert_eq!(
+                crate::obs::observation(&parallel, pid),
+                crate::obs::observation(&immediate, pid),
+                "parallel visibility must publish seat {pid}'s exact observation"
             );
         }
     }

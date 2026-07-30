@@ -44,6 +44,30 @@ thread_local! {
     static IN_WORK_POOL: Cell<bool> = const { Cell::new(false) };
 }
 
+/// Dynamic indices claimed by one stateful worker in a [`WorkPool`] batch.
+///
+/// Every clone shares one atomic cursor, so each index is yielded exactly
+/// once across the batch. Iteration stops promptly when another worker
+/// panics. The type deliberately exposes no way to manufacture or rewind an
+/// index; callers return `(index, value)` pairs for deterministic reordering.
+pub struct WorkIndices {
+    next: Arc<AtomicUsize>,
+    cancelled: Arc<AtomicBool>,
+    count: usize,
+}
+
+impl Iterator for WorkIndices {
+    type Item = usize;
+
+    fn next(&mut self) -> Option<usize> {
+        if self.cancelled.load(Ordering::Acquire) {
+            return None;
+        }
+        let index = self.next.fetch_add(1, Ordering::Relaxed);
+        (index < self.count).then_some(index)
+    }
+}
+
 /// Persistent workers for the fine-grained, read-only phases of one game.
 ///
 /// Unlike [`map`], which deliberately creates isolated workers for one batch
@@ -214,6 +238,135 @@ impl WorkPool {
                 .unwrap_or_else(|| panic!("work-pool input {index} was claimed twice"));
             job(input)
         })
+    }
+
+    /// Evaluate a batch with one owned, reusable state per active worker.
+    ///
+    /// This is the fine-grained path for a non-`Sync` world with useful
+    /// read-only caches. A worker can open one memo scope, claim dynamically
+    /// balanced indices from [`WorkIndices`], and score many candidates before
+    /// returning its `(index, value)` pairs. Results are still published in
+    /// index order. `states` must contain `min(self.threads(), count)` entries.
+    pub fn map_stateful<S, T, F>(&self, count: usize, states: Vec<S>, job: F) -> Vec<T>
+    where
+        S: Send + 'static,
+        T: Send + 'static,
+        F: Fn(S, WorkIndices) -> Vec<(usize, T)> + Send + Sync + 'static,
+    {
+        if count == 0 {
+            assert!(states.is_empty(), "an empty work batch needs no states");
+            return Vec::new();
+        }
+        let active = self.workers.len().min(count);
+        assert_eq!(
+            states.len(),
+            active,
+            "a stateful batch needs one state per active worker"
+        );
+        let next = Arc::new(AtomicUsize::new(0));
+        let cancelled = Arc::new(AtomicBool::new(false));
+        let nested = IN_WORK_POOL.with(Cell::get);
+
+        if active == 1 || nested {
+            let state = states
+                .into_iter()
+                .next()
+                .expect("a non-empty stateful batch has a state");
+            let results = job(
+                state,
+                WorkIndices {
+                    next,
+                    cancelled,
+                    count,
+                },
+            );
+            return Self::ordered_stateful_results(count, results);
+        }
+
+        let job = Arc::new(job);
+        let (result_tx, result_rx) = mpsc::channel::<BatchMessage<T>>();
+        for state in states {
+            let job = Arc::clone(&job);
+            let next = Arc::clone(&next);
+            let cancelled = Arc::clone(&cancelled);
+            let result_tx = result_tx.clone();
+            self.sender
+                .send(WorkerMessage::Run(Box::new(move || {
+                    let indices = WorkIndices {
+                        next,
+                        cancelled: Arc::clone(&cancelled),
+                        count,
+                    };
+                    match catch_unwind(AssertUnwindSafe(|| job(state, indices))) {
+                        Ok(results) => {
+                            for (index, value) in results {
+                                if result_tx.send(BatchMessage::Value(index, value)).is_err() {
+                                    break;
+                                }
+                            }
+                        }
+                        Err(payload) => {
+                            cancelled.store(true, Ordering::Release);
+                            let _ = result_tx.send(BatchMessage::Panicked(payload));
+                        }
+                    }
+                    let _ = result_tx.send(BatchMessage::WorkerDone);
+                })))
+                .expect("the persistent work pool stopped unexpectedly");
+        }
+        drop(result_tx);
+
+        let mut values: Vec<Option<T>> = (0..count).map(|_| None).collect();
+        let mut finished = 0;
+        let mut first_panic = None;
+        while finished < active {
+            match result_rx
+                .recv()
+                .expect("a stateful worker stopped without reporting completion")
+            {
+                BatchMessage::Value(index, value) => {
+                    assert!(index < count, "stateful worker returned index {index} out of range");
+                    assert!(
+                        values[index].is_none(),
+                        "stateful worker returned index {index} twice"
+                    );
+                    values[index] = Some(value);
+                }
+                BatchMessage::Panicked(payload) => {
+                    if first_panic.is_none() {
+                        first_panic = Some(payload);
+                    }
+                }
+                BatchMessage::WorkerDone => finished += 1,
+            }
+        }
+        if let Some(payload) = first_panic {
+            resume_unwind(payload);
+        }
+        Self::ordered_stateful_values(values)
+    }
+
+    fn ordered_stateful_results<T>(count: usize, results: Vec<(usize, T)>) -> Vec<T> {
+        let mut values: Vec<Option<T>> = (0..count).map(|_| None).collect();
+        for (index, value) in results {
+            assert!(index < count, "stateful worker returned index {index} out of range");
+            assert!(
+                values[index].is_none(),
+                "stateful worker returned index {index} twice"
+            );
+            values[index] = Some(value);
+        }
+        Self::ordered_stateful_values(values)
+    }
+
+    fn ordered_stateful_values<T>(values: Vec<Option<T>>) -> Vec<T> {
+        values
+            .into_iter()
+            .enumerate()
+            .map(|(index, value)| {
+                value.unwrap_or_else(|| panic!("stateful work-pool job {index} produced no result"))
+            })
+            .collect()
     }
 }
 
@@ -460,5 +613,56 @@ mod tests {
             pool.map_owned(inputs, |input| input.get() * 3),
             (0..12).map(|value| value * 3).collect::<Vec<_>>()
         );
+    }
+
+    #[test]
+    fn stateful_workers_reuse_private_state_and_order_results() {
+        use std::cell::Cell;
+
+        let pool = WorkPool::new(4);
+        let barrier = Arc::new(Barrier::new(4));
+        let states = (0..4)
+            .map(|state| (state, Cell::new(0usize), Arc::clone(&barrier)))
+            .collect();
+        let values = pool.map_stateful(64, states, |(state, visits, barrier), indices| {
+            barrier.wait();
+            indices
+                .map(|index| {
+                    let visit = visits.get();
+                    visits.set(visit + 1);
+                    (index, (index * index, state, visit))
+                })
+                .collect()
+        });
+        assert_eq!(
+            values.iter().map(|(square, _, _)| *square).collect::<Vec<_>>(),
+            (0..64).map(|index| index * index).collect::<Vec<_>>()
+        );
+        for state in 0..4 {
+            let mut visits = values
+                .iter()
+                .filter(|(_, owner, _)| *owner == state)
+                .map(|(_, _, visit)| *visit)
+                .collect::<Vec<_>>();
+            visits.sort_unstable();
+            assert_eq!(visits, (0..visits.len()).collect::<Vec<_>>());
+        }
+    }
+
+    #[test]
+    fn a_panicking_stateful_batch_does_not_destroy_the_pool() {
+        let pool = WorkPool::new(3);
+        let failed = std::panic::catch_unwind(AssertUnwindSafe(|| {
+            pool.map_stateful(24, vec![(); 3], |(), indices| {
+                indices
+                    .map(|index| {
+                        assert_ne!(index, 5, "intentional stateful work-pool test panic");
+                        (index, index)
+                    })
+                    .collect::<Vec<_>>()
+            })
+        }));
+        assert!(failed.is_err());
+        assert_eq!(pool.map(4, |index| index + 20), [20, 21, 22, 23]);
     }
 }

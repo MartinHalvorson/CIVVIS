@@ -1187,6 +1187,20 @@ pub struct BasicAi {
     pub(crate) journal: Journal,
 }
 
+/// Unit-scoped mutable planner state produced on a private search branch.
+///
+/// Advanced snapshot planning never publishes a cloned controller wholesale:
+/// doing so would overwrite decisions made by earlier units in the serial
+/// commit phase. This is the complete state one military unit's movement
+/// helpers may update, extracted and merged by unit ID only.
+pub(crate) struct BasicUnitPlanState {
+    recovering: bool,
+    patrol_target: Option<Pos>,
+    settler_target: Option<Pos>,
+    last_path_step: Option<(u32, Pos)>,
+    patrol_posts: HashMap<String, Vec<Pos>>,
+}
+
 impl Default for BasicAi {
     fn default() -> Self {
         Self::new()
@@ -2056,6 +2070,51 @@ impl BasicAi {
     pub(crate) fn begin_movement_turn(&mut self, g: &Game, pid: usize) {
         self.patrol_posts.clear();
         self.observe_unit_motion(g, pid);
+    }
+
+    pub(crate) fn unit_plan_state(&self, uid: u32) -> BasicUnitPlanState {
+        BasicUnitPlanState {
+            recovering: self.recovering_units.contains(&uid),
+            patrol_target: self.patrol_targets.get(&uid).copied(),
+            settler_target: self.settler_targets.get(&uid).copied(),
+            last_path_step: self.last_path_step_from.borrow().get(&uid).copied(),
+            patrol_posts: self.patrol_posts.clone(),
+        }
+    }
+
+    pub(crate) fn merge_unit_plan_state(&mut self, uid: u32, state: BasicUnitPlanState) {
+        if state.recovering {
+            self.recovering_units.insert(uid);
+        } else {
+            self.recovering_units.remove(&uid);
+        }
+        match state.patrol_target {
+            Some(target) => {
+                self.patrol_targets.insert(uid, target);
+            }
+            None => {
+                self.patrol_targets.remove(&uid);
+            }
+        }
+        match state.settler_target {
+            Some(target) => {
+                self.settler_targets.insert(uid, target);
+            }
+            None => {
+                self.settler_targets.remove(&uid);
+            }
+        }
+        match state.last_path_step {
+            Some(step) => {
+                self.last_path_step_from.borrow_mut().insert(uid, step);
+            }
+            None => {
+                self.last_path_step_from.borrow_mut().remove(&uid);
+            }
+        }
+        // Posts are immutable for the turn. A branch may have paid to build a
+        // domain's list, so retain that work for later serial fallbacks.
+        self.patrol_posts.extend(state.patrol_posts);
     }
 
     /// Record this turn's starting tile for every unit, and judge each unit
