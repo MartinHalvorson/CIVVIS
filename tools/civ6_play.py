@@ -131,6 +131,13 @@ def build_config(args: argparse.Namespace) -> dict:
         # block in the ladder is dead code. A 203-turn game built 7 monuments, 7
         # granaries and ZERO districts, and scored 203 against 1088.
         "ArmyCap": args.army_cap,
+        # How many battering rams to keep alive. They are the BREACH — walls halve melee
+        # damage and the city heals between turns — and they die: the deepest run built 8
+        # and issued 26 positioning orders with `siege = 0` alive through a 77-turn war.
+        # A support unit has no combat strength and the city bombards it, so this buys
+        # concurrency rather than survival, and it needs to be tunable to find out how
+        # much concurrency is enough.
+        "SiegeUnits": args.siege_units,
         # ★ Maximum tiles from our NEAREST existing city that a new city may be
         # founded. Loyalty support comes from our own nearby population, so beyond
         # this the city cannot be held at any price: run 071729Z founded (42,17)
@@ -849,6 +856,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--plan-near-window", type=int, default=6)
     ap.add_argument("--strength-weight", type=int, default=20)
     ap.add_argument("--army-cap", type=int, default=18)
+    ap.add_argument("--siege-units", type=int, default=4)
     ap.add_argument("--max-empire-distance", type=int, default=6)
     ap.add_argument("--garrison-per-city", type=int, default=2)
     ap.add_argument("--export-state", action="store_true", default=False)
