@@ -143,6 +143,11 @@ def build_config(args: argparse.Namespace) -> dict:
         # anything below the army block never gets built. 3 gives the economy a third of
         # the decisions while the army keeps the rest.
         "DevelopEvery": args.develop_every,
+        # Refuse to DECLARE on a rival more than this many times our score. The strength
+        # term only biases selection, which does nothing when `met` is 1 — measured: the
+        # sole met rival at 2.17x our score, declared anyway, and the empire went from 3
+        # cities to 1 city and 1 unit by turn 150.
+        "MaxTargetRatio": args.max_target_ratio,
         # ★ Maximum tiles from our NEAREST existing city that a new city may be
         # founded. Loyalty support comes from our own nearby population, so beyond
         # this the city cannot be held at any price: run 071729Z founded (42,17)
@@ -863,6 +868,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--army-cap", type=int, default=18)
     ap.add_argument("--siege-units", type=int, default=4)
     ap.add_argument("--develop-every", type=int, default=3)
+    ap.add_argument("--max-target-ratio", type=float, default=1.3)
     ap.add_argument("--max-empire-distance", type=int, default=6)
     ap.add_argument("--garrison-per-city", type=int, default=2)
     ap.add_argument("--export-state", action="store_true", default=False)

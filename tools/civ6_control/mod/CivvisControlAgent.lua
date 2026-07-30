@@ -1775,6 +1775,31 @@ local function declareWar(player, pid, counts, turn)
 		return blocked("already_at_war");
 	end
 	if warDeclared[target.player] then return blocked("already_declared"); end
+	-- ★★★★★ A VETO, NOT JUST A BIAS. The strength term in `findWarTarget` lowers a
+	-- strong rival's SCORE, which does nothing when there is only one candidate — and
+	-- `met` is frequently 1 here. Measured on settler-20260730T094745Z: the term was
+	-- live, the sole met rival was 2.17x our score, we declared anyway, and the run went
+	-- from 3 cities to ONE CITY AND ONE UNIT by turn 150 (score 115 against 530).
+	--
+	-- Preferring the weakest of several enemies and refusing to fight a hopeless one are
+	-- different mechanisms. This is the second: no declaration at all above the ratio.
+	--
+	-- ⚠ The ratio is recomputed here rather than trusted from selection time, because it
+	-- DRIFTS: another run chose a target at 0.95 and was at 1.76 thirty turns later. The
+	-- guard has to read the world as it is when the decision is made.
+	--
+	-- ⚠ Skipped when either score is unavailable, so a failed accessor cannot silently
+	-- forbid every war — the failure mode of a veto is worse than that of a bias.
+	local ourNow = try(function() return player:GetScore(); end, -1) or -1;
+	local theirNow = try(function()
+		return Players[target.player]:GetScore();
+	end, -1) or -1;
+	if ourNow > 0 and theirNow >= 0 then
+		local ratio = theirNow / ourNow;
+		if ratio > (cfg.MaxTargetRatio or 1.3) then
+			return blocked(string.format("too_strong_%.2f", ratio));
+		end
+	end
 	if not try(function() return diplomacy:CanDeclareWarOn(target.player); end, true) then
 		-- Records the player id, because "cannot declare on 62" (the Free Cities slot)
 		-- and "cannot declare on 1" (a major civ) are completely different problems.
