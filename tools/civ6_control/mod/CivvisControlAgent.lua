@@ -701,6 +701,13 @@ findSettleSite = function(player, pid, unit, turn)
 end
 
 local function orderSettler(player, pid, unit, turn)
+	-- ⚠ This binding was MISSING and `id` was therefore a nil global, so
+	-- `refusedSite[id] = ...` threw "table index is nil" for every settler the
+	-- engine would not path to its chosen site. The settler then got no order at
+	-- all, which is why the empire sat on two cities and never settled again.
+	-- Invisible until the roster pcall moved inside the loop: before that the
+	-- throw simply ended the whole unit walk.
+	local id = try(function() return unit:GetID(); end, -1);
 	if canOperate(unit, OP["UNITOPERATION_FOUND_CITY"])
 			and operate(unit, OP["UNITOPERATION_FOUND_CITY"]) then
 		return "found_city";

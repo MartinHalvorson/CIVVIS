@@ -46,8 +46,12 @@ local ERA_SCREENS = {
 	-- unattended run and both sit over the map while they play.
 	HistoricMoments = true, EraProgressPanel = true,
 };
-if ERA_SCREENS[NAME] then SECONDS = ERA_SECONDS; end
-if SECONDS < 0 then SECONDS = 0; end
+-- ⚠ The era clock is applied further down, AFTER `NAME` is declared. It used to
+-- be applied right here, twelve lines before `local NAME` existed, so `NAME` was
+-- the nil global and `ERA_SCREENS[nil]` was nil: the branch never once ran and
+-- every era screen sat for the full announcement time. Lua does not complain —
+-- indexing a table with a nil key READS fine and only assignment throws — so the
+-- setting simply had no effect. Found by check_scope.py.
 
 -- A screen that will not go away must not write a line every two seconds for
 -- the rest of a multi-hour run. Legitimate repeats -- two wonders finishing on
@@ -60,6 +64,11 @@ local PREFIX = "CIVVISJSON ";
 
 local NAME = "unknown";
 pcall(function() NAME = ContextPtr:GetID() or "unknown"; end);
+
+-- Now that this context knows its own name, the era screens can get their
+-- shorter clock. This must stay below `local NAME`.
+if ERA_SCREENS[NAME] then SECONDS = ERA_SECONDS; end
+if SECONDS < 0 then SECONDS = 0; end
 
 local RUN = tostring(cfg.RunTag or "unset");
 
