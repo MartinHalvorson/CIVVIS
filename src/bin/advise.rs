@@ -36,6 +36,19 @@ use std::path::Path;
 use civvis::ai::Ai;
 use civvis::mirror;
 
+/// ⚠ Civilization VI exports OFFSET coordinates; CIVVIS ranks in AXIAL. Every
+/// crossing goes through these, because mixing the two silently produced "CIVVIS
+/// offered no legal revealed site" on a map with 323 revealed plots: the origin was
+/// handed over unconverted and the axial results were filtered against an offset
+/// revealed-set, so everything was rejected.
+fn to_axial(offset: (i32, i32)) -> civvis::Pos {
+    civvis::hex::offset_to_axial(offset.0, offset.1)
+}
+
+fn to_offset(axial: civvis::Pos) -> (i32, i32) {
+    civvis::hex::axial_to_offset(axial.0, axial.1)
+}
+
 fn arg_text(args: &[String], flag: &str) -> Option<String> {
     args.iter()
         .position(|value| value == flag)
@@ -123,11 +136,11 @@ fn main() {
         let prior = &founded[..index];
         let (game, placed) = mirror::rebuild_with_empire(&snapshot, prior, 4, 1);
         let from = capital.unwrap_or(*chosen);
-        let ranked: Vec<civvis::Pos> = ai
-            .settle_ranking(&game, 0, from, radius)
+        let ranked: Vec<(i32, i32)> = ai
+            .settle_ranking(&game, 0, to_axial(from), radius)
             .into_iter()
-            .filter(|(pos, _)| snapshot.is_revealed(*pos))
-            .map(|(pos, _)| pos)
+            .map(|(pos, _)| to_offset(pos))
+            .filter(|pos| snapshot.is_revealed(*pos))
             .collect();
         let total = ranked.len();
         print!("city {} at {chosen:?} (with {placed}/{} prior cities placed): ",
@@ -173,9 +186,12 @@ fn main() {
         // Plan from the empire as it stands, which is what the next founding faces.
         let (game, _) = mirror::rebuild_with_empire(&snapshot, &founded, 4, 1);
         let from = capital.unwrap_or((snapshot.width / 2, snapshot.height / 2));
+        // Written back in Civ 6 OFFSET coordinates, because the mod reads them and
+        // the operator reads them on screen.
         let sites: Vec<serde_json::Value> = ai
-            .settle_ranking(&game, 0, from, radius)
+            .settle_ranking(&game, 0, to_axial(from), radius)
             .into_iter()
+            .map(|(pos, score)| (to_offset(pos), score))
             .filter(|(pos, _)| snapshot.is_revealed(*pos))
             .take(24)
             .map(|((x, y), score)| {

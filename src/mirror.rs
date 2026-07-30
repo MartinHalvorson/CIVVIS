@@ -406,6 +406,57 @@ mod tests {
     }
 
     #[test]
+    fn a_revealed_land_plot_becomes_land_and_can_hold_a_city() {
+        // ⚠ Written because `rebuild_with_empire` refused to place the capital of a
+        // real run on (56,28), a plot the export clearly recorded as TERRAIN_GRASS,
+        // not water. Either the tile is not being written or the placement check is
+        // wrong, and a test says which.
+        let chunks = vec![TilesChunk {
+            turn: 10,
+            width: 60,
+            height: 38,
+            chunk: 1,
+            plots: vec![Plot {
+                x: 56,
+                y: 28,
+                t: Some("TERRAIN_GRASS".to_string()),
+                f: None,
+                r: None,
+                o: 0,
+                w: false,
+                i: false,
+                fw: true,
+            }],
+        }];
+        let snapshot = Snapshot::from_chunks(&chunks);
+        assert!(snapshot.is_revealed((56, 28)), "the plot must read as revealed");
+
+        let game = rebuild_game(&snapshot, 4, 1);
+
+        let axial = crate::hex::offset_to_axial(56, 28);
+        let tile = game
+            .map
+            .get(axial)
+            .expect("the mirrored map must contain a plot the export described");
+        assert_eq!(
+            tile.terrain.as_str(),
+            "grassland",
+            "revealed grass must land as grassland, not the generated terrain"
+        );
+        assert!(
+            !game.rules.is_water(tile),
+            "a revealed grass plot must not read as water"
+        );
+
+        let (with_empire, placed) = rebuild_with_empire(&snapshot, &[(56, 28)], 4, 1);
+        assert_eq!(placed, 1, "the capital must be placeable on its own plot");
+        assert!(
+            with_empire.cities.values().any(|c| c.pos == axial),
+            "and the city must actually be there, at the AXIAL position"
+        );
+    }
+
+    #[test]
     fn the_real_export_shape_deserializes() {
         // Field-for-field what CivvisControlAgent.lua emits, so a rename on
         // either side fails here rather than in a live game.
@@ -456,6 +507,21 @@ pub fn snapshot_from_events(path: &std::path::Path) -> std::io::Result<Snapshot>
 
 /// Rebuild a CIVVIS `Game` whose map is the ground this seat has actually seen.
 ///
+/// ⚠⚠ CIVILIZATION VI EXPORTS **OFFSET** COORDINATES; CIVVIS STORES **AXIAL**.
+///
+/// They are not the same space, and the numbers look interchangeable, which is why
+/// this went unnoticed. A 60x38 CIVVIS map holds 2280 tiles keyed from `(-18, 36)`
+/// to `(59, 0)` — negative columns — because `q = col - (row - (row & 1)) / 2`.
+/// Writing a Civ 6 plot straight in therefore lands on a different hex or on no hex
+/// at all: the capital of a real run at offset (56, 28) had NO TILE in the
+/// reconstruction, so nothing was written, no city could be placed, and
+/// `civvis-advise` reported "no legal revealed site" while blaming the map.
+///
+/// `hex::offset_to_axial` is CIVVIS's own conversion and is used rather than a
+/// reimplementation. The [`Snapshot`] keeps Civ 6's offset coordinates because that
+/// is what the export says and what the operator sees on screen; conversion happens
+/// here, at the boundary, once.
+///
 /// ⚠ UNREVEALED PLOTS ARE FLATTENED TO OCEAN, and that is a deliberate,
 /// load-bearing choice rather than a convenience.
 ///
@@ -482,11 +548,11 @@ pub fn rebuild_game(snapshot: &Snapshot, players: usize, seed: u64) -> crate::ga
 
     for y in 0..height {
         for x in 0..width {
-            let pos = (x, y);
+            let pos = crate::hex::offset_to_axial(x, y);
             let Some(tile) = game.map.tiles.get_mut(&pos) else {
                 continue;
             };
-            let Some(plot) = snapshot.plot(pos) else {
+            let Some(plot) = snapshot.plot((x, y)) else {
                 tile.terrain = ocean;
                 tile.hills = false;
                 tile.feature = None;
@@ -560,21 +626,21 @@ pub fn rebuild_with_empire(
 ) -> (crate::game::Game, usize) {
     let mut game = rebuild_game(snapshot, players, seed);
     let mut placed = 0;
-    for pos in cities {
-        // A city can only stand on ground the mirror actually has. An unrevealed
-        // plot is ocean here, and placing on water would be a fiction of its own.
-        if !snapshot.is_revealed(*pos) {
+    for offset in cities {
+        // `cities` arrive in Civ 6 offset coordinates, like the plots.
+        if !snapshot.is_revealed(*offset) {
             continue;
         }
+        let pos = crate::hex::offset_to_axial(offset.0, offset.1);
         let is_water = game
             .map
-            .get(*pos)
+            .get(pos)
             .map(|tile| game.rules.is_water(tile))
             .unwrap_or(true);
         if is_water {
             continue;
         }
-        game.place_city(0, *pos, None);
+        game.place_city(0, pos, None);
         placed += 1;
     }
     (game, placed)
