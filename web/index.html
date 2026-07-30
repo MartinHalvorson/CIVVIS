@@ -22313,7 +22313,7 @@ function draw() {
       if (civ) cx.roundRect(x - rr, y - rr, rr * 2, rr * 2, 5);
       else cx.arc(x, y, rr, 0, 7);
       cx.stroke();
-      drawUnitPictogram(u.embarked ? "galley" : u.type, x, y,
+      drawUnitPictogram(u.type, x, y,
                         rr * 1.45 * COMMAND_UNIT_ICON_K(), tokenInk);
       cx.globalAlpha = 1;
     }
