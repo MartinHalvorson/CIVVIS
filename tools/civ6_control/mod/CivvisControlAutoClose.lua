@@ -102,45 +102,36 @@ local CHAINED = {
 	DiplomacyActionView = "DiplomacyActionView_Expansion2",
 };
 
--- Every handler this shim knows how to close a screen with.
---
--- ⚠ ONE LIST, USED BY BOTH `haveScreen` AND `endScreen`. When they kept separate
--- lists they drifted, and the drift was silent in the worst direction: the ladder
--- learned to call `OnHideScreen` and `OnButton1` for the relic screens while
--- `haveScreen` still tested only the original four names. So `haveScreen` said
--- "no screen here" about a screen that had loaded perfectly well, the timer was
--- never armed, and the run reported `autoclose_unarmed` for GreatWorkShowcase and
--- ChooseArtifact — I had made those two screens worse, not better. Same for
--- WorldCongressBetweenTurns, which uses a third name again.
---
--- Screens do not agree on what "close" is called, so the only safe test for "did
--- the shipped script load" is "does any name I could act on exist".
-local CLOSERS = {
-	"OnClose", "Close", "OnContinue", "OnClosePopup",
-	"OnHideScreen",          -- GreatWorkShowcase
-	"OnButton1",             -- ChooseArtifact
-	"ReleaseEventLock",      -- WorldCongressBetweenTurns: frees the event lock
-	"CloseFocusedState",     -- DiplomacyActionView: what Escape actually calls
-	"ExitConversationMode",  -- DiplomacyActionView: ends a conversation only
-	"OnHide", "InputHandler",
-};
-
--- ⚠ No `try` helper in this file — that lives in the agent. Reaching for it here
--- would itself have been a nil-global call, which is the very bug class this
--- session kept tripping over. check_scope.py flags it.
-local function globalFn(name)
-	local ok, isFn = pcall(function() return type(_G[name]) == "function"; end);
-	return ok and isFn == true;
-end
-
 -- Whether a screen is in there at all. An include that finds no file fails
 -- silently on this build, so the test has to be for what the script defines
 -- rather than for the include returning.
+--
+-- ⚠⚠ THESE MUST BE BARE GLOBAL REFERENCES, NOT `_G[name]` LOOKUPS.
+--
+-- A previous version of this file kept the names in a table and tested them with
+-- `type(_G[name]) == "function"` so that this check and `endScreen` could share
+-- one list. It broke every screen: each Civilization VI UI context runs in its
+-- own environment, so `_G["OnClose"]` does not resolve the same name that a bare
+-- `OnClose` resolves. The run went from three unarmed screens to EIGHT, taking
+-- EraCompletePopup, NaturalWonderPopup, NaturalDisasterPopup, WonderBuiltPopup
+-- and RockBandMoviePopup with it — all of which had been arming correctly for
+-- hours. Found by the `autoclose_unarmed` line in the event stream.
+--
+-- So the list is spelled out. It has to stay in step with the ladder in
+-- `endScreen` by hand, and tools/civ6_control/check_closers.py fails if it
+-- drifts or if anybody reaches for `_G` again.
 local function haveScreen()
-	for i = 1, #CLOSERS do
-		if globalFn(CLOSERS[i]) then return true; end
-	end
-	return false;
+	return type(OnClose) == "function"
+		or type(Close) == "function"
+		or type(OnContinue) == "function"
+		or type(OnClosePopup) == "function"
+		or type(OnHideScreen) == "function"        -- GreatWorkShowcase
+		or type(OnButton1) == "function"           -- ChooseArtifact
+		or type(ReleaseEventLock) == "function"    -- WorldCongressBetweenTurns
+		or type(CloseFocusedState) == "function"   -- DiplomacyActionView
+		or type(ExitConversationMode) == "function"
+		or type(OnHide) == "function"
+		or type(InputHandler) == "function";
 end
 
 -- The shipped screen, unchanged and unread. A context's id is the name of the
