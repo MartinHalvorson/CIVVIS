@@ -123,7 +123,7 @@ def outcome_of(tag: str) -> dict:
         except ValueError:
             merged = {}
     events = RUN_ROOT / tag / "events.jsonl"
-    last_turn, seat, victory = None, None, None
+    last_turn, seat, victory, ended_on_screen = None, None, None, None
     if events.exists():
         for line in events.read_text(errors="replace").splitlines():
             try:
@@ -137,6 +137,16 @@ def outcome_of(tag: str) -> dict:
                 seat = event
             elif kind in ("victory", "defeat", "gameover"):
                 victory = event
+            # ★★★★ A GAME THAT ENDED IS NOT A GAME THAT HUNG. Civilization VI's
+            # end-game screen halts the game core, so the agent stops exporting and
+            # the harness times out — and every such run was written down as
+            # `stalled: no event for 240s` with a blank outcome. Attempt 2 was
+            # photographed on the DEFEAT screen and recorded exactly that way.
+            #
+            # ⚠ This records that the game ENDED, never who won. `won()` still
+            # demands the mod's victory event naming us.
+            elif kind == "autoclose" and event.get("screen") == "EndGameMenu":
+                ended_on_screen = event
     from_events = {
         "tag": tag,
         "last_turn": (last_turn or {}).get("turn"),
@@ -148,6 +158,10 @@ def outcome_of(tag: str) -> dict:
         "met": (last_turn or {}).get("met"),
         "seat": seat,
         "victory": victory,
+        # True means Civilization VI showed its end-of-game screen: the run
+        # FINISHED. It says nothing about who won.
+        "reached_end_screen": bool(ended_on_screen) or None,
+        "end_screen_turn": (ended_on_screen or {}).get("turn"),
     }
     # The event stream wins where it has an answer; the summary keeps `reason` and
     # anything else only it records.

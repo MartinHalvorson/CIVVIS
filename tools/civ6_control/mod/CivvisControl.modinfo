@@ -60,6 +60,30 @@
 		<ImportFiles id="CivvisControlAutoCloseFiles">
 			<File>CivvisControlAutoClose.lua</File>
 		</ImportFiles>
+		<!-- ★★★★ THE END OF THE GAME, WHICH WAS BEING LOGGED AS A STALL.
+		     Run civvis-20260730T211350Z was photographed showing Civilization
+		     VI's DEFEAT screen for the Swedish Empire at turn 144, and the
+		     ledger recorded `reason: "stalled: no event for 240s"` with
+		     `outcome: null` — a loss and a hang are indistinguishable in the
+		     one column the ladder exists to fill.
+
+		     The cause is that this screen HALTS THE GAME CORE the way the era
+		     screens do, so the agent's own 0-cities defeat check never gets
+		     another turn to run: the empire still held one city on the last
+		     turn it managed to export. Registering the screen here makes it
+		     announce itself through the shim's `screen` field, so the run ends
+		     with evidence instead of silence.
+
+		     ⚠ Deliberately NOT relied on for won/lost. The shim reports which
+		     screen it closed, not who won; `won()` still requires the mod's own
+		     victory event naming us, because a rival's victory raises this same
+		     screen and recording that as ours would be the worst possible bug. -->
+		<ReplaceUIScript id="CivvisControlAutoCloseEndGameMenu">
+			<Properties>
+				<LuaContext>EndGameMenu</LuaContext>
+				<LuaReplace>CivvisControlAutoClose.lua</LuaReplace>
+			</Properties>
+		</ReplaceUIScript>
 		<ReplaceUIScript id="CivvisControlAutoCloseDiplomacyActionView">
 			<Properties>
 				<LuaContext>DiplomacyActionView</LuaContext>
