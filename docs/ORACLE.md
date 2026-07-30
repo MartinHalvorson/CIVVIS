@@ -1,7 +1,10 @@
 # Oracle ablation
 
 Status of the 2026-07-29 `strategic_deep` Expansion transfer study:
-**interrupted and invalid; no retry; confirmation unopened**.
+**interrupted and invalid; no retry; confirmation unopened**. This file is a
+chronological experiment record. Its “deployment” labels refer to the fixed
+six-seat profile targeted that day; the current exhibition rotates through
+4–10 seats and matching stock map profiles.
 
 `ablate` asks a deliberately stronger question than a policy comparison: if a
 seat is handed a perfect, free version of one capability, does it win games it
@@ -35,10 +38,11 @@ perfecting a subsystem or choosing the winning lane is worthless.
 ## 2026-07-29 preregistration: test the profile, not only the grant
 
 Every oracle result recorded so far used `AdvancedAi` at Standard speed. The
-exhibition profile is six players on 74x46 with nine city-states, 250 Online
-turns, and the strongest measured controller is `strategic_deep`. Neither
-transfer may be assumed: this repository has already measured both genomes and
-learned move heads reversing across controller or speed profiles.
+then-targeted comparison profile was six players on 74x46 with nine city-states
+and 250 Online turns; `strategic_deep` had the highest macro-search point
+estimate on its separate four-player source benchmark. Neither profile nor
+controller transfer may be assumed: this repository has already measured both
+genomes and learned move heads reversing across controller or speed profiles.
 
 Before this entry, `ablate` could name neither dimension. This experiment adds
 `--speed`, a grant-mode `--ai`, explicit agent provenance, and comma-separated
@@ -48,7 +52,7 @@ historical values (`standard`, `advanced`). The best-lane oracle remains an
 
 ### Hypotheses
 
-1. The oracle's positive calibration transfers to the deployment profile:
+1. The oracle's positive calibration transfers to the then-targeted profile:
    `treasury` helps more matched Online/Advanced cells than it hurts, fires at
    least once, and reaches two-sided McNemar `p < 0.05`.
 2. Perfect territorial acquisition remains below useful resolution on that
@@ -56,7 +60,7 @@ historical values (`standard`, `advanced`). The best-lane oracle remains an
    completed Standard bound at preregistration and it acts in the
    resource-producing layer the positive calibration points toward.
 3. `treasury` also remains a positive calibration when the wrapped controller
-   is `strategic_deep`. This is a mechanism check for future strongest-agent
+   is `strategic_deep`. This is a mechanism check for future search-controller
    oracle work, not evidence that free resources are a playable policy.
 
 ### Fixed screen
@@ -140,7 +144,7 @@ fallback to `advanced`.
 
 This lands exactly on the minimum eight discordant cells, all in the positive
 direction, and clears the fixed significance threshold. Oracle sensitivity
-therefore transfers to strongest-controller self-play on this two-seat Online
+therefore transfers to `strategic_deep` self-play on this two-seat Online
 profile. It licenses a future structural oracle run under `strategic_deep`; it
 does not make free resources a policy, promote an entrant, or alter the failed
 `ground` escalation decision above.
@@ -149,21 +153,22 @@ The 24 strategic games took about 3 hours 2 minutes wall-clock at four jobs on
 this host, including a period of fleet oversubscription; the control phase alone
 consumed about 412 CPU-minutes. That cost is too high for a default screen. The
 tool now reports each completed control and treatment cell so a long fixed batch
-is observable without inspecting worker threads, but deployment-scale
+is observable without inspecting worker threads, but fixed-profile
 `strategic_deep` oracle work should remain narrowly preregistered.
 
 ### Decision
 
-Both positive calibrations transfer to the deployment geometry and Online
-speed, including the strongest measured controller. Perfect territorial
-acquisition produced a favorable but underpowered 5/0 screen and stopped at its
-fixed gate, so no territorial policy experiment is justified by this batch.
+Both positive calibrations transfer to the recorded six-seat geometry and
+Online speed, including the tested `strategic_deep` controller. Perfect
+territorial acquisition produced a favorable but underpowered 5/0 screen and
+stopped at its fixed gate, so no territorial policy experiment is justified by
+this batch.
 The useful advance is methodological: future oracle claims can name their
 controller and speed, share one matched control across treatments, refuse a
 silent agent fallback, and expose progress during expensive batches. No
 gameplay behavior changes here.
 
-## 2026-07-29 preregistration: does the expansion ceiling reach the strongest agent?
+## 2026-07-29 preregistration: does the expansion ceiling reach `strategic_deep`?
 
 The first Expansion result is the largest structural ceiling measured in this
 repository: on the Standard/Advanced four-player profile the same focal seat
@@ -183,7 +188,8 @@ blocked the sampled shortfall turns; the expansion window alone blocked 31.2%,
 while 40.4% had no hard blocker and let the Settler compete on value and price.
 Those are two different honest treatments. Before spending an evaluation on
 either, this experiment asks whether the large ceiling survives the controller
-upgrade from `advanced` to the strongest published `strategic_deep` agent.
+change from `advanced` to `strategic_deep`, the source-profile search leader at
+the time.
 
 ### Profile and harness change
 
@@ -225,7 +231,7 @@ reaches two-sided McNemar `p < 0.05`. With only six discordances, that requires
 6/0; the significance test, rather than a raw win-rate threshold, continues to
 govern larger discordant sets.
 
-This narrow screen reuses the already completed strongest-controller positive
+This narrow screen reuses the already completed `strategic_deep` positive
 calibration (Treasury helped 8/12 and hurt 0/12 at `p = 0.0078` on the 6p Online
 cell) instead of spending another 12 strategic games to remeasure a deliberately
 enormous resource advantage. Consequently a failed Expansion screen is a stop,

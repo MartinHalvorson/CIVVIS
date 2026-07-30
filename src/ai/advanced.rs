@@ -951,7 +951,8 @@ pub struct AdvancedAi {
     /// in that lane instead of by declaring on them.
     ///
     /// Four of the seven races already answer themselves. The two that answer
-    /// with an army are the two the deployment-scale census argues against:
+    /// with an army are the two the recorded large-profile census argues
+    /// against:
     /// at 60x38 an empire at war with one or two rivals wins 4.4% and 10.7%
     /// of its seats against a 16.7% base rate, and the shipped response
     /// already costs terminal score (44 map-directions to 65, sign p=0.055)
@@ -979,9 +980,9 @@ pub struct AdvancedAi {
     /// a clock.
     ///
     /// The shipped term fires only in the last quarter of the game, so at the
-    /// deployment map size — where most games are decided on score at the turn
-    /// limit — every leader trips it at the same turn regardless of how far
-    /// ahead they are. `docs/COUNTERING_LEADERS.md` measures score as the only
+    /// recorded large map size — where most games are decided on score at the
+    /// turn limit — every leader trips it at the same turn regardless of how
+    /// far ahead they are. `docs/COUNTERING_LEADERS.md` measures score as the only
     /// instrument that predicts a winner at an actionable lead, so this reads
     /// the margin: 78 at 20% ahead of the next empire, 100 at 50% ahead, from
     /// the first turn an early game has enough history to mean anything.
@@ -1002,7 +1003,7 @@ pub struct AdvancedAi {
     /// target as `diplomatic_leader`. `congress_census` reads what that target
     /// is worth: over congress sessions of decided games the DVP leader is the
     /// eventual winner **24.8%** of the time at 4p (base rate 25.0%) and
-    /// **14.4%** at the 6p exhibition profile (base rate 16.7%) — at or below
+    /// **14.4%** at the recorded 6p profile (base rate 16.7%) — at or below
     /// chance on both. The score leader is the winner 61% of the time on both.
     ///
     /// That matters more here than anywhere else the same mistake appears,
@@ -2068,13 +2069,13 @@ impl AdvancedAi {
             .unwrap_or(0) as i32;
 
         // The shipped score term is a clock, not an observation: it fires only
-        // in the last quarter of the game, so at the deployment map size --
+        // in the last quarter of the game, so at the recorded large map size --
         // where most games are decided on score at the turn limit -- the alarm
         // it raises arrives at turn 300 of 400 for every leader alike,
         // regardless of how far ahead they are.
         //
         // The census says score is the one instrument that predicts: at the
-        // deployment profile the score leader is the eventual winner 62% of
+        // recorded large profile the score leader is the eventual winner 62% of
         // the time **200 turns out** against a 16.7% base rate, and settles on
         // them a median 135 turns before the end, while `victory_threat` sits
         // at or below the base rate at four of five leads. `early_score_alarm`
@@ -2246,9 +2247,9 @@ impl AdvancedAi {
         // Four of the seven races answer themselves — a culture threat is met
         // with culture, a religious one with religion. The two that answer with
         // an army are Science and Expansion, and those are the two the
-        // deployment-scale census argues against: at 60x38 and 74x46 an empire
-        // fighting one or two rivals wins 4.4% and 10.7% of the time against a
-        // 16.7% base rate, and the shipped response already costs terminal
+        // recorded large-profile census argues against: at 60x38 and 74x46 an
+        // empire fighting one or two rivals wins 4.4% and 10.7% of the time
+        // against a 16.7% base rate, and the shipped response already costs terminal
         // score (44 maps to 65, p=0.055) without buying a win. Racing the
         // leader in their own lane keeps the reaction and drops the war.
         // The decomposition arm: react to the other four races unchanged and
@@ -2639,7 +2640,7 @@ impl AdvancedAi {
     /// A city making 20 production a turn builds a settler in four turns; one
     /// making three takes twenty-seven. A single reserve is wrong for both, and
     /// `expansion_funnel_blocker_census` measures the cost of being wrong in
-    /// the strict direction: on the 6p/74x46 map the exhibition serves, the
+    /// the strict direction: on the recorded 6p/74x46 profile, the
     /// shut window is the **sole** blocker on 310 of 993 city-turns spent short
     /// of the empire's own city target — 31.2% of them.
     ///
@@ -21793,13 +21794,14 @@ mod tests {
     #[ignore = "census, not an assertion; run explicitly with --nocapture"]
     fn expansion_funnel_blocker_census() {
         // ⚠ `ai_eval` defaults to 24x16 at 4 players, which is 96 tiles per
-        // player; the exhibition this engine actually serves runs 74x46 at 6,
-        // which is 567. "No settle site in reach" is exactly the kind of
+        // player; the recorded large comparison runs 74x46 at 6, which is 567.
+        // "No settle site in reach" is exactly the kind of
         // reading that could be pure map scarcity at the small size, so both
         // are measured and reported side by side.
-        for (label, players, width, height) in
-            [("eval 4p 24x16", 4usize, 24i32, 16i32), ("deployment 6p 74x46", 6, 74, 46)]
-        {
+        for (label, players, width, height) in [
+            ("eval 4p 24x16", 4usize, 24i32, 16i32),
+            ("large 6p 74x46", 6, 74, 46),
+        ] {
             expansion_funnel_at(label, players, width, height);
         }
     }
@@ -21931,9 +21933,10 @@ mod tests {
     #[test]
     #[ignore = "census, not an assertion; run explicitly with --nocapture"]
     fn expansion_payback_fires() {
-        for (label, players, width, height) in
-            [("eval 4p 24x16", 4usize, 24i32, 16i32), ("deployment 6p 74x46", 6, 74, 46)]
-        {
+        for (label, players, width, height) in [
+            ("eval 4p 24x16", 4usize, 24i32, 16i32),
+            ("large 6p 74x46", 6, 74, 46),
+        ] {
             let mut agree = 0u64;
             let mut opened = 0u64;
             let mut closed = 0u64;
@@ -22009,9 +22012,10 @@ mod tests {
     #[test]
     #[ignore = "census, not an assertion; run explicitly with --nocapture"]
     fn production_allocation_census() {
-        for (label, players, width, height) in
-            [("eval 4p 24x16", 4usize, 24i32, 16i32), ("deployment 6p 74x46", 6, 74, 46)]
-        {
+        for (label, players, width, height) in [
+            ("eval 4p 24x16", 4usize, 24i32, 16i32),
+            ("large 6p 74x46", 6, 74, 46),
+        ] {
             let mut spent = BTreeMap::<&str, f64>::new();
             let mut total = 0.0f64;
             let mut end_cities = 0.0f64;
@@ -22113,9 +22117,10 @@ mod tests {
     #[test]
     #[ignore = "census, not an assertion; run explicitly with --nocapture"]
     fn city_target_floor_fires() {
-        for (label, players, width, height) in
-            [("eval 4p 24x16", 4usize, 24i32, 16i32), ("deployment 6p 74x46", 6, 74, 46)]
-        {
+        for (label, players, width, height) in [
+            ("eval 4p 24x16", 4usize, 24i32, 16i32),
+            ("large 6p 74x46", 6, 74, 46),
+        ] {
             for floor in [3usize, 6] {
                 let mut cities = 0.0f64;
                 let mut target = 0.0f64;
@@ -22181,9 +22186,10 @@ mod tests {
     #[test]
     #[ignore = "census, not an assertion; run explicitly with --nocapture"]
     fn idle_treasury_census() {
-        for (label, players, width, height) in
-            [("eval 4p 24x16", 4usize, 24i32, 16i32), ("deployment 6p 74x46", 6, 74, 46)]
-        {
+        for (label, players, width, height) in [
+            ("eval 4p 24x16", 4usize, 24i32, 16i32),
+            ("large 6p 74x46", 6, 74, 46),
+        ] {
             let mut gold_samples: Vec<f64> = Vec::new();
             let mut faith_samples: Vec<f64> = Vec::new();
             let mut gpt_samples: Vec<f64> = Vec::new();
@@ -22308,7 +22314,7 @@ mod tests {
     fn envoy_allocation_census() {
         for (label, players, width, height, city_states) in [
             ("eval 4p 24x16", 4usize, 24i32, 16i32, 4usize),
-            ("deployment 6p 74x46", 6, 74, 46, 12),
+            ("large 6p 74x46", 6, 74, 46, 12),
         ] {
             let mut free_samples: Vec<f64> = Vec::new();
             let mut placed_samples: Vec<f64> = Vec::new();
@@ -22445,7 +22451,7 @@ mod tests {
 
         for (label, players, width, height, city_states) in [
             ("eval 4p 24x16", 4usize, 24i32, 16i32, 4usize),
-            ("deployment 6p 74x46", 6, 74, 46, 12),
+            ("large 6p 74x46", 6, 74, 46, 12),
         ] {
             let mut govs = BTreeMap::<String, u64>::new();
             let mut envoys_per_threshold: Vec<f64> = Vec::new();

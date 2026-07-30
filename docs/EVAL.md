@@ -1,5 +1,11 @@
 # Evaluation baselines
 
+> **Reading note (2026-07-30).** This is an append-only experiment log, so
+> labels such as “deployment,” “strongest,” and “current” describe the dated
+> run that contains them. They are not present-day rankings. The live
+> exhibition now rotates through 4–10 seats and stock profiles; no learned
+> model or search entrant is live. See `AI_GAPS.md` for the current assessment.
+
 Recorded reference numbers so strength and health regressions are visible.
 Re-run the battery after any AI or rules batch and compare against the most
 recent entry; update this file (append, don't overwrite) when numbers move

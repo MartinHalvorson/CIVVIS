@@ -1,16 +1,16 @@
-//! PolicyAi: the learned net chooses the actions.
+//! PolicyAi: an experimental one-ply state-value action selector.
 //!
 //! Where `NeuralAi` consults the value net for one decision (war), this
-//! agent uses it as the policy itself: each turn it repeatedly scores the
-//! legal action set by applying each candidate to a clone and evaluating the
-//! resulting position, then commits the best improvement. That is one-ply
-//! net-guided search over the real action space — the first rung of a
-//! learned policy (AI_GAPS item 1) and the loop a trained policy head would
-//! later replace.
+//! agent uses it as a policy layer: each turn it repeatedly scores a bounded
+//! set of observable tactical actions by applying each candidate to a clone
+//! and evaluating the resulting position, then commits the best improvement.
+//! That is one-ply net-guided search over a subset of the real action space and
+//! the loop a trained policy head could later replace. Controlled evaluations
+//! are negative; this is not a deployed strength layer.
 //!
-//! Without `evolved/valuenet.json` there is nothing learned to consult, so
-//! the agent falls back to the scripted `AdvancedAi` rather than playing
-//! randomly.
+//! No value net ships with CIVVIS. Without `evolved/valuenet.json` there is
+//! nothing learned to consult, so the agent falls back to the scripted
+//! `AdvancedAi` rather than playing randomly.
 use crate::action_space::{kind_name, legal_encoded};
 use crate::ai::{AdvancedAi, Ai, PlanReport, Weights};
 use crate::decision_features::{decision_features, CONTACT_TERMS, WIDTH as DECISION_WIDTH};

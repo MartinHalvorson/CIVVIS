@@ -1,14 +1,16 @@
 # Strategy league (Glicko-2 ratings + selection)
 
 `civvis league` maintains a **persistent, distributed rated pool of high-level
-AI strategies** and improves it for as long as simulators keep running:
-strategies earn uncertainty-aware Glicko-2 ratings on mirrored games, strong
-ones breed refined offspring, and confidently weak ones retire. Multiple
+AI strategies** and searches it for improvements for as long as simulators keep
+running: strategies earn uncertainty-aware Glicko-2 ratings on mirrored games,
+high-rated ones breed offspring, and confidently weak ones retire. Multiple
 machines can safely contribute to the same league without a separate
 coordinator. It answers two questions the one-shot
 `tournament` command cannot: *how strong is each strategy, with an
-uncertainty bar, accumulated across runs* — and *what does an even stronger
-strategy look like*.
+uncertainty bar, accumulated across runs* — and *what candidate should be tested
+next*. Breeding and rating do not guarantee continuous strength gains; current
+evidence shows genome gains can be profile-specific and score-oriented changes
+can fail to produce more wins.
 
 ```bash
 civvis league                      # 10 Standard-speed rounds; resumes league/
@@ -63,9 +65,13 @@ do not provide shared-filesystem exclusive-create semantics.
 A strategy is either a built-in agent (`advanced`, `basic`, ...) or a
 **parameterized AdvancedAi**: a 40-gene `Weights` genome plus an optional
 fixed victory lane (`science`, `culture`, `religious`, `diplomatic`,
-`domination`, `score`). A fresh league seeds itself with the anchor agents
-`advanced` and `basic`, `advanced_v1`, one strategy per victory lane, and
-the GA champion from `evolved/best.json` when present.
+`domination`, `score`). A fresh league seeds itself with `advanced`,
+`advanced_evolved`, `basic`, and `advanced_v1`; one parameterized strategy per
+victory lane; and the embedded champion as a parameterized genome. It also
+seeds `strategic` as an offline-only, non-retiring anchor. That entry lets
+league rounds compare search with genomes the breeder can create, but
+`league_only` prevents it from being seated in the exhibition or offered for
+auto-play.
 
 ## Players
 
@@ -147,9 +153,10 @@ because they selected a leader they have not played before.
 
 ## Watching players in the game HUD
 
-`civvis play --spectate --league league/` seats every major civ with its
-best-rated available strategy (distinct specialists per leader/civ) and the
-spectator HUD lists, per player: **civ, league username + strategy, its
+`civvis play --spectate --league league/` ranks the live-eligible strategies
+for each leader/civilization, then samples from the top three with 3:2:1 rank
+weight while avoiding repeats until the roster is exhausted. The spectator HUD
+lists, per player: **civ, league username + strategy, its
 elo** (exact leader/civ rating after game one, ±RD on hover) **and two win
 odds** — the odds this seat had before a tile was drawn, and the odds it holds
 right now. Both are shares of the one win a table has to give

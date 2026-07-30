@@ -2,6 +2,10 @@
 //! self-play outcomes from game-grouped dataset.csv exports (NNUE-style
 //! distillation).
 //! Input = evolve::features(); output = win probability for that player.
+//!
+//! This module contains the architecture and loader, not trained weights. No
+//! `valuenet.json` is committed or embedded, so normal runtime construction
+//! uses each agent's documented non-neural fallback.
 use std::fs;
 use std::path::Path;
 

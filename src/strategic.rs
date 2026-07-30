@@ -3,11 +3,12 @@
 //! Every `review_every` turns the agent simulates staying adaptive and committing
 //! to each enabled victory lane for `horizon` rounds (rivals remain AdvancedAi
 //! opponents). It commits only when a targeted policy beats its adaptive parent
-//! by a real margin — macro search applied to victory routing, generalizing the
-//! war-decision rollouts `NeuralAi` proved. Positions are judged by the trained
-//! value net when `evolved/valuenet.json` exists, otherwise by score share. Public
-//! victory threats interrupt the periodic search before they can end the game,
-//! while irreversible Prophet investment and duel victory geometry supply
+//! by a real margin — macro search applied to victory routing. Positions blend
+//! a compatible value net when `evolved/valuenet.json` exists and otherwise use
+//! score share. No value net ships with CIVVIS, so the latter is the normal
+//! checkout. Public victory threats interrupt the periodic search before they
+//! can end the game, while irreversible Prophet investment and duel victory
+//! geometry supply
 //! priors that a short economic rollout cannot discover in time. The learned
 //! estimate is deliberately regularized toward score share because the
 //! counterfactual rollout endpoints remain out of distribution for ordinary

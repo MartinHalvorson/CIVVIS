@@ -41,9 +41,10 @@ pub struct EvoCfg {
     ///
     /// It also matters for what gets bred. `docs/EVAL.md` (2026-07-28) records
     /// the shipped champion measuring **+58 Elo at the 4p 24x16 Standard
-    /// profile it was bred on and +10, inconclusive, at the Online speed the
-    /// exhibition plays**. Breeding at the speed that ships is one field, and
-    /// this is the field.
+    /// profile it was bred on and -9, inconclusive, at the recorded 6p 74x46,
+    /// 6-city-state Online comparison profile**. Breeding at the profile that
+    /// will be evaluated matters; speed is one field in that profile, and this
+    /// is the field.
     pub speed: String,
 }
 

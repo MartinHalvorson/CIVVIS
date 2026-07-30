@@ -1383,17 +1383,18 @@ fn seed_league(dir: &str) -> League {
     //
     // Breeding produces `StrategyKind::Advanced` and nothing else, so a league
     // seeded without a searching entry can never acquire one however long it
-    // runs: it explores 48-gene variants of a scripted agent forever. That is
-    // worth naming next to three measured facts — the genome is a local optimum
-    // on wins, 11 of 48 genes produce zero divergence, and about a thousand
-    // rounds produced no measurable gain. The loop is not failing to climb; it
-    // cannot see the axis next door.
+    // runs: it explores 40-gene variants of a scripted agent forever. Causal
+    // probes have also found several genes bypassed on sampled AdvancedAi
+    // trajectories, while long league runs produced no measured gain. The loop
+    // cannot discover the search axis because that controller family is not in
+    // its mutation space.
     //
-    // It costs. At the older 6p, 74x46, 9-city-state profile, one searching
+    // It costs. At the measured 6p, 74x46, 9-city-state profile, one searching
     // seat among five scripted ones measured **6.4x** a game-turn: 76.7 ms
-    // against 13.3. The current live profile is larger and has not been
-    // measured, so this anchor is admitted to offline league rounds but marked
-    // `league_only` below. `docs/EVAL.md`, 2026-07-29.
+    // against 13.3. Live worlds now rotate through 4-10 seats and matching map
+    // sizes; search strength and cost across that matrix have not been
+    // measured. This anchor is therefore admitted to offline league rounds but
+    // marked `league_only` below. `docs/EVAL.md`, 2026-07-29.
     //
     // An anchor rather than a competitor: it is a reference point the bred
     // genomes are measured against, and `League::active` never retires one, so

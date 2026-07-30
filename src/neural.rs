@@ -1,7 +1,10 @@
-//! NeuralAi: champion-weight BasicAi play with value-net-guided strategy.
-//! War declarations are decided AlphaZero-style-in-miniature: clone the game,
-//! roll each branch forward with fast scripted AIs, and let the learned value
-//! net judge the resulting positions.
+//! NeuralAi: an experimental value-net-guided war decision on top of BasicAi.
+//!
+//! It clones peace and war branches, rolls each forward with scripted AIs, and
+//! lets a compatible 25-feature state-value net judge unresolved endpoints.
+//! No value net ships with CIVVIS; the `neural` builtin factory therefore
+//! returns champion-weight `BasicAi` in a normal checkout. This module is a
+//! research surface, not the production major-civilization controller.
 use crate::ai::{Ai, BasicAi, Weights};
 use crate::evolve::features;
 use crate::game::{Action, Game};

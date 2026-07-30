@@ -1,9 +1,10 @@
 # Single player
 
 CIVVIS was built AI-simulator-first, and its browser client grew up around the
-spectator: an exhibition of eight agents playing themselves, watched. The human
-seat came along for the ride. `civvis play` has always seated a person at seat
-0, and the engine has never been the limit — `Game::legal_actions(0)` already
+spectator: agents playing themselves, watched. The supervised exhibition now
+rotates through 4–10 major seats and matching stock map sizes. The human seat
+came along for the ride. `civvis play` has always seated a person at seat 0,
+and the engine has never been the limit — `Game::legal_actions(0)` already
 enumerates policy cards, pantheons, governors, envoys, spies, trade routes,
 Great People, casus belli and peace offers for that seat, and `observation()`
 already ships the state each of those decisions needs.
