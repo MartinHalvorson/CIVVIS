@@ -452,21 +452,47 @@ def dismiss_leader_dialogue(clicks: int = 4) -> bool:
     rather than hardcoded. `clicks` defaults to 4 because three options plus one
     spare covers every first-contact screen seen so far.
     """
-    size = desktop_size()
-    if size is None:
-        print("[dialogue] desktop size unknown; not guessing a click position",
+    # ⚠ MEASURE THE WINDOW, NOT THE DESKTOP.
+    #
+    # This first computed the position from the desktop size and GAME_FRACTION,
+    # which was right only while the game owned the left half at full height. The
+    # moment the operator asked for the game in the upper-right quadrant
+    # (864,33,864,542) those clicks landed on the TERMINAL instead, and a run sat
+    # stalled for ten minutes with the harness reporting "dialogue clicks sent".
+    # A position derived from an assumption about layout is a position that breaks
+    # when the layout changes; the window knows where it is.
+    rect = game_window()
+    if rect is None:
+        print("[dialogue] cannot read the game window; not guessing a position",
               file=sys.stderr)
         return False
-    width, height = size
+    wx, wy, ww, wh = rect
     focus_game(GAME_SIDE, GAME_FRACTION)
     time.sleep(1.0)
-    # The game occupies GAME_FRACTION of one side; the dialogue stack hugs the
-    # window's left edge regardless.
-    x = int(width * GAME_FRACTION * 0.14)
-    y = int(height * 0.73)
-    for _ in range(clicks):
-        click_at(x, y)
-        time.sleep(0.8)
+    # ⚠ THESE SCREENS ARE NOT ALL THE SAME SHAPE, and assuming they were cost a
+    # run. A first-contact conversation offers a stack of dialogue options at the
+    # LOWER-LEFT; a trade proposal (`DiplomacyDealView`) offers Accept/Refuse near
+    # the TOP. Clicking the conversation position on a deal screen hits empty space,
+    # which is exactly what happened: the harness logged "dialogue clicks sent"
+    # while a peace offer from Wilhelmina sat unanswered for eleven minutes and the
+    # run burned its stall timeout.
+    #
+    # ⚠ REFUSE, NEVER ACCEPT. The refuse button is clicked first and deliberately.
+    # An accepted deal can cede cities, gold per turn or a peace treaty, and a peace
+    # treaty ends the war that domination depends on — the only victory route still
+    # open. Refusing an unseen offer costs nothing; accepting one can cost the game.
+    targets = [
+        ("refuse deal", 0.222, 0.174),
+        ("dialogue stack", 0.14, 0.73),
+        ("dialogue stack (2nd)", 0.14, 0.68),
+    ]
+    print(f"[dialogue] window {rect}")
+    for name, fx, fy in targets:
+        x, y = int(wx + ww * fx), int(wy + wh * fy)
+        print(f"[dialogue]   {name} -> ({x},{y})")
+        for _ in range(max(1, clicks // len(targets))):
+            click_at(x, y)
+            time.sleep(0.7)
     return True
 
 
