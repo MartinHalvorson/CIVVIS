@@ -22,7 +22,7 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// edit cannot silently change the longitudinal anchor. If an edit reaches
 /// the legacy path, bump the Elo protocol and start a new ledger; if it is
 /// provably gated away, review that fact before updating this guard.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x34a9_ae45_6f45_48e9;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x03d5_8c0d_959c_258c;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {

@@ -21077,6 +21077,51 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "quality census; run explicitly with --nocapture"]
+    fn parallel_planner_quality_census() {
+        let mut candidate_wins = 0usize;
+        let mut control_wins = 0usize;
+        let mut candidate_score_share = 0.0;
+        let pairs = 8usize;
+        for pair in 0..pairs {
+            for swap in 0..2 {
+                let mut game = Game::new_full(4, 24, 16, 93_000 + pair as u64, 180, 0, false);
+                let candidate = |pid: usize| (pid + swap) % 2 == 0;
+                let mut ais = AdvancedAi::fleet_parallel(&game, 4);
+                for (pid, ai) in ais.iter_mut().enumerate() {
+                    if !candidate(pid) {
+                        *ai = AdvancedAi::new();
+                    }
+                }
+                run_game(&mut game, &mut ais);
+                match game.winner {
+                    Some(winner) if candidate(winner) => candidate_wins += 1,
+                    Some(_) => control_wins += 1,
+                    None => {}
+                }
+                let scores = (0..4)
+                    .map(|pid| game.score(pid).max(0) as f64)
+                    .collect::<Vec<_>>();
+                let total = scores.iter().sum::<f64>().max(1.0);
+                candidate_score_share += (0..4)
+                    .filter(|pid| candidate(*pid))
+                    .map(|pid| scores[pid])
+                    .sum::<f64>()
+                    / total;
+            }
+        }
+        let games = 2 * pairs;
+        let share = candidate_score_share / games as f64;
+        println!(
+            "parallel planner: {candidate_wins} wins; serial control: {control_wins}; terminal score share {share:.3}"
+        );
+        assert!(
+            share >= 0.45,
+            "parallel planning lost a material share of terminal position: {share:.3}"
+        );
+    }
+
+    #[test]
     fn colliding_unit_intents_revalidate_and_finish_from_live_state() {
         let mut game = Game::new(2, 20, 14, 73, 20, 0);
         let existing = game.units.keys().copied().collect::<Vec<_>>();
