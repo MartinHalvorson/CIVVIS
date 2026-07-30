@@ -543,6 +543,15 @@ local committedSite = {};
 -- was 4 moves to 15 SKIP_TURNs — the chosen site simply could not be reached,
 -- and re-offering it every turn was the whole failure.
 local refusedSite = {};
+-- Which city each unit is the garrison of, kept across turns.
+--
+-- ⚠ Without this the assignment oscillates. thinnestCity counts defenders, so
+-- with two units and two cities a warrior sent to the second city leaves the
+-- capital on zero, is ordered home next turn, which empties the second city
+-- again. It shuttles forever and looks exactly like two warriors parked in the
+-- capital — which is what was observed just before turn 50 of run
+-- settler-20260730T013057Z. A garrison is only a garrison if it stays.
+local garrisonOf = {};
 local findSettleSite;
 
 findSettleSite = function(player, pid, unit, turn)
@@ -780,17 +789,34 @@ local function orderMilitary(unit, stillExploring, player)
 		if healed then return healed; end
 	end
 	if player ~= nil then
-		local city, count = thinnestCity(player, unit);
-		if city ~= nil and (count or 0) < (cfg.GarrisonPerCity or 2) then
-			local ux = try(function() return unit:GetX(); end, -1);
-			local uy = try(function() return unit:GetY(); end, -1);
-			if plotDistance(ux, uy, city.x, city.y) > 1 then
-				local params = {};
-				params[UnitOperationTypes.PARAM_X] = city.x;
-				params[UnitOperationTypes.PARAM_Y] = city.y;
-				if operate(unit, OP["UNITOPERATION_MOVE_TO"], params) then
-					return "garrison";
-				end
+		local id = try(function() return unit:GetID(); end, -1);
+		local ux = try(function() return unit:GetX(); end, -1);
+		local uy = try(function() return unit:GetY(); end, -1);
+		-- Keep a standing assignment. Only pick a new one if this unit has none
+		-- or the city it was posted to has stopped being ours.
+		local post = garrisonOf[id];
+		if post ~= nil then
+			local mine = false;
+			eachCity(player, function(city)
+				local cx = try(function() return city:GetX(); end, -1);
+				local cy = try(function() return city:GetY(); end, -1);
+				if cx == post.x and cy == post.y then mine = true; end
+			end);
+			if not mine then garrisonOf[id] = nil; post = nil; end
+		end
+		if post == nil then
+			local city, count = thinnestCity(player, unit);
+			if city ~= nil and (count or 0) < (cfg.GarrisonPerCity or 2) then
+				garrisonOf[id] = { x = city.x, y = city.y };
+				post = garrisonOf[id];
+			end
+		end
+		if post ~= nil and plotDistance(ux, uy, post.x, post.y) > 1 then
+			local params = {};
+			params[UnitOperationTypes.PARAM_X] = post.x;
+			params[UnitOperationTypes.PARAM_Y] = post.y;
+			if operate(unit, OP["UNITOPERATION_MOVE_TO"], params) then
+				return "garrison";
 			end
 		end
 	end
