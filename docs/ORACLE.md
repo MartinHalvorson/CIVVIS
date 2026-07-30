@@ -1,5 +1,8 @@
 # Oracle ablation
 
+Status of the 2026-07-29 `strategic_deep` Expansion transfer study:
+**interrupted and invalid; no retry; confirmation unopened**.
+
 `ablate` asks a deliberately stronger question than a policy comparison: if a
 seat is handed a perfect, free version of one capability, does it win games it
 otherwise loses? The matched gap to the same seat on the same map is an upper
@@ -324,3 +327,25 @@ cell and is reported as either underresolved, null, harmful, or invalid
 according to the failed term. Any claim about the exhibition mixture would
 still require a separately fixed stratified sample across its varying player
 counts, scripts, and topologies.
+
+### Interrupted screen: invalid, no retry
+
+The exact seed-9,990,000 command began at 2026-07-29 10:38:41 UTC from the
+frozen release binary at `8ed75b4`. It completed all 12 shared controls and
+printed a control aggregate of 0/12 focal wins. It then completed only 6/12
+`none` replay cells before the process was deliberately terminated at
+2026-07-29 21:20:15 UTC in response to an operator halt, after about 10 hours
+41 minutes. The log ended at `none progress 6/12`.
+
+No `none` aggregate, exact-null verdict, Expansion cell, Expansion aggregate,
+or decision label was produced. The partial control value is not a treatment
+comparison and cannot answer either frozen hypothesis. In particular, replay
+identity was not established across all 12 cells, and the focal intervention
+was never reached.
+
+The protocol forbids a seed retry or replacement. Therefore this study is
+permanently **INVALID / STOP** rather than null, harmful, favorable, or
+inconclusive. Seed 9,991,000 and its entire confirmation range remain unopened.
+No gameplay change or follow-up Expansion experiment is licensed by this
+interrupted run. The evaluator improvements and historical clustering audit
+remain reusable methodology, but they carry no new Expansion result.
