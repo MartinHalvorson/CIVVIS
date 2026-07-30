@@ -181,6 +181,9 @@ def build_config(args: argparse.Namespace) -> dict:
         # automation. A policy, and counted separately as `explored` so it is never
         # mistaken for CIVVIS's work — see the note in the mod.
         "ExploreUnassigned": args.explore_unassigned,
+        # Hand a builder to Civ 6's own automation when CIVVIS's improvement is
+        # refused outright. A policy, counted as IMPROVE_AUTOMATED.
+        "AutomateStuckBuilders": args.automate_stuck_builders,
         # ⚠ Polling, not spinning. A `DB.Query` per tick pinned the game at 139% CPU
         # and starved the log flush that carries the board out, deadlocking the loop
         # on turn 2 of run civvis-20260730T110209Z. These are all counted in POLLS.
@@ -926,6 +929,9 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--no-explore-unassigned", dest="explore_unassigned",
                     action="store_false", default=True,
                     help="leave units CIVVIS did not order standing still")
+    ap.add_argument("--no-automate-stuck-builders", dest="automate_stuck_builders",
+                    action="store_false", default=True,
+                    help="leave a builder idle when CIVVIS's improvement is refused")
     ap.add_argument("--civvis-decides", action="store_true", default=False,
                     help="CIVVIS makes every decision; the mod only actuates")
     ap.add_argument("--governor-appoint", action="store_true", default=False,

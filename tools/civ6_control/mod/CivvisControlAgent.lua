@@ -4184,6 +4184,22 @@ local function applyOrder(player, pid, row, turn)
 					return true, "IMPROVE_ANY";
 				end
 			end
+			-- ★★★ AND IF THIS TILE CANNOT BE IMPROVED AT ALL, AUTOMATE THE BUILDER.
+			--
+			-- Dropping the name was not enough: 26 `IMPROVEMENT_MINE` refusals survived
+			-- it, so Civilization VI is refusing the tile itself — unowned, already
+			-- improved, or simply not improvable. A builder that cannot act stands there
+			-- while the mirror keeps reporting an undeveloped empire and CIVVIS orders
+			-- another builder.
+			--
+			-- Same shape as `ExploreUnassigned`, and the same honesty applies: this is a
+			-- POLICY. It does not pick a tile or an improvement — Civ 6's own builder
+			-- automation does — and it only ever runs where CIVVIS's own choice was
+			-- refused. Reported as `IMPROVE_AUTOMATED` so it is never counted as CIVVIS's.
+			if cfg.AutomateStuckBuilders ~= false
+					and commandUnit(unit, CMD["UNITCOMMAND_AUTOMATE"], {}) then
+				return true, "IMPROVE_AUTOMATED";
+			end
 			return false, wanted or "IMPROVE";
 		end
 		if verb == "UPGRADE" then
