@@ -396,6 +396,47 @@ def bootstrap_game(tail: watch.LogTail, on_event, run_dir: Path,
     return False
 
 
+def dismiss_leader_dialogue(clicks: int = 4) -> bool:
+    """Click through a leader conversation's dialogue options until it closes.
+
+    ⚠ THIS IS THE FOURTH APPROACH TO THIS SCREEN AND THE FIRST ONE THAT WORKS.
+    Verified by hand against a live stuck screen. The three that did not:
+
+    * `ExitConversationMode` — only acts `if ms_currentViewMode ==
+      CONVERSATION_MODE`, and a first-contact leader is CINEMA_MODE.
+    * `CloseFocusedState` — its cinema branch is gated on a fade animation being
+      stopped, and it never fired.
+    * Escape — does nothing at all on this screen. Twice, with focus confirmed.
+
+    A first-contact screen offers a stack of dialogue options in the lower-left of
+    the game window, and it closes only when one is chosen. Each click consumes
+    the option under the cursor and the stack shrinks, so clicking the same spot
+    repeatedly walks down it and the last one ends the conversation. That is
+    exactly what a person does.
+
+    Measured on this display: the stack sits at x ~= 123 pt and the bottom option
+    at y ~= 817 of 1117, so the position is taken as a fraction of the desktop
+    rather than hardcoded. `clicks` defaults to 4 because three options plus one
+    spare covers every first-contact screen seen so far.
+    """
+    size = desktop_size()
+    if size is None:
+        print("[dialogue] desktop size unknown; not guessing a click position",
+              file=sys.stderr)
+        return False
+    width, height = size
+    focus_game(GAME_SIDE, GAME_FRACTION)
+    time.sleep(1.0)
+    # The game occupies GAME_FRACTION of one side; the dialogue stack hugs the
+    # window's left edge regardless.
+    x = int(width * GAME_FRACTION * 0.14)
+    y = int(height * 0.73)
+    for _ in range(clicks):
+        click_at(x, y)
+        time.sleep(0.8)
+    return True
+
+
 def press_escape(times: int = 2) -> bool:
     """Dismiss the load screen, for when the mod's own dismissal does not land.
 
@@ -518,24 +559,22 @@ def _play(args: argparse.Namespace) -> int:
             # turn 121 on one, with four cities and a score of 126, the best of
             # the session.
             #
-            # This is the fallback because guessing at the right Lua entry point
-            # has now failed twice on DiplomacyActionView: `ExitConversationMode`
-            # only acts in CONVERSATION_MODE and a first-contact leader is a
-            # cinema, and `CloseFocusedState` gates its cinema branch on a fade
-            # animation being stopped. Escape does not care which script, context
-            # or view mode is live, which is exactly why it is the right tool once
-            # the in-engine route has been tried.
-            #
-            # Escape during normal play opens the pause menu, so a second press
-            # closes that again — press_escape defaults to two for that reason.
+            # A leader conversation needs a dialogue option CHOSEN; everything
+            # else on this list just needs dismissing. Escape was tried for the
+            # conversation case and does nothing at all on it — verified by hand
+            # against a live stuck screen — so the two get different treatment.
             screen = event.get("screen")
             print(f"[autoclose_stuck] {screen} gave up after "
-                  f"{event.get('attempts')} attempts; pressing escape")
-            if press_escape():
-                print(f"[autoclose_stuck] escape sent for {screen}")
+                  f"{event.get('attempts')} attempts")
+            if screen in ("DiplomacyActionView", "LeaderView", "DiplomacyDealView"):
+                ok = dismiss_leader_dialogue()
+                how = "dialogue clicks"
             else:
-                print(f"[autoclose_stuck] escape FAILED for {screen}",
-                      file=sys.stderr)
+                ok = press_escape()
+                how = "escape"
+            print(f"[autoclose_stuck] {how} "
+                  f"{'sent' if ok else 'FAILED'} for {screen}",
+                  file=sys.stderr if not ok else sys.stdout)
         elif kind in ("victory", "defeat", "error"):
             print(f"[{kind}] {json.dumps(event, sort_keys=True)}")
             if kind in ("victory", "defeat"):

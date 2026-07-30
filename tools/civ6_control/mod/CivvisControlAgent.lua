@@ -1013,6 +1013,25 @@ end
 -- not earn, and a ladder built on that measures nothing.
 
 local warTarget = nil;
+
+-- How many military units are out looking for the enemy this turn.
+--
+-- ★ THE REASON NO WAR EVER STARTED. `findWarTarget` requires a rival city plot to
+-- be `IsRevealed()` — correctly, because meeting a civilization does not reveal
+-- its empire and targeting a capital the seat has never seen would win games it
+-- did not earn. But nothing then went looking. Military exploration stopped at
+-- `ExploreUntilTurn` and every unit garrisoned for the rest of the game, so run
+-- settler-20260730T023440Z reached turn 90 with TWENTY units, `war = null` and
+-- `target = null` on every single turn, and 236 warrior ALERTs. Contact had been
+-- made — the operator watched two first-contact screens — and the army still had
+-- nobody to fight.
+--
+-- So the explore gate is no longer only a turn number: while no target is known,
+-- a few units keep probing. Capped, because exploring is also how an army
+-- evaporates — one run went 6 units to 3 wandering into barbarians while the war
+-- threshold was never reached — so this buys reconnaissance without spending the
+-- garrison.
+local probesOut = 0;
 local warDeclared = {};
 
 -- How many units have already been aimed at the target plot this turn, and
@@ -1230,7 +1249,14 @@ local function orderFor(player, pid, unit, turn)
 		-- Exploring is how the army evaporates: units 6 -> 4 -> 3 across turns
 		-- 20/40/100 of run settler-20260729T235910Z, wandering into barbarians
 		-- while the war threshold was never reached. Default is now early.
-		return orderMilitary(unit, turn < (cfg.ExploreUntilTurn or 12), player);
+		local early = turn < (cfg.ExploreUntilTurn or 12);
+		local probing = false;
+		if not early and warTarget == nil
+				and probesOut < (cfg.ProbeUnits or 2) then
+			probing = true;
+			probesOut = probesOut + 1;
+		end
+		return orderMilitary(unit, early or probing, player);
 	end
 	return nil;
 end
@@ -1254,6 +1280,7 @@ local function orderUnits(player, pid, turn)
 	lastActions = {};
 	local ordered, attempts = {}, {};
 	sweepPosts(player);
+	probesOut = 0;
 
 	local function give(unit, id)
 		local action = orderFor(player, pid, unit, turn) or orderIdle(unit);
