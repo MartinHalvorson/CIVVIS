@@ -549,6 +549,43 @@ fn heartbeat_of_steam_pays_one_era_score_per_industrial_building() {
 }
 
 #[test]
+fn kill_dedications_use_domain_formation_and_weapon_and_exclude_barbarians() {
+    let mut game = two_player_game();
+    game.players[0].dedications.extend([
+        "hic_sunt_dracones".to_string(),
+        "to_arms".to_string(),
+        "automaton_warfare".to_string(),
+    ]);
+    let mut victim = game
+        .units
+        .values()
+        .find(|unit| unit.owner == 1)
+        .unwrap()
+        .clone();
+    victim.kind = crate::name!("galley");
+    victim.formation = 2;
+
+    game.players[0].era_score = 0;
+    game.record_kill(0, Some("giant_death_robot"), &victim);
+    assert_eq!(
+        game.players[0].era_score, 4,
+        "a non-Barbarian Armada killed by a GDR pays naval + Army + robot triggers"
+    );
+
+    victim.owner = game
+        .players
+        .iter()
+        .find(|player| player.is_barbarian)
+        .unwrap()
+        .id;
+    game.record_kill(0, Some("giant_death_robot"), &victim);
+    assert_eq!(
+        game.players[0].era_score, 4,
+        "none of the three kill Dedications pays for a Barbarian"
+    );
+}
+
+#[test]
 fn era_score_moments_pay_what_the_moments_table_ships() {
     // Moments carries an EraScore per moment, and several of CIVVIS' awards had
     // drifted from it. The first-in-world variants are separate rows, which is
@@ -603,14 +640,16 @@ fn high_adjacency_moments_use_each_shipped_threshold() {
 #[test]
 fn first_in_world_moments_replace_instead_of_stack() {
     let mut game = two_player_game();
-    assert!(game.first_historic_moment(0, "test_first", 2, 5));
+    let ordinary = Some("MOMENT_PLAYER_MET_ALL_MAJORS");
+    let world_first = Some("MOMENT_PLAYER_MET_ALL_MAJORS_FIRST_IN_WORLD");
+    assert!(game.first_historic_moment(0, "test_first", ordinary, world_first));
     assert_eq!(game.players[0].era_score, 5);
-    assert!(!game.first_historic_moment(0, "test_first", 2, 5));
+    assert!(!game.first_historic_moment(0, "test_first", ordinary, world_first));
     assert_eq!(game.players[0].era_score, 5, "a moment is paid once");
 
-    assert!(!game.first_historic_moment(1, "test_first", 2, 5));
+    assert!(!game.first_historic_moment(1, "test_first", ordinary, world_first));
     assert_eq!(
-        game.players[1].era_score, 2,
+        game.players[1].era_score, 3,
         "the ordinary row replaces the first-in-world row for later civs"
     );
 }
@@ -719,7 +758,7 @@ fn taj_mahal_modifies_moments_but_never_dedication_score() {
         .insert(crate::name!("taj_mahal"), position);
 
     game.players[0].era_score = 0;
-    game.add_era_score(0, 2);
+    game.add_historic_moment(0, "MOMENT_BARBARIAN_CAMP_DESTROYED");
     assert_eq!(game.players[0].era_score, 3, "a +2 moment gets Taj's +1");
 
     game.players[0].era_score = 0;
@@ -740,9 +779,24 @@ fn national_parks_keep_paying_after_the_world_first() {
     game.players[0].era_score = 0;
     game.players[1].era_score = 0;
 
-    assert!(game.repeatable_world_first_moment(0, "test_park", 3, 4));
-    assert!(!game.repeatable_world_first_moment(0, "test_park", 3, 4));
-    assert!(!game.repeatable_world_first_moment(1, "test_park", 3, 4));
+    assert!(game.repeatable_world_first_moment(
+        0,
+        "test_park",
+        "MOMENT_NATIONAL_PARK_CREATED",
+        "MOMENT_NATIONAL_PARK_CREATED_FIRST_IN_WORLD",
+    ));
+    assert!(!game.repeatable_world_first_moment(
+        0,
+        "test_park",
+        "MOMENT_NATIONAL_PARK_CREATED",
+        "MOMENT_NATIONAL_PARK_CREATED_FIRST_IN_WORLD",
+    ));
+    assert!(!game.repeatable_world_first_moment(
+        1,
+        "test_park",
+        "MOMENT_NATIONAL_PARK_CREATED",
+        "MOMENT_NATIONAL_PARK_CREATED_FIRST_IN_WORLD",
+    ));
 
     assert_eq!(game.players[0].era_score, 7, "+4 first, then +3 again");
     assert_eq!(game.players[1].era_score, 3, "another civilization gets +3");
@@ -954,6 +1008,20 @@ fn a_golden_age_pays_its_bonus_and_banks_nothing() {
 }
 
 #[test]
+fn georgia_banks_dedication_score_during_golden_and_heroic_ages() {
+    for age in ["golden", "heroic"] {
+        let mut game = two_player_game();
+        game.players[0].civ = "Georgia".to_string();
+        game.players[0].age = age.to_string();
+        game.players[0]
+            .dedications
+            .insert("exodus_of_the_evangelists".to_string());
+        game.dedication_trigger(0, "city_converted", 1);
+        assert_eq!(game.players[0].era_score, 2, "Strength in Unity failed in a {age} age");
+    }
+}
+
+#[test]
 fn the_trigger_tally_counts_behaviour_not_what_was_paid_for() {
     // The tally is what `projected_dedication_score` reads, so it has to be
     // the behaviour itself: kept whether or not the trigger was dedicated, and
@@ -1148,5 +1216,217 @@ fn the_banking_arm_ranks_only_where_era_score_is_the_objective() {
                 .contains("exodus_of_the_evangelists"),
             "a {age} age keeps the default choice, which is the one that wins"
         );
+
+        let mut georgia = two_player_game();
+        georgia.world_era = 1;
+        georgia.players[0].civ = "Georgia".to_string();
+        georgia.players[0].age = age.to_string();
+        georgia.players[0].dedication_choices = 1;
+        georgia.players[0]
+            .last_era_triggers
+            .insert("eureka".to_string(), 6);
+
+        choose_dedications(&mut georgia, 0, DedicationChoice::Banking);
+        assert!(
+            georgia.players[0].dedications.contains("free_inquiry"),
+            "Strength in Unity lets Georgia bank in a {age} age"
+        );
     }
+}
+
+#[test]
+fn every_catalogued_moment_pays_its_score_only_inside_its_window() {
+    let mut game = two_player_game();
+    let catalogue: Vec<_> = game
+        .rules
+        .historic_moments
+        .iter()
+        .map(|(id, spec)| (id.to_string(), spec.clone()))
+        .collect();
+    assert_eq!(catalogue.len(), 149);
+
+    for (id, spec) in catalogue {
+        game.world_era = spec.minimum_game_era.unwrap_or(0);
+        game.players[0].era_score = 0;
+        assert!(game.add_historic_moment(0, &id), "{id} was not awardable");
+        assert_eq!(game.players[0].era_score, spec.era_score, "{id}");
+
+        if let Some(minimum) = spec.minimum_game_era.filter(|minimum| *minimum > 0) {
+            game.world_era = minimum - 1;
+            game.players[0].era_score = 0;
+            assert!(!game.add_historic_moment(0, &id), "{id} ignored its minimum era");
+            assert_eq!(game.players[0].era_score, 0);
+        }
+        if let Some(maximum) = spec
+            .maximum_game_era
+            .filter(|maximum| *maximum + 1 < crate::rules::ERA_NAMES.len())
+        {
+            game.world_era = maximum + 1;
+            game.players[0].era_score = 0;
+            assert!(!game.add_historic_moment(0, &id), "{id} ignored its maximum era");
+            assert_eq!(game.players[0].era_score, 0);
+        }
+        if let Some(obsolete) = spec.obsolete_era {
+            game.world_era = obsolete;
+            game.players[0].era_score = 0;
+            assert!(!game.add_historic_moment(0, &id), "{id} ignored ObsoleteEra");
+            assert_eq!(game.players[0].era_score, 0);
+        }
+    }
+    assert!(!game.add_historic_moment(0, "MOMENT_NOT_IN_THE_RULESET"));
+}
+
+#[test]
+fn unique_replacement_districts_do_not_claim_base_district_moments() {
+    let mut korea = two_player_game();
+    korea.players[0].civ = "Korea".to_string();
+    korea.players[0].era_score = 0;
+    let seowon = korea.units.values().find(|unit| unit.owner == 0).unwrap().pos;
+    korea.note_district_completed_moments(0, "seowon", seowon);
+    assert_eq!(korea.players[0].era_score, 4, "Seowon earns only the unique-district Moment");
+    assert!(!korea.players[0]
+        .counters
+        .contains_key("historic_moment:high_adjacency:campus"));
+
+    let mut kongo = two_player_game();
+    kongo.players[0].civ = "Kongo".to_string();
+    kongo.players[0].era_score = 0;
+    let mbanza = kongo.units.values().find(|unit| unit.owner == 0).unwrap().pos;
+    kongo.note_district_completed_moments(0, "mbanza", mbanza);
+    assert_eq!(kongo.players[0].era_score, 4, "Mbanza earns only the unique-district Moment");
+    assert!(!kongo.players[0]
+        .counters
+        .contains_key("historic_moment:neighborhood_district"));
+}
+
+#[test]
+fn free_population_unique_buildings_and_prophets_reach_moment_hooks() {
+    let mut game = two_player_game();
+    game.players[0].civ = "Arabia".to_string();
+    let city = found_capital(&mut game, 0);
+    game.players[0].era_score = 0;
+
+    game.cities.get_mut(&city).unwrap().pop = 9;
+    game.increase_city_population(city, 1);
+    assert_eq!(game.players[0].era_score, 2, "a granted tenth Citizen is still a world first");
+
+    game.grant_free_building_family(0, city, "university");
+    assert!(game.cities[&city].buildings.contains(&crate::name!("madrasa")));
+    assert_eq!(
+        game.players[0]
+            .counters
+            .get("historic_moment_awards:MOMENT_BUILDING_CONSTRUCTED_FIRST_UNIQUE"),
+        Some(&1)
+    );
+
+    let stonehenge = game.rules.wonders["stonehenge"].clone();
+    let position = game.cities[&city].pos;
+    game.cities
+        .get_mut(&city)
+        .unwrap()
+        .wonders
+        .insert(crate::name!("stonehenge"), position);
+    game.apply_wonder_completion_effects(0, city, "stonehenge", position, &stonehenge);
+    assert!(game.players[0].prophet_pending);
+    assert_eq!(
+        game.players[0]
+            .counters
+            .get("historic_moment_awards:MOMENT_GREAT_PERSON_CREATED_GAME_ERA"),
+        Some(&1)
+    );
+}
+
+#[test]
+fn repeat_conversions_keep_their_moments_but_not_repeat_dedication_credit() {
+    let mut game = two_player_game();
+    let _founder_city = found_capital(&mut game, 0);
+    let holy_city = found_capital(&mut game, 1);
+    game.players[0].religion = Some("First Faith".to_string());
+    game.players[1].religion = Some("Second Faith".to_string());
+    game.players[1].holy_city = Some(holy_city);
+    game.cities
+        .get_mut(&holy_city)
+        .unwrap()
+        .pressure
+        .insert("First Faith".to_string(), 10_000.0);
+    game.at_war.insert((0, 1));
+    game.players[0].era_score = 0;
+    let before = vec![(holy_city, Some("Second Faith".to_string()))];
+
+    game.award_conversion_era_score(&before);
+    game.award_conversion_era_score(&before);
+
+    assert_eq!(game.players[0].era_score, 14, "war + holy-city Moments pay on each conversion");
+    assert_eq!(game.players[0].converted_cities.len(), 1, "dedication credit stays first-only");
+}
+
+#[test]
+fn team_contact_final_capitals_and_invalid_casus_belli_do_not_misaward() {
+    let mut team = two_player_game();
+    team.players[0].team = Some(7);
+    team.players[1].team = Some(7);
+    team.note_met_all_majors(0);
+    assert_eq!(team.players[0].era_score, 5, "a known teammate completes the contact table");
+
+    let mut conquest = two_player_game();
+    let _own = found_capital(&mut conquest, 0);
+    let foreign = found_capital(&mut conquest, 1);
+    conquest.players[0].era_score = 0;
+    conquest.transfer_city(foreign, 0, true);
+    conquest.capture_rewards(0, 1, 0.0);
+    assert_eq!(
+        conquest.players[0].era_score, 5,
+        "the final original capital pays Final Foreign City only, not another +4"
+    );
+
+    let mut war = two_player_game();
+    war.players[0].met.insert(1);
+    assert!(war
+        .do_declare_war_with_casus_belli(0, 1, "golden_age_war")
+        .is_err());
+    assert_eq!(war.players[0].era_score, 0);
+}
+
+#[test]
+fn only_the_first_fully_promoted_governor_earns_the_moment() {
+    let mut game = two_player_game();
+    let city = found_capital(&mut game, 0);
+    game.players[0]
+        .counters
+        .insert("district_governor_titles".to_string(), 20);
+    game.do_appoint_governor(0, "pingala", city).unwrap();
+    game.players[0]
+        .governor_roster
+        .get_mut("pingala")
+        .unwrap()
+        .promotions
+        .extend(
+            ["connoisseur", "researcher", "grants", "space_initiative"]
+                .into_iter()
+                .map(str::to_string),
+        );
+    game.players[0].era_score = 0;
+    game.do_promote_governor(0, "pingala", "curator").unwrap();
+    assert_eq!(game.players[0].era_score, 1);
+
+    game.do_appoint_governor(0, "reyna", city).unwrap();
+    game.players[0]
+        .governor_roster
+        .get_mut("reyna")
+        .unwrap()
+        .promotions
+        .extend(
+            ["harbormaster", "forestry_management", "tax_collector", "contractor"]
+                .into_iter()
+                .map(str::to_string),
+        );
+    game.do_promote_governor(0, "reyna", "renewable_subsidizer")
+        .unwrap();
+    assert_eq!(game.players[0].era_score, 1, "a second Governor earns no second Moment");
+    assert_eq!(
+        game.players[0]
+            .counters
+            .get("historic_moment_awards:MOMENT_GOVERNOR_FULLY_PROMOTED_FIRST"),
+        Some(&1)
+    );
 }

@@ -3077,6 +3077,7 @@ mod corporation_tests {
                 .contains(&crate::name!("industry")),
             "the Industry must replace an existing resource improvement"
         );
+        game.players[0].era_score = 0;
         game.apply(
             0,
             &Action::Improve {
@@ -3089,6 +3090,21 @@ mod corporation_tests {
             game.map.tiles[&positions[0]].improvement.as_deref(),
             Some("industry")
         );
+        assert_eq!(
+            game.players[0].era_score, 6,
+            "the world's first Industry and first luxury Monopoly are +3 each"
+        );
+        for moment in [
+            "MOMENT_FIRST_INDUSTRY_IN_WORLD",
+            "MOMENT_FIRST_LUXURY_RESOURCE_MONOPOLY_IN_WORLD",
+        ] {
+            assert_eq!(
+                game.players[0]
+                    .counters
+                    .get(&format!("historic_moment_awards:{moment}")),
+                Some(&1)
+            );
+        }
         assert!(!game
             .valid_improvements(0, positions[1])
             .contains(&crate::name!("industry")));
@@ -3113,11 +3129,23 @@ mod corporation_tests {
         game.map.tiles.get_mut(&positions[2]).unwrap().improvement = Some(crate::name!("plantation"));
         assert!(game.can_found_corporation(0, positions[0]));
         let gold_before = game.players[0].gold;
+        let score_before = game.players[0].era_score;
         game.apply(0, &Action::FoundCorporation { pos: positions[0] })
             .unwrap();
         assert_eq!(
             game.players[0].gold, gold_before,
             "the retired Merchant's named effect is forgone"
+        );
+        assert_eq!(
+            game.players[0].era_score - score_before,
+            4,
+            "the world's first Corporation is +3 and recruiting its Merchant is +1"
+        );
+        assert_eq!(
+            game.players[0]
+                .counters
+                .get("historic_moment_awards:MOMENT_FIRST_CORPORATION_IN_WORLD"),
+            Some(&1)
         );
         assert_eq!(
             game.map.tiles[&positions[0]].improvement.as_deref(),
@@ -14809,11 +14837,6 @@ const DISASTER_FERTILITY_CAP: f64 = 3.0;
 
 /// The world era Heartbeat of Steam starts paying for buildings in.
 const INDUSTRIAL_ERA: usize = 4;
-const MEDIEVAL_ERA: usize = 2;
-const RENAISSANCE_ERA: usize = 3;
-const MODERN_ERA: usize = 5;
-const ATOMIC_ERA: usize = 6;
-const FUTURE_ERA: usize = 8;
 
 /// Gathering Storm's default disaster intensity: the middle of the five.
 pub const DEFAULT_DISASTER_INTENSITY: u8 = 2;
@@ -16423,10 +16446,7 @@ impl Game {
             Some("goody_hut") => {
                 self.map.tiles.get_mut(&pos).unwrap().improvement = None;
                 self.roll_goody_reward(owner, uid, pos);
-                // MOMENT_GOODY_HUT_TRIGGERED is Ancient-only.
-                if !self.players[owner].is_minor && self.world_era == 0 {
-                    self.add_era_score(owner, 1);
-                }
+                self.add_historic_moment(owner, "MOMENT_GOODY_HUT_TRIGGERED");
             }
             Some("meteor_goody") => {
                 // The crashed meteor is its own goody type with its own
@@ -16531,7 +16551,7 @@ impl Game {
                         .min_by_key(|c| self.wdist(c.pos, pos))
                         .map(|c| c.id)
                     {
-                        self.cities.get_mut(&city).unwrap().pop += 1;
+                        self.increase_city_population(city, 1);
                     }
                 }
                 "governor_title" => {
@@ -16712,13 +16732,18 @@ impl Game {
             let loot = self.promotion_effect(&self.units[&uid], "coastal_raid_gold");
             self.players[owner].gold += self.game_speed.scale(loot);
         }
-        let base = self.barbarian_camp_era_score();
-        let near_city = base > 0
-            && self
+        let near_city = self
                 .cities
                 .values()
                 .any(|city| city.owner == owner && self.wdist(city.pos, pos) <= 6);
-        self.add_era_score(owner, base + i64::from(near_city));
+        self.add_historic_moment(
+            owner,
+            if near_city {
+                "MOMENT_BARBARIAN_CAMP_DESTROYED_NEAR_YOUR_CITY"
+            } else {
+                "MOMENT_BARBARIAN_CAMP_DESTROYED"
+            },
+        );
         if self.has_ability(owner, "epic_quest") {
             // Epic Quest: a full tribal village reward for the cleared camp.
             self.roll_goody_reward(owner, uid, pos);
@@ -16828,12 +16853,12 @@ impl Game {
         };
         let between_majors = major(first) && major(second);
         for (observer, subject) in [(first, second), (second, first)] {
-            if self.players[observer].met.contains(&subject) {
+            if self.has_met(observer, subject) {
                 continue;
             }
             self.players[observer].met.insert(subject);
             if between_majors {
-                self.add_era_score(observer, 1);
+                self.add_historic_moment(observer, "MOMENT_PLAYER_MET_MAJOR");
                 self.note_met_all_majors(observer);
             }
         }
@@ -16853,17 +16878,17 @@ impl Game {
                     && other.alive
                     && !other.is_minor
                     && !other.is_barbarian
-                    && !self.players[pid].met.contains(&other.id)
+                    && !self.has_met(pid, other.id)
             });
         if outstanding {
             return;
         }
-        self.players[pid].counters.insert("met_all_majors".to_string(), 1);
-        let first_in_world = !self
-            .players
-            .iter()
-            .any(|other| other.id != pid && other.counters.contains_key("met_all_majors"));
-        self.add_era_score(pid, if first_in_world { 5 } else { 3 });
+        self.first_historic_moment(
+            pid,
+            "met_all_majors",
+            Some("MOMENT_PLAYER_MET_ALL_MAJORS"),
+            Some("MOMENT_PLAYER_MET_ALL_MAJORS_FIRST_IN_WORLD"),
+        );
     }
 
     /// Pre-game teams are permanent. `None` means an ordinary free-for-all
@@ -18775,9 +18800,16 @@ impl Game {
                 .counters
                 .entry("master_spies".to_string())
                 .or_insert(0);
-            let score = if *master_spies == 0 { 2 } else { 1 };
+            let first = *master_spies == 0;
             *master_spies += 1;
-            self.add_era_score(owner, score);
+            self.add_historic_moment(
+                owner,
+                if first {
+                    "MOMENT_SPY_MAX_LEVEL_FIRST"
+                } else {
+                    "MOMENT_SPY_MAX_LEVEL"
+                },
+            );
         }
     }
 
@@ -19639,7 +19671,7 @@ impl Game {
         let post_key = format!("trading_post_in:{destination_owner}");
         if !self.players[pid].counters.contains_key(&post_key) {
             self.players[pid].counters.insert(post_key, 1);
-            self.add_era_score(pid, 1);
+            self.add_historic_moment(pid, "MOMENT_TRADING_POST_CONSTRUCTED_IN_OTHER_CIV");
         }
         let every_other_major = self.players.iter().filter(|player| {
             player.id != pid
@@ -19652,7 +19684,12 @@ impl Game {
                 .contains_key(&format!("trading_post_in:{}", player.id))
         });
         if every_other_major {
-            self.first_historic_moment(pid, "trading_posts_in_every_civilization", 3, 5);
+            self.first_historic_moment(
+                pid,
+                "trading_posts_in_every_civilization",
+                Some("MOMENT_TRADING_POST_CONSTRUCTED_IN_EVERY_CIV"),
+                Some("MOMENT_TRADING_POST_CONSTRUCTED_IN_EVERY_CIV_FIRST_IN_WORLD"),
+            );
         }
     }
 
@@ -20001,13 +20038,21 @@ impl Game {
                 }
             }
         }
-        if self.world_era < 2 {
-            let first_in_world = !self
-                .players
-                .iter()
-                .any(|other| other.id != pid && other.pantheon.is_some());
-            self.add_era_score(pid, if first_in_world { 2 } else { 1 });
-        }
+        let first_in_world = !self
+            .players
+            .iter()
+            .any(|other| other.id != pid && other.pantheon.is_some());
+        self.players[pid]
+            .counters
+            .insert("historic_moment:pantheon_founded".to_string(), 1);
+        self.add_historic_moment(
+            pid,
+            if first_in_world {
+                "MOMENT_PANTHEON_FOUNDED_FIRST_IN_WORLD"
+            } else {
+                "MOMENT_PANTHEON_FOUNDED"
+            },
+        );
         Ok(())
     }
 
@@ -20078,12 +20123,21 @@ impl Game {
         self.players[pid].prophet_pending = false;
         self.players[pid].religion = Some(name.clone());
         self.players[pid].holy_city = Some(holy);
-        // MOMENT_RELIGION_FOUNDED is 2; only the world's first is 3.
         let first_in_world = !self
             .players
             .iter()
             .any(|other| other.id != pid && other.religion.is_some());
-        self.add_era_score(pid, if first_in_world { 3 } else { 2 });
+        self.players[pid]
+            .counters
+            .insert("historic_moment:religion_founded".to_string(), 1);
+        self.add_historic_moment(
+            pid,
+            if first_in_world {
+                "MOMENT_RELIGION_FOUNDED_FIRST_IN_WORLD"
+            } else {
+                "MOMENT_RELIGION_FOUNDED"
+            },
+        );
         self.players[pid].religion_beliefs = vec![follower.to_string(), founder.to_string()];
         for cid in holy_site_cities {
             self.cities
@@ -20477,7 +20531,12 @@ impl Game {
         }
         self.remove_unit(uid);
         bump(&mut self.players[pid], "inquisition");
-        self.first_historic_moment(pid, "inquisition_launched", 1, 2);
+        self.first_historic_moment(
+            pid,
+            "inquisition_launched",
+            Some("MOMENT_INQUISITION_LAUNCHED"),
+            Some("MOMENT_INQUISITION_LAUNCHED_FIRST_IN_WORLD"),
+        );
         Ok(())
     }
 
@@ -20515,7 +20574,12 @@ impl Game {
         }
         self.players[pid].religion_beliefs.push(belief.to_string());
         if self.players[pid].religion_beliefs.len() == 4 {
-            self.first_historic_moment(pid, "religion_fully_developed", 3, 4);
+            self.first_historic_moment(
+                pid,
+                "religion_fully_developed",
+                Some("MOMENT_BELIEF_ADDED_MAX_BELIEFS_REACHED"),
+                Some("MOMENT_BELIEF_ADDED_MAX_BELIEFS_REACHED_FIRST_IN_WORLD"),
+            );
         }
         self.remove_unit(uid);
         Ok(())
@@ -20691,19 +20755,21 @@ impl Game {
             let Some(founder) = self.religion_founder(&now) else {
                 continue;
             };
-            if !self.players[founder]
-                .converted_cities
-                .insert(*cid)
-            {
-                continue;
+            if self.players[founder].converted_cities.insert(*cid) {
+                self.dedication_trigger(founder, "city_converted", 1);
             }
-            self.dedication_trigger(founder, "city_converted", 1);
             let owner = self.cities[cid].owner;
             if owner != founder && self.is_at_war(founder, owner) {
-                self.add_era_score(founder, 3);
+                self.add_historic_moment(
+                    founder,
+                    "MOMENT_CITY_CHANGED_RELIGION_ENEMY_CITY_DURING_WAR",
+                );
             }
             if owner != founder && self.players[owner].holy_city == Some(*cid) {
-                self.add_era_score(founder, 4);
+                self.add_historic_moment(
+                    founder,
+                    "MOMENT_CITY_CHANGED_RELIGION_OTHER_HOLY_CITY",
+                );
             }
         }
     }
@@ -21233,9 +21299,9 @@ impl Game {
     }
 
     fn retire_merchant_for_corporation(&mut self, pid: usize) -> Result<(), String> {
-        let id = self
+        let (id, era) = self
             .current_great_person("merchant")
-            .map(|(id, _)| id.to_string())
+            .map(|(id, spec)| (id.to_string(), spec.era))
             .ok_or_else(|| "no Great Merchant is currently available".to_string())?;
         let cost = self.gp_cost(pid, "merchant");
         let points = self.players[pid]
@@ -21253,7 +21319,14 @@ impl Game {
             .gp_claimed
             .entry("merchant".to_string())
             .or_insert(0) += 1;
-        self.add_era_score(pid, 1);
+        self.add_historic_moment(
+            pid,
+            if era < self.world_era {
+                "MOMENT_GREAT_PERSON_CREATED_PAST_ERA"
+            } else {
+                "MOMENT_GREAT_PERSON_CREATED_GAME_ERA"
+            },
+        );
         self.dedication_trigger(pid, "great_person", 1);
         bump(&mut self.players[pid], "great_people");
         self.apply_great_person_district_effects(pid);
@@ -21287,6 +21360,12 @@ impl Game {
         self.map.tiles.get_mut(&pos).unwrap().improvement = Some(crate::name!("corporation"));
         self.map.tiles.get_mut(&pos).unwrap().pillaged = false;
         bump(&mut self.players[pid], "corporations");
+        self.first_historic_moment(
+            pid,
+            "first_corporation",
+            Some("MOMENT_FIRST_CORPORATION"),
+            Some("MOMENT_FIRST_CORPORATION_IN_WORLD"),
+        );
         Ok(())
     }
 
@@ -21491,9 +21570,17 @@ impl Game {
             .gp_claimed
             .entry(kind.to_string())
             .or_insert(0) += 1;
-        self.add_era_score(
+        self.add_historic_moment(
             pid,
-            if patronage.is_some() && missing > cost / 2.0 { 3 } else { 1 },
+            if patronage == Some("faith") && missing > cost / 2.0 {
+                "MOMENT_GREAT_PERSON_CREATED_PATRONAGE_FAITH_OVER_HALF"
+            } else if patronage == Some("gold") && missing > cost / 2.0 {
+                "MOMENT_GREAT_PERSON_CREATED_PATRONAGE_GOLD_OVER_HALF"
+            } else if spec.era < self.world_era {
+                "MOMENT_GREAT_PERSON_CREATED_PAST_ERA"
+            } else {
+                "MOMENT_GREAT_PERSON_CREATED_GAME_ERA"
+            },
         );
         self.dedication_trigger(pid, "great_person", 1);
         bump(&mut self.players[pid], "great_people");
@@ -21682,6 +21769,7 @@ impl Game {
                     let city = self.cities.get_mut(&city_id).unwrap();
                     city.buildings.push(building);
                     city.building_eras.insert(building, self.world_era);
+                    self.note_building_completed_moments(pid, &building);
                 }
             }
         }
@@ -21840,6 +21928,7 @@ impl Game {
         let city = self.cities.get_mut(&city_id).unwrap();
         city.buildings.push(building);
         city.building_eras.insert(building, self.world_era);
+        self.note_building_completed_moments(pid, &building);
     }
 
     fn do_recruit_great_person(&mut self, pid: usize, kind: &str) -> Result<(), String> {
@@ -22293,14 +22382,20 @@ impl Game {
         }
         let new_suzerain = self.suzerain_of_uncached(minor);
         if new_suzerain == Some(pid) && old_suzerain != Some(pid) {
-            if self.world_era < MEDIEVAL_ERA {
-                self.first_historic_moment(pid, &format!("first_suzerain:{minor}"), 0, 2);
-            }
+            self.first_historic_moment(
+                pid,
+                &format!("first_suzerain:{minor}"),
+                None,
+                Some("MOMENT_PLAYER_GAVE_ENVOY_BECAME_SUZERAIN_FIRST_IN_WORLD"),
+            );
             if canceled_levy {
-                self.add_era_score(pid, 2);
+                self.add_historic_moment(pid, "MOMENT_PLAYER_GAVE_ENVOY_CANCELED_LEVY");
             }
             if old_suzerain.is_some_and(|owner| self.is_at_war(pid, owner)) {
-                self.add_era_score(pid, 2);
+                self.add_historic_moment(
+                    pid,
+                    "MOMENT_PLAYER_GAVE_ENVOY_CANCELED_SUZERAIN_DURING_WAR",
+                );
             }
         }
         Ok(())
@@ -22377,7 +22472,14 @@ impl Game {
                     && self.wdist(city.pos, enemy.pos) <= 6
             })
         });
-        self.add_era_score(pid, if near_enemy { 2 } else { 1 });
+        self.add_historic_moment(
+            pid,
+            if near_enemy {
+                "MOMENT_PLAYER_LEVIED_MILITARY_NEAR_ENEMY_CITY"
+            } else {
+                "MOMENT_PLAYER_LEVIED_MILITARY"
+            },
+        );
         Ok(())
     }
 
@@ -23779,40 +23881,65 @@ impl Game {
             .sum()
     }
 
-    /// Taj Mahal adds one Era Score to Historic Moments whose base value is
-    /// at least two. Keeping the rule here prevents individual event sites
-    /// from silently forgetting the wonder modifier.
-    /// MOMENT_BARBARIAN_CAMP_DESTROYED is 2, and unlike almost every other
-    /// Moment it carries a window: MinimumGameEra ANCIENT through
-    /// MaximumGameEra MEDIEVAL. Clearing camps stops paying Era Score once the
-    /// world reaches the Renaissance, so late-game camp farming earns nothing.
+    /// `MOMENT_BARBARIAN_CAMP_DESTROYED` is available from Ancient through
+    /// Medieval. Keep this compatibility accessor for clients while deriving
+    /// its value and window from the same catalogue as every other Moment.
     pub(crate) fn barbarian_camp_era_score(&self) -> i64 {
-        if self.world_era <= 2 {
-            2
-        } else {
-            0
-        }
+        self.historic_moment_spec("MOMENT_BARBARIAN_CAMP_DESTROYED")
+            .map_or(0, |spec| spec.era_score)
     }
 
-    fn add_era_score(&mut self, pid: usize, amount: i64) {
-        if amount <= 0 || pid >= self.players.len() {
-            return;
-        }
-        let bonus = if amount >= 2 && self.empire_wonder_effect(pid, "historic_moment_bonus") > 0.0
+    fn historic_moment_spec(&self, moment: &str) -> Option<&crate::rules::HistoricMomentSpec> {
+        let spec = self.rules.historic_moments.get(moment)?;
+        (spec.era_score > 0
+            && spec
+                .minimum_game_era
+                .is_none_or(|minimum| self.world_era >= minimum)
+            && spec
+                .maximum_game_era
+                .is_none_or(|maximum| self.world_era <= maximum)
+            && spec
+                .obsolete_era
+                .is_none_or(|obsolete| self.world_era < obsolete))
+        .then_some(spec)
+    }
+
+    /// Award a named Historic Moment and record the concrete catalogue row.
+    /// Taj Mahal adds one Era Score to Moments whose base value is at least
+    /// two. No call site supplies a score or reimplements an era window.
+    fn add_historic_moment(&mut self, pid: usize, moment: &str) -> bool {
+        if pid >= self.players.len()
+            || self.players[pid].is_minor
+            || self.players[pid].is_barbarian
+            || self.players[pid].is_free_city
         {
+            return false;
+        }
+        let Some(amount) = self
+            .historic_moment_spec(moment)
+            .map(|spec| spec.era_score)
+        else {
+            return false;
+        };
+        let bonus = if amount >= 2 {
             self.empire_wonder_effect(pid, "historic_moment_bonus") as i64
         } else {
             0
         };
         self.players[pid].era_score += amount + bonus;
+        *self.players[pid]
+            .counters
+            .entry(format!("historic_moment_awards:{moment}"))
+            .or_insert(0) += 1;
+        true
     }
 
     fn first_historic_moment(
         &mut self,
         pid: usize,
         key: &str,
-        ordinary_score: i64,
-        world_first_score: i64,
+        ordinary_moment: Option<&str>,
+        world_first_moment: Option<&str>,
     ) -> bool {
         if pid >= self.players.len()
             || self.players[pid].is_minor
@@ -23833,14 +23960,13 @@ impl Game {
                 && other.counters.contains_key(&counter)
         });
         self.players[pid].counters.insert(counter, 1);
-        self.add_era_score(
-            pid,
-            if first_in_world {
-                world_first_score
-            } else {
-                ordinary_score
-            },
-        );
+        let preferred = first_in_world
+            .then_some(world_first_moment)
+            .flatten()
+            .filter(|moment| self.historic_moment_spec(moment).is_some());
+        if let Some(moment) = preferred.or(ordinary_moment) {
+            self.add_historic_moment(pid, moment);
+        }
         first_in_world
     }
 
@@ -23848,8 +23974,8 @@ impl Game {
         &mut self,
         pid: usize,
         key: &str,
-        ordinary_score: i64,
-        world_first_score: i64,
+        ordinary_moment: &str,
+        world_first_moment: &str,
     ) -> bool {
         if pid >= self.players.len()
             || self.players[pid].is_minor
@@ -23866,14 +23992,12 @@ impl Game {
                 && other.counters.contains_key(&counter)
         });
         *self.players[pid].counters.entry(counter).or_insert(0) += 1;
-        self.add_era_score(
-            pid,
-            if first_in_world {
-                world_first_score
-            } else {
-                ordinary_score
-            },
-        );
+        let moment = if first_in_world {
+            world_first_moment
+        } else {
+            ordinary_moment
+        };
+        self.add_historic_moment(pid, moment);
         first_in_world
     }
 
@@ -23890,14 +24014,29 @@ impl Game {
             .as_deref()
             .is_some_and(|civilization| civilization == self.players[pid].civ)
         {
-            self.first_historic_moment(pid, &format!("unique_unit:{unit}"), 4, 4);
+            self.first_historic_moment(
+                pid,
+                &format!("unique_unit:{unit}"),
+                Some("MOMENT_UNIT_CREATED_FIRST_UNIQUE"),
+                None,
+            );
         }
         match spec.domain.as_deref() {
             Some("air") => {
-                self.first_historic_moment(pid, "first_air_unit", 3, 5);
+                self.first_historic_moment(
+                    pid,
+                    "first_air_unit",
+                    Some("MOMENT_UNIT_CREATED_FIRST_DOMAIN_AIR"),
+                    Some("MOMENT_UNIT_CREATED_FIRST_DOMAIN_AIR_IN_WORLD"),
+                );
             }
             Some("sea") => {
-                self.first_historic_moment(pid, "first_sea_unit", 2, 3);
+                self.first_historic_moment(
+                    pid,
+                    "first_sea_unit",
+                    Some("MOMENT_UNIT_CREATED_FIRST_DOMAIN_SEA"),
+                    Some("MOMENT_UNIT_CREATED_FIRST_DOMAIN_SEA_IN_WORLD"),
+                );
             }
             _ => {}
         }
@@ -23905,8 +24044,8 @@ impl Game {
             self.first_historic_moment(
                 pid,
                 &format!("first_unit_using_resource:{resource}"),
-                1,
-                2,
+                Some("MOMENT_UNIT_CREATED_FIRST_REQUIRING_STRATEGIC"),
+                Some("MOMENT_UNIT_CREATED_FIRST_REQUIRING_STRATEGIC_IN_WORLD"),
             );
         }
     }
@@ -23917,16 +24056,35 @@ impl Game {
         };
         let formation = unit.formation;
         let naval = self.rules.units[unit.kind].domain.as_deref() == Some("sea");
-        let (name, available) = match (naval, formation) {
-            (false, 1) => ("corps", self.world_era < 5),
-            (false, 2) => ("army", self.world_era < 6),
-            (true, 1) => ("fleet", true),
-            (true, 2) => ("armada", true),
+        let (name, ordinary, world_first) = match (naval, formation) {
+            (false, 1) => (
+                "corps",
+                "MOMENT_FORMATION_CORPS_FIRST",
+                "MOMENT_FORMATION_CORPS_FIRST_IN_WORLD",
+            ),
+            (false, 2) => (
+                "army",
+                "MOMENT_FORMATION_ARMY_FIRST",
+                "MOMENT_FORMATION_ARMY_FIRST_IN_WORLD",
+            ),
+            (true, 1) => (
+                "fleet",
+                "MOMENT_FORMATION_FLEET_FIRST",
+                "MOMENT_FORMATION_FLEET_FIRST_IN_WORLD",
+            ),
+            (true, 2) => (
+                "armada",
+                "MOMENT_FORMATION_ARMADA_FIRST",
+                "MOMENT_FORMATION_ARMADA_FIRST_IN_WORLD",
+            ),
             _ => return,
         };
-        if available {
-            self.first_historic_moment(pid, &format!("formation:{name}"), 1, 2);
-        }
+        self.first_historic_moment(
+            pid,
+            &format!("formation:{name}"),
+            Some(ordinary),
+            Some(world_first),
+        );
     }
 
     fn note_district_completed_moments(&mut self, pid: usize, district: &str, pos: Pos) {
@@ -23936,18 +24094,29 @@ impl Game {
             .as_deref()
             .is_some_and(|civilization| civilization == self.players[pid].civ)
         {
-            self.first_historic_moment(pid, &format!("unique_district:{district}"), 4, 4);
+            self.first_historic_moment(
+                pid,
+                &format!("unique_district:{district}"),
+                Some("MOMENT_DISTRICT_CONSTRUCTED_FIRST_UNIQUE"),
+                None,
+            );
         }
         let family = self.district_family(Name::new(district));
         if family == "canal" {
-            self.first_historic_moment(pid, "canal_district", 2, 2);
+            self.first_historic_moment(
+                pid,
+                "canal_district",
+                Some("MOMENT_DISTRICT_CONSTRUCTED_CANAL"),
+                None,
+            );
         }
-        if family == "neighborhood" {
+        // Mbanza is explicitly excluded from the Neighborhood Moment.
+        if district == "neighborhood" {
             self.first_historic_moment(
                 pid,
                 "neighborhood_district",
-                2,
-                if self.world_era < 5 { 3 } else { 2 },
+                Some("MOMENT_DISTRICT_CONSTRUCTED_NEIGHBORHOOD_FIRST"),
+                Some("MOMENT_DISTRICT_CONSTRUCTED_NEIGHBORHOOD_FIRST_IN_WORLD"),
             );
         }
         // Historic Moments use the district's *starting* adjacency. Percentage
@@ -23967,10 +24136,33 @@ impl Game {
             "industrial_zone" => adjacency.production,
             _ => 0.0,
         };
-        if Self::district_historic_moment_threshold(&family)
+        // The six unique replacement districts are explicitly excluded from
+        // their base district's high-adjacency Moment.
+        if spec.unique_to.is_none()
+            && Self::district_historic_moment_threshold(&family)
             .is_some_and(|threshold| value >= threshold)
         {
-            self.first_historic_moment(pid, &format!("high_adjacency:{family}"), 3, 3);
+            let moment = match family.as_str() {
+                "campus" => "MOMENT_DISTRICT_CONSTRUCTED_HIGH_ADJACENCY_CAMPUS",
+                "holy_site" => "MOMENT_DISTRICT_CONSTRUCTED_HIGH_ADJACENCY_HOLY_SITE",
+                "commercial_hub" => {
+                    "MOMENT_DISTRICT_CONSTRUCTED_HIGH_ADJACENCY_COMMERCIAL_HUB"
+                }
+                "harbor" => "MOMENT_DISTRICT_CONSTRUCTED_HIGH_ADJACENCY_HARBOR",
+                "theater_square" => {
+                    "MOMENT_DISTRICT_CONSTRUCTED_HIGH_ADJACENCY_THEATER_SQUARE"
+                }
+                "industrial_zone" => {
+                    "MOMENT_DISTRICT_CONSTRUCTED_HIGH_ADJACENCY_INDUSTRIAL_ZONE"
+                }
+                _ => unreachable!(),
+            };
+            self.first_historic_moment(
+                pid,
+                &format!("high_adjacency:{family}"),
+                Some(moment),
+                None,
+            );
         }
     }
 
@@ -23989,7 +24181,12 @@ impl Game {
             .as_deref()
             .is_some_and(|civilization| civilization == self.players[pid].civ)
         {
-            self.first_historic_moment(pid, &format!("unique_building:{building}"), 4, 4);
+            self.first_historic_moment(
+                pid,
+                &format!("unique_building:{building}"),
+                Some("MOMENT_BUILDING_CONSTRUCTED_FIRST_UNIQUE"),
+                None,
+            );
         }
         for (terminal, family) in [
             ("airport", "aerodrome"),
@@ -23998,22 +24195,43 @@ impl Game {
             ("aquatics_center", "water_park"),
         ] {
             if self.building_is_family(Name::new(building), Name::new(terminal)) {
-                self.first_historic_moment(pid, &format!("full_district:{family}"), 3, 3);
+                let moment = match family {
+                    "aerodrome" => "MOMENT_BUILDING_CONSTRUCTED_FULL_AERODROME_FIRST",
+                    "encampment" => "MOMENT_BUILDING_CONSTRUCTED_FULL_ENCAMPMENT_FIRST",
+                    "entertainment_complex" => {
+                        "MOMENT_BUILDING_CONSTRUCTED_FULL_ENTERTAINMENT_COMPLEX_FIRST"
+                    }
+                    "water_park" => {
+                        "MOMENT_BUILDING_CONSTRUCTED_FULL_WATER_ENTERTAINMENT_COMPLEX_FIRST"
+                    }
+                    _ => unreachable!(),
+                };
+                self.first_historic_moment(
+                    pid,
+                    &format!("full_district:{family}"),
+                    Some(moment),
+                    None,
+                );
             }
         }
     }
 
-    fn wonder_historic_moment_score(&self, wonder: &str) -> i64 {
+    fn wonder_historic_moment(&self, wonder: &str) -> &'static str {
         if self.wonder_era(wonder) >= self.world_era {
-            4
+            "MOMENT_BUILDING_CONSTRUCTED_GAME_ERA_WONDER"
         } else {
-            3
+            "MOMENT_BUILDING_CONSTRUCTED_PAST_ERA_WONDER"
         }
     }
 
     fn note_project_founded_moment(&mut self, pid: usize, project: &str) {
         match project {
-            "manhattan_project" | "operation_ivy" => self.add_era_score(pid, 2),
+            "manhattan_project" => {
+                self.add_historic_moment(pid, "MOMENT_PROJECT_FOUNDED_MANHATTEN");
+            }
+            "operation_ivy" => {
+                self.add_historic_moment(pid, "MOMENT_PROJECT_FOUNDED_OPERATION_IVY");
+            }
             "launch_earth_satellite"
             | "launch_moon_landing"
             | "launch_mars_colony"
@@ -24021,7 +24239,29 @@ impl Game {
                 let first_in_world = !self.players.iter().any(|other| {
                     other.id != pid && other.science_projects.contains(project)
                 });
-                self.add_era_score(pid, if first_in_world { 4 } else { 2 });
+                let (ordinary, world_first) = match project {
+                    "launch_earth_satellite" => (
+                        "MOMENT_PROJECT_FOUNDED_SATELLITE_LAUNCH",
+                        "MOMENT_PROJECT_FOUNDED_SATELLITE_LAUNCH_FIRST_IN_WORLD",
+                    ),
+                    "launch_moon_landing" => (
+                        "MOMENT_PROJECT_FOUNDED_MOON_LANDING",
+                        "MOMENT_PROJECT_FOUNDED_MOON_LANDING_FIRST_IN_WORLD",
+                    ),
+                    "launch_mars_colony" => (
+                        "MOMENT_PROJECT_FOUNDED_MARS",
+                        "MOMENT_PROJECT_FOUNDED_MARS_FIRST_IN_WORLD",
+                    ),
+                    "exoplanet_expedition" => (
+                        "MOMENT_PROJECT_FOUNDED_EXOPLANET",
+                        "MOMENT_PROJECT_FOUNDED_EXOPLANET_FIRST_IN_WORLD",
+                    ),
+                    _ => unreachable!(),
+                };
+                self.add_historic_moment(
+                    pid,
+                    if first_in_world { world_first } else { ordinary },
+                );
             }
             _ => {}
         }
@@ -24248,7 +24488,14 @@ impl Game {
             self.players[pid]
                 .counters
                 .insert("first_resource_power".to_string(), 1);
-            self.add_era_score(pid, if first_in_world { 3 } else { 2 });
+            self.add_historic_moment(
+                pid,
+                if first_in_world {
+                    "MOMENT_CITY_POWER_GENERATED_FROM_RESOURCE_FIRST_IN_WORLD"
+                } else {
+                    "MOMENT_CITY_POWER_GENERATED_FROM_RESOURCE_FIRST"
+                },
+            );
         }
     }
 
@@ -24384,7 +24631,7 @@ impl Game {
             }
         }
         for owner in protected_by_infrastructure {
-            self.add_era_score(owner, 1);
+            self.add_historic_moment(owner, "MOMENT_MITIGATED_RIVER_FLOOD");
         }
     }
 
@@ -24902,7 +25149,7 @@ impl Game {
             }
         }
         for owner in protected_by_barrier {
-            self.add_era_score(owner, 1);
+            self.add_historic_moment(owner, "MOMENT_MITIGATED_COASTAL_FLOOD");
         }
     }
 
@@ -24967,7 +25214,7 @@ impl Game {
             }
         }
         for owner in protected_by_barrier {
-            self.add_era_score(owner, 1);
+            self.add_historic_moment(owner, "MOMENT_MITIGATED_COASTAL_FLOOD");
         }
     }
 
@@ -26541,6 +26788,35 @@ impl Game {
             gold += 5.0 * partners as f64;
         }
         (gold, tourism_percent)
+    }
+
+    /// Monopoly control can change through improvements, repair, city
+    /// transfer, trade, or Suzerain changes. Running this one transition
+    /// detector after each successful action covers every such mutation.
+    fn note_first_monopoly_moments(&mut self) {
+        let new_monopolists: Vec<usize> = self
+            .players
+            .iter()
+            .filter(|player| {
+                player.alive
+                    && !player.is_minor
+                    && !player.is_barbarian
+                    && !player.is_free_city
+                    && !player
+                        .counters
+                        .contains_key("historic_moment:first_luxury_monopoly")
+                    && self.monopoly_bonuses(player.id).0 > 0.0
+            })
+            .map(|player| player.id)
+            .collect();
+        for pid in new_monopolists {
+            self.first_historic_moment(
+                pid,
+                "first_luxury_monopoly",
+                Some("MOMENT_FIRST_LUXURY_RESOURCE_MONOPOLY"),
+                Some("MOMENT_FIRST_LUXURY_RESOURCE_MONOPOLY_IN_WORLD"),
+            );
+        }
     }
 
     fn resource_trade_balance(&self, pid: usize, res: &str) -> i32 {
@@ -28182,7 +28458,12 @@ impl Game {
             // Initial visibility establishes a home continent without
             // manufacturing a discovery moment before the capital exists.
             if has_founded_city {
-                self.first_historic_moment(pid, &format!("continent:{continent}"), 0, 4);
+                self.first_historic_moment(
+                    pid,
+                    &format!("continent:{continent}"),
+                    None,
+                    Some("MOMENT_FIND_NEW_CONTINENT_FIRST_IN_WORLD"),
+                );
                 self.dedication_trigger(pid, "continent_or_wonder", 1);
             }
         }
@@ -28213,11 +28494,17 @@ impl Game {
             {
                 continue;
             }
-            let first = !self
-                .players
-                .iter()
-                .any(|other| other.id != pid && other.discovered_natural_wonders.contains(&wonder));
-            self.add_era_score(pid, if first { 3 } else { 1 });
+            let first = !self.players.iter().any(|other| {
+                other.id != pid && other.discovered_natural_wonders.contains(&wonder)
+            });
+            self.add_historic_moment(
+                pid,
+                if first {
+                    "MOMENT_FIND_NATURAL_WONDER_FIRST_IN_WORLD"
+                } else {
+                    "MOMENT_FIND_NATURAL_WONDER"
+                },
+            );
             self.dedication_trigger(pid, "continent_or_wonder", 1);
             if self.grants_city_state_unique_bonus(pid, "Kandy") {
                 let era = self.world_era;
@@ -28283,7 +28570,12 @@ impl Game {
             return;
         }
         self.players[pid].went_around = true;
-        self.first_historic_moment(pid, "circumnavigation", 3, 5);
+        self.first_historic_moment(
+            pid,
+            "circumnavigation",
+            Some("MOMENT_WORLD_CIRCUMNAVIGATED"),
+            Some("MOMENT_WORLD_CIRCUMNAVIGATED_FIRST_IN_WORLD"),
+        );
         self.note_important(
             pid,
             "World",
@@ -36019,6 +36311,7 @@ impl Game {
             }
         };
         if r.is_ok() {
+            self.note_first_monopoly_moments();
             // The war infobox is live during a turn, not only after End Turn.
             // Refresh after actions that can damage, create, transfer, upgrade,
             // or otherwise change the unit-only military total.
@@ -37379,11 +37672,12 @@ impl Game {
             return;
         };
         let terrain = tile.terrain.clone();
-        if terrain.starts_with("desert")
-            || terrain.starts_with("snow")
-            || terrain.starts_with("tundra")
-        {
-            self.add_era_score(pid, 1);
+        if terrain.starts_with("desert") {
+            self.add_historic_moment(pid, "MOMENT_CITY_BUILT_ON_DESERT");
+        } else if terrain.starts_with("snow") {
+            self.add_historic_moment(pid, "MOMENT_CITY_BUILT_ON_SNOW");
+        } else if terrain.starts_with("tundra") {
+            self.add_historic_moment(pid, "MOMENT_CITY_BUILT_ON_TUNDRA");
         }
         let (floodable_river, volcano, natural_wonder) = {
             let nearby: Vec<&crate::world::Tile> = self
@@ -37413,13 +37707,13 @@ impl Game {
             )
         };
         if floodable_river {
-            self.add_era_score(pid, 1);
+            self.add_historic_moment(pid, "MOMENT_CITY_BUILT_NEAR_FLOODABLE_RIVER");
         }
         if volcano {
-            self.add_era_score(pid, 1);
+            self.add_historic_moment(pid, "MOMENT_CITY_BUILT_NEAR_VOLCANO");
         }
         if natural_wonder {
-            self.add_era_score(pid, 3);
+            self.add_historic_moment(pid, "MOMENT_CITY_BUILT_NEAR_NATURAL_WONDER");
         }
         if self
             .cities
@@ -37431,15 +37725,15 @@ impl Game {
                     && self.wdist(other.pos, pos) <= 5
             })
         {
-            self.add_era_score(pid, 1);
+            self.add_historic_moment(pid, "MOMENT_CITY_BUILT_NEAR_OTHER_CIV_CITY");
         }
         if self.on_foreign_continent(pid, pos) {
             if let Some(continent) = self.map.tiles[&pos].continent {
                 self.first_historic_moment(
                     pid,
                     &format!("settlement_on_continent:{continent}"),
-                    2,
-                    2,
+                    Some("MOMENT_CITY_BUILT_NEW_CONTINENT"),
+                    None,
                 );
             }
         }
@@ -37457,7 +37751,12 @@ impl Game {
             .max()
             .unwrap_or(0);
         if city_count >= largest_other.saturating_add(3) {
-            self.first_historic_moment(pid, "largest_civilization_by_three_cities", 3, 3);
+            self.first_historic_moment(
+                pid,
+                "largest_civilization_by_three_cities",
+                Some("MOMENT_CITY_BUILT_BECAME_LARGEST_CIV_BY_MARGIN"),
+                None,
+            );
         }
     }
 
@@ -37653,7 +37952,12 @@ impl Game {
                 tile.pillaged = false;
             }
             bump(&mut self.players[pid], "national_park");
-            self.repeatable_world_first_moment(pid, "national_park_created", 3, 4);
+            self.repeatable_world_first_moment(
+                pid,
+                "national_park_created",
+                "MOMENT_NATIONAL_PARK_CREATED",
+                "MOMENT_NATIONAL_PARK_CREATED_FIRST_IN_WORLD",
+            );
         } else {
             let t = self.map.tiles.get_mut(&u.pos).unwrap();
             // Excavation consumes the Antiquity Site/Shipwreck and immediately
@@ -37688,9 +37992,14 @@ impl Game {
                 .collect();
             let origin = civs[self.rng.below(civs.len().max(1))].clone();
             self.grant_great_work(pid, "artifact", era, &origin);
-            self.add_era_score(pid, 1);
+            self.add_historic_moment(pid, "MOMENT_ARTIFACT_EXTRACTED");
             if imp == "shipwreck_excavation" {
-                self.first_historic_moment(pid, "shipwreck_excavated", 2, 3);
+                self.first_historic_moment(
+                    pid,
+                    "shipwreck_excavated",
+                    Some("MOMENT_ARTIFACT_EXTRACTED_SHIPWRECK_FIRST"),
+                    Some("MOMENT_ARTIFACT_EXTRACTED_SHIPWRECK_FIRST_IN_WORLD"),
+                );
             }
             self.dedication_trigger(pid, "artifact", 1);
         } else if national_park.is_none() {
@@ -37699,22 +38008,61 @@ impl Game {
                 .as_deref()
                 .is_some_and(|civilization| civilization == self.players[pid].civ)
             {
-                self.first_historic_moment(pid, &format!("unique_improvement:{imp}"), 4, 4);
+                self.first_historic_moment(
+                    pid,
+                    &format!("unique_improvement:{imp}"),
+                    Some("MOMENT_IMPROVEMENT_CONSTRUCTED_FIRST_UNIQUE"),
+                    None,
+                );
             }
             match imp {
                 "mountain_tunnel" => {
-                    self.first_historic_moment(pid, "mountain_tunnel", 2, 3);
+                    self.first_historic_moment(
+                        pid,
+                        "mountain_tunnel",
+                        Some("MOMENT_IMPROVEMENT_CONSTRUCTED_MOUNTAIN_TUNNEL_FIRST"),
+                        Some(
+                            "MOMENT_IMPROVEMENT_CONSTRUCTED_MOUNTAIN_TUNNEL_FIRST_IN_WORLD",
+                        ),
+                    );
                 }
                 "seaside_resort" => {
-                    self.first_historic_moment(pid, "seaside_resort", 2, 3);
+                    self.first_historic_moment(
+                        pid,
+                        "seaside_resort",
+                        Some("MOMENT_IMPROVEMENT_CONSTRUCTED_SEASIDE_RESORT_FIRST"),
+                        Some(
+                            "MOMENT_IMPROVEMENT_CONSTRUCTED_SEASIDE_RESORT_FIRST_IN_WORLD",
+                        ),
+                    );
                 }
                 "wind_farm" | "solar_farm" | "offshore_wind_farm" | "geothermal_plant" => {
-                    self.first_historic_moment(pid, "renewable_improvement", 2, 3);
+                    self.first_historic_moment(
+                        pid,
+                        "renewable_improvement",
+                        Some("MOMENT_IMPROVEMENT_CONSTRUCTED_RENEWABLE_ENERGY_FIRST"),
+                        Some(
+                            "MOMENT_IMPROVEMENT_CONSTRUCTED_RENEWABLE_ENERGY_FIRST_IN_WORLD",
+                        ),
+                    );
                 }
                 _ => {}
             }
             if improved_disaster_fertility {
-                self.first_historic_moment(pid, "disaster_fertility_improved", 1, 1);
+                self.first_historic_moment(
+                    pid,
+                    "disaster_fertility_improved",
+                    Some("MOMENT_IMPROVEMENT_CONSTRUCTED_ON_DISASTER_YIELD_TILE_FIRST"),
+                    None,
+                );
+            }
+            if imp == "industry" {
+                self.first_historic_moment(
+                    pid,
+                    "first_industry",
+                    Some("MOMENT_FIRST_INDUSTRY"),
+                    Some("MOMENT_FIRST_INDUSTRY_IN_WORLD"),
+                );
             }
         }
         if self.units[&uid].charges <= 0 {
@@ -37873,7 +38221,12 @@ impl Game {
         self.map.tiles.get_mut(&pos).unwrap().road = 5;
         self.units.get_mut(&uid).unwrap().moves_left = 0.0;
         if self.has_railroad_city_connection(pid) {
-            self.first_historic_moment(pid, "railroad_city_connection", 2, 3);
+            self.first_historic_moment(
+                pid,
+                "railroad_city_connection",
+                Some("MOMENT_ROUTE_CREATED_RAILROAD_CONNECTS_TWO_CITIES"),
+                Some("MOMENT_ROUTE_CREATED_RAILROAD_CONNECTS_TWO_CITIES_FIRST_IN_WORLD"),
+            );
         }
         Ok(())
     }
@@ -38133,7 +38486,12 @@ impl Game {
         self.players[pid]
             .counters
             .insert(format!("rock_concert_tier:{uid}"), tier as i64);
-        self.first_historic_moment(pid, "rock_concert", 2, 3);
+        self.first_historic_moment(
+            pid,
+            "rock_concert",
+            Some("MOMENT_UNIT_TOURISM_BOMB"),
+            Some("MOMENT_UNIT_TOURISM_BOMB_FIRST_IN_WORLD"),
+        );
 
         let nearby_pct = self.promotion_effect(&band, "rock_nearby_tourism_pct") / 100.0;
         if nearby_pct > 0.0 {
@@ -39922,7 +40280,20 @@ impl Game {
             !rock_band && unit.level == 4
         };
         if distinguished {
-            self.add_era_score(pid, 1);
+            let counter = self.players[pid]
+                .counters
+                .entry("distinguished_units".to_string())
+                .or_insert(0);
+            let first = *counter == 0;
+            *counter += 1;
+            self.add_historic_moment(
+                pid,
+                if first {
+                    "MOMENT_UNIT_HIGH_LEVEL_FIRST"
+                } else {
+                    "MOMENT_UNIT_HIGH_LEVEL"
+                },
+            );
         }
         Ok(())
     }
@@ -41044,11 +41415,6 @@ impl Game {
                     };
                 era(pid) >= era(other).saturating_add(2)
             }
-            "territorial_expansion"
-            | "protectorate_war"
-            | "war_of_liberation"
-            | "war_of_reconquest"
-            | "golden_age_war" => true,
             _ => false,
         };
         if !valid {
@@ -41060,7 +41426,7 @@ impl Game {
             50.0
         };
         self.start_war(pid, other, grievances)?;
-        self.add_era_score(pid, 2);
+        self.add_historic_moment(pid, "MOMENT_WAR_DECLARED_USING_CASUS_BELLI");
         Ok(())
     }
 
@@ -43070,7 +43436,12 @@ impl Game {
         self.players[pid].governor_titles_spent += 1;
         self.sync_governor_cities(pid);
         if self.players[pid].governor_roster.len() == self.rules.governors.len() {
-            self.first_historic_moment(pid, "all_governors_appointed", 1, 1);
+            self.first_historic_moment(
+                pid,
+                "all_governors_appointed",
+                Some("MOMENT_GOVERNOR_ALL_APPOINTED_FIRST"),
+                None,
+            );
         }
         Ok(())
     }
@@ -43140,24 +43511,22 @@ impl Game {
             .promotions
             .insert(promotion.to_string());
         self.players[pid].governor_titles_spent += 1;
-        if self.world_era < MODERN_ERA {
-            let fully_promoted = self.players[pid]
-                .governor_roster
-                .get(governor)
-                .is_some_and(|state| {
-                    self.rules.governors[governor]
-                        .promotions
-                        .keys()
-                        .all(|promotion| state.promotions.contains(promotion))
-                });
-            if fully_promoted {
-                self.first_historic_moment(
-                    pid,
-                    &format!("governor_fully_promoted:{governor}"),
-                    1,
-                    1,
-                );
-            }
+        let fully_promoted = self.players[pid]
+            .governor_roster
+            .get(governor)
+            .is_some_and(|state| {
+                self.rules.governors[governor]
+                    .promotions
+                    .keys()
+                    .all(|promotion| state.promotions.contains(promotion))
+            });
+        if fully_promoted {
+            self.first_historic_moment(
+                pid,
+                "governor_fully_promoted",
+                Some("MOMENT_GOVERNOR_FULLY_PROMOTED_FIRST"),
+                None,
+            );
         }
         Ok(())
     }
@@ -43527,7 +43896,10 @@ impl Game {
                 }
                 Flip::Join(cid, new_owner) => {
                     self.transfer_city(cid, new_owner, false);
-                    self.add_era_score(new_owner, 2);
+                    self.add_historic_moment(
+                        new_owner,
+                        "MOMENT_CITY_TRANSFERRED_DISLOYAL_FREE_CITY",
+                    );
                     let city = self.cities.get_mut(&cid).unwrap();
                     city.loyalty = 100.0;
                     city.captured_from = None;
@@ -43983,7 +44355,10 @@ impl Game {
                     if self.victory_eligible(target) {
                         if winning_outcome == "A" {
                             self.players[target].dvp += 2;
-                            self.add_era_score(target, 2);
+                            self.add_historic_moment(
+                                target,
+                                "MOMENT_PLAYER_EARNED_DIPLOMATIC_VICTORY_POINT",
+                            );
                         } else {
                             self.players[target].dvp = self.players[target].dvp.saturating_sub(2);
                         }
@@ -44449,13 +44824,11 @@ impl Game {
                 };
                 *self.players[*member].counters.entry(key).or_insert(0) +=
                     if emergency.kind == "city_state" { 1 } else { 5 };
-                if self.world_era < MODERN_ERA {
-                    self.add_era_score(*member, 3);
-                }
+                self.add_historic_moment(*member, "MOMENT_EMERGENCY_WON_AS_MEMBER");
             }
         } else {
             self.players[emergency.target].diplomatic_favor += 200.0;
-            self.add_era_score(emergency.target, 4);
+            self.add_historic_moment(emergency.target, "MOMENT_EMERGENCY_WON_AS_TARGET");
             if emergency.kind == "city_state" {
                 *self.players[emergency.target]
                     .counters
@@ -44562,19 +44935,45 @@ impl Game {
         else {
             return;
         };
-        if pop == 10 && self.world_era >= MODERN_ERA {
-            return;
-        }
         let key = format!("city_size:{size}");
-        if self.players[pid].counters.contains_key(&key) {
+        let (ordinary, world_first) = match size {
+            "small" => (
+                "MOMENT_CITY_SIZE_SMALL_FIRST",
+                "MOMENT_CITY_SIZE_SMALL_FIRST_IN_WORLD",
+            ),
+            "medium" => (
+                "MOMENT_CITY_SIZE_MEDIUM_FIRST",
+                "MOMENT_CITY_SIZE_MEDIUM_FIRST_IN_WORLD",
+            ),
+            "large" => (
+                "MOMENT_CITY_SIZE_LARGE_FIRST",
+                "MOMENT_CITY_SIZE_LARGE_FIRST_IN_WORLD",
+            ),
+            "extra_large" => (
+                "MOMENT_CITY_SIZE_EXTRA_LARGE_FIRST",
+                "MOMENT_CITY_SIZE_EXTRA_LARGE_FIRST_IN_WORLD",
+            ),
+            _ => unreachable!(),
+        };
+        self.first_historic_moment(pid, &key, Some(ordinary), Some(world_first));
+    }
+
+    /// All non-growth population grants come through this boundary so a hut
+    /// or Angkor Wat cannot skip a city-size threshold.
+    fn increase_city_population(&mut self, cid: u32, amount: i32) {
+        if amount <= 0 || !self.cities.contains_key(&cid) {
             return;
         }
-        self.players[pid].counters.insert(key.clone(), 1);
-        let first_in_world = !self
-            .players
-            .iter()
-            .any(|other| other.id != pid && other.counters.contains_key(&key));
-        self.add_era_score(pid, if first_in_world { 2 } else { 1 });
+        let pid = self.cities[&cid].owner;
+        for _ in 0..amount {
+            let pop = {
+                let city = self.cities.get_mut(&cid).unwrap();
+                city.pop += 1;
+                city.pop as i64
+            };
+            self.apply_growth_pressure(cid);
+            self.note_city_size_moment(pid, pop);
+        }
     }
 
     /// `MOMENT_GOVERNMENT_ENACTED_TIER_N_FIRST`, +2, or +3 as
@@ -44593,25 +44992,27 @@ impl Game {
             // Chiefdom is the starting government and names no moment.
             _ => return,
         };
-        let obsolete_era = match tier {
-            1 => MEDIEVAL_ERA,
-            2 => RENAISSANCE_ERA,
-            3 => ATOMIC_ERA,
-            _ => FUTURE_ERA,
-        };
-        if self.world_era >= obsolete_era {
-            return;
-        }
         let key = format!("government_tier:{tier}");
-        if self.players[pid].counters.contains_key(&key) {
-            return;
-        }
-        self.players[pid].counters.insert(key.clone(), 1);
-        let first_in_world = !self
-            .players
-            .iter()
-            .any(|other| other.id != pid && other.counters.contains_key(&key));
-        self.add_era_score(pid, if first_in_world { 3 } else { 2 });
+        let (ordinary, world_first) = match tier {
+            1 => (
+                "MOMENT_GOVERNMENT_ENACTED_TIER_1_FIRST",
+                "MOMENT_GOVERNMENT_ENACTED_TIER_1_FIRST_IN_WORLD",
+            ),
+            2 => (
+                "MOMENT_GOVERNMENT_ENACTED_TIER_2_FIRST",
+                "MOMENT_GOVERNMENT_ENACTED_TIER_2_FIRST_IN_WORLD",
+            ),
+            3 => (
+                "MOMENT_GOVERNMENT_ENACTED_TIER_3_FIRST",
+                "MOMENT_GOVERNMENT_ENACTED_TIER_3_FIRST_IN_WORLD",
+            ),
+            4 => (
+                "MOMENT_GOVERNMENT_ENACTED_TIER_4_FIRST",
+                "MOMENT_GOVERNMENT_ENACTED_TIER_4_FIRST_IN_WORLD",
+            ),
+            _ => unreachable!(),
+        };
+        self.first_historic_moment(pid, &key, Some(ordinary), Some(world_first));
     }
 
     /// `MOMENT_TECH_RESEARCHED_IN_ERA_FIRST` (+1) and
@@ -44640,15 +45041,18 @@ impl Game {
         };
         let tree = if technology { "tech" } else { "civic" };
         let key = format!("era_first:{tree}:{era}");
-        if self.players[pid].counters.contains_key(&key) {
-            return;
-        }
-        self.players[pid].counters.insert(key.clone(), 1);
-        let first_in_world = !self
-            .players
-            .iter()
-            .any(|other| other.id != pid && other.counters.contains_key(&key));
-        self.add_era_score(pid, if first_in_world { 2 } else { 1 });
+        let (ordinary, world_first) = if technology {
+            (
+                "MOMENT_TECH_RESEARCHED_IN_ERA_FIRST",
+                "MOMENT_TECH_RESEARCHED_IN_ERA_FIRST_IN_WORLD",
+            )
+        } else {
+            (
+                "MOMENT_CIVIC_CULTURVATED_IN_ERA_FIRST",
+                "MOMENT_CIVIC_CULTURVATED_IN_ERA_FIRST_IN_WORLD",
+            )
+        };
+        self.first_historic_moment(pid, &key, Some(ordinary), Some(world_first));
     }
 
     /// What a Dedication would have paid over the era that just ended, in Era
@@ -44720,14 +45124,15 @@ impl Game {
     /// which is the whole point of dedicating a Normal or Dark Age, since that
     /// score is what buys the next Golden one.
     ///
-    /// **A Golden Age pays no Era Score.** Every quest modifier hangs off
+    /// **A Golden Age normally pays no Era Score.** Every quest modifier hangs off
     /// `PLAYER_ELIGIBLE_FOR_COMMEMORATION_QUEST`, a `TEST_ANY` set whose only
     /// two members are an inverted `REQUIREMENT_PLAYER_HAS_GOLDEN_AGE` and a
     /// `REQUIREMENT_PLAYER_ALWAYS_ALLOWED_COMMEMORATION_QUEST` that nothing in
     /// the shipped data grants. So the two halves are exclusive, and that is
-    /// what stops a Golden Age from financing its own successor: it hands out
-    /// its bonus and banks nothing, while a Dark or Normal Age banks the score
-    /// that buys the next one.
+    /// what normally stops a Golden Age from financing its own successor: it
+    /// hands out its bonus and banks nothing, while a Dark or Normal Age banks
+    /// the score that buys the next one. Georgia's Strength in Unity is the
+    /// explicit exception in the civilization data for Golden and Heroic Ages.
     ///
     /// `count` is how many times the trigger just happened, so a kill that
     /// resolves several units at once pays for all of them.
@@ -44741,7 +45146,9 @@ impl Game {
             .era_triggers
             .entry(trigger.to_string())
             .or_insert(0) += count;
-        if matches!(self.players[pid].age.as_str(), "golden" | "heroic") {
+        if matches!(self.players[pid].age.as_str(), "golden" | "heroic")
+            && self.civ_effect(pid, "golden_dedication_era_score") <= 0.0
+        {
             return;
         }
         let earned: i64 = self.players[pid]
@@ -46666,10 +47073,10 @@ impl Game {
             return;
         }
         if attacker.formation < victim.formation {
-            self.add_era_score(pid, 1);
+            self.add_historic_moment(pid, "MOMENT_UNIT_KILLED_UNDERDOG_MILITARY_FORMATION");
         }
         if victim.promotions.len() >= attacker.promotions.len().saturating_add(2) {
-            self.add_era_score(pid, 3);
+            self.add_historic_moment(pid, "MOMENT_UNIT_KILLED_UNDERDOG_PROMOTIONS");
         }
     }
 
@@ -46696,7 +47103,17 @@ impl Game {
                     .contains_key(&format!("historic_moment:assisted_kill:{person}"))
         });
         if let Some(person) = person.cloned() {
-            self.first_historic_moment(pid, &format!("assisted_kill:{person}"), 2, 2);
+            let moment = if kind == "admiral" {
+                "MOMENT_UNIT_KILLED_ASSISTED_BY_ADMIRAL"
+            } else {
+                "MOMENT_UNIT_KILLED_ASSISTED_BY_GENERAL"
+            };
+            self.first_historic_moment(
+                pid,
+                &format!("assisted_kill:{person}"),
+                Some(moment),
+                None,
+            );
         }
     }
 
@@ -46716,7 +47133,7 @@ impl Game {
             bump(&mut self.players[pid], "barbs_killed");
         } else {
             // Every Dedication that pays for kills excludes Barbarians.
-            if self.rules.units[victim.kind].class == "naval" {
+            if self.rules.units[victim.kind].domain.as_deref() == Some("sea") {
                 self.dedication_trigger(pid, "naval_kill", 1);
             }
             match victim.formation {
@@ -47422,9 +47839,9 @@ impl Game {
         }
 
         let population = effect("empire_population") as i32;
-        if population != 0 {
+        if population > 0 {
             for city_id in self.player_city_ids(pid) {
-                self.cities.get_mut(&city_id).unwrap().pop += population;
+                self.increase_city_population(city_id, population);
             }
         }
         let treasury_pct = effect("treasury_gold_pct");
@@ -47433,9 +47850,13 @@ impl Game {
         }
         if effect("free_great_prophet") > 0.0
             && self.players[pid].religion.is_none()
+            && !self.players[pid].prophet_pending
             && self.religions_founded() < self.max_religions()
         {
             self.players[pid].prophet_pending = true;
+            self.add_historic_moment(pid, "MOMENT_GREAT_PERSON_CREATED_GAME_ERA");
+            self.dedication_trigger(pid, "great_person", 1);
+            bump(&mut self.players[pid], "great_people");
         }
         if effect("ancient_classical_tech_boosts") > 0.0 {
             let boosts: Vec<(Name, f64)> = self
@@ -47583,6 +48004,7 @@ impl Game {
                     let city = self.cities.get_mut(&city_id).unwrap();
                     city.buildings.push(Name::new(building));
                     city.building_eras.insert(Name::new(building), self.world_era);
+                    self.note_building_completed_moments(pid, building);
                 }
             }
         }
@@ -47749,7 +48171,7 @@ impl Game {
                     }
                 }
                 if spec.wonder {
-                    self.add_era_score(pid, self.wonder_historic_moment_score(building));
+                    self.add_historic_moment(pid, self.wonder_historic_moment(building));
                 }
                 if spec.unit_levels > 0 {
                     for uid in self.player_unit_ids(pid) {
@@ -47925,7 +48347,7 @@ impl Game {
                     .unwrap()
                     .wonders
                     .insert(Name::new(wonder), *pos);
-                self.add_era_score(pid, self.wonder_historic_moment_score(wonder));
+                self.add_historic_moment(pid, self.wonder_historic_moment(wonder));
                 if spec
                     .effects
                     .get("promote_all_current_units")
@@ -48363,15 +48785,28 @@ impl Game {
         let old = self.cities[&cid].owner;
         let original_owner = self.cities[&cid].original_owner;
         let original_capital = self.cities[&cid].is_capital;
+        let final_city_of_old = conquest
+            && self
+                .cities
+                .values()
+                .filter(|city| city.owner == old)
+                .count()
+                == 1;
         if old != new_owner
             && !self.players[new_owner].is_minor
             && !self.players[new_owner].is_barbarian
             && !self.players[new_owner].is_free_city
         {
             if original_owner == new_owner {
-                self.add_era_score(new_owner, 2);
-            } else if original_capital {
-                self.add_era_score(new_owner, 4);
+                self.add_historic_moment(
+                    new_owner,
+                    "MOMENT_CITY_TRANSFERRED_TO_ORIGINAL_OWNER",
+                );
+            } else if original_capital && !final_city_of_old {
+                self.add_historic_moment(
+                    new_owner,
+                    "MOMENT_CITY_TRANSFERRED_FOREIGN_CAPITAL",
+                );
             }
         }
         {
@@ -48660,8 +49095,8 @@ impl Game {
             self.first_historic_moment(
                 conqueror,
                 &format!("civilization_defeated:{defeated}"),
-                5,
-                5,
+                Some("MOMENT_CITY_TRANSFERRED_PLAYER_DEFEATED"),
+                None,
             );
         }
         if defeated != conqueror && !self.players[defeated].is_barbarian {
@@ -48832,7 +49267,7 @@ impl Game {
             .entry("cities_liberated".to_string())
             .and_modify(|count| *count += 1)
             .or_insert(1);
-        self.add_era_score(pid, if restored_to_game { 4 } else { 2 });
+        self.add_historic_moment(pid, "MOMENT_CITY_TRANSFERRED_TO_ORIGINAL_OWNER");
         if self.players[original_owner].is_minor {
             // Shipped `Eras_XP1.LiberatedEnvoys`, which is 2 in the Ancient
             // era rather than 3 and then climbs 3/3/6/6/9 through the rest.
