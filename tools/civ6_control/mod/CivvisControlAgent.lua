@@ -512,8 +512,17 @@ end
 local siteMemo = { turn = -1, sites = {} };
 -- Where each settler decided to go, kept across turns. See findSettleSite.
 local committedSite = {};
+-- Sites the engine refused to move a given settler to.
+--
+-- ⚠ Only visible once `operate` started checking CanStartOperation WITH the
+-- destination: before that a refused move was logged as a successful
+-- `move_to_site`, 166 of them in one run. With refusals honest, the real ratio
+-- was 4 moves to 15 SKIP_TURNs — the chosen site simply could not be reached,
+-- and re-offering it every turn was the whole failure.
+local refusedSite = {};
+local findSettleSite;
 
-local function findSettleSite(player, pid, unit, turn)
+findSettleSite = function(player, pid, unit, turn)
 	local id = try(function() return unit:GetID(); end, -1);
 	if siteMemo.turn ~= turn then siteMemo = { turn = turn, sites = {} }; end
 	local cached = siteMemo.sites[id];
@@ -569,7 +578,10 @@ local function findSettleSite(player, pid, unit, turn)
 					return (not plot:IsWater()) and (not plot:IsImpassable());
 				end, false);
 				local owner = try(function() return plot:GetOwner(); end, -1);
-				if usable and (owner == -1 or owner == pid) then
+				local blocked = refusedSite[id] ~= nil
+					and plot ~= nil
+					and refusedSite[id][plot:GetX() .. ":" .. plot:GetY()];
+				if usable and not blocked and (owner == -1 or owner == pid) then
 					local px = plot:GetX();
 					local py = plot:GetY();
 					local nearest = 99;
@@ -663,6 +675,23 @@ local function orderSettler(player, pid, unit, turn)
 		params[UnitOperationTypes.PARAM_Y] = py;
 		if operate(unit, OP["UNITOPERATION_MOVE_TO"], params) then
 			return "move_to_site";
+		end
+		-- The engine will not path this settler there. Blacklist that ground
+		-- for this unit, drop the commitment, and let the search pick again
+		-- rather than re-offering a site it has already declined.
+		refusedSite[id] = refusedSite[id] or {};
+		refusedSite[id][px .. ":" .. py] = true;
+		committedSite[id] = nil;
+		siteMemo.sites[id] = nil;
+		local retry = findSettleSite(player, pid, unit, turn);
+		if retry ~= nil then
+			local rx, ry = retry:GetX(), retry:GetY();
+			local again = {};
+			again[UnitOperationTypes.PARAM_X] = rx;
+			again[UnitOperationTypes.PARAM_Y] = ry;
+			if operate(unit, OP["UNITOPERATION_MOVE_TO"], again) then
+				return "move_to_site";
+			end
 		end
 	end
 	-- A settler cannot explore, so this is nearly always nil; it is left as the
