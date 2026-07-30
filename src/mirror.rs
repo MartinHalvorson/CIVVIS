@@ -876,19 +876,48 @@ pub fn civvis_civ_name(civ6: &str) -> Option<&'static str> {
 /// the board — the visible half of the very bug this fixes.
 fn apply_identity(game: &mut crate::game::Game, state: &StateSnapshot) -> Vec<String> {
     let mut unmapped = Vec::new();
-    let mut assign = |game: &mut crate::game::Game, seat: usize, civ6: &str| {
+    let mut known: std::collections::BTreeMap<usize, &'static str> = Default::default();
+    let mut note = |seat: usize, civ6: &str, unmapped: &mut Vec<String>| {
         if civ6.is_empty() || seat >= game.players.len() {
             return;
         }
         match civvis_civ_name(civ6) {
-            Some(name) => game.players[seat].civ = name.to_string(),
+            Some(name) => {
+                known.insert(seat, name);
+            }
             None => unmapped.push(civ6.to_string()),
         }
     };
-    assign(game, 0, &state.seat.civ);
+    note(0, &state.seat.civ, &mut unmapped);
     for rival in &state.rivals {
-        let civ = rival.civ.clone();
-        assign(game, rival.player, &civ);
+        note(rival.player, &rival.civ.clone(), &mut unmapped);
+    }
+    for (&seat, &name) in &known {
+        game.players[seat].civ = name.to_string();
+    }
+
+    // ⚠ MOVE THE DEFAULTS OUT OF THE WAY. Seats we have not met keep CIVVIS's roster
+    // name, and that roster can collide with one we just learned: Civilization VI
+    // named player 1 Greece, `CIV_NAMES[2]` is also Greece, and the standings table
+    // showed TWO Greeces. A duplicate is worse than an unknown, because it looks like
+    // a real second civilization rather than a seat nobody has met yet.
+    let taken: std::collections::BTreeSet<String> =
+        known.values().map(|name| name.to_string()).collect();
+    let mut spare = crate::game::CIV_NAMES
+        .iter()
+        .filter(|name| !taken.contains(**name));
+    for seat in 0..game.players.len() {
+        if known.contains_key(&seat) || game.players[seat].is_minor {
+            continue;
+        }
+        // Free Cities and the barbarians are seats, but they are not civilizations
+        // and renaming them would invent a rival that does not exist.
+        if !taken.contains(&game.players[seat].civ) {
+            continue;
+        }
+        if let Some(name) = spare.next() {
+            game.players[seat].civ = name.to_string();
+        }
     }
     unmapped
 }
