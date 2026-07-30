@@ -156,13 +156,15 @@ because they selected a leader they have not played before.
 `civvis play --spectate --league league/` ranks the live-eligible strategies
 for each leader/civilization, then samples from the top three with 3:2:1 rank
 weight while avoiding repeats until the roster is exhausted. The spectator HUD
-lists, per player: **civ, league username + strategy, its
-elo** (exact leader/civ rating after game one, ±RD on hover) **and two win
-odds** — the odds this seat had before a tile was drawn, and the odds it holds
-right now. Both are shares of the one win a table has to give
-(`elo::win_shares`), so the seats sum to 100%; averaging the pairwise
-expectations instead would put every seat near 50% and could never be
-checked against a winner.
+lists, per player: **civ, league username + strategy, its elo** (exact
+leader/civ rating after game one, ±RD on hover) **and two win odds** in separate
+Start and Now columns, with their trend between them. The pregame forecast uses
+both the rating midpoint and its RD, so a one-game 1800 does not make the same
+promise as a settled 1800. In a free-for-all with an enabled result, the seats
+share 100%; on permanent teams, every member carries the whole side's chance;
+with every victory condition disabled, every chance is zero. Averaging pairwise
+expectations instead would put every seat near 50% and could never be checked
+against a winner.
 
 The **start** figure is the pregame prediction: the ratings at this table, the
 edge the roster has measured for the civilizations they drew, and what the
@@ -170,9 +172,12 @@ difficulty setting hands each seat. Nothing on the board moves it, which is what
 makes it auditable — compare it against who actually wins over many games. The
 **now** figure corrects that prior with the position each empire has built
 (Score, military strength, cities held, the closest victory race), weighted up
-as the clock runs down, and drops to zero for a seat that is out of the game.
-Both come from `crate::odds`, which documents every coefficient and what
-calibrates it. Without
+as the clock runs down. A free-for-all seat that can no longer win drops to zero;
+a defeated teammate retains the surviving side's chance because a later team
+victory still credits them. The clock weighting is checked at 25%, 50% and 75%
+of completed games with both Brier score and winner log loss, rather than only
+being required to rank better than a flat guess. Both figures come from
+`crate::odds`, which documents every coefficient and what calibrates it. Without
 `--league`, a `league/` dir in the working directory still labels the
 default fleet with the "advanced" entrant's elo; the AIs themselves are
 unchanged.

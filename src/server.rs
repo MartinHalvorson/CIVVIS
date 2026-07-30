@@ -67,6 +67,8 @@ const EMBEDDED_WORLD_WONDER_ATLAS: &[u8] =
 const EMBEDDED_MOUNTAIN_ATLAS: &[u8] = include_bytes!("../web/assets/mountain-atlas.png");
 const EMBEDDED_HIDDEN_MAP_MONSTERS: &[u8] =
     include_bytes!("../web/assets/hidden-map-monsters.png");
+const EMBEDDED_CIV6_UNIT_FLAGS: &[u8] =
+    include_bytes!("../web/assets/civ6-unit-flags.png");
 
 /// The agents that exist in every build, whether or not a league snapshot is
 /// on disk, with the handle the leaderboards give them. `make_send_ai`
@@ -422,13 +424,6 @@ fn completed_buildings(game: &Game) -> BTreeSet<Name> {
 /// digits are pure bytes on a document that is already the bottleneck.
 fn round_tenth(v: f64) -> f64 {
     (v * 10.0).round() / 10.0
-}
-
-/// Four decimal places, the precision a probability is reported at. A win
-/// chance is read as a percentage, and two decimals would round a seat holding
-/// two tenths of one per cent of the table down to nothing at all.
-fn round_probability(v: f64) -> f64 {
-    (v * 10_000.0).round() / 10_000.0
 }
 
 fn population_milestone(population: i32) -> i32 {
@@ -2076,19 +2071,24 @@ impl Session {
         // unrated seat cannot win.
         let odds = crate::odds::table(g, |pid| {
             let shown = rating_of(pid);
-            if shown.civ_specific {
+            let elo = if shown.civ_specific {
                 // Already a measurement of this player as this civilization.
-                return shown.rating;
-            }
-            // Otherwise the roster still knows something about the civ they
-            // drew, even if this player has never played it.
-            shown.rating
-                + self
+                shown.rating
+            } else {
+                // Otherwise the roster still knows something about the civ
+                // they drew, even if this player has never played it.
+                shown.rating
+                    + self
                     .league
                     .as_ref()
                     .map_or(0.0, |league| {
                         crate::odds::civ_edge_elo(league, &g.players[pid].civ)
                     })
+            };
+            // The midpoint and the uncertainty are both part of a pregame
+            // prediction. A one-game rating must not make the same promise as
+            // a settled one merely because the two badges show the same Elo.
+            crate::odds::PriorRating::new(elo, shown.rd)
         });
         let Some(players) = o["players"].as_array_mut() else {
             return;
@@ -2120,11 +2120,12 @@ impl Session {
             player["ai_elo_civ"] = json!(shown.civ_specific);
             player["ai_elo_provisional"] = json!(shown.provisional);
             if let Some(seat) = odds.get(&id) {
-                // Four decimals, not two. A seat on a Deity table is a
-                // genuine two-tenths of one per cent, and rounding that to
-                // "0.00" would publish "cannot win" for a seat that can.
-                player["odds_start"] = json!(round_probability(seat.start));
-                player["odds_now"] = json!(round_probability(seat.now));
+                // Preserve the model's positive probability exactly. Rounding
+                // at the transport boundary can turn a living long shot into
+                // numeric zero, which the client correctly reserves for a seat
+                // that cannot win. The browser owns display rounding.
+                player["odds_start"] = json!(seat.start);
+                player["odds_now"] = json!(seat.now);
                 // What made the number, so a dossier can say why rather than
                 // asking the reader to trust a percentage.
                 player["odds_prior_elo"] = json!(seat.prior_elo.round() as i64);
@@ -2615,6 +2616,11 @@ fn mountain_atlas() -> Vec<u8> {
 fn hidden_map_monsters() -> Vec<u8> {
     std::fs::read("web/assets/hidden-map-monsters.png")
         .unwrap_or_else(|_| EMBEDDED_HIDDEN_MAP_MONSTERS.to_vec())
+}
+
+fn civ6_unit_flags() -> Vec<u8> {
+    std::fs::read("web/assets/civ6-unit-flags.png")
+        .unwrap_or_else(|_| EMBEDDED_CIV6_UNIT_FLAGS.to_vec())
 }
 
 /// Where a single-player game keeps its own saves, relative to the process's
@@ -3395,6 +3401,9 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
         ("GET", "/assets/hidden-map-monsters.png") => {
             respond(stream, "200 OK", "image/png", &hidden_map_monsters());
         }
+        ("GET", "/assets/civ6-unit-flags.png") => {
+            respond(stream, "200 OK", "image/png", &civ6_unit_flags());
+        }
         // A lock-free identity probe for supervised process handoffs. The
         // browser used to fetch the multi-megabyte `/state` document here and
         // could queue behind an AI step for its entire three-second timeout.
@@ -4046,8 +4055,8 @@ mod tests {
         chronicle_world_events, final_countdown_ms, held_frame, new_game_params, query_value,
         request_path, save_path, seat_delay_ms, strategy_roster, tile_mark, ChronicleSnapshot,
         ChronicleState, FrameDelivery, Params,
-        Session, Shared, SpectatorFrame, EMBEDDED_CINEMATIC_3D, EMBEDDED_INDEX,
-        RESULT_COUNTDOWN_MS,
+        Session, Shared, SpectatorFrame, EMBEDDED_CINEMATIC_3D, EMBEDDED_CIV6_UNIT_FLAGS,
+        EMBEDDED_INDEX, RESULT_COUNTDOWN_MS,
         EMBEDDED_HIDDEN_MAP_MONSTERS, EMBEDDED_WORLD_WONDER_ATLAS, SAVE_DIR, STATE_LONG_POLL,
         VIEWER_ACTIVE,
     };
@@ -6179,9 +6188,25 @@ mod tests {
             }
         );
 
-        let session = Session::new(params.clone());
+        // Spectator state exposes every major; an interactive observer still
+        // withholds an unmet rival's annotations under the normal fog rule.
+        let mut visible_params = params.clone();
+        visible_params.spectate = true;
+        let session = Session::new(visible_params);
         assert_eq!(session.game.victory_conditions, params.victory_conditions);
-        assert_eq!(session.state()["victory_conditions"], disabled);
+        let state = session.state();
+        assert_eq!(state["victory_conditions"], disabled);
+        for player in state["players"]
+            .as_array()
+            .expect("state has players")
+            .iter()
+            .filter(|player| {
+                player["is_minor"] != json!(true) && player["is_barbarian"] != json!(true)
+            })
+        {
+            assert_eq!(player["odds_start"], json!(0.0));
+            assert_eq!(player["odds_now"], json!(0.0));
+        }
     }
 
     #[test]
@@ -7037,7 +7062,7 @@ mod tests {
         // the other silently re-weights the whole masthead.
         //
         // The floor is 5 label columns, the ELO figure and the wider odds cell,
-        // which carries two per cents and the arrow between them.
+        // whose two named numeric tracks flank a narrow trend track.
         assert!(EMBEDDED_INDEX.contains(
             "--hud-identity-column: minmax(\n      \
              calc(var(--hud-ident-min) * 5 + var(--hud-ident-num-min)\n           \
@@ -7052,13 +7077,25 @@ mod tests {
         // share would undo a dragged column on the next window resize, so no
         // media rule may set either track list or either enclosing track.
         assert!(EMBEDDED_INDEX.contains(
-            "--hud-ident-min: 30px; --hud-ident-num-min: 38px; --hud-ident-odds-min: 48px;"
+            "--hud-ident-min: 30px; --hud-ident-num-min: 38px; --hud-ident-odds-min: 76px;"
         ));
         assert_eq!(EMBEDDED_INDEX.matches("--hud-ident-num-min:").count(), 1,
             "the figure floor is declared once and holds at every width: four \
              digits need the same room on a laptop as on a wall");
         assert_eq!(EMBEDDED_INDEX.matches("--hud-ident-odds-min:").count(), 1,
-            "and so does the odds pair's own floor");
+            "and so does the two-category odds cell's own floor");
+        assert!(EMBEDDED_INDEX.contains(
+            "grid-template-columns: minmax(0, 1fr) 11px minmax(0, 1fr);"
+        ), "Start and Now flank one fixed-width trend column");
+        assert!(EMBEDDED_INDEX.contains(
+            "<span title=\"Win odds at the start of the game, per cent\">START</span>"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "<span class=\"odds-trend-head\" title=\"Trend from start to now\">Δ</span>"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "<span title=\"Win odds now, per cent\">NOW</span>"
+        ));
         assert_eq!(EMBEDDED_INDEX.matches("--hud-identity-column:").count(), 1,
             "the identity track is written once and then only from the column model");
         assert_eq!(EMBEDDED_INDEX.matches("--hud-stats-column:").count(), 1,
@@ -7072,14 +7109,14 @@ mod tests {
             "the value heads and the value cells are the same ten tracks");
         assert_eq!(EMBEDDED_INDEX.matches("grid-template-columns: var(--hud-identity-tracks);").count(), 2,
             "the identity heads and the identity cells are the same tracks");
-        // Player, ELO, WIN%, AGE and PLAN are drawn inside one button spanning
+        // Player, ELO, the Start/Now pair, AGE and PLAN are drawn inside one button spanning
         // five of those tracks, so that button divides itself with `subgrid` — the
         // same tracks, not a copy of their ratios. A copy is what shipped
         // before, and it came apart in both directions a copy can: it carried
         // `minmax(0, …)` where the heads carry the 30px label floor and the
         // 38px figure floor, so on a 1280px screen the ELO head stood at 38px
         // over a 27.5px figure and every "1703" rendered as "1…"; and it never
-        // heard about a drag, so moving the ELO/WIN% bar 26px at 1920px moved
+        // heard about a drag, so moving the ELO/odds bar 26px at 1920px moved
         // the head 21px and left the figures where they were.
         assert!(EMBEDDED_INDEX.contains(
             "#playerhud .diplomacy-identity-secondary {\n    grid-template-columns: subgrid;\n  }"
@@ -7251,7 +7288,9 @@ mod tests {
         // The repaint rate answers to what a frame actually costs, so the
         // expensive style degrades to a slower picture rather than a stalled one
         // on a box that is also running the game.
-        assert!(EMBEDDED_INDEX.contains("Math.max(floor, drawCost * 1.15)"));
+        assert!(EMBEDDED_INDEX.contains("const MAX_ANIMATION_PAINT_SHARE = .5"));
+        assert!(EMBEDDED_INDEX
+            .contains("Math.max(floor, drawCost / MAX_ANIMATION_PAINT_SHARE)"));
         // Three map styles, and the browser must be able to name each of them.
         // The idle repaint rate is a property of the style rather than a
         // constant now: strategic never repaints on its own, balanced ticks
@@ -7945,6 +7984,39 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("Cinematic3D.draw({"));
         assert!(EMBEDDED_INDEX.contains("specular glints travel"));
         assert!(EMBEDDED_INDEX.contains("cx.lineDashOffset = dash.length"));
+    }
+
+    #[test]
+    fn strategic_units_use_a_complete_civ6_icon_atlas() {
+        assert!(EMBEDDED_CIV6_UNIT_FLAGS.starts_with(b"\x89PNG\r\n\x1a\n"));
+        assert!(EMBEDDED_CIV6_UNIT_FLAGS.len() > 50_000);
+        assert!(
+            EMBEDDED_INDEX.contains("CIV6_UNIT_ICON_ATLAS.src = \"/assets/civ6-unit-flags.png\"")
+        );
+
+        let ids = EMBEDDED_INDEX
+            .split("const CIV6_UNIT_ICON_TYPES = [")
+            .nth(1)
+            .and_then(|tail| tail.split("];\nconst CIV6_UNIT_ICON_INDEX").next())
+            .expect("ordered Civilization VI unit icon IDs");
+        let rules = crate::rules::Rules::embedded();
+        assert_eq!(ids.matches('"').count() / 2, rules.units.len());
+        for unit in rules.units.keys() {
+            assert!(
+                ids.contains(&format!("\"{unit}\"")),
+                "unit {unit} has no Civilization VI icon cell"
+            );
+        }
+
+        let renderer = EMBEDDED_INDEX
+            .split("function drawUnitPictogram")
+            .nth(1)
+            .and_then(|tail| tail.split("function drawUnitFormationBadge").next())
+            .expect("strategic unit pictogram renderer");
+        assert!(renderer.contains("const official = civ6UnitIconSprite(type, color)"));
+        assert!(renderer.contains("cx.drawImage(official"));
+        assert!(EMBEDDED_INDEX.contains("const COMMAND_UNIT_ICON_K = () => 1 + .32"));
+        assert!(EMBEDDED_INDEX.contains("rr * 1.45 * COMMAND_UNIT_ICON_K(), tokenInk"));
     }
 
     #[test]
