@@ -1763,18 +1763,23 @@ local function declareWar(player, pid, counts, turn)
 	end
 	if cfg.MakeWar == false then return blocked("disabled"); end
 	if turn < (cfg.WarFromTurn or 25) then return blocked("too_early"); end
-	if counts.military < (cfg.WarArmy or 4) then
-		return blocked("army_" .. tostring(counts.military));
-	end
 	local target = warTarget;
 	if target == nil then return blocked("no_target"); end
-	local diplomacy = try(function() return player:GetDiplomacy(); end);
-	if diplomacy == nil then return blocked("no_diplomacy"); end
-	if try(function() return diplomacy:IsAtWarWith(target.player); end, false) then
-		warDeclared[target.player] = true;
-		return blocked("already_at_war");
-	end
-	if warDeclared[target.player] then return blocked("already_declared"); end
+	-- ⚠ ORDER: TARGET, THEN VETO, THEN ARMY. Two orderings were wrong before this. Gates
+	-- report the FIRST failure, so with the veto below the army check it was simply
+	-- unreachable: run 095626Z showed `war_blocked` cycling `too_early` then `army_4`
+	-- with a target at ratio 2.54, and never once evaluated the veto. A guard placed
+	-- after a gate that usually fails is a guard that never runs.
+	--
+	-- The order is also right on the merits: if the target is hopeless, building MORE
+	-- army toward it is equally wasted, so "too strong" should be the answer even when
+	-- the army is short.
+	--
+	-- ⚠⚠ AND IT MUST COME AFTER `local target = warTarget`. Hoisting it above that line
+	-- put `target.player` out of scope: a nil global, so `Players[nil]:GetScore()` threw
+	-- inside `try`, `theirNow` read -1, and the veto SKIPPED ITSELF. A guard that
+	-- silently declines to guard is worse than no guard, and `check_scope.py` is what
+	-- caught it — "'target' is a local elsewhere in this file but is not in scope here".
 	-- ★★★★★ A VETO, NOT JUST A BIAS. The strength term in `findWarTarget` lowers a
 	-- strong rival's SCORE, which does nothing when there is only one candidate — and
 	-- `met` is frequently 1 here. Measured on settler-20260730T094745Z: the term was
@@ -1800,6 +1805,16 @@ local function declareWar(player, pid, counts, turn)
 			return blocked(string.format("too_strong_%.2f", ratio));
 		end
 	end
+	if counts.military < (cfg.WarArmy or 4) then
+		return blocked("army_" .. tostring(counts.military));
+	end
+	local diplomacy = try(function() return player:GetDiplomacy(); end);
+	if diplomacy == nil then return blocked("no_diplomacy"); end
+	if try(function() return diplomacy:IsAtWarWith(target.player); end, false) then
+		warDeclared[target.player] = true;
+		return blocked("already_at_war");
+	end
+	if warDeclared[target.player] then return blocked("already_declared"); end
 	if not try(function() return diplomacy:CanDeclareWarOn(target.player); end, true) then
 		-- Records the player id, because "cannot declare on 62" (the Free Cities slot)
 		-- and "cannot declare on 1" (a major civ) are completely different problems.
