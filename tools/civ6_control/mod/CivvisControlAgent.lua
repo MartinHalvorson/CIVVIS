@@ -4088,6 +4088,23 @@ local function applyOrder(player, pid, row, turn)
 		verb = resolved;
 		local params = buildParams(row2);
 		if params == nil then return false, "no_params"; end
+		-- ★★★★ DO NOT RE-ISSUE WHAT THE CITY IS ALREADY BUILDING.
+		--
+		-- Every produce order carries `VALUE_REPLACE_AT`, so re-sending one REPLACES the
+		-- queue. CIVVIS re-decides production every turn from a board that cannot show
+		-- partial progress, so it alternates: measured on run civvis-20260730T134705Z,
+		-- **11 UNIT_BUILDER and 10 UNIT_GALLEY orders in 20 turns** in one city — a city
+		-- that swaps its build every turn finishes neither.
+		--
+		-- Comparing against the queue's current item is an actuation concern, not a
+		-- decision: CIVVIS still chooses, and a genuine change of mind still lands.
+		local current = try(function()
+			local q = city:GetBuildQueue();
+			return q and q:GetCurrentProductionTypeHash() or 0;
+		end, 0);
+		if current ~= 0 and row2.Hash ~= nil and current == row2.Hash then
+			return true, "already_building";
+		end
 		local ok = pcall(function()
 			CityManager.RequestOperation(city, CityOperationTypes.BUILD, params);
 		end);
