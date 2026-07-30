@@ -568,6 +568,15 @@ fn win_lower_confidence_for(s: &Strategy, table_size: usize) -> f64 {
     win_confidence(win_evidence(s, Some(table_size)), false)
 }
 
+fn exact_win_lower_confidence_for(s: &Strategy, table_size: usize) -> Option<f64> {
+    let players = u32::try_from(table_size).ok()?;
+    s.wins_by_table_size
+        .get(&players)
+        .copied()
+        .filter(|evidence| evidence.games > 0)
+        .map(|evidence| win_confidence(evidence, false))
+}
+
 fn win_upper_confidence_for(s: &Strategy, table_size: usize) -> f64 {
     win_confidence(win_evidence(s, Some(table_size)), true)
 }
@@ -2520,12 +2529,19 @@ pub fn seat_by_civ(league: &League, civs: &[String]) -> Vec<usize> {
     seat_by_leader_civ(league, &combinations)
 }
 
-/// Sample each civilization's specialist from its best few rated strategies.
-/// Rank weighting (3:2:1 for the default top three) keeps the best entrant
-/// most common without making every game the same matchup.
+/// Sample each seat from the best few proven winners at this table size, using
+/// its leader/civilization placement rating as the tie-break. Rank weighting
+/// (3:2:1 for the default top three) keeps the best entrant most common without
+/// making every game the same matchup.
+///
+/// `table_size` is explicit because a human-controlled seat is omitted from
+/// `civs` but still changes every AI's parity win probability. An old roster
+/// with fewer than `top_n` exact profiles keeps the historical placement-only
+/// policy until it can make the whole sampled pool from comparable evidence.
 pub fn seat_by_civ_seeded(
     league: &League,
     civs: &[String],
+    table_size: usize,
     seed: u64,
     top_n: usize,
 ) -> Vec<usize> {
@@ -2533,12 +2549,13 @@ pub fn seat_by_civ_seeded(
         .iter()
         .map(|civ| (default_leader(civ), civ.clone()))
         .collect();
-    seat_by_leader_civ_seeded(league, &combinations, seed, top_n)
+    seat_by_leader_civ_seeded(league, &combinations, table_size, seed, top_n)
 }
 
 pub fn seat_by_leader_civ_seeded(
     league: &League,
     combinations: &[(String, String)],
+    table_size: usize,
     seed: u64,
     top_n: usize,
 ) -> Vec<usize> {
@@ -2561,12 +2578,34 @@ pub fn seat_by_leader_civ_seeded(
             } else {
                 active.clone()
             };
+            let sample_size = top_n.max(1).min(pool.len());
+            let comparable_winners = pool
+                .iter()
+                .filter(|candidate| {
+                    exact_win_lower_confidence_for(&league.strategies[**candidate], table_size)
+                        .is_some()
+                })
+                .count()
+                >= sample_size;
             pool.sort_by(|a, b| {
                 let ea = display_elo_for(&league.strategies[*a], leader, civ).0;
                 let eb = display_elo_for(&league.strategies[*b], leader, civ).0;
-                eb.partial_cmp(&ea).unwrap().then(a.cmp(b))
+                let win_order = if comparable_winners {
+                    exact_win_lower_confidence_for(&league.strategies[*b], table_size)
+                        .unwrap_or(f64::NEG_INFINITY)
+                        .total_cmp(&exact_win_lower_confidence_for(
+                            &league.strategies[*a],
+                            table_size,
+                        )
+                        .unwrap_or(f64::NEG_INFINITY))
+                } else {
+                    std::cmp::Ordering::Equal
+                };
+                win_order
+                    .then_with(|| eb.total_cmp(&ea))
+                    .then(a.cmp(b))
             });
-            pool.truncate(top_n.max(1).min(pool.len()));
+            pool.truncate(sample_size);
             let weights: Vec<f64> = (1..=pool.len()).rev().map(|rank| rank as f64).collect();
             let pick = pool[rng.weighted(&weights)];
             used.insert(pick);
@@ -3765,17 +3804,106 @@ mod tests {
         for (index, strategy) in league.strategies.iter_mut().enumerate() {
             strategy.rating = 1_800.0 - index as f64 * 100.0;
         }
+        // One migrated row cannot switch half a live pool onto a different
+        // objective. Until top_n comparable entrants exist, placement remains
+        // the complete and deterministic fallback.
+        league.strategies[3]
+            .wins_by_table_size
+            .insert(4, WinEvidence { games: 1, wins: 1 });
         let mut seen = BTreeSet::new();
         for seed in 0..128 {
-            seen.insert(seat_by_civ_seeded(&league, &["Byzantium".into()], seed, 3)[0]);
+            seen.insert(seat_by_civ_seeded(&league, &["Byzantium".into()], 4, seed, 3)[0]);
         }
         assert_eq!(seen, BTreeSet::from([0, 1, 2]));
         assert!(!seen.contains(&3), "the fourth-rated strategy is outside the pool");
         assert_eq!(
-            seat_by_civ_seeded(&league, &["Byzantium".into()], 17, 3),
-            seat_by_civ_seeded(&league, &["Byzantium".into()], 17, 3),
+            seat_by_civ_seeded(&league, &["Byzantium".into()], 4, 17, 3),
+            seat_by_civ_seeded(&league, &["Byzantium".into()], 4, 17, 3),
             "a game seed must reproduce its specialist"
         );
+    }
+
+    #[test]
+    fn seeded_seating_samples_proven_winners_before_high_placement_nonwinners() {
+        let mut league = League {
+            round: 0,
+            strategies: (0..4)
+                .map(|index| {
+                    Strategy::new(
+                        &format!("candidate-{index}"),
+                        StrategyKind::Builtin {
+                            ai: "advanced".into(),
+                        },
+                        0,
+                    )
+                })
+                .collect(),
+            calibration: Calibration::default(),
+        };
+        for (index, strategy) in league.strategies.iter_mut().enumerate() {
+            strategy.rating = 1_900.0 - index as f64 * 100.0;
+            strategy.wins_by_table_size.insert(
+                4,
+                WinEvidence {
+                    games: 40,
+                    wins: [4, 8, 20, 15][index],
+                },
+            );
+        }
+
+        let mut seen = BTreeSet::new();
+        for seed in 0..128 {
+            seen.insert(seat_by_civ_seeded(
+                &league,
+                &["Byzantium".into()],
+                4,
+                seed,
+                2,
+            )[0]);
+        }
+        assert_eq!(seen, BTreeSet::from([2, 3]));
+        assert!(
+            !seen.contains(&0),
+            "the placement leader is outside the proven-winning pool"
+        );
+    }
+
+    #[test]
+    fn seeded_seating_uses_the_full_table_size_even_with_one_ai_seat() {
+        let mut league = League {
+            round: 0,
+            strategies: (0..2)
+                .map(|index| {
+                    Strategy::new(
+                        &format!("candidate-{index}"),
+                        StrategyKind::Builtin {
+                            ai: "advanced".into(),
+                        },
+                        0,
+                    )
+                })
+                .collect(),
+            calibration: Calibration::default(),
+        };
+        for (index, strategy) in league.strategies.iter_mut().enumerate() {
+            strategy.wins_by_table_size.insert(
+                4,
+                WinEvidence {
+                    games: 40,
+                    wins: [20, 4][index],
+                },
+            );
+            strategy.wins_by_table_size.insert(
+                6,
+                WinEvidence {
+                    games: 40,
+                    wins: [2, 15][index],
+                },
+            );
+        }
+        let civs = ["Byzantium".into()];
+        assert_eq!(seat_by_civ_seeded(&league, &civs, 4, 7, 1), vec![0]);
+        assert_eq!(seat_by_civ_seeded(&league, &civs, 6, 7, 1), vec![1]);
     }
 
     #[test]
@@ -5208,7 +5336,7 @@ mod searching_anchor_tests {
         .map(str::to_string)
         .collect();
         for seed in 0..256 {
-            let seats = seat_by_civ_seeded(&league, &civs, seed, 3);
+            let seats = seat_by_civ_seeded(&league, &civs, civs.len(), seed, 3);
             assert!(!seats.contains(&strategic));
             assert!(
                 seats

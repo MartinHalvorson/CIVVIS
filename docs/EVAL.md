@@ -6202,3 +6202,47 @@ causal head-to-head estimate. It fixes the largest mathematical mismatch in
 raw win probability and makes the remaining context visible in the checkpoint
 instead of irreversibly blending it. The anchored tournament remains the
 instrument for a fully fixed longitudinal Elo profile.
+
+## 2026-07-30 — ★★★ the live exhibition now selects winners, not placers
+
+After evolution moved to same-table-size outright wins, the exhibition still
+sampled each civilization's top three **placement** ratings. That left the
+system optimizing one objective and deploying another. It also made a
+low-placement outright winner almost unable to collect further live evidence:
+the result recorder could rate it, but the seating policy would not let it play.
+
+Seeded live seating now ranks the available roster by the lower 95% Wilson win
+bound for the full table size, uses the exact leader/civilization placement
+rating only as a tie-break, and keeps the existing 3:2:1 rank-weighted sample
+and no-repeat rule. The full table size is passed explicitly; a game with one
+human and five AI seats must read six-player evidence, not pretend it is a
+five-player contest. If fewer than the requested top three have retained exact
+evidence, the whole candidate pool stays on the previous placement policy.
+One migrated row therefore cannot switch half a lineup onto a different
+objective, and the embedded legacy snapshot remains behaviorally compatible
+until comparable evidence exists.
+
+Read-only replay of the production log gives these first-seat winner pools:
+
+| live table | conservative top entries (wins/games; lower 95% bound) |
+|---:|---|
+| 4p | `advanced_evolved` 25/61 (29.5%), `advanced` 25/61 (29.5%), `g28-28` 19/52 (24.8%) |
+| 6p | `g28-28` 12/33 (22.2%), `g676-58` 5/12 (19.3%), `advanced` 7/27 (13.2%) |
+| 8p | `advanced_evolved` 2/3 (20.8%), `g48-44` 60/422 (11.2%), `advanced` 36/254 (10.4%) |
+
+The six-player case is the material correction. Placement puts `g676-58` near
+the bottom at 1548 and would normally omit it; direct six-player tables record
+five wins in twelve, enough for its conservative bound to rank second even
+after the small-sample penalty. Conversely placement leader `g48-44` has only
+4/20 six-player wins (8.1% lower bound) and leaves the first pool. Later seats
+repeat the calculation after removing already used entrants, preserving
+lineup diversity without reaching past known winners while comparable choices
+remain.
+
+This is an objective-alignment change, not a randomized gameplay A/B. The
+retained games directly answer which named controllers won at each table size,
+but their opponent pools and maps are not fully controlled, so the new lineup
+is better supported rather than causally guaranteed stronger. The display
+ladder intentionally remains placement Glicko; a spectator can still see who
+usually finishes well without that statistic silently deciding which AI is
+supposed to win the exhibition.
