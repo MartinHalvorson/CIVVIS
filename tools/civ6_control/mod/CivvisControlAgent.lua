@@ -964,7 +964,84 @@ local function stepAside(player, unit)
 	return nil;
 end
 
-local function orderMilitary(unit, stillExploring, player)
+-- The nearest ground we have SEEN that belongs to a civilization we have met.
+--
+-- ★ WHY EXPLORING WAS NOT ENOUGH. `findWarTarget` needs a rival city plot to be
+-- revealed, and letting two units run `AUTOMATE_EXPLORE` did not deliver one:
+-- turn 120 of run settler-20260730T025856Z still read `target = None` with
+-- twenty units alive, so no war was declared and domination stayed impossible —
+-- while the rival's score ran to 493 against our 126. Automated explore seeks
+-- unrevealed terrain, not enemies, and once the neighbourhood is charted it has
+-- no reason to walk into somebody's borders.
+--
+-- Territory is the signpost. A civilization's cities sit inside its borders, so
+-- the nearest plot we have seen that it owns is the direction to walk to find
+-- one. `GetOwner` on a revealed plot is knowledge the seat has earned — the mirror
+-- already exports exactly this field — so nothing here is stolen.
+--
+-- ⚠ Scanned on a schedule, not every turn. A full sweep is width*height plots and
+-- doing that per turn per unit is precisely the cost that starves the game;
+-- `exportTiles` scans on the same principle. The answer barely moves between
+-- sweeps because borders do not.
+local enemyGroundMemo = { turn = -1, pos = nil };
+
+local function enemyGround(player, pid, turn)
+	local every = cfg.EnemyScanEvery or 12;
+	if enemyGroundMemo.turn >= 0 and (turn - enemyGroundMemo.turn) < every then
+		return enemyGroundMemo.pos;
+	end
+	enemyGroundMemo.turn = turn;
+	enemyGroundMemo.pos = nil;
+
+	local diplomacy = try(function() return player:GetDiplomacy(); end);
+	if diplomacy == nil then return nil; end
+	local met = {};
+	for _, otherId in ipairs(try(function() return PlayerManager.GetAliveMajorIDs(); end, {})) do
+		if otherId ~= pid
+				and try(function() return diplomacy:HasMet(otherId); end, false) then
+			met[otherId] = true;
+		end
+	end
+	if next(met) == nil then return nil; end
+
+	local home = try(function() return player:GetCities():GetCapitalCity(); end);
+	local hx = home and try(function() return home:GetX(); end, 0) or 0;
+	local hy = home and try(function() return home:GetY(); end, 0) or 0;
+	local width, height = 0, 0;
+	pcall(function() width, height = Map.GetGridSize(); end);
+	if width <= 0 or height <= 0 then return nil; end
+
+	local best, bestDist;
+	for y = 0, height - 1 do
+		for x = 0, width - 1 do
+			local owner = try(function()
+				local plot = Map.GetPlot(x, y);
+				if plot == nil or not plot:IsRevealed() then return -1; end
+				return plot:GetOwner();
+			end, -1);
+			if owner ~= nil and met[owner] then
+				local d = plotDistance(hx, hy, x, y);
+				if bestDist == nil or d < bestDist then
+					best, bestDist = { x = x, y = y }, d;
+				end
+			end
+		end
+	end
+	enemyGroundMemo.pos = best;
+	return best;
+end
+
+local function orderMilitary(unit, stillExploring, player, probeTo)
+	-- A probe with somewhere to be walks there. Automated explore is for charting
+	-- empty ground; finding a rival's city means going to a rival's border.
+	if probeTo ~= nil then
+		local params = {};
+		params[UnitOperationTypes.PARAM_X] = probeTo.x;
+		params[UnitOperationTypes.PARAM_Y] = probeTo.y;
+		if operate(unit, OP["UNITOPERATION_MOVE_TO"], params) then
+			return "probe";
+		end
+	end
 	if stillExploring then
 		local acted = firstOperation(unit, { "UNITOPERATION_AUTOMATE_EXPLORE" });
 		if acted then return acted; end
@@ -1283,7 +1360,9 @@ local function orderFor(player, pid, unit, turn)
 			probing = true;
 			probesOut = probesOut + 1;
 		end
-		return orderMilitary(unit, early or probing, player);
+		local probeTo = nil;
+		if probing then probeTo = enemyGround(player, pid, turn); end
+		return orderMilitary(unit, early or probing, player, probeTo);
 	end
 	return nil;
 end
