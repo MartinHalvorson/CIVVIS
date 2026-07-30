@@ -14,7 +14,7 @@ and seed set.
 
 ```bash
 civvis soak --games 12 --players 4 --turns 350 --start-seed 100
-civvis tournament --ais advanced,basic,random --games 30 --players 4 --turns 250 --quiet
+civvis tournament --ais advanced,advanced_v1,basic,random --games 40 --players 4 --quiet
 victory_eval --games 2 --players 2       # all six targets, stock turn limits
 ai_eval advanced basic --pairs 100 --seed 4000   # paired, low-variance
 ai_eval advanced basic --pairs 100 --difficulty emperor   # against the ladder

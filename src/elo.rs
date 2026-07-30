@@ -1,12 +1,12 @@
 //! Elo tournament harness: evaluate AI strategies against each other.
 //!
-//! Every rating belongs to one `(player, leader, civilization)` combination.
-//! A player may be a human account or a named AI strategy; changing leaders
-//! selects a different rating without changing player identity. Leader and
-//! civilization are both retained because they are not one-to-one (Eleanor,
-//! for example, can lead either England or France).
-//! Multiplayer games are scored as pairwise results with `K/(n-1)` scaling.
-use std::collections::BTreeMap;
+//! The primary rating belongs to a player (a human account or named AI
+//! strategy) and follows it across every leader/civilization draw. Separate
+//! `(player, leader, civilization)` rows retain matchup diagnostics; leader
+//! and civilization are both needed because they are not one-to-one (Eleanor,
+//! for example, can lead either England or France). Multiplayer games are
+//! scored as simultaneous pairwise results with `K/(n-1)` scaling.
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, OpenOptions};
 use std::io::{self, ErrorKind, Write};
 use std::path::{Path, PathBuf};
@@ -16,10 +16,10 @@ use std::time::Duration;
 use serde::{Deserialize, Serialize};
 
 use crate::ai::{AdvancedAi, Ai, BasicAi, RandomAi, Weights};
-use crate::game::{Action, Game};
+use crate::game::{default_speed, Action, Game, GameOptions};
 use crate::rng::Rng;
 use crate::rules::Rules;
-use crate::setup::MapSize;
+use crate::setup::{MapPoles, MapScript, MapSize, MapTopology};
 
 pub const BUILTIN_AIS: [&str; 10] = [
     "advanced",
@@ -38,7 +38,7 @@ pub const BUILTIN_AIS: [&str; 10] = [
 /// tournament ratings. Keeping them out of `BUILTIN_AIS` prevents a control
 /// factory from being pooled into the same player/leader rating key as
 /// its treatment.
-pub const EVAL_ONLY_AIS: [&str; 64] = [
+pub const EVAL_ONLY_AIS: [&str; 65] = [
     "advanced_congress_counter",
     "advanced_congress_votes",
     "advanced_congress_counter_hard",
@@ -75,6 +75,7 @@ pub const EVAL_ONLY_AIS: [&str; 64] = [
     "advanced_relief_scoped",
     "strategic_score",
     "strategic_doctrine",
+    "strategic_joint",
     "strategic_r20",
     "strategic_r10",
     "strategic_nodefer",
@@ -106,7 +107,8 @@ pub const EVAL_ONLY_AIS: [&str; 64] = [
 ];
 
 /// On-disk schema for the shared player/leader/civilization rating ledger.
-pub const ELO_SCHEMA_VERSION: u32 = 2;
+pub const ELO_SCHEMA_VERSION: u32 = 3;
+pub const ELO_BASE_RATING: f64 = 1500.0;
 pub const DEFAULT_RATINGS_PATH: &str = "data/elo_ratings.json";
 const LEAGUE_SNAPSHOT_DIR: &str = "data/league";
 const LEAGUE_SNAPSHOT_FILE: &str = "data/league/league.json";
@@ -192,6 +194,72 @@ pub struct Rating {
     pub wins: u32,
 }
 
+/// The game contract one persistent Elo ledger measures.
+///
+/// Ratings from different table sizes, maps, speeds, turn limits, or K factors
+/// are different experiments. Older ledgers silently mixed them. Schema 3
+/// binds the first run to its complete tournament profile and rejects later
+/// incompatible runs, so a number can serve as a longitudinal baseline.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct TournamentProfile {
+    pub players_per_game: usize,
+    pub width: i32,
+    pub height: i32,
+    pub max_turns: u32,
+    pub num_city_states: usize,
+    pub speed: String,
+    pub map_script: String,
+    pub map_topology: String,
+    pub map_poles: String,
+    pub k: f64,
+}
+
+impl TournamentProfile {
+    fn from_cfg(cfg: &TourneyCfg) -> Self {
+        Self {
+            players_per_game: cfg.players_per_game,
+            width: cfg.width,
+            height: cfg.height,
+            max_turns: cfg.max_turns,
+            num_city_states: cfg.num_city_states,
+            speed: cfg.speed.clone(),
+            map_script: cfg.map_script.id().to_string(),
+            map_topology: cfg.map_topology.id().to_string(),
+            map_poles: cfg.map_poles.id().to_string(),
+            k: cfg.k,
+        }
+    }
+
+    fn validate(&self) -> bool {
+        self.players_per_game >= 2
+            && self.width >= 8
+            && self.height >= 8
+            && self.max_turns > 0
+            && Rules::embedded().speeds.contains_key(&self.speed)
+            && MapScript::from_id(&self.map_script).is_some()
+            && MapTopology::from_id(&self.map_topology).is_some()
+            && MapPoles::from_id(&self.map_poles).is_some()
+            && self.k.is_finite()
+            && self.k >= 0.0
+    }
+
+    pub fn label(&self) -> String {
+        format!(
+            "{}p {}x{}, {} turns, {} city-states, {}, {}/{}/{}, K={}",
+            self.players_per_game,
+            self.width,
+            self.height,
+            self.max_turns,
+            self.num_city_states,
+            self.speed,
+            self.map_script,
+            self.map_topology,
+            self.map_poles,
+            self.k,
+        )
+    }
+}
+
 impl Rating {
     fn new(base: f64) -> Self {
         Self {
@@ -205,16 +273,36 @@ impl Rating {
 #[derive(Clone, Debug, PartialEq)]
 pub struct EloPool {
     pub base_rating: f64,
+    /// Profile-independent player summaries. These accumulate across every
+    /// leader/civilization draw and provide the stable longitudinal baseline;
+    /// exact combination rows below remain independently queryable.
+    pub overall: BTreeMap<String, Rating>,
     /// The rating identity is deliberately structured, not a display string:
     /// player, leader, and civilization can be queried independently.
     pub ratings: BTreeMap<RatingKey, Rating>,
+    /// Once present, every future tournament written to this ledger must match
+    /// it exactly. `None` exists only for in-memory/manual pools and migrated
+    /// schema-1/2 files until their first schema-3 tournament run.
+    pub profile: Option<TournamentProfile>,
 }
 
 #[derive(Serialize, Deserialize)]
 struct StoredPool {
     schema_version: u32,
     base_rating: f64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    profile: Option<TournamentProfile>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    players: Vec<StoredPlayerRating>,
     ratings: Vec<StoredRating>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct StoredPlayerRating {
+    player: String,
+    elo: f64,
+    games: u32,
+    wins: u32,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -259,6 +347,18 @@ impl RatedPlayer {
     }
 }
 
+fn head_to_head_score(a: &RatedPlayer, b: &RatedPlayer) -> f64 {
+    if a.won != b.won {
+        f64::from(a.won)
+    } else if a.score > b.score {
+        1.0
+    } else if a.score < b.score {
+        0.0
+    } else {
+        0.5
+    }
+}
+
 impl EloPool {
     /// Keep the historical constructor shape for library callers. Entrants no
     /// longer create rating rows up front because their leader/civilization
@@ -266,7 +366,9 @@ impl EloPool {
     pub fn new(_names: &[String], base: f64) -> EloPool {
         EloPool {
             base_rating: base,
+            overall: BTreeMap::new(),
             ratings: BTreeMap::new(),
+            profile: None,
         }
     }
 
@@ -283,7 +385,7 @@ impl EloPool {
                 format!("invalid Elo ledger {}: {error}", path.display()),
             )
         })?;
-        if !matches!(stored.schema_version, 1 | ELO_SCHEMA_VERSION) {
+        if !matches!(stored.schema_version, 1 | 2 | ELO_SCHEMA_VERSION) {
             return Err(io::Error::new(
                 ErrorKind::InvalidData,
                 format!(
@@ -298,6 +400,16 @@ impl EloPool {
             return Err(io::Error::new(
                 ErrorKind::InvalidData,
                 format!("non-finite base rating in {}", path.display()),
+            ));
+        }
+        if stored
+            .profile
+            .as_ref()
+            .is_some_and(|profile| !profile.validate())
+        {
+            return Err(io::Error::new(
+                ErrorKind::InvalidData,
+                format!("invalid tournament profile in {}", path.display()),
             ));
         }
         let mut ratings: BTreeMap<RatingKey, Rating> = BTreeMap::new();
@@ -334,7 +446,7 @@ impl EloPool {
                 wins: row.wins,
             };
             if let Some(existing) = ratings.get_mut(&key) {
-                if stored.schema_version == ELO_SCHEMA_VERSION {
+                if stored.schema_version >= 2 {
                     return Err(io::Error::new(
                         ErrorKind::InvalidData,
                         format!(
@@ -355,9 +467,59 @@ impl EloPool {
                 ratings.insert(key, rating);
             }
         }
+        let mut overall = BTreeMap::new();
+        for row in stored.players {
+            if row.player.trim().is_empty()
+                || !row.elo.is_finite()
+                || row.wins > row.games
+                || overall.contains_key(&row.player)
+            {
+                return Err(io::Error::new(
+                    ErrorKind::InvalidData,
+                    format!("invalid overall player rating in {}", path.display()),
+                ));
+            }
+            overall.insert(
+                row.player,
+                Rating {
+                    elo: row.elo,
+                    games: row.games,
+                    wins: row.wins,
+                },
+            );
+        }
+        // Schema 1/2 had only combination rows. Preserve their scale and give
+        // each player the games-weighted centre of those rows as a migration
+        // prior. The old files cannot recover how many distinct worlds those
+        // seats came from, so the global game/win counters start at zero;
+        // exact combination rows retain all of the legacy counts.
+        let mut accumulated = BTreeMap::<String, (f64, u32)>::new();
+        for (key, rating) in &ratings {
+            let entry = accumulated.entry(key.player.clone()).or_default();
+            entry.0 += rating.elo * f64::from(rating.games);
+            entry.1 = entry.1.saturating_add(rating.games);
+        }
+        for (player, (weighted, games)) in accumulated {
+            if !overall.contains_key(&player) {
+                overall.insert(
+                    player,
+                    Rating {
+                        elo: if games > 0 {
+                            weighted / f64::from(games)
+                        } else {
+                            stored.base_rating
+                        },
+                        games: 0,
+                        wins: 0,
+                    },
+                );
+            }
+        }
         Ok(EloPool {
             base_rating: stored.base_rating,
+            overall,
             ratings,
+            profile: stored.profile,
         })
     }
 
@@ -366,6 +528,35 @@ impl EloPool {
             Ok(pool) => Ok(pool),
             Err(error) if error.kind() == ErrorKind::NotFound => Ok(Self::with_base(base)),
             Err(error) => Err(error),
+        }
+    }
+
+    /// Bind a persistent ledger to one reproducible tournament contract.
+    ///
+    /// A migrated schema-1/2 file has no profile, so its first schema-3 run
+    /// records one. Once bound, mixing evidence from another profile is an
+    /// error rather than a silent change in what one Elo point means.
+    pub fn bind_profile(&mut self, profile: TournamentProfile) -> io::Result<()> {
+        if !profile.validate() {
+            return Err(io::Error::new(
+                ErrorKind::InvalidInput,
+                "invalid tournament rating profile",
+            ));
+        }
+        match &self.profile {
+            Some(existing) if existing != &profile => Err(io::Error::new(
+                ErrorKind::InvalidInput,
+                format!(
+                    "rating profile mismatch: ledger is [{}], requested [{}]; use a different --ratings path for a different experiment",
+                    existing.label(),
+                    profile.label(),
+                ),
+            )),
+            Some(_) => Ok(()),
+            None => {
+                self.profile = Some(profile);
+                Ok(())
+            }
         }
     }
 
@@ -381,6 +572,17 @@ impl EloPool {
         let stored = StoredPool {
             schema_version: ELO_SCHEMA_VERSION,
             base_rating: self.base_rating,
+            profile: self.profile.clone(),
+            players: self
+                .overall
+                .iter()
+                .map(|(player, rating)| StoredPlayerRating {
+                    player: player.clone(),
+                    elo: rating.elo,
+                    games: rating.games,
+                    wins: rating.wins,
+                })
+                .collect(),
             ratings: self
                 .ratings
                 .iter()
@@ -430,10 +632,62 @@ impl EloPool {
             k.is_finite() && k >= 0.0,
             "Elo K must be finite and non-negative"
         );
+        let mut by_player = BTreeMap::<String, Vec<&RatedPlayer>>::new();
         for player in players {
+            by_player
+                .entry(player.key.player.clone())
+                .or_default()
+                .push(player);
+            self.overall
+                .entry(player.key.player.clone())
+                .or_insert_with(|| Rating::new(self.base_rating));
+        }
+        for player in players {
+            let prior = self.overall[&player.key.player].elo;
             self.ratings
                 .entry(player.key.clone())
-                .or_insert_with(|| Rating::new(self.base_rating));
+                .or_insert_with(|| Rating::new(prior));
+        }
+
+        // One global player identity accumulates across every civilization it
+        // draws. When a tournament has fewer entrants than seats, average all
+        // cross-seat comparisons for one player pair and count that pair once;
+        // cloned seats are correlated and must not manufacture four games of
+        // rating evidence from one world.
+        let identities: Vec<String> = by_player.keys().cloned().collect();
+        if identities.len() >= 2 {
+            let scale = k / (identities.len() as f64 - 1.0);
+            let mut overall_delta = BTreeMap::<String, f64>::new();
+            for i in 0..identities.len() {
+                for j in (i + 1)..identities.len() {
+                    let a_name = &identities[i];
+                    let b_name = &identities[j];
+                    let mut actual = 0.0;
+                    let mut comparisons = 0usize;
+                    for a in &by_player[a_name] {
+                        for b in &by_player[b_name] {
+                            actual += head_to_head_score(a, b);
+                            comparisons += 1;
+                        }
+                    }
+                    actual /= comparisons.max(1) as f64;
+                    let expectation =
+                        expected(self.overall[a_name].elo, self.overall[b_name].elo);
+                    let change = scale * (actual - expectation);
+                    *overall_delta.entry(a_name.clone()).or_default() += change;
+                    *overall_delta.entry(b_name.clone()).or_default() -= change;
+                }
+            }
+            for (name, change) in overall_delta {
+                self.overall.get_mut(&name).unwrap().elo += change;
+            }
+        }
+        for (name, seats) in &by_player {
+            let rating = self.overall.get_mut(name).unwrap();
+            rating.games = rating.games.saturating_add(1);
+            rating.wins = rating
+                .wins
+                .saturating_add(u32::from(seats.iter().any(|seat| seat.won)));
         }
 
         let scale = k / (players.len() as f64 - 1.0);
@@ -448,19 +702,7 @@ impl EloPool {
                     // manufacture evidence by competing against themselves.
                     continue;
                 }
-                let actual_a = if a.won != b.won {
-                    if a.won {
-                        1.0
-                    } else {
-                        0.0
-                    }
-                } else if a.score > b.score {
-                    1.0
-                } else if a.score < b.score {
-                    0.0
-                } else {
-                    0.5
-                };
+                let actual_a = head_to_head_score(a, b);
                 let elo_a = self.ratings[&a.key].elo;
                 let elo_b = self.ratings[&b.key].elo;
                 let change = scale * (actual_a - expected(elo_a, elo_b));
@@ -1248,6 +1490,13 @@ pub fn builtin_ai(name: &str, seed: u64) -> Box<dyn Ai> {
             ai.doctrine_search = true;
             Box::new(ai)
         }
+        "strategic_joint" => {
+            let mut ai = crate::strategic::StrategicAi::with_weights(
+                crate::evolve::load_champion("evolved").unwrap_or_default(),
+            );
+            ai.joint_axis_search = true;
+            Box::new(ai)
+        }
         _ => Box::new(BasicAi::new()),
     }
 }
@@ -1432,6 +1681,7 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         // missing net therefore leaves it untrained rather than renamed,
         // which the provenance line says in those words.
         "strategic_doctrine" => (vec![genome, value(false)], "strategic_doctrine"),
+        "strategic_joint" => (vec![genome, value(false)], "strategic_joint"),
         "strategic_r20" => (vec![genome, value(false)], "strategic_r20"),
         "strategic_r10" => (vec![genome, value(false)], "strategic_r10"),
         "strategic_nodefer" => (vec![genome, value(false)], "strategic_nodefer"),
@@ -1584,6 +1834,10 @@ pub struct TourneyCfg {
     pub players_per_game: usize,
     pub width: i32,
     pub height: i32,
+    pub speed: String,
+    pub map_script: MapScript,
+    pub map_topology: MapTopology,
+    pub map_poles: MapPoles,
     pub max_turns: u32,
     pub num_city_states: usize,
     pub seed: u64,
@@ -1597,12 +1851,21 @@ pub struct TourneyCfg {
 impl Default for TourneyCfg {
     fn default() -> Self {
         let size = MapSize::for_players(4);
+        let speed = default_speed();
+        let max_turns = Rules::embedded()
+            .speeds
+            .get(&speed)
+            .map_or(500, |spec| spec.turns);
         TourneyCfg {
             games: 20,
             players_per_game: 4,
             width: size.width,
             height: size.height,
-            max_turns: 150,
+            speed,
+            map_script: MapScript::default(),
+            map_topology: MapTopology::default(),
+            map_poles: MapPoles::default(),
+            max_turns,
             num_city_states: size.default_city_states,
             seed: 0,
             k: 24.0,
@@ -1687,7 +1950,7 @@ where
     // persistence remain serialized below in deterministic game order.
     let played = crate::parallel::map(draws.len(), cfg.jobs, |game_index| {
         let (gseed, seats) = &draws[game_index];
-        let mut game = Game::new(
+        let mut options = GameOptions::new(
             cfg.players_per_game,
             cfg.width,
             cfg.height,
@@ -1695,6 +1958,11 @@ where
             cfg.max_turns,
             cfg.num_city_states,
         );
+        options.speed = cfg.speed.clone();
+        options.map_script = cfg.map_script;
+        options.map_topology = cfg.map_topology;
+        options.map_poles = cfg.map_poles;
+        let mut game = Game::new_with(options);
         let mut ais: Vec<Box<dyn Ai>> = game
             .players
             .iter()
@@ -1781,7 +2049,9 @@ pub fn run_tournament<F>(names: &[String], make: F, cfg: &TourneyCfg) -> EloPool
 where
     F: Fn(&str, u64) -> Box<dyn Ai> + Sync,
 {
-    let mut pool = EloPool::new(names, 1000.0);
+    let mut pool = EloPool::new(names, ELO_BASE_RATING);
+    pool.bind_profile(TournamentProfile::from_cfg(cfg))
+        .expect("TourneyCfg always produces a valid rating profile");
     let result: Result<(), std::convert::Infallible> =
         play_tournament(names, &make, cfg, |players| {
             pool.record_game(players, cfg.k);
@@ -1797,6 +2067,8 @@ pub fn run_tournament_into<F>(names: &[String], make: F, cfg: &TourneyCfg, pool:
 where
     F: Fn(&str, u64) -> Box<dyn Ai> + Sync,
 {
+    pool.bind_profile(TournamentProfile::from_cfg(cfg))
+        .expect("cannot mix tournament profiles in one Elo pool");
     let result: Result<(), std::convert::Infallible> =
         play_tournament(names, &make, cfg, |players| {
             pool.record_game(players, cfg.k);
@@ -1857,9 +2129,23 @@ fn acquire_ledger_lock(path: &Path) -> io::Result<LedgerLock> {
     ))
 }
 
+#[cfg(test)]
 fn update_ledger(path: &Path, update: impl FnOnce(&mut EloPool)) -> io::Result<EloPool> {
     let _lock = acquire_ledger_lock(path)?;
-    let mut pool = EloPool::load_or_new(path, 1000.0)?;
+    let mut pool = EloPool::load_or_new(path, ELO_BASE_RATING)?;
+    update(&mut pool);
+    pool.save(path)?;
+    Ok(pool)
+}
+
+fn update_profiled_ledger(
+    path: &Path,
+    profile: &TournamentProfile,
+    update: impl FnOnce(&mut EloPool),
+) -> io::Result<EloPool> {
+    let _lock = acquire_ledger_lock(path)?;
+    let mut pool = EloPool::load_or_new(path, ELO_BASE_RATING)?;
+    pool.bind_profile(profile.clone())?;
     update(&mut pool);
     pool.save(path)?;
     Ok(pool)
@@ -1877,16 +2163,57 @@ pub fn run_persistent_tournament<F>(
 where
     F: Fn(&str, u64) -> Box<dyn Ai> + Sync,
 {
+    if names.len() < cfg.players_per_game {
+        return Err(io::Error::new(
+            ErrorKind::InvalidInput,
+            format!(
+                "persistent Elo needs at least {} distinct entrants for {} seats; cloned seats change the contest, so add anchors or use an in-memory tournament",
+                cfg.players_per_game, cfg.players_per_game,
+            ),
+        ));
+    }
+    let distinct: BTreeSet<&String> = names.iter().collect();
+    if distinct.len() != names.len() {
+        return Err(io::Error::new(
+            ErrorKind::InvalidInput,
+            "persistent Elo entrant names must be unique",
+        ));
+    }
     let path = path.as_ref();
-    let mut pool = update_ledger(path, |_| {})?;
+    let profile = TournamentProfile::from_cfg(cfg);
+    let mut pool = update_profiled_ledger(path, &profile, |_| {})?;
     play_tournament(names, &make, cfg, |players| {
-        pool = update_ledger(path, |latest| latest.record_game(players, cfg.k))?;
+        pool = update_profiled_ledger(path, &profile, |latest| {
+            latest.record_game(players, cfg.k)
+        })?;
         Ok::<(), io::Error>(())
     })?;
     Ok(pool)
 }
 
 pub fn leaderboard(pool: &EloPool) -> String {
+    let mut overall: Vec<(&String, &Rating)> = pool.overall.iter().collect();
+    overall.sort_by(|(name_a, a), (name_b, b)| {
+        b.elo.total_cmp(&a.elo).then(name_a.cmp(name_b))
+    });
+    let mut out = String::new();
+    if let Some(profile) = &pool.profile {
+        out.push_str(&format!("rating profile: {}\n", profile.label()));
+    } else {
+        out.push_str("rating profile: unbound (migrated/manual pool)\n");
+    }
+    out.push_str("Overall Elo leaderboard (player across all draws):\n");
+    for (player, rating) in overall {
+        out.push_str(&format!(
+            "  {:<24} {:7.1}   games={:<4} wins={:<4} winrate={:>3.0}%\n",
+            player,
+            rating.elo,
+            rating.games,
+            rating.wins,
+            100.0 * rating.wins as f64 / rating.games.max(1) as f64,
+        ));
+    }
+    out.push_str("\nElo by player × leader × civilization:\n");
     let mut rows: Vec<(&RatingKey, &Rating)> = pool.ratings.iter().collect();
     rows.sort_by(|(key_a, a), (key_b, b)| {
         b.elo
@@ -1895,7 +2222,6 @@ pub fn leaderboard(pool: &EloPool) -> String {
             .then(key_a.leader.cmp(&key_b.leader))
             .then(key_a.civilization.cmp(&key_b.civilization))
     });
-    let mut out = String::from("Elo leaderboard (player × leader × civilization):\n");
     for (key, rating) in rows {
         out.push_str(&format!(
             "  {:<18} {:<18} {:<12} {:7.1}   games={:<4} wins={:<4} winrate={:>3.0}%\n",
@@ -1915,8 +2241,9 @@ pub fn leaderboard(pool: &EloPool) -> String {
 mod tests {
     use super::{
         builtin_ai, builtin_provenance, collapsed_entrants, expected, league_generalist,
-        scheduled_seats, seat_schedule, win_shares, EloPool, RatedPlayer, RatingKey, BUILTIN_AIS,
-        CHAMPION_FILE, ELO_SCHEMA_VERSION, EVAL_ONLY_AIS, VALUENET_FILE,
+        scheduled_seats, seat_schedule, win_shares, EloPool, RatedPlayer, RatingKey, TourneyCfg,
+        TournamentProfile, BUILTIN_AIS, CHAMPION_FILE, ELO_SCHEMA_VERSION, EVAL_ONLY_AIS,
+        ELO_BASE_RATING, DEFAULT_RATINGS_PATH, VALUENET_FILE,
     };
     use crate::rng::Rng;
     use std::collections::BTreeMap;
@@ -2107,6 +2434,15 @@ mod tests {
     }
 
     #[test]
+    fn joint_axis_challenger_constructs_a_searching_agent() {
+        let ai = builtin_ai("strategic_joint", 1);
+        assert_eq!(ai.review_census(), Some(Default::default()));
+        let provenance = builtin_provenance("strategic_joint", "unused");
+        assert_eq!(provenance.effective, "strategic_joint");
+        assert!(!provenance.degraded());
+    }
+
+    #[test]
     fn terminal_tempo_challenger_constructs_a_searching_agent() {
         let ai = builtin_ai("strategic_deep_tempo", 1);
         assert_eq!(ai.review_census(), Some(Default::default()));
@@ -2201,6 +2537,135 @@ mod tests {
         assert_eq!(rome.elo, 1012.0);
         assert_eq!(egypt.elo, 988.0);
         assert_eq!((rome.games, rome.wins), (1, 1));
+        assert_eq!(pool.overall["TechPriest"], *rome);
+        assert_eq!(pool.overall["LabRat"], *egypt);
+    }
+
+    #[test]
+    fn overall_rating_accumulates_across_civilizations() {
+        let mut pool = EloPool::with_base(1000.0);
+        pool.record_game(
+            &[
+                player("Alice", "Trajan", "Rome", 200, true),
+                player("Bob", "Cleopatra", "Egypt", 100, false),
+            ],
+            24.0,
+        );
+        pool.record_game(
+            &[
+                player("Alice", "Eleanor", "France", 100, false),
+                player("Bob", "Cleopatra", "Egypt", 200, true),
+            ],
+            24.0,
+        );
+
+        let alice = &pool.overall["Alice"];
+        assert_eq!((alice.games, alice.wins), (2, 1));
+        assert!(alice.elo < 1000.0, "the upset must erase more than the first win added");
+        assert_eq!(
+            alice.elo,
+            pool.ratings[&RatingKey::new("Alice", "Eleanor", "France")].elo
+        );
+        assert_eq!(
+            pool.ratings[&RatingKey::new("Alice", "Trajan", "Rome")].games,
+            1
+        );
+    }
+
+    #[test]
+    fn a_new_combination_inherits_its_players_global_rating() {
+        let mut pool = EloPool::with_base(1000.0);
+        pool.record_game(
+            &[
+                player("Alice", "Trajan", "Rome", 200, true),
+                player("Bob", "Cleopatra", "Egypt", 100, false),
+            ],
+            24.0,
+        );
+        pool.record_game(
+            &[
+                player("Alice", "Eleanor", "France", 200, true),
+                player("Bob", "Pericles", "Greece", 100, false),
+            ],
+            0.0,
+        );
+
+        assert_eq!(
+            pool.ratings[&RatingKey::new("Alice", "Eleanor", "France")].elo,
+            1012.0
+        );
+        assert_eq!(
+            pool.ratings[&RatingKey::new("Bob", "Pericles", "Greece")].elo,
+            988.0
+        );
+    }
+
+    #[test]
+    fn cloned_seats_count_as_one_overall_game_and_one_player_pair() {
+        let mut pool = EloPool::with_base(1000.0);
+        pool.record_game(
+            &[
+                player("Alice", "Trajan", "Rome", 400, true),
+                player("Alice", "Pericles", "Greece", 300, false),
+                player("Bob", "Cleopatra", "Egypt", 200, false),
+                player("Bob", "Qin Shi Huang", "China", 100, false),
+            ],
+            24.0,
+        );
+
+        assert_eq!(pool.overall["Alice"].elo, 1012.0);
+        assert_eq!(pool.overall["Bob"].elo, 988.0);
+        assert_eq!((pool.overall["Alice"].games, pool.overall["Alice"].wins), (1, 1));
+        assert_eq!((pool.overall["Bob"].games, pool.overall["Bob"].wins), (1, 0));
+    }
+
+    #[test]
+    fn a_ledger_rejects_a_different_tournament_profile() {
+        let cfg = TourneyCfg::default();
+        let original = TournamentProfile::from_cfg(&cfg);
+        let mut changed_cfg = TourneyCfg::default();
+        changed_cfg.width += 2;
+        let changed = TournamentProfile::from_cfg(&changed_cfg);
+        let mut pool = EloPool::with_base(1000.0);
+
+        pool.bind_profile(original.clone()).unwrap();
+        let error = pool.bind_profile(changed).unwrap_err();
+
+        assert_eq!(error.kind(), std::io::ErrorKind::InvalidInput);
+        assert!(error.to_string().contains("rating profile mismatch"));
+        assert_eq!(pool.profile, Some(original));
+    }
+
+    #[test]
+    fn persistent_ratings_reject_cloned_or_duplicate_entrants() {
+        let cfg = TourneyCfg::default();
+        let make = |_: &str, _: u64| {
+            Box::new(crate::ai::BasicAi::new()) as Box<dyn crate::ai::Ai>
+        };
+        let too_few = vec!["advanced".to_string(), "basic".to_string()];
+        let error = super::run_persistent_tournament(
+            &too_few,
+            make,
+            &cfg,
+            "target/elo-test-must-not-exist.json",
+        )
+        .unwrap_err();
+        assert!(error.to_string().contains("cloned seats change the contest"));
+
+        let duplicate = vec![
+            "advanced".to_string(),
+            "basic".to_string(),
+            "basic".to_string(),
+            "random".to_string(),
+        ];
+        let error = super::run_persistent_tournament(
+            &duplicate,
+            make,
+            &cfg,
+            "target/elo-test-must-not-exist.json",
+        )
+        .unwrap_err();
+        assert!(error.to_string().contains("must be unique"));
     }
 
     #[test]
@@ -2356,6 +2821,15 @@ mod tests {
     }
 
     #[test]
+    fn shipped_ledger_is_a_clean_standardized_baseline() {
+        let pool = EloPool::load(DEFAULT_RATINGS_PATH).unwrap();
+        assert_eq!(pool.base_rating, ELO_BASE_RATING);
+        assert_eq!(pool.profile, Some(TournamentProfile::from_cfg(&TourneyCfg::default())));
+        assert!(pool.overall.is_empty());
+        assert!(pool.ratings.is_empty());
+    }
+
+    #[test]
     fn schema_one_rows_migrate_to_player_leader_civilization() {
         let nonce = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -2373,9 +2847,12 @@ mod tests {
         let pool = EloPool::load(&path).unwrap();
         let rating = &pool.ratings[&RatingKey::new("advanced", "Trajan", "Rome")];
         assert_eq!((rating.elo, rating.games, rating.wins), (1111.0, 3, 2));
+        assert_eq!(pool.overall["advanced"].elo, rating.elo);
+        assert_eq!((pool.overall["advanced"].games, pool.overall["advanced"].wins), (0, 0));
         pool.save(&path).unwrap();
         let raw = fs::read_to_string(&path).unwrap();
-        assert!(raw.contains("\"schema_version\": 2"));
+        assert!(raw.contains(&format!("\"schema_version\": {ELO_SCHEMA_VERSION}")));
+        assert!(raw.contains("\"players\""));
         assert!(!raw.contains("\"strategy\""));
         fs::remove_dir_all(dir).unwrap();
     }

@@ -307,19 +307,30 @@ metadata.
 ## Elo tournaments
 
 ```bash
-civvis tournament --ais advanced,basic --games 40 --players 4
+civvis tournament --ais advanced,advanced_v1,basic,random --games 40 --players 4
 ```
 
 The CLI checkpoints every completed game to the tracked
-`data/elo_ratings.json` ledger (override it with `--ratings path`). Ratings are
-keyed by **player, leader, and civilization**. A player can be a human account
-or a named AI strategy; the tournament entrant name is the AI player's stable
-identity. Internal plan changes no longer split that player's evidence. Leader
-and civilization are both keys because the relationship is not one-to-one:
-Eleanor/England and Eleanor/France are separate ratings for the same player.
-Each game updates only the exact combinations that participated. The ledger
-also retains games and wins, so callers can distinguish evidence from an
-unmeasured pairing. Writes are atomic and briefly locked per game, allowing
+`data/elo_ratings.json` ledger (override it with `--ratings path`). Its primary
+rating is the **player** — a human account or named AI strategy — accumulated
+across every leader and civilization it draws. Separate
+`player × leader × civilization` rows remain as matchup diagnostics. A newly
+seen combination inherits that player's current Elo instead of silently
+starting the established player over at the base rating.
+
+Schema 3 binds a ledger to the complete rating profile: table size, dimensions,
+turn limit, city-state count, speed, map script/shape/poles, and K. A later run
+with any different field is rejected with a request to use another `--ratings`
+path. The shipped ledger is a clean 1500-centred baseline bound to the CLI's
+stock 4-player Standard game (60×38, 500 turns, six city-states, Pangaea,
+flat/poles, K=24). This prevents a short smoke test or another map size from
+quietly changing what its Elo scale measures.
+
+The ledger retains games and wins at both levels. If fewer entrants than seats
+would cause an AI to occupy several seats, a persistent run refuses: controlling
+twice as much of the map changes the contest even if the arithmetic deduplicates
+the comparisons. In-memory/manual pools still defensively count a cloned player
+once per world. Writes are atomic and briefly locked per game, allowing
 concurrent workers to share the file without replacing one another's updates.
 
 Entrants use a seeded round-robin seat schedule instead of independent random
@@ -339,7 +350,10 @@ use civvis::elo::{
     builtin_ai, leaderboard, run_persistent_tournament, TourneyCfg,
     DEFAULT_RATINGS_PATH,
 };
-let names = vec!["basic".to_string(), "mybot".to_string()];
+let names = ["mybot", "advanced_v1", "basic", "random"]
+    .into_iter()
+    .map(str::to_string)
+    .collect::<Vec<_>>();
 let pool = run_persistent_tournament(&names, |name, seed| match name {
     "mybot" => Box::new(MyBot),
     other => builtin_ai(other, seed),
@@ -348,7 +362,7 @@ println!("{}", leaderboard(&pool));
 # Ok::<(), std::io::Error>(())
 ```
 
-Multiplayer games score as pairwise Elo results by final placement
+Multiplayer games score as simultaneous pairwise Elo results by final placement
 (K/(n-1) scaling). `run_tournament` remains available for an in-memory,
 non-persisted evaluation. Game generation and seating are deterministic given
 `cfg.seed`; persistent ratings also depend on the ledger's prior state.

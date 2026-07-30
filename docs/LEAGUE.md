@@ -265,7 +265,9 @@ across hundreds of rounds even after every non-anchor founder has been replaced.
 - `calibration.csv` — per-round and cumulative pairwise prediction count,
   Brier score, and log loss.
 - `matches.csv` — every game: round, seed, end turn, victory type,
-  placements.
+  placements. New rows encode each seat as `player@leader@civ@rank`, so batch
+  score ties and the full leader/civilization identity survive replay; the
+  rating tool remains compatible with both older row shapes.
 - `work/round-N/manifest.json` — immutable roster, game speed, settings,
   mirrored schedule, and job IDs for one rating period.
 - `work/round-N/results/*.json` — immutable, validated match evidence. These

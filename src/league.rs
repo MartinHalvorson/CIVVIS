@@ -2014,7 +2014,10 @@ pub fn record_game(
     };
     let names: Vec<String> = placements
         .iter()
-        .map(|(name, civ)| format!("{name}@{}@{civ}", default_leader(civ)))
+        .enumerate()
+        .map(|(rank, (name, civ))| {
+            format!("{name}@{}@{civ}@{rank}", default_leader(civ))
+        })
         .collect();
     let round = league.round;
     let calibration_before = league.calibration.clone();
@@ -2569,8 +2572,12 @@ fn try_finalize_round(
             let names: Vec<String> = outcome
                 .placements
                 .iter()
+                .zip(&outcome.leaders)
                 .zip(&outcome.civs)
-                .map(|(name, civ)| format!("{name}@{civ}"))
+                .zip(&outcome.ranks)
+                .map(|(((name, leader), civ), rank)| {
+                    format!("{name}@{leader}@{civ}@{rank}")
+                })
                 .collect();
             format!(
                 "{round},{},{},{},{}",
@@ -3260,7 +3267,7 @@ mod tests {
         );
         let matches = fs::read_to_string(Path::new(dir).join("matches.csv")).unwrap();
         assert_eq!(matches.lines().count(), 3, "header plus one row per game");
-        assert!(matches.contains("a@Trajan@Rome|b@Cleopatra@Egypt"));
+        assert!(matches.contains("a@Trajan@Rome@0|b@Cleopatra@Egypt@1"));
         let calibration = fs::read_to_string(Path::new(dir).join("calibration.csv")).unwrap();
         assert_eq!(calibration.lines().count(), 3);
         assert!(calibration.starts_with("round,comparisons,brier,log_loss,"));

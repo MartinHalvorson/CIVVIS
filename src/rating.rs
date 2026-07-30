@@ -106,6 +106,11 @@ impl Default for Belief {
 pub struct Seat {
     /// Whoever played the seat: a league strategy name, or a human account.
     pub player: String,
+    /// The leader the seat drew. Empty means an older history did not record
+    /// it. The current model conditions on civilization, but preserving this
+    /// identity keeps the history usable by richer models without reparsing.
+    #[serde(default)]
+    pub leader: String,
     /// The civilization the seat drew. Empty means "no context recorded",
     /// which the model treats as a single shared no-op context.
     pub civ: String,
@@ -242,14 +247,19 @@ pub struct Record {
     pub wins: u32,
 }
 
-/// Evidence one game contributes, before it is applied: a mean shift and a
-/// precision gain per entity. Both are additive, which is what lets every
-/// stage of a game be scored against the same prior and then committed at
-/// once.
+/// Evidence one game contributes, before it is applied: a natural-parameter
+/// score and precision for each seat's latent `player + civ` strength. Both
+/// are additive, so every placement stage is first collapsed into one
+/// effective observation of the seat and only then split between its player
+/// and context.
+///
+/// Keeping the score in natural form matters. Summing the posterior *mean
+/// shifts* from several observations would apply the prior variance once per
+/// observation and over-move the rating. The final posterior variance must be
+/// known before the accumulated score is converted into one mean shift.
 #[derive(Default)]
 struct Evidence {
-    players: BTreeMap<String, (f64, f64)>,
-    civs: BTreeMap<String, (f64, f64)>,
+    seats: BTreeMap<(String, String), (f64, f64)>,
 }
 
 /// The rating system: player skill plus a shared per-civilization edge.
@@ -458,53 +468,67 @@ impl ContextualRating {
         }
     }
 
-    /// Exact Kalman gain for an observation of the sum `player + civ`: each
-    /// side moves in proportion to its own variance, so a settled civ edge
-    /// stays put while an unsettled player absorbs the surprise. Recorded as
-    /// a mean shift and a precision gain, both additive across stages.
+    /// Accumulate one Gaussian likelihood over the seat's combined strength.
+    /// Stages share the same player and civ latent variables, so their
+    /// likelihoods must be collapsed before the prior is applied. Treating
+    /// the civ uncertainty as fresh noise at every stage makes a single game
+    /// spuriously more certain about that context.
     fn accumulate(&self, seat: &Seat, innovation: f64, noise: f64, out: &mut Evidence) {
-        let pv = self.player(&seat.player).variance();
-        let cv = if seat.civ.is_empty() {
-            0.0
-        } else {
-            self.civ_edge(&seat.civ).variance()
-        };
-        let s = pv + cv + noise;
-        if s <= 0.0 || !s.is_finite() || !innovation.is_finite() {
+        if noise <= 0.0 || !noise.is_finite() || !innovation.is_finite() {
             return;
         }
-        // 1/var' - 1/var for the Kalman posterior var(1 - var/s) reduces to
-        // 1/(s - var), which stays well-conditioned as var shrinks.
-        let entry = out.players.entry(seat.player.clone()).or_default();
-        entry.0 += (pv / s) * innovation;
-        entry.1 += 1.0 / (cv + noise).max(1e-12);
-        // A zero-variance context is switched off, not merely certain: the
-        // backtest uses that to run this model without any civ term at all.
-        if !seat.civ.is_empty() && cv > 0.0 {
-            let entry = out.civs.entry(seat.civ.clone()).or_default();
-            entry.0 += (cv / s) * innovation;
-            entry.1 += 1.0 / (pv + noise).max(1e-12);
-        }
+        let entry = out
+            .seats
+            .entry((seat.player.clone(), seat.civ.clone()))
+            .or_default();
+        entry.0 += innovation / noise;
+        entry.1 += 1.0 / noise;
     }
 
     fn apply_evidence(&mut self, evidence: &Evidence) {
-        for (name, (shift, precision)) in &evidence.players {
+        let mut players = BTreeMap::<String, (f64, f64)>::new();
+        let mut civs = BTreeMap::<String, (f64, f64)>::new();
+        for ((player, civ), (seat_score, seat_precision)) in &evidence.seats {
+            if *seat_precision <= 0.0 || !seat_precision.is_finite() {
+                continue;
+            }
+            let innovation = seat_score / seat_precision;
+            let observation_noise = 1.0 / seat_precision;
+            let pv = self.player(player).variance();
+            let cv = if civ.is_empty() {
+                0.0
+            } else {
+                self.civ_edge(civ).variance()
+            };
+            let player_noise = cv + observation_noise;
+            let entry = players.entry(player.clone()).or_default();
+            entry.0 += innovation / player_noise;
+            entry.1 += 1.0 / player_noise;
+            // A zero-variance context is switched off, not merely certain:
+            // the backtest uses that to run without any civ term at all.
+            if !civ.is_empty() && cv > 0.0 {
+                let civ_noise = pv + observation_noise;
+                let entry = civs.entry(civ.clone()).or_default();
+                entry.0 += innovation / civ_noise;
+                entry.1 += 1.0 / civ_noise;
+            }
+        }
+        for (name, (score, precision)) in &players {
             let prior = self.player(name);
             let entry = self.players.entry(name.clone()).or_insert(prior);
-            entry.mu += shift;
-            entry.sigma = (1.0 / (1.0 / prior.variance() + precision)).max(0.0).sqrt();
+            let variance = (1.0 / (1.0 / prior.variance() + precision)).max(0.0);
+            entry.mu += variance * score;
+            entry.sigma = variance.sqrt();
             self.clamp_player(name);
         }
         let max = rd_to_logit(self.cfg.civ_prior_rd);
         let min = rd_to_logit(self.cfg.min_rd).min(max);
-        for (name, (shift, precision)) in &evidence.civs {
+        for (name, (score, precision)) in &civs {
             let prior = self.civ_edge(name);
             let entry = self.civs.entry(name.clone()).or_insert(prior);
-            entry.mu += shift;
-            entry.sigma = (1.0 / (1.0 / prior.variance() + precision))
-                .max(0.0)
-                .sqrt()
-                .clamp(min, max);
+            let variance = (1.0 / (1.0 / prior.variance() + precision)).max(0.0);
+            entry.mu += variance * score;
+            entry.sigma = variance.sqrt().clamp(min, max);
         }
     }
 
@@ -1218,9 +1242,14 @@ pub fn backtest_report(rows: &[BacktestRow], seats: f64) -> String {
 // Reading a league's history
 // ---------------------------------------------------------------------------
 
-/// Parse a league `matches.csv`. The placement column is
-/// `name@Civ|name@Civ|...` in finishing order; anything after a second `@`
-/// (a leader, say) is kept with the civ so richer histories still load.
+/// Parse a league `matches.csv` across all historical placement encodings.
+///
+/// - v1 batch: `player@civ` (rank is the finishing-order position)
+/// - v1 live: `player@leader@civ` (rank is the position)
+/// - v2: `player@leader@civ@rank` (ties are preserved explicitly)
+///
+/// Splitting from the right also lets a v2 player identity itself contain
+/// `@`, as an email-style human account commonly does.
 pub fn parse_matches_csv(text: &str) -> Vec<MatchRecord> {
     let mut out = Vec::new();
     for line in text.lines().skip(1) {
@@ -1236,14 +1265,7 @@ pub fn parse_matches_csv(text: &str) -> Vec<MatchRecord> {
             .split('|')
             .enumerate()
             .filter(|(_, s)| !s.trim().is_empty())
-            .map(|(rank, entry)| {
-                let (player, civ) = entry.split_once('@').unwrap_or((entry, ""));
-                Seat {
-                    player: player.trim().to_string(),
-                    civ: civ.trim().to_string(),
-                    rank: rank as u32,
-                }
-            })
+            .map(|(rank, entry)| parse_match_seat(entry, rank as u32))
             .collect();
         if seats.len() < 2 {
             continue;
@@ -1256,6 +1278,50 @@ pub fn parse_matches_csv(text: &str) -> Vec<MatchRecord> {
         });
     }
     out
+}
+
+fn parse_match_seat(entry: &str, fallback_rank: u32) -> Seat {
+    let reversed: Vec<&str> = entry.trim().rsplitn(4, '@').collect();
+    let clean = |field: &str| field.trim().to_string();
+    if reversed.len() == 4 {
+        if let Ok(rank) = reversed[0].trim().parse::<u32>() {
+            return Seat {
+                player: clean(reversed[3]),
+                leader: clean(reversed[2]),
+                civ: clean(reversed[1]),
+                rank,
+            };
+        }
+        // A legacy live player containing `@`: the other three rightmost
+        // fields are still unambiguously leader and civilization.
+        return Seat {
+            player: format!("{}@{}", reversed[3].trim(), reversed[2].trim()),
+            leader: clean(reversed[1]),
+            civ: clean(reversed[0]),
+            rank: fallback_rank,
+        };
+    }
+    match reversed.as_slice() {
+        [civ, leader, player] => Seat {
+            player: clean(player),
+            leader: clean(leader),
+            civ: clean(civ),
+            rank: fallback_rank,
+        },
+        [civ, player] => Seat {
+            player: clean(player),
+            leader: String::new(),
+            civ: clean(civ),
+            rank: fallback_rank,
+        },
+        [player] => Seat {
+            player: clean(player),
+            leader: String::new(),
+            civ: String::new(),
+            rank: fallback_rank,
+        },
+        _ => unreachable!("rsplitn always yields at least one field"),
+    }
 }
 
 /// Load the match history of a league directory.
@@ -1303,6 +1369,7 @@ mod tests {
     fn seat(player: &str, civ: &str, rank: u32) -> Seat {
         Seat {
             player: player.into(),
+            leader: String::new(),
             civ: civ.into(),
             rank,
         }
@@ -1329,6 +1396,88 @@ mod tests {
         let weak = Belief::from_elo(1500.0, 0.0);
         let odds = (strong.mu - weak.mu).exp();
         assert!((odds - 10.0).abs() < 1e-6, "400 points should be 10:1");
+    }
+
+    #[test]
+    fn batched_gaussian_evidence_matches_the_closed_form_posterior() {
+        let mut rating = ContextualRating::default();
+        let observation = seat("a", "", 0);
+        let prior = rating.player("a");
+        let innovation = 0.8;
+        let noise = 1.3;
+        let observations = 3.0;
+        let mut evidence = Evidence::default();
+        for _ in 0..observations as usize {
+            rating.accumulate(&observation, innovation, noise, &mut evidence);
+        }
+        rating.apply_evidence(&evidence);
+
+        let expected_variance =
+            1.0 / (1.0 / prior.variance() + observations / noise);
+        let expected_mu = prior.mu + expected_variance * observations * innovation / noise;
+        let actual = rating.player("a");
+        assert!(
+            (actual.mu - expected_mu).abs() < 1e-12,
+            "batched mean {} did not match closed form {expected_mu}",
+            actual.mu
+        );
+        assert!(
+            (actual.variance() - expected_variance).abs() < 1e-12,
+            "batched variance {} did not match closed form {expected_variance}",
+            actual.variance()
+        );
+    }
+
+    #[test]
+    fn repeated_context_evidence_is_collapsed_before_the_kalman_split() {
+        let mut rating = ContextualRating::default();
+        let observation = seat("a", "Rome", 0);
+        let player_prior = rating.player("a");
+        let civ_prior = rating.civ_edge("Rome");
+        let innovation = 0.8;
+        let noise = 1.3;
+        let observations = 3.0;
+        let mut evidence = Evidence::default();
+        for _ in 0..observations as usize {
+            rating.accumulate(&observation, innovation, noise, &mut evidence);
+        }
+        rating.apply_evidence(&evidence);
+
+        let effective_noise = noise / observations;
+        let total = player_prior.variance() + civ_prior.variance() + effective_noise;
+        let expected_player_mu = player_prior.mu + player_prior.variance() / total * innovation;
+        let expected_civ_mu = civ_prior.mu + civ_prior.variance() / total * innovation;
+        let expected_player_variance =
+            player_prior.variance() - player_prior.variance().powi(2) / total;
+        let expected_civ_variance =
+            civ_prior.variance() - civ_prior.variance().powi(2) / total;
+        let player = rating.player("a");
+        let civ = rating.civ_edge("Rome");
+        assert!((player.mu - expected_player_mu).abs() < 1e-12);
+        assert!((civ.mu - expected_civ_mu).abs() < 1e-12);
+        assert!((player.variance() - expected_player_variance).abs() < 1e-12);
+        assert!((civ.variance() - expected_civ_variance).abs() < 1e-12);
+    }
+
+    #[test]
+    fn repeated_evidence_has_diminishing_not_linear_mean_movement() {
+        let observation = seat("a", "", 0);
+        let update = |count: usize| {
+            let mut rating = ContextualRating::default();
+            let mut evidence = Evidence::default();
+            for _ in 0..count {
+                rating.accumulate(&observation, 1.0, 1.0, &mut evidence);
+            }
+            rating.apply_evidence(&evidence);
+            rating.player("a").mu
+        };
+        let once = update(1);
+        let twice = update(2);
+        assert!(twice > once, "a second agreeing observation must still add evidence");
+        assert!(
+            twice < 2.0 * once,
+            "a second observation cannot apply the prior gain twice: {once} -> {twice}"
+        );
     }
 
     #[test]
@@ -1615,9 +1764,28 @@ mod tests {
         assert_eq!(m.victory, "religious");
         assert_eq!(m.seats.len(), 3);
         assert_eq!(m.seats[0].player, "alpha");
+        assert_eq!(m.seats[0].leader, "");
         assert_eq!(m.seats[0].civ, "Egypt");
         assert_eq!(m.seats[0].rank, 0);
         assert_eq!(m.seats[2].rank, 2);
+    }
+
+    #[test]
+    fn parsing_live_and_v2_rows_separates_context_and_preserves_ties() {
+        let csv = "round,seed,turns,victory,placements\n\
+                   12,5,120,culture,alpha@Cleopatra@Egypt|beta@Trajan@Rome\n\
+                   13,6,130,score,user@example.com@Eleanor@France@0|beta@Trajan@Rome@0|gamma@Pericles@Greece@2\n";
+        let history = parse_matches_csv(csv);
+        assert_eq!(history.len(), 2);
+        assert_eq!(history[0].seats[0].player, "alpha");
+        assert_eq!(history[0].seats[0].leader, "Cleopatra");
+        assert_eq!(history[0].seats[0].civ, "Egypt");
+        assert_eq!(history[1].seats[0].player, "user@example.com");
+        assert_eq!(history[1].seats[0].leader, "Eleanor");
+        assert_eq!(history[1].seats[0].civ, "France");
+        assert_eq!(history[1].seats[0].rank, 0);
+        assert_eq!(history[1].seats[1].rank, 0);
+        assert_eq!(history[1].seats[2].rank, 2);
     }
 
     /// The headline claim, on synthetic data whose truth we control: with
@@ -1652,12 +1820,14 @@ mod tests {
             }
             let mut seats = vec![Seat {
                 player: format!("p{winner}"),
+                leader: String::new(),
                 civ: String::new(),
                 rank: 0,
             }];
             for (k, idx) in rest.iter().enumerate() {
                 seats.push(Seat {
                     player: format!("p{idx}"),
+                    leader: String::new(),
                     civ: String::new(),
                     rank: (k + 1) as u32,
                 });
@@ -1708,12 +1878,14 @@ mod tests {
             }
             let mut seats = vec![Seat {
                 player: format!("p{winner}"),
+                leader: String::new(),
                 civ: String::new(),
                 rank: 0,
             }];
             for (k, idx) in rest.iter().enumerate() {
                 seats.push(Seat {
                     player: format!("p{idx}"),
+                    leader: String::new(),
                     civ: String::new(),
                     rank: (k + 1) as u32,
                 });

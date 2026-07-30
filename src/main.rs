@@ -795,7 +795,14 @@ fn main() {
                 .position(|a| a == "--ais")
                 .and_then(|i| args.get(i + 1))
                 .map(|s| s.split(',').map(|x| x.trim().to_string()).collect())
-                .unwrap_or_else(|| vec!["advanced".to_string(), "basic".to_string()]);
+                .unwrap_or_else(|| {
+                    vec![
+                        "advanced".to_string(),
+                        "advanced_v1".to_string(),
+                        "basic".to_string(),
+                        "random".to_string(),
+                    ]
+                });
             for n in &names {
                 if !civvis::elo::BUILTIN_AIS.contains(&n.as_str()) {
                     eprintln!(
@@ -806,17 +813,33 @@ fn main() {
                     std::process::exit(1);
                 }
             }
+            let players = arg(&args, "--players", names.len().max(2) as i64).max(2);
+            let rules = Rules::embedded();
+            let speed = arg_text(&args, "--speed", &default_speed());
+            if !rules.speeds.contains_key(&speed) {
+                eprintln!("unknown game speed {speed:?}; choose one of {:?}", speeds(&rules));
+                std::process::exit(2);
+            }
+            let map_id = arg_text(&args, "--map", "pangaea");
+            let map_script = MapScript::from_id(&map_id).unwrap_or_else(|| {
+                eprintln!("unknown map script {map_id:?}; choose pangaea, continents, or archipelago");
+                std::process::exit(2);
+            });
             let cfg = civvis::elo::TourneyCfg {
                 games: arg(&args, "--games", 20) as u32,
-                players_per_game: arg(&args, "--players", 4) as usize,
-                width: auto_dimension(&args, "--width", arg(&args, "--players", 4), true),
-                height: auto_dimension(&args, "--height", arg(&args, "--players", 4), false),
+                players_per_game: players as usize,
+                width: auto_dimension(&args, "--width", players, true),
+                height: auto_dimension(&args, "--height", players, false),
+                speed,
+                map_script,
+                map_topology: map_topology(&args),
+                map_poles: map_poles(&args),
                 // A tournament writes the project's persistent Elo, so it has
                 // to rank on whole games; see `stock_turns`.
                 max_turns: arg(&args, "--turns", stock_turns(&args)) as u32,
-                num_city_states: auto_cs(&args, arg(&args, "--players", 4)),
+                num_city_states: auto_cs(&args, players),
                 seed: arg(&args, "--seed", 0) as u64,
-                k: arg(&args, "--k", 24) as f64,
+                k: arg_f64(&args, "--k", 24.0),
                 verbose: !args.iter().any(|a| a == "--quiet"),
                 jobs: jobs_arg(&args),
             };

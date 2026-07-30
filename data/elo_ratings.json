@@ -1,70 +1,17 @@
 {
-  "schema_version": 2,
-  "base_rating": 1000.0,
-  "ratings": [
-    {
-      "player": "basic",
-      "leader": "Qin Shi Huang",
-      "civilization": "China",
-      "elo": 1004.0,
-      "games": 1,
-      "wins": 0
-    },
-    {
-      "player": "advanced",
-      "leader": "Qin Shi Huang",
-      "civilization": "China",
-      "elo": 988.0,
-      "games": 1,
-      "wins": 0
-    },
-    {
-      "player": "basic",
-      "leader": "Cleopatra",
-      "civilization": "Egypt",
-      "elo": 996.0,
-      "games": 1,
-      "wins": 0
-    },
-    {
-      "player": "advanced",
-      "leader": "Cleopatra",
-      "civilization": "Egypt",
-      "elo": 996.0,
-      "games": 1,
-      "wins": 0
-    },
-    {
-      "player": "basic",
-      "leader": "Pericles",
-      "civilization": "Greece",
-      "elo": 1004.0,
-      "games": 1,
-      "wins": 0
-    },
-    {
-      "player": "advanced",
-      "leader": "Pericles",
-      "civilization": "Greece",
-      "elo": 988.0,
-      "games": 1,
-      "wins": 0
-    },
-    {
-      "player": "basic",
-      "leader": "Trajan",
-      "civilization": "Rome",
-      "elo": 1012.0,
-      "games": 1,
-      "wins": 1
-    },
-    {
-      "player": "advanced",
-      "leader": "Trajan",
-      "civilization": "Rome",
-      "elo": 1012.0,
-      "games": 1,
-      "wins": 1
-    }
-  ]
+  "schema_version": 3,
+  "base_rating": 1500.0,
+  "profile": {
+    "players_per_game": 4,
+    "width": 60,
+    "height": 38,
+    "max_turns": 500,
+    "num_city_states": 6,
+    "speed": "standard",
+    "map_script": "pangaea",
+    "map_topology": "flat",
+    "map_poles": "poles",
+    "k": 24.0
+  },
+  "ratings": []
 }
