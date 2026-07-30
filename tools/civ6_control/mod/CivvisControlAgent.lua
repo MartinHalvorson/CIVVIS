@@ -1398,6 +1398,88 @@ local function enemyGround(player, pid, turn)
 	return best;
 end
 
+-- ★★★★★ WHERE TO GO WHEN NO ENEMY GROUND IS KNOWN YET. `enemyGround` scans for REVEALED
+-- plots owned by a met rival, so with none revealed it returns nil — and the probe that
+-- exists to find the enemy could not start looking for them. Measured deadlock on run
+-- 082338Z at turn 91:
+--
+--     met = 1 (a major civ)   their cities_SEEN = 0
+--     explore orders after turn 25 = 195      probe orders = 0
+--     war_blocked = no_target
+--
+-- `findWarTarget` needs HasMet AND a revealed rival city. Contact happens through units
+-- and reveals none of their land, so the revealed gate binds forever, and
+-- `AUTOMATE_EXPLORE` charts terrain with no reason to walk toward anybody.
+--
+-- The frontier is the answer available from earned knowledge alone: a plot WE HAVE SEEN
+-- that still has an unseen neighbour is the edge of our map, and the farthest such plot
+-- from home is the direction the world continues in. Walking there pushes the revealed
+-- region outward instead of wandering inside it.
+--
+-- ⚠ Uses only what the seat has earned — every candidate is a plot we have revealed, and
+-- an unrevealed NEIGHBOUR is knowledge of our own ignorance, not of the map.
+local frontierMemo = { turn = -1, pos = nil };
+
+local function frontierGround(player, pid, turn)
+	local every = cfg.EnemyScanEvery or 12;
+	if frontierMemo.turn >= 0 and (turn - frontierMemo.turn) < every then
+		return frontierMemo.pos;
+	end
+	frontierMemo.turn = turn;
+	frontierMemo.pos = nil;
+
+	local home = try(function() return player:GetCities():GetCapitalCity(); end);
+	local hx = home and try(function() return home:GetX(); end, 0) or 0;
+	local hy = home and try(function() return home:GetY(); end, 0) or 0;
+	local width, height = 0, 0;
+	pcall(function() width, height = Map.GetGridSize(); end);
+	if width <= 0 or height <= 0 then return nil; end
+
+	-- ⚠ ONE ENGINE PASS, THEN PURE LUA. Asking the engine about each plot AND its eight
+	-- neighbours is nine times the work of `enemyGround`'s scan — about twenty thousand
+	-- guarded calls on a 60x38 map — and a table scan that runs while the game waits is
+	-- exactly what has starved turns here before. So reveal-state is read once into a
+	-- table and the edge test is then table lookups.
+	local seen = {};
+	for y = 0, height - 1 do
+		for x = 0, width - 1 do
+			if plotRevealed(pid, x, y) then seen[y * width + x] = true; end
+		end
+	end
+
+	local best, bestDist;
+	for y = 0, height - 1 do
+		for x = 0, width - 1 do
+			if seen[y * width + x] then
+				-- An edge plot: seen, but with at least one unseen neighbour.
+				local edge = false;
+				for dx = -1, 1 do
+					for dy = -1, 1 do
+						if not edge and not (dx == 0 and dy == 0) then
+							local nx, ny = x + dx, y + dy;
+							if nx >= 0 and nx < width and ny >= 0 and ny < height
+									and not seen[ny * width + nx] then
+								edge = true;
+							end
+						end
+					end
+				end
+				if edge then
+					-- FARTHEST, not nearest: the near frontier is already being
+					-- charted by the explorers, and the point is to reach ground a
+					-- rival might own.
+					local d = plotDistance(hx, hy, x, y);
+					if bestDist == nil or d > bestDist then
+						best, bestDist = { x = x, y = y }, d;
+					end
+				end
+			end
+		end
+	end
+	frontierMemo.pos = best;
+	return best;
+end
+
 local function orderMilitary(unit, stillExploring, player, probeTo)
 	-- A probe with somewhere to be walks there. Automated explore is for charting
 	-- empty ground; finding a rival's city means going to a rival's border.
@@ -1517,6 +1599,8 @@ local assaultReady = false;
 -- threshold was never reached — so this buys reconnaissance without spending the
 -- garrison.
 local probesOut = 0;
+-- What the last probe decision actually resolved to, for the fires-check.
+local probeDest, probeKind = nil, nil;
 local warDeclared = {};
 
 -- How many units have already been aimed at the target plot this turn, and
@@ -1812,14 +1896,30 @@ local function orderFor(player, pid, unit, turn)
 		local posted = 0;
 		for _ in pairs(garrisonPost) do posted = posted + 1; end
 		local defended = posted >= cityCount(player);
+		-- ⚠ THE DESTINATION IS DECIDED BEFORE THE PROBE IS SPENT. This used to set
+		-- `probing = true` and increment `probesOut` and only THEN ask `enemyGround`
+		-- where to go — so when it returned nil (which is always, until some enemy
+		-- land is revealed) up to `ProbeUnits` units were counted as probing every
+		-- turn while actually just exploring. The counter read as though
+		-- reconnaissance were happening; the only honest signal was that `probe`
+		-- never appeared in the action histogram.
 		local probing = false;
+		local probeTo = nil;
 		if not early and defended and warTarget == nil
 				and probesOut < (cfg.ProbeUnits or 2) then
-			probing = true;
-			probesOut = probesOut + 1;
+			-- Known enemy ground first; the frontier only when nothing is known.
+			probeTo = enemyGround(player, pid, turn);
+			probeKind = probeTo ~= nil and "enemy" or nil;
+			if probeTo == nil then
+				probeTo = frontierGround(player, pid, turn);
+				probeKind = probeTo ~= nil and "frontier" or "none";
+			end
+			probeDest = probeTo and (probeTo.x .. ":" .. probeTo.y) or nil;
+			if probeTo ~= nil then
+				probing = true;
+				probesOut = probesOut + 1;
+			end
 		end
-		local probeTo = nil;
-		if probing then probeTo = enemyGround(player, pid, turn); end
 		return orderMilitary(unit, early or probing, player, probeTo);
 	end
 	return nil;
@@ -3304,6 +3404,13 @@ local function playTurn(player, pid, turn)
 		-- already hid the worst bug this project has had. `war_target_player` is
 		-- beside it because 'cannot declare on 62' (Free Cities) and 'cannot declare
 		-- on 1' (a major civ) are different problems with the same symptom.
+		-- ⚠ Both halves of the probe, because a `probesOut` counter above zero was
+		-- exactly the lie that hid this: `probe_dest` says a destination was found
+		-- and `probe_kind` says whether it came from known enemy land or from the
+		-- frontier fallback. The action histogram showing `probe` is the real proof.
+		probes_out = probesOut,
+		probe_dest = probeDest,
+		probe_kind = probeKind,
 		war_blocked = warBlock,
 		war_target_player = warTarget and warTarget.player or nil,
 		flipping = loyaltyWatch.flipping,
