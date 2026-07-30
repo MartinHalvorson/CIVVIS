@@ -1571,22 +1571,49 @@ local function findWarTarget(player, pid)
 	return best;
 end
 
+-- ★★★★ NAME THE REASON WAR DID NOT HAPPEN. This function had SIX silent `return nil`
+-- paths, and a silent gate has already cost this project its single most expensive bug:
+-- `plot:IsRevealed()` could not answer in a gameplay context, so `findWarTarget` never
+-- succeeded and war was impossible by construction for the whole history of the project
+-- — invisible because nothing recorded WHY.
+--
+-- ⚠ Live symptom this is aimed at: run 081203Z reached turn 90 with `army = 14` against a
+-- gate of 12 and `target = city`, and STILL never declared. Both documented gates were
+-- open, so the block is one of the others and no telemetry distinguished them. The call
+-- itself is correct — PARAM_PLAYER_ONE/TWO and RequestPlayerOperation match the shipped
+-- `DeclareWarPopup.lua` line for line.
+--
+-- ⚠ A LIKELY ANSWER THIS WILL CONFIRM OR KILL: runs report `tgt = city` while `met = 0`.
+-- `findWarTarget` wants a revealed rival city, and a CITY-STATE or FREE CITY can be
+-- revealed without meeting any major civ — so the target may be a minor we cannot declare
+-- on, or one whose capture does nothing for domination. `war_blocked` will say which.
+local warBlock = nil;
+
 local function declareWar(player, pid, counts, turn)
-	if cfg.MakeWar == false then return nil; end
-	if turn < (cfg.WarFromTurn or 25) then return nil; end
-	if counts.military < (cfg.WarArmy or 4) then return nil; end
+	local function blocked(why)
+		warBlock = why;
+		return nil;
+	end
+	if cfg.MakeWar == false then return blocked("disabled"); end
+	if turn < (cfg.WarFromTurn or 25) then return blocked("too_early"); end
+	if counts.military < (cfg.WarArmy or 4) then
+		return blocked("army_" .. tostring(counts.military));
+	end
 	local target = warTarget;
-	if target == nil then return nil; end
+	if target == nil then return blocked("no_target"); end
 	local diplomacy = try(function() return player:GetDiplomacy(); end);
-	if diplomacy == nil then return nil; end
+	if diplomacy == nil then return blocked("no_diplomacy"); end
 	if try(function() return diplomacy:IsAtWarWith(target.player); end, false) then
 		warDeclared[target.player] = true;
-		return nil;
+		return blocked("already_at_war");
 	end
-	if warDeclared[target.player] then return nil; end
+	if warDeclared[target.player] then return blocked("already_declared"); end
 	if not try(function() return diplomacy:CanDeclareWarOn(target.player); end, true) then
-		return nil;
+		-- Records the player id, because "cannot declare on 62" (the Free Cities slot)
+		-- and "cannot declare on 1" (a major civ) are completely different problems.
+		return blocked("cannot_declare_on_" .. tostring(target.player));
 	end
+	warBlock = nil;
 	local params = {};
 	params[PlayerOperations.PARAM_PLAYER_ONE] = pid;
 	params[PlayerOperations.PARAM_PLAYER_TWO] = target.player;
@@ -3272,6 +3299,13 @@ local function playTurn(player, pid, turn)
 		-- Both a level and a RATE, because a city at 40 and climbing is safe while
 		-- one at 60 and dropping 8 a turn is lost in three turns.
 		sites_capped = siteCap.capped, sites_in_reach = siteCap.in_reach,
+		-- ⚠ WHY war did not happen, not merely that it did not. Six silent `return
+		-- nil` paths in `declareWar` used to be indistinguishable, and a silent gate
+		-- already hid the worst bug this project has had. `war_target_player` is
+		-- beside it because 'cannot declare on 62' (Free Cities) and 'cannot declare
+		-- on 1' (a major civ) are different problems with the same symptom.
+		war_blocked = warBlock,
+		war_target_player = warTarget and warTarget.player or nil,
 		flipping = loyaltyWatch.flipping,
 		worst_loyalty = loyaltyWatch.worst,
 		worst_loyalty_rate = loyaltyWatch.worst_rate,
