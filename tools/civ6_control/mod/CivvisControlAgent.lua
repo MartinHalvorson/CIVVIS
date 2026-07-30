@@ -510,6 +510,37 @@ local function cityCount(player)
 	return n;
 end
 
+-- ★★★★★ CITY DEFENCE, WHICH HAS READ -1 FOR THE WHOLE PROJECT.
+--
+-- `city:GetDistricts():GetDefenseStrength()` calls the method on the districts COLLECTION,
+-- which does not have it. `try` swallowed the error and handed back its -1 fallback, so
+-- every `defense` and `damage` field ever exported — ours AND every rival city — has been
+-- -1. Any reasoning about how well defended a city is has been blind.
+--
+-- The shipped UI calls `GetDefenseStrength()` on a DISTRICT object, obtained from a plot:
+-- `CityManager.GetDistrictAt(plot)` (CityBannerManager/CityPanel do this in a dozen
+-- places). Same failure family as `CanProduce`'s exclusion test and the missing
+-- PARAM_INSERT_MODE: the right name on the wrong object, failing silently.
+--
+-- ⚠ Why it matters now rather than as tidying: three gates must align for a war and they
+-- have no common window — turn >= 35 from t35, ratio <= 1.3 only until ~t45, army >= 12
+-- only after ~t70. Choosing WHICH gate to move needs to know what the target can actually
+-- resist. `WarArmy = 12` was measured against WALLED cities late in a game; an unwalled
+-- capital at t40 is a different problem, and defence strength is what distinguishes them.
+--
+-- Exported before any threshold is changed, deliberately: the loyalty work went the same
+-- way — make it visible, read the real numbers, then decide. Guessing a number and calling
+-- it a fix is what four attempts at the production ladder cost.
+local function cityDefence(x, y)
+	local plot = try(function() return Map.GetPlot(x, y); end);
+	if plot == nil then return nil, nil; end
+	local district = try(function() return CityManager.GetDistrictAt(plot); end);
+	if district == nil then return nil, nil; end
+	local strength = try(function() return district:GetDefenseStrength(); end);
+	local damage = try(function() return district:GetDefenseDamage(); end);
+	return strength, damage;
+end
+
 -- ★★★★★ Loyalty, the mechanism that has been quietly destroying the empire.
 --
 -- 22 of 39 runs past turn 60 lost at least one city, AT PEACE. A city that loses
@@ -3322,6 +3353,9 @@ local function exportState(player, pid, turn)
 		-- Once per city, not three times: this runs for every city every turn and
 		-- each call is three guarded engine reads.
 		local loyalNow, loyalRate, loyalFallsTo = cityLoyalty(city);
+		local defStrength, defDamage = cityDefence(
+			try(function() return city:GetX(); end, -1),
+			try(function() return city:GetY(); end, -1));
 		cities[#cities + 1] = {
 			id = try(function() return city:GetID(); end, -1),
 			x = try(function() return city:GetX(); end, -1),
@@ -3330,8 +3364,11 @@ local function exportState(player, pid, turn)
 			capital = try(function() return city:IsCapital(); end, false),
 			producing = queue,
 			food = try(function() return city:GetGrowth():GetFood(); end, -1),
-			defense = try(function() return city:GetDistricts():GetDefenseStrength(); end, -1),
-			damage = try(function() return city:GetDistricts():GetDefenseDamage(); end, -1),
+			-- ⚠ Was `GetDistricts():GetDefenseStrength()` — the method on the
+			-- collection, which does not exist, so this read -1 for the whole
+			-- project's history on every city on the board.
+			defense = defStrength,
+			damage = defDamage,
 			-- ⚠ THE FIELD WHOSE ABSENCE HID THE BIGGEST DEFECT IN THE PROJECT.
 			-- 45 runs of telemetry recorded cities peaking and then declining with
 			-- no cause attached, because loyalty was never exported. `falls_to` is
@@ -3381,14 +3418,20 @@ local function exportState(player, pid, turn)
 					local cy = city:GetY();
 					local seen = plotRevealed(pid, cx, cy);
 					if seen then
+						-- ⚠ THIS is the number that decides which war gate to move,
+						-- and it read -1 for the project's whole history: the
+						-- method was called on the districts COLLECTION. `WarArmy
+						-- = 12` was measured against WALLED cities late in a game;
+						-- an unwalled capital at turn 40 is a different problem and
+						-- only defence strength tells them apart.
+						local theirDef, theirDmg = cityDefence(cx, cy);
 						theirCities[#theirCities + 1] = {
 							x = cx, y = cy,
 							capital = try(function() return city:IsCapital(); end, false),
 							-- Defence is on the city banner when the city is
 							-- visible, so this is information a human has.
-							defense = try(function()
-								return city:GetDistricts():GetDefenseStrength();
-							end, -1),
+							defense = theirDef,
+							damage = theirDmg,
 						};
 					end
 				end
