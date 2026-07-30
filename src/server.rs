@@ -7261,7 +7261,9 @@ mod tests {
         // The repaint rate answers to what a frame actually costs, so the
         // expensive style degrades to a slower picture rather than a stalled one
         // on a box that is also running the game.
-        assert!(EMBEDDED_INDEX.contains("Math.max(floor, drawCost * 1.15)"));
+        assert!(EMBEDDED_INDEX.contains("const MAX_ANIMATION_PAINT_SHARE = .5"));
+        assert!(EMBEDDED_INDEX
+            .contains("Math.max(floor, drawCost / MAX_ANIMATION_PAINT_SHARE)"));
         // Three map styles, and the browser must be able to name each of them.
         // The idle repaint rate is a property of the style rather than a
         // constant now: strategic never repaints on its own, balanced ticks
