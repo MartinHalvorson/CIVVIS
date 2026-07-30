@@ -510,6 +510,33 @@ local function cityCount(player)
 	return n;
 end
 
+-- ★★★★★ Loyalty, the mechanism that has been quietly destroying the empire.
+--
+-- 22 of 39 runs past turn 60 lost at least one city, AT PEACE. A city that loses
+-- loyalty becomes a Free City -- a different player -- so it vanishes from our list
+-- and never appears in a rival's, which is precisely why 45 runs of telemetry showed
+-- cities "peak then decline" with no cause attached.
+--
+-- Accessors copied from the shipped `CityBannerManager.lua` (Expansion2), not recalled.
+-- `GetPotentialTransferPlayer()` is the game telling us outright who the city will fall
+-- to -- it drives the banner's "LOC_LOYALTY_CITY_WILL_FALL_TO_TT" warning -- so it is a
+-- free early warning rather than something to infer from the trend.
+--
+-- Returns loyalty, per-turn change, and who it will fall to (nil for nobody). All
+-- three nil when the ruleset has no loyalty at all: Rise & Fall introduced it, so a
+-- Vanilla ruleset has no `GetCulturalIdentity` and must not throw.
+local function cityLoyalty(city)
+	local identity = try(function() return city:GetCulturalIdentity(); end);
+	if identity == nil then return nil, nil, nil; end
+	local loyalty = try(function() return identity:GetLoyalty(); end);
+	local perTurn = try(function() return identity:GetLoyaltyPerTurn(); end);
+	local fallsTo = try(function() return identity:GetPotentialTransferPlayer(); end);
+	-- The engine uses -1 for "nobody"; keep nil for that so callers cannot treat
+	-- player 0 (us, the local player) as "no threat" by truthiness.
+	if fallsTo ~= nil and fallsTo < 0 then fallsTo = nil; end
+	return loyalty, perTurn, fallsTo;
+end
+
 -- ------------------------------------------------------------ unit handling
 
 -- ⚠ PASS THE PARAMETERS. `CanStartOperation(unit, hash, nil, false, false)`
@@ -2271,17 +2298,53 @@ local function chooseGovernor(player, pid)
 		end
 	end
 
-	-- 2. Post anyone we hold to a city with nobody in it. A governor sitting
-	-- unassigned grants nothing at all, which is the same as not having one.
+	-- 2. Post anyone we hold to the city that is ABOUT TO REVOLT.
+	--
+	-- ★★★★★ THIS IS WHY THE EMPIRE NEVER GROWS. 22 of 39 runs past turn 60 — 56% —
+	-- LOSE at least one city, some catastrophically (7 down to 4, 6 down to 2, 4 down
+	-- to 2). It is not conquest. Run 070750Z held (20,20) and (18,25) at turn 59 with
+	-- THREE military adjacent to the second and `at_war = false` against every rival;
+	-- at turn 60 the city was simply gone, and it appears in no rival's city list. A
+	-- city cannot be captured at peace, and a city that flips becomes a FREE CITY,
+	-- which is a separate player. **It revolted.** Pop 5, five tiles from the capital,
+	-- with a rival's cities five to seven tiles away pressing on it.
+	--
+	-- That single mechanism explains the shape every run has: cities peak, then
+	-- decline. It also explains why every production fix bounced off — settling faster
+	-- into ground that revolts is a treadmill, and it is why 010409Z's seventeen
+	-- settlers produced two cities.
+	--
+	-- ⚠ Loyalty was INVISIBLE in the telemetry for 45 runs, which is exactly why this
+	-- went unnoticed. `exportState` now carries it per city.
+	--
+	-- Governors are the lever, and the shipped database says so: every Governor row
+	-- carries `IdentityPressure: 8`, so establishing one is +8 loyalty a turn, enough
+	-- to turn a -5 slide into +3. Posting was previously to "the first city with no
+	-- governor", which is iteration order — and the capital comes first and never
+	-- flips, so the title went where it was needed least.
 	local posted = nil;
 	if assignOp ~= nil and cityParam ~= nil then
 		local taken = {};
 		for _, where in pairs(governorPost) do taken[where] = true; end
-		local target = nil;
+		local target, targetRank = nil, nil;
 		eachCity(player, function(city)
-			if target ~= nil then return; end
 			local id = try(function() return city:GetID(); end, -1);
-			if id >= 0 and not taken[id] then target = id; end
+			if id < 0 or taken[id] then return; end
+			-- Rank: 0 = the game itself says this city will fall to someone,
+			-- 1 = loyalty is sliding, 2 = merely ungoverned. Lower wins, and
+			-- within "sliding" the steeper slide wins.
+			local loyalty, perTurn, fallsTo = cityLoyalty(city);
+			local rank;
+			if fallsTo ~= nil and fallsTo >= 0 then
+				rank = -1000 + (perTurn or 0);
+			elseif perTurn ~= nil and perTurn < 0 then
+				rank = perTurn;
+			else
+				rank = 1000;
+			end
+			if targetRank == nil or rank < targetRank then
+				target, targetRank = id, rank;
+			end
 		end);
 		if target ~= nil then
 			for _, wanted in ipairs(GOVERNOR_ORDER) do
@@ -2810,6 +2873,9 @@ local function exportState(player, pid, turn)
 			local q = city:GetBuildQueue();
 			return q and q:GetCurrentProductionTypeHash() or 0;
 		end, 0);
+		-- Once per city, not three times: this runs for every city every turn and
+		-- each call is three guarded engine reads.
+		local loyalNow, loyalRate, loyalFallsTo = cityLoyalty(city);
 		cities[#cities + 1] = {
 			id = try(function() return city:GetID(); end, -1),
 			x = try(function() return city:GetX(); end, -1),
@@ -2820,6 +2886,13 @@ local function exportState(player, pid, turn)
 			food = try(function() return city:GetGrowth():GetFood(); end, -1),
 			defense = try(function() return city:GetDistricts():GetDefenseStrength(); end, -1),
 			damage = try(function() return city:GetDistricts():GetDefenseDamage(); end, -1),
+			-- ⚠ THE FIELD WHOSE ABSENCE HID THE BIGGEST DEFECT IN THE PROJECT.
+			-- 45 runs of telemetry recorded cities peaking and then declining with
+			-- no cause attached, because loyalty was never exported. `falls_to` is
+			-- the game's own verdict on who the city is about to be lost to.
+			loyalty = loyalNow,
+			loyalty_per_turn = loyalRate,
+			falls_to = loyalFallsTo,
 		};
 	end);
 
@@ -3018,6 +3091,21 @@ local function playTurn(player, pid, turn)
 	-- look at first.
 	assaultReady = armyNow >= (cfg.AssaultMin or 12);
 	local worstStack, piles = stackCensus(player);
+	-- Both branches counted: `flipping` is how many cities the game says will fall,
+	-- and worst/worst_rate describe the weakest city even when none is flipping yet.
+	-- A count alone would read 0 right up to the turn a city is lost.
+	local loyaltyWatch = { flipping = 0, worst = nil, worst_rate = nil };
+	eachCity(player, function(city)
+		local loyalty, perTurn, fallsTo = cityLoyalty(city);
+		if fallsTo ~= nil then
+			loyaltyWatch.flipping = loyaltyWatch.flipping + 1;
+		end
+		if loyalty ~= nil
+				and (loyaltyWatch.worst == nil or loyalty < loyaltyWatch.worst) then
+			loyaltyWatch.worst = loyalty;
+			loyaltyWatch.worst_rate = perTurn;
+		end
+	end);
 	local rivalTop, metCount = rivalBest(player, pid);
 	local ourScore = try(function() return player:GetScore(); end, -1);
 	emit("turn", {
@@ -3038,6 +3126,16 @@ local function playTurn(player, pid, turn)
 		research = research, civic = civic,
 		builds = builds, ordered = ordered, stuck = stuck,
 		worst_stack = worstStack, piles = piles,
+		-- ⚠ Loyalty on every turn event, not only under --export-state, because the
+		-- defect it exposes cost 45 runs of not knowing: 56% of runs past turn 60
+		-- lost a city AT PEACE, to revolt, and nothing in the telemetry said so.
+		-- `flipping` counts cities the game itself says will fall; `worst_loyalty`
+		-- and `worst_loyalty_rate` are the level and slide of the weakest city.
+		-- Both a level and a RATE, because a city at 40 and climbing is safe while
+		-- one at 60 and dropping 8 a turn is lost in three turns.
+		flipping = loyaltyWatch.flipping,
+		worst_loyalty = loyaltyWatch.worst,
+		worst_loyalty_rate = loyaltyWatch.worst_rate,
 		envoys_placed = envoyTally.placed, suzerainties = envoyTally.suzerainties,
 		levies = envoyTally.levies, met_minors = envoyTally.met_minors,
 		-- ★ The ram fires-check. `siege` staying 0 while `target` is set means no
