@@ -837,6 +837,15 @@ def _play(args: argparse.Namespace) -> int:
     reason = watch.follow(tail, args.timeout, record, stop_when=finished,
                           each_poll=keep_foreground, poll_s=poll_s,
                           stall_s=args.stall_seconds)
+    # ★★★ PHOTOGRAPH A STALL BEFORE KILLING IT. Stalls are now the dominant way runs
+    # end — t87, t95, t106, t184 — and the event stream goes silent by definition, so
+    # it cannot say what is on screen. One screen (`DiplomacyDealView`) was already
+    # found and fixed this way; the rest are invisible without a picture. Every large
+    # bug in this project was found in the event stream or in a screenshot.
+    if reason.startswith("stalled"):
+        shot = run_dir / "stalled.png"
+        screenshot(shot)
+        print(f"stalled — screen photographed to {shot}", flush=True)
     events.close()
 
     outcome = state["outcome"] or {}
