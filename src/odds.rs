@@ -12,14 +12,17 @@
 //!
 //! **Now odds** are the best guess at this moment. The same prior, corrected by
 //! the position each empire has actually built and by how much of the clock is
-//! left to overturn it, and collapsed to zero for anybody already eliminated.
+//! left to overturn it, and collapsed to zero for anybody already eliminated
+//! unless a surviving permanent teammate can still win for their side.
 //! On turn one there is almost nothing to correct — every empire is a settler
 //! and an escort, and what little separates them is discounted for being early
 //! — so the two figures start out together and part company as the world
 //! diverges. That is what makes the pair readable side by side: the distance
 //! between them is everything the game has decided so far.
 //!
-//! Both are shares of one win, so they sum to one across the table. With teams
+//! Both are shares of one win, so they sum to one across the table whenever the
+//! rules leave a way to win. If every victory condition is disabled, every
+//! chance is zero instead of inventing a winner. With teams
 //! on they sum to one across the *teams*: a team victory credits every member
 //! ([`Game::winning_players`]), so each member carries the whole side's chance
 //! of being among the winners rather than a slice of it.
@@ -40,9 +43,10 @@
 //! at Emperor, 1.0% at Immortal and 0.0% at Deity, which in share terms is a
 //! deficit of roughly 0, 125, 360, 610 and 800 Elo against the seats getting
 //! the bonuses. The AI-side constants reproduce that curve to within about 40
-//! Elo a rung. The standing constants are not measured — they are stated
-//! judgements about what a lead is worth, kept in one place and named so a
-//! later experiment can move them.
+//! Elo a rung. The standing components remain stated judgements about what each
+//! kind of lead is worth, kept in one place and named. Their clock multiplier is
+//! measured against completed games at three phases, using both Brier error and
+//! winner log loss so confidence as well as ranking is checked.
 
 use crate::elo::win_shares;
 use crate::game::Game;
@@ -85,6 +89,11 @@ const LEAD_CITY_ELO: f64 = 200.0;
 const SCORE_FLOOR: f64 = 25.0;
 const MILITARY_FLOOR: f64 = 40.0;
 const CITY_FLOOR: f64 = 0.75;
+/// Fixed deficit for a seat that has gone past the opening and holds no city
+/// but still has a settler. Global lead calibration must stay soft enough for
+/// ordinary late upsets; an empire reduced to a mobile restart is a distinct
+/// collapse and should not inherit that softness.
+const NO_CITY_ELO: f64 = 100.0;
 
 /// Elo for a victory race that is finished. A race at the threshold ends the
 /// game, so the curve is steep at the top and nearly flat early: capturing one
@@ -111,7 +120,12 @@ const PRIOR_FADE: f64 = 0.5;
 /// races ride on this same weight — discounting them to nothing early would
 /// leave a real event unreported for a hundred turns.
 const LEAD_BASE: f64 = 0.15;
-const LEAD_SHARPEN: f64 = 2.85;
+// Calibrated against completed games rather than inherited from the original
+// judgement call. An end weight of 3.0 made the 75%-clock forecast worse than
+// the 50% one and assigned punishing log loss to late upsets; 1.25 was the
+// minimum-error point of the held forecast sweep while preserving the same
+// ordering signal. `LEAD_BASE + LEAD_SHARPEN` is therefore 1.25.
+const LEAD_SHARPEN: f64 = 1.10;
 /// The clock a world with no turn limit is judged against, so an endless game
 /// still ages instead of treating turn three as the last turn.
 const NOMINAL_HORIZON: f64 = 500.0;
@@ -119,6 +133,33 @@ const NOMINAL_HORIZON: f64 = 500.0;
 /// Games of evidence a civilization's edge is shrunk against. With none behind
 /// it the edge is zero; with plenty it is taken at face value.
 const CIV_EDGE_PRIOR_GAMES: f64 = 30.0;
+/// The Elo-to-Glicko scale: 400 / ln(10). Rating deviation lives on this scale
+/// when the forecast attenuates an uncertain rating difference.
+const ELO_PER_LOGIT: f64 = 173.717_792_761_797_6;
+
+/// A pregame rating and the uncertainty behind it.
+///
+/// Elo alone is not a complete forecast. A one-game 1800 and a settled 1800
+/// have the same midpoint but should not make the same promise about winning.
+/// The deviation is the familiar Glicko RD in Elo points; zero retains ordinary
+/// Elo arithmetic for callers that have no uncertainty measurement.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct PriorRating {
+    pub elo: f64,
+    pub deviation: f64,
+}
+
+impl PriorRating {
+    pub fn new(elo: f64, deviation: f64) -> PriorRating {
+        PriorRating { elo, deviation }
+    }
+}
+
+impl From<f64> for PriorRating {
+    fn from(elo: f64) -> PriorRating {
+        PriorRating::new(elo, 0.0)
+    }
+}
 
 /// Both odds for one seat, and the terms that produced them.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -141,11 +182,14 @@ pub struct SeatOdds {
 
 /// Start and now odds for every major at the table, keyed by seat.
 ///
-/// `prior_elo` supplies the rating each seat sits down with, before difficulty:
-/// the league's number where there is one, and the provisional base where there
-/// is not. City-states and barbarians are not at this table and are absent from
-/// the result.
-pub fn table(game: &Game, prior_elo: impl Fn(usize) -> f64) -> BTreeMap<usize, SeatOdds> {
+/// `prior_rating` supplies the rating and deviation each seat sits down with,
+/// before difficulty: the league's numbers where there are any, and the
+/// provisional base otherwise. A plain `f64` is accepted for callers without
+/// an RD and is treated as settled. City-states and barbarians are absent.
+pub fn table<R>(game: &Game, prior_rating: impl Fn(usize) -> R) -> BTreeMap<usize, SeatOdds>
+where
+    R: Into<PriorRating>,
+{
     let seats: Vec<usize> = game
         .players
         .iter()
@@ -158,13 +202,31 @@ pub fn table(game: &Game, prior_elo: impl Fn(usize) -> f64) -> BTreeMap<usize, S
     }
 
     // ---- the pregame prior, which no later turn may move -------------------
+    let ratings: Vec<PriorRating> = seats
+        .iter()
+        .map(|pid| prior_rating(*pid).into())
+        .collect();
+    let rated_strength = uncertainty_adjusted_elos(&ratings);
     let handicap: Vec<f64> = seats.iter().map(|pid| handicap_elo(game, *pid)).collect();
-    let prior: Vec<f64> = seats
+    let prior: Vec<f64> = ratings
         .iter()
         .zip(&handicap)
-        .map(|(pid, bonus)| prior_elo(*pid) + bonus)
+        .map(|(rating, bonus)| rating.elo + bonus)
         .collect();
-    let start = team_shares(game, &seats, &win_shares(&prior));
+    // Difficulty is a known property of the rules, not uncertainty about who
+    // sat down, so it is added after rating attenuation rather than blurred by
+    // a provisional player's RD.
+    let pregame_elo: Vec<f64> = rated_strength
+        .iter()
+        .zip(&handicap)
+        .map(|(rating, bonus)| rating + bonus)
+        .collect();
+    let any_victory = any_victory_enabled(game);
+    let start = if any_victory {
+        team_shares(game, &seats, &win_shares(&pregame_elo))
+    } else {
+        vec![0.0; seats.len()]
+    };
 
     for (index, pid) in seats.iter().enumerate() {
         odds.insert(
@@ -192,6 +254,9 @@ pub fn table(game: &Game, prior_elo: impl Fn(usize) -> f64) -> BTreeMap<usize, S
         }
         return odds;
     }
+    if !any_victory {
+        return odds;
+    }
 
     let living: Vec<usize> = seats
         .iter()
@@ -207,23 +272,32 @@ pub fn table(game: &Game, prior_elo: impl Fn(usize) -> f64) -> BTreeMap<usize, S
     let mean_prior = mean(
         &living
             .iter()
-            .map(|pid| prior[seat_index(&seats, *pid)])
+            .map(|pid| pregame_elo[seat_index(&seats, *pid)])
             .collect::<Vec<_>>(),
     );
     let live_elo: Vec<f64> = living
         .iter()
         .zip(&standing)
         .map(|(pid, position)| {
-            (1.0 - PRIOR_FADE * progress) * (prior[seat_index(&seats, *pid)] - mean_prior)
+            (1.0 - PRIOR_FADE * progress)
+                * (pregame_elo[seat_index(&seats, *pid)] - mean_prior)
                 + (LEAD_BASE + LEAD_SHARPEN * progress) * position.elo
+                - no_city_penalty(game, *pid)
         })
         .collect();
-    let now = team_shares(game, &living, &win_shares(&live_elo));
+    let individual_now = win_shares(&live_elo);
     for (index, pid) in living.iter().enumerate() {
         let seat = odds.get_mut(pid).expect("a living seat is at the table");
-        seat.now = now[index];
-        seat.standing_elo = standing[index].elo;
+        seat.standing_elo = standing[index].elo - no_city_penalty(game, *pid);
         seat.race_pct = standing[index].race_pct;
+    }
+    // A defeated teammate cannot trigger a victory, but `winning_players`
+    // still credits them when another member of the permanent side does. The
+    // estimate answers that same question — chance of being among the winners
+    // — so every member carries the side's probability while any member lives.
+    for pid in &seats {
+        odds.get_mut(pid).expect("every seat is at the table").now =
+            team_share(game, *pid, &living, &individual_now);
     }
     odds
 }
@@ -322,6 +396,14 @@ fn still_playing(game: &Game, pid: usize) -> bool {
             .any(|unit| unit.owner == pid && unit.kind == "settler")
 }
 
+fn no_city_penalty(game: &Game, pid: usize) -> f64 {
+    if game.turn > 10 && game.player_city_ids(pid).is_empty() {
+        NO_CITY_ELO
+    } else {
+        0.0
+    }
+}
+
 /// One seat's position, valued against the rest of the living field.
 struct Standing {
     elo: f64,
@@ -416,23 +498,67 @@ fn clock_progress(game: &Game) -> f64 {
     }
 }
 
+/// Whether this ruleset leaves any way for the game to produce a winner.
+/// A lobby may deliberately switch every path off; in that world a forced
+/// one-win distribution is not a forecast but a contradiction of the rules.
+fn any_victory_enabled(game: &Game) -> bool {
+    let enabled = &game.victory_conditions;
+    enabled.science
+        || enabled.culture
+        || enabled.religious
+        || enabled.diplomatic
+        || enabled.domination
+        || enabled.score
+}
+
+/// Pull uncertain rating differences toward the field mean using the symmetric
+/// Glicko forecast attenuation. The average pair at this table has twice the
+/// mean rating variance; using that quantity makes a two-seat table exactly the
+/// ordinary symmetric Glicko matchup and extends the same calibration to a
+/// multiplayer softmax.
+fn uncertainty_adjusted_elos(ratings: &[PriorRating]) -> Vec<f64> {
+    if ratings.is_empty() {
+        return Vec::new();
+    }
+    let mean_elo = ratings.iter().map(|rating| rating.elo).sum::<f64>() / ratings.len() as f64;
+    let mean_variance = ratings
+        .iter()
+        .map(|rating| {
+            let phi = rating.deviation.max(0.0) / ELO_PER_LOGIT;
+            phi * phi
+        })
+        .sum::<f64>()
+        / ratings.len() as f64;
+    let attenuation =
+        1.0 / (1.0 + 6.0 * mean_variance / (std::f64::consts::PI.powi(2))).sqrt();
+    ratings
+        .iter()
+        .map(|rating| mean_elo + attenuation * (rating.elo - mean_elo))
+        .collect()
+}
+
 /// A team wins together, so every member carries the side's whole chance of
 /// being among the winners. Seats with no team are left exactly as they are.
 fn team_shares(game: &Game, seats: &[usize], shares: &[f64]) -> Vec<f64> {
     seats
         .iter()
-        .map(|pid| {
-            let members = game.team_members(*pid);
-            if members.len() < 2 {
-                return shares[seat_index(seats, *pid)];
-            }
-            members
-                .iter()
-                .filter_map(|member| seats.iter().position(|seat| seat == member))
-                .map(|index| shares[index])
-                .sum()
-        })
+        .map(|pid| team_share(game, *pid, seats, shares))
         .collect()
+}
+
+fn team_share(game: &Game, pid: usize, seats: &[usize], shares: &[f64]) -> f64 {
+    let members = game.team_members(pid);
+    if members.len() < 2 {
+        return seats
+            .iter()
+            .position(|seat| *seat == pid)
+            .map_or(0.0, |index| shares[index]);
+    }
+    members
+        .iter()
+        .filter_map(|member| seats.iter().position(|seat| seat == member))
+        .map(|index| shares[index])
+        .sum()
 }
 
 fn seat_index(seats: &[usize], pid: usize) -> usize {
@@ -574,6 +700,45 @@ mod tests {
             "a two-seat table is the ordinary Elo question: {:?}",
             odds[&0]
         );
+    }
+
+    /// Rating deviation belongs in a forecast, not just beside it in the UI.
+    /// Two barely measured ratings may have different midpoints without
+    /// supporting the same confidence as two settled ones.
+    #[test]
+    fn rating_uncertainty_tempers_the_start_forecast() {
+        let game = even_table(2, "prince", &[]);
+        let settled = table(&game, |pid| if pid == 0 { 1700.0 } else { 1500.0 });
+        let uncertain = table(&game, |pid| {
+            PriorRating::new(if pid == 0 { 1700.0 } else { 1500.0 }, 350.0)
+        });
+        assert!(uncertain[&0].start > 0.5);
+        assert!(
+            uncertain[&0].start < settled[&0].start,
+            "uncertain {:?} should be less emphatic than settled {:?}",
+            uncertain[&0],
+            settled[&0]
+        );
+        assert!((total(&uncertain, |seat| seat.start) - 1.0).abs() < 1e-9);
+    }
+
+    /// The lobby can switch off every victory path. That world ends without a
+    /// winner, so forcing one unit of probability across its seats would claim
+    /// somebody can achieve an outcome the rules prohibit.
+    #[test]
+    fn no_enabled_victory_means_no_win_probability() {
+        let mut game = even_table(4, "prince", &[]);
+        game.victory_conditions.science = false;
+        game.victory_conditions.culture = false;
+        game.victory_conditions.religious = false;
+        game.victory_conditions.diplomatic = false;
+        game.victory_conditions.domination = false;
+        game.victory_conditions.score = false;
+        let odds = table(&game, flat);
+        for seat in odds.values() {
+            assert_eq!(seat.start, 0.0);
+            assert_eq!(seat.now, 0.0);
+        }
     }
 
     /// The start odds are a prediction, so the board may not touch them. The
@@ -760,44 +925,77 @@ mod tests {
         assert!((total(&odds, |seat| seat.start) - 2.0).abs() < 1e-9);
     }
 
-    /// Score the live figure against played games, because a probability that
-    /// is never checked is only a decoration.
+    /// A defeated teammate is still credited if the surviving member later
+    /// wins. Live odds answer that exact "among the winners" question too.
+    #[test]
+    fn a_defeated_teammate_keeps_the_surviving_sides_chance() {
+        let mut options = GameOptions::new(4, 32, 22, 91_138, 250, 0);
+        options.barbarians = false;
+        options.teams = vec![Some(0), Some(0), Some(1), Some(1)];
+        let mut game = Game::new_with(options);
+        game.players[1].alive = false;
+        let odds = table(&game, flat);
+        assert!(odds[&0].now > 0.0);
+        assert_eq!(odds[&1].now, odds[&0].now);
+        assert_eq!(odds[&2].now, odds[&3].now);
+        assert!((odds[&0].now + odds[&2].now - 1.0).abs() < 1e-9);
+    }
+
+    /// Score the live figure throughout played games, because a probability
+    /// that is never checked is only a decoration.
     ///
-    /// Twenty-four games are played to a result. At 60% of each one's clock
-    /// every living seat's now odds are recorded, and the whole set is scored
-    /// with a Brier score against what actually happened — squared error
-    /// between the probability and a 1/0 outcome, lower being better. The
-    /// baseline is the only honest one available: the uniform prior that every
-    /// seat at a four-seat table has a quarter of the win, which is also what
-    /// the start odds say about an even table. The model has to beat it, and
-    /// its favourite has to win more often than a random seat would.
+    /// The old audit took one sample at 60% of the clock and only asked it to
+    /// beat a uniform quarter. That can bless a badly calibrated model: making
+    /// the right seat a 99% favourite half the time and the wrong one the other
+    /// half still ranks better than random while publishing terrible odds. It
+    /// also says nothing about the opening or the late game. This audit samples
+    /// every surviving game at 25%, 50% and 75%, and scores both Brier error over
+    /// all seats and log loss on the eventual winner against the fixed start
+    /// forecast. Ranking and calibration therefore have to improve together.
     ///
-    /// Ignored by default: two dozen games to a result is a minute of CPU, far
-    /// too long for the ordinary suite. Run it with
-    /// `cargo test --profile ci --lib odds:: -- --ignored --nocapture`.
+    /// Ignored by default: playing the games to a result is too slow for the
+    /// ordinary suite. Run it with `cargo test --profile ci --lib
+    /// the_now_odds_beat_the_start_forecast -- --ignored --nocapture`.
     #[test]
     #[ignore = "plays 24 games to a result"]
-    fn the_now_odds_beat_a_uniform_prior_over_played_games() {
+    fn the_now_odds_beat_the_start_forecast() {
         use crate::ai::{Ai, BasicAi};
         use crate::game::Action;
 
         const GAMES: u64 = 24;
         const PLAYERS: usize = 4;
         const TURNS: u32 = 220;
-        let mut samples: Vec<(f64, bool)> = Vec::new();
-        let mut favourite_wins = 0_u32;
-        let mut decided = 0_u32;
-        for seed in 0..GAMES {
+        const PHASES: [f64; 3] = [0.25, 0.50, 0.75];
+        #[derive(Default)]
+        struct Score {
+            games: u32,
+            seats: u32,
+            now_brier: f64,
+            start_brier: f64,
+            now_log_loss: f64,
+            start_log_loss: f64,
+            favourite_wins: u32,
+        }
+        let mut scores: [Score; PHASES.len()] = Default::default();
+        let seed_offset = std::env::var("CIVVIS_ODDS_SEED_OFFSET")
+            .ok()
+            .and_then(|value| value.parse::<u64>().ok())
+            .unwrap_or(0);
+        for seed in seed_offset..seed_offset + GAMES {
             let mut options = GameOptions::new(PLAYERS, 32, 22, 90_000 + seed, TURNS, 2);
             options.difficulty = "prince".to_string();
             let mut game = Game::new_with(options);
             let mut ais = BasicAi::fleet(&game);
-            let sample_at = (TURNS as f64 * 0.6) as u32;
-            let mut sampled: Option<BTreeMap<usize, SeatOdds>> = None;
+            let mut sampled: [Option<BTreeMap<usize, SeatOdds>>; PHASES.len()] =
+                Default::default();
             game.set_fog_memory(false);
             while game.winner.is_none() && game.turn <= game.max_turns {
-                if sampled.is_none() && game.turn >= sample_at {
-                    sampled = Some(table(&game, flat));
+                for (index, phase) in PHASES.iter().enumerate() {
+                    if sampled[index].is_none()
+                        && game.turn >= (TURNS as f64 * phase).round() as u32
+                    {
+                        sampled[index] = Some(table(&game, flat));
+                    }
                 }
                 let pid = game.current;
                 ais[pid].take_turn(&mut game, pid);
@@ -805,51 +1003,70 @@ mod tests {
                     let _ = game.apply(pid, &Action::EndTurn);
                 }
             }
-            let Some(odds) = sampled else { continue };
             let winners = game.winning_players();
             if winners.is_empty() {
-                // No result inside the turn limit: there is nothing to score
-                // this sample against, so it is dropped rather than counted as
-                // everybody having lost.
                 continue;
             }
-            decided += 1;
-            for (pid, seat) in &odds {
-                samples.push((seat.now, winners.contains(pid)));
+            for (index, odds) in sampled.into_iter().enumerate() {
+                let Some(odds) = odds else { continue };
+                let score = &mut scores[index];
+                score.games += 1;
+                let favourite = odds
+                    .iter()
+                    .max_by(|a, b| a.1.now.total_cmp(&b.1.now))
+                    .map(|(pid, _)| *pid)
+                    .expect("a table has seats");
+                score.favourite_wins += u32::from(winners.contains(&favourite));
+                let mut winner_now = 0.0;
+                let mut winner_start = 0.0;
+                for (pid, seat) in &odds {
+                    let outcome = f64::from(winners.contains(pid));
+                    score.now_brier += (seat.now - outcome) * (seat.now - outcome);
+                    score.start_brier += (seat.start - outcome) * (seat.start - outcome);
+                    score.seats += 1;
+                    if outcome > 0.0 {
+                        winner_now += seat.now;
+                        winner_start += seat.start;
+                    }
+                }
+                score.now_log_loss -= winner_now.max(1e-12).ln();
+                score.start_log_loss -= winner_start.max(1e-12).ln();
             }
-            let favourite = odds
-                .iter()
-                .max_by(|a, b| a.1.now.total_cmp(&b.1.now))
-                .map(|(pid, _)| *pid)
-                .expect("a table has seats");
-            favourite_wins += u32::from(winners.contains(&favourite));
         }
-        assert!(decided >= GAMES as u32 / 2, "only {decided} games reached a result");
-        let brier = samples.iter().map(|(p, won)| {
-            let outcome = f64::from(*won);
-            (p - outcome) * (p - outcome)
-        }).sum::<f64>() / samples.len() as f64;
-        let uniform = 1.0 / PLAYERS as f64;
-        let baseline = samples.iter().map(|(_, won)| {
-            let outcome = f64::from(*won);
-            (uniform - outcome) * (uniform - outcome)
-        }).sum::<f64>() / samples.len() as f64;
-        let favourite_rate = f64::from(favourite_wins) / f64::from(decided);
-        println!(
-            "{decided} decided games, {} seat samples: Brier {brier:.4} vs uniform {baseline:.4}, \
-             favourite won {favourite_wins}/{decided} ({:.0}%)",
-            samples.len(),
-            favourite_rate * 100.0
-        );
-        assert!(
-            brier < baseline,
-            "the live odds must beat a flat quarter: {brier:.4} against {baseline:.4}"
-        );
-        assert!(
-            favourite_rate > uniform,
-            "the favourite at 60% of the clock must beat a coin drawn from the table: \
-             {favourite_wins}/{decided}"
-        );
+        for (phase, score) in PHASES.iter().zip(&scores) {
+            assert!(
+                score.games >= GAMES as u32 / 2,
+                "only {} games reached the {:.0}% sample and a result",
+                score.games,
+                phase * 100.0
+            );
+            let now_brier = score.now_brier / f64::from(score.seats);
+            let start_brier = score.start_brier / f64::from(score.seats);
+            let now_log_loss = score.now_log_loss / f64::from(score.games);
+            let start_log_loss = score.start_log_loss / f64::from(score.games);
+            let favourite_rate = f64::from(score.favourite_wins) / f64::from(score.games);
+            println!(
+                "{:.0}%: {} games / {} seats, Brier now {now_brier:.4} vs start \
+                 {start_brier:.4}, log loss now {now_log_loss:.4} vs start \
+                 {start_log_loss:.4}, favourite {}/{} ({:.0}%)",
+                phase * 100.0,
+                score.games,
+                score.seats,
+                score.favourite_wins,
+                score.games,
+                favourite_rate * 100.0,
+            );
+            assert!(
+                now_brier < start_brier,
+                "at {:.0}%, live Brier {now_brier:.4} did not beat start {start_brier:.4}",
+                phase * 100.0
+            );
+            assert!(
+                now_log_loss < start_log_loss,
+                "at {:.0}%, live log loss {now_log_loss:.4} did not beat start {start_log_loss:.4}",
+                phase * 100.0
+            );
+        }
     }
 
     /// The civilization edge is learned from the roster, weighted by the games
