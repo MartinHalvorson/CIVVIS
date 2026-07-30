@@ -155,7 +155,7 @@ fn decide(
     ai.take_turn(&mut mirror_state.game, 0);
 
     let mut orders: Vec<Order> = Vec::new();
-    let mut skipped: std::collections::BTreeMap<&'static str, usize> =
+    let mut skipped: std::collections::BTreeMap<String, usize> =
         std::collections::BTreeMap::new();
     let mut note_bits: Vec<String> = Vec::new();
 
@@ -167,7 +167,33 @@ fn decide(
         match order {
             Some(value) => orders.push(value),
             None => {
-                *skipped.entry("untranslatable").or_insert(0) += 1;
+                // Which half failed: the action had no counterpart, or it named a unit
+                // or city this bridge could not map back to Civilization VI. Those are
+                // completely different repairs.
+                let why = match action {
+                    Action::MoveTo { unit, .. }
+                    | Action::Move { unit, .. }
+                    | Action::Attack { unit, .. }
+                    | Action::Ranged { unit, .. }
+                    | Action::FoundCity { unit }
+                    | Action::Fortify { unit }
+                    | Action::Improve { unit, .. }
+                    | Action::UpgradeUnit { unit } => {
+                        if rebuilt_unit_missing(mirror_state, *unit) {
+                            "unit_not_mapped"
+                        } else {
+                            "unit_action_untranslated"
+                        }
+                    }
+                    Action::Produce { .. } => "produce_not_mapped",
+                    _ => "",
+                };
+                let why = if why.is_empty() {
+                    action_variant(action)
+                } else {
+                    why.to_string()
+                };
+                *skipped.entry(why).or_insert(0) += 1;
             }
         }
     }
@@ -273,12 +299,17 @@ fn decide(
     )
 }
 
+/// Whether this CIVVIS unit has no Civilization VI counterpart in the id map.
+fn rebuilt_unit_missing(mirror_state: &civvis::mirror::LiveMirror, uid: u32) -> bool {
+    !mirror_state.civ6_of.contains_key(&uid)
+}
+
 /// One CIVVIS action -> one Civilization VI order, or None with a counted reason.
 fn translate(
     action: &Action,
     mirror_state: &civvis::mirror::LiveMirror,
     state: &civvis::mirror::StateSnapshot,
-    skipped: &mut std::collections::BTreeMap<&'static str, usize>,
+    skipped: &mut std::collections::BTreeMap<String, usize>,
 ) -> Option<Order> {
     let civ6_of = &mirror_state.civ6_of;
     match action {
@@ -379,7 +410,7 @@ fn translate(
             )
         }
         other => {
-            *skipped.entry(action_label(other)).or_insert(0) += 1;
+            *skipped.entry(action_variant(other)).or_insert(0) += 1;
             None
         }
     }
@@ -571,16 +602,50 @@ fn main() {
 }
 
 /// A short, stable label per action kind, for the skipped tally.
+///
+/// ⚠ NAME EVERY BUCKET. A tally whose biggest entry is `other` cannot be acted on —
+/// over 81 replayed turns it read `untranslatable 849, other 466, buy 122,
+/// government 81`, and the two largest said nothing at all about what was lost.
+/// `Action::Improve` hid in `other` for the whole project and was the reason CIVVIS
+/// ordered builder after builder.
+/// The variant's own name, taken from its Debug form.
+///
+/// ⚠ A HAND-WRITTEN LIST OF LABELS GOES STALE AND LIES. The curated `action_label`
+/// below still reported `other = 932` over 81 turns — 11 a turn of something nobody
+/// could name, because the list did not cover every variant and there is no compiler
+/// error for a missing arm behind `_`. Reading the name off Debug cannot drift.
+fn action_variant(action: &Action) -> String {
+    let text = format!("{action:?}");
+    text.split(|c: char| !c.is_alphanumeric() && c != '_')
+        .next()
+        .unwrap_or("other")
+        .to_string()
+}
+
+#[allow(dead_code)]
 fn action_label(action: &Action) -> &'static str {
     match action {
-        Action::Buy { .. } | Action::BuyBuilding { .. } | Action::BuyDistrict { .. } => "buy",
+        Action::Buy { .. } => "buy_unit",
+        Action::BuyBuilding { .. } => "buy_building",
+        Action::BuyDistrict { .. } => "buy_district",
         Action::BuyPlot { .. } => "buy_plot",
         Action::Improve { .. } => "improve",
         Action::Promote { .. } => "promote",
         Action::Government { .. } => "government",
         Action::ChooseDedication { .. } => "dedication",
         Action::MakePeace { .. } => "peace",
-        Action::Produce { .. } => "produce_nonunit",
+        Action::Denounce { .. } => "denounce",
+        Action::Produce { .. } => "produce_unmapped",
+        Action::Pillage { .. } => "pillage",
+        Action::RepairImprovement { .. } => "repair",
+        Action::Upgrade { .. } => "upgrade_other",
+        Action::CombineUnits { .. } => "combine",
+        Action::LinkUnits { .. } | Action::UnlinkUnits { .. } => "link",
+        Action::ContributeDistrict { .. } | Action::ContributeProject { .. } => "contribute",
+        Action::AssignSpy { .. } | Action::SpyMission { .. } | Action::PromoteSpy { .. } => "spy",
+        Action::ProposeDeal { .. } | Action::AcceptDeal { .. } | Action::RejectDeal { .. } => "deal",
+        Action::Trade { .. } => "trade",
+        Action::CongressVote { .. } => "congress",
         _ => "other",
     }
 }
