@@ -1,4 +1,4 @@
-//! Oracle ablation: measure the headroom in one subsystem at a time.
+//! Oracle interventions: measure the headroom in one subsystem at a time.
 //!
 //! For a subsystem S, this plays the stock agent against a copy of itself
 //! that has been handed a free, cheating version of S, on mirrored maps with
@@ -15,12 +15,14 @@
 //!
 //! `--grant none` is the control and must land at parity; if it does not, the
 //! harness is reporting its own noise as headroom.
+//! `idle_reserve` is a destructive, sign-reversed ablation. It remains
+//! available explicitly but is deliberately excluded from safe `all`.
 use civvis::ai::{AdvancedAi, Ai, VictoryTarget};
 use civvis::elo::{builtin_ai, builtin_provenance, BUILTIN_AIS, EVAL_ONLY_AIS};
-use civvis::game::{default_difficulty, Action, Game, GameOptions};
+use civvis::game::{default_difficulty, Action, Game, GameOptions, VictoryConditions};
 use civvis::oracle::{Grant, Oracle};
 use civvis::rules::Rules;
-use civvis::setup::MapSize;
+use civvis::setup::{MapPoles, MapScript, MapSize, MapTopology};
 use std::collections::BTreeSet;
 
 fn number(args: &[String], key: &str, default: i64) -> i64 {
@@ -43,10 +45,74 @@ fn known_ai(name: &str) -> bool {
     BUILTIN_AIS.contains(&name) || EVAL_ONLY_AIS.contains(&name)
 }
 
-/// Parse one grant, `all`, or a comma-separated set sharing one control.
+/// World axes grant mode adds to the historical evaluator profile.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct GrantProfile {
+    map_script: MapScript,
+    map_topology: MapTopology,
+    map_poles: MapPoles,
+    randomize_civs: bool,
+    victory_conditions: VictoryConditions,
+}
+
+fn parse_grant_profile(args: &[String]) -> Result<GrantProfile, String> {
+    let map_name = text(args, "--map", MapScript::default().id());
+    let map_script =
+        MapScript::from_id(&map_name).ok_or_else(|| format!("unknown map script {map_name:?}"))?;
+    let shape_name = text(args, "--shape", MapTopology::default().id());
+    let map_topology = MapTopology::from_id(&shape_name)
+        .ok_or_else(|| format!("unknown map shape {shape_name:?}"))?;
+    let poles_name = text(args, "--poles", MapPoles::default().id());
+    let map_poles = MapPoles::from_id(&poles_name)
+        .ok_or_else(|| format!("unknown thermal distribution {poles_name:?}"))?;
+    let default_victories = VictoryConditions::NAMES.join(",");
+    let victory_names = text(args, "--victories", &default_victories);
+    let victory_conditions = VictoryConditions::parse(&victory_names).map_err(|why| {
+        format!(
+            "--victories: {why}; choose from {:?}",
+            VictoryConditions::NAMES
+        )
+    })?;
+    Ok(GrantProfile {
+        map_script,
+        map_topology,
+        map_poles,
+        randomize_civs: args.iter().any(|arg| arg == "--randomize-civs"),
+        victory_conditions,
+    })
+}
+
+/// Planet accepts a stock flat-map size request, then realizes the closest
+/// equal-area globe. Report what the engine will actually store rather than
+/// leaving `84x54 --shape planet` to look like a rectangular 84x54 game.
+fn realized_geometry(width: i32, height: i32, topology: MapTopology) -> (i32, i32, usize) {
+    if topology.is_globe() {
+        let frequency = civvis::mapgen::globe_frequency(width, height);
+        (
+            civvis::sphere::Sphere::width_for(frequency),
+            civvis::sphere::Sphere::height_for(frequency),
+            civvis::sphere::Sphere::tiles_for(frequency),
+        )
+    } else {
+        (width, height, (width * height).max(0) as usize)
+    }
+}
+
+/// The default capability screen. `IdleReserve` deliberately destroys a
+/// resource and reverses the meaning of the treatment direction, so it must
+/// be requested explicitly rather than silently joining `all`.
+fn default_grants() -> Vec<Grant> {
+    Grant::ALL
+        .into_iter()
+        .filter(|grant| *grant != Grant::IdleReserve)
+        .collect()
+}
+
+/// Parse one intervention, safe `all`, or a comma-separated set sharing one
+/// control. The destructive `idle_reserve` ablation remains available by name.
 fn parse_grants(requested: &str) -> Result<Vec<Grant>, String> {
     if requested == "all" {
-        return Ok(Grant::ALL.to_vec());
+        return Ok(default_grants());
     }
     let mut grants = Vec::new();
     for name in requested.split(',') {
@@ -78,11 +144,13 @@ fn parse_grants(requested: &str) -> Result<Vec<Grant>, String> {
 /// not a control.
 fn play(
     options: GameOptions,
+    victory_conditions: VictoryConditions,
     oracle_seat: usize,
     grant: Grant,
     ai_name: &str,
 ) -> (bool, u64, i64) {
     let mut game = Game::new_with(options);
+    game.victory_conditions = victory_conditions;
     let mut stock: Vec<Box<dyn Ai>> = game
         .players
         .iter()
@@ -160,6 +228,105 @@ struct Cell {
     seat: usize,
 }
 
+/// Collapse the two focal seats on each shared world seed into one independent
+/// map direction. A map helps when the treatment wins more of its two focal
+/// seats than control, hurts when it wins fewer, and is otherwise unchanged.
+///
+/// The cell-level McNemar statistic remains useful as a sensitive screen, but
+/// its two seats share a generated world and cannot support an independent-
+/// cell confirmation claim. This sign statistic restores the map as the
+/// inference unit without pretending the two-seat cluster has a known
+/// correlation structure.
+fn map_cluster_directions(treated: &[bool], control: &[bool]) -> (u32, u32, u32) {
+    assert_eq!(treated.len(), control.len());
+    assert_eq!(treated.len() % 2, 0);
+    let mut helped = 0;
+    let mut hurt = 0;
+    let mut unchanged = 0;
+    for (with, without) in treated.chunks_exact(2).zip(control.chunks_exact(2)) {
+        let with_wins = with.iter().filter(|won| **won).count();
+        let without_wins = without.iter().filter(|won| **won).count();
+        match with_wins.cmp(&without_wins) {
+            std::cmp::Ordering::Greater => helped += 1,
+            std::cmp::Ordering::Less => hurt += 1,
+            std::cmp::Ordering::Equal => unchanged += 1,
+        }
+    }
+    (helped, hurt, unchanged)
+}
+
+/// Interpret one matched intervention without silently reversing a destructive
+/// ablation or turning a nonsignificant result into evidence of no effect.
+fn cell_verdict(grant: Grant, helped: u32, hurt: u32, p: f64) -> &'static str {
+    let discordant = helped + hurt;
+    if grant == Grant::None {
+        return if discordant == 0 {
+            "SANITY OK — the null intervention reproduced the control exactly, so \
+the harness is deterministic and adds nothing of its own"
+        } else {
+            "BROKEN — the null intervention changed outcomes, so every number \
+here includes harness noise and none of it can be trusted"
+        };
+    }
+    if discordant < 8 {
+        return "UNDERRESOLVED — fewer than eight cells changed outcome; do not infer an effect";
+    }
+    if p >= 0.05 {
+        return "INCONCLUSIVE — this run does not resolve whether the intervention changes outcomes";
+    }
+    if grant == Grant::IdleReserve {
+        return if helped > hurt {
+            "DELETING THE RESERVE HELPS — confiscation improves outcomes, so the stock reserve is counterproductive"
+        } else {
+            "RESERVE IS VALUABLE — confiscation harms outcomes, so retained Gold protects wins"
+        };
+    }
+    if helped > hurt {
+        "HEADROOM — this capability limits the agent; work on it can pay"
+    } else {
+        "HARMFUL — free capability here loses, so the grant is mis-specified rather than the subsystem being fine"
+    }
+}
+
+fn map_verdict(grant: Grant, helped: u32, hurt: u32, p: f64) -> &'static str {
+    let discordant = helped + hurt;
+    if grant == Grant::None {
+        return if discordant == 0 {
+            "MAP SANITY OK — the null intervention reproduced every map cluster"
+        } else {
+            "MAP SANITY BROKEN — the null intervention changed at least one map cluster"
+        };
+    }
+    if p >= 0.05 {
+        return "CLUSTERED INCONCLUSIVE — independently generated maps do not resolve an effect";
+    }
+    if grant == Grant::IdleReserve {
+        return if helped > hurt {
+            "CLUSTERED RESERVE-DELETION BENEFIT — confiscation improves outcomes across maps"
+        } else {
+            "CLUSTERED RESERVE VALUE — confiscation harms outcomes across maps"
+        };
+    }
+    if helped > hurt {
+        "CLUSTERED HEADROOM — the positive direction survives map-level inference"
+    } else {
+        "CLUSTERED HARMFUL — the adverse direction survives map-level inference"
+    }
+}
+
+fn best_lane_cell_verdict(best_only: u32, adaptive_only: u32, p: f64) -> &'static str {
+    let discordant = best_only + adaptive_only;
+    if discordant < 8 {
+        "UNDERRESOLVED VICTORY-ROUTING RESULT — fewer than eight cells changed outcome"
+    } else if p >= 0.05 {
+        "INCONCLUSIVE VICTORY-ROUTING RESULT — this run does not resolve a difference between the oracle and adaptive play"
+    } else if best_only > adaptive_only {
+        "HEADROOM IN VICTORY ROUTING — choosing the lane better can pay, and this is the ceiling on it"
+    } else {
+        "COMMITMENT IS HARMFUL — adapting beats every fixed lane, so routing is not a choice worth improving"
+    }
+}
+
 fn run(grants: &[Grant], args: &[String]) {
     let pairs = number(args, "--pairs", 40).max(1) as usize;
     let players = number(args, "--players", 4).max(2) as usize;
@@ -180,6 +347,10 @@ fn run(grants: &[Grant], args: &[String]) {
         number(args, "--city-states", size.default_city_states as i64).max(0) as usize;
     let speed = text(args, "--speed", &civvis::game::default_speed());
     let ai_name = text(args, "--ai", "advanced");
+    let profile = parse_grant_profile(args).unwrap_or_else(|error| {
+        eprintln!("{error}");
+        std::process::exit(2);
+    });
     if !known_ai(&ai_name) {
         eprintln!("unknown AI {ai_name:?}; choose a builtin or evaluator-only AI name");
         std::process::exit(2);
@@ -209,12 +380,31 @@ fn run(grants: &[Grant], args: &[String]) {
         eprintln!("unknown difficulty {difficulty:?}");
         std::process::exit(2);
     }
+    let (realized_width, realized_height, realized_tiles) =
+        realized_geometry(width, height, profile.map_topology);
     println!(
-        "profile: {players}p {width}x{height}, {city_states} city-states, \
+        "profile: {players}p requested {width}x{height}, realized \
+{realized_width}x{realized_height} ({realized_tiles} tiles), {city_states} city-states, \
 {turns} {speed} turns, seed {seed}, {jobs} jobs, difficulty {difficulty}"
     );
     println!(
-        "sampling seats 0 and {}; fixed stock civilizations; Basic city-states/barbarians",
+        "world: map {}, shape {}, poles {}, civilizations {}, victories {}",
+        profile.map_script.id(),
+        profile.map_topology.id(),
+        profile.map_poles.id(),
+        if profile.randomize_civs {
+            "randomized"
+        } else {
+            "fixed stock"
+        },
+        VictoryConditions::NAMES
+            .into_iter()
+            .filter(|name| profile.victory_conditions.is_enabled(name))
+            .collect::<Vec<_>>()
+            .join(","),
+    );
+    println!(
+        "sampling seats 0 and {}; Basic city-states/barbarians",
         players - 1
     );
 
@@ -239,6 +429,10 @@ fn run(grants: &[Grant], args: &[String]) {
         );
         options.difficulty = difficulty.clone();
         options.speed = speed.clone();
+        options.map_script = profile.map_script;
+        options.map_topology = profile.map_topology;
+        options.map_poles = profile.map_poles;
+        options.randomize_civs = profile.randomize_civs;
         // Only the granted seat sits on the human side of the ladder, so the
         // handicap moves with the grant rather than with the map.
         options.human_seats = BTreeSet::from([cell.seat]);
@@ -261,6 +455,7 @@ fn run(grants: &[Grant], args: &[String]) {
         |index| {
             play(
                 options_for(cells[index]),
+                profile.victory_conditions,
                 cells[index].seat,
                 Grant::None,
                 &ai_name,
@@ -278,26 +473,24 @@ fn run(grants: &[Grant], args: &[String]) {
     );
 
     for &grant in grants {
-        println!("playing {} treatment games for {}...", cells.len(), grant.name());
+        println!(
+            "playing {} treatment games for {}...",
+            cells.len(),
+            grant.name()
+        );
         let played = civvis::parallel::map_reporting(
             cells.len(),
             jobs,
             |index| {
                 play(
                     options_for(cells[index]),
+                    profile.victory_conditions,
                     cells[index].seat,
                     grant,
                     &ai_name,
                 )
             },
-            |index, _| {
-                println!(
-                    "  {} progress {}/{}",
-                    grant.name(),
-                    index + 1,
-                    cells.len()
-                )
-            },
+            |index, _| println!("  {} progress {}/{}", grant.name(), index + 1, cells.len()),
         );
         let treated: Vec<bool> = played.iter().map(|(won, _, _)| *won).collect();
         let fired: u64 = played.iter().map(|(_, fired, _)| *fired).sum();
@@ -317,26 +510,33 @@ fn run(grants: &[Grant], args: &[String]) {
         }
         let discordant = helped + hurt;
         let p = exact_two_sided(helped, discordant);
+        let (map_helped, map_hurt, map_unchanged) = map_cluster_directions(&treated, &control);
+        let map_discordant = map_helped + map_hurt;
+        let map_p = exact_two_sided(map_helped, map_discordant);
         let n = cells.len() as f64;
 
         println!(
-            "grant {:<10} {pairs} maps x 2 seats, {players} players, {turns} {speed} turns, {ai_name}",
+            "intervention {:<10} {pairs} maps x 2 seats, {players} players, {turns} {speed} turns, {ai_name}",
             grant.name()
         );
         println!(
-            "  granted seat won    {wins}/{} = {:.1}%   (control {control_wins} = {:.1}%)",
+            "  treatment seat won  {wins}/{} = {:.1}%   (control {control_wins} = {:.1}%)",
             cells.len(),
             100.0 * wins as f64 / n,
             100.0 * control_wins as f64 / n
         );
         println!(
-            "  matched pairs       grant won where control lost: {helped}; \
+            "  matched pairs       treatment won where control lost: {helped}; \
 lost where control won: {hurt}; unchanged: {}",
             cells.len() as u32 - discordant
         );
         println!("  McNemar exact       p={p:.4} over {discordant} discordant cells");
         println!(
-            "  grant fired         {fired} times ({:.1} per game)",
+            "  map-cluster sign    treatment won more seats on {map_helped} maps, fewer on \
+{map_hurt}, tied on {map_unchanged}; p={map_p:.4} over {map_discordant} discordant maps"
+        );
+        println!(
+            "  intervention fired  {fired} times ({:.1} per game)",
             fired as f64 / n
         );
         // Only the envoy grants move this, so stay silent otherwise rather
@@ -349,31 +549,19 @@ lost where control won: {hurt}; unchanged: {}",
         }
         if grant != Grant::None && fired == 0 {
             println!(
-                "  WARNING: the grant never fired, so this measured the stock \
+                "  WARNING: the intervention never fired, so this measured the stock \
 agent under an oracle's name and says nothing about {}",
                 grant.name()
             );
         }
-        let verdict = if grant == Grant::None {
-            if discordant == 0 {
-                "SANITY OK — the null grant reproduced the control exactly, so \
-the harness is deterministic and adds nothing of its own"
-            } else {
-                "BROKEN — the null grant changed outcomes, so every number \
-here includes harness noise and none of it can be trusted"
-            }
-        } else if discordant < 8 {
-            "TOO FEW DISCORDANT CELLS to say anything — raise --pairs"
-        } else if p >= 0.05 {
-            "NO MEASURABLE HEADROOM — perfecting this subsystem is worth less \
-than this run can resolve"
-        } else if helped > hurt {
-            "HEADROOM — this subsystem limits the agent; work on it can pay"
-        } else {
-            "HARMFUL — free perfection here loses, so the grant is \
-mis-specified rather than the subsystem being fine"
-        };
-        println!("  verdict             {verdict}");
+        println!(
+            "  cell verdict        {}",
+            cell_verdict(grant, helped, hurt, p)
+        );
+        println!(
+            "  map verdict         {}",
+            map_verdict(grant, map_helped, map_hurt, map_p)
+        );
         println!();
     }
 }
@@ -477,6 +665,8 @@ fn run_best_lane(args: &[String]) {
     let mut best_only = 0u32;
     let mut adaptive_only = 0u32;
     let mut per_lane = vec![0u32; lanes.len()];
+    let mut adaptive_outcomes = Vec::with_capacity(cells.len());
+    let mut best_outcomes = Vec::with_capacity(cells.len());
     for (index, cell) in cells.iter().enumerate() {
         let _ = cell;
         let base = index * (lanes.len() + 1);
@@ -490,6 +680,8 @@ fn run_best_lane(args: &[String]) {
         }
         adaptive_wins += u32::from(adaptive);
         best_wins += u32::from(best);
+        adaptive_outcomes.push(adaptive);
+        best_outcomes.push(best);
         match (best, adaptive) {
             (true, false) => best_only += 1,
             (false, true) => adaptive_only += 1,
@@ -499,32 +691,55 @@ fn run_best_lane(args: &[String]) {
     let n = cells.len() as f64;
     let discordant = best_only + adaptive_only;
     let p = exact_two_sided(best_only, discordant);
+    let (map_best, map_adaptive, map_neutral) =
+        map_cluster_directions(&best_outcomes, &adaptive_outcomes);
+    let map_discordant = map_best + map_adaptive;
+    let map_p = exact_two_sided(map_best, map_discordant);
     println!();
-    println!("best-lane oracle   {} cells, {players} players, {turns} {speed} turns", cells.len());
-    println!("  adaptive won        {adaptive_wins}/{} = {:.1}%   (parity {:.1}%)",
-        cells.len(), 100.0 * adaptive_wins as f64 / n, 100.0 / players as f64);
-    println!("  SOME lane won       {best_wins}/{} = {:.1}%",
-        cells.len(), 100.0 * best_wins as f64 / n);
-    println!("  matched pairs       a lane won where adaptive lost: {best_only}; \
-adaptive won where no lane did: {adaptive_only}");
+    println!(
+        "best-lane oracle   {} cells, {players} players, {turns} {speed} turns",
+        cells.len()
+    );
+    println!(
+        "  adaptive won        {adaptive_wins}/{} = {:.1}%   (parity {:.1}%)",
+        cells.len(),
+        100.0 * adaptive_wins as f64 / n,
+        100.0 / players as f64
+    );
+    println!(
+        "  SOME lane won       {best_wins}/{} = {:.1}%",
+        cells.len(),
+        100.0 * best_wins as f64 / n
+    );
+    println!(
+        "  matched pairs       a lane won where adaptive lost: {best_only}; \
+adaptive won where no lane did: {adaptive_only}"
+    );
     println!("  McNemar exact       p={p:.4} over {discordant} discordant cells");
+    println!(
+        "  map-cluster sign    best-lane won more seats on {map_best} maps, adaptive on \
+{map_adaptive}, tied on {map_neutral}; p={map_p:.4} over {map_discordant} discordant maps"
+    );
     for (lane, wins) in lanes.iter().zip(&per_lane) {
-        println!("    committed {:<11} {wins}/{} = {:.1}%",
-            format!("{lane:?}"), cells.len(), 100.0 * *wins as f64 / n);
+        println!(
+            "    committed {:<11} {wins}/{} = {:.1}%",
+            format!("{lane:?}"),
+            cells.len(),
+            100.0 * *wins as f64 / n
+        );
     }
-    let verdict = if discordant < 8 {
-        "TOO FEW DISCORDANT CELLS to say anything — raise --pairs"
-    } else if p >= 0.05 {
-        "NO MEASURABLE HEADROOM IN VICTORY ROUTING — knowing the right lane \
-in advance does not win these games"
-    } else if best_only > adaptive_only {
-        "HEADROOM IN VICTORY ROUTING — choosing the lane better can pay, and \
-this is the ceiling on it"
+    println!(
+        "  cell verdict        {}",
+        best_lane_cell_verdict(best_only, adaptive_only, p)
+    );
+    let map_verdict = if map_p >= 0.05 {
+        "CLUSTERED INCONCLUSIVE — independently generated maps do not resolve routing headroom"
+    } else if map_best > map_adaptive {
+        "CLUSTERED ROUTING HEADROOM — the oracle edge survives map-level inference"
     } else {
-        "COMMITMENT IS HARMFUL — adapting beats every fixed lane, so routing \
-is not a choice worth improving"
+        "CLUSTERED COMMITMENT HARM — adaptive play survives map-level inference"
     };
-    println!("  verdict             {verdict}");
+    println!("  map verdict         {map_verdict}");
 }
 
 fn main() {
@@ -555,18 +770,28 @@ fn main() {
         }
     };
     println!(
-        "Oracle ablation. Each grant hands one seat a free, cheating version of one\n\
-         subsystem and plays it against stock agents on mirrored maps. The result is an\n\
-         UPPER BOUND on what honest work on that subsystem could be worth, never a\n\
-         playable agent. `none` is the control and must land at parity.\n"
+        "Oracle intervention study. Capability grants hand one seat a free, cheating\n\
+         subsystem and play it against stock agents on mirrored maps. Their result is an\n\
+         UPPER BOUND on honest work, never a playable agent. `idle_reserve` instead\n\
+         destroys Gold and reverses the treatment sign; it is explicit-only and excluded\n\
+         from safe `all`. `none` is the control and must land at parity.\n"
     );
     run(&grants, &args);
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{known_ai, parse_grants};
+    use super::{
+        best_lane_cell_verdict, cell_verdict, exact_two_sided, known_ai, map_cluster_directions,
+        map_verdict, parse_grant_profile, parse_grants, realized_geometry,
+    };
+    use civvis::game::VictoryConditions;
     use civvis::oracle::Grant;
+    use civvis::setup::{MapPoles, MapScript, MapTopology};
+
+    fn args(values: &[&str]) -> Vec<String> {
+        values.iter().map(|value| (*value).to_string()).collect()
+    }
 
     #[test]
     fn comma_separated_grants_share_a_control_without_duplicates() {
@@ -574,9 +799,36 @@ mod tests {
             parse_grants("treasury,ground,treasury").unwrap(),
             vec![Grant::Treasury, Grant::Ground]
         );
-        assert_eq!(parse_grants("all").unwrap(), Grant::ALL);
+        let safe_all = parse_grants("all").unwrap();
+        assert_eq!(safe_all.len(), Grant::ALL.len() - 1);
+        assert!(!safe_all.contains(&Grant::IdleReserve));
+        assert_eq!(
+            parse_grants("idle_reserve").unwrap(),
+            vec![Grant::IdleReserve]
+        );
         assert!(parse_grants("all,ground").is_err());
         assert!(parse_grants("treasury,unknown").is_err());
+    }
+
+    #[test]
+    fn verdicts_keep_destructive_ablation_polarity_and_uncertainty_explicit() {
+        let significant = exact_two_sided(8, 8);
+        assert!(cell_verdict(Grant::Expansion, 8, 0, significant).starts_with("HEADROOM"));
+        assert!(cell_verdict(Grant::IdleReserve, 8, 0, significant)
+            .starts_with("DELETING THE RESERVE HELPS"));
+        assert!(
+            cell_verdict(Grant::IdleReserve, 0, 8, significant).starts_with("RESERVE IS VALUABLE")
+        );
+        assert!(map_verdict(Grant::IdleReserve, 6, 0, 0.03125)
+            .starts_with("CLUSTERED RESERVE-DELETION BENEFIT"));
+        assert!(
+            map_verdict(Grant::IdleReserve, 0, 6, 0.03125).starts_with("CLUSTERED RESERVE VALUE")
+        );
+
+        assert!(cell_verdict(Grant::Expansion, 4, 4, 1.0).starts_with("INCONCLUSIVE"));
+        assert!(
+            best_lane_cell_verdict(4, 4, 1.0).starts_with("INCONCLUSIVE VICTORY-ROUTING RESULT")
+        );
     }
 
     #[test]
@@ -584,5 +836,66 @@ mod tests {
         assert!(known_ai("advanced"));
         assert!(known_ai("strategic_deep"));
         assert!(!known_ai("strategic_typo"));
+    }
+
+    #[test]
+    fn historical_grant_profile_is_the_default() {
+        let profile = parse_grant_profile(&[]).unwrap();
+        assert_eq!(profile.map_script, MapScript::Pangaea);
+        assert_eq!(profile.map_topology, MapTopology::Flat);
+        assert_eq!(profile.map_poles, MapPoles::Poles);
+        assert!(!profile.randomize_civs);
+        assert_eq!(profile.victory_conditions, VictoryConditions::default());
+    }
+
+    #[test]
+    fn production_profile_resolves_every_axis_and_planet_geometry() {
+        let profile = parse_grant_profile(&args(&[
+            "--map",
+            "continents",
+            "--shape",
+            "planet",
+            "--poles",
+            "randomized",
+            "--randomize-civs",
+            "--victories",
+            "science,culture,domination",
+        ]))
+        .unwrap();
+        assert_eq!(profile.map_script, MapScript::Continents);
+        assert_eq!(profile.map_topology, MapTopology::Planet);
+        assert_eq!(profile.map_poles, MapPoles::Randomized);
+        assert!(profile.randomize_civs);
+        assert!(profile.victory_conditions.science);
+        assert!(profile.victory_conditions.culture);
+        assert!(profile.victory_conditions.domination);
+        assert!(!profile.victory_conditions.religious);
+        assert!(!profile.victory_conditions.diplomatic);
+        assert!(!profile.victory_conditions.score);
+        assert_eq!(
+            realized_geometry(84, 54, profile.map_topology),
+            (105, 44, 4412)
+        );
+    }
+
+    #[test]
+    fn unknown_profile_values_are_refused() {
+        assert!(parse_grant_profile(&args(&["--map", "supercontinent"])).is_err());
+        assert!(parse_grant_profile(&args(&["--shape", "torus"])).is_err());
+        assert!(parse_grant_profile(&args(&["--poles", "temperate"])).is_err());
+        assert!(parse_grant_profile(&args(&["--victories", "economic"])).is_err());
+    }
+
+    #[test]
+    fn map_cluster_inference_collapses_both_seats_before_testing() {
+        let control = [false, false, true, true, false, true, false, false];
+        let treated = [true, true, false, false, true, false, false, false];
+        assert_eq!(map_cluster_directions(&treated, &control), (1, 1, 2));
+
+        let all_control = [false; 12];
+        let all_treated = [true; 12];
+        let (helped, hurt, unchanged) = map_cluster_directions(&all_treated, &all_control);
+        assert_eq!((helped, hurt, unchanged), (6, 0, 0));
+        assert!((exact_two_sided(helped, helped + hurt) - 0.03125).abs() < f64::EPSILON);
     }
 }
