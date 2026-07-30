@@ -476,7 +476,7 @@ end
 -- runs more than once a turn and feeds the war threshold; it must not act.
 -- Upgrading belongs in `orderFor`, which is where it now lives.
 local function countUnits(player)
-	local counts = { settler = 0, builder = 0, military = 0, scout = 0, total = 0 };
+	local counts = { settler = 0, builder = 0, military = 0, scout = 0, siege = 0, total = 0 };
 	eachUnit(player, function(unit)
 		local name = unitTypeName(unit);
 		local row = GameInfo.Units[name];
@@ -487,6 +487,10 @@ local function countUnits(player)
 			counts.builder = counts.builder + 1;
 		elseif name == "UNIT_SCOUT" then
 			counts.scout = counts.scout + 1;
+		elseif name == "UNIT_BATTERING_RAM" or name == "UNIT_SIEGE_TOWER" then
+			-- Support units: no Combat, so the military branch below never sees
+			-- them and without this they would be built without limit.
+			counts.siege = counts.siege + 1;
 		elseif row ~= nil and (row.Combat or 0) > 0 then
 			counts.military = counts.military + 1;
 		end
@@ -1342,6 +1346,26 @@ local function pressAttack(unit, turn)
 	-- can. Fortifying in place beside the target is more useful than shuffling.
 	local row = GameInfo.Units[unitTypeName(unit)];
 	local ranged = row ~= nil and (row.RangedCombat or 0) > 0;
+	-- A support unit confers its bonus by STANDING NEXT TO the city; it has no
+	-- combat strength, cannot attack and cannot capture. Aiming a battering ram at
+	-- the city plot would throw it away and, worse, consume one of the
+	-- `AssaultWidth` slots that only melee can use.
+	local support = row ~= nil
+		and (row.FormationClass == "FORMATION_CLASS_SUPPORT"
+		     or (row.Combat or 0) <= 0);
+	if support then
+		local spot = approachTile(unit);
+		if spot ~= nil then
+			local near = {};
+			near[UnitOperationTypes.PARAM_X] = spot.x;
+			near[UnitOperationTypes.PARAM_Y] = spot.y;
+			if operate(unit, OP["UNITOPERATION_MOVE_TO"], near) then
+				assault.taken[spot.key] = true;
+				return "siege_up";
+			end
+		end
+		return firstOperation(unit, { "UNITOPERATION_FORTIFY", "UNITOPERATION_ALERT" });
+	end
 	if ranged and plotDistance(try(function() return unit:GetX(); end, 0),
 			try(function() return unit:GetY(); end, 0),
 			warTarget.x, warTarget.y) <= 2 then
@@ -1395,6 +1419,19 @@ local function orderFor(player, pid, unit, turn)
 		return orderBuilder(unit);
 	elseif name == "UNIT_SCOUT" then
 		return firstOperation(unit, { "UNITOPERATION_AUTOMATE_EXPLORE" });
+	elseif name == "UNIT_BATTERING_RAM" or name == "UNIT_SIEGE_TOWER" then
+		-- ⚠ SUPPORT UNITS HAVE Combat = 0, so the military branch below never sees
+		-- them. Without this branch a battering ram would be built and then fall
+		-- through to SKIP_TURN at home for the rest of the game — production spent
+		-- on the one unit that solves the wall, and it never walks to the wall.
+		if atWar(player) then
+			local pressed = pressAttack(unit, turn);
+			if pressed then return pressed; end
+		end
+		-- No war yet: wait with the garrison rather than wander, since a support
+		-- unit alone is free experience for anything that finds it.
+		return firstOperation(unit, { "UNITOPERATION_FORTIFY", "UNITOPERATION_ALERT",
+		                              "UNITOPERATION_SKIP_TURN" });
 	elseif row ~= nil and (row.Combat or 0) > 0 then
 		-- Upgrading is cheaper than losing the unit and rebuilding it a tier
 		-- late, and an un-upgraded army is why strength read 78 against 357 in
