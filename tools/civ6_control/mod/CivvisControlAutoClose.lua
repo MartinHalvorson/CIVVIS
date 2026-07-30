@@ -280,6 +280,24 @@ local function endScreen(attempt)
 	--
 	-- So it goes here, after the generic closers and after CloseSession have each had
 	-- their attempts, and it is bounded like every other rung.
+	-- ⚠⚠ DECLINE THE REQUEST, DO NOT JUST LEAVE THE ROOM. `CHOICE_EXIT` runs
+	-- `ExitConversationMode`, which drops the VIEW while the request is still pending,
+	-- so the screen comes straight back — 22 closes and 22 reopens, measured. The
+	-- shipped handler answers with `DiplomacyManager.AddResponse(session, player,
+	-- "NEGATIVE")` under `CHOICE_NEGATIVE`, and an answered request does not return.
+	-- `CHOICE_IGNORE` is the same shape via "RESPONSE_IGNORE".
+	if (attempt or 1) <= 14 and type(OnSelectConversationDiplomacyStatement) == "function"
+			and pcall(function()
+				OnSelectConversationDiplomacyStatement("CHOICE_NEGATIVE");
+			end) then
+		return true;
+	end
+	if (attempt or 1) <= 15 and type(OnSelectConversationDiplomacyStatement) == "function"
+			and pcall(function()
+				OnSelectConversationDiplomacyStatement("CHOICE_IGNORE");
+			end) then
+		return true;
+	end
 	if (attempt or 1) <= 16 and type(OnSelectConversationDiplomacyStatement) == "function"
 			and pcall(function()
 				OnSelectConversationDiplomacyStatement("CHOICE_EXIT");
