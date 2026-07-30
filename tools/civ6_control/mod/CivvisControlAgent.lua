@@ -674,7 +674,18 @@ findSettleSite = function(player, pid, unit, turn)
 		                        try(function() return city:GetY(); end, -1) };
 	end);
 
-	local spacing = cfg.MinCitySpacing or 4;
+	-- ⚠ THREE, NOT FOUR. `CITY_MIN_RANGE` in the shipped GlobalParameters is **3**,
+	-- so a four-tile rule is stricter than Civilization VI itself and rejects
+	-- ground the game would happily accept. On a Tiny map shared with three rivals
+	-- that is most of the map: run settler-20260730T010409Z ordered SEVENTEEN
+	-- settlers and founded two cities, and the surplus simply walked.
+	--
+	-- Settling tight is right twice over. CIVVIS measured the settler walk at 16.8
+	-- turns a city and found removing it the single biggest win on its whole
+	-- expansion axis, and a city founded far from the capital is the one that
+	-- FLIPS — runs 023440Z and 030431Z both bled cities with `war = null` on every
+	-- turn, and 030431Z was eliminated at turn 130.
+	local spacing = cfg.MinCitySpacing or 3;
 	local radius = cfg.SettleSearchRadius or 7;
 	local best, bestScore;
 	for dx = -radius, radius do
