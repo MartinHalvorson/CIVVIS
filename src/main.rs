@@ -987,7 +987,44 @@ fn main() {
                         snapshot.height,
                         snapshot.turn
                     );
-                    civvis::mirror::rebuild_game(&snapshot, players as usize, 1)
+                    // ★★★★ MIRROR THE EMPIRE, NOT JUST THE GROUND. `rebuild_game`
+                    // returns terrain only, so this window read "Ancient Age TURN 1"
+                    // with an empty world while Civilization VI sat at turn 7 with a
+                    // revealed continent, two cities and an army. Side by side that is
+                    // worse than no mirror: the operator is asked to verify the two
+                    // match and shown a board that cannot match by construction.
+                    //
+                    // `rebuild_from_state` places both empires' cities, our units and
+                    // every visible rival unit, and sets the turn — the same
+                    // reconstruction `civvis-orders` decides from, so what is on screen
+                    // is what CIVVIS is actually reasoning about.
+                    match civvis::mirror::state_from_events(&events, None) {
+                        Some(state) => {
+                            let rebuilt = civvis::mirror::rebuild_from_state(
+                                &snapshot, &state, players as usize, 1, 250, 6,
+                            );
+                            println!(
+                                "  empire: {} cities, {} units, {} rival cities, \
+                                 {} rival units at turn {}",
+                                rebuilt.placed_cities,
+                                rebuilt.placed_units,
+                                rebuilt.placed_rival_cities,
+                                rebuilt.placed_rival_units,
+                                state.turn
+                            );
+                            if !rebuilt.unmapped.is_empty() {
+                                println!("  untranslatable: {}", rebuilt.unmapped.join(","));
+                            }
+                            rebuilt.game
+                        }
+                        // No `state` event means the run is not exporting one; terrain
+                        // alone is still worth showing, and saying so beats implying
+                        // the empty empire is real.
+                        None => {
+                            println!("  no `state` event: terrain only, no cities or units");
+                            civvis::mirror::rebuild_game(&snapshot, players as usize, 1)
+                        }
+                    }
                 });
             let resumed: Option<Game> = args
                 .iter()

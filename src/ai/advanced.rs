@@ -1066,6 +1066,19 @@ impl AdvancedAi {
         self.settler_targets.get(&uid).copied()
     }
 
+    /// Forget unit-keyed memory in this agent and its baseline, keeping the plan.
+    ///
+    /// See `BasicAi::forget_unit_memory` for why: the board this agent mirrors has its
+    /// unit ids reassigned every turn, so anything keyed to one describes a different
+    /// unit than it did last turn.
+    pub fn forget_unit_memory(&mut self) {
+        self.base.forget_unit_memory();
+        self.settler_targets.clear();
+        self.builder_targets.clear();
+        self.force_groups.clear();
+        self.force_groups_dirty = true;
+    }
+
     pub fn targeting(target: VictoryTarget) -> AdvancedAi {
         Self::configured(BasicAi::new(), true, Some(target))
     }

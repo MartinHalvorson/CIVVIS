@@ -161,6 +161,40 @@ def build_config(args: argparse.Namespace) -> dict:
         # Mirror the board into the log once a turn so CIVVIS can be the engine
         # that decides. Off by default: it is the largest emit in the mod.
         "ExportState": args.export_state,
+        # Ask every candidate inbound API what it holds, once a turn, and emit the
+        # answer. Paired with `probe_channel.py`, which writes a changing nonce into
+        # each sink from outside: the channel is whichever field reports the nonce
+        # back. Diagnostic only, and off by default.
+        "ProbeChannels": args.probe_channels,
+        # A SQLite file THIS process owns, offered to the mod's `DB.Query` via
+        # ATTACH. If that works it is the live inbound channel the architecture
+        # needs, and it is safer than the game's own `DebugGameplay.sqlite`, which
+        # the game rebuilds and holds locks on.
+        "OrdersDb": args.orders_db,
+        # ★ CIVVIS decides; this mod actuates. With this on, the turn publishes the
+        # board and then WAITS for orders on the SQLite channel instead of running
+        # the hand-written heuristics. `OrdersWaitTicks` is the floor: past it the
+        # built-ins run and the turn is recorded `fallback`, so a brain that is slow
+        # or absent costs decision quality rather than progress.
+        "CivvisDecides": args.civvis_decides,
+        # ⚠ Polling, not spinning. A `DB.Query` per tick pinned the game at 139% CPU
+        # and starved the log flush that carries the board out, deadlocking the loop
+        # on turn 2 of run civvis-20260730T110209Z. These are all counted in POLLS.
+        # ⚠⚠ BOTH DEFAULT OFF: answering ENDTURN_BLOCKING_GOVERNOR_APPOINTMENT
+        # segfaults the Game Core. Three runs, three maps, byte-identical faulting
+        # frames at null+0x18 on the Game Core thread. Separate flags so whichever
+        # mutation faults can be identified without re-running both — turning both
+        # on at once is what made the envoy crash un-attributable.
+        "GovernorAppoint": args.governor_appoint,
+        "GovernorAssign": args.governor_assign,
+        "OrdersPollTicks": args.orders_poll_ticks,
+        "OrdersWaitPolls": args.orders_wait_polls,
+        "OrdersFallbackPolls": args.orders_fallback_polls,
+        "OrdersMaxStale": args.orders_max_stale,
+        # How often the map crosses. 25 turns is fine for an after-the-fact mirror
+        # and far too slow for a decision loop: newly explored ground is exactly
+        # what changes where the army and the next city should go.
+        "TileExportEvery": args.tile_export_every,
         # CIVVIS's own settle ranking, produced by `civvis-advise --plan` from a
         # previous run's exported map. Baked in because the mod has no runtime
         # inbound channel: no `io`, and FireTuner answered none of seven framings
@@ -780,8 +814,15 @@ def _play(args: argparse.Namespace) -> int:
         # being read off the screen for a resize to invalidate.
         place_game(GAME_SIDE, GAME_FRACTION, GAME_VFRACTION)
 
+    # ⚠ THE POLL INTERVAL IS THE OUTBOUND LEG OF THE DECISION LOOP. With CIVVIS
+    # deciding, the mod holds its turn open until orders arrive, and orders cannot
+    # be computed until the board reaches `events.jsonl` through this tail. At the
+    # 2 s default the round trip lost the race against the mod's tick budget on 6
+    # of 10 turns of run `smoke-20260730T105241Z` — the brain had written every one
+    # of them in 0.00 s. Polling is cheap; a stalled decision loop is not.
+    poll_s = 0.25 if args.civvis_decides else 2.0
     reason = watch.follow(tail, args.timeout, record, stop_when=finished,
-                          each_poll=keep_foreground)
+                          each_poll=keep_foreground, poll_s=poll_s)
     events.close()
 
     outcome = state["outcome"] or {}
@@ -872,6 +913,26 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--max-empire-distance", type=int, default=6)
     ap.add_argument("--garrison-per-city", type=int, default=2)
     ap.add_argument("--export-state", action="store_true", default=False)
+    ap.add_argument("--probe-channels", action="store_true", default=False,
+                    help="ask every candidate inbound API what it holds, once a turn")
+    ap.add_argument("--orders-db", default=str(Path.home() / "civvis-civ6-runs" / "orders.sqlite"),
+                    help="SQLite file offered to the mod via ATTACH as the inbound channel")
+    ap.add_argument("--tile-export-every", type=int, default=25,
+                    help="turns between map exports (turn 1 always exports)")
+    ap.add_argument("--civvis-decides", action="store_true", default=False,
+                    help="CIVVIS makes every decision; the mod only actuates")
+    ap.add_argument("--governor-appoint", action="store_true", default=False,
+                    help="spend governor titles (KNOWN to segfault the Game Core)")
+    ap.add_argument("--governor-assign", action="store_true", default=False,
+                    help="post governors to cities (untested since the crash)")
+    ap.add_argument("--orders-poll-ticks", type=int, default=30,
+                    help="game ticks between SQL polls for orders")
+    ap.add_argument("--orders-wait-polls", type=int, default=40,
+                    help="polls to wait for THIS turn before accepting a stale answer")
+    ap.add_argument("--orders-fallback-polls", type=int, default=120,
+                    help="polls before giving up on CIVVIS and running the built-ins")
+    ap.add_argument("--orders-max-stale", type=int, default=4,
+                    help="how many turns behind a reusable CIVVIS answer may be")
     ap.add_argument("--settle-plan", default=None,
                     help="JSON from `civvis-advise --plan`: CIVVIS decides where "
                          "cities go. Only valid for the seed it was planned on.")

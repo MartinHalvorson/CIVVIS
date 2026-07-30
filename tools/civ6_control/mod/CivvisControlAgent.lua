@@ -26,6 +26,18 @@
 local cfg = CivvisControlConfig or {};
 local PREFIX = "CIVVISJSON ";
 
+-- ⚠ DECLARED HERE, NOT WHERE THEY ARE USED. Both are read by `answerBlocker`,
+-- which is defined hundreds of lines above the orders section that owns them. A
+-- Lua local referenced before its `local` statement resolves to a GLOBAL instead —
+-- silently nil, no error — so the residual counter would have counted nothing and
+-- the fires-check would have read clean. `check_scope.py` exists because of this
+-- exact family of bug.
+--
+-- `awaiting` is the state of this turn's decision handshake; `residualAnswers`
+-- counts the built-in passes that ran on a turn CIVVIS was credited with.
+local awaiting = { turn = -1, ticks = 0, polls = 0, done = false, source = "none" };
+local residualAnswers = {};
+
 -- ---------------------------------------------------------------- reporting
 
 local function esc(s)
@@ -73,9 +85,16 @@ local function emit(kind, payload)
 	payload.kind = kind;
 	payload.ctx = "agent";
 	payload.run = cfg.RunTag or "unset";
+	-- ⚠⚠ THE TRAILING NEWLINE IS REQUIRED, NOT COSMETIC. `Automation.Log` does not
+	-- terminate its record — measured: the log's final byte was `}`. `watch.py`
+	-- splits on newlines and holds the unterminated tail as `partial`, so the LAST
+	-- event written was never delivered. With CIVVIS deciding, the last event
+	-- written is the `state` the brain must answer, so the loop deadlocked waiting
+	-- for a line that was already on disk. Terminating it here fixes every reader
+	-- rather than relying on some later event to flush the earlier one.
 	local line = PREFIX .. encode(payload);
 	pcall(function() print(line); end);
-	pcall(function() Automation.Log(line); end);
+	pcall(function() Automation.Log(line .. "\n"); end);
 	pcall(function() UI.DataError(line); end);
 end
 
@@ -2733,6 +2752,11 @@ local GOVERNOR_ORDER = {
 local governorPost = {};
 
 local function chooseGovernor(player, pid)
+	-- ⚠⚠ OFF BY DEFAULT: THIS FUNCTION SEGFAULTS THE GAME CORE. See the
+	-- `ENDTURN_BLOCKING_GOVERNOR_APPOINTMENT` entry in `SOFT_BLOCKERS` for the
+	-- three-run, byte-identical-stack evidence. Belt-and-braces with the skip list:
+	-- a blocker route added later must not silently re-arm a known crash.
+	if not (cfg.GovernorAppoint or cfg.GovernorAssign) then return nil; end
 	-- ⚠ Enum members first. `params[nil] = x` throws "table index is nil".
 	local govParam = try(function() return PlayerOperations.PARAM_GOVERNOR_TYPE; end);
 	local cityParam = try(function() return PlayerOperations.PARAM_CITY_DEST; end);
@@ -2745,7 +2769,7 @@ local function chooseGovernor(player, pid)
 
 	-- 1. Spend a title if one is going spare.
 	local appointed = nil;
-	if try(function() return governors:CanAppoint(); end, false) then
+	if cfg.GovernorAppoint and try(function() return governors:CanAppoint(); end, false) then
 		for _, wanted in ipairs(GOVERNOR_ORDER) do
 			local row = GameInfo.Governors[wanted];
 			if row ~= nil then
@@ -2792,7 +2816,9 @@ local function chooseGovernor(player, pid)
 	-- governor", which is iteration order — and the capital comes first and never
 	-- flips, so the title went where it was needed least.
 	local posted = nil;
-	if assignOp ~= nil and cityParam ~= nil then
+	-- Gated independently of the appointment: two mutations, two flags, so whichever
+	-- one faults can be identified without re-running both.
+	if cfg.GovernorAssign and assignOp ~= nil and cityParam ~= nil then
 		local taken = {};
 		for _, where in pairs(governorPost) do taken[where] = true; end
 		local target, targetRank = nil, nil;
@@ -3230,6 +3256,32 @@ local SOFT_BLOCKERS = {
 	ENDTURN_BLOCKING_GOVERNOR_PROMOTION = true,
 	ENDTURN_BLOCKING_GOVERNOR_IDLE = true,
 	ENDTURN_BLOCKING_GOVERNOR_OPPORTUNITY = true,
+	-- ⚠⚠⚠ GOVERNOR_APPOINTMENT JOINS ITS SIBLINGS, AND THIS ONE IS MEASURED.
+	-- Answering it with `chooseGovernor` CRASHES THE GAME CORE. Three runs, three
+	-- different maps and civilizations, all with CIVVIS deciding:
+	--     civvis-…T111953Z  t38      civvis-…T112719Z  t37      civvis-…T113303Z  t37
+	-- Every one died with EXC_BAD_ACCESS at KERN_INVALID_ADDRESS 0x18 on the
+	-- **Game Core** thread, and the faulting frames are BYTE-IDENTICAL across all
+	-- three: GameCore_XP2.dll +746148, +745916, +2560108, +2565576, +2567456,
+	-- +546828. In each run the very last event written is the turn record with
+	-- `blocker: ENDTURN_BLOCKING_GOVERNOR_APPOINTMENT, answered: null` — the game
+	-- dies in the answer, before the answer can be reported.
+	--
+	-- ⚠ WHY THIS NEVER SHOWED UP BEFORE: the prompt has to be RAISED first, and it
+	-- is raised by holding a governor title. The long heuristic runs
+	-- (settler-…T101628Z reached t190) answered it ZERO times — the cheapest-tech,
+	-- cheapest-civic ladder never took the civic that grants one. CIVVIS picks
+	-- Code of Laws, Craftsmanship and Foreign Trade, so it earns a title around
+	-- turn 37 and walks straight into this. That also makes it a strong candidate
+	-- for the t44-47 cluster this project recorded as unexplained and wrongly
+	-- attributed to envoys: same thread, same null offset, different prompt.
+	--
+	-- ⚠ THIS COSTS SOMETHING REAL. A governor is +8 loyalty and 56% of runs past
+	-- t60 lose a city to revolt, so this is not a free skip — it is the lesser of
+	-- two failures, exactly as with `GIVE_INFLUENCE_TOKEN`. `GovernorAppoint` and
+	-- `GovernorAssign` re-enable the two mutations SEPARATELY. Do not turn both on
+	-- at once: that is precisely what made the envoy crash un-attributable.
+	ENDTURN_BLOCKING_GOVERNOR_APPOINTMENT = true,
 	-- ⚠⚠ GIVE_INFLUENCE_TOKEN IS BACK HERE, AND THE REASON MATTERS. Answering it
 	-- with `chooseEnvoy` CRASHES THE GAME CORE. On one fixed seed (425255), same
 	-- flags, same everything:
@@ -3259,6 +3311,18 @@ local SOFT_BLOCKERS = {
 -- diagnosable: the log says which blocker recurred, not merely that one did.
 local function answerBlocker(player, pid, blocker, turn)
 	local name = blockerName(blocker);
+	-- ⚠⚠ THE HONEST DENOMINATOR FOR "CIVVIS IS DECIDING". Even on a turn CIVVIS
+	-- answered, the game's own end-turn prompts route back into the hand-written
+	-- passes below — `chooseResearch`, `driveProduction`, `orderUnits` — because a
+	-- blocker must be answered for the turn to end. So a turn can read
+	-- `orders_source: civvis` while a heuristic picked the tech.
+	--
+	-- This counts those. `residual` is what stands between a real measurement and
+	-- the failure this project has already shipped twice: a mechanism that reads
+	-- connected whether it is driving or not.
+	if cfg.CivvisDecides and awaiting.source == "civvis" then
+		residualAnswers[name] = (residualAnswers[name] or 0) + 1;
+	end
 	-- Every answer below walks a GameInfo table, so each is budgeted. Answering
 	-- twice in a turn is the useful case -- the first attempt can be refused
 	-- while something else settles -- and answering two hundred times is how a
@@ -3436,22 +3500,104 @@ local function exportState(player, pid, turn)
 					end
 				end
 			end);
+			-- ⚠ Visible enemy units, so CIVVIS can weigh a field army rather than only
+			-- a city's walls. Gated on the plot being visible to us — NOT merely
+			-- revealed: a remembered tile does not show who is standing on it now, and
+			-- letting the mirror see through fog would make CIVVIS plan against
+			-- knowledge this seat has not earned.
+			-- ⚠ THE pcall GOES INSIDE THE LOOP. One wrapped around the whole roster walk
+			-- is the single defect in this file that hid seven others: the first unit
+			-- that throws abandons every remaining unit and reports nothing, so the
+			-- export silently truncates and every count read off it is wrong.
+			-- ⚠⚠ `Members()` RETURNS AN ITERATOR TRIPLE, NOT A VALUE. Capturing it
+			-- through `try` keeps only the first of the three, so the loop called the
+			-- aux function with no state and the game threw "Not a valid instance" —
+			-- inside `exportState`, which aborted the whole export, so the brain got
+			-- NO board and every turn starved. Measured on run civvis-20260730T111537Z.
+			--
+			-- The `for` statement therefore has to stay whole inside one pcall (a bad
+			-- iterator costs this one rival), with a second pcall INSIDE the loop (a
+			-- bad unit costs one unit). That inner pcall is the one that matters: a
+			-- single pcall around a roster walk is the defect that once hid seven
+			-- others in this file.
+			local theirUnits = {};
+			pcall(function()
+				for _, unit in other:GetUnits():Members() do
+					pcall(function()
+						local ux = unit:GetX();
+						local uy = unit:GetY();
+						-- `IsVisible`, not `IsRevealed`: a remembered tile does not show
+						-- who stands on it now. Confirmed on a player-indexed
+						-- `PlayersVisibility` handle, which is the only form that
+						-- answers in a gameplay context.
+						if PlayersVisibility[pid]:IsVisible(ux, uy) then
+							local name = unitTypeName(unit);
+							local row = GameInfo.Units[name];
+							theirUnits[#theirUnits + 1] = {
+								x = ux, y = uy, kind = name,
+								hp = 100 - (try(function() return unit:GetDamage(); end, 0) or 0),
+								combat = row ~= nil and (row.Combat or 0) or 0,
+								ranged = row ~= nil and (row.RangedCombat or 0) or 0,
+							};
+						end
+					end);
+				end
+			end);
 			rivals[#rivals + 1] = {
 				player = otherId,
 				at_war = try(function() return diplomacy:IsAtWarWith(otherId); end, false),
 				score = try(function() return other:GetScore(); end, -1),
+				-- ★★★★★ THE NUMBER THE WAR DECISION ACTUALLY NEEDS, and it was never
+				-- exported. The old veto compared SCORE ratios, and on Settler the
+				-- shipped AI always outscores this seat — so "their score is 2.59x ours"
+				-- forbade every war for 190 turns while our 19 units stood on ALERT.
+				-- Score counts wonders, techs and population; none of them defends a
+				-- city. `GetMilitaryStrength` is what the game's own diplomacy ribbon
+				-- shows a human (`DiplomacyRibbon.lua:159`), copied rather than recalled.
+				military = try(function() return other:GetStats():GetMilitaryStrength(); end, -1),
 				cities = theirCities,
+				units = theirUnits,
 			};
+		end
+	end
+
+	-- ★★★ WITHOUT THESE, CIVVIS DECIDES IN THE ANCIENT ERA FOREVER. The
+	-- reconstruction had no research at all, so `civvis-orders` on the turn-190
+	-- board of run 101628Z ordered SLINGERS and `TECH_ASTROLOGY` — reasonable
+	-- advice for turn 5, worthless at turn 190 against Pikemen. What a seat knows
+	-- is half of what it can decide.
+	--
+	-- ⚠ Completed only. `CanResearch` would describe what is reachable, which is a
+	-- different question and would let CIVVIS build from a tree it does not have.
+	local techs, civics = {}, {};
+	local ptechs = try(function() return player:GetTechs(); end);
+	if ptechs ~= nil then
+		for row in GameInfo.Technologies() do
+			if try(function() return ptechs:HasTech(row.Index); end, false) then
+				techs[#techs + 1] = row.TechnologyType;
+			end
+		end
+	end
+	local pculture = try(function() return player:GetCulture(); end);
+	if pculture ~= nil then
+		for row in GameInfo.Civics() do
+			if try(function() return pculture:HasCivic(row.Index); end, false) then
+				civics[#civics + 1] = row.CivicType;
+			end
 		end
 	end
 
 	emit("state", {
 		turn = turn,
+		techs = techs,
+		civics = civics,
 		gold = try(function() return math.floor(player:GetTreasury():GetGoldBalance()); end, -1),
 		faith = try(function() return math.floor(player:GetReligion():GetFaithBalance()); end, -1),
 		science = try(function() return player:GetTechs():GetScienceYield(); end, -1),
 		culture = try(function() return player:GetCulture():GetCultureYield(); end, -1),
 		score = try(function() return player:GetScore(); end, -1),
+		-- Ours, on the same scale as each rival's, so a comparison is possible at all.
+		military = try(function() return player:GetStats():GetMilitaryStrength(); end, -1),
 		cities = cities,
 		units = units,
 		rivals = rivals,
@@ -3489,7 +3635,13 @@ end
 local function exportTiles(player, pid, turn)
 	if cfg.ExportState ~= true then return; end
 	local every = cfg.TileExportEvery or 25;
-	if turn % every ~= 0 then return; end
+	-- ⚠ TURN 1 MUST EXPORT, whatever the cadence. `turn % 25` is false for turns
+	-- 1..24, so CIVVIS spent the whole opening with NO MAP: `civvis-orders` on run
+	-- smoke-20260730T105241Z answered "no revealed terrain yet" every turn to turn 9
+	-- and would have to turn 24. The opening is where settling and the first army
+	-- are decided, so that is precisely the window that cannot be handed to a
+	-- fallback. Export on the first turn, then on the cadence.
+	if turn > 1 and turn % every ~= 0 then return; end
 	local width = try(function() return Map.GetGridSize(); end, 0) or 0;
 	local height = 0;
 	pcall(function() width, height = Map.GetGridSize(); end);
@@ -3549,6 +3701,600 @@ local function exportTiles(player, pid, turn)
 	emit("tiles_done", { turn = turn, chunks = chunks, width = width, height = height });
 end
 
+-- ★★★★★ CHANNEL PROBE — is there ANY way for a decision to reach a running game?
+--
+-- The architecture asked for is "CIVVIS decides, this mod actuates". The outbound
+-- half is proven and live (`Automation.Log` -> `watch.py`, one JSON object per
+-- turn). The inbound half is not proven at all: `io` is absent from the sandbox,
+-- FireTuner acknowledged seven framings and executed none of them, and config is
+-- baked in at install time — which is a channel between GAMES, not within one.
+-- Every decision the agent makes today is therefore a heuristic hard-coded here,
+-- and that is exactly how "veto war when their SCORE exceeds 1.3x ours" survived
+-- 190 turns of never fighting.
+--
+-- ⚠ This asks rather than assumes. Every API recalled from memory in this project
+-- has been wrong on this build at least once — `plot:IsRevealed()` took no player
+-- argument, `GetMovesRemaining` did not exist, `GetDefenseStrength` was on the
+-- wrong object — and each failed SILENTLY. So each candidate is asked once per
+-- turn and its answer is emitted verbatim.
+--
+-- ⚠⚠ EXISTENCE IS NOT A CHANNEL. A candidate counts only when the harness changes
+-- the value from OUTSIDE and the emitted value FOLLOWS. `type()` reading "function"
+-- proves the name resolves, nothing more — the same mistake as `applied = true` on
+-- a build request the engine ignored. `tools/civ6_control/probe_channel.py` writes
+-- a fresh nonce into every sink each turn; the channel is whichever field reports
+-- that nonce back.
+-- Run a query and describe the OUTCOME as text, keeping the three cases apart:
+-- a throw (with its message), a nil return, and rows. Collapsing them is how a
+-- silent gate happens.
+local function sqlText(fn)
+	local ok, res = pcall(fn);
+	if not ok then return "ERR:" .. tostring(res):sub(1, 160); end
+	if res == nil then return "nil"; end
+	if type(res) ~= "table" then return "scalar:" .. tostring(res); end
+	local parts = {};
+	for _, row in ipairs(res) do
+		if type(row) == "table" then
+			for k, v in pairs(row) do
+				parts[#parts + 1] = tostring(k) .. "=" .. tostring(v);
+				if #parts >= 8 then break; end
+			end
+		else
+			parts[#parts + 1] = tostring(row);
+		end
+		if #parts >= 8 then break; end
+	end
+	if #parts == 0 then return "rows:0"; end
+	return table.concat(parts, ";");
+end
+
+local function probeChannels(turn)
+	local report = { turn = turn };
+	-- Bare globals, not `_G[name]`: each Civ 6 UI context runs in its own
+	-- environment, and reading through `_G` is what made all 21 autoclose contexts
+	-- report unarmed. `type` on an undefined global is "nil" and cannot throw.
+	report.t_ModUserData = type(ModUserData);
+	report.t_DB = type(DB);
+	report.t_Options = type(Options);
+	report.t_UserConfiguration = type(UserConfiguration);
+	report.t_GameConfiguration = type(GameConfiguration);
+	report.t_UIManager = type(UIManager);
+	report.t_Network = type(Network);
+	report.t_Modding = type(Modding);
+	report.t_io = type(io);
+	report.t_loadfile = type(loadfile);
+	report.t_dofile = type(dofile);
+	-- Reads. Each is guarded: indexing a nil global throws, and a throw here must
+	-- cost this one field rather than the turn.
+	report.clip = try(function() return tostring(UIManager:GetClipboardString()); end, nil);
+	report.clip_fn = try(function() return type(UIManager.GetClipboardString); end, "absent");
+	report.appopt = try(function() return tostring(Options.GetAppOption("Civvis", "Decision")); end, nil);
+	report.useropt = try(function() return tostring(Options.GetUserOption("Civvis", "Decision")); end, nil);
+	report.gamecfg = try(function() return tostring(GameConfiguration.GetValue("CIVVIS_DECISION")); end, nil);
+	report.usercfg = try(function() return tostring(UserConfiguration.GetValue("CIVVIS_DECISION")); end, nil);
+	report.mud = try(function() return tostring(ModUserData.GetValue("civvis_decision")); end, nil);
+	report.db_q = try(function() return type(DB.Query); end, "absent");
+	report.db_cfgq = try(function() return type(DB.ConfigurationQuery); end, "absent");
+	-- ★ `DB.Query` and `DB.ConfigurationQuery` BOTH resolve to functions on this
+	-- build — measured, not recalled. That makes SQL the only candidate left after
+	-- the first probe killed the others: `ModUserData` is nil, `io`/`loadfile`/
+	-- `dofile` are nil, and `UIManager` exists but has only the clipboard SETTER,
+	-- so nothing can be handed in through it.
+	--
+	-- The question this asks is whether SQL can reach a file OUTSIDE the game.
+	-- `ATTACH DATABASE` would do it, and it is much better than writing into the
+	-- game's own `DebugGameplay.sqlite`: a database this process owns cannot be
+	-- clobbered when the game rebuilds its cache, and cannot block a turn on a
+	-- lock the game is holding.
+	--
+	-- ⚠ The error TEXT is the payload here. "no such table" means SQL ran and the
+	-- schema is missing; "not authorized" means the sandbox forbids ATTACH; a nil
+	-- return means the call itself failed. Those are three different projects, and
+	-- a bare `try(..., nil)` collapses them into one.
+	report.db_master = sqlText(function()
+		return DB.Query("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name LIMIT 4");
+	end);
+	report.db_attach = sqlText(function()
+		return DB.Query("ATTACH DATABASE '" .. tostring(cfg.OrdersDb or "") .. "' AS civvis");
+	end);
+	report.db_orders = sqlText(function()
+		return DB.Query("SELECT turn, payload FROM civvis.orders WHERE id = 1");
+	end);
+	report.cfg_master = sqlText(function()
+		return DB.ConfigurationQuery("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name LIMIT 3");
+	end);
+	emit("channel", report);
+end
+
+-- ------------------------------------------------------------- CIVVIS orders
+--
+-- ★★★★★ THE SEAT'S DECISIONS COME FROM CIVVIS, NOT FROM THIS FILE.
+--
+-- Everything above this line that *chooses* — which tech, what to build, whether
+-- to fight — is a hand-written heuristic, and hand-written heuristics are how
+-- "veto war when their SCORE exceeds 1.3x ours" survived 190 turns of never
+-- fighting on a difficulty where the shipped AI always outscores this seat. CIVVIS
+-- has a measured decision layer; this mod's job is to actuate it.
+--
+-- The channel is `DB.Query("ATTACH DATABASE <file the harness owns>")`, measured
+-- working on run `sqlprobe-20260730T103836Z`: 23 distinct payloads followed a nonce
+-- an outside process rewrote every second. See the memory note for what is
+-- measured DEAD (ModUserData, io, the clipboard getter).
+--
+-- ⚠ NO JSON PARSER. The encoder here is write-only and Lua 5.1 has no decoder;
+-- writing one is a needless risk when SQLite already structures data. Orders
+-- arrive as ROWS with typed columns, so there is nothing to parse and a malformed
+-- payload cannot take a turn down.
+--
+-- ⚠⚠ THE BRAIN MUST NOT BE ABLE TO WEDGE A TURN. Three regressions in this project
+-- came from handing a mechanism authority with no floor for the case where it is
+-- wrong. So: the turn WAITS for orders, but only for `OrdersWaitTicks`; past that
+-- the built-in heuristics run and the turn is recorded as `fallback`. A brain that
+-- crashes costs quality, never progress.
+local ordersAttached = nil;
+-- ⚠ `awaiting` and `residualAnswers` are declared at the top of the file, not here.
+-- A second `local awaiting` at this point would shadow it for everything below,
+-- so `answerBlocker` above would read one table while `settleTurn` wrote another
+-- and the residual counter would silently always be empty.
+
+local function sqlSafe(s)
+	return tostring(s or ""):gsub("'", ""):gsub("\\", "");
+end
+
+-- ATTACH once per game. A second ATTACH under the same name errors, and that
+-- error is not a failure worth reporting every turn.
+local function attachOrders()
+	if ordersAttached ~= nil then return ordersAttached; end
+	local path = cfg.OrdersDb;
+	if path == nil or path == "" then
+		ordersAttached = false;
+		return false;
+	end
+	local ok = pcall(function()
+		DB.Query("ATTACH DATABASE '" .. sqlSafe(path) .. "' AS civvis");
+	end);
+	-- Prove the attach by reading through it, not by the absence of a throw:
+	-- `applied = true` on a request the engine discarded is this project's
+	-- signature bug.
+	local reads = false;
+	if ok then
+		reads = pcall(function()
+			DB.Query("SELECT count(*) AS n FROM civvis.ready");
+		end);
+	end
+	ordersAttached = ok and reads;
+	emit("orders_channel", { attached = ordersAttached, path = tostring(path) });
+	return ordersAttached;
+end
+
+-- Has the brain finished writing this turn? `ready` is written last, so a
+-- partially written turn is never actuated.
+local function ordersReady(turn)
+	if not attachOrders() then return nil; end
+	local count = nil;
+	pcall(function()
+		local rows = DB.Query(string.format(
+			"SELECT count AS n FROM civvis.ready WHERE run = '%s' AND turn = %d LIMIT 1",
+			sqlSafe(cfg.RunTag), turn));
+		for _, row in ipairs(rows) do count = row.n; end
+	end);
+	return count;
+end
+
+local function fetchOrders(turn)
+	local out = {};
+	pcall(function()
+		local rows = DB.Query(string.format(
+			"SELECT seq, kind, subject, verb, x, y FROM civvis.orders "
+			.. "WHERE run = '%s' AND turn = %d ORDER BY seq",
+			sqlSafe(cfg.RunTag), turn));
+		for _, row in ipairs(rows) do out[#out + 1] = row; end
+	end);
+	return out;
+end
+
+-- The newest turn CIVVIS has answered at all, at or before `turn`.
+--
+-- ⚠ WHY STALE ORDERS BEAT THE HEURISTICS. The round trip is board -> log ->
+-- `watch.py` -> brain -> SQLite, and it is not instant. When turn N's answer has
+-- not landed, the choice is between CIVVIS's answer to turn N-1 and the
+-- hand-written ladder — and the ladder is what spent 190 turns refusing to fight.
+-- A unit told to walk somewhere it already stands is refused harmlessly and
+-- counted; a wrong doctrine is not.
+local function newestAnsweredTurn(turn)
+	local best = nil;
+	pcall(function()
+		local rows = DB.Query(string.format(
+			"SELECT max(turn) AS t FROM civvis.ready WHERE run = '%s' AND turn <= %d",
+			sqlSafe(cfg.RunTag), turn));
+		for _, row in ipairs(rows) do best = row.t; end
+	end);
+	return best;
+end
+
+-- Actuate one CIVVIS order. Every branch goes through the same
+-- `canOperate`-then-request discipline the rest of this file uses, so a refused
+-- order is reported as refused rather than counted as done.
+-- ⚠⚠⚠ RE-RESOLVE THE SUBJECT, NEVER CACHE IT ACROSS ORDERS.
+--
+-- A cached handle can outlive the thing it points at, and CIVVIS issues several
+-- orders per turn for the same units:
+--
+--   * a melee MOVE_TO onto a defended plot IS the attack, so the unit can DIE
+--     partway through this turn's list;
+--   * a settler that founds a city is CONSUMED;
+--   * two MOVE_TOs for one unit are normal, since a unit has several movement points.
+--
+-- Building `units[id]` once and then issuing operations from it therefore hands
+-- `UnitManager.RequestOperation` a freed unit, and the game does not survive that:
+-- run civvis-20260730T111953Z died at turn 38 with SIGSEGV at
+-- KERN_INVALID_ADDRESS 0x18 on the **Game Core** thread in `GameCore_XP2.dll` —
+-- the exact signature of the t44-47 crash cluster this project had recorded as
+-- unexplained, and which persisted with envoy code disabled.
+--
+-- `UnitManager.GetUnit(pid, id)` and `GetCities():FindID(id)` are the shipped UI's
+-- own lookups (`UnitPanel.lua`, `CityPanel.lua`). Asking again costs one call and
+-- returns nil for something that is gone, which is a refusal we can count.
+-- ★★★ RESOLVE A TYPE NAME AGAINST THE GAME'S OWN DATABASE, LENIENTLY.
+--
+-- CIVVIS and Civilization VI do not spell every node the same way: CIVVIS's `wheel`
+-- is Civ 6's `TECH_THE_WHEEL`, and a mechanical `TECH_` + upper-case gives
+-- `TECH_WHEEL`, which does not exist. Measured on run civvis-20260730T120107Z:
+-- **102 refused research orders**, all of them that one name, against 120 that landed
+-- — so nearly half of CIVVIS's research decisions were silently discarded and the
+-- seat researched whatever the blocker path happened to pick.
+--
+-- ⚠ Resolved HERE rather than guessed in the translator, because this is the only
+-- place that can ask the shipped database whether a name exists. The alternative
+-- spelling is tried and the name that actually resolved is reported, so a future
+-- mismatch shows up as a named miss instead of a silent default.
+local function resolveType(table_, name)
+	if name == nil or name == "" then return nil, "empty"; end
+	if table_[name] ~= nil then return table_[name], name; end
+	local prefix, rest = string.match(name, "^([A-Z]+_)(.+)$");
+	if prefix ~= nil then
+		local alt = prefix .. "THE_" .. rest;
+		if table_[alt] ~= nil then return table_[alt], alt; end
+	end
+	return nil, name;
+end
+
+local function liveUnit(pid, id)
+	return try(function() return UnitManager.GetUnit(pid, id); end);
+end
+
+local function liveCity(player, id)
+	return try(function() return player:GetCities():FindID(id); end);
+end
+
+local function applyOrder(player, pid, row, turn)
+	local kind = tostring(row.kind or "");
+	local verb = tostring(row.verb or "");
+	local subject = tonumber(row.subject) or -1;
+	local x, y = tonumber(row.x), tonumber(row.y);
+
+	if kind == "war" then
+		local diplomacy = try(function() return player:GetDiplomacy(); end);
+		if diplomacy == nil then return false, "no_diplomacy"; end
+		if try(function() return diplomacy:IsAtWarWith(subject); end, false) then
+			return false, "already_at_war";
+		end
+		if not try(function() return diplomacy:CanDeclareWarOn(subject); end, true) then
+			return false, "cannot_declare";
+		end
+		local params = {};
+		params[PlayerOperations.PARAM_PLAYER_ONE] = pid;
+		params[PlayerOperations.PARAM_PLAYER_TWO] = subject;
+		local ok = pcall(function()
+			UI.RequestPlayerOperation(pid, PlayerOperations.DIPLOMACY_DECLARE_WAR, params);
+		end);
+		if ok then
+			warDeclared[subject] = true;
+			-- ⚠ THE FIRES-CHECK FOR THE DECISION THAT DECIDES THE GAME. `declareWar`
+			-- emits this on the built-in path; without it here, a CIVVIS-declared war
+			-- appeared only as an anonymous `by.war = 1` count and the run's `war`
+			-- field stayed null — which is exactly how "the army never fights" was
+			-- misdiagnosed for the whole history of this project.
+			emit("war", { turn = turn, target = subject, source = "civvis" });
+		end
+		return ok, ok and "declared" or "throw";
+	end
+
+	if kind == "research" or kind == "civic" then
+		local isTech = kind == "research";
+		local table_ = isTech and GameInfo.Technologies or GameInfo.Civics;
+		local row2, resolved = resolveType(table_, verb);
+		if row2 == nil then return false, "unknown_" .. verb; end
+		verb = resolved;
+		local progress = try(function()
+			return isTech and player:GetTechs() or player:GetCulture();
+		end);
+		if progress == nil then return false, "no_progress"; end
+		-- ⚠ `GetResearchPath` is what makes a DISTANT node reachable: asking for a
+		-- tech whose prerequisites are unmet is refused outright, while its path
+		-- queues the prerequisites. CIVVIS names the destination; the game routes.
+		local params = {};
+		if isTech then
+			params[PlayerOperations.PARAM_TECH_TYPE] =
+				try(function() return progress:GetResearchPath(row2.Hash); end) or row2.Hash;
+		else
+			params[PlayerOperations.PARAM_CIVIC_TYPE] =
+				try(function() return progress:GetCivicPath(row2.Hash); end) or row2.Hash;
+		end
+		params[PlayerOperations.PARAM_INSERT_MODE] = PlayerOperations.VALUE_EXCLUSIVE;
+		local op = isTech and PlayerOperations.RESEARCH or PlayerOperations.PROGRESS_CIVIC;
+		local ok = pcall(function() UI.RequestPlayerOperation(pid, op, params); end);
+		return ok, ok and verb or "throw";
+	end
+
+	if kind == "produce" then
+		local city = liveCity(player, subject);
+		if city == nil then return false, "no_city"; end
+		-- ⚠ `GameInfo.Types`, NOT the per-kind tables. `buildParams` switches on
+		-- `row.Kind`, and only the `Types` table carries that column — rows from
+		-- `GameInfo.Units`/`Buildings`/`Districts` have no `Kind`, so `buildParams`
+		-- returned nil and EVERY produce order was refused `no_params`. Measured on
+		-- run civvis-20260730T111537Z: 9 refusals in 10 turns, all of them this.
+		-- The built-in ladder reads `GameInfo.Types[name]` for exactly this reason.
+		local row2, resolved = resolveType(GameInfo.Types, verb);
+		if row2 == nil then return false, "unknown_" .. verb; end
+		verb = resolved;
+		local params = buildParams(row2);
+		if params == nil then return false, "no_params"; end
+		local ok = pcall(function()
+			CityManager.RequestOperation(city, CityOperationTypes.BUILD, params);
+		end);
+		return ok, ok and verb or "throw";
+	end
+
+	if kind == "unit" then
+		-- Asked for fresh, right here: the previous order in this very list may have
+		-- killed or consumed it.
+		local unit = liveUnit(pid, subject);
+		if unit == nil then return false, "unit_gone"; end
+		-- FOUND_CITY, MOVE_TO and RANGE_ATTACK are the three that decide a game.
+		-- ⚠ There is NO attack operation on this build — the resolved list is only
+		-- MOVE_TO and RANGE_ATTACK — so a melee strike IS a MOVE_TO onto the
+		-- defended plot. CIVVIS's `Attack` therefore translates to MOVE_TO, and
+		-- that is not a workaround: it is how Civilization VI resolves it.
+		if verb == "FOUND_CITY" then
+			return operate(unit, OP["UNITOPERATION_FOUND_CITY"], {}), "found";
+		end
+		if verb == "MOVE_TO" or verb == "ATTACK" then
+			if x == nil or y == nil then return false, "no_dest"; end
+			local params = {};
+			params[UnitOperationTypes.PARAM_X] = x;
+			params[UnitOperationTypes.PARAM_Y] = y;
+			return operate(unit, OP["UNITOPERATION_MOVE_TO"], params), verb;
+		end
+		if verb == "RANGE_ATTACK" then
+			if x == nil or y == nil then return false, "no_dest"; end
+			local params = {};
+			params[UnitOperationTypes.PARAM_X] = x;
+			params[UnitOperationTypes.PARAM_Y] = y;
+			return operate(unit, OP["UNITOPERATION_RANGE_ATTACK"], params), verb;
+		end
+		if verb == "UPGRADE" then
+			return commandUnit(unit, CMD["UNITCOMMAND_UPGRADE"], {}), verb;
+		end
+		-- Anything else is a named operation from the resolved table: FORTIFY,
+		-- ALERT, SKIP_TURN, HEAL, AUTOMATE_EXPLORE, BUILD_IMPROVEMENT.
+		local hash = OP["UNITOPERATION_" .. verb];
+		if hash == nil then return false, "unknown_op_" .. verb; end
+		return operate(unit, hash, {}), verb;
+	end
+
+	return false, "unknown_kind_" .. kind;
+end
+
+-- ⚠ EMIT THE NUMERATOR AND THE DENOMINATOR. Four of this project's defects were
+-- caught by a count and would have passed a boolean "is it wired up" check. An
+-- `orders` event that says only "CIVVIS decided" reads identical whether every
+-- order landed or every one was refused.
+local function applyOrders(player, pid, turn, rows)
+	local applied, refused = 0, 0;
+	local byKind, whyNot = {}, {};
+
+	-- ★★★★★ FOUND A CITY BEFORE MOVING, ALWAYS. This is an actuation rule of
+	-- Civilization VI, not a decision, which is why it belongs here and not in CIVVIS.
+	--
+	-- A settler needs MOVEMENT REMAINING to found, and CIVVIS legitimately issues
+	-- `MOVE_TO` then `FoundCity` for the same unit in one turn — it plans to walk onto
+	-- the site and settle it. Applied in that order the move spends the last movement
+	-- point and the found is refused, so the settler stands on a perfectly legal site
+	-- and never settles.
+	--
+	-- Measured on run civvis-20260730T115158Z: `MOVE_TO 12 19` then `FOUND_CITY` every
+	-- turn from t31 to t53, the settler at (12,19) with `moves = 0`, 4 tiles from the
+	-- capital so `CITY_MIN_RANGE` was satisfied — 20+ turns of one refused order while
+	-- the empire sat at ONE city and CIVVIS's own plan asked for three. It also
+	-- oscillated (12,19)/(13,19) because the move was the only order that landed.
+	--
+	-- Founding first costs nothing when the settler is elsewhere (the found is refused,
+	-- the move still happens, and it settles next turn) and fixes the case where it has
+	-- already arrived. Either way it converges instead of looping.
+	local ordered = {};
+	local function runOrder(index, row)
+		local kind = tostring(row.kind or "?");
+		-- One pcall PER ORDER, never around the loop: the first order that throws
+		-- must cost one order, not every order after it. That exact mistake
+		-- (`pcall` outside the roster loop) hid seven separate bugs in this file.
+		local ok, why = false, "throw";
+		local safe, res1, res2 = pcall(function()
+			return applyOrder(player, pid, row, turn);
+		end);
+		if safe then ok, why = res1, res2; end
+		if ok then
+			applied = applied + 1;
+			byKind[kind] = (byKind[kind] or 0) + 1;
+		else
+			refused = refused + 1;
+			whyNot[tostring(why)] = (whyNot[tostring(why)] or 0) + 1;
+		end
+		ordered[index] = true;
+	end
+
+	for index, row in ipairs(rows) do
+		if tostring(row.kind or "") == "unit" and tostring(row.verb or "") == "FOUND_CITY" then
+			runOrder(index, row);
+		end
+	end
+	for index, row in ipairs(rows) do
+		if not ordered[index] then runOrder(index, row); end
+	end
+
+	emit("orders", {
+		turn = turn, source = "civvis", seen = #rows,
+		applied = applied, refused = refused, by = byKind, refusals = whyNot,
+	});
+
+	-- ⚠⚠ A CIVVIS TURN MUST STILL EMIT A `turn` RECORD. The full one lives at the
+	-- end of `playTurn`, which no longer runs when CIVVIS is deciding — so run
+	-- civvis-20260730T110209Z produced ZERO turn records and every progress check,
+	-- mine and the harness's, went blind. The harness's `[turn N]` lines come from
+	-- this event, so its absence also disabled the stall watchdog's only clock.
+	--
+	-- Leaner than the heuristic path's record on purpose: the fields it omits
+	-- (`war_blocked`, the settle-plan fires) describe built-ins that did not run.
+	local counts = countUnits(player);
+	local rivalTop, metCount = rivalBest(player, pid);
+	local ourScore = try(function() return player:GetScore(); end, -1);
+	local cityCount = 0;
+	eachCity(player, function() cityCount = cityCount + 1; end);
+	emit("turn", {
+		turn = turn,
+		score = ourScore,
+		rival_best = rivalTop,
+		met = metCount,
+		lead = (rivalTop ~= nil and ourScore >= 0) and (ourScore - rivalTop) or nil,
+		cities = cityCount,
+		units = counts.total or counts.military,
+		army = counts.military,
+		gold = try(function() return math.floor(player:GetTreasury():GetGoldBalance()); end, -1),
+		orders_source = awaiting.source,
+		orders_seen = #rows,
+		orders_applied = applied,
+		orders_refused = refused,
+		orders_polls = awaiting.polls,
+		residual = residualAnswers,
+		blocker = blockerName(currentBlocker(pid)),
+	});
+	return applied;
+end
+
+-- Publish the board and open the window in which CIVVIS answers.
+--
+-- Split out of `playTurn` because the export must happen whether or not CIVVIS
+-- replies: it is the only thing the brain has to read, so skipping it on a
+-- fallback turn would guarantee the next turn falls back too.
+local function beginTurn(player, pid, turn)
+	if cfg.ProbeChannels then probeChannels(turn); end
+	-- Refreshed here rather than in the fallback so that the export, CIVVIS and the
+	-- built-ins all describe the same war picture.
+	warTarget = findWarTarget(player, pid);
+	exportState(player, pid, turn);
+	exportTiles(player, pid, turn);
+	awaiting.turn = turn;
+	awaiting.ticks = 0;
+	awaiting.polls = 0;
+	awaiting.done = false;
+	awaiting.source = "pending";
+	-- Per turn, or the tally becomes cumulative and unreadable.
+	residualAnswers = {};
+end
+
+-- Poll for CIVVIS's answer. Returns true once the turn's decisions are settled,
+-- by CIVVIS or by the fallback; the caller must not end the turn before then.
+local function settleTurn(player, pid, turn, playFallback)
+	if awaiting.turn ~= turn then return true; end
+	if awaiting.done then return true; end
+	awaiting.ticks = awaiting.ticks + 1;
+
+	-- ⚠⚠ DO NOT QUERY ON EVERY TICK. This is the bug that deadlocked run
+	-- civvis-20260730T110209Z on turn 2: `GameCoreEventPublishComplete` fires
+	-- thousands of times per turn, so a `DB.Query` per tick pinned the game at 139%
+	-- CPU and — fatally — starved the `Automation.Log` flush that carries the board
+	-- OUT. The brain never saw turn 2, so it never answered, so the wait never
+	-- ended. A busy-wait on a channel whose other half needs the same thread is a
+	-- deadlock, not a delay.
+	--
+	-- Polling every `OrdersPollTicks` costs 1/30th the queries and still answers
+	-- within milliseconds of the orders landing.
+	local every = cfg.OrdersPollTicks or 30;
+	if awaiting.ticks % every ~= 0 then return false; end
+	awaiting.polls = (awaiting.polls or 0) + 1;
+
+	-- ★★★★★ THE HEARTBEAT IS LOAD-BEARING. IT IS NOT DIAGNOSTICS.
+	--
+	-- `watch.py` splits the log on newlines and keeps the trailing fragment as
+	-- `partial` until a newline arrives. `Automation.Log` leaves no trailing newline,
+	-- so the LAST line written is never delivered — and during this wait the last
+	-- line written is exactly the `state` export the brain needs to answer. The
+	-- outbound leg therefore required one more log line before it would release the
+	-- previous one, and the loop deadlocked: measured twice, on turn 2 of runs
+	-- civvis-20260730T110209Z and ...T111055Z, both with the log's final byte `}`
+	-- and the game spinning at 139% CPU with nothing to do.
+	--
+	-- It also explains the earlier intermittency rather than leaving it a mystery:
+	-- in the stub smoke test, turns succeeded only when some UNRELATED event
+	-- (`blocked`, `build`) happened to terminate the state line. 4 of 10.
+	--
+	-- One line per poll terminates the previous one, so the state reaches the brain
+	-- on the first poll. `polls` doubles as the wait's own telemetry.
+	emit("await", { turn = turn, polls = awaiting.polls });
+
+	local ready = ordersReady(turn);
+	if ready ~= nil and ready > 0 then
+		local rows = fetchOrders(turn);
+		if #rows > 0 then
+			-- ⚠ BEFORE, not after: `applyOrders` emits the turn record, which reads
+			-- `awaiting.source`. Setting it afterwards made every CIVVIS turn report
+			-- `orders_source: pending` — the one field that proves who drove the game,
+			-- blank on the turns it was meant to describe.
+			awaiting.source = "civvis";
+			awaiting.done = true;
+			applyOrders(player, pid, turn, rows);
+			return true;
+		end
+	end
+
+	-- Past the wait, prefer CIVVIS's most recent answer over the built-ins.
+	if awaiting.polls >= (cfg.OrdersWaitPolls or 40) then
+		local stale = newestAnsweredTurn(turn);
+		local maxStale = cfg.OrdersMaxStale or 4;
+		if stale ~= nil and stale > 0 and (turn - stale) <= maxStale then
+			local rows = fetchOrders(stale);
+			if #rows > 0 then
+				awaiting.source = "civvis_stale";
+				awaiting.done = true;
+				applyOrders(player, pid, turn, rows);
+				emit("orders_stale", { turn = turn, used = stale,
+				                       behind = turn - stale, polls = awaiting.polls });
+				return true;
+			end
+		end
+	end
+	-- ⚠ THE FLOOR. A brain that is slow, crashed, or has not been started must cost
+	-- decision QUALITY, never progress: three regressions in this project came from
+	-- a mechanism given authority with no floor for being wrong. Past the budget the
+	-- built-in heuristics run and the turn is recorded as `fallback`, which is a
+	-- number to watch — a run that is mostly fallback is not a measurement of CIVVIS.
+	if awaiting.polls >= (cfg.OrdersFallbackPolls or 120) then
+		-- ⚠ SET THE SOURCE *BEFORE* RUNNING THE FALLBACK. `playFallback` emits the
+		-- turn record, which reads `awaiting.source` — assigning after the call made
+		-- every fallback turn report `orders_source: pending`, so the one field that
+		-- proves who drove the game was blank exactly when it mattered. Measured on
+		-- run smoke-20260730T105241Z: six fallback turns, all labelled `pending`.
+		awaiting.source = "fallback";
+		awaiting.done = true;
+		playFallback(player, pid, turn);
+		emit("orders", { turn = turn, source = "fallback", seen = 0, applied = 0,
+		                 refused = 0, waited = awaiting.ticks, polls = awaiting.polls });
+		return true;
+	end
+	return false;
+end
+
 local function playTurn(player, pid, turn)
 	local research, civic;
 	if try(function() return player:GetTechs():GetResearchingTech(); end, -1) < 0 then
@@ -3558,12 +4304,17 @@ local function playTurn(player, pid, turn)
 		civic = chooseCivic(player, pid);
 	end
 	local policies = fillPolicies(player);
-	-- Refresh the war picture once a turn, not once a tick: it walks every
-	-- city of every civilization this player has met.
-	warTarget = findWarTarget(player, pid);
+	-- ⚠ `warTarget` and the exports moved to `beginTurn`, which runs on every turn
+	-- including one CIVVIS answers — the export is the only thing the brain has to
+	-- read, so leaving it here would mean a CIVVIS turn published nothing and
+	-- starved the next one. When CIVVIS is NOT deciding, `beginTurn` never runs, so
+	-- this path still has to do them itself or the mirror goes dark.
+	if not cfg.CivvisDecides then
+		warTarget = findWarTarget(player, pid);
+		exportState(player, pid, turn);
+		exportTiles(player, pid, turn);
+	end
 	local war = declareWar(player, pid, countUnits(player), turn);
-	exportState(player, pid, turn);
-	exportTiles(player, pid, turn);
 	local builds = driveProduction(player, turn);
 	local ordered, stuck = orderUnits(player, pid, turn);
 	-- Refreshed before any unit is ordered, so the whole army agrees this turn about
@@ -3648,6 +4399,17 @@ local function playTurn(player, pid, turn)
 		probe_dest = probeDest,
 		probe_kind = probeKind,
 		war_blocked = warBlock,
+		-- ⚠ THE FIRES-CHECK FOR THE WHOLE ARCHITECTURE. "CIVVIS is deciding" is a
+		-- claim, and this is its denominator: `civvis` means the orders arrived and
+		-- were actuated, `fallback` means the built-in heuristics ran because nothing
+		-- arrived in time. A run that is mostly `fallback` is not a measurement of
+		-- CIVVIS, however much CIVVIS code exists — the same trap as an evaluator
+		-- that never loaded while the docs called it good and inert.
+		orders_source = awaiting.source,
+		orders_waited = awaiting.ticks,
+		-- Built-in passes that ran on a turn credited to CIVVIS, by blocker name.
+		-- Non-empty means the heuristics still made some of this turn's decisions.
+		residual = residualAnswers,
 		war_target_player = warTarget and warTarget.player or nil,
 		-- ⚠ Whether the strength term actually CHANGED the choice, not merely that it
 		-- ran. `target_ratio` above 1 means we are still attacking somebody stronger
@@ -3700,7 +4462,23 @@ local function tick()
 			turnsPlayed = turnsPlayed + 1;
 			attempts = 0;
 			passes = {};
-			playTurn(player, pid, turn);
+			if cfg.CivvisDecides then
+				-- Publish the board; the decisions land on a later tick, once CIVVIS
+				-- has answered. `GameCoreEventPublishComplete` fires many times per
+				-- frame, so "later this turn" costs no wall clock the game was not
+				-- already spending.
+				beginTurn(player, pid, turn);
+			else
+				playTurn(player, pid, turn);
+			end
+		end
+
+		-- ⚠ DO NOT END A TURN WHOSE DECISIONS HAVE NOT BEEN MADE. Every order below
+		-- this point assumes the turn has been played. Ending first would hand CIVVIS
+		-- a board it never acted on and read, in telemetry, exactly like a controller
+		-- that decided to do nothing.
+		if cfg.CivvisDecides and not settleTurn(player, pid, turn, playTurn) then
+			return;
 		end
 
 		-- Answer whatever the game says it is waiting on, then end the turn

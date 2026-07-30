@@ -546,6 +546,21 @@ pub fn rebuild_game(snapshot: &Snapshot, players: usize, seed: u64) -> crate::ga
     let vocab = Vocabulary::embedded();
     let ocean = Name::new("ocean");
 
+    apply_terrain(&mut game, snapshot);
+    let _ = (ocean, vocab);
+    game
+}
+
+/// Write every plot the seat has seen onto the map, and ocean everywhere else.
+///
+/// Shared by the one-shot rebuild and by [`LiveMirror::sync`], which has to re-apply
+/// it as ground is revealed. Idempotent: re-running it on an existing map only
+/// overwrites terrain the snapshot has an opinion about.
+pub(crate) fn apply_terrain(game: &mut crate::game::Game, snapshot: &Snapshot) {
+    let vocab = Vocabulary::embedded();
+    let ocean = Name::new("ocean");
+    let width = snapshot.width.max(1);
+    let height = snapshot.height.max(1);
     for y in 0..height {
         for x in 0..width {
             let pos = crate::hex::offset_to_axial(x, y);
@@ -553,6 +568,13 @@ pub fn rebuild_game(snapshot: &Snapshot, players: usize, seed: u64) -> crate::ga
                 continue;
             };
             let Some(plot) = snapshot.plot((x, y)) else {
+                // ⚠ Only stamp ocean where nothing is known. A tile the frontier
+                // painted as land must not be reverted on the next sync, or the
+                // frontier would flicker between land and sea every turn and CIVVIS
+                // would re-plan around it — the oscillation bug in another costume.
+                if !snapshot.is_revealed((x, y)) && tile.terrain == Name::new("plains") {
+                    continue;
+                }
                 tile.terrain = ocean;
                 tile.hills = false;
                 tile.feature = None;
@@ -575,7 +597,6 @@ pub fn rebuild_game(snapshot: &Snapshot, players: usize, seed: u64) -> crate::ga
             });
         }
     }
-    game
 }
 
 /// The seat's own cities, in the order they appear in the stream.
@@ -644,4 +665,731 @@ pub fn rebuild_with_empire(
         placed += 1;
     }
     (game, placed)
+}
+
+// ============================================================ the live empire
+//
+// ★★★★★ WHY THIS EXISTS. `rebuild_game` gives CIVVIS terrain and
+// `rebuild_with_empire` adds the seat's cities. Neither gives it UNITS, and
+// neither gives it a RIVAL — so CIVVIS could not answer the two questions that
+// decide a game on Settler: whom to fight, and where to send the army. Those were
+// answered instead by hand-written Lua, which is how a veto comparing SCORE ratios
+// forbade every war for 190 turns while nineteen units stood on ALERT.
+//
+// ⚠ Civilization VI speaks OFFSET, CIVVIS stores AXIAL. Every crossing here goes
+// through `hex::offset_to_axial`, because mixing them is silent: a capital at
+// offset (56,28) landed on NO TILE and the ranker then blamed the map.
+
+/// One city as Civilization VI reported it, in OFFSET coordinates.
+#[derive(Clone, Debug, Default, serde::Deserialize)]
+pub struct StateCity {
+    #[serde(default)]
+    pub id: i64,
+    pub x: i32,
+    pub y: i32,
+    #[serde(default)]
+    pub pop: i32,
+    #[serde(default)]
+    pub capital: bool,
+    #[serde(default)]
+    pub defense: f64,
+}
+
+/// One unit as Civilization VI reported it, in OFFSET coordinates.
+#[derive(Clone, Debug, Default, serde::Deserialize)]
+pub struct StateUnit {
+    #[serde(default)]
+    pub id: i64,
+    #[serde(default)]
+    pub kind: String,
+    pub x: i32,
+    pub y: i32,
+    #[serde(default)]
+    pub hp: f64,
+    /// Movement points left, as Civilization VI reports them this turn.
+    #[serde(default = "unknown_strength")]
+    pub moves: f64,
+}
+
+#[derive(Clone, Debug, Default, serde::Deserialize)]
+pub struct StateRival {
+    #[serde(default)]
+    pub player: usize,
+    #[serde(default)]
+    pub score: i64,
+    #[serde(default = "unknown_strength")]
+    pub military: f64,
+    #[serde(default)]
+    pub at_war: bool,
+    #[serde(default)]
+    pub cities: Vec<StateCity>,
+    #[serde(default)]
+    pub units: Vec<StateUnit>,
+}
+
+fn unknown_strength() -> f64 {
+    -1.0
+}
+
+/// The whole board as one `state` event described it.
+#[derive(Clone, Debug, Default, serde::Deserialize)]
+pub struct StateSnapshot {
+    pub turn: u32,
+    /// Civ 6 type names of COMPLETED research, e.g. `TECH_BRONZE_WORKING`.
+    #[serde(default)]
+    pub techs: Vec<String>,
+    #[serde(default)]
+    pub civics: Vec<String>,
+    #[serde(default)]
+    pub gold: i64,
+    #[serde(default)]
+    pub score: i64,
+    #[serde(default = "unknown_strength")]
+    pub military: f64,
+    #[serde(default)]
+    pub cities: Vec<StateCity>,
+    #[serde(default)]
+    pub units: Vec<StateUnit>,
+    #[serde(default)]
+    pub rivals: Vec<StateRival>,
+}
+
+/// The newest `state` event, or the one for `turn` when asked for a specific one.
+///
+/// ⚠ Newest-wins rather than first-match: the mod re-emits state as a turn is
+/// replayed, and an early partial export would otherwise win forever.
+pub fn state_from_events(
+    path: &std::path::Path,
+    turn: Option<u32>,
+) -> Option<StateSnapshot> {
+    let raw = std::fs::read_to_string(path).ok()?;
+    let mut best: Option<StateSnapshot> = None;
+    for line in raw.lines() {
+        if !line.contains("\"state\"") {
+            continue;
+        }
+        let Ok(state) = serde_json::from_str::<StateSnapshot>(line) else {
+            continue;
+        };
+        match turn {
+            Some(want) if state.turn != want => continue,
+            _ => {}
+        }
+        if best.as_ref().map(|b| state.turn >= b.turn).unwrap_or(true) {
+            best = Some(state);
+        }
+    }
+    best
+}
+
+/// What a reconstruction produced, including what it could NOT translate.
+///
+/// ⚠ `unmapped` is not decoration. A Civilization VI unit type with no CIVVIS
+/// counterpart is a unit CIVVIS cannot see, and an army that is half-invisible
+/// produces confident orders about the wrong battle. The caller reports it.
+pub struct Reconstruction {
+    pub game: crate::game::Game,
+    /// CIVVIS unit id -> Civilization VI unit id, for translating orders back.
+    pub unit_ids: std::collections::BTreeMap<u32, i64>,
+    /// CIVVIS city id -> Civilization VI city id.
+    pub city_ids: std::collections::BTreeMap<u32, i64>,
+    pub placed_cities: usize,
+    pub placed_units: usize,
+    pub placed_rival_cities: usize,
+    pub placed_rival_units: usize,
+    pub unmapped: Vec<String>,
+}
+
+/// `UNIT_BATTERING_RAM` -> `battering_ram`. Mechanical, then CHECKED against the
+/// ruleset — `spawn_unit` indexes `rules.units` and panics on a name it does not
+/// have, so an unchecked guess would take the brain down mid-game.
+fn civvis_unit_name(civ6: &str) -> String {
+    civ6.strip_prefix("UNIT_").unwrap_or(civ6).to_ascii_lowercase()
+}
+
+
+/// Paint `depth` rings of neutral land beyond the edge of what the seat has seen.
+///
+/// ⚠⚠ THIS IS AN INVENTED PRIOR, and it is deliberate. `apply_terrain` fills the
+/// unknown with OCEAN, which is honest for scoring and catastrophic for deciding: a
+/// seat that has revealed 51 plots sees a 51-tile island, so it has nowhere to settle,
+/// nowhere to explore, and nothing worth building but soldiers. Measured: revealed
+/// plots crawled 25 -> 150 over 104 turns, `met` stopped at 2, and ZERO rival cities
+/// were ever seen.
+///
+/// A bounded ring is closer to what a human knows — the ground past your border is
+/// probably ground — and it cannot invent a continent, because the far unknown stays
+/// sea. Each ring becomes real terrain as it is revealed. An order onto ground that
+/// turns out to be water is refused by Civilization VI and counted, so the failure
+/// mode is a wasted order, not a plan resting on a phantom.
+pub(crate) fn grow_frontier(
+    game: &mut crate::game::Game,
+    snapshot: &Snapshot,
+    depth: u32,
+) {
+    if depth == 0 {
+        return;
+    }
+
+    let unknown_land = Name::new("plains");
+    let width = snapshot.width.max(1);
+    let height = snapshot.height.max(1);
+    // Grown one ring at a time so depth means "tiles beyond what we have seen",
+    // and so each ring is seeded only by ground the previous ring established.
+    //
+    // ⚠ ONE RING WAS NOT ENOUGH, and the failure was quiet: CIVVIS could only ever
+    // aim one tile past its own border, and the map refreshes on a cadence, so
+    // exploration crawled. Measured on civvis-20260730T120107Z: revealed plots went
+    // 25 -> 109 across 64 turns, `met = 1`, and **zero** rival cities ever seen —
+    // so the army had nothing to attack and domination was unreachable. The
+    // heuristic path, which hands scouts to AUTOMATE_EXPLORE, had 468 by t190.
+    let mut land: std::collections::BTreeSet<crate::Pos> = std::collections::BTreeSet::new();
+    for y in 0..height {
+        for x in 0..width {
+            if !snapshot.is_revealed((x, y)) {
+                continue;
+            }
+            let pos = crate::hex::offset_to_axial(x, y);
+            if game
+                .map
+                .get(pos)
+                .map(|tile| !game.rules.is_water(tile))
+                .unwrap_or(false)
+            {
+                land.insert(pos);
+            }
+        }
+    }
+    let mut edge: Vec<crate::Pos> = land.iter().copied().collect();
+    for _ in 0..depth {
+        let mut next_edge: Vec<crate::Pos> = Vec::new();
+        for pos in &edge {
+            for neighbour in crate::hex::neighbors(*pos) {
+                let (nx, ny) = crate::hex::axial_to_offset(neighbour.0, neighbour.1);
+                if nx < 0 || ny < 0 || nx >= width || ny >= height {
+                    continue;
+                }
+                // Never overwrite ground the seat has actually seen: a coast we
+                // scouted must stay coast, or this would invent land over water
+                // we know about.
+                if snapshot.is_revealed((nx, ny)) || land.contains(&neighbour) {
+                    continue;
+                }
+                if let Some(tile) = game.map.tiles.get_mut(&neighbour) {
+                    tile.terrain = unknown_land;
+                    tile.hills = false;
+                    tile.feature = None;
+                    tile.resource = None;
+                }
+                land.insert(neighbour);
+                next_edge.push(neighbour);
+            }
+        }
+        if next_edge.is_empty() {
+            break;
+        }
+        edge = next_edge;
+    }
+
+}
+
+/// Rebuild terrain, both empires, and everything visible of the rivals.
+pub fn rebuild_from_state(
+    snapshot: &Snapshot,
+    state: &StateSnapshot,
+    players: usize,
+    seed: u64,
+    max_turns: u32,
+    frontier_depth: u32,
+) -> Reconstruction {
+    let mut game = rebuild_game(snapshot, players.max(2), seed);
+    let mut unit_ids = std::collections::BTreeMap::new();
+    let mut city_ids = std::collections::BTreeMap::new();
+    let mut unmapped: Vec<String> = Vec::new();
+    let mut placed_cities = 0;
+    let mut placed_units = 0;
+    let mut placed_rival_cities = 0;
+    let mut placed_rival_units = 0;
+
+    // Land only, and revealed only. `place_city` on water or on an unseen tile
+    // would put CIVVIS's empire somewhere the seat cannot act.
+    let mut plant_city = |game: &mut crate::game::Game, owner: usize, c: &StateCity| -> Option<u32> {
+        if !snapshot.is_revealed((c.x, c.y)) {
+            return None;
+        }
+        let pos = crate::hex::offset_to_axial(c.x, c.y);
+        let water = game
+            .map
+            .get(pos)
+            .map(|tile| game.rules.is_water(tile))
+            .unwrap_or(true);
+        if water || game.city_at(pos).is_some() {
+            return None;
+        }
+        Some(game.place_city(owner, pos, None))
+    };
+
+    // ★★★★★ THE FRONTIER RING — without it CIVVIS believes it lives on a tiny island.
+    //
+    // `rebuild_game` fills every unrevealed plot with OCEAN, and its own doc names the
+    // limit: honest about what is known, pessimistic about what is not, and "the WRONG
+    // direction for pathfinding, which would route around phantom sea". That was
+    // tolerable while this reconstruction only fed a viewer and a settle ranking over
+    // ground already seen. It is not tolerable now that CIVVIS is the DECIDER, because
+    // a seat that has revealed 51 plots sees a 51-tile island: nowhere to expand,
+    // nowhere to explore, nothing to build but soldiers.
+    //
+    // Measured on run bisect1-114111Z: `desired_cities = 3`, and at turn 34 the empire
+    // was still ONE city with 33 production orders, every one of them a Warrior.
+    //
+    // One ring of neutral land at the edge of what we have seen is the minimum that
+    // lets expansion and exploration aim OUTWARD, and it is what a human knows: the
+    // ground past your border is probably ground. It stays one ring — the far unknown
+    // is still ocean — so this cannot invent a continent, and each ring becomes real
+    // terrain as it is revealed. An order onto ground that turns out to be sea is
+    // refused by Civilization VI and counted as a refusal, so the failure mode is a
+    // wasted order rather than a plan built on a phantom.
+    grow_frontier(&mut game, snapshot, frontier_depth);
+
+    // ★★★★ TELL CIVVIS WHAT TURN IT IS. `Game::new` starts at the beginning, and the
+    // board is rebuilt from scratch every turn, so without this CIVVIS was answering
+    // TURN 1 for the whole game — every time. Measured consequence on run
+    // civvis-20260730T111953Z: 15 production orders, ALL of them Warrior, no settler
+    // and no district, while its own plan asked for 3 cities. An agent whose strategy
+    // is keyed to era and timing cannot plan from a clock stuck at zero.
+    game.turn = state.turn.max(1);
+    // ★★★ AND HOW MANY TURNS ARE LEFT. `rebuild_game` hardcodes 500; this build's real
+    // limit at Tiny/Online reads 250 (`seat.max_turns`, and the HUD shows TURN n/250).
+    // CIVVIS keys several windows on the remaining turns — `expansion_pays_back_for`
+    // asks whether a settler can still pay for itself before the game ends, and
+    // `expansion_window_open` reserves the endgame — so a horizon that is twice too
+    // long makes late expansion look affordable when it is not, and distorts every
+    // build-versus-fight trade in the other direction too.
+    game.max_turns = max_turns;
+    // The treasury and each city's population are read by CIVVIS's buy and build
+    // decisions. Defaults made a 20-population empire with 600 gold look like a
+    // founding settlement.
+    if state.gold >= 0 {
+        game.players[0].gold = state.gold as f64;
+    }
+
+    // ★ Research first: what a seat KNOWS bounds what it can sensibly do, and a
+    // CIVVIS player with an empty tree recommends Slingers in the Medieval era.
+    // ⚠ Names that do not exist in the CIVVIS ruleset are counted, not ignored —
+    // a silently dropped tech is a capability CIVVIS will not use and nobody sees.
+    for civ6 in &state.techs {
+        let name = civ6.strip_prefix("TECH_").unwrap_or(civ6).to_ascii_lowercase();
+        if game.rules.techs.contains_key(&name) {
+            game.players[0].techs.insert(crate::name::Name::new(&name));
+        } else if !unmapped.contains(civ6) {
+            unmapped.push(civ6.clone());
+        }
+    }
+    for civ6 in &state.civics {
+        let name = civ6.strip_prefix("CIVIC_").unwrap_or(civ6).to_ascii_lowercase();
+        if game.rules.civics.contains_key(&name) {
+            game.players[0].civics.insert(crate::name::Name::new(&name));
+        } else if !unmapped.contains(civ6) {
+            unmapped.push(civ6.clone());
+        }
+    }
+
+    for city in &state.cities {
+        if let Some(cid) = plant_city(&mut game, 0, city) {
+            city_ids.insert(cid, city.id);
+            placed_cities += 1;
+            if city.pop > 0 {
+                if let Some(built) = game.cities.get_mut(&cid) {
+                    built.pop = city.pop;
+                }
+            }
+        }
+    }
+
+    let mut plant_unit = |game: &mut crate::game::Game,
+                          owner: usize,
+                          u: &StateUnit,
+                          unmapped: &mut Vec<String>|
+     -> Option<u32> {
+        if !snapshot.is_revealed((u.x, u.y)) {
+            return None;
+        }
+        let name = civvis_unit_name(&u.kind);
+        if !game.rules.units.contains_key(&name) {
+            if !unmapped.contains(&u.kind) {
+                unmapped.push(u.kind.clone());
+            }
+            return None;
+        }
+        let pos = crate::hex::offset_to_axial(u.x, u.y);
+        let water = game
+            .map
+            .get(pos)
+            .map(|tile| game.rules.is_water(tile))
+            .unwrap_or(true);
+        if water {
+            return None;
+        }
+        let uid = game.spawn_unit(&name, owner, pos);
+        // Carry damage across: a unit at 30 hp is a unit CIVVIS should pull out,
+        // and defaulting it to full health is how an army gets thrown away.
+        if let Some(unit) = game.units.get_mut(&uid) {
+            let hp = u.hp.round() as i32;
+            if hp > 0 && hp < 100 {
+                unit.hp = hp;
+            }
+        }
+        Some(uid)
+    };
+
+    for unit in &state.units {
+        if let Some(uid) = plant_unit(&mut game, 0, unit, &mut unmapped) {
+            unit_ids.insert(uid, unit.id);
+            placed_units += 1;
+        }
+    }
+
+    // Rivals get seats 1..n in the order Civilization VI reported them, so a
+    // CIVVIS `DeclareWar { player }` maps straight back onto a Civ 6 player id.
+    for (index, rival) in state.rivals.iter().enumerate() {
+        let owner = index + 1;
+        if owner >= game.players.len() {
+            break;
+        }
+        for city in &rival.cities {
+            if plant_city(&mut game, owner, city).is_some() {
+                placed_rival_cities += 1;
+            }
+        }
+        for unit in &rival.units {
+            if plant_unit(&mut game, owner, unit, &mut unmapped).is_some() {
+                placed_rival_units += 1;
+            }
+        }
+    }
+
+    Reconstruction {
+        game,
+        unit_ids,
+        city_ids,
+        placed_cities,
+        placed_units,
+        placed_rival_cities,
+        placed_rival_units,
+        unmapped,
+    }
+}
+
+// ===================================================== the persistent live mirror
+//
+// ★★★★★ WHY REBUILDING EVERY TURN IS NOT ENOUGH.
+//
+// `rebuild_from_state` makes a fresh `Game` from each board, and a fresh `AdvancedAi`
+// is asked to decide on it. That agent's whole medium-term apparatus — its strategic
+// plan, its force groups, the site each settler is walking to — is therefore thrown
+// away and re-derived every single turn. What survives is only what is locally optimal
+// on this turn's board, and holding still is almost always locally optimal.
+//
+// Two measurements of the same defect:
+//
+//   * A settler issued `MOVE_TO 12 19` then `MOVE_TO 13 19` on alternating turns for
+//     twenty turns, oscillating between two tiles it kept re-choosing.
+//   * On run civvis-20260730T120107Z at turn 108, with 28 units alive, the FURTHEST
+//     unit from the capital was 7 tiles and the mean was 3.2 — plateaued since turn
+//     74. Nothing ever went looking for the enemy, so `met` stayed at 2, ZERO rival
+//     cities were ever seen, and an army of 23 had nothing it could attack.
+//     Domination was unreachable, and no heuristic tweak would have changed it.
+//
+// So the game and the agent must persist, and reality must be synced INTO them. The
+// unit id mapping persisting is what makes CIVVIS's per-unit memory stay valid: a
+// `settler_target` keyed to a unit id is worthless if that id is reassigned each turn.
+pub struct LiveMirror {
+    pub game: crate::game::Game,
+    /// Civilization VI unit id -> the CIVVIS unit standing in for it. Stable for the
+    /// life of the unit, which is the point.
+    pub uid_of: std::collections::BTreeMap<i64, u32>,
+    pub civ6_of: std::collections::BTreeMap<u32, i64>,
+    /// Civilization VI city id -> CIVVIS city id.
+    pub cid_of: std::collections::BTreeMap<i64, u32>,
+    /// Rival stand-ins, rebuilt each sync: they need no continuity of their own and
+    /// what we can see of them changes with the fog.
+    rival_units: Vec<u32>,
+    rival_cities: std::collections::BTreeSet<(i32, i32)>,
+    pub unmapped: Vec<String>,
+    pub turns_synced: u32,
+}
+
+/// A unit's full movement allowance from the ruleset.
+fn mirror_unit_moves(game: &crate::game::Game, uid: u32) -> f64 {
+    let kind = match game.units.get(&uid) {
+        Some(unit) => unit.kind,
+        None => return 2.0,
+    };
+    game.rules
+        .units
+        .get(kind.as_str())
+        .map(|spec| spec.moves)
+        .unwrap_or(2.0)
+}
+
+impl LiveMirror {
+    pub fn new(
+        snapshot: &Snapshot,
+        state: &StateSnapshot,
+        players: usize,
+        seed: u64,
+        max_turns: u32,
+        frontier_depth: u32,
+    ) -> LiveMirror {
+        let rebuilt =
+            rebuild_from_state(snapshot, state, players, seed, max_turns, frontier_depth);
+        let mut uid_of = std::collections::BTreeMap::new();
+        for (uid, civ6) in &rebuilt.unit_ids {
+            uid_of.insert(*civ6, *uid);
+        }
+        let mut cid_of = std::collections::BTreeMap::new();
+        for (cid, civ6) in &rebuilt.city_ids {
+            cid_of.insert(*civ6, *cid);
+        }
+        LiveMirror {
+            game: rebuilt.game,
+            civ6_of: rebuilt.unit_ids,
+            uid_of,
+            cid_of,
+            rival_units: Vec::new(),
+            rival_cities: std::collections::BTreeSet::new(),
+            unmapped: rebuilt.unmapped,
+            turns_synced: 1,
+        }
+    }
+
+    /// Bring the persistent game up to date with what Civilization VI now reports.
+    ///
+    /// ⚠ Units are matched by their CIV 6 id, never by position or index. Position
+    /// changes every turn and index changes whenever anything dies, so either would
+    /// silently re-point CIVVIS's memory at a different unit — the failure mode being
+    /// a plan that looks continuous and is not.
+    pub fn sync(&mut self, snapshot: &Snapshot, state: &StateSnapshot, frontier_depth: u32) {
+        // ⚠ Bisect switches. Persistent sync silences CIVVIS completely — 0 actions on
+        // every turn after the first, with a FRESH agent, a correct roster and full
+        // movement — so the cause is somewhere in the mutations below. Each part can be
+        // switched off to find which one, because five rounds of hypothesis were wrong.
+        let skip_terrain = std::env::var("CIVVIS_SYNC_NO_TERRAIN").is_ok();
+        let skip_rivals = std::env::var("CIVVIS_SYNC_NO_RIVALS").is_ok();
+        let skip_units = std::env::var("CIVVIS_SYNC_NO_UNITS").is_ok();
+        self.turns_synced += 1;
+        self.game.turn = state.turn.max(1);
+        if state.gold >= 0 {
+            self.game.players[0].gold = state.gold as f64;
+        }
+        for civ6 in &state.techs {
+            let name = civ6.strip_prefix("TECH_").unwrap_or(civ6).to_ascii_lowercase();
+            if self.game.rules.techs.contains_key(&name) {
+                self.game.players[0].techs.insert(crate::name::Name::new(&name));
+            }
+        }
+        for civ6 in &state.civics {
+            let name = civ6.strip_prefix("CIVIC_").unwrap_or(civ6).to_ascii_lowercase();
+            if self.game.rules.civics.contains_key(&name) {
+                self.game.players[0].civics.insert(crate::name::Name::new(&name));
+            }
+        }
+
+        // Newly revealed ground, and the frontier redrawn beyond it. Terrain that was
+        // already known does not change, so only the freshly seen needs writing —
+        // but the frontier has to be recomputed because its edge just moved.
+        if !skip_terrain {
+            apply_terrain(&mut self.game, snapshot);
+            grow_frontier(&mut self.game, snapshot, frontier_depth);
+        }
+
+        // --- our units -------------------------------------------------------
+        let mut seen: std::collections::BTreeSet<i64> = std::collections::BTreeSet::new();
+        for unit in if skip_units { &[][..] } else { &state.units[..] } {
+            seen.insert(unit.id);
+            if !snapshot.is_revealed((unit.x, unit.y)) {
+                continue;
+            }
+            let pos = crate::hex::offset_to_axial(unit.x, unit.y);
+            match self.uid_of.get(&unit.id).copied() {
+                Some(uid) if self.game.units.contains_key(&uid) => {
+                    if self.game.units[&uid].pos != pos {
+                        self.game.relocate(uid, pos);
+                    }
+                    let hp = unit.hp.round() as i32;
+                    if let Some(live) = self.game.units.get_mut(&uid) {
+                        live.hp = if hp > 0 { hp.min(100) } else { 1 };
+                        // ★★★★★ REFRESH THE TURN FROM REALITY, DO NOT SIMULATE IT.
+                        //
+                        // `take_turn` spends a unit's movement, and on a persistent
+                        // game nothing hands it back — so after the first turn every
+                        // unit had `moves_left = 0` and CIVVIS returned ZERO orders on
+                        // every subsequent turn while its plan kept evolving. Measured:
+                        // 10 orders on the first synced turn, then 0, 0, 0, 0.
+                        //
+                        // `Game::begin_turn` would reset this, but it also runs CIVVIS's
+                        // own loyalty, pressure, trade and great-people processing —
+                        // simulating a second game beside the real one and drifting from
+                        // it. Civilization VI already reports the truth (`moves` comes
+                        // from `GetMovesRemaining`), so take it from there. Reality is
+                        // cheaper and cannot diverge.
+                        // ⚠⚠⚠ FULL MOVEMENT, NOT THE EXPORTED `moves`. I had this
+                        // backwards and it silenced CIVVIS completely.
+                        //
+                        // The reasoning was "take movement from reality, reality cannot
+                        // diverge". But the quantity Civilization VI reports is not the
+                        // one that was assumed: measured on run civvis-20260730T120107Z,
+                        // the export at the START of turn 31 had **7 of 8 units at
+                        // `moves: 0`**. `GetMovesRemaining` at the instant `beginTurn`
+                        // runs does not mean "movement available this turn", so feeding
+                        // it in left `advanced_units` breaking immediately on
+                        // `moves_left <= 0.0` for almost every unit — 0 actions logged
+                        // on every turn after the first, with the plan still evolving.
+                        //
+                        // A unit facing a fresh turn has its full allowance, which is
+                        // what the working one-shot path gives it via `spawn_unit`. If
+                        // CIVVIS then orders a unit that really cannot move,
+                        // `canOperate` refuses it in the mod and it is counted — a
+                        // wasted order, not a silent paralysis.
+                        let allowance = mirror_unit_moves(&self.game, uid);
+                        if let Some(live) = self.game.units.get_mut(&uid) {
+                            live.moves_left = allowance;
+                            live.acted = false;
+                            live.attacks_left = 1;
+                            // Cleared by `Game::begin_turn` every turn; on a persistent
+                            // game they survive and a unit that "already moved" is
+                            // skipped.
+                            live.moved = false;
+                            live.zoc_stopped = false;
+                            live.fortified = false;
+                            live.fortify_turns = 0;
+                        }
+                    }
+                }
+                _ => {
+                    let name = civvis_unit_name(&unit.kind);
+                    if !self.game.rules.units.contains_key(&name) {
+                        if !self.unmapped.contains(&unit.kind) {
+                            self.unmapped.push(unit.kind.clone());
+                        }
+                        continue;
+                    }
+                    let water = self
+                        .game
+                        .map
+                        .get(pos)
+                        .map(|tile| self.game.rules.is_water(tile))
+                        .unwrap_or(true);
+                    if water {
+                        continue;
+                    }
+                    let uid = self.game.spawn_unit(&name, 0, pos);
+                    self.uid_of.insert(unit.id, uid);
+                    self.civ6_of.insert(uid, unit.id);
+                }
+            }
+        }
+        // Anything Civilization VI no longer reports is dead or consumed. Leaving it
+        // in would have CIVVIS planning with an army that does not exist.
+        let gone: Vec<i64> = self
+            .uid_of
+            .keys()
+            .copied()
+            .filter(|civ6| !seen.contains(civ6))
+            .collect();
+        for civ6 in gone {
+            if let Some(uid) = self.uid_of.remove(&civ6) {
+                self.civ6_of.remove(&uid);
+                if self.game.units.contains_key(&uid) {
+                    self.game.remove_unit(uid);
+                }
+            }
+        }
+
+        // --- our cities ------------------------------------------------------
+        for city in &state.cities {
+            if self.cid_of.contains_key(&city.id) || !snapshot.is_revealed((city.x, city.y)) {
+                continue;
+            }
+            let pos = crate::hex::offset_to_axial(city.x, city.y);
+            let water = self
+                .game
+                .map
+                .get(pos)
+                .map(|tile| self.game.rules.is_water(tile))
+                .unwrap_or(true);
+            if water || self.game.city_at(pos).is_some() {
+                continue;
+            }
+            let cid = self.game.place_city(0, pos, None);
+            self.cid_of.insert(city.id, cid);
+        }
+        for city in &state.cities {
+            if let Some(cid) = self.cid_of.get(&city.id) {
+                if city.pop > 0 {
+                    if let Some(live) = self.game.cities.get_mut(cid) {
+                        live.pop = city.pop;
+                    }
+                }
+            }
+        }
+
+        // --- rivals ----------------------------------------------------------
+        // Rebuilt wholesale: what we can see of them is fog-dependent and they carry
+        // no plan of ours worth preserving.
+        if skip_rivals {
+            return;
+        }
+        for uid in std::mem::take(&mut self.rival_units) {
+            if self.game.units.contains_key(&uid) {
+                self.game.remove_unit(uid);
+            }
+        }
+        for (index, rival) in state.rivals.iter().enumerate() {
+            let owner = index + 1;
+            if owner >= self.game.players.len() {
+                break;
+            }
+            for city in &rival.cities {
+                if self.rival_cities.contains(&(city.x, city.y))
+                    || !snapshot.is_revealed((city.x, city.y))
+                {
+                    continue;
+                }
+                let pos = crate::hex::offset_to_axial(city.x, city.y);
+                let water = self
+                    .game
+                    .map
+                    .get(pos)
+                    .map(|tile| self.game.rules.is_water(tile))
+                    .unwrap_or(true);
+                if water || self.game.city_at(pos).is_some() {
+                    continue;
+                }
+                self.game.place_city(owner, pos, None);
+                self.rival_cities.insert((city.x, city.y));
+            }
+            for unit in &rival.units {
+                if !snapshot.is_revealed((unit.x, unit.y)) {
+                    continue;
+                }
+                let name = civvis_unit_name(&unit.kind);
+                if !self.game.rules.units.contains_key(&name) {
+                    continue;
+                }
+                let pos = crate::hex::offset_to_axial(unit.x, unit.y);
+                let water = self
+                    .game
+                    .map
+                    .get(pos)
+                    .map(|tile| self.game.rules.is_water(tile))
+                    .unwrap_or(true);
+                if water {
+                    continue;
+                }
+                let uid = self.game.spawn_unit(&name, owner, pos);
+                self.rival_units.push(uid);
+            }
+        }
+    }
 }

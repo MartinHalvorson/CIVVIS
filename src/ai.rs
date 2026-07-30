@@ -2048,6 +2048,35 @@ impl BasicAi {
     /// movement capabilities, and take down where every unit is standing
     /// before any of them moves. Persistent destinations live across turns;
     /// the expensive all-map candidate scan does not need to.
+    /// Drop everything this agent remembers ABOUT INDIVIDUAL UNITS, keeping the rest.
+    ///
+    /// ★★★★★ FOR MIRRORING A GAME WHOSE UNIT IDS ARE REASSIGNED EVERY TURN.
+    /// `civvis-orders --serve --fresh-board` keeps one agent alive across a real
+    /// Civilization VI game and rebuilds the board each turn, because `take_turn`
+    /// cannot be run twice on a board that has not advanced through `begin_turn`.
+    /// Rebuilding reassigns unit ids, so every id-keyed map here silently describes a
+    /// DIFFERENT unit than it did last turn.
+    ///
+    /// `unit_motion` is the one that does the damage: it is the livelock detector, so
+    /// a unit whose recorded history jumps around looks like it is going in circles,
+    /// and `hold_stood_down_unit` then fortifies it and suppresses it for several
+    /// turns. Measured cost of not calling this — same code, same settings, one agent
+    /// persisted across a real game: **about 1 unit order per turn against 13**, and by
+    /// turn 62 the empire was ONE city and ONE unit where the no-continuity arm had 2
+    /// cities and 25 units at turn 82. Continuity that poisons the unit layer is worse
+    /// than no continuity.
+    ///
+    /// What is deliberately KEPT is the strategic plan, which is the whole reason to
+    /// persist an agent: grand strategy, war target, city target — none of it keyed to
+    /// a unit id.
+    pub fn forget_unit_memory(&mut self) {
+        self.recovering_units.clear();
+        self.patrol_targets.clear();
+        self.patrol_posts.clear();
+        self.settler_targets.clear();
+        self.unit_motion.clear();
+    }
+
     pub(crate) fn begin_movement_turn(&mut self, g: &Game, pid: usize) {
         self.patrol_posts.clear();
         self.observe_unit_motion(g, pid);
