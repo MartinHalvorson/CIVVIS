@@ -2397,6 +2397,188 @@ local function blockerName(id)
 	return blockerNames[id] or tostring(id);
 end
 
+-- Spend envoys, take suzerainty, and levy the army that comes with it.
+--
+-- ★★★★ THE LARGEST UNANSWERED DECISION IN THE PROJECT, and it was on the
+-- give-up list below for the whole of its history. In a 106-turn run,
+-- `ENDTURN_BLOCKING_GIVE_INFLUENCE_TOKEN` fired **44 times** -- more than
+-- production (21), research (13), units (8) and civics (7). The comment above
+-- `chooseDedication` even names the number ("44 for the next one (influence
+-- tokens)") because that count came out of the same census that moved
+-- commemoration off the list. It was read and then left alone.
+--
+-- ⚠ It is also what HANGS the run. Force-skipping the blocker does not clear
+-- it: at turn 106 the seat sat 10 minutes on `GIVE_INFLUENCE_TOKEN` while the
+-- stall watchdog clicked dialogue coordinates at a prompt that is not a
+-- dialogue. The shipped screen clears it with `SetGivingTokensConsidered(true)`
+-- (`CityStates.lua:451`), so that is done here even when nothing is worth
+-- buying -- an unspendable envoy must still end the turn.
+--
+-- ★ Why this is worth more than another combat tuning pass. CIVVIS measured
+-- suzerainty as its single biggest headroom: an oracle granted it wins **56.7%
+-- against 22.7%**, a near doubling and the largest gap any ablation has
+-- produced. In the real game the seat has been discarding that lever for free
+-- while sitting on hundreds of unspent gold.
+--
+-- ⚠ CONCENTRATE, DO NOT SPREAD. One envoy in six city-states buys six small
+-- yield bonuses; three in one buys SUZERAINTY -- its unique bonus and, decisive
+-- for a domination route, the right to levy its whole army. The runs that
+-- collapse do so with the army at 2-3 units and gold unspent, so a levied army
+-- is the one source of force that does not have to be built first.
+--
+-- Every accessor here is copied from the shipped `CityStates.lua` rather than
+-- recalled: `GetTokensToGive`, `CanGiveInfluence`, `CanGiveTokensToPlayer`,
+-- `GetTokensReceived`, `GetMostTokensReceived`, `GetSuzerain`, `CanLevyMilitary`,
+-- `GetLevyMilitaryCost`, and one `GIVE_INFLUENCE_TOKEN` request PER TOKEN.
+local MIN_ENVOY_TOKENS_SUZERAIN = 3;
+
+-- Carried onto every turn event. ⚠ A boolean "envoys handled" would read green
+-- both when a suzerainty was bought and when nothing was buyable and the flag
+-- was merely cleared -- the same trap that let a Settler request report
+-- `applied = true` on 83 consecutive turns with nothing built. So: envoys
+-- placed, suzerainties held, and levies taken, separately.
+local envoyTally = { placed = 0, suzerainties = 0, levies = 0, met_minors = 0 };
+
+local function chooseEnvoy(player, pid, turn)
+	local influence = try(function() return player:GetInfluence(); end);
+	local oneParam = try(function() return PlayerOperations.PARAM_PLAYER_ONE; end);
+	if influence == nil or oneParam == nil then return nil; end
+	local giveOp = try(function() return PlayerOperations.GIVE_INFLUENCE_TOKEN; end);
+	local levyOp = try(function() return PlayerOperations.LEVY_MILITARY; end);
+
+	local diplomacy = try(function() return player:GetDiplomacy(); end);
+	local tokens = try(function() return influence:GetTokensToGive(); end, 0) or 0;
+	local canGive = try(function() return influence:CanGiveInfluence(); end, false);
+
+	-- ⚠ MET CITY-STATES ONLY. The operator's standing constraint is that this
+	-- agent may use only what a human in the seat can see, and an unmet minor
+	-- is not on the human's screen. `PlayerManager.GetAliveMinors()` returns
+	-- every one of them whether met or not, so the HasMet gate is what keeps
+	-- this honest -- without it the agent would be reading the roster.
+	local seen, suzerainties, levied = {}, 0, nil;
+	local minors = try(function() return PlayerManager.GetAliveMinors(); end);
+	if minors ~= nil then
+		for _, minor in ipairs(minors) do
+			pcall(function()
+				local mid = try(function() return minor:GetID(); end, -1) or -1;
+				local theirs = try(function() return minor:GetInfluence(); end);
+				if mid < 0 or theirs == nil then return; end
+				if not try(function() return theirs:CanReceiveInfluence(); end, false) then
+					return;
+				end
+				if diplomacy ~= nil
+					and not try(function() return diplomacy:HasMet(mid); end, false) then
+					return;
+				end
+				local mine = try(function() return theirs:GetTokensReceived(pid); end, 0) or 0;
+				local most = try(function() return theirs:GetMostTokensReceived(); end, 0) or 0;
+				local holder = try(function() return theirs:GetSuzerain(); end, -1) or -1;
+				-- Tokens still needed to take it: the suzerain is whoever holds
+				-- the most, with a floor of three. `GetMostTokensReceived`
+				-- already counts ours, so this reads 1 when we lead 2-2.
+				local need = 0;
+				if holder ~= pid then
+					need = math.max(MIN_ENVOY_TOKENS_SUZERAIN, most + 1) - mine;
+					if need < 1 then need = 1; end
+				else
+					suzerainties = suzerainties + 1;
+				end
+				seen[#seen + 1] = {
+					id = mid, mine = mine, need = need, ours = holder == pid,
+					takes = try(function()
+						return influence:CanGiveTokensToPlayer(mid);
+					end, false),
+				};
+			end);
+		end
+	end
+
+	-- 1. Levy first, because it is the cheapest army in the game and this agent's
+	--    failure mode is running out of units. Gold is checked against the
+	--    engine's own quote; `CanLevyMilitary` already refuses a levy that is
+	--    still on cooldown.
+	if levyOp ~= nil then
+		local purse = try(function()
+			return math.floor(player:GetTreasury():GetGoldBalance());
+		end, 0) or 0;
+		for _, minor in ipairs(seen) do
+			if levied == nil and minor.ours
+				and try(function() return influence:CanLevyMilitary(minor.id); end, false)
+			then
+				local cost = try(function()
+					return influence:GetLevyMilitaryCost(minor.id);
+				end, -1) or -1;
+				if cost >= 0 and purse >= cost then
+					local params = {};
+					params[oneParam] = minor.id;
+					local ok = pcall(function()
+						UI.RequestPlayerOperation(pid, levyOp, params);
+					end);
+					if ok then levied = minor.id; end
+				end
+			end
+		end
+	end
+
+	-- 2. Place every envoy on ONE target: the cheapest city-state to flip that
+	--    we do not already hold. Ties go to the one we have most invested in, so
+	--    a part-built claim finishes instead of a new one starting.
+	local placed, target = 0, nil;
+	if giveOp ~= nil and canGive and tokens > 0 then
+		local best = nil;
+		for _, minor in ipairs(seen) do
+			if minor.takes and not minor.ours then
+				if best == nil or minor.need < best.need
+					or (minor.need == best.need and minor.mine > best.mine) then
+					best = minor;
+				end
+			end
+		end
+		-- Nothing flippable: top up somewhere legal anyway rather than forfeit
+		-- the token. A held envoy expires with the game.
+		if best == nil then
+			for _, minor in ipairs(seen) do
+				if minor.takes and best == nil then best = minor; end
+			end
+		end
+		if best ~= nil then
+			target = best.id;
+			for _ = 1, tokens do
+				local params = {};
+				params[oneParam] = best.id;
+				local ok = pcall(function()
+					UI.RequestPlayerOperation(pid, giveOp, params);
+				end);
+				if not ok then break; end
+				placed = placed + 1;
+			end
+		end
+	end
+
+	-- 3. Clear the prompt whatever happened. This is the line that ends the
+	--    turn, and skipping it is what left a run wedged for ten minutes.
+	pcall(function()
+		if not influence:IsGivingTokensConsidered() then
+			influence:SetGivingTokensConsidered(true);
+		end
+	end);
+
+	envoyTally.placed = envoyTally.placed + placed;
+	envoyTally.suzerainties = suzerainties;
+	envoyTally.met_minors = #seen;
+	if levied ~= nil then envoyTally.levies = envoyTally.levies + 1; end
+
+	-- Both branches counted, because "envoys handled" reads green whether the
+	-- agent bought a suzerainty or found nothing and cleared the flag.
+	emit("envoy", {
+		turn = turn, held = tokens, placed = placed, target = target,
+		met_minors = #seen, suzerainties = suzerainties, levied = levied,
+	});
+	if levied ~= nil then return "levy"; end
+	if placed > 0 then return "envoy"; end
+	return "envoy_considered";
+end
+
 local function currentBlocker(pid)
 	return try(function()
 		return NotificationManager.GetFirstEndTurnBlocking(pid);
@@ -2432,7 +2614,11 @@ local SOFT_BLOCKERS = {
 	ENDTURN_BLOCKING_GOVERNOR_PROMOTION = true,
 	ENDTURN_BLOCKING_GOVERNOR_IDLE = true,
 	ENDTURN_BLOCKING_GOVERNOR_OPPORTUNITY = true,
-	ENDTURN_BLOCKING_GIVE_INFLUENCE_TOKEN = true,
+	-- ⚠ GIVE_INFLUENCE_TOKEN IS NO LONGER HERE either, and it was the worst one
+	-- left: 44 firings in a 106-turn run, the top blocker by count. Listing it
+	-- did not even buy the cheap turn-end the comment above promises, because
+	-- force-skipping never clears this prompt -- the run wedged on it for ten
+	-- minutes at turn 106. `answerBlocker` now calls `chooseEnvoy`.
 	ENDTURN_BLOCKING_CLAIM_GREAT_PERSON = true,
 	ENDTURN_BLOCKING_ARTIFACT = true,
 	ENDTURN_BLOCKING_EMERGENCY_NEEDS_ATTENTION = true,
@@ -2466,6 +2652,11 @@ local function answerBlocker(player, pid, blocker, turn)
 	elseif name == "ENDTURN_BLOCKING_COMMEMORATION_AVAILABLE" then
 		if not spend("dedication", cfg.MaxDedicationPasses or 2) then return nil; end
 		return chooseDedication(player, pid);
+	elseif name == "ENDTURN_BLOCKING_GIVE_INFLUENCE_TOKEN" then
+		-- One pass is enough: `chooseEnvoy` places every held token and then
+		-- sets the considered flag, so a second call has nothing left to do.
+		if not spend("envoy", cfg.MaxEnvoyPasses or 1) then return nil; end
+		return chooseEnvoy(player, pid, turn);
 	elseif name == "ENDTURN_BLOCKING_PANTHEON" then
 		if not spend("pantheon", cfg.MaxPantheonPasses or 2) then return nil; end
 		return choosePantheon(player, pid);
@@ -2757,6 +2948,8 @@ local function playTurn(player, pid, turn)
 		research = research, civic = civic,
 		builds = builds, ordered = ordered, stuck = stuck,
 		worst_stack = worstStack, piles = piles,
+		envoys_placed = envoyTally.placed, suzerainties = envoyTally.suzerainties,
+		levies = envoyTally.levies, met_minors = envoyTally.met_minors,
 		-- ★ The ram fires-check. `siege` staying 0 while `target` is set means no
 		-- wall will ever break, whatever the ladder claims to queue. Reported every
 		-- turn precisely because I once believed the entry existed when it did not.

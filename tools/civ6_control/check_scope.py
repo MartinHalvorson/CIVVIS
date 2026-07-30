@@ -319,9 +319,17 @@ def main() -> int:
     if args.self_test:
         return 1 if self_test() else 0
 
-    total = sum(check(p, args.globals) for p in args.paths)
-    print(f"checked {len(args.paths)} file(s) for scope slips: "
-          f"{total} finding(s)")
+    # ⚠ With no arguments this used to check NOTHING and exit 0, printing
+    # "checked 0 file(s): 0 finding(s)" — a guard that passes vacuously is worse
+    # than no guard, because it is quoted as evidence. It reported green on the
+    # very edit that added `chooseEnvoy`. Same family as `install.py` with no
+    # args exiting 0 having installed nothing.
+    paths = args.paths or sorted((pathlib.Path(__file__).parent / "mod").glob("*.lua"))
+    total = sum(check(p, args.globals) for p in paths)
+    if not paths:
+        print("FAIL: no Lua files found to check — refusing to report success")
+        return 2
+    print(f"checked {len(paths)} file(s) for scope slips: {total} finding(s)")
     return 1 if total else 0
 
 
