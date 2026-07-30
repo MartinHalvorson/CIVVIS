@@ -3546,6 +3546,18 @@ local function exportState(player, pid, turn)
 			rivals[#rivals + 1] = {
 				player = otherId,
 				at_war = try(function() return diplomacy:IsAtWarWith(otherId); end, false),
+				-- ★★★ THE GAME'S OWN ANSWER TO "MAY WE DECLARE ON THEM". CIVVIS gates a
+				-- war on its own diplomatic bookkeeping — it wants a casus belli, and
+				-- failing that it denounces and waits five turns for a Formal War. That
+				-- bookkeeping does not exist in a reconstruction with no turn
+				-- processing, so the wait never ends: measured over 81 replayed turns
+				-- with a persistent agent and `strategy = conquest` on 26 of them,
+				-- CIVVIS declared war ZERO times. Exporting the real permission lets
+				-- the reconstruction offer the action Civilization VI would actually
+				-- allow, instead of a CIVVIS rule with no counterpart here.
+				can_declare = try(function()
+					return diplomacy:CanDeclareWarOn(otherId);
+				end, false),
 				score = try(function() return other:GetScore(); end, -1),
 				-- ★★★★★ THE NUMBER THE WAR DECISION ACTUALLY NEEDS, and it was never
 				-- exported. The old veto compared SCORE ratios, and on Settler the

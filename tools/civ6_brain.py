@@ -156,16 +156,25 @@ class Decider:
     either way, so the note records which mode answered.
     """
 
-    def __init__(self, binary: Path, run_dir: Path, victory: str):
+    def __init__(self, binary: Path, run_dir: Path, victory: str,
+                 war_from_plan: bool = False):
         self.binary = binary
         self.run_dir = run_dir
         self.victory = victory
+        # ⚠ Declares war when CIVVIS's PLAN names a target but its own diplomatic
+        # bookkeeping cannot fire. That bookkeeping wants a casus belli, or a
+        # denouncement matured over five turns, and NOTHING matures in a board rebuilt
+        # each turn — measured: 81 replayed turns, `strategy = conquest` on 26 of them,
+        # ZERO declarations. So the decline is an artefact of the reconstruction
+        # rather than a judgement about the war.
+        self.war_from_plan = war_from_plan
         self.proc: subprocess.Popen | None = None
 
     def start(self) -> None:
         self.proc = subprocess.Popen(
             [str(self.binary), "--mirror", str(self.run_dir), "--serve",
-             "--fresh-board", "--victory", self.victory],
+             "--fresh-board", "--victory", self.victory]
+            + (["--war-from-plan"] if self.war_from_plan else []),
             stdin=subprocess.PIPE, stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL, text=True, bufsize=1,
         )
@@ -241,6 +250,9 @@ def main() -> int:
                     help="comma-separated order verbs to drop (bisect only)")
     ap.add_argument("--one-order-per-unit", action="store_true", default=False,
                     help="keep only a unit's last positional order (bisect only)")
+    ap.add_argument("--war-from-plan", action="store_true", default=False,
+                    help="declare on CIVVIS's plan target when its own casus-belli "
+                         "bookkeeping cannot mature in a rebuilt board")
     ap.add_argument("--server", action="store_true", default=True,
                     help="keep one CIVVIS agent alive across turns (plan continuity)")
     ap.add_argument("--no-server", dest="server", action="store_false",
@@ -267,7 +279,7 @@ def main() -> int:
     conn = connect(Path(args.orders_db).expanduser())
     print(f"[brain] mode={args.mode} run={run_tag} db={args.orders_db} "
           f"decider={'server' if args.server else 'per-turn'}", flush=True)
-    decider = (Decider(binary, run_dir, args.victory)
+    decider = (Decider(binary, run_dir, args.victory, args.war_from_plan)
                if args.mode == "civvis" and args.server else None)
 
     deadline = time.time() + args.seconds

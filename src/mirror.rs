@@ -715,6 +715,9 @@ pub struct StateUnit {
 pub struct StateRival {
     #[serde(default)]
     pub player: usize,
+    /// Whether Civilization VI says this seat may declare war on them RIGHT NOW.
+    #[serde(default)]
+    pub can_declare: bool,
     #[serde(default)]
     pub score: i64,
     #[serde(default = "unknown_strength")]
@@ -1056,6 +1059,11 @@ pub fn rebuild_from_state(
         if owner >= game.players.len() {
             break;
         }
+        // Same as `LiveMirror::sync`: Civilization VI's own `CanDeclareWarOn` is the
+        // permission, and CIVVIS's Formal War wait cannot mature here.
+        if rival.can_declare && !rival.at_war {
+            game.players[0].denounced_until.insert(owner, game.turn + 1);
+        }
         for city in &rival.cities {
             if plant_city(&mut game, owner, city).is_some() {
                 placed_rival_cities += 1;
@@ -1349,6 +1357,24 @@ impl LiveMirror {
             let owner = index + 1;
             if owner >= self.game.players.len() {
                 break;
+            }
+            // ★★★★★ MIRROR THE WAR PERMISSION, NOT CIVVIS'S BOOKKEEPING.
+            //
+            // `preferred_war_opening` wants a casus belli; failing that it denounces a
+            // major rival and waits for `denounced_until` to mature into a Formal War.
+            // Nothing matures in a reconstruction with no turn processing, so the wait
+            // is forever: 81 replayed turns, `strategy = conquest` on 26 of them, and
+            // ZERO declarations.
+            //
+            // Civilization VI has already answered the only question that matters —
+            // `CanDeclareWarOn` — so when it says yes, mark the rival as denounced far
+            // enough back that the Formal War option is open. This mirrors a real
+            // permission the seat holds; it does not invent one. When Civ 6 says no,
+            // nothing is set and CIVVIS is correctly unable to declare.
+            if rival.can_declare && !rival.at_war {
+                self.game.players[0].denounced_until.insert(owner, self.game.turn + 1);
+            } else {
+                self.game.players[0].denounced_until.remove(&owner);
             }
             for city in &rival.cities {
                 if self.rival_cities.contains(&(city.x, city.y))

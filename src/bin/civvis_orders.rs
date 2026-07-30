@@ -323,7 +323,15 @@ fn translate(
             verb: Some("UPGRADE".to_string()),
             pos: None,
         }),
-        Action::DeclareWar { player, .. } => Some(Order {
+        // ⚠⚠ A CASUS-BELLI WAR IS STILL A WAR, AND THIS DROPPED IT ON THE FLOOR.
+        // CIVVIS prefers `DeclareWarWithCasusBelli` for a major rival and keeps
+        // surprise war for minors, so this variant is the one it would actually emit
+        // against the civilizations domination needs — and it was falling through to
+        // the `other` tally, counted as untranslatable. Civilization VI has one war
+        // declaration; the grievance bookkeeping is a CIVVIS rule with no counterpart,
+        // so the casus belli is dropped and the war is kept.
+        Action::DeclareWarWithCasusBelli { player, .. }
+        | Action::DeclareWar { player, .. } => Some(Order {
             kind: "war",
             subject: state
                 .rivals

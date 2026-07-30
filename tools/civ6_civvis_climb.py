@@ -177,6 +177,8 @@ def main() -> int:
     ap.add_argument("--max-turns", type=int, default=250)
     ap.add_argument("--timeout", type=float, default=5400.0)
     ap.add_argument("--victory", default="domination")
+    ap.add_argument("--war-from-plan", action="store_true", default=False,
+                    help="pass through to the brain; see its note for why")
     ap.add_argument("--tile-export-every", type=int, default=4,
                     help="turns between map exports; the operator watches this against the game")
     ap.add_argument("--orders-bin", default=str(HERE.parent / "target" / "release" / "civvis_orders"))
@@ -235,7 +237,9 @@ def main() -> int:
              "--run-dir", str(RUN_ROOT / tag),
              "--mode", "civvis",
              "--bin", str(orders_bin),
-             "--victory", args.victory,
+             "--victory", args.victory]
+            + (["--war-from-plan"] if args.war_from_plan else [])
+            + [
              "--seconds", str(args.timeout + 300)],
             stdout=brain_log, stderr=subprocess.STDOUT,
         )
