@@ -680,11 +680,24 @@ warning: policy and advanced both play as advanced; this run measures
 advanced against itself and says nothing about either name
 ```
 
-`--require-artifacts` exits 3 instead of recording an untrained result, and
-`--artifact-dir` points the check at a non-default champion directory. The
+`--require-artifacts` exits 3 instead of recording an untrained result. The
 collapse warning is the load-bearing half: a missing artifact is only a
 problem when it makes two entrants the same agent, and that is precisely
 the case a win rate cannot show you.
+
+⚠ **`--artifact-dir` used to point the check at a non-default champion
+directory, and that is exactly what was wrong with it.** It moved the *report*
+and never the run: `builtin_provenance(name, dir)` honours the directory, but
+`builtin_ai(name, seed)` takes **no directory at all** — every arm resolves the
+`ARTIFACT_DIR` constant, and `StrategicAi`/`PolicyAi`/`ProductionSearchAi` each
+load their own net from that same constant. So the flag could print a net found
+in one directory and then play the agent that read another, which is the one
+failure this whole reporting path exists to prevent. `ai_eval` now exits **2**
+with the reason rather than printing a provenance the run does not have. To
+evaluate a different artifact, run from a working directory that holds it —
+`evolved/valuenet.json` or `data/evolved/valuenet.json`, both of which
+`ValueNet::load` now resolves. Threading a directory into construction is the
+general fix and is ~70 call sites inside `elo::builtin_ai`.
 
 ## 2026-07-26 — a duel never reaches the macro search
 
@@ -2541,6 +2554,25 @@ in-progress run still overrides the snapshot and a genome can still be swapped
 without rebuilding. The built-in answers only for the canonical `evolved`
 directory, because `--artifact-dir` asks about *that* directory and
 `--require-artifacts` depends on the answer being honest.
+
+⚠ **That rationale survives; the flag it names does not.** `--artifact-dir` is
+now refused for anything but the default (see the note above), so what keeps the
+built-in honest is `--require-artifacts` alone. Restricting the embedded tier to
+the canonical directory is still right, and for the reason given — an explicit
+question about some other directory must not be answered with a built-in — it is
+just no longer askable through this flag.
+
+★ And the same defect was still live one artifact over. `ValueNet::load` had
+none of this resolution: a single cwd-relative read, no `data/` tier, no
+built-in, while nothing was tracked at `evolved/valuenet.json` anywhere in the
+tree. So the learned evaluator resolved to `None` in every process on every
+machine, and `strategic` has never once played as anything but
+`strategic_score`. It now resolves local → `data/<dir>`, with a
+present-but-unloadable artifact **stopping** resolution rather than falling
+through to a net the experimenter did not place. Third instance of this class,
+after the genome here and the league roster in #490 — which is the sharpest
+available argument for reading the paragraph below as a standing rule rather
+than a war story.
 
 **The general shape, which has now cost this session twice:** a number true in
 one context read as true in another. The genome was present in the repository
@@ -5807,4 +5839,52 @@ seeds) and this one (+0.50 cities, null).
 That is worth stating plainly for whoever picks this up: **the expansion gap is
 real and is not currently reachable by changing a decision.** Anything further
 here should either change what a settler costs, or stop and go elsewhere.
-||||||| 2dbf641
+
+## 2026-07-29 — ★★★★ what a searching turn costs, and why the first answer was wrong
+
+The entry above established that no searching agent is seated in the deployed
+league and that breeding cannot produce one. The obvious explanation is cost.
+`turn_cost` measures it at the deployment profile: 6 players, 74×46, 9
+city-states, interleaved on the same seeds so both fleets meet the same
+contention on a shared box.
+
+| fleet | ms a game-turn | ratio |
+|---|---|---|
+| all `AdvancedAi` | 13.3 | 1× |
+| **one searching seat among five** | **76.7** | **6.4×** |
+| all `StrategicAi` | 410.0 | 29.2× |
+
+**The first version of this probe measured only the all-searching fleet and
+would have given the wrong recommendation.** It reported 25–31× and concluded
+"too expensive to seat as it stands — make the search cheaper rather than
+better." But nothing seats that way. A league entry is *one* strategy among five
+opponents, so the cost of admitting search is `(5a + s) / 6a`, not `s / a`. The
+configuration that would actually ship costs **6.4×**, which is a deliberate
+trade rather than an impossibility — and the difference between those two
+conclusions is the difference between abandoning the search line and investing in
+it.
+
+That is a general trap worth naming: **measure the configuration that would
+ship, not the one that is convenient to construct.** It is the same failure as
+evaluating at 4p 24×16 and deploying at 6p 74×46, one level down.
+
+**What follows.** Seating a searching agent in the league is affordable. A round
+would take several times as long, which is a real cost for an offline rating
+system that runs continuously, but 76.7 ms a game-turn is about thirteen turns a
+second — the live exhibition paces turns for viewers and reports
+`frames_missed: 0`, so a searching seat is very unlikely to be what a spectator
+would notice. The highest-value change available is therefore to anchor one, so
+the self-improvement loop can rate search against the bred genomes at all.
+
+**Limits.** Three seeds, 100 turns, on a box at load 30–50. The ratio is robust
+to that because the runs are interleaved, but the absolutes are not, and
+early-game turns are cheaper than late ones for both fleets, so a 250-turn game
+would move both numbers up. The category — single digits, not tens — is what
+this establishes.
+
+| claim | status |
+|---|---|
+| an all-searching fleet costs ~29× a scripted one | **established** (n=3) |
+| **seating one searching entry costs ~6.4×** | **established** (n=3) |
+| search is too expensive to seat | **refuted** — that conclusion came from measuring a fleet nobody runs |
+| a searching seat would break the exhibition's frame-per-turn guarantee | **unmeasured**, and unlikely at 13 turns/sec |

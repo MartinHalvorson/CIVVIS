@@ -1,5 +1,8 @@
 # Oracle ablation
 
+Status of the 2026-07-29 `strategic_deep` Expansion transfer study:
+**interrupted and invalid; no retry; confirmation unopened**.
+
 `ablate` asks a deliberately stronger question than a policy comparison: if a
 seat is handed a perfect, free version of one capability, does it win games it
 otherwise loses? The matched gap to the same seat on the same map is an upper
@@ -14,6 +17,20 @@ Two checks make a null interpretable:
 
 The number of times a grant fires is a third, separate check. A grant that
 never changes the position has measured the stock agent under another name.
+
+`--grant all` is the safe capability set, including its exact `none` sanity
+arm. It deliberately excludes `idle_reserve`. That intervention confiscates
+Gold rather than granting a capability, so its sign reads in reverse and it
+must be requested explicitly as `--grant idle_reserve`. When confiscation wins
+more matched outcomes, deleting the reserve helps; when it loses more, the
+reserve is valuable. The evaluator labels those directions directly instead of
+calling either one generic “headroom.”
+
+The evaluator also treats a nonsignificant result as unresolved, not as proof
+of a null. A powered null requires a preregistered sensitivity argument outside
+the generic tool output. This applies equally to capability grants and the
+best-lane oracle: a run that does not resolve a direction cannot establish that
+perfecting a subsystem or choosing the winning lane is worthless.
 
 ## 2026-07-29 preregistration: test the profile, not only the grant
 
@@ -145,3 +162,190 @@ The useful advance is methodological: future oracle claims can name their
 controller and speed, share one matched control across treatments, refuse a
 silent agent fallback, and expose progress during expensive batches. No
 gameplay behavior changes here.
+
+## 2026-07-29 preregistration: does the expansion ceiling reach the strongest agent?
+
+The first Expansion result is the largest structural ceiling measured in this
+repository: on the Standard/Advanced four-player profile the same focal seat
+won 69/300 untreated cells and 157/300 granted cells, with 144 discordant cells
+and exact `p = 0`. Its interpretation needs one correction before it guides
+work. `Grant::Expansion` does not isolate settler price. At the start of a
+granted turn it creates a free Settler whenever the empire has one to five
+cities and no Settler already walking. It therefore bypasses all of the
+ordinary production decision: the population floor, expansion window,
+build-time site requirement, queue competition, production cost, and population
+cost. It preserves the six-city ceiling, one-at-a-time serialization, transit,
+site choice, and settlement. This is an upper bound on the bundled supply and
+tempo of expansion, not evidence that any one bypassed conjunct is causal.
+
+That distinction matters after #559's census. On 6p/74x46, a missing site never
+blocked the sampled shortfall turns; the expansion window alone blocked 31.2%,
+while 40.4% had no hard blocker and let the Settler compete on value and price.
+Those are two different honest treatments. Before spending an evaluation on
+either, this experiment asks whether the large ceiling survives the controller
+upgrade from `advanced` to the strongest published `strategic_deep` agent.
+
+### Profile and harness change
+
+The exhibition does not have one map cell: after its bootstrap world it samples
+4–10 players, nine map scripts, and both Flat and Planet topology. The focal
+cell here is the same high-cost 8-player Continents/Planet cell used by the
+contemporaneous rush and faith studies. It is one production-relevant cell, not
+an exhibition-wide estimate. With the stock 84x54 size request, Planet resolves
+to the globe's 105x44 storage rectangle (4,412 playable tiles); the evaluator
+must print both requested and realized geometry so that conversion is visible.
+
+Before the run, grant mode in `ablate` gains the profile axes it cannot
+currently express:
+
+- `--map`, `--shape`, and `--poles`;
+- `--randomize-civs`; and
+- `--victories`.
+
+Historical defaults remain Pangaea, Flat, poles, fixed stock civilizations, and
+all victory conditions. Unknown values must fail instead of falling back. The
+best-lane mode is outside this experiment and retains its existing interface.
+
+### Fixed screen
+
+The untouched primary seed and exact command are:
+
+```text
+ablate --grant none,expansion --ai strategic_deep --pairs 6 --players 8 \
+  --width 84 --height 54 --city-states 12 --turns 250 --speed online \
+  --map continents --shape planet --poles poles --randomize-civs \
+  --victories science,culture,domination --seed 9990000 --jobs 6
+```
+
+Six maps sampled from seats 0 and 7 produce 12 matched cells. The shared control
+is played once, then the exact null and Expansion treatments are played against
+it. The null must change 0/12 outcomes. Expansion advances only if it fires,
+produces at least six discordant cells, helps more cells than it hurts, and
+reaches two-sided McNemar `p < 0.05`. With only six discordances, that requires
+6/0; the significance test, rather than a raw win-rate threshold, continues to
+govern larger discordant sets.
+
+This narrow screen reuses the already completed strongest-controller positive
+calibration (Treasury helped 8/12 and hurt 0/12 at `p = 0.0078` on the 6p Online
+cell) instead of spending another 12 strategic games to remeasure a deliberately
+enormous resource advantage. Consequently a failed Expansion screen is a stop,
+not a powered negative bound on this different profile. There is no seed retry
+and no threshold adjustment.
+
+### Prospective clustered-inference amendment
+
+At 2026-07-29 16:28 UTC, after the fixed screen had completed 10/12 control
+games but before it printed a control summary or began either the null or
+Expansion arm, a preflight audit identified that the two focal seat-cells on
+one map share a generated world. Treating all 12 cells as mutually independent
+would therefore make the screen's McNemar value anti-conservative whenever the
+two seats move together. No control aggregate or treatment outcome had been
+printed or inspected when this amendment was written.
+
+The already-running screen remains byte-for-byte unchanged at frozen binary
+head `8ed75b4`. Its original cell-level gate remains only a deliberately cheap
+resource-allocation screen: passage can earn the disjoint confirmation, but the
+screen's cell-level `p` is not itself a population-level transfer claim. Before
+any confirmation, `ablate` additionally collapses each map's two seats into one
+direction: helped when treatment wins more of the two seats than control, hurt
+when it wins fewer, and unchanged on a tie. It reports an exact two-sided sign
+test across discordant maps, restoring the independently generated map as the
+inference unit. This changes no world, seed, seat, controller, treatment,
+endpoint, or resource rule.
+
+This also narrows the older calibration language. The Online/Advanced
+Treasury result had 17 helped and zero hurt cells, so even worst-case pairing
+places those changes on at least nine wholly positive maps (`p <= 0.0039`);
+its sensitivity conclusion survives clustering. The 8/0 `strategic_deep`
+Treasury aggregate can occupy only four to six positive maps, however, whose
+two-sided map-level values range from 0.1250 to 0.03125. Because the old log
+did not retain cell identities, that architecture calibration is now treated
+as sensitivity rationale rather than confirmed map-level inference. No
+playable policy was promoted from it, and a focal Expansion transfer claim now
+requires the disjoint clustered confirmation below.
+
+The same reporting correction applies to best-lane mode, which uses the same
+two-seat-per-map layout. Its published 25 favorable / 1 adverse cell result is
+still directionally robust under every possible within-map pairing, but future
+runs print the exact map-level sign test rather than asking readers to recover
+that bound from aggregate cells.
+
+#### Sensitivity audit of retained aggregate results
+
+The old logs retained helped, hurt, and unchanged cell totals but not which two
+cells shared a map. A finite sensitivity audit can still enumerate every
+two-cell partition consistent with those totals. In the table below, the
+“possible map `p`” interval spans all such partitions; it is not a confidence
+interval and does not recover the missing identities.
+
+| result | helped / hurt cells | possible map `p` | conclusion after clustering audit |
+|---|---:|---:|---|
+| Modernity, seed 420000 | 16 / 16 | 0.1516–1.0000 | null survives every partition |
+| Taker, seed 420000 | 15 / 13 | 0.1153–1.0000 | null survives every partition |
+| Attrition, seed 420000 | 11 / 14 | 0.0963–1.0000 | null survives every partition |
+| Treasury, seed 420000 | 62 / 0 | <0.000001 throughout | positive calibration survives |
+| best lane, seed 420000 | 25 / 1 | <0.0019 throughout | routing ceiling survives for the fallback agent |
+| Expansion, seed 450000 | 31 / 9 | <0.000001–0.2296 | first screen alone is indeterminate |
+| Expansion, seed 460000 | 116 / 28 | <0.000001–0.0017 | disjoint confirmation survives every partition |
+| Online/Advanced Treasury | 17 / 0 | 0.0005–0.0039 | calibration survives |
+| Online/Advanced Ground | 5 / 0 | 0.0625–0.2500 | stopped screen remains stopped |
+| Online/`strategic_deep` Treasury | 8 / 0 | 0.03125–0.1250 | architecture calibration is indeterminate |
+| IdleReserve, seed 450000 | 6 / 12 | 0.03125–1.0000 | aggregate cannot distinguish null from harm |
+| IdleReserve, seed 460000 | 41 / 27 | 0.00013–1.0000 | aggregate can support either map direction |
+
+This preserves the load-bearing Expansion finding because its 150-map
+confirmation is positive under every admissible clustering, even though the
+smaller first screen is not. It also preserves the military nulls: their most
+favorable possible map partitions still miss 0.05. Conversely, the merged
+IdleReserve label cannot be recovered from its aggregate cells. Its directions
+reverse across seeds at the cell level, but without map identities neither run
+supports a map-level null or effect claim. Treat that axis as unresolved unless
+the original per-cell records are recovered or the preregistered comparison is
+replayed with map-cluster output.
+
+### Gated confirmation and decision
+
+Passing every screen term earns one disjoint confirmation with only the focal
+treatment:
+
+```text
+ablate --grant expansion --ai strategic_deep --pairs 20 --players 8 \
+  --width 84 --height 54 --city-states 12 --turns 250 --speed online \
+  --map continents --shape planet --poles poles --randomize-civs \
+  --victories science,culture,domination --seed 9991000 --jobs 6
+```
+
+The confirmation supports transfer only if the grant fires, helps more cells
+than it hurts, independently reaches cell-level two-sided McNemar `p < 0.05`,
+helps more maps than it hurts, and independently reaches map-level two-sided
+sign-test `p < 0.05`. The map-level condition is additive and cannot rescue a
+failed original condition. A pass does not promote a playable agent: the grant
+is cheating and deliberately bundled. It prioritizes separate preregistered
+tests of the two measured honest causes—late expansion eligibility and settler
+production value—without combining them. Failure stops this line on the focal
+cell and is reported as either underresolved, null, harmful, or invalid
+according to the failed term. Any claim about the exhibition mixture would
+still require a separately fixed stratified sample across its varying player
+counts, scripts, and topologies.
+
+### Interrupted screen: invalid, no retry
+
+The exact seed-9,990,000 command began at 2026-07-29 10:38:41 UTC from the
+frozen release binary at `8ed75b4`. It completed all 12 shared controls and
+printed a control aggregate of 0/12 focal wins. It then completed only 6/12
+`none` replay cells before the process was deliberately terminated at
+2026-07-29 21:20:15 UTC in response to an operator halt, after about 10 hours
+41 minutes. The log ended at `none progress 6/12`.
+
+No `none` aggregate, exact-null verdict, Expansion cell, Expansion aggregate,
+or decision label was produced. The partial control value is not a treatment
+comparison and cannot answer either frozen hypothesis. In particular, replay
+identity was not established across all 12 cells, and the focal intervention
+was never reached.
+
+The protocol forbids a seed retry or replacement. Therefore this study is
+permanently **INVALID / STOP** rather than null, harmful, favorable, or
+inconclusive. Seed 9,991,000 and its entire confirmation range remain unopened.
+No gameplay change or follow-up Expansion experiment is licensed by this
+interrupted run. The evaluator improvements and historical clustering audit
+remain reusable methodology, but they carry no new Expansion result.

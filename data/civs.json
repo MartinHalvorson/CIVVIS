@@ -881,9 +881,10 @@
     "agenda": "golden_age_georgia",
     "effects": {
       "city_faith": 1,
-      "combat_strength": 2
+      "combat_strength": 2,
+      "golden_dedication_era_score": 1
     },
-    "note": "Strength is in Unity: +1 faith and +2 combat strength",
+    "note": "Strength is in Unity: +1 faith, +2 combat strength, and Golden or Heroic Age Dedications also grant their Normal Age Era Score bonuses",
     "traits": [
       "religious_major_civ"
     ]

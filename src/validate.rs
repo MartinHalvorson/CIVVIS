@@ -725,7 +725,7 @@ fn people(check: &mut Check) {
     // engine that reads it, or the civilization silently has no ability at
     // all — a misspelt key is indistinguishable from a fair one until someone
     // measures a whole game against the note in the ruleset.
-    const CIV_EFFECTS: [&str; 22] = [
+    const CIV_EFFECTS: [&str; 23] = [
         "city_food",
         "city_production",
         "city_gold",
@@ -748,6 +748,7 @@ fn people(check: &mut Check) {
         "capture_formation_upgrade",
         "garrison_loyalty",
         "formation_garrison_loyalty",
+        "golden_dedication_era_score",
     ];
     let units = check.rules.units.clone();
     for (id, spec) in &check.rules.civs.clone() {
