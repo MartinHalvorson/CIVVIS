@@ -37,6 +37,8 @@ local PREFIX = "CIVVISJSON ";
 -- counts the built-in passes that ran on a turn CIVVIS was credited with.
 local awaiting = { turn = -1, ticks = 0, polls = 0, done = false, source = "none" };
 local residualAnswers = {};
+-- Emitted once: a defeat is not a per-turn condition.
+local defeatReported = false;
 
 -- ---------------------------------------------------------------- reporting
 
@@ -4413,6 +4415,27 @@ local function beginTurn(player, pid, turn)
 	warTarget = findWarTarget(player, pid);
 	exportState(player, pid, turn);
 	exportTiles(player, pid, turn);
+	-- ★★★★ AN EMPIRE WITH NO CITIES IS DEFEATED, AND `PlayerDefeat` DOES NOT SAY SO.
+	--
+	-- Run civvis-20260730T170738Z ended on Civilization VI's DEFEAT screen at turn 80,
+	-- and the event stream contains NO `defeat` event at all — the registered
+	-- `PlayerDefeat` handler never fired. The harness then saw only silence and recorded
+	-- `stalled: no event for 240s`, so a LOSS went into the ledger as a hung run. A
+	-- ledger that cannot tell defeat from a wedge cannot be used to compare anything.
+	--
+	-- Losing every city is the definition of elimination here, and it is observable
+	-- from inside without relying on an event that does not arrive.
+	if not defeatReported and turn > 5 then
+		local alive = 0;
+		eachCity(player, function() alive = alive + 1; end);
+		if alive == 0 then
+			defeatReported = true;
+			finished = true;
+			emit("defeat", { turn = turn, ours = true, reason = "no cities remain",
+			                 local_player = pid });
+		end
+	end
+
 	awaiting.turn = turn;
 	awaiting.ticks = 0;
 	awaiting.polls = 0;
