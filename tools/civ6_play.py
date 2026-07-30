@@ -828,8 +828,15 @@ def _play(args: argparse.Namespace) -> int:
     # of 10 turns of run `smoke-20260730T105241Z` — the brain had written every one
     # of them in 0.00 s. Polling is cheap; a stalled decision loop is not.
     poll_s = 0.25 if args.civvis_decides else 2.0
+    # ⚠ A STALLED RUN IS DEAD, AND WAITING TEN MINUTES FOR IT COSTS A WHOLE ATTEMPT.
+    # Run civvis-20260730T140023Z wedged at turn 87 and burned the full 600 s before the
+    # ladder could start the next game. The mod emits at least one event per turn and a
+    # turn takes a few seconds, so silence for a couple of minutes already means wedged.
+    # Shorter is only wrong if the machine is so loaded that turns take minutes — see
+    # the contention note — so it is a flag, not a constant.
     reason = watch.follow(tail, args.timeout, record, stop_when=finished,
-                          each_poll=keep_foreground, poll_s=poll_s)
+                          each_poll=keep_foreground, poll_s=poll_s,
+                          stall_s=args.stall_seconds)
     events.close()
 
     outcome = state["outcome"] or {}
@@ -932,6 +939,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--no-automate-stuck-builders", dest="automate_stuck_builders",
                     action="store_false", default=True,
                     help="leave a builder idle when CIVVIS's improvement is refused")
+    ap.add_argument("--stall-seconds", type=float, default=240.0,
+                    help="give up on a run that has emitted nothing for this long")
     ap.add_argument("--civvis-decides", action="store_true", default=False,
                     help="CIVVIS makes every decision; the mod only actuates")
     ap.add_argument("--governor-appoint", action="store_true", default=False,
