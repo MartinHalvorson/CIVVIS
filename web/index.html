@@ -15442,6 +15442,12 @@ const UI_K = () => 1 / Math.min(1, Math.max(cam.scale, 0.5));
 // cells. The floor is derived from token diameter / hex width.
 const COMMAND_UNIT_K = () => 1 / Math.min(1, Math.max(cam.scale,
   (2 * 10.5) / (S * SQ3)));
+// The Civ VI atlas cells carry breathing room around each silhouette. Preserve
+// the authored survey size through zoom 1, then spend that room as the camera
+// closes in: at maximum zoom the glyph fills nearly a third more of its token
+// without changing the token footprint or crowding the zoomed-out map.
+const COMMAND_UNIT_ICON_K = () => 1 + .32 * Math.max(0, Math.min(1,
+  (cam.scale - 1) / 2.2));
 
 // Civ 6 hangs a small flag off each unit carrying its icon, because a drawn
 // figure at map scale reads as "somebody's soldier" and nothing more. Same
@@ -22287,7 +22293,7 @@ function draw() {
       else cx.arc(x, y, rr, 0, 7);
       cx.stroke();
       drawUnitPictogram(u.embarked ? "galley" : u.type, x, y,
-                        rr * 1.45, tokenInk);
+                        rr * 1.45 * COMMAND_UNIT_ICON_K(), tokenInk);
       cx.globalAlpha = 1;
     }
     // chunky health bar — sized against zoom so it stays readable far out, and

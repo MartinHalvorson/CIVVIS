@@ -7986,6 +7986,8 @@ mod tests {
             .expect("strategic unit pictogram renderer");
         assert!(renderer.contains("const official = civ6UnitIconSprite(type, color)"));
         assert!(renderer.contains("cx.drawImage(official"));
+        assert!(EMBEDDED_INDEX.contains("const COMMAND_UNIT_ICON_K = () => 1 + .32"));
+        assert!(EMBEDDED_INDEX.contains("rr * 1.45 * COMMAND_UNIT_ICON_K(), tokenInk"));
     }
 
     #[test]
