@@ -8,15 +8,16 @@ are rated directly from completed table outcomes over many games.
 `strategic_deep_league` transfers the conservatively strongest active,
 untargeted `Advanced` genome from `data/league/league.json` into the strongest
 measured macro-search budget (`review_every = 20`, `horizon = 80`). The
-selection statistic is `rating - 1.96 * rd`; fixed-lane specialists are
-excluded so the test changes the general policy, not the victory target.
+selection statistic is the same lower 95% Wilson win bound used by league
+breeding, with `rating - 1.96 * rd` as its tie-break; fixed-lane specialists
+are excluded so the test changes the general policy, not the victory target.
 
 In the current committed snapshot the selected genome is `g20-21`:
 
-| strategy | rating | RD | games | wins | lower-confidence rating |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| `g20-21` | 1790.8 | 31.0 | 216 | 82 | 1730.1 |
-| `advanced` anchor | 1702.7 | 30.5 | 331 | 91 | 1642.8 |
+| strategy | rating | RD | games | wins | lower win bound | lower placement rating |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `g20-21` | 1790.8 | 31.0 | 216 | 82 | 31.8% | 1730.1 |
+| `advanced` anchor | 1702.7 | 30.5 | 331 | 91 | 23.0% | 1642.8 |
 
 The league snapshot is definitional provenance. If it is absent or contains
 no eligible generalist, the entrant explicitly degrades to `strategic_deep`
@@ -26,8 +27,9 @@ evidence rather than silently changing the treatment.
 
 ## Fresh mirrored screen
 
-The transfer candidate was preselected by its league lower-confidence rating,
-then evaluated once on a fresh seed:
+The historical screen below preselected the same `g20-21` row under the older
+placement-first criterion, then evaluated it once on a fresh seed. Changing the
+selector therefore changes future transfer wiring, not the recorded treatment:
 
 ```sh
 cargo run --profile ci --bin ai_eval -- \

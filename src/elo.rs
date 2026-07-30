@@ -117,28 +117,34 @@ pub const DEFAULT_RATINGS_PATH: &str = "data/elo_ratings.json";
 const LEAGUE_SNAPSHOT_DIR: &str = "data/league";
 const LEAGUE_SNAPSHOT_FILE: &str = "data/league/league.json";
 
-/// Conservatively strongest active, untargeted genome in the committed
-/// outcome-rated league. Lane specialists answer a different question; this
-/// challenger isolates whether a win-selected generalist policy transfers to
-/// the strongest macro-search budget.
+/// Conservatively strongest *winning* active, untargeted genome in the
+/// committed outcome-rated league. Lane specialists answer a different
+/// question; this challenger isolates whether the same win-selected generalist
+/// the evolutionary loop prefers transfers to the strongest macro-search
+/// budget.
 fn league_generalist() -> Option<(String, Weights)> {
     crate::league::load_league(LEAGUE_SNAPSHOT_DIR)?
         .strategies
         .into_iter()
         .filter(|strategy| !strategy.retired && !strategy.human)
-        .filter_map(|strategy| match strategy.kind {
-            crate::league::StrategyKind::Advanced {
-                weights,
-                target: None,
-            } => Some((strategy.rating - 1.96 * strategy.rd, strategy.name, weights)),
-            _ => None,
+        .filter_map(|strategy| {
+            let win = crate::league::win_lower_confidence(&strategy);
+            let rating = strategy.rating - 1.96 * strategy.rd;
+            match strategy.kind {
+                crate::league::StrategyKind::Advanced {
+                    weights,
+                    target: None,
+                } => Some((win, rating, strategy.name, weights)),
+                _ => None,
+            }
         })
         .max_by(|left, right| {
             left.0
-                .partial_cmp(&right.0)
-                .unwrap_or(std::cmp::Ordering::Equal)
+                .total_cmp(&right.0)
+                .then_with(|| left.1.total_cmp(&right.1))
+                .then_with(|| right.2.cmp(&left.2))
         })
-        .map(|(_, name, weights)| (name, weights))
+        .map(|(_, _, name, weights)| (name, weights))
 }
 
 /// Resolve the leader supplied by the active ruleset. Keeping this beside the
@@ -417,6 +423,22 @@ fn head_to_head_score(a: &RatedPlayer, b: &RatedPlayer) -> f64 {
     }
 }
 
+fn valid_rated_players(players: &[RatedPlayer], distinct_identities: bool) -> bool {
+    players.len() >= 2
+        && players.iter().all(|player| {
+            !player.key.player.trim().is_empty()
+                && !player.key.leader.trim().is_empty()
+                && !player.key.civilization.trim().is_empty()
+        })
+        && (!distinct_identities
+            || players
+                .iter()
+                .map(|player| player.key.player.as_str())
+                .collect::<BTreeSet<_>>()
+                .len()
+                == players.len())
+}
+
 impl EloPool {
     /// Keep the historical constructor shape for library callers. Entrants no
     /// longer create rating rows up front because their leader/civilization
@@ -589,11 +611,9 @@ impl EloPool {
                 }
                 None => true,
             };
-            let valid_players = game.players.len() >= 2
-                && game.players.iter().all(|player| {
-                    !player.key.player.trim().is_empty()
-                        && !player.key.leader.trim().is_empty()
-                        && !player.key.civilization.trim().is_empty()
+            let valid_players = valid_rated_players(&game.players, game.id.is_some())
+                && stored.profile.as_ref().is_none_or(|profile| {
+                    game.players.len() == profile.players_per_game
                 });
             if !valid_id || !valid_players || !game.k.is_finite() || game.k < 0.0 {
                 return Err(io::Error::new(
@@ -677,11 +697,14 @@ impl EloPool {
         if self
             .history
             .iter()
-            .any(|game| (game.k - profile.k).abs() > f64::EPSILON)
+            .any(|game| {
+                (game.k - profile.k).abs() > f64::EPSILON
+                    || game.players.len() != profile.players_per_game
+            })
         {
             return Err(io::Error::new(
                 ErrorKind::InvalidInput,
-                "raw game K does not match the tournament rating profile",
+                "raw game evidence does not match the tournament rating profile",
             ));
         }
         match &self.profile {
@@ -781,6 +804,12 @@ impl EloPool {
                 .is_none_or(|profile| (profile.k - k).abs() <= f64::EPSILON),
             "Elo K must match the bound tournament profile"
         );
+        assert!(
+            self.profile
+                .as_ref()
+                .is_none_or(|profile| players.len() == profile.players_per_game),
+            "Elo table size must match the bound tournament profile"
+        );
         self.apply_game(players, k);
         self.history.push(RatedGame {
             id: None,
@@ -803,10 +832,18 @@ impl EloPool {
         k: f64,
     ) -> io::Result<bool> {
         let id = id.into();
-        if id.trim().is_empty() || players.len() < 2 || !k.is_finite() || k < 0.0 {
+        if id.trim().is_empty()
+            || !valid_rated_players(players, true)
+            || !k.is_finite()
+            || k < 0.0
+            || self
+                .profile
+                .as_ref()
+                .is_some_and(|profile| players.len() != profile.players_per_game)
+        {
             return Err(io::Error::new(
                 ErrorKind::InvalidInput,
-                "invalid keyed Elo game",
+                "invalid keyed Elo game (table size and player identities must be distinct and match the profile)",
             ));
         }
         if self
@@ -2514,7 +2551,9 @@ pub fn leaderboard(pool: &EloPool) -> String {
             pool.history.len()
         ));
     }
-    out.push_str("Overall Elo leaderboard (player across all draws):\n");
+    out.push_str(
+        "Anchored online Elo leaderboard (order-sensitive K-factor path, player across all draws):\n",
+    );
     for (player, rating) in overall {
         out.push_str(&format!(
             "  {:<24} {:7.1}   games={:<4} wins={:<4} winrate={:>3.0}%\n",
@@ -2539,16 +2578,18 @@ pub fn leaderboard(pool: &EloPool) -> String {
         });
         if !performance.is_empty() {
             out.push_str(&format!(
-                "\nDirect performance Elo vs {anchor} (order-independent, Jeffreys-smoothed):\n"
+                "\nStandardized direct performance Elo vs {anchor} (order-independent Jeffreys point; 95% Wilson pair-score interval):\n"
             ));
-            for (player, elo, score, games) in performance {
+            for (player, elo, score, games, low, high) in performance {
                 out.push_str(&format!(
-                    "  {:<24} {:7.1}   pair-score={:>5.1}/{:<4} ({:>4.1}%)\n",
+                    "  {:<24} {:7.1}   pair-score={:>5.1}/{:<4} ({:>4.1}%, 95% {:>4.1}..{:>4.1}%)\n",
                     player,
                     elo,
                     score,
                     games,
                     100.0 * score / games as f64,
+                    100.0 * low,
+                    100.0 * high,
                 ));
             }
         }
@@ -2581,10 +2622,24 @@ pub fn leaderboard(pool: &EloPool) -> String {
 /// control, derived from raw games rather than the order-sensitive K-factor
 /// path. A Jeffreys half-result on each side keeps an undefeated or winless
 /// finite sample finite without pretending it was observed.
+fn wilson_interval(score: f64, games: usize) -> (f64, f64) {
+    if games == 0 {
+        return (0.0, 1.0);
+    }
+    let n = games as f64;
+    let p = (score / n).clamp(0.0, 1.0);
+    let z = 1.96;
+    let z2 = z * z;
+    let denominator = 1.0 + z2 / n;
+    let centre = (p + z2 / (2.0 * n)) / denominator;
+    let margin = z * (p * (1.0 - p) / n + z2 / (4.0 * n * n)).sqrt() / denominator;
+    ((centre - margin).clamp(0.0, 1.0), (centre + margin).clamp(0.0, 1.0))
+}
+
 fn direct_anchor_performance(
     pool: &EloPool,
     anchor: &str,
-) -> Vec<(String, f64, f64, usize)> {
+) -> Vec<(String, f64, f64, usize, f64, f64)> {
     let mut evidence = BTreeMap::<String, (f64, usize)>::new();
     for game in &pool.history {
         let anchor_seats: Vec<&RatedPlayer> = game
@@ -2627,7 +2682,8 @@ fn direct_anchor_performance(
             (games > 0).then(|| {
                 let odds = (score + 0.5) / (games as f64 - score + 0.5);
                 let elo = pool.base_rating + 400.0 * odds.log10();
-                (player, elo, score, games)
+                let (low, high) = wilson_interval(score, games);
+                (player, elo, score, games, low, high)
             })
         })
         .collect()
@@ -2637,8 +2693,8 @@ fn direct_anchor_performance(
 mod tests {
     use super::{
         builtin_ai, builtin_provenance, collapsed_entrants, direct_anchor_performance, expected,
-        league_generalist, scheduled_seats, seat_schedule, win_shares, EloPool, RatedPlayer,
-        RatingKey, TourneyCfg, TournamentProfile, BUILTIN_AIS, CHAMPION_FILE,
+        league_generalist, scheduled_seats, seat_schedule, wilson_interval, win_shares, EloPool,
+        RatedPlayer, RatingKey, TourneyCfg, TournamentProfile, BUILTIN_AIS, CHAMPION_FILE,
         DEFAULT_RATINGS_PATH, ELO_BASE_RATING, ELO_SCHEMA_VERSION, EVAL_ONLY_AIS, VALUENET_FILE,
     };
     use crate::rng::Rng;
@@ -2919,6 +2975,16 @@ mod tests {
     }
 
     #[test]
+    fn direct_pair_score_interval_is_bounded_and_symmetric() {
+        let (low, high) = wilson_interval(31.0, 40);
+        let (reverse_low, reverse_high) = wilson_interval(9.0, 40);
+        assert!(low < 31.0 / 40.0 && 31.0 / 40.0 < high);
+        assert!((low - (1.0 - reverse_high)).abs() < 1e-12);
+        assert!((high - (1.0 - reverse_low)).abs() < 1e-12);
+        assert_eq!(wilson_interval(0.0, 0), (0.0, 1.0));
+    }
+
+    #[test]
     fn result_updates_player_leader_civilization_rows() {
         let mut pool = EloPool::with_base(1000.0);
         pool.record_game(
@@ -2980,11 +3046,11 @@ mod tests {
         let direct = direct_anchor_performance(&anchored, "Control");
         let challenger = direct
             .iter()
-            .find(|(player, _, _, _)| player == "Challenger")
+            .find(|(player, _, _, _, _, _)| player == "Challenger")
             .unwrap();
         let novice = direct
             .iter()
-            .find(|(player, _, _, _)| player == "Novice")
+            .find(|(player, _, _, _, _, _)| player == "Novice")
             .unwrap();
         assert_eq!((challenger.2, challenger.3), (1.0, 1));
         assert_eq!((novice.2, novice.3), (0.0, 1));
@@ -3116,6 +3182,25 @@ mod tests {
         )
         .unwrap_err();
         assert!(error.to_string().contains("must be unique"));
+
+        let anchored_cfg = TourneyCfg {
+            rating_anchor: Some("missing-control".to_string()),
+            ..TourneyCfg::default()
+        };
+        let distinct = vec![
+            "advanced".to_string(),
+            "advanced_v1".to_string(),
+            "basic".to_string(),
+            "random".to_string(),
+        ];
+        let error = super::run_persistent_tournament(
+            &distinct,
+            make,
+            &anchored_cfg,
+            "target/elo-test-must-not-exist.json",
+        )
+        .unwrap_err();
+        assert!(error.to_string().contains("must be one of the tournament entrants"));
     }
 
     #[test]
@@ -3305,6 +3390,33 @@ mod tests {
             .record_game_once("event-a", &changed, 24.0)
             .unwrap_err();
         assert!(error.to_string().contains("different results"));
+    }
+
+    #[test]
+    fn keyed_games_refuse_cloned_identities_and_profile_shape_drift() {
+        let clones = [
+            player("Alice", "Trajan", "Rome", 200, true),
+            player("Alice", "Pericles", "Greece", 100, false),
+        ];
+        let mut unbound = EloPool::with_base(1500.0);
+        let error = unbound
+            .record_game_once("cloned-table", &clones, 24.0)
+            .unwrap_err();
+        assert!(error.to_string().contains("identities must be distinct"));
+
+        let cfg = TourneyCfg::default();
+        let mut profiled = EloPool::with_base(1500.0);
+        profiled
+            .bind_profile(TournamentProfile::from_cfg(&cfg))
+            .unwrap();
+        let duel = [
+            player("Alice", "Trajan", "Rome", 200, true),
+            player("Bob", "Cleopatra", "Egypt", 100, false),
+        ];
+        let error = profiled
+            .record_game_once("wrong-table-size", &duel, 24.0)
+            .unwrap_err();
+        assert!(error.to_string().contains("match the profile"));
     }
 
     #[test]

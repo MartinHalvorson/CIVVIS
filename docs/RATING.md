@@ -217,9 +217,10 @@ worth knowing that the tool reports this rather than hiding it.
 
 `--backtest` and `--stages` read `matches.csv` from a league directory, which
 records every finished game as `round,seed,turns,victory,placements` with
-new placements encoded as `player@leader@civ@rank`. The explicit rank preserves
-score ties, and splitting from the right permits an email-style player identity
-to contain `@`. Both historical writers remain readable: batch
+new placements encoded as `player@leader@civ@rank`. Both batch workers and live
+spectator games now write the same exact competition ranks, so score ties
+survive either ingestion path. Splitting from the right permits an email-style
+player identity to contain `@`. Both historical writers remain readable: batch
 `player@civ` rows infer rank from finishing order, while live
 `player@leader@civ` rows now separate the leader from the civilization instead
 of incorrectly treating `leader@civ` as one unseen civ context.

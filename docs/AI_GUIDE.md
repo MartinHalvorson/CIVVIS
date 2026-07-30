@@ -311,6 +311,9 @@ ordered first by 95% Wilson bounds on **outright wins**. Placement rating only
 breaks an equal win-bound tie. This prevents a safe second-place specialist
 from breeding merely because placement compressed a large difference in who
 actually won, while keeping a two-game lucky streak behind a settled winner.
+The `strategic_deep_league` transfer control reads that same ordering when it
+chooses a generalist genome, so evaluation and breeding cannot diverge on the
+objective by accident.
 The standalone `evolve` fitness above still uses its cheaper score/combat proxy;
 its separate promotion gate remains the point where wins decide shipment.
 
@@ -324,8 +327,8 @@ civvis tournament --standings          # verify and print without playing
 ```
 
 The CLI checkpoints every completed game to the tracked
-`data/elo_ratings.json` ledger (override it with `--ratings path`). Its primary
-rating is the **player** — a human account or named AI strategy — accumulated
+`data/elo_ratings.json` ledger (override it with `--ratings path`). Its online
+rating key is the **player** — a human account or named AI strategy — accumulated
 across every leader and civilization it draws. Separate
 `player × leader × civilization` rows remain as matchup diagnostics. A newly
 seen combination inherits that player's current Elo instead of silently
@@ -356,8 +359,10 @@ to define a different contest. The shipped ledger is a canonical 40-game,
 1500-centred protocol-v1 baseline bound to the CLI's stock 4-player Standard
 game (60×38, 500 turns, six city-states, Pangaea, flat/poles, no mods, K=24).
 Its frozen July 30 run rates `advanced-20260730` at 1589 and the
-`advanced_v1` anchor at 1500, an +89-point gap; future dated challengers can
-therefore be compared through the unchanged control. This prevents a short
+`advanced_v1` anchor at 1500, an +89-point online gap. The order-independent
+direct result is 1708, from a 31/40 pair score whose 95% interval is
+62.5–87.7%. Future dated challengers can therefore be compared through the
+unchanged control, with both effect and uncertainty visible. This prevents a short
 smoke test, a mod, or another map size from
 quietly changing what its Elo scale measures. Settings control the experiment;
 versioned identities control what player generated each observation. Both are
@@ -380,15 +385,20 @@ sorted before replay, so concurrent workers preserve every result *and* finish
 with the same ratings regardless of lock-acquisition order. Migrated schema-1/2
 aggregates cannot recover games that were never stored and say so explicitly in
 the leaderboard; start a fresh path for a fully auditable baseline. A keyed
-history also has one canonical order, and every raw event's K must match the
-bound profile.
+history also has one canonical order. Every raw event must contain exactly the
+profile's table size with distinct player identities, and its K must match the
+bound profile; replay-consistent but structurally truncated evidence is still
+rejected.
 
 The leaderboard additionally derives a **direct performance Elo** for every
 player co-seated with the fixed anchor. It converts that player's aggregate
 pair score into the usual 400-point logistic scale, with a Jeffreys half-result
 on each side so finite undefeated samples remain finite. This diagnostic is
-order-independent and is recomputed from raw evidence; the incremental
-K-factor Elo remains the primary continuously updated rating.
+order-independent and is recomputed from raw evidence. Its printed 95% Wilson
+interval stays on the observed pair-score scale so a short run cannot masquerade
+as a settled Elo gap. Use this direct-anchor result at a fixed game count as the
+longitudinal baseline; use the incremental K-factor Elo as the continuously
+updated matchmaking/leaderboard state.
 
 Entrants use a seeded round-robin seat schedule instead of independent random
 sampling. Across one complete cycle, every fixed civilization seat sees every

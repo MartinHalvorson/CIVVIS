@@ -2346,24 +2346,42 @@ impl Session {
             })
             .collect();
         let winner = self.game.winner.unwrap();
-        // Same ordering the league itself uses: winner first, then by score.
-        let mut rated: Vec<usize> = (0..seat_names.len())
+        // Same ordering and competition ranks as a distributed league game:
+        // the declared winner stands alone, while equal non-winner scores are
+        // draws rather than arbitrary wins for the lower player id.
+        let rated: Vec<usize> = (0..seat_names.len())
             .filter(|pid| seat_names[*pid].is_some())
             .collect();
-        rated.sort_by_key(|pid| (*pid != winner, -self.game.score(*pid), *pid));
-        let placements: Vec<(String, String)> = rated
+        let (rated, ranks) = crate::league::competition_ranking(
+            rated,
+            Some(winner),
+            |pid| self.game.score(pid),
+        );
+        let seats: Vec<crate::league::LiveGameSeat> = rated
             .iter()
-            .map(|pid| {
-                (
-                    seat_names[*pid].clone().unwrap(),
-                    self.game.players[*pid].civ.clone(),
-                )
+            .enumerate()
+            .map(|(place, pid)| {
+                let civilization = self.game.players[*pid].civ.clone();
+                let leader = self
+                    .game
+                    .rules
+                    .civs
+                    .get(&civilization)
+                    .map(|spec| spec.leader.clone())
+                    .unwrap_or_else(|| civilization.clone());
+                crate::league::LiveGameSeat {
+                    strategy: seat_names[*pid].clone().unwrap(),
+                    leader,
+                    civilization,
+                    rank: ranks[place],
+                    won: *pid == winner,
+                }
             })
             .collect();
         let victory = self.game.victory_type.clone().unwrap_or_default();
-        let Some(updated) = crate::league::record_game(
+        let Some(updated) = crate::league::record_ranked_game(
             &dir,
-            &placements,
+            &seats,
             self.game.seed,
             self.game.reported_turn(),
             &victory,

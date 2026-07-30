@@ -519,7 +519,7 @@ fn win_confidence(s: &Strategy, upper: bool) -> f64 {
     ((centre + if upper { margin } else { -margin }) / (1.0 + z2 / n)).clamp(0.0, 1.0)
 }
 
-fn win_lower_confidence(s: &Strategy) -> f64 {
+pub(crate) fn win_lower_confidence(s: &Strategy) -> f64 {
     win_confidence(s, false)
 }
 
@@ -1769,6 +1769,42 @@ struct Outcome {
     victory: String,
 }
 
+/// Put a finished set of player ids into the league's canonical competition
+/// order and retain score ties. An engine-declared winner is always alone at
+/// rank zero even when another seat has the same (or a higher) score.
+///
+/// Batch workers and the live spectator recorder share this helper so the two
+/// ingestion paths cannot quietly assign different pairwise results to the
+/// same terminal game.
+pub(crate) fn competition_ranking<F>(
+    mut players: Vec<usize>,
+    winner: Option<usize>,
+    score: F,
+) -> (Vec<usize>, Vec<u32>)
+where
+    F: Fn(usize) -> i64,
+{
+    players.sort_by_key(|pid| {
+        (
+            winner != Some(*pid),
+            std::cmp::Reverse(score(*pid)),
+            *pid,
+        )
+    });
+    let mut ranks = Vec::with_capacity(players.len());
+    for (place, pid) in players.iter().copied().enumerate() {
+        let same_as_previous = place > 0
+            && (winner == Some(pid)) == (winner == Some(players[place - 1]))
+            && score(pid) == score(players[place - 1]);
+        ranks.push(if same_as_previous {
+            ranks[place - 1]
+        } else {
+            place as u32
+        });
+    }
+    (players, ranks)
+}
+
 fn game_options_for_job(cfg: &WorkConfig, job: &WorkJob) -> GameOptions {
     let mut options = GameOptions::new(
         cfg.players_per_game,
@@ -1804,19 +1840,11 @@ fn play_job(manifest: &RoundManifest, job: &WorkJob, worker: &str) -> StoredOutc
         .collect();
     run_game(&mut game, &mut ais);
 
-    let mut ranked: Vec<usize> = (0..cfg.players_per_game).collect();
-    ranked.sort_by_key(|pid| (game.winner != Some(*pid), -game.score(*pid), *pid));
-    let mut ranks = Vec::with_capacity(ranked.len());
-    for (place, pid) in ranked.iter().copied().enumerate() {
-        let same_as_previous = place > 0
-            && (game.winner == Some(pid)) == (game.winner == Some(ranked[place - 1]))
-            && game.score(pid) == game.score(ranked[place - 1]);
-        ranks.push(if same_as_previous {
-            ranks[place - 1]
-        } else {
-            place as u32
-        });
-    }
+    let (ranked, ranks) = competition_ranking(
+        (0..cfg.players_per_game).collect(),
+        game.winner,
+        |pid| game.score(pid),
+    );
     StoredOutcome {
         schema_version: WORK_SCHEMA_VERSION,
         engine: manifest.engine.clone(),
@@ -1980,19 +2008,6 @@ fn apply_round(league: &mut League, outcomes: &[Outcome], age_idle: bool) {
     }
 }
 
-/// Rate one finished game as its own rating period and persist it, so a
-/// server playing rated seats actually moves the table instead of showing a
-/// snapshot forever.
-///
-/// `placements` is (player/strategy id, civilization) ordered winner first,
-/// then by score. The active ruleset resolves the matching leader. The roster
-/// is re-read from `dir` and seats are resolved by stable strategy id
-/// rather than by the index the caller seated from: a live server holds its
-/// league in memory for the length of a game, and writing that stale copy
-/// back would undo any result recorded in the meantime. Returns the updated
-/// league, or `None` if the roster is unreadable or no longer holds every
-/// name (a retired or renamed entrant leaves the game unrated rather than
-/// rating the wrong strategy).
 /// Register a new player in the roster on disk, so the game they are about to
 /// play is rated as theirs. Returns the roster they are now part of and their
 /// index in it.
@@ -2015,14 +2030,56 @@ pub fn register_player(dir: &str) -> Option<(League, usize)> {
     Some((league, index))
 }
 
-pub fn record_game(
+/// Exact terminal evidence for one rated live seat. `rank` is a competition
+/// rank in finish order (0, 1, 1, 3 for a tie); `won` records the engine's
+/// declared winner separately from score placement.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LiveGameSeat {
+    pub strategy: String,
+    pub leader: String,
+    pub civilization: String,
+    pub rank: u32,
+    pub won: bool,
+}
+
+fn valid_live_game_seats(seats: &[LiveGameSeat]) -> bool {
+    if seats.len() < 2
+        || seats.first().is_none_or(|seat| seat.rank != 0)
+        || seats.iter().any(|seat| {
+            seat.strategy.trim().is_empty()
+                || seat.leader.trim().is_empty()
+                || seat.civilization.trim().is_empty()
+        })
+        || seats.iter().enumerate().skip(1).any(|(place, seat)| {
+            seat.rank != seats[place - 1].rank && seat.rank != place as u32
+        })
+    {
+        return false;
+    }
+    let winners = seats.iter().filter(|seat| seat.won).count();
+    winners <= 1
+        && (winners == 0
+            || (seats[0].won
+                && seats[0].rank == 0
+                && seats.iter().skip(1).all(|seat| !seat.won && seat.rank > 0)))
+}
+
+/// Rate exact live-game evidence into the latest roster on disk.
+///
+/// This is the live equivalent of a distributed [`StoredOutcome`]: score ties,
+/// declared victory, and the exact leader/civilization identity all survive.
+/// The roster is re-read from `dir` and seats are resolved by stable strategy
+/// id rather than by the index held when the game started, so a long game
+/// cannot overwrite a concurrent update with a stale roster. Malformed or
+/// stale evidence leaves the roster untouched.
+pub fn record_ranked_game(
     dir: &str,
-    placements: &[(String, String)],
+    seats: &[LiveGameSeat],
     seed: u64,
     turn: u32,
     victory: &str,
 ) -> Option<League> {
-    if placements.len() < 2 {
+    if !valid_live_game_seats(seats) {
         return None;
     }
     let worker = default_worker_id();
@@ -2034,30 +2091,35 @@ pub fn record_game(
     if manifest_path(dir, league.round).exists() {
         return None;
     }
-    let seats: Option<Vec<usize>> = placements
+    let placements: Option<Vec<usize>> = seats
         .iter()
-        .map(|(name, _)| league.strategies.iter().position(|s| &s.name == name))
+        .map(|seat| {
+            league
+                .strategies
+                .iter()
+                .position(|strategy| strategy.name == seat.strategy)
+        })
         .collect();
     let outcome = Outcome {
-        placements: seats?,
-        leaders: placements
+        placements: placements?,
+        leaders: seats.iter().map(|seat| seat.leader.clone()).collect(),
+        civs: seats
             .iter()
-            .map(|(_, civilization)| default_leader(civilization))
+            .map(|seat| seat.civilization.clone())
             .collect(),
-        civs: placements.iter().map(|(_, civ)| civ.clone()).collect(),
-        // The live-server API supplies a strict placement list. Engine-run
-        // league rounds retain score ties in `Outcome::ranks`.
-        ranks: (0..placements.len() as u32).collect(),
-        won: (0..placements.len()).map(|place| place == 0).collect(),
+        ranks: seats.iter().map(|seat| seat.rank).collect(),
+        won: seats.iter().map(|seat| seat.won).collect(),
         seed,
         turn,
         victory: victory.to_string(),
     };
-    let names: Vec<String> = placements
+    let names: Vec<String> = seats
         .iter()
-        .enumerate()
-        .map(|(rank, (name, civ))| {
-            format!("{name}@{}@{civ}@{rank}", default_leader(civ))
+        .map(|seat| {
+            format!(
+                "{}@{}@{}@{}",
+                seat.strategy, seat.leader, seat.civilization, seat.rank
+            )
         })
         .collect();
     let round = league.round;
@@ -2077,9 +2139,14 @@ pub fn record_game(
             names.join("|")
         )],
     );
-    let rating_lines: Vec<String> = placements
+    let rating_lines: Vec<String> = seats
         .iter()
-        .filter_map(|(name, _)| league.strategies.iter().find(|s| &s.name == name))
+        .filter_map(|seat| {
+            league
+                .strategies
+                .iter()
+                .find(|strategy| strategy.name == seat.strategy)
+        })
         .map(|s| {
             format!(
                 "{},{},{:.1},{:.1},{:.4},{},{}",
@@ -2095,6 +2162,31 @@ pub fn record_game(
     );
     append_calibration(dir, league.round, &period_calibration, &league.calibration);
     Some(league)
+}
+
+/// Compatibility adapter for callers that only have a strict placement list.
+/// The first row is treated as the declared winner and leaders are resolved
+/// from the active ruleset. New engine-facing code should call
+/// [`record_ranked_game`] so it cannot discard ties.
+pub fn record_game(
+    dir: &str,
+    placements: &[(String, String)],
+    seed: u64,
+    turn: u32,
+    victory: &str,
+) -> Option<League> {
+    let seats: Vec<LiveGameSeat> = placements
+        .iter()
+        .enumerate()
+        .map(|(rank, (strategy, civilization))| LiveGameSeat {
+            strategy: strategy.clone(),
+            leader: default_leader(civilization),
+            civilization: civilization.clone(),
+            rank: rank as u32,
+            won: rank == 0,
+        })
+        .collect();
+    record_ranked_game(dir, &seats, seed, turn, victory)
 }
 
 /// Quality-diversity selection: restore or refine the least-represented
@@ -3115,6 +3207,23 @@ mod tests {
     }
 
     #[test]
+    fn live_and_batch_ranking_keep_the_winner_unique_and_other_ties_equal() {
+        // Player 2 won despite a lower score. Players 0 and 1 have equal
+        // scores and must remain a draw after the winner is lifted above them.
+        let scores = [40, 40, 10, 5];
+        let (players, ranks) =
+            competition_ranking(vec![0, 1, 2, 3], Some(2), |pid| scores[pid]);
+        assert_eq!(players, vec![2, 0, 1, 3]);
+        assert_eq!(ranks, vec![0, 1, 1, 3]);
+
+        // Without a declared winner, the best score can itself be tied.
+        let (players, ranks) =
+            competition_ranking(vec![0, 1, 2, 3], None, |pid| scores[pid]);
+        assert_eq!(players, vec![0, 1, 2, 3]);
+        assert_eq!(ranks, vec![0, 0, 2, 3]);
+    }
+
+    #[test]
     fn winners_gain_and_losers_lose() {
         let mut league = League {
             round: 0,
@@ -3326,6 +3435,73 @@ mod tests {
         ];
         assert!(record_game(dir, &unknown, 7, 140, "score").is_none());
         assert_eq!(load_league(dir).unwrap().round, 14);
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn live_recording_preserves_exact_leaders_winners_and_score_ties() {
+        let dir = std::env::temp_dir().join(format!(
+            "civvis-league-live-ties-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let dir = dir.to_str().unwrap();
+        let _ = fs::remove_dir_all(dir);
+        let builtin = |ai: &str| StrategyKind::Builtin { ai: ai.into() };
+        save_league(
+            dir,
+            &League {
+                round: 4,
+                strategies: vec![
+                    Strategy::new("a", builtin("advanced"), 0),
+                    Strategy::new("b", builtin("basic"), 0),
+                    Strategy::new("c", builtin("basic"), 0),
+                ],
+                calibration: Calibration::default(),
+            },
+        );
+        let seats = vec![
+            LiveGameSeat {
+                strategy: "a".into(),
+                leader: "Live Leader".into(),
+                civilization: "Rome".into(),
+                rank: 0,
+                won: true,
+            },
+            LiveGameSeat {
+                strategy: "b".into(),
+                leader: "Pericles".into(),
+                civilization: "Greece".into(),
+                rank: 1,
+                won: false,
+            },
+            LiveGameSeat {
+                strategy: "c".into(),
+                leader: "Cleopatra".into(),
+                civilization: "Egypt".into(),
+                rank: 1,
+                won: false,
+            },
+        ];
+        let rated = record_ranked_game(dir, &seats, 17, 144, "science").expect("rated");
+        assert_eq!(rated.round, 5);
+        assert!(rated.strategies[0].rating > BASE_RATING);
+        assert!(
+            (rated.strategies[1].rating - rated.strategies[2].rating).abs() < 1e-12,
+            "tied seats moved differently: {} vs {}",
+            rated.strategies[1].rating,
+            rated.strategies[2].rating,
+        );
+        assert!(rated.strategies[0].leader_elo["Live Leader"].contains_key("Rome"));
+        let matches = fs::read_to_string(Path::new(dir).join("matches.csv")).unwrap();
+        assert!(matches.contains(
+            "a@Live Leader@Rome@0|b@Pericles@Greece@1|c@Cleopatra@Egypt@1"
+        ));
+
+        let mut invalid = seats;
+        invalid[1].rank = 2;
+        assert!(record_ranked_game(dir, &invalid, 18, 145, "science").is_none());
+        assert_eq!(load_league(dir).unwrap().round, 5);
         let _ = fs::remove_dir_all(dir);
     }
 

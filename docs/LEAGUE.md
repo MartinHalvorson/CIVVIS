@@ -109,9 +109,11 @@ paired design removes much of the spawn, civ, and first-move variance. A
 requested `--games` count is rounded up to finish the final `--players`-game
 mirror series.
 
-A batch game decomposes into pairwise results by placement: equal engine
-scores are draws, while a declared victory always outranks score. Those
-correlated comparisons receive total weight one per player per game; a
+A finished game decomposes into pairwise results by placement: equal engine
+scores are draws, while a declared victory always outranks score. Batch
+workers and the live spectator recorder use the same competition-rank helper,
+so neither starting-seat order nor a different ingestion path can break a tie.
+The correlated comparisons receive total weight one per player per game; a
 four-player finish no longer masquerades as three independent observations
 and make RD falsely precise. The whole round updates at once as one
 Glicko-2 rating period (start 1500, RD 350, vol 0.06, tau 0.5; the
@@ -195,9 +197,10 @@ at the moment of recording and seats are matched by strategy *name*, so
 a game long enough to outlive a concurrent update writes its result on
 top rather than reverting it. A live exhibition is deliberately left unrated
 while a distributed manifest is pending, because injecting a one-game period
-would invalidate the in-flight roster snapshot. Results also append to `matches.csv`,
-`ratings.csv`, and `calibration.csv` beside `league.json`. The live-server API
-supplies a strict placement list, so only batch rounds can retain score ties.
+would invalidate the in-flight roster snapshot. Results also append to
+`matches.csv`, `ratings.csv`, and `calibration.csv` beside `league.json`. Each
+match row retains player, exact leader, civilization, and competition rank,
+including live score ties.
 
 A snapshot of a finished league lives in the repo at `data/league/`
 (see its README for provenance) and is compiled into the binary, so any

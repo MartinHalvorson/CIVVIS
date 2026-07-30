@@ -5944,21 +5944,23 @@ and China ten times.
 
 | immutable player | anchored Elo | direct Elo vs anchor | games | wins |
 |---|---:|---:|---:|---:|
-| `advanced-20260730` | **1588.5** | **1708.2** (31/40 pair score) | 40 | 29 |
+| `advanced-20260730` | **1588.5** | **1708.2** (31/40; 95% 62.5–87.7%) | 40 | 29 |
 | `advanced_v1` (fixed anchor) | **1500.0** | — | 40 | 8 |
-| `basic-20260730` | 1431.4 | 1314.8 (10/40) | 40 | 3 |
-| `random-20260730` | 1174.1 | 736.6 (0/40) | 40 | 0 |
+| `basic-20260730` | 1431.4 | 1314.8 (10/40; 95% 14.2–40.2%) | 40 | 3 |
+| `random-20260730` | 1174.1 | 736.6 (0/40; 95% 0.0–8.8%) | 40 | 0 |
 
 This establishes a reproducible +88.5 Elo gap for the July 30 advanced
 controller over the frozen legacy control on one named multiplayer profile. It
 also gives an order-independent +208.2 direct performance gap from their 31/40
-pair score; the difference is expected because the incremental K=24 path has
-only 40 updates and is not a batch maximum-likelihood fit. It
-does not turn 40 correlated multiplayer worlds into a narrow confidence
-interval, and it remains an internal CIVVIS scale rather than a human or
-Firaxis calibration. Future controllers need a new identity and the same
-protocol; a material rules or scoring change needs a new protocol rather than
-being mixed into this file.
+pair score; its 95% Wilson interval is still 62.5–87.7%. The difference is
+expected because the incremental K=24 path has only 40 updates and is not a
+batch maximum-likelihood fit. The direct-anchor result at an equal game count
+is therefore the longitudinal baseline; the incremental number remains useful
+for continuously updated ordering. Neither turns 40 correlated multiplayer
+worlds into a narrow confidence interval, and both remain an internal CIVVIS
+scale rather than a human or Firaxis calibration. Future controllers need a
+new identity and the same protocol; a material rules or scoring change needs a
+new protocol rather than being mixed into this file.
 
 ## 2026-07-30 — the contextual rating update was overconfident
 
@@ -6024,4 +6026,25 @@ the first two. This does not prove their children will improve, and raw win
 rate assumes the league keeps entrants on the same table-size distribution.
 It does align the self-improvement loop's selection pressure with its stated
 goal. Glicko remains unchanged for prediction, seating, and the viewer-facing
-ladder rather than being forced to serve two incompatible objectives.
+ladder rather than being forced to serve two incompatible objectives. The
+`strategic_deep_league` transfer entrant now consumes this same win-first
+ordering; it no longer quietly switches back to placement Glicko when choosing
+which generalist genome to put under macro search.
+
+## 2026-07-30 — live league games no longer invent a strict finish order
+
+Distributed league results already retained the engine winner and competition
+ranks, so equal scores were Glicko draws. The spectator recorder instead sorted
+the same terminal state and passed only `(strategy, civilization)` rows to a
+legacy adapter. That adapter assigned ranks `0, 1, 2, ...`: every live score tie
+became an arbitrary pairwise win for the lower player id, and the leader was
+re-derived later rather than retained from the game that actually ran.
+
+Batch and live ingestion now share one competition-ranking function. The live
+API carries strategy, exact leader, civilization, rank, and declared-winner
+status into the same `Outcome`; malformed ranks fail before the roster lock is
+mutated. A regression pins a declared low-score winner above two equal-score
+losers, verifies that the tied players receive identical Glicko movement, and
+checks the exact `player@leader@civ@rank` audit row. The compatibility adapter
+remains for callers that truly have only a strict list, but the engine no longer
+uses it.
