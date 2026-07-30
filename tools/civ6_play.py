@@ -120,6 +120,12 @@ def build_config(args: argparse.Namespace) -> dict:
         # arithmetic starves the army, which is why war is declared in only 19 of
         # 47 runs and no capital has ever been taken.
         "PlanNearWindow": args.plan_near_window,
+        # ★ Maximum tiles from our NEAREST existing city that a new city may be
+        # founded. Loyalty support comes from our own nearby population, so beyond
+        # this the city cannot be held at any price: run 071729Z founded (42,17)
+        # THIRTEEN tiles out and it opened at -23 loyalty a turn and was gone in
+        # four. A governor is only +8, so this is the lever, not governors.
+        "MaxEmpireDistance": args.max_empire_distance,
         # Two defenders a city is enough at Settler. Beyond that, production
         # spent on units that stand still is production not spent on the
         # districts and buildings that score is actually made of.
@@ -830,6 +836,7 @@ def main(argv: list[str] | None = None) -> int:
     # 1 = the shipped behaviour (always CIVVIS's top-ranked unoccupied site),
     # which is what makes it a usable control arm for the near-window A/B.
     ap.add_argument("--plan-near-window", type=int, default=6)
+    ap.add_argument("--max-empire-distance", type=int, default=6)
     ap.add_argument("--garrison-per-city", type=int, default=2)
     ap.add_argument("--export-state", action="store_true", default=False)
     ap.add_argument("--settle-plan", default=None,

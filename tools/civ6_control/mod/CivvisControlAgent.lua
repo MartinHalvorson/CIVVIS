@@ -945,7 +945,31 @@ findSettleSite = function(player, pid, unit, turn)
 						local d = plotDistance(px, py, city[1], city[2]);
 						if d < nearest then nearest = d; end
 					end
-					if nearest >= spacing then
+					-- ★★★★★ A MAXIMUM DISTANCE, NOT ONLY A MINIMUM. Loyalty support
+				-- comes from the population of our OWN nearby cities, so ground
+				-- beyond that reach cannot be held at any price.
+				--
+				-- Measured with the new loyalty telemetry, run 071729Z: city
+				-- (42,17) founded turn 29 THIRTEEN TILES from the capital (55,17)
+				-- opened at loyalty 77 and **-23 a turn** — 77, 54, 37, 14, gone by
+				-- turn 33. Four turns. It was doomed the moment it was founded, and
+				-- 56% of runs past turn 60 lose a city exactly this way.
+				--
+				-- ⚠ A GOVERNOR CANNOT SAVE THIS and I built that fix first: the
+				-- shipped `IdentityPressure: 8` against -23 a turn still leaves -15.
+				-- Propping up remote cities is the wrong lever by a factor of three;
+				-- the fix is not to found them there.
+				--
+				-- ⚠ Why the existing score did not catch it: `walk` charges distance
+				-- from the SETTLER, and a settler that has already wandered thirteen
+				-- tiles finds good ground right next to itself and scores it well.
+				-- Nothing charged distance from the EMPIRE. `nearest` was computed
+				-- and then only ever compared against the minimum spacing.
+				--
+				-- A hard cap rather than a penalty, because the failure is a cliff:
+				-- inside support range the city holds, outside it dies in four turns.
+				local reach = cfg.MaxEmpireDistance or 6;
+				if nearest >= spacing and (nearest <= reach or #cities == 0) then
 						-- Score the GROUND, not just the geometry.
 						--
 						-- This used to be `-distance + nearest`, which never
@@ -2330,14 +2354,22 @@ local function chooseGovernor(player, pid)
 		eachCity(player, function(city)
 			local id = try(function() return city:GetID(); end, -1);
 			if id < 0 or taken[id] then return; end
-			-- Rank: 0 = the game itself says this city will fall to someone,
-			-- 1 = loyalty is sliding, 2 = merely ungoverned. Lower wins, and
-			-- within "sliding" the steeper slide wins.
-			local loyalty, perTurn, fallsTo = cityLoyalty(city);
+			-- Rank by the SLIDE, lowest first; ungoverned-but-stable last.
+			--
+			-- ⚠ This first used `GetPotentialTransferPlayer()` as the top priority,
+			-- which was wrong: it names the transfer target (62, Free Cities) for
+			-- every city we own, safe ones included, so every city tied in the top
+			-- band. The rate is the only honest signal. Harmless by luck — the band
+			-- was ordered by rate anyway — but it was measuring nothing.
+			--
+			-- ⚠ AND A GOVERNOR IS NOT ENOUGH ON ITS OWN: `IdentityPressure: 8`
+			-- against the measured -23 a turn still loses. The real fix is
+			-- `MaxEmpireDistance` in the settle search, which stops the city being
+			-- founded out of reach in the first place. This just salvages the
+			-- borderline ones.
+			local loyalty, perTurn = cityLoyalty(city);
 			local rank;
-			if fallsTo ~= nil and fallsTo >= 0 then
-				rank = -1000 + (perTurn or 0);
-			elseif perTurn ~= nil and perTurn < 0 then
+			if perTurn ~= nil and perTurn < 0 then
 				rank = perTurn;
 			else
 				rank = 1000;
@@ -3097,7 +3129,19 @@ local function playTurn(player, pid, turn)
 	local loyaltyWatch = { flipping = 0, worst = nil, worst_rate = nil };
 	eachCity(player, function(city)
 		local loyalty, perTurn, fallsTo = cityLoyalty(city);
-		if fallsTo ~= nil then
+		-- ⚠⚠ `falls_to` IS NOT THE DANGER SIGNAL, and I shipped it as one. It is
+		-- the transfer TARGET — who a city would go to if it fell — and it reads
+		-- **62** (the Free Cities slot) for every city we own, including a capital
+		-- sitting at loyalty 100 and RISING +18 a turn. So `flipping` was just the
+		-- city count: t25 cities=1 flipping=1, t29 cities=2 flipping=2.
+		--
+		-- Caught only because this emits the LEVEL and the RATE beside the count.
+		-- A bare count would have looked plausible forever, which is the whole
+		-- argument for never emitting a single number for a mechanism.
+		--
+		-- The honest signal is a NEGATIVE RATE: that is what killed (42,17) at -23
+		-- a turn while `falls_to` said exactly the same thing about the safe capital.
+		if perTurn ~= nil and perTurn < 0 then
 			loyaltyWatch.flipping = loyaltyWatch.flipping + 1;
 		end
 		if loyalty ~= nil
