@@ -5,6 +5,7 @@
 //! civilian work, and military movement pursue the same medium-term goal.
 use super::{Ai, BasicAi, ForceReport, PlanReport, UnitDoctrine, Weights};
 use crate::name::Name;
+use crate::parallel::WorkPool;
 use crate::game::{
     Action, ActionFamilies, CityDirective, CityRole, CongressResolution, DiplomaticDeal, Game, Item,
 };
@@ -13,6 +14,7 @@ use crate::rules::Yields;
 use crate::think;
 use crate::Pos;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::sync::Arc;
 
 /// Local strength ratio a force group needs before it will advance or press an
 /// attack unsupported. Below it the group holds on its own account, whatever
@@ -469,6 +471,10 @@ pub struct AdvancedAi {
     forced_target_player: Option<usize>,
     force_groups: Vec<ForceGroup>,
     force_groups_dirty: bool,
+    /// Reusable workers shared by every controller in one headless game.
+    /// The authoritative game is never shared: only owned search branches
+    /// cross this boundary, and their results return in candidate order.
+    work_pool: Option<Arc<WorkPool>>,
     /// Hold only the force groups that could actually reach the threatened
     /// city, instead of every group in the empire.
     ///
@@ -1108,6 +1114,7 @@ impl AdvancedAi {
             forced_target_player: None,
             force_groups: Vec::new(),
             force_groups_dirty: false,
+            work_pool: None,
             scoped_relief_hold: false,
             refuse_unreachable_lanes: false,
             prophet_before_opportunism: false,
@@ -1198,6 +1205,24 @@ impl AdvancedAi {
 
     pub fn fleet(g: &Game) -> Vec<AdvancedAi> {
         g.players.iter().map(|_| AdvancedAi::new()).collect()
+    }
+
+    /// Controllers for one game that share persistent tactical workers.
+    ///
+    /// A single pool lives for the whole simulation rather than spawning at
+    /// every decision. `threads == 1` intentionally uses the same parallel
+    /// call sites through their deterministic serial fallback, which makes it
+    /// a useful equivalence oracle for tests and benchmarks.
+    pub fn fleet_parallel(g: &Game, threads: usize) -> Vec<AdvancedAi> {
+        let pool = Arc::new(WorkPool::new(threads));
+        g.players
+            .iter()
+            .map(|_| {
+                let mut ai = AdvancedAi::new();
+                ai.work_pool = Some(Arc::clone(&pool));
+                ai
+            })
+            .collect()
     }
 
     pub fn fleet_targeting(g: &Game, target: VictoryTarget) -> Vec<AdvancedAi> {
@@ -10772,7 +10797,13 @@ impl AdvancedAi {
         replies
     }
 
-    fn forcing_reply_line(&self, position: &Game, enemy: usize, victim: u32, depth: usize) -> f64 {
+    fn forcing_reply_line(
+        work_pool: Option<&Arc<WorkPool>>,
+        position: &Game,
+        enemy: usize,
+        victim: u32,
+        depth: usize,
+    ) -> f64 {
         if depth == 0 || !position.units.contains_key(&victim) {
             return 0.0;
         }
@@ -10873,13 +10904,36 @@ impl AdvancedAi {
                 .total_cmp(&left.0)
                 .then_with(|| left.1.cmp(&right.1))
         });
-        ordered
-            .into_iter()
-            .take(4)
-            .map(|(immediate, _, branch)| {
-                immediate + self.forcing_reply_line(&branch, enemy, victim, depth - 1)
-            })
-            .fold(0.0_f64, f64::max)
+        let continuations = ordered.into_iter().take(4).collect::<Vec<_>>();
+        let values = match work_pool {
+            Some(pool) if continuations.len() > 1 => {
+                let nested_pool = Arc::clone(pool);
+                pool.map_owned(continuations, move |(immediate, _, branch)| {
+                    immediate
+                        + Self::forcing_reply_line(
+                            Some(&nested_pool),
+                            &branch,
+                            enemy,
+                            victim,
+                            depth - 1,
+                        )
+                })
+            }
+            _ => continuations
+                .into_iter()
+                .map(|(immediate, _, branch)| {
+                    immediate
+                        + Self::forcing_reply_line(
+                            work_pool,
+                            &branch,
+                            enemy,
+                            victim,
+                            depth - 1,
+                        )
+                })
+                .collect(),
+        };
+        values.into_iter().fold(0.0_f64, f64::max)
     }
 
     /// Make a candidate battlefield action on a clone and value the exact
@@ -10888,9 +10942,8 @@ impl AdvancedAi {
     /// cheap move ordering, while the final decision sees the seeded damage
     /// roll, kills, attacker survival, wall damage, district pillage, and an
     /// actual city transfer.
-    fn tactical_attack_value(
-        &self,
-        g: &Game,
+    fn tactical_attack_value_owned(
+        mut after: Game,
         pid: usize,
         uid: u32,
         action: &Action,
@@ -10907,16 +10960,16 @@ impl AdvancedAi {
             _ => return f64::NEG_INFINITY,
         };
         let priority_target = matches!(action, Action::PriorityTarget { .. });
-        let attacker = &g.units[&uid];
-        let attacker_spec = &g.rules.units[attacker.kind];
-        let defenders: Vec<(u32, i32, f64, f64, bool, bool)> = g
+        let attacker_hp = after.units[&uid].hp;
+        let attacker_cost = after.rules.units[after.units[&uid].kind].cost;
+        let defenders: Vec<(u32, i32, f64, f64, bool, bool)> = after
             .units_at(target)
             .into_iter()
             .filter_map(|unit| {
-                let defender = &g.units[&unit];
-                let spec = &g.rules.units[defender.kind];
+                let defender = &after.units[&unit];
+                let spec = &after.rules.units[defender.kind];
                 (defender.owner != pid
-                    && g.is_at_war(pid, defender.owner)
+                    && after.is_at_war(pid, defender.owner)
                     && if priority_target {
                         spec.class == "support"
                     } else {
@@ -10925,7 +10978,7 @@ impl AdvancedAi {
                 .then_some((
                     unit,
                     defender.hp,
-                    g.unit_strength(defender, true),
+                    after.unit_strength(defender, true),
                     spec.cost,
                     spec.siege,
                     spec.is_melee_capable(),
@@ -10933,23 +10986,45 @@ impl AdvancedAi {
             })
             .collect();
         let target_city = (!priority_target)
-            .then(|| g.city_at(target))
+            .then(|| after.city_at(target))
             .flatten()
-            .filter(|city| g.cities[city].owner != pid && g.is_at_war(pid, g.cities[city].owner));
+            .filter(|city| {
+                after.cities[city].owner != pid
+                    && after.is_at_war(pid, after.cities[city].owner)
+            });
         let target_encampment = target_city
             .is_none()
-            .then(|| g.encampment_at(target))
+            .then(|| after.encampment_at(target))
             .flatten();
-        let mut after = g.clone();
+        let city_before = target_city.map(|city| {
+            let before = &after.cities[&city];
+            (
+                before.pop,
+                before.districts.len(),
+                before.wonders.len(),
+                before.is_capital,
+                before.wall_hp,
+                before.hp,
+                Self::should_defer_city_capture(&after, pid, city),
+            )
+        });
+        let encampment_before = target_encampment.map(|city| {
+            let before = &after.cities[&city];
+            (
+                before.encampment_wall_hp,
+                before.encampment_hp,
+                before.encampment_pillaged,
+            )
+        });
         if after.apply(pid, action).is_err() {
             return f64::NEG_INFINITY;
         }
 
         let attacker_loss = match after.units.get(&uid) {
             Some(survivor) => {
-                (attacker.hp - survivor.hp).max(0) as f64 * (1.25 + attacker_spec.cost / 800.0)
+                (attacker_hp - survivor.hp).max(0) as f64 * (1.25 + attacker_cost / 800.0)
             }
-            None => 230.0 + attacker_spec.cost * 0.65,
+            None => 230.0 + attacker_cost * 0.65,
         };
         let mut value = -attacker_loss;
         for (unit, hp, strength, cost, siege, captures) in defenders {
@@ -10969,28 +11044,29 @@ impl AdvancedAi {
             };
         }
         if let Some(city) = target_city {
-            let before = &g.cities[&city];
+            let (pop, districts, wonders, capital, wall_hp, city_hp, defer_capture) =
+                city_before.expect("a target city has pre-attack state");
             let captured = after
                 .cities
                 .get(&city)
                 .is_some_and(|city| city.owner == pid);
             if captured {
-                if Self::should_defer_city_capture(g, pid, city) {
+                if defer_capture {
                     return f64::NEG_INFINITY;
                 }
                 value += 520.0
-                    + before.pop.max(1) as f64 * 14.0
-                    + before.districts.len() as f64 * 24.0
-                    + before.wonders.len() as f64 * 45.0
-                    + if before.is_capital { 180.0 } else { 0.0 }
+                    + pop.max(1) as f64 * 14.0
+                    + districts as f64 * 24.0
+                    + wonders as f64 * 45.0
+                    + if capital { 180.0 } else { 0.0 }
                     + if plan.target_city == Some(city) {
                         100.0
                     } else {
                         0.0
                     };
             } else if let Some(after_city) = after.cities.get(&city) {
-                let wall_damage = (before.wall_hp - after_city.wall_hp).max(0) as f64;
-                let city_damage = (before.hp - after_city.hp).max(0) as f64;
+                let wall_damage = (wall_hp - after_city.wall_hp).max(0) as f64;
+                let city_damage = (city_hp - after_city.hp).max(0) as f64;
                 let progress = wall_damage * 1.35 + city_damage;
                 value += progress
                     + if progress > 0.0 && plan.target_city == Some(city) {
@@ -11000,16 +11076,27 @@ impl AdvancedAi {
                     };
             }
         } else if let Some(city) = target_encampment {
-            let before = &g.cities[&city];
+            let (wall_hp, encampment_hp, pillaged) =
+                encampment_before.expect("a target encampment has pre-attack state");
             let after_city = &after.cities[&city];
-            value += (before.encampment_wall_hp - after_city.encampment_wall_hp).max(0) as f64
-                * 1.35
-                + (before.encampment_hp - after_city.encampment_hp).max(0) as f64;
-            if !before.encampment_pillaged && after_city.encampment_pillaged {
+            value += (wall_hp - after_city.encampment_wall_hp).max(0) as f64 * 1.35
+                + (encampment_hp - after_city.encampment_hp).max(0) as f64;
+            if !pillaged && after_city.encampment_pillaged {
                 value += 180.0;
             }
         }
         value
+    }
+
+    fn tactical_attack_value(
+        &self,
+        g: &Game,
+        pid: usize,
+        uid: u32,
+        action: &Action,
+        plan: &StrategicPlan,
+    ) -> f64 {
+        Self::tactical_attack_value_owned(g.clone(), pid, uid, action, plan)
     }
 
     /// Bounded quiescence-style reply search for a proposed attack. The
@@ -11018,8 +11105,13 @@ impl AdvancedAi {
     /// enemy's forcing combat actions, and prices a two-action focus-fire
     /// sequence. It catches poisoned captures and coordinated ranged kills
     /// without turning every unit decision into an unbounded turn search.
-    fn forcing_reply_penalty(&self, g: &Game, pid: usize, uid: u32, action: &Action) -> f64 {
-        let mut after = g.clone();
+    fn forcing_reply_penalty_owned(
+        work_pool: Option<Arc<WorkPool>>,
+        mut after: Game,
+        pid: usize,
+        uid: u32,
+        action: &Action,
+    ) -> f64 {
         if after.apply(pid, action).is_err() {
             return 1_000.0;
         }
@@ -11059,9 +11151,25 @@ impl AdvancedAi {
                 city.encampment_struck = false;
             }
 
-            worst_reply = worst_reply.max(self.forcing_reply_line(&reply_position, enemy, uid, 2));
+            worst_reply = worst_reply.max(Self::forcing_reply_line(
+                work_pool.as_ref(),
+                &reply_position,
+                enemy,
+                uid,
+                2,
+            ));
         }
         worst_reply
+    }
+
+    fn forcing_reply_penalty(&self, g: &Game, pid: usize, uid: u32, action: &Action) -> f64 {
+        Self::forcing_reply_penalty_owned(
+            self.work_pool.clone(),
+            g.clone(),
+            pid,
+            uid,
+            action,
+        )
     }
 
     /// Evaluate an air strike by making it on a cloned position. This captures
@@ -11673,7 +11781,7 @@ impl AdvancedAi {
         } else {
             1
         };
-        let mut best: Option<(f64, Pos, Action)> = None;
+        let mut candidates = Vec::new();
         for pos in g.wdisk(unit.pos, radius) {
             if spec.class != "military" {
                 break;
@@ -11712,33 +11820,73 @@ impl AdvancedAi {
                 });
             }
             for action in actions {
-                let mut score = self.tactical_attack_value(g, pid, uid, &action, plan)
-                    - self.base.attack_threshold(g, uid, pos);
-                if plan
-                    .target_city
-                    .is_some_and(|cid| g.cities.get(&cid).is_some_and(|c| c.pos == pos))
-                {
-                    score += 28.0;
-                }
-                if g.units_at(pos).iter().any(|oid| g.units[oid].hp <= 35) {
-                    score += 16.0;
-                }
-                if group.as_ref().and_then(|orders| orders.focus_target) == Some(pos) {
-                    score += self.base.w.focus_fire * 10.0;
-                }
-                if let Some(orders) = &group {
-                    score -= self.base.w.local_superiority
-                        * (1.0 - orders.local_strength_ratio).max(0.0);
-                }
-                score -=
-                    self.base.w.trade_caution * self.forcing_reply_penalty(g, pid, uid, &action);
-                if best
-                    .as_ref()
-                    .map(|(old, bp, _)| score > *old || (score == *old && pos < *bp))
-                    .unwrap_or(true)
-                {
-                    best = Some((score, pos, action));
-                }
+                candidates.push((pos, action));
+            }
+        }
+        // Each score consumes two private worlds: one for the exact attack
+        // result and one for the enemy reply search. Those are the same two
+        // clones the serial evaluator made, moved to persistent workers only
+        // after cloning so the authoritative `Game` never crosses threads.
+        let evaluations = match &self.work_pool {
+            Some(pool) if candidates.len() > 1 => {
+                let inputs = candidates
+                    .iter()
+                    .map(|(_, action)| (g.clone(), g.clone(), action.clone()))
+                    .collect();
+                let plan = plan.clone();
+                let nested_pool = Arc::clone(pool);
+                pool.map_owned(inputs, move |(attack, reply, action)| {
+                    (
+                        Self::tactical_attack_value_owned(attack, pid, uid, &action, &plan),
+                        Self::forcing_reply_penalty_owned(
+                            Some(Arc::clone(&nested_pool)),
+                            reply,
+                            pid,
+                            uid,
+                            &action,
+                        ),
+                    )
+                })
+            }
+            _ => candidates
+                .iter()
+                .map(|(_, action)| {
+                    (
+                        self.tactical_attack_value(g, pid, uid, action, plan),
+                        self.forcing_reply_penalty(g, pid, uid, action),
+                    )
+                })
+                .collect(),
+        };
+
+        let mut best: Option<(f64, Pos, Action)> = None;
+        for ((pos, action), (attack_value, reply_penalty)) in
+            candidates.into_iter().zip(evaluations)
+        {
+            let mut score = attack_value - self.base.attack_threshold(g, uid, pos);
+            if plan
+                .target_city
+                .is_some_and(|cid| g.cities.get(&cid).is_some_and(|c| c.pos == pos))
+            {
+                score += 28.0;
+            }
+            if g.units_at(pos).iter().any(|oid| g.units[oid].hp <= 35) {
+                score += 16.0;
+            }
+            if group.as_ref().and_then(|orders| orders.focus_target) == Some(pos) {
+                score += self.base.w.focus_fire * 10.0;
+            }
+            if let Some(orders) = &group {
+                score -= self.base.w.local_superiority
+                    * (1.0 - orders.local_strength_ratio).max(0.0);
+            }
+            score -= self.base.w.trade_caution * reply_penalty;
+            if best
+                .as_ref()
+                .map(|(old, bp, _)| score > *old || (score == *old && pos < *bp))
+                .unwrap_or(true)
+            {
+                best = Some((score, pos, action));
             }
         }
         if let Some((score, at, action)) = best {
@@ -19896,6 +20044,16 @@ mod tests {
             risky_reply > safe_reply + 5.0,
             "the ranged recapture must make the exposed kill materially worse: single={single_reply}, risky={risky_reply}, safe={safe_reply}"
         );
+        let mut parallel_ai = ai.clone();
+        parallel_ai.work_pool = Some(Arc::new(WorkPool::new(4)));
+        assert_eq!(
+            risky_reply,
+            parallel_ai.forcing_reply_penalty(&g, 0, attacker, &risky_action)
+        );
+        assert_eq!(
+            safe_reply,
+            parallel_ai.forcing_reply_penalty(&g, 0, attacker, &safe_action)
+        );
 
         let plan = StrategicPlan {
             strategy: GrandStrategy::Conquest,
@@ -19906,7 +20064,18 @@ mod tests {
             assessed_turn: g.turn,
             rush: false,
         };
+        let mut parallel_game = g.clone();
         assert!(ai.advanced_military_step(&mut g, 0, attacker, &plan));
+        assert!(parallel_ai.advanced_military_step(
+            &mut parallel_game,
+            0,
+            attacker,
+            &plan
+        ));
+        assert_eq!(
+            serde_json::to_value(&g).unwrap(),
+            serde_json::to_value(&parallel_game).unwrap()
+        );
         assert!(!g.units.contains_key(&safe_defender));
         assert!(g.units.contains_key(&risky_defender));
         assert_eq!(g.units[&attacker].pos, safe);
@@ -20324,6 +20493,23 @@ mod tests {
                 player.id
             );
         }
+    }
+
+    #[test]
+    fn parallel_tactical_workers_replay_the_serial_game_exactly() {
+        let mut serial = Game::new(2, 20, 14, 73, 80, 1);
+        let mut parallel = serial.clone();
+        let mut serial_ais = AdvancedAi::fleet(&serial);
+        let mut parallel_ais = AdvancedAi::fleet_parallel(&parallel, 4);
+
+        run_game(&mut serial, &mut serial_ais);
+        run_game(&mut parallel, &mut parallel_ais);
+
+        assert_eq!(serial.log, parallel.log);
+        assert_eq!(
+            serde_json::to_value(&serial).unwrap(),
+            serde_json::to_value(&parallel).unwrap()
+        );
     }
 
     #[test]
