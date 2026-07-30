@@ -879,11 +879,21 @@ local function findWarTarget(player, pid)
 				for _, city in other:GetCities():Members() do
 					local cx = city:GetX();
 					local cy = city:GetY();
+					-- ⚠ The comment above this function promises only knowledge
+					-- the seat has earned, and gating on HasMet alone did not
+					-- deliver it: GetCities():Members() lists every city the
+					-- rival owns, so the target could be a capital this seat had
+					-- never laid eyes on. Meeting a civilization does not reveal
+					-- its empire. Require the plot to be revealed to us.
+					local seen = try(function()
+						local plot = Map.GetPlot(cx, cy);
+						return plot ~= nil and plot:IsRevealed();
+					end, false);
 					-- A capital is worth walking further for: taking every
 					-- original capital is what actually ends the game.
 					local capital = try(function() return city:IsCapital(); end, false);
 					local score = -plotDistance(hx, hy, cx, cy) + (capital and 12 or 0);
-					if bestScore == nil or score > bestScore then
+					if seen and (bestScore == nil or score > bestScore) then
 						best = { player = otherId, x = cx, y = cy, capital = capital };
 						bestScore = score;
 					end
@@ -1674,13 +1684,31 @@ local function exportState(player, pid, turn)
 			local theirCities = {};
 			pcall(function()
 				for _, city in other:GetCities():Members() do
-					theirCities[#theirCities + 1] = {
-						x = city:GetX(), y = city:GetY(),
-						capital = try(function() return city:IsCapital(); end, false),
-						defense = try(function()
-							return city:GetDistricts():GetDefenseStrength();
-						end, -1),
-					};
+					-- ⚠ ONLY CITIES WE HAVE ACTUALLY SEEN.
+					--
+					-- GetCities():Members() returns every city the rival owns,
+					-- including ones this seat has never laid eyes on. Meeting a
+					-- civilization does not reveal its empire to a human player,
+					-- so a mirror built from the full list would let the
+					-- simulator plan against ground the controller never
+					-- scouted. Gate on the plot being revealed to us.
+					local cx = city:GetX();
+					local cy = city:GetY();
+					local seen = try(function()
+						local plot = Map.GetPlot(cx, cy);
+						return plot ~= nil and plot:IsRevealed();
+					end, false);
+					if seen then
+						theirCities[#theirCities + 1] = {
+							x = cx, y = cy,
+							capital = try(function() return city:IsCapital(); end, false),
+							-- Defence is on the city banner when the city is
+							-- visible, so this is information a human has.
+							defense = try(function()
+								return city:GetDistricts():GetDefenseStrength();
+							end, -1),
+						};
+					end
 				end
 			end);
 			rivals[#rivals + 1] = {
