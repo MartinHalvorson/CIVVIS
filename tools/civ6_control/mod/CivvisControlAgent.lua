@@ -2726,7 +2726,16 @@ local function playTurn(player, pid, turn)
 	-- Refreshed before any unit is ordered, so the whole army agrees this turn about
 	-- whether it is strong enough to attack.
 	armyNow = countUnits(player).military;
-	assaultReady = armyNow >= (cfg.AssaultMin or 8);
+	-- ⚠ TWELVE, NOT EIGHT. Attacking at 8 is what the gate was built to prevent, one
+	-- step removed: the army reaches 8, attacks, grinds to 6, rebuilds, attacks at 8
+	-- again. Measured on settler-20260730T055245Z — army 9 at t45 assaulting, 11 at
+	-- t60, back to 6 by t75, capital untouched. The threshold has to be a force that
+	-- can finish the job, not the smallest force willing to start it.
+	--
+	-- `MilitaryPerCity * 4 cities` is 20, so 12 is reachable and still leaves
+	-- garrisons. If `assaulting` never turns true in a run, this is the number to
+	-- look at first.
+	assaultReady = armyNow >= (cfg.AssaultMin or 12);
 	local worstStack, piles = stackCensus(player);
 	local rivalTop, metCount = rivalBest(player, pid);
 	local ourScore = try(function() return player:GetScore(); end, -1);
