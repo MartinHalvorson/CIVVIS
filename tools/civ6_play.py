@@ -515,7 +515,25 @@ def _play(args: argparse.Namespace) -> int:
                 state["outcome"] = event
 
     def finished(event: dict) -> bool:
-        return event.get("kind") in ("victory", "defeat")
+        """Only OUR victory or OUR defeat ends the run.
+
+        ⚠ This used to stop on any `defeat` event, and a Civilization VI game
+        emits one every time ANY player is eliminated — including a rival or a
+        city-state. Run settler-20260730T013057Z was stopped at turn 234 of 250
+        with a score of 185 because player 7 died: sixteen turns short of the
+        turn limit, which is where a score victory is awarded. The mod already
+        gets this right — it sets `finished` only when the defeated player is the
+        local one — and the harness was throwing that distinction away.
+
+        `victory` carries `won`; `defeat` carries `ours`. Neither is a reason to
+        stop unless it is about us.
+        """
+        kind = event.get("kind")
+        if kind == "victory":
+            return True
+        if kind == "defeat":
+            return bool(event.get("ours"))
+        return False
 
     if not bootstrap_game(tail, record, run_dir, args):
         print("could not start a game from the main menu", file=sys.stderr)
