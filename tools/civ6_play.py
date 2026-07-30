@@ -765,12 +765,33 @@ def _play(args: argparse.Namespace) -> int:
             screen = event.get("screen")
             print(f"[autoclose_stuck] {screen} gave up after "
                   f"{event.get('attempts')} attempts")
+            # ⚠⚠ ESCAPE WITH NOTHING TO CLOSE OPENS THE PAUSE MENU, AND THAT KILLS THE
+            # RUN. Photographed at the moment of a stall (run civvis-20260730T181327Z,
+            # turn 69, three healthy cities at loyalty 100): Civilization VI showing
+            # RETURN TO GAME / SAVE / OPTIONS / RETIRE / EXIT TO DESKTOP. A paused game
+            # advances no turns, so the harness then recorded its own keystroke as
+            # "stalled".
+            #
+            # The screens that had "given up" were TradeRouteChooser and
+            # TechCivicCompletedPopup, and the run had already reached turn 69 WITH them
+            # stuck — they were never blocking anything. The blind Escape was more
+            # dangerous than the screen it was aimed at.
+            #
+            # So the key is pressed only for screens known to hold the game. Everything
+            # else is reported and left alone, which is the honest response to "the shim
+            # gave up on a screen that is not stopping us".
+            BLOCKING = ("DiplomacyActionView", "LeaderView", "DiplomacyDealView",
+                        "WorldCongressBetweenTurns", "GreatWorkShowcase",
+                        "ChooseArtifact")
             if screen in ("DiplomacyActionView", "LeaderView", "DiplomacyDealView"):
                 ok = dismiss_leader_dialogue()
                 how = "dialogue clicks"
-            else:
+            elif screen in BLOCKING:
                 ok = press_escape()
                 how = "escape"
+            else:
+                ok = True
+                how = "left alone (not a blocking screen)"
             print(f"[autoclose_stuck] {how} "
                   f"{'sent' if ok else 'FAILED'} for {screen}",
                   file=sys.stderr if not ok else sys.stdout)
