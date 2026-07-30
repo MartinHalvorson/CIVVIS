@@ -158,18 +158,25 @@ because they selected a leader they have not played before.
 
 ## Watching players in the game HUD
 
-`civvis play --spectate --league league/` ranks the live-eligible strategies
-for each leader/civilization, then samples from the top three with 3:2:1 rank
-weight while avoiding repeats until the roster is exhausted. The spectator HUD
-lists, per player: **civ, league username + strategy, its elo** (exact
-leader/civ rating after game one, ±RD on hover) **and two win odds** in separate
-Start and Now columns, with their trend between them. The pregame forecast uses
-both the rating midpoint and its RD, so a one-game 1800 does not make the same
-promise as a settled 1800. In a free-for-all with an enabled result, the seats
-share 100%; on permanent teams, every member carries the whole side's chance;
-with every victory condition disabled, every chance is zero. Averaging pairwise
-expectations instead would put every seat near 50% and could never be checked
-against a winner.
+`civvis play --spectate --league league/` ranks live-eligible strategies first
+by the lower 95% Wilson **outright-win** bound for the full table size. The
+exact leader/civilization placement rating breaks an equal bound. It samples
+from the top three with 3:2:1 rank weight, avoids repeats, and exhausts exact
+profiles before using an unprofiled fallback. A roster does not switch from the
+legacy placement-only policy until it has enough exact profiles to fill the
+initial three-entry pool. Thus one human plus five AI seats uses six-player
+evidence, not five-player evidence, and removing seat one's pick cannot switch
+seat two back to a different objective.
+
+The spectator HUD lists, per player: **civ, league username + strategy, its
+elo** (exact leader/civ rating after game one, ±RD on hover) **and two win odds**
+in separate Start and Now columns, with their trend between them. The pregame
+forecast uses both the rating midpoint and its RD, so a one-game 1800 does not
+make the same promise as a settled 1800. In a free-for-all with an enabled
+result, the seats share 100%; on permanent teams, every member carries the
+whole side's chance; with every victory condition disabled, every chance is
+zero. Averaging pairwise expectations instead would put every seat near 50%
+and could never be checked against a winner.
 
 The **start** figure is the pregame prediction: the ratings at this table, the
 edge the roster has measured for the civilizations they drew, and what the
@@ -189,7 +196,8 @@ unchanged.
 
 Add `--league-record` and each finished game is rated into that roster
 as its own one-game rating period: the table moves as the exhibition
-plays, and the next game seats from the ratings the last one produced.
+plays, and the next game seats from the outright-win evidence the last one
+produced, with updated placement ratings available for tie-breaking.
 Only the six seats that played are touched — a league round schedules
 the whole roster, so a missing strategy really idled and its RD should
 grow, but a six-seat game is not an idle period for everyone who could
@@ -234,15 +242,17 @@ Every `--evolve-every` rounds (default 4):
   deterministically between selection generations. One parent comes from the
   top half of that niche's full historical archive when it exists (otherwise
   the active pool), and the other from the top half of active genome carriers;
-  both pools rank first by the lower 95% Wilson bound on **outright win rate**;
-  conservative placement Glicko (`rating - 1.96 × RD`) breaks a tie. Thus a
-  retired specialist can seed a better successor without re-entering the
-  schedule, while a proven generalist contributes broadly useful genes. A
-  child is a uniform crossover plus bounded mutation (the same operators
-  `civvis evolve` uses), is assigned the selected niche, and enters at
-  1500 ± 350 to earn its place.
-- **Retire** strategies with the lowest optimistic 95% Wilson win bound until
-  the active roster is back under `--pop`; `rating + 1.96 × RD` breaks a tie.
+  both pools rank first by the lower 95% Wilson bound on **outright win rate at
+  the current round manifest's table size**; conservative placement Glicko
+  (`rating - 1.96 × RD`) breaks a tie. Thus a duel-heavy history cannot decide
+  a six-player breeding round. A retired specialist can seed a better successor
+  without re-entering the schedule, while a proven generalist contributes
+  broadly useful genes. A child is a uniform crossover plus bounded mutation
+  (the same operators `civvis evolve` uses), is assigned the selected niche,
+  and enters at 1500 ± 350 to earn its place.
+- **Retire** strategies with the lowest optimistic 95% Wilson win bound at the
+  manifest's table size until the active roster is back under `--pop`;
+  `rating + 1.96 × RD` breaks a tie.
   Retirement still requires evidence: never anchors, never anyone with fewer
   than 20 games or placement RD above 110, and never the conservatively
   strongest winning genome in a represented niche. Weaker duplicates remain
@@ -259,6 +269,13 @@ Quality-diversity selection makes winning and strategic breadth joint
 objectives instead of asking a placement ladder to serve as a breeding
 objective too. Glicko remains the public ladder and matchup predictor.
 
+New results checkpoint games and wins by player count. A legacy snapshot
+recovers exact buckets from every retained `matches.csv` row; aggregate games
+that predate the retained log remain visible but are not assigned a fictional
+table size. Selection falls back to that aggregate only when no exact bucket
+exists for the current size. `--standings` prints both the lifetime record and
+the retained per-table buckets so that fallback is auditable.
+
 The fixed anchors (`advanced`, `basic`, and the offline-only `strategic`) are
 never retired, which pins the scale and keeps the otherwise-unreachable search
 controller measurable: a league leader's margin over `advanced` is comparable
@@ -267,9 +284,9 @@ across hundreds of rounds even after every non-anchor founder has been replaced.
 ## State on disk (`--dir`, default `league/`, gitignored)
 
 - `league.json` — the roster: every AI player's strategy kind/genome,
-  aggregate rating, leader/civ ratings, RD, volatility, record, lineage
-  (`parents`), and status. The single source of truth; delete it to start a
-  fresh league.
+  aggregate rating, leader/civ ratings, RD, volatility, lifetime record,
+  per-table-size win evidence, lineage (`parents`), and status. The single
+  source of truth; delete it to start a fresh league.
 - `.civvis-managed-roster` — present only on the supervisor's mutable
   `--league auto` copy; opts that roster into required builtin admission while
   leaving explicitly constructed comparison pools untouched.
@@ -279,8 +296,8 @@ across hundreds of rounds even after every non-anchor founder has been replaced.
   Brier score, and log loss.
 - `matches.csv` — every game: round, seed, end turn, victory type,
   placements. New rows encode each seat as `player@leader@civ@rank`, so batch
-  score ties and the full leader/civilization identity survive replay; the
-  rating tool remains compatible with both older row shapes.
+  score ties, table size, and the full leader/civilization identity survive
+  replay; the rating tool remains compatible with both older row shapes.
 - `work/round-N/manifest.json` — immutable roster, game speed, settings,
   effective-rules fingerprint, mirrored schedule, and job IDs for one rating
   period.

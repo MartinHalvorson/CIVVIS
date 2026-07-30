@@ -28,13 +28,15 @@ granting a subsystem for free so an ablation can measure the maximum headroom in
 that subsystem.
 
 The supervised exhibition uses `--league auto`: it copies the committed roster
-to a mutable runtime directory and makes a rank-weighted choice from each
-leader/civilization's top three live-eligible strategies, avoiding repeats while
-the roster allows. Those entries are scripted `AdvancedAi` variants and
-baselines. The only searching roster entry, `strategic`, is marked
-`league_only` and is excluded from exhibition and auto-play choices. Without a
-seated league, every non-human major uses stock `AdvancedAi`; minors and
-barbarians use `BasicAi`.
+to a mutable runtime directory and makes a rank-weighted choice from the exact
+table size's top three conservative outright winners. The lower 95% Wilson win
+bound orders that pool; the exact leader/civilization placement rating breaks a
+tie. Seating avoids repeats, exhausts profiled winners before an unprofiled
+fallback, and retains the old placement-only policy until at least three exact
+profiles exist. Those entries are scripted `AdvancedAi` variants and baselines.
+The only searching roster entry, `strategic`, is marked `league_only` and is
+excluded from exhibition and auto-play choices. Without a seated league, every
+non-human major uses stock `AdvancedAi`; minors and barbarians use `BasicAi`.
 
 The repository ships and embeds the 40-gene champion in
 `data/evolved/best.json`. It ships no `valuenet.json`. That distinction matters:
@@ -224,11 +226,14 @@ its cheap per-genome fitness estimate, so its separate win-based promotion gate
 remains essential.
 
 The continuous league no longer shares that mistake: parent choice, niche
-elites, and retirement now use conservative Wilson bounds on outright wins,
-with placement Glicko only breaking a tie. On the committed roster this drops
-the 1823-rated, 4/21-win `g56-50` from second in the breeding order to eighth and
-puts the well-sampled `g20-21` and `g28-28` first. That aligns the objective; it
-does not yet establish that the next offspring generation improves.
+elites, and retirement now use conservative Wilson bounds on outright wins at
+the current round's exact table size, with placement Glicko only breaking a
+tie. Retained raw matches backfill old rosters without assigning an invented
+size to older aggregate history. On the production log, mixed-history evidence
+would breed `advanced_evolved` then `advanced`; exact six-player evidence ranks
+`g28-28` 12/33 (22.2% lower bound), `g676-58` 5/12 (19.3%), then `advanced`
+7/27 (13.2%). That aligns the objective; it does not yet establish that the
+next offspring generation improves.
 
 ### 7. Search is not live-validated and is materially more expensive
 
@@ -260,8 +265,13 @@ The fixed-profile, fixed-anchor tournament ledger now gives internal versions a
 replayable longitudinal baseline: compare the order-independent direct Elo and
 its pair-score interval against `advanced_v1` at the same game count and under
 the profile-bound `advanced / advanced_v1 / basic / random` controller roles.
-That fixes an internal measurement problem; it does not supply the missing
-external rung.
+The canonical 40-game ledger records `advanced-20260730` at direct 1708.2
+against the 1500 anchor from a 31/40 pair score (95% Elo 1588.7–1841.0); its
+order-sensitive online path is separately labelled 1588.5. The rules
+fingerprint, four-player 60×38 Standard profile, source-pinned anchor, raw
+games, and immutable controller identities make that number replayable rather
+than portable to a different experiment. This fixes an internal measurement
+problem; it does not supply the missing external rung.
 
 Claims such as “world-class,” “superhuman,” or “three times stronger” are not
 supported. The defensible form is always: agent A beat agent B, on a named
