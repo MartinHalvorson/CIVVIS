@@ -187,6 +187,31 @@ OPTIONS = {
               "GAMESPEED_EPIC", "GAMESPEED_MARATHON"],
     "map_size": ["MAPSIZE_DUEL", "MAPSIZE_TINY", "MAPSIZE_SMALL",
                  "MAPSIZE_STANDARD", "MAPSIZE_LARGE", "MAPSIZE_HUGE"],
+    # ⚠ THIS ORDER IS A HYPOTHESIS, AND IT IS VERIFIED RATHER THAN TRUSTED.
+    #
+    # Setting the map through config does NOT work: `CivvisControlSetup.lua` never
+    # runs because the FrontEnd context does not load on this install, so
+    # `MapScript` is ignored and every game so far has been Continents. That
+    # matters more than it sounds: on Continents a seat can start ALONE. Run
+    # settler-20260730T045551Z reached turn 118 with `met = 0` after 415 explore
+    # orders, and first contact came at turn 130 — far too late for domination,
+    # which needs three capitals.
+    #
+    # The dropdown is the only route that works, and it needs an index.
+    # `vision.py` reads row POSITIONS, not text, so the name cannot be matched on
+    # screen. This order is the scripted maps from the shipped `Maps` table sorted
+    # by SortIndex (Continents 10, Fractal 20, InlandSea 25, Island_Plates 30,
+    # Lakes 35, Pangaea 40, ...), on the assumption that fixed-size static maps are
+    # filtered out at Tiny.
+    #
+    # The `seat` event reports the script the game ACTUALLY generated, so a wrong
+    # guess is caught on the first run rather than silently played for hours —
+    # which is exactly how "we have been asking for Pangaea and playing Continents"
+    # survived this long.
+    "map_type": ["Continents.lua", "Fractal.lua", "InlandSea.lua",
+                 "Island_Plates.lua", "Lakes.lua", "Pangaea.lua",
+                 "Seven_Seas.lua", "Shuffle.lua", "Small_Continents.lua",
+                 "Terra.lua"],
 }
 
 
@@ -335,6 +360,17 @@ def configure_and_start(bounds: tuple[int, int, int, int], args: argparse.Namesp
     set_dropdown(bounds, "difficulty", args.difficulty)
     set_dropdown(bounds, "map_size", args.map_size)
     set_dropdown(bounds, "speed", args.speed)
+    # The map has to be chosen HERE. `MapScript` in the baked config is ignored,
+    # because the FrontEnd context that would read it never loads, so every game so
+    # far has been Continents whatever was asked for. On Continents a seat can start
+    # alone: one run reached turn 118 with `met = 0`, and first contact at turn 130 is
+    # too late for domination. The `seat` event reports the script the game actually
+    # generated, so a wrong row shows up as a run that says so.
+    if args.map in OPTIONS["map_type"]:
+        set_dropdown(bounds, "map_type", args.map)
+    else:
+        print(f"map {args.map} is not in the dropdown order; leaving the default",
+              file=sys.stderr)
     screenshot(run_dir / "setup.png")
     x, y, w, h = bounds
     click_at(int(x + w * START_GAME[0]), int(y + h * START_GAME[1]))
