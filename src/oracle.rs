@@ -211,10 +211,55 @@ pub enum Grant {
     /// and `advanced_envoys` is where that work goes. If it reads null, 48
     /// city-states are decoration and the axis closes.
     Suzerain,
+    /// The **resource-matched control** for [`Grant::Suzerain`]: hand over the
+    /// same envoys, into the pool the agent spends from, and let it place them.
+    ///
+    /// `Suzerain` grants an outcome. This grants the input to that outcome, on
+    /// the same budget, and buys no suzerainty directly — the direct analogue
+    /// of `Grant::Rebate` on the expansion axis, which is what proved that
+    /// axis was tempo rather than money (#584).
+    ///
+    /// ★ **It exists because the envoy axis' central claim cannot be supported
+    /// by the evidence it rests on.** `envoy_allocation_census` (#608, re-run
+    /// on the shipping agent in #620) found the free-envoy pool empty at
+    /// *every* sample at both map scales, and concluded "allocation is already
+    /// perfect; the gap is income." But an always-empty pool is evidence of **no
+    /// slack**, not of good targeting: a policy that would spread envoys one
+    /// per city-state and a policy that would concentrate three into a
+    /// suzerainty are indistinguishable when there is never more than one envoy
+    /// in hand. You cannot measure allocation quality from a resource that is
+    /// never available to allocate.
+    ///
+    /// The live census (#624, 463 archived games) sharpens the puzzle rather
+    /// than resolving it: the deployed population *does* reach Ideology
+    /// (88.1%), Gunboat Diplomacy (64.4%) and a Diplomatic Quarter (66.1%),
+    /// which are the income sources #612/#620 nominated — and it still holds
+    /// only 11.2% of the city-states it meets, against a mean shortfall of
+    /// 24.4 envoys. So every named cause of the largest measured headroom in
+    /// the repository has been eliminated, and this grant separates the two
+    /// readings that remain:
+    ///
+    /// | outcome | reading |
+    /// |---|---|
+    /// | comparable to `suzerain` | the gap **is** income; the agent converts envoys fine, and the work goes to `envoys_per_threshold`, the diplomatic buildings and the cards |
+    /// | null while `suzerain` reproduces | the agent **cannot convert envoys into suzerainty even when handed them**; #608's "allocation is already perfect" does not follow from an empty pool, and `advanced_envoys` is back on the table |
+    /// | partial | it is a bundle; price future treatments against the residual, not against +34 |
+    ///
+    /// ⚠ **Budget-matched, not rate-matched.** This is the trap `Grant::Rebate`
+    /// documented: a shared firing *condition* is not a shared *schedule*.
+    /// `Suzerain` switches its own trigger off — once the seat is suzerain the
+    /// deficit is zero and it stops paying — while free envoys switch nothing
+    /// off, because the agent may spend them anywhere. Paying the deficit every
+    /// turn would hand over many times the gift (the rebate reached 12x before
+    /// it was capped). So this tracks the cumulative envoys already granted per
+    /// city-state and tops up only to the largest deficit ever required, which
+    /// equals `Suzerain`'s cumulative write per city-state **by construction
+    /// rather than by tuning**.
+    Envoys,
 }
 
 impl Grant {
-    pub const ALL: [Grant; 10] = [
+    pub const ALL: [Grant; 11] = [
         Grant::None,
         Grant::Modernity,
         Grant::Taker,
@@ -225,6 +270,7 @@ impl Grant {
         Grant::Expansion,
         Grant::IdleReserve,
         Grant::Suzerain,
+        Grant::Envoys,
     ];
 
     pub fn name(self) -> &'static str {
@@ -239,6 +285,7 @@ impl Grant {
             Grant::Expansion => "expansion",
             Grant::IdleReserve => "idle_reserve",
             Grant::Suzerain => "suzerain",
+            Grant::Envoys => "envoys",
         }
     }
 
@@ -256,6 +303,15 @@ pub struct Oracle<A: Ai> {
     /// failure the provenance work in `elo.rs` exists to prevent — so the
     /// harness reports it rather than letting a null be ambiguous.
     fired: u64,
+    /// Cumulative raw envoys already handed over per city-state, for
+    /// [`Grant::Envoys`] only.
+    ///
+    /// This is the budget match. See that variant's note on why a shared
+    /// firing condition is not a shared schedule.
+    envoys_paid: Vec<(usize, i64)>,
+    /// Raw envoys created by [`Grant::Envoys`], reported separately from
+    /// `fired` because one firing can hand over several.
+    envoys_granted: i64,
 }
 
 impl<A: Ai> Oracle<A> {
@@ -264,12 +320,24 @@ impl<A: Ai> Oracle<A> {
             inner,
             grant,
             fired: 0,
+            envoys_paid: Vec::new(),
+            envoys_granted: 0,
         }
     }
 
     /// Times the grant changed the position.
     pub fn fired(&self) -> u64 {
         self.fired
+    }
+
+    /// Raw envoys handed to the seat's free pool by [`Grant::Envoys`].
+    ///
+    /// Separate from `fired` because the question this grant answers is about
+    /// a *quantity* of resource, and a firing count cannot express it. It is
+    /// also the number that has to match `Grant::Suzerain`'s cumulative write
+    /// for the comparison to be a control at all.
+    pub fn envoys_granted(&self) -> i64 {
+        self.envoys_granted
     }
 
     /// Walk every unit to the top of its unlocked upgrade chain, free, with
@@ -514,6 +582,7 @@ impl<A: Ai> Oracle<A> {
             if g.envoys_at(pid, minor) >= want {
                 continue;
             }
+            let held = g.envoys_at(pid, minor);
             let Some(seat) = g.players.get_mut(pid) else {
                 continue;
             };
@@ -521,6 +590,73 @@ impl<A: Ai> Oracle<A> {
                 Some((_, count)) => *count = want,
                 None => seat.envoys.push((minor, want)),
             }
+            self.fired += 1;
+            // The raw envoys this write brought into existence. Recorded so
+            // `Grant::Envoys` can be checked against it rather than assumed to
+            // match: a control whose budget is never compared is not a control.
+            // (#614 introduces an equivalent `raw_envoys_granted` for this
+            // grant; whichever of the two lands second should collapse them.)
+            self.envoys_granted += (want - held).max(0);
+        }
+    }
+
+    /// Hand the seat the raw envoys [`Grant::Suzerain`] would have created,
+    /// into the free pool `advanced_envoys` spends from, and let it choose
+    /// where they go.
+    ///
+    /// The resource-matched control. See [`Grant::Envoys`] for what the two
+    /// possible outcomes mean and why the envoy axis needs this before any more
+    /// work goes into it.
+    ///
+    /// The city-state selection is a deliberate duplicate of
+    /// `grant_suzerain`'s rather than a shared helper: two open PRs (#614,
+    /// #584) are rewriting that neighbouring function, and factoring now
+    /// guarantees a conflict in code whose whole purpose is that the two arms
+    /// agree. `both_arms_select_the_same_city_states` pins the agreement
+    /// instead, which is the property that actually matters and which a shared
+    /// helper would only have made *look* guaranteed — the trap #584 hit when a
+    /// shared condition turned out not to be a shared schedule.
+    fn grant_envoys(&mut self, g: &mut Game, pid: usize) {
+        let minors: Vec<usize> = g
+            .players
+            .iter()
+            .filter(|minor| {
+                minor.is_minor && minor.alive && !minor.is_barbarian && minor.id != pid
+            })
+            .map(|minor| minor.id)
+            .filter(|minor| g.has_met(pid, *minor))
+            .collect();
+        for minor in minors {
+            let best_rival = g
+                .players
+                .iter()
+                .filter(|other| !other.is_minor && other.alive && other.id != pid)
+                .map(|other| g.envoys_at(other.id, minor))
+                .max()
+                .unwrap_or(0);
+            let want = (best_rival + 1).max(SUZERAIN_ENVOYS);
+            let deficit = (want - g.envoys_at(pid, minor)).max(0);
+            if deficit == 0 {
+                continue;
+            }
+            // Budget, not rate. Free envoys do not switch this trigger off the
+            // way a suzerainty does, so paying the standing deficit every turn
+            // would hand over many times the gift. Top up only to the largest
+            // deficit this city-state has ever shown.
+            let slot = match self.envoys_paid.iter().position(|(at, _)| *at == minor) {
+                Some(slot) => slot,
+                None => {
+                    self.envoys_paid.push((minor, 0));
+                    self.envoys_paid.len() - 1
+                }
+            };
+            let top_up = deficit - self.envoys_paid[slot].1;
+            if top_up <= 0 {
+                continue;
+            }
+            self.envoys_paid[slot].1 = deficit;
+            g.players[pid].envoys_free += top_up;
+            self.envoys_granted += top_up;
             self.fired += 1;
         }
     }
@@ -642,6 +778,7 @@ impl<A: Ai> Ai for Oracle<A> {
                 Grant::Expansion => self.grant_expansion(g, pid),
                 Grant::IdleReserve => self.confiscate_idle_reserve(g, pid),
                 Grant::Suzerain => self.grant_suzerain(g, pid),
+                Grant::Envoys => self.grant_envoys(g, pid),
             }
         }
         self.inner.take_turn(g, pid);
@@ -1139,6 +1276,183 @@ mod tests {
         }
         assert!(oracle.fired() > 0, "the suzerain grant never placed an envoy");
         assert!(ever_gained, "no suzerainty was ever actually gained");
+    }
+
+    /// ★ The property the whole comparison rests on: on the same position the
+    /// two arms act on the same city-states and move the same number of raw
+    /// envoys. If they diverge here, a difference in win rate could just be a
+    /// difference in how much was handed over.
+    ///
+    /// This is what #584 lacked. There, the rebate shared the expansion grant's
+    /// firing *condition* and a test confirmed identical firing against one
+    /// shared position — and the two still diverged twelvefold over a
+    /// trajectory, because a granted settler switched its own trigger off and
+    /// banked production switched nothing off. So this asserts equality of the
+    /// *budget* at an instant, and the run reports `envoys_granted` per arm so
+    /// the trajectory claim is checked with numbers rather than assumed.
+    #[test]
+    fn both_arms_select_the_same_city_states_and_move_the_same_envoys() {
+        let mut g = Game::new(4, 28, 18, 8_111, 200, 4);
+        let mut others = AdvancedAi::fleet(&g);
+        let mut compared = 0usize;
+        let mut ever_nonzero = false;
+        while g.winner.is_none() && g.turn <= 140 {
+            let pid = g.current;
+            if pid == 0 {
+                let mut suz = Oracle::new(AdvancedAi::new(), Grant::Suzerain);
+                let mut env = Oracle::new(AdvancedAi::new(), Grant::Envoys);
+                let mut a = g.clone();
+                let mut b = g.clone();
+                suz.grant_suzerain(&mut a, 0);
+                env.grant_envoys(&mut b, 0);
+                assert_eq!(
+                    suz.fired(),
+                    env.fired(),
+                    "the arms acted on a different number of city-states on turn {}",
+                    g.turn
+                );
+                assert_eq!(
+                    suz.envoys_granted(),
+                    env.envoys_granted(),
+                    "the arms moved a different number of raw envoys on turn {}",
+                    g.turn
+                );
+                if suz.envoys_granted() > 0 {
+                    ever_nonzero = true;
+                }
+                compared += 1;
+                let mut live = Oracle::new(AdvancedAi::new(), Grant::Envoys);
+                live.take_turn(&mut g, pid);
+            } else {
+                others[pid].take_turn(&mut g, pid);
+            }
+            if g.winner.is_none() && g.current == pid {
+                let _ = g.apply(pid, &crate::game::Action::EndTurn);
+            }
+        }
+        assert!(compared > 0, "no position was ever compared");
+        assert!(
+            ever_nonzero,
+            "both arms were inert everywhere, so the equality is vacuous"
+        );
+    }
+
+    /// The control must hand over a *resource* and buy no suzerainty itself.
+    /// If it wrote the envoy list it would be `Grant::Suzerain` under another
+    /// name and the comparison would be of nothing against nothing.
+    #[test]
+    fn the_envoys_grant_pays_the_pool_and_claims_nothing() {
+        let mut g = Game::new(4, 28, 18, 8_112, 200, 4);
+        let mut oracle = Oracle::new(AdvancedAi::new(), Grant::Envoys);
+        let mut others = AdvancedAi::fleet(&g);
+        let mut ever_paid = false;
+        while g.winner.is_none() && g.turn <= 140 {
+            let pid = g.current;
+            if pid == 0 {
+                let mut probe = g.clone();
+                let gold = probe.players[0].gold;
+                let faith = probe.players[0].faith;
+                let pool = probe.players[0].envoys_free;
+                let placed = probe.players[0].envoys.clone();
+                let rivals: Vec<Vec<(usize, i64)>> = probe
+                    .players
+                    .iter()
+                    .filter(|p| p.id != 0)
+                    .map(|p| p.envoys.clone())
+                    .collect();
+                let suzerainties = probe
+                    .players
+                    .iter()
+                    .filter(|m| m.is_minor && m.alive && !m.is_barbarian)
+                    .filter(|m| probe.suzerain_of(m.id) == Some(0))
+                    .count();
+
+                let before = oracle.envoys_granted();
+                oracle.grant_envoys(&mut probe, 0);
+                let handed = oracle.envoys_granted() - before;
+
+                assert_eq!(gold, probe.players[0].gold, "the grant moved Gold");
+                assert_eq!(faith, probe.players[0].faith, "the grant moved Faith");
+                assert_eq!(
+                    placed, probe.players[0].envoys,
+                    "the grant placed envoys instead of handing them over"
+                );
+                let rivals_after: Vec<Vec<(usize, i64)>> = probe
+                    .players
+                    .iter()
+                    .filter(|p| p.id != 0)
+                    .map(|p| p.envoys.clone())
+                    .collect();
+                assert_eq!(rivals, rivals_after, "the grant moved a rival's envoys");
+                assert_eq!(
+                    pool + handed,
+                    probe.players[0].envoys_free,
+                    "the pool did not receive exactly what was granted"
+                );
+                let after = probe
+                    .players
+                    .iter()
+                    .filter(|m| m.is_minor && m.alive && !m.is_barbarian)
+                    .filter(|m| probe.suzerain_of(m.id) == Some(0))
+                    .count();
+                assert_eq!(
+                    suzerainties, after,
+                    "the resource control took a suzerainty by itself"
+                );
+                if handed > 0 {
+                    ever_paid = true;
+                }
+                oracle.take_turn(&mut g, pid);
+            } else {
+                others[pid].take_turn(&mut g, pid);
+            }
+            if g.winner.is_none() && g.current == pid {
+                let _ = g.apply(pid, &crate::game::Action::EndTurn);
+            }
+        }
+        assert!(ever_paid, "the envoys grant never handed over an envoy");
+    }
+
+    /// The budget cap. Applied twice to an unchanged position the grant must
+    /// pay once: free envoys do not switch the trigger off the way a
+    /// suzerainty does, and paying the standing deficit every turn is how the
+    /// expansion rebate reached twelve times the gift it was controlling for.
+    #[test]
+    fn the_envoys_grant_does_not_pay_twice_for_the_same_city_state() {
+        let mut g = Game::new(4, 28, 18, 8_113, 200, 4);
+        let mut others = AdvancedAi::fleet(&g);
+        let mut checked = 0usize;
+        while g.winner.is_none() && g.turn <= 140 {
+            let pid = g.current;
+            if pid == 0 {
+                let mut oracle = Oracle::new(AdvancedAi::new(), Grant::Envoys);
+                let mut probe = g.clone();
+                oracle.grant_envoys(&mut probe, 0);
+                let first = oracle.envoys_granted();
+                if first > 0 {
+                    // Undo the pool credit so the position is identical again;
+                    // the ledger, not the game state, is what must stop the
+                    // second payment.
+                    probe.players[0].envoys_free -= first;
+                    oracle.grant_envoys(&mut probe, 0);
+                    assert_eq!(
+                        first,
+                        oracle.envoys_granted(),
+                        "the grant paid twice for the same city-states on turn {}",
+                        g.turn
+                    );
+                    checked += 1;
+                }
+                let mut live = Oracle::new(AdvancedAi::new(), Grant::Envoys);
+                live.take_turn(&mut g, pid);
+            } else {
+                others[pid].take_turn(&mut g, pid);
+            }
+            if g.winner.is_none() && g.current == pid {
+                let _ = g.apply(pid, &crate::game::Action::EndTurn);
+            }
+        }
+        assert!(checked > 0, "the cap was never exercised");
     }
 
     /// The grant must be modernization and nothing else: no Gold, no health,
