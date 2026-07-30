@@ -289,8 +289,20 @@ fn decide(
     // to, or the action is not on the table. Those are opposite problems.
     {
         let has_met = mirror_state.game.has_met(0, 1);
+        // ⚠ Which units does CIVVIS think it has that this bridge cannot name? A unit
+        // with no Civ 6 counterpart takes orders that vanish, so CIVVIS believes a
+        // settler is marching to a site while nothing moves in the real game.
+        let phantom: Vec<String> = mirror_state
+            .game
+            .units
+            .values()
+            .filter(|u| u.owner == 0 && !mirror_state.civ6_of.contains_key(&u.id))
+            .map(|u| format!("{}:{}", u.id, u.kind.as_str()))
+            .collect();
         note_bits.push(format!(
-            "pre_all_legal={pre_all_legal} pre_war_legal={pre_war_legal} has_met01={has_met}"
+            "pre_all_legal={pre_all_legal} pre_war_legal={pre_war_legal} has_met01={has_met} \
+             phantom=[{}]",
+            phantom.join(",")
         ));
         let legal = mirror_state
             .game

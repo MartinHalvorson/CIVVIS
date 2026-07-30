@@ -942,6 +942,33 @@ pub fn rebuild_from_state(
     frontier_depth: u32,
 ) -> Reconstruction {
     let mut game = rebuild_game(snapshot, players.max(2), seed);
+
+    // ★★★★★ CLEAR THE STARTING UNITS `Game::new` HANDS OUT. This is the root of the
+    // economy failure, and it is invisible from the outside.
+    //
+    // A new CIVVIS game gives every player a settler and a warrior. This
+    // reconstruction then adds the REAL units on top, so CIVVIS's board permanently
+    // contains a settler that does not exist in Civilization VI — measured directly:
+    // `phantom=[1:settler,2:warrior]`.
+    //
+    // Two consequences, and the second is the expensive one:
+    //
+    //   * CIVVIS marches the phantom settler toward a site every turn ("Settler
+    //     marching to (-1, 21), 5 tiles away, the site is worth 70.8") and those orders
+    //     name a unit this bridge cannot map, so they are dropped as `unit_not_mapped`
+    //     and nothing moves in the real game.
+    //   * `advanced_units` computes `decline_settlers = counts.settlers > 0`, so with a
+    //     phantom settler always present CIVVIS **never builds a real one**. One city
+    //     for a whole game against a plan asking for five, and 26 turns out of 182 with
+    //     any settler alive at all.
+    //
+    // Every unit on this board must come from the export, or CIVVIS is planning with an
+    // army that does not exist.
+    let starting: Vec<u32> = game.units.keys().copied().collect();
+    for uid in starting {
+        game.remove_unit(uid);
+    }
+
     let mut unit_ids = std::collections::BTreeMap::new();
     let mut city_ids = std::collections::BTreeMap::new();
     let mut unmapped: Vec<String> = Vec::new();
