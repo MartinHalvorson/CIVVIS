@@ -145,3 +145,98 @@ The useful advance is methodological: future oracle claims can name their
 controller and speed, share one matched control across treatments, refuse a
 silent agent fallback, and expose progress during expensive batches. No
 gameplay behavior changes here.
+
+## 2026-07-30 — a resource-matched control for suzerainty, and why its budget cannot be matched
+
+`Grant::Suzerain` measured 56.7% against a 22.7% control (p=0.0000, 400 maps,
+two disjoint seeds, 150 map-directions to 18) — the largest headroom this
+harness has found, larger than `expansion`. Every proposed cause for it has now
+been eliminated, and the claim that survived does not follow from its evidence.
+
+### The hole
+
+`envoy_allocation_census` (#608, re-run on the shipping agent in #620) found the
+free-envoy pool empty at **every** sample at both map scales and concluded
+*"allocation is already perfect; the gap is income."*
+
+An always-empty pool is evidence of **no slack**, not of good targeting. A
+policy that spreads one envoy per city-state and a policy that concentrates
+three into a suzerainty are indistinguishable when there is never more than one
+envoy in hand. Allocation quality cannot be measured from a resource that is
+never available to allocate.
+
+The income reading no longer fits either. #624's census over 463 archived live
+games shows the deployed population reaching **Ideology 88.1%**, **Gunboat
+Diplomacy 64.4%** and a **Diplomatic Quarter 66.1%** — the sources #612/#620
+nominated — while still holding **11.2%** of the city-states it meets against a
+mean shortfall of **24.4** envoys. The six-game censuses that named those causes
+were not representative of the population that plays.
+
+### The control
+
+`Grant::Envoys` hands over the envoys `Suzerain` would have created, into the
+free pool `advanced_envoys` spends from, and lets the agent place them. It is
+`Grant::Rebate` on the expansion axis — the control that proved that axis was
+tempo rather than money — applied here.
+
+Budget, not rate. A suzerainty switches its own trigger off; free envoys switch
+nothing off, because the agent may spend them anywhere. A per-city-state ledger
+tracks the **target level** reached and tops up only to the largest ever
+required. Two earlier versions of that ledger were wrong and both were caught by
+measuring rather than reasoning:
+
+| ledger keyed on | raw envoys/game | against `suzerain`'s 54.5 |
+|---|---|---|
+| the deficit seen | 34.5 | 37% under |
+| the deficit, first payment uncredited | 32.8 | over-pays where the seat already held envoys |
+| **the target level, `max(paid, held)`** | **32.8** | correct per event — see below |
+
+### ★★ The budgets cannot be matched, and that is the finding
+
+3 pairs, 6 players, 74×46, Online, 250 turns, seed 999003:
+
+| arm | fired/game | raw envoys/game | **per firing** |
+|---|---|---|---|
+| `suzerain` | 18.0 | 54.5 | **3.03** |
+| `envoys` | 11.0 | 32.8 | **2.98** |
+
+The two arms pay the **same amount each time they pay**. The entire aggregate
+gap is in how often the gate re-opens — and it re-opens more for `Suzerain`
+because a seat that actually *holds* every suzerainty provokes rivals into
+pouring envoys back in, which raises the target and asks again. A seat merely
+handed envoys does not provoke that response.
+
+So `want` is a function of the arm. **No online rule can match the totals**, and
+forcing it would be tuning to a number rather than a construction. This is
+#584's "a shared condition is not a shared schedule" in a sharper form: there,
+the schedule diverged because the treatment switched its own trigger off; here it
+diverges because the treatment changes what the *opponents* do.
+
+### Preregistered decision rule, fixed before the run
+
+`ablate --grant none,suzerain,envoys --pairs 150 --players 4 --turns 500
+--seed 460000` — #602's exact confirming configuration, so `suzerain` and the
+shared `none` control reproduce known values inside the same batch.
+
+Read `raw envoys granted` on both arms **before** the win rate. `Envoys` is a
+**conservative** control at ~60% of the resource, which makes the outcomes
+asymmetric:
+
+| outcome | reading |
+|---|---|
+| `envoys` comparable to `suzerain` | **strong**: matching the full oracle on 60% of the budget means the gap is income, the agent converts envoys fine, and the work goes to `envoys_per_threshold`, the diplomatic buildings and the cards |
+| `envoys` null while `suzerain` reproduces | **ambiguous** between "the agent cannot convert envoys even when handed them" and "it was underpaid by 40%". Named follow-up: a deliberately generous arm — not a conclusion |
+| partial | a bundle; price future treatments against the residual, not against +34 |
+| `suzerain` fails to reproduce | harness or seed moved; nothing in the batch is readable |
+
+`Grant::None` must reproduce the control exactly, as it did in the fires-check
+(`SANITY OK`, 0 discordant of 4).
+
+### Instrument change
+
+`ablate` now reports `raw envoys granted` per arm. A firing *count* cannot
+express a budget: two grants can fire different numbers of times while moving
+the same resource, or fire equally while moving very different amounts. Without
+the quantity printed, the arms above would have looked matched at 18.0 against
+11.0 firings and the 40% shortfall would have been invisible. **A control whose
+budget is never printed is not a control.**

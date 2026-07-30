@@ -65,9 +65,23 @@ fn parse_grants(requested: &str) -> Result<Vec<Grant>, String> {
 }
 
 /// One game. `oracle_seat` is the seat holding the grant; every other major
-/// plays the stock agent. Returns whether the granted seat won, and how many
-/// times its grant fired.
-fn play(options: GameOptions, oracle_seat: usize, grant: Grant, ai_name: &str) -> (bool, u64) {
+/// plays the stock agent. Returns whether the granted seat won, how many times
+/// its grant fired, and how many raw envoys it handed over.
+///
+/// The third value exists because a firing *count* cannot express a budget. On
+/// the envoy axis two grants can fire a different number of times while moving
+/// the same resource, or fire equally while moving very different amounts, and
+/// `Grant::Envoys` is only a control for `Grant::Suzerain` if the amounts
+/// match. #584 is the standing warning: its rebate shared the expansion grant's
+/// firing condition, passed a same-position test, and still handed over twelve
+/// times the gift over a trajectory. A control whose budget is never printed is
+/// not a control.
+fn play(
+    options: GameOptions,
+    oracle_seat: usize,
+    grant: Grant,
+    ai_name: &str,
+) -> (bool, u64, i64) {
     let mut game = Game::new_with(options);
     let mut stock: Vec<Box<dyn Ai>> = game
         .players
@@ -96,7 +110,11 @@ fn play(options: GameOptions, oracle_seat: usize, grant: Grant, ai_name: &str) -
             let _ = game.apply(pid, &Action::EndTurn);
         }
     }
-    (game.winner == Some(oracle_seat), oracle.fired())
+    (
+        game.winner == Some(oracle_seat),
+        oracle.fired(),
+        oracle.envoys_granted(),
+    )
 }
 
 /// Wilson score interval, the same statistic the promotion gate uses.
@@ -281,8 +299,9 @@ fn run(grants: &[Grant], args: &[String]) {
                 )
             },
         );
-        let treated: Vec<bool> = played.iter().map(|(won, _)| *won).collect();
-        let fired: u64 = played.iter().map(|(_, fired)| *fired).sum();
+        let treated: Vec<bool> = played.iter().map(|(won, _, _)| *won).collect();
+        let fired: u64 = played.iter().map(|(_, fired, _)| *fired).sum();
+        let envoys_granted: i64 = played.iter().map(|(_, _, envoys)| *envoys).sum();
 
         let wins = treated.iter().filter(|won| **won).count();
         // McNemar: only the cells where the grant changed the outcome carry
@@ -320,6 +339,14 @@ lost where control won: {hurt}; unchanged: {}",
             "  grant fired         {fired} times ({:.1} per game)",
             fired as f64 / n
         );
+        // Only the envoy grants move this, so stay silent otherwise rather
+        // than printing a zero on eight unrelated arms.
+        if envoys_granted > 0 {
+            println!(
+                "  raw envoys granted  {envoys_granted} ({:.1} per game)",
+                envoys_granted as f64 / n
+            );
+        }
         if grant != Grant::None && fired == 0 {
             println!(
                 "  WARNING: the grant never fired, so this measured the stock \

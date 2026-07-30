@@ -247,14 +247,39 @@ pub enum Grant {
     ///
     /// ⚠ **Budget-matched, not rate-matched.** This is the trap `Grant::Rebate`
     /// documented: a shared firing *condition* is not a shared *schedule*.
-    /// `Suzerain` switches its own trigger off — once the seat is suzerain the
-    /// deficit is zero and it stops paying — while free envoys switch nothing
-    /// off, because the agent may spend them anywhere. Paying the deficit every
-    /// turn would hand over many times the gift (the rebate reached 12x before
-    /// it was capped). So this tracks the cumulative envoys already granted per
-    /// city-state and tops up only to the largest deficit ever required, which
-    /// equals `Suzerain`'s cumulative write per city-state **by construction
-    /// rather than by tuning**.
+    /// `Suzerain` switches its own trigger off — once the seat is at the target
+    /// it stops paying — while free envoys switch nothing off, because the agent
+    /// may spend them anywhere. Paying the standing deficit every turn would
+    /// hand over many times the gift (the rebate reached 12x before it was
+    /// capped). So this keeps a per-city-state ledger of the target level
+    /// reached and tops up only to the largest one ever required.
+    ///
+    /// ★★ **And the aggregate budgets still cannot be matched, for a reason
+    /// worth recording: the oracle's price is endogenous to its success.**
+    /// Measured at the deployment profile, 3 pairs, 6p 74x46 Online, seed
+    /// 999003:
+    ///
+    /// | arm | fired/game | raw envoys/game | **per firing** |
+    /// |---|---|---|---|
+    /// | `suzerain` | 18.0 | 54.5 | **3.03** |
+    /// | `envoys` | 11.0 | 32.8 | **2.98** |
+    ///
+    /// The two pay the *same amount each time they pay*. The whole aggregate
+    /// gap is in how often the gate re-opens — and it re-opens more for
+    /// `Suzerain` because a seat that actually holds every suzerainty provokes
+    /// rivals into pouring envoys back in, which raises `want` and asks again.
+    /// A seat merely handed envoys does not provoke that response. So `want` is
+    /// a function of the arm, no online rule can match the totals, and any
+    /// attempt to force it would be tuning to a number rather than a
+    /// construction.
+    ///
+    /// ⚠ **Read this arm as a CONSERVATIVE control: it moves ~60% of the
+    /// resource.** That makes the two outcomes asymmetric, and the
+    /// preregistration says so before the run:
+    /// a win comparable to `suzerain` on 60% of the budget is *strong* evidence
+    /// the gap is income, while a null is **ambiguous** between "the agent
+    /// cannot convert envoys" and "it was underpaid", and its named follow-up is
+    /// a deliberately generous arm rather than a conclusion.
     Envoys,
 }
 
@@ -635,14 +660,37 @@ impl<A: Ai> Oracle<A> {
                 .max()
                 .unwrap_or(0);
             let want = (best_rival + 1).max(SUZERAIN_ENVOYS);
-            let deficit = (want - g.envoys_at(pid, minor)).max(0);
-            if deficit == 0 {
+            let held = g.envoys_at(pid, minor);
+            // The same gate `grant_suzerain` uses: if the seat is already at or
+            // above the target, that grant creates nothing and so must this one.
+            if held >= want {
                 continue;
             }
             // Budget, not rate. Free envoys do not switch this trigger off the
             // way a suzerainty does, so paying the standing deficit every turn
-            // would hand over many times the gift. Top up only to the largest
-            // deficit this city-state has ever shown.
+            // would hand over many times the gift.
+            //
+            // The ledger tracks the **target level** reached, not the deficit
+            // seen. Those differ exactly where it matters: once the agent
+            // places what it was handed, its holding rises and the deficit
+            // shrinks, so a deficit-keyed ledger stops paying while
+            // `grant_suzerain` keeps topping up as rivals escalate. Measured at
+            // the deployment profile, the deficit-keyed version handed over
+            // 34.5 raw envoys a game against `suzerain`'s 54.5 — a 37%
+            // under-payment that would have made a null unreadable.
+            //
+            // Keyed on `want` the two agree by construction in both cases:
+            // placed at this city-state (3 then +1 as the target rises = 4, the
+            // same two writes `grant_suzerain` makes) and spent elsewhere (3
+            // once, then nothing, because that grant's own write also satisfies
+            // its gate).
+            //
+            // `max(paid, held)` is what keeps the *first* payment honest.
+            // `grant_suzerain` raises `held` to `want` and so creates
+            // `want - held`; a ledger starting from zero would hand over the
+            // full `want` and over-pay by whatever the seat had earned there on
+            // its own. Taking the larger of the two credits the seat's own
+            // envoys once, exactly as that grant does.
             let slot = match self.envoys_paid.iter().position(|(at, _)| *at == minor) {
                 Some(slot) => slot,
                 None => {
@@ -650,11 +698,11 @@ impl<A: Ai> Oracle<A> {
                     self.envoys_paid.len() - 1
                 }
             };
-            let top_up = deficit - self.envoys_paid[slot].1;
+            let top_up = want - self.envoys_paid[slot].1.max(held);
             if top_up <= 0 {
                 continue;
             }
-            self.envoys_paid[slot].1 = deficit;
+            self.envoys_paid[slot].1 = want;
             g.players[pid].envoys_free += top_up;
             self.envoys_granted += top_up;
             self.fired += 1;
