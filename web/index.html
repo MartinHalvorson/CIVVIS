@@ -30810,6 +30810,10 @@ boot();
 // compete with the simulation for an entire core at Lightning pace. Human
 // turns retain 60fps; spectators need no more than 30fps between 10Hz states.
 let lastIdleDraw = 0, drawCost = 8;
+// Leave the other half of the main thread to state delivery, UI work and the
+// simulation sharing this machine. This is a share, rather than a magic
+// multiplier, so the scheduling promise and the arithmetic cannot drift apart.
+const MAX_ANIMATION_PAINT_SHARE = .5;
 function animTick(now) {
   requestAnimationFrame(animTick);
   if (!state) return;
@@ -30832,7 +30836,7 @@ function animTick(now) {
   // 130ms rather than every 33, so the view degrades to a slower picture
   // instead of to a stalled one.
   const floor = active ? (SPEC ? 32 : 16) : MODE.idle;
-  const cadence = Math.max(floor, drawCost * 1.15);
+  const cadence = Math.max(floor, drawCost / MAX_ANIMATION_PAINT_SHARE);
   if ((active || MODE.idle) && now - lastIdleDraw > cadence) {
     lastIdleDraw = now;
     const t0 = performance.now();
