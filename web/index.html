@@ -7903,7 +7903,11 @@ function tickFinaleCountdown() {
   button.textContent = `${FINALE_RESTART_LABEL} (${left})`;
   if (left > 0) return;
   cancelFinaleCountdown();
-  startNewSimulation();
+  // Name the only non-human caller. The supervised endpoint verifies that a
+  // finale request really belongs to a finished game; exact world identity by
+  // itself cannot distinguish a legitimate result from a bad callback that
+  // was armed while the current world was still playing.
+  startNewSimulation("finale_countdown");
 }
 
 function cancelFinaleCountdown() {
@@ -30329,7 +30333,7 @@ async function writeSave() {
   }
 }
 
-async function startNewSimulation() {
+async function startNewSimulation(restartSource = "manual") {
   if (newSimulationBusy) return;
   cancelFinaleCountdown();
   const wasPaused = specPaused;
@@ -30364,7 +30368,8 @@ async function startNewSimulation() {
       const finishedSeed = handoff.finishedSeed;
       const requested = await fetchJSON("/supervisor-new", { method: "POST",
         headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({...payload, mode: "restart", replace_world: {
+        body: JSON.stringify({...payload, mode: "restart",
+          restart_source: restartSource, replace_world: {
           server_instance: finishedInstance, seed: finishedSeed,
         }}) });
       if (requested.error) throw new Error(requested.error);
