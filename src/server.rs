@@ -424,13 +424,6 @@ fn round_tenth(v: f64) -> f64 {
     (v * 10.0).round() / 10.0
 }
 
-/// Four decimal places, the precision a probability is reported at. A win
-/// chance is read as a percentage, and two decimals would round a seat holding
-/// two tenths of one per cent of the table down to nothing at all.
-fn round_probability(v: f64) -> f64 {
-    (v * 10_000.0).round() / 10_000.0
-}
-
 fn population_milestone(population: i32) -> i32 {
     if population < 4 {
         0
@@ -2076,19 +2069,24 @@ impl Session {
         // unrated seat cannot win.
         let odds = crate::odds::table(g, |pid| {
             let shown = rating_of(pid);
-            if shown.civ_specific {
+            let elo = if shown.civ_specific {
                 // Already a measurement of this player as this civilization.
-                return shown.rating;
-            }
-            // Otherwise the roster still knows something about the civ they
-            // drew, even if this player has never played it.
-            shown.rating
-                + self
+                shown.rating
+            } else {
+                // Otherwise the roster still knows something about the civ
+                // they drew, even if this player has never played it.
+                shown.rating
+                    + self
                     .league
                     .as_ref()
                     .map_or(0.0, |league| {
                         crate::odds::civ_edge_elo(league, &g.players[pid].civ)
                     })
+            };
+            // The midpoint and the uncertainty are both part of a pregame
+            // prediction. A one-game rating must not make the same promise as
+            // a settled one merely because the two badges show the same Elo.
+            crate::odds::PriorRating::new(elo, shown.rd)
         });
         let Some(players) = o["players"].as_array_mut() else {
             return;
@@ -2120,11 +2118,12 @@ impl Session {
             player["ai_elo_civ"] = json!(shown.civ_specific);
             player["ai_elo_provisional"] = json!(shown.provisional);
             if let Some(seat) = odds.get(&id) {
-                // Four decimals, not two. A seat on a Deity table is a
-                // genuine two-tenths of one per cent, and rounding that to
-                // "0.00" would publish "cannot win" for a seat that can.
-                player["odds_start"] = json!(round_probability(seat.start));
-                player["odds_now"] = json!(round_probability(seat.now));
+                // Preserve the model's positive probability exactly. Rounding
+                // at the transport boundary can turn a living long shot into
+                // numeric zero, which the client correctly reserves for a seat
+                // that cannot win. The browser owns display rounding.
+                player["odds_start"] = json!(seat.start);
+                player["odds_now"] = json!(seat.now);
                 // What made the number, so a dossier can say why rather than
                 // asking the reader to trust a percentage.
                 player["odds_prior_elo"] = json!(seat.prior_elo.round() as i64);
@@ -6179,9 +6178,25 @@ mod tests {
             }
         );
 
-        let session = Session::new(params.clone());
+        // Spectator state exposes every major; an interactive observer still
+        // withholds an unmet rival's annotations under the normal fog rule.
+        let mut visible_params = params.clone();
+        visible_params.spectate = true;
+        let session = Session::new(visible_params);
         assert_eq!(session.game.victory_conditions, params.victory_conditions);
-        assert_eq!(session.state()["victory_conditions"], disabled);
+        let state = session.state();
+        assert_eq!(state["victory_conditions"], disabled);
+        for player in state["players"]
+            .as_array()
+            .expect("state has players")
+            .iter()
+            .filter(|player| {
+                player["is_minor"] != json!(true) && player["is_barbarian"] != json!(true)
+            })
+        {
+            assert_eq!(player["odds_start"], json!(0.0));
+            assert_eq!(player["odds_now"], json!(0.0));
+        }
     }
 
     #[test]
@@ -7037,7 +7052,7 @@ mod tests {
         // the other silently re-weights the whole masthead.
         //
         // The floor is 5 label columns, the ELO figure and the wider odds cell,
-        // which carries two per cents and the arrow between them.
+        // whose two named numeric tracks flank a narrow trend track.
         assert!(EMBEDDED_INDEX.contains(
             "--hud-identity-column: minmax(\n      \
              calc(var(--hud-ident-min) * 5 + var(--hud-ident-num-min)\n           \
@@ -7052,13 +7067,25 @@ mod tests {
         // share would undo a dragged column on the next window resize, so no
         // media rule may set either track list or either enclosing track.
         assert!(EMBEDDED_INDEX.contains(
-            "--hud-ident-min: 30px; --hud-ident-num-min: 38px; --hud-ident-odds-min: 48px;"
+            "--hud-ident-min: 30px; --hud-ident-num-min: 38px; --hud-ident-odds-min: 76px;"
         ));
         assert_eq!(EMBEDDED_INDEX.matches("--hud-ident-num-min:").count(), 1,
             "the figure floor is declared once and holds at every width: four \
              digits need the same room on a laptop as on a wall");
         assert_eq!(EMBEDDED_INDEX.matches("--hud-ident-odds-min:").count(), 1,
-            "and so does the odds pair's own floor");
+            "and so does the two-category odds cell's own floor");
+        assert!(EMBEDDED_INDEX.contains(
+            "grid-template-columns: minmax(0, 1fr) 11px minmax(0, 1fr);"
+        ), "Start and Now flank one fixed-width trend column");
+        assert!(EMBEDDED_INDEX.contains(
+            "<span title=\"Win odds at the start of the game, per cent\">START</span>"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "<span class=\"odds-trend-head\" title=\"Trend from start to now\">Δ</span>"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "<span title=\"Win odds now, per cent\">NOW</span>"
+        ));
         assert_eq!(EMBEDDED_INDEX.matches("--hud-identity-column:").count(), 1,
             "the identity track is written once and then only from the column model");
         assert_eq!(EMBEDDED_INDEX.matches("--hud-stats-column:").count(), 1,
@@ -7072,14 +7099,14 @@ mod tests {
             "the value heads and the value cells are the same ten tracks");
         assert_eq!(EMBEDDED_INDEX.matches("grid-template-columns: var(--hud-identity-tracks);").count(), 2,
             "the identity heads and the identity cells are the same tracks");
-        // Player, ELO, WIN%, AGE and PLAN are drawn inside one button spanning
+        // Player, ELO, the Start/Now pair, AGE and PLAN are drawn inside one button spanning
         // five of those tracks, so that button divides itself with `subgrid` — the
         // same tracks, not a copy of their ratios. A copy is what shipped
         // before, and it came apart in both directions a copy can: it carried
         // `minmax(0, …)` where the heads carry the 30px label floor and the
         // 38px figure floor, so on a 1280px screen the ELO head stood at 38px
         // over a 27.5px figure and every "1703" rendered as "1…"; and it never
-        // heard about a drag, so moving the ELO/WIN% bar 26px at 1920px moved
+        // heard about a drag, so moving the ELO/odds bar 26px at 1920px moved
         // the head 21px and left the figures where they were.
         assert!(EMBEDDED_INDEX.contains(
             "#playerhud .diplomacy-identity-secondary {\n    grid-template-columns: subgrid;\n  }"
