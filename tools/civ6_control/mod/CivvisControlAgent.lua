@@ -1968,6 +1968,44 @@ local function chooseProduction(city, counts, nCities, turn, refused)
 			ladder[#ladder + 1] = { name, "ranged" };
 		end
 	end
+	-- ★★★★★ THE ECONOMY GOES ABOVE THE OPEN-ENDED ARMY, OR IT IS DEAD CODE.
+	--
+	-- The builder and the nine development entries used to sit BELOW the army block.
+	-- `playable` returns the first entry that can be built, and
+	-- `wantArmy = nCities * MilitaryPerCity` is 25 at five cities — never satisfied —
+	-- so a melee unit was always playable and nothing below it was ever reached.
+	--
+	-- Measured on run 072231Z, EVERY production request in 110 turns:
+	--     255 UNIT_SWORDSMAN, 48 UNIT_SETTLER, 21 other units,
+	--     ZERO buildings, ZERO districts, ZERO builders.
+	-- Not one monument or granary in the whole game. Cities sat at pop 5/4/2/2 with a
+	-- single builder, score 132 against a rival's 398 from ONE visible city.
+	--
+	-- ⚠ AND IT IS SELF-DEFEATING: the army was stuck at 10 for thirty turns against a
+	-- gate of 12 *because* all production went to the army. Undeveloped cities produce
+	-- almost nothing, so 255 swordsman requests bought ten units. Spending everything
+	-- on soldiers is what made the army small.
+	--
+	-- ⚠ This is the THIRD time ladder order has done this here — the battering ram was
+	-- unreachable below the same gate, and so was the ranged floor. The rule: never
+	-- put anything you need below an open-ended target.
+	--
+	-- Bounded on purpose. Only the cheap per-city growth core goes above the army —
+	-- a builder, a monument, a granary — all of which COMPLETE and stop being
+	-- playable. Putting all nine development items above an open-ended army block
+	-- would invert the failure and never raise a soldier at all.
+	local defenceFloor = math.max(1, nCities);
+	if counts.military < defenceFloor then
+		for _, name in ipairs({ "UNIT_WARRIOR", "UNIT_SPEARMAN", "UNIT_SLINGER" }) do
+			ladder[#ladder + 1] = { name, "defend" };
+		end
+	end
+	if counts.builder < math.max(1, nCities * (cfg.BuilderPerCity or 0.8)) then
+		ladder[#ladder + 1] = { "UNIT_BUILDER", "improve" };
+	end
+	for _, name in ipairs({ "BUILDING_MONUMENT", "BUILDING_GRANARY" }) do
+		ladder[#ladder + 1] = { name, "grow" };
+	end
 	if counts.military < wantArmy then
 		-- ⚠ MELEE FIRST. A ranged unit can bombard a city forever and never
 		-- take it — only a melee unit captures, by moving onto the plot. Run
@@ -1982,11 +2020,9 @@ local function chooseProduction(city, counts, nCities, turn, refused)
 			ladder[#ladder + 1] = { name, "army" };
 		end
 	end
-	if counts.builder < math.max(1, nCities * (cfg.BuilderPerCity or 0.8)) then
-		ladder[#ladder + 1] = { "UNIT_BUILDER", "improve" };
-	end
-	for _, name in ipairs({ "BUILDING_MONUMENT", "BUILDING_GRANARY",
-	                        "DISTRICT_CAMPUS", "BUILDING_LIBRARY",
+	-- The deeper economy, below the army: reached once the army target is met, and
+	-- reachable at all only because the army target CAN be met now.
+	for _, name in ipairs({ "DISTRICT_CAMPUS", "BUILDING_LIBRARY",
 	                        "DISTRICT_HOLY_SITE", "DISTRICT_COMMERCIAL_HUB",
 	                        "BUILDING_WATER_MILL", "DISTRICT_THEATER",
 	                        "BUILDING_ANCIENT_WALLS" }) do
