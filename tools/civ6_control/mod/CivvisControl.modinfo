@@ -1,0 +1,127 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- CIVVIS Control: play Civilization VI without a person at the keyboard.
+     Separate from CivvisGrounding, which observes AI-only autoplay games and
+     must keep working unchanged while this one takes a seat and plays.
+
+     The id must be a syntactically valid GUID. The modding framework parses it
+     before it logs anything about the mod, so one non-hex character makes the
+     mod disappear from discovery with nothing in any log naming it. -->
+<Mod id="4d2c8b16-7e05-49af-a3c1-6b90d5f2e841" version="1">
+	<Properties>
+		<Name>CIVVIS Control</Name>
+		<Teaser>Configures, starts and plays a game under program control.</Teaser>
+		<Description>Computer control for Civilization VI. One context configures a game from an exact specification and hosts it from the main menu; the other takes a player's seat and issues every order that player needs, turn after turn, until the game ends. Changes no rules.</Description>
+		<Authors>CIVVIS</Authors>
+		<!-- Loaded from the install's DLC tree, which this build scans; no user
+		     Mods directory is scanned. Enabled by default so an unattended run
+		     needs no menu interaction. -->
+		<EnabledByDefault>1</EnabledByDefault>
+		<CompatibleVersions>2.0</CompatibleVersions>
+	</Properties>
+	<!-- Load after GranColombia_Maya, and only for the sake of one screen.
+	     Both mods declare a ReplaceUIScript for NaturalDisasterPopup, and the
+	     later mod wins: measured on 2026-07-29, eight of this mod's nine
+	     screens armed and that one did not, because GranColombia_Maya sorts
+	     after CivvisControl. A reference is soft: it orders the load if that
+	     mod is present and is ignored if it is not, and it is the same tag
+	     GranColombia_Maya itself uses to sit after Expansion2. -->
+	<References>
+		<Mod id="9DE86512-DE1A-400D-8C0A-AB46EBBF76B9" title="GranColombia_Maya"/>
+	</References>
+	<FrontEndActions>
+		<AddUserInterfaces id="CivvisControlSetupUI">
+			<Properties>
+				<Context>FrontEnd</Context>
+			</Properties>
+			<File>CivvisControlSetup.xml</File>
+		</AddUserInterfaces>
+	</FrontEndActions>
+	<InGameActions>
+		<AddUserInterfaces id="CivvisControlAgentUI">
+			<Properties>
+				<Context>InGame</Context>
+			</Properties>
+			<File>CivvisControlAgent.xml</File>
+		</AddUserInterfaces>
+		<!-- The game's announcement screens hold the world until somebody
+		     dismisses them, and nobody is at the keyboard. Each one below is
+		     pointed at the same replacement, which loads the shipped screen and
+		     gives it a stopwatch; CivvisControlAutoClose.lua says why these
+		     screens and no others.
+
+		     A LuaReplace file must also be imported. A file listed only under
+		     <Files> is not in the virtual file system, so the replacement
+		     resolves to nothing and the screen loses its script altogether:
+		     the same trap that silently emptied the settings prelude. -->
+		<ImportFiles id="CivvisControlAutoCloseFiles">
+			<File>CivvisControlAutoClose.lua</File>
+		</ImportFiles>
+		<ReplaceUIScript id="CivvisControlAutoCloseWonderBuilt">
+			<Properties>
+				<LuaContext>WonderBuiltPopup</LuaContext>
+				<LuaReplace>CivvisControlAutoClose.lua</LuaReplace>
+			</Properties>
+		</ReplaceUIScript>
+		<ReplaceUIScript id="CivvisControlAutoCloseNaturalWonder">
+			<Properties>
+				<LuaContext>NaturalWonderPopup</LuaContext>
+				<LuaReplace>CivvisControlAutoClose.lua</LuaReplace>
+			</Properties>
+		</ReplaceUIScript>
+		<ReplaceUIScript id="CivvisControlAutoCloseEraComplete">
+			<Properties>
+				<LuaContext>EraCompletePopup</LuaContext>
+				<LuaReplace>CivvisControlAutoClose.lua</LuaReplace>
+			</Properties>
+		</ReplaceUIScript>
+		<ReplaceUIScript id="CivvisControlAutoCloseEraReview">
+			<Properties>
+				<LuaContext>EraReviewPopup</LuaContext>
+				<LuaReplace>CivvisControlAutoClose.lua</LuaReplace>
+			</Properties>
+		</ReplaceUIScript>
+		<ReplaceUIScript id="CivvisControlAutoCloseTechCivicCompleted">
+			<Properties>
+				<LuaContext>TechCivicCompletedPopup</LuaContext>
+				<LuaReplace>CivvisControlAutoClose.lua</LuaReplace>
+			</Properties>
+		</ReplaceUIScript>
+		<ReplaceUIScript id="CivvisControlAutoCloseBoostUnlocked">
+			<Properties>
+				<LuaContext>BoostUnlockedPopup</LuaContext>
+				<LuaReplace>CivvisControlAutoClose.lua</LuaReplace>
+			</Properties>
+		</ReplaceUIScript>
+		<ReplaceUIScript id="CivvisControlAutoCloseProjectBuilt">
+			<Properties>
+				<LuaContext>ProjectBuiltPopup</LuaContext>
+				<LuaReplace>CivvisControlAutoClose.lua</LuaReplace>
+			</Properties>
+		</ReplaceUIScript>
+		<ReplaceUIScript id="CivvisControlAutoCloseNaturalDisaster">
+			<Properties>
+				<LuaContext>NaturalDisasterPopup</LuaContext>
+				<LuaReplace>CivvisControlAutoClose.lua</LuaReplace>
+			</Properties>
+		</ReplaceUIScript>
+		<ReplaceUIScript id="CivvisControlAutoCloseInGamePopup">
+			<Properties>
+				<LuaContext>InGamePopup</LuaContext>
+				<LuaReplace>CivvisControlAutoClose.lua</LuaReplace>
+			</Properties>
+		</ReplaceUIScript>
+		<ReplaceUIScript id="CivvisControlAutoCloseRockBandMovie">
+			<Properties>
+				<LuaContext>RockBandMoviePopup</LuaContext>
+				<LuaReplace>CivvisControlAutoClose.lua</LuaReplace>
+			</Properties>
+		</ReplaceUIScript>
+	</InGameActions>
+	<Files>
+		<File>CivvisControlSetup.xml</File>
+		<File>CivvisControlSetup.lua</File>
+		<File>CivvisControlAgent.xml</File>
+		<File>CivvisControlAgent.lua</File>
+		<File>CivvisControlAutoClose.lua</File>
+	</Files>
+</Mod>

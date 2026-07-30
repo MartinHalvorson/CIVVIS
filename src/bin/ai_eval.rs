@@ -308,10 +308,46 @@ struct PlanTrace {
     ever_rushed: bool,
     targets: BTreeMap<String, usize>,
     last_target: Option<String>,
+    strategy_switches: usize,
+    strategy_turns: BTreeMap<String, usize>,
+    midgame_observations: usize,
+    midgame_strategy_switches: usize,
+    midgame_boundary_switches: usize,
+    midgame_unanchored_switches: usize,
+    midgame_war_boundary_switches: usize,
+    midgame_threat_boundary_switches: usize,
+    midgame_city_deficit_boundary_switches: usize,
+    midgame_strategy_turns: BTreeMap<String, usize>,
+    midgame_transitions: BTreeMap<String, usize>,
+    last_strategy: Option<String>,
+    last_context: Option<StrategyContext>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct StrategyContext {
+    at_major_war: bool,
+    threatened: bool,
+    city_deficit: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct PlanObservation {
+    target: &'static str,
+    strategy: &'static str,
+    rush: bool,
+    context: StrategyContext,
+    midgame: bool,
 }
 
 impl PlanTrace {
-    fn observe(&mut self, target: &str, rush: bool) {
+    fn observe(&mut self, observation: PlanObservation) {
+        let PlanObservation {
+            target,
+            strategy,
+            rush,
+            context,
+            midgame,
+        } = observation;
         if self
             .last_target
             .as_deref()
@@ -324,6 +360,44 @@ impl PlanTrace {
         self.ever_rushed |= rush;
         *self.targets.entry(target.to_string()).or_default() += 1;
         self.last_target = Some(target.to_string());
+
+        let strategy_changed = self
+            .last_strategy
+            .as_deref()
+            .is_some_and(|previous| previous != strategy);
+        if strategy_changed {
+            self.strategy_switches += 1;
+            if midgame {
+                self.midgame_strategy_switches += 1;
+                let previous = self.last_strategy.as_deref().unwrap();
+                *self
+                    .midgame_transitions
+                    .entry(format!("{previous}->{strategy}"))
+                    .or_default() += 1;
+                let previous_context = self.last_context.unwrap();
+                let war_changed = previous_context.at_major_war != context.at_major_war;
+                let threat_changed = previous_context.threatened != context.threatened;
+                let city_deficit_changed = previous_context.city_deficit != context.city_deficit;
+                self.midgame_war_boundary_switches += war_changed as usize;
+                self.midgame_threat_boundary_switches += threat_changed as usize;
+                self.midgame_city_deficit_boundary_switches += city_deficit_changed as usize;
+                if war_changed || threat_changed || city_deficit_changed {
+                    self.midgame_boundary_switches += 1;
+                } else {
+                    self.midgame_unanchored_switches += 1;
+                }
+            }
+        }
+        *self.strategy_turns.entry(strategy.to_string()).or_default() += 1;
+        if midgame {
+            self.midgame_observations += 1;
+            *self
+                .midgame_strategy_turns
+                .entry(strategy.to_string())
+                .or_default() += 1;
+        }
+        self.last_strategy = Some(strategy.to_string());
+        self.last_context = Some(context);
     }
 
     /// Target used on the most observed player-turns. A tie keeps the final
@@ -344,14 +418,43 @@ impl PlanTrace {
     }
 }
 
-fn plan_observation(ai: &dyn Ai) -> (&'static str, bool) {
-    ai.plan_report().map_or(("unreported", false), |plan| {
-        (plan.victory_target.unwrap_or("adaptive"), plan.rush)
-    })
+fn plan_observation(g: &Game, pid: usize, ai: &dyn Ai) -> PlanObservation {
+    let midgame = g.turn >= g.standard_duration(60) && g.turn < g.standard_duration(180);
+    let at_major_war = g.players.iter().any(|player| {
+        player.id != pid
+            && player.alive
+            && !player.is_minor
+            && !player.is_barbarian
+            && g.is_at_war(pid, player.id)
+    });
+    ai.plan_report().map_or(
+        PlanObservation {
+            target: "unreported",
+            strategy: "unreported",
+            rush: false,
+            context: StrategyContext {
+                at_major_war,
+                threatened: false,
+                city_deficit: false,
+            },
+            midgame,
+        },
+        |plan| PlanObservation {
+            target: plan.victory_target.unwrap_or("adaptive"),
+            strategy: plan.strategy,
+            rush: plan.rush,
+            context: StrategyContext {
+                at_major_war,
+                threatened: plan.threatened_city.is_some(),
+                city_deficit: g.player_city_ids(pid).len() < plan.desired_cities,
+            },
+            midgame,
+        },
+    )
 }
 
-fn plan_target(ai: &dyn Ai) -> &'static str {
-    plan_observation(ai).0
+fn plan_target(g: &Game, pid: usize, ai: &dyn Ai) -> &'static str {
+    plan_observation(g, pid, ai).target
 }
 
 fn run_traced_game(
@@ -364,8 +467,8 @@ fn run_traced_game(
         let pid = game.current;
         ais[pid].take_turn(game, pid);
         if pid < traced_players {
-            let (target, rush) = plan_observation(ais[pid].as_ref());
-            traces[pid].observe(target, rush);
+            let observation = plan_observation(game, pid, ais[pid].as_ref());
+            traces[pid].observe(observation);
         }
         if game.winner.is_none() && game.current == pid {
             let _ = game.apply(pid, &Action::EndTurn);
@@ -420,6 +523,17 @@ struct Metrics {
     plan_turns: BTreeMap<String, usize>,
     plan_observations: usize,
     plan_switches: usize,
+    strategy_turns: BTreeMap<String, usize>,
+    strategy_switches: usize,
+    midgame_strategy_turns: BTreeMap<String, usize>,
+    midgame_observations: usize,
+    midgame_strategy_switches: usize,
+    midgame_boundary_switches: usize,
+    midgame_unanchored_switches: usize,
+    midgame_war_boundary_switches: usize,
+    midgame_threat_boundary_switches: usize,
+    midgame_city_deficit_boundary_switches: usize,
+    midgame_transitions: BTreeMap<String, usize>,
     rush_seats: usize,
     rush_turns: usize,
     /// Reviews summed over every seat this entrant played, so a run can say
@@ -450,10 +564,33 @@ impl Metrics {
         outcome.wins += won as usize;
         self.plan_observations += trace.observations;
         self.plan_switches += trace.switches;
+        self.strategy_switches += trace.strategy_switches;
+        self.midgame_observations += trace.midgame_observations;
+        self.midgame_strategy_switches += trace.midgame_strategy_switches;
+        self.midgame_boundary_switches += trace.midgame_boundary_switches;
+        self.midgame_unanchored_switches += trace.midgame_unanchored_switches;
+        self.midgame_war_boundary_switches += trace.midgame_war_boundary_switches;
+        self.midgame_threat_boundary_switches += trace.midgame_threat_boundary_switches;
+        self.midgame_city_deficit_boundary_switches += trace.midgame_city_deficit_boundary_switches;
         self.rush_seats += trace.ever_rushed as usize;
         self.rush_turns += trace.rush_observations;
         for (target, turns) in &trace.targets {
             *self.plan_turns.entry(target.clone()).or_default() += turns;
+        }
+        for (strategy, turns) in &trace.strategy_turns {
+            *self.strategy_turns.entry(strategy.clone()).or_default() += turns;
+        }
+        for (strategy, turns) in &trace.midgame_strategy_turns {
+            *self
+                .midgame_strategy_turns
+                .entry(strategy.clone())
+                .or_default() += turns;
+        }
+        for (transition, count) in &trace.midgame_transitions {
+            *self
+                .midgame_transitions
+                .entry(transition.clone())
+                .or_default() += count;
         }
         if won {
             *self
@@ -536,6 +673,30 @@ fn target_shares(metrics: &Metrics) -> String {
             let share = 100.0 * *turns as f64 / metrics.plan_observations.max(1) as f64;
             format!("{target} {share:.1}%")
         })
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+fn shares(turns: &BTreeMap<String, usize>, observations: usize) -> String {
+    turns
+        .iter()
+        .map(|(label, turns)| {
+            let share = 100.0 * *turns as f64 / observations.max(1) as f64;
+            format!("{label} {share:.1}%")
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+fn transition_counts(transitions: &BTreeMap<String, usize>) -> String {
+    let mut ranked: Vec<(&str, usize)> = transitions
+        .iter()
+        .map(|(transition, count)| (transition.as_str(), *count))
+        .collect();
+    ranked.sort_by(|left, right| right.1.cmp(&left.1).then_with(|| left.0.cmp(right.0)));
+    ranked
+        .into_iter()
+        .map(|(transition, count)| format!("{transition} {count}"))
         .collect::<Vec<_>>()
         .join(", ")
 }
@@ -740,7 +901,7 @@ fn main() {
                 .collect();
             let traces = run_traced_game(&mut game, &mut ais, players);
             let targets = (0..players)
-                .map(|pid| plan_target(ais[pid].as_ref()))
+                .map(|pid| plan_target(&game, pid, ais[pid].as_ref()))
                 .collect();
             let censuses = (0..players).map(|pid| ais[pid].review_census()).collect();
             PlayedGame {
@@ -1022,6 +1183,39 @@ fn main() {
             "  {name:<11} switches/game {:.2}; {}",
             metrics.plan_switches as f64 / metrics.games.max(1) as f64,
             target_shares(metrics)
+        );
+    }
+    println!("\nAdaptive grand strategy by observed player-turn:");
+    for name in [a, b] {
+        let metrics = &totals[name];
+        let games = metrics.games.max(1);
+        let switches = metrics.midgame_strategy_switches.max(1);
+        println!(
+            "  {name:<11} all-game switches/seat-game {:.2}, switches/100t {:.2}; {}",
+            metrics.strategy_switches as f64 / games as f64,
+            100.0 * metrics.strategy_switches as f64 / metrics.plan_observations.max(1) as f64,
+            shares(&metrics.strategy_turns, metrics.plan_observations),
+        );
+        println!(
+            "  {name:<11} midgame switches/seat-game {:.2}; unanchored/seat-game {:.2}, {}/{} ({:.1}%); {}",
+            metrics.midgame_strategy_switches as f64 / games as f64,
+            metrics.midgame_unanchored_switches as f64 / games as f64,
+            metrics.midgame_unanchored_switches,
+            metrics.midgame_strategy_switches,
+            100.0 * metrics.midgame_unanchored_switches as f64 / switches as f64,
+            shares(
+                &metrics.midgame_strategy_turns,
+                metrics.midgame_observations
+            ),
+        );
+        println!(
+            "  {name:<11} boundary-accompanied {}/{}; war {}, threat {}, city-deficit {}; transitions {}",
+            metrics.midgame_boundary_switches,
+            metrics.midgame_strategy_switches,
+            metrics.midgame_war_boundary_switches,
+            metrics.midgame_threat_boundary_switches,
+            metrics.midgame_city_deficit_boundary_switches,
+            transition_counts(&metrics.midgame_transitions),
         );
     }
     println!("\nAncient-rush treatment exposure:");
@@ -1468,21 +1662,68 @@ mod tests {
     #[test]
     fn plan_trace_counts_exposure_and_switches() {
         let mut trace = PlanTrace::default();
-        for (target, rush) in [
-            ("adaptive", false),
-            ("religion", true),
-            ("religion", true),
-            ("adaptive", false),
+        for (target, strategy, rush) in [
+            ("adaptive", "expansion", false),
+            ("religion", "religion", true),
+            ("religion", "religion", true),
+            ("adaptive", "science", false),
         ] {
-            trace.observe(target, rush);
+            trace.observe(PlanObservation {
+                target,
+                strategy,
+                rush,
+                context: StrategyContext {
+                    at_major_war: false,
+                    threatened: false,
+                    city_deficit: false,
+                },
+                midgame: false,
+            });
         }
         assert_eq!(trace.observations, 4);
         assert_eq!(trace.switches, 2);
+        assert_eq!(trace.strategy_switches, 2);
         assert_eq!(trace.rush_observations, 2);
         assert!(trace.ever_rushed);
         assert_eq!(trace.targets["adaptive"], 2);
         assert_eq!(trace.targets["religion"], 2);
+        assert_eq!(trace.strategy_turns["religion"], 2);
         assert_eq!(trace.dominant_target(), "adaptive");
+    }
+
+    #[test]
+    fn midgame_strategy_switches_separate_visible_boundaries_from_the_residual() {
+        let mut trace = PlanTrace::default();
+        for (strategy, at_major_war, threatened, city_deficit) in [
+            ("expansion", false, false, true),
+            ("conquest", true, false, true),
+            ("recovery", true, true, true),
+            ("conquest", true, true, true),
+        ] {
+            trace.observe(PlanObservation {
+                target: "adaptive",
+                strategy,
+                rush: false,
+                context: StrategyContext {
+                    at_major_war,
+                    threatened,
+                    city_deficit,
+                },
+                midgame: true,
+            });
+        }
+
+        assert_eq!(trace.switches, 0, "the assigned target never changed");
+        assert_eq!(trace.strategy_switches, 3);
+        assert_eq!(trace.midgame_strategy_switches, 3);
+        assert_eq!(trace.midgame_boundary_switches, 2);
+        assert_eq!(trace.midgame_unanchored_switches, 1);
+        assert_eq!(trace.midgame_war_boundary_switches, 1);
+        assert_eq!(trace.midgame_threat_boundary_switches, 1);
+        assert_eq!(trace.midgame_city_deficit_boundary_switches, 0);
+        assert_eq!(trace.midgame_transitions["expansion->conquest"], 1);
+        assert_eq!(trace.midgame_transitions["conquest->recovery"], 1);
+        assert_eq!(trace.midgame_transitions["recovery->conquest"], 1);
     }
 
     #[test]
