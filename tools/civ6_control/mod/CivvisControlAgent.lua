@@ -1876,8 +1876,33 @@ local function chooseProduction(city, counts, nCities, turn, refused)
 		if refused[name] then return nil; end
 		local row = GameInfo.Types[name];
 		if row == nil then return nil; end
+		-- ★★★★★ `CanProduce(hash, true)` IS THE EXCLUSION TEST, NOT "can I build
+		-- this now". The shipped `ProductionPanel.lua` documents the signature at
+		-- line 1943:
+		--
+		--   BuildQueue::CanProduce(nDistrictHash, bExclusionTest, bReturnResults, ...)
+		--
+		-- and uses TWO different calls: `CanProduce(hash, true)` to decide whether an
+		-- item appears in the LIST at all, then `CanProduce(hash, false, true)` to
+		-- decide whether it can actually be STARTED (line 2038, and 1913 derives
+		-- `isDisabled` from it). This agent used the listing test as its build check,
+		-- so anything merely *available in principle* read as buildable.
+		--
+		-- ⚠ MEASURED CONSEQUENCE: `UNIT_SWORDSMAN` needs Iron. Without Iron it is not
+		-- excluded, so the exclusion test said yes forever. Run 072900Z issued **329
+		-- swordsman requests — TWENTY IN A SINGLE TURN across four cities — and not
+		-- one swordsman was ever built.** The army froze at 8 warriors from turn 60 to
+		-- turn 111 while `army` requests piled up, so the war gate (12) never opened
+		-- and the run could not fight. An earlier run logged 255 of the same.
+		--
+		-- ⚠ Same failure class as the PARAM_INSERT_MODE bug: an API that answers a
+		-- DIFFERENT QUESTION than the one being asked, while every request logs
+		-- `applied = true`. "The request did not throw" is not "the engine took it",
+		-- and here it was not even the right question.
 		local ok, can = pcall(function()
-			return city:GetBuildQueue():CanProduce(row.Hash, true);
+			-- Three-arg form returns (canStart, results); take the verdict only.
+			local canStart = city:GetBuildQueue():CanProduce(row.Hash, false, true);
+			return canStart;
 		end);
 		if ok and can == true then return row; end
 		return nil;
