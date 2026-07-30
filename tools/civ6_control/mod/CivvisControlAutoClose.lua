@@ -89,8 +89,17 @@ end
 -- one loads after it; this then loads *their* file rather than the shipped
 -- one, so their comet-strike label survives. Their file opens with
 -- include("NaturalDisasterPopup"), which is this same pattern, from Firaxis.
+--
+-- The same table also covers the other case where the live script is not the one
+-- named after the context.
+--
+-- ⚠ Gathering Storm is Expansion2 and ships a *Replacement* for the diplomacy
+-- view, so `include("DiplomacyActionView")` pulls the BASE file and misses
+-- everything the expansion changed, including its own `Close`. Chain to the
+-- replacement, which includes Expansion1, which includes the base.
 local CHAINED = {
 	NaturalDisasterPopup = "NaturalDisasterPopup_GranColombia_Maya",
+	DiplomacyActionView = "DiplomacyActionView_Expansion2",
 };
 
 -- Every handler this shim knows how to close a screen with.
@@ -111,7 +120,8 @@ local CLOSERS = {
 	"OnHideScreen",          -- GreatWorkShowcase
 	"OnButton1",             -- ChooseArtifact
 	"ReleaseEventLock",      -- WorldCongressBetweenTurns: frees the event lock
-	"ExitConversationMode",  -- DiplomacyActionView: ends the diplomacy session
+	"CloseFocusedState",     -- DiplomacyActionView: what Escape actually calls
+	"ExitConversationMode",  -- DiplomacyActionView: ends a conversation only
 	"OnHide", "InputHandler",
 };
 
@@ -213,11 +223,25 @@ local function endScreen(attempt)
 	-- acceptance" trap that voided every build order in this project. If the
 	-- first few attempts have not worked, stop trying this rung and fall through
 	-- to the plain handlers below.
-	if (attempt or 1) <= 3 and type(ExitConversationMode) == "function"
+	-- ⚠ MY FIRST FIX HERE WAS AIMED AT THE WRONG MODE AND DID NOT WORK: the run
+	-- reported `autoclose_stuck DiplomacyActionView` a second time, after twenty
+	-- attempts, with `ExitConversationMode` in the ladder.
+	--
+	-- `ExitConversationMode` only acts `if ms_currentViewMode == CONVERSATION_MODE`.
+	-- A first-contact leader is CINEMA_MODE — a full-screen portrait, which is
+	-- exactly what the screenshot showed — so it returned having done nothing, and
+	-- `Close()` does not dismiss a cinema either. `CloseFocusedState` is the one
+	-- entry point that handles all three states (open popup, conversation, cinema)
+	-- and it is what the shipped Escape key calls, so it is what we call.
+	if (attempt or 1) <= 6 and type(CloseFocusedState) == "function"
+			and pcall(function() CloseFocusedState(true); end) then
+		return true;
+	end
+	if (attempt or 1) <= 9 and type(ExitConversationMode) == "function"
 			and pcall(function() ExitConversationMode(true); end) then
 		return true;
 	end
-	if (attempt or 1) <= 6 and type(DiplomacyManager) == "table"
+	if (attempt or 1) <= 12 and type(DiplomacyManager) == "table"
 			and ms_ActiveSessionID ~= nil
 			and pcall(function()
 				DiplomacyManager.CloseSession(ms_ActiveSessionID);

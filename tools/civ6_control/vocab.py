@@ -147,6 +147,27 @@ def simple_map(table: str, column: str, prefix: str, filename: str,
     return mapping, missing
 
 
+def emit_json() -> dict:
+    """The mapping as data, so Rust and Lua do not re-derive it.
+
+    One source of truth matters here more than usual: a mirror that disagrees
+    with the simulator about what a terrain id means would put the decision
+    engine on ground that does not exist, and nothing would report an error.
+    """
+    terrains, _ = terrain_map()
+    features, _ = simple_map(
+        "Features", "FeatureType", "FEATURE_", "features.json", FEATURE_ALIASES)
+    resources, _ = simple_map(
+        "Resources", "ResourceType", "RESOURCE_", "resources.json")
+    return {
+        "terrains": {k: {"terrain": v[0], "hills": v[1]}
+                     for k, v in sorted(terrains.items())},
+        "features": dict(sorted(features.items())),
+        "resources": dict(sorted(resources.items())),
+        "excluded": dict(sorted(EXCLUDED.items())),
+    }
+
+
 def main() -> int:
     terrains, terrain_missing = terrain_map()
     features, feature_missing = simple_map(
@@ -174,4 +195,9 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    if "--json" in sys.argv:
+        out = pathlib.Path(__file__).resolve().parent / "vocab.json"
+        out.write_text(json.dumps(emit_json(), indent=2, ensure_ascii=False) + "\n")
+        print(f"wrote {out}")
+        sys.exit(0)
     sys.exit(main())
