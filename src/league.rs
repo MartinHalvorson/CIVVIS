@@ -114,6 +114,17 @@ pub struct Calibration {
     pub log_loss_sum: f64,
 }
 
+/// Outright-win evidence from one table size.
+///
+/// A win in a two-player duel has a 50% parity rate; a win at an eight-player
+/// table has a 12.5% parity rate. Keeping those Bernoulli samples separate is
+/// therefore part of the experiment identity, not merely extra display data.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WinEvidence {
+    pub games: u32,
+    pub wins: u32,
+}
+
 impl Calibration {
     fn record(&mut self, predicted: f64, actual: f64) {
         let predicted = predicted.clamp(1e-12, 1.0 - 1e-12);
@@ -153,6 +164,13 @@ pub struct Strategy {
     pub vol: f64,
     pub games: u32,
     pub wins: u32,
+    /// Outright wins partitioned by the number of seats at the table.
+    ///
+    /// `games` / `wins` above remain the all-history public totals. Evolution
+    /// reads this table-size-specific evidence when it exists so a controller
+    /// cannot look strong merely because most of its history came from duels.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub wins_by_table_size: BTreeMap<u32, WinEvidence>,
     /// Per-leader/per-civilization tables (leader -> civ -> Glicko state).
     /// Each named AI strategy is a player, matching the same identity model
     /// used for humans. Sparse combinations only update when actually played.
@@ -201,6 +219,7 @@ impl Strategy {
             vol: BASE_VOL,
             games: 0,
             wins: 0,
+            wins_by_table_size: BTreeMap::new(),
             leader_elo: BTreeMap::new(),
             legacy_civ_elo: BTreeMap::new(),
             born_round,
@@ -512,12 +531,24 @@ fn upper_confidence(s: &Strategy) -> f64 {
 /// into seven rating points. A noisy point win rate would merely replace one
 /// selection error with another, so breeding and retirement use opposite 95%
 /// bounds and leave an unplayed genome at [0, 1].
-fn win_confidence(s: &Strategy, upper: bool) -> f64 {
-    if s.games == 0 {
+fn win_evidence(s: &Strategy, table_size: Option<usize>) -> WinEvidence {
+    table_size
+        .and_then(|players| u32::try_from(players).ok())
+        .and_then(|players| s.wins_by_table_size.get(&players))
+        .copied()
+        .filter(|evidence| evidence.games > 0)
+        .unwrap_or(WinEvidence {
+            games: s.games,
+            wins: s.wins,
+        })
+}
+
+fn win_confidence(evidence: WinEvidence, upper: bool) -> f64 {
+    if evidence.games == 0 {
         return f64::from(upper);
     }
-    let n = f64::from(s.games);
-    let p = f64::from(s.wins) / n;
+    let n = f64::from(evidence.games);
+    let p = f64::from(evidence.wins) / n;
     let z2 = SELECTION_Z * SELECTION_Z;
     let centre = p + z2 / (2.0 * n);
     let margin = SELECTION_Z * (p * (1.0 - p) / n + z2 / (4.0 * n * n)).sqrt();
@@ -525,11 +556,20 @@ fn win_confidence(s: &Strategy, upper: bool) -> f64 {
 }
 
 pub(crate) fn win_lower_confidence(s: &Strategy) -> f64 {
-    win_confidence(s, false)
+    win_confidence(win_evidence(s, None), false)
 }
 
+#[cfg(test)]
 fn win_upper_confidence(s: &Strategy) -> f64 {
-    win_confidence(s, true)
+    win_confidence(win_evidence(s, None), true)
+}
+
+fn win_lower_confidence_for(s: &Strategy, table_size: usize) -> f64 {
+    win_confidence(win_evidence(s, Some(table_size)), false)
+}
+
+fn win_upper_confidence_for(s: &Strategy, table_size: usize) -> f64 {
+    win_confidence(win_evidence(s, Some(table_size)), true)
 }
 
 /// One rating period for one player. `results` are (opponent, score, weight)
@@ -672,10 +712,13 @@ fn target_for_niche(niche: usize) -> Option<String> {
         .map(|target| target.as_str().to_string())
 }
 
-fn breeding_order(league: &League, indices: &mut [usize]) {
+fn breeding_order(league: &League, indices: &mut [usize], table_size: usize) {
     indices.sort_by(|a, b| {
-        win_lower_confidence(&league.strategies[*b])
-            .total_cmp(&win_lower_confidence(&league.strategies[*a]))
+        win_lower_confidence_for(&league.strategies[*b], table_size)
+            .total_cmp(&win_lower_confidence_for(
+                &league.strategies[*a],
+                table_size,
+            ))
             .then_with(|| {
                 lower_confidence(&league.strategies[*b])
                     .total_cmp(&lower_confidence(&league.strategies[*a]))
@@ -714,7 +757,7 @@ fn next_niche(league: &League, cfg: &LeagueCfg, birth: usize) -> usize {
     for i in league.active() {
         if let Some(niche) = evolution_niche(&league.strategies[i].kind) {
             counts[niche] += 1;
-            let win = win_lower_confidence(&league.strategies[i]);
+            let win = win_lower_confidence_for(&league.strategies[i], cfg.players_per_game);
             let rating = lower_confidence(&league.strategies[i]);
             if win > win_strength[niche]
                 || (win == win_strength[niche] && rating > rating_strength[niche])
@@ -748,9 +791,8 @@ fn next_niche(league: &League, cfg: &LeagueCfg, birth: usize) -> usize {
 /// Protect one conservatively best winning genome in every represented niche.
 /// This is the live quality-diversity archive: duplicates can still be culled,
 /// but selection cannot silently erase an entire victory strategy again.
-fn niche_elites(league: &League) -> std::collections::BTreeSet<usize> {
-    let mut candidates: [Vec<usize>; EVOLUTION_NICHES] =
-        std::array::from_fn(|_| Vec::new());
+fn niche_elites(league: &League, table_size: usize) -> std::collections::BTreeSet<usize> {
+    let mut candidates: [Vec<usize>; EVOLUTION_NICHES] = std::array::from_fn(|_| Vec::new());
     for i in league.active() {
         if let Some(niche) = evolution_niche(&league.strategies[i].kind) {
             candidates[niche].push(i);
@@ -759,7 +801,7 @@ fn niche_elites(league: &League) -> std::collections::BTreeSet<usize> {
     candidates
         .iter_mut()
         .filter_map(|niche| {
-            breeding_order(league, niche);
+            breeding_order(league, niche, table_size);
             niche.first().copied()
         })
         .collect()
@@ -1483,10 +1525,89 @@ fn seed_league(dir: &str) -> League {
     league
 }
 
+/// Recover table-size evidence for rosters written before it was stored in
+/// `league.json`. `matches.csv` is a derived view and may lag the authoritative
+/// checkpoint after a crash, so this migration deliberately promises only the
+/// retained raw games. It is nevertheless strictly better than mixing duels
+/// and large tables forever, and newly recorded games are checkpointed in the
+/// source of truth directly.
+fn backfill_win_profiles(dir: &str, league: &mut League) -> bool {
+    if league
+        .strategies
+        .iter()
+        .any(|strategy| !strategy.wins_by_table_size.is_empty())
+    {
+        return false;
+    }
+    let raw = match fs::read_to_string(Path::new(dir).join("matches.csv")) {
+        Ok(raw) => raw,
+        Err(_) => return false,
+    };
+    let mut lines = raw.lines();
+    if lines.next() != Some("round,seed,turns,victory,placements") {
+        return false;
+    }
+    let indices: BTreeMap<&str, usize> = league
+        .strategies
+        .iter()
+        .enumerate()
+        .map(|(index, strategy)| (strategy.name.as_str(), index))
+        .collect();
+    if indices.len() != league.strategies.len() {
+        return false; // ambiguous legacy identity; do not guess
+    }
+    let mut recovered = vec![BTreeMap::<u32, WinEvidence>::new(); league.strategies.len()];
+    let mut games = 0usize;
+    for line in lines.filter(|line| !line.trim().is_empty()) {
+        let columns: Vec<&str> = line.splitn(5, ',').collect();
+        if columns.len() != 5 {
+            return false;
+        }
+        let seats: Vec<&str> = columns[4].split('|').collect();
+        let Ok(table_size) = u32::try_from(seats.len()) else {
+            return false;
+        };
+        if table_size < 2 {
+            return false;
+        }
+        for (place, seat) in seats.iter().enumerate() {
+            let Some(name) = seat.split('@').next().filter(|name| !name.is_empty()) else {
+                return false;
+            };
+            let Some(index) = indices.get(name).copied() else {
+                return false;
+            };
+            let evidence = recovered[index].entry(table_size).or_default();
+            let Some(next_games) = evidence.games.checked_add(1) else {
+                return false;
+            };
+            evidence.games = next_games;
+            // Historical rows put the declared winner first. A deliberately
+            // winnerless ranked result has an empty victory field and must not
+            // invent one during migration.
+            if place == 0 && !columns[3].trim().is_empty() {
+                let Some(next_wins) = evidence.wins.checked_add(1) else {
+                    return false;
+                };
+                evidence.wins = next_wins;
+            }
+        }
+        games += 1;
+    }
+    if games == 0 {
+        return false;
+    }
+    for (strategy, evidence) in league.strategies.iter_mut().zip(recovered) {
+        strategy.wins_by_table_size = evidence;
+    }
+    true
+}
+
 pub fn load_league(dir: &str) -> Option<League> {
     let raw = fs::read_to_string(Path::new(dir).join("league.json")).ok()?;
     let mut league = parse_league(&raw)?;
     reconcile_idle_managed_roster(dir, &mut league);
+    backfill_win_profiles(dir, &mut league);
     Some(league)
 }
 
@@ -1500,7 +1621,10 @@ fn load_league_for_update(dir: &str) -> io::Result<Option<League>> {
     };
     let mut league = parse_league(&raw)
         .ok_or_else(|| io::Error::new(ErrorKind::InvalidData, "invalid league.json"))?;
-    if reconcile_idle_managed_roster(dir, &mut league) {
+    let idle = !manifest_path(dir, league.round).exists();
+    let changed = reconcile_idle_managed_roster(dir, &mut league)
+        | (idle && backfill_win_profiles(dir, &mut league));
+    if changed {
         save_league_checked(dir, &league)?;
     }
     Ok(Some(league))
@@ -1927,6 +2051,7 @@ fn apply_round(league: &mut League, outcomes: &[Outcome], age_idle: bool) {
         BTreeMap::<(usize, String, String), Vec<(Glicko, f64, f64)>>::new();
     for outcome in outcomes {
         let p = &outcome.placements;
+        let table_size = u32::try_from(p.len()).expect("a table size fits in u32");
         let comparison_weight = 1.0 / p.len().saturating_sub(1).max(1) as f64;
         for i in 0..p.len() {
             for j in (i + 1)..p.len() {
@@ -1970,6 +2095,11 @@ fn apply_round(league: &mut League, outcomes: &[Outcome], age_idle: bool) {
             strategy.games += 1;
             if outcome.won[rank] {
                 strategy.wins += 1;
+            }
+            let table_evidence = strategy.wins_by_table_size.entry(table_size).or_default();
+            table_evidence.games += 1;
+            if outcome.won[rank] {
+                table_evidence.wins += 1;
             }
             let prior = leader_prior(pre[*s]);
             let on_combination = strategy
@@ -2213,7 +2343,7 @@ fn evolve_league(
         .into_iter()
         .filter(|i| genome_of(&league.strategies[*i].kind).is_some())
         .collect();
-    breeding_order(league, &mut parents);
+    breeding_order(league, &mut parents, cfg.players_per_game);
     let pool = (parents.len() / 2).max(1).min(parents.len());
     let mut born = Vec::new();
     if !parents.is_empty() {
@@ -2227,7 +2357,7 @@ fn evolve_league(
                 .filter(|(_, strategy)| evolution_niche(&strategy.kind) == Some(niche))
                 .map(|(i, _)| i)
                 .collect();
-            breeding_order(league, &mut archive);
+            breeding_order(league, &mut archive, cfg.players_per_game);
             let archive_pool = (archive.len() / 2).max(1).min(archive.len());
             let pa = if archive.is_empty() {
                 parents[rng.below(pool)]
@@ -2274,7 +2404,7 @@ fn evolve_league(
         if active.len() <= cfg.max_pop {
             break;
         }
-        let protected = niche_elites(league);
+        let protected = niche_elites(league, cfg.players_per_game);
         let candidate = active
             .into_iter()
             .filter(|i| {
@@ -2285,8 +2415,11 @@ fn evolve_league(
                     && s.rd <= MAX_RD_TO_RETIRE
             })
             .min_by(|a, b| {
-                win_upper_confidence(&league.strategies[*a])
-                    .total_cmp(&win_upper_confidence(&league.strategies[*b]))
+                win_upper_confidence_for(&league.strategies[*a], cfg.players_per_game)
+                    .total_cmp(&win_upper_confidence_for(
+                        &league.strategies[*b],
+                        cfg.players_per_game,
+                    ))
                     .then_with(|| {
                         upper_confidence(&league.strategies[*a])
                             .total_cmp(&upper_confidence(&league.strategies[*b]))
@@ -2699,6 +2832,7 @@ fn try_finalize_round(
 
     let mut effective_cfg = cfg.clone();
     effective_cfg.seed = manifest.config.league_seed;
+    effective_cfg.players_per_game = manifest.config.players_per_game;
     effective_cfg.evolve_every = manifest.config.evolve_every;
     effective_cfg.max_pop = manifest.config.max_pop;
     let mut rng = round_rng(effective_cfg.seed, round);
@@ -2824,6 +2958,15 @@ pub fn standings(league: &League) -> String {
             league.calibration.log_loss(),
         ));
     }
+    if league
+        .strategies
+        .iter()
+        .any(|strategy| !strategy.wins_by_table_size.is_empty())
+    {
+        out.push_str(
+            "Win profiles: retained raw games by table size; all-history totals may include an older aggregate prior.\n",
+        );
+    }
     for (rank, s) in order.iter().enumerate() {
         let status = if s.retired {
             "retired"
@@ -2834,8 +2977,21 @@ pub fn standings(league: &League) -> String {
         } else {
             "active"
         };
+        let profiles = if s.wins_by_table_size.is_empty() {
+            String::new()
+        } else {
+            let evidence = s
+                .wins_by_table_size
+                .iter()
+                .map(|(players, evidence)| {
+                    format!("{players}p:{}/{}", evidence.wins, evidence.games)
+                })
+                .collect::<Vec<_>>()
+                .join(",");
+            format!("  retained-tables={evidence}")
+        };
         out.push_str(&format!(
-            "  {:>2}. {:<18} {:6.0} elo ±{:<4.0} {:<14} games={:<5} wins={:<4} winrate={:3.0}%  born r{:<3} {:<7} [{}]\n",
+            "  {:>2}. {:<18} {:6.0} elo ±{:<4.0} {:<14} games={:<5} wins={:<4} winrate={:3.0}%  born r{:<3} {:<7} [{}]{}\n",
             rank + 1,
             s.username,
             s.rating,
@@ -2847,6 +3003,7 @@ pub fn standings(league: &League) -> String {
             s.born_round,
             status,
             s.name,
+            profiles,
         ));
     }
     out
@@ -3903,6 +4060,172 @@ mod tests {
             "two lucky wins must not outrank a settled 70% winner"
         );
         assert!(win_upper_confidence(&lucky) > win_upper_confidence(&proven));
+    }
+
+    #[test]
+    fn win_selection_uses_the_current_table_size_instead_of_mixed_history() {
+        let kind = || StrategyKind::Advanced {
+            weights: Weights::default(),
+            target: None,
+        };
+        let mut duel_star = Strategy::new("duel-star", kind(), 0);
+        duel_star.games = 100;
+        duel_star.wins = 80;
+        duel_star
+            .wins_by_table_size
+            .insert(6, WinEvidence { games: 40, wins: 4 });
+        let mut six_player_star = Strategy::new("six-player-star", kind(), 0);
+        six_player_star.games = 100;
+        six_player_star.wins = 20;
+        six_player_star
+            .wins_by_table_size
+            .insert(6, WinEvidence { games: 40, wins: 20 });
+        let league = League {
+            round: 0,
+            strategies: vec![duel_star, six_player_star],
+            calibration: Calibration::default(),
+        };
+
+        let mut six_player_order = vec![0, 1];
+        breeding_order(&league, &mut six_player_order, 6);
+        assert_eq!(six_player_order, vec![1, 0]);
+
+        // A legacy profile with no retained raw rows preserves the historical
+        // aggregate instead of pretending that its table size is known.
+        let mut legacy_order = vec![0, 1];
+        breeding_order(&league, &mut legacy_order, 4);
+        assert_eq!(legacy_order, vec![0, 1]);
+    }
+
+    #[test]
+    fn applying_results_partitions_win_evidence_by_table_size() {
+        let mut league = League {
+            round: 0,
+            strategies: (0..4)
+                .map(|index| {
+                    Strategy::new(
+                        &format!("player-{index}"),
+                        StrategyKind::Builtin {
+                            ai: "advanced".into(),
+                        },
+                        0,
+                    )
+                })
+                .collect(),
+            calibration: Calibration::default(),
+        };
+        let outcome = |placements: Vec<usize>, winner: usize, seed: u64| Outcome {
+            leaders: placements
+                .iter()
+                .map(|player| format!("leader-{player}"))
+                .collect(),
+            civs: placements
+                .iter()
+                .map(|player| format!("civ-{player}"))
+                .collect(),
+            ranks: (0..placements.len() as u32).collect(),
+            won: placements.iter().map(|player| *player == winner).collect(),
+            placements,
+            seed,
+            turn: 100,
+            victory: "science".into(),
+        };
+        apply_round(
+            &mut league,
+            &[outcome(vec![0, 1], 0, 1), outcome(vec![1, 0, 2, 3], 1, 2)],
+            false,
+        );
+
+        assert_eq!(
+            (league.strategies[0].games, league.strategies[0].wins),
+            (2, 1)
+        );
+        assert_eq!(
+            league.strategies[0].wins_by_table_size,
+            BTreeMap::from([
+                (2, WinEvidence { games: 1, wins: 1 }),
+                (4, WinEvidence { games: 1, wins: 0 }),
+            ])
+        );
+        assert_eq!(
+            league.strategies[1].wins_by_table_size,
+            BTreeMap::from([
+                (2, WinEvidence { games: 1, wins: 0 }),
+                (4, WinEvidence { games: 1, wins: 1 }),
+            ])
+        );
+    }
+
+    #[test]
+    fn legacy_match_log_backfills_retained_table_size_evidence() {
+        let dir = std::env::temp_dir().join(format!(
+            "civvis-win-profile-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let mut league = League {
+            round: 3,
+            strategies: (0..4)
+                .map(|index| {
+                    Strategy::new(
+                        &format!("player-{index}"),
+                        StrategyKind::Builtin {
+                            ai: "advanced".into(),
+                        },
+                        0,
+                    )
+                })
+                .collect(),
+            calibration: Calibration::default(),
+        };
+        for strategy in &mut league.strategies {
+            strategy.games = 99; // legacy mixed total is deliberately ignored
+            strategy.wins = 50;
+        }
+        save_league(dir.to_str().unwrap(), &league);
+        fs::write(
+            dir.join("matches.csv"),
+            concat!(
+                "round,seed,turns,victory,placements\n",
+                "0,10,100,science,player-0@Rome|player-1@Egypt\n",
+                "1,11,110,religious,player-1@Cleopatra@Egypt@0|player-0@Trajan@Rome@1\n",
+                "2,12,120,,player-2@Rome|player-0@Egypt|player-1@China|player-3@Greece\n",
+            ),
+        )
+        .unwrap();
+
+        let migrated = load_league(dir.to_str().unwrap()).unwrap();
+        assert_eq!(
+            migrated.strategies[0].wins_by_table_size,
+            BTreeMap::from([
+                (2, WinEvidence { games: 2, wins: 1 }),
+                (4, WinEvidence { games: 1, wins: 0 }),
+            ])
+        );
+        assert_eq!(
+            migrated.strategies[1].wins_by_table_size,
+            BTreeMap::from([
+                (2, WinEvidence { games: 2, wins: 1 }),
+                (4, WinEvidence { games: 1, wins: 0 }),
+            ])
+        );
+        assert_eq!(
+            migrated.strategies[2].wins_by_table_size,
+            BTreeMap::from([(4, WinEvidence { games: 1, wins: 0 })])
+        );
+        let persisted = load_league_for_update(dir.to_str().unwrap())
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            persisted.strategies[0].wins_by_table_size,
+            migrated.strategies[0].wins_by_table_size
+        );
+        assert!(fs::read_to_string(dir.join("league.json"))
+            .unwrap()
+            .contains("\"wins_by_table_size\""));
+        let _ = fs::remove_dir_all(dir);
     }
 
     #[test]
