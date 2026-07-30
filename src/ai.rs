@@ -375,9 +375,11 @@ fn empire_reading(g: &Game, pid: usize, w: &Weights) -> f64 {
 /// thing is the one both halves pay.
 ///
 /// Which half is live still changes what the number *means*, and the engine
-/// settles that: a Golden or Heroic Age banks no Era Score at all, so there the
-/// tally is read purely as "which lane am I in". In a Normal or Dark Age it is
-/// read literally, as the score that buys the next age.
+/// settles that: a Golden or Heroic Age normally banks no Era Score, so there
+/// the tally is read purely as "which lane am I in". In a Normal or Dark Age it
+/// is read literally, as the score that buys the next age. Georgia's Strength
+/// in Unity is the explicit exception and keeps the literal ranking in every
+/// age.
 ///
 /// Ties — including the all-zero tie of a civilization whose first age arrives
 /// before it has done anything the table counts — fall back to the alphabetical
@@ -389,11 +391,14 @@ pub(crate) fn choose_dedications(g: &mut Game, pid: usize, choice: DedicationCho
         if offered.is_empty() {
             return;
         }
-        // A Golden or Heroic Age banks no Era Score, so there the projection is
-        // only a correlate of what the Golden half is worth — and ranking on it
-        // is what lost the first gate. `Banking` keeps the measured number
-        // where it is the literal objective and leaves the rest alone.
-        let banking = !matches!(g.players[pid].age.as_str(), "golden" | "heroic");
+        // A Golden or Heroic Age normally banks no Era Score, so there the
+        // projection is only a correlate of what the Golden half is worth —
+        // and ranking on it is what lost the first gate. `Banking` keeps the
+        // measured number where it is the literal objective and leaves the
+        // rest alone. Georgia is the shipped exception: Strength in Unity also
+        // pays the Normal-Age half during Golden and Heroic Ages.
+        let banking = !matches!(g.players[pid].age.as_str(), "golden" | "heroic")
+            || g.civ_effect(pid, "golden_dedication_era_score") > 0.0;
         let rank = match choice {
             DedicationChoice::Alphabetical => false,
             DedicationChoice::Measured => true,
