@@ -655,6 +655,20 @@ local findSettleSite;
 local settlePlan = nil;
 local planTaken = {};
 
+-- ★ THE FIRES-CHECK, and it is not optional.
+--
+-- This project's most expensive mistakes have all been treatments that looked
+-- applied and were not: a Settler requested on 83 consecutive turns with
+-- `applied = true` and nothing ever built, and a value evaluator that has never
+-- once loaded while `docs/EVAL.md` concluded it was "good and inert". A settle plan
+-- baked into the config is exactly that shape of change — silent when it works and
+-- silent when it does not.
+--
+-- So the stream says which brain chose each city: `plan` means CIVVIS's ranking
+-- picked it, `search` means the hand-rolled Lua score did. An evaluation of
+-- CIVVIS-as-decider is meaningless until `plan_sites` is non-zero.
+local planFires = { plan = 0, search = 0, offered = 0 };
+
 local function planSite(player, pid, unit)
 	if settlePlan == nil then
 		settlePlan = {};
@@ -669,6 +683,7 @@ local function planSite(player, pid, unit)
 		end
 	end
 	if #settlePlan == 0 then return nil; end
+	planFires.offered = planFires.offered + 1;
 	for i = 1, #settlePlan do
 		local site = settlePlan[i];
 		local key = site.x .. ":" .. site.y;
@@ -693,6 +708,13 @@ findSettleSite = function(player, pid, unit, turn)
 	local planned, planKey = planSite(player, pid, unit);
 	if planned ~= nil then
 		planTaken[planKey] = true;
+		planFires.plan = planFires.plan + 1;
+		emit("settle_choice", {
+			source = "plan",
+			x = try(function() return planned:GetX(); end, -1),
+			y = try(function() return planned:GetY(); end, -1),
+			turn = turn,
+		});
 		return planned;
 	end
 	local id = try(function() return unit:GetID(); end, -1);
@@ -833,6 +855,13 @@ findSettleSite = function(player, pid, unit, turn)
 	siteMemo.sites[id] = best or false;
 	if best ~= nil then
 		committedSite[id] = { x = best:GetX(), y = best:GetY() };
+		-- The other half of the fires-check: a site the hand-rolled search chose.
+		-- `plan` against `search` is what says whether CIVVIS is actually deciding.
+		planFires.search = planFires.search + 1;
+		emit("settle_choice", {
+			source = "search",
+			x = best:GetX(), y = best:GetY(), turn = turn,
+		});
 	end
 	return best;
 end
@@ -2552,6 +2581,11 @@ local function playTurn(player, pid, turn)
 		research = research, civic = civic,
 		builds = builds, ordered = ordered, stuck = stuck,
 		worst_stack = worstStack, piles = piles,
+		-- Which brain is choosing city sites. `plan_sites` staying at zero while a
+		-- plan is configured means CIVVIS is NOT deciding, whatever the config says.
+		plan_sites = planFires.plan,
+		own_sites = planFires.search,
+		plan_offered = planFires.offered,
 		actions = lastActions,
 		ticks_seen = ticksSeen, ticks_taken = ticksTaken,
 		blocker = blockerName(currentBlocker(pid)),

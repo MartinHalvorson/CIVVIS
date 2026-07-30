@@ -91,7 +91,19 @@ def climb(args: argparse.Namespace) -> int:
         if difficulty in state["wins"] and not args.only:
             continue
         for attempt in range(1, args.attempts + 1):
-            seed = args.seed + attempt * 1013 + rungs.index(difficulty) * 7919
+            # ⚠ `--fixed-seed` REPLAYS THE SAME WORLD every attempt, which is what
+            # makes a CIVVIS settle plan meaningful: the plan describes one map, and
+            # the map is a function of the seed. Without it each attempt is a
+            # different world and a plan from the last one is describing terrain
+            # that no longer exists.
+            #
+            # Varying seeds remains the default, because a ladder rung claimed on
+            # one lucky map is not a rung.
+            seed = (
+                args.seed
+                if args.fixed_seed
+                else args.seed + attempt * 1013 + rungs.index(difficulty) * 7919
+            )
             summary = run_attempt(difficulty, seed, args)
             if summary and ladder.is_win(summary) and summary.get("configured"):
                 print(f"*** {difficulty} beaten on attempt {attempt} ***", flush=True)
@@ -128,6 +140,9 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--garrison-per-city", type=int, default=2)
     ap.add_argument("--export-state", action="store_true", default=False)
     ap.add_argument("--settle-plan", default=None)
+    ap.add_argument("--fixed-seed", action="store_true", default=False,
+                    help="replay the same world every attempt, so a CIVVIS settle "
+                         "plan still describes the map it was planned on")
     ap.add_argument("--window-side", default="left")
     ap.add_argument("--window-frac", type=float, default=0.5)
     ap.add_argument("--window-vfrac", type=float, default=1.0)
