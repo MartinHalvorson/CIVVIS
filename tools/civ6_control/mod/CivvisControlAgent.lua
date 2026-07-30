@@ -4128,6 +4128,40 @@ local function applyOrder(player, pid, row, turn)
 		return ok, ok and verb or "throw";
 	end
 
+	-- ★★★★ BUY. CIVVIS spends gold and the seat sat on hundreds of it: 122 `Buy` and
+	-- 224 `BuyBuilding` actions dropped in one 81-turn stretch. Worse than the waste,
+	-- a purchase CIVVIS makes in its model and the bridge discards leaves it believing
+	-- it owns a unit that does not exist — the same phantom that stopped it building
+	-- settlers for a whole game.
+	--
+	-- Pattern copied from the shipped `ProductionPanel.lua`: a PURCHASE **command**,
+	-- not a BUILD operation, with the item hash and the yield to pay from.
+	if kind == "purchase" then
+		local city = liveCity(player, subject);
+		if city == nil then return false, "no_city"; end
+		local row2, resolved = resolveType(GameInfo.Types, verb);
+		if row2 == nil then return false, "unknown_" .. verb; end
+		local params = {};
+		if row2.Kind == "KIND_UNIT" then
+			params[CityCommandTypes.PARAM_UNIT_TYPE] = row2.Hash;
+			params[CityCommandTypes.PARAM_MILITARY_FORMATION_TYPE] =
+				MilitaryFormationTypes.STANDARD_MILITARY_FORMATION;
+		elseif row2.Kind == "KIND_BUILDING" then
+			params[CityCommandTypes.PARAM_BUILDING_TYPE] = row2.Hash;
+		elseif row2.Kind == "KIND_DISTRICT" then
+			params[CityCommandTypes.PARAM_DISTRICT_TYPE] = row2.Hash;
+		else
+			return false, "no_params";
+		end
+		local gold = try(function() return GameInfo.Yields["YIELD_GOLD"].Index; end);
+		if gold == nil then return false, "no_yield"; end
+		params[CityCommandTypes.PARAM_YIELD_TYPE] = gold;
+		local ok = pcall(function()
+			CityManager.RequestCommand(city, CityCommandTypes.PURCHASE, params);
+		end);
+		return ok, ok and resolved or "throw";
+	end
+
 	if kind == "unit" then
 		-- Asked for fresh, right here: the previous order in this very list may have
 		-- killed or consumed it.

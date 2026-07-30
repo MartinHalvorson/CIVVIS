@@ -415,6 +415,28 @@ fn translate(
         }),
         // A builder improving the tile it stands on. Dropping this is what kept the
         // mirror looking undeveloped and made CIVVIS order builder after builder.
+        // Gold purchases. Dropping these both wastes the treasury and leaves CIVVIS
+        // believing it owns something it does not — the phantom-settler failure again.
+        Action::Buy { city, unit, currency, .. } if currency.as_str() == "gold" => mirror_state
+            .cid_of
+            .iter()
+            .find(|(_, cid)| **cid == *city)
+            .map(|(civ6, _)| Order {
+                kind: "purchase",
+                subject: Some(*civ6),
+                verb: Some(format!("UNIT_{}", unit.as_str().to_ascii_uppercase())),
+                pos: None,
+            }),
+        Action::BuyBuilding { city, building, currency } if currency.as_str() == "gold" => mirror_state
+            .cid_of
+            .iter()
+            .find(|(_, cid)| **cid == *city)
+            .map(|(civ6, _)| Order {
+                kind: "purchase",
+                subject: Some(*civ6),
+                verb: Some(format!("BUILDING_{}", building.as_str().to_ascii_uppercase())),
+                pos: None,
+            }),
         Action::Improve { unit, improvement } => civ6_of.get(unit).map(|civ6| Order {
             kind: "unit",
             subject: Some(*civ6),
