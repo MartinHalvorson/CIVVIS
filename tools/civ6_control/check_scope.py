@@ -53,6 +53,14 @@ KNOWN_GLOBALS = {
     "NotificationManager", "PlayerConfigurations", "PlayerManager", "Players",
     "RevealedState", "UI", "UILens", "UnitCommandTypes", "UnitManager",
     "UnitOperationTypes", "YieldTypes",
+    # Context-scoped engine globals, present in every UI script.
+    "ContextPtr", "Controls", "include", "Keys", "KeyEvents", "Mouse",
+    # This mod's own install-time config global.
+    "CivvisControlConfig",
+    # Engine type enumerations, same family as the ones above.
+    "ActionTypes", "CivilizationLevelTypes", "EndTurnBlockingTypes",
+    "InterfaceModeTypes", "Modding", "Network", "PlayerOperations",
+    "ServerType", "SlotStatus", "TurnLimitTypes",
 }
 
 KEYWORDS = {
@@ -108,6 +116,22 @@ def tokenize(text: str) -> list[tuple[str, int]]:
         for m in re.finditer(NAME + r"|[=,\.\:\(\)\{\}\[\]]|\S", line):
             tokens.append((m.group(0), line_no))
     return tokens
+
+
+def guarded_names(text: str) -> set[str]:
+    """Names the file checks for existence before using.
+
+    `if type(OnClose) == "function" then OnClose() end` and
+    `if ms_ActiveSessionID ~= nil then ...` are deliberate probes of something
+    that may legitimately not exist — a shipped screen's handler, say. Reporting
+    those as suspicious globals buried the one real finding under sixteen
+    intentional ones, which is how a gate becomes something you stop reading.
+    An unguarded call like `try(...)` has no such excuse.
+    """
+    clean = strip_noise(text)
+    guarded = set(re.findall(r"\btype\s*\(\s*(" + NAME + r")\s*\)", clean))
+    guarded |= set(re.findall(r"\b(" + NAME + r")\s*[=~]=\s*nil\b", clean))
+    return guarded
 
 
 def analyse(text: str) -> tuple[list[tuple[int, str]], set[str], set[str]]:
@@ -177,7 +201,12 @@ def analyse(text: str) -> tuple[list[tuple[int, str]], set[str], set[str]]:
                 pending_params = False
                 i = j + 1
                 continue
-            # A named function: `function M.f(...)` / `function f(...)`.
+            # A named function DEFINES that name. Without recording it,
+            # `function Initialize()` reported as an undeclared read of
+            # `Initialize` — the definition accusing itself.
+            if re.fullmatch(NAME, tok) and tok not in KEYWORDS:
+                scopes[0].add(tok)
+                all_locals.add(tok)
             i += 1
             continue
 
@@ -235,8 +264,10 @@ def check(path: pathlib.Path, show_globals: bool) -> int:
                   f"in this file but is not in scope here")
             findings += 1
     if show_globals:
-        for name in sorted(globals_read - all_locals):
-            print(f"{path}: reads unknown global '{name}'")
+        unguarded = globals_read - all_locals - guarded_names(text)
+        for name in sorted(unguarded):
+            print(f"{path}: calls undeclared global '{name}' without guarding it")
+            findings += 1
     return findings
 
 

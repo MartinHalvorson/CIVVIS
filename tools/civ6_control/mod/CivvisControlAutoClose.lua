@@ -93,12 +93,44 @@ local CHAINED = {
 	NaturalDisasterPopup = "NaturalDisasterPopup_GranColombia_Maya",
 };
 
+-- Every handler this shim knows how to close a screen with.
+--
+-- ⚠ ONE LIST, USED BY BOTH `haveScreen` AND `endScreen`. When they kept separate
+-- lists they drifted, and the drift was silent in the worst direction: the ladder
+-- learned to call `OnHideScreen` and `OnButton1` for the relic screens while
+-- `haveScreen` still tested only the original four names. So `haveScreen` said
+-- "no screen here" about a screen that had loaded perfectly well, the timer was
+-- never armed, and the run reported `autoclose_unarmed` for GreatWorkShowcase and
+-- ChooseArtifact — I had made those two screens worse, not better. Same for
+-- WorldCongressBetweenTurns, which uses a third name again.
+--
+-- Screens do not agree on what "close" is called, so the only safe test for "did
+-- the shipped script load" is "does any name I could act on exist".
+local CLOSERS = {
+	"OnClose", "Close", "OnContinue", "OnClosePopup",
+	"OnHideScreen",          -- GreatWorkShowcase
+	"OnButton1",             -- ChooseArtifact
+	"ReleaseEventLock",      -- WorldCongressBetweenTurns: frees the event lock
+	"ExitConversationMode",  -- DiplomacyActionView: ends the diplomacy session
+	"OnHide", "InputHandler",
+};
+
+-- ⚠ No `try` helper in this file — that lives in the agent. Reaching for it here
+-- would itself have been a nil-global call, which is the very bug class this
+-- session kept tripping over. check_scope.py flags it.
+local function globalFn(name)
+	local ok, isFn = pcall(function() return type(_G[name]) == "function"; end);
+	return ok and isFn == true;
+end
+
 -- Whether a screen is in there at all. An include that finds no file fails
 -- silently on this build, so the test has to be for what the script defines
 -- rather than for the include returning.
 local function haveScreen()
-	return type(OnClose) == "function" or type(Close) == "function"
-	       or type(OnContinue) == "function" or type(OnClosePopup) == "function";
+	for i = 1, #CLOSERS do
+		if globalFn(CLOSERS[i]) then return true; end
+	end
+	return false;
 end
 
 -- The shipped screen, unchanged and unread. A context's id is the name of the
@@ -204,6 +236,14 @@ local function endScreen(attempt)
 	if type(OnHideScreen) == "function" then OnHideScreen(); return true; end
 	if NAME == "ChooseArtifact" and type(OnButton1) == "function" then
 		OnButton1();
+		return true;
+	end
+	-- The between-turns congress screen holds an EVENT LOCK, so closing it is not
+	-- cosmetic: until the lock is released the game will not proceed. Releasing it
+	-- is what the shipped Continue button does.
+	if NAME == "WorldCongressBetweenTurns"
+			and type(ReleaseEventLock) == "function" then
+		ReleaseEventLock();
 		return true;
 	end
 	if type(OnClose) == "function" then OnClose(); return true; end
