@@ -21,6 +21,7 @@ measurement:
 from __future__ import annotations
 
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -105,6 +106,22 @@ def install(config: dict) -> Path:
             error = check_syntax(written)
             if error:
                 raise SystemExit(f"{src.name} does not parse: {error}")
+        elif src.name == "CivvisControlConfig.xml":
+            # The setup DEFAULTS, applied through the one FrontEnd hook shipped
+            # content actually uses (`UpdateDatabase`). ⚠ The seed must be a real
+            # integer: a literal 0 reads as "unset" and silently restores random
+            # maps, which is the failure this whole file exists to end.
+            seed = int(config.get("MapSeed") or 0)
+            text_xml = src.read_text()
+            if seed > 0:
+                text_xml = text_xml.replace("CIVVIS_SEED", str(seed))
+            else:
+                # No seed asked for: drop the two seed updates rather than write a
+                # placeholder the database would reject.
+                text_xml = re.sub(
+                    r"\t\t<Update>\s*<Where ParameterId=\"(?:Map|Game)RandomSeed\"/>.*?</Update>\n",
+                    "", text_xml, flags=re.S)
+            (target / src.name).write_text(text_xml)
         else:
             shutil.copy2(src, target / src.name)
     # Kept beside the scripts so the active settings are readable in the

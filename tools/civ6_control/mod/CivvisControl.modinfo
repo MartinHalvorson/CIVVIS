@@ -29,12 +29,16 @@
 		<Mod id="9DE86512-DE1A-400D-8C0A-AB46EBBF76B9" title="GranColombia_Maya"/>
 	</References>
 	<FrontEndActions>
-		<AddUserInterfaces id="CivvisControlSetupUI">
-			<Properties>
-				<Context>FrontEnd</Context>
-			</Properties>
-			<File>CivvisControlSetup.xml</File>
-		</AddUserInterfaces>
+		<!-- ⚠ `AddUserInterfaces` with `<Context>FrontEnd</Context>` USED TO BE HERE and
+		     never loaded: across 38 shipped DLC that pattern appears in FrontEndActions
+		     ZERO times (and in InGameActions nine times). That single dead hook is why
+		     `setup: "(absent)"` appears in every seat event, and therefore why MapScript,
+		     Leader and MapSeed have never applied. `UpdateDatabase` is what shipped DLC
+		     actually use here, and the Create Game screen is driven by the configuration
+		     DATABASE rather than by Lua — so the defaults are reachable as data. -->
+		<UpdateDatabase id="CivvisControlSetupDefaults">
+			<File>CivvisControlConfig.xml</File>
+		</UpdateDatabase>
 	</FrontEndActions>
 	<InGameActions>
 		<AddUserInterfaces id="CivvisControlAgentUI">
