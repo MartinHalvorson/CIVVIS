@@ -509,6 +509,33 @@ def _play(args: argparse.Namespace) -> int:
         elif kind == "blocked":
             print(f"[turn {event.get('turn')}] blocked on {event.get('blocker')} "
                   f"({event.get('attempts')} attempts)")
+        elif kind == "autoclose_stuck":
+            # ⚠ THE SHIM HAS GIVEN UP, so press the key a person would.
+            #
+            # `autoclose_stuck` means twenty close attempts failed and the screen
+            # called ClearUpdate, so it will never try again — the screen is up
+            # for the rest of the game. Run settler-20260730T021107Z halted at
+            # turn 121 on one, with four cities and a score of 126, the best of
+            # the session.
+            #
+            # This is the fallback because guessing at the right Lua entry point
+            # has now failed twice on DiplomacyActionView: `ExitConversationMode`
+            # only acts in CONVERSATION_MODE and a first-contact leader is a
+            # cinema, and `CloseFocusedState` gates its cinema branch on a fade
+            # animation being stopped. Escape does not care which script, context
+            # or view mode is live, which is exactly why it is the right tool once
+            # the in-engine route has been tried.
+            #
+            # Escape during normal play opens the pause menu, so a second press
+            # closes that again — press_escape defaults to two for that reason.
+            screen = event.get("screen")
+            print(f"[autoclose_stuck] {screen} gave up after "
+                  f"{event.get('attempts')} attempts; pressing escape")
+            if press_escape():
+                print(f"[autoclose_stuck] escape sent for {screen}")
+            else:
+                print(f"[autoclose_stuck] escape FAILED for {screen}",
+                      file=sys.stderr)
         elif kind in ("victory", "defeat", "error"):
             print(f"[{kind}] {json.dumps(event, sort_keys=True)}")
             if kind in ("victory", "defeat"):

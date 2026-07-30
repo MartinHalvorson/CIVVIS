@@ -1921,6 +1921,20 @@ end
 -- so no single log record is unbounded. Terrain does not change often; what
 -- changes fast is ownership and revelation, and 25 turns is well inside the
 -- window where those still matter.
+-- The game's own name for a terrain/feature/resource row index.
+--
+-- Returns nil for -1 (Civilization VI's "none", used for a tile with no feature
+-- or no resource) and for anything that does not resolve. nil is deliberate: a
+-- mirror that guessed would put the simulator on ground that does not exist, and
+-- an absent field is a hole the reader can see.
+local function typeName(table_name, column, index)
+	if index == nil or index < 0 then return nil; end
+	return try(function()
+		local row = GameInfo[table_name][index];
+		return row and row[column] or nil;
+	end);
+end
+
 local function exportTiles(player, pid, turn)
 	if cfg.ExportState ~= true then return; end
 	local every = cfg.TileExportEvery or 25;
@@ -1955,9 +1969,21 @@ local function exportTiles(player, pid, turn)
 					index = index + 1;
 					chunk[index] = {
 						x = x, y = y,
-						t = try(function() return plot:GetTerrainType(); end, -1),
-						f = try(function() return plot:GetFeatureType(); end, -1),
-						r = try(function() return plot:GetResourceType(); end, -1),
+						-- ⚠ NAMES, NOT INDICES. `GetTerrainType` returns a row
+						-- index into the game's own Terrains table, and the
+						-- CIVVIS vocabulary (tools/civ6_control/vocab.json) is
+						-- keyed by TERRAIN_/FEATURE_/RESOURCE_ names. Mapping
+						-- index to name on the Rust side would mean guessing the
+						-- table's ordering; asking GameInfo here is authoritative
+						-- and costs one lookup. A tile whose type does not
+						-- resolve sends nil rather than a number that would be
+						-- silently misread as a different terrain.
+						t = typeName("Terrains", "TerrainType",
+						             try(function() return plot:GetTerrainType(); end, -1)),
+						f = typeName("Features", "FeatureType",
+						             try(function() return plot:GetFeatureType(); end, -1)),
+						r = typeName("Resources", "ResourceType",
+						             try(function() return plot:GetResourceType(); end, -1)),
 						o = try(function() return plot:GetOwner(); end, -1),
 						w = try(function() return plot:IsWater(); end, false),
 						i = try(function() return plot:IsImpassable(); end, false),
