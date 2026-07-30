@@ -1397,6 +1397,104 @@ pub fn load_league(dir: &str) -> Option<League> {
     Some(parse_league(&raw)?)
 }
 
+/// Anchors a running roster cannot acquire for itself, so a round must supply
+/// them.
+///
+/// `(entry name, builtin ai)`. Only the searching agent is here, deliberately.
+/// `advanced` and `basic` are anchors too, but a roster missing one of those is
+/// missing a benchmark, whereas a roster missing this one cannot reach the only
+/// axis with a reproducible strength result. Seating the others on every round
+/// would also add seats nobody asked for to rosters that never had them.
+///
+/// A test asserts `seed_league` produces every entry here, so the founding
+/// roster and this list cannot drift apart — drifting apart is exactly how the
+/// live league ended up without a searching entry while the founding roster
+/// had one.
+const REQUIRED_ANCHORS: [(&str, &str); 1] = [("strategic", "strategic")];
+
+/// Add any required anchor the roster is missing, leaving everything already
+/// there untouched.
+///
+/// ⚠ NOT called from `parse_league` or `evolve_league`, and both attempts are
+/// worth recording because each broke a real invariant:
+///
+/// * On load, `register_player` appends and hands back an index, so adding
+///   entrants underneath it moves seats — `registering_a_player_persists_a_new_row`.
+/// * Inside a round, an extra entrant grows the active population, and
+///   retirement runs until the population fits `max_pop`. Seating before
+///   retirement silently costs some bred strategy its place; seating after it
+///   breaks `active() <= max_pop`. Caught by
+///   `retirement_uses_the_lowest_upper_confidence_bound` and
+///   `selection_breeds_from_leaders_and_retires_confident_losers`.
+///
+/// A permanent extra seat is therefore a deliberate reallocation, not a
+/// mechanical migration, which is why this is applied ONCE by an operator
+/// (`seat_missing_anchors`) rather than silently on every round. That also
+/// matches how the live league has been treated: operational state, changed on
+/// purpose.
+///
+/// ⚠ THIS IS THE MIGRATION THE LIVE LEAGUE NEVER GOT, and it is the reason the
+/// self-improvement loop cannot reach the one axis with a reproducible strength
+/// result. `seed_league` gained a searching anchor, but that is the FOUNDING
+/// roster only: a league already on disk keeps whatever it was seeded with, and
+/// `parse_league` migrated leader ratings and usernames while adding no
+/// entrants. Measured on the live roster before this function existed: 61
+/// entries, 54 `Advanced` and 7 `Builtin`, and not one of them searches.
+///
+/// It cannot fix itself, either. Breeding produces `StrategyKind::Advanced` and
+/// nothing else, so a roster seeded without a searching entry can never acquire
+/// one however long it runs — it explores genome variants of a scripted agent
+/// forever. Put that beside three measured facts: the genome is a local optimum
+/// on wins, 11 of 48 genes produce zero divergence, and about a thousand rounds
+/// produced no measurable gain. The loop is not climbing slowly; it cannot see
+/// the axis next door, and `strategic`'s compute-doubling win (p=0.0023) is the
+/// single reproducible strength result on record.
+///
+/// Anchors are the right shape for this. `League::active` never retires one, so
+/// a slow start cannot cull the only entry able to answer whether search is
+/// worth its cost — and the cost is real but affordable at the deployment
+/// profile: one searching seat among five is 6.4x a game-turn, not the 29x an
+/// all-searching fleet would cost.
+fn ensure_anchors(league: &mut League) {
+    for (name, ai) in REQUIRED_ANCHORS {
+        if league.strategies.iter().any(|s| s.name == name) {
+            continue;
+        }
+        // Born this round, not round zero: it did not exist for the history
+        // already on the table, and dating it honestly keeps `born_round`
+        // meaningful for anything reading the roster's shape over time.
+        let mut entry = Strategy::new(
+            name,
+            StrategyKind::Builtin { ai: ai.to_string() },
+            league.round,
+        );
+        entry.anchor = true;
+        league.strategies.push(entry);
+    }
+}
+
+/// Seat the anchors a running roster cannot acquire, once, on disk.
+///
+/// Returns the names added. Idempotent: a roster that already has them is left
+/// exactly as it was, and nothing already on the table is touched.
+pub fn seat_missing_anchors(dir: &str) -> Option<Vec<String>> {
+    let mut league = load_league(dir)?;
+    let before: std::collections::BTreeSet<String> =
+        league.strategies.iter().map(|s| s.name.clone()).collect();
+    ensure_anchors(&mut league);
+    ensure_usernames(&mut league);
+    let added: Vec<String> = league
+        .strategies
+        .iter()
+        .map(|s| s.name.clone())
+        .filter(|name| !before.contains(name))
+        .collect();
+    if !added.is_empty() {
+        save_league(dir, &league);
+    }
+    Some(added)
+}
+
 fn parse_league(raw: &str) -> Option<League> {
     let mut league: League = serde_json::from_str(raw).ok()?;
     migrate_legacy_leader_ratings(&mut league);
@@ -3997,7 +4095,10 @@ mod tests {
 
 #[cfg(test)]
 mod searching_anchor_tests {
-    use super::{seed_league, StrategyKind};
+    use super::{
+        ensure_anchors, ensure_usernames, make_ai, parse_league, seed_league, Calibration,
+        League, Strategy, StrategyKind, REQUIRED_ANCHORS,
+    };
 
     /// A league that cannot seat a searching agent cannot ever rate one:
     /// breeding only produces `StrategyKind::Advanced`, so anything not in the
@@ -4034,5 +4135,164 @@ mod searching_anchor_tests {
             target: None,
         };
         assert!(matches!(bred, StrategyKind::Advanced { .. }));
+        // Which is why `ensure_anchors` has to exist: breeding can never turn
+        // an all-`Advanced` roster into one that searches.
+        assert!(!matches!(bred, StrategyKind::Builtin { .. }));
+    }
+
+    /// A roster of the shape the live league actually had: builtins that do not
+    /// search, and bred genomes that structurally cannot.
+    fn roster_without_search() -> League {
+        let mut league = League {
+            round: 12,
+            strategies: Vec::new(),
+            calibration: Calibration::default(),
+        };
+        for (name, ai) in [("advanced", "advanced"), ("basic", "basic")] {
+            let mut s = Strategy::new(
+                name,
+                StrategyKind::Builtin { ai: ai.to_string() },
+                0,
+            );
+            s.anchor = true;
+            s.rating = 1784.0;
+            league.strategies.push(s);
+        }
+        league.strategies.push(Strategy::new(
+            "bred-1",
+            StrategyKind::Advanced {
+                weights: crate::ai::Weights::default(),
+                target: None,
+            },
+            5,
+        ));
+        ensure_usernames(&mut league);
+        league
+    }
+
+    #[test]
+    fn a_roster_with_no_searching_entry_gains_one_at_the_round_boundary() {
+        let mut league = roster_without_search();
+        assert!(
+            !league.strategies.iter().any(|s| s.name == "strategic"),
+            "fixture should start without the searching entry"
+        );
+        ensure_anchors(&mut league);
+
+        let seated = league
+            .strategies
+            .iter()
+            .find(|s| s.name == "strategic")
+            .expect("the round seats the searching anchor");
+        // An anchor, or a slow start could retire the only entry able to say
+        // whether search earns its 6.4x.
+        assert!(seated.anchor, "the searching entry must be an anchor");
+        assert!(matches!(
+            &seated.kind,
+            StrategyKind::Builtin { ai } if ai == "strategic"
+        ));
+        assert_eq!(seated.born_round, 12, "dated when it actually joined");
+    }
+
+    #[test]
+    fn loading_a_roster_reports_exactly_what_is_on_disk() {
+        // ⚠ The reason this migration runs at a round boundary and not on load.
+        // `register_player` appends and hands back an index, so a load that
+        // quietly added entrants would move seats under it. Learned by breaking
+        // `registering_a_player_persists_a_new_row` with the first attempt.
+        let saved = roster_without_search();
+        let names: Vec<String> = saved.strategies.iter().map(|s| s.name.clone()).collect();
+        let raw = serde_json::to_string(&saved).unwrap();
+        let loaded = parse_league(&raw).expect("roster parses");
+        assert_eq!(
+            loaded.strategies.iter().map(|s| s.name.clone()).collect::<Vec<_>>(),
+            names,
+            "loading must not add, remove or reorder entries"
+        );
+    }
+
+    #[test]
+    fn seating_an_anchor_is_idempotent_and_disturbs_no_existing_entry() {
+        let mut league = roster_without_search();
+        ensure_anchors(&mut league);
+        let after_once: Vec<(String, f64, u32)> = league
+            .strategies
+            .iter()
+            .map(|s| (s.name.clone(), s.rating, s.games))
+            .collect();
+        ensure_anchors(&mut league);
+
+        assert_eq!(
+            league.strategies.iter().filter(|s| s.name == "strategic").count(),
+            1,
+            "a second round must not seat the anchor twice"
+        );
+        assert_eq!(league.strategies.len(), after_once.len());
+        // Ratings already earned are none of this migration's business.
+        for (name, rating, games) in after_once {
+            let now = league.strategies.iter().find(|s| s.name == name).unwrap();
+            assert_eq!(now.rating, rating, "{name} rating moved");
+            assert_eq!(now.games, games, "{name} games moved");
+        }
+    }
+
+    #[test]
+    fn the_founding_roster_and_the_migration_cannot_drift_apart() {
+        // The live league lost its searching entry precisely because these two
+        // were separate lists. If an anchor is added to one, this fails until it
+        // is added to the other.
+        let dir = std::env::temp_dir().join("civvis-anchor-drift-check");
+        let seeded = seed_league(dir.to_str().unwrap());
+        for (name, ai) in REQUIRED_ANCHORS {
+            let entry = seeded
+                .strategies
+                .iter()
+                .find(|s| s.name == name)
+                .unwrap_or_else(|| panic!("seed_league omits required anchor {name}"));
+            assert!(entry.anchor, "{name} is required but not an anchor");
+            assert!(matches!(
+                &entry.kind,
+                StrategyKind::Builtin { ai: got } if got == ai
+            ));
+        }
+    }
+
+    #[test]
+    fn the_seated_anchor_actually_builds_a_searching_agent() {
+        // ⚠ The fires-check. Seating a row in a table proves nothing; the whole
+        // finding this fixes was a subsystem that existed and never ran. What
+        // matters is that the roster entry resolves to an agent that searches,
+        // so this goes through the same factory a game does.
+        let mut loaded = roster_without_search();
+        ensure_anchors(&mut loaded);
+        let seated = loaded
+            .strategies
+            .iter()
+            .find(|s| s.name == "strategic")
+            .expect("anchor seated");
+
+        assert!(
+            crate::elo::BUILTIN_AIS.contains(&"strategic"),
+            "the factory must know this name or the entry is unplayable"
+        );
+        // `review_census` is reported only by an agent that reviews branches, so
+        // it asks the question that matters — does this seat search — rather than
+        // whether it happens to be spelled "strategic".
+        let searching = make_ai(&seated.kind, 7);
+        assert!(
+            searching.review_census().is_some(),
+            "the seated anchor must resolve to an agent that searches"
+        );
+        // And the contrast that makes that assertion mean something: every bred
+        // entry resolves to an agent that does not.
+        let bred = loaded
+            .strategies
+            .iter()
+            .find(|s| s.name == "bred-1")
+            .expect("fixture has a bred entry");
+        assert!(
+            make_ai(&bred.kind, 7).review_census().is_none(),
+            "a bred genome must not already be searching, or the contrast is empty"
+        );
     }
 }
