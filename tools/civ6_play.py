@@ -79,6 +79,7 @@ def build_config(args: argparse.Namespace) -> dict:
         "WarFromTurn": args.war_from_turn,
         "WarArmy": args.war_army,
         "MilitaryPerCity": args.military_per_city,
+        "ExploreUntilTurn": args.explore_until_turn,
         "Leader": args.leader,
         "StartDelayFrames": args.start_delay_frames,
         "TickFrames": args.tick_frames,
@@ -593,6 +594,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--war-from-turn", type=int, default=25)
     ap.add_argument("--war-army", type=int, default=4)
     ap.add_argument("--military-per-city", type=float, default=1.5)
+    ap.add_argument("--explore-until-turn", type=int, default=12)
     ap.add_argument("--survey", action="store_true", default=True)
     ap.add_argument("--no-survey", dest="survey", action="store_false")
     ap.add_argument("--survey-enums", action="store_true",

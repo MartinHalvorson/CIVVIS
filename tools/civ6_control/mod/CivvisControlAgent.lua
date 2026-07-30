@@ -764,7 +764,10 @@ local function orderFor(player, pid, unit, turn)
 			local pressed = pressAttack(unit);
 			if pressed then return pressed; end
 		end
-		return orderMilitary(unit, turn < (cfg.ExploreUntilTurn or 80));
+		-- Exploring is how the army evaporates: units 6 -> 4 -> 3 across turns
+		-- 20/40/100 of run settler-20260729T235910Z, wandering into barbarians
+		-- while the war threshold was never reached. Default is now early.
+		return orderMilitary(unit, turn < (cfg.ExploreUntilTurn or 12));
 	end
 	return nil;
 end
@@ -823,8 +826,12 @@ local function orderUnits(player, pid, turn)
 	eachUnit(player, function(unit)
 		local id = try(function() return unit:GetID(); end, -1);
 		if ordered[id] then return; end
-		local moves = try(function() return unit:GetMovesRemaining(); end, 0) or 0;
-		if moves <= 0 then return; end
+		-- No movement gate. `GetMovesRemaining` is not used anywhere else in
+		-- this mod and there is no evidence it exists on this build; `try`
+		-- returned its 0 default for every unit, so the gate silently skipped
+		-- the entire roster and turns 12 and 13 recorded `actions: []` with
+		-- five units alive. An order that cannot be given fails harmlessly, so
+		-- attempting it is strictly safer than guarding it.
 		if not give(unit, id) then stuck = stuck + 1; end
 	end);
 	return given, stuck;
@@ -895,6 +902,22 @@ end
 
 local function buildParams(row)
 	local params = {};
+	-- ⚠ WITHOUT AN INSERT MODE THE GAME REJECTS EVERY BUILD.
+	--
+	-- `ProductionPanel.lua`'s own `GetBuildInsertMode` sets these two on every
+	-- request it makes, and with the queue panel closed — which is always, under
+	-- program control — it sends REPLACE_AT at destination 0. We sent neither,
+	-- so `RequestOperation` returned without throwing and did nothing.
+	--
+	-- That is the whole reason no run ever built anything. Run
+	-- settler-20260729T221605Z asked for a Settler on 83 consecutive turns,
+	-- every one `applied = true`, and finished with one city and zero units;
+	-- once refusal detection was added, the ladder simply refused every item in
+	-- turn and the city still built nothing. The order was never malformed in a
+	-- way Lua could see — it was missing a parameter the engine requires.
+	params[CityOperationTypes.PARAM_INSERT_MODE] =
+		CityOperationTypes.VALUE_REPLACE_AT;
+	params[CityOperationTypes.PARAM_QUEUE_DESTINATION_LOCATION] = 0;
 	if row.Kind == "KIND_UNIT" then
 		params[CityOperationTypes.PARAM_UNIT_TYPE] = row.Hash;
 	elseif row.Kind == "KIND_BUILDING" then
