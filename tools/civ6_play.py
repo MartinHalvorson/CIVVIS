@@ -90,6 +90,7 @@ def build_config(args: argparse.Namespace) -> dict:
         # this is attacks per turn — and a city heals between turns, so too few
         # attackers means a siege that never resolves.
         "AssaultWidth": args.assault_width,
+        "SettlersInFlight": args.settlers_in_flight,
         "AnnouncementSeconds": args.announcement_seconds,
         "EraAnnouncementSeconds": args.era_announcement_seconds,
         "Leader": args.leader,
@@ -610,6 +611,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--make-war", dest="make_war", action="store_true", default=True)
     ap.add_argument("--no-war", dest="make_war", action="store_false")
     ap.add_argument("--assault-width", type=int, default=2)
+    ap.add_argument("--settlers-in-flight", type=int, default=1)
     ap.add_argument("--announcement-seconds", type=float, default=1.0)
     ap.add_argument("--era-announcement-seconds", type=float, default=0.5)
     ap.add_argument("--survey", action="store_true", default=True)

@@ -980,7 +980,22 @@ local function chooseProduction(city, counts, nCities, turn, refused)
 	end
 
 	local ladder = {};
+	-- ⚠ ONE SETTLER IN FLIGHT AT A TIME.
+	--
+	-- The condition used to be `(nCities + counts.settler) < CityTarget` with no
+	-- cap on how many settlers could be walking at once. With one city and two
+	-- settlers alive that is 3 < 6, so it built another settler — and another,
+	-- and another. Run settler-20260730T010409Z reached turn 60 having ordered
+	-- SEVENTEEN settlers and NOTHING else: no monument, no granary, no district.
+	-- 166 move_to_site orders produced 2 cities, because a Tiny map shared with
+	-- three rivals has almost no legal ground at four-tile spacing, so the
+	-- surplus settlers just walked.
+	--
+	-- Score comes from cities, population, districts and buildings. A capital
+	-- that only ever builds settlers scores nothing and expands barely, which is
+	-- the worst of both. One at a time is also what the engine's own AI does.
 	if (nCities + counts.settler) < (cfg.CityTarget or 6)
+			and counts.settler < (cfg.SettlersInFlight or 1)
 			and turn < (cfg.SettlerStopTurn or 9999) then
 		ladder[#ladder + 1] = { "UNIT_SETTLER", "expand" };
 	end
