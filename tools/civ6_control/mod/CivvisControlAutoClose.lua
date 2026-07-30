@@ -32,7 +32,17 @@ local cfg = CivvisControlConfig or {};
 -- Long enough to read a headline and the line of quote under it, short enough
 -- that nobody sits through it twice. It is a setting because "long enough to
 -- read" is a judgement about the person watching, not a fact about the game.
-local SECONDS = tonumber(cfg.AnnouncementSeconds) or 2.0;
+local SECONDS = tonumber(cfg.AnnouncementSeconds) or 1.0;
+
+-- Era screens get a shorter clock than the rest. They are the most frequent
+-- interruption in a long game and carry the least the agent needs to read, and
+-- at Online speed an era can turn over every twenty turns or so.
+local ERA_SECONDS = tonumber(cfg.EraAnnouncementSeconds) or 0.5;
+local ERA_SCREENS = {
+	EraCompletePopup = true, EraReviewPopup = true,
+	DedicationPopup = true, BoostUnlockedPopup = true,
+};
+if ERA_SCREENS[NAME] then SECONDS = ERA_SECONDS; end
 if SECONDS < 0 then SECONDS = 0; end
 
 -- A screen that will not go away must not write a line every two seconds for

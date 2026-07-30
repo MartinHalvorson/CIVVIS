@@ -967,12 +967,15 @@ local function driveProduction(player, turn, force)
 		-- on production the whole point is to try again: an order that was
 		-- refused once must not lock the city out for the rest of the turn.
 		local fresh = force or (remembered == nil) or (remembered.turn ~= turn);
-		if remembered ~= nil and remembered.turn < turn
-				and (current == nil or current == 0) then
-			refusedByCity[cityId] = refusedByCity[cityId] or {};
-			refusedByCity[cityId][remembered.item] = true;
-			emit("refused", { turn = turn, city = cityId, item = remembered.item });
-		end
+		-- ⚠ NO REFUSAL LIST. It was a workaround for the missing
+		-- PARAM_INSERT_MODE, and with that fixed it does more harm than good:
+		-- it rests on GetCurrentProductionTypeHash reading back reliably, and
+		-- it does not. Measured with the insert mode in place, one run logged
+		-- 12 build orders against 15 refusals — BUILDING_GRANARY refused seven
+		-- times, which a multi-turn building cannot honestly earn. A read that
+		-- returns empty while something is genuinely in production marks every
+		-- candidate refused in turn and empties the ladder, which is the same
+		-- failure it was written to prevent.
 		if (current == nil or current == 0) and fresh then
 			-- Ask for candidates in ladder order and keep going until one
 			-- actually STARTS. `pcall` succeeding means the request did not
@@ -995,8 +998,7 @@ local function driveProduction(player, turn, force)
 			-- `autoclose` events because THIS FILE never loaded. The autoclose
 			-- context lives in a separate file and kept working, which is what
 			-- made it look like a stalled game rather than a broken script.
-			local name, row, why = chooseProduction(city, counts, #cities, turn,
-				refusedByCity[cityId]);
+			local name, row, why = chooseProduction(city, counts, #cities, turn);
 			if row ~= nil then
 				local params = buildParams(row);
 				if params ~= nil then

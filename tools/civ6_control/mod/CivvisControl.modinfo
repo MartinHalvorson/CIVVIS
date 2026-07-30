@@ -56,6 +56,18 @@
 		<ImportFiles id="CivvisControlAutoCloseFiles">
 			<File>CivvisControlAutoClose.lua</File>
 		</ImportFiles>
+		<ReplaceUIScript id="CivvisControlAutoCloseDiplomacyActionView">
+			<Properties>
+				<LuaContext>DiplomacyActionView</LuaContext>
+				<LuaReplace>CivvisControlAutoClose.lua</LuaReplace>
+			</Properties>
+		</ReplaceUIScript>
+		<ReplaceUIScript id="CivvisControlAutoCloseLeaderView">
+			<Properties>
+				<LuaContext>LeaderView</LuaContext>
+				<LuaReplace>CivvisControlAutoClose.lua</LuaReplace>
+			</Properties>
+		</ReplaceUIScript>
 		<ReplaceUIScript id="CivvisControlAutoCloseWorldCongressIntro">
 			<Properties>
 				<LuaContext>WorldCongressIntro</LuaContext>
