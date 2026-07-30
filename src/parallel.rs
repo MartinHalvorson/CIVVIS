@@ -184,6 +184,37 @@ impl WorkPool {
             })
             .collect()
     }
+
+    /// Evaluate owned inputs that are `Send` but do not have to be `Sync`.
+    ///
+    /// A [`crate::game::Game`] deliberately contains worker-local `RefCell`
+    /// caches, so an immutable game cannot be shared between threads. Search
+    /// code can instead clone each branch on the simulation thread and move
+    /// those independent worlds into this method. The small per-input mutex
+    /// exists only to transfer ownership to the worker assigned that stable
+    /// index; jobs never contend for the same input.
+    pub fn map_owned<I, T, F>(&self, inputs: Vec<I>, job: F) -> Vec<T>
+    where
+        I: Send + 'static,
+        T: Send + 'static,
+        F: Fn(I) -> T + Send + Sync + 'static,
+    {
+        let count = inputs.len();
+        let inputs = Arc::new(
+            inputs
+                .into_iter()
+                .map(|input| Mutex::new(Some(input)))
+                .collect::<Vec<_>>(),
+        );
+        self.map(count, move |index| {
+            let input = inputs[index]
+                .lock()
+                .expect("a work-pool input was poisoned")
+                .take()
+                .unwrap_or_else(|| panic!("work-pool input {index} was claimed twice"));
+            job(input)
+        })
+    }
 }
 
 impl Drop for WorkPool {
@@ -417,5 +448,17 @@ mod tests {
         assert_eq!(pool.threads(), 1);
         assert_eq!(pool.map(3, |index| index * 2), [0, 2, 4]);
         assert!(pool.map::<usize, _>(0, |_| unreachable!()).is_empty());
+    }
+
+    #[test]
+    fn owned_inputs_only_need_to_be_send() {
+        use std::cell::Cell;
+
+        let pool = WorkPool::new(3);
+        let inputs = (0..12).map(Cell::new).collect();
+        assert_eq!(
+            pool.map_owned(inputs, |input| input.get() * 3),
+            (0..12).map(|value| value * 3).collect::<Vec<_>>()
+        );
     }
 }

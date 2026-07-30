@@ -22,7 +22,7 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// edit cannot silently change the longitudinal anchor. If an edit reaches
 /// the legacy path, bump the Elo protocol and start a new ledger; if it is
 /// provably gated away, review that fact before updating this guard.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xf556_dc14_f291_e3df;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xce5d_1182_90f6_6e91;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
@@ -471,8 +471,9 @@ fn standings(g: &Game) {
     }
 }
 
-/// How many games to play at once. Defaults to one per core; `--jobs 1`
-/// restores the strictly serial run, which is what timing one game wants.
+/// Available simulation workers. Batch commands assign whole games to them;
+/// `simulate` assigns independent tactical branches within its one game.
+/// Defaults to one per core, while `--jobs 1` is the equivalence baseline.
 fn jobs_arg(args: &[String]) -> usize {
     let requested = arg(args, "--jobs", 0);
     if requested > 0 {
@@ -509,13 +510,14 @@ fn main() {
     match cmd {
         "simulate" => {
             let players = arg(&args, "--players", 4);
+            let jobs = jobs_arg(&args);
             let g0 = Instant::now();
             let mut g = Game::new_with(game_options(
                 &args,
                 players,
                 arg(&args, "--seed", 0) as u64,
             ));
-            let mut ais = AdvancedAi::fleet(&g);
+            let mut ais = AdvancedAi::fleet_parallel(&g, jobs);
             run_game(&mut g, &mut ais);
             println!("[{:.3}s]", g0.elapsed().as_secs_f64());
             standings(&g);
