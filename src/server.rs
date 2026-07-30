@@ -1377,6 +1377,30 @@ impl Shared {
         {
             return Err("the world changed before the restart began".into());
         }
+        let restart_source = request["restart_source"].as_str().unwrap_or("unknown");
+        if restart_source == "finale_countdown" {
+            // A process/seed pair proves which world a callback belongs to,
+            // not that the callback had a reason to replace it. The browser's
+            // unattended human-game timer is the only non-user caller. Make
+            // that intent explicit and verify its terminal condition here so
+            // a bad current-world callback cannot retire a healthy exhibition.
+            //
+            // This exceptional path may take the simulation lock. A genuine
+            // finale has no AI turn in flight, while manual Restart remains
+            // lock-free so it can still escape a long or wedged turn.
+            let session = self.session.lock().unwrap();
+            let human_was_eliminated = !session.params.spectate
+                && session
+                    .game
+                    .players
+                    .get(0)
+                    .is_some_and(|player| !player.alive);
+            if session.game.seed != expected_seed
+                || (session.game.winner.is_none() && !human_was_eliminated)
+            {
+                return Err("automatic restart requires a finished game".into());
+            }
+        }
         let mode = request["mode"]
             .as_str()
             .ok_or_else(|| "mode must be restart or fresh_code".to_string())?;
@@ -1391,10 +1415,15 @@ impl Shared {
         params.spectate = true;
         *self.supervisor_request.lock().unwrap() = Some(json!({
             "mode": mode,
+            "source": restart_source,
             "server_instance": process_identity(),
             "paused": paused,
             "settings": simulation_settings(&params),
         }));
+        eprintln!(
+            "[server] accepted supervised {mode} request from {restart_source} for instance {} seed {expected_seed}",
+            process_identity()
+        );
         // The world on screen is being replaced. Stop stepping it rather than
         // spending the handoff computing turns nobody will ever be shown.
         self.paused.store(true, Ordering::Relaxed);
@@ -6651,7 +6680,8 @@ mod tests {
         assert!(!EMBEDDED_INDEX.contains("id=\"specstep\""));
         assert!(!EMBEDDED_INDEX.contains("id=\"specdirector\""));
         assert!(!EMBEDDED_INDEX.contains("id=\"speccinema\""));
-        assert!(EMBEDDED_INDEX.contains("async function startNewSimulation()"));
+        assert!(EMBEDDED_INDEX
+            .contains("async function startNewSimulation(restartSource = \"manual\")"));
         assert!(EMBEDDED_INDEX
             .contains("const payload = {...newSimulationPayload(), paused: wasPaused}"));
         assert!(EMBEDDED_INDEX.contains("setPace({paused: wasPaused})"));
@@ -6684,9 +6714,11 @@ mod tests {
             "state.server_instance !== finaleCountdownWorld.serverInstance"
         ));
         assert!(EMBEDDED_INDEX.contains("state.seed !== finaleCountdownWorld.seed"));
+        assert!(EMBEDDED_INDEX.contains("startNewSimulation(\"finale_countdown\")"));
         assert!(EMBEDDED_INDEX.contains("const finishedInstance = handoff.finishedInstance;"));
         assert!(EMBEDDED_INDEX.contains("const finishedSeed = handoff.finishedSeed;"));
         assert!(EMBEDDED_INDEX.contains("replace_world: {"));
+        assert!(EMBEDDED_INDEX.contains("restart_source: restartSource"));
         assert!(EMBEDDED_INDEX.contains(
             "server_instance: finishedInstance, seed: finishedSeed"
         ));
@@ -8398,6 +8430,7 @@ mod tests {
         );
         assert_eq!(state["supervisor_request"]["mode"], "fresh_code");
         assert_eq!(state["supervisor_request"]["paused"], false);
+        assert_eq!(state["supervisor_request"]["source"], "unknown");
         assert_eq!(
             state["supervisor_request"]["server_instance"].as_u64(),
             Some(std::process::id() as u64)
@@ -8507,6 +8540,49 @@ mod tests {
                 .load(std::sync::atomic::Ordering::Relaxed),
             seed
         );
+    }
+
+    /// World identity prevents an old result page from replacing a successor,
+    /// but it cannot prove that a callback created for the *current* world had
+    /// any reason to end it. The browser labels its unattended finale timer so
+    /// the server can require an actual terminal session for that one source.
+    #[test]
+    fn an_automatic_finale_cannot_restart_an_active_supervised_game() {
+        let mut params = current();
+        params.spectate = true;
+        params.supervised = true;
+        let shared = shared_for(Session::new(params));
+        let seed = shared
+            .current_seed
+            .load(std::sync::atomic::Ordering::Relaxed);
+        let request = json!({
+            "mode": "restart",
+            "restart_source": "finale_countdown",
+            "paused": false,
+            "replace_world": {
+                "server_instance": std::process::id(),
+                "seed": seed,
+            },
+        });
+
+        assert_eq!(
+            shared
+                .request_supervised_new_game(&request)
+                .expect_err("an active exhibition is not a finale"),
+            "automatic restart requires a finished game"
+        );
+        assert!(shared.pending_new_game_request().is_none());
+        assert!(!shared.paused.load(std::sync::atomic::Ordering::Relaxed));
+
+        shared.session.lock().unwrap().game.winner = Some(0);
+        shared
+            .request_supervised_new_game(&request)
+            .expect("the same timer is valid once its exact game is finished");
+        let pending = shared
+            .pending_new_game_request()
+            .expect("the finished game's restart is queued");
+        assert_eq!(pending["source"], "finale_countdown");
+        assert!(shared.paused.load(std::sync::atomic::Ordering::Relaxed));
     }
 
     #[test]
@@ -9387,8 +9463,13 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("cancelFinaleCountdown(),\n    {capture: true, passive: true});"));
         assert!(EMBEDDED_INDEX.contains("cancelSupervisedSuccessorWatch();\n  cancelFinaleCountdown();"));
         assert!(EMBEDDED_INDEX.contains("clearFinaleCountdown();"));
-        // And reaching zero is the same act as pressing the button.
-        assert!(EMBEDDED_INDEX.contains("cancelFinaleCountdown();\n  startNewSimulation();"));
+        // Reaching zero starts the same flow as the button, but identifies the
+        // unattended caller so the server can require a genuinely finished
+        // session before it accepts a supervised handoff.
+        assert!(EMBEDDED_INDEX.contains(
+            "cancelFinaleCountdown();\n  // Name the only non-human caller."
+        ));
+        assert!(EMBEDDED_INDEX.contains("startNewSimulation(\"finale_countdown\");"));
     }
 
     /// Auto-play used to be one button that ran whichever agent the fleet
