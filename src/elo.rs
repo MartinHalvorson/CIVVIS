@@ -215,6 +215,11 @@ pub struct TournamentProfile {
     pub protocol_version: u32,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rating_anchor: Option<String>,
+    /// Ordered controller roles in the tournament. Immutable player identities
+    /// may version between runs, but changing a role changes the multiplayer
+    /// environment and therefore requires a different ledger.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub controller_roster: Vec<String>,
     pub players_per_game: usize,
     pub width: i32,
     pub height: i32,
@@ -233,6 +238,7 @@ impl TournamentProfile {
         Self {
             protocol_version: ELO_PROTOCOL_VERSION,
             rating_anchor: cfg.rating_anchor.clone(),
+            controller_roster: cfg.controller_roster.clone(),
             players_per_game: cfg.players_per_game,
             width: cfg.width,
             height: cfg.height,
@@ -253,6 +259,15 @@ impl TournamentProfile {
                 .rating_anchor
                 .as_ref()
                 .is_none_or(|anchor| !anchor.trim().is_empty())
+            && self.controller_roster.iter().all(|name| !name.trim().is_empty())
+            && (self.controller_roster.is_empty()
+                || (self.controller_roster.len() >= self.players_per_game
+                    && self
+                        .controller_roster
+                        .iter()
+                        .collect::<BTreeSet<_>>()
+                        .len()
+                        == self.controller_roster.len()))
             && (2..=100).contains(&self.players_per_game)
             && self.width >= 8
             && self.height >= 8
@@ -273,8 +288,13 @@ impl TournamentProfile {
             self.mods.join("+")
         };
         let anchor = self.rating_anchor.as_deref().unwrap_or("floating");
+        let controllers = if self.controller_roster.is_empty() {
+            "unbound".to_string()
+        } else {
+            self.controller_roster.join(",")
+        };
         format!(
-            "protocol v{}, {}p {}x{}, {} turns, {} city-states, {}, {}/{}/{}, mods={}, K={}, anchor={}",
+            "protocol v{}, {}p {}x{}, {} turns, {} city-states, {}, {}/{}/{}, mods={}, K={}, anchor={}, controllers={}",
             self.protocol_version,
             self.players_per_game,
             self.width,
@@ -288,6 +308,7 @@ impl TournamentProfile {
             mods,
             self.k,
             anchor,
+            controllers,
         )
     }
 }
@@ -2150,6 +2171,10 @@ pub struct TourneyCfg {
     /// Immutable player identity that pins the longitudinal rating scale.
     /// `None` leaves an in-memory or one-off pool floating around its base.
     pub rating_anchor: Option<String>,
+    /// Ordered controller roles behind the versioned rating identities.
+    /// Persistent CLI tournaments require one role per entrant; in-memory
+    /// library experiments may leave this empty.
+    pub controller_roster: Vec<String>,
     pub verbose: bool,
     /// How many games to play at once. Results and rating checkpoints remain
     /// in game order, so concurrency does not change the final table.
@@ -2178,6 +2203,7 @@ impl Default for TourneyCfg {
             seed: 0,
             k: 24.0,
             rating_anchor: None,
+            controller_roster: Vec::new(),
             verbose: true,
             jobs: crate::parallel::default_jobs(),
         }
@@ -2479,8 +2505,10 @@ fn tournament_event_id(
 }
 
 /// Run a tournament against the latest shared ledger and atomically checkpoint
-/// every completed game. The short per-game lock prevents concurrent agents
-/// from overwriting one another's updates.
+/// every completed game. `cfg.controller_roster` must name the ordered,
+/// immutable controller role behind each versioned identity in `names`. The
+/// short per-game lock prevents concurrent agents from overwriting one
+/// another's updates.
 pub fn run_persistent_tournament<F>(
     names: &[String],
     make: F,
@@ -2513,6 +2541,16 @@ where
                 format!("rating anchor {anchor:?} must be one of the tournament entrants"),
             ));
         }
+    }
+    if cfg.controller_roster.len() != names.len() {
+        return Err(io::Error::new(
+            ErrorKind::InvalidInput,
+            format!(
+                "persistent Elo needs one ordered controller role per entrant ({} identities, {} controllers)",
+                names.len(),
+                cfg.controller_roster.len(),
+            ),
+        ));
     }
     let path = path.as_ref();
     let profile = TournamentProfile::from_cfg(cfg);
@@ -3150,6 +3188,15 @@ mod tests {
         assert_eq!(error.kind(), std::io::ErrorKind::InvalidInput);
         assert!(error.to_string().contains("rating profile mismatch"));
         assert_eq!(pool.profile, Some(original));
+
+        let mut controller_changed = pool.profile.clone().unwrap();
+        controller_changed.controller_roster =
+            ["advanced", "advanced_v1", "basic", "strategic"]
+                .into_iter()
+                .map(str::to_string)
+                .collect();
+        let error = pool.bind_profile(controller_changed).unwrap_err();
+        assert!(error.to_string().contains("rating profile mismatch"));
     }
 
     #[test]
@@ -3201,6 +3248,17 @@ mod tests {
         )
         .unwrap_err();
         assert!(error.to_string().contains("must be one of the tournament entrants"));
+
+        let error = super::run_persistent_tournament(
+            &distinct,
+            make,
+            &TourneyCfg::default(),
+            "target/elo-test-must-not-exist.json",
+        )
+        .unwrap_err();
+        assert!(error
+            .to_string()
+            .contains("one ordered controller role per entrant"));
     }
 
     #[test]
@@ -3459,6 +3517,10 @@ mod tests {
         let pool = EloPool::load(DEFAULT_RATINGS_PATH).unwrap();
         let expected_cfg = TourneyCfg {
             rating_anchor: Some("advanced_v1".to_string()),
+            controller_roster: ["advanced", "advanced_v1", "basic", "random"]
+                .into_iter()
+                .map(str::to_string)
+                .collect(),
             ..TourneyCfg::default()
         };
         assert_eq!(pool.base_rating, ELO_BASE_RATING);
@@ -3486,6 +3548,16 @@ mod tests {
             ]
         );
         assert_eq!(pool.ratings.len(), 16);
+
+        let direct = direct_anchor_performance(&pool, "advanced_v1");
+        let advanced = direct
+            .iter()
+            .find(|(player, _, _, _, _, _)| player == "advanced-20260730")
+            .unwrap();
+        assert_eq!((advanced.2, advanced.3), (31.0, 40));
+        assert!((advanced.1 - 1708.2).abs() < 0.1);
+        assert!((100.0 * advanced.4 - 62.5).abs() < 0.1);
+        assert!((100.0 * advanced.5 - 87.7).abs() < 0.1);
     }
 
     #[test]

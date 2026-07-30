@@ -5910,8 +5910,9 @@ Schema 3 now makes the experiment explicit and replayable:
 - the primary row is one player identity across every civilization draw;
 - exact player/leader/civilization rows are diagnostics and inherit that
   player's current prior;
-- a protocol records table size, dimensions, full turn limit, city-states,
-  speed, map script/shape/poles, active mods, K, and a fixed rating anchor;
+- a protocol records the ordered controller roles, table size, dimensions,
+  full turn limit, city-states, speed, map script/shape/poles, active mods, K,
+  and a fixed rating anchor;
 - mutable controllers enter under dated identities while frozen
   `advanced_v1` remains the connected control;
 - every scored table is retained under a deterministic event id, sorted into
@@ -5920,8 +5921,8 @@ Schema 3 now makes the experiment explicit and replayable:
   error, concurrent checkpoint arrival cannot change the final table, and
   keyed events cannot mix K values or unkeyed history;
 - persistent tournaments reject duplicate identities, effective-controller
-  aliases, degraded learned entrants, cloned seats, malformed numeric flags,
-  and any profile mismatch.
+  aliases, degraded learned entrants, cloned seats, a missing controller role,
+  malformed numeric flags, and any profile mismatch.
 
 The anchor is literal rather than documentary. After every Elo update all rows
 move by the same translation that returns `advanced_v1` to 1500. Pairwise gaps
@@ -5939,8 +5940,9 @@ civvis tournament --standings
 ```
 
 Profile: 4 players, 60×38, Standard 500 turns, six city-states, Pangaea,
-flat/poles, stock rules, K=24. Every entrant drew each of Rome, Greece, Egypt,
-and China ten times.
+flat/poles, stock rules, K=24; ordered controller roles are `advanced`,
+`advanced_v1`, `basic`, `random`. Every entrant drew each of Rome, Greece,
+Egypt, and China ten times.
 
 | immutable player | anchored Elo | direct Elo vs anchor | games | wins |
 |---|---:|---:|---:|---:|

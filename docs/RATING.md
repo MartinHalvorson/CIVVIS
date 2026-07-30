@@ -2,8 +2,9 @@
 
 `civvis rating` is the measurement layer under the strategy league. It exists
 because a rating that nobody audits is a number, not a measurement — and when
-the recorded exhibition ratings were audited, they turned out to carry no
-information at all.
+one confounded historical exhibition slice was audited, its ratings carried no
+information at all. Current results are profile-dependent rather than a blanket
+failure; the corrected replay and its seat-count breakdown appear below.
 
 ```bash
 civvis rating --dir league/                  # rate a history, print the table

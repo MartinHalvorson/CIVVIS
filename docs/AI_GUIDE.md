@@ -351,9 +351,13 @@ same effective controller and refuses a learned entrant that silently degraded
 because a definitional artifact is absent.
 
 Schema 3 binds a ledger to the complete rating profile: an explicit experiment
-protocol version, table size, dimensions, turn limit, city-state count, speed,
-map script/shape/poles, active mods, and K. A later run with any different field
-is rejected with a request to use another `--ratings` path. Bump the protocol
+protocol version, ordered controller roster, table size, dimensions, turn
+limit, city-state count, speed, map script/shape/poles, active mods, and K. A
+later run with any different field is rejected with a request to use another
+`--ratings` path. Versioned player identities may change while their ordered
+controller roles remain `advanced, advanced_v1, basic, random`; this is what
+lets a new challenger join without quietly changing its multiplayer controls.
+Bump the protocol
 when engine rules, implicit setup defaults, or scoring semantics change enough
 to define a different contest. The shipped ledger is a canonical 40-game,
 1500-centred protocol-v1 baseline bound to the CLI's stock 4-player Standard

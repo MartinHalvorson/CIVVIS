@@ -2,22 +2,20 @@
 //!
 //! The league rates strategies with Glicko-2 over a full pairwise
 //! decomposition of each game's finishing order (`league.rs`). Measured
-//! against the exhibition's own match history that system forecasts no
-//! better than a coin flip, for two reasons this module fixes:
+//! against available exhibition history, both systems extract only modest and
+//! profile-dependent information. This module tests two candidate refinements
+//! rather than assuming either is a universal replacement:
 //!
-//! 1. **Most of a finishing order is noise.** In a six-player game the
-//!    winner is decided by play; ranks 4th through 6th are decided by an
-//!    engine score that barely separates strategies. Weighting all fifteen
-//!    pairwise comparisons equally buries the one informative comparison
-//!    under fourteen coin flips. [`fit_stage_weights`] measures how much
-//!    information each placement stage actually carries, and the model
-//!    weights the stages accordingly.
-//! 2. **A seat is not just a strategy.** Which civilization a seat drew
-//!    moves the result at least as much as which strategy plays it, and
-//!    seating that assigns civs by rating confounds the two permanently.
-//!    Here a seat's strength is `skill[player] + edge[civ]`, so a rating
-//!    means "how strong is this player, net of what it drew", and the civ
-//!    edge is a shared quantity every game helps estimate.
+//! 1. **Not every placement stage is equally informative.** In a six-player
+//!    game the winner is decided by play, while lower ranks can be separated
+//!    only by a noisy engine score. [`fit_stage_weights`] measures how much
+//!    forecast information each stage carries instead of automatically
+//!    weighting all fifteen pairwise comparisons alike.
+//! 2. **A seat is not just a strategy.** Civilization can move a result, and
+//!    seating that assigns civilizations by rating can confound the two.
+//!    Here a seat's strength is `skill[player] + edge[civ]`, so a rating means
+//!    "how strong is this player, net of what it drew", and the civ edge is a
+//!    shared quantity every game helps estimate.
 //!
 //! Both effects are Gaussian beliefs updated by an exact Kalman step
 //! against a Laplace approximation of the Plackett-Luce stage likelihood,
@@ -27,8 +25,10 @@
 //! separate per-civ rating table cannot produce.
 //!
 //! Nothing here asks to be believed: [`backtest`] replays a match history
-//! through this model and the systems it replaces, scoring every forecast
-//! before the result is revealed.
+//! through this candidate and the deployed baselines, scoring every forecast
+//! before the result is revealed. On the currently available 822-game replay,
+//! Glicko is better at four seats, the contextual model is better at six and
+//! eight, and the mixed difference is small; see `docs/RATING.md`.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;

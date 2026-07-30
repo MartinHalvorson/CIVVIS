@@ -4,6 +4,12 @@
   "profile": {
     "protocol_version": 1,
     "rating_anchor": "advanced_v1",
+    "controller_roster": [
+      "advanced",
+      "advanced_v1",
+      "basic",
+      "random"
+    ],
     "players_per_game": 4,
     "width": 60,
     "height": 38,

@@ -927,6 +927,10 @@ fn main() {
                 .iter()
                 .map(|entrant| entrant.identity.clone())
                 .collect();
+            let controller_roster: Vec<String> = entrants
+                .iter()
+                .map(|entrant| entrant.controller.clone())
+                .collect();
             let controllers: BTreeMap<String, String> = entrants
                 .into_iter()
                 .map(|entrant| (entrant.identity, entrant.controller))
@@ -1051,6 +1055,7 @@ fn main() {
                 seed: seed as u64,
                 k,
                 rating_anchor,
+                controller_roster,
                 verbose: !args.iter().any(|a| a == "--quiet"),
                 jobs: if jobs == 0 {
                     civvis::parallel::default_jobs()

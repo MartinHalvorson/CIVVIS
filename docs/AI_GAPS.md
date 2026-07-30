@@ -253,8 +253,10 @@ controller has no recorded completed ladder attempt in `CIV6_LADDER.md`.
 
 The fixed-profile, fixed-anchor tournament ledger now gives internal versions a
 replayable longitudinal baseline: compare the order-independent direct Elo and
-its pair-score interval against `advanced_v1` at the same game count. That fixes
-an internal measurement problem; it does not supply the missing external rung.
+its pair-score interval against `advanced_v1` at the same game count and under
+the profile-bound `advanced / advanced_v1 / basic / random` controller roles.
+That fixes an internal measurement problem; it does not supply the missing
+external rung.
 
 Claims such as “world-class,” “superhuman,” or “three times stronger” are not
 supported. The defensible form is always: agent A beat agent B, on a named
