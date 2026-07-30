@@ -1691,6 +1691,110 @@ local function chooseDedication(player, pid)
 	return taken > 0 and ("dedication:" .. table.concat(names, ",")) or nil;
 end
 
+-- Appoint a governor, then post them to a city that has none.
+--
+-- ★ THIS IS THE ANSWER TO LOSING A CITY WITHOUT A WAR. Run
+-- settler-20260730T023440Z went from three cities to two at turn 96 with
+-- `war = null` on every turn — nobody had declared war on us. A city lost with no
+-- war is a LOYALTY flip, and every governor in the shipped `Governors` table
+-- carries `IdentityPressure: 8`: establishing any one of them is +8 loyalty a turn
+-- in that city, which is the strongest single counter in the game. The agent
+-- declined the prompt (24 occurrences measured), so it never had one.
+--
+-- Preference is from the database, not taste. THE_BUILDER is Magnus — production
+-- and cheaper settlers, which is the expansion axis CIVVIS measures as its
+-- biggest lever — and THE_DEFENDER carries `TransitionStrength: 150`, the highest
+-- of the base governors, so it establishes hardest where loyalty is contested.
+-- The two `AssignCityState` governors are skipped because they cannot be posted
+-- to one of our own cities, and the Secret Societies ones do not exist in a
+-- standard game.
+local GOVERNOR_ORDER = {
+	"GOVERNOR_THE_BUILDER",
+	"GOVERNOR_THE_DEFENDER",
+	"GOVERNOR_THE_EDUCATOR",
+	"GOVERNOR_THE_MERCHANT",
+	"GOVERNOR_THE_RESOURCE_MANAGER",
+	"GOVERNOR_THE_CARDINAL",
+};
+
+-- Which city each appointed governor was posted to, kept across turns. The engine
+-- has query methods for this but their names differ between builds, and guessing
+-- a Civilization VI API has cost this project three failed fixes today, so the
+-- assignment we made is the assignment we remember.
+local governorPost = {};
+
+local function chooseGovernor(player, pid)
+	-- ⚠ Enum members first. `params[nil] = x` throws "table index is nil".
+	local govParam = try(function() return PlayerOperations.PARAM_GOVERNOR_TYPE; end);
+	local cityParam = try(function() return PlayerOperations.PARAM_CITY_DEST; end);
+	local appointOp = try(function() return PlayerOperations.APPOINT_GOVERNOR; end);
+	local assignOp = try(function() return PlayerOperations.ASSIGN_GOVERNOR; end);
+	if govParam == nil or appointOp == nil then return nil; end
+
+	local governors = try(function() return player:GetGovernors(); end);
+	if governors == nil then return nil; end
+
+	-- 1. Spend a title if one is going spare.
+	local appointed = nil;
+	if try(function() return governors:CanAppoint(); end, false) then
+		for _, wanted in ipairs(GOVERNOR_ORDER) do
+			local row = GameInfo.Governors[wanted];
+			if row ~= nil then
+				local held = try(function()
+					return governors:HasGovernor(row.Hash);
+				end, false);
+				local possible = try(function()
+					return governors:CanEverAppointGovernor(row.Hash);
+				end, false);
+				if not held and possible then
+					local params = {};
+					params[govParam] = row.Hash;
+					local ok = pcall(function()
+						UI.RequestPlayerOperation(pid, appointOp, params);
+					end);
+					if ok then appointed = wanted; break; end
+				end
+			end
+		end
+	end
+
+	-- 2. Post anyone we hold to a city with nobody in it. A governor sitting
+	-- unassigned grants nothing at all, which is the same as not having one.
+	local posted = nil;
+	if assignOp ~= nil and cityParam ~= nil then
+		local taken = {};
+		for _, where in pairs(governorPost) do taken[where] = true; end
+		local target = nil;
+		eachCity(player, function(city)
+			if target ~= nil then return; end
+			local id = try(function() return city:GetID(); end, -1);
+			if id >= 0 and not taken[id] then target = id; end
+		end);
+		if target ~= nil then
+			for _, wanted in ipairs(GOVERNOR_ORDER) do
+				local row = GameInfo.Governors[wanted];
+				if row ~= nil and governorPost[wanted] == nil
+						and try(function() return governors:HasGovernor(row.Hash); end, false) then
+					local params = {};
+					params[govParam] = row.Hash;
+					params[cityParam] = target;
+					local ok = pcall(function()
+						UI.RequestPlayerOperation(pid, assignOp, params);
+					end);
+					if ok then
+						governorPost[wanted] = target;
+						posted = wanted;
+						break;
+					end
+				end
+			end
+		end
+	end
+
+	if appointed == nil and posted == nil then return nil; end
+	return "governor:" .. tostring(appointed or "-") .. "/" .. tostring(posted or "-");
+end
+
 local function chooseCivic(player, pid)
 	local culture = try(function() return player:GetCulture(); end);
 	if culture == nil then return nil; end
@@ -1879,7 +1983,6 @@ local SOFT_BLOCKERS = {
 	-- now calls `chooseDedication`. Kept as a comment because "listed here" and
 	-- "answered" are the two states this table distinguishes, and moving one out
 	-- is the interesting event.
-	ENDTURN_BLOCKING_GOVERNOR_APPOINTMENT = true,
 	ENDTURN_BLOCKING_GOVERNOR_PROMOTION = true,
 	ENDTURN_BLOCKING_GOVERNOR_IDLE = true,
 	ENDTURN_BLOCKING_GOVERNOR_OPPORTUNITY = true,
@@ -1911,6 +2014,9 @@ local function answerBlocker(player, pid, blocker, turn)
 	elseif name == "ENDTURN_BLOCKING_PRODUCTION" then
 		if not spend("production", cfg.MaxProductionPasses or 4) then return nil; end
 		return driveProduction(player, turn, true) > 0 and "production" or nil;
+	elseif name == "ENDTURN_BLOCKING_GOVERNOR_APPOINTMENT" then
+		if not spend("governor", cfg.MaxGovernorPasses or 2) then return nil; end
+		return chooseGovernor(player, pid);
 	elseif name == "ENDTURN_BLOCKING_COMMEMORATION_AVAILABLE" then
 		if not spend("dedication", cfg.MaxDedicationPasses or 2) then return nil; end
 		return chooseDedication(player, pid);
