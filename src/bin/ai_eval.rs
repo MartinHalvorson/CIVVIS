@@ -732,6 +732,32 @@ fn main() {
     // loaded. Say what each entrant resolved to before playing anything, so
     // a result is never filed under an agent that was never in the game.
     let artifact_dir = text(&args, "--artifact-dir", ARTIFACT_DIR);
+    // `builtin_provenance`'s contract is "resolve what `builtin_ai` will
+    // actually construct from `dir`" -- but `builtin_ai(name, seed)` takes no
+    // directory. Every one of its arms resolves the constant `ARTIFACT_DIR`,
+    // and the agent constructors below it (`StrategicAi::with_weights`,
+    // `PolicyAi::with_weights`, `ProductionSearchAi::with_weights`) each load
+    // their own net from that same constant. So pointing this flag somewhere
+    // else moved the *report* and never the run: it would print a net found in
+    // one directory and then play the agent that read another.
+    //
+    // Reporting a provenance the run does not have is the single failure this
+    // whole reporting path exists to prevent, so refuse instead of printing it.
+    // Threading a directory into construction is the general fix and is a
+    // separate change: it is ~70 call sites inside `elo::builtin_ai`, in a file
+    // three open PRs already claim.
+    if artifact_dir != ARTIFACT_DIR {
+        eprintln!(
+            "--artifact-dir {artifact_dir}: unsupported. Agent construction resolves \
+             `{ARTIFACT_DIR}` and ignores this flag, so the provenance line would \
+             describe a directory this run never reads."
+        );
+        eprintln!(
+            "to evaluate a different artifact, run from a working directory that has \
+             it: `{ARTIFACT_DIR}/valuenet.json` or `data/{ARTIFACT_DIR}/valuenet.json`"
+        );
+        std::process::exit(2);
+    }
     let provenance = builtin_provenances(&[a, b], &artifact_dir);
     for entry in &provenance {
         println!("{}", entry.line());

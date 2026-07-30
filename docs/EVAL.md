@@ -680,11 +680,24 @@ warning: policy and advanced both play as advanced; this run measures
 advanced against itself and says nothing about either name
 ```
 
-`--require-artifacts` exits 3 instead of recording an untrained result, and
-`--artifact-dir` points the check at a non-default champion directory. The
+`--require-artifacts` exits 3 instead of recording an untrained result. The
 collapse warning is the load-bearing half: a missing artifact is only a
 problem when it makes two entrants the same agent, and that is precisely
 the case a win rate cannot show you.
+
+⚠ **`--artifact-dir` used to point the check at a non-default champion
+directory, and that is exactly what was wrong with it.** It moved the *report*
+and never the run: `builtin_provenance(name, dir)` honours the directory, but
+`builtin_ai(name, seed)` takes **no directory at all** — every arm resolves the
+`ARTIFACT_DIR` constant, and `StrategicAi`/`PolicyAi`/`ProductionSearchAi` each
+load their own net from that same constant. So the flag could print a net found
+in one directory and then play the agent that read another, which is the one
+failure this whole reporting path exists to prevent. `ai_eval` now exits **2**
+with the reason rather than printing a provenance the run does not have. To
+evaluate a different artifact, run from a working directory that holds it —
+`evolved/valuenet.json` or `data/evolved/valuenet.json`, both of which
+`ValueNet::load` now resolves. Threading a directory into construction is the
+general fix and is ~70 call sites inside `elo::builtin_ai`.
 
 ## 2026-07-26 — a duel never reaches the macro search
 
@@ -2541,6 +2554,25 @@ in-progress run still overrides the snapshot and a genome can still be swapped
 without rebuilding. The built-in answers only for the canonical `evolved`
 directory, because `--artifact-dir` asks about *that* directory and
 `--require-artifacts` depends on the answer being honest.
+
+⚠ **That rationale survives; the flag it names does not.** `--artifact-dir` is
+now refused for anything but the default (see the note above), so what keeps the
+built-in honest is `--require-artifacts` alone. Restricting the embedded tier to
+the canonical directory is still right, and for the reason given — an explicit
+question about some other directory must not be answered with a built-in — it is
+just no longer askable through this flag.
+
+★ And the same defect was still live one artifact over. `ValueNet::load` had
+none of this resolution: a single cwd-relative read, no `data/` tier, no
+built-in, while nothing was tracked at `evolved/valuenet.json` anywhere in the
+tree. So the learned evaluator resolved to `None` in every process on every
+machine, and `strategic` has never once played as anything but
+`strategic_score`. It now resolves local → `data/<dir>`, with a
+present-but-unloadable artifact **stopping** resolution rather than falling
+through to a net the experimenter did not place. Third instance of this class,
+after the genome here and the league roster in #490 — which is the sharpest
+available argument for reading the paragraph below as a standing rule rather
+than a war story.
 
 **The general shape, which has now cost this session twice:** a number true in
 one context read as true in another. The genome was present in the repository
@@ -5807,7 +5839,6 @@ seeds) and this one (+0.50 cities, null).
 That is worth stating plainly for whoever picks this up: **the expansion gap is
 real and is not currently reachable by changing a decision.** Anything further
 here should either change what a settler costs, or stop and go elsewhere.
-||||||| 2dbf641
 
 ## 2026-07-29 — ★★★★ what a searching turn costs, and why the first answer was wrong
 
