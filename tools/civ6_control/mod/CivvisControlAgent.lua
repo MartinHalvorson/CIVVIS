@@ -4163,8 +4163,28 @@ local function applyOrder(player, pid, row, turn)
 			if row2 ~= nil then
 				params[UnitOperationTypes.PARAM_IMPROVEMENT_TYPE] = row2.Hash;
 			end
-			return operate(unit, OP["UNITOPERATION_BUILD_IMPROVEMENT"], params),
-			       wanted or "IMPROVE";
+			if operate(unit, OP["UNITOPERATION_BUILD_IMPROVEMENT"], params) then
+				return true, wanted or "IMPROVE";
+			end
+			-- ★★★★ FALL BACK TO WHATEVER THIS TILE ALLOWS.
+			--
+			-- CIVVIS names the improvement from ITS terrain model, and the two rulesets
+			-- do not agree tile for tile — measured on run civvis-20260730T135149Z: 34
+			-- refused improvements by turn 42, **22 of them `IMPROVEMENT_MINE`**. A
+			-- refused improvement means the tile stays bare, the mirror keeps reporting
+			-- an undeveloped empire, and CIVVIS orders another builder: seven builders
+			-- alive against an army of one.
+			--
+			-- The DECISION worth keeping is "improve this tile" — which tile is CIVVIS's
+			-- call. Which improvement is legal there is the game's call, and dropping the
+			-- name asks it exactly that, the same as the shipped build button.
+			if row2 ~= nil then
+				params[UnitOperationTypes.PARAM_IMPROVEMENT_TYPE] = nil;
+				if operate(unit, OP["UNITOPERATION_BUILD_IMPROVEMENT"], params) then
+					return true, "IMPROVE_ANY";
+				end
+			end
+			return false, wanted or "IMPROVE";
 		end
 		if verb == "UPGRADE" then
 			return commandUnit(unit, CMD["UNITCOMMAND_UPGRADE"], {}), verb;
