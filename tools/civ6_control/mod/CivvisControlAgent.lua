@@ -401,6 +401,9 @@ local function countUnits(player)
 		elseif name == "UNIT_SCOUT" then
 			counts.scout = counts.scout + 1;
 		elseif row ~= nil and (row.Combat or 0) > 0 then
+		-- Cheaper than losing the unit and rebuilding it a tier late.
+		local better = upgradeUnit(unit);
+		if better then return better; end
 			counts.military = counts.military + 1;
 		end
 	end);
@@ -450,11 +453,31 @@ local function operate(unit, hash, params)
 	end);
 end
 
+-- Same discipline as `operate`: ask whether the command can start before
+-- claiming it was given. `pcall` only reports that the call did not raise.
 local function commandUnit(unit, hash, params)
 	if hash == nil then return false; end
-	return pcall(function()
-		UnitManager.RequestCommand(unit, hash, params or {});
+	params = params or {};
+	local ok, can = pcall(function()
+		return UnitManager.CanStartCommand(unit, hash, nil, params);
 	end);
+	if not (ok and can == true) then return false; end
+	return pcall(function()
+		UnitManager.RequestCommand(unit, hash, params);
+	end);
+end
+
+-- Spend gold to bring a unit up to date before spending its life.
+--
+-- ⚠ The agent fielded WARRIORs and SPEARMEN in 1100 AD against swordsmen and
+-- archers — military strength 78 against 357, a 4.5:1 deficit — and the combat
+-- log read as a rout. The army ladder builds ancient units and nothing ever
+-- upgraded them, while the treasury sat on 478 unspent Gold. UNITCOMMAND_UPGRADE
+-- is in this build's resolved command list, so this is available and was simply
+-- never attempted.
+local function upgradeUnit(unit)
+	if commandUnit(unit, CMD["UNITCOMMAND_UPGRADE"]) then return "upgrade"; end
+	return nil;
 end
 
 -- Try each order in turn and take the first the engine accepts. Asking "can
