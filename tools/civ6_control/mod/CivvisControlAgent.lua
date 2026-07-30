@@ -1669,10 +1669,47 @@ local function findWarTarget(player, pid)
 	local hx = home and try(function() return home:GetX(); end, 0) or 0;
 	local hy = home and try(function() return home:GetY(); end, 0) or 0;
 
+	-- ★★★★★ WHO WE FIGHT, NOT JUST WHERE. This used to score candidates purely on
+	-- `-distance + (capital and 12 or 0)` — proximity and capital-ness, with no notion
+	-- of whether the target can be BEATEN. So it would pick the strongest civ on the
+	-- map, and measured on the deepest run in project history it did exactly that:
+	--
+	--     war declared t88, held to t198 against player 3
+	--     their visible cities 1 -> 10, they ELIMINATED another civ mid-war
+	--     final score 203 (us) against 1066 (them)
+	--
+	-- Every mechanism on our side worked through all of it — cities held, army 10-18,
+	-- assault running for 110 turns — and the target grew straight through the siege.
+	-- No amount of siege tuning wins that fight, so target choice is upstream of all
+	-- of it.
+	--
+	-- The term is a RATIO of scores, not a difference: score scales through the game,
+	-- so "twice as strong" means the same thing at turn 50 and turn 200 while "300
+	-- ahead" does not. A rival at twice our score is charged `StrengthWeight`, which
+	-- at 20 is worth twenty tiles of walking; a rival at half our score is credited
+	-- the same, so the weakest reachable enemy wins ties against a nearer strong one.
+	-- Bounded either way: the credit cannot exceed StrengthWeight, and distance still
+	-- rules out an unreachable weakling.
+	--
+	-- ⚠ Uses only what the seat can see: `HasMet` already gates the loop, and
+	-- `GetScore` is what the HUD shows for a met rival — the same accessor the state
+	-- export and `rivalBest` already use.
+	--
+	-- ⚠ Falls back to the old proximity-only behaviour when either score is
+	-- unavailable (-1), rather than letting a failed accessor silently distort the
+	-- choice.
+	local ourScore = try(function() return player:GetScore(); end, -1) or -1;
 	local best, bestScore;
 	for _, otherId in ipairs(try(function() return PlayerManager.GetAliveMajorIDs(); end, {})) do
 		if otherId ~= pid and try(function() return diplomacy:HasMet(otherId); end, false) then
 			local other = Players[otherId];
+			-- Once per rival, not once per city: this is a per-turn scan already.
+			local theirScore = try(function() return other:GetScore(); end, -1) or -1;
+			local strength = 0;
+			if ourScore > 0 and theirScore >= 0 then
+				strength = (cfg.StrengthWeight or 20)
+					* ((theirScore / ourScore) - 1.0);
+			end
 			pcall(function()
 				for _, city in other:GetCities():Members() do
 					local cx = city:GetX();
@@ -1687,9 +1724,11 @@ local function findWarTarget(player, pid)
 					-- A capital is worth walking further for: taking every
 					-- original capital is what actually ends the game.
 					local capital = try(function() return city:IsCapital(); end, false);
-					local score = -plotDistance(hx, hy, cx, cy) + (capital and 12 or 0);
+					local score = -plotDistance(hx, hy, cx, cy) + (capital and 12 or 0)
+						- strength;
 					if seen and (bestScore == nil or score > bestScore) then
-						best = { player = otherId, x = cx, y = cy, capital = capital };
+						best = { player = otherId, x = cx, y = cy, capital = capital,
+						         their_score = theirScore, our_score = ourScore };
 						bestScore = score;
 					end
 				end
@@ -3470,6 +3509,13 @@ local function playTurn(player, pid, turn)
 		probe_kind = probeKind,
 		war_blocked = warBlock,
 		war_target_player = warTarget and warTarget.player or nil,
+		-- ⚠ Whether the strength term actually CHANGED the choice, not merely that it
+		-- ran. `target_ratio` above 1 means we are still attacking somebody stronger
+		-- than us — which is the failure this term exists to prevent, and it would be
+		-- invisible if only the target id were logged.
+		target_their_score = warTarget and warTarget.their_score or nil,
+		target_ratio = (warTarget and warTarget.our_score and warTarget.our_score > 0)
+			and (warTarget.their_score / warTarget.our_score) or nil,
 		flipping = loyaltyWatch.flipping,
 		worst_loyalty = loyaltyWatch.worst,
 		worst_loyalty_rate = loyaltyWatch.worst_rate,

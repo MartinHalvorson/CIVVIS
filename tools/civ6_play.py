@@ -120,6 +120,12 @@ def build_config(args: argparse.Namespace) -> dict:
         # arithmetic starves the army, which is why war is declared in only 19 of
         # 47 runs and no capital has ever been taken.
         "PlanNearWindow": args.plan_near_window,
+        # How much a rival being STRONGER than us costs in the war-target score,
+        # expressed in tiles of walking per unit of score ratio. `findWarTarget` used
+        # to weigh only proximity, so it declared on the runaway leader: the deepest
+        # run held a war from turn 88 to 198 against a civ that grew 1 -> 10 visible
+        # cities, eliminated another civ mid-war, and finished 1066 to our 203.
+        "StrengthWeight": args.strength_weight,
         # ★ Maximum tiles from our NEAREST existing city that a new city may be
         # founded. Loyalty support comes from our own nearby population, so beyond
         # this the city cannot be held at any price: run 071729Z founded (42,17)
@@ -836,6 +842,7 @@ def main(argv: list[str] | None = None) -> int:
     # 1 = the shipped behaviour (always CIVVIS's top-ranked unoccupied site),
     # which is what makes it a usable control arm for the near-window A/B.
     ap.add_argument("--plan-near-window", type=int, default=6)
+    ap.add_argument("--strength-weight", type=int, default=20)
     ap.add_argument("--max-empire-distance", type=int, default=6)
     ap.add_argument("--garrison-per-city", type=int, default=2)
     ap.add_argument("--export-state", action="store_true", default=False)
