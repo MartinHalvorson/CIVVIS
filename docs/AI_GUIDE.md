@@ -417,6 +417,10 @@ An interval touching 0% or 100% correctly has an infinite Elo endpoint. Use
 this direct-anchor result at a fixed game count as the longitudinal baseline;
 use the incremental K-factor Elo as the continuously updated
 matchmaking/leaderboard state.
+On a migrated schema-1/2 pool, the heading explicitly says “post-migration” and
+“retained raw games only”: that direct slice is valid for those new games, but
+it excludes the unreconstructable aggregate prior and is not the standardized
+full-history baseline.
 
 Entrants use a seeded round-robin seat schedule instead of independent random
 sampling. Across one complete cycle, every fixed civilization seat sees every

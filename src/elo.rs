@@ -2625,8 +2625,13 @@ pub fn leaderboard(pool: &EloPool) -> String {
                 .then_with(|| left.0.cmp(&right.0))
         });
         if !performance.is_empty() {
+            let evidence = if pool.history_complete {
+                "Standardized direct performance"
+            } else {
+                "Post-migration direct performance (retained raw games only; legacy prior excluded)"
+            };
             out.push_str(&format!(
-                "\nStandardized direct performance Elo vs {anchor} (order-independent Jeffreys point; 95% Wilson interval transformed to Elo):\n"
+                "\n{evidence} Elo vs {anchor} (order-independent Jeffreys point; 95% Wilson interval transformed to Elo):\n"
             ));
             for (player, elo, score, games, low, high) in performance {
                 let elo_low = performance_elo(pool.base_rating, low);
@@ -2750,10 +2755,10 @@ fn direct_anchor_performance(
 mod tests {
     use super::{
         builtin_ai, builtin_provenance, collapsed_entrants, direct_anchor_performance, expected,
-        league_generalist, performance_elo, scheduled_seats, seat_schedule, wilson_interval,
-        win_shares, EloPool, RatedPlayer, RatingKey, TourneyCfg, TournamentProfile, BUILTIN_AIS,
-        CHAMPION_FILE, DEFAULT_RATINGS_PATH, ELO_BASE_RATING, ELO_SCHEMA_VERSION, EVAL_ONLY_AIS,
-        VALUENET_FILE,
+        leaderboard, league_generalist, performance_elo, scheduled_seats, seat_schedule,
+        wilson_interval, win_shares, EloPool, RatedPlayer, RatingKey, TourneyCfg,
+        TournamentProfile, BUILTIN_AIS, CHAMPION_FILE, DEFAULT_RATINGS_PATH, ELO_BASE_RATING,
+        ELO_SCHEMA_VERSION, EVAL_ONLY_AIS, VALUENET_FILE,
     };
     use crate::rng::Rng;
     use std::collections::BTreeMap;
@@ -3122,6 +3127,16 @@ mod tests {
         assert_eq!((challenger.2, challenger.3), (1.0, 1));
         assert_eq!((novice.2, novice.3), (0.0, 1));
         assert!(challenger.1 > 1500.0 && novice.1 < 1500.0);
+
+        let complete_report = leaderboard(&anchored);
+        assert!(complete_report.contains("Standardized direct performance Elo"));
+        let mut migrated = anchored.clone();
+        migrated.history_complete = false;
+        let migrated_report = leaderboard(&migrated);
+        assert!(migrated_report.contains(
+            "Post-migration direct performance (retained raw games only; legacy prior excluded)"
+        ));
+        assert!(!migrated_report.contains("Standardized direct performance Elo"));
     }
 
     #[test]
