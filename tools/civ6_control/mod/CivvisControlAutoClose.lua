@@ -247,35 +247,6 @@ local function endScreen(attempt)
 			and pcall(function() OnRefuseDeal(true); end) then
 		return true;
 	end
-	-- ★★★★★ A LEADER ASKING A QUESTION IS NOT A POPUP — IT NEEDS AN ANSWER.
-	--
-	-- Photographed at the moment of a stall (`stalled.png`, run
-	-- civvis-20260730T161301Z, turn 142): Cyrus asking "Will you allow us to establish
-	-- an embassy in your capital?" with three dialogue choices. Nothing that merely
-	-- CLOSES a screen dismisses that, which is why `CloseFocusedState` and
-	-- `ExitConversationMode` both failed and the run died with the event stream silent.
-	--
-	-- The shipped screen's own Goodbye is `OnSelectConversationDiplomacyStatement`
-	-- with `CHOICE_EXIT`, and its initial-statement twin is
-	-- `OnSelectInitialDiplomacyStatement`. Calling those runs the game's own bookkeeping
-	-- — note the shipped path passes `ExitConversationMode(FALSE)`, where this shim was
-	-- passing `true`.
-	--
-	-- ⚠ This always answers "Goodbye": it declines embassies, alliances and demands
-	-- alike. That is a decision, and the measured alternative is not a considered reply
-	-- but a dead run — stalls are the single largest cause of lost attempts.
-	if type(OnSelectConversationDiplomacyStatement) == "function"
-			and pcall(function()
-				OnSelectConversationDiplomacyStatement("CHOICE_EXIT");
-			end) then
-		return true;
-	end
-	if type(OnSelectInitialDiplomacyStatement) == "function"
-			and pcall(function()
-				OnSelectInitialDiplomacyStatement("CHOICE_EXIT");
-			end) then
-		return true;
-	end
 	if (attempt or 1) <= 6 and type(CloseFocusedState) == "function"
 			and pcall(function() CloseFocusedState(true); end) then
 		return true;
@@ -291,6 +262,37 @@ local function endScreen(attempt)
 			end) then
 		return true;
 	end
+	-- ★★★★★ A LEADER ASKING A QUESTION IS NOT A POPUP — but answering it is a LATER
+	-- rung, not the first.
+	--
+	-- Photographed at the moment of two stalls (`stalled.png`): Cyrus, then Wilhelmina,
+	-- asking "Will you allow us to establish an embassy in your capital?" with three
+	-- dialogue choices. Nothing that merely CLOSES a screen answers a question.
+	--
+	-- ⚠⚠ AND THE FIRST VERSION OF THIS MADE IT WORSE, in the way this project keeps
+	-- being bitten. It sat at the TOP of the ladder and returned true whenever `pcall`
+	-- succeeded — but `pcall` succeeding means the call did not throw, NOT that the
+	-- screen closed. Measured: **22 `autoclose` events, every one `ended: true`,
+	-- followed by `autoclose_stuck`**. `CHOICE_EXIT` runs `ExitConversationMode(false)`,
+	-- which drops the view while the REQUEST is still pending, so the screen reopens
+	-- immediately — and by returning first it also short-circuited the
+	-- `DiplomacyManager.CloseSession` rung that had been running before it.
+	--
+	-- So it goes here, after the generic closers and after CloseSession have each had
+	-- their attempts, and it is bounded like every other rung.
+	if (attempt or 1) <= 16 and type(OnSelectConversationDiplomacyStatement) == "function"
+			and pcall(function()
+				OnSelectConversationDiplomacyStatement("CHOICE_EXIT");
+			end) then
+		return true;
+	end
+	if (attempt or 1) <= 18 and type(OnSelectInitialDiplomacyStatement) == "function"
+			and pcall(function()
+				OnSelectInitialDiplomacyStatement("CHOICE_EXIT");
+			end) then
+		return true;
+	end
+
 	-- The relic screens. Neither exposes OnClose or Close, which is why both sat
 	-- over the map: the operator reported "relic found" alongside the Canada
 	-- delegation. Their close buttons are wired to these globals instead.
