@@ -68,6 +68,7 @@ def run_attempt(difficulty: str, seed: int, args: argparse.Namespace) -> dict | 
         "--strength-weight", str(args.strength_weight),
         "--army-cap", str(args.army_cap),
         "--siege-units", str(args.siege_units),
+        "--develop-every", str(args.develop_every),
         "--max-empire-distance", str(args.max_empire_distance),
         "--garrison-per-city", str(args.garrison_per_city),
         *(["--export-state"] if args.export_state else []),
@@ -146,6 +147,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--strength-weight", type=int, default=20)
     ap.add_argument("--army-cap", type=int, default=18)
     ap.add_argument("--siege-units", type=int, default=4)
+    ap.add_argument("--develop-every", type=int, default=3)
     ap.add_argument("--max-empire-distance", type=int, default=6)
     ap.add_argument("--garrison-per-city", type=int, default=2)
     ap.add_argument("--export-state", action="store_true", default=False)

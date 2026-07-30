@@ -2284,6 +2284,42 @@ local function chooseProduction(city, counts, nCities, turn, refused)
 	for _, name in ipairs({ "BUILDING_MONUMENT", "BUILDING_GRANARY" }) do
 		ladder[#ladder + 1] = { name, "grow" };
 	end
+	-- ★★★★★ A GUARANTEED SHARE, BECAUSE A LADDER POSITION IS NOT ENOUGH.
+	--
+	-- Capping `wantArmy` at 18 made development reachable in principle and it still never
+	-- happened. Measured at turn 78 with the cap in place and a war running:
+	--
+	--     army = 12   (gate 12, cap 18)      siege = 6 alive
+	--     `develop` still never fires, zero districts or libraries requested
+	--
+	-- Combat losses hold the army permanently BELOW its cap once fighting starts — which
+	-- is exactly when a long game most needs science and gold — so anything below the
+	-- army block stays unreachable for the rest of the game. Score is population,
+	-- districts and buildings, and the previous run finished 203 against 1088 with seven
+	-- monuments, seven granaries and nothing else.
+	--
+	-- So development gets one turn in `DevelopEvery` where it outranks the army outright.
+	-- Not a reordering — a SHARE. The army still wins the other two turns in three, and
+	-- the defence floor above still comes first, so this cannot strip a city of its
+	-- garrison.
+	--
+	-- ⚠ FOURTH APPEARANCE OF THIS CLASS, and the second time my own fix for it was
+	-- insufficient rather than wrong: the ram and the ranged floor were dead below this
+	-- gate, then seven district entries were, then the cap turned out to be unreachable
+	-- in the state that matters. The rule has three parts now: never put what you need
+	-- below an open-ended target; check what ELSE is down there; and check the target is
+	-- reachable in the state you actually care about.
+	local DEVELOP = { "DISTRICT_CAMPUS", "BUILDING_LIBRARY",
+	                  "DISTRICT_HOLY_SITE", "DISTRICT_COMMERCIAL_HUB",
+	                  "BUILDING_WATER_MILL", "DISTRICT_THEATER",
+	                  "BUILDING_ANCIENT_WALLS" };
+	local function pushDevelop()
+		for _, name in ipairs(DEVELOP) do
+			ladder[#ladder + 1] = { name, "develop" };
+		end
+	end
+	local devFirst = (turn % (cfg.DevelopEvery or 3)) == 0;
+	if devFirst then pushDevelop(); end
 	if counts.military < wantArmy then
 		-- ⚠ MELEE FIRST. A ranged unit can bombard a city forever and never
 		-- take it — only a melee unit captures, by moving onto the plot. Run
@@ -2298,14 +2334,9 @@ local function chooseProduction(city, counts, nCities, turn, refused)
 			ladder[#ladder + 1] = { name, "army" };
 		end
 	end
-	-- The deeper economy, below the army: reached once the army target is met, and
-	-- reachable at all only because the army target CAN be met now.
-	for _, name in ipairs({ "DISTRICT_CAMPUS", "BUILDING_LIBRARY",
-	                        "DISTRICT_HOLY_SITE", "DISTRICT_COMMERCIAL_HUB",
-	                        "BUILDING_WATER_MILL", "DISTRICT_THEATER",
-	                        "BUILDING_ANCIENT_WALLS" }) do
-		ladder[#ladder + 1] = { name, "develop" };
-	end
+	-- The same list below the army on the other two turns in three, so development is
+	-- still preferred over the always-available floor when the army IS satisfied.
+	if not devFirst then pushDevelop(); end
 	-- Always-available floor. A city with an empty queue and nothing it can
 	-- build is a permanent end-turn blocker; a project never is.
 	for _, name in ipairs({ "PROJECT_CAMPUS_RESEARCH_GRANT", "UNIT_WARRIOR",

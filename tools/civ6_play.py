@@ -138,6 +138,11 @@ def build_config(args: argparse.Namespace) -> dict:
         # concurrency rather than survival, and it needs to be tunable to find out how
         # much concurrency is enough.
         "SiegeUnits": args.siege_units,
+        # One turn in N where development outranks the army outright. A ladder POSITION
+        # was not enough: combat losses hold the army below its cap for the whole war, so
+        # anything below the army block never gets built. 3 gives the economy a third of
+        # the decisions while the army keeps the rest.
+        "DevelopEvery": args.develop_every,
         # ★ Maximum tiles from our NEAREST existing city that a new city may be
         # founded. Loyalty support comes from our own nearby population, so beyond
         # this the city cannot be held at any price: run 071729Z founded (42,17)
@@ -857,6 +862,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--strength-weight", type=int, default=20)
     ap.add_argument("--army-cap", type=int, default=18)
     ap.add_argument("--siege-units", type=int, default=4)
+    ap.add_argument("--develop-every", type=int, default=3)
     ap.add_argument("--max-empire-distance", type=int, default=6)
     ap.add_argument("--garrison-per-city", type=int, default=2)
     ap.add_argument("--export-state", action="store_true", default=False)
