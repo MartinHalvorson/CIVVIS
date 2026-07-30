@@ -1376,26 +1376,70 @@ local function enemyGround(player, pid, turn)
 	pcall(function() width, height = Map.GetGridSize(); end);
 	if width <= 0 or height <= 0 then return nil; end
 
-	local best, bestDist;
+	-- ★★★★★ AIM AT THE FRONTIER OF THEIR LAND, NOT AT ITS EDGE NEAREST US.
+	--
+	-- This used to keep the enemy-owned plot with the SMALLEST distance from home, and
+	-- the nearest owned plot is by definition the border facing us. The probe walked to
+	-- the border and stopped, so their BORDER got revealed and their CITIES never did —
+	-- and `findWarTarget` needs a revealed CITY. Measured on run 083136Z at turn 70,
+	-- after the frontier bootstrap had already worked:
+	--
+	--     probe_kind = enemy   (their ground IS revealed)
+	--     rival cities SEEN = 0        target = None
+	--
+	-- So prefer an enemy plot WE HAVE SEEN that still has an UNSEEN neighbour: that is
+	-- the edge of our knowledge inside their empire, and walking there is what uncovers
+	-- what lies deeper. Nearest such plot, so the probe advances progressively instead
+	-- of setting off for the far side of the world.
+	--
+	-- ⚠ Falls back to the deepest known enemy plot when their land holds no unseen edge,
+	-- because at that point everything of theirs is charted and a city is already
+	-- visible if one exists — a nil here would silently stop probing.
+	--
+	-- One engine pass for reveal state, then table lookups, for the reason given in
+	-- `frontierGround`: nine calls per plot is what starves a turn.
+	local seen, ours = {}, {};
 	for y = 0, height - 1 do
 		for x = 0, width - 1 do
-			local owner = -1;
 			if plotRevealed(pid, x, y) then
-				owner = try(function()
+				seen[y * width + x] = true;
+				local owner = try(function()
 					local plot = Map.GetPlot(x, y);
 					return plot ~= nil and plot:GetOwner() or -1;
 				end, -1);
+				if owner ~= nil and met[owner] then ours[y * width + x] = true; end
 			end
-			if owner ~= nil and met[owner] then
+		end
+	end
+
+	local edge, edgeDist, deep, deepDist;
+	for y = 0, height - 1 do
+		for x = 0, width - 1 do
+			if ours[y * width + x] then
 				local d = plotDistance(hx, hy, x, y);
-				if bestDist == nil or d < bestDist then
-					best, bestDist = { x = x, y = y }, d;
+				local frontier = false;
+				for dx = -1, 1 do
+					for dy = -1, 1 do
+						if not frontier and not (dx == 0 and dy == 0) then
+							local nx, ny = x + dx, y + dy;
+							if nx >= 0 and nx < width and ny >= 0 and ny < height
+									and not seen[ny * width + nx] then
+								frontier = true;
+							end
+						end
+					end
+				end
+				if frontier and (edgeDist == nil or d < edgeDist) then
+					edge, edgeDist = { x = x, y = y }, d;
+				end
+				if deepDist == nil or d > deepDist then
+					deep, deepDist = { x = x, y = y }, d;
 				end
 			end
 		end
 	end
-	enemyGroundMemo.pos = best;
-	return best;
+	enemyGroundMemo.pos = edge or deep;
+	return enemyGroundMemo.pos;
 end
 
 -- ★★★★★ WHERE TO GO WHEN NO ENEMY GROUND IS KNOWN YET. `enemyGround` scans for REVEALED
