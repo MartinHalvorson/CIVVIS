@@ -415,18 +415,38 @@ end
 
 -- ------------------------------------------------------------ unit handling
 
-local function canOperate(unit, hash)
+-- ⚠ PASS THE PARAMETERS. `CanStartOperation(unit, hash, nil, false, false)`
+-- asks "can this unit move", which is not the question — the question is "can
+-- this unit move TO (x, y)". `WorldInput.lua` passes the same parameter table it
+-- is about to request with:
+--
+--   UnitManager.CanStartOperation( pUnit, OP, nil, tParameters )
+--   UnitManager.RequestOperation ( pUnit, OP, tParameters )
+--
+-- Without it a rejected order is indistinguishable from an accepted one, and
+-- that is how 518 `advance` orders were logged while the army stood still in
+-- its own city: `pcall` succeeded every time because the call did not throw,
+-- and the engine quietly declined to move anything.
+local function canOperate(unit, hash, params)
 	if hash == nil then return false; end
 	local ok, result = pcall(function()
-		return UnitManager.CanStartOperation(unit, hash, nil, false, false);
+		return UnitManager.CanStartOperation(unit, hash, nil, params or {});
 	end);
 	return ok and result == true;
 end
 
+-- Never report an order as given unless the engine said it could start.
+--
+-- `pcall` returning true means the call did not raise, NOT that the operation
+-- was accepted — the identical trap that made every production order look
+-- applied while nothing was ever built. Checking first is what turns a silent
+-- no-op into an observable refusal, so a fallback can actually run.
 local function operate(unit, hash, params)
 	if hash == nil then return false; end
+	params = params or {};
+	if not canOperate(unit, hash, params) then return false; end
 	return pcall(function()
-		UnitManager.RequestOperation(unit, hash, params or {});
+		UnitManager.RequestOperation(unit, hash, params);
 	end);
 end
 
@@ -444,7 +464,7 @@ end
 local function firstOperation(unit, names)
 	for _, name in ipairs(names) do
 		local hash = OP[name];
-		if canOperate(unit, hash) and operate(unit, hash) then
+		if operate(unit, hash) then
 			return name;
 		end
 	end
