@@ -4158,6 +4158,24 @@ local function applyOrder(player, pid, row, turn)
 		local gold = try(function() return GameInfo.Yields["YIELD_GOLD"].Index; end);
 		if gold == nil then return false, "no_yield"; end
 		params[CityCommandTypes.PARAM_YIELD_TYPE] = gold;
+		-- ⚠⚠ ASK BEFORE CLAIMING. `pcall` succeeding means the call did not throw, not
+		-- that the city bought anything — the trap this file documents three times and
+		-- which I walked into again here. Run civvis-20260730T173235Z issued purchases
+		-- for 238 turns and finished with **1589 unspent gold**, every one reported as
+		-- applied.
+		--
+		-- ★ AND IT COSTS MORE THAN THE GOLD. CIVVIS's model spawns the bought unit
+		-- immediately, so a purchase that fails in the real game leaves a PHANTOM
+		-- settler — `phantom=[15:settler]` — and `advanced_units` then computes
+		-- `decline_settlers = counts.settlers > 0` and refuses to BUILD one. Every turn.
+		-- That is the phantom-settler failure returning through a different door, and it
+		-- is why that run held ONE city to turn 238.
+		local canBuy = false;
+		local okCan = pcall(function()
+			canBuy = CityManager.CanStartCommand(city, CityCommandTypes.PURCHASE,
+			                                    params, true) == true;
+		end);
+		if not (okCan and canBuy) then return false, "cannot_buy_" .. resolved; end
 		local ok = pcall(function()
 			CityManager.RequestCommand(city, CityCommandTypes.PURCHASE, params);
 		end);
