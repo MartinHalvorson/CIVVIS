@@ -66,6 +66,12 @@ def run_attempt(difficulty: str, seed: int, args: argparse.Namespace) -> dict | 
         "--settlers-in-flight", str(args.settlers_in_flight),
         "--garrison-per-city", str(args.garrison_per_city),
         *(["--export-state"] if args.export_state else []),
+        # The operator's layout: CIVVIS owns the left half, the real game the
+        # upper right, a terminal beneath it. Threaded through because a ladder
+        # attempt relaunches Civ 6 and it comes back wherever it last was.
+        "--window-side", args.window_side,
+        "--window-frac", str(args.window_frac),
+        "--window-vfrac", str(args.window_vfrac),
     ]
     print(f"\n=== {difficulty} seed {seed} -> {tag} ===", flush=True)
     subprocess.run(command, check=False)
@@ -120,6 +126,9 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--settlers-in-flight", type=int, default=1)
     ap.add_argument("--garrison-per-city", type=int, default=2)
     ap.add_argument("--export-state", action="store_true", default=False)
+    ap.add_argument("--window-side", default="left")
+    ap.add_argument("--window-frac", type=float, default=0.5)
+    ap.add_argument("--window-vfrac", type=float, default=1.0)
     ap.add_argument("--map-size", default="MAPSIZE_DUEL")
     ap.add_argument("--speed", default="GAMESPEED_ONLINE")
     ap.add_argument("--max-turns", type=int, default=120)

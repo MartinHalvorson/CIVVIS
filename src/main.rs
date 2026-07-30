@@ -952,6 +952,43 @@ fn main() {
         }
         "play" => {
             let players = arg(&args, "--players", 4);
+            // `--mirror <run-dir>`: show the board a Civilization VI seat can
+            // actually see, rebuilt as a CIVVIS game, instead of generating one.
+            //
+            // This is what makes the two windows one game rather than two. The
+            // control mod exports only revealed plots, so what appears here is
+            // what the seat has earned and nothing more.
+            //
+            // ⚠ Unrevealed ground arrives as ocean — see `mirror::rebuild_game`
+            // for why that is the least misleading filler and where it is wrong.
+            let mirrored: Option<Game> = args
+                .iter()
+                .position(|value| value == "--mirror")
+                .and_then(|index| args.get(index + 1))
+                .map(|dir| {
+                    let events = std::path::Path::new(dir).join("events.jsonl");
+                    let snapshot = civvis::mirror::snapshot_from_events(&events)
+                        .unwrap_or_else(|error| {
+                            eprintln!("cannot read {}: {error}", events.display());
+                            std::process::exit(2);
+                        });
+                    if snapshot.revealed_count() == 0 {
+                        eprintln!(
+                            "{} has no tiles to mirror — the run needs --export-state, \
+                             and before the PlayersVisibility fix the export emitted nothing",
+                            events.display()
+                        );
+                        std::process::exit(2);
+                    }
+                    println!(
+                        "mirroring {} revealed plots of a {}x{} world at turn {}",
+                        snapshot.revealed_count(),
+                        snapshot.width,
+                        snapshot.height,
+                        snapshot.turn
+                    );
+                    civvis::mirror::rebuild_game(&snapshot, players as usize, 1)
+                });
             let resumed: Option<Game> = args
                 .iter()
                 .position(|value| value == "--resume")
@@ -1023,7 +1060,7 @@ fn main() {
                     },
                     league_record: args.iter().any(|a| a == "--league-record"),
                 },
-                resumed,
+                mirrored.or(resumed),
                 args.iter().any(|a| a == "--paused"),
             );
         }

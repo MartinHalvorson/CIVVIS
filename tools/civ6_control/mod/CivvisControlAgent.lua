@@ -1457,8 +1457,19 @@ local function orderFor(player, pid, unit, turn)
 		-- 20/40/100 of run settler-20260729T235910Z, wandering into barbarians
 		-- while the war threshold was never reached. Default is now early.
 		local early = turn < (cfg.ExploreUntilTurn or 12);
+		-- ⚠ HOME FIRST. Probing was my own fix and it backfired: with two units
+		-- always out looking for an enemy, a newly founded city stood undefended
+		-- and barbarians took it within five turns. Run settler-20260730T033439Z
+		-- logged 38 probes, 34 explores, 18 heals and just TWO garrison orders,
+		-- and went two cities to one between turn 20 and turn 25.
+		--
+		-- Reconnaissance is worth nothing if the empire it reports to has been
+		-- captured, so nobody probes until every city has a defender posted.
+		local posted = 0;
+		for _ in pairs(garrisonPost) do posted = posted + 1; end
+		local defended = posted >= cityCount(player);
 		local probing = false;
-		if not early and warTarget == nil
+		if not early and defended and warTarget == nil
 				and probesOut < (cfg.ProbeUnits or 2) then
 			probing = true;
 			probesOut = probesOut + 1;

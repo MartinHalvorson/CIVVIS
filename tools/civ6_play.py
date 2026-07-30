@@ -184,6 +184,7 @@ def game_window() -> tuple[int, int, int, int] | None:
 # call site.
 GAME_SIDE = "left"
 GAME_FRACTION = 0.5
+GAME_VFRACTION = 1.0
 
 
 def desktop_size() -> tuple[int, int] | None:
@@ -207,8 +208,15 @@ def desktop_size() -> tuple[int, int] | None:
     return (width, height) if width > 800 and height > 600 else None
 
 
-def place_game(side: str = "left", fraction: float = 0.5) -> None:
-    """Park the game on one half of the screen so a terminal can own the other.
+def place_game(side: str = "left", fraction: float = 0.5,
+               vfraction: float = 1.0) -> None:
+    """Park the game on part of the screen so other windows can own the rest.
+
+    `fraction` is the share of screen WIDTH and `vfraction` the share of HEIGHT,
+    measured from the top. The default is a full-height half. `vfraction` exists
+    so the game can take a quadrant instead: CIVVIS itself now wants a half, and
+    the operator asked for the real game in the upper right with a terminal
+    beneath it.
 
     Re-applied on every focus pass rather than once at launch: each ladder
     attempt relaunches Civ 6, and a fresh process comes up wherever the game
@@ -222,12 +230,13 @@ def place_game(side: str = "left", fraction: float = 0.5) -> None:
     screen_w, screen_h = size
     menu = 33  # the menu bar; a window placed at y=0 hides behind it
     width = max(640, int(screen_w * fraction))
+    height = max(480, int((screen_h - menu) * max(0.1, min(1.0, vfraction))))
     x = 0 if side == "left" else screen_w - width
     script = (
         'tell application "System Events" to tell '
         '(first process whose name contains "Civ6") to tell window 1\n'
         f'  set position to {{{x}, {menu}}}\n'
-        f'  set size to {{{width}, {screen_h - menu}}}\n'
+        f'  set size to {{{width}, {height}}}\n'
         'end tell')
     subprocess.run(["osascript", "-e", script], capture_output=True)
 
@@ -620,7 +629,7 @@ def _play(args: argparse.Namespace) -> int:
         focus_game()
         # Safe here and only here: the game is in play, so there is no menu
         # being read off the screen for a resize to invalidate.
-        place_game(GAME_SIDE, GAME_FRACTION)
+        place_game(GAME_SIDE, GAME_FRACTION, GAME_VFRACTION)
 
     reason = watch.follow(tail, args.timeout, record, stop_when=finished,
                           each_poll=keep_foreground)
@@ -705,6 +714,9 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--settlers-in-flight", type=int, default=1)
     ap.add_argument("--garrison-per-city", type=int, default=2)
     ap.add_argument("--export-state", action="store_true", default=False)
+    ap.add_argument("--window-vfrac", type=float, default=1.0,
+                    help="share of screen height for the game window; 0.5 puts "
+                         "it in a quadrant so CIVVIS can own the other half")
     ap.add_argument("--announcement-seconds", type=float, default=1.0)
     ap.add_argument("--era-announcement-seconds", type=float, default=0.5)
     ap.add_argument("--survey", action="store_true", default=True)
@@ -724,8 +736,9 @@ def main(argv: list[str] | None = None) -> int:
                     help="seconds between raising the game window (0 disables)")
     ap.add_argument("--status", action="store_true")
     args = ap.parse_args(argv)
-    global GAME_SIDE, GAME_FRACTION
+    global GAME_SIDE, GAME_FRACTION, GAME_VFRACTION
     GAME_SIDE, GAME_FRACTION = args.window_side, args.window_frac
+    GAME_VFRACTION = args.window_vfrac
 
     if args.status:
         return status()

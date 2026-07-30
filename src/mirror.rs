@@ -432,3 +432,82 @@ mod tests {
         assert!(chunk.plots[1].f.is_none() && chunk.plots[1].r.is_none());
     }
 }
+
+/// Read every `tiles` chunk out of a run's `events.jsonl`.
+///
+/// The stream is append-only and a chunk is self-describing, so re-reading from
+/// the start is both simplest and correct — later chunks overwrite earlier ones
+/// for the same plot, which is what [`Snapshot::from_chunks`] does.
+pub fn snapshot_from_events(path: &std::path::Path) -> std::io::Result<Snapshot> {
+    let raw = std::fs::read_to_string(path)?;
+    let mut chunks = Vec::new();
+    for line in raw.lines() {
+        if !line.contains("\"tiles\"") {
+            continue;
+        }
+        if let Ok(chunk) = serde_json::from_str::<TilesChunk>(line) {
+            if !chunk.plots.is_empty() {
+                chunks.push(chunk);
+            }
+        }
+    }
+    Ok(Snapshot::from_chunks(&chunks))
+}
+
+/// Rebuild a CIVVIS `Game` whose map is the ground this seat has actually seen.
+///
+/// ⚠ UNREVEALED PLOTS ARE FLATTENED TO OCEAN, and that is a deliberate,
+/// load-bearing choice rather than a convenience.
+///
+/// A generated map arrives full of terrain the seat has never laid eyes on. Left
+/// alone, that terrain is a map generator's invention presented as knowledge, and
+/// anything reading tile yields — `settle_value` reads them directly, with no
+/// visibility filter, because CIVVIS stores no per-player revealed map — would be
+/// planning on ground that does not exist. Ocean is the least misleading filler:
+/// it scores nothing and cannot be settled, so an unseen plot cannot attract a
+/// decision.
+///
+/// It is still wrong in a way worth naming: it makes unseen land read as water, so
+/// a reconstruction is honest about what it KNOWS and pessimistic about what it
+/// does not. That is the right direction for a viewer and for settling. It is the
+/// WRONG direction for pathfinding, which would route around phantom sea. Use
+/// [`Snapshot::is_revealed`] to tell the two apart rather than trusting the map.
+pub fn rebuild_game(snapshot: &Snapshot, players: usize, seed: u64) -> crate::game::Game {
+    use crate::game::Game;
+    let width = snapshot.width.max(1);
+    let height = snapshot.height.max(1);
+    let mut game = Game::new(players.max(2), width, height, seed, 500, 0);
+    let vocab = Vocabulary::embedded();
+    let ocean = Name::new("ocean");
+
+    for y in 0..height {
+        for x in 0..width {
+            let pos = (x, y);
+            let Some(tile) = game.map.tiles.get_mut(&pos) else {
+                continue;
+            };
+            let Some(plot) = snapshot.plot(pos) else {
+                tile.terrain = ocean;
+                tile.hills = false;
+                tile.feature = None;
+                tile.resource = None;
+                continue;
+            };
+            if let Some(name) = &plot.t {
+                if let Resolved::Known((terrain, hills)) = vocab.terrain(name) {
+                    tile.terrain = terrain;
+                    tile.hills = hills;
+                }
+            }
+            tile.feature = plot.f.as_ref().and_then(|name| match vocab.feature(name) {
+                Resolved::Known(value) => Some(value),
+                _ => None,
+            });
+            tile.resource = plot.r.as_ref().and_then(|name| match vocab.resource(name) {
+                Resolved::Known(value) => Some(value),
+                _ => None,
+            });
+        }
+    }
+    game
+}
