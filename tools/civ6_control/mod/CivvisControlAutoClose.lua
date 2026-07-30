@@ -142,7 +142,7 @@ end
 
 -- What a click on this screen's own button does. Everything shipped registers
 -- OnClose; the era review is the exception explained at the top.
-local function endScreen()
+local function endScreen(attempt)
 	if NAME == "InGamePopup" then
 		-- The shipped Escape path rather than a bare close, so the single
 		-- button's own callback runs. Escape tries CANCEL, then DEFAULT, then
@@ -158,6 +158,52 @@ local function endScreen()
 	end
 	if NAME == "EraReviewPopup" and type(OnContinue) == "function" then
 		OnContinue();
+		return true;
+	end
+	-- ⚠ THE MEET-A-NEW-CIV SCREEN NEEDS ITS OWN EXIT.
+	--
+	-- `OnClose`/`Close` do not clear a leader conversation, and the operator saw
+	-- Wilfrid Laurier sitting over the map with his three dialogue options while
+	-- turns went on advancing behind him. The evidence was
+	-- `autoclose_stuck {"attempts":20,"screen":"DiplomacyActionView"}` — twenty
+	-- failed tries, then the shim gave up. A first-contact scene is a diplomacy
+	-- SESSION, and it ends only when the session is closed.
+	--
+	-- `ExitConversationMode` is the shipped exit and is a global function, so it
+	-- is reachable from here; it closes the active session and falls back to
+	-- `Close()` when there is none. `ms_ActiveSessionID` is likewise a global in
+	-- the shipped script (no `local`), so closing the session directly is
+	-- available as a second try if the view mode is not what we assumed.
+	--
+	-- ⚠ ESCALATE, do not retry one rung forever. `ExitConversationMode` returns
+	-- silently when the view is not in conversation mode, so `pcall` succeeding
+	-- does not mean the screen went away — the same "pcall success is not
+	-- acceptance" trap that voided every build order in this project. If the
+	-- first few attempts have not worked, stop trying this rung and fall through
+	-- to the plain handlers below.
+	if (attempt or 1) <= 3 and type(ExitConversationMode) == "function"
+			and pcall(function() ExitConversationMode(true); end) then
+		return true;
+	end
+	if (attempt or 1) <= 6 and type(DiplomacyManager) == "table"
+			and ms_ActiveSessionID ~= nil
+			and pcall(function()
+				DiplomacyManager.CloseSession(ms_ActiveSessionID);
+			end) then
+		return true;
+	end
+	-- The relic screens. Neither exposes OnClose or Close, which is why both sat
+	-- over the map: the operator reported "relic found" alongside the Canada
+	-- delegation. Their close buttons are wired to these globals instead.
+	--
+	-- GreatWorkShowcase shows a relic or great work just acquired and its close
+	-- button calls OnHideScreen. ChooseArtifact is a real decision -- which
+	-- artifact an Archaeologist lifts -- and Button1 takes the first. Taking the
+	-- first is a worse choice than a human would make and a far better one than
+	-- staring at the dialog until the timeout, which is the current behaviour.
+	if type(OnHideScreen) == "function" then OnHideScreen(); return true; end
+	if NAME == "ChooseArtifact" and type(OnButton1) == "function" then
+		OnButton1();
 		return true;
 	end
 	if type(OnClose) == "function" then OnClose(); return true; end
@@ -226,7 +272,7 @@ else
 		shown = 0;
 		closes = closes + 1;
 		local ended = false;
-		pcall(function() ended = endScreen(); end);
+		pcall(function() ended = endScreen(closes); end);
 		if NAME == "InGamePopup" then dialogIsAnnouncement = false; end
 		report("autoclose", string.format(',"after":%.2f,"ended":%s', upFor, tostring(ended)));
 		if closes >= GIVE_UP_AFTER then

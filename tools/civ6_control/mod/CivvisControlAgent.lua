@@ -409,6 +409,32 @@ local function eachCity(player, fn)
 	end);
 end
 
+-- How badly our units are piled up, measured rather than inferred.
+--
+-- ⚠ Every single time units stacked in a city this session, the OPERATOR found it
+-- on screen and no statistic in this file showed it. `stuck` does not: a unit on
+-- standing automation legitimately accepts no new order, so a high `stuck` proves
+-- nothing either way. This counts what the complaint actually describes — how
+-- many of our units share one plot — so the next occurrence shows up in the
+-- stream instead of in a screenshot.
+local function stackCensus(player)
+	local perPlot = {};
+	eachUnit(player, function(unit)
+		local x = try(function() return unit:GetX(); end, -1);
+		local y = try(function() return unit:GetY(); end, -1);
+		if x >= 0 then
+			local key = x .. ":" .. y;
+			perPlot[key] = (perPlot[key] or 0) + 1;
+		end
+	end);
+	local worst, piles = 0, 0;
+	for _, n in pairs(perPlot) do
+		if n > worst then worst = n; end
+		if n > 1 then piles = piles + 1; end
+	end
+	return worst, piles;
+end
+
 -- Pure. ⚠ An `upgradeUnit` call had been spliced into the military branch here,
 -- so *counting* the army issued upgrade orders — and its `return better` skipped
 -- the increment, so an upgrading unit was never counted as military. Counting
@@ -1965,6 +1991,7 @@ local function playTurn(player, pid, turn)
 	exportTiles(player, pid, turn);
 	local builds = driveProduction(player, turn);
 	local ordered, stuck = orderUnits(player, pid, turn);
+	local worstStack, piles = stackCensus(player);
 	emit("turn", {
 		policies = policies,
 		war = war,
@@ -1976,6 +2003,7 @@ local function playTurn(player, pid, turn)
 		units = countUnits(player).total,
 		research = research, civic = civic,
 		builds = builds, ordered = ordered, stuck = stuck,
+		worst_stack = worstStack, piles = piles,
 		actions = lastActions,
 		ticks_seen = ticksSeen, ticks_taken = ticksTaken,
 		blocker = blockerName(currentBlocker(pid)),

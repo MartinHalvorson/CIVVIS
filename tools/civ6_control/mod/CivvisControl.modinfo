@@ -72,6 +72,21 @@
 				<LuaReplace>CivvisControlAutoClose.lua</LuaReplace>
 			</Properties>
 		</ReplaceUIScript>
+		<!-- The relic screens, reported sitting over the map. Neither
+		     exposes OnClose or Close; their buttons call OnHideScreen and
+		     OnButton1, which the shim now tries. -->
+		<ReplaceUIScript id="CivvisControlAutoCloseGreatWorkShowcase">
+			<Properties>
+				<LuaContext>GreatWorkShowcase</LuaContext>
+				<LuaReplace>CivvisControlAutoClose.lua</LuaReplace>
+			</Properties>
+		</ReplaceUIScript>
+		<ReplaceUIScript id="CivvisControlAutoCloseChooseArtifact">
+			<Properties>
+				<LuaContext>ChooseArtifact</LuaContext>
+				<LuaReplace>CivvisControlAutoClose.lua</LuaReplace>
+			</Properties>
+		</ReplaceUIScript>
 		<ReplaceUIScript id="CivvisControlAutoCloseTradeOverview">
 			<Properties>
 				<LuaContext>TradeOverview</LuaContext>
