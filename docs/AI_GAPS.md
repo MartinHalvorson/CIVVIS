@@ -239,10 +239,15 @@ keeps it as a `league_only` anchor so the league can compare against an axis
 breeding cannot create without putting that unresolved cost/strength trade into
 the exhibition.
 
-The latest structural probe also finds that sequential lane-then-doctrine
-search misses the joint evaluator optimum often enough to clear its commitment
-margin. Whether joint search wins games, especially on live profiles, is still
-unmeasured.
+The original structural probe overstated joint-search headroom because it
+reconstructed the lane pass under the doctrine in force; the live lane pass
+uses the unchanged base genome. Against that corrected comparator, a
+deployment-profile run on 20 mirrored 6p 74×46 Online maps split **every map**:
+20/40 wins per arm, +0 Elo-equivalent (95% −148 to +148). Joint search changed
+only 10/268 eligible rollout reviews (3.7%) while evaluating 28 branches rather
+than the sequential policy's 11. That interval does not prove parity, but it
+does not justify buying the extra rollout compute. The treatment remains an
+evaluator-only control and production stays sequential.
 
 ### 8. Internal ratings are not external strength
 
@@ -271,8 +276,10 @@ profile, under a named decision rule.
    correlate.
 3. Require a profile matrix that covers the rotating exhibition before a
    strength label or live promotion. Keep artifact provenance mandatory.
-4. Evaluate joint macro decisions and structural oracle headroom at the profile
-   that would ship before buying more rollout compute.
+4. Pursue structural oracle headroom at the profile that would ship. Keep the
+   corrected joint-macro arm reproducible, but require substantially more
+   evidence before spending 28 branches where 11 produced the same measured
+   wins.
 5. Add external calibration: completed games against Firaxis' AI and humans,
    with settings and logs retained.
 

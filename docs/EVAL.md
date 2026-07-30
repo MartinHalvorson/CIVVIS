@@ -5717,6 +5717,15 @@ expansion instrument added here reports both scales for that reason.
 
 ## 2026-07-29 — ★★★★ the macro search chooses its two axes in the wrong order
 
+> **Correction, 2026-07-30:** this diagnostic reconstructed the first step
+> with the doctrine then in force. The shipped lane pass actually projects the
+> unchanged evolved base genome (`self.weights`, `Doctrine::Incumbent`) and
+> consults the active doctrine only in the second-step commitment comparison.
+> The 64.6% disagreement and 22.3% actionable-miss figures below therefore
+> describe the wrong comparator and are retracted. The corrected implementation
+> is pinned by a regression test and the deployment-profile paired run later in
+> this log replaces the gameplay conclusion.
+
 `StrategicAi` chooses a victory **lane** and a **doctrine**, one after the other.
 `lane_values` projects each lane using `self.weights` — the doctrine currently in
 force — and `doctrine_values` then projects each doctrine under the lane that
@@ -6054,3 +6063,91 @@ losers, verifies that the tied players receive identical Glicko movement, and
 checks the exact `player@leader@civ@rank` audit row. The compatibility adapter
 remains for callers that truly have only a strict list, but the engine no longer
 uses it.
+
+## 2026-07-30 — corrected joint macro search is neutral at deployment scale
+
+The July 29 interaction probe reconstructed sequential search incorrectly: it
+chose the lane under the doctrine currently in force. The live policy has
+always chosen its lane under the unchanged evolved base genome and considered
+the active doctrine only in the second step. `choose_joint_axes` now reproduces
+that exact order, with a regression in which a prior doctrine switch would
+make the old comparator choose a different lane. The full-matrix treatment is
+therefore a test of joint optimization against the policy that actually ships.
+
+Pre-registered deployment-profile command:
+
+```bash
+cargo run --profile ci --locked --bin ai_eval -- \
+  strategic_joint strategic_doctrine --pairs 20 --players 6 \
+  --width 74 --height 46 --turns 250 --city-states 9 \
+  --speed online --seed 7320000 --jobs 10
+```
+
+The 20 maps produced 40 games averaging 213.3 turns. Every mirrored map split
+one game each: **20/40 wins per arm, 50.0% paired score, +0 Elo-equivalent**
+(95% Wilson **−148 to +148**), zero favorable directions either way, and
+two-sided sign p=1.0000. Terminal score leaned only 50.4%; five maps favored
+joint, one favored sequential, and fourteen tied (p=0.2188). No promotion
+evidence crossed at any point.
+
+The mechanism did fire, but rarely. Joint search reached 268 rollout reviews
+and replaced the exact sequential choice in **10 (3.7%)**; all ten changed the
+lane and nine also changed doctrine. Only 42% of all reviews reached rollouts,
+because urgent counters and irreversible religious commitments correctly
+answered the others before macro search. A joint review evaluates 28
+lane × doctrine branches instead of the sequential policy's 11. The feature
+therefore spends roughly 2.5× the branch work at the reviews where it can act,
+for no resolved win gain in this sample.
+
+This is not proof of exact parity—the interval is wide—but it is enough to
+reject promotion. `joint_axis_search` remains off in every production entrant;
+`strategic_joint` stays as an evaluator-only control so a larger future run can
+accumulate evidence without rebuilding the experiment. The corrected result
+also replaces the retracted 64.6%/22.3% diagnostic above: interaction in an
+internal value matrix is not gameplay strength, and the exact shipped
+comparator matters before either number is interpretable.
+
+## 2026-07-30 — the deployment audit now measures the deployment
+
+`audit` previously constructed every game through `Game::new`, so a command
+that said `--turns 250` was still a truncated **Standard-speed** game. Its war
+checks also hard-coded ten raw turns, falsely reporting legal Online peace
+after the rules had scaled the ten-Standard-turn duration to eight. The harness
+now accepts `--speed`, derives the default turn limit from that speed, constructs
+`GameOptions`, and applies `Game::standard_duration` to duration invariants.
+Invalid nonpositive counts and undersized maps are rejected or bounded rather
+than wrapping through integer casts.
+
+The motion census is now split by controller role. That makes a rated major's
+rate comparable across maps with different city-state and barbarian
+populations, whose intentionally bounded jobs have very different idle shapes.
+Exact rerun:
+
+```bash
+cargo run --profile ci --locked --bin audit -- \
+  --games 2 --players 6 --width 74 --height 46 --turns 250 \
+  --city-states 9 --speed online --start-seed 7330000 --quiet
+```
+
+| controller role | unit-turns | livelock | idle field | fortified picket |
+|---|---:|---:|---:|---:|
+| rated majors | 53,100 | **0.49%** | 18.96% | 7.75% |
+| city-states | 19,315 | 0.38% | 26.05% | 28.01% |
+| barbarians | 17,625 | **3.31%** | 6.10% | 75.26% |
+| all | 90,040 | 1.02% | 17.97% | 25.31% |
+
+Both games completed with **zero rule violations**. The attribution changes the
+gameplay reading: most remaining circling belongs to barbarians, while the
+rated controllers spend only one unit-turn in 204 in a confirmed loop. Raising
+the global anti-livelock penalty from the blended 1.02% headline would optimize
+the wrong population and risk damaging productive major movement. No tactical
+constant changed. Future AI work should use the `major` line as its baseline
+and treat the other roles as separate controllers.
+
+Attribution also localized all 16 “city builds nothing” reports to
+city-states. Each had reached its bounded garrison and exposed only general
+districts or repeatable projects that its deliberately specialized governor
+does not choose. The auditor had equated “engine-legal” with “on this policy's
+action surface.” It now treats only a repair, building, repair project, or the
+city-state's own district family as actionable infrastructure; the exact rerun
+removes all 16 false symptoms without changing gameplay.

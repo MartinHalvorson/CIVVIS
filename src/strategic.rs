@@ -450,9 +450,14 @@ pub struct StrategicAi {
     /// exact paired A/B of the second axis alone.
     pub doctrine_search: bool,
     /// Evaluate lane and doctrine as one decision instead of coordinate
-    /// descent. Off by default until a paired deployment-profile evaluation
-    /// shows that the additional rollouts improve completed-game outcomes.
-    /// The evaluator-only `strategic_joint` entrant turns it on.
+    /// descent. The evaluator-only `strategic_joint` entrant turns it on.
+    ///
+    /// **Measured neutral and not promoted.** At the 6p 74×46 Online
+    /// deployment profile, 20 mirrored maps split exactly one game each:
+    /// 20/40 wins per arm, +0 Elo-equivalent (95% -148..+148). The joint
+    /// choice replaced coordinate descent in only 10/268 eligible reviews
+    /// while evaluating 28 branches instead of 11. The interval is wide, but
+    /// there is no evidence to buy that extra rollout work; leave it off.
     pub joint_axis_search: bool,
     /// Project every branch together and stop as soon as they separate,
     /// instead of running each for a fixed count of rounds.

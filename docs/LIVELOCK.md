@@ -75,15 +75,33 @@ and is time it was going to spend standing there anyway. It must never run
 
 ## Keeping the measurement honest
 
-`audit` reports a `motion` line per game and in the totals:
+`audit` reports motion per game and in the totals. The first line is the whole
+world; the next three hold the population constant by controller role:
 
 ```
-motion    unit-turns=25112 livelock=1361 (5.42%) idle-field=5333 (21.24%) picket=8078 (32.17%)
+motion all        unit-turns=25112 livelock=1361 (5.42%) idle-field=5333 (21.24%) picket=8078 (32.17%)
+       major      unit-turns=...
+       city-state unit-turns=...
+       barbarian  unit-turns=...
 ```
 
 `picket` — stood still, fortified, outside its own city — is there so that a
 "fix" that merely converts circling into fortified stillness shows up as a
 transfer rather than as a win. Read the three columns together.
+
+Read the `major` line when judging a rated controller. City-state forces are
+deliberately confined to a defense radius and barbarians have no empire to
+develop; mixing them into the headline can make a controller look idle, or
+make two runs incomparable merely because they spawned different numbers of
+minor units. The `all` line remains for engine-wide capacity and regression
+comparisons.
+
+The harness accepts the same `--speed` profile as the deployment tools. Its
+default turn limit and its war/peace duration checks are derived from that
+speed's effective rules. For example, a deployment audit should say
+`--speed online --turns 250`; a negotiated war lasting eight turns is illegal
+under the ten-turn Standard minimum but legal when Online scales that duration
+to eight.
 
 ## What it bought
 
