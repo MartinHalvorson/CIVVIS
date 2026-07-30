@@ -632,16 +632,24 @@ def dismiss_leader_dialogue(clicks: int = 6) -> bool:
         ("goodbye only", 0.172, 0.913),
         ("two-option (lower)", 0.170, 0.897),
         ("two-option (upper)", 0.170, 0.847),
-        ("dialogue stack", 0.14, 0.73),
-        ("dialogue stack (2nd)", 0.14, 0.68),
+        ("three-option (top)", 0.170, 0.825),
+        ("three-option (mid)", 0.170, 0.863),
+        ("dialogue stack (legacy)", 0.14, 0.73),
     ]
     print(f"[dialogue] window {rect}")
+    # ⚠ EACH TARGET NEEDS SEVERAL CLICKS, NOT ONE. `clicks // len(targets)` gave
+    # exactly one click per position once the target list grew, and a leader
+    # conversation is a CHAIN: choosing an option can open the next statement, so one
+    # click opens a new question rather than ending anything. Measured on
+    # stalled-1.png of run civvis-20260730T200543Z — a three-option delegation offer
+    # that survived three full rescue rounds.
+    repeats = max(1, clicks)
     for name, fx, fy in targets:
         x, y = int(wx + ww * fx), int(wy + wh * fy)
-        print(f"[dialogue]   {name} -> ({x},{y})")
-        for _ in range(max(1, clicks // len(targets))):
+        print(f"[dialogue]   {name} -> ({x},{y}) x{repeats}")
+        for _ in range(repeats):
             click_at(x, y)
-            time.sleep(0.7)
+            time.sleep(0.4)
     return True
 
 
