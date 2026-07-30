@@ -27,7 +27,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::name::Name;
 use crate::ai::{run_game, AdvancedAi, Ai, VictoryTarget, Weights};
-use crate::game::Game;
+use crate::game::{default_speed, Game, GameOptions};
 use crate::rng::Rng;
 use crate::setup::MapSize;
 
@@ -52,7 +52,7 @@ const MIN_GAMES_TO_RETIRE: u32 = 20;
 const MAX_RD_TO_RETIRE: f64 = 110.0;
 /// Immutable work/result protocol. Bump this whenever a binary can no longer
 /// execute a pending round exactly as an older binary would.
-const WORK_SCHEMA_VERSION: u32 = 2;
+const WORK_SCHEMA_VERSION: u32 = 3;
 /// A dead simulator's game becomes available again after this lease. Duplicate
 /// execution is harmless because results have deterministic IDs and publish
 /// with create-if-absent semantics.
@@ -276,6 +276,8 @@ pub struct LeagueCfg {
     pub players_per_game: usize,
     pub width: i32,
     pub height: i32,
+    /// Game-speed rules used by every simulation in the rating period.
+    pub speed: String,
     pub max_turns: u32,
     pub num_city_states: usize,
     pub seed: u64,
@@ -322,6 +324,7 @@ impl Default for LeagueCfg {
             players_per_game: 4,
             width: size.width,
             height: size.height,
+            speed: default_speed(),
             // The stock budget for the speed the league plays, so games are
             // decided by winning rather than by whoever led on score when the
             // clock ran out. 150 turns made almost everything a score victory
@@ -357,6 +360,7 @@ struct WorkConfig {
     players_per_game: usize,
     width: i32,
     height: i32,
+    speed: String,
     max_turns: u32,
     num_city_states: usize,
     evolve_every: u32,
@@ -370,6 +374,7 @@ impl From<&LeagueCfg> for WorkConfig {
             players_per_game: cfg.players_per_game,
             width: cfg.width,
             height: cfg.height,
+            speed: cfg.speed.clone(),
             max_turns: cfg.max_turns,
             num_city_states: cfg.num_city_states,
             evolve_every: cfg.evolve_every,
@@ -1153,6 +1158,9 @@ fn validate_manifest(manifest: &RoundManifest, league: &League) -> io::Result<()
         || manifest.config.players_per_game < 2
         || manifest.config.width <= 0
         || manifest.config.height <= 0
+        || !crate::rules::Rules::embedded()
+            .speeds
+            .contains_key(&manifest.config.speed)
         || manifest.config.max_turns == 0
     {
         return Err(io::Error::new(
@@ -1719,9 +1727,8 @@ struct Outcome {
     victory: String,
 }
 
-fn play_job(manifest: &RoundManifest, job: &WorkJob, worker: &str) -> StoredOutcome {
-    let cfg = &manifest.config;
-    let mut game = Game::new(
+fn game_options_for_job(cfg: &WorkConfig, job: &WorkJob) -> GameOptions {
+    let mut options = GameOptions::new(
         cfg.players_per_game,
         cfg.width,
         cfg.height,
@@ -1729,6 +1736,13 @@ fn play_job(manifest: &RoundManifest, job: &WorkJob, worker: &str) -> StoredOutc
         cfg.max_turns,
         cfg.num_city_states,
     );
+    options.speed = cfg.speed.clone();
+    options
+}
+
+fn play_job(manifest: &RoundManifest, job: &WorkJob, worker: &str) -> StoredOutcome {
+    let cfg = &manifest.config;
+    let mut game = Game::new_with(game_options_for_job(cfg, job));
     let mut ais: Vec<Box<dyn Ai>> = game
         .players
         .iter()
@@ -3411,9 +3425,20 @@ mod tests {
         let cfg = LeagueCfg {
             games_per_round: 4,
             players_per_game: 4,
+            speed: "online".into(),
+            max_turns: 250,
             ..LeagueCfg::default()
         };
         let manifest = build_manifest(&league, &cfg);
+        assert_eq!(manifest.config.speed, "online");
+        assert_eq!(manifest.config.max_turns, 250);
+        let options = game_options_for_job(&manifest.config, &manifest.jobs[0]);
+        assert_eq!(options.speed, "online");
+        assert_eq!(options.max_turns, 250);
+        assert!(validate_manifest(&manifest, &league).is_ok());
+        let mut invalid_speed = manifest.clone();
+        invalid_speed.config.speed = "faster-than-light".into();
+        assert!(validate_manifest(&invalid_speed, &league).is_err());
         assert_eq!(manifest.jobs.len(), 4);
         assert!(manifest
             .jobs
@@ -3891,6 +3916,7 @@ mod tests {
                 players_per_game: 2,
                 width: 20,
                 height: 14,
+                speed: "online".into(),
                 max_turns: 25,
                 num_city_states: 1,
                 seed: 11,
@@ -4065,6 +4091,7 @@ mod tests {
             players_per_game: 2,
             width: 20,
             height: 14,
+            speed: default_speed(),
             max_turns: 20,
             num_city_states: 1,
             seed: 91,

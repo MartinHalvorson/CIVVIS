@@ -882,6 +882,15 @@ fn main() {
         "league" => {
             let players = arg(&args, "--players", 4).max(2);
             let defaults = civvis::league::LeagueCfg::default();
+            let rules = Rules::embedded();
+            let speed = arg_text(&args, "--speed", &defaults.speed);
+            let Some(speed_spec) = rules.speeds.get(&speed) else {
+                eprintln!(
+                    "unknown game speed {speed:?}; choose one of {:?}",
+                    speeds(&rules)
+                );
+                std::process::exit(2);
+            };
             let shared_dir =
                 std::env::var("CIVVIS_LEAGUE_DIR").unwrap_or_else(|_| defaults.dir.clone());
             let cfg = civvis::league::LeagueCfg {
@@ -890,7 +899,8 @@ fn main() {
                 players_per_game: players as usize,
                 width: auto_dimension(&args, "--width", players, true),
                 height: auto_dimension(&args, "--height", players, false),
-                max_turns: arg(&args, "--turns", i64::from(defaults.max_turns)).max(1) as u32,
+                speed,
+                max_turns: arg(&args, "--turns", i64::from(speed_spec.turns)).max(1) as u32,
                 num_city_states: auto_cs(&args, players),
                 seed: arg(&args, "--seed", 1) as u64,
                 jobs: jobs_arg(&args),
