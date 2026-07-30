@@ -213,6 +213,9 @@ pub struct Rating {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct TournamentProfile {
     pub protocol_version: u32,
+    /// Fingerprint of the fully merged stock + mod rules JSON. Mod names are
+    /// retained below for readability; this value binds their actual content.
+    pub rules_fingerprint: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rating_anchor: Option<String>,
     /// Ordered controller roles in the tournament. Immutable player identities
@@ -237,6 +240,7 @@ impl TournamentProfile {
     fn from_cfg(cfg: &TourneyCfg) -> Self {
         Self {
             protocol_version: ELO_PROTOCOL_VERSION,
+            rules_fingerprint: Rules::embedded().source_fingerprint().to_string(),
             rating_anchor: cfg.rating_anchor.clone(),
             controller_roster: cfg.controller_roster.clone(),
             players_per_game: cfg.players_per_game,
@@ -255,6 +259,11 @@ impl TournamentProfile {
 
     fn validate(&self) -> bool {
         self.protocol_version > 0
+            && self.rules_fingerprint.starts_with("fnv1a64:")
+            && self.rules_fingerprint.len() == "fnv1a64:".len() + 16
+            && self.rules_fingerprint["fnv1a64:".len()..]
+                .bytes()
+                .all(|byte| byte.is_ascii_hexdigit())
             && self
                 .rating_anchor
                 .as_ref()
@@ -294,8 +303,9 @@ impl TournamentProfile {
             self.controller_roster.join(",")
         };
         format!(
-            "protocol v{}, {}p {}x{}, {} turns, {} city-states, {}, {}/{}/{}, mods={}, K={}, anchor={}, controllers={}",
+            "protocol v{}, rules={}, {}p {}x{}, {} turns, {} city-states, {}, {}/{}/{}, mods={}, K={}, anchor={}, controllers={}",
             self.protocol_version,
+            self.rules_fingerprint,
             self.players_per_game,
             self.width,
             self.height,
@@ -2616,13 +2626,17 @@ pub fn leaderboard(pool: &EloPool) -> String {
         });
         if !performance.is_empty() {
             out.push_str(&format!(
-                "\nStandardized direct performance Elo vs {anchor} (order-independent Jeffreys point; 95% Wilson pair-score interval):\n"
+                "\nStandardized direct performance Elo vs {anchor} (order-independent Jeffreys point; 95% Wilson interval transformed to Elo):\n"
             ));
             for (player, elo, score, games, low, high) in performance {
+                let elo_low = performance_elo(pool.base_rating, low);
+                let elo_high = performance_elo(pool.base_rating, high);
                 out.push_str(&format!(
-                    "  {:<24} {:7.1}   pair-score={:>5.1}/{:<4} ({:>4.1}%, 95% {:>4.1}..{:>4.1}%)\n",
+                    "  {:<24} {:7.1} (95% {:7.1}..{:7.1})   pair-score={:>5.1}/{:<4} ({:>4.1}%, 95% {:>4.1}..{:>4.1}%)\n",
                     player,
                     elo,
+                    elo_low,
+                    elo_high,
                     score,
                     games,
                     100.0 * score / games as f64,
@@ -2674,6 +2688,11 @@ fn wilson_interval(score: f64, games: usize) -> (f64, f64) {
     ((centre - margin).clamp(0.0, 1.0), (centre + margin).clamp(0.0, 1.0))
 }
 
+fn performance_elo(base: f64, pair_score: f64) -> f64 {
+    let probability = pair_score.clamp(0.0, 1.0);
+    base + 400.0 * (probability / (1.0 - probability)).log10()
+}
+
 fn direct_anchor_performance(
     pool: &EloPool,
     anchor: &str,
@@ -2718,8 +2737,8 @@ fn direct_anchor_performance(
         .into_iter()
         .filter_map(|(player, (score, games))| {
             (games > 0).then(|| {
-                let odds = (score + 0.5) / (games as f64 - score + 0.5);
-                let elo = pool.base_rating + 400.0 * odds.log10();
+                let probability = (score + 0.5) / (games as f64 + 1.0);
+                let elo = performance_elo(pool.base_rating, probability);
                 let (low, high) = wilson_interval(score, games);
                 (player, elo, score, games, low, high)
             })
@@ -2731,9 +2750,10 @@ fn direct_anchor_performance(
 mod tests {
     use super::{
         builtin_ai, builtin_provenance, collapsed_entrants, direct_anchor_performance, expected,
-        league_generalist, scheduled_seats, seat_schedule, wilson_interval, win_shares, EloPool,
-        RatedPlayer, RatingKey, TourneyCfg, TournamentProfile, BUILTIN_AIS, CHAMPION_FILE,
-        DEFAULT_RATINGS_PATH, ELO_BASE_RATING, ELO_SCHEMA_VERSION, EVAL_ONLY_AIS, VALUENET_FILE,
+        league_generalist, performance_elo, scheduled_seats, seat_schedule, wilson_interval,
+        win_shares, EloPool, RatedPlayer, RatingKey, TourneyCfg, TournamentProfile, BUILTIN_AIS,
+        CHAMPION_FILE, DEFAULT_RATINGS_PATH, ELO_BASE_RATING, ELO_SCHEMA_VERSION, EVAL_ONLY_AIS,
+        VALUENET_FILE,
     };
     use crate::rng::Rng;
     use std::collections::BTreeMap;
@@ -3020,6 +3040,15 @@ mod tests {
         assert!((low - (1.0 - reverse_high)).abs() < 1e-12);
         assert!((high - (1.0 - reverse_low)).abs() < 1e-12);
         assert_eq!(wilson_interval(0.0, 0), (0.0, 1.0));
+        assert_eq!(performance_elo(1500.0, 0.5), 1500.0);
+        assert!(performance_elo(1500.0, 0.0).is_infinite());
+        assert!(performance_elo(1500.0, 1.0).is_infinite());
+        assert!(
+            (performance_elo(1500.0, low) + performance_elo(1500.0, reverse_high)
+                - 3000.0)
+                .abs()
+                < 1e-9
+        );
     }
 
     #[test]
@@ -3196,6 +3225,11 @@ mod tests {
                 .map(str::to_string)
                 .collect();
         let error = pool.bind_profile(controller_changed).unwrap_err();
+        assert!(error.to_string().contains("rating profile mismatch"));
+
+        let mut rules_changed = pool.profile.clone().unwrap();
+        rules_changed.rules_fingerprint = "fnv1a64:0000000000000000".to_string();
+        let error = pool.bind_profile(rules_changed).unwrap_err();
         assert!(error.to_string().contains("rating profile mismatch"));
     }
 

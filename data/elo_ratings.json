@@ -3,6 +3,7 @@
   "base_rating": 1500.0,
   "profile": {
     "protocol_version": 1,
+    "rules_fingerprint": "fnv1a64:3423bd46da2b8cd7",
     "rating_anchor": "advanced_v1",
     "controller_roster": [
       "advanced",

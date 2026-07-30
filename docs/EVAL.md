@@ -5940,21 +5940,25 @@ civvis tournament --standings
 ```
 
 Profile: 4 players, 60×38, Standard 500 turns, six city-states, Pangaea,
-flat/poles, stock rules, K=24; ordered controller roles are `advanced`,
-`advanced_v1`, `basic`, `random`. Every entrant drew each of Rome, Greece,
-Egypt, and China ten times.
+flat/poles, stock rules fingerprint `fnv1a64:3423bd46da2b8cd7`, K=24; ordered
+controller roles are `advanced`, `advanced_v1`, `basic`, `random`. Every
+entrant drew each of Rome, Greece, Egypt, and China ten times. The fingerprint
+is computed from the fully merged JSON, so changing stock data or editing a
+mod without renaming it now forces a different ledger; engine/scoring changes
+still require an explicit protocol bump.
 
 | immutable player | anchored Elo | direct Elo vs anchor | games | wins |
 |---|---:|---:|---:|---:|
-| `advanced-20260730` | **1588.5** | **1708.2** (31/40; 95% 62.5–87.7%) | 40 | 29 |
+| `advanced-20260730` | **1588.5** | **1708.2** (95% 1588.7–1841.0; pair 31/40, 62.5–87.7%) | 40 | 29 |
 | `advanced_v1` (fixed anchor) | **1500.0** | — | 40 | 8 |
-| `basic-20260730` | 1431.4 | 1314.8 (10/40; 95% 14.2–40.2%) | 40 | 3 |
-| `random-20260730` | 1174.1 | 736.6 (0/40; 95% 0.0–8.8%) | 40 | 0 |
+| `basic-20260730` | 1431.4 | 1314.8 (95% 1187.3–1431.0; pair 10/40, 14.2–40.2%) | 40 | 3 |
+| `random-20260730` | 1174.1 | 736.6 (95% −∞–1093.0; pair 0/40, 0.0–8.8%) | 40 | 0 |
 
 This establishes a reproducible +88.5 Elo gap for the July 30 advanced
 controller over the frozen legacy control on one named multiplayer profile. It
 also gives an order-independent +208.2 direct performance gap from their 31/40
-pair score; its 95% Wilson interval is still 62.5–87.7%. The difference is
+pair score; its 95% Wilson interval is 62.5–87.7%, which transforms
+monotonically to 1588.7–1841.0 Elo. The difference is
 expected because the incremental K=24 path has only 40 updates and is not a
 batch maximum-likelihood fit. The direct-anchor result at an equal game count
 is therefore the longitudinal baseline; the incremental number remains useful

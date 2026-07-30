@@ -52,7 +52,7 @@ const MIN_GAMES_TO_RETIRE: u32 = 20;
 const MAX_RD_TO_RETIRE: f64 = 110.0;
 /// Immutable work/result protocol. Bump this whenever a binary can no longer
 /// execute a pending round exactly as an older binary would.
-const WORK_SCHEMA_VERSION: u32 = 3;
+const WORK_SCHEMA_VERSION: u32 = 4;
 /// A dead simulator's game becomes available again after this lease. Duplicate
 /// execution is harmless because results have deterministic IDs and publish
 /// with create-if-absent semantics.
@@ -357,6 +357,8 @@ impl Default for LeagueCfg {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 struct WorkConfig {
     league_seed: u64,
+    /// Effective merged rule data, not merely the display names of mods.
+    rules_fingerprint: String,
     players_per_game: usize,
     width: i32,
     height: i32,
@@ -371,6 +373,9 @@ impl From<&LeagueCfg> for WorkConfig {
     fn from(cfg: &LeagueCfg) -> Self {
         Self {
             league_seed: cfg.seed,
+            rules_fingerprint: crate::rules::Rules::embedded()
+                .source_fingerprint()
+                .to_string(),
             players_per_game: cfg.players_per_game,
             width: cfg.width,
             height: cfg.height,
@@ -1196,6 +1201,8 @@ fn validate_manifest(manifest: &RoundManifest, league: &League) -> io::Result<()
         || manifest.engine != work_engine()
         || manifest.round != league.round
         || manifest.strategies != league.strategies
+        || manifest.config.rules_fingerprint
+            != crate::rules::Rules::embedded().source_fingerprint()
         || manifest.config.players_per_game < 2
         || manifest.config.width <= 0
         || manifest.config.height <= 0
@@ -3661,6 +3668,10 @@ mod tests {
             ..LeagueCfg::default()
         };
         let manifest = build_manifest(&league, &cfg);
+        assert_eq!(
+            manifest.config.rules_fingerprint,
+            crate::rules::Rules::embedded().source_fingerprint()
+        );
         assert_eq!(manifest.config.speed, "online");
         assert_eq!(manifest.config.max_turns, 250);
         let options = game_options_for_job(&manifest.config, &manifest.jobs[0]);
@@ -3670,6 +3681,9 @@ mod tests {
         let mut invalid_speed = manifest.clone();
         invalid_speed.config.speed = "faster-than-light".into();
         assert!(validate_manifest(&invalid_speed, &league).is_err());
+        let mut invalid_rules = manifest.clone();
+        invalid_rules.config.rules_fingerprint = "fnv1a64:0000000000000000".into();
+        assert!(validate_manifest(&invalid_rules, &league).is_err());
         assert_eq!(manifest.jobs.len(), 4);
         assert!(manifest
             .jobs

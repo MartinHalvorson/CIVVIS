@@ -47,7 +47,9 @@ simulation/selection flags and league-work protocol/build; an incompatible
 binary refuses a pending manifest instead of contaminating its evidence. The
 first worker to reach a new round
 writes an immutable manifest containing the exact roster, genomes, game speed,
-settings, maps, seats, and job IDs. Workers then:
+settings, effective merged-rules fingerprint, maps, seats, and job IDs. Work
+protocol v4 refuses a worker whose stock or modded rule content differs even
+when a mod kept the same display name. Workers then:
 
 1. atomically claim unplayed games, up to their local `--jobs` capacity;
 2. simulate without holding the league lock;
@@ -280,7 +282,8 @@ across hundreds of rounds even after every non-anchor founder has been replaced.
   score ties and the full leader/civilization identity survive replay; the
   rating tool remains compatible with both older row shapes.
 - `work/round-N/manifest.json` — immutable roster, game speed, settings,
-  mirrored schedule, and job IDs for one rating period.
+  effective-rules fingerprint, mirrored schedule, and job IDs for one rating
+  period.
 - `work/round-N/results/*.json` — immutable, validated match evidence. These
   files make rating changes auditable and safely deduplicate late workers.
 - `work/round-N/finalized.json` — the period's commit summary, births, and

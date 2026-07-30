@@ -351,23 +351,27 @@ same effective controller and refuses a learned entrant that silently degraded
 because a definitional artifact is absent.
 
 Schema 3 binds a ledger to the complete rating profile: an explicit experiment
-protocol version, ordered controller roster, table size, dimensions, turn
-limit, city-state count, speed, map script/shape/poles, active mods, and K. A
-later run with any different field is rejected with a request to use another
-`--ratings` path. Versioned player identities may change while their ordered
-controller roles remain `advanced, advanced_v1, basic, random`; this is what
-lets a new challenger join without quietly changing its multiplayer controls.
-Bump the protocol
-when engine rules, implicit setup defaults, or scoring semantics change enough
-to define a different contest. The shipped ledger is a canonical 40-game,
+protocol version, a deterministic fingerprint of the fully merged rules JSON,
+ordered controller roster, table size, dimensions, turn limit, city-state
+count, speed, map script/shape/poles, active mods, and K. The readable mod names
+say what was loaded; the fingerprint binds their actual content, so editing a
+mod in place cannot reuse its old scale. A later run with any different field
+is rejected with a request to use another `--ratings` path. Versioned player
+identities may change while their ordered controller roles remain `advanced,
+advanced_v1, basic, random`; this is what lets a new challenger join without
+quietly changing its multiplayer controls. Bump the protocol when engine
+behavior, implicit setup defaults, or scoring semantics change enough to
+define a different contest; rules-data changes are detected automatically.
+The shipped ledger is a canonical 40-game,
 1500-centred protocol-v1 baseline bound to the CLI's stock 4-player Standard
-game (60×38, 500 turns, six city-states, Pangaea, flat/poles, no mods, K=24).
+game (rules `fnv1a64:3423bd46da2b8cd7`, 60×38, 500 turns, six city-states,
+Pangaea, flat/poles, no mods, K=24).
 Its frozen July 30 run rates `advanced-20260730` at 1589 and the
 `advanced_v1` anchor at 1500, an +89-point online gap. The order-independent
 direct result is 1708, from a 31/40 pair score whose 95% interval is
-62.5–87.7%. Future dated challengers can therefore be compared through the
-unchanged control, with both effect and uncertainty visible. This prevents a short
-smoke test, a mod, or another map size from
+62.5–87.7%, or 1589–1841 after the same monotone Elo transform. Future dated
+challengers can therefore be compared through the unchanged control, with both
+effect and uncertainty visible. This prevents a short smoke test, a mod, or another map size from
 quietly changing what its Elo scale measures. Settings control the experiment;
 versioned identities control what player generated each observation. Both are
 required for a longitudinal number.
@@ -399,10 +403,12 @@ player co-seated with the fixed anchor. It converts that player's aggregate
 pair score into the usual 400-point logistic scale, with a Jeffreys half-result
 on each side so finite undefeated samples remain finite. This diagnostic is
 order-independent and is recomputed from raw evidence. Its printed 95% Wilson
-interval stays on the observed pair-score scale so a short run cannot masquerade
-as a settled Elo gap. Use this direct-anchor result at a fixed game count as the
-longitudinal baseline; use the incremental K-factor Elo as the continuously
-updated matchmaking/leaderboard state.
+interval appears both on the observed pair-score scale and after the same
+monotone Elo transform, so a short run cannot masquerade as a settled Elo gap.
+An interval touching 0% or 100% correctly has an infinite Elo endpoint. Use
+this direct-anchor result at a fixed game count as the longitudinal baseline;
+use the incremental K-factor Elo as the continuously updated
+matchmaking/leaderboard state.
 
 Entrants use a seeded round-robin seat schedule instead of independent random
 sampling. Across one complete cycle, every fixed civilization seat sees every
