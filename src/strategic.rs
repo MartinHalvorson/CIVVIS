@@ -104,18 +104,24 @@ fn choose_joint_axes(
         .iter()
         .position(|doctrine| *doctrine == incumbent)
         .expect("the incumbent doctrine is in Doctrine::ALL");
+    let base_index = Doctrine::ALL
+        .iter()
+        .position(|doctrine| *doctrine == Doctrine::Incumbent)
+        .expect("the evolved base genome is in Doctrine::ALL");
     let adaptive_index = lanes
         .iter()
         .position(Option::is_none)
         .expect("the adaptive lane is always projected");
 
-    // Lane first under the doctrine currently in force, exactly as
-    // `choose_rollout_target` does.
+    // Lane first under the evolved base genome, exactly as `rollout` and
+    // `choose_rollout_target` do. The acting inner agent may currently carry
+    // another doctrine, but the shipped lane pass deliberately projects
+    // `self.weights`; only the second coordinate compares the active doctrine.
     let mut best_target: Option<usize> = None;
     for (index, target) in lanes.iter().enumerate() {
         if target.is_some()
             && best_target.is_none_or(|best| {
-                values[index][incumbent_index] > values[best][incumbent_index]
+                values[index][base_index] > values[best][base_index]
             })
         {
             best_target = Some(index);
@@ -123,8 +129,8 @@ fn choose_joint_axes(
     }
     let sequential_lane = best_target
         .filter(|index| {
-            values[*index][incumbent_index]
-                > values[adaptive_index][incumbent_index] + TARGET_COMMITMENT_MARGIN
+            values[*index][base_index]
+                > values[adaptive_index][base_index] + TARGET_COMMITMENT_MARGIN
         })
         .unwrap_or(adaptive_index);
 
@@ -2378,6 +2384,21 @@ mod tests {
         assert_eq!(choice.target, Some(VictoryTarget::Science));
         assert_eq!(choice.doctrine, Doctrine::Expand);
         assert_eq!(choice.value, 0.53);
+        assert_eq!(choice, sequential);
+    }
+
+    #[test]
+    fn joint_comparator_reproduces_the_base_genome_lane_pass_after_a_doctrine_switch() {
+        let lanes = vec![None, Some(VictoryTarget::Domination)];
+        // Under the evolved base genome (column 0), Domination loses to the
+        // adaptive lane. Under the currently active Expand doctrine (column
+        // 1) it wins. The shipped coordinate descent uses column 0 for its
+        // lane pass, then compares doctrines on that selected lane.
+        let values = vec![vec![0.50, 0.10, 0.09, 0.08], vec![0.49, 0.30, 0.20, 0.10]];
+
+        let (choice, sequential) = choose_joint_axes(&lanes, &values, Doctrine::Expand);
+        assert_eq!(sequential.target, None);
+        assert_eq!(sequential.doctrine, Doctrine::Incumbent);
         assert_eq!(choice, sequential);
     }
 

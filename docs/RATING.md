@@ -22,9 +22,26 @@ live. Nothing below asks to be taken on trust.
 > variance once per placement stage. The implementation now accumulates
 > Gaussian natural parameters and applies the final posterior variance once.
 > The qualitative audit and raw-history findings below still identify the
-> right experiment defects, but their exact contextual-model backtest numbers
-> predate this correction and must be regenerated before they are used as a
-> current calibration claim.
+> right experiment defects. The historical tables below retain the numbers
+> recorded with each experiment; the current corrected replay is reported
+> separately here rather than silently rewriting them.
+
+On the live runtime history available when the correction landed (822 games
+through round 697), `--backtest` evaluates the last 70% strictly out of sample:
+
+| seats | evaluated games | Glicko-2 info/game | corrected staged + civ |
+| ---: | ---: | ---: | ---: |
+| 4 | 127 | **+0.1612** | +0.1505 |
+| 6 | 37 | +0.2074 | **+0.2477** |
+| 8 | 365 | −0.0141 | **+0.0104** |
+| mixed (4–8, mean 7.0) | 576 | +0.0521 | **+0.0608** |
+
+The old update scored +0.0632 nats/game on that same mixed replay; the
+correction removes 0.0024 nats/game of optimistic movement while preserving
+the small measured advantage over Glicko. It does not establish a universal
+replacement: Glicko remains better on this four-seat slice, the six-seat slice
+is small, and the eight-seat history barely carries signal for either system.
+That profile dependence is why `--seats` exists.
 
 ## What the audit found
 

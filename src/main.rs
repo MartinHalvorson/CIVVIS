@@ -10,6 +10,46 @@ use civvis::game::{
 use civvis::rules::Rules;
 use civvis::setup::{self, BaseRuleset, GameSpeed, MapPoles, MapScript, MapSize, MapTopology};
 
+/// The mutable controller is deliberately given a dated rating identity.
+/// Reusing the bare `advanced` row after its implementation changes would
+/// blend two players into one lifetime average and erase the very improvement
+/// the longitudinal tournament is supposed to expose.
+const DEFAULT_TOURNAMENT_ENTRANTS: &str =
+    "advanced-20260730=advanced,advanced_v1,basic-20260730=basic,random-20260730=random";
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct TournamentEntrant {
+    identity: String,
+    controller: String,
+}
+
+/// Parse `rating-identity=controller`, with a bare name meaning both.
+///
+/// Separating the two lets a changing builtin enter a persistent ledger under
+/// a new immutable identity while still constructing the existing controller.
+fn parse_tournament_entrants(spec: &str) -> Result<Vec<TournamentEntrant>, String> {
+    let mut entrants = Vec::new();
+    for raw in spec.split(',') {
+        let raw = raw.trim();
+        if raw.is_empty() {
+            return Err("--ais contains an empty entrant".to_string());
+        }
+        let (identity, controller) = raw.split_once('=').unwrap_or((raw, raw));
+        let identity = identity.trim();
+        let controller = controller.trim();
+        if identity.is_empty() || controller.is_empty() {
+            return Err(format!(
+                "invalid tournament entrant {raw:?}; use rating-identity=controller"
+            ));
+        }
+        entrants.push(TournamentEntrant {
+            identity: identity.to_string(),
+            controller: controller.to_string(),
+        });
+    }
+    Ok(entrants)
+}
+
 fn arg(args: &[String], key: &str, default: i64) -> i64 {
     args.iter()
         .position(|a| a == key)
@@ -24,6 +64,34 @@ fn arg_f64(args: &[String], key: &str, default: f64) -> f64 {
         .and_then(|i| args.get(i + 1))
         .and_then(|v| v.parse().ok())
         .unwrap_or(default)
+}
+
+fn strict_i64_arg(args: &[String], key: &str, default: i64) -> Result<i64, String> {
+    match args.iter().position(|arg| arg == key) {
+        Some(index) => {
+            let value = args
+                .get(index + 1)
+                .ok_or_else(|| format!("{key} needs a value"))?;
+            value
+                .parse::<i64>()
+                .map_err(|_| format!("{key} needs an integer, got {value:?}"))
+        }
+        None => Ok(default),
+    }
+}
+
+fn strict_f64_arg(args: &[String], key: &str, default: f64) -> Result<f64, String> {
+    match args.iter().position(|arg| arg == key) {
+        Some(index) => {
+            let value = args
+                .get(index + 1)
+                .ok_or_else(|| format!("{key} needs a value"))?;
+            value
+                .parse::<f64>()
+                .map_err(|_| format!("{key} needs a number, got {value:?}"))
+        }
+        None => Ok(default),
+    }
 }
 
 fn arg_text(args: &[String], key: &str, default: &str) -> String {
@@ -790,30 +858,111 @@ fn main() {
             let _ = sink;
         }
         "tournament" => {
-            let names: Vec<String> = args
+            let ratings_path = arg_text(&args, "--ratings", civvis::elo::DEFAULT_RATINGS_PATH);
+            if args.iter().any(|arg| arg == "--standings") {
+                match civvis::elo::EloPool::load(&ratings_path) {
+                    Ok(pool) => print!("{}", civvis::elo::leaderboard(&pool)),
+                    Err(error) => {
+                        eprintln!("cannot load Elo ledger {ratings_path}: {error}");
+                        std::process::exit(1);
+                    }
+                }
+                return;
+            }
+            let entrant_spec = args
                 .iter()
                 .position(|a| a == "--ais")
                 .and_then(|i| args.get(i + 1))
-                .map(|s| s.split(',').map(|x| x.trim().to_string()).collect())
-                .unwrap_or_else(|| {
-                    vec![
-                        "advanced".to_string(),
-                        "advanced_v1".to_string(),
-                        "basic".to_string(),
-                        "random".to_string(),
-                    ]
-                });
-            for n in &names {
-                if !civvis::elo::BUILTIN_AIS.contains(&n.as_str()) {
+                .map(String::as_str)
+                .unwrap_or(DEFAULT_TOURNAMENT_ENTRANTS);
+            let entrants = parse_tournament_entrants(entrant_spec).unwrap_or_else(|error| {
+                eprintln!("{error}");
+                std::process::exit(2);
+            });
+            for entrant in &entrants {
+                if !civvis::elo::BUILTIN_AIS.contains(&entrant.controller.as_str()) {
                     eprintln!(
-                        "unknown AI {n:?}; builtin: {:?} (custom bots: \
-                              use civvis::elo::run_tournament from Rust)",
+                        "unknown AI controller {:?}; builtin: {:?} (custom bots: \
+                         use civvis::elo::run_tournament from Rust)",
+                        entrant.controller,
                         civvis::elo::BUILTIN_AIS
                     );
                     std::process::exit(1);
                 }
             }
-            let players = arg(&args, "--players", names.len().max(2) as i64).max(2);
+            let mut effective = BTreeMap::<&'static str, String>::new();
+            for entrant in &entrants {
+                let provenance = civvis::elo::builtin_provenance(
+                    &entrant.controller,
+                    civvis::elo::ARTIFACT_DIR,
+                );
+                if provenance.degraded() {
+                    eprintln!(
+                        "cannot rate identity {:?}: {}",
+                        entrant.identity,
+                        provenance.line()
+                    );
+                    std::process::exit(2);
+                }
+                if let Some(other) = effective.insert(provenance.effective, entrant.identity.clone()) {
+                    eprintln!(
+                        "rating identities {:?} and {:?} both play as {:?}; cloned controllers cannot be rated as separate players",
+                        other,
+                        entrant.identity,
+                        provenance.effective,
+                    );
+                    std::process::exit(2);
+                }
+                if entrant.identity != entrant.controller {
+                    eprintln!(
+                        "rating identity {:?} plays controller {:?}",
+                        entrant.identity, entrant.controller
+                    );
+                }
+                if provenance.untrained() {
+                    eprintln!("warning: {}", provenance.line());
+                }
+            }
+            let names: Vec<String> = entrants
+                .iter()
+                .map(|entrant| entrant.identity.clone())
+                .collect();
+            let controllers: BTreeMap<String, String> = entrants
+                .into_iter()
+                .map(|entrant| (entrant.identity, entrant.controller))
+                .collect();
+            let rating_anchor = match args.iter().position(|arg| arg == "--anchor") {
+                Some(index) => {
+                    let value = args.get(index + 1).unwrap_or_else(|| {
+                        eprintln!("--anchor needs an entrant identity or 'none'");
+                        std::process::exit(2);
+                    });
+                    if value.starts_with("--") || value.trim().is_empty() {
+                        eprintln!("--anchor needs an entrant identity or 'none'");
+                        std::process::exit(2);
+                    }
+                    (value != "none").then(|| value.clone())
+                }
+                None => names
+                    .iter()
+                    .any(|name| name == "advanced_v1")
+                    .then(|| "advanced_v1".to_string()),
+            };
+            let strict = |result: Result<i64, String>| {
+                result.unwrap_or_else(|error| {
+                    eprintln!("{error}");
+                    std::process::exit(2);
+                })
+            };
+            let players = strict(strict_i64_arg(
+                &args,
+                "--players",
+                names.len().max(2) as i64,
+            ));
+            if !(2..=100).contains(&players) {
+                eprintln!("--players must be between 2 and 100");
+                std::process::exit(2);
+            }
             let rules = Rules::embedded();
             let speed = arg_text(&args, "--speed", &default_speed());
             if !rules.speeds.contains_key(&speed) {
@@ -825,28 +974,98 @@ fn main() {
                 eprintln!("unknown map script {map_id:?}; choose pangaea, continents, or archipelago");
                 std::process::exit(2);
             });
+            let topology_default = if map_id == "planet" { "planet" } else { "flat" };
+            let topology_id = arg_text(&args, "--shape", topology_default);
+            let tournament_topology = MapTopology::from_id(&topology_id).unwrap_or_else(|| {
+                eprintln!("unknown map shape {topology_id:?}; choose flat or planet");
+                std::process::exit(2);
+            });
+            let poles_id = arg_text(&args, "--poles", "poles");
+            let tournament_poles = MapPoles::from_id(&poles_id).unwrap_or_else(|| {
+                eprintln!("unknown pole setting {poles_id:?}; choose poles or randomized");
+                std::process::exit(2);
+            });
+            let size = MapSize::for_players(players as usize);
+            let (default_width, default_height) = size.dimensions(tournament_topology);
+            let width = strict(strict_i64_arg(&args, "--width", i64::from(default_width)));
+            let height = strict(strict_i64_arg(&args, "--height", i64::from(default_height)));
+            if width < 8 || height < 8 || width > i64::from(i32::MAX) || height > i64::from(i32::MAX)
+            {
+                eprintln!("tournament dimensions must each be between 8 and {}", i32::MAX);
+                std::process::exit(2);
+            }
+            let games = strict(strict_i64_arg(&args, "--games", 20));
+            let turns = strict(strict_i64_arg(&args, "--turns", stock_turns(&args)));
+            let seed = strict(strict_i64_arg(&args, "--seed", 0));
+            let city_states = strict(strict_i64_arg(
+                &args,
+                "--city-states",
+                size.default_city_states
+                    .min(civvis::game::CITY_STATE_NAMES.len()) as i64,
+            ));
+            if games <= 0 || games > i64::from(u32::MAX) {
+                eprintln!("--games must be between 1 and {}", u32::MAX);
+                std::process::exit(2);
+            }
+            if turns <= 0 || turns > i64::from(u32::MAX) {
+                eprintln!("--turns must be between 1 and {}", u32::MAX);
+                std::process::exit(2);
+            }
+            if seed < 0 {
+                eprintln!("--seed must be non-negative");
+                std::process::exit(2);
+            }
+            if city_states < 0 || city_states as usize > civvis::game::CITY_STATE_NAMES.len() {
+                eprintln!(
+                    "--city-states must be between 0 and {}",
+                    civvis::game::CITY_STATE_NAMES.len()
+                );
+                std::process::exit(2);
+            }
+            let k = strict_f64_arg(&args, "--k", 24.0).unwrap_or_else(|error| {
+                eprintln!("{error}");
+                std::process::exit(2);
+            });
+            if !k.is_finite() || k <= 0.0 {
+                eprintln!("--k must be finite and greater than zero");
+                std::process::exit(2);
+            }
+            let jobs = strict(strict_i64_arg(&args, "--jobs", 0));
+            if jobs < 0 {
+                eprintln!("--jobs must be non-negative (zero means one per core)");
+                std::process::exit(2);
+            }
             let cfg = civvis::elo::TourneyCfg {
-                games: arg(&args, "--games", 20) as u32,
+                games: games as u32,
                 players_per_game: players as usize,
-                width: auto_dimension(&args, "--width", players, true),
-                height: auto_dimension(&args, "--height", players, false),
+                width: width as i32,
+                height: height as i32,
                 speed,
                 map_script,
-                map_topology: map_topology(&args),
-                map_poles: map_poles(&args),
+                map_topology: tournament_topology,
+                map_poles: tournament_poles,
                 // A tournament writes the project's persistent Elo, so it has
                 // to rank on whole games; see `stock_turns`.
-                max_turns: arg(&args, "--turns", stock_turns(&args)) as u32,
-                num_city_states: auto_cs(&args, players),
-                seed: arg(&args, "--seed", 0) as u64,
-                k: arg_f64(&args, "--k", 24.0),
+                max_turns: turns as u32,
+                num_city_states: city_states as usize,
+                seed: seed as u64,
+                k,
+                rating_anchor,
                 verbose: !args.iter().any(|a| a == "--quiet"),
-                jobs: jobs_arg(&args),
+                jobs: if jobs == 0 {
+                    civvis::parallel::default_jobs()
+                } else {
+                    jobs as usize
+                },
             };
-            let ratings_path = arg_text(&args, "--ratings", civvis::elo::DEFAULT_RATINGS_PATH);
             match civvis::elo::run_persistent_tournament(
                 &names,
-                civvis::elo::builtin_ai,
+                |identity, seed| {
+                    let controller = controllers
+                        .get(identity)
+                        .expect("every scheduled identity came from --ais");
+                    civvis::elo::builtin_ai(controller, seed)
+                },
                 &cfg,
                 &ratings_path,
             ) {
@@ -1186,7 +1405,7 @@ fn main() {
             println!(
                 "usage: civvis <simulate|soak|benchmark|tournament|league|rating|play|evolve|validate|pedia> \
                       [--players N] [--seed N] [--turns N] [--width N] [--height N] \
-                      [--city-states N] [--games N] [--ais a,b] [--ratings path] [--port N] [--no-open] \
+                      [--city-states N] [--games N] [--ais [identity=]controller,...] [--anchor identity|none] [--ratings path] [--standings] [--port N] [--no-open] \
                       [--map land_only|lakes|inland_sea|grand_canals|grand_canals_2|pangaea|continents|small_continents|islands|water_world|true_start_earth] \
                       [--shape flat|planet] [--poles poles|randomized] \
                       [--difficulty settler|chieftain|warlord|prince|king|emperor|immortal|deity] \
@@ -1207,7 +1426,39 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
+    use super::{parse_tournament_entrants, strict_f64_arg, strict_i64_arg};
     use civvis::game::{Action, Game};
+
+    #[test]
+    fn tournament_entrants_separate_immutable_identity_from_controller() {
+        let entrants = parse_tournament_entrants(
+            "advanced-20260730=advanced, advanced_v1, basic-20260730=basic, random-20260730=random",
+        )
+        .unwrap();
+        assert_eq!(entrants[0].identity, "advanced-20260730");
+        assert_eq!(entrants[0].controller, "advanced");
+        assert_eq!(entrants[1].identity, "advanced_v1");
+        assert_eq!(entrants[1].controller, "advanced_v1");
+        assert_eq!(entrants[2].identity, "basic-20260730");
+        assert_eq!(entrants[2].controller, "basic");
+        assert!(parse_tournament_entrants("candidate=").is_err());
+        assert!(parse_tournament_entrants("advanced,,basic").is_err());
+    }
+
+    #[test]
+    fn strict_tournament_numbers_never_fall_back_on_malformed_input() {
+        let args = vec![
+            "tournament".to_string(),
+            "--games".to_string(),
+            "forty".to_string(),
+            "--k".to_string(),
+            "fast".to_string(),
+        ];
+        assert!(strict_i64_arg(&args, "--games", 20).is_err());
+        assert!(strict_f64_arg(&args, "--k", 24.0).is_err());
+        assert_eq!(strict_i64_arg(&args, "--players", 4).unwrap(), 4);
+        assert!(strict_i64_arg(&["--games".to_string()], "--games", 20).is_err());
+    }
 
     /// The soak's WAR block folds over the wars it can see, and
     /// `close_war_record` moves a finished war out of `Game::wars` into

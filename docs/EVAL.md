@@ -14,7 +14,8 @@ and seed set.
 
 ```bash
 civvis soak --games 12 --players 4 --turns 350 --start-seed 100
-civvis tournament --ais advanced,advanced_v1,basic,random --games 40 --players 4 --quiet
+civvis tournament --ais advanced-20260730=advanced,advanced_v1,basic-20260730=basic,random-20260730=random \
+  --games 40 --players 4 --quiet
 victory_eval --games 2 --players 2       # all six targets, stock turn limits
 ai_eval advanced basic --pairs 100 --seed 4000   # paired, low-variance
 ai_eval advanced basic --pairs 100 --difficulty emperor   # against the ladder
@@ -5894,3 +5895,91 @@ this establishes.
 | **seating one searching entry costs ~6.4×** | **established** (n=3) |
 | search is too expensive to seat | **refuted** — that conclusion came from measuring a fleet nobody runs |
 | a searching seat would break the exhibition's frame-per-turn guarantee | **unmeasured**, and unlikely at 13 turns/sec |
+
+## 2026-07-30 — ★★★★ the first replayable, anchored Elo baseline
+
+The tracked Elo file was not a baseline. It was a schema-2, 1000-centred toy
+ledger from one game in which `advanced` and `basic` each controlled two seats.
+Those cloned seats were counted as independent evidence, every
+player/civilization combination started over, and no map, speed, turn limit, K,
+or raw result survived. Appending to it could not produce a longitudinal
+measurement.
+
+Schema 3 now makes the experiment explicit and replayable:
+
+- the primary row is one player identity across every civilization draw;
+- exact player/leader/civilization rows are diagnostics and inherit that
+  player's current prior;
+- a protocol records table size, dimensions, full turn limit, city-states,
+  speed, map script/shape/poles, active mods, K, and a fixed rating anchor;
+- mutable controllers enter under dated identities while frozen
+  `advanced_v1` remains the connected control;
+- every scored table is retained under a deterministic event id, sorted into
+  one canonical update order, and replayed on load to verify the aggregates;
+- rerunning a seed is idempotent, a changed result under the same id is an
+  error, concurrent checkpoint arrival cannot change the final table, and
+  keyed events cannot mix K values or unkeyed history;
+- persistent tournaments reject duplicate identities, effective-controller
+  aliases, degraded learned entrants, cloned seats, malformed numeric flags,
+  and any profile mismatch.
+
+The anchor is literal rather than documentary. After every Elo update all rows
+move by the same translation that returns `advanced_v1` to 1500. Pairwise gaps
+and expected scores are unchanged. What changes is cross-generation meaning:
+repeatedly introducing a fresh weak controller at 1500 can no longer inflate a
+new challenger while leaving an older inactive challenger on another scale.
+
+Canonical command, protocol v1:
+
+```bash
+civvis tournament \
+  --ais advanced-20260730=advanced,advanced_v1,basic-20260730=basic,random-20260730=random \
+  --games 40 --players 4 --seed 0 --quiet
+civvis tournament --standings
+```
+
+Profile: 4 players, 60×38, Standard 500 turns, six city-states, Pangaea,
+flat/poles, stock rules, K=24. Every entrant drew each of Rome, Greece, Egypt,
+and China ten times.
+
+| immutable player | anchored Elo | games | wins |
+|---|---:|---:|---:|
+| `advanced-20260730` | **1588.5** | 40 | 29 |
+| `advanced_v1` (fixed anchor) | **1500.0** | 40 | 8 |
+| `basic-20260730` | 1431.4 | 40 | 3 |
+| `random-20260730` | 1174.1 | 40 | 0 |
+
+This establishes a reproducible +88.5 Elo gap for the July 30 advanced
+controller over the frozen legacy control on one named multiplayer profile. It
+does not turn 40 correlated multiplayer worlds into a narrow confidence
+interval, and it remains an internal CIVVIS scale rather than a human or
+Firaxis calibration. Future controllers need a new identity and the same
+protocol; a material rules or scoring change needs a new protocol rather than
+being mixed into this file.
+
+## 2026-07-30 — the contextual rating update was overconfident
+
+The staged Gaussian updater summed each observation's *posterior mean shift*.
+That applies the prior variance once for every placement stage, and repeatedly
+marginalizes the same civilization uncertainty as though it were a fresh draw.
+The fix accumulates likelihood natural score and precision for each
+player/civilization seat, collapses the repeated stages, and applies the final
+posterior variance once. Closed-form tests now cover a plain repeated
+observation, a shared context, order invariance, and diminishing evidence.
+
+Strictly out-of-sample replay on the available live history (822 games through
+round 697; last 70% scored):
+
+| seats | evaluated games | Glicko-2 info/game | corrected staged + civ |
+|---:|---:|---:|---:|
+| 4 | 127 | **+0.1612** | +0.1505 |
+| 6 | 37 | +0.2074 | **+0.2477** |
+| 8 | 365 | −0.0141 | **+0.0104** |
+| mixed, mean 7.0 | 576 | +0.0521 | **+0.0608** |
+
+The old update scored +0.0632 nats/game on that same mixed replay. Correcting
+it removes 0.0024 nats/game of optimistic movement while retaining a small
++0.0087 advantage over Glicko on the mixed slice. The four-seat slice favors
+Glicko, the six-seat slice is small, and neither system extracts much from the
+eight-seat history. The honest conclusion is profile dependence, not that one
+estimator universally replaced the other.

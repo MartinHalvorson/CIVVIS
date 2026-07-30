@@ -307,7 +307,10 @@ metadata.
 ## Elo tournaments
 
 ```bash
-civvis tournament --ais advanced,advanced_v1,basic,random --games 40 --players 4
+civvis tournament \
+  --ais advanced-20260730=advanced,advanced_v1,basic-20260730=basic,random-20260730=random \
+  --games 40 --players 4
+civvis tournament --standings          # verify and print without playing
 ```
 
 The CLI checkpoints every completed game to the tracked
@@ -318,20 +321,57 @@ across every leader and civilization it draws. Separate
 seen combination inherits that player's current Elo instead of silently
 starting the established player over at the base rating.
 
-Schema 3 binds a ledger to the complete rating profile: table size, dimensions,
-turn limit, city-state count, speed, map script/shape/poles, and K. A later run
-with any different field is rejected with a request to use another `--ratings`
-path. The shipped ledger is a clean 1500-centred baseline bound to the CLI's
-stock 4-player Standard game (60×38, 500 turns, six city-states, Pangaea,
-flat/poles, K=24). This prevents a short smoke test or another map size from
-quietly changing what its Elo scale measures.
+An entrant may be written as `rating-identity=controller`. The left side is
+what the ledger measures; the right side is the builtin the game constructs.
+Use a new immutable identity whenever a mutable controller changes, for example
+`advanced-20260815=advanced`. Otherwise a row named only `advanced` is a
+lifetime average of several implementations and will dilute improvements over
+time. The default command dates every mutable controller; only the deliberately
+frozen `advanced_v1` keeps its bare identity and anchors successive versions on
+one connected scale. After every update the ledger translates every rating by
+the same amount to keep that immutable control at exactly 1500. Pairwise gaps
+and win expectations are unchanged, while fresh weak identities can no longer
+inflate later generations relative to inactive older ones. Custom tournaments
+can select another entrant with `--anchor identity`; `--anchor none` leaves a
+one-off pool floating. The CLI also refuses two identities that resolve to the
+same effective controller and refuses a learned entrant that silently degraded
+because a definitional artifact is absent.
+
+Schema 3 binds a ledger to the complete rating profile: an explicit experiment
+protocol version, table size, dimensions, turn limit, city-state count, speed,
+map script/shape/poles, active mods, and K. A later run with any different field
+is rejected with a request to use another `--ratings` path. Bump the protocol
+when engine rules, implicit setup defaults, or scoring semantics change enough
+to define a different contest. The shipped ledger is a canonical 40-game,
+1500-centred protocol-v1 baseline bound to the CLI's stock 4-player Standard
+game (60×38, 500 turns, six city-states, Pangaea, flat/poles, no mods, K=24).
+Its frozen July 30 run rates `advanced-20260730` at 1589 and the
+`advanced_v1` anchor at 1500, an +89-point gap; future dated challengers can
+therefore be compared through the unchanged control. This prevents a short
+smoke test, a mod, or another map size from
+quietly changing what its Elo scale measures. Settings control the experiment;
+versioned identities control what player generated each observation. Both are
+required for a longitudinal number.
 
 The ledger retains games and wins at both levels. If fewer entrants than seats
 would cause an AI to occupy several seats, a persistent run refuses: controlling
 twice as much of the map changes the contest even if the arithmetic deduplicates
 the comparisons. In-memory/manual pools still defensively count a cloned player
-once per world. Writes are atomic and briefly locked per game, allowing
-concurrent workers to share the file without replacing one another's updates.
+once per world.
+
+Every fresh schema-3 ledger also retains the raw scored table for every game,
+not only the resulting point estimates. On load, the aggregates are replayed
+and checked against that evidence, so a hand-edited or corrupted Elo cannot
+pass as a result. Persistent events are keyed by run seed, game index, map seed,
+and ordered identities. Repeating a run is idempotent; replaying the same key
+with a different outcome is an error that points back to a reused mutable
+identity. Writes are atomic and briefly locked per game, and keyed events are
+sorted before replay, so concurrent workers preserve every result *and* finish
+with the same ratings regardless of lock-acquisition order. Migrated schema-1/2
+aggregates cannot recover games that were never stored and say so explicitly in
+the leaderboard; start a fresh path for a fully auditable baseline. A keyed
+history also has one canonical order, and every raw event's K must match the
+bound profile.
 
 Entrants use a seeded round-robin seat schedule instead of independent random
 sampling. Across one complete cycle, every fixed civilization seat sees every
