@@ -1032,7 +1032,7 @@ impl EloPool {
         self.recenter_to_anchor();
     }
 
-    /// Keep one immutable control at the base rating. Elo expectations depend
+    /// Keep one contract-pinned control at the base rating. Elo expectations depend
     /// only on differences, so translating every row preserves every update
     /// while preventing repeated introductions of fresh 1500-rated identities
     /// from inflating later generations relative to old, inactive ones.
@@ -2516,7 +2516,7 @@ fn tournament_event_id(
 
 /// Run a tournament against the latest shared ledger and atomically checkpoint
 /// every completed game. `cfg.controller_roster` must name the ordered,
-/// immutable controller role behind each versioned identity in `names`. The
+/// fixed controller role behind each versioned identity in `names`. The
 /// short per-game lock prevents concurrent agents from overwriting one
 /// another's updates.
 pub fn run_persistent_tournament<F>(

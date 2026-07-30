@@ -17,6 +17,13 @@ use civvis::setup::{self, BaseRuleset, GameSpeed, MapPoles, MapScript, MapSize, 
 const DEFAULT_TOURNAMENT_ENTRANTS: &str =
     "advanced-20260730=advanced,advanced_v1,basic-20260730=basic,random-20260730=random";
 
+/// `advanced_v1` freezes the planning configuration, but deliberately shares
+/// the production Basic/Advanced implementation. Pin those sources so a code
+/// edit cannot silently change the longitudinal anchor. If an edit reaches
+/// the legacy path, bump the Elo protocol and start a new ledger; if it is
+/// provably gated away, review that fact before updating this guard.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xf556_dc14_f291_e3df;
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
     identity: String,
@@ -1431,7 +1438,10 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_tournament_entrants, strict_f64_arg, strict_i64_arg};
+    use super::{
+        parse_tournament_entrants, strict_f64_arg, strict_i64_arg,
+        ADVANCED_V1_SOURCE_CONTRACT_FNV,
+    };
     use civvis::game::{Action, Game};
 
     #[test]
@@ -1448,6 +1458,26 @@ mod tests {
         assert_eq!(entrants[2].controller, "basic");
         assert!(parse_tournament_entrants("candidate=").is_err());
         assert!(parse_tournament_entrants("advanced,,basic").is_err());
+    }
+
+    #[test]
+    fn advanced_v1_shared_sources_cannot_change_silently() {
+        let mut fingerprint = 0xcbf29ce484222325u64;
+        for source in [
+            include_bytes!("ai.rs").as_slice(),
+            include_bytes!("ai/advanced.rs").as_slice(),
+        ] {
+            for byte in source {
+                fingerprint ^= u64::from(*byte);
+                fingerprint = fingerprint.wrapping_mul(0x100000001b3);
+            }
+            fingerprint ^= 0xff;
+            fingerprint = fingerprint.wrapping_mul(0x100000001b3);
+        }
+        assert_eq!(
+            fingerprint, ADVANCED_V1_SOURCE_CONTRACT_FNV,
+            "BasicAi/AdvancedAi changed under the advanced_v1 anchor: if the legacy path changed, bump ELO_PROTOCOL_VERSION and start a new ledger; otherwise review the gating and deliberately re-pin this source contract"
+        );
     }
 
     #[test]

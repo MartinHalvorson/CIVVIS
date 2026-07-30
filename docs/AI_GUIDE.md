@@ -340,15 +340,23 @@ Use a new immutable identity whenever a mutable controller changes, for example
 `advanced-20260815=advanced`. Otherwise a row named only `advanced` is a
 lifetime average of several implementations and will dilute improvements over
 time. The default command dates every mutable controller; only the deliberately
-frozen `advanced_v1` keeps its bare identity and anchors successive versions on
+configuration-pinned `advanced_v1` keeps its bare identity and anchors successive versions on
 one connected scale. After every update the ledger translates every rating by
-the same amount to keep that immutable control at exactly 1500. Pairwise gaps
+the same amount to keep that contract-pinned control at exactly 1500. Pairwise gaps
 and win expectations are unchanged, while fresh weak identities can no longer
 inflate later generations relative to inactive older ones. Custom tournaments
 can select another entrant with `--anchor identity`; `--anchor none` leaves a
 one-off pool floating. The CLI also refuses two identities that resolve to the
 same effective controller and refuses a learned entrant that silently degraded
 because a definitional artifact is absent.
+
+`advanced_v1` is not a copied historical implementation: it freezes the
+victory-planning configuration but shares the underlying `BasicAi` and
+`AdvancedAi` code. CI pins both source files under an explicit anchor contract.
+If an edit affects the legacy path, the Elo protocol must change and the run
+must use a new ledger; an edit proved to be gated away from that path still
+requires an explicit review and re-pin. This guard prevents the word “frozen”
+from hiding a moving control, while allowing candidate-only code to evolve.
 
 Schema 3 binds a ledger to the complete rating profile: an explicit experiment
 protocol version, a deterministic fingerprint of the fully merged rules JSON,
