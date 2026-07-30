@@ -95,6 +95,9 @@ def build_config(args: argparse.Namespace) -> dict:
         # spent on units that stand still is production not spent on the
         # districts and buildings that score is actually made of.
         "GarrisonPerCity": args.garrison_per_city,
+        # Mirror the board into the log once a turn so CIVVIS can be the engine
+        # that decides. Off by default: it is the largest emit in the mod.
+        "ExportState": args.export_state,
         "AnnouncementSeconds": args.announcement_seconds,
         "EraAnnouncementSeconds": args.era_announcement_seconds,
         "Leader": args.leader,
@@ -617,6 +620,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--assault-width", type=int, default=2)
     ap.add_argument("--settlers-in-flight", type=int, default=1)
     ap.add_argument("--garrison-per-city", type=int, default=2)
+    ap.add_argument("--export-state", action="store_true", default=False)
     ap.add_argument("--announcement-seconds", type=float, default=1.0)
     ap.add_argument("--era-announcement-seconds", type=float, default=0.5)
     ap.add_argument("--survey", action="store_true", default=True)

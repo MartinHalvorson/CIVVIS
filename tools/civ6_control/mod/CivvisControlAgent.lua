@@ -1609,6 +1609,102 @@ local attempts = 0;
 local inTick = false;
 local finished = false;
 
+
+-- ------------------------------------------------------------- state export
+--
+-- The full board, once a turn, so CIVVIS can be the thing that decides.
+--
+-- The controller's own heuristics are a weak second AI: they duplicate what
+-- `AdvancedAi` already does and do it worse, which is why an ancient army was
+-- still being built in 1100 AD. The intended architecture is the other way
+-- round -- mirror the real state into the simulator, let the simulator
+-- strategise, and let this mod (or the harness) actuate the answer.
+--
+-- ⚠ BUDGET. `GameCoreEventPublishComplete` fires many times per frame and a
+-- full-map scan on every one of them took a turn from three seconds to over ten
+-- minutes once already. This runs from `playTurn`, which is once per turn, and
+-- only when `cfg.ExportState` asks for it. Tiles are emitted in chunks so no
+-- single log line is unbounded.
+local function exportState(player, pid, turn)
+	if cfg.ExportState ~= true then return; end
+
+	local cities = {};
+	eachCity(player, function(city)
+		local queue = try(function()
+			local q = city:GetBuildQueue();
+			return q and q:GetCurrentProductionTypeHash() or 0;
+		end, 0);
+		cities[#cities + 1] = {
+			id = try(function() return city:GetID(); end, -1),
+			x = try(function() return city:GetX(); end, -1),
+			y = try(function() return city:GetY(); end, -1),
+			pop = try(function() return city:GetPopulation(); end, -1),
+			capital = try(function() return city:IsCapital(); end, false),
+			producing = queue,
+			food = try(function() return city:GetGrowth():GetFood(); end, -1),
+			defense = try(function() return city:GetDistricts():GetDefenseStrength(); end, -1),
+			damage = try(function() return city:GetDistricts():GetDefenseDamage(); end, -1),
+		};
+	end);
+
+	local units = {};
+	eachUnit(player, function(unit)
+		local name = unitTypeName(unit);
+		local row = GameInfo.Units[name];
+		units[#units + 1] = {
+			id = try(function() return unit:GetID(); end, -1),
+			kind = name,
+			x = try(function() return unit:GetX(); end, -1),
+			y = try(function() return unit:GetY(); end, -1),
+			hp = 100 - (try(function() return unit:GetDamage(); end, 0) or 0),
+			moves = try(function() return unit:GetMovesRemaining(); end, -1),
+			combat = row ~= nil and (row.Combat or 0) or 0,
+			ranged = row ~= nil and (row.RangedCombat or 0) or 0,
+		};
+	end);
+
+	-- Rivals: only what we have actually met, so the mirror never contains
+	-- knowledge the seat has not earned.
+	local rivals = {};
+	local diplomacy = try(function() return player:GetDiplomacy(); end);
+	for _, otherId in ipairs(try(function() return PlayerManager.GetAliveMajorIDs(); end, {})) do
+		if otherId ~= pid and diplomacy ~= nil
+				and try(function() return diplomacy:HasMet(otherId); end, false) then
+			local other = Players[otherId];
+			local theirCities = {};
+			pcall(function()
+				for _, city in other:GetCities():Members() do
+					theirCities[#theirCities + 1] = {
+						x = city:GetX(), y = city:GetY(),
+						capital = try(function() return city:IsCapital(); end, false),
+						defense = try(function()
+							return city:GetDistricts():GetDefenseStrength();
+						end, -1),
+					};
+				end
+			end);
+			rivals[#rivals + 1] = {
+				player = otherId,
+				at_war = try(function() return diplomacy:IsAtWarWith(otherId); end, false),
+				score = try(function() return other:GetScore(); end, -1),
+				cities = theirCities,
+			};
+		end
+	end
+
+	emit("state", {
+		turn = turn,
+		gold = try(function() return math.floor(player:GetTreasury():GetGoldBalance()); end, -1),
+		faith = try(function() return math.floor(player:GetReligion():GetFaithBalance()); end, -1),
+		science = try(function() return player:GetTechs():GetScienceYield(); end, -1),
+		culture = try(function() return player:GetCulture():GetCultureYield(); end, -1),
+		score = try(function() return player:GetScore(); end, -1),
+		cities = cities,
+		units = units,
+		rivals = rivals,
+	});
+end
+
 local function playTurn(player, pid, turn)
 	local research, civic;
 	if try(function() return player:GetTechs():GetResearchingTech(); end, -1) < 0 then
@@ -1622,6 +1718,7 @@ local function playTurn(player, pid, turn)
 	-- city of every civilization this player has met.
 	warTarget = findWarTarget(player, pid);
 	local war = declareWar(player, pid, countUnits(player), turn);
+	exportState(player, pid, turn);
 	local builds = driveProduction(player, turn);
 	local ordered, stuck = orderUnits(player, pid, turn);
 	emit("turn", {
