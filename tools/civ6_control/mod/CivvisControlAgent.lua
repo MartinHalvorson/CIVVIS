@@ -1671,8 +1671,22 @@ local function chooseProduction(city, counts, nCities, turn, refused)
 	-- Score comes from cities, population, districts and buildings. A capital
 	-- that only ever builds settlers scores nothing and expands barely, which is
 	-- the worst of both. One at a time is also what the engine's own AI does.
+	-- ⚠ DEFEND BEFORE EXPANDING, because the settler sits ABOVE the army in this
+	-- ladder and will otherwise take every hammer forever.
+	--
+	-- Measured on run settler-20260730T044823Z, the first run where CIVVIS chose the
+	-- sites: turn 40 with TWO cities and ONE unit, three cities founded and one
+	-- already lost. A city target of six kept a settler queued permanently, so the
+	-- army was never built and barbarians took what the settlers founded. Expansion
+	-- that cannot be held is not expansion.
+	--
+	-- One defender per city is the floor, not a garrison — enough that a new city is
+	-- not free to the first raider. Above the floor the settler competes normally.
+	local defenders = counts.military or 0;
+	local floorNeeded = math.max(1, nCities);
 	if (nCities + counts.settler) < (cfg.CityTarget or 6)
 			and counts.settler < (cfg.SettlersInFlight or 1)
+			and defenders >= floorNeeded
 			and turn < (cfg.SettlerStopTurn or 9999) then
 		ladder[#ladder + 1] = { "UNIT_SETTLER", "expand" };
 	end
