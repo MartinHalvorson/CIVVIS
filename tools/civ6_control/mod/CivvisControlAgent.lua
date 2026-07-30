@@ -490,6 +490,8 @@ end
 -- seconds to four minutes -- the controller was starving the game it was
 -- playing.
 local siteMemo = { turn = -1, sites = {} };
+-- Where each settler decided to go, kept across turns. See findSettleSite.
+local committedSite = {};
 
 local function findSettleSite(player, pid, unit, turn)
 	local id = try(function() return unit:GetID(); end, -1);
@@ -498,6 +500,32 @@ local function findSettleSite(player, pid, unit, turn)
 	if cached ~= nil then
 		if cached == false then return nil; end
 		return cached;
+	end
+	-- ⚠ COMMIT TO A SITE ACROSS TURNS, not just within one.
+	--
+	-- The score charges distance, so as a settler walks the ranking shifts
+	-- underneath it and two comparable sites can trade places every turn. The
+	-- settler then re-targets, walks back, re-targets again, and never arrives:
+	-- run settler-20260730T004226Z logged `move_to_site` three times on turn 40
+	-- while the empire was still on two cities. A destination is only worth
+	-- having if it survives the walk, so a committed site is kept until it stops
+	-- being legal or the settler stands on it.
+	local held = committedSite[id];
+	if held ~= nil then
+		local plot = try(function() return Map.GetPlot(held.x, held.y); end);
+		local ux0 = try(function() return unit:GetX(); end, -1);
+		local uy0 = try(function() return unit:GetY(); end, -1);
+		local arrived = (ux0 == held.x and uy0 == held.y);
+		local ok = plot ~= nil and try(function()
+			local owner = plot:GetOwner();
+			return (not plot:IsWater()) and (not plot:IsImpassable())
+				and (owner == -1 or owner == pid);
+		end, false);
+		if ok and not arrived then
+			siteMemo.sites[id] = plot;
+			return plot;
+		end
+		committedSite[id] = nil;
 	end
 
 	local ux = try(function() return unit:GetX(); end, -1);
@@ -588,6 +616,9 @@ local function findSettleSite(player, pid, unit, turn)
 		end
 	end
 	siteMemo.sites[id] = best or false;
+	if best ~= nil then
+		committedSite[id] = { x = best:GetX(), y = best:GetY() };
+	end
 	return best;
 end
 

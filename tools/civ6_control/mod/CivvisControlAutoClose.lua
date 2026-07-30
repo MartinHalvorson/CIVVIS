@@ -41,6 +41,10 @@ local ERA_SECONDS = tonumber(cfg.EraAnnouncementSeconds) or 0.5;
 local ERA_SCREENS = {
 	EraCompletePopup = true, EraReviewPopup = true,
 	DedicationPopup = true, BoostUnlockedPopup = true,
+	-- The era-score animations: a historic moment plays a card flourish and
+	-- the era progress panel animates a bar. Both are pure spectacle for an
+	-- unattended run and both sit over the map while they play.
+	HistoricMoments = true, EraProgressPanel = true,
 };
 if ERA_SCREENS[NAME] then SECONDS = ERA_SECONDS; end
 if SECONDS < 0 then SECONDS = 0; end

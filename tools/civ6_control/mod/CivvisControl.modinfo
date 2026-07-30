@@ -68,6 +68,18 @@
 				<LuaReplace>CivvisControlAutoClose.lua</LuaReplace>
 			</Properties>
 		</ReplaceUIScript>
+		<ReplaceUIScript id="CivvisControlAutoCloseHistoricMoments">
+			<Properties>
+				<LuaContext>HistoricMoments</LuaContext>
+				<LuaReplace>CivvisControlAutoClose.lua</LuaReplace>
+			</Properties>
+		</ReplaceUIScript>
+		<ReplaceUIScript id="CivvisControlAutoCloseEraProgressPanel">
+			<Properties>
+				<LuaContext>EraProgressPanel</LuaContext>
+				<LuaReplace>CivvisControlAutoClose.lua</LuaReplace>
+			</Properties>
+		</ReplaceUIScript>
 		<ReplaceUIScript id="CivvisControlAutoCloseWorldCongressIntro">
 			<Properties>
 				<LuaContext>WorldCongressIntro</LuaContext>
