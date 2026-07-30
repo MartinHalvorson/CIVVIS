@@ -599,15 +599,24 @@ local function orderSettler(player, pid, unit, turn)
 	local plot = findSettleSite(player, pid, unit, turn);
 	if plot ~= nil then
 		local px, py = plot:GetX(), plot:GetY();
-		if reachable(unit, px, py) then
-			local params = {};
-			params[UnitOperationTypes.PARAM_X] = px;
-			params[UnitOperationTypes.PARAM_Y] = py;
-			if operate(unit, OP["UNITOPERATION_MOVE_TO"], params) then
-				return "move_to_site";
-			end
+		-- ⚠ NO `reachable` GATE. It counts the plots in the path and demands
+		-- more than one, which is false for a site the settler is already
+		-- standing next to — so a settler one tile from a good site could
+		-- neither found nor move, fell through to AUTOMATE_EXPLORE (which a
+		-- settler cannot do), and ended on SKIP_TURN. Measured at turn 20 of
+		-- run settler-20260730T001117Z: `UNIT_SETTLER:UNITOPERATION_SKIP_TURN=2`
+		-- with the empire still on one city. MOVE_TO fails harmlessly when the
+		-- site truly cannot be reached, so trying it is strictly safer.
+		local params = {};
+		params[UnitOperationTypes.PARAM_X] = px;
+		params[UnitOperationTypes.PARAM_Y] = py;
+		if operate(unit, OP["UNITOPERATION_MOVE_TO"], params) then
+			return "move_to_site";
 		end
 	end
+	-- A settler cannot explore, so this is nearly always nil; it is left as the
+	-- last resort rather than removed because a settler with nowhere to go is
+	-- better wandering than blocking the tile it stands on.
 	return firstOperation(unit, { "UNITOPERATION_AUTOMATE_EXPLORE" });
 end
 
@@ -734,8 +743,20 @@ local function pressAttack(unit)
 			and operate(unit, OP["UNITOPERATION_RANGE_ATTACK"], params) then
 		return "range_attack";
 	end
-	if reachable(unit, warTarget.x, warTarget.y)
-			and operate(unit, OP["UNITOPERATION_MOVE_TO"], params) then
+	-- ⚠ NO `reachable` GATE ON THE ATTACK MOVE.
+	--
+	-- In Civilization VI a melee unit captures a city by moving ONTO it, so
+	-- this MOVE_TO is the capture, not merely an approach. `reachable` counts
+	-- the plots in the path and demands more than one — which is exactly false
+	-- for a unit already standing next to the city. A unit that had walked the
+	-- whole way to the enemy capital could therefore never strike it, and would
+	-- fall through to FORTIFY and sit there. That is the "units stack up and
+	-- never take it" shape.
+	--
+	-- MOVE_TO fails harmlessly when the target genuinely cannot be pathed to,
+	-- so attempting it unconditionally costs nothing and is strictly safer than
+	-- a gate that can be wrong in the one position that matters.
+	if operate(unit, OP["UNITOPERATION_MOVE_TO"], params) then
 		return "advance";
 	end
 	return nil;
