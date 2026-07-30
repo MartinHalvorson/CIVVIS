@@ -1870,9 +1870,13 @@ end
 local function chooseProduction(city, counts, nCities, turn, refused)
 	refused = refused or {};
 	local function playable(name)
-		-- Already asked for this one on this turn and the game did not start
-		-- it. `CanProduce` will keep saying yes, so the caller's record of what
-		-- was refused is the only thing that makes the ladder fall through.
+		-- Already asked for this one on this turn and the game did not start it.
+		-- ⚠ This comment used to say `CanProduce` "will keep saying yes, so the
+		-- caller's record of what was refused is the only thing that makes the
+		-- ladder fall through" — which was true only because the call below was
+		-- the wrong one (see the next block). With the correct predicate the
+		-- engine now rejects what it cannot build, so `refused` is a backstop for
+		-- genuine per-turn refusals rather than the sole escape hatch.
 		if refused[name] then return nil; end
 		local row = GameInfo.Types[name];
 		if row == nil then return nil; end
