@@ -1,6 +1,6 @@
 # Deployment horizon calibration
 
-Status: **preregistered; no focal seed has been read**.
+Status: **fixed screen passed 3/12; confirmation earned and unopened**.
 
 ## Prospective deployment-population amendment
 
@@ -252,6 +252,29 @@ production censoring only if at least 3/12 games have no winner at the nominal
 boundary and then resolve to an enabled victory by turn 320. Games still
 unresolved at 320 are reported but do not satisfy that term. A weaker result
 stops without a larger run.
+
+### Fixed screen result
+
+The exact command ran once from 2026-07-30 00:43:01 UTC through 02:58:57 UTC
+at pushed branch head `6f17d7cd7e2c53432c066f59664d3a910980d102` and release-binary
+SHA-256 `a16270bd4c7d4fdff4372b0704bf11c6fae2f7095f490c6aa73fa0e62fafe170`.
+The complete log has SHA-256
+`e79b997a2c5efdf3e12e9b584cdae7fee55dcbf338ca1092655c3402bfb296a8`.
+
+The screen produced 9/12 nominal completions, 3/12 late completions, and zero
+games still censored at the external bound. The three late games resolved to
+Science victories at turns 284, 288, and 290. Their eventual winners ranked
+third, first, and sixth by score at the nominal snapshot. Across all 12 maps,
+the eventual winner led score at the nominal boundary in 6/12 games. The
+late-completion share was 25.0% with a descriptive 95% Wilson interval of
+8.9%--53.2%.
+
+The fixed screen gate therefore **PASSES exactly at 3/12** and earns the one
+already specified seed-9,987,000 confirmation. No threshold, world, endpoint,
+controller, resource limit, or confirmation rule changes. The axis summaries
+remain descriptive: the three late cells happened in the 5-, 7-, and 9-player
+rows, on Lakes, Inland Sea, and Pangaea, across two Flat and one Planet map.
+They do not alter or stratify the pooled confirmation gate.
 
 ## Fixed confirmation and decision
 
