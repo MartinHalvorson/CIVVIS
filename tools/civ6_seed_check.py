@@ -23,6 +23,24 @@ The capital is in the first `state` export, so each arm needs about two turns, n
 hundred. ⚠ Deliberately NOT a full game: a long run would confound the answer with
 everything that happens after turn 2.
 
+# ⚠⚠ IT HAS ALREADY RUN, AND THE ANSWER WAS NO (2026-07-30)
+
+    seed 777001, arm 1: capital (51,13)  SCOTLAND  Continents.lua
+    seed 777001, arm 2: capital (19,11)  ARABIA    Continents.lua
+
+Both seed rows were verified written in the live config cache at the time, and the world was
+still freshly random. So `Parameters.DefaultValue` is not the source of the map seed at
+generation time — just as it is not the source of MAP_SCRIPT. The UpdateDatabase channel
+reaches the DATABASE and not WORLD GENERATION.
+
+Keep this tool: re-run it after any change that claims to pin the map, because the claim is
+cheap to make and this is the only thing that settles it. But do not re-run it expecting a
+different answer from another edit to `Parameters`.
+
+⚠ `--max-turns` sets the GAME's turn limit and does NOT stop the harness early: an arm asked
+for 4 turns played to 38. The capital is in the first `state` export, so read it and kill the
+arm rather than waiting for the arm to finish.
+
     python3 tools/civ6_seed_check.py                 # two arms on one seed
     python3 tools/civ6_seed_check.py --seed 777001 --arms 3
 """
