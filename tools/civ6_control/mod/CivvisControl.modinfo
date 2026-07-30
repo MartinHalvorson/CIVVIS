@@ -207,6 +207,13 @@
 		</ReplaceUIScript>
 	</InGameActions>
 	<Files>
+		<!-- ⚠ EVERY FILE AN ACTION REFERENCES MUST BE LISTED HERE, or the game logs
+		     "Invalid file reference in action, did you forgot to add it in <Files>?"
+		     and silently drops that action. CivvisControlConfig.xml was missing, so the
+		     whole setup-defaults UpdateDatabase never ran and the seat kept reporting
+		     Continents — the change was correct and simply never loaded. The game names
+		     this in Modding.log; grep it before theorising about a mechanism. -->
+		<File>CivvisControlConfig.xml</File>
 		<File>CivvisControlSetup.xml</File>
 		<File>CivvisControlSetup.lua</File>
 		<File>CivvisControlAgent.xml</File>
