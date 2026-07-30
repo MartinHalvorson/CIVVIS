@@ -1540,6 +1540,103 @@ local function chooseResearch(player, pid)
 	return ok and best.TechnologyType or nil;
 end
 
+-- Take a Dedication at the era boundary.
+--
+-- ★ MEASURED AS THE MOST-DECLINED DECISION IN THE PROJECT. Across 48 recorded
+-- runs, `ENDTURN_BLOCKING_COMMEMORATION_AVAILABLE` fired **1763** times — more
+-- than every other unanswered prompt combined, and against 44 for the next one
+-- (influence tokens) and 24 for governor appointments. It was on the "no answer
+-- for this" list, which kept it cheap but meant the empire forfeited a
+-- Dedication in every era of every game ever played.
+--
+-- The preference order is not taste. `CommemorationModifiers` in the shipped
+-- database says what each one actually grants, and INFRASTRUCTURE carries exactly
+-- four: `GA_MOVEMENT`, `GA_PURCHASE_CIVILIAN`, `SETTLER_DISCOUNT_MODIFIER` and
+-- `BUILDER_DISCOUNT_MODIFIER`. That is CIVVIS's expansion axis item for item, and
+-- CIVVIS measured civilian **movement** as the single largest grant on it
+-- (`expansion_swift`, 59.5%) while measuring settler **cost** as null. RELIGIOUS
+-- also carries `GA_MOVEMENT`, so it comes second.
+--
+-- ⚠ Those `GA_` modifiers only apply in a Golden Age, and these runs are mostly
+-- Normal or Dark. In a Normal age the choice mostly grants an era-score *quest*
+-- instead — which still beats declining, because era score is what decides
+-- whether the next age is Golden or Dark, and a Dark Age is a standing penalty.
+-- So the rule is: always take one; take the expansion one when there is a choice.
+local DEDICATION_ORDER = {
+	"COMMEMORATION_INFRASTRUCTURE",
+	"COMMEMORATION_RELIGIOUS",
+	"COMMEMORATION_SCIENTIFIC",
+	"COMMEMORATION_ECONOMIC",
+	"COMMEMORATION_INDUSTRIAL",
+	"COMMEMORATION_MILITARY",
+	"COMMEMORATION_EXPLORATION",
+	"COMMEMORATION_CULTURAL",
+};
+
+local function chooseDedication(player, pid)
+	-- ⚠ GUARD THE ENUM MEMBERS FIRST. `params[nil] = x` throws "table index is
+	-- nil", and that is exactly how orderSettler silently stopped settling
+	-- earlier today. If this build does not expose the commemorate operation,
+	-- decline cleanly instead of throwing once an era.
+	local param = try(function() return PlayerOperations.PARAM_COMMEMORATION_TYPE; end);
+	local operation = try(function() return PlayerOperations.COMMEMORATE; end);
+	if param == nil or operation == nil then return nil; end
+	local eras = try(function() return Game.GetEras(); end);
+	if eras == nil then return nil; end
+	local allowed = try(function()
+		return eras:GetPlayerNumAllowedCommemorations(pid);
+	end, 0) or 0;
+	if allowed <= 0 then return nil; end
+	local choices = try(function()
+		return eras:GetPlayerCommemorateChoices(pid);
+	end);
+	if choices == nil then return nil; end
+
+	-- The choices arrive as type names or as hashes depending on build, so index
+	-- both ways rather than assuming one.
+	local offered, names = {}, {};
+	for _, choice in ipairs(choices) do
+		local row = GameInfo.CommemorationTypes[choice];
+		local name = row and row.CommemorationType or tostring(choice);
+		offered[name] = choice;
+		names[#names + 1] = name;
+	end
+	if #names == 0 then return nil; end
+
+	local taken = 0;
+	for _, preferred in ipairs(DEDICATION_ORDER) do
+		if taken >= allowed then break; end
+		local choice = offered[preferred];
+		if choice ~= nil then
+			local params = {};
+			params[param] = choice;
+			local ok = pcall(function()
+				UI.RequestPlayerOperation(pid, operation, params);
+			end);
+			if ok then
+				taken = taken + 1;
+				offered[preferred] = nil;
+			end
+		end
+	end
+	-- Anything at all beats leaving the prompt standing: an unanswered
+	-- commemoration costs an order pass every turn for the rest of the game and
+	-- forfeits the bonus outright.
+	if taken == 0 then
+		for _, name in ipairs(names) do
+			if offered[name] ~= nil then
+				local params = {};
+				params[param] = offered[name];
+				local ok = pcall(function()
+					UI.RequestPlayerOperation(pid, operation, params);
+				end);
+				if ok then taken = 1; break; end
+			end
+		end
+	end
+	return taken > 0 and ("dedication:" .. table.concat(names, ",")) or nil;
+end
+
 local function chooseCivic(player, pid)
 	local culture = try(function() return player:GetCulture(); end);
 	if culture == nil then return nil; end
@@ -1722,7 +1819,12 @@ local SOFT_BLOCKERS = {
 	-- up: an unlisted blocker burns forty attempts and then forfeits its
 	-- notification, and each of those attempts re-runs a table scan while the
 	-- game waits. Named here, they cost one order pass and the turn ends.
-	ENDTURN_BLOCKING_COMMEMORATION_AVAILABLE = true,
+	-- ⚠ COMMEMORATION IS NO LONGER HERE. It was, and across 48 runs it fired
+	-- 1763 times — more than every other unanswered prompt combined — so the
+	-- empire forfeited a Dedication in every era of every game. `answerBlocker`
+	-- now calls `chooseDedication`. Kept as a comment because "listed here" and
+	-- "answered" are the two states this table distinguishes, and moving one out
+	-- is the interesting event.
 	ENDTURN_BLOCKING_GOVERNOR_APPOINTMENT = true,
 	ENDTURN_BLOCKING_GOVERNOR_PROMOTION = true,
 	ENDTURN_BLOCKING_GOVERNOR_IDLE = true,
@@ -1755,6 +1857,9 @@ local function answerBlocker(player, pid, blocker, turn)
 	elseif name == "ENDTURN_BLOCKING_PRODUCTION" then
 		if not spend("production", cfg.MaxProductionPasses or 4) then return nil; end
 		return driveProduction(player, turn, true) > 0 and "production" or nil;
+	elseif name == "ENDTURN_BLOCKING_COMMEMORATION_AVAILABLE" then
+		if not spend("dedication", cfg.MaxDedicationPasses or 2) then return nil; end
+		return chooseDedication(player, pid);
 	elseif name == "ENDTURN_BLOCKING_PANTHEON" then
 		if not spend("pantheon", cfg.MaxPantheonPasses or 2) then return nil; end
 		return choosePantheon(player, pid);
