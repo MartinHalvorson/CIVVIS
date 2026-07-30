@@ -130,6 +130,8 @@ local function haveScreen()
 		or type(ReleaseEventLock) == "function"    -- WorldCongressBetweenTurns
 		or type(CloseFocusedState) == "function"   -- DiplomacyActionView
 		or type(OnRefuseDeal) == "function"        -- DiplomacyDealView
+		or type(OnSelectConversationDiplomacyStatement) == "function"  -- leader asking
+		or type(OnSelectInitialDiplomacyStatement) == "function"       -- opening statement
 		or type(ExitConversationMode) == "function"
 		or type(OnHide) == "function"
 		or type(InputHandler) == "function";
@@ -243,6 +245,35 @@ local function endScreen(attempt)
 	-- that the alternative measured is not "consider the deal" but "the run ends".
 	if type(OnRefuseDeal) == "function"
 			and pcall(function() OnRefuseDeal(true); end) then
+		return true;
+	end
+	-- ★★★★★ A LEADER ASKING A QUESTION IS NOT A POPUP — IT NEEDS AN ANSWER.
+	--
+	-- Photographed at the moment of a stall (`stalled.png`, run
+	-- civvis-20260730T161301Z, turn 142): Cyrus asking "Will you allow us to establish
+	-- an embassy in your capital?" with three dialogue choices. Nothing that merely
+	-- CLOSES a screen dismisses that, which is why `CloseFocusedState` and
+	-- `ExitConversationMode` both failed and the run died with the event stream silent.
+	--
+	-- The shipped screen's own Goodbye is `OnSelectConversationDiplomacyStatement`
+	-- with `CHOICE_EXIT`, and its initial-statement twin is
+	-- `OnSelectInitialDiplomacyStatement`. Calling those runs the game's own bookkeeping
+	-- — note the shipped path passes `ExitConversationMode(FALSE)`, where this shim was
+	-- passing `true`.
+	--
+	-- ⚠ This always answers "Goodbye": it declines embassies, alliances and demands
+	-- alike. That is a decision, and the measured alternative is not a considered reply
+	-- but a dead run — stalls are the single largest cause of lost attempts.
+	if type(OnSelectConversationDiplomacyStatement) == "function"
+			and pcall(function()
+				OnSelectConversationDiplomacyStatement("CHOICE_EXIT");
+			end) then
+		return true;
+	end
+	if type(OnSelectInitialDiplomacyStatement) == "function"
+			and pcall(function()
+				OnSelectInitialDiplomacyStatement("CHOICE_EXIT");
+			end) then
 		return true;
 	end
 	if (attempt or 1) <= 6 and type(CloseFocusedState) == "function"
