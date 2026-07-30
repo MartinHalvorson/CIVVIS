@@ -366,11 +366,22 @@ def configure_and_start(bounds: tuple[int, int, int, int], args: argparse.Namesp
     # alone: one run reached turn 118 with `met = 0`, and first contact at turn 130 is
     # too late for domination. The `seat` event reports the script the game actually
     # generated, so a wrong row shows up as a run that says so.
+    # ⚠ REVERTED, AND LEFT REVERTED UNTIL IT CAN BE VERIFIED.
+    #
+    # Selecting the map here broke setup outright: four consecutive attempts logged
+    # "no game started" and no `seat` event ever arrived, where the same path had
+    # been reliable for hours. The dropdown row is an unverified guess (`vision.py`
+    # reads row POSITIONS, not text, so "Pangaea" cannot be matched on screen), and
+    # an unverified guess that breaks a working path is not worth keeping.
+    #
+    # The problem it was aimed at is REAL and still open: `MapScript` in the baked
+    # config is ignored because the FrontEnd context never loads, so every game is
+    # Continents, and on Continents a seat can start ALONE — one run reached turn 118
+    # with `met = 0`. Fixing it properly needs OCR on the dropdown rows, or reading
+    # the selected value back off the screen before committing to Start Game.
     if args.map in OPTIONS["map_type"]:
-        set_dropdown(bounds, "map_type", args.map)
-    else:
-        print(f"map {args.map} is not in the dropdown order; leaving the default",
-              file=sys.stderr)
+        print(f"map selection is disabled pending verification; the game will "
+              f"generate its default rather than {args.map}", file=sys.stderr)
     screenshot(run_dir / "setup.png")
     x, y, w, h = bounds
     click_at(int(x + w * START_GAME[0]), int(y + h * START_GAME[1]))
