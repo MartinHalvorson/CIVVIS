@@ -627,14 +627,31 @@ def dismiss_leader_dialogue(clicks: int = 6) -> bool:
     # the nearest existing target was 0.913 and the stack pair sat at 0.73/0.68.
     # Thirty-five pixels of miss cost a run holding FIVE cities and score 209, the
     # best of the day.
-    targets = [
-        ("refuse deal", 0.222, 0.174),
-        ("goodbye only", 0.172, 0.913),
-        ("two-option (lower)", 0.170, 0.897),
-        ("two-option (upper)", 0.170, 0.847),
-        ("three-option (top)", 0.170, 0.825),
-        ("three-option (mid)", 0.170, 0.863),
-        ("dialogue stack (legacy)", 0.14, 0.73),
+    # ★★★★ SWEEP THE COLUMN, DO NOT ENUMERATE THE SHAPES.
+    #
+    # The list above this comment grew one entry per lost run — three shapes, then
+    # four, each added after a stall that a thirty-five pixel miss had caused. Run
+    # civvis-20260730T223506Z died the same way at turn 88 on a three-option
+    # delegation from John Curtin. Enumerating variants cannot converge: Civilization
+    # VI composes these screens from a variable number of options, so the Nth shape
+    # is always one run away.
+    #
+    # Every variant shares a geometry, and that is the thing worth encoding: the
+    # options are a VERTICAL STACK at the lower-left of the game window, x ~= 0.17.
+    # So sweep that column densely enough that no option can fall between two clicks.
+    # Measured off stalled-1.png of the run above: options at fy 0.828, 0.876 and
+    # 0.920, which a 0.02 step covers with room to spare.
+    #
+    # ⚠ Clicks that miss land on the leader art, which does nothing. This runs ONLY
+    # after a stall is confirmed and one of these screens is therefore up; it is not
+    # safe to sweep a live map, where a click can select a unit and the next can
+    # order it to move.
+    targets = [("refuse deal", 0.222, 0.174)]
+    step = 0.02
+    band = int(round((0.95 - 0.60) / step))
+    targets += [
+        ("stack sweep %.2f" % (0.60 + i * step), 0.170, 0.60 + i * step)
+        for i in range(band + 1)
     ]
     print(f"[dialogue] window {rect}")
     # ⚠ EACH TARGET NEEDS SEVERAL CLICKS, NOT ONE. `clicks // len(targets)` gave
@@ -643,11 +660,18 @@ def dismiss_leader_dialogue(clicks: int = 6) -> bool:
     # click opens a new question rather than ending anything. Measured on
     # stalled-1.png of run civvis-20260730T200543Z — a three-option delegation offer
     # that survived three full rescue rounds.
-    repeats = max(1, clicks)
-    for name, fx, fy in targets:
-        x, y = int(wx + ww * fx), int(wy + wh * fy)
-        print(f"[dialogue]   {name} -> ({x},{y}) x{repeats}")
-        for _ in range(repeats):
+    # ⚠ PASSES OUTSIDE, POSITIONS INSIDE. This used to click one position six times
+    # before moving on, which is the wrong order for a CHAIN: when an option is not
+    # at that spot the five extra clicks do nothing, and when one is, the statement it
+    # opens is somewhere else by the time the next click lands. Walking the whole
+    # column once per pass advances a chain one link per pass, which is what a person
+    # does. Same number of clicks, and the sweep now finishes in about 23s of a 240s
+    # stall budget instead of 46s.
+    passes = max(1, clicks // 2)
+    for attempt in range(passes):
+        print(f"[dialogue] pass {attempt + 1}/{passes} over {len(targets)} positions")
+        for name, fx, fy in targets:
+            x, y = int(wx + ww * fx), int(wy + wh * fy)
             click_at(x, y)
             time.sleep(0.4)
     return True
