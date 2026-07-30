@@ -1,6 +1,8 @@
 # Water resource connections
 
-Status: **implemented and locally validated; merge remains ordered behind #584**.
+Status: **implemented and validated on current `main`**. Draft #584 was
+discarded during the operator-requested backlog cleanup before this fix was
+integrated; it was not a code dependency.
 
 ## Observation
 
@@ -84,11 +86,10 @@ be observed after deployment but cannot rescue a failing correctness test.
 
 ## Ownership and ordering
 
-This task claims only `src/game.rs` and this document. The path overlap with
-#584 is explicitly coordinated: that PR changes one visibility line in a
-distant section and owns an already-frozen evaluator. This fix must not merge
-ahead of or alter #584's measurement boundary without explicit coordination.
-It starts no simulator process and consumes no place in the heavy-job queue.
+This task claims only `src/game.rs` and this document. Draft #584 previously
+overlapped one distant visibility line, but it was discarded during backlog
+cleanup before final integration. This fix starts no simulator process and
+consumes no place in the heavy-job queue.
 
 ## Implementation and validation
 
@@ -128,3 +129,7 @@ follow-up:
 `git diff --check` is clean, and a static scan finds none of the replaced
 default-only predicates in the preregistered call sites. No randomized batch,
 frozen evaluator seed, or additional simulator process was used.
+
+After integrating current `main` through #614, `cargo test --profile ci
+--locked` passed all 1,237 library tests (19 intentionally ignored) and every
+binary, integration, and doc-test target.
