@@ -718,6 +718,13 @@ pub fn rebuild_with_empire(
 pub struct StateCity {
     #[serde(default)]
     pub id: i64,
+    /// The name Civilization VI shows on the banner, e.g. `Pasargadae`.
+    ///
+    /// ⚠ Without this the reconstruction names cities from CIVVIS's own list for
+    /// whatever civilization it happened to assign, so a Persian game showed
+    /// ROME / OSTIA / ANTIUM and the two screens could not be compared at all.
+    #[serde(default)]
+    pub name: String,
     /// Civ 6 building type names this city has already finished.
     #[serde(default)]
     pub buildings: Vec<String>,
@@ -755,6 +762,12 @@ pub struct StateUnit {
 pub struct StateRival {
     #[serde(default)]
     pub player: usize,
+    /// Civ 6 type name, e.g. `CIVILIZATION_NUBIA`. Mapped onto CIVVIS's roster by
+    /// [`civvis_civ_name`] so the rival list reads the same on both screens.
+    #[serde(default)]
+    pub civ: String,
+    #[serde(default)]
+    pub leader: String,
     /// Whether Civilization VI says this seat may declare war on them RIGHT NOW.
     #[serde(default)]
     pub can_declare: bool,
@@ -795,6 +808,89 @@ pub struct StateSnapshot {
     pub units: Vec<StateUnit>,
     #[serde(default)]
     pub rivals: Vec<StateRival>,
+    /// Who this seat actually is, from the run's `seat` event.
+    ///
+    /// ⚠ Not part of the `state` event — [`state_from_events`] merges it in, so
+    /// every existing caller gets identity without changing its signature.
+    #[serde(default)]
+    pub seat: Seat,
+}
+
+/// The identity Civilization VI gave this game: who we play, and under what rules.
+///
+/// ★★★★ THE SIXTH FACT THE BRIDGE DROPPED. The mod has always exported all of this
+/// in its `seat` event; nothing read it, so `Game::new` assigned CIVVIS's default
+/// roster and the operator watched Trajan of Rome next to a Civilization VI game
+/// playing Persia. Identity is not cosmetic here — the whole point of running the
+/// two side by side is checking that they match, and a mismatched name defeats that
+/// before any deeper comparison starts.
+#[derive(Clone, Debug, Default, serde::Deserialize)]
+pub struct Seat {
+    #[serde(default)]
+    pub civ: String,
+    #[serde(default)]
+    pub leader: String,
+    #[serde(default)]
+    pub difficulty: String,
+    #[serde(default)]
+    pub speed: String,
+    #[serde(default)]
+    pub map: String,
+    #[serde(default)]
+    pub size: String,
+}
+
+/// `CIVILIZATION_ROME` -> `Rome`, using CIVVIS's own roster as the authority.
+///
+/// Returns `None` when Civilization VI names a civilization CIVVIS does not have,
+/// which is deliberate: a wrong-but-plausible name is worse than an obvious gap,
+/// because it silently reintroduces exactly the mismatch this function exists to
+/// remove. Of the Civ 6 roster only the Ottomans currently miss, and they miss on
+/// spelling (`Ottomans`), which the plural retry below catches.
+pub fn civvis_civ_name(civ6: &str) -> Option<&'static str> {
+    let bare = civ6
+        .trim()
+        .strip_prefix("CIVILIZATION_")
+        .unwrap_or(civ6.trim())
+        .replace('_', " ");
+    if bare.is_empty() || bare == "?" {
+        return None;
+    }
+    let matches = |candidate: &str| {
+        crate::game::CIV_NAMES
+            .iter()
+            .find(|known| known.eq_ignore_ascii_case(candidate))
+            .copied()
+    };
+    // Plural retry: Civ 6 says OTTOMAN where CIVVIS says Ottomans, and the same
+    // shape covers any future singular/plural disagreement.
+    matches(&bare)
+        .or_else(|| matches(&format!("{bare}s")))
+        .or_else(|| matches(bare.trim_end_matches('s')))
+}
+
+/// Give every seat the civilization Civilization VI is actually playing.
+///
+/// ⚠ MUST RUN BEFORE ANY CITY IS PLACED. `found_city_for` reads `players[pid].civ`
+/// to name a city, so setting identity afterwards leaves the old roster's names on
+/// the board — the visible half of the very bug this fixes.
+fn apply_identity(game: &mut crate::game::Game, state: &StateSnapshot) -> Vec<String> {
+    let mut unmapped = Vec::new();
+    let mut assign = |game: &mut crate::game::Game, seat: usize, civ6: &str| {
+        if civ6.is_empty() || seat >= game.players.len() {
+            return;
+        }
+        match civvis_civ_name(civ6) {
+            Some(name) => game.players[seat].civ = name.to_string(),
+            None => unmapped.push(civ6.to_string()),
+        }
+    };
+    assign(game, 0, &state.seat.civ);
+    for rival in &state.rivals {
+        let civ = rival.civ.clone();
+        assign(game, rival.player, &civ);
+    }
+    unmapped
 }
 
 /// The newest `state` event, or the one for `turn` when asked for a specific one.
@@ -807,7 +903,18 @@ pub fn state_from_events(
 ) -> Option<StateSnapshot> {
     let raw = std::fs::read_to_string(path).ok()?;
     let mut best: Option<StateSnapshot> = None;
+    // Identity rides in the `seat` event, which is emitted once at startup rather
+    // than every turn, so it is collected separately and merged into whichever
+    // state wins. Newest-wins here too: a run that reloads re-emits it.
+    let mut seat: Option<Seat> = None;
     for line in raw.lines() {
+        if line.contains("\"seat\"") {
+            if let Ok(found) = serde_json::from_str::<Seat>(line) {
+                if !found.civ.is_empty() {
+                    seat = Some(found);
+                }
+            }
+        }
         if !line.contains("\"state\"") {
             continue;
         }
@@ -821,6 +928,9 @@ pub fn state_from_events(
         if best.as_ref().map(|b| state.turn >= b.turn).unwrap_or(true) {
             best = Some(state);
         }
+    }
+    if let (Some(state), Some(seat)) = (best.as_mut(), seat) {
+        state.seat = seat;
     }
     best
 }
@@ -963,6 +1073,80 @@ pub(crate) fn grow_frontier(
 
 }
 
+/// The newest `state` event as raw JSON, with the run's `seat` identity merged in.
+///
+/// The typed [`state_from_events`] is what the decision path wants. This is for the
+/// mock path, where a field has to survive the round trip even if CIVVIS has no
+/// struct member for it — dumping through `StateSnapshot` would silently drop
+/// anything unmodelled, and the operator would edit a file that cannot describe
+/// what they are looking at.
+pub fn state_value_from_events(
+    path: &std::path::Path,
+    turn: Option<u32>,
+) -> Option<serde_json::Value> {
+    let raw = std::fs::read_to_string(path).ok()?;
+    let mut best: Option<serde_json::Value> = None;
+    let mut seat: Option<serde_json::Value> = None;
+    for line in raw.lines() {
+        let Ok(value) = serde_json::from_str::<serde_json::Value>(line) else {
+            continue;
+        };
+        match value.get("kind").and_then(|k| k.as_str()) {
+            Some("seat") => seat = Some(value),
+            Some("state") => {
+                let at = value.get("turn").and_then(|t| t.as_u64()).unwrap_or(0) as u32;
+                if matches!(turn, Some(want) if at != want) {
+                    continue;
+                }
+                let newer = best
+                    .as_ref()
+                    .and_then(|b| b.get("turn").and_then(|t| t.as_u64()))
+                    .map(|had| at as u64 >= had)
+                    .unwrap_or(true);
+                if newer {
+                    best = Some(value);
+                }
+            }
+            _ => {}
+        }
+    }
+    if let (Some(state), Some(seat)) = (best.as_mut(), seat) {
+        if let Some(object) = state.as_object_mut() {
+            object.insert("seat".into(), seat);
+        }
+    }
+    best
+}
+
+/// Merge `patch` over `base`: objects recurse key by key, anything else replaces.
+///
+/// ⚠ A LIST REPLACES WHOLE. Merging arrays element-wise would make it impossible to
+/// DELETE a city or unit from a mocked board — you could only ever add or edit — and
+/// removing things is most of what setting up a position is.
+pub fn merge_state(base: &mut serde_json::Value, patch: &serde_json::Value) {
+    match (base.as_object_mut(), patch.as_object()) {
+        (Some(base_map), Some(patch_map)) => {
+            for (key, value) in patch_map {
+                if value.is_null() {
+                    base_map.remove(key);
+                    continue;
+                }
+                merge_state(base_map.entry(key.clone()).or_insert(serde_json::Value::Null), value);
+            }
+        }
+        _ => *base = patch.clone(),
+    }
+}
+
+/// The name to hang on a reconstructed city: Civilization VI's, when it sent one.
+///
+/// Falling back to `None` keeps CIVVIS's own naming for runs recorded before the
+/// mod exported names, rather than leaving those cities blank.
+fn banner(city: &StateCity) -> Option<String> {
+    let name = city.name.trim();
+    (!name.is_empty()).then(|| name.to_string())
+}
+
 /// Rebuild terrain, both empires, and everything visible of the rivals.
 pub fn rebuild_from_state(
     snapshot: &Snapshot,
@@ -973,6 +1157,16 @@ pub fn rebuild_from_state(
     frontier_depth: u32,
 ) -> Reconstruction {
     let mut game = rebuild_game(snapshot, players.max(2), seed);
+
+    // Identity first: city naming reads it, so this cannot wait until after the
+    // cities are placed. See `apply_identity`.
+    let unmapped = apply_identity(&mut game, state);
+    if !unmapped.is_empty() {
+        eprintln!(
+            "mirror: no CIVVIS civilization for {unmapped:?} — those seats keep their \
+             default roster name and will NOT match the Civilization VI screen"
+        );
+    }
 
     // ★★★★★ CLEAR THE STARTING UNITS `Game::new` HANDS OUT. This is the root of the
     // economy failure, and it is invisible from the outside.
@@ -1023,7 +1217,7 @@ pub fn rebuild_from_state(
         if water || game.city_at(pos).is_some() {
             return None;
         }
-        Some(game.place_city(owner, pos, None))
+        Some(game.place_city(owner, pos, banner(c)))
     };
 
     // ★★★★★ THE FRONTIER RING — without it CIVVIS believes it lives on a tiny island.
@@ -1323,6 +1517,9 @@ impl LiveMirror {
         let skip_rivals = std::env::var("CIVVIS_SYNC_NO_RIVALS").is_ok();
         let skip_units = std::env::var("CIVVIS_SYNC_NO_UNITS").is_ok();
         self.turns_synced += 1;
+        // Rivals are met as the game goes on, so identity is not a one-time job at
+        // reconstruction: a civilization first seen on turn 90 arrives here.
+        apply_identity(&mut self.game, state);
         self.game.turn = state.turn.max(1);
         if state.gold >= 0 {
             self.game.players[0].gold = state.gold as f64;
@@ -1464,7 +1661,7 @@ impl LiveMirror {
             if water || self.game.city_at(pos).is_some() {
                 continue;
             }
-            let cid = self.game.place_city(0, pos, None);
+            let cid = self.game.place_city(0, pos, banner(city));
             self.cid_of.insert(city.id, cid);
         }
         for city in &state.cities {
@@ -1581,7 +1778,7 @@ impl LiveMirror {
                 if water || self.game.city_at(pos).is_some() {
                     continue;
                 }
-                self.game.place_city(owner, pos, None);
+                self.game.place_city(owner, pos, banner(city));
                 self.rival_cities.insert((city.x, city.y));
             }
             for unit in &rival.units {

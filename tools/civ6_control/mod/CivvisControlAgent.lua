@@ -3449,6 +3449,11 @@ local function exportState(player, pid, turn)
 		end
 		cities[#cities + 1] = {
 			id = try(function() return city:GetID(); end, -1),
+			-- The banner name, so the mirror can label the same city the same way.
+			-- Without it the reconstruction falls back to CIVVIS's own list for
+			-- whatever civilization it assigned, which is how a Persian game came
+			-- out as ROME / OSTIA / ANTIUM on the left-hand screen.
+			name = try(function() return Locale.Lookup(city:GetName()); end, ""),
 			buildings = built,
 			x = try(function() return city:GetX(); end, -1),
 			y = try(function() return city:GetY(); end, -1),
@@ -3519,6 +3524,9 @@ local function exportState(player, pid, turn)
 						local theirDef, theirDmg = cityDefence(cx, cy);
 						theirCities[#theirCities + 1] = {
 							x = cx, y = cy,
+							name = try(function()
+								return Locale.Lookup(city:GetName());
+							end, ""),
 							capital = try(function() return city:IsCapital(); end, false),
 							-- Defence is on the city banner when the city is
 							-- visible, so this is information a human has.
@@ -3573,6 +3581,15 @@ local function exportState(player, pid, turn)
 			end);
 			rivals[#rivals + 1] = {
 				player = otherId,
+				-- Who they actually are. The reconstruction seats rivals from
+				-- CIVVIS's default roster otherwise, so the standings table on the
+				-- left named a different set of civilizations than the game.
+				civ = try(function()
+					return PlayerConfigurations[otherId]:GetCivilizationTypeName();
+				end, ""),
+				leader = try(function()
+					return PlayerConfigurations[otherId]:GetLeaderTypeName();
+				end, ""),
 				at_war = try(function() return diplomacy:IsAtWarWith(otherId); end, false),
 				-- ★★★ THE GAME'S OWN ANSWER TO "MAY WE DECLARE ON THEM". CIVVIS gates a
 				-- war on its own diplomatic bookkeeping — it wants a casus belli, and
