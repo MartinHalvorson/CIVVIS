@@ -209,6 +209,19 @@ local function survey()
 		size = typeName(GameInfo.Maps,
 			try(function() return MapConfiguration.GetMapSize(); end)) or "?",
 		max_turns = try(function() return GameConfiguration.GetMaxTurns(); end, -1),
+		-- ★★★ WHICH VICTORIES THIS GAME ACTUALLY ALLOWS. Everything the war layer does
+		-- is aimed at domination, and none of it means anything if the lobby has
+		-- VICTORY_CONQUEST switched off. That was never checked — the whole siege
+		-- chain could have been debugged against a game that cannot be won that way.
+		-- `Game.IsVictoryEnabled` is the shipped `WorldRankings.lua` check.
+		victories = {
+			conquest = try(function() return Game.IsVictoryEnabled("VICTORY_CONQUEST"); end, nil),
+			score = try(function() return Game.IsVictoryEnabled("VICTORY_SCORE"); end, nil),
+			technology = try(function() return Game.IsVictoryEnabled("VICTORY_TECHNOLOGY"); end, nil),
+			culture = try(function() return Game.IsVictoryEnabled("VICTORY_CULTURE"); end, nil),
+			religious = try(function() return Game.IsVictoryEnabled("VICTORY_RELIGIOUS"); end, nil),
+			diplomatic = try(function() return Game.IsVictoryEnabled("VICTORY_DIPLOMATIC"); end, nil),
+		},
 		players = try(function() return #PlayerManager.GetAliveMajorIDs(); end, -1),
 		-- Left behind by the setup context; see CivvisControlSetup.lua. Absent
 		-- means this game was started some other way -- by a person clicking
@@ -3420,8 +3433,21 @@ local function exportState(player, pid, turn)
 		local defStrength, defDamage = cityDefence(
 			try(function() return city:GetX(); end, -1),
 			try(function() return city:GetY(); end, -1));
+		-- What this city has ALREADY built. Same reason as `im` in the tiles export: a
+		-- city whose buildings are invisible looks empty forever, so CIVVIS keeps
+		-- ordering the granary it finished twenty turns ago.
+		local built = {};
+		local blds = try(function() return city:GetBuildings(); end);
+		if blds ~= nil then
+			for row in GameInfo.Buildings() do
+				if try(function() return blds:HasBuilding(row.Index); end, false) then
+					built[#built + 1] = row.BuildingType;
+				end
+			end
+		end
 		cities[#cities + 1] = {
 			id = try(function() return city:GetID(); end, -1),
+			buildings = built,
 			x = try(function() return city:GetX(); end, -1),
 			y = try(function() return city:GetY(); end, -1),
 			pop = try(function() return city:GetPopulation(); end, -1),
@@ -3701,6 +3727,15 @@ local function exportTiles(player, pid, turn)
 						w = try(function() return plot:IsWater(); end, false),
 						i = try(function() return plot:IsImpassable(); end, false),
 						fw = try(function() return plot:IsFreshWater(); end, false),
+						-- ★★★★ WHAT IS ALREADY BUILT HERE. Without it the mirror shows a
+						-- permanently unimproved world, so CIVVIS re-orders the same
+						-- development every turn and never moves on. Measured on run
+						-- civvis-20260730T132504Z: **19 UNIT_BUILDER and 17
+						-- BUILDING_GRANARY orders for ONE city**, against one Warrior and
+						-- one Slinger — the exact mirror image of the old all-army,
+						-- no-economy failure, and just as self-defeating.
+						im = typeName("Improvements", "ImprovementType",
+						              try(function() return plot:GetImprovementType(); end, -1)),
 					};
 					if index >= (cfg.TileChunk or 250) then
 						flush(); index = 0;

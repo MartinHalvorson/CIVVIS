@@ -154,6 +154,9 @@ pub struct Plot {
     pub i: bool,
     #[serde(default)]
     pub fw: bool,
+    /// Improvement type name already built here, e.g. `IMPROVEMENT_FARM`.
+    #[serde(default)]
+    pub im: Option<String>,
 }
 
 fn minus_one() -> i32 {
@@ -595,8 +598,38 @@ pub(crate) fn apply_terrain(game: &mut crate::game::Game, snapshot: &Snapshot) {
                 Resolved::Known(value) => Some(value),
                 _ => None,
             });
+            // ★★★ WHAT IS ALREADY IMPROVED. An unimproved-looking world makes CIVVIS
+            // order builders forever: 19 of them for one city in one measured run.
+            // ⚠ Mapped by name with no vocabulary, so a Civ 6 improvement CIVVIS does
+            // not know becomes None rather than a wrong improvement — the tile then
+            // reads unimproved, which is the honest direction for a name we cannot
+            // translate.
+            tile.improvement = plot.im.as_ref().and_then(|name| {
+                let short = name.strip_prefix("IMPROVEMENT_").unwrap_or(name).to_ascii_lowercase();
+                if game_rules_has_improvement(&short) {
+                    Some(Name::new(&short))
+                } else {
+                    None
+                }
+            });
         }
     }
+}
+
+/// Whether the CIVVIS ruleset knows this improvement name.
+///
+/// Split out so the terrain pass does not need a `&Game` borrow while it holds a
+/// mutable tile.
+fn game_rules_has_improvement(name: &str) -> bool {
+    // The improvement set is small and stable; checking against the shipped ruleset
+    // would need a borrow this loop cannot take, so the names CIVVIS actually models
+    // are listed. Anything else reads as unimproved, which is the honest direction.
+    matches!(
+        name,
+        "farm" | "mine" | "quarry" | "pasture" | "plantation" | "camp" | "fishing_boats"
+            | "lumber_mill" | "oil_well" | "offshore_oil_rig" | "fort" | "airstrip"
+            | "national_park" | "industry" | "seaside_resort" | "ski_resort"
+    )
 }
 
 /// The seat's own cities, in the order they appear in the stream.
@@ -685,6 +718,9 @@ pub fn rebuild_with_empire(
 pub struct StateCity {
     #[serde(default)]
     pub id: i64,
+    /// Civ 6 building type names this city has already finished.
+    #[serde(default)]
+    pub buildings: Vec<String>,
     pub x: i32,
     pub y: i32,
     #[serde(default)]
@@ -1001,9 +1037,23 @@ pub fn rebuild_from_state(
         if let Some(cid) = plant_city(&mut game, 0, city) {
             city_ids.insert(cid, city.id);
             placed_cities += 1;
-            if city.pop > 0 {
-                if let Some(built) = game.cities.get_mut(&cid) {
+            if let Some(built) = game.cities.get_mut(&cid) {
+                if city.pop > 0 {
                     built.pop = city.pop;
+                }
+                // ★★★★ WHAT THE CITY ALREADY HAS. Without this a city reads as empty
+                // forever and CIVVIS re-orders the same development every turn:
+                // measured 19 Builders and 17 Granaries for ONE city, against one
+                // Warrior — the mirror image of the old all-army failure.
+                for civ6 in &city.buildings {
+                    let name = civ6
+                        .strip_prefix("BUILDING_")
+                        .unwrap_or(civ6)
+                        .to_ascii_lowercase();
+                    let named = crate::name::Name::new(&name);
+                    if !built.buildings.contains(&named) {
+                        built.buildings.push(named);
+                    }
                 }
             }
         }
@@ -1334,9 +1384,19 @@ impl LiveMirror {
         }
         for city in &state.cities {
             if let Some(cid) = self.cid_of.get(&city.id) {
-                if city.pop > 0 {
-                    if let Some(live) = self.game.cities.get_mut(cid) {
+                if let Some(live) = self.game.cities.get_mut(cid) {
+                    if city.pop > 0 {
                         live.pop = city.pop;
+                    }
+                    for civ6 in &city.buildings {
+                        let name = civ6
+                            .strip_prefix("BUILDING_")
+                            .unwrap_or(civ6)
+                            .to_ascii_lowercase();
+                        let named = crate::name::Name::new(&name);
+                        if !live.buildings.contains(&named) {
+                            live.buildings.push(named);
+                        }
                     }
                 }
             }
