@@ -653,7 +653,6 @@ local findSettleSite;
 -- hand-rolled search. A plan that disagreed with the live game would otherwise
 -- strand settlers exactly the way `committedSite` was built to prevent.
 local settlePlan = nil;
-local planTaken = {};
 
 -- ★ THE FIRES-CHECK, and it is not optional.
 --
@@ -684,10 +683,36 @@ local function planSite(player, pid, unit)
 	end
 	if #settlePlan == 0 then return nil; end
 	planFires.offered = planFires.offered + 1;
+	-- ⚠ "USED" MEANS A CITY STANDS THERE, NOT THAT WE ONCE LOOKED AT IT.
+	--
+	-- The first version marked a site taken the moment it was OFFERED. This
+	-- function runs once per settler per turn, so the plan burned through all 24
+	-- sites in a handful of turns: run settler-20260730T045220Z read
+	-- `plan_sites 24` at turn 37 with ONE city. The plan destroyed itself and then
+	-- fell back to the Lua search, which is the opposite of the intent.
+	--
+	-- Occupancy is now derived from the board instead of remembered: a site is used
+	-- if one of our cities is within the spacing rule of it. Stateless, so it cannot
+	-- drift out of step with the game, and a settler that dies on the way leaves its
+	-- target available again.
+	local spacing = cfg.MinCitySpacing or 3;
+	local occupied = {};
+	eachCity(player, function(city)
+		local cx = try(function() return city:GetX(); end, -1);
+		local cy = try(function() return city:GetY(); end, -1);
+		if cx >= 0 then occupied[#occupied + 1] = { x = cx, y = cy }; end
+	end);
 	for i = 1, #settlePlan do
 		local site = settlePlan[i];
 		local key = site.x .. ":" .. site.y;
-		if not planTaken[key] then
+		local tooClose = false;
+		for j = 1, #occupied do
+			if plotDistance(occupied[j].x, occupied[j].y, site.x, site.y) < spacing then
+				tooClose = true;
+				break;
+			end
+		end
+		if not tooClose then
 			-- Legality is not asserted here. `orderSettler` already asks the
 			-- engine to FOUND_CITY or MOVE_TO and honours a refusal, and this
 			-- project has been burned repeatedly by gates that answered wrongly
@@ -707,7 +732,6 @@ findSettleSite = function(player, pid, unit, turn)
 	-- planned site already used).
 	local planned, planKey = planSite(player, pid, unit);
 	if planned ~= nil then
-		planTaken[planKey] = true;
 		planFires.plan = planFires.plan + 1;
 		emit("settle_choice", {
 			source = "plan",
