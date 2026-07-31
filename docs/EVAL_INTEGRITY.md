@@ -251,6 +251,16 @@ promoted them, and they do not replicate at size:
 The direction and the significance replicate. The **size** does not, and it
 fails in one direction: downward.
 
+There is a sharper version of the problem in that third row. The replication
+exists — PR **#482** (merged) records the pooled 220-map result as
+`−0.0110 ± 0.0144`, Elo-equivalent **−8 (CI −27..+12)**, against a promotion
+claiming +45, i.e. the promoted effect is *excluded*, not merely unreproduced.
+It reached a PR body and never reached `docs/`. `docs/GENOME.md` still lists
+“`strategic_deep` at +45 Elo” among the repository's promoted gains. **The
+discovery estimate is in the documentation and the refutation is not**, which
+is the same asymmetry one level up: the number that entered the record was the
+one selected for being large.
+
 ### The root cause
 
 That asymmetry is the tell, and it is not bad luck. A promotion gate accepts
@@ -295,6 +305,11 @@ give confirmations for the four rows above.
    same `tools/civvis_collab.py check-pr` gate that already validates ownership
    can grep added lines for an Elo-equivalent figure and require an
    accompanying seed pair.
+4. The corollary, which #482 shows is the half that actually gets skipped: **a
+   replication that refutes a documented size must land in the same document
+   that carries the size.** A refutation recorded only in a PR body is not
+   recorded. Fixing `docs/GENOME.md`'s standing “+45 Elo” claim is the first
+   instance and costs nothing but the edit.
 
 This costs one extra run per promoted change and buys numbers that mean what
 they say.
