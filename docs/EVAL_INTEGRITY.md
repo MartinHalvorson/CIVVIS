@@ -353,6 +353,39 @@ give confirmations for the four rows above.
 This costs one extra run per promoted change and buys numbers that mean what
 they say.
 
+### Implemented 2026-07-31 — the docs rule, enforced
+
+Fix (3) — the mechanical check — is in `tools/civvis_collab.py check-pr`, which
+already runs on every PR. `unevidenced_effect_sizes` reads the **added** lines of
+any `docs/**.md` or `README.md` in the diff and rejects an Elo-equivalent figure
+that has no provenance beside it: a seed, an interval, a map/pair/game count, the
+PR it was measured in, a p-value, or an explicit `DISCOVERY ESTIMATE` marker.
+
+Two design points, both learned from the instance it exists to catch:
+
+- **It joins before matching.** These documents wrap at 80 columns, and the real
+  defect put the figure at the end of one line (`… at +45`) and its unit at the
+  start of the next (`Elo, warm branches …`). A per-line scan sees neither half.
+- **The window is bounded** (`EVIDENCE_WINDOW_CHARS`, 320). Wide enough to reach
+  the sentence that sources the number, narrow enough that an unrelated
+  measurement elsewhere in the same hunk cannot launder a bare claim.
+
+Validated against the real before/after rather than invented fixtures: the gate
+**rejects** `docs/GENOME.md` as it read before #662, and **passes** the
+refutation that replaced it. Swept over the last 40 commits, 2 of the 30 that
+touch `docs/`/`README.md` would have been flagged — and both are effect-size
+claims of exactly this class, one of them the `+207` that later re-measured
+to +86.
+
+Note what it does **not** do. It cannot tell a discovery estimate from a
+confirmed one, because that distinction lives in how the run was commissioned
+rather than in the text. Fixes (1) and (2) — `ai_eval` labelling a gate-passing
+size as a `DISCOVERY ESTIMATE`, and a `--confirm <prior-seed>` mode — are the
+half that has to happen in the evaluator, and they are **not** done. They belong
+in `src/bin/ai_eval.rs`, which PR #679 holds; whoever picks them up should read
+the `EVIDENCE_RE` escape list first, so the string the tool prints is one the
+gate already accepts.
+
 ---
 
 ## 5. R4 — a display artifact bound to neither source nor semantics
@@ -564,7 +597,7 @@ trusting anything measured afterwards.
 | 0 | Correct `docs/GENOME.md`'s standing “`strategic_deep` at +45 Elo”, which #482 excluded | R3 corollary | one edit |
 | 1 | **Landed:** typed `ArmKind` / `AgentSpec` boundary, spec-based collapse check, factory and plays-as-typed-spec tests | R1 — both defects | PR #674, `src/elo.rs` |
 | 2 | Fallible strict `builtin_ai`; explicit degraded entry point | R2 | ~half a day |
-| 3 | Discovery-vs-confirmed effect sizes in `ai_eval`; the docs rule | R3 | ~half a day |
+| 3 | **Half landed:** the docs rule is enforced in `check-pr` (PR #685); `ai_eval` labelling and `--confirm` remain | R3 | ~half a day left |
 | 4 | **Landed:** `strength_bound()` as the only ordering; separation bar applied; table reproducible from the committed snapshot | R4 | PR #678 |
 | 5 | Arm lifecycle: `EvalArm` with evidence + status, CI check that the section exists | §7 | falls out of 1 |
 | 6 | Restate the eight two-axis comparisons in §8 against matched controls | fallout of 1 and 3 | ~a day of compute |
