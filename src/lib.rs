@@ -7,6 +7,7 @@ pub mod action_space;
 pub mod actionlog;
 pub mod ai;
 pub mod belief;
+pub mod civ6;
 pub mod elo;
 pub mod evolve;
 pub mod fractal;
