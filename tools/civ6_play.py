@@ -1020,7 +1020,18 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--difficulty", default="DIFFICULTY_SETTLER", choices=LADDER)
     ap.add_argument("--ruleset", default="RULESET_EXPANSION_2")
     ap.add_argument("--map", default="Continents.lua")
-    ap.add_argument("--map-size", default="MAPSIZE_DUEL")
+    # ★★★★ THE MAP SIZE IS THE PLAYER COUNT, so this is the lobby, not a detail.
+    #
+    # Civilization VI derives majors and city-states from the size — Duel 2, Tiny 4,
+    # Small 6, Standard 8 — and the competitive lobby CIVVIS aims at pins "Firaxis
+    # default map size and city-states for the player count" (docs/COMPETITIVE.md,
+    # from cpl.gg/rules/in-game-rules). So a size IS a player count, and Duel was
+    # measuring a two-player game against rules written for six.
+    #
+    # Small is the six-player default. The `seat` event reads the size and the
+    # player count back from inside the running game and `configured` is false
+    # unless they match what was asked, so this is checked rather than assumed.
+    ap.add_argument("--map-size", default="MAPSIZE_SMALL")
     ap.add_argument("--speed", default="GAMESPEED_ONLINE")
     ap.add_argument("--seed", type=int, default=424242)
     ap.add_argument("--max-turns", type=int, default=150)

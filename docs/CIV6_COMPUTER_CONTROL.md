@@ -347,6 +347,36 @@ frame rate a loaded machine was managing, not drift.
   `GameInfo.UnitOperations` / `GameInfo.UnitCommands` and their resolution is
   reported at startup.
 
+## The lobby a run sets up
+
+**The map size IS the player count.** Civilization VI derives both majors and
+city-states from it — Duel 2, Tiny 4, **Small 6**, Standard 8 — and there is no
+separate player-count control on the Create Game screen for the harness to set.
+
+`docs/COMPETITIVE.md` pins the competitive lobby CIVVIS aims at, and its size line
+is *"Firaxis-default map size and city-states for the player count"*. So a six-player
+game is `MAPSIZE_SMALL`, and that is the default for `civ6_play.py`,
+`civ6_civvis_climb.py` and `civ6_climb.py`. Duel and Tiny were measuring two- and
+four-player games against rules written for six.
+
+| setting | value | why |
+|---|---|---|
+| map size | `MAPSIZE_SMALL` | six majors, Firaxis-default city-states |
+| speed | `GAMESPEED_ONLINE` | the competitive lobby's speed |
+| start era | Ancient | the competitive lobby's start |
+| game modes | none | the competitive lobby disables all of them |
+
+⚠ **`MapScript` in the baked config is ignored** — the FrontEnd context that would
+read it never loads, so every game is whatever the Create Game screen defaults to.
+Selecting the map on-screen was tried and reverted; see the comment in
+`configure_and_start`.
+
+**None of this is assumed.** The `seat` event reports the difficulty, size, speed
+and player count the game actually generated, read from inside it, and `configured`
+is false unless they match what the run asked for — so a misclick on the setup
+screen shows up as a run that says so rather than as a Small result recorded under a
+Duel heading.
+
 ## The ladder
 
 `tools/civ6_ladder.py` holds the record. A rung is claimed only by a victory

@@ -343,7 +343,8 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--attempts", type=int, default=10)
     ap.add_argument("--difficulty", default="DIFFICULTY_SETTLER")
-    ap.add_argument("--map-size", default="MAPSIZE_TINY")
+    # Six players, because the size IS the player count — see `civ6_play.py`.
+    ap.add_argument("--map-size", default="MAPSIZE_SMALL")
     ap.add_argument("--speed", default="GAMESPEED_ONLINE")
     ap.add_argument("--max-turns", type=int, default=250)
     ap.add_argument("--timeout", type=float, default=5400.0)
