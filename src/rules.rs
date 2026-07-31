@@ -995,13 +995,43 @@ pub struct BeliefsData {
     pub worship: BTreeMap<String, BeliefSpec>,
 }
 
+/// Read `"replaces": "x"` and `"replaces": ["x", "y"]` alike.
+///
+/// The one-card form is by far the common one and there are 19 of them already in
+/// `data/policies.json`; rewriting every one of them into a single-element list to
+/// express the three that need two would be a large diff for no gain.
+fn one_or_many_names<'de, D>(deserializer: D) -> Result<Vec<Name>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum OneOrMany {
+        One(Name),
+        Many(Vec<Name>),
+    }
+    Ok(match OneOrMany::deserialize(deserializer)? {
+        OneOrMany::One(name) => vec![name],
+        OneOrMany::Many(names) => names,
+    })
+}
+
 #[derive(Clone, Serialize, Deserialize)]
 pub struct PolicySpec {
     pub slot: String, // military | economic | diplomatic | wildcard
     #[serde(default)]
     pub civic: Option<Name>,
-    #[serde(default)]
-    pub replaces: Option<Name>, // unlocking this obsoletes the named card
+    /// Cards this one retires when it unlocks.
+    ///
+    /// ⚠ ONE CARD CAN RETIRE SEVERAL. Civilization VI's `ObsoletePolicies` is keyed
+    /// by the *predecessor*, so a successor appears once per card it kills, and three
+    /// of them kill two: Public Works (Bastions + Serfdom), Lightning Warfare (Limes
+    /// + Maneuver) and Native Conquest (Discipline + Survey). A single `Option` could
+    /// only ever carry one of each pair, which is why this reads as a list.
+    ///
+    /// A bare string is still accepted, so entries naming one card stay one line.
+    #[serde(default, deserialize_with = "one_or_many_names")]
+    pub replaces: Vec<Name>,
     #[serde(default)]
     pub note: String,
     /// Numeric, data-driven policy primitives consumed by the game engine.
@@ -3194,7 +3224,7 @@ mod tests {
                 !spec.effects.is_empty(),
                 "policy {id} has no runtime effect"
             );
-            if let Some(replaced) = &spec.replaces {
+            for replaced in &spec.replaces {
                 assert!(
                     rules.policies.contains_key(replaced),
                     "{id} replaces missing policy {replaced}"

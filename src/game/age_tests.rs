@@ -1430,3 +1430,64 @@ fn only_the_first_fully_promoted_governor_earns_the_moment() {
         Some(&1)
     );
 }
+
+#[test]
+fn a_card_retires_when_its_successor_unlocks_and_one_successor_can_retire_several() {
+    // ⚠ Civilization VI's `ObsoletePolicies` is keyed by the PREDECESSOR, so a
+    // successor appears once per card it kills — and three of them kill two. Public
+    // Works retires Bastions *and* Serfdom, which the old single-`Option` schema
+    // could not express: it carried one name, so the other card never died.
+    let mut game = two_player_game();
+    game.world_era = 3;
+    let civics = &mut game.players[0].civics;
+    for civic in ["code_of_laws", "craftsmanship", "defensive_tactics", "feudalism"] {
+        civics.insert(crate::name::Name::new(civic));
+    }
+
+    let before = game.available_policies(0);
+    assert!(before.contains(&crate::name!("bastions")), "Bastions is unlocked");
+    assert!(before.contains(&crate::name!("serfdom")), "and so is Serfdom");
+    assert!(
+        !before.contains(&crate::name!("ilkum")),
+        "Ilkum is already retired by Serfdom, which this player has"
+    );
+
+    game.players[0].civics.insert(crate::name!("civil_engineering"));
+    let after = game.available_policies(0);
+    assert!(
+        after.contains(&crate::name!("public_works")),
+        "Civil Engineering offers Public Works"
+    );
+    assert!(
+        !after.contains(&crate::name!("bastions")),
+        "Public Works retires Bastions"
+    );
+    assert!(
+        !after.contains(&crate::name!("serfdom")),
+        "AND Serfdom — the half a single `replaces` could never carry"
+    );
+}
+
+#[test]
+fn every_shipped_obsolescence_row_names_a_card_that_exists() {
+    // The relation is only worth anything if both ends resolve; a typo would
+    // silently retire nothing. `validate` covers the same ground, but this keeps the
+    // rule beside the behaviour it drives.
+    let game = two_player_game();
+    let mut with_successors = 0usize;
+    for (name, spec) in &game.rules.policies {
+        for retired in &spec.replaces {
+            assert!(
+                game.rules.policies.contains_key(retired),
+                "{name} retires {retired:?}, which is not a policy"
+            );
+            assert_ne!(retired, name, "{name} cannot retire itself");
+            with_successors += 1;
+        }
+    }
+    assert!(
+        with_successors >= 41,
+        "Civilization VI ships 41 obsolescence rows with a named successor; \
+         modelling {with_successors} means cards are still immortal"
+    );
+}
