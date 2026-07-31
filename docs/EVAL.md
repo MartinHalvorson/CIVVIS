@@ -6599,14 +6599,19 @@ cleared 1/2 required profiles`. This is a full-prefix null, not a reason to
 search a more favorable seed or tune the switch after the fact. The arm remains
 evaluator-only and production `advanced` is unchanged.
 
-## 2026-07-31 — the shipped genome measured on both promotion profiles, and the sign flips
+## 2026-07-31 — why the shipped genome's sign flips between the promotion profiles
 
-`docs/AI_GAPS.md` §5 records the embedded gen-14 champion at **+58 and PASS on
-the 4p 24×16 Standard profile it was bred on and −9, inconclusive**, on an
-older six-city-state deployment comparison, and files it under "search and
-evolution overfit their measurement profile". This re-asks that question on the
-promotion matrix's **own two profiles**, at one disjoint seed prefix, with the
-victory set held fixed:
+⚠ **The result being explained here is already recorded and this section does
+not claim it.** The matrix table above has `advanced_evolved` at 120 maps per
+profile — compact **57.3%, +51** (direction 44–16, p=0.0004) and deployment
+**45.6%, −30** (direction 24–40) — verdict **retain stock**. `docs/AI_GAPS.md`
+§5 records the same shape as +58/−9 on an older comparison. What no entry
+records is *why* the same forty genes are worth +51 on one profile and −30 on
+the other, and that is what this section adds. The forty-map runs below are an
+independent replication on a disjoint seed, not a discovery.
+
+The replication asks the question on the matrix's **own two profiles**, at one
+disjoint seed prefix, with the victory set held fixed:
 
 ```sh
 # deployment
@@ -6627,10 +6632,11 @@ alone.
 | deployment 6p 74×46 Online/250 | **42.5%** (95% Wilson 28.5–57.8) | **−53** | 13–25 | 8 for / 14 neutral / 18 against | 0.0755 |
 
 Both verdicts are `INCONCLUSIVE` at forty maps and neither establishes
-anything on its own. Taken together they are a **101-point swing and a sign
-reversal on one artifact**, reproducing the recorded +58/−9 with a fresh
-instrument on a disjoint seed. Nothing about the victory list explains it: both
-runs used `science,culture,domination`.
+anything on its own. Taken together they reproduce the recorded 120-map matrix
+(+51 compact, −30 deployment) on a disjoint seed with a fresh instrument — a
+**101-point swing and a sign reversal on one artifact**. Nothing about the
+victory list explains it: both runs used `science,culture,domination`, so the
+gate's exclusion of religion is not the cause.
 
 ### The victory mix says why, and it is reachability
 
