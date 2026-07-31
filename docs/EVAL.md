@@ -6598,3 +6598,137 @@ matrix consequently returned `RETAIN advanced — advanced_expansion_dispatch
 cleared 1/2 required profiles`. This is a full-prefix null, not a reason to
 search a more favorable seed or tune the switch after the fact. The arm remains
 evaluator-only and production `advanced` is unchanged.
+
+## 2026-07-31 — the shipped genome measured on both promotion profiles, and the sign flips
+
+`docs/AI_GAPS.md` §5 records the embedded gen-14 champion at **+58 and PASS on
+the 4p 24×16 Standard profile it was bred on and −9, inconclusive**, on an
+older six-city-state deployment comparison, and files it under "search and
+evolution overfit their measurement profile". This re-asks that question on the
+promotion matrix's **own two profiles**, at one disjoint seed prefix, with the
+victory set held fixed:
+
+```sh
+# deployment
+ai_eval advanced_evolved advanced --pairs 40 --jobs 4 --seed 61000000 \
+  --players 6 --width 74 --height 46 --city-states 9 --turns 250 --speed online \
+  --map continents --shape planet --poles poles --randomize-civs \
+  --victories science,culture,domination
+# compact: --players 4 --width 24 --height 16 --city-states 4 --turns 500 --speed standard
+```
+
+`advanced_evolved` resolves the embedded champion, `advanced` is stock
+`AdvancedAi::new()`, and `ai_eval` reports the arms differing on `weights`
+alone.
+
+| profile | paired score | Elo-equivalent | games | map directions | sign p |
+|---|---:|---:|---:|---:|---:|
+| compact 4p 24×16 Standard/500 | **56.9%** (95% Wilson 41.6–70.9) | **+48** | 28–17 | 15 for / 19 neutral / 6 against | 0.0784 |
+| deployment 6p 74×46 Online/250 | **42.5%** (95% Wilson 28.5–57.8) | **−53** | 13–25 | 8 for / 14 neutral / 18 against | 0.0755 |
+
+Both verdicts are `INCONCLUSIVE` at forty maps and neither establishes
+anything on its own. Taken together they are a **101-point swing and a sign
+reversal on one artifact**, reproducing the recorded +58/−9 with a fresh
+instrument on a disjoint seed. Nothing about the victory list explains it: both
+runs used `science,culture,domination`.
+
+### The victory mix says why, and it is reachability
+
+| | compact | deployment |
+|---|---|---|
+| champion wins | domination **21**, culture 5, science 2 | science 12, culture 1 |
+| stock wins | domination 7, culture 5, science 5 | science 18, culture 7 |
+
+At 96 tiles per player with four seats, neighbours are adjacent, domination is
+reachable, and the champion's combat and doctrine genes cash out — it takes
+three times stock's domination wins. At 567 tiles per player with six seats
+nobody is reachable in 250 Online turns, the game is a science and culture
+race, and the champion trails on **every** column that race is run on: cities
+5.82 v 6.08, population 70.7 v 77.4, techs 56.8 v 59.3, production 298 v 344,
+science 174 v 191, culture 126 v 145. It leads on exactly one, **faith, 3131 v
+2924**, in a profile with religious victory switched off.
+
+### The planner shows the mechanism: an expansion trap that never reaches Science
+
+The adaptive grand-strategy census on the same deployment run, midgame share of
+observed player-turns:
+
+| | champion | stock |
+|---|---:|---:|
+| science | **16.1%** | **31.4%** |
+| expansion | **34.8%** | 19.5% |
+| recovery | 13.0% | 11.2% |
+| conquest | 23.7% | 27.8% |
+| strategy boundaries accompanied by a **city deficit** | **100** | 52 |
+
+Stock spends nearly twice the midgame on Science, and takes 18 science
+victories to the champion's 12. The champion spends it on Expansion instead,
+with twice as many strategy boundaries carrying a city deficit — it is
+chronically short of the city target it shares with stock (`city_target_floor`
+is not a gene, so both empires want the same number), because
+`settler_min_pop` 4.457 makes a city grow to five before it may build a
+Settler and `builder_per_city` 0.200 leaves the tiles that feed that growth
+unimproved. It stays in the expansion loop and never routes to the lane that
+wins on this map.
+
+That is the same shape as the compact result read the other way round: on a
+map where the neighbour is adjacent, the loop resolves into Conquest and the
+combat genes pay; on a map where nobody is reachable, it resolves into nothing.
+
+That is consistent with its genome. Against `Weights::default()` it carries
+`faith_builder` 350.4 v 120.0, `wonder_min_bld` 1.164 v 3.0,
+`builder_per_city` 0.200 v 0.5 — the lower bound of that gene — `city_target`
+2.408 v 4.0 and `settler_min_pop` 4.457 v 2.0. A tall faith-and-wonder build
+bred on a map where the neighbour is next door.
+
+**The defensible statement is that the shipped genome is bred for a
+reachability regime, not that it is weak.** It is +48 where it was bred and
+does not carry to the profile the deployment gate judges on. Nothing here
+licenses removing it; it does mean a claim that the embedded champion is "the
+strong agent" must name the profile, and that a genome intended for deployment
+should be selected there.
+
+### A deck-only calibration rung
+
+Every genome staged as a JSON artifact deserializes to `PolicyDeck::Live`,
+while `Weights::default()` is `Legacy`, so an artifact arm bundles the deck
+with the genome. To difference it out, a rung carrying `"weights": {}` — every
+gene falling back to the stock default, deck Live — was run against `advanced`
+on the same deployment maps at seed 66,000,000: **53.1%, +22** (95% Wilson
+38.1–67.6). That is the same comparison `advanced_policy_live_control` records
+at 300 pairs (54.3%, +30 at deployment), so the rig reproduces a known
+quantity, and the champion's 42.5% sits about eleven points below its own
+deck-matched baseline.
+
+### The live league's leader
+
+Live league round 3217 ranks `g28-28` first at the six-player table on the
+statistic the league selects on — 199 outright wins in 1011 six-player games
+against stock `advanced`'s 142 in 866. Staged and run on the deployment profile
+at seed 63,000,000 (10 pairs, `INSUFFICIENT` by the gate's own 20-map floor):
+40.0%, −70, 4 games to 8, while building cities 7.97 v 5.17, population 104.5 v
+67.6, production 406.6 v 280.8 and science 177.3 v 151.2 — a uniformly larger
+empire on every yield column and fewer wins.
+
+⚠ Ten maps establish nothing, and this does **not** generalise to "league
+genomes do not carry": `docs/LIVE_GENOME_TRANSFER.md` ran that question at
+proper power on an 8p 84×54 profile and `g44-41` scored **51.9%** (+13,
+`INCONCLUSIVE`, 11 directions for and 8 against), failing only its own
+pre-declared 52.5% screen term. One league genome reads slightly positive at
+forty maps and another reads negative at ten.
+
+### The expansion gate the adaptive path actually uses
+
+Recorded separately in `docs/PLAN_CITY_TARGET.md`: `city_target` is **not**
+confined to the `unwrap_or_else` fallback `docs/GENOME.md` describes. After the
+opening book an untargeted adaptive empire ends in `BasicAi::cities`, whose
+Settler gate reads the flat gene, and `ai_eval` reports stock `advanced` at
+100% adaptive plans. The default-off `advanced_plan_city_target` arm, which
+hands that governor the empire's own land-aware `plan.desired_cities`, was
+**refuted by its own fires-check before any outcome seed was read** — cities
+fall 2.17→1.50 at compact and 4.83→4.33 at deployment, because the ramp opens
+at three while the stock gene is four. The census it produced is the durable
+part: at deployment the empire reaches 4.83 cities against its own target of
+5.00 and is **target**-limited, while at the compact eval profile it reaches
+2.17 against 3.83 and is **execution**-limited. The expansion axis has two
+regimes and one profile cannot judge it.
