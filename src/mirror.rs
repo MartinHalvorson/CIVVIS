@@ -866,6 +866,17 @@ pub struct StateSnapshot {
     /// from every calculation it makes.
     #[serde(default)]
     pub pantheon: Option<String>,
+    /// Civ 6 policy types currently slotted, e.g. `POLICY_DISCIPLINE`.
+    ///
+    /// ⚠ Same shape as `government` and `pantheon`: a fact the game holds that CIVVIS
+    /// was never told, so it re-decided it every turn. 73 `no_slot_for_*` refusals and
+    /// 23 `already_*` in 61 turns of run civvis-20260731T070956Z.
+    #[serde(default)]
+    pub policies: Vec<String>,
+    /// How many policy slots this government actually has. Choosing a card for a slot
+    /// that does not exist is an uninformed decision, not a bad one.
+    #[serde(default)]
+    pub policy_slots: i64,
     #[serde(default)]
     pub gold: i64,
     /// Faith BALANCE. `science` and `culture` are per-turn yields that CIVVIS
@@ -1488,6 +1499,18 @@ pub fn rebuild_from_state(
         match civvis_node_name(&game.rules.techs, civ6, "TECH_") {
             Some(name) => {
                 game.players[0].techs.insert(crate::name::Name::new(&name));
+            }
+            None => {
+                if !unmapped.contains(civ6) {
+                    unmapped.push(civ6.clone());
+                }
+            }
+        }
+    }
+    for civ6 in &state.policies {
+        match civvis_node_name(&game.rules.policies, civ6, "POLICY_") {
+            Some(name) => {
+                game.players[0].policies.insert(crate::name::Name::new(&name));
             }
             None => {
                 if !unmapped.contains(civ6) {

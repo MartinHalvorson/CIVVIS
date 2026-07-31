@@ -3810,12 +3810,39 @@ local function exportState(player, pid, turn)
 		local row = GameInfo.Beliefs[index];
 		return row ~= nil and row.BeliefType or nil;
 	end);
+	-- ★★★★ THE POLICY CARDS ALREADY SLOTTED, and how many slots exist at all.
+	--
+	-- The third instance of one shape tonight, after the government and the pantheon:
+	-- a fact Civilization VI holds, CIVVIS is never told, and therefore re-decides
+	-- every turn. Measured on run civvis-20260731T070956Z in 61 turns:
+	-- `no_slot_for_POLICY_URBAN_PLANNING` 46, `no_slot_for_POLICY_AGOGE` 27,
+	-- `already_POLICY_DISCIPLINE` 23 — CIVVIS asking for cards it already holds and
+	-- for slots this government does not have.
+	--
+	-- ⚠ Slot COUNT matters as much as the cards. A seat under Chiefdom has a
+	-- different shape of government than one under Monarchy, and CIVVIS choosing a
+	-- military card for a slot that does not exist is not a bad choice, it is an
+	-- uninformed one.
+	local policies, policy_slots = {}, 0;
+	local pcult = try(function() return player:GetCulture(); end);
+	if pcult ~= nil then
+		policy_slots = try(function() return pcult:GetNumPolicySlots(); end, 0) or 0;
+		for i = 0, policy_slots - 1 do
+			local index = try(function() return pcult:GetSlotPolicy(i); end, -1);
+			if index ~= nil and index >= 0 then
+				local row = GameInfo.Policies[index];
+				if row ~= nil then policies[#policies + 1] = row.PolicyType; end
+			end
+		end
+	end
 	emit("state", {
 		turn = turn,
 		techs = techs,
 		civics = civics,
 		government = government,
 		pantheon = pantheon,
+		policies = policies,
+		policy_slots = policy_slots,
 		hostiles = hostiles,
 		gold = try(function() return math.floor(player:GetTreasury():GetGoldBalance()); end, -1),
 		faith = try(function() return math.floor(player:GetReligion():GetFaithBalance()); end, -1),
