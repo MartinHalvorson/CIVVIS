@@ -35,6 +35,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import signal
 import subprocess
 import sys
@@ -145,14 +146,54 @@ def code_state() -> str:
     `tools/civ6_*.py` is exactly the kind of thing that appears mid-session and
     changes what runs. ⚠ The limit worth knowing: an untracked file's CONTENT is not
     hashed, only its existence, so editing one in place will not break a pin.
+
+    ★★★★★ THE TREE THAT PLAYS THE GAME IS OFTEN NOT A GIT CHECKOUT AT ALL.
+    `/Users/martin/civvis-settler-harness` — the copy most real attempts run from —
+    has no `.git`, and `run()` returns stdout+stderr, so `git rev-parse` handed back
+    its own failure and the ledger recorded rows stamped:
+
+        "code_rev": "fatal: not a git repository (or any of the parent
+                     directories): .git+036c4dc7"
+
+    Worse than ugly: the `+036c4dc7` half is a hash of that same error text, so it is
+    IDENTICAL for every non-repo tree and two genuinely different programs pin alike —
+    the exact failure this function exists to prevent, wearing a different costume.
+
+    So a revision is accepted only if it LOOKS like one, and a tree with no revision
+    is named by hashing what will actually run.
     """
-    root = str(HERE.parent)
-    rev = run(["git", "-C", root, "rev-parse", "--short", "HEAD"]).strip() or "?"
-    tree = (run(["git", "-C", root, "status", "--porcelain"])
-            + run(["git", "-C", root, "diff", "HEAD"]))
+    root = HERE.parent
+    rev = run(["git", "-C", str(root), "rev-parse", "--short", "HEAD"]).strip()
+    if not re.fullmatch(r"[0-9a-f]{7,40}", rev):
+        return f"nogit+{_tree_fingerprint(root)}"
+    tree = (run(["git", "-C", str(root), "status", "--porcelain"])
+            + run(["git", "-C", str(root), "diff", "HEAD"]))
     if tree.strip():
         return f"{rev}+{hashlib.sha1(tree.encode()).hexdigest()[:8]}"
     return rev
+
+
+def _tree_fingerprint(root: Path) -> str:
+    """Hash what a non-git tree will actually run: the harness and the mod.
+
+    Only the files that decide behaviour, so an unrelated log or screenshot dropped
+    beside them does not invent a new program. Read failures are folded in by name
+    rather than skipped — a file that cannot be read is itself a difference.
+    """
+    digest = hashlib.sha1()
+    targets = sorted(
+        path
+        for pattern in ("civ6_*.py", "civ6_control/*.py", "civ6_control/mod/*")
+        for path in (root / "tools").glob(pattern)
+        if path.is_file()
+    )
+    for path in targets:
+        digest.update(str(path.relative_to(root)).encode())
+        try:
+            digest.update(path.read_bytes())
+        except OSError as exc:
+            digest.update(f"unreadable:{exc}".encode())
+    return digest.hexdigest()[:8]
 
 
 def blocked_reason() -> str | None:
