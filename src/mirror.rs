@@ -423,6 +423,102 @@ mod tests {
         );
     }
 
+    /// ★★★★★ Explored ground the seat cannot currently see must still be ON THE BOARD.
+    ///
+    /// This is the operator's report — *"civvis sometimes only shows current
+    /// visibility… area has been explored that isn't in civvis map"* — reduced to its
+    /// mechanism. `obs.rs` walks `explored` and, for a tile that is not currently
+    /// visible, looks it up in `remembered_tiles` inside a `filter_map`; a tile with no
+    /// memory is therefore **dropped from the board**, not dimmed. Nothing in this
+    /// bridge wrote `remembered_tiles`, so before the fix the seated observation of a
+    /// charted continent contained **zero** tiles.
+    ///
+    /// ⚠ Asserted through `observation_player_view`, not against `remembered_tiles`
+    /// directly: the mirror window attaches with `POST /view {"player": 0}` and that is
+    /// the surface that was empty. A test that only counted the memory map would pass on
+    /// a memory the viewer never consults.
+    #[test]
+    fn ground_the_seat_has_charted_survives_the_fog_closing_over_it() {
+        let plots: Vec<Plot> = (0..6)
+            .map(|x| plot(5 + x, 5, "TERRAIN_GRASS"))
+            .collect();
+        let revealed = plots.len();
+        let chunks = vec![TilesChunk {
+            turn: 40,
+            width: 20,
+            height: 20,
+            chunk: 1,
+            plots,
+        }];
+        let snapshot = Snapshot::from_chunks(&chunks);
+        let game = rebuild_game(&snapshot, 4, 7);
+
+        let seat = &game.players[0];
+        assert_eq!(seat.explored.len(), revealed, "the export is the explored set");
+        assert_eq!(
+            seat.remembered_tiles.len(),
+            revealed,
+            "and memory must cover it exactly — never more (invented ground from the \
+             generated map) and never less (a hole the viewer drops)"
+        );
+
+        // ⚠ The test is only meaningful if some charted ground is genuinely under fog.
+        // Asserted rather than assumed: `Game::new` reveals a generated start, so which
+        // plots the seat can see is a property of the map roll, not of this fixture.
+        let visible = game.player_visibility(0);
+        let fogged: Vec<crate::Pos> = seat
+            .explored
+            .iter()
+            .filter(|pos| !visible.contains(pos))
+            .copied()
+            .collect();
+        assert!(
+            !fogged.is_empty(),
+            "no charted plot is under fog, so this fixture cannot exercise the defect"
+        );
+
+        let view = crate::obs::observation_player_view(&game, 0);
+        let tiles = view["map"]["tiles"].as_array().expect("a board of tiles");
+        let on_board: std::collections::BTreeSet<crate::Pos> = tiles
+            .iter()
+            .filter_map(|tile| {
+                let pos = tile["pos"].as_array()?;
+                Some((pos[0].as_i64()? as i32, pos[1].as_i64()? as i32))
+            })
+            .collect();
+        assert_eq!(
+            tiles.len(),
+            revealed,
+            "every charted plot must still be on the board once the fog closes over it \
+             — before the fix only the currently-visible ones survived, which is the \
+             whole defect"
+        );
+        for pos in &fogged {
+            assert!(
+                on_board.contains(pos),
+                "remembered ground {pos:?} was dropped from the board entirely"
+            );
+        }
+
+        // And it must arrive as REMEMBERED, not as currently seen. A mirror that
+        // reported stale ground as live would be the opposite error, and just as wrong.
+        let live: std::collections::BTreeSet<crate::Pos> = view["visible"]
+            .as_array()
+            .expect("a visible set")
+            .iter()
+            .filter_map(|pos| {
+                let pos = pos.as_array()?;
+                Some((pos[0].as_i64()? as i32, pos[1].as_i64()? as i32))
+            })
+            .collect();
+        for pos in &fogged {
+            assert!(
+                !live.contains(pos),
+                "fogged ground {pos:?} must not be reported as currently visible"
+            );
+        }
+    }
+
     #[test]
     fn civ6_encodes_hills_in_the_terrain_and_civvis_does_not() {
         let vocab = Vocabulary::embedded();
@@ -865,6 +961,10 @@ pub(crate) fn apply_terrain(game: &mut crate::game::Game, snapshot: &Snapshot) {
     // Called from here, and never separately, because a map and an explored set that
     // disagree is the defect this pair repairs — see `apply_explored`.
     apply_explored(game, snapshot);
+    // And what that ground LOOKED like, which is a different set — see
+    // `apply_tile_memory`. Explored ground with no memory is not drawn dim, it is
+    // not drawn at all.
+    apply_tile_memory(game, snapshot);
 }
 
 /// Tell the seat which ground it has actually seen.
@@ -912,6 +1012,97 @@ pub(crate) fn apply_explored(game: &mut crate::game::Game, snapshot: &Snapshot) 
         .revealed_positions()
         .map(|(x, y)| crate::hex::offset_to_axial(x, y))
         .collect();
+}
+
+/// Tell the seat what the ground it has seen actually LOOKED like.
+///
+/// ★★★★★ **THE SEAT REMEMBERED NOTHING, SO THE MIRROR DREW ONLY WHAT IT COULD SEE THIS
+/// INSTANT** — a live vision cone beside a Civilization VI screen showing a continent.
+/// The operator reported it as *"civvis sometimes only shows current visibility… you can
+/// see from the map now that area has been explored that isn't in civvis map."*
+///
+/// `explored` and `remembered_tiles` are two different sets and this bridge only ever
+/// wrote the first. `grep -c remembered_tiles src/mirror.rs` answered **0**.
+///
+/// ⚠⚠ **AND THE MEMORY WAS NOT EMPTY — IT WAS A DIFFERENT WORLD.** Exactly the trap
+/// [[civvis-civ6-explored-was-a-fiction]] describes, one field over. Measured by
+/// disabling this function on the test below: the seat held **33 remembered tiles**
+/// against **6 charted plots**, because `Game::new` generates a CIVVIS map and reveals a
+/// start on it. Overlap: **2**. So the board rendered **2 of 6** charted plots, and both
+/// survivors were coincidences of the generated map rather than ground the real
+/// Civilization VI seat had ever stood on. Every "is the memory populated" check said
+/// yes, which is why this outlived the `explored` fix that shipped beside it.
+///
+/// What that costs: `obs.rs` builds the board a *seated* viewer receives by walking
+/// `explored`, and for a tile that is not currently visible it reads the freshest
+/// viewer's memory of it —
+///
+/// ```ignore
+/// let tiles: Vec<Value> = explored.iter().filter_map(|pos| {
+///     let live = omniscient || vis.contains(pos);
+///     let (tile, owner) = if live { … } else {
+///         let (memory, _) = viewers.iter().filter_map(…).max_by_key(…)?;  // <-- HERE
+///         (&memory.tile, memory.owner)
+///     };
+/// ```
+///
+/// That `?` sits inside a `filter_map`, so a tile with no memory is **dropped from the
+/// board entirely** — not fogged, not stale, absent. The mirror window attaches with
+/// `POST /view {"player": 0}`, so it is exactly the seated, non-omniscient path, and
+/// every explored plot outside the seat's current sight radius disappeared from it.
+///
+/// ⚠ This is a *display and knowledge* defect, not only a cosmetic one: the same
+/// observation feeds anything reading the board through `obs`, so ground the seat has
+/// charted reads as ground nobody has ever been to.
+///
+/// ⚠ **Replaces, for the same reason [`apply_explored`] replaces.** `rebuild_game`
+/// starts from `Game::new`, which generates an ordinary CIVVIS map and reveals a start
+/// on it; any memory of *that* world describes a place the real seat has never been
+/// ([[civvis-civ6-explored-was-a-fiction]]). Rebuilding from the snapshot keeps the
+/// invariant that matters — **memory is exactly the explored set, never more and never
+/// less** — so the two can no longer disagree. It stays monotonic in practice because
+/// `Snapshot::revealed` only ever accumulates.
+///
+/// ⚠ The frontier is deliberately excluded: this keys strictly off
+/// `Snapshot::revealed_positions`, so the invented land `grow_frontier` paints beyond
+/// the charted edge is never remembered as though the seat had seen it.
+///
+/// Idempotent.
+pub(crate) fn apply_tile_memory(game: &mut crate::game::Game, snapshot: &Snapshot) {
+    let turn = snapshot.turn.max(1) as u32;
+    // Decided first, applied second: reading the map and the owning city needs `game`
+    // immutably while writing the seat's memory needs it mutably.
+    let remembered: Vec<(crate::Pos, crate::world::RememberedTile)> = snapshot
+        .revealed_positions()
+        .filter_map(|(x, y)| {
+            let pos = crate::hex::offset_to_axial(x, y);
+            let tile = game.map.get(pos)?;
+            // The same derivation the live branch of `obs.rs` uses, so a tile does not
+            // change owner merely by passing under fog. `apply_territory` has already
+            // written `owner_city` from Civilization VI's own `GetOwner` on the rebuild
+            // path; where it has not run, this is `None`, which is what the live branch
+            // would report for the same tile.
+            let owner = tile
+                .owner_city
+                .and_then(|city| game.cities.get(&city))
+                .map(|city| city.owner);
+            Some((
+                pos,
+                crate::world::RememberedTile {
+                    tile: tile.clone(),
+                    owner,
+                    seen_turn: turn,
+                },
+            ))
+        })
+        .collect();
+    let Some(seat) = game.players.get_mut(0) else {
+        return;
+    };
+    seat.remembered_tiles.forget_all();
+    for (pos, memory) in remembered {
+        seat.remembered_tiles.remember(pos, memory, turn);
+    }
 }
 
 /// Whether the CIVVIS ruleset knows this improvement name.
@@ -2301,6 +2492,12 @@ pub fn rebuild_from_state(
     }
 
     apply_territory(&mut game, snapshot, state);
+    // ⚠ AFTER territory, not before. `apply_terrain` already recorded the seat's memory
+    // of every revealed plot, but ownership is written here — so a memory taken earlier
+    // would say every fogged tile is unowned, and `obs.rs` reads `memory.owner` for
+    // exactly those tiles. Re-recording is idempotent and costs one pass over the
+    // revealed set.
+    apply_tile_memory(&mut game, snapshot);
 
     Reconstruction {
         game,
