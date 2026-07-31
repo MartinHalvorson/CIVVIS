@@ -554,3 +554,50 @@ The next ranked set is:
    another threshold or seed sweep over these failed representations.
 
 The next iteration takes item 1.
+
+## Full-sequence expansion resolution and next ranking
+
+The complete-investment treatment passed its causal and parallel integrity
+boundary. Across discovery it executed 2,278 real reviews and 7,630 exact
+branches, committed a Settler on 494 reviews, selected control on 1,784, and
+reported zero branch failures. One- and four-worker replays were byte-identical,
+four workers were 1.77x faster, and the preregistered median one-seat turn-cost
+ratio was 1.8x, below the 3.0x cap.
+
+It did not pass deployment strength. Compact Standard was favorable but
+inconclusive at 53.3% paired score (+23 Elo-equivalent), while deployment
+Online was inconclusive at 48.3% (-12) and lost the raw game count 40–44. The
+treatment nevertheless raised deployment terminal score, cities, population,
+science, production, and military. This clean split says expansion investment
+was not the missing economy lever; the resulting empire failed to route its
+advantage into victories. Production remains the current promoted `advanced`,
+the 300-map confirmation stayed sealed, and live full-sequence search remains
+evaluator-only.
+
+The next ranked set is:
+
+1. **Remove the next fog leak family.** Localize the tactical/campaign channel
+   behind the remaining 16/698 controlled witnesses and preserve the same
+   equal-information invariant. This is the clearest remaining correctness
+   boundary and can improve decision fidelity without rollout cost.
+2. **Convert development leads into victories.** Instrument the late science,
+   culture, and conquest closing transitions that produced better terminal
+   economies but fewer deployment wins. Preregister a narrow victory-routing
+   intervention against win outcomes rather than another broad score-share
+   proxy.
+3. **Distill search decisions instead of running macro rollouts live.** The
+   expansion evaluator now supplies 2,278 labeled reviews and exact control/
+   commitment outcomes. A successor should learn or extract a cheap, auditable
+   rule from those decisions, use victory-aware labels, and earn deployment
+   strength without the late-game rollout wall cost.
+4. **Finish evidence semantics and external calibration.** Bind evaluator-only
+   names to explicit experiment status and retain external opponents before
+   making broader strength claims.
+5. **Revisit action advantage only with a new confidence signal.** Both frozen
+   logistic representations failed calibrated abstention despite oracle
+   headroom. Do not spend another seed or threshold sweep on those models.
+
+General live macro search is deliberately demoted: this experiment showed that
+deterministic parallelism can reduce branch latency, but neither more economic
+development nor acceptable early-turn cost guarantees victory strength or
+practical full-game evaluation cost.

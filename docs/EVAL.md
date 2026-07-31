@@ -7014,3 +7014,75 @@ Separately, the same all-treated single game is run with one and four attached
 workers; outcomes must be identical and four workers must reduce branch-search
 wall time. Loaded-host absolutes remain diagnostic, but a treatment that misses
 the ratio or parallel-speedup gate stays evaluator-only even if it wins.
+
+### Discovery resolution: development improved, deployment strength did not
+
+The exact cost command passed both preregistered gates. Per-seed turn costs on
+the deployment-shaped position were:
+
+| seed | scripted | one treated seat | all treated |
+|---:|---:|---:|---:|
+| 105000 | 16.1 ms | 85.5 ms (5.3x) | 154.8 ms (9.6x) |
+| 105001 | 13.7 ms | 24.7 ms (1.8x) | 115.5 ms (8.4x) |
+| 105002 | 15.9 ms | 26.8 ms (1.7x) | 162.9 ms (10.3x) |
+| 105003 | 13.3 ms | 23.1 ms (1.7x) | 170.5 ms (12.8x) |
+
+The aggregate scripted, one-seat, and all-treated costs were 14.7, 40.0, and
+150.9 ms/turn. The median one-seat ratio was 1.8x, below the fixed 3.0x cap.
+The all-treated seed-105004 replay was byte-identical with one and four branch
+workers, and four workers reduced wall cost from 135.4 to 76.4 ms/turn, a
+1.77x speedup. Thus deterministic parallel branch evaluation worked and cost
+did not independently bar promotion.
+
+The exact 60-map discovery matrix then completed without changing the sample:
+
+| profile | paired score | Elo-equivalent | game wins | gate result |
+|---|---:|---:|---:|---|
+| compact Standard | 53.3% (40.9%..65.4%) | +23 (-64..+110) | 37–29 | ACCEPT no-regression; inconclusive |
+| deployment Online | 48.3% (36.2%..60.7%) | -12 (-99..+75) | 40–44 | REJECT strength; inconclusive |
+
+Compact direction was 15 treatment-favored, 36 neutral, and 9
+incumbent-favored maps (two-sided sign p=0.3075). Deployment direction was
+9/40/11 (p=0.8238). Neither profile crossed its anytime-valid superiority
+boundary. The treatment did improve the deployment terminal-score diagnostic
+to 51.3% (38 treatment-favored, one neutral, 21 incumbent-favored maps;
+p=0.0363), but that diagnostic was explicitly not a promotion endpoint and
+pointed opposite the 40–44 victory count.
+
+The development change was concrete rather than a dormant arm. Compact
+reported 1,189 reviews, 3,449 branches, 241 commitments, 948 controls, and zero
+branch failures. Deployment reported 1,089 reviews, 4,181 branches, 253
+commitments, 836 controls, and zero failures. On deployment maps the treatment
+finished with more score (670.3 vs 637.5), cities (6.35 vs 5.90), population
+(79.9 vs 75.2), science (203.0 vs 190.8), and production (356.5 vs 331.7), yet
+won fewer games. Full-sequence expansion search therefore found a real economy
+lever but did not convert it into the required deployment strength.
+
+The matrix gate retained `advanced`: only one of two required profiles cleared
+its role. In accordance with the staged contract, seed 40,061,000 and the
+300-map confirmation remain unopened. `advanced_expansion_sequence` stays an
+evaluator-only measured negative, and production continues to use the promoted
+scripted `advanced` policy with this search disabled.
+
+Post-result verification rebuilt `civvis`, `ai_eval`, and `turn_cost` in the
+release profile. The complete locked CI suite passed 1,313 library tests plus
+every binary, integration, and doc-test target with zero failures (20 long
+censuses/benchmarks intentionally ignored). This includes the causal branch,
+authoritative-state, default-off, source-contract, and serial/parallel replay
+tests added for this iteration.
+
+A fresh production-only deployment soak completed 12/12 games:
+
+```sh
+target/release/civvis soak --games 12 --players 6 \
+  --start-seed 41051000 --jobs 8 --width 74 --height 46 \
+  --city-states 9 --speed online --turns 250 \
+  --map continents --shape planet --poles poles
+```
+
+The retained controller produced five science victories, two religious
+victories, and five score finishes across the fixed horizon. The games included
+152 wars, 44 city captures, five captured capitals, and nuclear strikes. Thus
+the final default-off boundary and promoted production stack completed varied
+economic, religious, scientific, and combat trajectories after the negative
+experiment.
