@@ -5798,7 +5798,12 @@ impl AdvancedAi {
         if g.wdist(here, objective) <= 1 {
             if depleted && g.can_move(uid, objective) {
                 // The city is open. Walking in *is* the capture.
-                return Some(g.apply(pid, &Action::Move { unit: uid, to: objective }).is_ok());
+                let expert = Action::Move {
+                    unit: uid,
+                    to: objective,
+                };
+                let movement = self.base.qualified_move(g, pid, &expert);
+                return Some(g.apply(pid, &movement).is_ok());
             }
             let attacked = g
                 .apply(
@@ -5870,7 +5875,9 @@ impl AdvancedAi {
                 .route_step_to_any(uid, &goals)
                 .filter(|pos| g.can_move(uid, *pos))
             {
-                return Some(g.apply(pid, &Action::Move { unit: uid, to: next }).is_ok());
+                let expert = Action::Move { unit: uid, to: next };
+                let movement = self.base.qualified_move(g, pid, &expert);
+                return Some(g.apply(pid, &movement).is_ok());
             }
         }
         None
@@ -5939,7 +5946,9 @@ impl AdvancedAi {
             return Some(self.base.fortify_or_stop(g, pid, uid));
         }
         debug_assert_ne!(next, current);
-        Some(g.apply(pid, &Action::Move { unit: uid, to: next }).is_ok())
+        let expert = Action::Move { unit: uid, to: next };
+        let movement = self.base.qualified_move(g, pid, &expert);
+        Some(g.apply(pid, &movement).is_ok())
     }
 
     fn advanced_diplomacy(&mut self, g: &mut Game, pid: usize, plan: &StrategicPlan) {
@@ -11574,7 +11583,9 @@ impl AdvancedAi {
                 self.base.move_beats_holding(g, uid, candidate, stay)
             };
             if should_move {
-                return g.apply(pid, &Action::Move { unit: uid, to: pos }).is_ok();
+                let expert = Action::Move { unit: uid, to: pos };
+                let movement = self.base.qualified_move(g, pid, &expert);
+                return g.apply(pid, &movement).is_ok();
             }
         }
 
@@ -11601,7 +11612,9 @@ impl AdvancedAi {
                 })
             {
                 if self.base.move_beats_holding(g, uid, score(g, pos), stay) {
-                    return g.apply(pid, &Action::Move { unit: uid, to: pos }).is_ok();
+                    let expert = Action::Move { unit: uid, to: pos };
+                    let movement = self.base.qualified_move(g, pid, &expert);
+                    return g.apply(pid, &movement).is_ok();
                 }
             }
         }
@@ -12501,7 +12514,9 @@ impl AdvancedAi {
         let Some(to) = targets.first().copied() else {
             return false;
         };
-        if g.apply(pid, &Action::Move { unit: uid, to }).is_err() {
+        let expert = Action::Move { unit: uid, to };
+        let movement = self.base.qualified_move(g, pid, &expert);
+        if g.apply(pid, &movement).is_err() {
             return false;
         }
         if let Some(target_unit) = condemnable(g, to) {
@@ -21998,6 +22013,48 @@ mod tests {
         assert_eq!(
             serde_json::to_value(&serial).unwrap(),
             serde_json::to_value(&parallel).unwrap()
+        );
+    }
+
+    #[test]
+    fn qualified_q_override_consults_only_the_first_move_each_turn() {
+        let game = Game::new(2, 20, 14, 73_002, 45, 0);
+        let model = Arc::new(
+            QualifiedQOverride::from_artifact(crate::q_override::valid_test_artifact()).unwrap(),
+        );
+        let mut ai = AdvancedAi::new();
+        ai.base.set_q_override(Some(model));
+        let moves = game
+            .legal_actions(0)
+            .into_iter()
+            .filter(|action| crate::action_space::kind_name(action) == "move")
+            .collect::<Vec<_>>();
+        assert!(moves.len() >= 2);
+
+        let unsupported = Action::EndTurn;
+        assert_eq!(
+            ai.base.qualified_move(&game, 0, &unsupported),
+            unsupported
+        );
+        assert_eq!(*ai.base.q_override_decision_turn.borrow(), None);
+
+        let _ = ai.base.qualified_move(&game, 0, &moves[0]);
+        assert_eq!(
+            *ai.base.q_override_decision_turn.borrow(),
+            Some((game.turn, 0))
+        );
+        assert_eq!(
+            ai.base.qualified_move(&game, 0, &moves[1]),
+            moves[1],
+            "later movement in the same player-turn must remain scripted"
+        );
+
+        let mut next_turn = game.clone();
+        next_turn.turn += 1;
+        let _ = ai.base.qualified_move(&next_turn, 0, &moves[0]);
+        assert_eq!(
+            *ai.base.q_override_decision_turn.borrow(),
+            Some((next_turn.turn, 0))
         );
     }
 

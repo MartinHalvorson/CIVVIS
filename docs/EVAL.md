@@ -6750,7 +6750,14 @@ The frozen destination ranker remains the deterministic
 epochs, batch 32, rate 0.05, L2 0.0001, four doctrine replicas, destination
 features only, and raw threshold 0.70. Regeneration must reproduce its recorded
 SHA-256 `2c93f4456b72d1acf548f1994c9ce49569fe158c7b8eb18f4c903b606ce1c463`.
-It is frozen before any new reliability game is opened.
+The emitter and trainer must be built from historical source commit
+`90335031354b28eda33eb41dc03fb03fab5f9a92`; using the current emitter would
+silently replace the historical expert with later envoy and fog promotions.
+The 247-decision replay reproduced that SHA exactly, and the decoded 159-term
+behavior fingerprint is pinned as `fnv1a64:a9b4c4ddc2749250` in both trainer
+and runtime loader. A self-consistent substitute ranker is rejected. It is
+frozen before any new reliability game is opened; the new corpora below then
+use the current promoted expert to test whether that frozen scorer transfers.
 
 The reliability representation is fixed at 13 terms rather than 105: raw rank
 margin, then sibling-minus-expert objective progress, hostile threat, hostile

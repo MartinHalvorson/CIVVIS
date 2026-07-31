@@ -110,39 +110,6 @@ fn objectives(g: &Game, ai: &AdvancedAi) -> Vec<Pos> {
     positions
 }
 
-/// Chosen first, then an evenly spaced deterministic sample of legal siblings.
-fn move_candidates(
-    legal: &[Action],
-    chosen: &Action,
-    alternatives: usize,
-    salt: u64,
-) -> Vec<Action> {
-    let Some(actor) = action_space::acting_unit(chosen) else {
-        return Vec::new();
-    };
-    if action_space::kind_name(chosen) != "move" || !legal.contains(chosen) {
-        return Vec::new();
-    }
-    let others: Vec<&Action> = legal
-        .iter()
-        .filter(|candidate| *candidate != chosen)
-        .filter(|candidate| action_space::kind_name(candidate) == "move")
-        .filter(|candidate| action_space::acting_unit(candidate) == Some(actor))
-        .collect();
-    if others.is_empty() || alternatives == 0 {
-        return Vec::new();
-    }
-    let take = alternatives.min(others.len());
-    let start = (salt.rotate_left(17) as usize) % others.len();
-    let mut selected = Vec::with_capacity(take + 1);
-    selected.push(chosen.clone());
-    for index in 0..take {
-        let offset = index * others.len() / take;
-        selected.push(others[(start + offset) % others.len()].clone());
-    }
-    selected
-}
-
 /// Observe without mutating the harvested trajectory, then reproduce the exact
 /// pre-action state by replaying only successful actions from this turn.
 fn observe_move(
@@ -172,7 +139,7 @@ fn observe_move(
         }
         if action_space::kind_name(&action) == "move" {
             let legal = replay.legal_actions(seat);
-            let candidates = move_candidates(
+            let candidates = action_space::sampled_move_candidates(
                 &legal,
                 &action,
                 alternatives,
@@ -587,14 +554,14 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
-    use super::{harvest_game, header, move_candidates, observe_move, rollout};
+    use super::{harvest_game, header, observe_move, rollout};
     use civvis::ai::{AdvancedAi, Ai};
     use civvis::game::{Action, Game};
 
     fn first_move_choice(game: &Game, seat: usize) -> Option<(Action, Vec<Action>)> {
         let legal = game.legal_actions(seat);
         legal.iter().find_map(|chosen| {
-            let candidates = move_candidates(&legal, chosen, 3, 7);
+            let candidates = civvis::action_space::sampled_move_candidates(&legal, chosen, 3, 7);
             (candidates.len() >= 2).then(|| (chosen.clone(), candidates))
         })
     }

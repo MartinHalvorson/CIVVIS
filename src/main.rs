@@ -29,7 +29,7 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// treatment disabled; its existing shared decision behavior is unchanged.
 // Re-pinned after adding the default-empty qualified action-override hook.
 // Legacy construction never installs an artifact, so this path is inert.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xfc00_9428_69ab_c4c7;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x5136_1f62_fa0a_b8f0;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {

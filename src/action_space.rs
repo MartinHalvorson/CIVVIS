@@ -583,6 +583,42 @@ pub fn acting_unit(action: &Action) -> Option<u32> {
     }
 }
 
+/// Chosen move first, then an evenly spaced deterministic sample of legal
+/// same-unit siblings. Counterfactual collection and qualified runtime
+/// inference share this function so an artifact is never asked to authorize
+/// a candidate outside the set on which its reliability was measured.
+pub fn sampled_move_candidates(
+    legal: &[Action],
+    chosen: &Action,
+    alternatives: usize,
+    salt: u64,
+) -> Vec<Action> {
+    let Some(actor) = acting_unit(chosen) else {
+        return Vec::new();
+    };
+    if kind_name(chosen) != "move" || !legal.contains(chosen) {
+        return Vec::new();
+    }
+    let others: Vec<&Action> = legal
+        .iter()
+        .filter(|candidate| *candidate != chosen)
+        .filter(|candidate| kind_name(candidate) == "move")
+        .filter(|candidate| acting_unit(candidate) == Some(actor))
+        .collect();
+    if others.is_empty() || alternatives == 0 {
+        return Vec::new();
+    }
+    let take = alternatives.min(others.len());
+    let start = (salt.rotate_left(17) as usize) % others.len();
+    let mut selected = Vec::with_capacity(take + 1);
+    selected.push(chosen.clone());
+    for index in 0..take {
+        let offset = index * others.len() / take;
+        selected.push(others[(start + offset) % others.len()].clone());
+    }
+    selected
+}
+
 pub struct Encoded {
     pub actions: Vec<Action>,
     pub kinds: Vec<usize>,

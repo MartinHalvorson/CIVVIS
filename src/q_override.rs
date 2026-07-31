@@ -20,8 +20,20 @@ use crate::Pos;
 pub const FILE: &str = "q_override.json";
 pub const SCHEMA: &str = "civvis-q-override-qualified-v2";
 pub const RANKER_SCHEMA: &str = "civvis-q-pairwise-v1";
+/// Byte identity of the historical JSON regenerated from source commit
+/// `90335031354b28eda33eb41dc03fb03fab5f9a92`. This is retained for external
+/// provenance checks; runtime behavior is pinned by the decoded-field
+/// fingerprint below so harmless JSON whitespace cannot change acceptance.
+pub const FROZEN_RANKER_SHA256: &str =
+    "2c93f4456b72d1acf548f1994c9ce49569fe158c7b8eb18f4c903b606ce1c463";
+pub const FROZEN_RANKER_FINGERPRINT: &str = "fnv1a64:a9b4c4ddc2749250";
 pub const OVERRIDE_PROBABILITY: f64 = 0.70;
 pub const REQUIRED_REPLICAS: usize = 4;
+pub const RANKER_ALTERNATIVES: usize = 3;
+pub const RELIABILITY_FOLDS: usize = 5;
+pub const RELIABILITY_STEPS: usize = 6_000;
+pub const RELIABILITY_RATE: f64 = 0.05;
+pub const RELIABILITY_L2: f64 = 0.02;
 
 pub const DEVELOPMENT_SEED: u64 = 1_240_000;
 pub const DEVELOPMENT_GAMES: usize = 192;
@@ -169,6 +181,16 @@ fn validate_gate(
     if !gate.passed || gate.decisions < gate.games || !finite(&metrics) {
         return Err(format!("{profile} evidence is incomplete or did not pass"));
     }
+    if gate.decisions > games.saturating_mul(2)
+        || !(0.0..=1.0).contains(&gate.raw_brier)
+        || !(0.0..=1.0).contains(&gate.constant_brier)
+        || !(0.0..=1.0).contains(&gate.reliability_brier)
+        || !(-1.0..=1.0).contains(&gate.lift)
+        || !(0.0..=1.0).contains(&gate.lift_se)
+        || !(0.0..=1.0).contains(&gate.override_rate)
+    {
+        return Err(format!("{profile} evidence contains impossible metrics"));
+    }
     if gate.reliability_brier + EPS >= gate.raw_brier
         || gate.reliability_brier + EPS >= gate.constant_brier
         || gate.lift <= 0.0
@@ -208,14 +230,18 @@ impl QualifiedQOverride {
         {
             return Err("ranker schema, width, replicas, or coefficients are invalid".to_string());
         }
-        if artifact.ranker_fingerprint
-            != ranker_fingerprint(
-                &artifact.ranker_weights,
-                artifact.ranker_feature_width,
-                artifact.replicas,
-            )
+        if artifact.ranker_fingerprint != FROZEN_RANKER_FINGERPRINT
+            || artifact.ranker_fingerprint
+                != ranker_fingerprint(
+                    &artifact.ranker_weights,
+                    artifact.ranker_feature_width,
+                    artifact.replicas,
+                )
         {
-            return Err("ranker fingerprint does not match its coefficients".to_string());
+            return Err(
+                "ranker fingerprint does not match the preregistered frozen coefficients"
+                    .to_string(),
+            );
         }
         let expected_features = RELIABILITY_FEATURES.map(str::to_string).to_vec();
         let model = &artifact.reliability;
@@ -231,6 +257,10 @@ impl QualifiedQOverride {
             || !model.intercept.is_finite()
             || !model.constant_probability.is_finite()
             || !(0.0..=1.0).contains(&model.constant_probability)
+            || artifact.folds != RELIABILITY_FOLDS
+            || artifact.steps != RELIABILITY_STEPS
+            || (artifact.rate - RELIABILITY_RATE).abs() > EPS
+            || (artifact.l2 - RELIABILITY_L2).abs() > EPS
             || (artifact.override_probability - OVERRIDE_PROBABILITY).abs() > EPS
         {
             return Err(
@@ -316,11 +346,13 @@ impl QualifiedQOverride {
         if !legal.contains(expert) {
             return abstain(expert);
         }
-        let siblings = legal.iter().filter(|candidate| {
-            *candidate != expert
-                && action_space::kind_name(candidate) == "move"
-                && action_space::acting_unit(candidate) == Some(unit)
-        });
+        let candidates = action_space::sampled_move_candidates(
+            &legal,
+            expert,
+            RANKER_ALTERNATIVES,
+            game.seed ^ u64::from(game.turn) ^ u64::from(unit),
+        );
+        let siblings = candidates.iter().skip(1);
         let context = FeatureContext::new(game, pid, objectives);
         let state = decision_features::decision_features(game, pid);
         let expert_features = action_space::features_with_context(game, pid, expert, &context);
@@ -403,9 +435,15 @@ where
 
 #[cfg(test)]
 pub(crate) fn valid_test_artifact() -> Artifact {
-    let mut ranker_weights = vec![0.0; RANKER_WIDTH];
-    // Prefer progress toward an explicit objective.
-    ranker_weights[decision_features::WIDTH + DESTINATION_BASE + 10] = 10.0;
+    #[derive(Deserialize)]
+    struct Fixture {
+        weights: Vec<f64>,
+    }
+    let ranker_weights = serde_json::from_str::<Fixture>(include_str!(
+        "../tests/fixtures/q-pairwise-base.json"
+    ))
+    .expect("frozen ranker fixture parses")
+    .weights;
     let gate = |profile: &str, seed, games| GateEvidence {
         profile: profile.to_string(),
         seed,
@@ -432,10 +470,10 @@ pub(crate) fn valid_test_artifact() -> Artifact {
         reliability_features: RELIABILITY_FEATURES.map(str::to_string).to_vec(),
         reliability_feature_width: RELIABILITY_WIDTH,
         replicas: REQUIRED_REPLICAS,
-        folds: 5,
-        steps: 6_000,
-        rate: 0.05,
-        l2: 0.02,
+        folds: RELIABILITY_FOLDS,
+        steps: RELIABILITY_STEPS,
+        rate: RELIABILITY_RATE,
+        l2: RELIABILITY_L2,
         override_probability: OVERRIDE_PROBABILITY,
         reliability: ReliabilityModel {
             means: vec![0.0; RELIABILITY_WIDTH],
@@ -485,9 +523,26 @@ mod tests {
         let valid = valid_test_artifact();
         assert!(QualifiedQOverride::from_artifact(valid.clone()).is_ok());
 
+        let mut substituted = valid.clone();
+        substituted.ranker_weights[0] = 1.0;
+        substituted.ranker_fingerprint = super::ranker_fingerprint(
+            &substituted.ranker_weights,
+            substituted.ranker_feature_width,
+            substituted.replicas,
+        );
+        assert!(QualifiedQOverride::from_artifact(substituted).is_err());
+
         let mut failed = valid.clone();
         failed.qualification.selection.passed = false;
         assert!(QualifiedQOverride::from_artifact(failed).is_err());
+
+        let mut retuned = valid.clone();
+        retuned.l2 = 0.01;
+        assert!(QualifiedQOverride::from_artifact(retuned).is_err());
+
+        let mut impossible = valid.clone();
+        impossible.qualification.deployment.lift_se = -0.01;
+        assert!(QualifiedQOverride::from_artifact(impossible).is_err());
 
         let mut weak_external = valid.clone();
         weak_external.qualification.deployment.lift_se = 0.02;

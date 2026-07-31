@@ -16,9 +16,10 @@ use serde::Deserialize;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::io::{BufRead, BufReader, Write};
+use std::path::Path;
 
 const EPS: f64 = 1e-9;
-const FOLDS: usize = 5;
+const FOLDS: usize = q_override::RELIABILITY_FOLDS;
 
 fn number(args: &[String], flag: &str, default: usize) -> usize {
     args.iter()
@@ -42,6 +43,16 @@ fn text(args: &[String], flag: &str, default: &str) -> String {
         .and_then(|index| args.get(index + 1))
         .cloned()
         .unwrap_or_else(|| default.to_string())
+}
+
+fn require_unused_output(path: &str) -> Result<(), String> {
+    if Path::new(path).exists() {
+        Err(format!(
+            "refusing occupied output {path}; qualification must start with no artifact at its destination"
+        ))
+    } else {
+        Ok(())
+    }
 }
 
 #[derive(Deserialize)]
@@ -69,6 +80,18 @@ impl FrozenRanker {
         {
             return Err(format!(
                 "{path}: expected the finite four-replica destination ranker with threshold 0.70"
+            ));
+        }
+        let fingerprint = q_override::ranker_fingerprint(
+            &model.weights,
+            model.feature_width,
+            model.replicas,
+        );
+        if fingerprint != q_override::FROZEN_RANKER_FINGERPRINT {
+            return Err(format!(
+                "{path}: ranker {fingerprint} is not preregistered frozen ranker {} (historical JSON SHA-256 {})",
+                q_override::FROZEN_RANKER_FINGERPRINT,
+                q_override::FROZEN_RANKER_SHA256,
             ));
         }
         Ok(model)
@@ -567,7 +590,11 @@ fn evaluate(
         } else {
             expert
         };
-        let gated = if prediction.probability + EPS >= threshold {
+        // Keep evidence byte-for-byte aligned with runtime eligibility:
+        // confidence may authorize the frozen ranker's preferred sibling,
+        // but it may not reverse a non-positive rank margin.
+        let overrides = example.margin > EPS && prediction.probability + EPS >= threshold;
+        let gated = if overrides {
             sibling
         } else {
             expert
@@ -594,7 +621,7 @@ fn evaluate(
         metrics.raw_log_loss += log_loss(raw_probability, example.target);
         metrics.constant_log_loss += log_loss(prediction.constant_probability, example.target);
         metrics.reliability_log_loss += log_loss(prediction.probability, example.target);
-        if prediction.probability + EPS >= threshold {
+        if overrides {
             metrics.overrides += 1;
             let difference = sibling - expert;
             if difference > EPS {
@@ -779,6 +806,10 @@ fn write_artifact(
     selection: GateEvidence,
     deployment: GateEvidence,
 ) {
+    require_unused_output(path).unwrap_or_else(|error| {
+        eprintln!("q_override_train: {error}");
+        std::process::exit(2);
+    });
     let artifact = Artifact {
         schema: q_override::SCHEMA.to_string(),
         ranker_schema: ranker.schema.clone(),
@@ -876,13 +907,17 @@ fn main() {
         .and_then(|index| args.get(index + 1))
         .cloned();
     let out = text(&args, "--out", "/tmp/q-override-qualified.json");
-    let steps = number(&args, "--steps", 6_000);
-    let rate = decimal(&args, "--rate", 0.05);
-    let l2 = decimal(&args, "--l2", 0.02);
+    require_unused_output(&out).unwrap_or_else(|error| {
+        eprintln!("q_override_train: {error}");
+        std::process::exit(2);
+    });
+    let steps = number(&args, "--steps", q_override::RELIABILITY_STEPS);
+    let rate = decimal(&args, "--rate", q_override::RELIABILITY_RATE);
+    let l2 = decimal(&args, "--l2", q_override::RELIABILITY_L2);
     let threshold = decimal(&args, "--override-probability", 0.70);
-    if steps != 6_000
-        || (rate - 0.05).abs() > EPS
-        || (l2 - 0.02).abs() > EPS
+    if steps != q_override::RELIABILITY_STEPS
+        || (rate - q_override::RELIABILITY_RATE).abs() > EPS
+        || (l2 - q_override::RELIABILITY_L2).abs() > EPS
         || (threshold - OVERRIDE_PROBABILITY).abs() > EPS
     {
         eprintln!(
@@ -1055,9 +1090,10 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::{
-        fit, fold, game_weights, probability, standard_pass, superiority_target, Example, Report,
-        RELIABILITY_WIDTH,
+        evaluate, fit, fold, game_weights, probability, standard_pass, superiority_target,
+        Example, FrozenRanker, Prediction, Report, RELIABILITY_WIDTH, require_unused_output,
     };
+    use std::fs;
 
     fn example(game: u64, value: f64, target: f64) -> Example {
         Example {
@@ -1135,5 +1171,58 @@ mod tests {
         report.reliability_brier = 0.09;
         report.lift = 0.0;
         assert!(!standard_pass(&report));
+    }
+
+    #[test]
+    fn high_confidence_cannot_override_a_non_positive_rank_margin() {
+        let mut rejected = example(7, -0.5, 0.9);
+        rejected.margin = -0.5;
+        rejected.means = vec![0.0, 1.0];
+        rejected.expert_returns = vec![0.0; 4];
+        rejected.sibling_returns = vec![1.0; 4];
+        let (games, _) = evaluate(
+            &[rejected],
+            &[Prediction {
+                probability: 0.99,
+                constant_probability: 0.5,
+            }],
+            0.70,
+        );
+        let metrics = &games[&7];
+        assert_eq!(metrics.overrides, 0);
+        assert_eq!(metrics.gated_lift, 0.0);
+        assert_eq!(metrics.gated_regret, metrics.expert_regret);
+    }
+
+    #[test]
+    fn trainer_accepts_only_the_frozen_historical_ranker() {
+        let fixture = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/fixtures/q-pairwise-base.json"
+        );
+        assert!(FrozenRanker::load(fixture).is_ok());
+
+        let substituted = std::env::temp_dir().join(format!(
+            "civvis-q-override-substituted-ranker-{}.json",
+            std::process::id()
+        ));
+        let mut value: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(fixture).unwrap()).unwrap();
+        value["weights"][0] = serde_json::json!(1.0);
+        fs::write(&substituted, serde_json::to_vec(&value).unwrap()).unwrap();
+        assert!(FrozenRanker::load(substituted.to_str().unwrap()).is_err());
+        fs::remove_file(substituted).unwrap();
+    }
+
+    #[test]
+    fn trainer_refuses_an_occupied_artifact_destination() {
+        let occupied = std::env::temp_dir().join(format!(
+            "civvis-q-override-occupied-output-{}.json",
+            std::process::id()
+        ));
+        fs::write(&occupied, b"old qualified artifact").unwrap();
+        assert!(require_unused_output(occupied.to_str().unwrap()).is_err());
+        fs::remove_file(&occupied).unwrap();
+        assert!(require_unused_output(occupied.to_str().unwrap()).is_ok());
     }
 }

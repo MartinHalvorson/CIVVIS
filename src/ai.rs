@@ -1188,6 +1188,10 @@ pub struct BasicAi {
     /// qualification gate. `None` is the exact scripted policy, not an
     /// untrained approximation.
     q_override: Option<Arc<QualifiedQOverride>>,
+    /// The corpus labels the first `Move` decision on a sampled player-turn.
+    /// A qualified artifact therefore gets one consultation per turn, whether
+    /// it overrides or abstains; later moves remain the scripted continuation.
+    q_override_decision_turn: RefCell<Option<(u32, usize)>>,
     /// High-level destinations in force for the current AdvancedAi turn.
     /// Empty for BasicAi and for any decision without a strategic objective.
     q_override_objectives: Vec<Pos>,
@@ -1983,6 +1987,7 @@ impl BasicAi {
             unit_motion: BTreeMap::new(),
             rush_military_floor: 0,
             q_override: None,
+            q_override_decision_turn: RefCell::new(None),
             q_override_objectives: Vec::new(),
             journal: Journal::default(),
         }
@@ -2004,6 +2009,7 @@ impl BasicAi {
             unit_motion: BTreeMap::new(),
             rush_military_floor: 0,
             q_override: None,
+            q_override_decision_turn: RefCell::new(None),
             q_override_objectives: Vec::new(),
             journal: Journal::default(),
         }
@@ -2047,20 +2053,29 @@ impl Ai for BasicAi {
 impl BasicAi {
     pub(crate) fn set_q_override(&mut self, model: Option<Arc<QualifiedQOverride>>) {
         self.q_override = model;
+        *self.q_override_decision_turn.borrow_mut() = None;
     }
 
     pub(crate) fn set_q_override_objectives(&mut self, objectives: Vec<Pos>) {
         self.q_override_objectives = objectives;
     }
 
-    fn qualified_move(&self, g: &Game, pid: usize, expert: &Action) -> Action {
+    pub(crate) fn qualified_move(&self, g: &Game, pid: usize, expert: &Action) -> Action {
         if self.minor || self.barb {
             return expert.clone();
         }
-        self.q_override
-            .as_ref()
-            .map(|model| model.decide(g, pid, &self.q_override_objectives, expert).action)
-            .unwrap_or_else(|| expert.clone())
+        let Some(model) = self.q_override.as_ref() else {
+            return expert.clone();
+        };
+        let decision_turn = (g.turn, pid);
+        if self.q_override_decision_turn.borrow().as_ref() == Some(&decision_turn) {
+            return expert.clone();
+        }
+        let decision = model.decide(g, pid, &self.q_override_objectives, expert);
+        if decision.rank_margin.is_some() {
+            *self.q_override_decision_turn.borrow_mut() = Some(decision_turn);
+        }
+        decision.action
     }
 
     fn take_turn_inner(&mut self, g: &mut Game, pid: usize) {
@@ -6648,7 +6663,11 @@ impl BasicAi {
             })
             .max_by_key(|(value, position)| (*value, std::cmp::Reverse(*position)))
             .map(|(_, position)| position);
-        target.is_some_and(|to| g.apply(pid, &Action::Move { unit: uid, to }).is_ok())
+        target.is_some_and(|to| {
+            let expert = Action::Move { unit: uid, to };
+            let movement = self.qualified_move(g, pid, &expert);
+            g.apply(pid, &movement).is_ok()
+        })
     }
 
     /// Minors guard home; majors explore, then garrison the nearest city.
