@@ -307,8 +307,8 @@ fn build_scenario(seed: u64, setup: &SkirmishSetup) -> Option<Game> {
         .map(|pid| toward(&g, midpoint, home[pid], half))
         .collect();
 
-    for pid in 0..2 {
-        if !place_army(&mut g, pid, &setup.army, anchors[pid]) {
+    for (pid, anchor) in anchors.iter().enumerate() {
+        if !place_army(&mut g, pid, &setup.army, *anchor) {
             return None;
         }
     }
