@@ -5284,6 +5284,7 @@ impl BasicAi {
         };
         !g.rules.is_water(tile)
             && g.rules.is_passable(tile)
+            && !g.tile_is_natural_wonder(tile)
             && !g
                 .cities
                 .values()
@@ -6743,6 +6744,7 @@ impl BasicAi {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ai::advanced::AdvancedAi;
 
     /// A quiet one-player world with a lone Scout, so nothing else on the map
     /// can move the unit or attack it while its whereabouts are recorded.
@@ -8184,6 +8186,42 @@ mod tests {
             )
             .map(|(position, _)| position),
             Some(target),
+        );
+    }
+
+    #[test]
+    fn settler_retargets_a_natural_wonder_for_an_open_island_site() {
+        let (mut game, _source, wonder) = island_colony_game(1);
+        let alternate = game
+            .nbrs(wonder)
+            .into_iter()
+            .find(|position| game.map.get(*position).is_some())
+            .expect("the island has a neighboring shore tile");
+        game.map.tiles.get_mut(&alternate).unwrap().terrain = crate::name!("grassland");
+        game.map.tiles.get_mut(&wonder).unwrap().feature = Some(crate::name!("pantanal"));
+
+        let settler = game.spawn_test_unit("settler", 0, wonder);
+        let mut ai = BasicAi::new();
+        ai.settler_targets.insert(settler, wonder);
+
+        assert!(
+            !ai.valid_settle_site(&game, 0, wonder),
+            "a natural wonder looks like land but may not become a city"
+        );
+        assert!(!game.can_found_city(settler));
+        assert!(ai.settler_step(&mut game, 0, settler));
+        assert_eq!(ai.settler_targets.get(&settler), Some(&alternate));
+        assert_eq!(game.units[&settler].pos, alternate);
+    }
+
+    #[test]
+    fn advanced_settle_search_rejects_a_natural_wonder() {
+        let (mut game, _source, wonder) = island_colony_game(1);
+        game.map.tiles.get_mut(&wonder).unwrap().feature = Some(crate::name!("pantanal"));
+
+        assert!(
+            !AdvancedAi::new().any_settle_site(&game, 0),
+            "a natural wonder cannot keep the strategic settler gate open"
         );
     }
 

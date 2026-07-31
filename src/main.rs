@@ -15,7 +15,7 @@ use civvis::setup::{self, BaseRuleset, GameSpeed, MapPoles, MapScript, MapSize, 
 /// blend two players into one lifetime average and erase the very improvement
 /// the longitudinal tournament is supposed to expose.
 const DEFAULT_TOURNAMENT_ENTRANTS: &str =
-    "advanced-20260731=advanced,advanced_v1,basic-20260730=basic,random-20260730=random";
+    "advanced-20260731-settlement=advanced,advanced_v1,basic-20260731-settlement=basic,random-20260730=random";
 
 /// `advanced_v1` freezes the planning configuration, but deliberately shares
 /// the production Basic/Advanced implementation. Pin those sources so a code
@@ -59,7 +59,13 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// strategy-transition counts across 40 Advanced seat-games and 4,022 observed
 /// Advanced turns on that same fixed prefix. The re-pin is justified because
 /// the arm never observes or contributes a nonzero term while its flag is off.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x2d27_2f08_7676_3f23;
+///
+/// #686 repairs a legacy settlement path: a passable natural wonder must not
+/// remain a settler target when `Game::can_found_city` will always reject it.
+/// Because that behavior is live for `advanced_v1`, the Elo protocol advances
+/// to v3 and the source contract is recomputed with the new ledger rather than
+/// being treated as a default-off compatibility re-pin.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x297b_4adf_496d_2282;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
