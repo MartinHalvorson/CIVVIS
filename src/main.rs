@@ -52,7 +52,14 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// seat-games and 4,022 observed Advanced turns. The only added report is a
 /// zero-valued telemetry block, so this fingerprint is deliberately re-pinned
 /// rather than changing the Elo protocol.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x7954_5308_ec6a_36ef;
+///
+/// #673 similarly adds an empty `BeliefState` and a default-off pressure arm.
+/// A clean `2f3dcb7` release build and this branch both produced the identical
+/// 19/20 Advanced game wins, scores, sweeps, seat metrics, victory mix, and
+/// strategy-transition counts across 40 Advanced seat-games and 4,022 observed
+/// Advanced turns on that same fixed prefix. The re-pin is justified because
+/// the arm never observes or contributes a nonzero term while its flag is off.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x2d27_2f08_7676_3f23;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {

@@ -83,6 +83,23 @@ reads full `Game` state that the tensor does not reveal. They do **not** measure
 every possible leak, and a zero result on any finite treatment set would not
 establish fog honesty.
 
+## Current post-repair spot check
+
+After the visible-only city-pressure repair, a fresh current-main spot check at
+seed `872000` (`16` maps, the same four-player 44×28/200-turn shape, 12
+probes/map, six workers) produced 177 valid controls. All modified tensors,
+save/load tensors, and no-op decisions matched; 6/177 decisions diverged
+(3.4%): four plan reports and two action traces. The sample had 90 hidden unit
+positions, 45 unit HP values, 42 city HP values, and 135 active-war targets.
+This smaller run is not a replacement for the 64-map release census, but it
+confirms that filtering one pressure path reduced neither the broader
+information-set problem nor the need for a fog-honest controller.
+
+`advanced_belief_pressure` is a default-off evaluator arm that now consumes
+last-seen, player-visible military observations only for that repaired pressure
+path. Its memory term is intentionally too narrow to affect the census's other
+full-state reads, so it must not be cited as a fog-honesty repair.
+
 ## Scope and limitations
 
 The census uses `obs_tensor` as the implementation's fog-honest input

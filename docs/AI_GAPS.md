@@ -128,10 +128,14 @@ learned controller that wins.
 
 ### 1. Production agents cheat on fog
 
-`BasicAi` and `AdvancedAi` read the full `Game`, including information a seated
-player cannot observe. The HTTP observation and spatial tensor honor fog, but
-the production policy does not consume either. This prevents a fair-play claim
-and removes scouting, memory, and uncertainty from the decision problem.
+`BasicAi` and production `AdvancedAi` read the full `Game`, including
+information a seated player cannot observe. The HTTP observation and spatial
+tensor honor fog, but the production policy does not consume either. This
+prevents a fair-play claim and removes scouting, memory, and uncertainty from
+the decision problem. `advanced_belief_pressure` now proves one bounded
+evaluator-only use of player-visible memory in the repaired city-pressure path,
+but it neither replaces the controller's other full-state reads nor cleared its
+whole-game promotion gate.
 
 ### 2. No learned policy ships
 
@@ -312,10 +316,10 @@ no tested replacement cleared the deployment gate.
 
 ## Next priorities
 
-1. **Fog-honest major controller.** Make a major civilization consume the
-   existing observation, memory, and belief surfaces. This is the largest
-   remaining rules-integrity gap and creates honest uncertainty for every
-   later policy improvement.
+1. **Fog-honest major controller.** Extend the bounded belief-pressure use into
+   a major civilization that consumes the existing observation, memory, and
+   belief surfaces end-to-end. This is the largest remaining rules-integrity
+   gap and creates honest uncertainty for every later policy improvement.
 2. **Action-conditioned return with external-profile calibration.** Expand the
    counterfactual Q/advantage corpus well beyond the current 52-game sample,
    reserve the deployment profile as an untouched calibration set, and require
@@ -368,9 +372,10 @@ and effective self-play fail closed in promotion mode.
    deployment outcomes and the latter demonstrably moved the resource. Use new
    stable, disjoint 300+ map prefixes, preserve compact safety, and record build
    opportunity costs. Do not run a parameter sweep on the confirmation seeds.
-3. **Build a fog-honest major controller.** Make a major civilization consume
-   the existing observation, memory, and belief surfaces. This remains the
-   largest rules-integrity gap and is prerequisite to honest learned policies.
+3. **Build a fog-honest major controller.** Extend the now-tested bounded
+   belief-pressure surface into a major civilization that consumes observation,
+   memory, and belief end-to-end. This remains the largest rules-integrity gap
+   and is prerequisite to honest learned policies.
 4. **Learn action-conditioned advantage with abstention.** Expand the
    counterfactual action corpus, reserve deployment as an untouched calibration
    set, and fall back to scripted play out of distribution. A state-value argmax

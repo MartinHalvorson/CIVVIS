@@ -4,6 +4,7 @@
 //! agent adds a shared strategic model so research, production, diplomacy,
 //! civilian work, and military movement pursue the same medium-term goal.
 use super::{Ai, BasicAi, BasicUnitPlanState, ForceReport, PlanReport, UnitDoctrine, Weights};
+use crate::belief::BeliefState;
 use crate::name::Name;
 use crate::parallel::WorkPool;
 use crate::game::{
@@ -73,6 +74,11 @@ const RUSH_STAGING_RANGE: i32 = 3;
 /// governor and the empire's recovery alarm cannot disagree about what counts
 /// as a threat.
 const BASTION_PRESSURE: f64 = 0.45;
+
+/// A last-seen enemy can move, heal, or die while hidden. Four turns retains a
+/// recent withdrawal long enough to finish a defensive response without
+/// treating a stale frontier report as a current siege.
+const BELIEF_PRESSURE_HORIZON: u32 = 4;
 
 /// Turns between a settler finishing and its city standing. `settle_siting_census`
 /// measures the chosen site a median three tiles from where the alternatives
@@ -566,6 +572,10 @@ pub struct AdvancedAi {
     /// The authoritative game is never shared: only owned search branches
     /// cross this boundary, and their results return in candidate order.
     work_pool: Option<Arc<WorkPool>>,
+    /// Observations retained only while the evaluator-only pressure arm is on.
+    /// Keeping this state inside the controller makes cloned counterfactuals
+    /// carry exactly the same player-visible history.
+    belief: BeliefState,
     /// Hold only the force groups that could actually reach the threatened
     /// city, instead of every group in the empire.
     ///
@@ -887,6 +897,11 @@ pub struct AdvancedAi {
     /// Factual mechanism telemetry for the two flags above. It never feeds a
     /// decision, score, or action selection.
     expansion_census: ExpansionCensus,
+    /// Let the city-pressure/recovery path use decaying last-seen hostile
+    /// military strength after the contact passes back into fog. This is a
+    /// default-off evaluator arm; it does not claim to make the broader
+    /// full-state Advanced controller fog honest.
+    pub belief_pressure: bool,
     /// Where the city-target ramp starts. **3 by default, the shipped value.**
     ///
     /// `assess` computes `desired_cities = (3 + turn / cadence).min(map_capacity).min(6)`
@@ -1307,6 +1322,7 @@ impl AdvancedAi {
             force_groups: Vec::new(),
             force_groups_dirty: false,
             work_pool: None,
+            belief: BeliefState::new(),
             scoped_relief_hold: false,
             refuse_unreachable_lanes: false,
             prophet_before_opportunism: false,
@@ -1322,6 +1338,7 @@ impl AdvancedAi {
             late_expansion: false,
             expansion_dispatch: false,
             expansion_census: ExpansionCensus::default(),
+            belief_pressure: false,
             city_target_floor: 3,
             city_strategy: false,
             city_strategy_emphasis: true,
@@ -1686,20 +1703,63 @@ impl AdvancedAi {
         if hostile <= 0.0 {
             return 0.0;
         }
-        let friendly = g.city_strength(cid)
+        hostile / Self::city_friendly_strength(g, pid, cid).max(1.0)
+    }
+
+    fn city_friendly_strength(g: &Game, pid: usize, cid: u32) -> f64 {
+        let Some(city) = g.cities.get(&cid) else {
+            return 0.0;
+        };
+        g.city_strength(cid)
             + g.units
                 .values()
                 .filter(|unit| unit.owner == pid && g.wdist(city.pos, unit.pos) <= 6)
                 .filter(|unit| g.rules.units[unit.kind].class == "military")
                 .map(|unit| crate::game::effective_strength(g.unit_strength(unit, true), unit.hp))
-                .sum::<f64>();
-        hostile / friendly.max(1.0)
+                .sum::<f64>()
+    }
+
+    /// The stock pressure calculation sees only live contacts. The evaluator
+    /// arm adds an independently auditable, decayed memory term after that
+    /// calculation, so visible sightings cannot be counted twice.
+    fn remembered_city_pressure(&self, g: &Game, pid: usize, cid: u32) -> f64 {
+        if !self.belief_pressure {
+            return 0.0;
+        }
+        let Some(city) = g.cities.get(&cid) else {
+            return 0.0;
+        };
+        let remembered = self.belief.remembered_hidden_military_threat(
+            g,
+            pid,
+            city.pos,
+            THREAT_RELIEF_RADIUS,
+            BELIEF_PRESSURE_HORIZON,
+        );
+        remembered / Self::city_friendly_strength(g, pid, cid).max(1.0)
+    }
+
+    fn city_pressure_with_belief(
+        &self,
+        g: &Game,
+        pid: usize,
+        cid: u32,
+        visible: &crate::world::TileBits,
+    ) -> f64 {
+        Self::city_pressure_with_visibility(g, pid, cid, visible)
+            + self.remembered_city_pressure(g, pid, cid)
     }
 
     #[cfg(test)]
     fn city_pressure(g: &Game, pid: usize, cid: u32) -> f64 {
         let visible = g.player_vision_now(pid);
         Self::city_pressure_with_visibility(g, pid, cid, &visible)
+    }
+
+    #[cfg(test)]
+    fn belief_city_pressure(&self, g: &Game, pid: usize, cid: u32) -> f64 {
+        let visible = g.player_vision_now(pid);
+        self.city_pressure_with_belief(g, pid, cid, &visible)
     }
 
     /// Evaluate the independent city/unit distance matrix from compact,
@@ -1711,7 +1771,7 @@ impl AdvancedAi {
         let Some(pool) = self.work_pool.as_ref() else {
             return cities
                 .iter()
-                .map(|city| Self::city_pressure_with_visibility(g, pid, *city, &visible))
+                .map(|city| self.city_pressure_with_belief(g, pid, *city, &visible))
                 .collect();
         };
         let relevant = g
@@ -1731,10 +1791,17 @@ impl AdvancedAi {
         if cities.len() < 2 || cities.len().saturating_mul(relevant.len()) < 128 {
             return cities
                 .iter()
-                .map(|city| Self::city_pressure_with_visibility(g, pid, *city, &visible))
+                .map(|city| self.city_pressure_with_belief(g, pid, *city, &visible))
                 .collect();
         }
 
+        // Add remembered pressure after the pool's exact live-contact result.
+        // That preserves the stock summation order and makes the treatment's
+        // only new contribution an explicit scalar per city.
+        let remembered = cities
+            .iter()
+            .map(|city| self.remembered_city_pressure(g, pid, *city))
+            .collect::<Vec<_>>();
         let units = relevant
             .into_iter()
             .map(|unit| {
@@ -1785,6 +1852,10 @@ impl AdvancedAi {
                     .sum::<f64>();
             hostile / friendly.max(1.0)
         })
+        .into_iter()
+        .zip(remembered)
+        .map(|(observed, remembered)| observed + remembered)
+        .collect()
     }
 
     /// The empire's objective translated into the citizen governor's own
@@ -1958,7 +2029,7 @@ impl AdvancedAi {
             .into_iter()
             .filter_map(|cid| {
                 let city = &g.cities[&cid];
-                let danger = Self::city_pressure_with_visibility(g, pid, cid, &visible);
+                let danger = self.city_pressure_with_belief(g, pid, cid, &visible);
                 if danger <= 0.0 {
                     return None;
                 }
@@ -14102,6 +14173,9 @@ impl AdvancedAi {
             self.base.take_turn(g, pid);
             return;
         }
+        if self.belief_pressure {
+            self.belief.observe(g, pid);
+        }
         let rush_routes_frozen = self.freeze_rush_route_targets(g, pid);
         let disposition_strategy = active_victory_target
             .map(VictoryTarget::strategy)
@@ -22844,6 +22918,155 @@ mod tests {
         assert!(
             AdvancedAi::city_pressure(&game, 0, city) > 0.0,
             "the same force must count once it is visible"
+        );
+    }
+
+    #[test]
+    fn belief_pressure_remembers_a_hidden_contact_without_reading_current_state() {
+        let mut game = Game::new_full(2, 30, 18, 411_006, 120, 0, false);
+        for unit in game.player_unit_ids(1) {
+            game.remove_unit(unit);
+        }
+        let city = found_test_city(&mut game, 0);
+        let city_pos = game.cities[&city].pos;
+        game.at_war.insert((0, 1));
+
+        let hidden = game
+            .wdisk(city_pos, THREAT_RELIEF_RADIUS)
+            .into_iter()
+            .find(|position| {
+                *position != city_pos
+                    && game.city_at(*position).is_none()
+                    && game.units_at(*position).is_empty()
+                    && !game.player_visibility(0).contains(position)
+                    && game.map.get(*position).is_some_and(|tile| {
+                        game.rules.is_passable(tile) && !game.rules.is_water(tile)
+                    })
+            })
+            .expect("test city has a hidden passable pressure tile");
+        let enemy = game.spawn_test_unit("warrior", 1, hidden);
+        let scout_candidates = game
+            .wdisk(hidden, 2)
+            .into_iter()
+            .filter(|position| {
+                *position != hidden
+                    && game.city_at(*position).is_none()
+                    && game.units_at(*position).is_empty()
+                    && game.map.get(*position).is_some_and(|tile| {
+                        game.rules.is_passable(tile) && !game.rules.is_water(tile)
+                    })
+            })
+            .collect::<Vec<_>>();
+        let scout = scout_candidates
+            .into_iter()
+            .find_map(|position| {
+                let scout = game.spawn_test_unit("scout", 0, position);
+                let sees_enemy = game.player_visibility(0).contains(&hidden)
+                    && game.unit_visible_to(enemy, 0);
+                if sees_enemy {
+                    Some(scout)
+                } else {
+                    game.remove_unit(scout);
+                    None
+                }
+            })
+            .expect("an adjacent scout can observe the hidden pressure tile");
+
+        let mut ai = AdvancedAi::new();
+        ai.belief_pressure = true;
+        ai.belief.observe(&game, 0);
+        assert!(ai.belief.units.contains_key(&enemy));
+        let observed = AdvancedAi::city_pressure(&game, 0, city);
+        assert!(observed > 0.0, "the scout makes the contact visible");
+        assert_eq!(
+            ai.belief_city_pressure(&game, 0, city),
+            observed,
+            "a refreshed visible sighting must not be counted twice"
+        );
+
+        game.remove_unit(scout);
+        assert!(
+            !game.player_visibility(0).contains(&hidden),
+            "the contact returns to fog once the scout leaves"
+        );
+        ai.belief.observe(&game, 0);
+        assert_eq!(AdvancedAi::city_pressure(&game, 0, city), 0.0);
+        let remembered = ai.belief_city_pressure(&game, 0, city);
+        assert!(remembered > 0.0, "a last-seen hostile affects recovery");
+
+        // Deleting the real hidden unit cannot change the memory term: the
+        // controller is allowed to know what it saw, not what happened later.
+        game.remove_unit(enemy);
+        ai.belief.observe(&game, 0);
+        assert_eq!(ai.belief_city_pressure(&game, 0, city), remembered);
+
+        game.turn += BELIEF_PRESSURE_HORIZON;
+        ai.belief.observe(&game, 0);
+        assert_eq!(
+            ai.belief_city_pressure(&game, 0, city),
+            0.0,
+            "a four-turn-old contact cannot sustain a recovery alarm"
+        );
+    }
+
+    /// Factual coverage check for the evaluator arm, not an outcome claim.
+    /// It asks how often a current major's own observation history adds local
+    /// pressure, and how often that addition changes the recovery selector.
+    /// Run with `cargo test --profile ci belief_pressure_census -- --ignored
+    /// --nocapture` before spending a fresh outcome prefix.
+    #[test]
+    #[ignore = "factual mechanism census; run explicitly with --nocapture"]
+    fn belief_pressure_census() {
+        let mut city_turns = 0u64;
+        let mut memory_city_turns = 0u64;
+        let mut memory_only_city_turns = 0u64;
+        let mut recovery_changes = 0u64;
+
+        for map in 0..12u64 {
+            let mut game = Game::new_full(4, 44, 28, 871_000 + map, 200, 0, false);
+            game.set_fog_memory(false);
+            let mut fleet = AdvancedAi::fleet(&game);
+            for ai in &mut fleet {
+                ai.belief_pressure = true;
+            }
+
+            while game.winner.is_none() && game.turn <= game.max_turns {
+                let pid = game.current;
+                if !game.players[pid].is_minor && !game.players[pid].is_barbarian {
+                    // `take_turn` refreshes the live controller at exactly this
+                    // point. Clone it to audit that imminent calculation
+                    // without mutating the player who will actually act.
+                    let mut probe = fleet[pid].clone();
+                    probe.belief.observe(&game, pid);
+                    let stock = AdvancedAi::new().threatened_city(&game, pid);
+                    let remembered = probe.threatened_city(&game, pid);
+                    recovery_changes += u64::from(stock != remembered);
+                    for city in game.player_city_ids(pid) {
+                        city_turns += 1;
+                        let observed = AdvancedAi::city_pressure(&game, pid, city);
+                        let pressure = probe.belief_city_pressure(&game, pid, city);
+                        if pressure > observed {
+                            memory_city_turns += 1;
+                        }
+                        if observed == 0.0 && pressure > 0.0 {
+                            memory_only_city_turns += 1;
+                        }
+                    }
+                }
+                fleet[pid].take_turn(&mut game, pid);
+                if game.winner.is_none() && game.current == pid {
+                    let _ = game.apply(pid, &Action::EndTurn);
+                }
+            }
+        }
+
+        println!(
+            "belief-pressure census: {memory_city_turns}/{city_turns} city-turns with memory, \
+             {memory_only_city_turns}/{city_turns} memory-only, {recovery_changes} recovery changes"
+        );
+        assert!(
+            memory_city_turns > 0,
+            "the evaluator arm never receives a hidden remembered contact"
         );
     }
 

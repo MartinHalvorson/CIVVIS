@@ -12,7 +12,6 @@
 //! it to value scouting as information gain is the next step.
 use std::collections::BTreeMap;
 
-use crate::name::Name;
 use crate::game::Game;
 use crate::obs::visibility;
 use crate::Pos;
@@ -66,7 +65,10 @@ impl BeliefState {
                     turn: g.turn,
                     owner: unit.owner,
                     kind: unit.kind.to_string(),
-                    strength: g.unit_strength(unit, false),
+                    strength: crate::game::effective_strength(
+                        g.unit_strength(unit, false),
+                        unit.hp,
+                    ),
                 },
             );
         }
@@ -108,6 +110,40 @@ impl BeliefState {
                 let age = self.staleness(s).min(horizon) as f64;
                 let decay = 1.0 - age / horizon.max(1) as f64;
                 s.strength * decay
+            })
+            .sum()
+    }
+
+    /// Last-seen, now-hidden hostile military strength near a tile. This is
+    /// intentionally narrower than [`Self::remembered_threat`]: callers that
+    /// already account for live contacts must not count a refreshed sighting a
+    /// second time. The calculation reads only a sighting's observed owner,
+    /// kind, position, and strength; it never looks up that unit's current
+    /// position, health, or existence.
+    pub fn remembered_hidden_military_threat(
+        &self,
+        g: &Game,
+        pid: usize,
+        at: Pos,
+        radius: i32,
+        horizon: u32,
+    ) -> f64 {
+        let (vis, _) = visibility(g, pid);
+        self.units
+            .values()
+            .filter(|sighting| sighting.owner != pid && g.is_at_war(pid, sighting.owner))
+            .filter(|sighting| !vis.contains(&sighting.pos))
+            .filter(|sighting| {
+                g.rules
+                    .units
+                    .get(sighting.kind.as_str())
+                    .is_some_and(|spec| spec.class == "military")
+            })
+            .filter(|sighting| g.wdist(sighting.pos, at) <= radius)
+            .map(|sighting| {
+                let age = self.staleness(sighting).min(horizon) as f64;
+                let decay = 1.0 - age / horizon.max(1) as f64;
+                sighting.strength * decay
             })
             .sum()
     }
