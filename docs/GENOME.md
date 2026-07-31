@@ -1,9 +1,17 @@
 # The genome, and why breeding it has not worked
 
 `docs/SUPERHUMAN.md` is about the macro search. This is about the other half:
-the 48-gene `Weights` vector that `civvis evolve` and `civvis league` search,
-and which about a thousand rounds of live evolution moved without producing a
-measurable gain (`docs/RATING.md`).
+the 40-gene vector returned by `Weights::to_vec` and searched by `civvis
+evolve` and `civvis league`. `Weights` also stores nine policy appetites plus
+policy-deck and dedication selectors, but those fields are deliberately absent
+from `to_vec`, `from_vec`, `bounds`, and `gene_names`; they are policy state,
+not genes.
+
+An earlier version of this document repeatedly called that surface 48-wide.
+That was a bookkeeping error caused by mixing the eight policy appetites then
+under study with the gene vector. The implementation, champion artifact, and
+length-pinning tests are 40-wide. Historical measurements below are preserved,
+but their old “11 of 48” ratio is not a current genome fact.
 
 Three causes are now on record. The first was known. The second and third are
 measured here.
@@ -15,7 +23,7 @@ measured here.
 `docs/RATING.md`: the deployed Glicko-2 ratings scored **−0.025 nats/game**,
 worse than guessing, so evolution selected on noise. Fixed by `civvis rating`.
 
-## 2. About a quarter of the genome cannot change a game
+## 2. Several genes did not change the sampled games
 
 `src/bin/gene_probe.rs` drives each gene to **both ends of its own bounds**
 and plays the same map against the same opponents with `AdvancedAi` — the
@@ -23,7 +31,8 @@ agent that plays every evaluated game — comparing the seat turn by turn on
 cities, units, techs, civics, policies, score, gold and wars. Divergence
 proves causally that a gene bites.
 
-**11 of 48 genes produced zero divergence** over 12 trials at 4p/200 turns:
+The historical report's own table names **ten active genes** that produced zero
+divergence over 12 trials at 4p/200 turns:
 
 | block | genes |
 |---|---|
@@ -31,17 +40,19 @@ proves causally that a gene bites.
 | settle site | `settle_food`, `settle_prod`, `settle_gold`, `settle_dist` |
 | other | `settler_stop_turn`, `faith_builder` |
 
-Two coherent blocks of four is the signature of a bypassed subsystem, not
-eleven coincidences. Every consumer of the war block is in `impl BasicAi`,
+Two coherent blocks of four is the signature of a bypassed subsystem, not ten
+coincidences. Every consumer of the war block is in `impl BasicAi`,
 while `AdvancedAi` has its own `DeclareWar` path and does not delegate. The
 settle block is subtler and the distinction matters: those genes *are* read by
 `BasicAi::settle_value`, which `AdvancedAi` can reach, but it normally uses
 its own `settle_value` with hard-coded ring weights — so they are either
 unreached, or reached with a site argmax insensitive to reweighting.
 
-The loud end of the same table, for contrast: `open0`, `mv_support`,
-`withdraw_hp`, `rejoin_hp`, `pol_production`, `pol_gold` and `pol_faith` all
-bite **12/12**, first divergence between turns 8 and 32.
+The loud end of the active-gene table, for contrast: `open0`, `mv_support`,
+`withdraw_hp`, and `rejoin_hp` all bit **12/12**, with first divergence between
+turns 8 and 32. The old report also listed `pol_production`, `pol_gold`, and
+`pol_faith`; those fields can affect the live policy valuation but are not part
+of the gene vector.
 
 **This mechanically explains a recorded null.** `StrategicAi`'s `Doctrine`
 axis perturbs a genome per doctrine. Against the zero-divergence set:
@@ -176,7 +187,7 @@ design effort on, and scrambling all eleven costs **−0.0019**. It agrees with
 the standing finding that this agent's wars resolve nothing: the doctrine is
 well-built machinery bolted to a subsystem that never converts.
 
-### `city_target` saturates above six
+### The historical `city_target` sweep saturated above six—but on a fallback path
 
 The expansion block was the only one where randomising *beat* the shipped
 values, so the obvious suspect was `city_target = 4` against a 2..12 range
@@ -192,10 +203,12 @@ point:
 | 10 | 0.5035 ± 0.0043 | +0.0035 |
 | 12 | 0.5035 ± 0.0043 | +0.0035 |
 
-Six, eight, ten and twelve are **identical to four decimal places**, which
-says the cap stops binding at about six: the agent never gets that many cities
-anyway, so raising the ceiling changes nothing. Something other than the
-target limits expansion.
+Six, eight, ten and twelve were **identical to four decimal places** in this
+sweep. That once looked like a live cap saturating at six. A later path audit
+showed that `AdvancedAi` reads `StrategicPlan::desired_cities` whenever a plan
+exists and consults this gene only as a fallback. The experiment therefore
+establishes saturation on the sampled fallback path, not that the live agent's
+city target binds or that it cannot reach six cities.
 
 And the magnitudes do not work. The block effect is +0.0305; the largest
 single-gene effect here is +0.0035, a tenth of it, at 0.8 SE. **So
@@ -822,8 +835,30 @@ Every measured attempt to make this agent stronger by **tuning parameters** has
 returned null: the policy appetites three ways, the opening book two ways, the
 war-declaration threshold, and about a thousand rounds of whole-genome
 evolution. Meanwhile every promoted gain in the repository has come from
-**giving the search more counterfactual rollout** — `strategic_deep` at +45
-Elo, warm branches at +37.
+**giving the search more counterfactual rollout**.
+
+⚠ **One of the two sizes that sentence used to quote is refuted.** It cited
+`strategic_deep` at +45 Elo and warm branches at +37. **#482 excludes the +45**
+(the +37 is untouched by that run, and remains a single-run discovery estimate
+in the sense below):
+`search_dose --only STOCK` builds both arms in process so the budget is the only
+difference, and pooled over 220 mirrored maps on two disjoint seeds it measured
+−0.0110 ± 0.0144, Elo-equivalent **−8 (95% CI −27..+12)**. The promoted effect
+is outside that interval — excluded, not merely unreproduced. The entrant-name
+comparison that produced +45 could not have isolated the budget in any case:
+`ai_eval` reports `strategic_deep` playing "with untrained defaults" against a
+`strategic` that degrades to `strategic_score`, so the arms differ in evaluator
+as well as in compute.
+
+**The direction survives; only the magnitudes were wrong.** Measured against a
+genome-matched control on a disjoint seed (2026-07-31 audit, 120 mirrored pairs
+at 4p 24×16), `strategic` beats `advanced_evolved` by **+61** — direction
+significant at p = 0.0003, but the promotion gate INCONCLUSIVE. Rollout search
+remains the best-supported lever in the repository. What is no longer supported
+is any particular number attached to it, and the reason is general enough to be
+worth stating: every effect size here is the point estimate of the run that
+promoted it, and conditioning on "passed the gate" biases that estimate upward.
+See `docs/EVAL_INTEGRITY.md` §4.
 
 Taken with `docs/SUPERHUMAN.md` §0, which reaches the same verdict about
 learned state-value components, the pattern is hard to miss:
@@ -859,7 +894,7 @@ statement than it first appears.
 
 The asymmetry is not a flaw in those runs; it is what they cost. A win-based
 measurement of one gene value took 240 full games to reach p=0.70. Pricing all
-48 genes that way is not affordable, which is the same wall the GA hits.
+40 genes that way is not affordable, which is the same wall the GA hits.
 
 ## Method rules these runs paid for
 

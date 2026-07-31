@@ -7,11 +7,13 @@
 //! shape most engine and AI defects actually take from the outside.
 //!
 //! Usage: audit [--games N] [--start-seed N] [--players N] [--turns N]
-//!              [--width N] [--height N] [--city-states N] [--quiet]
+//!              [--width N] [--height N] [--city-states N] [--speed ID]
+//!              [--quiet]
 use std::collections::{BTreeMap, HashSet};
 
 use civvis::ai::{AdvancedAi, Ai};
-use civvis::game::{Action, Game, WarRecord};
+use civvis::game::{default_speed, Action, Game, GameOptions, WarRecord};
+use civvis::rules::Rules;
 use civvis::setup::MapSize;
 
 fn number(args: &[String], flag: &str, default: i64) -> i64 {
@@ -20,6 +22,14 @@ fn number(args: &[String], flag: &str, default: i64) -> i64 {
         .and_then(|index| args.get(index + 1))
         .and_then(|value| value.parse().ok())
         .unwrap_or(default)
+}
+
+fn text(args: &[String], flag: &str, default: &str) -> String {
+    args.iter()
+        .position(|arg| arg == flag)
+        .and_then(|index| args.get(index + 1))
+        .cloned()
+        .unwrap_or_else(|| default.to_string())
 }
 
 /// How long a unit or city may sit doing nothing before it is worth reporting.
@@ -38,14 +48,14 @@ const LIVELOCK_FOOTPRINT: usize = 3;
 /// The minimum applies to a negotiated settlement, not to eliminating the
 /// opposing civilization. A quick conquest is a decisive war, not diplomacy
 /// undoing a declaration before its commitment has run.
-fn negotiated_war_ended_early(war: &WarRecord) -> bool {
+fn negotiated_war_ended_early(war: &WarRecord, minimum_turns: u32) -> bool {
     let Some(ended) = war.ended else {
         return false;
     };
     war.highlights
         .last()
         .is_some_and(|highlight| highlight.kind == "peace")
-        && ended.saturating_sub(war.started) < WAR_MIN_TURNS
+        && ended.saturating_sub(war.started) < minimum_turns
 }
 
 /// Only negotiated peace creates the treaty whose cooldown this audit checks.
@@ -53,7 +63,11 @@ fn negotiated_war_ended_early(war: &WarRecord) -> bool {
 /// can close a ledger record too; neither is a peace agreement between the
 /// pair, so a later war must not be reported as violating a treaty that never
 /// existed.
-fn redeclared_inside_peace_treaty(previous: &WarRecord, next: &WarRecord) -> bool {
+fn redeclared_inside_peace_treaty(
+    previous: &WarRecord,
+    next: &WarRecord,
+    treaty_turns: u32,
+) -> bool {
     let previous_pair = (
         previous.aggressor.min(previous.defender),
         previous.aggressor.max(previous.defender),
@@ -70,7 +84,7 @@ fn redeclared_inside_peace_treaty(previous: &WarRecord, next: &WarRecord) -> boo
             .highlights
             .last()
             .is_some_and(|highlight| highlight.kind == "peace")
-        && next.started.saturating_sub(ended) < WAR_MIN_TURNS
+        && next.started.saturating_sub(ended) < treaty_turns
 }
 
 fn rapid_recapture_window(war: &WarRecord) -> Option<(String, u32, u32)> {
@@ -208,6 +222,60 @@ impl Motion {
             self.picket,
             rate(self.picket),
         )
+    }
+}
+
+/// Split motion waste by controller role. City-states are deliberately
+/// restricted to a small defense radius and barbarians have no empire to
+/// develop, so mixing either into the major-civilization rate can make a
+/// healthy rated AI look idle (or hide a regression behind a changing minor
+/// population).
+#[derive(Default)]
+struct MotionBreakdown {
+    major: Motion,
+    minor: Motion,
+    barbarian: Motion,
+}
+
+fn controller_role(g: &Game, owner: usize) -> &'static str {
+    let player = &g.players[owner];
+    if player.is_barbarian {
+        "barbarian"
+    } else if player.is_minor {
+        "city-state"
+    } else {
+        "major"
+    }
+}
+
+impl MotionBreakdown {
+    fn for_owner(&mut self, g: &Game, owner: usize) -> &mut Motion {
+        match controller_role(g, owner) {
+            "major" => &mut self.major,
+            "city-state" => &mut self.minor,
+            "barbarian" => &mut self.barbarian,
+            _ => unreachable!(),
+        }
+    }
+
+    fn add(&mut self, other: &MotionBreakdown) {
+        self.major.add(other.major);
+        self.minor.add(other.minor);
+        self.barbarian.add(other.barbarian);
+    }
+
+    fn total(&self) -> Motion {
+        let mut total = self.major;
+        total.add(self.minor);
+        total.add(self.barbarian);
+        total
+    }
+
+    fn print(&self, indent: &str) {
+        println!("{indent}motion all        {}", self.total().line());
+        println!("{indent}       major      {}", self.major.line());
+        println!("{indent}       city-state {}", self.minor.line());
+        println!("{indent}       barbarian  {}", self.barbarian.line());
     }
 }
 
@@ -395,25 +463,65 @@ fn idle_city_context(g: &Game, id: u32) -> String {
     )
 }
 
+fn city_state_district_family(g: &Game, pid: usize) -> &'static str {
+    match g.cs_type(&g.players[pid].civ) {
+        "scientific" => "campus",
+        "cultural" => "theater_square",
+        "religious" => "holy_site",
+        "militaristic" => "encampment",
+        "industrial" => "industrial_zone",
+        _ => "commercial_hub",
+    }
+}
+
+fn district_family(g: &Game, district: civvis::name::Name) -> civvis::name::Name {
+    let mut current = district;
+    for _ in 0..g.rules.districts.len() {
+        let Some(parent) = g.rules.districts[&current].replaces else {
+            break;
+        };
+        current = parent;
+    }
+    current
+}
+
 fn bounded_minor_idle(
-    player_is_minor: bool,
+    g: &Game,
+    pid: usize,
     military: usize,
     producible: &[civvis::game::Item],
 ) -> bool {
-    player_is_minor
+    let specialty = city_state_district_family(g, pid);
+    let actionable_infrastructure = producible.iter().any(|item| match item {
+        civvis::game::Item::Repair { .. } | civvis::game::Item::Building { .. } => true,
+        civvis::game::Item::District { district, .. } => {
+            district_family(g, *district).as_str() == specialty
+        }
+        civvis::game::Item::Project { project } => {
+            matches!(project.as_str(), "repair_outer_defenses" | "repair_encampment")
+        }
+        _ => false,
+    });
+    g.players[pid].is_minor
         && military >= 3
-        && !producible.is_empty()
-        && producible
-            .iter()
-            .all(|item| matches!(item, civvis::game::Item::Unit { .. }))
+        && !actionable_infrastructure
 }
 
-fn audit_turn(g: &Game, history: &mut History, found: &mut Findings, motion: &mut Motion) {
+fn audit_turn(
+    g: &Game,
+    history: &mut History,
+    found: &mut Findings,
+    motion: &mut MotionBreakdown,
+) {
     history.tracks.retain(|id, _| g.units.contains_key(id));
     for (id, unit) in &g.units {
-        if let Some(detail) = track_unit(g, history, *id, motion) {
+        let role = controller_role(g, unit.owner);
+        if let Some(detail) = track_unit(g, history, *id, motion.for_owner(g, unit.owner)) {
             found.symptom(
-                format!("{} circles without progress {LIVELOCK_TURNS}+ turns", unit.kind),
+                format!(
+                    "{role} {} circles without progress {LIVELOCK_TURNS}+ turns",
+                    unit.kind
+                ),
                 detail,
             );
         }
@@ -481,7 +589,7 @@ fn audit_turn(g: &Game, history: &mut History, found: &mut Findings, motion: &mu
                 _ => String::new(),
             };
             found.symptom(
-                format!("{} sits still {IDLE_TURNS}+ turns", unit.kind),
+                format!("{role} {} sits still {IDLE_TURNS}+ turns", unit.kind),
                 format!(
                     "unit {id} ({}) of {} unmoved since turn {}{context}",
                     unit.kind, g.players[unit.owner].civ, entry.0,
@@ -539,11 +647,13 @@ fn audit_turn(g: &Game, history: &mut History, found: &mut Findings, motion: &mu
                     g.rules.units[g.units[unit].kind].class == "military"
                 })
                 .count();
-            if bounded_minor_idle(g.players[city.owner].is_minor, military, &producible) {
-                // A one-city state with no remaining infrastructure or
-                // project site deliberately stops at its bounded garrison.
-                // Calling that a production defect would pressure the AI to
-                // fill the map with units solely to silence the auditor.
+            if bounded_minor_idle(g, city.owner, military, &producible) {
+                // City-state governors build only their own district family,
+                // repairs, and ordinary buildings. A general district or
+                // repeatable project being engine-legal does not make it a
+                // policy choice. Once the bounded garrison is full, calling
+                // that deliberate stop a defect would pressure the AI to fill
+                // the map solely to silence the auditor.
                 history.city_idle_since.remove(id);
                 continue;
             }
@@ -553,8 +663,9 @@ fn audit_turn(g: &Game, history: &mut History, found: &mut Findings, motion: &mu
             {
                 history.reported_city.insert(*id, true);
                 let context = idle_city_context(g, *id);
+                let role = controller_role(g, city.owner);
                 found.symptom(
-                    "city builds nothing for 25+ turns",
+                    format!("{role} city builds nothing for {IDLE_TURNS}+ turns"),
                     format!(
                         "city {id} ({}) of {} idle since turn {since}{context}",
                         city.name, g.players[city.owner].civ,
@@ -608,9 +719,12 @@ fn audit_result(g: &Game, found: &mut Findings) {
     }
 
     // The war log is only readable if a war is one entry. Two shipped rules
-    // hold that: a war runs ten turns before it can be settled, and the peace
-    // binds for ten more. A record that breaks either means the log is filling
-    // with fragments of the same war again.
+    // hold that: a war runs ten Standard turns before it can be settled, and
+    // the peace binds for ten more. Both durations scale with game speed. A
+    // record that breaks either means the log is filling with fragments of the
+    // same war again.
+    let war_minimum = g.standard_duration(WAR_MIN_TURNS);
+    let treaty_minimum = g.standard_duration(WAR_MIN_TURNS);
     let mut previous: BTreeMap<(usize, usize), &WarRecord> = BTreeMap::new();
     for war in &g.concluded_wars {
         let key = (war.aggressor.min(war.defender), war.aggressor.max(war.defender));
@@ -619,7 +733,7 @@ fn audit_result(g: &Game, found: &mut Findings) {
             g.players[war.aggressor].civ.clone(),
             g.players[war.defender].civ.clone(),
         );
-        if negotiated_war_ended_early(war) {
+        if negotiated_war_ended_early(war, war_minimum) {
             found.violation(
                 "a war ended before the shipped minimum",
                 format!(
@@ -629,7 +743,7 @@ fn audit_result(g: &Game, found: &mut Findings) {
             );
         }
         if let Some(previous_war) = previous.insert(key, war) {
-            if redeclared_inside_peace_treaty(previous_war, war) {
+            if redeclared_inside_peace_treaty(previous_war, war, treaty_minimum) {
                 let last = previous_war.ended.unwrap_or_default();
                 found.violation(
                     "the same pair re-declared inside the peace treaty",
@@ -720,20 +834,27 @@ fn audit_result(g: &Game, found: &mut Findings) {
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    let games = number(&args, "--games", 3);
+    let games = number(&args, "--games", 3).max(1);
     let start = number(&args, "--start-seed", 0);
     let players = number(&args, "--players", 8).max(1);
     let size = MapSize::for_players(players as usize);
-    let width = number(&args, "--width", size.width as i64) as i32;
-    let height = number(&args, "--height", size.height as i64) as i32;
-    let city_states = number(&args, "--city-states", size.default_city_states as i64) as usize;
-    let turns = number(&args, "--turns", 300) as u32;
+    let width = number(&args, "--width", size.width as i64).max(8) as i32;
+    let height = number(&args, "--height", size.height as i64).max(8) as i32;
+    let city_states = number(&args, "--city-states", size.default_city_states as i64).max(0)
+        as usize;
+    let rules = Rules::embedded();
+    let speed = text(&args, "--speed", &default_speed());
+    let speed_turns = rules.speeds.get(&speed).unwrap_or_else(|| {
+        eprintln!("unknown game speed {speed:?}");
+        std::process::exit(2);
+    });
+    let turns = number(&args, "--turns", i64::from(speed_turns.turns)).max(1) as u32;
     let quiet = args.iter().any(|arg| arg == "--quiet");
 
     let mut totals = Findings::default();
-    let mut totals_motion = Motion::default();
+    let mut totals_motion = MotionBreakdown::default();
     for seed in start..start + games {
-        let mut g = Game::new(
+        let mut options = GameOptions::new(
             players as usize,
             width,
             height,
@@ -741,10 +862,12 @@ fn main() {
             turns,
             city_states,
         );
+        options.speed = speed.clone();
+        let mut g = Game::new_with(options);
         let mut ais = AdvancedAi::fleet(&g);
         let mut history = History::default();
         let mut found = Findings::default();
-        let mut motion = Motion::default();
+        let mut motion = MotionBreakdown::default();
         let mut last_turn = g.turn;
         while g.winner.is_none() {
             let pid = g.current;
@@ -758,7 +881,7 @@ fn main() {
             }
         }
         audit_result(&g, &mut found);
-        totals_motion.add(motion);
+        totals_motion.add(&motion);
 
         if !quiet {
             println!(
@@ -769,7 +892,7 @@ fn main() {
                 found.violations.values().map(|entry| entry.0).sum::<usize>(),
                 found.symptoms.values().map(|entry| entry.0).sum::<usize>(),
             );
-            println!("    motion    {}", motion.line());
+            motion.print("    ");
             for (key, (count, detail)) in &found.violations {
                 println!("    VIOLATION x{count:<5} {key} - e.g. {detail}");
             }
@@ -794,7 +917,11 @@ fn main() {
     }
 
     println!("\n=== {games} games ===");
-    println!("motion    {}", totals_motion.line());
+    println!(
+        "profile   {players}p {width}x{height}, {speed}, {turns} turns, {city_states} city-states, seeds {start}..{}",
+        start + games - 1,
+    );
+    totals_motion.print("");
     if totals.violations.is_empty() {
         println!("no rule violations");
     }
@@ -816,9 +943,9 @@ mod tests {
     use civvis::game::{Item, WarHighlight, WarRecord};
 
     use super::{
-        bounded_minor_idle, negotiated_war_ended_early, rapid_recapture_window,
-        redeclared_inside_peace_treaty, track_unit, treasury_looks_hoarded,
-        unit_had_idle_opportunity, History, Motion, LIVELOCK_TURNS,
+        bounded_minor_idle, city_state_district_family, negotiated_war_ended_early,
+        rapid_recapture_window, redeclared_inside_peace_treaty, track_unit,
+        treasury_looks_hoarded, unit_had_idle_opportunity, History, Motion, LIVELOCK_TURNS,
     };
     use civvis::game::Game;
 
@@ -928,9 +1055,22 @@ mod tests {
 
     #[test]
     fn the_war_minimum_applies_only_to_negotiated_peace() {
-        assert!(negotiated_war_ended_early(&concluded_war("peace")));
-        assert!(!negotiated_war_ended_early(&concluded_war("conquest")));
-        assert!(!negotiated_war_ended_early(&concluded_war("coalition")));
+        assert!(negotiated_war_ended_early(&concluded_war("peace"), 10));
+        assert!(!negotiated_war_ended_early(
+            &concluded_war("conquest"),
+            10
+        ));
+        assert!(!negotiated_war_ended_early(
+            &concluded_war("coalition"),
+            10
+        ));
+        let mut online_length = concluded_war("peace");
+        online_length.ended = Some(28);
+        online_length.highlights[1].turn = 28;
+        assert!(
+            !negotiated_war_ended_early(&online_length, 8),
+            "Online scales the shipped ten-turn minimum to eight"
+        );
     }
 
     #[test]
@@ -942,15 +1082,25 @@ mod tests {
 
         assert!(redeclared_inside_peace_treaty(
             &concluded_war("peace"),
-            &next
+            &next,
+            10,
         ));
         assert!(!redeclared_inside_peace_treaty(
             &concluded_war("coalition"),
-            &next
+            &next,
+            10,
         ));
         assert!(!redeclared_inside_peace_treaty(
             &concluded_war("conquest"),
-            &next
+            &next,
+            10,
+        ));
+        let mut after_scaled_treaty = next.clone();
+        after_scaled_treaty.started = 32;
+        assert!(!redeclared_inside_peace_treaty(
+            &concluded_war("peace"),
+            &after_scaled_treaty,
+            8,
         ));
     }
 
@@ -975,6 +1125,13 @@ mod tests {
 
     #[test]
     fn bounded_city_state_garrisons_are_not_reported_as_idle_production() {
+        let g = Game::new_full(2, 24, 16, 97, 120, 1, false);
+        let minor = g
+            .players
+            .iter()
+            .find(|player| player.is_minor && !player.is_barbarian)
+            .map(|player| player.id)
+            .unwrap();
         let units = vec![
             Item::Unit {
                 unit: civvis::name!("builder"),
@@ -983,15 +1140,34 @@ mod tests {
                 unit: civvis::name!("warrior"),
             },
         ];
-        assert!(bounded_minor_idle(true, 3, &units));
-        assert!(!bounded_minor_idle(false, 3, &units));
-        assert!(!bounded_minor_idle(true, 2, &units));
+        assert!(bounded_minor_idle(&g, minor, 3, &units));
+        assert!(!bounded_minor_idle(&g, 0, 3, &units));
+        assert!(!bounded_minor_idle(&g, minor, 2, &units));
 
         let mut investment = units;
-        investment.push(Item::Project {
-            project: civvis::name!("campus_research_grants"),
+        investment.push(Item::Building {
+            building: civvis::name!("monument"),
         });
-        assert!(!bounded_minor_idle(true, 3, &investment));
+        assert!(!bounded_minor_idle(&g, minor, 3, &investment));
+
+        let specialty = city_state_district_family(&g, minor);
+        let specialty = Item::District {
+            district: civvis::name::Name::new(specialty),
+            pos: (0, 0),
+        };
+        assert!(!bounded_minor_idle(&g, minor, 3, &[specialty]));
+
+        // A district outside this city-state's specialty is legal engine
+        // output, but not a choice its deliberately narrow governor makes.
+        let other = ["campus", "commercial_hub", "theater_square"]
+            .into_iter()
+            .find(|family| *family != city_state_district_family(&g, minor))
+            .unwrap();
+        let general = Item::District {
+            district: civvis::name::Name::new(other),
+            pos: (0, 0),
+        };
+        assert!(bounded_minor_idle(&g, minor, 3, &[general]));
     }
 
     #[test]

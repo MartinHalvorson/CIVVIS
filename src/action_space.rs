@@ -1,10 +1,12 @@
-//! Fixed action encoding for learned policies.
+//! Fixed action encoding for learned-policy experiments.
 //!
 //! Civ's action space is enormous and variable, so a fixed one-hot head is
 //! the wrong shape. Instead every legal action is featurized into a
 //! fixed-width vector; a policy scores the candidate set and picks one
 //! (pointer-style). That keeps the network's output size constant while the
-//! number of legal actions varies from turn to turn.
+//! number of legal actions varies from turn to turn. The runtime scripted
+//! controllers do not consume this encoding; it currently supports exporters,
+//! imitation/ranking experiments, and evaluator arms.
 //!
 //! `legal_encoded(g, pid)` returns the legal actions alongside their kind
 //! indices and feature rows. The kind mask says which of the [`KINDS`]

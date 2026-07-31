@@ -1,14 +1,16 @@
 //! Paired, seat-balanced head-to-head evaluator for built-in AIs.
-use civvis::ai::Ai;
+use civvis::ai::{Ai, ExpansionCensus};
 use civvis::elo::{
-    builtin_ai, builtin_provenances, collapsed_entrants, AgentProvenance, ARTIFACT_DIR,
-    BUILTIN_AIS, EVAL_ONLY_AIS,
+    builtin_ai, builtin_arm, builtin_provenances, collapsed_entrants, AgentProvenance,
+    ARTIFACT_DIR, BUILTIN_AIS, EVAL_ONLY_AIS,
 };
 use civvis::game::{default_difficulty, Action, Game, GameOptions, VictoryConditions};
 use civvis::rules::Rules;
 use civvis::setup::{MapPoles, MapScript, MapTopology};
 use civvis::strategic::ReviewCensus;
 use std::collections::{BTreeMap, BTreeSet};
+use std::io::Write;
+use std::process::Command;
 
 const PROMOTION_MIN_MAPS: usize = 20;
 const Z_95: f64 = 1.959_963_984_540_054;
@@ -543,6 +545,16 @@ struct Metrics {
     /// Seats whose agent reports a search at all, distinguishing "searched
     /// zero times" from "has no search to report".
     searching_seats: usize,
+    /// Actual production telemetry for the adaptive-expansion evaluator arms.
+    /// Kept separately from city totals because a queue decision is not a
+    /// founded city, and neither is a plan predicate.
+    expansion_census: ExpansionCensus,
+    expansion_reporting_seats: usize,
+    dispatch_action_seats: usize,
+    dispatch_settler_seats: usize,
+    dispatch_late_settler_seats: usize,
+    advanced_late_settler_seats: usize,
+    expansion_deadlines: Option<(u32, u32)>,
 }
 
 impl Metrics {
@@ -701,6 +713,22 @@ fn transition_counts(transitions: &BTreeMap<String, usize>) -> String {
         .join(", ")
 }
 
+/// Keep production telemetry auditable without making evaluator output depend
+/// on worker completion order.
+fn turn_list(turns: &[u32]) -> String {
+    let mut sorted = turns.to_vec();
+    sorted.sort_unstable();
+    if sorted.is_empty() {
+        "none".to_string()
+    } else {
+        sorted
+            .into_iter()
+            .map(|turn| turn.to_string())
+            .collect::<Vec<_>>()
+            .join(",")
+    }
+}
+
 fn text(args: &[String], flag: &str, default: &str) -> String {
     args.iter()
         .position(|arg| arg == flag)
@@ -717,6 +745,299 @@ fn number(args: &[String], flag: &str, default: i64) -> i64 {
         .unwrap_or(default)
 }
 
+#[derive(Clone, Copy)]
+struct MatrixProfile {
+    name: &'static str,
+    players: usize,
+    width: i32,
+    height: i32,
+    city_states: usize,
+    turns: u32,
+    speed: &'static str,
+    requirement: MatrixRequirement,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum MatrixRequirement {
+    NoRegression,
+    Strength,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum MatrixVerdict {
+    Pass,
+    Retain,
+    Inconclusive,
+    Insufficient,
+}
+
+const PROMOTION_PROFILES: [MatrixProfile; 2] = [
+    MatrixProfile {
+        name: "compact-standard",
+        players: 4,
+        width: 24,
+        height: 16,
+        city_states: 4,
+        turns: 500,
+        speed: "standard",
+        requirement: MatrixRequirement::NoRegression,
+    },
+    MatrixProfile {
+        name: "deployment-online",
+        players: 6,
+        width: 74,
+        height: 46,
+        city_states: 9,
+        turns: 250,
+        speed: "online",
+        requirement: MatrixRequirement::Strength,
+    },
+];
+
+/// Stable separation between profile seed streams.
+///
+/// This must not depend on `--pairs`: increasing a preregistered sample must
+/// extend each profile's existing seed prefix, not silently select a new one.
+const MATRIX_PROFILE_SEED_STRIDE: u64 = 1_000_000;
+
+fn matrix_profile_seed(seed: u64, profile_index: usize) -> u64 {
+    seed + profile_index as u64 * MATRIX_PROFILE_SEED_STRIDE
+}
+
+fn matrix_child_args(
+    challenger: &str,
+    incumbent: &str,
+    pairs: usize,
+    jobs: usize,
+    seed: u64,
+    profile: MatrixProfile,
+    difficulty: &str,
+    require_artifacts: bool,
+) -> Vec<String> {
+    let mut args: Vec<String> = [
+        challenger.to_string(),
+        incumbent.to_string(),
+        "--pairs".to_string(),
+        pairs.to_string(),
+        "--jobs".to_string(),
+        jobs.max(1).to_string(),
+        "--seed".to_string(),
+        seed.to_string(),
+        "--players".to_string(),
+        profile.players.to_string(),
+        "--width".to_string(),
+        profile.width.to_string(),
+        "--height".to_string(),
+        profile.height.to_string(),
+        "--city-states".to_string(),
+        profile.city_states.to_string(),
+        "--turns".to_string(),
+        profile.turns.to_string(),
+        "--speed".to_string(),
+        profile.speed.to_string(),
+        "--map".to_string(),
+        "continents".to_string(),
+        "--shape".to_string(),
+        "planet".to_string(),
+        "--poles".to_string(),
+        "poles".to_string(),
+        "--randomize-civs".to_string(),
+        "--victories".to_string(),
+        "science,culture,domination".to_string(),
+        "--difficulty".to_string(),
+        difficulty.to_string(),
+        // A profile matrix asks the explicitly replacement-oriented question
+        // of whether the challenger should displace the incumbent. It is not
+        // an attribution claim, so its child runs opt into multi-axis arms.
+        "--deployment-comparison".to_string(),
+    ]
+    .into_iter()
+    .collect();
+    if require_artifacts {
+        args.push("--require-artifacts".to_string());
+    }
+    args
+}
+
+fn matrix_verdict(output: &[u8]) -> Option<MatrixVerdict> {
+    let output = String::from_utf8_lossy(output);
+    if output.contains("promotion gate: PASS —") {
+        Some(MatrixVerdict::Pass)
+    } else if output.contains("promotion gate: RETAIN ") {
+        Some(MatrixVerdict::Retain)
+    } else if output.contains("promotion gate: INCONCLUSIVE —") {
+        Some(MatrixVerdict::Inconclusive)
+    } else if output.contains("promotion gate: INSUFFICIENT —") {
+        Some(MatrixVerdict::Insufficient)
+    } else {
+        None
+    }
+}
+
+fn matrix_profile_accepts(requirement: MatrixRequirement, verdict: MatrixVerdict) -> bool {
+    match requirement {
+        MatrixRequirement::Strength => verdict == MatrixVerdict::Pass,
+        MatrixRequirement::NoRegression => {
+            matches!(verdict, MatrixVerdict::Pass | MatrixVerdict::Inconclusive)
+        }
+    }
+}
+
+/// Split the concurrent matrix budget around the measured critical path.
+///
+/// The 6p 74x46 deployment profile has roughly twice the work of the compact
+/// 4p 24x16 profile in repeated matrix runs. An equal split therefore leaves
+/// compact idle while deployment determines wall time; integer division also
+/// discarded every odd remainder. Keep every requested worker and give the
+/// heavier profile about two thirds, while retaining at least one per profile.
+fn matrix_job_budgets(total_jobs: usize) -> [usize; 2] {
+    if total_jobs < PROMOTION_PROFILES.len() {
+        // These run sequentially, so each child can use the sole worker.
+        return [1, 1];
+    }
+    let compact = ((total_jobs + 2) / 3).max(1);
+    [compact, total_jobs - compact]
+}
+
+fn run_profile_matrix(args: &[String], challenger: &str, incumbent: &str) -> ! {
+    const PROFILE_FLAGS: [&str; 11] = [
+        "--players",
+        "--width",
+        "--height",
+        "--city-states",
+        "--turns",
+        "--speed",
+        "--map",
+        "--shape",
+        "--poles",
+        "--victories",
+        "--randomize-civs",
+    ];
+    if let Some(flag) = PROFILE_FLAGS
+        .into_iter()
+        .find(|flag| args.iter().any(|argument| argument == flag))
+    {
+        eprintln!("--matrix owns the promotion profiles; remove conflicting profile flag {flag}");
+        std::process::exit(2);
+    }
+    if args.iter().any(|argument| argument == "--allow-degraded") {
+        eprintln!("--matrix never permits degraded agents; remove --allow-degraded");
+        std::process::exit(2);
+    }
+    let pairs = number(args, "--pairs", 50).max(1) as usize;
+    if pairs as u64 >= MATRIX_PROFILE_SEED_STRIDE {
+        eprintln!(
+            "--matrix supports fewer than {MATRIX_PROFILE_SEED_STRIDE} pairs so profile seed streams remain disjoint"
+        );
+        std::process::exit(2);
+    }
+    let artifact_dir = text(args, "--artifact-dir", ARTIFACT_DIR);
+    if artifact_dir != ARTIFACT_DIR {
+        eprintln!(
+            "--matrix cannot use --artifact-dir {artifact_dir}; agent construction resolves {ARTIFACT_DIR}"
+        );
+        std::process::exit(2);
+    }
+    let total_jobs = match number(args, "--jobs", 0) {
+        requested if requested > 0 => requested as usize,
+        _ => civvis::parallel::default_jobs(),
+    };
+    let job_budgets = matrix_job_budgets(total_jobs);
+    let seed = number(args, "--seed", 4000).max(0) as u64;
+    let difficulty = text(args, "--difficulty", &default_difficulty());
+    let require_artifacts = args
+        .iter()
+        .any(|argument| argument == "--require-artifacts");
+    let executable = std::env::current_exe().expect("resolve ai_eval executable");
+
+    let outputs = if total_jobs < PROMOTION_PROFILES.len() {
+        PROMOTION_PROFILES
+            .into_iter()
+            .enumerate()
+            .map(|(index, profile)| {
+                let profile_seed = matrix_profile_seed(seed, index);
+                let child_args = matrix_child_args(
+                    challenger,
+                    incumbent,
+                    pairs,
+                    1,
+                    profile_seed,
+                    profile,
+                    &difficulty,
+                    require_artifacts,
+                );
+                let output = Command::new(&executable)
+                    .args(child_args)
+                    .output()
+                    .expect("run ai_eval promotion profile");
+                (profile, output)
+            })
+            .collect::<Vec<_>>()
+    } else {
+        std::thread::scope(|scope| {
+            let handles: Vec<_> = PROMOTION_PROFILES
+                .into_iter()
+                .enumerate()
+                .map(|(index, profile)| {
+                    let executable = executable.clone();
+                    let difficulty = difficulty.clone();
+                    scope.spawn(move || {
+                        let profile_seed = matrix_profile_seed(seed, index);
+                        let child_args = matrix_child_args(
+                            challenger,
+                            incumbent,
+                            pairs,
+                            job_budgets[index],
+                            profile_seed,
+                            profile,
+                            &difficulty,
+                            require_artifacts,
+                        );
+                        let output = Command::new(executable)
+                            .args(child_args)
+                            .output()
+                            .expect("run ai_eval promotion profile");
+                        (profile, output)
+                    })
+                })
+                .collect();
+            handles
+                .into_iter()
+                .map(|handle| handle.join().expect("promotion profile worker panicked"))
+                .collect::<Vec<_>>()
+        })
+    };
+
+    let mut passed = 0usize;
+    for (profile, output) in outputs {
+        println!("\n===== promotion profile: {} =====", profile.name);
+        print!("{}", String::from_utf8_lossy(&output.stdout));
+        eprint!("{}", String::from_utf8_lossy(&output.stderr));
+        let verdict = matrix_verdict(&output.stdout);
+        let profile_pass = output.status.success()
+            && verdict.is_some_and(|verdict| matrix_profile_accepts(profile.requirement, verdict));
+        passed += profile_pass as usize;
+        println!(
+            "matrix profile result: {} ({:?}) — {} ({:?})",
+            profile.name,
+            profile.requirement,
+            if profile_pass { "ACCEPT" } else { "REJECT" },
+            verdict,
+        );
+    }
+    if passed == PROMOTION_PROFILES.len() {
+        println!(
+            "\nmulti-profile promotion gate: PASS — {challenger} cleared every required profile"
+        );
+        std::process::exit(0);
+    }
+    println!(
+        "\nmulti-profile promotion gate: RETAIN {incumbent} — {challenger} cleared {passed}/{} required profiles",
+        PROMOTION_PROFILES.len()
+    );
+    std::process::exit(1);
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let a = args.first().map(|name| name.as_str()).unwrap_or("advanced");
@@ -728,20 +1049,61 @@ fn main() {
             "unknown AI {name:?}: builtins {BUILTIN_AIS:?}; evaluator-only {EVAL_ONLY_AIS:?}"
         );
     }
+    if args.iter().any(|argument| argument == "--matrix") {
+        run_profile_matrix(&args, a, b);
+    }
     // A learned name is only worth recording if its artifacts actually
     // loaded. Say what each entrant resolved to before playing anything, so
     // a result is never filed under an agent that was never in the game.
     let artifact_dir = text(&args, "--artifact-dir", ARTIFACT_DIR);
+    // `builtin_provenance`'s contract is "resolve what `builtin_ai` will
+    // actually construct from `dir`" -- but `builtin_ai(name, seed)` takes no
+    // directory. Every one of its arms resolves the constant `ARTIFACT_DIR`,
+    // and the agent constructors below it (`StrategicAi::with_weights`,
+    // `PolicyAi::with_weights`, `ProductionSearchAi::with_weights`) each load
+    // their own net from that same constant. So pointing this flag somewhere
+    // else moved the *report* and never the run: it would print a net found in
+    // one directory and then play the agent that read another.
+    //
+    // Reporting a provenance the run does not have is the single failure this
+    // whole reporting path exists to prevent, so refuse instead of printing it.
+    // Threading a directory into construction is the general fix and is a
+    // separate change: it is ~70 call sites inside `elo::builtin_ai`, in a file
+    // three open PRs already claim.
+    if artifact_dir != ARTIFACT_DIR {
+        eprintln!(
+            "--artifact-dir {artifact_dir}: unsupported. Agent construction resolves \
+             `{ARTIFACT_DIR}` and ignores this flag, so the provenance line would \
+             describe a directory this run never reads."
+        );
+        eprintln!(
+            "to evaluate a different artifact, run from a working directory that has \
+             it: `{ARTIFACT_DIR}/valuenet.json` or `data/{ARTIFACT_DIR}/valuenet.json`"
+        );
+        std::process::exit(2);
+    }
     let provenance = builtin_provenances(&[a, b], &artifact_dir);
     for entry in &provenance {
         println!("{}", entry.line());
     }
-    for (left, right, shared) in collapsed_entrants(&[a, b], &artifact_dir) {
+    let arms = [
+        builtin_arm(a).expect("validated left builtin arm"),
+        builtin_arm(b).expect("validated right builtin arm"),
+    ];
+    let axes = arms[0].spec.differing_axes(&arms[1].spec);
+    if axes.is_empty() {
+        println!("arms differ on: none");
+    } else {
+        println!("arms differ on: {}", axes.join(", "));
+    }
+    let collapsed = collapsed_entrants(&[a, b], &artifact_dir);
+    for (left, right, shared) in &collapsed {
         println!(
             "warning: {left} and {right} both play as {shared}; this run measures \
              {shared} against itself and says nothing about either name"
         );
     }
+    let _ = std::io::stdout().flush();
     if args.iter().any(|arg| arg == "--require-artifacts") {
         let untrained: Vec<&AgentProvenance> = provenance
             .iter()
@@ -758,6 +1120,34 @@ fn main() {
             eprintln!("--require-artifacts: refusing to record an untrained result");
             std::process::exit(3);
         }
+    } else if !args.iter().any(|arg| arg == "--allow-degraded") {
+        let degraded: Vec<&AgentProvenance> = provenance
+            .iter()
+            .filter(|entry| entry.degraded())
+            .collect();
+        if !degraded.is_empty() {
+            for entry in degraded {
+                eprintln!(
+                    "{}: requested agent is unavailable and would play as {}",
+                    entry.requested, entry.effective
+                );
+            }
+            eprintln!(
+                "refusing degraded evaluation by default; name the effective agent or pass --allow-degraded"
+            );
+            std::process::exit(3);
+        }
+    }
+    if !collapsed.is_empty() {
+        eprintln!("refusing to evaluate two names that resolve to one agent");
+        std::process::exit(2);
+    }
+    if axes.len() > 1 && !args.iter().any(|arg| arg == "--deployment-comparison") {
+        eprintln!(
+            "refusing a {}-axis comparison without --deployment-comparison; this run cannot attribute a replacement result to one mechanism",
+            axes.len()
+        );
+        std::process::exit(2);
     }
     let pairs = number(&args, "--pairs", 50).max(1) as usize;
     // How many games run at once. Every game is independent and seeded, so
@@ -783,7 +1173,7 @@ fn main() {
     // set. An evaluator that cannot name them silently measures a different
     // game: historically Pangaea/flat/fixed-roster/all-victories, whatever the
     // command line appeared to say. Keep those historical defaults, but make
-    // the deployment profile expressible and print the resolved values below.
+    // the deployment axes expressible and print the resolved values below.
     let map_name = text(&args, "--map", MapScript::default().id());
     let map_script = MapScript::from_id(&map_name).unwrap_or_else(|| {
         eprintln!("unknown map script {map_name:?}");
@@ -851,6 +1241,7 @@ fn main() {
         traces: Vec<PlanTrace>,
         targets: Vec<&'static str>,
         censuses: Vec<Option<ReviewCensus>>,
+        expansion_censuses: Vec<Option<ExpansionCensus>>,
     }
 
     // Games share nothing but the immutable ruleset, and every one is fully
@@ -861,9 +1252,12 @@ fn main() {
     // this binary is the promotion gate, and how many maps it can afford is
     // what decides whether an effect is resolvable at all.
     //
-    // Chunked rather than one flat batch so peak memory holds a chunk of
-    // finished games rather than the whole run.
-    let chunk_pairs = jobs.max(1);
+    // Chunked rather than one flat batch so peak memory holds a bounded set of
+    // finished games rather than the whole run. Four games per worker gives
+    // the dynamic scheduler enough slack to hide the large early-victory vs
+    // turn-limit cost variance; the former two-game window repeatedly left
+    // half the workers idle on each chunk's long tail.
+    let chunk_pairs = jobs.max(1).saturating_mul(2);
     let mut pair = 0usize;
     while pair < pairs {
         let chunk = chunk_pairs.min(pairs - pair);
@@ -904,12 +1298,16 @@ fn main() {
                 .map(|pid| plan_target(&game, pid, ais[pid].as_ref()))
                 .collect();
             let censuses = (0..players).map(|pid| ais[pid].review_census()).collect();
+            let expansion_censuses = (0..players)
+                .map(|pid| ais[pid].expansion_census())
+                .collect();
             PlayedGame {
                 game,
                 seats,
                 traces,
                 targets,
                 censuses,
+                expansion_censuses,
             }
         });
         for (index, result) in played.into_iter().enumerate() {
@@ -919,6 +1317,7 @@ fn main() {
                 traces,
                 targets,
                 censuses,
+                expansion_censuses,
             } = result;
             total_turns += game.reported_turn() as u64;
             let score = game_score(game.winner, &seats, a);
@@ -939,6 +1338,32 @@ fn main() {
                     let metrics = totals.get_mut(*name).unwrap();
                     metrics.census.merge(census);
                     metrics.searching_seats += 1;
+                }
+                if let Some(expansion) = expansion_censuses[pid].as_ref() {
+                    let metrics = totals.get_mut(*name).unwrap();
+                    metrics.expansion_census.merge(expansion);
+                    metrics.expansion_reporting_seats += 1;
+                    metrics.dispatch_action_seats +=
+                        usize::from(expansion.dispatch_productions > 0);
+                    metrics.dispatch_settler_seats +=
+                        usize::from(!expansion.dispatch_settler_turns.is_empty());
+                    let stock_deadline = game.standard_duration(300).min(
+                        game.max_turns
+                            .saturating_sub(game.standard_duration(50)),
+                    );
+                    let late_deadline = game
+                        .max_turns
+                        .saturating_sub(game.standard_duration(50));
+                    metrics.expansion_deadlines = Some((stock_deadline, late_deadline));
+                    metrics.dispatch_late_settler_seats += usize::from(
+                        expansion
+                            .dispatch_settler_turns
+                            .iter()
+                            .any(|turn| *turn >= stock_deadline && *turn < late_deadline),
+                    );
+                    metrics.advanced_late_settler_seats += usize::from(
+                        !expansion.advanced_late_settler_turns.is_empty(),
+                    );
                 }
                 totals.get_mut(*name).unwrap().record(
                     &game,
@@ -980,6 +1405,10 @@ fn main() {
         "mirrored head-to-head: {pairs} maps, {} games, {players} players, average {:.1} turns",
         2 * pairs,
         total_turns as f64 / (2 * pairs) as f64
+    );
+    println!(
+        "seed prefix: {seed}..={} (inclusive, one independent map per seed)",
+        seed + pairs.saturating_sub(1) as u64
     );
     let games = 2 * pairs;
     print!("game-win share:");
@@ -1231,6 +1660,51 @@ fn main() {
             100.0 * metrics.rush_turns as f64 / metrics.plan_observations.max(1) as f64,
         );
     }
+    if [a, b]
+        .iter()
+        .any(|name| totals[*name].expansion_reporting_seats > 0)
+    {
+        println!("\nAdaptive-expansion production exposure:");
+        for name in [a, b] {
+            let metrics = &totals[name];
+            if metrics.expansion_reporting_seats == 0 {
+                println!("  {name:<11} no Advanced-production census to report");
+                continue;
+            }
+            let (stock_deadline, late_deadline) = metrics
+                .expansion_deadlines
+                .expect("an expansion census records its game-speed deadlines");
+            let census = &metrics.expansion_census;
+            let dispatch_late_starts = census
+                .dispatch_settler_turns
+                .iter()
+                .filter(|turn| **turn >= stock_deadline && **turn < late_deadline)
+                .count();
+            println!(
+                "  {name:<11} dispatcher calls {}, successful produces {} on {}/{} seats; \
+                 Settlers {} on {}/{} seats (late [{stock_deadline},{late_deadline}) {} on {}/{}); \
+                 Advanced late Settlers {} on {}/{} seats",
+                census.dispatch_calls,
+                census.dispatch_productions,
+                metrics.dispatch_action_seats,
+                metrics.expansion_reporting_seats,
+                census.dispatch_settler_turns.len(),
+                metrics.dispatch_settler_seats,
+                metrics.expansion_reporting_seats,
+                dispatch_late_starts,
+                metrics.dispatch_late_settler_seats,
+                metrics.expansion_reporting_seats,
+                census.advanced_late_settler_turns.len(),
+                metrics.advanced_late_settler_seats,
+                metrics.expansion_reporting_seats,
+            );
+            println!(
+                "  {name:<11} dispatcher Settler turns [{}]; all Advanced late-Settler turns [{}]",
+                turn_list(&census.dispatch_settler_turns),
+                turn_list(&census.advanced_late_settler_turns),
+            );
+        }
+    }
     // A searching entrant that never reached its search is a scripted agent
     // under a searching agent's name. Say so beside the win rate, because
     // the win rate cannot.
@@ -1259,6 +1733,16 @@ fn main() {
                     census.urgent_counter,
                     census.irreversible_religion
                 ),
+            }
+            if census.joint_reviews > 0 {
+                println!(
+                    "  {name:<11} joint overrides {}/{} rollout reviews ({:.1}%); lane {}, doctrine {}",
+                    census.joint_overrides,
+                    census.joint_reviews,
+                    100.0 * census.joint_overrides as f64 / census.joint_reviews as f64,
+                    census.joint_lane_overrides,
+                    census.joint_doctrine_overrides,
+                );
             }
         }
         if [a, b]
@@ -1293,6 +1777,114 @@ fn main() {
 mod tests {
     use super::*;
     use civvis::rng::Rng;
+
+    #[test]
+    fn turn_list_is_stable_across_worker_completion_order() {
+        assert_eq!(turn_list(&[]), "none");
+        assert_eq!(turn_list(&[212, 198, 213, 198]), "198,198,212,213");
+    }
+
+    #[test]
+    fn promotion_matrix_pins_compact_and_deployment_profiles() {
+        let compact = matrix_child_args(
+            "challenger",
+            "incumbent",
+            60,
+            4,
+            90_000,
+            PROMOTION_PROFILES[0],
+            "prince",
+            false,
+        );
+        let deployment = matrix_child_args(
+            "challenger",
+            "incumbent",
+            60,
+            4,
+            1_090_000,
+            PROMOTION_PROFILES[1],
+            "prince",
+            false,
+        );
+        for args in [&compact, &deployment] {
+            assert_eq!(text(args, "--map", "missing"), "continents");
+            assert_eq!(text(args, "--shape", "missing"), "planet");
+            assert_eq!(text(args, "--poles", "missing"), "poles");
+            assert!(args.iter().any(|argument| argument == "--randomize-civs"));
+            assert!(args
+                .iter()
+                .any(|argument| argument == "--deployment-comparison"));
+            assert!(!args.iter().any(|argument| argument == "--matrix"));
+        }
+        assert_eq!(number(&compact, "--players", 0), 4);
+        assert_eq!(number(&compact, "--turns", 0), 500);
+        assert_eq!(text(&compact, "--speed", "missing"), "standard");
+        assert_eq!(number(&deployment, "--players", 0), 6);
+        assert_eq!(number(&deployment, "--width", 0), 74);
+        assert_eq!(number(&deployment, "--height", 0), 46);
+        assert_eq!(number(&deployment, "--turns", 0), 250);
+        assert_eq!(text(&deployment, "--speed", "missing"), "online");
+        assert_eq!(matrix_profile_seed(90_000, 0), 90_000);
+        assert_eq!(matrix_profile_seed(90_000, 1), 1_090_000);
+        let extended = matrix_child_args(
+            "challenger",
+            "incumbent",
+            120,
+            4,
+            matrix_profile_seed(90_000, 1),
+            PROMOTION_PROFILES[1],
+            "prince",
+            false,
+        );
+        assert_eq!(number(&extended, "--seed", 0), 1_090_000);
+    }
+
+    #[test]
+    fn promotion_matrix_uses_every_worker_and_weights_the_critical_path() {
+        assert_eq!(matrix_job_budgets(1), [1, 1]);
+        assert_eq!(matrix_job_budgets(2), [1, 1]);
+        assert_eq!(matrix_job_budgets(3), [1, 2]);
+        assert_eq!(matrix_job_budgets(4), [2, 2]);
+        assert_eq!(matrix_job_budgets(5), [2, 3]);
+        assert_eq!(matrix_job_budgets(6), [2, 4]);
+        assert_eq!(matrix_job_budgets(12), [4, 8]);
+        for jobs in 2..32 {
+            assert_eq!(matrix_job_budgets(jobs).iter().sum::<usize>(), jobs);
+            assert!(matrix_job_budgets(jobs).into_iter().all(|budget| budget > 0));
+        }
+    }
+
+    #[test]
+    fn promotion_matrix_requires_strength_at_deployment_and_safety_elsewhere() {
+        assert_eq!(
+            matrix_verdict(b"promotion gate: PASS \xe2\x80\x94 challenger cleared"),
+            Some(MatrixVerdict::Pass)
+        );
+        assert_eq!(
+            matrix_verdict(b"promotion gate: RETAIN incumbent \xe2\x80\x94 regression"),
+            Some(MatrixVerdict::Retain)
+        );
+        assert!(matrix_profile_accepts(
+            MatrixRequirement::Strength,
+            MatrixVerdict::Pass
+        ));
+        assert!(!matrix_profile_accepts(
+            MatrixRequirement::Strength,
+            MatrixVerdict::Inconclusive
+        ));
+        assert!(matrix_profile_accepts(
+            MatrixRequirement::NoRegression,
+            MatrixVerdict::Inconclusive
+        ));
+        assert!(!matrix_profile_accepts(
+            MatrixRequirement::NoRegression,
+            MatrixVerdict::Retain
+        ));
+        assert!(!matrix_profile_accepts(
+            MatrixRequirement::NoRegression,
+            MatrixVerdict::Insufficient
+        ));
+    }
 
     /// A 95% interval for the mean of paired map scores that uses their
     /// observed variance instead of the worst case.

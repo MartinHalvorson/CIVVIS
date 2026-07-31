@@ -1,9 +1,18 @@
 # What the search must become
 
-`docs/AI_GAPS.md` names ten gaps and ranks them. `docs/EVAL.md` records what
-happened when they were attacked. This file is the third thing: given
-everything both of those now say, **what would a much stronger designer
-actually build, and in what order.**
+> **Scope note (2026-07-30).** This is a research design and historical
+> argument, not the live-agent description. Unless a row says otherwise, its
+> search results were measured at four players on a 24×16 Standard map. The
+> evolved genome and macro-search gains did not transfer to the measured
+> six-player 74×46, six-city-state Online profile, no value net ships, and no
+> searching agent is live-eligible in the exhibition. `docs/AI_GAPS.md` is the
+> current status; `docs/EVAL.md` retains the chronological evidence and
+> corrections.
+
+`docs/AI_GAPS.md` ranks the current gaps. `docs/EVAL.md` records what happened
+when they were attacked. This file is the third thing: given everything both
+of those now say, **what would a much stronger designer actually build, and in
+what order.**
 
 It is written to be falsifiable. Every mechanism below states the evidence it
 rests on, the check that proves it is not inert, and what would refute it.
@@ -14,7 +23,8 @@ rests on, the check that proves it is not inert, and what would refute it.
 
 Sort every AI change this repository has measured into two piles.
 
-**Won maps at adequate power — all of them are policy rollouts:**
+**Won maps at adequate power on the source benchmark — all of them are policy
+rollouts:**
 
 | change | result |
 |---|---|
@@ -72,9 +82,10 @@ Meanwhile every decision that repeats — what each city builds, where each unit
 moves, what to research — is a hand-written heuristic evaluated greedily.
 There are between 10⁴ and 10⁵ of those in a game.
 
-So the search is both **under-provisioned** (doubling it always wins) and
-**aimed at the wrong variable**. Those are separable problems and they have
-separable fixes.
+So on that source benchmark the search is both **under-provisioned** (each
+tested doubling won) and **aimed at the wrong variable**. Those are separable
+problems and they have separable fixes; neither claim has been established
+across the rotating live profiles.
 
 Two further constraints bound any fix:
 
@@ -91,8 +102,8 @@ Two further constraints bound any fix:
   **This retires a whole family of ideas as predicted-null**: rotation,
   adaptive stopping, focused deepening, progressive widening, sequential
   halving — every scheme that re-allocates a fixed review budget using an
-  early ranking. The only lever on this search that has ever worked is raising
-  the total.
+  early ranking. On this benchmark, the only lever on this search that worked
+  was raising the total.
 - **The horizon saturates.** A branch that reaches a decided game returns
   exactly 1.0 or 0.0, so once every branch resolves they agree *by
   construction*. Share of reviews in that state: 22% at horizon 40, 56% at 80,

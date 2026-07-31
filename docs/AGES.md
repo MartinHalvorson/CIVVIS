@@ -3,15 +3,46 @@
 What Gathering Storm's age system does in CIVVIS, what was checked against the
 shipped game, and what the AI does with it.
 
-Sources for every "shipped" claim below are the built rules database the game
-leaves behind — `~/Library/Application Support/Sid Meier's Civilization VI/Cache/DebugGameplay.sqlite`
-on this machine, with load order and every expansion overlay already resolved —
-and the `en_US` text assets in the app bundle. Tables used: `CommemorationTypes`,
+Sources for every "shipped" claim below are the resolved Gathering Storm rules
+and the matching English Civilopedia data. Tables used: `CommemorationTypes`,
 `CommemorationModifiers`, `Modifiers`, `ModifierArguments`, `RequirementSets`,
 `RequirementSetRequirements`, `Requirements`, `Policies_XP1`, `GlobalParameters`,
 `Eras`, `Eras_XP1`, `Moments`.
 
 ## The audit
+
+### Final result (2026-07-29)
+
+The original diagnosis was right — Era Score supply was starved — but the first
+repair was incomplete. A second row-by-row audit of all 143 positive-score rows
+in Gathering Storm's 162-row `Moments` catalogue found and closed the remaining
+families. It also found three independent structural bugs:
+
+- world era used the leading civilization instead of the field median, then the
+  first median repair used the lower side of an even field; the shipped trigger
+  is reached when **at least half** the living majors enter the next individual
+  era;
+- the 40-turn minimum existed, but the ten-turn warning and 60-turn maximum did
+  not; all three are now speed-scaled and serialized;
+- stock Gathering Storm thresholds were using Dramatic Ages overrides. Stock is
+  base 14/28, Ancient shift -3, +1 per city, -5 per past Dark Age and +5 per
+  past Golden/Heroic Age. The +3-per-city/-10-per-Dark values belong to the
+  optional Dramatic Ages mode.
+
+The score hooks now cover every positive-score moment: exploration and contacts;
+city sites, growth and transfers; research,
+governments and Governors; districts, buildings, Wonders, improvements and
+railroads; units, formations, promotions and underdog kills; religion; Great
+People and patronage; city-state Envoys and levies; trade posts; wars,
+Emergencies and liberation; disasters and Power; archaeology, parks and Rock
+Bands; space projects and the Diplomatic Victory resolution. First-in-world,
+ordinary, repeatable, obsolete-era and replacement-versus-stacking behavior is
+tested separately. Taj Mahal applies once to each qualifying Historic Moment,
+never to Dedication score or to a sum of unrelated +1 moments. CIVVIS recruits
+and expends named Great People immediately, so each recruited General or Admiral
+can oversee one future offensive in the matching land or sea domain; this
+preserves each person's first-victory Moment without inventing a passive map
+unit that the engine does not otherwise model.
 
 ### Correct before this change, and re-verified
 
@@ -27,11 +58,6 @@ and the `en_US` text assets in the app bundle. Tables used: `CommemorationTypes`
   (`PER_CULTURE_BUILDING_CONSTRUCTED` / `PER_SCIENCE_BUILDING_CONSTRUCTED`), which
   are a building that *yields* that yield rather than one holding a slot — the
   English text says "Great Work Slot" but the modifier does not.
-- **Era Score thresholds are self-correcting from the shipped parameters.**
-  `THRESHOLD_SHIFT_PER_CITY` 3, `_PER_PAST_DARK_AGE` −10, `_PER_PAST_GOLDEN_AGE`
-  +5; `_PER_ANARCHY`, `_PER_INCOMPLETE_ERA_TECH`/`_CIVIC`,
-  `_PER_INCOMPLETE_OLD_TECH`/`_CIVIC` and `_PER_MISSING_AMENITY` all ship as 0,
-  so there is nothing to model for them.
 - **Loyalty per citizen by age.** Golden and Heroic 1.5, Dark 0.5, Normal 1.0.
 - **Heroic Age.** A Dark Age that reaches the Golden threshold, three Dedications
   instead of one.
@@ -80,18 +106,20 @@ a median 12 short of Golden.
 Two causes, both fidelity gaps, both fixed here.
 
 **1. The Era Score supply was starved.** CIVVIS awarded Era Score at 14 sites.
-The shipped game defines 162 Historic Moments. Thresholds are calibrated to the
-shipped supply, so nobody cleared them — even after
-`THRESHOLD_SHIFT_PER_PAST_DARK_AGE` −10 compounds and floors the threshold at 6.
-Added here, at their exact `Moments.EraScore` values:
+The shipped game defines 162 Historic Moments, 143 of which carry positive Era
+Score. Thresholds are calibrated to that supply, so nobody cleared them. The
+first repair added the highest-frequency families below; the final audit above
+completed every other family the engine can emit, at its exact
+`Moments.EraScore` value:
 
 | moment | value | frequency |
 |---|---|---|
 | `TECH_RESEARCHED_IN_ERA_FIRST` / `_IN_WORLD` | +1 / +2 | once per era per civ |
 | `CIVIC_CULTURVATED_IN_ERA_FIRST` / `_IN_WORLD` | +1 / +2 | once per era per civ |
 | `CITY_BUILT_ON_DESERT` / `_SNOW` / `_TUNDRA` | +1 each | per city, stacking |
-| `CITY_BUILT_NEAR_FLOODABLE_RIVER` / `_VOLCANO` / `_NATURAL_WONDER` / `_OTHER_CIV_CITY` | +1 each | per city, stacking |
-| `CITY_BUILT_NEW_CONTINENT` | +2 | per city |
+| `CITY_BUILT_NEAR_FLOODABLE_RIVER` / `_VOLCANO` / `_OTHER_CIV_CITY` | +1 each | per city, stacking |
+| `CITY_BUILT_NEAR_NATURAL_WONDER` | +3 | per city, stacking |
+| `CITY_BUILT_NEW_CONTINENT` | +2 | first settlement on each new continent |
 | `PLAYER_MET_MAJOR` | +1 | per rival |
 | `PLAYER_MET_ALL_MAJORS` / `_FIRST_IN_WORLD` | +3 / +5 | once |
 | `GOODY_HUT_TRIGGERED` | +1 | per village |
@@ -106,86 +134,46 @@ guaranteed Dark Age for everyone. Shipped `Eras_XP1.GameEraMinimumTurns` is 40
 for every era; that floor is now enforced, speed-scaled, via
 `Game::world_era_since`.
 
-`GameEraMaximumTurns` (60) is deliberately **not** modelled: forcing the world
-era past what anybody has researched reaches into wonder eligibility, Dark Age
-card windows and unit obsolescence far further than the evidence here justifies.
+The complete shipped pacing rule is now modeled: at least half the living majors
+entering the next individual era arms a ten-turn warning; it cannot expire
+before turn 40 of the current world era, and an untriggered era arms the same
+warning in time to end at the turn-60 maximum. A transition advances exactly
+one era, so a late research grant cannot skip age judgments.
 
 ### What the fixes did, and the answer to the question that started this
 
-Same instrument, same seed, same shape — 60 six-seat 500-turn games at seed
-900000, so the two runs are directly comparable:
+The completion census used 24 deterministic six-seat, 500-turn maps at seed
+990000 (336 age transitions). It is a diagnostic sample, not a balance gate:
 
-| | before | after |
-|---|---|---|
-| dark | 79% | **64%** |
-| normal | 20% | **33%** |
-| golden | 0.4% | **2%** |
-| heroic | 0.8% | **1.3%** |
-| era 1 dark | 98% | **36%** |
-| turns between transitions | mean 41.9, **p10 1** | mean 47.7, **p10 40** |
-
-Golden Ages went from 6 in the run to 27, and the pacing floor holds exactly.
-
-**Is it ever good to intentionally take a Dark Age? No.** The threshold gives a
-natural experiment: among seats that finished an era within a few Era Score of
-the Normal line, which side they fell on turns on one Eureka or one barbarian
-camp, and is close to independent of how strong the seat is.
-
-| margin | just dark, win% | just normal, win% | dark n | normal n |
-|---|---|---|---|---|
-| within 2 | **9.7%** | **20.5%** | 103 | 127 |
-| within 4 | 10.9% | 20.8% | 175 | 178 |
-| within 6 | 10.1% | 20.7% | 267 | 222 |
-
-**Falling just short of Normal roughly halves a seat's win rate** (base rate at
-six seats is 16.7%), and the effect is flat across all three bandwidths, which is
-what separates a real discontinuity from an artefact of where the window was
-drawn.
-
-The Heroic escape hatch does not rescue it. What follows each age:
-
-| after | dark | normal | golden | heroic | n |
+| era | dark | normal | golden | heroic | n |
 |---|---|---|---|---|---|
-| dark | **73%** | 24% | 0% | **3%** | 745 |
-| normal | 70% | 29% | 2% | 0% | 438 |
-| golden | **92%** | 8% | 0% | 0% | 26 |
-| heroic | 73% | 27% | 0% | 0% | 15 |
+| 1 | 30% | 25% | **46%** | 0% | 138 |
+| 2 | 65% | 32% | 3% | 0% | 60 |
+| 3 | 69% | 12% | **19%** | 0% | 48 |
+| 4 | 54% | 42% | 0% | 4% | 48 |
+| 5 | 46% | 50% | 0% | 4% | 24 |
+| 6 | 17% | 75% | 0% | 8% | 12 |
+| 7 | 17% | 83% | 0% | 0% | 6 |
+| **all** | **46%** | **31%** | **22%** | **1%** | **336** |
 
-A Dark Age converts to Heroic **3% of the time** and to another Dark Age 73% of
-the time. `THRESHOLD_SHIFT_PER_PAST_DARK_AGE` −10, the Dark Age cards and
-Heroic's three Dedications together do not pay for the Loyalty penalty and the
-lost age. The 92% after a Golden Age is not a bug — it is the Golden Age banking
-nothing, which is exactly the oscillation the mechanic is designed to produce.
+Golden/Heroic ages are now 23.2% of transitions, rather than the original 1.2%,
+and the opening era is no longer an automatic Dark Age. Era pacing is bounded
+exactly as shipped: mean 53.0 turns, p10 40, median 57, p90 60.
 
-**Caveat on the discontinuity.** The buckets are seats, not transitions, and a
-seat with several age transitions can land in both. That biases toward finding
-nothing, so it does not manufacture the gap, but it does mean the numbers are a
-strong reading rather than a clean estimate.
+Dark misses remain real (median six points short), but they are no longer caused
+by an impossible score supply or a runaway civilization advancing the world.
+The small completion sample does **not** reproduce the old claim that barely
+missing Normal halves win rate: within two points, just-Dark seats won 5.9%
+and just-Normal seats 9.4%, with only 17 and 32 observations. That earlier
+causal claim is withdrawn pending a new pre-registered large run.
 
-### Known gaps, not closed here
+### Remaining scope boundaries
 
-- **Ten of the seventeen shipped Dark Age cards are absent**: Decentralization,
-  Samoderzhaviye, Soft Targets, Despotic Paternalism, Collectivism, Rogue State,
-  Flower Power, Cyber Warfare, Automated Workforce, Disinformation Campaign.
-  Each needs a new engine effect at a new read site, not just a data row.
-  Decentralization (Classical–Renaissance, +4 Loyalty in cities of 6 or less
-  population, −15% Gold above that) is the one that most changes Dark Age play,
-  because it directly answers the Dark Age's own Loyalty penalty.
-- **Which civilizations set the world era.** CIVVIS takes the maximum over
-  seats; the shipped game weighs the field. A runaway leader therefore drags
-  every threshold up (they scale +3 per era) while the laggards' capacity to
-  bank does not follow. The minimum-turn floor blunts this but does not answer
-  it. **This is the most likely cause of the residual 64% Dark rate** and is the
-  first thing to try next; it is a one-line change to `era_from_progress` and
-  needs its own measurement, because moving the world era moves wonder
-  eligibility, Dark Age card windows and unit obsolescence with it.
-- **Historic Moments, the rest of them.** The shipped game defines 162 and this
-  change closes the highest-frequency families. Still absent and worth having:
-  the six `DISTRICT_CONSTRUCTED_HIGH_ADJACENCY_*` moments (+3 each), the
-  `FORMATION_*_FIRST` ladder (+1/+2), `UNIT_CREATED_FIRST_*` (+2 to +5),
-  `WAR_DECLARED_USING_CASUS_BELLI` (+2), `NATIONAL_PARK_CREATED` (+3),
-  `WORLD_CIRCUMNAVIGATED` (+3/+5), and the `PROJECT_FOUNDED_*` set. Each is a
-  hook at an event the engine already resolves.
+- Ten Gathering Storm Dark Age policy cards remain outside this Era Score
+  repair: Decentralization, Samoderzhaviye, Soft Targets, Despotic Paternalism,
+  Collectivism, Rogue State, Flower Power, Cyber Warfare, Automated Workforce
+  and Disinformation Campaign. They require unrelated engine effects, not Era
+  Score hooks.
 
 ## What the AI does
 

@@ -179,9 +179,10 @@ fn main() {
     let height = number(&args, "--height", 16) as i32;
     let turns = number(&args, "--turns", 400) as u32;
     let seed0 = number(&args, "--seed", 900_000) as u64;
-    // The deployed exhibition seats 9 city-states at 6 players (74x46). A
-    // census run without them is measuring a different game -- city-states
-    // carry envoys, suzerainty and a large share of the religious map.
+    // The recorded large comparison profile seats 9 city-states at 6 players
+    // (74x46). A census run without them is measuring a different game --
+    // city-states carry envoys, suzerainty and a large share of the religious
+    // map.
     let city_states = number(&args, "--city-states", 0);
     // Which response shape the whole table plays. The census is otherwise
     // identical, so `--arm` reads what a treatment does to behaviour before

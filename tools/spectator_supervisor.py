@@ -1074,6 +1074,7 @@ def result_standings(state: dict[str, Any]) -> str | None:
 # dropped the key and unrated every game after the first victory boundary.
 LEAGUE_SPEC = "auto"
 LEAGUE_RECORD = True
+MANAGED_ROSTER_MARKER = ".civvis-managed-roster"
 
 
 def league_dir(spec: str) -> tuple[Path, bool] | None:
@@ -1109,6 +1110,12 @@ def league_dir(spec: str) -> tuple[Path, bool] | None:
         live.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(snapshot, live / "league.json")
         log(f"seeded the live rating table at {live} from {snapshot}")
+    # The marker distinguishes this evolving copy from an explicitly named
+    # experimental pool. The Rust loader may then append newly required
+    # controller families without changing a hand-built comparison roster.
+    marker = live / MANAGED_ROSTER_MARKER
+    if not marker.exists():
+        marker.write_text("managed by spectator --league auto\n", encoding="utf-8")
     return live, True
 
 

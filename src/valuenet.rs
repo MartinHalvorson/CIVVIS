@@ -2,6 +2,10 @@
 //! self-play outcomes from game-grouped dataset.csv exports (NNUE-style
 //! distillation).
 //! Input = evolve::features(); output = win probability for that player.
+//!
+//! This module contains the architecture and loader, not trained weights. No
+//! `valuenet.json` is committed or embedded, so normal runtime construction
+//! uses each agent's documented non-neural fallback.
 use std::fs;
 use std::path::Path;
 
@@ -14,36 +18,76 @@ pub struct ValueNet {
     pub biases: Vec<Vec<f64>>,
 }
 
+/// What a directory holds, distinguishing "no artifact here" from "an
+/// artifact that will not load".
+///
+/// The difference decides whether resolution continues, so it cannot be
+/// collapsed into `Option`. See [`ValueNet::load`].
+enum Artifact {
+    Missing,
+    Invalid,
+    Net(ValueNet),
+}
+
+fn read_net(dir: &Path) -> Artifact {
+    let Ok(raw) = fs::read_to_string(dir.join("valuenet.json")) else {
+        return Artifact::Missing;
+    };
+    match serde_json::from_str::<ValueNet>(&raw) {
+        Ok(net) if net.valid() => Artifact::Net(net),
+        _ => Artifact::Invalid,
+    }
+}
+
 impl ValueNet {
-    fn read(dir: &Path) -> Option<ValueNet> {
-        let raw = fs::read_to_string(dir.join("valuenet.json")).ok()?;
-        serde_json::from_str::<ValueNet>(&raw)
-            .ok()
-            .filter(ValueNet::valid)
+    /// Read a net from `dir`, falling back to a committed snapshot under
+    /// `data/`.
+    ///
+    /// This is the resolution [`crate::evolve::load_champion`] already uses
+    /// for the genome, and it is here for the same reason. The previous body
+    /// was a single read of `<dir>/valuenet.json` against the **current
+    /// working directory**, so whether an agent had a learned evaluator at all
+    /// depended on where its process happened to be started — and nothing in
+    /// the tree is tracked at that path, so in practice every agent on every
+    /// machine resolved to `None` and played the score-share fallback. That is
+    /// the defect `#469`/`#471` fixed for the champion genome and `#490` fixed
+    /// for the league roster, still live for the net.
+    ///
+    /// A local `<dir>/valuenet.json` still wins, so an in-progress training
+    /// run is never shadowed by a committed snapshot.
+    ///
+    /// **A present-but-unloadable artifact stops resolution.** Only `Missing`
+    /// continues to the next tier. Falling through on `Invalid` would hand an
+    /// experimenter a *different* net than the one they placed while
+    /// `elo::builtin_provenance` reported a net found — the silent substitution
+    /// this repository keeps having to undo.
+    ///
+    /// There is deliberately **no embedded tier**. `include_str!` needs the
+    /// artifact at compile time, and whether any particular net should ship is
+    /// a strength question with its own paired run, not a consequence of fixing
+    /// a path. The live path does not need one today: the spectator supervisor
+    /// runs with a checkout root as its working directory, so `data/` resolves
+    /// there. A binary copied somewhere without the tree still gets `None`, and
+    /// that is the remaining tier to add if and when an artifact is committed.
+    pub fn load(dir: &str) -> Option<ValueNet> {
+        Self::load_under(Path::new(""), dir)
     }
 
-    /// Resolve `dir` relative to the working directory, then under `data/`.
+    /// [`ValueNet::load`] with an explicit base directory.
     ///
-    /// ⚠⚠ THIS WAS A SINGLE CWD-RELATIVE READ, AND IT IS WHY THE LEARNED
-    /// EVALUATOR HAS NEVER LOADED IN ANY GAME.
-    ///
-    /// Every caller passes `"evolved"` — `strategic.rs`, `policy.rs`,
-    /// `production.rs`, `elo.rs` — so the old body asked for `./evolved/valuenet.json`,
-    /// which exists nowhere. Every agent on every machine therefore resolved to
-    /// `None` and silently played the score-share fallback, and `docs/EVAL.md`
-    /// recorded ten neutral splits on ten maps and concluded "the evaluator is
-    /// good and inert". Treatment and control were the same agent.
-    ///
-    /// This is the FOURTH instance of the same defect class in this codebase:
-    /// #469/#471 fixed it for the champion genome (worth +49 Elo once found), #490
-    /// for the league roster, and `evolve::load_champion_record` — one file away —
-    /// already resolves local → `data/<dir>` → embedded with a long comment
-    /// explaining exactly this failure. There is no embedded arm here yet because
-    /// no artifact is tracked; `data/evolved/` holds only `best.json`. Producing
-    /// one is the other half of the fix, and a resolver that cannot find a file
-    /// that does not exist is still broken.
-    pub fn load(dir: &str) -> Option<ValueNet> {
-        Self::read(Path::new(dir)).or_else(|| Self::read(&Path::new("data").join(dir)))
+    /// Production passes `""`, which `Path::join` leaves as the bare relative
+    /// path the old body used. Tests pass a temporary base so the fallback
+    /// order can be exercised without a process-wide `chdir`, which would make
+    /// them unsafe to run in parallel with everything else in this crate.
+    fn load_under(base: &Path, dir: &str) -> Option<ValueNet> {
+        match read_net(&base.join(dir)) {
+            Artifact::Net(net) => Some(net),
+            Artifact::Invalid => None,
+            Artifact::Missing => match read_net(&base.join("data").join(dir)) {
+                Artifact::Net(net) => Some(net),
+                _ => None,
+            },
+        }
     }
 
     /// Input width this net expects. Feeding it any other width is a
@@ -61,6 +105,13 @@ impl ValueNet {
     /// silently evaluated the wrong one would produce numbers rather than
     /// an error, which is the failure mode this codebase has spent a lot
     /// of effort removing.
+    ///
+    /// The width filter is applied **after** resolution, so this deliberately
+    /// does not go looking for a differently-shaped net in the next tier. A run
+    /// seats `strategic` (25-wide) and `policy_wide` (34-wide) from the same
+    /// directory name; width-shopping across tiers would let those two agents
+    /// read two different artifacts in one run, and the resulting numbers would
+    /// be filed under one provenance line.
     pub fn load_width(dir: &str, width: usize) -> Option<ValueNet> {
         Self::load(dir).filter(|net| net.input_width() == width)
     }
@@ -126,33 +177,123 @@ impl ValueNet {
 
 #[cfg(test)]
 mod tests {
-    use super::ValueNet;
+    use super::{read_net, Artifact, ValueNet};
+    use std::path::{Path, PathBuf};
+
+    /// A structurally valid net of the requested input width, as JSON.
+    ///
+    /// `ValueNet` derives only `Deserialize`, so a test fixture has to be
+    /// written out rather than serialized.
+    fn net_json(width: usize) -> String {
+        let plane = |rows: usize, cols: usize| {
+            let row = format!("[{}]", vec!["0.0"; cols].join(","));
+            format!("[{}]", vec![row; rows].join(","))
+        };
+        let bias = |n: usize| format!("[{}]", vec!["0.0"; n].join(","));
+        format!(
+            "{{\"sizes\":[{width},64,32,1],\"weights\":[{},{},{}],\"biases\":[{},{},{}]}}",
+            plane(width, 64),
+            plane(64, 32),
+            plane(32, 1),
+            bias(64),
+            bias(32),
+            bias(1)
+        )
+    }
+
+    /// A fresh base directory, so these can run beside every other test in the
+    /// crate without a process-wide `chdir`.
+    fn base(tag: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "civvis-valuenet-{tag}-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        dir
+    }
+
+    fn place(dir: &Path, body: &str) {
+        std::fs::create_dir_all(dir).unwrap();
+        std::fs::write(dir.join("valuenet.json"), body).unwrap();
+    }
 
     /// Preserve parity with a Python training artifact when one is present.
+    ///
+    /// The net and its fixture must come from the **same tier**.
+    /// `ValueNet::load` falls back to `data/`, so resolving the net with the
+    /// fallback while reading the fixture from a fixed path would compare a
+    /// committed net against a local fixture and report a parity failure that
+    /// is really a mismatch of artifacts. `read_net` is the exact-tier read.
     #[test]
     fn matches_training_fixture() {
-        let Some(net) = ValueNet::load("evolved") else {
-            return;
-        };
         #[derive(serde::Deserialize)]
         struct Fix {
             input: Vec<f32>,
             output: f64,
         }
-        // ⚠ Resolve the fixture the SAME two ways the net resolves. Hardcoding
-        // "evolved/..." here is the identical cwd-relative defect that kept the
-        // net itself from ever loading: once an artifact is tracked under
-        // `data/evolved/`, `load` would succeed and this read would panic.
-        let raw = std::fs::read_to_string("evolved/valuenet_fixture.json")
-            .or_else(|_| std::fs::read_to_string("data/evolved/valuenet_fixture.json"))
-            .expect("a trained model must include its parity fixture");
-        let fix: Fix = serde_json::from_str(&raw).unwrap();
-        let got = net.eval(&fix.input);
+        for dir in ["evolved", "data/evolved"] {
+            let Ok(raw) = std::fs::read_to_string(format!("{dir}/valuenet_fixture.json")) else {
+                continue;
+            };
+            let Artifact::Net(net) = read_net(Path::new(dir)) else {
+                panic!("{dir} ships a parity fixture but no loadable net beside it");
+            };
+            let fix: Fix = serde_json::from_str(&raw).unwrap();
+            let got = net.eval(&fix.input);
+            assert!(
+                (got - fix.output).abs() < 1e-4,
+                "{dir}: rust {got} vs python {}",
+                fix.output
+            );
+        }
+    }
+
+    /// An in-progress training run must not be shadowed by a committed net.
+    #[test]
+    fn a_local_net_wins_over_the_committed_snapshot() {
+        let base = base("local-wins");
+        place(&base.join("evolved"), &net_json(25));
+        place(&base.join("data").join("evolved"), &net_json(34));
+        let net = ValueNet::load_under(&base, "evolved").expect("the local net resolves");
+        assert_eq!(net.input_width(), 25, "the local net must win");
+    }
+
+    /// The defect this resolution exists for: a process whose working
+    /// directory holds no `evolved/` still gets the committed net.
+    #[test]
+    fn the_committed_snapshot_answers_when_the_working_directory_has_none() {
+        let base = base("data-tier");
+        place(&base.join("data").join("evolved"), &net_json(25));
+        let net = ValueNet::load_under(&base, "evolved").expect("the data/ tier resolves");
+        assert_eq!(net.input_width(), 25);
+    }
+
+    /// A present-but-unloadable artifact stops resolution. Falling through
+    /// would hand back a net the experimenter did not place while
+    /// `elo::builtin_provenance` reported one found.
+    #[test]
+    fn an_unloadable_local_net_does_not_fall_through() {
+        let base = base("invalid-stops");
+        place(&base.join("evolved"), "{ not json");
+        place(&base.join("data").join("evolved"), &net_json(25));
         assert!(
-            (got - fix.output).abs() < 1e-4,
-            "rust {got} vs python {}",
-            fix.output
+            ValueNet::load_under(&base, "evolved").is_none(),
+            "an invalid local artifact must not be silently replaced"
         );
+
+        // Structurally parseable but the wrong shape is the same condition:
+        // `valid` rejects it, so it is the experimenter's broken file, not an
+        // absent one.
+        place(&base.join("evolved"), &net_json(0));
+        assert!(ValueNet::load_under(&base, "evolved").is_none());
+    }
+
+    #[test]
+    fn absent_in_every_tier_is_none() {
+        let base = base("absent");
+        std::fs::create_dir_all(&base).unwrap();
+        assert!(ValueNet::load_under(&base, "evolved").is_none());
     }
 
     #[test]
@@ -172,32 +313,5 @@ mod tests {
         assert!(!network.valid());
         network.weights[0][0].push(f64::NAN);
         assert!(!network.valid());
-    }
-}
-
-#[cfg(test)]
-mod resolver_tests {
-    use super::ValueNet;
-
-    #[test]
-    fn a_missing_net_is_none_from_both_candidate_paths() {
-        // Not a tautology: the point is that `load` no longer panics or reads a
-        // single fixed path. A name that exists in neither place must be None,
-        // and a name is looked for under `data/` too.
-        assert!(ValueNet::load("definitely-not-a-directory-anywhere").is_none());
-    }
-
-    #[test]
-    fn the_shipped_evaluator_directory_is_the_one_every_caller_asks_for() {
-        // ⚠ Every caller passes "evolved" — strategic.rs, policy.rs,
-        // production.rs, elo.rs. This test documents that and will start
-        // returning Some the moment an artifact is tracked at either
-        // `evolved/valuenet.json` or `data/evolved/valuenet.json`, which is how
-        // the second half of this fix will be noticed rather than assumed.
-        let resolved = ValueNet::load("evolved");
-        println!(
-            "evolved/valuenet.json resolves: {}",
-            if resolved.is_some() { "YES" } else { "no artifact tracked yet" }
-        );
     }
 }

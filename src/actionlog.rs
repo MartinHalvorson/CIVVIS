@@ -82,8 +82,26 @@ impl ActionLog {
     }
 
     /// The actions applied since the log was `start` entries long.
+    ///
+    /// This walks back from the head far enough to answer, and no further.
+    /// The obvious spelling — `self.chain().skip(start)` — is the same answer
+    /// but costs the whole game: `chain` materialises every action ever
+    /// applied so that `skip` can discard all but the last handful. The hot
+    /// caller is `plan_general_unit_turn`, which asks for the 0-8 actions one
+    /// unit just took, once per unit per turn, against a log that reaches
+    /// five figures in a long game — so the obvious spelling makes planning
+    /// cost grow with the length of the game behind it.
     pub fn since(&self, start: usize) -> impl DoubleEndedIterator<Item = &(usize, Action)> + '_ {
-        self.chain().into_iter().skip(start.min(self.len)).map(|entry| &entry.applied)
+        let wanted = self.len - start.min(self.len);
+        let mut entries = Vec::with_capacity(wanted);
+        let mut cursor = self.last.as_deref();
+        for _ in 0..wanted {
+            let Some(entry) = cursor else { break };
+            entries.push(entry);
+            cursor = entry.previous.as_deref();
+        }
+        entries.reverse();
+        entries.into_iter().map(|entry| &entry.applied)
     }
 
     /// The chain walked out into oldest-first order.

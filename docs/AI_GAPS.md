@@ -1,219 +1,400 @@
-# Ten gaps between today's AI and world-class Civ 6 play
+# AI status: what works, what fails, and what is still missing
 
-> **Status update (2026-07-22, session F).** The parallel rules wave landed
-> far past this doc's snapshot: full Gathering Storm content (77 techs / 61
-> civics, 53 placed wonders, corps/armies, aircraft, espionage, rock bands),
-> deep diplomacy (deals, alliances, World Congress, emergencies), and a
-> chess-style tactical search in `AdvancedAi` (`tactical_attack_value` +
-> `forcing_reply_line`). Re-scored against that reality: **10 and 7 are
-> essentially closed**, **4 is largely closed** (multi-unit joint planning
-> remains), **9 has recorded baselines now** (`docs/EVAL.md`), and **3 has
-> its first half shipped** (`obs_tensor.rs`: 25 fog-honest feature planes +
-> global vector; action-space enumeration/masking still open). **2+6 have a
-> first search rung** (`strategic.rs`: StrategicAi picks its victory lane by
-> rolling each lane forward and judging the position — builtin `strategic`;
-> paired numbers in EVAL.md). The live frontier, in order: **8 (GPU
-> self-play loop) → 1 (learned policy), deepening 2's macro search as the
-> improvement operator, then 5 (belief state)**. The original ranking below
-> is kept for context.
+This is the current assessment of the game-playing AI. `docs/EVAL.md` is the
+chronological experiment log; older entries there preserve what was believed at
+the time and are not automatically the current conclusion.
 
-State as of 2026-07-22: the engine is complete enough to matter (all six
-victory types, zero ❌ rows in MECHANICS.md, ~27k turns/sec), and the AI
-stack has four rungs — `RandomAi`, `BasicAi` (29 GA-evolved weights,
-anchor-stabilized evolution in `evolve.rs`), `AdvancedAi` (scripted grand
-strategy / campaigns / threat state), and `NeuralAi` (distilled value net
-judging war declarations via rollouts). Evaluation exists (`tournament`,
-`ai_eval` paired runner, `soak`). That is a real foundation — and every rung
-of it is still a scripted bot with garnish. Ranked, most impactful first:
+## First: what “AI” means in CIVVIS
 
-1. **No learned policy.** Everything the AI does turn-to-turn comes from
-   hand-written heuristics; the only learning is 29 scalar weights and one
-   value net consulted for one decision type. World-class play means a policy
-   network trained by self-play RL (AlphaZero/PPO-style) choosing among the
-   engine's actions. The ceiling of the current approach is "best possible
-   scripted bot," which is nowhere near it.
+CIVVIS has no runtime LLM, prompt pipeline, or hosted-model dependency. The
+agents that play the game are local Rust controllers. The browser's AI plan and
+reasoning views display deterministic `PlanReport` and `Journal` records emitted
+by those controllers; they are not generated explanations.
 
-> **Measured update (2026-07-26).** Items 2 and 8 now have numbers rather
-> than plans. `StrategicAi`'s macro search reaches its rollouts about 1.5
-> times per seat per game — half its reviews are answered by cheap priors,
-> and in a *duel* the religious prior answers all of them, so every
-> published duel number for that agent measures a forced lane rather than
-> search. It is under-provisioned: doubling its compute, either as twice
-> the reviews (`strategic_r20`) or twice the horizon (`strategic_h80`),
-> wins significantly more maps at 120-map power (sign p=0.0023 and 0.0025).
-> Quadrupling reviews does not help further. Item 1's learned components,
-> by contrast, are measurably inert: the value net is calibrated
-> (grouped-holdout BCE 0.4058 vs 0.5636 constant) yet never changes a lane
-> choice, and `PolicyAi` ranks unit actions with 25 *empire* features that
-> a move cannot change, so its computed gain is exactly zero on 96% of the
-> candidates it clones. Search is where the returns are today; see
-> `docs/EVAL.md` from 2026-07-26 for the runs.
+There are seven concrete `Ai` implementations, with different purposes:
 
-2. **No search.** `NeuralAi::consider_war` is the only lookahead in the
-   codebase — everything else is greedy. The roadmap's MCTS baseline was
-   never built. Civ turns are combinatorial, so raw MCTS over unit-level
-   actions won't work; the gap is hierarchical search over macro-decisions
-   (settle here, tech path X, war on Y now vs +10 turns) with fast scripted
-   rollouts underneath — exactly the machinery the war check already
-   prototypes, generalized.
+| implementation | purpose | live by default? |
+|---|---|---|
+| `RandomAi` | legal-action baseline | no |
+| `BasicAi` | cheap deterministic heuristic | city-states and barbarians |
+| `AdvancedAi` | stateful hierarchical scripted play | yes, directly or through league variants |
+| `NeuralAi` | value-net-guided war-rollout experiment | no; resolves to `BasicAi` without a net |
+| `StrategicAi` | victory-lane rollout search over `AdvancedAi` | offline league anchor only |
+| `PolicyAi` | one-ply value-net tactical experiment | no; resolves to `AdvancedAi` without a net |
+| `ProductionSearchAi` | per-city build rollout experiment | evaluator-only negative result |
 
-3. **No spatial representation.** `evolve::features()` is 25 global scalars;
-   the map never reaches any learned component. Tactics, city placement, and
-   terrain play are unlearnable without a tile-grid observation (hex conv or
-   transformer) plus per-unit embeddings and action masks. The roadmap's
-   "observation tensors for RL" item is the prerequisite for gaps 1 and 2.
+The generic `Oracle<A>` wrapper is not an entrant. It deliberately cheats by
+granting a subsystem for free so an ablation can measure the maximum headroom in
+that subsystem.
 
-4. **Tactical combat micro is heuristic.** Focus fire, terrain/river/ZOC
-   exploitation, siege escort, retreat-and-heal cycles, kill-securing — all
-   threshold rules today (the barb chase-no-attack bug was this class).
-   Combat micro is where every scripted Civ AI, Firaxis included, bleeds the
-   most Elo; a local battle solver (small search or learned policy over the
-   engaged cluster) is the single biggest per-system win available.
+The supervised exhibition uses `--league auto`: it copies the committed roster
+to a mutable runtime directory and makes a rank-weighted choice from the exact
+table size's top three conservative outright winners. The lower 95% Wilson win
+bound orders that pool; the exact leader/civilization placement rating breaks a
+tie. Seating avoids repeats, exhausts profiled winners before an unprofiled
+fallback, and retains the old placement-only policy until at least three exact
+profiles exist. Those entries are scripted `AdvancedAi` variants and baselines.
+The only searching roster entry, `strategic`, is marked `league_only` and is
+excluded from exhibition and auto-play choices. Without a seated league, every
+non-human major uses stock `AdvancedAi`; minors and barbarians use `BasicAi`.
 
-5. **The AIs cheat on fog.** `BasicAi`/`AdvancedAi` read full `Game` state.
-   A world-class agent plays from `obs::observation(pid)`: belief state over
-   unseen territory, remembered enemy units, inferred opponent science/army
-   from what's visible, scouting valued as information gain. No memory or
-   belief infrastructure exists yet — and honest-obs play is also what makes
-   the agent portable to real Civ 6, which never grants omniscience.
+The repository ships and embeds the 40-gene champion in
+`data/evolved/best.json`. It ships no `valuenet.json`. That distinction matters:
+the genome changes a scripted policy, while a value net would be a learned
+model. `ai_eval` reports the artifact provenance and effective fallback for
+every named entrant.
 
-6. **No long-horizon victory routing.** Rollout horizon is 12 rounds; games
-   run 300-500 turns. `AdvancedAi`'s grand-strategy state picks postures but
-   nothing plans a victory line ("culture win via these 3 wonder cities by
-   T280") and replans as evidence arrives. Credit assignment across
-   hundreds of turns is the hard RL problem here; explicit goal decomposition
-   (victory route → milestones → per-city build orders) is how comparable
-   systems made it tractable.
+Two tools reach the real Civilization VI executable, but neither runs the Rust
+agent unchanged. The grounding mod imports only the economic subset of a league
+genome and leaves tactics to Firaxis' AI. The computer-control mod is a separate
+Lua heuristic controller that issues its own orders. The first has two
+explicitly anecdotal 60-turn strategy-transfer datapoints; the second has no
+completed ladder attempt. They establish integration paths, not external
+strength.
 
-7. **Diplomacy is war/peace only.** No deals, tribute, alliances, joint
-   wars, denouncements, or negotiated peace terms — the only 🟡 in
-   MECHANICS.md that removes an entire strategic dimension. Dominant human
-   play leans on diplomacy constantly (buy time, sell luxuries, bribe wars).
-   Engine work must land first; then the AI needs a valuation model for
-   deals. Also the price of entry for ever playing humans credibly.
+## Where the AI is used well
 
-8. **Training infrastructure doesn't reach the hardware.** `evolve` is a
-   single-machine CPU GA; the value net was trained by an offline script on
-   a CSV. The rig has a 96GB RTX Pro 6000 sitting idle. Needed: parallel
-   self-play workers feeding a GPU trainer (the engine's speed makes this
-   viable today), replay buffers, league play with past champions (the
-   anchor bot is a first step against strategy cycling), and periodic gated
-   promotion — the loop, not just the pieces.
+### 1. Scripted hierarchy coordinates a very large rules surface
 
-9. **Evaluation has no external calibration, and the sim has exploitable
-   seams.** Elo is measured only within the in-house pool; nothing says what
-   "beats AdvancedAi 65%" means against Deity-grade opposition. Worse, a
-   strong optimizer will farm the 🟡 simplifications (score-victory margins,
-   placement-free wonders, simplified congress) — mastering CIVVIS quirks,
-   not Civ 6. Needed: per-victory-type win matrices, exploit-hunting soak
-   analysis, fidelity spot-checks against the wiki, and human games as the
-   ground-truth benchmark.
+`AdvancedAi` is where most effective play lives. It keeps persistent grand
+strategy, victory route, campaign, force-group, settlement, builder, city-role,
+and threat state. Research, civics, governments, policies, diplomacy,
+production, purchases, religion, trade, envoys, Congress, espionage, and unit
+orders consume that shared state instead of behaving as unrelated greedy
+systems.
 
-10. **The late game doesn't exist.** Content stops at renaissance plus a
-    space-race stub: no industrial→information eras, corps/armies, flight,
-    late wonders, promotion effects, apostle combat, or late culture
-    machinery (national parks, rock bands). Half of Civ 6's strategy space —
-    and most of its victory endgames as actually played — is missing, so an
-    agent trained here masters a truncated game. Lowest rank not because it
-    is small but because gaps 1-3 pay off even on the truncated game, and
-    content can land incrementally in parallel.
+Its tactical layer also performs real bounded search. Candidate attacks are
+applied to cloned games and checked against the opponent's best forcing reply.
+`StrategicAi` is therefore not “the only agent that searches”; it is the agent
+that adds periodic macro rollouts.
 
-The through-line: 1-3 are one project (representation → search → learned
-policy), 4-6 are what the learned agent must be good *at*, 7 and 10 are
-engine surface area, and 8-9 are the loop that turns compute into strength
-and proves it. Sequence the first three; the rest parallelize across
-sessions the way the rules batches did.
+The scripted agent has a strong recorded regression result: on the recorded
+six-player 74×46, six-city-state Online benchmark, `advanced` measured +207
+Elo-equivalent against the frozen `advanced_v1` control and passed the promotion
+gate. Separate exact full-game tests complete all six victory conditions without
+injected progress. The first result is evidence of relative strength on that
+profile; the second is evidence of coverage, not human-level skill.
 
-## Sequencing
+### 2. Cheap controllers are used where their cost is appropriate
 
-> **Re-sequenced 2026-07-26 on measurement.** The order below was written
-> before any of these items had numbers. Six search configurations and four
-> learned components have now been measured at 120–400 mirrored maps
-> (`docs/EVAL.md`), and they imply a different order and, more usefully, a
-> single organising principle.
->
-> **Every learned component that failed, failed the same way: its evaluator
-> could not see the decision it was ranking.** Not "was poorly tuned" —
-> could not see it.
->
-> | component | the mismatch | evidence |
-> |---|---|---|
-> | `PolicyAi` tactical | 25 *empire* features cannot change under a unit move | gain exactly 0.0 on 96.4% of 11,347 candidates |
-> | `strategic` value net | blended estimate never flips a lane argmax | 20/20 identical maps; 127 identical reviews |
-> | `Doctrine` axis | commitment margin exceeded the value spread | 0 switches in 16 reviews at the lane margin |
-> | `ProductionSearchAi` | horizon shorter than the decision's payoff | loses 9 maps to 21, p=0.0428 |
->
-> That reframes the ranking. **Item 3 is not a prerequisite for item 1 by
-> argument any more; it is one by measurement.** No amount of training
-> improves a predictor whose inputs are constant across the actions being
-> compared, and the current 25 scalars are constant across every unit move
-> and near-constant across lane choices. Calibration was never the
-> bottleneck: the net trained this session reached grouped-holdout BCE
-> 0.4058 against a 0.5636 constant baseline and still changed nothing.
->
-> **What pays right now is item 2, and it pays through compute rather than
-> sophistication.** The macro search reaches its rollouts about 1.5 times
-> per seat per game, and doubling its budget — as reviews, as horizon, or
-> split across both — wins significantly more maps every time it has been
-> measured (best: 240 maps, 53 map-directions to 15, sign p=4.1e-06). The
-> two *clever* extensions both measured null: a second search axis over
-> play-style genomes, and rotating the projected lane set to buy frequency
-> cheaply. Buy compute before cleverness here.
->
-> **Item 9 was the real blocker for all of it, and is largely closed.** The
-> evaluator now reports which artifacts each entrant actually loaded, how
-> many of its reviews reached its search, how many maps each direction
-> rests on, and runs its batch in parallel. That last one matters most: it
-> was the only batch runner in the repository on a single core, which is
-> why runs were twenty maps, and **twenty-map runs on this evaluator are
-> anti-evidence** — two conclusions published from them inverted at 120
-> maps, in opposite directions. The remaining piece is the promotion gate's
-> fixed-n Wilson criterion, which declined a change carrying an e-value of
-> 19,720 over 400 maps.
->
-> **Amended after measuring item 3's payoff.** Representation was fixed
-> (action visibility 44.5% → 86.1%) and the agent using it got *worse*, not
-> better: `policy_wide` scores 14.2% against `advanced`, an Elo-equivalent
-> of −313, where the blind version scored 45%. The blindness had been
-> suppressing a bad policy, not hiding a good one. So item 3 is necessary
-> and was never the binding constraint; the constraint is that a value net
-> greedily maximised one ply at a time leaves the distribution it was
-> trained on. Item 8 (a self-play loop that retrains on the states the
-> agent visits) therefore moves *before* item 1, not after it.
->
-> Suggested order from here: **8 → 1 → 2's remaining compute → the
-> rest**, with item 3 already done. Item 4 (combat micro) is unranked here because it has never been
-> measured; treat it as unknown rather than cheap. Whatever is attempted,
-> the cheap first move is now standard: check that the evaluator's inputs
-> actually move under the decision, before building anything on top of it.
+`BasicAi` is deterministic, small, and fast. Using it for city-states and
+barbarians avoids paying the persistent-planning cost of a major-civilization
+agent for actors with a narrower job. `RandomAi` remains a clean zero-point for
+legality, determinism, and tournament sanity checks.
 
-The original ordering, kept for context: **9 → 4 → 3 → 2 → 6 → 8 → 1 → 7 → 10 → 5.**
+### 3. The evaluation system finds failures before deployment
 
-Wave one — aim the compass, bank the cheap Elo:
-- **9** first: days of work with existing tools, and everything after is
-  steered by it. Closing exploit seams before any optimizer exists means
-  never training a quirk-farmer.
-- **4** second: self-contained, needs no new representation (material/HP
-  heuristics score the cluster), reuses the clone+rollout machinery
-  `consider_war` already proved. Biggest immediate strength gain and it
-  de-risks search.
+The engine is deterministic and cheaply cloneable. `ai_eval` uses paired maps
+and swapped seats, reports win and terminal-state diagnostics separately, names
+the exact player/map/speed profile, exposes macro-search review counts, and
+prints artifact provenance. Promotion gates are based on wins rather than an
+internal Elo label.
 
-Wave two — the learning stack in dependency order:
-- **3** built fog-honest from day one, which absorbs the cheap half of 5
-  for free (retrofitting fog onto a trained omniscient agent wastes the
-  training).
-- **2** works with the existing 25-feature value net immediately, improves
-  as spatial nets arrive, and is the policy-improvement operator that later
-  generates 1's training data.
-- **6** lands as the top layer of 2's macro-action hierarchy, not a
-  separate project.
-- **8** before 1, because policy training is what needs it.
-- **1** is the payoff, not the starting point.
+That instrumentation has caught several failures that an aggregate win rate
+would hide:
 
-Wave three — widen the game, then close the loop:
-- **7** and **10** are parallel-session rules-batch work; run them
-  concurrently with wave two in wall-clock, but land them before the final
-  expensive training runs (action-space expansions invalidate trained
-  policies).
-- **5**'s remaining half (opponent inference, scouting as information gain)
-  goes last — it only matters once there's a learned agent to consume it.
+- missing model files silently turning named learned agents into scripted ones;
+- duel priors preventing `StrategicAi` from reaching its rollouts;
+- a value function that is predictive but never changes the lane argmax;
+- action features that are visible but reward the wrong causal direction;
+- small-map gains that disappear or reverse on a larger Online game;
+- score-share improvements that do not produce more victories.
+
+The deterministic `Journal` is useful here too: it reports the actual rule,
+candidate, and reason used by the controller, without pretending to be a
+post-hoc natural-language explanation.
+
+### 4. Search, evolution, and learned representations are useful laboratories
+
+On the four-player 24×16 Standard benchmark, deeper/frequent macro search has
+won controlled comparisons: `strategic_deep` beat `strategic` by about +45
+Elo-equivalent in its pre-registered promotion run. The embedded evolved genome
+also beat stock weights by +58 on that source profile. Those are real,
+profile-scoped results.
+
+The learning data surfaces are substantial even though they are not deployed:
+
+- `obs_tensor` supplies 25 fog-honest spatial planes plus public/global values;
+- `selfplay` exports tensors and terminal labels;
+- `decision_features` makes many more action consequences visible;
+- `action_space` stably encodes all 77 action variants and destination context;
+- counterfactual and Q-data tools measure sibling actions without changing the
+  source trajectory.
+
+These tools have answered research questions. They have not yet produced a
+learned controller that wins.
+
+## Where it is failing
+
+### 1. Production agents cheat on fog
+
+`BasicAi` and production `AdvancedAi` read the full `Game`, including
+information a seated player cannot observe. The HTTP observation and spatial
+tensor honor fog, but the production policy does not consume either. This
+prevents a fair-play claim and removes scouting, memory, and uncertainty from
+the decision problem. `advanced_belief_pressure` now proves one bounded
+evaluator-only use of player-visible memory in the repaired city-pressure path,
+but it neither replaces the controller's other full-state reads nor cleared its
+whole-game promotion gate.
+
+### 2. No learned policy ships
+
+`tools/train_spatial.py` writes a PyTorch checkpoint that no Rust agent loads.
+The scalar value-net trainer can write `evolved/valuenet.json`, but that file is
+generated, untracked, and absent from the shipped tree. In a normal checkout:
+
+| requested name | effective behavior |
+|---|---|
+| `neural` | champion-weight `BasicAi` |
+| `policy` | champion-weight `AdvancedAi` |
+| `strategic` | macro search evaluated by score share (`strategic_score`) |
+
+Calling these names “learned agents” without stating the artifact is therefore
+incorrect.
+
+### 3. Predicting outcomes has not produced a safe action objective
+
+The 25-feature value net uses full-state empire aggregates. Historical models
+beat a constant predictor on grouped held-out games, but that establishes
+correlation with eventual wins, not the consequence of a candidate action.
+
+The tactical policy made the distinction measurable:
+
+- With 25 features, 96% of evaluated tactical candidates left the value
+  unchanged, so the learned layer mostly declined to act.
+- A 34-feature vector raised action visibility from 44.5% to 86.1%.
+- The resulting `policy_wide` agent then won only 14.2% against `advanced`,
+  about −313 Elo-equivalent.
+- It maximized enemy contact because contact correlates with strong empires
+  pressing an attack in the training games. Chosen moves increased contact far
+  more than the average legal move while losing material.
+- Freezing exactly the two contact terms restored 50.0%, causally confirming
+  the mechanism. It did not create an improvement.
+
+The first learned advantage/ranking heads also failed to transfer across
+profiles or confidence gates. Destination context can imitate which move the
+scripted expert chose, but imitation and value prediction are not evidence that
+the move wins more games.
+
+### 4. Production rollout search optimizes the wrong endpoint
+
+`ProductionSearchAi` won 45.0% against the scripted governor (9 paired-map
+directions for, 21 against, sign p=0.0428). Replacing score share with the scalar
+value net changed one game. Raising the horizon ceiling from 40 to 200 left 54
+of 56 choices unchanged.
+
+The evaluator can distinguish the builds and sees them after their payoff has
+landed; it still ranks them worse than the hand-written sequencing. The failure
+is the unresolved-game proxy, not simply a short horizon.
+
+### 5. Search and evolution overfit their measurement profile
+
+Results that passed at four players on 24×16 Standard did not transfer to the
+recorded six-player 74×46, six-city-state Online benchmark:
+
+| treatment | small Standard profile | 6p 74×46, 6 city-states, Online |
+|---|---:|---:|
+| evolved genome vs stock | +58, PASS | −9, inconclusive |
+| `strategic` vs `advanced` | +117, PASS | −47, wins inconclusive; terminal score worse |
+| cheap search vs `advanced` | +16 | −63, significant against |
+| `advanced` vs `advanced_v1` | +114 | +207, PASS |
+
+The final row shows that the larger profile can resolve a real difference; it
+is not merely compressing every comparison. The completed 300-map confirmation
+for `strategic` at the larger profile does not exist, so neither “search wins in
+deployment” nor “search is a proven regression” is supported.
+
+The live exhibition now rotates through 4–10 seats, matching stock map sizes,
+map scripts, and flat/planet shapes. That makes any single-profile “strongest
+agent” label even less defensible.
+
+### 6. The search surface is narrower than the policy and often bypassed
+
+The active gene vector is 40 entries. The policy appetites and the policy-deck
+and dedication selectors stored beside it in `Weights` are not genes. Research
+order, city roles, strategic gates, and many tactical decisions are also outside
+the vector.
+
+An older report said “11 of 48 genes” were silent, but the implementation's
+vector has 40 entries and that report's table names only ten. Treat the ratio as
+a historical bookkeeping error, not a current genome fact. The supported
+finding is narrower: causal probes have found multiple parameters that do not
+change the sampled `AdvancedAi` games, often because the live hierarchical path
+bypasses the `BasicAi` consumer. Silence on a finite sample is not proof of
+global inertness.
+
+Standalone evolution still has an objective problem. Score share is cheap and
+correlated with winning, but controlled changes have improved score
+significantly without changing wins. Direct win-rate selection is too noisy for
+its cheap per-genome fitness estimate, so its separate win-based promotion gate
+remains essential.
+
+The continuous league no longer shares that mistake: parent choice, niche
+elites, and retirement now use conservative Wilson bounds on outright wins at
+the current round's exact table size, with placement Glicko only breaking a
+tie. Retained raw matches backfill old rosters without assigning an invented
+size to older aggregate history. On the production log, mixed-history evidence
+would breed `advanced_evolved` then `advanced`; exact six-player evidence ranks
+`g28-28` 12/33 (22.2% lower bound), `g676-58` 5/12 (19.3%), then `advanced`
+7/27 (13.2%). That aligns the objective; it does not yet establish that the
+next offspring generation improves.
+
+### 7. Search is not live-validated and is materially more expensive
+
+One `StrategicAi` among five scripted seats measured about 6.4× the all-scripted
+game-turn cost on three early-game seeds; an all-searching fleet measured about
+29×. That makes a single offline entrant feasible, not free. The shipped roster
+keeps it as a `league_only` anchor so the league can compare against an axis
+breeding cannot create without putting that unresolved cost/strength trade into
+the exhibition.
+
+The original structural probe overstated joint-search headroom because it
+reconstructed the lane pass under the doctrine in force; the live lane pass
+uses the unchanged base genome. Against that corrected comparator, a
+deployment-profile run on 20 mirrored 6p 74×46 Online maps split **every map**:
+20/40 wins per arm, +0 Elo-equivalent (95% −148 to +148). Joint search changed
+only 10/268 eligible rollout reviews (3.7%) while evaluating 28 branches rather
+than the sequential policy's 11. That interval does not prove parity, but it
+does not justify buying the extra rollout compute. The treatment remains an
+evaluator-only control and production stays sequential.
+
+### 8. Internal ratings are not external strength
+
+League Glicko and tournament Elo compare agents inside CIVVIS. Difficulty
+handicaps test how the same internal controller responds to bonuses; they do not
+calibrate it against a human or Firaxis' AI. The separate Civilization VI Lua
+controller has no recorded completed ladder attempt in `CIV6_LADDER.md`.
+
+The fixed-profile, fixed-anchor tournament ledger now gives internal versions a
+replayable longitudinal baseline: compare the order-independent direct Elo and
+its pair-score interval against `advanced_v1` at the same game count and under
+the profile-bound `advanced / advanced_v1 / basic / random` controller roles.
+The canonical 40-game ledger records `advanced-20260730` at direct 1708.2
+against the 1500 anchor from a 31/40 pair score (95% Elo 1588.7–1841.0); its
+order-sensitive online path is separately labelled 1588.5. The rules
+fingerprint, four-player 60×38 Standard profile, source-pinned anchor, raw
+games, and immutable controller identities make that number replayable rather
+than portable to a different experiment. This fixes an internal measurement
+problem; it does not supply the missing external rung.
+
+Claims such as “world-class,” “superhuman,” or “three times stronger” are not
+supported. The defensible form is always: agent A beat agent B, on a named
+profile, under a named decision rule.
+
+## 2026-07-31 ranked intervention audit
+
+The first implementation set ranked envoy acquisition first, strategy
+commitment second, and a cross-profile promotion gate third. The ordering came
+from replicated headroom rather than code aesthetics: suzerainty has the
+largest oracle win-rate ceiling, and the deployment evaluator records 2–3
+unanchored midgame plan changes per seat-game.
+
+Both direct hypotheses were implemented behind independent evaluator arms and
+then rejected as defaults. Influence infrastructure and influence-aware policy
+selection increased the named resource in some compact samples, but component
+controls could not attribute the promising deployment direction to either
+mechanism. Corrected trigger-scoped commitment reliably reduced churn and
+pointed +26 on compact and +35 at deployment, but both 20-map results were
+inconclusive; deployment therefore failed the strength gate. These are useful
+bounded results: more envoys are not automatically worth their opportunity
+cost, and less plan motion is not yet established as stronger adaptation.
+
+The systematic item did survive. `ai_eval --matrix` now requires a strength
+PASS on the six-player Online deployment and no statistically established
+regression on the compact Standard safety profile. Insufficient evidence fails
+closed, both profiles run concurrently under one job budget, and matrix mode
+owns all outcome-affecting profile flags. This closes the specific process hole
+that allowed compact-only gains to acquire unqualified “stronger” labels.
+
+A fresh 40-map comparison of retained `advanced` with `advanced_v1` on that
+nine-city-state, randomized-civilization deployment profile was itself
+inconclusive: 47.5% (−17 Elo-equivalent, 95% CI −124..+89). That does not erase
+the recorded +207/PASS result on the older six-city-state fixed-roster profile,
+but it does prevent a profile-independent “top-tier” claim. The strongest
+supported conclusion is that `advanced` remains the production incumbent and
+no tested replacement cleared the deployment gate.
+
+## Next priorities
+
+1. **Fog-honest major controller.** Extend the bounded belief-pressure use into
+   a major civilization that consumes the existing observation, memory, and
+   belief surfaces end-to-end. This is the largest remaining rules-integrity
+   gap and creates honest uncertainty for every later policy improvement.
+2. **Action-conditioned return with external-profile calibration.** Expand the
+   counterfactual Q/advantage corpus well beyond the current 52-game sample,
+   reserve the deployment profile as an untouched calibration set, and require
+   selective abstention when the model is out of distribution. Do not greedily
+   maximize another state-outcome correlate.
+3. **Cost-aware expansion search.** Expansion is the second replicated oracle
+   ceiling, but seven decision treatments failed because the oracle removed
+   settler production and population costs. Search or value the full
+   build-settle-payback sequence instead of raising a city target again.
+4. **Policy-deck transfer confirmation.** The existing live deck, not the new
+   influence terms, produced the clearest direction in the envoy decomposition.
+   Its first 20-map matrix scored 53.8% (+26) at deployment with 52.1% terminal
+   score, while compact safety was inconclusive rather than harmful. Extend the
+   same pre-declared seed prefix until the anytime gate resolves; promote only
+   if deployment passes and compact continues not to retain the incumbent.
+5. **External calibration.** Complete retained games against Firaxis' AI and
+   humans with named settings. Internal Elo remains an internal ruler.
+
+For implementation details see `docs/AI_GUIDE.md`; for the run-by-run evidence
+and its corrections see `docs/EVAL.md`; for the rating/seating contract see
+`docs/LEAGUE.md`.
+
+## 2026-07-31 full-prefix resolution
+
+The fixed-prefix follow-through strengthens the audit's negative conclusion.
+Neither a 120-map direct envoy-production treatment nor a 300-map live-policy
+control cleared the unchanged matrix rule. Both pointed +30 Elo-equivalent on
+deployment, and the envoy treatment raised deployment envoys from 14.3 to 19.3
+and suzerainty share from 0.41 to 0.70, but both Wilson lower bounds still
+included 50%. Strategy commitment regressed over 120 maps, and champion-weight
+commitment regressed sharply. Stock `advanced` therefore remains the production
+incumbent by failed-replacement logic, not by a claim of universal superiority.
+
+The work also found a measurement defect with direct implications for future
+research: extending `--pairs` used to move the deployment seed prefix because
+the profile offset depended on sample size. Matrix profile seeds now have a
+constant stride. Effective controller aliases and champion consumption are also
+canonicalized through the same table used by construction; degraded artifacts
+and effective self-play fail closed in promotion mode.
+
+## Next ranked work after the identity implementation
+
+The former first item is now landed: every selectable arm has a typed
+`AgentSpec`, evaluator preflight prints its actual comparison axes, and an
+unlabelled multi-axis result cannot start. The remaining work should build on
+that boundary rather than re-running the old stringly comparisons.
+
+1. **Make artifact-dependent evaluation strict by default.** The typed boundary
+   prevents an evaluator from misnaming a fallback, but a learned entrant can
+   still degrade when a model is absent. Give strict evaluation construction a
+   fallible path and reserve the existing game-start fallback for callers that
+   explicitly need a game to continue. This is R2 in `EVAL_INTEGRITY.md`.
+2. **Test one rational composite, pre-registered.** Combine the live policy deck
+   with direct envoy production, because the two controls independently moved
+   deployment outcomes and the latter demonstrably moved the resource. Use new
+   stable, disjoint 300+ map prefixes, preserve compact safety, and record build
+   opportunity costs. Mark it as a deployment comparison; do not attribute its
+   outcome to either component or run a parameter sweep on the confirmation
+   seeds.
+3. **Build a fog-honest major controller.** Extend the now-tested bounded
+   belief-pressure surface into a major civilization that consumes observation,
+   memory, and belief end-to-end. This remains the largest rules-integrity gap
+   and is prerequisite to honest learned policies.
+4. **Learn action-conditioned advantage with abstention.** Expand the
+   counterfactual action corpus, reserve deployment as an untouched calibration
+   set, and fall back to scripted play out of distribution. A state-value argmax
+   is not an action-value policy.
+5. **Search the full expansion investment.** Model settler production,
+   population, escort, travel, settlement, and payback together. The oracle
+   ceiling is large, but seven city-target treatments failed because the oracle
+   removed those costs.
+6. **Price strategic search on deployment.** Compare the searching controller
+   with a genome-matched sequential control and keep it out of the live league
+   unless its measured gain justifies its roughly 6.4× turn cost.
+
+This supersedes the ordering immediately above: evaluator trust comes first,
+and the now-resolved policy/envoy prefixes justify one bounded composite before
+broader search.

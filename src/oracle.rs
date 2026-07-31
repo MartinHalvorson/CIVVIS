@@ -36,9 +36,15 @@ use crate::Pos;
 /// ever be assigned to.
 const CITY_WORK_RADIUS: usize = 3;
 
-/// The city count the expansion grant stops at — the same six
-/// `StrategicPlan::desired_cities` aims at, so the grant removes the cost of
-/// the agent's own appetite rather than inventing a larger one.
+/// The city count the expansion grant stops at.
+///
+/// This is an oracle ceiling, not a claim about the live plan. `AdvancedAi`
+/// computes a dynamic `desired_cities` that averaged 3.83 on the small
+/// evaluation profile and 5.00 on the measured 6p/74x46 profile; granting six
+/// cities can therefore exceed the policy's own target. The oracle measures
+/// expansion headroom, including a too-low target, rather than affordability
+/// of the existing plan alone.
+///
 /// `pub` so `src/bin/rebate_census.rs` can report when a seat stopped being
 /// eligible for a payout, which is the length of the window both grants act in.
 pub const EXPANSION_TARGET: usize = 6;
@@ -181,15 +187,16 @@ pub enum Grant {
     /// foundation is lifted first so the engine will enumerate alternatives —
     /// and its own tile — instead of reporting the site as taken.
     Siting,
-    /// A free Settler whenever the seat is below its city target and has none
-    /// in flight.
+    /// A free Settler whenever the seat is below the fixed six-city oracle
+    /// ceiling and has none in flight.
     ///
     /// Bounds **expansion**, which every other city measurement is conditional
     /// on. #532/#534/#542/#553 bound what a city works, owns, builds districts
     /// on and stands on — all *per city*, and all saturated or null. None of
-    /// them asks whether the empire has enough cities in the first place, and
-    /// the evals say it does not: seats finish four-player games holding
-    /// **2.1 to 2.8** cities while `StrategicPlan::desired_cities` targets six.
+    /// them asks whether the empire has enough cities in the first place. The
+    /// live plan has a dynamic target, measured at 3.83 on the small profile
+    /// and 5.00 on a large six-player profile; the oracle can therefore grant
+    /// beyond the plan as well as remove Settler cost and population cost.
     ///
     /// A settler costs production and a point of population, and needs
     /// `pop >= 2` to build at all, so expansion is paid for out of exactly the
@@ -199,8 +206,8 @@ pub enum Grant {
     ///
     /// It grants only the unit. Where to settle is still the agent's decision,
     /// walked by its own settler logic — which #553 measured taking 99.9% of
-    /// the value on offer — so this is a bound on expansion *rate* and not on
-    /// siting.
+    /// the value on offer — so this is a bound on expansion target and *rate*,
+    /// not on siting.
     Expansion,
     /// What a Settler *costs*, handed to the capital on exactly the schedule
     /// [`Grant::Expansion`] hands over a Settler — and no Settler.
@@ -370,20 +377,23 @@ pub enum Grant {
     IdleReserve,
     /// Suzerain of every city-state this empire has met.
     ///
-    /// Bounds the envoy layer, which nothing in `docs/` has measured. It is the
-    /// direct analogue of `Taker`: that grant puts the piece where perfect play
-    /// would have put it, and this one puts the envoys where perfect play would
-    /// have put them. It grants an *outcome*, not a resource — no extra envoys
-    /// are created anywhere else, and a rival's own envoys are left untouched.
+    /// Bounds the complete Envoy acquisition-and-allocation bundle. Unlike a
+    /// conserved-stock policy test, it creates the focal raw Envoys needed for
+    /// control and places them perfectly while leaving the free pool, focal
+    /// placements elsewhere, and every rival untouched. The result can
+    /// prioritize the Envoy layer, but cannot say whether acquisition or
+    /// allocation supplied the headroom; `raw_envoys_granted` makes the
+    /// resource grant explicit.
     ///
     /// The engine's rule is `envoys >= 3` and strictly more than every other
-    /// major, so this raises the seat to one above the best rival at each met
-    /// city-state and no further. Ties lose under `suzerain_of_uncached`, which
-    /// is why it is `+1` rather than a match.
+    /// major. The grant finds the smallest raw count whose engine-effective
+    /// value reaches one above the best rival, so Messenger and Puppeteer are
+    /// applied exactly once. A discrete multiplier may jump past the target,
+    /// but no additional raw Envoy is added beyond that minimum.
     ///
-    /// If this reads large, the envoy layer is high-leverage and worth work,
-    /// and `advanced_envoys` is where that work goes. If it reads null, 48
-    /// city-states are decoration and the axis closes.
+    /// If this reads large, the Envoy layer is high-leverage and separately
+    /// conserving stock decides whether work belongs in allocation or income.
+    /// If it reads null, city-state control is not a binding subsystem.
     Suzerain,
     /// Every subsystem grant at once.
     ///
@@ -470,6 +480,13 @@ pub struct Oracle<A: Ai> {
     /// failure the provenance work in `elo.rs` exists to prevent — so the
     /// harness reports it rather than letting a null be ambiguous.
     fired: u64,
+    /// Raw Envoys created by `Grant::Suzerain`.
+    ///
+    /// This provenance is separate from `fired`, which counts changed
+    /// city-states. The grant does not conserve the focal empire's stock: it
+    /// is a compound acquisition-plus-allocation ceiling, and future reports
+    /// must be able to say how much resource it created.
+    raw_envoys_granted: u64,
 }
 
 impl<A: Ai> Oracle<A> {
@@ -478,12 +495,18 @@ impl<A: Ai> Oracle<A> {
             inner,
             grant,
             fired: 0,
+            raw_envoys_granted: 0,
         }
     }
 
     /// Times the grant changed the position.
     pub fn fired(&self) -> u64 {
         self.fired
+    }
+
+    /// Raw focal Envoys created by the compound Suzerainty ceiling.
+    pub fn raw_envoys_granted(&self) -> u64 {
+        self.raw_envoys_granted
     }
 
     /// Walk every unit to the top of its unlocked upgrade chain, free, with
@@ -648,9 +671,8 @@ impl<A: Ai> Oracle<A> {
     ///
     /// One at a time, which is the engine's own standing constraint on
     /// expansion rate, so this removes the *cost* of a settler without also
-    /// removing the serialization. The target is `EXPANSION_TARGET`, the same
-    /// six `StrategicPlan::desired_cities` aims at, so the grant stops exactly
-    /// where the agent's own appetite stops rather than expanding forever.
+    /// removing the serialization. `EXPANSION_TARGET` is an oracle ceiling,
+    /// not the live plan's dynamic appetite; see the constant's documentation.
     fn grant_expansion(&mut self, g: &mut Game, pid: usize) {
         let Some(home) = expansion_payout_city(g, pid) else {
             return;
@@ -877,19 +899,21 @@ impl<A: Ai> Oracle<A> {
         }
     }
 
-    /// Put this empire one envoy above the best rival at every met city-state.
+    /// Give this empire the minimum raw stock needed to control every met
+    /// city-state.
     ///
-    /// Reads every rival's standing through `envoys_at`, which includes the
-    /// Amani governor's bonus, so the target is the *effective* count the
-    /// suzerainty rule compares rather than the raw one. Writes the raw list,
-    /// because that is the only thing an agent can normally influence.
+    /// This is deliberately a compound acquisition-plus-allocation ceiling:
+    /// it creates focal raw Envoys without consuming the free pool or moving a
+    /// previous placement. Rival standings and the focal target are effective
+    /// counts through `envoys_at`, but the stored table is raw. Search that
+    /// engine method for the smallest raw count that reaches the target so
+    /// Messenger and Puppeteer are applied exactly once rather than writing an
+    /// effective target into raw stock and applying Amani again.
     fn grant_suzerain(&mut self, g: &mut Game, pid: usize) {
         let minors: Vec<usize> = g
             .players
             .iter()
-            .filter(|minor| {
-                minor.is_minor && minor.alive && !minor.is_barbarian && minor.id != pid
-            })
+            .filter(|minor| minor.is_minor && minor.alive && !minor.is_barbarian && minor.id != pid)
             .map(|minor| minor.id)
             .filter(|minor| g.has_met(pid, *minor))
             .collect();
@@ -906,13 +930,32 @@ impl<A: Ai> Oracle<A> {
             if g.envoys_at(pid, minor) >= want {
                 continue;
             }
-            let Some(seat) = g.players.get_mut(pid) else {
-                continue;
-            };
-            match seat.envoys.iter_mut().find(|(at, _)| *at == minor) {
-                Some((_, count)) => *count = want,
-                None => seat.envoys.push((minor, want)),
+
+            let current_raw = g.players[pid]
+                .envoys
+                .iter()
+                .find(|(at, _)| *at == minor)
+                .map(|(_, count)| *count)
+                .unwrap_or(0);
+            let mut required_raw = None;
+            // Raw `want` always suffices because Amani's virtual contribution
+            // is nonnegative. Mutating through the candidates is safe here:
+            // the grant runs before the wrapped controller opens a query-memo
+            // scope, and the final candidate is the only externally visible
+            // state.
+            for candidate in current_raw + 1..=want {
+                let seat = &mut g.players[pid];
+                match seat.envoys.iter_mut().find(|(at, _)| *at == minor) {
+                    Some((_, count)) => *count = candidate,
+                    None => seat.envoys.push((minor, candidate)),
+                }
+                if g.envoys_at(pid, minor) >= want {
+                    required_raw = Some(candidate);
+                    break;
+                }
             }
+            let required_raw = required_raw.expect("raw target must reach effective target");
+            self.raw_envoys_granted += (required_raw - current_raw) as u64;
             self.fired += 1;
         }
     }
@@ -1095,8 +1138,9 @@ impl<A: Ai> Ai for Oracle<A> {
 mod tests {
     use super::{Grant, Oracle, CITY_WORK_RADIUS, EXPANSION_TARGET, IDLE_RESERVE_TURNS};
     use crate::ai::{AdvancedAi, Ai};
-    use crate::game::{Game, Item};
+    use crate::game::{Game, GovernorState, Item};
     use crate::Pos;
+    use std::collections::BTreeSet;
 
     #[test]
     fn grant_ids_round_trip() {
@@ -1889,11 +1933,72 @@ mostly inert and a null from it would say nothing",
         assert!(ever_took, "no confiscation was ever observed");
     }
 
+    #[test]
+    fn the_suzerain_grant_uses_minimal_raw_stock_under_amani() {
+        let game = Game::new_full(2, 26, 16, 8_111, 200, 1, false);
+        let minor = game
+            .players
+            .iter()
+            .find(|player| player.is_minor && !player.is_barbarian)
+            .unwrap()
+            .id;
+        let city_state = game.player_city_ids(minor)[0];
 
-    /// The suzerainty grant must actually take suzerainties, must take them at
-    /// every met city-state, and must not touch a rival's envoys or anything
-    /// else. A grant that also moved Gold would attribute treasury's very large
-    /// headroom to diplomacy.
+        let fixture = |puppeteer: Option<bool>| {
+            let mut game = game.clone();
+            game.turn = 100;
+            game.players[0].met.insert(minor);
+            game.players[minor].met.insert(0);
+            game.players[1].envoys = vec![(minor, 5)];
+            if let Some(puppeteer) = puppeteer {
+                game.players[0].governor_roster.insert(
+                    "amani".to_string(),
+                    GovernorState {
+                        city: Some(city_state),
+                        assigned_turn: 0,
+                        disabled_until: 0,
+                        promotions: if puppeteer {
+                            BTreeSet::from(["puppeteer".to_string()])
+                        } else {
+                            BTreeSet::new()
+                        },
+                    },
+                );
+            }
+            game
+        };
+
+        for (puppeteer, expected_raw) in [(None, 6), (Some(false), 4), (Some(true), 1)] {
+            let mut game = fixture(puppeteer);
+            let free = game.players[0].envoys_free;
+            let rival = game.players[1].envoys.clone();
+            let gold = game.players[0].gold;
+            let faith = game.players[0].faith;
+            let mut oracle = Oracle::new(AdvancedAi::new(), Grant::Suzerain);
+
+            oracle.grant_suzerain(&mut game, 0);
+
+            let raw = game.players[0]
+                .envoys
+                .iter()
+                .find(|(at, _)| *at == minor)
+                .map(|(_, count)| *count)
+                .unwrap_or(0);
+            assert_eq!(raw, expected_raw, "Amani mode {puppeteer:?}");
+            assert_eq!(game.envoys_at(0, minor), 6, "Amani mode {puppeteer:?}");
+            assert_eq!(game.suzerain_of(minor), Some(0));
+            assert_eq!(oracle.fired(), 1);
+            assert_eq!(oracle.raw_envoys_granted(), expected_raw as u64);
+            assert_eq!(game.players[0].envoys_free, free);
+            assert_eq!(game.players[1].envoys, rival);
+            assert_eq!(game.players[0].gold, gold);
+            assert_eq!(game.players[0].faith, faith);
+        }
+    }
+
+    /// The compound suzerainty ceiling must actually take every met state and
+    /// may create only focal raw Envoys. Moving Gold, Faith, or rival stock
+    /// would bundle a second resource axis into the result.
     #[test]
     fn the_suzerain_grant_fires_and_only_moves_its_own_envoys() {
         let mut g = Game::new(4, 28, 18, 8_110, 200, 4);

@@ -1,7 +1,10 @@
-//! NeuralAi: champion-weight BasicAi play with value-net-guided strategy.
-//! War declarations are decided AlphaZero-style-in-miniature: clone the game,
-//! roll each branch forward with fast scripted AIs, and let the learned value
-//! net judge the resulting positions.
+//! NeuralAi: an experimental value-net-guided war decision on top of BasicAi.
+//!
+//! It clones peace and war branches, rolls each forward with scripted AIs, and
+//! lets a compatible 25-feature state-value net judge unresolved endpoints.
+//! No value net ships with CIVVIS; the `neural` builtin factory therefore
+//! returns champion-weight `BasicAi` in a normal checkout. This module is a
+//! research surface, not the production major-civilization controller.
 use crate::ai::{Ai, BasicAi, Weights};
 use crate::evolve::features;
 use crate::game::{Action, Game};
@@ -44,16 +47,25 @@ impl NeuralAi {
         }
     }
 
+    fn war_candidates(g: &Game, pid: usize) -> Vec<usize> {
+        g.players
+            .iter()
+            .filter(|other| {
+                other.id != pid
+                    && other.alive
+                    && !other.is_minor
+                    && !other.is_barbarian
+                    && g.has_met(pid, other.id)
+            })
+            .map(|other| other.id)
+            .collect()
+    }
+
     fn consider_war(&mut self, g: &mut Game, pid: usize) {
         if !g.turn.is_multiple_of(self.every) || g.player_city_ids(pid).len() < 2 {
             return;
         }
-        let others: Vec<usize> = g
-            .players
-            .iter()
-            .filter(|o| o.id != pid && o.alive && !o.is_minor && !o.is_barbarian)
-            .map(|o| o.id)
-            .collect();
+        let others = Self::war_candidates(g, pid);
         if others.is_empty() || others.iter().any(|o| g.is_at_war(pid, *o)) {
             return;
         }
@@ -83,5 +95,22 @@ impl Ai for NeuralAi {
             self.consider_war(g, pid);
         }
         self.base.take_turn(g, pid);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::NeuralAi;
+    use crate::game::Game;
+
+    #[test]
+    fn war_candidates_include_only_met_major_civilizations() {
+        let mut game = Game::new_full(3, 24, 16, 90_735, 120, 0, false);
+        for player in 0..game.players.len() {
+            game.players[player].met.clear();
+        }
+        game.record_contact(0, 2);
+
+        assert_eq!(NeuralAi::war_candidates(&game, 0), vec![2]);
     }
 }

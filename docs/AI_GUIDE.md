@@ -3,6 +3,44 @@
 The engine exists so you can develop advanced AI strategies against a
 Civ-6-like game without a UI in the loop.
 
+## Runtime status
+
+CIVVIS does not use a language model at runtime. Its game agents are local Rust
+controllers, and the observer's plan/reasoning feed is a deterministic journal
+of their decisions rather than generated prose.
+
+Keep deployment, builtins, and evaluator arms separate when describing the AI:
+
+| surface | controller in a normal checkout |
+|---|---|
+| major civilization, no seated league | stock `AdvancedAi` |
+| supervised exhibition | rank-weighted sample from the current table size's top three conservative outright winners; leader/civilization placement rating breaks equal win bounds |
+| city-state or barbarian | `BasicAi` |
+| human-seat auto-play | selected live roster entry, with scripted builtin fallbacks |
+| `neural` / `policy` | `BasicAi` / champion-weight `AdvancedAi` fallback because no value net ships |
+| `strategic` | champion-weight `StrategicAi` using score-share rollouts; offline `league_only` anchor, not an exhibition seat |
+
+The shipped tree contains and embeds `data/evolved/best.json`; it contains no
+`valuenet.json`. `builtin_provenance` and `ai_eval` report the effective
+controller after those fallbacks. The exhibition supervisor uses `--league
+auto`, seeds a mutable runtime roster from `data/league`, and excludes
+`league_only` entries from live seating. Without a league, the server uses
+stock `AdvancedAi` for every non-human major.
+
+There are seven concrete `Ai` implementations: `RandomAi`, `BasicAi`,
+`AdvancedAi`, `NeuralAi`, `StrategicAi`, `PolicyAi`, and
+`ProductionSearchAi`. They are not a linear strength ladder.
+`ProductionSearchAi` is a retained negative result, while the generic
+`Oracle<A>` wrapper is diagnostic-only and cannot be selected as a rated
+entrant.
+
+The real Civilization VI tooling does not transplant this controller whole.
+`tools/civ6_strategy.py` exports the economic subset of a parameterized league
+strategy while Firaxis' AI handles the rest. `tools/civ6_control` is a separate
+Lua heuristic seat controller. Its generated ladder currently contains no
+completed attempt; neither bridge is external strength evidence for
+`AdvancedAi`.
+
 ## In-process Rust agents
 
 Implement the `Ai` trait; you get the full `Game` API (`legal_actions`,
@@ -24,8 +62,9 @@ let mut ais = AdvancedAi::fleet(&g);
 run_game(&mut g, &mut ais);
 ```
 
-`AdvancedAi` is the default major-civilization agent. It maintains persistent
-grand strategy, victory, campaign, force-group, settlement, builder, and threat
+`AdvancedAi` is the default major-civilization agent when no league strategy
+is seated. It maintains persistent grand strategy, victory, campaign,
+force-group, settlement, builder, and threat
 state; coordinates research, civics, policies, governments, Secret Societies,
 diplomacy, production, spending, religion, trade, and unit orders; and falls
 back to the stable city governor for routine production. `advanced_v1`
@@ -238,8 +277,11 @@ independent-unit AI.
 
 ## Genetic strategy evolution
 
-`Weights` is a complete genome for the advanced agent. Alongside economy,
-diplomacy, production, and exchange evaluation, it includes command radius,
+`Weights::to_vec` exposes a 40-gene search surface for part of the advanced
+agent. It is not a complete encoding of the policy: research ordering, city
+roles, many strategic gates, policy-deck mode, and dedication choice remain
+hand-written or live outside the vector. Alongside economy, diplomacy,
+production, and exchange evaluation, the vector includes command radius,
 muster radius/readiness, cohesion, focus fire, screening, role spacing,
 objective pressure, local-superiority caution, and withdraw/rejoin thresholds.
 
@@ -262,23 +304,148 @@ records training and holdout progress, and `dataset.csv` feeds value training.
 Old checkpoints load with defaults for newly introduced genes and validation
 metadata.
 
+The continuous league and live exhibition have a different **selection**
+contract from the placement ladder. Glicko continues to rate full placement
+because that is useful for matchmaking and display, but genome parents, niche
+elites, retirement, and live seeded seating are ordered first by 95% Wilson
+bounds on **outright wins at the current table size**. A
+leader/civilization's placement rating breaks an equal live win bound. A
+two-player win rate is not compared as though its parity rate matched a six-
+or eight-player table. The roster checkpoints games and wins by seat count;
+old rosters recover the retained raw portion from `matches.csv`, preserve
+unreconstructable prior games only in the all-history totals, and show both in
+`--standings`. Live seating requires enough exact evidence to fill its entire
+top-three sample; a new or unmigrated roster otherwise retains the old
+placement-only policy. Once that evidence bar is met, seating exhausts the
+exact-profile entrants before falling back to unprofiled placement candidates,
+so removing the first pick cannot switch the next seat back to a different
+objective. This prevents a safe second-place specialist from breeding or being
+exhibited because placement compressed who won, a duel-heavy entrant from
+winning selection because its wins were easier to obtain, and a two-game lucky
+streak from outranking a settled winner.
+The `strategic_deep_league` transfer control uses the same conservative
+outright-win objective on the committed snapshot; the fixed-profile tournament
+below remains the instrument for a fully standardized longitudinal comparison.
+The standalone `evolve` fitness above still uses its cheaper score/combat proxy;
+its separate promotion gate remains the point where wins decide shipment.
+
 ## Elo tournaments
 
 ```bash
-civvis tournament --ais advanced,basic --games 40 --players 4
+civvis tournament \
+  --ais advanced-20260731=advanced,advanced_v1,basic-20260730=basic,random-20260730=random \
+  --games 40 --players 4
+civvis tournament --standings          # verify and print without playing
 ```
 
 The CLI checkpoints every completed game to the tracked
-`data/elo_ratings.json` ledger (override it with `--ratings path`). Ratings are
-keyed by **player, leader, and civilization**. A player can be a human account
-or a named AI strategy; the tournament entrant name is the AI player's stable
-identity. Internal plan changes no longer split that player's evidence. Leader
-and civilization are both keys because the relationship is not one-to-one:
-Eleanor/England and Eleanor/France are separate ratings for the same player.
-Each game updates only the exact combinations that participated. The ledger
-also retains games and wins, so callers can distinguish evidence from an
-unmeasured pairing. Writes are atomic and briefly locked per game, allowing
-concurrent workers to share the file without replacing one another's updates.
+`data/elo_ratings.json` ledger (override it with `--ratings path`). Its online
+rating key is the **player** — a human account or named AI strategy — accumulated
+across every leader and civilization it draws. Separate
+`player × leader × civilization` rows remain as matchup diagnostics. A newly
+seen combination inherits that player's current Elo instead of silently
+starting the established player over at the base rating.
+
+An entrant may be written as `rating-identity=controller`. The left side is
+what the ledger measures; the right side is the builtin the game constructs.
+Use a new immutable identity whenever a mutable controller changes, for example
+`advanced-20260815=advanced`. Otherwise a row named only `advanced` is a
+lifetime average of several implementations and will dilute improvements over
+time. The default command dates every mutable controller; only the deliberately
+configuration-pinned `advanced_v1` keeps its bare identity and anchors successive versions on
+one connected scale. After every update the ledger translates every rating by
+the same amount to keep that contract-pinned control at exactly 1500. Pairwise gaps
+and win expectations are unchanged, while fresh weak identities can no longer
+inflate later generations relative to inactive older ones. Custom tournaments
+can select another entrant with `--anchor identity`; `--anchor none` leaves a
+one-off pool floating. The CLI also refuses two identities that resolve to the
+same effective controller and refuses a learned entrant that silently degraded
+because a definitional artifact is absent.
+
+`advanced_v1` is not a copied historical implementation: it freezes the
+victory-planning configuration but shares the underlying `BasicAi` and
+`AdvancedAi` code. CI pins both source files under an explicit anchor contract.
+If an edit affects the legacy path, the Elo protocol must change and the run
+must use a new ledger; an edit proved to be gated away from that path still
+requires an explicit review and re-pin. This guard prevents the word “frozen”
+from hiding a moving control, while allowing candidate-only code to evolve.
+
+The fog-honest city-pressure repair changes that shared legacy path, so the
+default `data/elo_ratings.json` is a new, replay-verified 40-game protocol-v2
+ledger. The complete protocol-v1 baseline is preserved, read-only, at
+`data/elo_ratings_v1.json`; it remains useful historical evidence but must not
+be extended or mixed with protocol-v2 results.
+
+Schema 3 binds a ledger to the complete rating profile: an explicit experiment
+protocol version, a deterministic fingerprint of the fully merged rules JSON,
+a readable contract for every fixed lobby default, ordered controller roster,
+table size, dimensions, turn limit, city-state count, speed, map
+script/shape/poles, active mods, and K. The setup contract records Civ6 rules,
+an Ancient start, Prince difficulty, barbarians, disaster intensity 2, no game
+modes, the Civ6 leader pool, deterministic stock civilization fill, no humans,
+free-for-all teams, and all six victory types. The readable mod names say what
+was loaded; the fingerprint binds their actual content, so editing a mod in
+place cannot reuse its old scale. A later run with any different field is
+rejected with a request to use another `--ratings` path. Versioned player
+identities may change while their ordered controller roles remain `advanced,
+advanced_v1, basic, random`; this is what lets a new challenger join without
+quietly changing its multiplayer controls. Bump the protocol when engine
+behavior, implicit setup defaults, or scoring semantics change enough to
+define a different contest; rules-data changes are detected automatically.
+The preserved protocol-v1 ledger is a canonical 40-game,
+1500-centred baseline bound to the CLI's stock 4-player Standard game (rules
+`fnv1a64:3423bd46da2b8cd7`, 60×38, 500 turns, six city-states, Pangaea,
+flat/poles, no mods, K=24). Protocol-v2 uses the same fixed setup with a new
+40-game evidence set: `advanced-20260731` is 1570.5 online Elo and 1623.6
+direct Elo against `advanced_v1`, from a 27/40 pair score (95% 52.0–79.9%, or
+1514.0–1739.9 direct Elo). The historical frozen July 30 run rates
+`advanced-20260730` at 1589 and the
+`advanced_v1` anchor at 1500, an +89-point online gap. The order-independent
+direct result is 1708, from a 31/40 pair score whose 95% interval is
+62.5–87.7%, or 1589–1841 after the same monotone Elo transform. Future dated
+challengers can therefore be compared through the unchanged control, with both
+effect and uncertainty visible. This prevents a short smoke test, a mod, or another map size from
+quietly changing what its Elo scale measures. Settings control the experiment;
+versioned identities control what player generated each observation. Both are
+required for a longitudinal number.
+
+The ledger retains games and wins at both levels. If fewer entrants than seats
+would cause an AI to occupy several seats, a persistent run refuses: controlling
+twice as much of the map changes the contest even if the arithmetic deduplicates
+the comparisons. In-memory/manual pools still defensively count a cloned player
+once per world.
+
+Every fresh schema-3 ledger also retains the raw scored table for every game,
+not only the resulting point estimates. On load, the aggregates are replayed
+and checked against that evidence, so a hand-edited or corrupted Elo cannot
+pass as a result. Persistent events are keyed by run seed, game index, map seed,
+and ordered identities. Repeating a run is idempotent; replaying the same key
+with a different outcome is an error that points back to a reused mutable
+identity. Writes are atomic and briefly locked per game, and keyed events are
+sorted before replay, so concurrent workers preserve every result *and* finish
+with the same ratings regardless of lock-acquisition order. Migrated schema-1/2
+aggregates cannot recover games that were never stored and say so explicitly in
+the leaderboard; start a fresh path for a fully auditable baseline. A keyed
+history also has one canonical order. Every raw event must contain exactly the
+profile's table size with distinct player identities, and its K must match the
+bound profile; replay-consistent but structurally truncated evidence is still
+rejected.
+
+The leaderboard additionally derives a **direct performance Elo** for every
+player co-seated with the fixed anchor. It converts that player's aggregate
+pair score into the usual 400-point logistic scale, with a Jeffreys half-result
+on each side so finite undefeated samples remain finite. This diagnostic is
+order-independent and is recomputed from raw evidence. Its printed 95% Wilson
+interval appears both on the observed pair-score scale and after the same
+monotone Elo transform, so a short run cannot masquerade as a settled Elo gap.
+An interval touching 0% or 100% correctly has an infinite Elo endpoint. Use
+this direct-anchor result at a fixed game count as the longitudinal baseline;
+use the incremental K-factor Elo as the continuously updated
+matchmaking/leaderboard state.
+On a migrated schema-1/2 pool, the heading explicitly says “post-migration” and
+“retained raw games only”: that direct slice is valid for those new games, but
+it excludes the unreconstructable aggregate prior and is not the standardized
+full-history baseline.
 
 Entrants use a seeded round-robin seat schedule instead of independent random
 sampling. Across one complete cycle, every fixed civilization seat sees every
@@ -297,7 +464,10 @@ use civvis::elo::{
     builtin_ai, leaderboard, run_persistent_tournament, TourneyCfg,
     DEFAULT_RATINGS_PATH,
 };
-let names = vec!["basic".to_string(), "mybot".to_string()];
+let names = ["mybot", "advanced_v1", "basic", "random"]
+    .into_iter()
+    .map(str::to_string)
+    .collect::<Vec<_>>();
 let pool = run_persistent_tournament(&names, |name, seed| match name {
     "mybot" => Box::new(MyBot),
     other => builtin_ai(other, seed),
@@ -306,7 +476,7 @@ println!("{}", leaderboard(&pool));
 # Ok::<(), std::io::Error>(())
 ```
 
-Multiplayer games score as pairwise Elo results by final placement
+Multiplayer games score as simultaneous pairwise Elo results by final placement
 (K/(n-1) scaling). `run_tournament` remains available for an in-memory,
 non-persisted evaluation. Game generation and seating are deterministic given
 `cfg.seed`; persistent ratings also depend on the ledger's prior state.
@@ -355,10 +525,11 @@ a turn is roughly eight times the cost of a move — it settles every city's
 yields and refreshes every seat's map — so a search that ends turns deep in a
 line costs far more per node than one that does not.
 
-Actions are plain JSON dicts identical to what `legal_actions` returns —
-feed them straight into LLM tool-calling or an RL policy. One process per
-concurrent game; in-process Rust agents remain the fast path for self-play at
-scale. On an Apple M5 Max, the current release Advanced-v2 workload measured
+Actions are plain JSON dicts identical to what `legal_actions` returns, so an
+external client can feed them to LLM tool-calling or an RL policy. No in-tree
+agent currently does so. One process per concurrent game; in-process Rust
+agents remain the fast path for self-play at scale. On an Apple M5 Max, the
+current release Advanced-v2 workload measured
 1,173 turns/sec for `benchmark --games 100 --turns 100 --jobs 1` (two players,
 20×14, one game at a time). A batch that leaves `--jobs` alone plays across
 every core and reaches several times that. Throughput varies materially with
@@ -368,68 +539,113 @@ describe a much smaller historical rules workload.
 ## Machine-learning surfaces
 
 - `civvis::obs_tensor::obs_tensor(&game, pid)` renders a fog-honest spatial
-  observation: 25 named `f32` feature planes over the full wrapped map plus
-  a named global scalar vector (own empire exact, per-rival public facts).
-  Same visibility contract as the JSON protocol (`obs::visibility`), so a
-  net trained on it never sees hidden state.
-- `civvis selfplay --games 200 --out <dir>` plays full games and exports
-  those tensors plus outcome labels (`planes.f32`, `globals.f32`,
-  `labels.f32`, `meta.json`); `python tools/train_spatial.py <dir>` trains a
-  wrap-aware residual CNN value net on them (CUDA when available).
-- `civvis evolve` appends value-net training rows to `evolved/dataset.csv`
-  during SPRT confirmation games; `python tools/train_valuenet.py` trains
-  the 25→64→32→1 net (CUDA via torch when present, NumPy fallback) and
-  writes `evolved/valuenet.json` for `NeuralAi` plus the Rust parity
-  fixture.
-- `civvis::strategic::StrategicAi` (builtin `strategic`) picks its victory
-  lane by rolling each lane forward and judging the resulting position —
-  the first macro-search rung above the scripted agents.
-- Builtin `strategic_deep` is the same agent with four times the search
-  compute, split across both of its axes: it reviews every 20 turns rather
-  than 40 and projects 80 rounds rather than 40. It is the strongest agent
-  measured here and the only one promoted through the gate.
+  observation: 25 named `f32` feature planes over the wrapped map plus named
+  public/global scalars. `civvis selfplay` exports these tensors and outcome
+  labels, and `tools/train_spatial.py` trains a wrap-aware PyTorch model.
+  Nothing in the Rust runtime loads that checkpoint yet.
+- `evolve::features` is a different representation: 25 full-state empire
+  aggregates. `tools/train_valuenet.py` can fit a 25→64→32→1 state-value MLP
+  and write `evolved/valuenet.json`. That artifact is local/generated, not
+  committed or embedded.
+- `decision_features` widens the scalar input to 34 terms and raises measured
+  action visibility from 44.5% to 86.1%. `action_space` supplies stable IDs for
+  all 77 action variants plus contextual destination features. These are
+  useful offline data surfaces; neither is a live learned policy.
+- `NeuralAi` uses a 25-wide value net only to compare scripted war rollouts.
+  `PolicyAi` applies legal tactical actions to clones and greedily scores the
+  resulting states. `StrategicAi` rolls out adaptive and victory-lane branches,
+  blending a compatible net at 25% when one exists and using score share when
+  it does not.
 
-  Its evidence is a pre-registered 300-map run at a fresh seed — size and
-  decision rule fixed in writing beforehand, because the gate's Wilson
-  interval is a fixed-n statistic and stopping when it happens to clear
-  would be optional stopping. Result: 339/600 games (56.5%), **56 mirrored
-  maps to 17**, sign p=0.0000, an anytime e-process of 3.14e4 crossing at
-  map 127, Wilson 50.8%..62.0%, Elo-equivalent +45 (CI +6..+85), and
-  `promotion gate: PASS` under the unmodified gate. Two earlier disjoint
-  sets add 240 maps at 53 to 15, for 540 independent maps at 109 to 32.
+### Current evidence, with scope
 
-  Against the scripted default rather than its own parent it is also
-  ahead: 136/240 games, 22 mirrored maps to 6, sign p=0.0037, e=89. The
-  measured ordering is `strategic_deep` > `strategic` > `advanced`,
-  consistent across every pairing. Note that `strategic` itself has never
-  been shown to beat `advanced` at adequate power — it leans ahead 20 maps
-  to 10 at p=0.0987, which is not a result.
+No agent has a profile-independent “strongest” result. The exhibition rotates
+through 4–10 seats and matching stock map sizes, while much of the research was
+run at four players on a 24×16 Standard map.
 
-  Each doubling on its own clears the anytime-valid evidence but not the
-  effect interval; only together do they clear both. Spending the same 4×
-  on frequency alone (`strategic_r10`) is the weakest arm measured, so it
-  is the product of the axes that pays rather than the total.
+| comparison | measured profile | result | interpretation |
+|---|---|---|---|
+| `advanced` vs `advanced_v1` | 6p, 74×46, 6 city-states, Online | **+207**, gate PASS | robust scripted improvement on that recorded comparison profile |
+| `advanced` vs `advanced_v1` | 6p, 74×46, 9 city-states, Online, randomized civilizations | −17, inconclusive (40 maps) | the ordering is not established on the matrix deployment profile |
+| `advanced_evolved` vs `advanced` | 6p recorded profile above | −9, inconclusive | small-profile genome gain did not transfer |
+| `strategic` vs `advanced` | 6p recorded profile above, 60 maps | −47, wins inconclusive | open; the planned 300-map confirmation did not finish |
+| `strategic_cheap` vs `advanced` | 6p recorded profile above | **−63**, retain `advanced` | cheap search regressed |
+| `strategic_deep` vs `strategic` | 4p, 24×16, Standard | **+45**, gate PASS | deeper search won on its source benchmark only |
+| `policy_wide` vs `advanced` | 4p benchmark | **−313**, 14.2% | outcome correlation was harmful when greedily maximized |
+| `production` vs `advanced` | 4p benchmark | 45.0%, sign p=0.0428 | scripted governor retained |
 
-  `strategic` is unchanged and is the frozen control for measuring further
-  search changes, the way `advanced_v1` is for `advanced`. Four times the
-  macro-search compute is also a real cost, so batch callers (soak, league,
-  fleet) should adopt it deliberately rather than inherit it.
+The learned-policy diagnosis is causal, not just a bad score. The original
+25-wide policy was unchanged by 96% of tactical candidates. The 34-wide policy
+could distinguish them, but selected moves that increased enemy contact—a
+correlate of strong attacking positions in the training games—while losing
+material. Freezing those two contact inputs restored exact parity. A predictive
+state value is therefore not an action value, and calibration alone does not
+license an argmax over interventions.
 
-  Two cautions that generalize beyond this agent. Nothing below about a
-  hundred maps of `ai_eval --players 4` is a result here — the same
-  measurements at twenty maps said the opposite twice, in opposite
-  directions — and since `--jobs` landed, a hundred maps is one run of
-  roughly half an hour. And the gate can decline overwhelming evidence:
-  `strategic_r20` reached an e-value of 19,720 over 400 maps, 46 map
-  directions to 12, and still read INCONCLUSIVE because its 54.2% effect
-  needs about 540 maps for the Wilson bound to clear.
+Search remains valuable as a counterfactual laboratory, and one searching seat
+was measured at about 6.4× the game-turn cost of an all-scripted six-seat fleet
+on a 74×46 map with nine city-states (three early-game seeds). Its live strength
+across the rotating exhibition profiles is unmeasured, which is why the shipped
+roster keeps `strategic` as an offline-only anchor.
 - Ranked AI-strength roadmap and current status: `docs/AI_GAPS.md`.
   Recorded eval baselines and the regression battery: `docs/EVAL.md`.
 
 ## Evaluation tips
 
 - Fix multiple seed sets; report paired win rate vs `basic` plus multiplayer Elo.
+- Use the promotion matrix for any claim that a challenger should replace
+  `advanced`:
+
+  ```sh
+  cargo run --release --bin ai_eval -- challenger advanced \
+    --matrix --pairs 120 --jobs 12 --seed 12000000
+  ```
+
+  It runs the compact Standard safety profile and the six-player Online
+  deployment concurrently. Deployment must PASS; compact must have enough
+  evidence and must not RETAIN `advanced`. Matrix mode rejects profile-shaping
+  flags, so the command cannot silently test a different game under the same
+  label.
+- Keep mechanism controls separate. `advanced_policy_live_control`,
+  `advanced_envoy_policy`, `advanced_envoy_infrastructure`, and
+  `advanced_envoy_economy` decompose policy-deck, influence-card, and production
+  effects. `advanced_strategic_commitment` is the default-off soft-replan
+  treatment. None is production behavior unless a later matrix gate promotes
+  it.
 - Use `ai_eval` to catch regressions hidden by wins (stalled settlers, obsolete
   armies, unfinished queues, or weak science/culture output).
 - Keep `random` in the pool as a sanity floor.
 - `soak` flags anomalies (no tech progress, minor winners) across seeds.
+
+### 2026-07-31 full-prefix status
+
+Production remains `advanced`, with every new behavior below default-off. This
+is a failed-replacement conclusion, not a profile-independent strength claim.
+
+| comparison | matrix sample | compact | deployment | production consequence |
+|---|---:|---:|---:|---|
+| live policy deck vs `advanced` | 300 maps/profile | 52.3%, +16 | 54.3%, +30 | Wilson gate inconclusive; no promotion |
+| direct envoy production vs `advanced` | 120 maps/profile | 48.3%, −12 | 54.4%, +30 | gate inconclusive; no promotion |
+| commitment vs `advanced` | 120 maps/profile | 51.0%, +7 | 46.5%, −25 | reject treatment |
+| `advanced_evolved` vs `advanced` | 120 maps/profile | 57.3%, +51 | 45.6%, −30 | reject transfer |
+| live policy deck vs `advanced_v1` | 300 maps/profile | 50.5%, +3 | 53.7%, +26 | gate inconclusive; anchor retained |
+
+`advanced_envoy_priority` is the direct mechanism arm. After the opening book,
+it can place the first incomplete empire-unique Diplomatic Quarter, Consulate,
+or Chancery stage into an idle adaptive-production queue. It requires a met and
+contestable city-state plus useful remaining envoy stream, preserves existing
+queues, and yields to Recovery, local danger, active rushes, and major war.
+`advanced_envoy_infrastructure` remains the valuation-only control. Do not infer
+direct production behavior from that older arm.
+
+Evaluator-only fallbacks now report what they actually build: champion-backed
+netless policy arms are `advanced_evolved`, and champion-backed netless neural
+is `basic_evolved`. Direct evaluation refuses degraded artifacts by default;
+`--allow-degraded` is a diagnostic opt-in and is forbidden in `--matrix` mode.
+The matrix also uses sample-size-independent profile seeds, so extending a
+prefix preserves both profiles' earlier maps.
+
+The next strength experiment should be a single pre-registered composite of the
+live policy deck and direct envoy production on fresh stable prefixes. Treat it
+as a new hypothesis: the two favorable directions may overlap, and higher envoy
+income may simply move production cost elsewhere.

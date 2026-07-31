@@ -1,0 +1,270 @@
+# Simulator performance
+
+This note records the July 2026 simulator profile, the changes kept from that
+work, the production-catalog follow-up, and the next optimization targets.
+Percentages below are diagnostic signals, not an additive decomposition:
+library routines such as `memcmp` and `memmove` are costs incurred by several
+higher-level systems.
+
+## Representative workloads
+
+Measurements used the `ci` Cargo profile and an otherwise idle serial CIVVIS
+process as far as the shared development host allowed. The full-game comparison
+used ten adjacent baseline/treatment pairs with four major civilizations, a
+44-by-28 map, no city-states, a 200-turn limit, and seeds 7,310,000 through
+7,310,009. CPU time is reported because unrelated jobs made wall time noisy.
+
+The rollout comparison prepared the same four-player, 44-by-28 game through
+turn 100 at seed 7,310,002, then took the median of four adjacent 5,000-sample
+runs for each operation. Headless games disable fog memory, so the no-fog rows
+most closely represent simulator and search use.
+
+| Rollout operation | Baseline | Optimized | Latency change |
+| --- | ---: | ---: | ---: |
+| Clone only | 8.55 us | 8.50 us | -0.6% |
+| Clone + move | 50.10 us | 32.15 us | -35.8% (1.56x throughput) |
+| Clone + end turn | 301.90 us | 277.30 us | -8.1% |
+| Clone + move, no fog memory | 38.60 us | 22.45 us | -41.8% (1.72x throughput) |
+| Clone + end turn, no fog memory | 305.35 us | 286.35 us | -6.2% |
+
+Across the ten paired full games, aggregate user CPU time fell from 16.96 to
+15.76 seconds, a 7.1% reduction. Every seed was faster. After removing the
+elapsed-time line, all ten baseline and optimized simulator reports were
+identical. A separate optimized soak completed all 20 requested games.
+
+## Changes retained
+
+Four deliberately small changes produced that result:
+
+1. Monopoly calculation now builds one connected-resource census per player
+   and reuses it across every luxury and foreign player. Previously each query
+   walked all owned city tiles again.
+2. An ordinary adjacent `Move` no longer runs the first-monopoly transition
+   scan after success. Moves onto tribal villages, meteor sites, or Barbarian
+   Outposts still run it because their rewards can complete a technology and
+   reveal a luxury resource. Other action kinds remain conservative.
+3. `hex::disk` reserves its exact `1 + 3r(r + 1)` result size, avoiding growth
+   copies in a primitive used by movement, combat, yields, and visibility.
+4. A per-player/city production catalog retains the complete legal `Item` list
+   across the separate read-only passes a city governor makes before acting.
+   A successful `Game::apply` clears it, and game clones and saves start empty,
+   so normal mutation and search branches cannot reuse a stale menu.
+
+## Production-catalog follow-up
+
+The production catalog was the narrow first experiment from the profile. Its
+target is a real multi-city decision path: repairs, products, and wonder
+fallbacks can each ask for the same city's legal production menu before a
+single action is committed. Caching only the fully derived menu preserves the
+existing item order and legality checks.
+
+On a release paired measurement of 20 fixed-seed games (four major
+civilizations, 44-by-28 map, no city-states, 200-turn limit, seeds 7,310,200
+through 7,310,219), aggregate serial wall time fell from 44.57 to 41.34
+seconds: **7.2%**, with a 6.8% median per-seed reduction. Baseline ran first
+for ten seeds and the catalog build first for the other ten; the two subsets
+improved 7.1% and 7.4% respectively. After removing the elapsed-time field,
+all 20 paired terminal reports were identical. A separate 40-game,
+eight-worker soak on the same map shape also had identical normalized reports
+and reduced accumulated per-game time from 230.54 to 221.51 seconds (3.9%).
+
+This is intentionally a targeted result, not a claim that every tiny
+production query is faster. A short two-player throughput run was not
+consistently improved; the retained cache earns its cost where a developed,
+multi-city controller repeats the catalog scan.
+
+Two broader prototypes were rejected rather than kept without evidence. A
+borrowed replacement for `units_at` did not materially improve adjacent rollout
+runs because most consumers still need a stable snapshot while mutating the
+game. Filling `WorldMap::disk`'s final buffer directly was neutral to slightly
+slower. An older sphere-cache experiment also remains rejected: admitted-row
+lookup improved substantially but cold local lookup exceeded the project's
+regression gate.
+
+## Largest remaining opportunities
+
+A post-change main-thread sample contained 8,282 active samples. The profile
+was taken immediately before the small `hex::disk` reserve change, which does
+not materially affect this ranking.
+
+| Opportunity | Current signal | Promising next experiment | Main constraint |
+| --- | --- | --- | --- |
+| Intern effect and rules keys | `memcmp` 9.2%, `Name::new` 1.4%, and `SpecMap::position` 1.2% as exclusive leaves | The full effect-map conversion was exact but a 0.3% CPU loss; retry only after isolating a direct typed lookup in a measured hot path | Broad representation change; conversion alone leaves dynamic `&str` callers doing the same comparisons |
+| Reuse movement and routing state | Traversal class, neighbors, passability, path checks, entry checks, and routing zones form roughly a 6-7% family | Identify one repeated rule derivation before changing it; generic search buffers and route-local traversal profiles were measured and rejected | Movement rules have many conditional abilities and diplomatic dependencies |
+| Remove targeted allocation and copying | `memmove` 5.9% and allocator leaves are prominent; `units_at` alone is 1.4% | Add narrow `tile_occupied` and callback/iterator queries, then migrate read-only and `is_empty` callers individually | These costs overlap the systems above; a wholesale borrowed API showed no win |
+| Reduce rollout clone cost | Clone alone is 8.5 us, 38% of the optimized no-fog clone-plus-move latency | Share more immutable state or prototype reversible branch deltas/undo for search | High correctness and determinism risk; cloning is currently the isolation boundary |
+| Broaden visibility and yield memoization | Line-of-sight/world-stamp leaves are about 2-3%; yield and adjacency work is fragmented across roughly 3-5% | Extend epoch-keyed memoization and precompute stable adjacency facts | Smaller expected return and potentially high cache-invalidation complexity |
+
+The string/key work is cross-cutting but invasive. With the production catalog
+now retained, no generic routing-state reuse is a standing target: a future
+movement experiment needs one measured repeated derivation first. These should
+be measured independently because removing one source of comparison or
+allocation cost will also shrink the apparent library leaves.
+
+Operationally, independent games should continue to use the existing outer
+`--jobs` parallelism. Production runs should use `--release`; its thin LTO and
+single codegen unit are intentionally more optimized than the faster-building
+`ci` profile used for the comparisons above.
+
+## Where the allocations are (2026-07-31)
+
+Every earlier profile here is a *time* profile — `sample`'s leaf ranking, or
+inclusive timers around suspect functions. Allocation had only ever been
+inferred from `memmove`/`malloc` leaves, which say how much it costs but not
+who is doing it. This is the direct measurement.
+
+**Method, and it is cheap to repeat.** A counting `GlobalAlloc` plus a global
+slot index and an RAII `Tag` that swaps the slot and restores it on drop, so a
+tagged function is charged exclusively and nested tags are charged to the
+innermost. It needs no thread-local — the probe is run under `--jobs 1`, and a
+lazily-initialised thread-local risks allocating inside the allocator. Roughly
+sixty lines in a scratch module plus one tag line per suspect, applied and
+stripped by a script; it must not reach a commit.
+
+**One 6p 74×46 150-turn game allocates 13,728,753 times for 3.09 GB.** Game
+setup is 142k of that, so essentially all of it is play. That is about 5,700
+allocations per seat-turn, and at a plausible 30 ns per malloc/free pair it is
+roughly a tenth of the game's runtime — consistent with the allocator and
+`memmove` leaves in the time profile.
+
+| site | allocations | share | bytes |
+| --- | ---: | ---: | ---: |
+| `advanced_units` | 5,842,083 | **42.6%** | 1.70 GB |
+| the rest of `AdvancedAi::take_turn` | 3,038,944 | 22.1% | 597 MB |
+| `city_yields` | 1,256,361 | 9.2% | 129 MB |
+| `units_at` | 1,076,368 | 7.8% | 4.5 MB |
+| `wdisk` | 817,304 | 6.0% | 128 MB |
+| `begin_turn` | 606,103 | 4.4% | 69 MB |
+| `legal_actions_within` | 325,139 | 2.4% | 51 MB |
+| `player_unit_ids` | 213,378 | 1.6% | 9 MB |
+| `player_city_ids` | 182,495 | 1.3% | 7 MB |
+| `route_step` | 89,702 | 0.7% | 292 MB |
+
+**Two thirds of all allocation is the AI's own decision code**, and
+`advanced_units` alone is 42.6% of it. That agrees with the long-standing
+finding that roughly two thirds of runtime is `AdvancedAi`'s deliberation
+rather than the engine's rules, and it says the largest remaining allocation
+work is in `src/ai/advanced.rs`, not in `src/game.rs`.
+
+**Read the count column, not the byte column.** `route_step` is the warning:
+292 MB — the largest byte figure outside the AI — from only 89,702
+allocations, because each search allocates two dense per-tile vectors. Its
+leaf time is about 1%. Large, short-lived, lazily-faulted buffers are cheap;
+volume of small allocations is what shows up in the allocator leaves.
+`units_at` is the mirror image: 1.08M allocations for 4.5 MB, an average of
+four bytes, because it clones a one- or two-element `Vec<u32>` out of the
+occupancy map.
+
+### Route-search scratch reuse: rejected
+
+The `route_step` byte total also suggested a generation-stamped, worker-local
+scratch buffer for A* and breadth-first routing. The prototype preserved the
+same search ordering and route rules, then compared release serial games with
+six major civilizations, a 74-by-46 map, nine city-states, 150 turns, and
+fixed seeds 7,310,500 through 7,310,514. Removing the per-game elapsed field,
+all fifteen baseline/prototype reports were byte-identical.
+
+| Five-game block | Run order | baseline | scratch prototype |
+| --- | --- | ---: | ---: |
+| 7,310,500–504 | baseline then prototype | 10.15s | 10.91s |
+| 7,310,505–509 | baseline then prototype | 11.42s | 14.93s |
+| 7,310,510–514 | prototype then baseline | 11.03s | 14.75s |
+
+The prototype was slower in every block (40.59s versus 32.60s in aggregate),
+so it was removed. It replaces cheap dense initialization with an extra
+per-tile generation array and a thread-local borrow on every search; for this
+map size, that additional cache traffic loses to the allocator. Future routing
+work should isolate traversal or entry-rule derivation instead of retrying
+generic scratch-buffer reuse.
+
+### Route-local traversal profile: rejected
+
+A follow-up passed the already memoized `TraversalClass` directly into A* and
+breadth-first entry checks, avoiding the memo-map lookup at each neighbor. It
+used the same release workload and three fresh five-game blocks (seeds
+7,310,520 through 7,310,534). Again, every normalized report was
+byte-identical.
+
+| Five-game block | Run order | baseline | direct profile |
+| --- | --- | ---: | ---: |
+| 7,310,520–524 | prototype then baseline | 12.48s | 13.44s |
+| 7,310,525–529 | baseline then prototype | 13.65s | 13.58s |
+| 7,310,530–534 | prototype then baseline | 11.33s | 12.23s |
+
+Two losses and one near-tie (39.25s versus 37.46s aggregate) do not clear the
+regression gate, so this plumbing was also removed. The profile lookup is too
+small relative to the rule checks that remain; future movement work needs a
+measured expensive derivation, not a generic memo lookup.
+
+**What this does and does not license.** It ranks allocation, which is one of
+the two things this codebase has repeatedly found to be worth removing (the
+other being an expensive derivation that is recomputed). It does not by itself
+predict a win: the record already contains a neutral result for removing ~30
+`String` allocations per citizen plan, and a neutral result for a wholesale
+borrowed `units_at`. Take the count column as a ranking of *candidates* and
+still A/B each one interleaved.
+
+### The first thing this profile suggested, measured and rejected
+
+The obvious read of the table is that `units_at` is worth attacking: 1.08M
+allocations, and 82 of its 183 call sites are an immediate `.is_empty()`, so a
+borrow-free `tile_occupied(pos)` removes the allocation entirely at every one
+of them. That is also the experiment the opportunity table above proposes.
+
+It was implemented — `tile_occupied` plus 50 converted sites, leaving
+`src/ai/advanced.rs` alone to avoid a conflicting branch — verified
+byte-identical on nine seed/player combinations, and measured against
+`origin/main` over ten interleaved pairs:
+
+| | main | `tile_occupied` |
+| --- | ---: | ---: |
+| best of 10 | 2.70s | 2.71s |
+| median | 3.69s | 3.71s |
+
+**0.996x best, 0.993x median, 52 of 100 pairs, p = 0.88 — a clean null.**
+Reverted.
+
+**This is the calibration the count column needed, and it should be read
+alongside the table above.** `units_at` allocations average *four bytes*: they
+are one-element `Vec<u32>` clones served straight from the tiny-allocation free
+list, and a million of them cost no measurable time. So allocation *count* is
+not by itself a predictor either — what the record's two paying allocation
+fixes had in common was that the allocation also did work (a `format!` builds
+and copies a string; a deep clone copies a structure). A malloc/free pair on
+its own is nearly free here.
+
+That makes this the eighth consecutive null for "remove cheap per-call work",
+and it narrows the standing rule usefully: **the payer is an expensive
+derivation that is recomputed, not a cheap operation that is frequent — and
+allocation only counts as expensive when something is built.** Applied to the
+table above, the interesting rows are the ones with a high byte-per-allocation
+ratio inside the AI, not `units_at`.
+
+### Interned effect-map keys: rejected
+
+The remaining string-key opportunity was tested directly. The candidate
+changed each numeric rules `effects` table from `BTreeMap<String, f64>` to
+`BTreeMap<Name, f64>`, keeping the same lexical `Ord` and JSON string shape.
+`Name` also exposed a borrowed `str` lookup so every dynamic caller continued
+to compile unchanged. The source was then replayed against the unchanged
+baseline over fifteen release headless games: six major civilizations, a
+74-by-46 map, nine city-states, 150 turns, and seeds 7,310,700 through
+7,310,714.
+
+After removing the per-game elapsed field, all fifteen baseline/candidate
+reports had identical SHA-256 hashes. The CPU result did not earn the added
+representation:
+
+| run order | seeds | baseline user CPU | interned effect maps |
+| --- | --- | ---: | ---: |
+| baseline then candidate | 7,310,700–705; 7,310,711–714 | 46.77s | 46.99s |
+| candidate then baseline | 7,310,706–710 | 27.60s | 27.57s |
+| aggregate | 15 pairs | 74.37s | 74.56s |
+
+The median was a noisy 4.92s versus 4.90s, but the aggregate is a **0.3%
+loss**, not an optimization. The mechanical conversion removes duplicate keys
+at rules-load time, yet nearly all runtime effect queries still begin with a
+borrowed string and therefore retain the original string comparison. It was
+removed. A future retry needs one profiled high-frequency caller that can carry
+a `Name` all the way to the map lookup; broad key conversion on its own is not
+a standing target.

@@ -718,6 +718,25 @@
      carries. */
   .diplomacy-elo-value.provisional { opacity: 0.62; }
   .diplomacy-expected { flex: 0 0 auto; color: #8fd6a4; font-weight: 850; }
+  /* Start and Now are two numeric categories on matching tracks. The narrow
+     middle track belongs only to the trend glyph, so the three tokens no longer
+     run together as one unexplained number. */
+  .diplomacy-expected-value, .diplomacy-odds-head {
+    width: 100%; display: grid;
+    grid-template-columns: minmax(0, 1fr) 11px minmax(0, 1fr);
+    align-items: center; column-gap: 1px;
+    font-variant-numeric: tabular-nums;
+  }
+  .diplomacy-expected .odds-start { opacity: .62; }
+  .diplomacy-expected .odds-start, .diplomacy-expected .odds-now {
+    min-width: 0; overflow: hidden; text-overflow: clip; text-align: right;
+  }
+  .diplomacy-expected .odds-move {
+    padding: 0; color: #93aca1; opacity: .78; font-weight: 800; text-align: center;
+  }
+  .diplomacy-expected .odds-move.up { color: #8fd6a4; opacity: 1; }
+  .diplomacy-expected .odds-move.down { color: #f2a09b; opacity: 1; }
+  .diplomacy-expected .odds-unavailable { grid-column: 1 / -1; text-align: center; }
   .diplomacy-player { flex: 1 1 auto; color: #d9e1dc; font-weight: 750; }
   /* The mark leads the CIV cell from a gutter of its own. It is emitted on
      every row, empty where there is no stance to report, so that the rank
@@ -2379,37 +2398,41 @@
        without disturbing the shares; and each enclosing track is the exact sum
        of the columns inside it, which is what lets one bar move width out of
        the last identity column and into the first value column. */
-    /* The label floor narrows with the screen; the figure floor does not. Elo
-       and win odds are four digits and a per cent, and 38px is what those need
-       whatever size the window is — a label that gives up width ellipsizes and
-       keeps its tooltip, where a figure that gives up width becomes a smaller
-       number that is simply wrong. Each breakpoint below moves the label floor
-       only, and keeps 5 labels + 2 figures adding up to what the identity block
-       has always claimed at that width. */
-    --hud-ident-min: 30px; --hud-ident-num-min: 38px;
+    /* The label floor narrows with the screen; the figure floors do not. Elo is
+       four digits and 38px is what that needs whatever size the window is — a
+       label that gives up width ellipsizes and keeps its tooltip, where a figure
+       that gives up width becomes a smaller number that is simply wrong. The
+       odds cell carries two separately aligned figures and the arrow between
+       them, so it stands on a wider floor of its own: 76px keeps the longer
+       START label and both numeric tracks whole at the fitter's 9px floor. Each
+       breakpoint below moves the label floor only, and keeps
+       5 labels + 2 figure cells adding up to what the identity block claims at
+       that width. */
+    --hud-ident-min: 30px; --hud-ident-num-min: 38px; --hud-ident-odds-min: 76px;
     /* How much of the flexible width the identity block asks for relative to
        the values, over and above the sum of its own columns. A wide panel can
        afford whole names; a narrow one gives the identity up first, because a
        clipped name still reads and a clipped number lies. */
     --hud-identity-bias: 1;
     --hud-identity-column: minmax(
-      calc(var(--hud-ident-min) * 5 + var(--hud-ident-num-min) * 2), 11.104fr);
+      calc(var(--hud-ident-min) * 5 + var(--hud-ident-num-min)
+           + var(--hud-ident-odds-min)), 11.387fr);
     /* Ten cells and the nine gutters between them. */
     --hud-stats-column: minmax(
       calc(var(--hud-stat-min) * 10 + var(--hud-stat-gap) * 9), 10fr);
     --hud-column-gap: 6px;
     /* Civilization, leader, player, age and the plan are labels, and their
-       cells ellipsize. Elo and win odds are figures on the taller floor: with no
-       minimum at all they collapsed on a 1440px screen and rendered "1792" as
-       "179" and "11%" as "1" — a truncated number that reads as a different,
-       smaller number. Watch-as keeps its fixed track between Leader and
-       Player, which is why the bar for that seam is drawn on Leader's edge.
+       cells ellipsize. Elo and the odds pair are figures on the taller floors:
+       with no minimum at all they collapsed on a 1440px screen and rendered
+       "1792" as "179" and "11%" as "1" — a truncated number that reads as a
+       different, smaller number. Watch-as keeps its fixed track between Leader
+       and Player, which is why the bar for that seam is drawn on Leader's edge.
        Its extra four-pixel tail is the visual gutter before Player. */
     --hud-identity-tracks:
       minmax(var(--hud-ident-min), 2.035fr) minmax(var(--hud-ident-min), 1.85fr)
       var(--hud-watch-column) minmax(var(--hud-ident-min), 1.85fr)
       minmax(var(--hud-ident-num-min), 1.017fr)
-      minmax(var(--hud-ident-num-min), 1.017fr)
+      minmax(var(--hud-ident-odds-min), 1.3fr)
       minmax(var(--hud-ident-min), 1.3fr)
       minmax(var(--hud-ident-min), 2.035fr);
     --hud-stat-tracks: repeat(10, minmax(var(--hud-stat-min), 1fr));
@@ -2470,15 +2493,22 @@
      which are integers, while the browser applies text-overflow on any
      sub-pixel overflow at all — so a head the fitter has correctly settled at
      its exact width overflows by a third of a pixel, and `ellipsis` spends a
-     whole character saying so. Measured at 1600px: WIN% in its 38px column
-     renders whole under `clip` and as "WIN…" under `ellipsis`. Every head is
+     whole character saying so. Measured at 1600px: ELO in its 38px column
+     renders whole under `clip` and as "EL…" under `ellipsis`. Every head is
      short enough to stand at its own floor, and each carries a title. */
-  .diplomacy-identity-head span {
+  .diplomacy-identity-head > span {
     min-width: 0; overflow: hidden; padding-inline: 3px;
     border-left: 1px solid #ffffff10; text-overflow: clip; white-space: nowrap;
   }
-  .diplomacy-identity-head span:first-child { border-left-color: transparent; }
+  .diplomacy-identity-head > span:first-child { border-left-color: transparent; }
   .diplomacy-identity-head .numeric { text-align: right; }
+  .diplomacy-identity-head .diplomacy-odds-head { padding-inline: 2px; }
+  .diplomacy-odds-head > span {
+    min-width: 0; overflow: hidden; text-overflow: clip; text-align: right;
+  }
+  .diplomacy-odds-head .odds-trend-head {
+    color: #738981; font-size: .88em; font-weight: 800; text-align: center;
+  }
   /* The Watch-as column's heading is the inverse of every action below it:
      leave any one civilization's fog and return to the omniscient table.
      Keeping it in the column makes that relationship visible, while the
@@ -2882,7 +2912,7 @@
      300px minimum never actually yields, which is why the identity column used
      to hold its full width while the values it was starving fell to 27px.
      Every step keeps the five label floors and the two figure floors adding up
-     to what the identity block claims at that width (5a + 76),
+     to what the identity block claims at that width (5a + 38 + 48),
      because the enclosing track's own floor is written from exactly that sum.
      Only the floors move here — the shares belong to the viewer now, and a
      breakpoint that rewrote them would undo a dragged column on the next
@@ -4375,17 +4405,71 @@ const RES_BADGE_R = 8.2 * RES_BADGE_K;
 // small; at this size it decides whether the badge leans into the next hex.
 const RES_BADGE_SEAT = 1 - (RES_BADGE_R + 1.2) / (S * SQ3 / 2);
 const ARTIFACT_RESOURCES = new Set(["antiquity_site", "shipwreck"]);
-// One compact silhouette per unit in data/units.json. The value is a drawing
-// vocabulary entry, not a Unicode character, so a platform font cannot turn a
-// crossbowman into a bullseye or a trebuchet into a meteor. Closely related
-// replacements deliberately share their weapon while truly different machines
-// keep different outlines.
 // Units that cannot fight — captured rather than killed, and the things an
 // empire has to escort. They carry their own plate shape so a glance separates
 // an army from what it is protecting.
 const CIVILIAN_UNITS = new Set(["settler", "builder", "trader", "naturalist",
   "archaeologist", "rock_band", "spy", "missionary", "apostle", "guru",
   "inquisitor"]);
+// The command map uses Civilization VI's own unit glyphs. Their order is the
+// order of the cells in civ6-unit-flags.png and is kept beside the renderer so
+// a missing ruleset unit cannot silently borrow another unit's picture.
+const CIV6_UNIT_ICON_TYPES = [
+  "aircraft_carrier", "anti_air_gun", "apostle", "archaeologist", "archer",
+  "artillery", "at_crew", "battering_ram", "battleship", "biplane",
+  "bombard", "bomber", "builder", "caravel", "catapult", "cavalry",
+  "courser", "crossbowman", "crouching_tiger", "cuirassier", "destroyer",
+  "drone", "eagle_warrior", "field_cannon", "fighter", "frigate", "galley",
+  "giant_death_robot", "guru", "heavy_chariot", "helicopter", "hoplite",
+  "horseman", "infantry", "inquisitor", "ironclad", "jet_bomber",
+  "jet_fighter", "knight", "legion", "line_infantry", "machine_gun",
+  "man_at_arms", "maryannu_chariot_archer", "mechanized_infantry", "medic",
+  "military_engineer", "missile_cruiser", "missionary", "mobile_sam",
+  "modern_armor", "modern_at", "musketman", "naturalist",
+  "nuclear_submarine", "observation_balloon", "pike_and_shot", "pikeman",
+  "pitati_archer", "privateer", "quadrireme", "ranger", "rock_band",
+  "rocket_artillery", "saka_horse_archer", "scout", "settler", "siege_tower",
+  "skirmisher", "slinger", "spearman", "spec_ops", "spy", "submarine",
+  "supply_convoy", "swordsman", "tagma", "tank", "trader", "trebuchet",
+  "war_cart", "warrior", "warrior_monk"
+];
+const CIV6_UNIT_ICON_INDEX = new Map(
+  CIV6_UNIT_ICON_TYPES.map((type, index) => [type, index]));
+const CIV6_UNIT_ICON_CELL = 64, CIV6_UNIT_ICON_COLUMNS = 12;
+const CIV6_UNIT_ICON_ATLAS = new Image();
+const CIV6_UNIT_ICON_CACHE = new Map();
+let CIV6_UNIT_ICON_ATLAS_READY = false;
+CIV6_UNIT_ICON_ATLAS.onload = () => {
+  CIV6_UNIT_ICON_ATLAS_READY = true;
+  CIV6_UNIT_ICON_CACHE.clear();
+  if (state) { draw(); drawMini(); }
+};
+CIV6_UNIT_ICON_ATLAS.src = "/assets/civ6-unit-flags.png";
+
+function civ6UnitIconSprite(type, color) {
+  const index = CIV6_UNIT_ICON_INDEX.get(type);
+  if (!CIV6_UNIT_ICON_ATLAS_READY || index === undefined) return null;
+  const cacheKey = `${index}|${color}`;
+  if (CIV6_UNIT_ICON_CACHE.has(cacheKey)) return CIV6_UNIT_ICON_CACHE.get(cacheKey);
+  const sprite = document.createElement("canvas");
+  sprite.width = sprite.height = CIV6_UNIT_ICON_CELL;
+  const g = sprite.getContext("2d");
+  const sx = (index % CIV6_UNIT_ICON_COLUMNS) * CIV6_UNIT_ICON_CELL;
+  const sy = Math.floor(index / CIV6_UNIT_ICON_COLUMNS) * CIV6_UNIT_ICON_CELL;
+  g.drawImage(CIV6_UNIT_ICON_ATLAS, sx, sy,
+              CIV6_UNIT_ICON_CELL, CIV6_UNIT_ICON_CELL,
+              0, 0, CIV6_UNIT_ICON_CELL, CIV6_UNIT_ICON_CELL);
+  // The atlas is a white alpha mask. Tinting once per jersey colour keeps the
+  // official shape while making a busy map cost only one drawImage per unit.
+  g.globalCompositeOperation = "source-in";
+  g.fillStyle = color;
+  g.fillRect(0, 0, CIV6_UNIT_ICON_CELL, CIV6_UNIT_ICON_CELL);
+  CIV6_UNIT_ICON_CACHE.set(cacheKey, sprite);
+  return sprite;
+}
+
+// Canvas-drawn fallbacks cover the first frame while the local atlas loads and
+// make an asset-load failure visible without making the map unusable.
 const UNIT_PICTOGRAM = {
   // civilians & specialists
   settler:"camp", builder:"hammer", trader:"caravan", naturalist:"leaf",
@@ -4427,8 +4511,8 @@ const UNIT_PICTOGRAM = {
   nuclear_submarine:"nuclear_submarine", aircraft_carrier:"carrier",
   // civilization uniques
   legion:"gladius_shield", hoplite:"hoplon_spear", eagle_warrior:"macuahuitl",
-  war_cart:"war_cart", pitati_archer:"bow", maryannu_chariot_archer:"chariot_bow",
-  saka_horse_archer:"horse_bow", crouching_tiger:"crossbow", tagma:"horse_lance"
+  war_cart:"war_cart", pitati_archer:"pitati_bow", maryannu_chariot_archer:"chariot_bow",
+  saka_horse_archer:"horse_bow", crouching_tiger:"tiger_cannon", tagma:"horse_cross_lance"
 };
 const BLDG_ICON = { monument:"🗿", granary:"🌾", walls:"🧱", medieval_walls:"🧱",
                     shrine:"⛩", library:"📜", market:"⚖", barracks:"🛡",
@@ -4471,53 +4555,134 @@ const districtColor = d =>
 // with them.
 const YICON = { food:"🍞", production:"⚙️", gold:"🪙", science:"🔬",
                 culture:"🎭", faith:"✡" };
-const PCOLORS = ["#ffd700","#e05050","#50a0e0","#50c878","#c878e0","#e09050",
-                 "#70d0d0","#f0f080","#a0a0ff","#ffa0c0","#80e080","#d0b080"];
-// Jersey partners, Civ 6 style: each empire pairs its colour with a second one
-// chosen for hue/lightness distance from the first, so anything stroked in
-// both can never dissolve into terrain that happens to share one of them —
-// the green empire's off-white casing carries its border across grassland,
-// the green core carries it across snow. Indexed in PCOLORS order.
-const PCOLORS2 = ["#4a2a8a","#f8eed6","#0e2f5e","#f4f7e8","#e8c25a","#1d3a6e",
-                  "#5c2140","#7a2020","#4e1e30","#123c3c","#3d2070","#7a1f2e"];
-// Civ VI's PlayerColors tables give every leader a canonical pair plus three
-// alternates. Keep those pairs together: when two primaries collide, the
-// later player takes the first free backup exactly as the base game does.
-// PCOLORS/PCOLORS2 remain the last resort for custom or future civilizations.
+// >>> generated by tools/civ6_player_colors.py -- do not edit by hand
+// Civ 6 dresses an empire in a jersey: a primary that fills its territory and a
+// secondary that trims it, plus three alternates for when two players in one lobby
+// would wear the same primary. These are those colours, read out of the game's own
+// PlayerColors tables -- 50 civilizations copy their base leader exactly, and the 55
+// Civ 6 never shipped are dressed from the same 28-colour palette. Regenerate with
+//   python3 tools/civ6_player_colors.py --write --json
+// and keep data/civ6_player_colors.json in step; tests/civ6_jerseys.rs compares them.
+
+// The last resort, for a civilization with no entry below: Civ 6's own generic
+// Usage=Major jerseys, ordered so consecutive player ids land far apart in hue.
+const PCOLORS = ["#e57574", "#79e077", "#74a3f3", "#aeaeae", "#eae19d", "#004fce", "#ca1415",
+                 "#ffb23c", "#7dece3", "#750073", "#ff8112", "#156c30", "#6d00cd", "#f9f9f9",
+                 "#61bf22", "#012a6c", "#535353", "#f7d801", "#014f51", "#780001", "#783d02",
+                 "#00c09b", "#b780e6"];
+// Indexed in PCOLORS order -- a jersey is the pair, so these must stay aligned.
+const PCOLORS2 = ["#780001", "#181818", "#181818", "#181818", "#181818", "#f9f9f9", "#f9f9f9",
+                  "#181818", "#181818", "#f9f9f9", "#181818", "#f9f9f9", "#7dece3", "#ca1415",
+                  "#181818", "#f9f9f9", "#eae19d", "#012a6c", "#ffb23c", "#eae19d", "#f9f9f9",
+                  "#780001", "#370065"];
 const CIV6_JERSEYS = {
-  Rome: [
-    ["#6d00cd", "#f7d801"], ["#780001", "#f7d801"],
-    ["#f7d801", "#370065"], ["#6d00cd", "#f9f9f9"],
-  ],
-  Egypt: [
-    ["#014f51", "#eae19d"], ["#eae19d", "#6d00cd"],
-    ["#eae19d", "#014f51"], ["#6d00cd", "#eae19d"],
-  ],
-  Greece: [
-    ["#74a3f3", "#f9f9f9"], ["#f9f9f9", "#74a3f3"],
-    ["#74a3f3", "#012a6c"], ["#012a6c", "#74a3f3"],
-  ],
-  China: [
-    ["#156c30", "#f9f9f9"], ["#ca1415", "#f7d801"],
-    ["#f7d801", "#ca1415"], ["#f7d801", "#012a6c"],
-  ],
-  Sumeria: [
-    ["#012a6c", "#ff8112"], ["#012a6c", "#7dece3"],
-    ["#ff8112", "#012a6c"], ["#012a6c", "#b780e6"],
-  ],
-  Aztec: [
-    ["#7dece3", "#780001"], ["#780001", "#7dece3"],
-    ["#ff8112", "#014f51"], ["#014f51", "#ff8112"],
-  ],
-  Nubia: [
-    ["#eae19d", "#783d02"], ["#783d02", "#eae19d"],
-    ["#f9f9f9", "#783d02"], ["#783d02", "#f9f9f9"],
-  ],
-  Scythia: [
-    ["#ffb23c", "#780001"], ["#783d02", "#f9f9f9"],
-    ["#780001", "#eae19d"], ["#783d02", "#eae19d"],
-  ],
+  Rome: [["#6d00cd","#f7d801"], ["#780001","#f7d801"], ["#f7d801","#370065"], ["#6d00cd","#f9f9f9"]], // leader Trajan
+  Egypt: [["#014f51","#eae19d"], ["#eae19d","#6d00cd"], ["#eae19d","#014f51"], ["#6d00cd","#eae19d"]], // leader Cleopatra
+  Greece: [["#74a3f3","#f9f9f9"], ["#f9f9f9","#74a3f3"], ["#74a3f3","#012a6c"], ["#012a6c","#74a3f3"]], // leader Pericles
+  China: [["#156c30","#f9f9f9"], ["#ca1415","#f7d801"], ["#f7d801","#ca1415"], ["#f7d801","#012a6c"]], // leader Qin
+  Sumeria: [["#012a6c","#ff8112"], ["#012a6c","#7dece3"], ["#ff8112","#012a6c"], ["#012a6c","#b780e6"]], // leader Gilgamesh
+  Aztec: [["#7dece3","#780001"], ["#780001","#7dece3"], ["#ff8112","#014f51"], ["#014f51","#ff8112"]], // leader Montezuma
+  Nubia: [["#eae19d","#783d02"], ["#783d02","#eae19d"], ["#f9f9f9","#783d02"], ["#783d02","#f9f9f9"]], // leader Amanitore
+  Scythia: [["#ffb23c","#780001"], ["#783d02","#f9f9f9"], ["#780001","#eae19d"], ["#783d02","#eae19d"]], // leader Tomyris
+  England: [["#ca1415","#f9f9f9"], ["#f9f9f9","#ca1415"], ["#012a6c","#ca1415"], ["#ca1415","#012a6c"]], // leader Victoria
+  Germany: [["#aeaeae","#181818"], ["#f7d801","#181818"], ["#ca1415","#f9f9f9"], ["#f7d801","#ca1415"]], // leader Barbarossa
+  Russia: [["#f7d801","#181818"], ["#f9f9f9","#004fce"], ["#004fce","#f9f9f9"], ["#012a6c","#e57574"]], // leader Peter Great
+  Korea: [["#ca1415","#74a3f3"], ["#74a3f3","#ca1415"], ["#ff8112","#f9f9f9"], ["#f9f9f9","#ff8112"]], // leader Seondeok
+  Maya: [["#74a3f3","#014f51"], ["#014f51","#74a3f3"], ["#156c30","#eae19d"], ["#ffb23c","#014f51"]], // leader Lady Six Sky
+  Mali: [["#780001","#eae19d"], ["#eae19d","#780001"], ["#867202","#f9f9f9"], ["#867202","#79e077"]], // leader Mansa Musa
+  Phoenicia: [["#6d00cd","#74a3f3"], ["#6d00cd","#f9f9f9"], ["#370065","#ffb23c"], ["#f9f9f9","#370065"]], // leader Dido
+  Byzantium: [["#370065","#eae19d"], ["#780001","#f7d801"], ["#f7d801","#780001"], ["#6d00cd","#f7d801"]], // leader Basil
+  Zulu: [["#783d02","#f9f9f9"], ["#156c30","#eae19d"], ["#f9f9f9","#783d02"], ["#61bf22","#181818"]], // leader Shaka
+  Gaul: [["#156c30","#7dece3"], ["#eae19d","#156c30"], ["#783d02","#ff8112"], ["#ff8112","#eae19d"]], // leader Ambiorix
+  Kongo: [["#f7d801","#ca1415"], ["#ca1415","#f7d801"], ["#79e077","#783d02"], ["#783d02","#79e077"]], // leader Mvemba
+  Vietnam: [["#f7d801","#750073"], ["#f7d801","#783d02"], ["#ca1415","#f7d801"], ["#f7d801","#181818"]], // leader Lady Trieu
+  Brazil: [["#61bf22","#f7d801"], ["#61bf22","#012a6c"], ["#f7d801","#156c30"], ["#012a6c","#79e077"]], // leader Pedro
+  France: [["#004fce","#eae19d"], ["#f9f9f9","#867202"], ["#f9f9f9","#004fce"], ["#012a6c","#ca1415"]], // leader Catherine De Medici
+  Spain: [["#ca1415","#f7d801"], ["#f7d801","#ca1415"], ["#ca1415","#012a6c"], ["#012a6c","#ca1415"]], // leader Philip Ii
+  Portugal: [["#f9f9f9","#012a6c"], ["#61bf22","#780001"], ["#012a6c","#f9f9f9"], ["#780001","#f7d801"]], // leader Joao Iii
+  Netherlands: [["#ff8112","#004fce"], ["#ff8112","#f9f9f9"], ["#ff8112","#ffb23c"], ["#ff8112","#780001"]], // leader Wilhelmina
+  Sweden: [["#74a3f3","#f7d801"], ["#f7d801","#012a6c"], ["#004fce","#f9f9f9"], ["#f9f9f9","#012a6c"]], // leader Kristina
+  Norway: [["#012a6c","#ca1415"], ["#ca1415","#012a6c"], ["#ca1415","#f7d801"], ["#f7d801","#ca1415"]], // leader Hardrada
+  Denmark: [["#780001","#f9f9f9"], ["#f9f9f9","#780001"], ["#e57574","#f9f9f9"], ["#181818","#780001"]], // palette red_dk/white_lt
+  Poland: [["#780001","#e57574"], ["#f9f9f9","#e57574"], ["#012a6c","#f9f9f9"], ["#f9f9f9","#012a6c"]], // leader Jadwiga
+  Hungary: [["#156c30","#ff8112"], ["#f9f9f9","#156c30"], ["#156c30","#ca1415"], ["#156c30","#f9f9f9"]], // leader Matthias Corvinus
+  Austria: [["#ca1415","#aeaeae"], ["#aeaeae","#ca1415"], ["#780001","#aeaeae"], ["#181818","#ca1415"]], // palette red_md/white_md2
+  Bohemia: [["#aeaeae","#ca1415"], ["#ca1415","#aeaeae"], ["#181818","#ca1415"], ["#780001","#aeaeae"]], // palette white_md2/red_md
+  Scotland: [["#f9f9f9","#004fce"], ["#004fce","#f9f9f9"], ["#f7d801","#ca1415"], ["#f7d801","#004fce"]], // leader Robert The Bruce
+  Ireland: [["#61bf22","#ff8112"], ["#ff8112","#61bf22"], ["#156c30","#ff8112"], ["#783d02","#61bf22"]], // palette green_md/orange_md
+  Switzerland: [["#ca1415","#181818"], ["#181818","#ca1415"], ["#780001","#181818"], ["#f9f9f9","#ca1415"]], // palette red_md/white_dk
+  Venice: [["#780001","#f7d801"], ["#f7d801","#780001"], ["#e57574","#f7d801"], ["#867202","#780001"]], // palette red_dk/yellow_md
+  Serbia: [["#012a6c","#e57574"], ["#e57574","#012a6c"], ["#74a3f3","#e57574"], ["#780001","#012a6c"]], // palette blue_dk/red_lt
+  Bulgaria: [["#61bf22","#f9f9f9"], ["#f9f9f9","#61bf22"], ["#156c30","#f9f9f9"], ["#181818","#61bf22"]], // palette green_md/white_lt
+  Lithuania: [["#867202","#ca1415"], ["#ca1415","#867202"], ["#eae19d","#ca1415"], ["#780001","#867202"]], // palette yellow_dk/red_md
+  Ukraine: [["#004fce","#f7d801"], ["#f7d801","#004fce"], ["#012a6c","#f7d801"], ["#867202","#004fce"]], // palette blue_md/yellow_md
+  Finland: [["#004fce","#f9f9f9"], ["#f9f9f9","#004fce"], ["#012a6c","#f9f9f9"], ["#181818","#004fce"]], // palette blue_md/white_lt
+  Romania: [["#004fce","#ca1415"], ["#ca1415","#004fce"], ["#012a6c","#ca1415"], ["#780001","#004fce"]], // palette blue_md/red_md
+  Novgorod: [["#014f51","#f7d801"], ["#f7d801","#014f51"], ["#7dece3","#f7d801"], ["#867202","#014f51"]], // palette aqua_dk/yellow_md
+  Prussia: [["#181818","#aeaeae"], ["#aeaeae","#181818"], ["#f9f9f9","#aeaeae"]], // palette white_dk/white_md2
+  Catalonia: [["#eae19d","#ca1415"], ["#ca1415","#eae19d"], ["#867202","#ca1415"], ["#780001","#eae19d"]], // palette yellow_lt/red_md
+  Gujarat: [["#ff8112","#00c09b"], ["#00c09b","#ff8112"], ["#783d02","#00c09b"], ["#014f51","#ff8112"]], // palette orange_md/aqua_md
+  Assyria: [["#783d02","#7dece3"], ["#7dece3","#783d02"], ["#ffb23c","#7dece3"], ["#014f51","#783d02"]], // palette orange_dk/aqua_lt
+  Persia: [["#b780e6","#780001"], ["#780001","#b780e6"], ["#ca1415","#f7d801"], ["#00c09b","#780001"]], // leader Cyrus
+  Media: [["#6d00cd","#7dece3"], ["#7dece3","#6d00cd"], ["#370065","#7dece3"], ["#014f51","#6d00cd"]], // palette purple_md/aqua_lt
+  Manchuria: [["#867202","#181818"], ["#181818","#867202"], ["#eae19d","#181818"], ["#f9f9f9","#867202"]], // palette yellow_dk/white_dk
+  Lydia: [["#eae19d","#780001"], ["#780001","#eae19d"], ["#867202","#780001"], ["#e57574","#eae19d"]], // palette yellow_lt/red_dk
+  Parthia: [["#014f51","#ffb23c"], ["#ffb23c","#014f51"], ["#7dece3","#ffb23c"], ["#783d02","#014f51"]], // palette aqua_dk/orange_lt
+  Sogdiana: [["#7dece3","#370065"], ["#370065","#7dece3"], ["#014f51","#370065"], ["#b780e6","#7dece3"]], // palette aqua_lt/purple_dk
+  Ottomans: [["#f9f9f9","#156c30"], ["#ca1415","#f9f9f9"], ["#156c30","#f9f9f9"], ["#156c30","#e57574"]], // leader Suleiman
+  Arabia: [["#f7d801","#156c30"], ["#156c30","#79e077"], ["#79e077","#181818"], ["#867202","#61bf22"]], // leader Saladin
+  Israel: [["#f9f9f9","#74a3f3"], ["#74a3f3","#f9f9f9"], ["#181818","#74a3f3"], ["#012a6c","#f9f9f9"]], // palette white_lt/blue_lt
+  Armenia: [["#780001","#ffb23c"], ["#ffb23c","#780001"], ["#e57574","#ffb23c"], ["#783d02","#780001"]], // palette red_dk/orange_lt
+  Georgia: [["#f9f9f9","#ff8112"], ["#f9f9f9","#ca1415"], ["#780001","#f9f9f9"], ["#f7d801","#181818"]], // leader Tamar
+  Timurids: [["#00c09b","#181818"], ["#181818","#00c09b"], ["#014f51","#181818"], ["#f9f9f9","#00c09b"]], // palette aqua_md/white_dk
+  Kazakh: [["#00c09b","#f7d801"], ["#f7d801","#00c09b"], ["#014f51","#f7d801"], ["#867202","#00c09b"]], // palette aqua_md/yellow_md
+  Bactria: [["#156c30","#ffb23c"], ["#ffb23c","#156c30"], ["#79e077","#ffb23c"], ["#783d02","#156c30"]], // palette green_dk/orange_lt
+  Ethiopia: [["#f7d801","#156c30"], ["#156c30","#f7d801"], ["#ca1415","#f7d801"], ["#156c30","#ca1415"]], // leader Menelik
+  Axum: [["#156c30","#eae19d"], ["#eae19d","#156c30"], ["#79e077","#eae19d"], ["#867202","#156c30"]], // palette green_dk/yellow_lt
+  Morocco: [["#780001","#61bf22"], ["#61bf22","#780001"], ["#e57574","#61bf22"], ["#156c30","#780001"]], // palette red_dk/green_md
+  Numidia: [["#783d02","#eae19d"], ["#eae19d","#783d02"], ["#ffb23c","#eae19d"], ["#867202","#783d02"]], // palette orange_dk/yellow_lt
+  Songhai: [["#867202","#7dece3"], ["#7dece3","#867202"], ["#eae19d","#7dece3"], ["#014f51","#867202"]], // palette yellow_dk/aqua_lt
+  Ghana: [["#f7d801","#780001"], ["#780001","#f7d801"], ["#867202","#780001"], ["#e57574","#f7d801"]], // palette yellow_md/red_dk
+  Benin: [["#750073","#ffb23c"], ["#ffb23c","#750073"], ["#ff99ff","#ffb23c"], ["#783d02","#750073"]], // palette magenta_dk/orange_lt
+  Ashanti: [["#f7d801","#783d02"], ["#783d02","#f7d801"], ["#867202","#783d02"], ["#ffb23c","#f7d801"]], // palette yellow_md/orange_dk
+  Swahili: [["#00c09b","#780001"], ["#780001","#00c09b"], ["#014f51","#780001"], ["#e57574","#00c09b"]], // palette aqua_md/red_dk
+  "Great Zimbabwe": [["#79e077","#181818"], ["#181818","#79e077"], ["#156c30","#181818"], ["#f9f9f9","#79e077"]], // palette green_lt/white_dk
+  Buganda: [["#ff99ff","#156c30"], ["#156c30","#ff99ff"], ["#750073","#156c30"], ["#79e077","#ff99ff"]], // palette magenta_lt/green_dk
+  Oyo: [["#b780e6","#867202"], ["#867202","#b780e6"], ["#370065","#867202"], ["#eae19d","#b780e6"]], // palette purple_lt/yellow_dk
+  Tuareg: [["#74a3f3","#783d02"], ["#783d02","#74a3f3"], ["#012a6c","#783d02"], ["#ffb23c","#74a3f3"]], // palette blue_lt/orange_dk
+  Madagascar: [["#ff00ff","#156c30"], ["#156c30","#ff00ff"], ["#750073","#156c30"], ["#79e077","#ff00ff"]], // palette magenta_md/green_dk
+  India: [["#370065","#00c09b"], ["#00c09b","#370065"], ["#156c30","#ffb23c"], ["#ffb23c","#156c30"]], // leader Gandhi
+  Japan: [["#f9f9f9","#780001"], ["#780001","#f9f9f9"], ["#004fce","#f9f9f9"], ["#f9f9f9","#004fce"]], // leader Hojo
+  Mongolia: [["#780001","#ff8112"], ["#ff8112","#780001"], ["#eae19d","#780001"], ["#780001","#f7d801"]], // leader Genghis Khan
+  Tibet: [["#ca1415","#eae19d"], ["#eae19d","#ca1415"], ["#780001","#eae19d"], ["#867202","#ca1415"]], // palette red_md/yellow_lt
+  Nepal: [["#ca1415","#012a6c"], ["#012a6c","#ca1415"], ["#780001","#012a6c"], ["#74a3f3","#ca1415"]], // palette red_md/blue_dk
+  Kalinga: [["#ffb23c","#370065"], ["#370065","#ffb23c"], ["#783d02","#370065"], ["#b780e6","#ffb23c"]], // palette orange_lt/purple_dk
+  Chola: [["#e57574","#867202"], ["#867202","#e57574"], ["#780001","#867202"], ["#eae19d","#e57574"]], // palette red_lt/yellow_dk
+  Bengal: [["#156c30","#ca1415"], ["#ca1415","#156c30"], ["#79e077","#ca1415"], ["#780001","#156c30"]], // palette green_dk/red_md
+  Maratha: [["#ff8112","#370065"], ["#370065","#ff8112"], ["#783d02","#370065"], ["#b780e6","#ff8112"]], // palette orange_md/purple_dk
+  Khmer: [["#750073","#ff8112"], ["#012a6c","#eae19d"], ["#783d02","#ff8112"], ["#ff8112","#750073"]], // leader Jayavarman
+  Siam: [["#ca1415","#004fce"], ["#004fce","#ca1415"], ["#780001","#004fce"], ["#012a6c","#ca1415"]], // palette red_md/blue_md
+  Burma: [["#f7d801","#61bf22"], ["#61bf22","#f7d801"], ["#867202","#61bf22"], ["#156c30","#f7d801"]], // palette yellow_md/green_md
+  Majapahit: [["#e57574","#f9f9f9"], ["#f9f9f9","#e57574"], ["#780001","#f9f9f9"], ["#181818","#e57574"]], // palette red_lt/white_lt
+  Champa: [["#750073","#eae19d"], ["#eae19d","#750073"], ["#ff99ff","#eae19d"], ["#867202","#750073"]], // palette magenta_dk/yellow_lt
+  America: [["#012a6c","#f9f9f9"], ["#ca1415","#f9f9f9"], ["#f9f9f9","#012a6c"], ["#012a6c","#ca1415"]], // leader T Roosevelt
+  Canada: [["#f9f9f9","#ca1415"], ["#ca1415","#f9f9f9"], ["#780001","#e57574"], ["#e57574","#780001"]], // leader Laurier
+  Pueblo: [["#ffb23c","#014f51"], ["#014f51","#ffb23c"], ["#783d02","#014f51"], ["#7dece3","#ffb23c"]], // palette orange_lt/aqua_dk
+  Comanche: [["#e57574","#181818"], ["#181818","#e57574"], ["#780001","#181818"], ["#f9f9f9","#e57574"]], // palette red_lt/white_dk
+  Sioux: [["#370065","#aeaeae"], ["#aeaeae","#370065"], ["#b780e6","#aeaeae"], ["#181818","#370065"]], // palette purple_dk/white_md2
+  Inca: [["#783d02","#f7d801"], ["#ffb23c","#014f51"], ["#f7d801","#783d02"], ["#014f51","#ffb23c"]], // leader Pachacuti
+  Muisca: [["#eae19d","#156c30"], ["#156c30","#eae19d"], ["#867202","#156c30"], ["#79e077","#eae19d"]], // palette yellow_lt/green_dk
+  Mapuche: [["#004fce","#7dece3"], ["#f7d801","#780001"], ["#eae19d","#783d02"], ["#74a3f3","#012a6c"]], // leader Lautaro
+  Argentina: [["#74a3f3","#eae19d"], ["#eae19d","#74a3f3"], ["#012a6c","#eae19d"], ["#867202","#74a3f3"]], // palette blue_lt/yellow_lt
+  Australia: [["#156c30","#f7d801"], ["#f9f9f9","#ff8112"], ["#012a6c","#f9f9f9"], ["#f9f9f9","#012a6c"]], // leader John Curtin
+  Maori: [["#ca1415","#7dece3"], ["#7dece3","#ca1415"], ["#00c09b","#7dece3"], ["#783d02","#eae19d"]], // leader Kupe
+  Babylon: [["#74a3f3","#012a6c"], ["#eae19d","#012a6c"], ["#012a6c","#f9f9f9"], ["#012a6c","#f7d801"]], // leader Hammurabi
+  Cree: [["#012a6c","#61bf22"], ["#61bf22","#012a6c"], ["#74a3f3","#f7d801"], ["#61bf22","#f7d801"]], // leader Poundmaker
+  "Gran Colombia": [["#012a6c","#f7d801"], ["#012a6c","#ca1415"], ["#ca1415","#012a6c"], ["#eae19d","#780001"]], // leader Simon Bolivar
+  Indonesia: [["#780001","#00c09b"], ["#00c09b","#780001"], ["#ca1415","#f9f9f9"], ["#012a6c","#00c09b"]], // leader Gitarja
+  Macedon: [["#aeaeae","#f7d801"], ["#012a6c","#f7d801"], ["#ca1415","#f7d801"], ["#f7d801","#012a6c"]], // leader Alexander
 };
+// <<< generated by tools/civ6_player_colors.py
 const CITY_STATE_TINT = "#202225";
 const CITY_STATE_TYPE_COLORS = {
   scientific:"#4aa3df", cultural:"#a46bd4", religious:"#eee7cf",
@@ -6133,7 +6298,10 @@ const PLAYER_HUD_COLUMNS = [
   {key:"leader", label:"Leader", block:"identity", head:1, min:"--hud-ident-min", width:1.85},
   {key:"player", label:"Player", block:"identity", head:3, min:"--hud-ident-min", width:1.85},
   {key:"elo", label:"Elo rating", block:"identity", head:4, min:"--hud-ident-num-min", width:1.017},
-  {key:"win", label:"Win odds", block:"identity", head:5, min:"--hud-ident-num-min", width:1.017},
+  // One column, two figures: the odds this seat started with and the odds it
+  // holds now. They are dragged, saved and measured as a single column because
+  // they are read as a single movement.
+  {key:"win", label:"Win odds", block:"identity", head:5, min:"--hud-ident-odds-min", width:1.3},
   {key:"age", label:"Age", block:"identity", head:6, min:"--hud-ident-min", width:1.3},
   {key:"plan", label:"Plan", block:"identity", head:7, min:"--hud-ident-min", width:2.035},
   ...[["production", "Production"], ["science", "Science"], ["culture", "Culture"],
@@ -6203,8 +6371,8 @@ function syncPlayerHudColumns(placeGrips = true) {
     `${track(identity[0])} ${track(identity[1])} var(--hud-watch-column) ` +
       identity.slice(2).map(track).join(" "),
     stats.map(track).join(" "),
-    `minmax(calc(var(--hud-ident-min) * 5 + var(--hud-ident-num-min) * 2), ` +
-      `${total(identity).toFixed(4)}fr)`,
+    `minmax(calc(var(--hud-ident-min) * 5 + var(--hud-ident-num-min) ` +
+      `+ var(--hud-ident-odds-min)), ${total(identity).toFixed(4)}fr)`,
     `minmax(calc(var(--hud-stat-min) * 10 + var(--hud-stat-gap) * 9), ` +
       `${total(stats).toFixed(4)}fr)`,
   ];
@@ -7087,6 +7255,16 @@ function lightness(hex) {
   return (0.2126 * ((n >> 16) & 255) + 0.7152 * ((n >> 8) & 255)
           + 0.0722 * (n & 255)) / 255;
 }
+// Command tokens are ownership colour plus type ink. Some real Civ VI primary
+// jerseys are near-black (as are barbarians and city-states), so fixed black
+// ink erases the very pictogram the token exists to carry. Prefer the jersey's
+// partner when it has useful contrast, then fall back to map-ink dark or cream.
+function unitTokenInk(owner) {
+  const primaryLight = lightness(pcol(owner));
+  const partner = pcol2(owner);
+  if (Math.abs(primaryLight - lightness(partner)) >= .34) return partner;
+  return primaryLight < .48 ? "#f0ead8" : "#10151d";
+}
 // A civilization's jersey pair, darker first. Jersey order is which colour is
 // "primary", which says nothing about which is light: Rome is purple on yellow
 // and Sumeria is navy on orange, so anything that wants the light half has to
@@ -7848,11 +8026,19 @@ let finaleCountdownTimer = null;
 // finale cannot re-arm itself on the next poll, and cleared when the screen
 // goes away so a later result in the same world gets its own countdown.
 let finaleCountdownResult = null;
+// Process and seed are the authority behind that result. A throttled timer can
+// wake after the supervisor has already put a successor on the same port; it
+// must never turn that old finale into a restart of the new, active world.
+let finaleCountdownWorld = null;
 
 function armFinaleCountdown(signature) {
   if (SPEC || finaleCountdownResult === signature) return;
   cancelFinaleCountdown();
   finaleCountdownResult = signature;
+  finaleCountdownWorld = {
+    serverInstance: state?.server_instance ?? null,
+    seed: state?.seed ?? null,
+  };
   finaleCountdownDeadline = Date.now() + FINALE_RESTART_SECONDS * 1000;
   // Sub-second ticks so the number on the button is never a second stale, and
   // so a throttled background tab cannot overshoot the start by a whole tick.
@@ -7861,15 +8047,33 @@ function armFinaleCountdown(signature) {
 }
 
 function tickFinaleCountdown() {
+  // A gesture or play-on action may cancel an interval whose callback was
+  // already queued. Clearing the timer is the authority; that queued callback
+  // no longer owns a restart.
+  if (finaleCountdownTimer === null) return;
   const button = document.getElementById("finale-restart");
   // The result screen was replaced or dismissed under the countdown. Nothing
   // is left to count, and an interval with no button never stops on its own.
   if (!button) { cancelFinaleCountdown(); return; }
+  // Re-check at the firing edge, not only when the timer was armed. Browser
+  // timers are deliberately throttled in a background tab, so this callback
+  // may run after a process handoff and after the new world has begun. The
+  // successor is not an answer to the old result screen.
+  if (SPEC || !state || !finaleCountdownWorld ||
+      state.server_instance !== finaleCountdownWorld.serverInstance ||
+      state.seed !== finaleCountdownWorld.seed) {
+    clearFinaleCountdown();
+    return;
+  }
   const left = Math.max(0, Math.ceil((finaleCountdownDeadline - Date.now()) / 1000));
   button.textContent = `${FINALE_RESTART_LABEL} (${left})`;
   if (left > 0) return;
   cancelFinaleCountdown();
-  startNewSimulation();
+  // Name the only non-human caller. The supervised endpoint verifies that a
+  // finale request really belongs to a finished game; exact world identity by
+  // itself cannot distinguish a legitimate result from a bad callback that
+  // was armed while the current world was still playing.
+  startNewSimulation("finale_countdown");
 }
 
 function cancelFinaleCountdown() {
@@ -7884,6 +8088,7 @@ function cancelFinaleCountdown() {
 function clearFinaleCountdown() {
   cancelFinaleCountdown();
   finaleCountdownResult = null;
+  finaleCountdownWorld = null;
 }
 
 for (const gesture of ["pointerdown", "keydown", "wheel"])
@@ -12375,10 +12580,16 @@ const BAKED_FAMILIES = new Set(["infantry", "civilian", "religious", "mounted",
 const UNIT_SPAN = 32;               // measured widest figure, sprite units
 const UNIT_FILL = 0.80;
 const UNIT_SCALE = S * SQ3 * UNIT_FILL / UNIT_SPAN;
+// Flat-board figures live in world coordinates, while a Planet figure is
+// composed in projected screen coordinates.  The latter supplies its local
+// tile scale here rather than teaching every painted part about spherical
+// projection.  It is set only for the duration of one planet-unit draw.
+let UNIT_RENDER_CONTEXT = null;
 // Strategic does not draw figures at all — it draws a flat disc token whose
 // size is set by the glyph it has to hold — so the figure scale is a painted
 // concern and that view is left exactly as it was.
-const unitScale = () => MODE.painted ? UNIT_SCALE : 1;
+const unitScale = () => MODE.painted
+  ? UNIT_SCALE * (UNIT_RENDER_CONTEXT?.scale || 1) : 1;
 // Every mark that hangs off a unit — the ground plate, the type badge, the
 // fortify shield, the health bar — is laid out against the figure it belongs
 // to, so all of them take the figure's scale or the composition comes apart:
@@ -12395,7 +12606,6 @@ const ART_BOX = 26;
 const UNIT_ART = new Map();
 const UNIT_ART_WARNED = new Set();
 const UNIT_ART_CAP = 192;           // ~24 types x 8 jerseys live on screen at once
-let UNIT_ART_RES = 0;
 let BAKE_RES = 2;
 // Bake resolution follows the zoom in whole steps — the same rule `artRes`
 // uses for terrain, so a pinch does not thrash the cache — but it *rounds up*.
@@ -12425,7 +12635,8 @@ function unitArtScale() {
   // it and then magnified by it is exactly the softening this cache exists to
   // avoid, and it would have been invisible because the sprite still appears —
   // just blurred.
-  return cam.scale * DPR * close * unitScale();
+  const screenScale = UNIT_RENDER_CONTEXT?.screenScale ?? cam.scale * DPR;
+  return screenScale * close * unitScale();
 }
 function unitArtRes() {
   return Math.min(ART_MAX_RES, Math.max(1, Math.ceil(unitArtScale())));
@@ -12435,11 +12646,13 @@ function unitArtUsable() {
 }
 function unitArt(type, col, family, fc, skin) {
   const res = unitArtRes();
-  if (res !== UNIT_ART_RES) { UNIT_ART.clear(); UNIT_ART_RES = res; }
   // Orientation is baked in rather than mirrored at blit time: a mirrored blit
   // would carry the highlight round with the figure and light it from the
   // wrong side, which is the thing the whole `dir` convention exists to avoid.
-  const key = `${type}|${col}|${fc}|${LITF}`;
+  // Resolution and family belong in the key too. A planet's near cells can be
+  // larger than its far cells in one frame, and an embarked unit uses the same
+  // rules ID as the land figure it temporarily replaces.
+  const key = `${res}|${family}|${type}|${col}|${fc}|${LITF}|${skin}`;
   const had = UNIT_ART.get(key);
   if (had !== undefined) return had;
   const D = Math.ceil(ART_BOX * 2 * res);
@@ -12800,12 +13013,20 @@ function drawUnitChar(u, x, y, now, moving) {
   // `unitVisualFamily` is implemented by the module; this guard preserves the
   // zero-dependency vector fallback if an old cached page or constrained
   // browser cannot load it.
+  // A planet supplies its own local ground frame. It is still this same unit
+  // renderer — only its projection and world-fixed light differ from the flat
+  // board — so the handoff remains one behavior for every unit family.
+  const cinematicSurface = UNIT_RENDER_CONTEXT?.cinematic3d;
   const depthModel = cinemaActive() && MODE.fx && cam.scale >= 1.18 &&
     (cinematicDepthSubject(u, now) || cam.scale >= 1.58) &&
-    !u.survey_count && globalThis.Cinematic3D?.supports(family);
+    !u.survey_count && cinematicSurface?.depthAllowed !== false &&
+    globalThis.Cinematic3D?.supports(family);
   if (depthModel && Cinematic3D.draw({
       ctx:cx, family, type:k, color:col, skin, facing:fc,
       time:now, seed:Number(u.id || 0), moving, action, scale:1.04,
+      orthographic:cinematicSurface?.orthographic,
+      tilt:cinematicSurface?.tilt,
+      sunAngle:cinematicSurface?.sunAngle,
     })) {
     cx.restore();
     return;
@@ -15252,6 +15473,18 @@ function unitPad() {
 // Status marks keep their on-screen size as the map zooms out, so a unit's
 // state stays readable at the scale you actually survey an empire at.
 const UI_K = () => 1 / Math.min(1, Math.max(cam.scale, 0.5));
+// Strategic's unit *is* its token, not a figure with a small annotation. Hold
+// that token at authored size through ordinary survey zoom; once a whole hex
+// is only one token wide, let both shrink together instead of covering adjacent
+// cells. The floor is derived from token diameter / hex width.
+const COMMAND_UNIT_K = () => 1 / Math.min(1, Math.max(cam.scale,
+  (2 * 10.5) / (S * SQ3)));
+// The Civ VI atlas cells carry breathing room around each silhouette. Preserve
+// the authored survey size through zoom 1, then spend that room as the camera
+// closes in: at maximum zoom the glyph fills nearly a third more of its token
+// without changing the token footprint or crowding the zoomed-out map.
+const COMMAND_UNIT_ICON_K = () => 1 + .32 * Math.max(0, Math.min(1,
+  (cam.scale - 1) / 2.2));
 
 // Civ 6 hangs a small flag off each unit carrying its icon, because a drawn
 // figure at map scale reads as "somebody's soldier" and nothing more. Same
@@ -15284,6 +15517,16 @@ function pictogramBow(kind, color) {
     cx.lineWidth = 1.2;
     cx.beginPath(); cx.moveTo(-3,0); cx.lineTo(9,0); cx.stroke();
     cx.beginPath(); cx.moveTo(9,0); cx.lineTo(6,-2); cx.lineTo(6,2); cx.closePath(); cx.fill();
+    if (kind === "pitati_bow") {
+      // The Pitati keeps the readable bow family, but a three-feather tail
+      // separates it from the ordinary archer even at the smallest token.
+      cx.lineWidth = 1.15;
+      cx.beginPath();
+      cx.moveTo(-2,0); cx.lineTo(-6,-4);
+      cx.moveTo(-2,0); cx.lineTo(-7,0);
+      cx.moveTo(-2,0); cx.lineTo(-6,4);
+      cx.stroke();
+    }
   }
 }
 
@@ -15297,10 +15540,17 @@ function pictogramHorse(kind, color) {
   cx.lineTo(-7,9); cx.closePath(); cx.fill();
   cx.lineWidth = 1.2;
   cx.beginPath(); cx.moveTo(-7,4); cx.quadraticCurveTo(-11,0,-9,-4); cx.stroke();
-  if (kind === "horse_lance") {
+  if (kind === "horse_lance" || kind === "horse_cross_lance") {
     cx.lineWidth = 1.3; cx.beginPath(); cx.moveTo(-3,1); cx.lineTo(10,-9); cx.stroke();
-  } else if (kind === "horse_sword" || kind === "horse_sabre") {
+    if (kind === "horse_cross_lance") {
+      cx.lineWidth = 1.15;
+      cx.beginPath(); cx.moveTo(4,-8); cx.lineTo(8,-3); cx.stroke();
+    }
+  } else if (kind === "horse_sword") {
     cx.lineWidth = 1.4; cx.beginPath(); cx.moveTo(-1,0); cx.lineTo(6,-8); cx.stroke();
+  } else if (kind === "horse_sabre") {
+    cx.lineWidth = 1.4; cx.beginPath();
+    cx.moveTo(-1,0); cx.quadraticCurveTo(7,-3,7,-9); cx.stroke();
   } else if (kind === "horse_rifle") {
     cx.lineWidth = 1.5; cx.beginPath(); cx.moveTo(-3,-2); cx.lineTo(8,-5); cx.stroke();
   } else if (kind === "horse_bow") {
@@ -15315,7 +15565,11 @@ function pictogramShip(kind, color) {
     cx.beginPath(); cx.ellipse(0,2,10,4,0,0,7); cx.fill();
     cx.fillRect(-2,-4,5,4); cx.fillRect(0,-7,1.5,4);
     if (kind === "nuclear_submarine") {
-      cx.globalAlpha = .5; cx.beginPath(); cx.arc(-5,2,2,0,7); cx.fill(); cx.globalAlpha = 1;
+      // Cut a reactor port through the otherwise solid hull. Tinting a mark on
+      // top of a solid same-colour silhouette changed no pixels at all.
+      cx.globalCompositeOperation = "destination-out";
+      cx.beginPath(); cx.arc(-5,2,1.8,0,7); cx.fill();
+      cx.globalCompositeOperation = "source-over";
     }
     return;
   }
@@ -15337,6 +15591,16 @@ function pictogramShip(kind, color) {
     }
     cx.closePath(); cx.fill();
     if (kind === "privateer") { cx.globalAlpha=.55; cx.beginPath(); cx.arc(3,-5,1.7,0,7); cx.fill(); cx.globalAlpha=1; }
+    if (kind === "quadrireme") {
+      cx.lineWidth = .85;
+      cx.beginPath();
+      for (const ox of [-7,-3,1,5]) { cx.moveTo(ox,5); cx.lineTo(ox-2,10); }
+      cx.stroke();
+    } else if (kind === "frigate") {
+      cx.lineWidth = .9;
+      cx.beginPath(); cx.moveTo(-6,1); cx.lineTo(-6,-7); cx.stroke();
+      cx.beginPath(); cx.moveTo(-5,-6); cx.lineTo(-1,-3); cx.lineTo(-5,-2); cx.closePath(); cx.fill();
+    }
   } else {
     cx.fillRect(-2,-5,7,5);
     cx.lineWidth = 1.25;
@@ -15346,6 +15610,12 @@ function pictogramShip(kind, color) {
     }
     if (kind === "missile_cruiser") {
       for (const dx of [-4,-1,2]) { cx.beginPath(); cx.moveTo(dx,-3); cx.lineTo(dx+1,-9); cx.stroke(); }
+    } else if (kind === "destroyer") {
+      cx.beginPath(); cx.moveTo(-3,-4); cx.lineTo(-1,-9); cx.lineTo(2,-4); cx.stroke();
+      cx.beginPath(); cx.moveTo(-8,-2); cx.lineTo(-10,-6); cx.stroke();
+    } else if (kind === "ironclad") {
+      cx.lineWidth = 1.3;
+      cx.beginPath(); cx.arc(-4,-3,3,Math.PI,0); cx.stroke();
     }
   }
   if (carrier) {
@@ -15394,13 +15664,18 @@ function pictogramCannon(kind, color) {
 }
 
 function drawUnitPictogram(type, x, y, size, color = "#f0ead8") {
+  const official = civ6UnitIconSprite(type, color);
+  if (official) {
+    cx.drawImage(official, x - size / 2, y - size / 2, size, size);
+    return;
+  }
   const kind = UNIT_PICTOGRAM[type] || "shield";
   cx.save();
   cx.translate(x, y); cx.scale(size / 24, size / 24);
   cx.lineCap = "round"; cx.lineJoin = "round";
   cx.strokeStyle = color; cx.fillStyle = color; cx.lineWidth = 1.6;
 
-  if (["bow","crossbow"].includes(kind)) {
+  if (["bow","crossbow","pitati_bow"].includes(kind)) {
     pictogramBow(kind, color); cx.restore(); return;
   }
   if (kind.startsWith("horse")) {
@@ -15502,29 +15777,50 @@ function drawUnitPictogram(type, x, y, size, color = "#f0ead8") {
     case "rifle":
     case "suppressed_rifle":
     case "musket":
-    case "long_rifle":
-      cx.lineWidth=2.2; cx.beginPath(); cx.moveTo(-9,6); cx.lineTo(7,-5); cx.stroke();
+    case "long_rifle": {
+      const muzzle = kind === "long_rifle" ? [10,-7] : [7,-5];
+      cx.lineWidth=2.2; cx.beginPath(); cx.moveTo(-9,6); cx.lineTo(...muzzle); cx.stroke();
       cx.lineWidth=1.2; cx.beginPath(); cx.moveTo(-5,3); cx.lineTo(-1,8); cx.lineTo(2,5); cx.stroke();
       if (kind === "suppressed_rifle") { cx.lineWidth=3; cx.beginPath(); cx.moveTo(6,-5); cx.lineTo(10,-8); cx.stroke(); }
-      if (kind === "musket" || kind === "long_rifle") { cx.lineWidth=.8; cx.beginPath(); cx.moveTo(3,-2); cx.lineTo(0,-8); cx.stroke(); } break;
+      if (kind === "musket") { cx.lineWidth=.8; cx.beginPath(); cx.moveTo(3,-2); cx.lineTo(0,-8); cx.stroke(); }
+      if (kind === "long_rifle") {
+        cx.lineWidth = .9; cx.beginPath();
+        cx.moveTo(3,-2); cx.lineTo(0,-8); cx.moveTo(7,-5); cx.lineTo(6,-9); cx.stroke();
+      }
+      break;
+    }
     case "axe":
       cx.save(); cx.rotate(.55); cx.fillRect(-1,-8,2,17); cx.beginPath(); cx.moveTo(0,-7); cx.quadraticCurveTo(8,-8,7,-1); cx.lineTo(0,-2); cx.closePath(); cx.fill(); cx.restore(); break;
     case "sword":
       cx.beginPath(); cx.moveTo(0,-10); cx.lineTo(2,4); cx.lineTo(0,7); cx.lineTo(-2,4); cx.closePath(); cx.fill();
       cx.fillRect(-6,4,12,2); cx.fillRect(-1,6,2,5); break;
     case "sword_shield":
-    case "gladius_shield":
       cx.beginPath(); cx.moveTo(-8,-7); cx.lineTo(1,-5); cx.lineTo(0,5); cx.lineTo(-5,9); cx.lineTo(-9,5); cx.closePath(); cx.stroke();
       cx.save(); cx.translate(5,0); cx.scale(.7,.7); cx.beginPath(); cx.moveTo(0,-10); cx.lineTo(2,4); cx.lineTo(0,7); cx.lineTo(-2,4); cx.closePath(); cx.fill(); cx.fillRect(-5,4,10,2); cx.restore(); break;
+    case "gladius_shield":
+      cx.beginPath(); cx.roundRect(-9,-8,9,16,4); cx.stroke();
+      cx.lineWidth = .9; cx.beginPath(); cx.moveTo(-4.5,-7); cx.lineTo(-4.5,7); cx.stroke();
+      cx.save(); cx.translate(5,0); cx.scale(.65,.65); cx.beginPath(); cx.moveTo(0,-9); cx.lineTo(2,4); cx.lineTo(0,7); cx.lineTo(-2,4); cx.closePath(); cx.fill(); cx.fillRect(-5,4,10,2); cx.restore(); break;
     case "rifle_helmet":
       cx.lineWidth=2; cx.beginPath(); cx.moveTo(-8,7); cx.lineTo(8,-5); cx.stroke();
       cx.beginPath(); cx.arc(-3,-4,5,Math.PI,0); cx.lineTo(3,-3); cx.lineTo(-9,-3); cx.closePath(); cx.fill(); break;
     case "ifv":
+      cx.beginPath(); cx.roundRect(-10,1,20,7,3); cx.stroke();
+      cx.beginPath(); cx.roundRect(-7,-5,14,6,2); cx.fill();
+      cx.fillRect(5,-8,2,-3);
+      cx.globalCompositeOperation = "destination-out";
+      for (const dx of [-3,1,5]) { cx.beginPath(); cx.arc(dx,-2,1,0,7); cx.fill(); }
+      cx.globalCompositeOperation = "source-over";
+      cx.lineWidth=.7; for (const dx of [-6,-2,2,6]) { cx.beginPath(); cx.arc(dx,5,1.5,0,7); cx.stroke(); } break;
     case "tank":
     case "modern_tank":
       cx.beginPath(); cx.roundRect(-10,1,20,7,3); cx.stroke();
       cx.beginPath(); cx.roundRect(-6,-4,11,6,2); cx.fill();
-      cx.lineWidth=kind==="modern_tank"?2.6:2; cx.beginPath(); cx.moveTo(3,-3); cx.lineTo(11,-7); cx.stroke();
+      cx.lineWidth=kind==="modern_tank"?2.8:2; cx.beginPath(); cx.moveTo(3,-3); cx.lineTo(11,-7); cx.stroke();
+      if (kind === "modern_tank") {
+        cx.lineWidth = 1;
+        cx.beginPath(); cx.moveTo(-8,1); cx.lineTo(-3,-4); cx.lineTo(2,1); cx.stroke();
+      }
       cx.lineWidth=.7; for (const dx of [-6,-2,2,6]) { cx.beginPath(); cx.arc(dx,5,1.5,0,7); cx.stroke(); } break;
     case "pike_musket":
       cx.lineWidth=1.4; cx.beginPath(); cx.moveTo(-9,9); cx.lineTo(6,-9); cx.moveTo(-6,3); cx.lineTo(9,-4); cx.stroke(); break;
@@ -15543,6 +15839,11 @@ function drawUnitPictogram(type, x, y, size, color = "#f0ead8") {
       cx.beginPath(); cx.moveTo(-8,-4); cx.lineTo(4,-4); cx.lineTo(7,3); cx.lineTo(-7,3); cx.closePath(); cx.stroke();
       pictogramWheel(-4,7,3,color); pictogramWheel(5,7,3,color);
       cx.beginPath(); cx.moveTo(7,1); cx.lineTo(11,-4); cx.stroke();
+      if (kind === "war_cart") {
+        cx.lineWidth = 1.2;
+        cx.beginPath(); cx.moveTo(-8,-4); cx.lineTo(-8,-9); cx.lineTo(4,-9); cx.lineTo(4,-4); cx.stroke();
+        cx.beginPath(); cx.moveTo(7,0); cx.lineTo(11,0); cx.moveTo(9,-3); cx.lineTo(9,3); cx.stroke();
+      }
       if (kind === "chariot_bow") { cx.save(); cx.translate(-2,-7); cx.scale(.45,.45); pictogramBow("bow",color); cx.restore(); } break;
     case "sling":
       cx.lineWidth=1.5; cx.beginPath(); cx.moveTo(-8,7); cx.quadraticCurveTo(0,-2,5,-7); cx.stroke();
@@ -15551,6 +15852,18 @@ function drawUnitPictogram(type, x, y, size, color = "#f0ead8") {
       cx.lineWidth=2.6; cx.beginPath(); cx.moveTo(-8,-3); cx.lineTo(9,-5); cx.stroke();
       cx.beginPath(); cx.roundRect(-6,-6,7,6,1); cx.fill();
       cx.lineWidth=1.5; cx.beginPath(); cx.moveTo(-1,0); cx.lineTo(-7,9); cx.moveTo(1,0); cx.lineTo(7,9); cx.stroke(); break;
+    case "tiger_cannon":
+      // A striped tiger-head muzzle: this is a ranged replacement, but it must
+      // not collapse back into the crossbowman's icon it replaces in the tree.
+      cx.beginPath();
+      cx.moveTo(-8,-5); cx.lineTo(-5,-9); cx.lineTo(-2,-6);
+      cx.quadraticCurveTo(0,-8,2,-6); cx.lineTo(5,-9); cx.lineTo(8,-5);
+      cx.lineTo(7,5); cx.quadraticCurveTo(0,10,-7,5); cx.closePath(); cx.stroke();
+      cx.beginPath(); cx.arc(-3,-1,1.25,0,7); cx.arc(3,-1,1.25,0,7); cx.fill();
+      cx.lineWidth = 1; cx.beginPath();
+      cx.moveTo(-5,-5); cx.lineTo(-2,-3); cx.moveTo(5,-5); cx.lineTo(2,-3);
+      cx.moveTo(-4,4); cx.lineTo(-1,3); cx.moveTo(4,4); cx.lineTo(1,3); cx.stroke();
+      cx.beginPath(); cx.arc(0,4,2.2,0,7); cx.stroke(); break;
     case "catapult":
       pictogramWheel(-6,7,3,color); pictogramWheel(5,7,3,color);
       cx.beginPath(); cx.moveTo(-8,4); cx.lineTo(5,4); cx.lineTo(-1,-5); cx.closePath(); cx.stroke();
@@ -16004,6 +16317,144 @@ function planetCellInradius(cell) {
   }
   return Number.isFinite(inradius) ? inradius : 0;
 }
+
+// A painted soldier needs enough of a projected cell to carry its silhouette,
+// owner plate and type badge.  Below this it would be a few noisy pixels, so
+// the existing overview token remains the truthful representation of an army.
+const PLANET_PAINTED_UNIT_INRADIUS = 9;
+const PLANET_PAINTED_UNIT_BADGE_INRADIUS = 12;
+// The 3D mesh reads at roughly an eighteen-pixel width. Smaller than this its
+// face detail aliases into the same noise the compact token intentionally
+// avoids, so it stays on the regular painted path until the globe is close.
+const PLANET_CINEMATIC_UNIT_INRADIUS = 11.5;
+
+function planetUnitTangentAngle(cell, centerX, centerY) {
+  const dx = cell.center.x - centerX, dy = cell.center.y - centerY;
+  // Local negative Y points away from the centre of the globe, matching the
+  // landform convention in drawPlanetSurfaceDetail. At the exact centre there
+  // is no preferred tangent, so keep the screen's normal upright reading.
+  return Math.hypot(dx, dy) > 1e-4 ? Math.atan2(dy, dx) + Math.PI / 2 : 0;
+}
+
+function drawPlanetPaintedUnitMarks(unit, y, cellRadius, now) {
+  const us = unitScale();
+  const detail = cellRadius >= PLANET_PAINTED_UNIT_BADGE_INRADIUS;
+  if (unit.survey_count > 1) drawUnitFormationBadge(unit, 0, y);
+  else if (detail) drawUnitBadge(unit, 0, y);
+  if (unit.fortified && detail) {
+    const k = UNIT_K(), w = 3.5 * k;
+    const sx = -9.5 * k, sy = y + 1;
+    cx.beginPath();
+    cx.moveTo(sx - w, sy - 4.2 * k); cx.lineTo(sx + w, sy - 4.2 * k);
+    cx.lineTo(sx + w, sy + 0.5 * k);
+    cx.quadraticCurveTo(sx, sy + 5.2 * k, sx - w, sy + 0.5 * k);
+    cx.closePath();
+    cx.fillStyle = "#dee7f4ee"; cx.fill();
+    cx.strokeStyle = "#10151d"; cx.lineWidth = 1.2; cx.stroke();
+  }
+  if (unit.hp < 100) {
+    const bw = Math.min(cellRadius * 1.45,
+      24 * us / Math.min(1, Math.max(cam.scale, 0.45)));
+    const bh = Math.max(2.1, Math.min(cellRadius * .24,
+      4.5 * us / Math.min(1, Math.max(cam.scale, 0.55))));
+    const by = y - 18 * us;
+    const frac = Math.max(0, Math.min(1, unit.hp / 100));
+    const color = frac > .5 ? "#4fd45c" : (frac > .25 ? "#f0b429" : "#f04f3f");
+    cx.fillStyle = "#10151dd8";
+    cx.beginPath(); cx.roundRect(-bw / 2 - 1, by - 1, bw + 2, bh + 2, 2); cx.fill();
+    cx.fillStyle = color;
+    cx.beginPath(); cx.roundRect(-bw / 2, by, bw * frac, bh, 1.5); cx.fill();
+    if (frac <= .25) {
+      cx.globalAlpha = .35 + .3 * Math.sin(now / 160);
+      cx.strokeStyle = "#ff7060"; cx.lineWidth = 1.6;
+      cx.strokeRect(-bw / 2 - 2, by - 2, bw + 4, bh + 4);
+      cx.globalAlpha = 1;
+    }
+  }
+  if (detail && unit.level > 1) {
+    cx.fillStyle = "#ffd700";
+    for (let index = 0; index < unit.level - 1; index++) {
+      cx.beginPath();
+      cx.arc((index * 6 - 6) * us,
+             y - 10.5 * us - (unit.hp < 100 ? 12 : 4) * us,
+             2 * us, 0, 7);
+      cx.fill();
+    }
+  }
+  if (sel && sel.id === unit.id) {
+    const r = Math.min(cellRadius * .86, 16 * us + 6 * us);
+    cx.strokeStyle = "#f0c674"; cx.lineWidth = 2.1;
+    cx.setLineDash([5, 4]);
+    cx.beginPath(); cx.ellipse(0, y + 8.5 * us, r, r * .42, 0, 0, 7); cx.stroke();
+    cx.setLineDash([]);
+  }
+}
+
+function drawPlanetPaintedUnits(units, cellByKey, centerX, centerY,
+                                 visible, spectator, onSheet, camera) {
+  const cities = new Set(state.cities.map(city => key(city.pos)));
+  const figures = [];
+  const drawn = new Set();
+  for (const unit of units) {
+    const cell = cellByKey.get(key(unit.pos));
+    if (!cell || (!spectator && !visible.has(key(unit.pos))) ||
+        cell.center.z < (onSheet ?? .025)) continue;
+    const radius = planetCellInradius(cell);
+    if (radius < PLANET_PAINTED_UNIT_INRADIUS) continue;
+    // planetCells contains the whole facing hemisphere so relief at its rim
+    // can meet cleanly; a close camera only shows a small patch of that set.
+    // Meshes outside the canvas are still expensive to build and sort, so cull
+    // by the largest silhouette the cell can project before entering the unit
+    // renderer. The generous margin preserves a figure or a health bar that
+    // just reaches in from beyond the frame.
+    const margin = Math.max(22, radius * 2.4);
+    if (cell.center.x < -margin || cell.center.x > MAPW + margin ||
+        cell.center.y < -margin || cell.center.y > MAPH + margin) continue;
+    figures.push({unit, cell, radius});
+  }
+  // The ground is painted back-to-front. Preserve that order for figures so a
+  // close regiment can cover one just beyond it without either appearing to
+  // float through the other at the limb.
+  figures.sort((a, b) => a.cell.center.z - b.cell.center.z);
+  const now = performance.now();
+  for (const {unit, cell, radius} of figures) {
+    const previous = UNIT_RENDER_CONTEXT;
+    // UNIT_SCALE makes a 32-unit silhouette fill 80% of a normal flat hex.
+    // A projected cell follows that same contract from its measured inradius.
+    const angle = planetUnitTangentAngle(cell, centerX, centerY);
+    UNIT_RENDER_CONTEXT = {
+      scale:(radius * 2 * UNIT_FILL / UNIT_SPAN) / UNIT_SCALE,
+      screenScale:DPR,
+      // The globe is orthographic, while a flat scene looks down a tilted
+      // board. Give the shared mesh the former projection and turn its light
+      // back through this cell's local frame so the sun stays in the world as
+      // the camera turns around the planet.
+      cinematic3d:{
+        depthAllowed:radius >= PLANET_CINEMATIC_UNIT_INRADIUS &&
+          (camera.chart || cell.center.z >= .13),
+        orthographic:true, tilt:.42, sunAngle:SUN - angle,
+      },
+    };
+    cx.save();
+    try {
+      const y = cities.has(key(unit.pos)) ? radius * .52 : 0;
+      cx.translate(cell.center.x, cell.center.y);
+      cx.rotate(angle);
+      if (VIEW === "cinematic") drawCinematicSubjectMarker(unit, 0, y, now);
+      drawUnitBase(unit, 0, y);
+      if (VIEW === "cinematic") drawUnitCompany(unit, 0, y, now, false);
+      else drawUnitChar(unit, 0, y, now, false);
+      if (VIEW === "cinematic") drawCinematicSubjectBrackets(unit, 0, y, now);
+      drawPlanetPaintedUnitMarks(unit, y, radius, now);
+      drawn.add(unit.id);
+    } finally {
+      cx.restore();
+      UNIT_RENDER_CONTEXT = previous;
+    }
+  }
+  return drawn;
+}
+
 function pointInsidePlanetCell(x, y, points) {
   let inside = false;
   for (let i = 0, j = points.length - 1; i < points.length; j = i++) {
@@ -19585,6 +20036,93 @@ function planetTerrainUnderpaint(tile) {
   return isWater(tile) ? "#174b61" : "#747655";
 }
 
+// Cinematic terrain follows the sphere instead of pretending the globe is a
+// flat board seen through a circular mask. A shared vertex is moved along its
+// projected radial normal by the same amount on both adjoining cells, so equal
+// ground still meets exactly; only a real height change opens a side face.
+// Heights are expressed in screen pixels per globe subdivision, which keeps a
+// mountain proportional to its cell at both survey and close zoom.
+function planetTerrainLift(tile, radius) {
+  if (!tile || isWater(tile)) return 0;
+  const unit = Math.max(1.2, Math.min(18,
+    radius / Math.max(1, planetFrequency() * 2.45)));
+  if (tile.terrain === "mountain") return unit;
+  if (tile.hills) return unit * .56;
+  return unit * .20;
+}
+
+function raisedPlanetPoint(point, centerX, centerY, radius, lift) {
+  if (!(lift > 0) || !(radius > 0)) return {x:point.x, y:point.y, z:point.z};
+  const factor = 1 + lift / radius;
+  return {x:centerX + (point.x - centerX) * factor,
+          y:centerY + (point.y - centerY) * factor,
+          z:point.z};
+}
+
+function planetReliefCells(cells, camera, radius, centerX, centerY,
+                           visible, spectator) {
+  if (!MODE.relief || camera.chart || radius < SKY_MARKERS * 1.15) return cells;
+  return cells.map(cell => {
+    // Geometry is information too. An unexplored mountain must not reveal
+    // itself as a raised patch in the fog before its terrain is visible.
+    const known = spectator || visible.has(key(cell.tile.pos));
+    const lift = known ? planetTerrainLift(cell.tile, radius) : 0;
+    return {...cell, reliefLift:lift, basePoints:cell.points,
+      points:cell.points.map(point =>
+        raisedPlanetPoint(point, centerX, centerY, radius, lift)),
+      center:{...cell.center,
+        ...raisedPlanetPoint(cell.center, centerX, centerY, radius, lift)}};
+  });
+}
+
+// Draw only the exposed drop from a higher top to its lower neighbour. Faces
+// are batched by material rather than filled edge by edge: a mature globe can
+// have thousands of cells, while it has only eight terrain materials.
+function drawPlanetReliefSides(cells, radius, centerX, centerY, visible, spectator) {
+  if (!cells.length || !cells[0].basePoints) return;
+  const faces = new Map(), rims = [];
+  for (const cell of cells) {
+    if (!spectator && !visible.has(key(cell.tile.pos))) continue;
+    const high = cell.reliefLift || 0;
+    if (!(high > .1)) continue;
+    for (let side = 0; side < cell.points.length; side++) {
+      const neighbor = TMAP.get(cell.cell?.nbrs[side]);
+      // Unknown ground may not disclose whether a cliff is waiting beyond the
+      // fog frontier. Bring a known face down to the unrevealed surface; this
+      // closes the geometry without borrowing the neighbour's hidden height.
+      const neighborKnown = neighbor &&
+        (spectator || visible.has(key(neighbor.pos)));
+      const low = neighborKnown ? planetTerrainLift(neighbor, radius) : 0;
+      if (high <= low + .1) continue;
+      const next = (side + 1) % cell.points.length;
+      const a = cell.points[side], b = cell.points[next];
+      const lowA = raisedPlanetPoint(cell.basePoints[side], centerX, centerY, radius, low);
+      const lowB = raisedPlanetPoint(cell.basePoints[next], centerX, centerY, radius, low);
+      const group = faces.get(cell.tile.terrain);
+      const face = [a.x, a.y, b.x, b.y, lowB.x, lowB.y, lowA.x, lowA.y];
+      if (group) group.push(face); else faces.set(cell.tile.terrain, [face]);
+      rims.push([a.x, a.y, b.x, b.y]);
+    }
+  }
+  if (!faces.size) return;
+  cx.save();
+  cx.lineJoin = "round";
+  for (const [terrain, group] of faces) {
+    cx.beginPath();
+    for (const [ax, ay, bx, by, cx2, cy2, dx, dy] of group) {
+      cx.moveTo(ax, ay); cx.lineTo(bx, by); cx.lineTo(cx2, cy2);
+      cx.lineTo(dx, dy); cx.closePath();
+    }
+    cx.fillStyle = shade(TERRAIN[terrain] || planetTerrainUnderpaint({terrain}), .46);
+    cx.globalAlpha = .94; cx.fill();
+  }
+  cx.beginPath();
+  for (const [ax, ay, bx, by] of rims) { cx.moveTo(ax, ay); cx.lineTo(bx, by); }
+  cx.strokeStyle = "rgba(255,244,211,.22)"; cx.lineWidth = .7;
+  cx.globalAlpha = 1; cx.stroke();
+  cx.restore();
+}
+
 // The shoreline is the one terrain boundary that should survive the painted
 // blend. Draw it as one continuous surf network after the ground is lit: the
 // dark wet edge seats the land, the blue shelf carries the coast, and the fine
@@ -19702,6 +20240,27 @@ function drawPlanetGround(cells, camera, scale, radius, centerX, centerY,
     }
     cx.restore();
 
+    // Feather the boundary, not the photograph. The blurred pass above makes
+    // adjacent biome colours meet without rebuilding the cell diagram, but by
+    // itself it also turns grass, sand and ice into the same soft wash. A quiet
+    // unfiltered pass restores the atlas' fine material inside each region;
+    // soft-light keeps its hard edge subordinate to the blended colour below.
+    cx.save();
+    cx.beginPath();
+    for (const cell of knownCells) appendPlanetPaintPath(cx, cell, .15);
+    cx.clip();
+    cx.globalCompositeOperation = "soft-light";
+    cx.globalAlpha = MODE.atmosphere ? .42 : .48;
+    for (const [terrain, group] of byTerrain) {
+      const pattern = patterns.get(terrain);
+      if (!pattern) continue;
+      cx.beginPath();
+      for (const cell of group) appendPlanetPaintPath(cx, cell, .20);
+      cx.fillStyle = pattern;
+      cx.fill();
+    }
+    cx.restore();
+
     // Lighting is continuous over the hemisphere, not reset inside every
     // polygon. Painted 2D keeps a gentle wash; Cinematic gives the same sphere
     // a real terminator and a warm shoulder.
@@ -19768,7 +20327,7 @@ function drawPlanetGround(cells, camera, scale, radius, centerX, centerY,
 // marks and Cinematic gets the same forms with deeper occlusion and highlights.
 // These are clipped to the exact five- or six-sided top face, so relief never
 // reintroduces rectangular or hexagonal art at the twelve pentagons.
-function drawPlanetSurfaceDetail(cell) {
+function drawPlanetSurfaceDetail(cell, planetX, planetY) {
   if (!MODE.painted) return;
   const tile = cell.tile;
   const r = planetCellInradius(cell);
@@ -19778,6 +20337,13 @@ function drawPlanetSurfaceDetail(cell) {
   const seed = hash2(tile.pos[0] * 31 + 7, tile.pos[1] * 37 + 11);
   cx.save();
   planetPath(cx, cell.points); cx.clip();
+  // Every mark uses the local tangent plane. Screen-up happened to be right
+  // only at the top of the old disc: mountains along the lower hemisphere all
+  // leaned north and water waves ignored the curve underneath them. Rotate the
+  // existing authored marks so local up points away from the globe's centre.
+  const dx = x - planetX, dy = y - planetY;
+  const radial = Math.hypot(dx, dy);
+  const angle = radial > 1e-4 ? Math.atan2(dy, dx) + Math.PI / 2 : 0;
 
   if (isWater(tile)) {
     if (seed > .48 && r > 2.2) {
@@ -19789,50 +20355,109 @@ function drawPlanetSurfaceDetail(cell) {
       cx.quadraticCurveTo(x, y - r * .18, x + r * .58, y + (seed - .5) * r);
       cx.stroke();
     }
-  } else if (tile.terrain === "mountain" || tile.feature === "volcano") {
-    const peak = r * (tile.feature === "volcano" ? .78 : .92);
-    cx.globalAlpha = .48 + depth * .24;
-    cx.fillStyle = "#18201d";
-    cx.beginPath();
-    cx.moveTo(x - r * .72, y + r * .58);
-    cx.lineTo(x + r * .15, y - peak);
-    cx.lineTo(x + r * .74, y + r * .58);
-    cx.closePath(); cx.fill();
-    cx.fillStyle = tile.feature === "volcano" ? "#d98942" : "#e8e1ca";
-    cx.globalAlpha = .52 + depth * .24;
-    cx.beginPath();
-    cx.moveTo(x + r * .15, y - peak);
-    cx.lineTo(x + r * .08, y + r * .15);
-    cx.lineTo(x + r * .48, y + r * .50);
-    cx.closePath(); cx.fill();
-  } else if (tile.hills) {
-    const mound = cx.createRadialGradient(x - r * .24, y - r * .30, r * .05,
-                                          x, y, r * .95);
-    mound.addColorStop(0, `rgba(255,244,207,${(.16 + depth * .12).toFixed(2)})`);
-    mound.addColorStop(.55, "rgba(255,255,255,0)");
-    mound.addColorStop(1, `rgba(8,12,12,${(.15 + depth * .17).toFixed(2)})`);
-    cx.fillStyle = mound;
-    cx.beginPath(); cx.ellipse(x, y + r * .12, r * .80, r * .58, 0, 0, 7); cx.fill();
   }
 
-  if (tile.feature === "forest" || tile.feature === "jungle") {
+  // Waves are a material direction and stay screen-coherent. Standing
+  // landforms begin here, in the cell's local tangent frame.
+  cx.translate(x, y); cx.rotate(angle);
+
+  if (!isWater(tile) && (tile.terrain === "mountain" || tile.feature === "volcano")) {
+    let atlasDrawn = false;
+    if (tile.feature === "volcano" && ENVIRONMENT_FEATURE_ATLAS_READY && r > 3.2) {
+      const [column, row] = ENVIRONMENT_FEATURE_CELL.volcano;
+      const cw = ENVIRONMENT_FEATURE_ATLAS.naturalWidth / 4;
+      const ch = ENVIRONMENT_FEATURE_ATLAS.naturalHeight / 2;
+      cx.globalAlpha = .66 + depth * .28;
+      cx.drawImage(ENVIRONMENT_FEATURE_ATLAS, column * cw, row * ch, cw, ch,
+                   -r * 1.28, -r * 1.42, r * 2.56, r * 2.52);
+      atlasDrawn = true;
+    } else if (tile.terrain === "mountain" && MOUNTAIN_ATLAS_READY && r > 3.2) {
+      const cw = MOUNTAIN_ATLAS.naturalWidth / 3;
+      const ch = MOUNTAIN_ATLAS.naturalHeight;
+      const column = mountainRockColumn(tile);
+      cx.save();
+      if (seed > .5) cx.scale(-1, 1);
+      cx.globalAlpha = .68 + depth * .27;
+      cx.drawImage(MOUNTAIN_ATLAS, column * cw, 0, cw, ch,
+                   -r * 1.30, -r * 1.24, r * 2.60, r * 2.18);
+      cx.restore();
+      atlasDrawn = true;
+    }
+    if (!atlasDrawn) {
+      const peak = r * (tile.feature === "volcano" ? .78 : .92);
+      cx.globalAlpha = .48 + depth * .24;
+      cx.fillStyle = "#18201d";
+      cx.beginPath();
+      cx.moveTo(-r * .72, r * .58);
+      cx.lineTo(r * .15, -peak);
+      cx.lineTo(r * .74, r * .58);
+      cx.closePath(); cx.fill();
+      cx.fillStyle = tile.feature === "volcano" ? "#d98942" : "#e8e1ca";
+      cx.globalAlpha = .52 + depth * .24;
+      cx.beginPath();
+      cx.moveTo(r * .15, -peak);
+      cx.lineTo(r * .08, r * .15);
+      cx.lineTo(r * .48, r * .50);
+      cx.closePath(); cx.fill();
+    }
+  } else if (!isWater(tile) && tile.hills) {
+    if (MODE.relief) {
+      // The cell itself is already raised in Cinematic. A broad directional
+      // shoulder describes that plane without stamping a plastic dome on top.
+      const shoulder = cx.createLinearGradient(-r, -r, r, r);
+      shoulder.addColorStop(0, "rgba(255,244,207,.24)");
+      shoulder.addColorStop(.48, "rgba(255,255,255,0)");
+      shoulder.addColorStop(1, "rgba(8,12,12,.26)");
+      cx.fillStyle = shoulder; cx.fillRect(-r * 1.4, -r * 1.4, r * 2.8, r * 2.8);
+    } else {
+      const mound = cx.createRadialGradient(-r * .24, -r * .30, r * .05,
+                                            0, 0, r * .95);
+      mound.addColorStop(0, "rgba(255,244,207,.19)");
+      mound.addColorStop(.55, "rgba(255,255,255,0)");
+      mound.addColorStop(1, "rgba(8,12,12,.18)");
+      cx.fillStyle = mound;
+      cx.beginPath(); cx.ellipse(0, r * .12, r * .80, r * .58, 0, 0, 7); cx.fill();
+    }
+  }
+
+  const feature = featureBlendKind(tile.feature);
+  const featureColumn = FEATURE_CELL[feature];
+  if (featureColumn !== undefined && FEATURE_ATLAS_READY && r > 3) {
+    const cw = FEATURE_ATLAS.naturalWidth / 4;
+    const ch = FEATURE_ATLAS.naturalHeight;
+    cx.save();
+    cx.rotate(seed * Math.PI * 2);
+    if (hash2(tile.pos[0] * 13, tile.pos[1] * 17) > .5) cx.scale(-1, 1);
+    cx.globalAlpha = (tile.feature || "").startsWith("burnt_") ? .48 : .76 + depth * .18;
+    cx.drawImage(FEATURE_ATLAS, featureColumn * cw, 0, cw, ch,
+                 -r * 1.42, -r * 1.42, r * 2.84, r * 2.84);
+    cx.restore();
+  } else if (tile.feature === "forest" || tile.feature === "jungle") {
     const jungle = tile.feature === "jungle";
-    const color = jungle ? "#173f2c" : "#234a31";
-    cx.fillStyle = color;
+    cx.fillStyle = jungle ? "#173f2c" : "#234a31";
     cx.globalAlpha = .56 + depth * .20;
     const crown = r * (jungle ? .34 : .29);
-    for (const [dx, dy, size] of [[-.34,.18,.88],[.06,-.18,1.08],[.38,.20,.82]]) {
-      cx.beginPath(); cx.arc(x + dx * r, y + dy * r, crown * size, 0, 7); cx.fill();
+    for (const [fx, fy, size] of [[-.34,.18,.88],[.06,-.18,1.08],[.38,.20,.82]]) {
+      cx.beginPath(); cx.arc(fx * r, fy * r, crown * size, 0, 7); cx.fill();
     }
     cx.fillStyle = "rgba(228,235,190,.22)";
-    cx.beginPath(); cx.arc(x - r * .06, y - r * .31, crown * .46, 0, 7); cx.fill();
+    cx.beginPath(); cx.arc(-r * .06, -r * .31, crown * .46, 0, 7); cx.fill();
   } else if (tile.feature === "ice") {
-    cx.globalAlpha = .52 + depth * .24;
-    cx.fillStyle = "#d9f3f5";
-    cx.beginPath();
-    cx.moveTo(x - r * .68, y + r * .18); cx.lineTo(x - r * .18, y - r * .52);
-    cx.lineTo(x + r * .66, y - r * .12); cx.lineTo(x + r * .18, y + r * .48);
-    cx.closePath(); cx.fill();
+    if (ENVIRONMENT_FEATURE_ATLAS_READY && r > 3) {
+      const [column, row] = ENVIRONMENT_FEATURE_CELL.ice;
+      const cw = ENVIRONMENT_FEATURE_ATLAS.naturalWidth / 4;
+      const ch = ENVIRONMENT_FEATURE_ATLAS.naturalHeight / 2;
+      cx.globalAlpha = .72 + depth * .24;
+      cx.drawImage(ENVIRONMENT_FEATURE_ATLAS, column * cw, row * ch, cw, ch,
+                   -r * 1.40, -r * 1.40, r * 2.80, r * 2.80);
+    } else {
+      cx.globalAlpha = .52 + depth * .24;
+      cx.fillStyle = "#d9f3f5";
+      cx.beginPath();
+      cx.moveTo(-r * .68, r * .18); cx.lineTo(-r * .18, -r * .52);
+      cx.lineTo(r * .66, -r * .12); cx.lineTo(r * .18, r * .48);
+      cx.closePath(); cx.fill();
+    }
   }
   cx.restore();
   cx.globalAlpha = 1;
@@ -20351,7 +20976,10 @@ function drawPlanetMap() {
     drawPlanetChartMarginalia();
   }
 
-  const cells = earthInFrame ? planetCells(camera, scale, centerX, centerY) : [];
+  const baseCells = earthInFrame ? planetCells(camera, scale, centerX, centerY) : [];
+  const cells = planetReliefCells(baseCells, camera, radius, centerX, centerY,
+                                  visible, spectator);
+  drawPlanetReliefSides(cells, radius, centerX, centerY, visible, spectator);
   drawPlanetGround(cells, camera, scale, radius, centerX, centerY, visible, spectator);
   for (const {tile, points, center} of cells)
     PLANET_HIT_CELLS.push({pos:tile.pos, points, z:center.z});
@@ -20387,7 +21015,7 @@ function drawPlanetMap() {
     for (const cell of cells) {
       if ((!spectator && !visible.has(key(cell.tile.pos))) ||
           cell.center.z < (onSheet ?? .04)) continue;
-      drawPlanetSurfaceDetail(cell);
+      drawPlanetSurfaceDetail(cell, centerX, centerY);
     }
   } else if (!empireLens && scale > .42) {
     cx.textAlign = "center"; cx.textBaseline = "middle";
@@ -20461,13 +21089,43 @@ function drawPlanetMap() {
     }
     if (cityState) cx.restore();
   }
-  for (const unit of empireLens ? [] : state.units) {
+  const visibleUnits = empireLens ? [] : (cinemaActive()
+    ? cinematicSurveyUnits(state.units) : state.units);
+  // Both painted styles share one spherical figure pass. In Balanced it keeps
+  // the illustrated unit; in Cinematic the familiar close-shot handoff inside
+  // drawUnitChar promotes the exact same family to its low-poly 3D model.
+  // Small or side-on cells deliberately keep their overview token, so every
+  // map script, globe frequency and chart scale retains a readable army.
+  const paintedFigureIds = MODE.painted
+    ? drawPlanetPaintedUnits(visibleUnits, cellByKey, centerX, centerY,
+                              visible, spectator, onSheet, camera)
+    : null;
+  for (const unit of visibleUnits) {
+    // A painting replaces its overview dot only when the cell is wide enough
+    // to read it. Farther out, retain the lightweight globe-level marker so a
+    // player never loses an army while zooming through the handoff.
+    if (paintedFigureIds?.has(unit.id)) continue;
     const cell = cellByKey.get(key(unit.pos));
     if (!cell || cell.center.z < (onSheet ?? .025)) continue;
-    const r = Math.max(3.5, Math.min(7, 4.5 * Math.sqrt(scale)));
-    cx.fillStyle = pcol(unit.owner); cx.strokeStyle = sel?.id === unit.id ? "#fff2a8" : "#10151d";
+    // A coloured dot answers only "whose unit?". Strategic is the command-map
+    // view, so keep its tokens large enough to carry the same type pictogram as
+    // the flat map; Cinematic preserves its existing quiet overview dot.
+    const commandToken = !MODE.painted;
+    const r = commandToken
+      ? Math.max(7.2, Math.min(10.5, 7.8 * Math.sqrt(scale)))
+      : Math.max(3.5, Math.min(7, 4.5 * Math.sqrt(scale)));
+    const ux = cell.center.x + r * .7, uy = cell.center.y + r * .6;
+    const civilian = CIVILIAN_UNITS.has(unit.type);
+    const tokenInk = unitTokenInk(unit.owner);
+    cx.fillStyle = pcol(unit.owner); cx.strokeStyle = sel?.id === unit.id ? "#fff2a8" : tokenInk;
     cx.lineWidth = sel?.id === unit.id ? 2.3 : 1.2;
-    cx.beginPath(); cx.arc(cell.center.x + r * .7, cell.center.y + r * .6, r, 0, 7); cx.fill(); cx.stroke();
+    cx.beginPath();
+    if (commandToken && civilian) cx.roundRect(ux - r, uy - r, r * 2, r * 2, r * .42);
+    else cx.arc(ux, uy, r, 0, 7);
+    cx.fill(); cx.stroke();
+    if (commandToken)
+      drawUnitPictogram(unit.embarked ? "galley" : unit.type, ux, uy,
+                        r * 1.48, tokenInk);
   }
   for (const tack of empireLens ? [] : tacks) {
     const cell = cellByKey.get(key(tack));
@@ -21781,7 +22439,7 @@ function draw() {
     // it would otherwise stand on, which is the figure's size.
     const us = unitScale();
     y += 12 * us * inTown;
-    const rr = 10.5;
+    const rr = 10.5 * (beau ? 1 : COMMAND_UNIT_K());
     if (beau) {
       drawCinematicSubjectMarker(u, x, y, now);
       drawUnitBase(u, x, y);
@@ -21816,14 +22474,15 @@ function draw() {
       else cx.arc(x, y, rr, 0, 7);
       cx.fill();
       cx.restore();
-      cx.strokeStyle = u.fortified ? "#f4f8ff" : "#10151d";
+      const tokenInk = unitTokenInk(u.owner);
+      cx.strokeStyle = u.fortified ? "#f4f8ff" : tokenInk;
       cx.lineWidth = u.fortified ? 2.6 : 1.6;
       cx.beginPath();
       if (civ) cx.roundRect(x - rr, y - rr, rr * 2, rr * 2, 5);
       else cx.arc(x, y, rr, 0, 7);
       cx.stroke();
-      drawUnitPictogram(u.embarked ? "galley" : u.type, x, y,
-                        rr * 1.45, "#10151d");
+      drawUnitPictogram(u.type, x, y,
+                        rr * 1.45 * COMMAND_UNIT_ICON_K(), tokenInk);
       cx.globalAlpha = 1;
     }
     // chunky health bar — sized against zoom so it stays readable far out, and
@@ -21833,7 +22492,11 @@ function draw() {
     if (u.hp < 100) {
       const bw = 24 * us / Math.min(1, Math.max(cam.scale, 0.45));
       const bh = 4.5 * us / Math.min(1, Math.max(cam.scale, 0.55));
-      const by = y - 18 * us;
+      // The command token grows at survey zoom; keep its health strip above
+      // the rim instead of laying it across the pictogram it is meant to name.
+      const by = beau
+        ? y - 18 * us
+        : y - rr - 5 * COMMAND_UNIT_K();
       const frac = u.hp / 100;
       const fc2 = frac > 0.5 ? "#4fd45c" : (frac > 0.25 ? "#f0b429" : "#f04f3f");
       cx.fillStyle = "#10151dd8";
@@ -23122,6 +23785,82 @@ function foundedReligionMarker(player) {
   return player.founded_religion_exists ? "*" : "";
 }
 
+// ── Win odds: what a seat was worth before the game, and what it is worth now ─
+//
+// A whole per cent is all a 26px row can carry, with two exceptions at the ends
+// of the scale, because both roundings would otherwise state something false:
+//
+//  * "0" is reserved for a seat that cannot win — eliminated, or holding no city
+//    and no settler to found one. A seat with two tenths of one per cent still
+//    has a game to play and reads "<1".
+//  * "100" is reserved for a decided result. A seat at 99.7% has not won yet and
+//    reads ">99".
+function oddsValue(value) {
+  if (value === null || value === undefined || value === "") return null;
+  const probability = Number(value);
+  return Number.isFinite(probability) ? probability : null;
+}
+
+function oddsPct(value) {
+  const probability = oddsValue(value);
+  if (probability === null) return null;
+  const pct = probability * 100;
+  if (pct <= 0) return "0";
+  if (pct < 0.5) return "<1";
+  if (pct >= 100) return "100";
+  if (pct >= 99.5) return ">99";
+  return String(Math.round(pct));
+}
+
+// Which way the game has moved this seat. The dead band is deliberate: without
+// it a rounding-sized wobble flips the arrow every turn and the column reads as
+// noise instead of as a story.
+function oddsMovement(player) {
+  const start = oddsValue(player.odds_start);
+  const now = oddsValue(player.odds_now);
+  if (start === null || now === null) return {symbol:"→", direction:"flat"};
+  // Five per cent of the opening chance catches a real relative move, while a
+  // half-point absolute floor stops a 0.10% long shot flickering upward at
+  // 0.11%. The displayed columns should tell a trend, not amplify float noise.
+  const deadBand = Math.max(.005, start * .05);
+  if (now - start >= deadBand) return {symbol:"↗", direction:"up"};
+  if (start - now >= deadBand) return {symbol:"↘", direction:"down"};
+  return {symbol:"→", direction:"flat"};
+}
+
+function playerOddsFigures(player) {
+  const start = oddsPct(player.odds_start);
+  const now = oddsPct(player.odds_now);
+  if (start === null && now === null) {
+    return `<span class="diplomacy-expected-value"><span class="odds-unavailable">—</span></span>`;
+  }
+  const movement = oddsMovement(player);
+  return `<span class="diplomacy-expected-value">` +
+    `<span class="odds-start">${start ?? "—"}</span>` +
+    `<span class="odds-move ${movement.direction}" aria-label="Win chance trend ${movement.direction}">${movement.symbol}</span>` +
+    `<span class="odds-now">${now ?? "—"}</span></span>`;
+}
+
+function anyVictoryEnabled() {
+  return VICTORY_TRACKS.some(track => state?.victory_conditions?.[track.id] !== false);
+}
+
+function oddsTitle(player) {
+  const start = oddsPct(player.odds_start);
+  const now = oddsPct(player.odds_now);
+  if (start === null && now === null) return "Win odds unavailable";
+  const standing = +player.odds_standing_elo;
+  const handicap = +player.odds_handicap_elo;
+  return `Win odds: ${start ?? "—"}% at the start of the game; ${now ?? "—"}% now` +
+    `${Number.isFinite(handicap) && handicap !== 0
+      ? ` · difficulty ${handicap > 0 ? "+" : ""}${handicap} Elo to this seat` : ""}` +
+    `${Number.isFinite(standing) && standing !== 0
+      ? ` · position ${standing > 0 ? "+" : ""}${standing} Elo against the field` : ""}` +
+    `${oddsValue(player.odds_now) === 0
+      ? anyVictoryEnabled() ? " · out of the game" : " · no victory condition is enabled"
+      : ""}`;
+}
+
 function playerHudStats(player, rank) {
   const y = player.yields || {};
   const goldPerTurn = Number.isFinite(+player.gold_per_turn) ? +player.gold_per_turn : +(y.gold || 0);
@@ -23209,12 +23948,11 @@ function drawPlayerHud() {
     `<span>Player stats</span></div>` +
     `<div class="ribbon-stat-heading">` +
     `<span class="diplomacy-identity-head">` +
-    // WIN%, AGE and PLAN, not WIN ODDS, CURRENT AGE and AI STRATEGY. These heads clip rather than
-    // ellipsize, so an overlong one is not shortened but corrupted: "WIN ODDS"
-    // rendered as "WIN ODI" and "AI STRATEGY" as "AI STRATEG". All three fit
-    // whole at every width the masthead supports, and PLAN is the word the rest
-    // of the client already uses for this field. The full wording is in the
-    // tooltip on each head.
+    // The two win estimates are two named categories on matching inner tracks;
+    // Δ owns the narrow middle track used by each row's trend glyph. The outer
+    // cell remains one draggable Win odds column, so adding the labels does not
+    // add two more masthead seams. AGE and PLAN stay short because these heads
+    // clip rather than ellipsize; their full wording is in their tooltips.
     `<span title="Civilization">CIV</span><span>LEADER</span>` +
     `<button type="button" class="spectator-view-link" data-hud-action="spectator" ` +
     `aria-pressed="${state.view_player === null || state.view_player === undefined}" ` +
@@ -23222,7 +23960,10 @@ function drawPlayerHud() {
     `aria-label="Spectator mode: see everyone with full map visibility">All</button>` +
     `<span>PLAYER</span>` +
     `<span class="numeric" title="Elo rating">ELO</span>` +
-    `<span class="numeric" title="Elo-implied win odds, per cent">WIN%</span>` +
+    `<span class="diplomacy-odds-head numeric" title="Win odds, per cent: at the start of the game and now">` +
+    `<span title="Win odds at the start of the game, per cent">START</span>` +
+    `<span class="odds-trend-head" title="Trend from start to now">Δ</span>` +
+    `<span title="Win odds now, per cent">NOW</span></span>` +
     `<span title="Civilization age">AGE</span>` +
     `<span title="AI active strategy">PLAN</span></span>` +
     `<span class="diplomacy-stat-head">` +
@@ -23293,7 +24034,8 @@ function drawPlayerHud() {
         : `<span class="ai-plan">No active strategy</span>`;
       // The themed league handle names the player, while `ai_strategy` is the
       // live grand strategy selected inside this particular match.
-      const expectPct = Number.isFinite(+p.ai_expected) ? Math.round(p.ai_expected * 100) : null;
+      const startPct = oddsPct(p.odds_start);
+      const nowPct = oddsPct(p.odds_now);
       // A seat somebody is playing is a player of its own: this game
       // registered a new one for it rather than lending it an agent's name,
       // so the row says who you are and what you are defending.
@@ -23331,7 +24073,7 @@ function drawPlayerHud() {
         ? `League player ${p.ai_username} (${p.ai_strat_label || "unrated"})` +
           ` · ${eloCiv ? `${p.civ}-specific` : "overall"} ELO ${p.ai_elo} ±${p.ai_elo_rd}` +
           `${eloProvisional ? ` (${provisionalNote})` : ""}` +
-          `${expectPct === null ? "" : ` · expected win chance vs this table ${expectPct}%`}`
+          `${startPct === null ? "" : ` · ${startPct}% to win this table when it sat down`}`
         : `${p.ai_name || "AI player"} · ${eloKnown
             ? `${eloProvisional ? "provisional " : ""}ELO ${eloValue} ±${eloRd}` : "unrated"}` +
           ` · ${strategy ? `${titleCase(strategy)} active strategy` : "no active strategy"}`;
@@ -23380,8 +24122,12 @@ function drawPlayerHud() {
         // because the value ellipsizes rather than shrinks, going one pixel over
         // dropped two characters: "12%" rendered as "1…", a win probability of
         // twelve per cent shown as the digit one.
-        `<span class="diplomacy-identity-field diplomacy-expected" title="Elo-implied win odds">` +
-        `<span class="diplomacy-expected-value">${expectPct === null ? "—" : expectPct}</span></span>` +
+        //
+        // Two named numeric categories inside the outer Win odds cell: Start,
+        // a narrow trend track, and Now. Matching grid tracks keep every opening
+        // estimate, arrow and current estimate aligned down the table.
+        `<span class="diplomacy-identity-field diplomacy-expected" title="${escapeAttr(oddsTitle(p))}">` +
+        playerOddsFigures(p) + `</span>` +
         `<span class="diplomacy-identity-field diplomacy-age" title="${ageTitle}">` +
         `<span class="civ-age ${age || "unknown"}">${ageLabel}</span></span>` +
         `<span class="diplomacy-identity-field diplomacy-strategy">${activeStrategy}</span>` +
@@ -23657,24 +24403,49 @@ function civDossier(p, rank, relation) {
     ? `This player's rating specifically when playing ${p.civ}; each civ keeps its own table`
     : `Overall league rating — not enough rated ${p.civ} games yet for a civ-specific number`;
   const eloRow = row("Elo", dossierEloValue, dossierEloWhy);
-  const expectedRow = Number.isFinite(+p.ai_expected)
-    ? row("Expected wins", `${Math.round(p.ai_expected * 100)}% vs this table`,
-        "Elo-implied mean win probability against the other majors — compare with actual results over time")
-    : "";
+  // Both odds, named and explained. The masthead has room for two figures and
+  // an arrow; this is where the pair says what it is made of — and it is shown
+  // for every seat, the one you are playing included.
+  const dossierHandicap = +p.odds_handicap_elo;
+  const dossierStanding = +p.odds_standing_elo;
+  const startOdds = oddsPct(p.odds_start);
+  const nowOdds = oddsPct(p.odds_now);
+  const noVictoryPath = !anyVictoryEnabled();
+  const oddsRows = startOdds === null ? "" :
+    row("Win odds at start", `${startOdds}% of this table`,
+        noVictoryPath
+          ? "No victory condition was enabled, so no seat could win when the game began"
+          : "Judged before a tile was drawn: the ratings sitting at this table, the " +
+            "civilizations they drew and what the difficulty setting hands each seat. " +
+            "Nothing on the board moves it, so the finished game can be scored against it" +
+            (Number.isFinite(dossierHandicap) && dossierHandicap !== 0
+              ? ` — difficulty is worth ${dossierHandicap > 0 ? "+" : ""}${dossierHandicap} Elo to this seat`
+              : "")) +
+    row("Win odds now", `${nowOdds ?? "—"}%`,
+        oddsValue(p.odds_now) === 0
+          ? noVictoryPath
+            ? "No victory condition is enabled, so this game cannot produce a winner"
+            : "Out of the game: an empire with no cities and no settler to found one cannot win"
+          : "The same prior corrected by the position on the board — Score, military " +
+            "strength, cities held and the closest victory race — weighted up as the " +
+            "clock runs down" +
+            (Number.isFinite(dossierStanding) && dossierStanding !== 0
+              ? `. This position is worth ${dossierStanding > 0 ? "+" : ""}${dossierStanding} Elo against the living field`
+              : ""));
   const leagueRows = isPerson
     ? row("League player", `${p.player_username} (you)`,
         p.player_rated
           ? "Registered in the rated roster when this game began — the result is filed under this name"
           : "Registered for this game only: nothing is being rated, so the handle goes no further") +
-      eloRow
+      eloRow + oddsRows
     : p.ai_username
     ? row("League player", `${p.ai_username} (${p.ai_strat_label || "unrated"})`,
         "Which league strategy is playing this civilization") +
-      eloRow + expectedRow
+      eloRow + oddsRows
     : p.ai_name
     ? row("AI player", p.ai_name,
         strategy ? `Generated from this AI's ${titleCase(strategy)} strategy` : "Generated for this AI seat") +
-      eloRow + expectedRow
+      eloRow + oddsRows
     : "";
   const strategyBody = leagueRows + (plan
     ? row("Doctrine", `<span class="ai-plan ${plan.strategy}">${titleCase(plan.strategy)}</span>`,
@@ -24825,10 +25596,13 @@ function drawUbar() {
   const bar = document.getElementById("ubar");
   if (!sel || SPEC) { bar.style.display = "none"; return; }
   const u = sel;
+  const linked = u.linked_to !== null && u.linked_to !== undefined;
+  const escortPeer = linked && state.units.find(candidate => candidate.id === u.linked_to);
+  const escortName = escortPeer ? titleCase(escortPeer.type) : null;
   let h = `<b>${u.type}</b> <span class="small">hp ${u.hp} · mp ${u.moves_left}` +
     (u.level > 1 ? ` · lvl ${u.level}` : "") + (u.fortified ? " · ⛨ fortified" : "") +
     (u.formation ? ` · ${formationName(u.type, u.formation)}` : "") +
-    (u.linked_to ? ` · linked #${u.linked_to}` : "") +
+    (linked ? ` · escort with ${escortName || `#${u.linked_to}`}` : "") +
     (u.religion ? ` · ${titleCase(u.religion)}` : "") +
     (u.charges ? ` · ${u.charges} charges` : "") +
     (u.obsolete ? ` · <span class="obsolete">obsolete</span>` : "") + `</span><br>`;
@@ -24872,10 +25646,14 @@ function drawUbar() {
       h += `<button class="primary" onclick='send(${JSON.stringify(a)})'>⬆ Upgrade to ${titleCase(a.to)}</button>`;
     if (a.type === "combine_units")
       h += `<button onclick='send(${JSON.stringify(a)})'>⚔ Form ${formationName(u.type, u.formation === 1 ? 2 : 1)} with #${a.unit === u.id ? a.with : a.unit}</button>`;
-    if (a.type === "link_units")
-      h += `<button onclick='send(${JSON.stringify(a)})'>🔗 Link with #${a.unit === u.id ? a.with : a.unit}</button>`;
+    if (a.type === "link_units") {
+      const peerId = a.unit === u.id ? a.with : a.unit;
+      const peer = state.units.find(candidate => candidate.id === peerId);
+      const peerName = peer ? titleCase(peer.type) : `unit #${peerId}`;
+      h += `<button title="Move together as one formation" onclick='send(${JSON.stringify(a)})'>🔗 Form escort with ${peerName}</button>`;
+    }
     if (a.type === "unlink_units")
-      h += `<button onclick='send(${JSON.stringify(a)})'>⛓ Unlink formation</button>`;
+      h += `<button title="Let each unit move independently" onclick='send(${JSON.stringify(a)})'>⛓ Unform escort${escortName ? ` with ${escortName}` : ""}</button>`;
     if (a.type === "spread")
       h += `<button onclick='send(${JSON.stringify(a)})'>☼ Spread religion</button>`;
     if (a.type === "theological_attack")
@@ -30030,7 +30808,7 @@ async function writeSave() {
   }
 }
 
-async function startNewSimulation() {
+async function startNewSimulation(restartSource = "manual") {
   if (newSimulationBusy) return;
   cancelFinaleCountdown();
   const wasPaused = specPaused;
@@ -30058,11 +30836,17 @@ async function startNewSimulation() {
     sel = null; selCity = null;
     clearTimeout(specTimer);
     if (supervised) {
-      const finishedInstance = state.server_instance;
-      const finishedSeed = state.seed;
+      // Use the identity captured before the settings write above. The port
+      // may belong to a successor by the time this POST runs; that server must
+      // reject a request created for the world it replaced.
+      const finishedInstance = handoff.finishedInstance;
+      const finishedSeed = handoff.finishedSeed;
       const requested = await fetchJSON("/supervisor-new", { method: "POST",
         headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({...payload, mode: "restart"}) });
+        body: JSON.stringify({...payload, mode: "restart",
+          restart_source: restartSource, replace_world: {
+          server_instance: finishedInstance, seed: finishedSeed,
+        }}) });
       if (requested.error) throw new Error(requested.error);
       const respawn = document.getElementById("respawn");
       if (respawn) respawn.textContent = "restarting sim on existing code";
@@ -30243,6 +31027,10 @@ boot();
 // compete with the simulation for an entire core at Lightning pace. Human
 // turns retain 60fps; spectators need no more than 30fps between 10Hz states.
 let lastIdleDraw = 0, drawCost = 8;
+// Leave the other half of the main thread to state delivery, UI work and the
+// simulation sharing this machine. This is a share, rather than a magic
+// multiplier, so the scheduling promise and the arithmetic cannot drift apart.
+const MAX_ANIMATION_PAINT_SHARE = .5;
 function animTick(now) {
   requestAnimationFrame(animTick);
   if (!state) return;
@@ -30265,7 +31053,7 @@ function animTick(now) {
   // 130ms rather than every 33, so the view degrades to a slower picture
   // instead of to a stalled one.
   const floor = active ? (SPEC ? 32 : 16) : MODE.idle;
-  const cadence = Math.max(floor, drawCost * 1.15);
+  const cadence = Math.max(floor, drawCost / MAX_ANIMATION_PAINT_SHARE);
   if ((active || MODE.idle) && now - lastIdleDraw > cadence) {
     lastIdleDraw = now;
     const t0 = performance.now();

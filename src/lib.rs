@@ -18,6 +18,7 @@ pub mod mirror;
 pub mod name;
 pub mod neural;
 pub mod obs;
+pub mod odds;
 pub mod oracle;
 pub mod parallel;
 
@@ -34,6 +35,7 @@ pub mod selfplay;
 pub mod specmap;
 pub mod server;
 pub mod setup;
+pub mod skirmish;
 pub mod sphere;
 pub mod strategic;
 pub mod valuenet;
@@ -199,6 +201,7 @@ mod tests {
             .unwrap();
         let pos = g.units[&settler].pos;
         g.found_city_for(0, pos, Some("Testopolis".to_string()));
+        g.record_contact(0, 1);
         g.apply(0, &Action::DeclareWar { player: 1 }).unwrap();
 
         let mine = g.events_for(0);
@@ -455,6 +458,7 @@ mod tests {
         assert_eq!(g.agenda_opinion(tomyris, honest), 0.0, "no reason to judge");
         // Declaring war piles grievances on the aggressor, which is exactly
         // the reputation her agenda punishes.
+        g.record_contact(treacherous, honest);
         g.apply(treacherous, &Action::DeclareWar { player: honest })
             .unwrap();
         assert!(
@@ -1190,6 +1194,7 @@ mod tests {
             tile.hills = false;
         }
         let mut g = teleport(&g, foe, spot);
+        g.record_contact(0, 1);
         g.apply(0, &Action::DeclareWar { player: 1 }).unwrap();
         assert!(g.in_enemy_zoc(0, mid));
         g.apply(0, &Action::Move { unit: me, to: mid }).unwrap();
@@ -1265,6 +1270,7 @@ mod tests {
             .unwrap();
         let g = teleport(&g, mine, far);
         let mut g = teleport(&g, foe, adj);
+        g.record_contact(0, 1);
         g.apply(0, &Action::DeclareWar { player: 1 }).unwrap();
         g.apply(0, &Action::EndTurn).unwrap();
         let city_hp = g.cities[&cid].hp;
@@ -1972,6 +1978,9 @@ mod tests {
         ] {
             g.players[0].techs.insert(Name::new(t));
         }
+        // The world era advances when at least half the living majors have
+        // reached the next era, not when the single leader gets there.
+        g.players[1].techs = g.players[0].techs.clone();
         g.players[0].era_score = g.players[0].golden_age_threshold;
         g.players[1].era_score = 0;
         let round = |g: &mut Game| {
@@ -1983,7 +1992,10 @@ mod tests {
         };
         // An era is held open for its shipped 40-turn minimum (Eras_XP1
         // GameEraMinimumTurns), so the Classical era cannot arrive on turn one.
-        g.turn = 40;
+        g.turn = 29;
+        round(&mut g);
+        assert_eq!(g.world_era, 0);
+        g.turn = 39;
         round(&mut g);
         assert_eq!(g.world_era, 1);
         assert_eq!(g.players[0].age, "golden");
@@ -2096,6 +2108,7 @@ mod tests {
             }));
             (serde_json::from_value::<Game>(v).unwrap(), id)
         };
+        g4.record_contact(0, 1);
         g4.apply(0, &Action::DeclareWar { player: 1 }).unwrap();
         g4.apply(0, &Action::EndTurn).unwrap();
         g4.apply(
@@ -2306,6 +2319,7 @@ mod tests {
     #[test]
     fn domination_victory() {
         let mut g = Game::new_full(2, 20, 14, 5, 300, 0, false);
+        g.record_contact(0, 1);
         g.apply(0, &Action::DeclareWar { player: 1 }).unwrap();
         // eliminate player 1 in open combat: seize their last settler
         let settler = g

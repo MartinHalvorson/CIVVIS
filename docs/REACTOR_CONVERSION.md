@@ -1,12 +1,12 @@
 # Reactor conversion without oscillation
 
-Status: **preregistered from production saves and code; no treatment exists and
-no focal seed has been read**.
+Status: **preregistered and implemented on draft PR #622; the exact default-off
+null is queued behind the shared simulator, and no focal seed has been read**.
 
 ## Production observation
 
 The latest 50 completed production saves available on 2026-07-29, through
-`20260729T124923.092707Z`, are one homogeneous deployment cell: eight major
+`20260729T124923.092707Z`, were one homogeneous then-live cell: eight major
 civilizations, Continents, Planet topology, Poles, Online speed, a
 policy-visible turn limit of 250, and external continuation until an enabled
 victory. They ended in 48 Science and two Culture victories at a mean turn of
@@ -71,9 +71,10 @@ improve game strength without reducing reliable power.
 
 ## Frozen treatment
 
-A later implementation PR may add a default-off
-`advanced_reactor_marginal` evaluator entrant. It must not change shipped
-`AdvancedAi` while this experiment is running.
+A later implementation PR may add a default-off treatment private to the
+pinned evaluator runner. It must not add a public factory whose controller can
+drift from the evaluator, or change shipped `AdvancedAi` while this experiment
+is running.
 
 For a coal, oil, or uranium conversion candidate, the treatment will:
 
@@ -109,10 +110,31 @@ Focused tests must establish all of the following before a focal run:
 ## Frozen evaluator
 
 Add an observer/evaluator-only `reactor_conversion_eval`. Each independent map
-is replayed four times: focal seats 0 and 7 under stock `AdvancedAi` and under
-the default-off treatment entrant. All non-focal majors use stock `AdvancedAi`;
-city-states and barbarians use the same minor path in both arms. The two focal
-seats are averaged inside their map, and the map is the only inference unit.
+is replayed four times: focal seats 0 and 7 under the pinned generation-14
+`AdvancedAi` champion and under its default-off treatment entrant. All
+non-focal majors use that same pinned champion; city-states and barbarians use
+the same minor path in both arms. The two focal seats are averaged inside their
+map, and the map is the only inference unit.
+
+Before implementation is committed, the controller and runner integrity are
+bound prospectively. Every major uses the exact committed `advanced_evolved`
+generation-14 champion embedded from `data/evolved/best.json`, with FNV-1a
+fingerprint `0x40b1fbb2a5b88bc6`; minors retain the Basic path. The runner
+prints and asserts both values. It rejects unknown or positional tokens,
+missing values, malformed values, and every duplicate option occurrence. An
+official phase requires one canonical occurrence of every frozen argument,
+including `--ai advanced_evolved` and `--jobs 6`.
+
+The registered 84x54 Planet request resolves through the engine to 105x44 and
+4,412 map tiles. The runner prints realized geometry and asserts those exact
+values before any registered game advances; a future topology change therefore
+invalidates the phase instead of silently changing its population.
+
+The runner asserts `Game.max_turns = 250` at construction, immediately after
+every controller action, after fallback `EndTurn`, and at the terminal
+boundary. A controller that does not end its live turn receives one ordinary
+fallback `EndTurn`; failure or failure to advance is fatal. These are execution
+contracts, not changes to the treatment, endpoint, screen, or confirmation.
 
 The runner must preserve `Game.max_turns = 250` and continue the same game and
 stateful agents externally through turn 320 or an enabled victory. It must
@@ -133,12 +155,39 @@ assert that the policy-visible horizon never changes. For each arm it reports:
 The evaluator must not read its new diagnostics when making any game decision.
 Generated output is not committed.
 
+For the frozen safety endpoints, powered-city share is the pooled share of
+owned terminal cities with positive Power demand whose full demand is met;
+cities with no powered building are outside that denominator, and an arm with
+no demanding city has share 100%. A resource-shortage record is one unpaid
+fuel unit in the terminal `strategic_resource_shortages` values, summed across
+resources and focal seats. Conversion and recommission counts come only from
+the engine's cumulative `project:*` counters, and reactor accidents from its
+cumulative `reactor_accident:*` counters.
+
+## Exact default-off null
+
+Before treatment data, one four-map null at seed `9975999` compares the pinned
+controller with the same controller construction path while the marginal flag
+remains off:
+
+```text
+reactor_conversion_eval --null --ai advanced_evolved --maps 4 --players 8 \
+  --width 84 --height 54 --city-states 12 --turns 250 \
+  --observe-through 320 --speed online --map continents --shape planet \
+  --poles poles --randomize-civs --victories science,culture,domination \
+  --seed 9975999 --jobs 6
+```
+
+Both focal seats on all four maps must match in the complete terminal
+serialized `Game` and every reported endpoint: eight exact cells or **STOP**.
+No screen seed may be opened after a null mismatch.
+
 ## Fixed development screen
 
 The one allowed screen is 12 maps / 48 games:
 
 ```text
-reactor_conversion_eval --maps 12 --players 8 --width 84 --height 54 \
+reactor_conversion_eval --ai advanced_evolved --maps 12 --players 8 --width 84 --height 54 \
   --city-states 12 --turns 250 --observe-through 320 --speed online \
   --map continents --shape planet --poles poles --randomize-civs \
   --victories science,culture,domination --seed 9976000 --jobs 6
@@ -162,8 +211,8 @@ the weights, add a cooldown, change the seed, or inspect the confirmation.
 ## Fixed confirmation and decision
 
 A passing screen earns one unchanged 60-map confirmation at seed `9977000`
-(240 games). Every other argument and the treatment remain fixed. Confirmation
-requires every term below:
+(240 games). Every other argument, including `--ai advanced_evolved`, and the
+treatment remain fixed. Confirmation requires every term below:
 
 - stock again has at least 25% focal-game conversion coverage;
 - treatment conversion completions per 100 focal turns remain at most 25% of
@@ -184,3 +233,61 @@ post-result treatment change.
 
 The six-job batches remain behind the shared-host simulation queue. They must
 not start while another process owns six or more simulator cores.
+
+## Prospective implementation checkpoint
+
+The runner-integrity and controller-binding amendment above was committed as
+`6cd15b9`, endpoint definitions as `eed0293`, and realized geometry as
+`0c217ab`, all before the evaluator implementation commit and before any null,
+screen, or confirmation read. They add only a disjoint default-off null and
+reproducibility/liveness guards; the already-frozen treatment, screen seed,
+confirmation seed, endpoints, thresholds, stop rules, and map-level inference
+are unchanged.
+
+The default-off treatment was implemented at `d63fad7`; the matched runner
+followed separately at `5d2d5f5`. A transient public entrant constructed
+default weights instead of the runner's pinned generation-14 genome, so it was
+removed before any registered seed was opened. Before any
+registered run, `f1f10b8` restored the stock expression's exact left-to-right
+floating-point evaluation order and added a fixture where regrouping changes
+the IEEE-754 result, while `b320c93` bound conversion rates to counted focal
+actor turns instead of reported game turns. The focused runner contract is 8/8
+green, and the underlying marginal-valuation and bit-level stock-arithmetic
+tests pass. A one-map, one-turn, one-job null diagnostic used
+nonregistered seed `97590`: it printed generation 14 and FNV-1a
+`0x40b1fbb2a5b88bc6`, realized 105x44 / 4,412 tiles, reproduced both focal
+results and complete serialized terminal Games exactly, and labeled itself
+diagnostic only. Unknown, positional, duplicate, valueless, and wrong-controller
+CLI probes all exit 2 before game construction.
+
+## Registered result (2026-07-29)
+
+The exact default-off null used seed `9975999` and passed. All eight matched
+focal results and complete serialized terminal `Game` values reproduced
+exactly. Both arms recorded 0/8 wins, mean turn 294.0, mean score 598.5,
+92/79/17 coal/oil/uranium conversions, 5/8 conversion coverage, 2,304 observed
+focal turns, 27/29 powered demanding cities, 17 shortage records, and one
+nuclear plant. Every paired map and reported endpoint was neutral.
+
+That pass admitted the one fixed development screen at seed `9976000`. Its
+requested 84x54 Planet geometry again realized exactly 105x44 with 4,412
+tiles. The complete 12-map / 48-game screen produced:
+
+- 845 control conversions (414 coal, 371 oil, 60 uranium) versus 620 treatment
+  conversions (298 coal, 301 oil, 21 uranium), with coverage 18/24 versus
+  17/24 focal games;
+- conversion rates of 12.410 versus 8.975 per 100 observed focal turns, so the
+  treatment retained 72.3% of control rather than the required maximum 25%;
+- 29,900 nominal Online Production avoided, or 1,245.8 per focal game;
+- powered-city share of 75.00% versus 82.50%, shortage records of 41 versus
+  60, recommissions of 1 versus 9, and reactor accidents of 1 versus 4;
+- 3/24 control wins versus 2/24 treatment wins, all Science victories; and
+- paired map win score 47.9% (0 favorable, 11 neutral, 1 adverse; exact
+  two-sided sign-test p=1.0000) and terminal-score share 49.86% (4 favorable,
+  2 neutral, 6 adverse; p=0.7539; mean score delta -4.58).
+
+The mechanism, savings, powered-city, and terminal-score-share gates passed.
+The conversion-rate, accident, paired-win-score, total-win, and Science-win
+gates failed. Per the frozen rule this is **STOP**: retain stock `AdvancedAi`,
+do not tune or retry this treatment, and do not inspect seed `9977000`. The
+confirmation seed remains unopened.

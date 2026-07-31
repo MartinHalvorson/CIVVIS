@@ -1,6 +1,6 @@
 //! Which genes can change a game at all?
 //!
-//! You cannot breed what does not bite. `civvis evolve` searches 48 genes, and
+//! You cannot breed what does not bite. `civvis evolve` searches 40 genes, and
 //! about a thousand rounds of live evolution produced no measurable gain
 //! (`docs/RATING.md`). Two explanations have been offered — selection had no
 //! signal, and the genome does not span the decisions — but a third has only
@@ -13,8 +13,9 @@
 //! This measures it. For each gene, one seat plays with the shipped value and
 //! then with a perturbed one, on the **same map against the same opponents**,
 //! and the two games are compared turn by turn. A gene that never moves a
-//! single observable has been shown, causally, to be dead weight in the search
-//! space — the genome analogue of `search_probe`'s `INERT` exit.
+//! single observable has been shown, causally, not to affect those sampled
+//! trajectories. That makes it low-priority in this search space, not globally
+//! inert — the genome analogue of `search_probe`'s bounded `INERT` exit.
 //!
 //! ```text
 //! gene_probe --maps 6 --turns 200

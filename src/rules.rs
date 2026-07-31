@@ -1224,6 +1224,18 @@ pub struct SpeedSpec {
     pub turns: u32,
 }
 
+/// One positive Historic Moment from the shipped ruleset. Era numbers use
+/// [`ERA_NAMES`] indices. Minimum and maximum bounds are inclusive; an
+/// obsolete era is exclusive, matching the game's `ObsoleteEra` column.
+#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(default)]
+pub struct HistoricMomentSpec {
+    pub era_score: i64,
+    pub minimum_game_era: Option<usize>,
+    pub maximum_game_era: Option<usize>,
+    pub obsolete_era: Option<usize>,
+}
+
 fn dhundred() -> f64 {
     100.0
 }
@@ -1234,6 +1246,10 @@ fn dstandard_turns() -> u32 {
 
 #[derive(Clone)]
 pub struct Rules {
+    /// Deterministic fingerprint of the effective source JSON before derived
+    /// indexes are built. Tournament evidence binds to this so changing a
+    /// stock rule or a mod's contents cannot silently reuse an old baseline.
+    source_fingerprint: String,
     pub terrains: SpecMap<TerrainSpec>,
     pub features: SpecMap<FeatureSpec>,
     pub resources: SpecMap<ResourceSpec>,
@@ -1269,6 +1285,10 @@ pub struct Rules {
     pub disasters: SpecMap<DisasterSpec>,
     /// Rise & Fall's Dedications, both halves.
     pub dedications: SpecMap<DedicationSpec>,
+    /// Every positive Historic Moment supported by the engine, including the
+    /// six Monopoly and Corporations mode moments absent from the base GS
+    /// `Moments` table.
+    pub historic_moments: SpecMap<HistoricMomentSpec>,
     /// The city-state seats this ruleset can hand out, in seating order.
     pub city_states: CityStateRoster,
     /// Which technologies grant each global effect, and which civics do.
@@ -1926,7 +1946,7 @@ pub struct CityStateRoster {
 }
 
 /// Every ruleset file the engine ships, by the name a mod overlay uses.
-pub const DATA_FILES: [(&str, &str); 29] = [
+pub const DATA_FILES: [(&str, &str); 30] = [
     ("terrains", include_str!("../data/terrains.json")),
     ("features", include_str!("../data/features.json")),
     ("resources", include_str!("../data/resources.json")),
@@ -1955,6 +1975,10 @@ pub const DATA_FILES: [(&str, &str); 29] = [
     ("tree_effects", include_str!("../data/tree_effects.json")),
     ("disasters", include_str!("../data/disasters.json")),
     ("dedications", include_str!("../data/dedications.json")),
+    (
+        "historic_moments",
+        include_str!("../data/historic_moments.json"),
+    ),
     ("city_states", include_str!("../data/city_states.json")),
 ];
 
@@ -2088,6 +2112,13 @@ static ACTIVE: OnceLock<Rules> = OnceLock::new();
 static SHARED: OnceLock<Arc<Rules>> = OnceLock::new();
 
 impl Rules {
+    /// Stable identity of the effective rules data. The algorithm name is
+    /// part of the value so a future fingerprint upgrade is an explicit
+    /// protocol change rather than an accidental mismatch.
+    pub fn source_fingerprint(&self) -> &str {
+        &self.source_fingerprint
+    }
+
     /// The active ruleset — shipped data unless mods were installed.
     pub fn embedded() -> Rules {
         ACTIVE.get_or_init(Rules::shipped).clone()
@@ -2181,6 +2212,18 @@ impl Rules {
 
     /// Build a ruleset from raw JSON, one value per entry in [`DATA_FILES`].
     pub fn from_values(mut files: BTreeMap<String, serde_json::Value>) -> Result<Rules, String> {
+        // BTreeMap and serde_json's default sorted object map make this byte
+        // representation stable across processes. FNV-1a is used as a compact
+        // change detector, not as a security boundary.
+        let encoded = serde_json::to_vec(&files)
+            .map_err(|error| format!("cannot fingerprint ruleset: {error}"))?;
+        let mut fingerprint = 0xcbf29ce484222325u64;
+        for byte in encoded {
+            fingerprint ^= u64::from(byte);
+            fingerprint = fingerprint.wrapping_mul(0x100000001b3);
+        }
+        let source_fingerprint = format!("fnv1a64:{fingerprint:016x}");
+
         fn take<T: serde::de::DeserializeOwned>(
             files: &mut BTreeMap<String, serde_json::Value>,
             name: &str,
@@ -2195,6 +2238,7 @@ impl Rules {
             expand_modifier_attachments(name, value, &modifiers)?;
         }
         let mut rules = Rules {
+            source_fingerprint,
             terrains: take(&mut files, "terrains")?,
             features: take(&mut files, "features")?,
             resources: take(&mut files, "resources")?,
@@ -2222,6 +2266,7 @@ impl Rules {
             wmds: take(&mut files, "wmds")?,
             disasters: take(&mut files, "disasters")?,
             dedications: take(&mut files, "dedications")?,
+            historic_moments: take(&mut files, "historic_moments")?,
             city_states: take(&mut files, "city_states")?,
             tech_effects: SpecMap::default(),
             civic_effects: SpecMap::default(),
@@ -2243,6 +2288,40 @@ impl Rules {
                 .get_mut(&node)
                 .ok_or_else(|| format!("tree_effects.json references missing civic {node}"))?;
             add_effects(&mut spec.effects, &values);
+        }
+        if rules.historic_moments.is_empty() {
+            return Err("historic_moments.json contains no positive Moments".to_string());
+        }
+        for (moment, spec) in &rules.historic_moments {
+            if !moment.starts_with("MOMENT_") || spec.era_score <= 0 {
+                return Err(format!(
+                    "historic_moments.json entry {moment} must be a positive MOMENT_* row"
+                ));
+            }
+            for (field, era) in [
+                ("minimum_game_era", spec.minimum_game_era),
+                ("maximum_game_era", spec.maximum_game_era),
+                ("obsolete_era", spec.obsolete_era),
+            ] {
+                if era.is_some_and(|era| era >= ERA_NAMES.len()) {
+                    return Err(format!(
+                        "historic_moments.json entry {moment} has invalid {field}"
+                    ));
+                }
+            }
+            if spec.minimum_game_era.unwrap_or(0)
+                > spec.maximum_game_era.unwrap_or(ERA_NAMES.len() - 1)
+                || spec.obsolete_era.is_some_and(|obsolete| {
+                    obsolete <= spec.minimum_game_era.unwrap_or(0)
+                        || spec
+                            .maximum_game_era
+                            .is_some_and(|maximum| maximum >= obsolete)
+                })
+            {
+                return Err(format!(
+                    "historic_moments.json entry {moment} has an empty era window"
+                ));
+            }
         }
         rules.index_tree_unlocks();
         rules.tech_effects = effect_sources(&rules.techs);
@@ -2466,6 +2545,19 @@ mod tests {
     use super::*;
     use serde_json::json;
     use std::collections::BTreeSet;
+
+    #[test]
+    fn rules_fingerprint_is_stable_and_content_sensitive() {
+        let stock = Rules::shipped();
+        let repeated = Rules::shipped();
+        assert_eq!(stock.source_fingerprint(), repeated.source_fingerprint());
+        assert!(stock.source_fingerprint().starts_with("fnv1a64:"));
+
+        let mut changed = Rules::shipped_values();
+        changed.get_mut("speeds").unwrap()["standard"]["turns"] = json!(499);
+        let changed = Rules::from_values(changed).unwrap();
+        assert_ne!(stock.source_fingerprint(), changed.source_fingerprint());
+    }
 
     const TECHS: &str = "
         pottery animal_husbandry mining sailing astrology irrigation archery writing masonry
@@ -3547,6 +3639,45 @@ mod tests {
                     "{key} names ability {ability}, which the index omits"
                 );
             }
+        }
+    }
+
+    #[test]
+    fn historic_moment_catalogue_is_complete_positive_and_windowed() {
+        let rules = Rules::shipped();
+        assert_eq!(rules.historic_moments.len(), 149);
+        assert_eq!(
+            rules
+                .historic_moments
+                .values()
+                .map(|moment| moment.era_score)
+                .sum::<i64>(),
+            347
+        );
+        assert_eq!(
+            rules
+                .historic_moments
+                .values()
+                .filter(|moment| {
+                    moment.minimum_game_era.is_some()
+                        || moment.maximum_game_era.is_some()
+                        || moment.obsolete_era.is_some()
+                })
+                .count(),
+            23
+        );
+        for id in [
+            "MOMENT_FIRST_INDUSTRY",
+            "MOMENT_FIRST_INDUSTRY_IN_WORLD",
+            "MOMENT_FIRST_CORPORATION",
+            "MOMENT_FIRST_CORPORATION_IN_WORLD",
+            "MOMENT_FIRST_LUXURY_RESOURCE_MONOPOLY",
+            "MOMENT_FIRST_LUXURY_RESOURCE_MONOPOLY_IN_WORLD",
+        ] {
+            assert!(
+                rules.historic_moments.contains_key(id),
+                "New Frontier Moment {id} is missing"
+            );
         }
     }
 }

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Export a CIVVIS league strategy as a genome the Civ 6 grounding mod can play.
+"""Export the transferable part of a CIVVIS league strategy to the grounding mod.
 
 The league rates strategies that are, concretely, ~40 scalar weights driving
 `AdvancedAi`. Most of that genome is tactical -- how a force groups, when it
@@ -14,9 +14,11 @@ what most distinguishes the top strategies from one another:
 - ``builder_per_city``, ``mil_per_city``  the standing builder and army targets
 - ``d_campus``, ``d_commercial``, ``d_holy``, ``d_theater``  district priority
 
-Those are exactly the levers a mod can pull through ``CityManager``, so this
-exports them, verbatim, into a Lua table the mod reads. Nothing is rescaled or
-reinterpreted on the way out: a divergence between the two engines should be
+Those are exactly the levers this mod can pull through ``CityManager``, so this
+exports them, verbatim, into a Lua table the mod reads. This is a hybrid
+experiment, not ``AdvancedAi`` running in Civilization VI: Firaxis' controller
+still owns tactics and every unexported choice. Nothing is rescaled or
+reinterpreted on the way out, so a divergence between the two engines should be
 the engines' fault, not the exporter's.
 
 Usage::

@@ -352,7 +352,7 @@ fn main() {
     }
 
     // How a Dark Age is supposed to pay: THRESHOLD_SHIFT_PER_PAST_DARK_AGE is
-    // -10, so the era after a Dark Age is the cheapest era a civilization will
+    // -5, so the era after a Dark Age is the cheapest era a civilization will
     // ever have to clear — and clearing it all the way to Golden from a Dark Age
     // is a Heroic Age, three Dedications instead of one.
     println!("\n== what the era after each age looks like ==");

@@ -2,119 +2,174 @@
 
 ## Layers
 
-```
-data (JSON rulesets)  ->  engine (Game)  ->  interfaces (CivEnv / CLI / AIs)
+```text
+data/*.json
+    ↓
+Rules + map generation
+    ↓
+Game state machine + Action protocol
+    ↓
+observations / scripted agents / search experiments
+    ↓
+CLI / HTTP server / browser / WASM / evaluation tools
 ```
 
-- **Ruleset** (`rules.py` + `data/*.json`): all content — terrains, features,
-  resources, improvements, units, districts, buildings, projects, techs, civics — is
-  data, not code. Pass a custom `data_dir` to `Ruleset` to mod the game
-  (Unciv-style).
-- **Game** (`game.py`): the authoritative state machine. Holds the map,
-  players, units, cities, war state, RNG. All mutation goes through
-  `Game.apply(pid, action)`; anything invalid raises `IllegalAction` and
-  leaves state untouched.
-- **Interfaces**: `CivEnv` (gym-style single-agent), scripted AIs
-  (`ai/basic_ai.py`, `ai/random_ai.py`), and the CLI. All speak the same
-  action-dict protocol, so a GUI or network client later needs no engine
-  changes.
+- **Rules and content** — `src/rules.rs`, `src/validate.rs`, and `data/*.json`.
+  Units, technologies, civics, buildings, districts, projects, governments,
+  policies, leaders, civilizations, map settings, and other catalogues are data.
+  The canonical ruleset is embedded in the binary; tools can load a data
+  directory for validation and mod work.
+- **World generation** — `src/mapgen.rs`, `src/world.rs`, `src/fractal.rs`, and
+  `src/sphere.rs`. Flat maps and geodesic Planet worlds share the same `Pos` and
+  adjacency-facing game APIs.
+- **Game** — `src/game.rs`. `Game` owns authoritative state: players, map,
+  units, cities, diplomacy, victory state, event log, and the serialized RNG.
+  All player-visible mutation goes through `Game::apply(pid, &Action)`.
+  Illegal actions return an error without becoming a second mutation path.
+- **Observation** — `src/obs.rs` produces the fog-filtered JSON view used by a
+  seated player and the HTTP API. `src/obs_tensor.rs` produces a fog-honest
+  spatial tensor for offline learning. The spectator has an explicitly
+  omniscient view; it is not a player observation.
+- **Agents** — `src/ai.rs` contains the `Ai` trait, `RandomAi`, and `BasicAi`;
+  `src/ai/advanced.rs` contains the production major-civilization controller.
+  `src/strategic.rs`, `src/neural.rs`, `src/policy.rs`, and `src/production.rs`
+  are search/learning experiments with explicit fallbacks and evaluation
+  status. `src/oracle.rs` is a diagnostic wrapper, not a playable strategy.
+- **Evaluation and training** — `src/elo.rs`, `src/evolve.rs`, `src/league.rs`,
+  `src/action_space.rs`, and the binaries under `src/bin/`. Python in `tools/`
+  trains offline models, analyzes evidence, and supervises deployments; it is
+  not the game engine.
+- **Interfaces** — `src/main.rs` exposes the CLI, while `src/server.rs` serves
+  the JSON protocol and the browser client in `web/index.html`. The same Rust
+  engine is compiled for native and WASM use.
+- **Civilization VI bridges** — `tools/civ6_strategy.py` exports only the
+  economic subset of a league genome to a grounding mod; Firaxis' AI controls
+  the remaining real-game behavior. `tools/civ6_control/` is a separate Lua
+  controller and does not embed or call the Rust agent.
+
+The former Python `rules.py`, `game.py`, `hexgrid.py`, `CivEnv`, and
+`ai/basic_ai.py` architecture no longer exists.
 
 ## Action protocol
 
-`Game.legal_actions(pid)` enumerates every valid action as a JSON-able dict:
+`Game::legal_actions(pid)` returns the valid `Action` values for the current
+state. `Game::apply` consumes the same enum, so internal agents, the HTTP API,
+replay tools, and tests do not maintain separate rule paths. Serde gives each
+action its tagged JSON representation.
 
-| type | fields | effect |
-|---|---|---|
-| `move` | `unit`, `to: [q,r]` | move one tile (cost from terrain) |
-| `move_to` | `unit`, `to: [q,r]` | multi-step move along best path within remaining MP |
-| `attack` | `unit`, `target` | melee attack unit/city (auto-declares war) |
-| `ranged` | `unit`, `target` | ranged attack, no counterattack |
-| `found_city` | `unit` | settler founds a city (min distance 4) |
-| `improve` | `unit`, `improvement` | builder spends a charge |
-| `produce` | `city`, `item` | set production: `{"unit": n}` / `{"building": n}` / `{"district": n, "pos": [q,r]}` |
-| `buy` | `city`, `unit`, `currency` | instant purchase with gold (4x cost) or faith (2x) |
-| `research` / `civic` | `tech` / `civic` | pick current research |
-| `declare_war` / `make_peace` | `player` | diplomacy |
-| `end_turn` | — | pass control to next player |
+The enum currently has 77 variants across these families:
 
-Positions are axial hex coordinates `[q, r]`; maps are generated from odd-r
-offset rectangles (`hexgrid.py`).
+- movement, attacks, air operations, fortification, pillaging, upgrades, and
+  formations;
+- founding, improving, harvesting, purchasing plots, and assigning citizens;
+- city production and purchases, districts, projects, specialists, and Great
+  People;
+- research, civics, governments, policies, governors, dedications, religion,
+  and Secret Societies;
+- diplomacy, deals, alliances, emergencies, World Congress, espionage, trade,
+  envoys, and occupied-city decisions;
+- turn completion and other mandatory choices.
+
+Do not add a side-channel for a controller. A new player action needs an
+`Action` variant, legality enumeration, a `Game::apply` handler, serialization,
+and tests.
 
 ## Turn lifecycle
 
-Players act sequentially. On becoming current (`_begin_turn`): unit moves
-reset + healing; each city collects yields, grows/starves (Civ 6 food curve),
-advances production, expands borders; empire science/culture advance the
-current tech/civic (overflow banked when none selected); gold/faith accrue
-(unit maintenance beyond 3 free units). Victory checks follow the six Civ VI
-paths: science requires a Spaceport, the ordered Earth Satellite, Moon Landing,
-Mars Colony, and Exoplanet Expedition projects, then travel to 50 light-years;
-domination requires every foreign original capital; religious victory requires
-a strict city majority in every living major; culture compares visiting tourists
-against the largest rival domestic-tourist total; diplomacy requires 20 victory
-points; score is used only after `max_turns`.
+Players act sequentially. At a turn boundary the engine refreshes units and
+visibility, applies healing and ongoing effects, settles city yields, growth,
+production, borders, trade, research, civics, income, maintenance, diplomacy,
+climate/disasters, era systems, and victory progress. The game then exposes the
+next player's legal actions.
 
-## Combat
+Victory checks use the represented Civilization VI routes: Science, Culture,
+Religion, Diplomacy, Domination, and turn-limit Score. The same checks are used
+by human play, scripted play, rollouts, tournaments, and exact victory tests.
 
-Civ 6 math: effective strength drops 1 per 10 HP lost; damage =
-`30·e^(diff/25)·U(0.8,1.2)` clamped to [1,100]. Defenders get +3 on
-hills/forest/jungle. Melee draws a counterattack; ranged does not. City strength
-uses the strongest unit built (or a stronger garrison), walls, districts,
-terrain, and capital/policy modifiers. Cities have 200 HP and can only be
-captured by melee. Ordinary ranged attacks floor city HP at 1; Bombard attacks
-may deplete it to 0 but cannot capture it. Melee capture retains 75% Population,
-damages City Center buildings, transfers housed works, converts unique district
-and building families, removes unavailable infrastructure, resolves units in
-the center plus military/air districts, and forces a keep/raze/liberate
-disposition before another action. Original Capitals and former city-states
-cannot be razed; liberation restores the founder, while persistent occupation,
-elimination, and city-state conquest feed the Loyalty, Grievance, Envoy, and
-Diplomatic Favor systems.
+## AI architecture
 
-### Combat AI hierarchy
+### Production controllers
 
-`AdvancedAi` translates its empire-level campaign target into `ForceGroup`
-orders before moving any combat unit. Nearby units are clustered separately by
-domain, so an army and a fleet can support the same campaign through reachable
-objectives. Each group publishes an anchor, readiness, local strength ratio,
-posture, and shared focus target. Unit execution consumes that order with
-role-aware formation scoring rather than independently chasing the nearest
-enemy. The order graph is refreshed between unit actions, allowing the force
-to retarget and change posture as casualties and positions change.
+`BasicAi` is a deterministic, full-state heuristic. It is deliberately cheap
+and is used for city-states and barbarians. `AdvancedAi` wraps a persistent
+hierarchy around the same legal-action interface for major civilizations:
 
-Candidate attacks first use a static exchange estimate, then enter a bounded
-quiescence-style extension: `AdvancedAi` makes the attack on a cloned position
-and evaluates the opponent's best single forcing reply against that attacker.
-Only melee, ranged, air, City Center, and Encampment counterattacks are expanded,
-which catches poisoned captures without searching quiet empire actions.
+```text
+victory pressure and empire assessment
+    ↓
+persistent strategic plan and city roles
+    ↓
+campaigns, settlements, builders, trade, diplomacy, and spending
+    ↓
+domain-specific force groups and tactical candidates
+    ↓
+Game::apply(Action)
+```
 
-Forced strategic decisions use a make-and-evaluate pass over cloned positions.
-For a captured city, `AdvancedAi` evaluates every legal keep, raze, and liberate
-result with victory-specific economy, military, loyalty, capital, Favor, and
-Grievance terms, then plays the highest-valued outcome deterministically. It
-greedily reserves one reachable land combat unit per ungarrisoned occupied city,
-lowest Loyalty first, so campaign movement internalizes the occupation penalty.
+Combat units are clustered by movement domain and command distance into
+`ForceGroup`s with a shared objective, anchor, focus target, readiness, local
+strength, and posture. Orders are recomputed between unit actions, so a kill,
+retreat, opened route, or local-power change can alter the rest of the turn.
 
-The parameters controlling clustering, muster thresholds, cohesion, screening,
-engagement depth, focus fire, caution, and recovery are part of the serialized
-`Weights` genome. `evolve` evaluates full `AdvancedAi` self-play, retains elites,
-crosses and mutates fitter parents, checkpoints every generation, and promotes
-a champion only after a sequential win-rate test plus a fixed-seed holdout
-non-regression gate. Prior champions remain in an opponent archive so training
-continues to test old strategies rather than forgetting them.
+Candidate attacks use a static exchange score and a bounded forcing-reply
+extension on a clone. Only forcing combat responses are expanded. This is real
+local search inside `AdvancedAi`; macro rollout search is not the only search in
+the codebase.
 
-## Determinism & serialization
+### Experimental controllers
 
-One serialized `Rng` drives map generation and combat; scripted AIs use their
-own seeded RNGs. Same seed + same action sequence = the same game, and JSON
-saves round-trip the complete state including RNG.
+`StrategicAi` wraps `AdvancedAi` and periodically projects an adaptive branch
+plus enabled victory-lane commitments. Decided branches return the outcome;
+unresolved branches use score share blended with an optional 25-feature value
+net. Priors may answer before a rollout, and `ReviewCensus` reports which path
+actually decided each review.
 
-## Fidelity notes
+`NeuralAi` applies a similar optional scalar value net to scripted peace/war
+rollouts on top of `BasicAi`. `PolicyAi` applies candidate tactical actions to
+clones and greedily scores their resulting state before handing routine work to
+`AdvancedAi`. `ProductionSearchAi` projects candidate city builds. None is the
+default major controller, and the latter two are retained in part because their
+controlled evaluations were negative.
 
-The combat curve, ZOC, staged embarkation/Ocean access, naval and air domains,
-XP/promotions, fortification, pillaging and repairs, coastal raids, cliffs,
-aircraft basing/interception/anti-air defense, siege support, linked formations,
-Corps/Armies, theological combat, and independent Encampment defenses all use
-the same deterministic action/state model as ordinary unit combat. Promotion
-nodes are rules data in `data/promotions.json`, and every represented effect
-family has an active engine path.
+The repository embeds an evolved scripted genome but no value net. Agent
+factories therefore resolve missing learned artifacts to documented scripted or
+score-share behavior. `builtin_provenance` uses the same loaders as the agent
+factory so an evaluator can report what will actually play.
+
+### League and live seating
+
+`src/league.rs` stores named builtin or parameterized `AdvancedAi` strategies
+with Glicko-2 state. The supervised exhibition starts with a committed snapshot,
+records into a gitignored runtime copy, and rank-weights each
+leader/civilization's top three live-eligible strategies while avoiding repeats
+where possible. `league_only` entries participate in offline rating but are
+excluded from exhibition and auto-play seating.
+
+Without a league, `Session::ai_fleet` constructs stock `AdvancedAi` for major
+civilizations and `BasicAi` for minors/barbarians. A human seat is never silently
+credited to a roster strategy.
+
+## Learning surfaces
+
+The runtime and training representations are intentionally distinct:
+
+- `evolve::features` — 25 full-state empire aggregates used by the scalar MLP;
+- `decision_features` — 34 action-sensitive scalar terms for offline policy
+  experiments;
+- `obs_tensor` — 25 fog-honest spatial planes plus public/global values;
+- `action_space` — stable action-kind IDs and contextual/destination features.
+
+`selfplay` and counterfactual/Q exporters write training corpora. Python tools
+train scalar or spatial models. A spatial checkpoint currently has no Rust
+consumer, and no learned model file is committed, so these are development
+surfaces rather than claims about the live agent.
+
+## Determinism and serialization
+
+One serialized `Rng` drives engine randomness. Scripted agents use seeded local
+RNGs only where needed. The same initial state and action sequence reproduce the
+same game, and JSON saves round-trip the state required to continue it.
+
+Search clones the same state machine and applies real actions; it does not use a
+simplified shadow rules engine. Evaluation relies on that property for paired
+maps, replay, counterfactual labels, and provenance checks.

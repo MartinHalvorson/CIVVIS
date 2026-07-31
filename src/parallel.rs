@@ -9,8 +9,12 @@
 //! job order, so a batch produces exactly what it produced serially — only
 //! sooner.
 
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::Mutex;
+use std::any::Any;
+use std::cell::Cell;
+use std::panic::{catch_unwind, resume_unwind, AssertUnwindSafe};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::{mpsc, Arc, Mutex};
+use std::thread::JoinHandle;
 
 /// Stack a worker gets. Turn resolution nests deeply enough that a whole game
 /// does not fit in a thread's stock 2 MiB, which is a quarter of the 8 MiB the
@@ -18,6 +22,370 @@ use std::sync::Mutex;
 /// with a stack overflow as soon as it was spread across workers, and the
 /// larger the armies grew the sooner it happened.
 const WORKER_STACK: usize = 32 * 1024 * 1024;
+
+type Task = Box<dyn FnOnce() + Send + 'static>;
+
+enum WorkerMessage {
+    Run(Task),
+    Shutdown,
+}
+
+enum BatchMessage<T> {
+    Value(usize, T),
+    Panicked(Box<dyn Any + Send + 'static>),
+    WorkerDone,
+}
+
+thread_local! {
+    /// Nested fork-join is both expensive and capable of deadlocking a bounded
+    /// pool when every worker waits for work queued behind itself. A job that
+    /// reaches another parallel frontier therefore evaluates that inner
+    /// frontier serially.
+    static IN_WORK_POOL: Cell<bool> = const { Cell::new(false) };
+}
+
+/// Dynamic indices claimed by one stateful worker in a [`WorkPool`] batch.
+///
+/// Every clone shares one atomic cursor, so each index is yielded exactly
+/// once across the batch. Iteration stops promptly when another worker
+/// panics. The type deliberately exposes no way to manufacture or rewind an
+/// index; callers return `(index, value)` pairs for deterministic reordering.
+pub struct WorkIndices {
+    next: Arc<AtomicUsize>,
+    cancelled: Arc<AtomicBool>,
+    count: usize,
+}
+
+impl Iterator for WorkIndices {
+    type Item = usize;
+
+    fn next(&mut self) -> Option<usize> {
+        if self.cancelled.load(Ordering::Acquire) {
+            return None;
+        }
+        let index = self.next.fetch_add(1, Ordering::Relaxed);
+        (index < self.count).then_some(index)
+    }
+}
+
+/// Persistent workers for the fine-grained, read-only phases of one game.
+///
+/// Unlike [`map`], which deliberately creates isolated workers for one batch
+/// of complete games, a `WorkPool` lives across thousands of AI decisions.
+/// Each call hands out indices dynamically and returns values in index order,
+/// so worker completion order can never change an action tie-break or replay.
+/// Jobs own their inputs (`'static`) because a persistent worker cannot safely
+/// borrow the caller's stack; game evaluators pass an `Arc` snapshot or an
+/// owned search branch instead.
+pub struct WorkPool {
+    sender: mpsc::Sender<WorkerMessage>,
+    workers: Vec<JoinHandle<()>>,
+}
+
+impl WorkPool {
+    /// Start a reusable pool. Zero is treated as one so a CLI-provided worker
+    /// count always has a deterministic serial fallback.
+    pub fn new(threads: usize) -> WorkPool {
+        let threads = threads.max(1);
+        let (sender, receiver) = mpsc::channel::<WorkerMessage>();
+        let receiver = Arc::new(Mutex::new(receiver));
+        let mut workers = Vec::with_capacity(threads);
+        for index in 0..threads {
+            let receiver = Arc::clone(&receiver);
+            let worker = std::thread::Builder::new()
+                .name(format!("civvis-work-{index}"))
+                .stack_size(WORKER_STACK)
+                .spawn(move || {
+                    IN_WORK_POOL.with(|inside| inside.set(true));
+                    loop {
+                        // `Receiver` is not Sync. Hold the lock only long
+                        // enough to claim one task; executing outside it lets
+                        // all workers drain a queued batch concurrently.
+                        let message = receiver
+                            .lock()
+                            .expect("a work-pool receiver was poisoned")
+                            .recv();
+                        match message {
+                            Ok(WorkerMessage::Run(task)) => task(),
+                            Ok(WorkerMessage::Shutdown) | Err(_) => break,
+                        }
+                    }
+                    IN_WORK_POOL.with(|inside| inside.set(false));
+                })
+                .expect("the operating system refused a persistent worker thread");
+            workers.push(worker);
+        }
+        WorkPool { sender, workers }
+    }
+
+    /// Number of reusable workers owned by this pool.
+    pub fn threads(&self) -> usize {
+        self.workers.len()
+    }
+
+    /// Evaluate `count` owned jobs and return their results in index order.
+    ///
+    /// At most one batch task per worker is queued. Those tasks claim indices
+    /// from a shared counter, retaining load balance without one allocation and
+    /// one channel message per candidate. A panic cancels unclaimed work,
+    /// drains every active worker, and resumes on the caller; the pool itself
+    /// remains usable.
+    pub fn map<T, F>(&self, count: usize, job: F) -> Vec<T>
+    where
+        T: Send + 'static,
+        F: Fn(usize) -> T + Send + Sync + 'static,
+    {
+        if count == 0 {
+            return Vec::new();
+        }
+        let nested = IN_WORK_POOL.with(Cell::get);
+        let active = self.workers.len().min(count);
+        if active == 1 || nested {
+            return (0..count).map(job).collect();
+        }
+
+        let job = Arc::new(job);
+        let next = Arc::new(AtomicUsize::new(0));
+        let cancelled = Arc::new(AtomicBool::new(false));
+        let (result_tx, result_rx) = mpsc::channel::<BatchMessage<T>>();
+
+        for _ in 0..active {
+            let job = Arc::clone(&job);
+            let next = Arc::clone(&next);
+            let cancelled = Arc::clone(&cancelled);
+            let result_tx = result_tx.clone();
+            self.sender
+                .send(WorkerMessage::Run(Box::new(move || {
+                    while !cancelled.load(Ordering::Acquire) {
+                        let index = next.fetch_add(1, Ordering::Relaxed);
+                        if index >= count {
+                            break;
+                        }
+                        match catch_unwind(AssertUnwindSafe(|| job(index))) {
+                            Ok(value) => {
+                                if result_tx.send(BatchMessage::Value(index, value)).is_err() {
+                                    break;
+                                }
+                            }
+                            Err(payload) => {
+                                cancelled.store(true, Ordering::Release);
+                                let _ = result_tx.send(BatchMessage::Panicked(payload));
+                                break;
+                            }
+                        }
+                    }
+                    let _ = result_tx.send(BatchMessage::WorkerDone);
+                })))
+                .expect("the persistent work pool stopped unexpectedly");
+        }
+        drop(result_tx);
+
+        let mut values: Vec<Option<T>> = (0..count).map(|_| None).collect();
+        let mut finished = 0;
+        let mut first_panic = None;
+        while finished < active {
+            match result_rx
+                .recv()
+                .expect("a persistent worker stopped without reporting completion")
+            {
+                BatchMessage::Value(index, value) => values[index] = Some(value),
+                BatchMessage::Panicked(payload) => {
+                    if first_panic.is_none() {
+                        first_panic = Some(payload);
+                    }
+                }
+                BatchMessage::WorkerDone => finished += 1,
+            }
+        }
+        if let Some(payload) = first_panic {
+            resume_unwind(payload);
+        }
+        values
+            .into_iter()
+            .enumerate()
+            .map(|(index, value)| {
+                value.unwrap_or_else(|| panic!("work-pool job {index} produced no result"))
+            })
+            .collect()
+    }
+
+    /// Evaluate owned inputs that are `Send` but do not have to be `Sync`.
+    ///
+    /// A [`crate::game::Game`] deliberately contains worker-local `RefCell`
+    /// caches, so an immutable game cannot be shared between threads. Search
+    /// code can instead clone each branch on the simulation thread and move
+    /// those independent worlds into this method. The small per-input mutex
+    /// exists only to transfer ownership to the worker assigned that stable
+    /// index; jobs never contend for the same input.
+    pub fn map_owned<I, T, F>(&self, inputs: Vec<I>, job: F) -> Vec<T>
+    where
+        I: Send + 'static,
+        T: Send + 'static,
+        F: Fn(I) -> T + Send + Sync + 'static,
+    {
+        let count = inputs.len();
+        let inputs = Arc::new(
+            inputs
+                .into_iter()
+                .map(|input| Mutex::new(Some(input)))
+                .collect::<Vec<_>>(),
+        );
+        self.map(count, move |index| {
+            let input = inputs[index]
+                .lock()
+                .expect("a work-pool input was poisoned")
+                .take()
+                .unwrap_or_else(|| panic!("work-pool input {index} was claimed twice"));
+            job(input)
+        })
+    }
+
+    /// Evaluate a batch with one owned, reusable state per active worker.
+    ///
+    /// This is the fine-grained path for a non-`Sync` world with useful
+    /// read-only caches. A worker can open one memo scope, claim dynamically
+    /// balanced indices from [`WorkIndices`], and score many candidates before
+    /// returning its `(index, value)` pairs. Results are still published in
+    /// index order. `states` must contain `min(self.threads(), count)` entries.
+    pub fn map_stateful<S, T, F>(&self, count: usize, states: Vec<S>, job: F) -> Vec<T>
+    where
+        S: Send + 'static,
+        T: Send + 'static,
+        F: Fn(S, WorkIndices) -> Vec<(usize, T)> + Send + Sync + 'static,
+    {
+        if count == 0 {
+            assert!(states.is_empty(), "an empty work batch needs no states");
+            return Vec::new();
+        }
+        let active = self.workers.len().min(count);
+        assert_eq!(
+            states.len(),
+            active,
+            "a stateful batch needs one state per active worker"
+        );
+        let next = Arc::new(AtomicUsize::new(0));
+        let cancelled = Arc::new(AtomicBool::new(false));
+        let nested = IN_WORK_POOL.with(Cell::get);
+
+        if active == 1 || nested {
+            let state = states
+                .into_iter()
+                .next()
+                .expect("a non-empty stateful batch has a state");
+            let results = job(
+                state,
+                WorkIndices {
+                    next,
+                    cancelled,
+                    count,
+                },
+            );
+            return Self::ordered_stateful_results(count, results);
+        }
+
+        let job = Arc::new(job);
+        let (result_tx, result_rx) = mpsc::channel::<BatchMessage<T>>();
+        for state in states {
+            let job = Arc::clone(&job);
+            let next = Arc::clone(&next);
+            let cancelled = Arc::clone(&cancelled);
+            let result_tx = result_tx.clone();
+            self.sender
+                .send(WorkerMessage::Run(Box::new(move || {
+                    let indices = WorkIndices {
+                        next,
+                        cancelled: Arc::clone(&cancelled),
+                        count,
+                    };
+                    match catch_unwind(AssertUnwindSafe(|| job(state, indices))) {
+                        Ok(results) => {
+                            for (index, value) in results {
+                                if result_tx.send(BatchMessage::Value(index, value)).is_err() {
+                                    break;
+                                }
+                            }
+                        }
+                        Err(payload) => {
+                            cancelled.store(true, Ordering::Release);
+                            let _ = result_tx.send(BatchMessage::Panicked(payload));
+                        }
+                    }
+                    let _ = result_tx.send(BatchMessage::WorkerDone);
+                })))
+                .expect("the persistent work pool stopped unexpectedly");
+        }
+        drop(result_tx);
+
+        let mut values: Vec<Option<T>> = (0..count).map(|_| None).collect();
+        let mut finished = 0;
+        let mut first_panic = None;
+        while finished < active {
+            match result_rx
+                .recv()
+                .expect("a stateful worker stopped without reporting completion")
+            {
+                BatchMessage::Value(index, value) => {
+                    assert!(index < count, "stateful worker returned index {index} out of range");
+                    assert!(
+                        values[index].is_none(),
+                        "stateful worker returned index {index} twice"
+                    );
+                    values[index] = Some(value);
+                }
+                BatchMessage::Panicked(payload) => {
+                    if first_panic.is_none() {
+                        first_panic = Some(payload);
+                    }
+                }
+                BatchMessage::WorkerDone => finished += 1,
+            }
+        }
+        if let Some(payload) = first_panic {
+            resume_unwind(payload);
+        }
+        Self::ordered_stateful_values(values)
+    }
+
+    fn ordered_stateful_results<T>(count: usize, results: Vec<(usize, T)>) -> Vec<T> {
+        let mut values: Vec<Option<T>> = (0..count).map(|_| None).collect();
+        for (index, value) in results {
+            assert!(index < count, "stateful worker returned index {index} out of range");
+            assert!(
+                values[index].is_none(),
+                "stateful worker returned index {index} twice"
+            );
+            values[index] = Some(value);
+        }
+        Self::ordered_stateful_values(values)
+    }
+
+    fn ordered_stateful_values<T>(values: Vec<Option<T>>) -> Vec<T> {
+        values
+            .into_iter()
+            .enumerate()
+            .map(|(index, value)| {
+                value.unwrap_or_else(|| panic!("stateful work-pool job {index} produced no result"))
+            })
+            .collect()
+    }
+}
+
+impl Drop for WorkPool {
+    fn drop(&mut self) {
+        for _ in &self.workers {
+            let _ = self.sender.send(WorkerMessage::Shutdown);
+        }
+        let current = std::thread::current().id();
+        for worker in self.workers.drain(..) {
+            // An `Arc<WorkPool>` may exceptionally lose its last owner inside
+            // one of its jobs. Dropping that thread's own handle detaches it;
+            // the queued shutdown still lets the worker exit after this task.
+            if worker.thread().id() != current {
+                let _ = worker.join();
+            }
+        }
+    }
+}
 
 /// Spawn one worker with a stack a whole game fits in.
 fn spawn_worker<'scope, 'env, F>(scope: &'scope std::thread::Scope<'scope, 'env>, worker: F)
@@ -137,6 +505,11 @@ where
 
 #[cfg(test)]
 mod tests {
+    use super::WorkPool;
+    use std::collections::HashSet;
+    use std::panic::AssertUnwindSafe;
+    use std::sync::{Arc, Barrier};
+
     #[test]
     fn results_come_back_in_job_order() {
         let squares = super::map(64, 8, |index| index * index);
@@ -167,5 +540,129 @@ mod tests {
             seen.into_inner().unwrap(),
             (0..32).map(|i| (i, i)).collect::<Vec<_>>()
         );
+    }
+
+    #[test]
+    fn persistent_pool_orders_results_and_reuses_workers() {
+        let pool = WorkPool::new(4);
+        let run = |pool: &WorkPool| {
+            let barrier = Arc::new(Barrier::new(4));
+            pool.map(4, move |index| {
+                barrier.wait();
+                (index, std::thread::current().id())
+            })
+        };
+        let first = run(&pool);
+        let second = run(&pool);
+        assert_eq!(
+            first.iter().map(|(index, _)| *index).collect::<Vec<_>>(),
+            [0, 1, 2, 3]
+        );
+        let first_workers = first
+            .into_iter()
+            .map(|(_, worker)| worker)
+            .collect::<HashSet<_>>();
+        let second_workers = second
+            .into_iter()
+            .map(|(_, worker)| worker)
+            .collect::<HashSet<_>>();
+        assert_eq!(first_workers.len(), 4);
+        assert_eq!(first_workers, second_workers);
+    }
+
+    #[test]
+    fn nested_pool_work_uses_its_current_worker_serially() {
+        let pool = Arc::new(WorkPool::new(2));
+        let nested_pool = Arc::clone(&pool);
+        let results = pool.map(2, move |_| {
+            let current = std::thread::current().id();
+            let inner = Arc::clone(&nested_pool);
+            inner.map(8, move |_| std::thread::current().id() == current)
+        });
+        assert!(results.into_iter().flatten().all(|same_worker| same_worker));
+    }
+
+    #[test]
+    fn a_panicking_job_does_not_destroy_the_pool() {
+        let pool = WorkPool::new(4);
+        let failed = std::panic::catch_unwind(AssertUnwindSafe(|| {
+            pool.map(32, |index| {
+                assert_ne!(index, 7, "intentional work-pool test panic");
+                index
+            })
+        }));
+        assert!(failed.is_err());
+        assert_eq!(pool.map(5, |index| index + 10), [10, 11, 12, 13, 14]);
+    }
+
+    #[test]
+    fn persistent_pool_has_serial_and_empty_paths() {
+        let pool = WorkPool::new(0);
+        assert_eq!(pool.threads(), 1);
+        assert_eq!(pool.map(3, |index| index * 2), [0, 2, 4]);
+        assert!(pool.map::<usize, _>(0, |_| unreachable!()).is_empty());
+    }
+
+    #[test]
+    fn owned_inputs_only_need_to_be_send() {
+        use std::cell::Cell;
+
+        let pool = WorkPool::new(3);
+        let inputs = (0..12).map(Cell::new).collect();
+        assert_eq!(
+            pool.map_owned(inputs, |input| input.get() * 3),
+            (0..12).map(|value| value * 3).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn stateful_workers_reuse_private_state_and_order_results() {
+        use std::cell::Cell;
+
+        let pool = WorkPool::new(4);
+        let barrier = Arc::new(Barrier::new(4));
+        let states = (0..4)
+            .map(|state| (state, Cell::new(0usize), Arc::clone(&barrier)))
+            .collect();
+        let values = pool.map_stateful(64, states, |(state, visits, barrier), indices| {
+            barrier.wait();
+            indices
+                .map(|index| {
+                    let visit = visits.get();
+                    visits.set(visit + 1);
+                    (index, (index * index, state, visit))
+                })
+                .collect()
+        });
+        assert_eq!(
+            values.iter().map(|(square, _, _)| *square).collect::<Vec<_>>(),
+            (0..64).map(|index| index * index).collect::<Vec<_>>()
+        );
+        for state in 0..4 {
+            let mut visits = values
+                .iter()
+                .filter(|(_, owner, _)| *owner == state)
+                .map(|(_, _, visit)| *visit)
+                .collect::<Vec<_>>();
+            visits.sort_unstable();
+            assert_eq!(visits, (0..visits.len()).collect::<Vec<_>>());
+        }
+    }
+
+    #[test]
+    fn a_panicking_stateful_batch_does_not_destroy_the_pool() {
+        let pool = WorkPool::new(3);
+        let failed = std::panic::catch_unwind(AssertUnwindSafe(|| {
+            pool.map_stateful(24, vec![(); 3], |(), indices| {
+                indices
+                    .map(|index| {
+                        assert_ne!(index, 5, "intentional stateful work-pool test panic");
+                        (index, index)
+                    })
+                    .collect::<Vec<_>>()
+            })
+        }));
+        assert!(failed.is_err());
+        assert_eq!(pool.map(4, |index| index + 20), [20, 21, 22, 23]);
     }
 }

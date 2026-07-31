@@ -2,6 +2,10 @@
 
 *What an early rush can reach in this engine, measured rather than assumed.*
 
+> **Profile note (2026-07-30).** “Deployment” in this experiment means its
+> recorded six-player 74×46 comparison cell. The live exhibition now rotates
+> through 4–10 seats and matching stock map profiles.
+
 Every prior war measurement in this repository is of a **late** war —
 `docs/AI_GAPS.md` and [`civvis-wars-take-nothing`] both start from full-length
 games and ask why 0.33 cities a game get taken. This document asks the prior
@@ -163,8 +167,8 @@ not that.
 
 ### ★★★ Capability — it wipes a neighbour in 19 games of 24, by turn ~48
 
-**24 maps at the deployment shape (6p 74x46), replicated on three disjoint
-seed sets:**
+**24 maps at the recorded large-map shape (6p 74x46), replicated on three
+disjoint seed sets:**
 
 | | stock `advanced` | `advanced_rush` |
 |---|---|---|
@@ -235,7 +239,8 @@ is not the shape this window was measured on, and this repository has already
 seen a sign flip between the two. Always pass `--width 74 --height 46
 --players 6`.
 
-At the deployment shape, as the lane got better at actually killing, its cost
+At the recorded large-map shape, as the lane got better at actually killing,
+its cost
 in wins fell away:
 
 | | early lane (3 for / 21 against) | **finished lane** |

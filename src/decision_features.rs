@@ -1,8 +1,9 @@
 //! Position features chosen so that the decisions an agent ranks are
 //! visible in them.
 //!
-//! Every learned component in this codebase has failed the same way, and
-//! not by being badly tuned. `evolve::features` is twenty-five *empire
+//! Several scalar learned experiments in this codebase failed at the boundary
+//! between state prediction and action ranking. `evolve::features` is
+//! twenty-five *empire
 //! aggregates* — cities, population, owned tiles, techs, civics, military
 //! power, unit count, three yields, Gold, score, mirrored for the leading
 //! rival, plus turn fraction. Repositioning a unit changes none of them, so
@@ -35,10 +36,11 @@
 //!    measurements above establish is that the previous set made correct
 //!    ranking *impossible*, which is a different and stronger claim than
 //!    "it was inaccurate".
-//! 2. **No agent uses this yet, and no net is trained on it.** It is the
-//!    prerequisite, offered with the measurement that justifies it, not a
-//!    strength improvement. `ValueNet` still hard-validates a 25-wide
-//!    input, so training on this needs that generalized first.
+//! 2. **The live controller does not use this.** The evaluator-only
+//!    `policy_wide` arm can load a 34-wide net, and its first trained run was a
+//!    large regression because visibility did not make the state-value delta
+//!    causal. No 34-wide artifact ships. This representation is research
+//!    infrastructure, not a strength improvement.
 //! 3. **Policy-card and diplomacy actions remain invisible** — `slot_policy`
 //!    and `unslot_policy` are still 0%, because nothing here encodes which
 //!    cards occupy which slots. That is the next gap, not a solved one.

@@ -62,9 +62,10 @@ const MINOR_DEFENSE_RADIUS: i32 = 6;
 const RAILROAD_RESOURCE_RESERVE: f64 = 4.0;
 
 mod advanced;
+mod tactics;
 pub use advanced::{
     AdvancedAi, ForceDomain, ForceGroup, ForcePosture, GrandStrategy, StrategicPlan,
-    StrategyCensus, VictoryTarget,
+    ExpansionCensus, StrategyCensus, VictoryTarget,
 };
 
 const TECH_PRIORITY: [&str; 15] = [
@@ -150,6 +151,25 @@ pub trait Ai {
         None
     }
 
+    /// How often an adaptive Expansion plan reached the Advanced-production
+    /// dispatcher, and what that newly exposed call actually completed. This
+    /// is observer-only telemetry for the default-off expansion experiments;
+    /// agents without the instrument return `None`.
+    fn expansion_census(&self) -> Option<ExpansionCensus> {
+        None
+    }
+
+    /// How often this agent's joint tactical planner produced a plan, and how
+    /// many unit decisions it reached. Agents without one return `None`.
+    ///
+    /// This exists for the same reason [`Ai::review_census`] does: an agent
+    /// that searches must be able to say when it did not. A whole-game null
+    /// from a layer that barely ran and one from a layer that ran constantly
+    /// call for opposite next steps, and a win rate cannot tell them apart.
+    fn joint_tactics_census(&self) -> Option<(usize, usize)> {
+        None
+    }
+
     /// Write this agent's reasoning into an observer's log.
     ///
     /// Every seat at a watched table is handed a handle on the *same*
@@ -175,6 +195,14 @@ impl<T: Ai + ?Sized> Ai for Box<T> {
 
     fn review_census(&self) -> Option<crate::strategic::ReviewCensus> {
         (**self).review_census()
+    }
+
+    fn expansion_census(&self) -> Option<ExpansionCensus> {
+        (**self).expansion_census()
+    }
+
+    fn joint_tactics_census(&self) -> Option<(usize, usize)> {
+        (**self).joint_tactics_census()
     }
 
     fn attach_journal(&mut self, journal: Journal) {
@@ -382,9 +410,11 @@ fn empire_reading(g: &Game, pid: usize, w: &Weights) -> f64 {
 /// thing is the one both halves pay.
 ///
 /// Which half is live still changes what the number *means*, and the engine
-/// settles that: a Golden or Heroic Age banks no Era Score at all, so there the
-/// tally is read purely as "which lane am I in". In a Normal or Dark Age it is
-/// read literally, as the score that buys the next age.
+/// settles that: a Golden or Heroic Age normally banks no Era Score, so there
+/// the tally is read purely as "which lane am I in". In a Normal or Dark Age it
+/// is read literally, as the score that buys the next age. Georgia's Strength
+/// in Unity is the explicit exception and keeps the literal ranking in every
+/// age.
 ///
 /// Ties — including the all-zero tie of a civilization whose first age arrives
 /// before it has done anything the table counts — fall back to the alphabetical
@@ -396,11 +426,14 @@ pub(crate) fn choose_dedications(g: &mut Game, pid: usize, choice: DedicationCho
         if offered.is_empty() {
             return;
         }
-        // A Golden or Heroic Age banks no Era Score, so there the projection is
-        // only a correlate of what the Golden half is worth — and ranking on it
-        // is what lost the first gate. `Banking` keeps the measured number
-        // where it is the literal objective and leaves the rest alone.
-        let banking = !matches!(g.players[pid].age.as_str(), "golden" | "heroic");
+        // A Golden or Heroic Age normally banks no Era Score, so there the
+        // projection is only a correlate of what the Golden half is worth —
+        // and ranking on it is what lost the first gate. `Banking` keeps the
+        // measured number where it is the literal objective and leaves the
+        // rest alone. Georgia is the shipped exception: Strength in Unity also
+        // pays the Normal-Age half during Golden and Heroic Ages.
+        let banking = !matches!(g.players[pid].age.as_str(), "golden" | "heroic")
+            || g.civ_effect(pid, "golden_dedication_era_score") > 0.0;
         let rank = match choice {
             DedicationChoice::Alphabetical => false,
             DedicationChoice::Measured => true,
@@ -638,7 +671,7 @@ pub struct Weights {
     /// Which deck this strategy holds.
     ///
     /// **Not a gene.** Deliberately absent from `to_vec`/`from_vec`/`bounds`,
-    /// so the GA can neither read nor breed it and the genome stays 48 wide.
+    /// so the GA can neither read nor breed it and the genome stays 40 wide.
     /// It rides on `Weights` for one reason: `AdvancedAi::with_weights` already
     /// carries a genome into the inner `BasicAi`, so an eval arm costs no
     /// change to `src/ai/advanced.rs` or `src/elo.rs`. Set it in a harness;
@@ -648,7 +681,7 @@ pub struct Weights {
     /// How this strategy picks its Dedication at an age transition.
     ///
     /// **Not a gene**, for the same reasons as `policy_deck`: absent from
-    /// `to_vec`/`from_vec`/`bounds`, so the genome stays 48 wide.
+    /// `to_vec`/`from_vec`/`bounds`, so the genome stays 40 wide.
     #[serde(default)]
     pub dedication_choice: DedicationChoice,
 }
@@ -705,7 +738,7 @@ pub enum PolicyDeck {
     /// Cards valued by slotting them and reading the empire either side.
     ///
     /// Old champion artifacts predate this non-gene field. They deserialize
-    /// to Live for compatibility, and a deployment-profile A/B showed that
+    /// to Live for compatibility, and a recorded six-seat A/B showed that
     /// changing them to Legacy loses significantly (12 map directions for,
     /// 26 against, p=0.0336). Gene-vector children preserve their template's
     /// non-gene policy through `Weights::from_vec_like`.
@@ -1187,6 +1220,20 @@ pub struct BasicAi {
     /// Where this agent tells an observer what it is doing. Off unless a
     /// spectator attached one; see [`crate::reasoning`].
     pub(crate) journal: Journal,
+}
+
+/// Unit-scoped mutable planner state produced on a private search branch.
+///
+/// Advanced snapshot planning never publishes a cloned controller wholesale:
+/// doing so would overwrite decisions made by earlier units in the serial
+/// commit phase. This is the complete state one military unit's movement
+/// helpers may update, extracted and merged by unit ID only.
+pub(crate) struct BasicUnitPlanState {
+    recovering: bool,
+    patrol_target: Option<Pos>,
+    settler_target: Option<Pos>,
+    last_path_step: Option<(u32, Pos)>,
+    patrol_posts: HashMap<String, Vec<Pos>>,
 }
 
 impl Default for BasicAi {
@@ -2136,6 +2183,51 @@ impl BasicAi {
         self.observe_unit_motion(g, pid);
     }
 
+    pub(crate) fn unit_plan_state(&self, uid: u32) -> BasicUnitPlanState {
+        BasicUnitPlanState {
+            recovering: self.recovering_units.contains(&uid),
+            patrol_target: self.patrol_targets.get(&uid).copied(),
+            settler_target: self.settler_targets.get(&uid).copied(),
+            last_path_step: self.last_path_step_from.borrow().get(&uid).copied(),
+            patrol_posts: self.patrol_posts.clone(),
+        }
+    }
+
+    pub(crate) fn merge_unit_plan_state(&mut self, uid: u32, state: BasicUnitPlanState) {
+        if state.recovering {
+            self.recovering_units.insert(uid);
+        } else {
+            self.recovering_units.remove(&uid);
+        }
+        match state.patrol_target {
+            Some(target) => {
+                self.patrol_targets.insert(uid, target);
+            }
+            None => {
+                self.patrol_targets.remove(&uid);
+            }
+        }
+        match state.settler_target {
+            Some(target) => {
+                self.settler_targets.insert(uid, target);
+            }
+            None => {
+                self.settler_targets.remove(&uid);
+            }
+        }
+        match state.last_path_step {
+            Some(step) => {
+                self.last_path_step_from.borrow_mut().insert(uid, step);
+            }
+            None => {
+                self.last_path_step_from.borrow_mut().remove(&uid);
+            }
+        }
+        // Posts are immutable for the turn. A branch may have paid to build a
+        // domain's list, so retain that work for later serial fallbacks.
+        self.patrol_posts.extend(state.patrol_posts);
+    }
+
     /// Record this turn's starting tile for every unit, and judge each unit
     /// against the window that has just closed. This is the only point in the
     /// turn where a livelock can be seen at all: it is a property of a unit's
@@ -3001,7 +3093,7 @@ impl BasicAi {
         let others: Vec<usize> = g
             .players
             .iter()
-            .filter(|o| o.id != pid && o.alive && !o.is_barbarian)
+            .filter(|o| o.id != pid && o.alive && !o.is_barbarian && g.has_met(pid, o.id))
             .map(|o| o.id)
             .collect();
         for o in &others {
@@ -6958,6 +7050,26 @@ mod tests {
         assert_eq!(game.envoys_at(0, known), 1);
     }
 
+    #[test]
+    fn baseline_diplomacy_skips_an_unmet_major_and_reaches_a_known_one() {
+        let mut game = Game::new_full(3, 24, 16, 90_734, 120, 0, false);
+        for player in 0..game.players.len() {
+            game.players[player].met.clear();
+        }
+        game.record_contact(0, 2);
+        game.turn = 0;
+        game.current = 0;
+
+        // Player 1 wins the stable id tie but is unknown. A rejected proposal
+        // must not prevent the same diplomatic pass from reaching player 2.
+        BasicAi::new().diplomacy(&mut game, 0);
+
+        assert_eq!(game.pending_deals.len(), 1);
+        assert_eq!(game.pending_deals[0].from, 0);
+        assert_eq!(game.pending_deals[0].to, 2);
+        assert!(game.pending_deals[0].friendship);
+    }
+
     /// The single-turn reversal ban cannot see a round trip that takes two
     /// turns to complete, and every step of one is individually the best move
     /// available. Only the unit's own recent history gives the loop away.
@@ -7118,6 +7230,7 @@ mod tests {
             .unwrap()
             .buildings
             .push(crate::name!("walls"));
+        g.record_contact(0, 1);
         g.apply(0, &Action::DeclareWar { player: 1 }).unwrap();
         (g, home, enemy)
     }

@@ -2225,6 +2225,10 @@ class LeagueRosterTests(unittest.TestCase):
                 "the committed snapshot must stay untouched",
             )
             self.assertEqual(json.loads((again / "league.json").read_text())["round"], 9)
+            self.assertTrue(
+                (again / supervisor.MANAGED_ROSTER_MARKER).is_file(),
+                "auto rosters opt into safe controller-family reconciliation",
+            )
 
     def test_recording_off_seats_from_the_snapshot_and_writes_nothing(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -2248,6 +2252,10 @@ class LeagueRosterTests(unittest.TestCase):
                 self.assertEqual(supervisor.league_dir(str(named))[1], False)
             with patch.object(supervisor, "LEAGUE_RECORD", True):
                 self.assertEqual(supervisor.league_dir(str(named))[1], True)
+            self.assertFalse(
+                (named / supervisor.MANAGED_ROSTER_MARKER).exists(),
+                "an explicit experimental roster must keep its exact membership",
+            )
             self.assertIsNone(supervisor.league_dir(str(named / "missing")))
             self.assertIsNone(supervisor.league_dir("off"))
 
