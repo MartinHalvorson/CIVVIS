@@ -228,7 +228,18 @@ def main() -> int:
 
     for attempt in range(1, args.attempts + 1):
         tag = f"civvis-{stamp()}"
-        print(f"\n=== attempt {attempt}/{args.attempts}  {tag} ===", flush=True)
+        # ⚠ THE CODE CHANGES BETWEEN ATTEMPTS AND THE LEDGER COULD NOT SAY SO.
+        # The harness re-installs the mod at the start of every attempt, so a fix
+        # landed mid-batch takes effect on the next row — and every earlier row then
+        # describes a different program under the same column headings. Without this
+        # a ledger read back tomorrow cannot separate a treatment from variance,
+        # which is exactly how the persistent-agent "regression" got published wrong.
+        # Captured HERE, at attempt start, because that is when the mod is synced.
+        rev = run(["git", "-C", str(HERE.parent), "rev-parse", "--short", "HEAD"]).strip()
+        dirty = run(["git", "-C", str(HERE.parent), "status", "--porcelain"]).strip()
+        code_rev = (rev or "?") + ("+dirty" if dirty else "")
+        print(f"\n=== attempt {attempt}/{args.attempts}  {tag}  code={code_rev} ===",
+              flush=True)
         # A fresh orders database per attempt. Stale rows are keyed by run tag so
         # they could not be actuated, but a growing file is a growing query.
         for suffix in ("", "-wal", "-shm"):
@@ -291,6 +302,7 @@ def main() -> int:
         record["attempt"] = attempt
         record["victory_target"] = args.victory
         record["difficulty_asked"] = args.difficulty
+        record["code_rev"] = code_rev
         with LEDGER.open("a") as handle:
             handle.write(json.dumps(record, sort_keys=True) + "\n")
 

@@ -613,6 +613,121 @@ fn main() {
         Some((snapshot, state))
     };
 
+    // ★★★★★ PRINT THE BOARD CIVVIS IS ACTUALLY ANSWERING, so it can be diffed against
+    // the one Civilization VI exported.
+    //
+    // ⚠ THIS EXISTS BECAUSE "the mirror is 1:1" HAS ALREADY BEEN CLAIMED AND BEEN
+    // FALSE. It was rendering the right terrain at the wrong hexes: Civ 6 speaks
+    // OFFSET, CIVVIS stores AXIAL, both are pairs of small integers, and nothing
+    // complains when they are mixed. A capital at offset (56,28) had NO TILE in the
+    // reconstruction and the only symptom was CIVVIS reporting "no legal revealed
+    // site" on a map with 323 revealed plots — it blamed the map.
+    //
+    // The dump is keyed back in OFFSET (`hex::axial_to_offset`) precisely so the
+    // round trip is exercised: a plot the export named and this dump cannot produce
+    // is the coordinate bug's signature, and it shows as an ABSENT tile rather than a
+    // wrong value.
+    //
+    // Not everything here is an independent check — terrain names are written from
+    // this same export through this same vocabulary, so they must agree. What IS
+    // independent, and is where the defects have been:
+    //
+    //   w    Civ 6 answers `IsWater()`; CIVVIS derives water from its own ruleset via
+    //        the translated terrain. This is the "unrevealed ground reads as OCEAN"
+    //        family, which cost a seat its whole continent.
+    //   h    the export encodes hills in the terrain NAME (`TERRAIN_*_HILLS`) and
+    //        CIVVIS carries a separate flag. Disagreement here is the standing
+    //        explanation for improvement orders refused and re-issued forever.
+    //   res  whether the name resolved at all. An unresolved name does not error: the
+    //        tile silently keeps whatever `Game::new` generated, which is a wrong
+    //        terrain wearing a right one's clothes.
+    if args.iter().any(|a| a == "--dump-mirror") {
+        let want_turn: Option<u32> = arg_text(&args, "--turn").and_then(|v| v.parse().ok());
+        let Some((snapshot, state)) = load(want_turn) else {
+            println!("{{\"plots\":[],\"note\":\"no revealed terrain or no state yet\"}}");
+            return;
+        };
+        let live = civvis::mirror::LiveMirror::new(
+            &snapshot, &state, players, 1, max_turns, frontier,
+        );
+        let game = &live.game;
+        let vocab = civvis::mirror::Vocabulary::embedded();
+        let width = snapshot.width.max(1);
+        let height = snapshot.height.max(1);
+        let mut plots: Vec<String> = Vec::new();
+        let mut unresolved: std::collections::BTreeMap<String, usize> = Default::default();
+        for y in 0..height {
+            for x in 0..width {
+                let pos = civvis::hex::offset_to_axial(x, y);
+                let Some(tile) = game.map.get(pos) else {
+                    // Deliberately NOT skipped silently: a plot with no tile is the
+                    // whole reason this dump exists. It is reported as absent by
+                    // simply not appearing, and the diff counts it.
+                    continue;
+                };
+                let exported = snapshot.plot((x, y));
+                // Only dump ground either side has an opinion about. The far unknown
+                // is ocean filler on both and would drown the diff in agreement.
+                if exported.is_none() && !snapshot.is_revealed((x, y)) {
+                    continue;
+                }
+                let mut resolved = true;
+                if let Some(plot) = exported {
+                    if let Some(name) = &plot.t {
+                        match vocab.terrain(name) {
+                            civvis::mirror::Resolved::Known(_) => {}
+                            _ => {
+                                resolved = false;
+                                *unresolved.entry(name.clone()).or_default() += 1;
+                            }
+                        }
+                    }
+                }
+                let field = |value: &Option<civvis::name::Name>| match value {
+                    Some(name) => format!("\"{}\"", name.as_str()),
+                    None => "null".to_string(),
+                };
+                // Whose ground the mirror thinks this is, as a CIVVIS seat index.
+                // The export gives a Civ 6 player id and our seat is always its
+                // local player 0, so "ours" is the part that compares cleanly; a
+                // rival's id does not, because rivals are remapped on the way in.
+                let owner = tile
+                    .owner_city
+                    .and_then(|cid| game.cities.get(&cid))
+                    .map(|city| city.owner as i64);
+                plots.push(format!(
+                    "{{\"x\":{},\"y\":{},\"t\":\"{}\",\"h\":{},\"w\":{},\"f\":{},\"r\":{},\
+                     \"im\":{},\"own\":{},\"res\":{}}}",
+                    x,
+                    y,
+                    tile.terrain.as_str(),
+                    tile.hills,
+                    game.rules.is_water(tile),
+                    field(&tile.feature),
+                    field(&tile.resource),
+                    field(&tile.improvement),
+                    owner.map(|o| o == 0).unwrap_or(false),
+                    resolved,
+                ));
+            }
+        }
+        let unresolved_json: Vec<String> = unresolved
+            .iter()
+            .map(|(name, count)| format!("\"{name}\":{count}"))
+            .collect();
+        println!(
+            "{{\"turn\":{},\"width\":{},\"height\":{},\"revealed\":{},\
+             \"unresolved_terrain\":{{{}}},\"plots\":[{}]}}",
+            state.turn,
+            width,
+            height,
+            snapshot.revealed_count(),
+            unresolved_json.join(","),
+            plots.join(",")
+        );
+        return;
+    }
+
     if !serve {
         let want_turn: Option<u32> = arg_text(&args, "--turn").and_then(|v| v.parse().ok());
         let Some((snapshot, state)) = load(want_turn) else {

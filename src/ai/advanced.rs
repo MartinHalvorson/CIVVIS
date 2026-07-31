@@ -460,6 +460,9 @@ pub struct AdvancedAi {
     census: StrategyCensus,
     settler_targets: BTreeMap<u32, Pos>,
     builder_targets: BTreeMap<u32, Pos>,
+    /// Escort unit -> the settler it is walking with. Rebuilt every turn from the
+    /// board, so it never has to survive a mirror rebuild that reassigns unit ids.
+    settler_escorts: BTreeMap<u32, u32>,
     major_war_since: Option<u32>,
     last_campaign_progress: u32,
     last_city_count: usize,
@@ -1075,6 +1078,7 @@ impl AdvancedAi {
         self.base.forget_unit_memory();
         self.settler_targets.clear();
         self.builder_targets.clear();
+        self.settler_escorts.clear();
         self.force_groups.clear();
         self.force_groups_dirty = true;
     }
@@ -1099,6 +1103,7 @@ impl AdvancedAi {
             plan: None,
             settler_targets: BTreeMap::new(),
             builder_targets: BTreeMap::new(),
+            settler_escorts: BTreeMap::new(),
             major_war_since: None,
             last_campaign_progress: 0,
             last_city_count: 0,
@@ -11603,6 +11608,20 @@ impl AdvancedAi {
                     return self.base.fortify_or_stop(g, pid, uid);
                 }
             }
+            // Catch up with the settler this unit is walking out with. Only while
+            // no major war is on: once there is a front, the front is where an army
+            // belongs, and `campaign_staging_step` below owns that decision.
+            //
+            // ⚠ Falls through once it is ALONGSIDE the settler rather than stopping
+            // there, so an escort standing next to a barbarian still fights it. An
+            // escort that will not strike is a second civilian.
+            if let Some(guarded) = self.settler_escorts.get(&uid).copied() {
+                if let Some(spos) = g.units.get(&guarded).map(|settler| settler.pos) {
+                    if g.wdist(unit.pos, spos) > 1 && self.base.step_toward(g, pid, uid, spos) {
+                        return true;
+                    }
+                }
+            }
             if let Some(acted) = self.campaign_staging_step(g, pid, uid, plan) {
                 return acted;
             }
@@ -12169,8 +12188,86 @@ impl AdvancedAi {
         }
     }
 
+    /// Walk one spare soldier out with each settler that is on its own.
+    ///
+    /// ★★★★★ THE OTHER HALF OF THE 2-CITY CEILING, and the answer to a question the
+    /// operator kept asking about a different symptom. Two facts measured on the same
+    /// turn of run `civvis-20260731T040858Z`: a settler died alone at (47,15), and our
+    /// two warriors were standing at (51,13) and (52,14) beside the capital with full
+    /// movement. **"Units stacking up in the capital, unused" and "settlers keep
+    /// dying" are one defect, not two** — the army had nothing to do because there was
+    /// no war yet, and the settlers were dying because the army had nothing to do.
+    ///
+    /// The pairing is rebuilt from the board every turn rather than remembered,
+    /// because the mirror reassigns unit ids on every rebuild and unit-keyed memory
+    /// then describes the wrong unit.
+    ///
+    /// ⚠ THE GARRISON FLOOR IS NOT OPTIONAL. Expansion has already starved this
+    /// empire's defence to one unit at turn 40 once, so a city keeps the last combat
+    /// unit standing on or beside it and only the surplus can escort. An empire that
+    /// escorts its settlers with its whole army loses the cities it already has.
+    fn assign_settler_escorts(&mut self, g: &Game, pid: usize) {
+        self.settler_escorts.clear();
+        let cities: Vec<Pos> = g
+            .player_city_ids(pid)
+            .into_iter()
+            .map(|cid| g.cities[&cid].pos)
+            .collect();
+        if cities.is_empty() {
+            return; // the founding settler has nowhere to be escorted from
+        }
+        let mut combat: Vec<u32> = g
+            .player_unit_ids(pid)
+            .into_iter()
+            .filter(|uid| g.rules.units[g.units[uid].kind].strength > 0.0)
+            .collect();
+        combat.sort();
+        // One defender stays with each city: the unit closest to it that nothing
+        // else has claimed. Everything left over is free to escort.
+        let mut held: std::collections::BTreeSet<u32> = Default::default();
+        for city in &cities {
+            if let Some(keeper) = combat
+                .iter()
+                .filter(|uid| !held.contains(uid))
+                .min_by_key(|uid| (g.wdist(g.units[uid].pos, *city), **uid))
+            {
+                held.insert(*keeper);
+            }
+        }
+        let settlers: Vec<u32> = g
+            .player_unit_ids(pid)
+            .into_iter()
+            .filter(|uid| g.units[uid].kind == "settler")
+            .filter(|uid| {
+                let pos = g.units[uid].pos;
+                // A settler still inside the home ring is not exposed, and one that
+                // already has company does not need more.
+                !cities.iter().any(|city| g.wdist(*city, pos) <= 1)
+                    && !g.units.values().any(|other| {
+                        other.owner == pid
+                            && other.id != *uid
+                            && g.rules.units[other.kind].strength > 0.0
+                            && g.wdist(other.pos, pos) <= 1
+                    })
+            })
+            .collect();
+        let mut taken: std::collections::BTreeSet<u32> = Default::default();
+        for settler in settlers {
+            let spos = g.units[&settler].pos;
+            let escort = combat
+                .iter()
+                .filter(|uid| !held.contains(uid) && !taken.contains(uid))
+                .min_by_key(|uid| (g.wdist(g.units[uid].pos, spos), **uid));
+            if let Some(escort) = escort.copied() {
+                taken.insert(escort);
+                self.settler_escorts.insert(escort, settler);
+            }
+        }
+    }
+
     fn advanced_units(&mut self, g: &mut Game, pid: usize, plan: &StrategicPlan) {
         self.base.begin_movement_turn(g, pid);
+        self.assign_settler_escorts(g, pid);
         if self.victory_planning {
             self.rebuild_force_groups(g, pid, plan);
         } else {
@@ -13247,6 +13344,96 @@ mod tests {
             .map
             .get(g.units[&settler].pos)
             .is_some_and(|tile| g.rules.is_water(tile)));
+    }
+
+    /// A capital, one settler already out on its own, and two soldiers at home.
+    fn settler_escort_world() -> (Game, u32, Vec<u32>) {
+        let mut game = Game::new_full(1, 26, 16, 4_242, 200, 0, false);
+        let founder = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|uid| game.units[uid].kind == "settler")
+            .unwrap();
+        let home = game.units[&founder].pos;
+        game.apply(0, &Action::FoundCity { unit: founder }).unwrap();
+        for existing in game
+            .player_unit_ids(0)
+            .into_iter()
+            .filter(|uid| game.rules.units[game.units[uid].kind].strength > 0.0)
+            .collect::<Vec<_>>()
+        {
+            game.remove_unit(existing);
+        }
+        let away = game
+            .map
+            .tiles
+            .iter()
+            .filter(|(_, tile)| game.rules.is_passable(tile) && !game.rules.is_water(tile))
+            .map(|(pos, _)| *pos)
+            .filter(|pos| game.wdist(home, *pos) == 4)
+            .min()
+            .expect("open land four tiles from the capital");
+        let settler = game.spawn_test_unit("settler", 0, away);
+        let soldiers = vec![
+            game.spawn_test_unit("warrior", 0, home),
+            game.spawn_test_unit("warrior", 0, home),
+        ];
+        (game, settler, soldiers)
+    }
+
+    #[test]
+    fn a_spare_soldier_is_sent_out_with_a_settler_walking_alone() {
+        let (game, settler, soldiers) = settler_escort_world();
+        let mut ai = AdvancedAi::new();
+
+        ai.assign_settler_escorts(&game, 0);
+
+        assert_eq!(
+            ai.settler_escorts.values().copied().collect::<Vec<_>>(),
+            vec![settler],
+            "the exposed settler should have picked up exactly one escort"
+        );
+        assert!(
+            soldiers.contains(ai.settler_escorts.keys().next().unwrap()),
+            "the escort should be one of the units standing at home doing nothing"
+        );
+    }
+
+    /// ⚠ Expansion has starved this empire's defence to a single unit at turn 40
+    /// before. The last soldier a city has is not spare.
+    #[test]
+    fn the_last_defender_of_a_city_is_never_sent_away_as_an_escort() {
+        let (mut game, _settler, soldiers) = settler_escort_world();
+        game.remove_unit(soldiers[1]);
+        let mut ai = AdvancedAi::new();
+
+        ai.assign_settler_escorts(&game, 0);
+
+        assert!(
+            ai.settler_escorts.is_empty(),
+            "the city's only defender was assigned as an escort"
+        );
+    }
+
+    #[test]
+    fn a_settler_that_already_has_company_does_not_claim_another_escort() {
+        let (mut game, settler, _soldiers) = settler_escort_world();
+        let beside = game
+            .nbrs(game.units[&settler].pos)
+            .into_iter()
+            .find(|pos| {
+                game.units_at(*pos).is_empty()
+                    && game.map.get(*pos).is_some_and(|tile| {
+                        game.rules.is_passable(tile) && !game.rules.is_water(tile)
+                    })
+            })
+            .expect("open ground beside the settler");
+        game.spawn_test_unit("warrior", 0, beside);
+        let mut ai = AdvancedAi::new();
+
+        ai.assign_settler_escorts(&game, 0);
+
+        assert!(ai.settler_escorts.is_empty());
     }
 
     #[test]

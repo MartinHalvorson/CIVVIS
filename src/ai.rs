@@ -5134,14 +5134,129 @@ impl BasicAi {
     /// geometrically closer tile can be a one-hex cul-de-sac; with two
     /// movement points the generic mover enters it and immediately routes
     /// back out, repeating the same round trip every turn.
-    fn settler_step_toward(&self, g: &mut Game, pid: usize, uid: u32, target: Pos) -> bool {
-        if let Some(next) = g
+    /// Whether a unit standing on `pos` could be taken by something we can see.
+    ///
+    /// Barbarians count whether or not a war has been declared — they are hostile by
+    /// construction and never need one — and so does any player we are actually at
+    /// war with. Civilians are captured rather than killed, so a single warrior one
+    /// tile away is a total loss, which is why the radius is measured in tiles a
+    /// unit can cross rather than in tiles it occupies.
+    pub(crate) fn captor_within(&self, g: &Game, pid: usize, pos: Pos, radius: i32) -> bool {
+        g.units.values().any(|unit| {
+            unit.owner != pid
+                && g.rules.units[unit.kind].strength > 0.0
+                && (g.players[unit.owner].is_barbarian || g.is_at_war(pid, unit.owner))
+                && g.wdist(unit.pos, pos) <= radius
+        })
+    }
+
+    /// Whether one of our own combat units is close enough to contest a capture.
+    fn escorted(&self, g: &Game, pid: usize, pos: Pos) -> bool {
+        g.units.values().any(|unit| {
+            unit.owner == pid
+                && g.rules.units[unit.kind].strength > 0.0
+                && g.wdist(unit.pos, pos) <= 1
+        })
+    }
+
+    /// Walk a settler toward its site without walking it into capture.
+    ///
+    /// ★★★★★ THIS IS THE 2-CITY CEILING. Traced over every CIVVIS-driven run of the
+    /// ladder (`tools/civ6_settler_trace.py`): the first two settlers found cities and
+    /// then **every later settler was lost**, 3-9 turns after it was built, 4-9 tiles
+    /// from the capital, with `found_refused` at ZERO in every one of those runs. They
+    /// were not refused a site and they were not stuck — they died on the way.
+    ///
+    /// Run `civvis-20260731T040858Z` is the whole failure in four turns: the settler
+    /// stands at (47,15) on turn 33 at full health, a barbarian warrior is at (49,13)
+    /// — which the export had already told us — our own two warriors are at (51,13)
+    /// and (52,14) beside the capital, and on turn 34 the settler is simply gone.
+    ///
+    /// ⚠ THE INFORMATION WAS NEVER MISSING. `state.hostiles` is exported every turn
+    /// and mirrored onto CIVVIS's own barbarian seat, so the threat was on the board
+    /// the whole time. `settler_step` just had no term for it: it took the best site
+    /// and walked, and nothing anywhere in the settler path consulted a hostile. This
+    /// is a missing capability, not a mistuned weight — which is why it is a rule and
+    /// not a number.
+    ///
+    /// The rule: an unescorted settler will not END its step within reach of a captor
+    /// when any other step is available. In order of preference it takes the safe step
+    /// that gets closest to the site; failing that, and only when it is already in
+    /// danger, the safe step that gets closest to home; failing that it stands still
+    /// and lets the caller's stall counter decide when to give the site up.
+    ///
+    /// ⚠ Escorted settlers are deliberately NOT slowed down. A settler with one of our
+    /// combat units beside it walks the direct route, because the alternative — a
+    /// settler that refuses to advance whenever a barbarian is anywhere near — is the
+    /// zero-city failure in a different costume, and this project has already starved
+    /// an empire to zero cities through turn 90 with a guard that had no floor.
+    pub(crate) fn settler_step_toward(
+        &self,
+        g: &mut Game,
+        pid: usize,
+        uid: u32,
+        target: Pos,
+    ) -> bool {
+        let here = g.units[&uid].pos;
+        let direct = g
             .route_step(uid, target, 0)
-            .filter(|next| g.can_move(uid, *next))
-        {
-            return self.path_move(g, pid, uid, next);
+            .filter(|next| g.can_move(uid, *next));
+        // An escort makes the direct route the right route. So does the absence of
+        // anything that could take the unit.
+        let unsafe_step = |g: &Game, pos: Pos| {
+            self.captor_within(g, pid, pos, 1) && !self.escorted(g, pid, pos)
+        };
+        if let Some(next) = direct {
+            if !unsafe_step(g, next) {
+                return self.path_move(g, pid, uid, next);
+            }
         }
-        self.step_toward(g, pid, uid, target)
+        // The direct step would end beside something that can take the settler. Look
+        // for a step that does not.
+        let mut safe: Vec<Pos> = g
+            .nbrs(here)
+            .into_iter()
+            .filter(|next| g.can_move(uid, *next) && !unsafe_step(g, *next))
+            .collect();
+        if safe.is_empty() {
+            // Nowhere safe to go. Standing still is only worse than stepping into
+            // reach if we are already in reach, and this returns false so the
+            // caller's commitment logic — not this function — decides whether the
+            // site is still worth waiting for.
+            return false;
+        }
+        // Toward the site if we can, toward home if we are already in danger.
+        let in_danger = self.captor_within(g, pid, here, 1) && !self.escorted(g, pid, here);
+        if in_danger {
+            let refuge = g
+                .player_city_ids(pid)
+                .into_iter()
+                .map(|cid| g.cities[&cid].pos)
+                .min_by_key(|pos| g.wdist(here, *pos));
+            if let Some(refuge) = refuge {
+                safe.sort_by_key(|next| (g.wdist(*next, refuge), *next));
+                for next in safe {
+                    if self.path_move(g, pid, uid, next) {
+                        return true;
+                    }
+                }
+                return false;
+            }
+        }
+        safe.sort_by_key(|next| (g.wdist(*next, target), *next));
+        // Only take a detour that still gets somewhere: a step that moves AWAY from
+        // the site while nothing is chasing us is how a settler wanders forever, and
+        // wandering settlers are already on this project's record.
+        let progress = g.wdist(here, target);
+        for next in safe {
+            if g.wdist(next, target) > progress {
+                break;
+            }
+            if self.path_move(g, pid, uid, next) {
+                return true;
+            }
+        }
+        false
     }
 
     /// Move toward a target without insisting on entering its tile. Religious
@@ -8467,6 +8582,131 @@ mod tests {
         let snapshot = serde_json::to_value(&g).unwrap();
         let g: Game = serde_json::from_value(snapshot).unwrap();
         (g, warrior, bid)
+    }
+
+    /// A quiet world with a capital, one spare settler and no organic raiders, so a
+    /// staged barbarian is the only thing on the map that can take a civilian.
+    fn lone_settler_world(seed: u64) -> (Game, u32, Pos) {
+        let mut g = Game::new_full(1, 24, 16, seed, 200, 0, true);
+        let barb_pid = g.barb_pid.unwrap();
+        for unit in g
+            .units
+            .values()
+            .filter(|unit| unit.owner == barb_pid)
+            .map(|unit| unit.id)
+            .collect::<Vec<_>>()
+        {
+            g.remove_unit(unit);
+        }
+        g.barb_camps.clear();
+        let founder = g
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|id| g.units[id].kind == "settler")
+            .unwrap();
+        let home = g.units[&founder].pos;
+        g.apply(0, &Action::FoundCity { unit: founder }).unwrap();
+        // Flat open ground, so the route is a straight walk and the test is about
+        // the danger rule rather than about terrain.
+        for tile in g.map.tiles.values_mut() {
+            tile.terrain = crate::name!("plains");
+            tile.feature = None;
+            tile.hills = false;
+        }
+        // ⚠ AND OUR OWN ARMY, or the fixture cannot test what it claims to. The
+        // starting warrior stands beside the capital, so a settler leaving home is
+        // escorted by it and the rule correctly lets it walk — which reads as the
+        // guard failing when it is in fact working.
+        for unit in g
+            .player_unit_ids(0)
+            .into_iter()
+            .filter(|id| g.rules.units[g.units[id].kind].strength > 0.0)
+            .collect::<Vec<_>>()
+        {
+            g.remove_unit(unit);
+        }
+        let settler = g.spawn_test_unit("settler", 0, home);
+        // Far enough that the settler must walk, close enough to stay on the map.
+        let target = g
+            .map
+            .tiles
+            .keys()
+            .copied()
+            .filter(|pos| g.wdist(home, *pos) == 5)
+            .min()
+            .expect("a site five tiles out");
+        (g, settler, target)
+    }
+
+    /// ★★★★★ THE 2-CITY CEILING, AS A TEST. Every CIVVIS-driven Civilization VI run
+    /// founded two cities and then lost every later settler 3-9 turns after building
+    /// it, unescorted, with `found_refused` at zero — they were killed walking, and
+    /// nothing in the settler path had ever consulted a hostile.
+    #[test]
+    fn an_unescorted_settler_will_not_step_within_reach_of_a_captor() {
+        let (mut g, settler, target) = lone_settler_world(77);
+        let here = g.units[&settler].pos;
+        let direct = g
+            .route_step(settler, target, 0)
+            .expect("a route toward the site");
+        let barb_pid = g.barb_pid.unwrap();
+        let ambush = g
+            .nbrs(direct)
+            .into_iter()
+            .find(|pos| {
+                *pos != here
+                    && g.units_at(*pos).is_empty()
+                    && g.city_at(*pos).is_none()
+                    && g.map.get(*pos).is_some_and(|tile| !g.rules.is_water(tile))
+            })
+            .expect("open ground beside the step the settler was about to take");
+        let barb = g.spawn_test_unit("warrior", barb_pid, ambush);
+
+        let ai = BasicAi::new();
+        ai.settler_step_toward(&mut g, 0, settler, target);
+
+        let ended = g.units[&settler].pos;
+        assert!(
+            g.wdist(ended, g.units[&barb].pos) > 1,
+            "settler ended at {ended:?}, within reach of a barbarian at {:?}",
+            g.units[&barb].pos
+        );
+    }
+
+    /// ⚠ AND THE FLOOR. A settler that refuses to advance whenever a barbarian is
+    /// anywhere near is the zero-city failure wearing the fix's clothes; this project
+    /// has already starved an empire to no cities through turn 90 with a guard that
+    /// had no floor. An escort is what makes the direct route the right route.
+    #[test]
+    fn an_escorted_settler_still_walks_the_direct_route() {
+        let (mut g, settler, target) = lone_settler_world(78);
+        let here = g.units[&settler].pos;
+        let direct = g
+            .route_step(settler, target, 0)
+            .expect("a route toward the site");
+        let barb_pid = g.barb_pid.unwrap();
+        let ambush = g
+            .nbrs(direct)
+            .into_iter()
+            .find(|pos| {
+                *pos != here
+                    && g.units_at(*pos).is_empty()
+                    && g.city_at(*pos).is_none()
+                    && g.map.get(*pos).is_some_and(|tile| !g.rules.is_water(tile))
+            })
+            .expect("open ground beside the step");
+        g.spawn_test_unit("warrior", barb_pid, ambush);
+        // Our own warrior stands with the settler.
+        g.spawn_test_unit("warrior", 0, here);
+
+        let before = g.wdist(here, target);
+        let ai = BasicAi::new();
+        ai.settler_step_toward(&mut g, 0, settler, target);
+
+        assert!(
+            g.wdist(g.units[&settler].pos, target) < before,
+            "an escorted settler should still close on its site"
+        );
     }
 
     #[test]
