@@ -517,6 +517,57 @@ the audit even though it is not a bug.
    most important negative result in the project, because search is the
    repository's own stated best lever.
 
+### Implemented 2026-07-31 — step 2, the exclusion carries its own expiry
+
+`Exclusion { reason, revisit_when }` is on `Strategy`, and
+`Strategy::exclude_from_live(reason, revisit_when)` is the **only** way to set
+`league_only` — there is no longer a way to exclude an entrant without saying
+what would put it back. The searching anchor's own exclusion now reads:
+
+> **reason** 6.4x game-turn cost at the 6p 74x46 profile (76.7 ms against 13.3),
+> `docs/EVAL.md` 2026-07-29
+> **revisit_when** a deployment-profile run against a genome-matched control
+> clears parity, or the turn-cost ratio falls below 2x
+
+The bool is kept beside the reason rather than replaced. It is the on-disk
+format every committed snapshot carries and the value every seating filter
+reads, and replacing it buys nothing the pair does not — provided the two cannot
+drift, which is the failure mode this whole document is about. So they are
+pinned: `every_live_exclusion_states_what_would_reverse_it` asserts
+`league_only == exclusion.is_some()` across a reconciled league and that no
+`revisit_when` is empty, and `reconcile_required_entrants` backfills any
+pre-existing snapshot that carries the bare bool.
+
+### Step 1 is running, and the control is not the one this document specified
+
+Started 2026-07-31, 120 mirrored pairs at the deployment profile
+(6p, 74×46, 9 city-states, Online, planet/poles, 250 turns) on seed 900000000 —
+disjoint from every seed in `docs/EVAL.md`.
+
+⚠ **The pairing §8 prescribes does not isolate search.** With the typed specs
+from #674 in place, `ai_eval` reports `strategic_score` v `advanced_evolved` as
+differing on **two** axes — `architecture, evaluator` — not one. Matching the
+genome fixed the weights axis that the audit identified and left a second one
+standing, because the searching agent also *evaluates* differently. So this run
+answers the replacement question — should search be seated — and it is filed
+with `--deployment-comparison`, which is exactly the flag for that. It cannot
+attribute its result to search alone.
+
+The genuinely one-axis search comparisons, for whoever wants that attribution:
+
+| pairing | axes `ai_eval` reports |
+|---|---|
+| `strategic_cheap` v `strategic_score` | `search-cheap` — **one** |
+| `strategic_r20` v `strategic_r10` | `search-cadence-20`, `search-cadence-10` |
+| `strategic_deep` v `strategic` | `search-cadence-20`, `search-horizon-80` |
+
+The third row is worth keeping. `strategic_deep` v `strategic` is the comparison
+that produced the promoted **+45**, and it varies *two* treatment components at
+once — so that number was never attributable to a single mechanism even before
+#482 excluded it on size. §8's restatement worklist should be recomputed against
+what `arms differ on:` actually prints, rather than against the hand-built table,
+which is one axis short on every `strategic` row.
+
 ---
 
 ## 7. The accretion, which is the same root cause wearing different clothes
@@ -601,7 +652,7 @@ trusting anything measured afterwards.
 | 4 | **Landed:** `strength_bound()` as the only ordering; separation bar applied; table reproducible from the committed snapshot | R4 | PR #678 |
 | 5 | Arm lifecycle: `EvalArm` with evidence + status, CI check that the section exists | §7 | falls out of 1 |
 | 6 | Restate the eight two-axis comparisons in §8 against matched controls | fallout of 1 and 3 | ~a day of compute |
-| 7 | Deployment-profile decision on seating search | §6 | compute, largest |
+| 7 | **Step 2 landed** (`Exclusion` with a review condition, PR #687); step 1's 120-pair deployment run is in flight | §6 | compute, largest |
 
 Item 0 is free and should go first. Item 1 is now landed; items 2–4 are
 independent follow-on code. **Item 6 cannot be trusted before item 1 lands**,

@@ -10323,6 +10323,7 @@ impl AdvancedAi {
             let Some(tile) = g.map.get(pos) else { continue };
             if g.rules.is_water(tile)
                 || !g.rules.is_passable(tile)
+                || g.tile_is_natural_wonder(tile)
                 || g.cities.values().any(|c| g.wdist(c.pos, pos) < 4)
                 || tile
                     .owner_city
