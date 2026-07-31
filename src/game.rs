@@ -12293,6 +12293,19 @@ pub struct VisionCache {
     built_wonders: Option<BTreeSet<Name>>,
 }
 
+/// The player-independent half of a monopoly answer.
+///
+/// Borrowed from the game it was built against, so it cannot outlive the
+/// state it summarises and there is nothing to invalidate: a caller builds
+/// one, asks its question of as many seats as it likes, and drops it.
+struct MonopolyContext<'a> {
+    world_counts: BTreeMap<&'a str, i32>,
+    /// Each player's suzerained city-states, whose holdings count as theirs.
+    minors: Vec<Vec<usize>>,
+    /// Each player's connected holdings, by resource.
+    connected: Vec<BTreeMap<&'a str, i32>>,
+}
+
 /// Memoized answers to expensive read-only queries, live only while a
 /// [`QueryMemo`] guard is held.
 ///
@@ -26880,12 +26893,18 @@ impl Game {
     /// Monopolies. The percentage follows Civ VI's 1% per controlled copy and
     /// foreign non-controller, or 3% after establishing an Industry/Corporation.
     pub fn monopoly_bonuses(&self, pid: usize) -> (f64, f64) {
-        let mut gold = 0.0;
-        let mut tourism_percent = 0.0;
-        let mut monopolies = 0usize;
-        // Both the world's resource census and every player's roster of
-        // client city-states are the same for all twenty-odd luxuries, so
-        // they are settled once instead of inside the sweep.
+        self.monopoly_bonuses_with(&self.monopoly_context(), pid)
+    }
+
+    /// The three world-wide derivations a monopoly answer reads.
+    ///
+    /// None of them depends on which player is asking, and together they are
+    /// nearly all of the cost: the world census walks every tile on the map,
+    /// and the connected census walks every owned tile of every city in the
+    /// game. Separating them lets a caller that asks about several players
+    /// pay once — `note_first_monopoly_moments` asks about every seat after
+    /// most actions, which made that scan quadratic in the number of seats.
+    fn monopoly_context(&self) -> MonopolyContext<'_> {
         let world_counts = self.world_resource_counts();
         let mut minors: Vec<Vec<usize>> = vec![Vec::new(); self.players.len()];
         for minor in self
@@ -26905,6 +26924,20 @@ impl Game {
         let connected: Vec<BTreeMap<&str, i32>> = (0..self.players.len())
             .map(|player| self.connected_resource_census(player))
             .collect();
+        MonopolyContext {
+            world_counts,
+            minors,
+            connected,
+        }
+    }
+
+    fn monopoly_bonuses_with(&self, context: &MonopolyContext<'_>, pid: usize) -> (f64, f64) {
+        let mut gold = 0.0;
+        let mut tourism_percent = 0.0;
+        let mut monopolies = 0usize;
+        let world_counts = &context.world_counts;
+        let minors = &context.minors;
+        let connected = &context.connected;
         let controlled = |player: usize, resource: &str| {
             if !self.resource_visible_to(player, resource) {
                 return 0;
@@ -26988,6 +27021,9 @@ impl Game {
     /// transfer, trade, or Suzerain changes. Running this one transition
     /// detector after each successful action covers every such mutation.
     fn note_first_monopoly_moments(&mut self) {
+        // One context for the whole sweep. Asking each seat separately made
+        // this walk the map and every city's tiles once per seat.
+        let context = self.monopoly_context();
         let new_monopolists: Vec<usize> = self
             .players
             .iter()
@@ -26999,7 +27035,7 @@ impl Game {
                     && !player
                         .counters
                         .contains_key("historic_moment:first_luxury_monopoly")
-                    && self.monopoly_bonuses(player.id).0 > 0.0
+                    && self.monopoly_bonuses_with(&context, player.id).0 > 0.0
             })
             .map(|player| player.id)
             .collect();
