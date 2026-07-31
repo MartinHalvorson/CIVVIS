@@ -156,3 +156,13 @@ adaptive path's Settler gate is the flat gene in `BasicAi::cities`, and
 true of `advanced_production` and false of the path an adaptive empire takes.
 Any future sweep of that gene must move it on this path or it is sweeping the
 fallback again.
+
+⚠ **And it does not generalise.** The obvious next question is whether the four
+settle-site genes are live for the same reason. They are not: there are two
+`settle_value` implementations — `BasicAi`'s reads the genes, `AdvancedAi`'s
+uses hard-coded ring weights — and the Advanced settler path calls its own at
+every site choice and every re-target, while the gene-reading one is reached
+only from `BasicAi`'s own settler movement. `docs/GENOME.md`'s dead-gene
+reading of the settle block stands. `city_target` crosses over through
+*production*, not through siting, and this correction should not be extended
+past the one gene it was measured on.
