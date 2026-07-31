@@ -248,8 +248,9 @@ learned component at all** — the arm that won is `strategic_score`. And the
 by hand-written logic looks like.
 
 **On tidiness.** The code itself is in good order: it builds clean, the tests
-pass, the seven controllers are small and documented, and the provenance
-system means an agent almost never lies about what it is. What has accreted is
+pass, and every controller module carries a doc comment that states its own
+negative results rather than its intentions — `policy.rs` opens by explaining
+why its own argmax loses. What has accreted is
 *experimental surface*. `builtin_ai` now has 78 arms behind those seven
 controllers and `src/bin` holds 44 research binaries; 41 of the 78 arms have no
 entry in `docs/EVAL.md` and 13 appear nowhere in `docs/` at all. Most name
