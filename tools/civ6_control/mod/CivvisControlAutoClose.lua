@@ -168,8 +168,15 @@ else
 	local remaining = 0;
 	local shown = 0;
 	local closes = 0;
-	-- Giving up is about THIS screen, never about the context. See `tick`.
-	local gaveUp = false;
+	-- Whether this screen's failure has already been reported. Giving up is a
+	-- BACK-OFF, never a stop -- see the end of `tick` for why nothing here may
+	-- be permanent.
+	local reported = false;
+
+	-- How long to leave a screen alone once it has refused GIVE_UP_AFTER times.
+	-- Long enough not to hammer it, short enough that the map comes back on its
+	-- own if whatever held it goes away.
+	local RETRY_SECONDS = 30.0;
 
 	-- What "up" means. Everywhere else it is the context not being hidden, the
 	-- same test the shipped popup manager uses. InGamePopup is *pushed as a
@@ -185,15 +192,9 @@ else
 		if not isUp() then
 			showing = false;
 			closes = 0;
-			-- The screen went down, so whatever we gave up on is gone and the
-			-- next one gets the full budget again.
-			gaveUp = false;
+			reported = false;
 			return;
 		end
-		-- Stop hammering a screen that has had its attempts, but keep ticking:
-		-- the reset above is the only way back, and it only runs while this
-		-- update is still installed.
-		if gaveUp then return; end
 		if not showing then
 			showing = true;
 			remaining = SECONDS;
@@ -231,18 +232,44 @@ else
 		local gone = not isUp();
 		report("autoclose", string.format(',"after":%.2f,"ended":%s,"gone":%s',
 		                                  upFor, tostring(ended), tostring(gone)));
+		-- ★★★★★ A CLOSE THAT WORKED MUST CLEAR THE COUNTER HERE, NOT LATER.
+		--
+		-- `closes` is meant to count consecutive FAILURES, and the `not isUp()`
+		-- branch above is meant to reset it between screens. That branch does not
+		-- run: an update installed on a popup context does not tick while the
+		-- context is hidden, so the only ticks that ever happen are the ones with
+		-- a screen up. `closes` therefore counted every successful close for the
+		-- lifetime of the run and nothing ever reset it.
+		--
+		-- Measured on run civvis-20260731T144251Z: TechCivicCompletedPopup's 20
+		-- closes are spread over turns 8 to 64 and DiplomacyActionView's over
+		-- turns 11 to 49 -- one every few turns, each a different popup that
+		-- closed correctly. Both then hit exactly GIVE_UP_AFTER and were declared
+		-- stuck. Nothing was stuck. Every context simply died on its 20th popup
+		-- and covered the map from then on, which is why a run gets worse the
+		-- longer it lasts.
+		if gone then closes = 0; reported = false; end
 		if closes >= GIVE_UP_AFTER then
-			-- ⚠⚠ NEVER `ContextPtr:ClearUpdate()` HERE. It unhooks the update from
-			-- the CONTEXT, not from this screen, and `closes` is only reset by the
-			-- `not isUp()` branch of the tick that no longer runs -- so one stubborn
-			-- screen permanently disables autoclose for every screen that context
-			-- ever shows again. That is the operator's "not all screens are always
-			-- closing out": the run above lost DiplomacyActionView and
-			-- TechCivicCompletedPopup by turn 73, and every later leader conversation
-			-- and completed-tech popup then sat over the map untouched for the rest
-			-- of the run. Latch the screen instead; the context stays armed.
-			gaveUp = true;
-			report("autoclose_stuck", string.format(',"attempts":%d', closes));
+			-- ⚠⚠ GIVING UP MUST NOT BE PERMANENT, AND MUST NOT BE ABOUT THE CONTEXT.
+			--
+			-- This used to call `ContextPtr:ClearUpdate()`, which unhooks the update
+			-- from the CONTEXT rather than from the screen in front of it. Combined
+			-- with the counter bug above, every context died on its 20th popup and
+			-- covered the map for the rest of the run -- the operator's "not all
+			-- screens are always closing out", and worse the longer a game ran.
+			--
+			-- A latched flag would be no better: the only code that could clear it
+			-- is the `not isUp()` branch, and that branch does not run. Anything
+			-- that can only be undone while hidden is permanent in practice.
+			--
+			-- So back off instead of stopping. The screen is left alone for
+			-- RETRY_SECONDS and then tried again, forever; the report is emitted
+			-- once per screen rather than once per attempt.
+			if not reported then
+				reported = true;
+				report("autoclose_stuck", string.format(',"attempts":%d', closes));
+			end
+			remaining = RETRY_SECONDS;
 		end
 	end
 
