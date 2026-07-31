@@ -6811,7 +6811,14 @@ never routes to Science. Its faith is 3265 against 2929 and its tourists 33.8
 against 40.7, consistent with `faith_builder` 350.4 against 120.0 spending the
 difference on a lane the profile has switched off.
 
-⚠ **That is a reading of one column, not an attribution within the block.**
+⚠ **That is a reading of one column, not an attribution within the block**, and
+the column is partly an *effect*. `BasicAi::cities` gates builders on
+`builder_per_city * n_cities`, so a smaller empire builds fewer of them at any
+gene value — `r3` holds **2.62 builders against stock's 2.15 while carrying
+stock's own `builder_per_city`**, purely by holding more cities. The loop runs
+both ways: fewer builders, slower growth, fewer cities, fewer builders. That is
+a coherent mechanism and it is not one-directional causation, so the column
+supports the block-level attribution and does not isolate a gene inside it.
 Separating `economy` from `expansion` needs its own two arms and its own
 pre-registration; nothing here licenses moving a single gene.
 
