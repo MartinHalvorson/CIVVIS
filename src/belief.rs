@@ -26,14 +26,32 @@ pub struct Sighting {
     pub strength: f64,
 }
 
+/// Last combat-relevant state confirmed at a foreign City Center.
+///
+/// A city keeps its map position, but its owner, defenses, and durability can
+/// all change behind fog.  Retaining the values seen at the City Center gives
+/// a controller a useful campaign memory without letting a hidden heal,
+/// bombardment, or garrison rewrite its plan.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct CitySighting {
+    pub pos: Pos,
+    pub turn: u32,
+    pub owner: usize,
+    pub hp: i32,
+    pub wall_hp: i32,
+    /// City combat strength at the last observation, including its then-live
+    /// garrison and defense modifiers.
+    pub strength: f64,
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct BeliefState {
     /// Last confirmed sighting per enemy unit id.
     pub units: BTreeMap<u32, Sighting>,
-    /// Last confirmed owner per foreign city id (cities do not move, but
-    /// they change hands, and a stale owner is exactly the kind of mistake
-    /// a fog-honest agent should be able to make).
-    pub cities: BTreeMap<u32, (Pos, usize, u32)>,
+    /// Last confirmed combat state per foreign city id. Cities do not move,
+    /// but they change hands and heal under fog, and a stale report is exactly
+    /// the kind of mistake a fog-honest agent should be able to make.
+    pub cities: BTreeMap<u32, CitySighting>,
     pub updated_turn: u32,
 }
 
@@ -89,7 +107,17 @@ impl BeliefState {
             if city.owner == pid || !vis.contains(&city.pos) {
                 continue;
             }
-            self.cities.insert(city.id, (city.pos, city.owner, g.turn));
+            self.cities.insert(
+                city.id,
+                CitySighting {
+                    pos: city.pos,
+                    turn: g.turn,
+                    owner: city.owner,
+                    hp: city.hp,
+                    wall_hp: city.wall_hp,
+                    strength: g.city_strength(city.id),
+                },
+            );
         }
     }
 

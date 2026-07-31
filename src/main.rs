@@ -97,7 +97,17 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// a type change, not a behaviour change. Confirmed on the same fixed prefix,
 /// release, this branch against `main` at `1d8567b`: the two `ai_eval` reports
 /// are **byte-identical**. Compatibility re-pin; the Elo protocol does not move.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x30c7_81b6_241e_4df0;
+///
+/// #682 adds fog-aware campaign and battlefront observation to the live
+/// controller, but `AdvancedAi::legacy()` explicitly disables every new
+/// branch. A clean `41c02c0` release build and this branch produced identical
+/// output from `ai_eval advanced_v1 basic --pairs 10 --jobs 1 --seed 31337
+/// --players 4 --turns 200 --deployment-comparison`: all 20 game results,
+/// scores, sweeps, seat metrics, victory mix, and strategy-transition counts
+/// matched across 40 Advanced-v1 seat-games and 4,300 observed Advanced-v1
+/// turns. The source contract is deliberately re-pinned after that direct
+/// compatibility check rather than changing the Elo protocol.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x4d9f_c30a_4e56_d7d7;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
