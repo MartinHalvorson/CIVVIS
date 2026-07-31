@@ -170,9 +170,14 @@ def classify(window):
                   # macOS's own window button lives in the window's top-left corner.
                   if not (c["cx"] < w * 0.08 and c["cy"] < h * 0.08)
                   and 8 <= c["w"] <= 40 and 8 <= c["h"] <= 40 and c["n"] >= 18
-                  # Cards are drawn central; the map's own red markers are not
-                  # excluded by that alone, so the verify step is what protects us.
-                  and w * 0.25 < c["cx"] < w * 0.75 and c["cy"] < h * 0.6]
+                  # ⚠ Keep this band TIGHT. A completion card is drawn in the
+                  # middle of the window and its close button sits in the upper
+                  # third. A wider band caught a red marker in the top-left HUD
+                  # and clicked (1126,183) when the card's button was at
+                  # (1357,185) -- a click on the live map, which is the one
+                  # mistake this tool must not make.
+                  and w * 0.40 < c["cx"] < w * 0.68
+                  and h * 0.08 < c["cy"] < h * 0.45]
     if candidates:
         best = min(candidates, key=lambda c: c["cy"])
         return "card", [(best["cx"], best["cy"])], dark
