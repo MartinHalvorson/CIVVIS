@@ -848,6 +848,16 @@ pub struct StateSnapshot {
     pub techs: Vec<String>,
     #[serde(default)]
     pub civics: Vec<String>,
+    /// Civ 6 type name of the government in force, e.g. `GOVERNMENT_OLIGARCHY`.
+    ///
+    /// ⚠ Nothing carried this and the consequence was not silent, only unread: 62
+    /// `cannot_change_government` refusals in 96 turns of run
+    /// `civvis-20260731T052021Z`, one every turn. CIVVIS's mirrored player had no
+    /// government, and a player with no government asks for one. Policy slots hang
+    /// off the government, so it was also choosing cards for a constitution it did
+    /// not know it had.
+    #[serde(default)]
+    pub government: Option<String>,
     #[serde(default)]
     pub gold: i64,
     /// Faith BALANCE. `science` and `culture` are per-turn yields that CIVVIS
@@ -1471,6 +1481,16 @@ pub fn rebuild_from_state(
             Some(name) => {
                 game.players[0].techs.insert(crate::name::Name::new(&name));
             }
+            None => {
+                if !unmapped.contains(civ6) {
+                    unmapped.push(civ6.clone());
+                }
+            }
+        }
+    }
+    if let Some(civ6) = &state.government {
+        match civvis_node_name(&game.rules.governments, civ6, "GOVERNMENT_") {
+            Some(name) => game.players[0].government = Some(name),
             None => {
                 if !unmapped.contains(civ6) {
                     unmapped.push(civ6.clone());

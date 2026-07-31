@@ -3783,10 +3783,27 @@ local function exportState(player, pid, turn)
 		end
 	end);
 
+	-- ★★★★ WHAT GOVERNMENT WE ARE ALREADY UNDER.
+	--
+	-- Nothing carried it, so CIVVIS's mirrored player had none — and a player with no
+	-- government asks for one. Measured on run `civvis-20260731T052021Z`: **62
+	-- `cannot_change_government` refusals in 96 turns**, one every single turn, plus
+	-- `already_GOVERNMENT_CHIEFDOM` once the seat did have one. That is a decision
+	-- CIVVIS re-makes from scratch every turn against a fact it was never told, and
+	-- while it is cheap in orders it is not cheap in belief: policy slots hang off the
+	-- government, and CIVVIS is choosing cards for a government it does not know it has.
+	local government = try(function()
+		local culture = player:GetCulture();
+		local index = culture:GetCurrentGovernment();
+		if index == nil or index < 0 then return nil; end
+		local row = GameInfo.Governments[index];
+		return row ~= nil and row.GovernmentType or nil;
+	end);
 	emit("state", {
 		turn = turn,
 		techs = techs,
 		civics = civics,
+		government = government,
 		hostiles = hostiles,
 		gold = try(function() return math.floor(player:GetTreasury():GetGoldBalance()); end, -1),
 		faith = try(function() return math.floor(player:GetReligion():GetFaithBalance()); end, -1),
