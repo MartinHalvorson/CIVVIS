@@ -80,7 +80,24 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// 95.0% paired-map score, 9 sweeps and 1 neutral, and every seat metric equal
 /// across 20 games and 2,310 turns. Default-off compatibility re-pin; the Elo
 /// protocol does not move.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x8f87_2f61_ae5f_abff;
+///
+/// #704 widens `PolicySpec::replaces` from `Option<Name>` to a list, because
+/// Civilization VI's `ObsoletePolicies` lets one card retire several. The only
+/// edit inside this anchor is the obsolete-card scan adapting to the new type:
+///
+/// ```text
+/// - .filter_map(|policy| policy.replaces.clone())
+/// + .flat_map(|policy| policy.replaces.iter().copied())
+/// ```
+///
+/// **`data/policies.json` is untouched by that PR**, so every `replaces` still
+/// deserializes to exactly one name, and a `filter_map` over `Option` and a
+/// `flat_map` over a one-element `Vec` collect the identical set. The obsolete
+/// set, and therefore every policy decision downstream, cannot differ — this is
+/// a type change, not a behaviour change. Confirmed on the same fixed prefix,
+/// release, this branch against `main` at `1d8567b`: the two `ai_eval` reports
+/// are **byte-identical**. Compatibility re-pin; the Elo protocol does not move.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x30c7_81b6_241e_4df0;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
