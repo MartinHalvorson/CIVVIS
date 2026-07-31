@@ -32,6 +32,7 @@ project has had to repair: a number that reports a result where nothing happened
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import signal
@@ -124,6 +125,34 @@ def teardown() -> None:
 def busy() -> str | None:
     out = run(["pgrep", "-f", "Civ6_Exe|civ6_play.py|civ6_brain.py"])
     return out.strip() or None
+
+
+def code_state() -> str:
+    """A name for the program this attempt will actually run.
+
+    ⚠ `rev + "+dirty"` DOES NOT IDENTIFY CODE. Most of the ledger's rows are stamped
+    `0d6cc28+dirt`, and two rows carrying that string can be two different programs —
+    the flag says only that something was uncommitted, never what. Uncommitted work is
+    normal here and is not the problem; being unable to tell one uncommitted state
+    from the next is.
+
+    So a dirty tree is fingerprinted by its CONTENT, not by a boolean.
+    `abc1234+9f2c1e04` changes the moment the working tree does, which is what makes a
+    pinned batch enforceable at all.
+
+    `diff HEAD` covers staged and unstaged changes to tracked files; `status
+    --porcelain` is folded in because it lists UNTRACKED paths, and a brand new
+    `tools/civ6_*.py` is exactly the kind of thing that appears mid-session and
+    changes what runs. ⚠ The limit worth knowing: an untracked file's CONTENT is not
+    hashed, only its existence, so editing one in place will not break a pin.
+    """
+    root = str(HERE.parent)
+    rev = run(["git", "-C", root, "rev-parse", "--short", "HEAD"]).strip() or "?"
+    tree = (run(["git", "-C", root, "status", "--porcelain"])
+            + run(["git", "-C", root, "diff", "HEAD"]))
+    if tree.strip():
+        return f"{rev}+{hashlib.sha1(tree.encode()).hexdigest()[:8]}"
+    return rev
 
 
 def blocked_reason() -> str | None:
@@ -284,6 +313,9 @@ def main() -> int:
                     help="turns between map exports; the operator watches this against the game")
     ap.add_argument("--orders-bin", default=str(HERE.parent / "target" / "release" / "civvis_orders"))
     ap.add_argument("--logs", default=None, help="directory for per-attempt logs")
+    ap.add_argument("--no-pin", action="store_true", default=False,
+                    help="allow the code to change mid-batch; rows stop being "
+                         "comparable and the ledger can only say so afterwards")
     args = ap.parse_args()
 
     logs = Path(args.logs).expanduser() if args.logs else Path.cwd() / "civvis-climb-logs"
@@ -296,6 +328,14 @@ def main() -> int:
     if busy():
         print("something already holds the game; tearing it down first", flush=True)
     teardown()
+
+    # A batch is a COMPARISON, so it is pinned to one program by default. Opting out
+    # is a deliberate act with a name, not the silent default it used to be.
+    pinned = None if args.no_pin else code_state()
+    if pinned is not None:
+        print(f"batch pinned to {pinned}"
+              + ("  ⚠ working tree is dirty; the fingerprint tracks it"
+                 if "+" in pinned else ""), flush=True)
 
     played = 0          # attempts that produced a MEASUREMENT — the only budget
     started = 0         # iterations, for the log line only
@@ -325,16 +365,25 @@ def main() -> int:
         attempt = played + 1
         started += 1
         tag = f"civvis-{stamp()}"
-        # ⚠ THE CODE CHANGES BETWEEN ATTEMPTS AND THE LEDGER COULD NOT SAY SO.
-        # The harness re-installs the mod at the start of every attempt, so a fix
-        # landed mid-batch takes effect on the next row — and every earlier row then
-        # describes a different program under the same column headings. Without this
-        # a ledger read back tomorrow cannot separate a treatment from variance,
-        # which is exactly how the persistent-agent "regression" got published wrong.
+        # ⚠ THE CODE CHANGES BETWEEN ATTEMPTS AND THE LEDGER COULD ONLY SAY SO
+        # AFTERWARDS. The harness re-installs the mod at the start of every attempt,
+        # so a fix landed mid-batch takes effect on the next row — and every earlier
+        # row then describes a different program under the same column headings.
+        # Recording `code_rev` made that visible in hindsight and did nothing to stop
+        # it: on 2026-07-31 a commit at 12:45 silently unfroze a batch that had been
+        # deliberately frozen at `1ee5dcb` with eleven attempts still queued, and the
+        # freeze existed only as an intention in an operator's head.
         # Captured HERE, at attempt start, because that is when the mod is synced.
-        rev = run(["git", "-C", str(HERE.parent), "rev-parse", "--short", "HEAD"]).strip()
-        dirty = run(["git", "-C", str(HERE.parent), "status", "--porcelain"]).strip()
-        code_rev = (rev or "?") + ("+dirty" if dirty else "")
+        code_rev = code_state()
+        if pinned is not None and code_rev != pinned:
+            print(f"\nTHE BUILD CHANGED MID-BATCH — pinned {pinned}, now {code_rev}.\n"
+                  f"  {played} attempt(s) were played on {pinned}. This batch ends "
+                  f"here so its rows stay comparable;\n  the remaining "
+                  f"{args.attempts - played} would have measured a different program "
+                  f"under the same heading.\n  Start a new batch to measure "
+                  f"{code_rev}, or pass --no-pin to mix revisions deliberately.",
+                  flush=True)
+            return 4
         print(f"\n=== attempt {attempt}/{args.attempts}  {tag}  code={code_rev} ===",
               flush=True)
         # A fresh orders database per attempt. Stale rows are keyed by run tag so

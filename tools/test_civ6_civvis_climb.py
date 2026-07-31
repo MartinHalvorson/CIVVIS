@@ -49,7 +49,9 @@ class FakeProc:
         pass
 
 
-class ClimbBudgetTests(unittest.TestCase):
+class _Harness:
+    """Shared rig. NOT a TestCase — subclassing one re-runs all of its tests."""
+
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         root = Path(self.tmp.name)
@@ -61,7 +63,7 @@ class ClimbBudgetTests(unittest.TestCase):
 
         self.saved = {name: getattr(climb, name) for name in
                       ("LEDGER", "BLOCKED_BACKOFF_S", "teardown", "busy",
-                       "wake_steam", "outcome_of")}
+                       "wake_steam", "outcome_of", "code_state")}
         climb.LEDGER = self.ledger
         climb.BLOCKED_BACKOFF_S = (0.0, 0.0, 0.0)   # the table, without the waiting
         climb.teardown = lambda: None
@@ -73,6 +75,8 @@ class ClimbBudgetTests(unittest.TestCase):
         climb.subprocess.Popen = FakeProc
         self.saved_run = climb.run
         climb.run = lambda cmd, timeout=60.0: "deadbeef"
+        # One program unless a test says otherwise; `code_state` gets its own suite.
+        climb.code_state = lambda: "deadbeef"
 
         # The harness waits three seconds between starting the game and starting the
         # brain, which is right for a real launch and is pure dead time here. Without
@@ -99,9 +103,16 @@ class ClimbBudgetTests(unittest.TestCase):
         climb.launcher.game_binary = self.saved_binary
         self.tmp.cleanup()
 
-    def climb_with(self, outcomes, attempts=3):
-        """Run main() with a scripted sequence of per-attempt outcomes."""
+    def climb_with(self, outcomes, attempts=3, argv_extra=(), revs=None):
+        """Run main() with a scripted sequence of per-attempt outcomes.
+
+        `revs` scripts what `code_state()` reports on successive calls, which is how
+        a commit landing mid-batch is reproduced without one.
+        """
         seq = list(outcomes)
+        if revs is not None:
+            pending = list(revs)
+            climb.code_state = lambda: pending.pop(0) if pending else "deadbeef"
 
         def outcome_of(tag):
             # The play log is what a blocked row quotes, so write one like the real
@@ -113,7 +124,7 @@ class ClimbBudgetTests(unittest.TestCase):
         argv = sys.argv
         sys.argv = ["climb", "--attempts", str(attempts),
                     "--orders-bin", str(self.orders_bin),
-                    "--logs", str(self.logs), "--timeout", "0.1"]
+                    "--logs", str(self.logs), "--timeout", "0.1", *argv_extra]
         try:
             code = climb.main()
         finally:
@@ -122,6 +133,7 @@ class ClimbBudgetTests(unittest.TestCase):
                 self.ledger.read_text().splitlines()] if self.ledger.exists() else []
         return code, rows
 
+class ClimbBudgetTests(_Harness, unittest.TestCase):
     # ---- the regression itself -------------------------------------------------
 
     def test_dead_steam_spends_no_attempts(self):
@@ -190,6 +202,92 @@ class ClimbBudgetTests(unittest.TestCase):
 
         self.assertEqual(code, 1, "the streak reset, so it kept playing")
         self.assertEqual([r["attempt"] for r in rows if r["attempt"]], [1, 2])
+
+
+class FrozenBuildTests(_Harness, unittest.TestCase):
+    """A batch is a comparison, so every row in it has to be the same program.
+
+    ⚠ THE REAL CASE: the ladder was deliberately frozen at `1ee5dcb` with eleven
+    attempts queued, a commit landed at 12:45, and attempts 14 onward silently ran
+    `23878b2` under the same column headings. `code_rev` recorded the change and
+    nothing enforced the freeze — it existed only as an intention.
+    """
+
+    def test_a_commit_mid_batch_ends_the_batch(self):
+        code, rows = self.climb_with(
+            [{"last_turn": 191, "last_score": 267},
+             {"last_turn": 240, "last_score": 119}],
+            attempts=6,
+            # pin, attempt 1, attempt 2, then the 12:45 commit lands
+            revs=["1ee5dcb", "1ee5dcb", "1ee5dcb", "23878b2"])
+
+        self.assertEqual(code, 4, "a changed build is not a played-out batch")
+        self.assertEqual([r["code_rev"] for r in rows], ["1ee5dcb", "1ee5dcb"])
+        self.assertEqual(len(rows), 2, "no row was written for the new program")
+
+    def test_no_pin_lets_revisions_mix_when_asked(self):
+        code, rows = self.climb_with(
+            [{"last_turn": 191}, {"last_turn": 240}],
+            attempts=2, argv_extra=("--no-pin",),
+            revs=["1ee5dcb", "23878b2"])
+
+        self.assertEqual(code, 1, "played out")
+        self.assertEqual([r["code_rev"] for r in rows], ["1ee5dcb", "23878b2"])
+
+    def test_an_unchanged_build_runs_the_whole_batch(self):
+        code, rows = self.climb_with(
+            [{"last_turn": 191}, {"last_turn": 240}, {"last_turn": 104}],
+            attempts=3, revs=["1ee5dcb"] * 8)
+
+        self.assertEqual(code, 1)
+        self.assertEqual(len(rows), 3)
+
+    def test_a_dirty_tree_that_changes_also_ends_the_batch(self):
+        """An edit to uncommitted work is a new program too, and `+dirty` hid it."""
+        code, rows = self.climb_with(
+            [{"last_turn": 191}], attempts=3,
+            revs=["1ee5dcb+9f2c1e04", "1ee5dcb+9f2c1e04", "1ee5dcb+a7b0c331"])
+
+        self.assertEqual(code, 4)
+        self.assertEqual(len(rows), 1)
+
+
+class CodeStateTests(unittest.TestCase):
+    """`rev+dirty` cannot tell two uncommitted states apart. The fingerprint can."""
+
+    def setUp(self):
+        self.saved_run = climb.run
+
+    def tearDown(self):
+        climb.run = self.saved_run
+
+    def _state(self, rev, diff="", status=""):
+        def fake(cmd, timeout=60.0):
+            if "rev-parse" in cmd:
+                return rev
+            return status if "status" in cmd else diff
+        climb.run = fake
+        return climb.code_state()
+
+    def test_a_clean_tree_is_named_by_its_revision_alone(self):
+        self.assertEqual(self._state("1ee5dcb\n"), "1ee5dcb")
+
+    def test_two_different_dirty_trees_get_different_names(self):
+        one = self._state("1ee5dcb\n", diff="diff --git a/x b/x\n+one\n")
+        two = self._state("1ee5dcb\n", diff="diff --git a/x b/x\n+two\n")
+        self.assertNotEqual(one, two, "this is the whole point of the fingerprint")
+        self.assertTrue(one.startswith("1ee5dcb+"))
+
+    def test_the_same_dirty_tree_keeps_its_name(self):
+        diff = "diff --git a/x b/x\n+same\n"
+        self.assertEqual(self._state("1ee5dcb\n", diff=diff),
+                         self._state("1ee5dcb\n", diff=diff))
+
+    def test_a_new_untracked_tool_changes_the_name(self):
+        """A file that appears mid-session changes what runs; `git diff` cannot see it."""
+        clean = self._state("1ee5dcb\n")
+        added = self._state("1ee5dcb\n", status="?? tools/civ6_newthing.py\n")
+        self.assertNotEqual(clean, added)
 
 
 if __name__ == "__main__":
