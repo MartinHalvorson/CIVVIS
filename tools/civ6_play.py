@@ -915,19 +915,36 @@ def _play(args: argparse.Namespace) -> int:
     #
     # So on a stall: photograph it, try the rescue that already works, and keep
     # watching. Bounded, because a rescue that never rescues must not loop forever.
-    stall_rescues = 0
-    while reason.startswith("stalled") and stall_rescues < args.stall_rescues:
-        stall_rescues += 1
-        shot = run_dir / f"stalled-{stall_rescues}.png"
+    # ⚠⚠ THE BUDGET IS CONSECUTIVE FAILURES, NOT RESCUES EVER. This counter used to
+    # run for the life of the game, so a rescue that WORKED at turn 60 still spent
+    # one of three, and an unrelated leader screen ninety turns later found the budget
+    # already gone. Both long runs of 2026-07-31 died that way with the game perfectly
+    # healthy: `civvis-20260731T040858Z` at t199 and `civvis-20260731T055749Z` at t179,
+    # each after three rescues spread across the whole game. stalled-3.png of the
+    # second is Hammurabi asking about barbarians with a single Goodbye button — a
+    # screen the column sweep covers and would have cleared, on the fourth try it was
+    # not allowed to make.
+    #
+    # `--stall-rescues` reads "times to try dismissing a blocking screen before giving
+    # up", and that is what it now means: give up on a screen the sweep cannot clear,
+    # not on a game that has been rescued before.
+    consecutive = 0
+    rescues = 0
+    while reason.startswith("stalled") and consecutive < args.stall_rescues:
+        consecutive += 1
+        rescues += 1
+        shot = run_dir / f"stalled-{rescues}.png"
         screenshot(shot)
-        print(f"stalled — photographed to {shot}; rescue attempt {stall_rescues}",
+        print(f"stalled — photographed to {shot}; rescue attempt {consecutive} "
+              f"of {args.stall_rescues} on this screen ({rescues} this run)",
               flush=True)
         dismiss_leader_dialogue()
         reason = watch.follow(tail, args.timeout, record, stop_when=finished,
                               each_poll=keep_foreground, poll_s=poll_s,
                               stall_s=args.stall_seconds)
         if not reason.startswith("stalled"):
-            print(f"recovered from stall after {stall_rescues} attempt(s)", flush=True)
+            print(f"recovered from stall after {consecutive} attempt(s)", flush=True)
+            consecutive = 0
     events.close()
 
     outcome = state["outcome"] or {}
@@ -1032,7 +1049,14 @@ def main(argv: list[str] | None = None) -> int:
                     help="leave a builder idle when CIVVIS's improvement is refused")
     ap.add_argument("--stall-rescues", type=int, default=3,
                     help="times to try dismissing a blocking screen before giving up")
-    ap.add_argument("--stall-seconds", type=float, default=240.0,
+    # ⚠ A FALSE STALL IS NOT FREE. The rescue SWEEPS CLICKS across the game window,
+    # which is safe only because a stall means a leader screen is up; on a live map a
+    # click selects a unit and the next one orders it to move. Overnight on 2026-07-31
+    # a contended machine took ~100 s a turn for long stretches, which puts 240 s at
+    # under three quiet turns. 420 s is four, and the cost of the longer window is a
+    # few extra minutes on a genuinely wedged run against the cost of the shorter one
+    # being clicks landing on a live game.
+    ap.add_argument("--stall-seconds", type=float, default=420.0,
                     help="give up on a run that has emitted nothing for this long")
     ap.add_argument("--civvis-decides", action="store_true", default=False,
                     help="CIVVIS makes every decision; the mod only actuates")
