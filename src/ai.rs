@@ -55,6 +55,7 @@ const MINOR_DEFENSE_RADIUS: i32 = 6;
 const RAILROAD_RESOURCE_RESERVE: f64 = 4.0;
 
 mod advanced;
+mod tactics;
 pub use advanced::{
     AdvancedAi, ForceDomain, ForceGroup, ForcePosture, GrandStrategy, StrategicPlan,
     StrategyCensus, VictoryTarget,
@@ -143,6 +144,17 @@ pub trait Ai {
         None
     }
 
+    /// How often this agent's joint tactical planner produced a plan, and how
+    /// many unit decisions it reached. Agents without one return `None`.
+    ///
+    /// This exists for the same reason [`Ai::review_census`] does: an agent
+    /// that searches must be able to say when it did not. A whole-game null
+    /// from a layer that barely ran and one from a layer that ran constantly
+    /// call for opposite next steps, and a win rate cannot tell them apart.
+    fn joint_tactics_census(&self) -> Option<(usize, usize)> {
+        None
+    }
+
     /// Write this agent's reasoning into an observer's log.
     ///
     /// Every seat at a watched table is handed a handle on the *same*
@@ -168,6 +180,10 @@ impl<T: Ai + ?Sized> Ai for Box<T> {
 
     fn review_census(&self) -> Option<crate::strategic::ReviewCensus> {
         (**self).review_census()
+    }
+
+    fn joint_tactics_census(&self) -> Option<(usize, usize)> {
+        (**self).joint_tactics_census()
     }
 
     fn attach_journal(&mut self, journal: Journal) {
