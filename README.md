@@ -290,7 +290,8 @@ matters most here.
 at 76.7%, +207, gate PASS. At the same profile on a disjoint seed it measured
 62.1%, **+86** — same direction, same significance, same gate verdict, but
 76.7% sits outside the 95% interval of 53.2–70.3%. The improvement is real;
-its size was overstated by roughly a factor of two.
+the recorded effect is more than twice the replicated one, so quote it as the
+result of one run rather than as the size of the gap.
 
 **On tidiness.** The code itself is in good order: it builds clean, the tests
 pass, and every controller module carries a doc comment that states its own
