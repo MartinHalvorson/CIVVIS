@@ -441,6 +441,32 @@ fn translate(
             verb: Some("FOUND_CITY".to_string()),
             pos: None,
         }),
+        // ★★★ A TRADER THAT CANNOT BE GIVEN A ROUTE IS PRODUCTION AND GOLD SPENT ON A
+        // UNIT THAT WILL NEVER ACT. `Action::TradeRoute` was on the untranslatable
+        // list, so every trader CIVVIS built stood where it was made for the rest of
+        // the game — `civ6_watchdogs.py` names one in every run, motionless for 114
+        // turns in the longest case.
+        //
+        // Civilization VI takes the DESTINATION CITY's plot, so the order carries the
+        // target city's position rather than a unit id the bridge would have to map
+        // twice. The mod resolves the operation and reports a refusal if the engine
+        // will not take it, which is the honest failure for something untested against
+        // a live game.
+        Action::TradeRoute { unit, city } => civ6_of.get(unit).and_then(|civ6| {
+            mirror_state
+                .game
+                .cities
+                .get(city)
+                .map(|destination| Order {
+                    kind: "unit",
+                    subject: Some(*civ6),
+                    verb: Some("TRADE_ROUTE".to_string()),
+                    pos: Some(civvis::hex::axial_to_offset(
+                        destination.pos.0,
+                        destination.pos.1,
+                    )),
+                })
+        }),
         // A builder improving the tile it stands on. Dropping this is what kept the
         // mirror looking undeveloped and made CIVVIS order builder after builder.
         // Gold purchases. Dropping these both wastes the treasury and leaves CIVVIS

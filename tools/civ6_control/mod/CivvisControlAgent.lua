@@ -144,6 +144,7 @@ local function resolveActions()
 		"UNITOPERATION_HEAL", "UNITOPERATION_AUTOMATE_EXPLORE",
 		"UNITOPERATION_BUILD_IMPROVEMENT", "UNITOPERATION_RANGE_ATTACK",
 		"UNITOPERATION_HARVEST_RESOURCE", "UNITOPERATION_REST_REPAIR",
+		"UNITOPERATION_MAKE_TRADE_ROUTE",
 	}) do
 		OP[name] = opHash(name);
 	end
@@ -4627,6 +4628,23 @@ local function applyOrder(player, pid, row, turn)
 			                          want = wanted or "IMPROVE",
 			                          x = unit:GetX(), y = unit:GetY() });
 			return false, wanted or "IMPROVE";
+		end
+		-- ★★★ SEND THE TRADER SOMEWHERE. Untranslated until now, so a trader stood
+		-- where it was built for the whole game: `civ6_watchdogs.py` names one in every
+		-- run, motionless for 114 turns in the longest case, with its production and
+		-- its maintenance already paid.
+		--
+		-- ⚠ UNTESTED AGAINST A LIVE GAME when it was written, which is why it asks the
+		-- engine rather than assuming: a refused operation is counted as a refusal
+		-- under this verb, so the tally says plainly whether it works. If
+		-- `UNITOPERATION_MAKE_TRADE_ROUTE` does not resolve on this build, `OP[...]` is
+		-- nil and `operate` refuses — no throw, no silent success.
+		if verb == "TRADE_ROUTE" then
+			if x == nil or y == nil then return false, "no_dest"; end
+			local params = {};
+			params[UnitOperationTypes.PARAM_X] = x;
+			params[UnitOperationTypes.PARAM_Y] = y;
+			return operate(unit, OP["UNITOPERATION_MAKE_TRADE_ROUTE"], params), verb;
 		end
 		if verb == "UPGRADE" then
 			return commandUnit(unit, CMD["UNITCOMMAND_UPGRADE"], {}), verb;
