@@ -1633,6 +1633,8 @@ pub fn rebuild_from_state(
         }
     }
 
+    apply_territory(&mut game, snapshot, state);
+
     Reconstruction {
         game,
         unit_ids,
@@ -1642,6 +1644,106 @@ pub fn rebuild_from_state(
         placed_rival_cities,
         placed_rival_units,
         unmapped,
+    }
+}
+
+/// Give every revealed plot the owner Civilization VI says it has.
+///
+/// ★★★★ FOUND BY `tools/civ6_watchdogs.py`, WHICH IS THE POINT OF IT. Diffing the
+/// mirror against Civ 6's own export tile for tile: terrain, hills, water, features
+/// and resources agreed on every plot, no exported plot was missing — and **20 of 509
+/// plots that Civilization VI says WE OWN were unowned in CIVVIS's board** (44 of 375
+/// on another run, 27 of 266 on a third). Nothing else in any report could have shown
+/// this: the seat looked correct, the map looked correct, and the borders were wrong.
+///
+/// The cause is structural rather than a bug. `place_city` claims a city centre and
+/// its first ring — seven tiles — and that is all a mirrored city ever gets, because
+/// the board is rebuilt from scratch every turn so no border ever grows. A real
+/// Civ 6 city at population six owns three rings. So CIVVIS was planning an empire
+/// roughly a third the size of the one on screen.
+///
+/// ⚠ Both directions matter, and they fail differently. Ground of OURS that reads
+/// unowned understates our yields and our workable tiles. Ground of a RIVAL'S that
+/// reads unowned invites CIVVIS to settle inside their borders, which Civilization VI
+/// then refuses — one of the live explanations for the `found` refusal loop.
+///
+/// ⚠ Our own Civ 6 player id is read off our own city centres rather than assumed.
+/// The alternative — "any owner that is not a known rival is us" — would hand a plot
+/// belonging to a civilization we have not met to our own empire, and a seat that
+/// believes it owns a rival's capital ring is worse off than one that knows nothing.
+fn apply_territory(
+    game: &mut crate::game::Game,
+    snapshot: &Snapshot,
+    state: &StateSnapshot,
+) {
+    // Civ 6 player id -> CIVVIS seat. Rivals are remapped `i -> i + 1`, the same
+    // mapping the war bond uses; see `LiveMirror::sync`.
+    let mut seat_of: std::collections::BTreeMap<i32, usize> = Default::default();
+    for (index, rival) in state.rivals.iter().enumerate() {
+        seat_of.insert(rival.player as i32, index + 1);
+    }
+    for city in &state.cities {
+        if let Some(plot) = snapshot.plot((city.x, city.y)) {
+            if plot.o >= 0 && !seat_of.contains_key(&plot.o) {
+                seat_of.insert(plot.o, 0);
+            }
+        }
+    }
+    let mut centres: std::collections::BTreeMap<usize, Vec<(u32, crate::Pos)>> = Default::default();
+    for (cid, city) in &game.cities {
+        centres.entry(city.owner).or_default().push((*cid, city.pos));
+    }
+    // Decided first, applied second: the nearest-city lookup needs `game` immutably
+    // while the assignment needs it mutably.
+    let mut assign: Vec<(crate::Pos, Option<u32>)> = Vec::new();
+    for y in 0..snapshot.height.max(1) {
+        for x in 0..snapshot.width.max(1) {
+            let Some(plot) = snapshot.plot((x, y)) else {
+                continue;
+            };
+            let pos = crate::hex::offset_to_axial(x, y);
+            if !game.map.tiles.contains_key(&pos) {
+                continue;
+            }
+            let Some(&seat) = seat_of.get(&plot.o) else {
+                // `o = -1` is nobody, and Civilization VI is authoritative about that
+                // too: a tile CIVVIS thinks it owns and the game says is neutral is
+                // the same class of error in the other direction. An owner we cannot
+                // map (a met civ with no seat) is left alone rather than guessed.
+                if plot.o < 0 {
+                    assign.push((pos, None));
+                }
+                continue;
+            };
+            // The city that would work it: the owner's nearest. Civ 6 records only
+            // the owning PLAYER per plot, so which of their cities holds it is not in
+            // the export and the nearest is the only defensible reconstruction.
+            let owner = centres.get(&seat).and_then(|list| {
+                list.iter()
+                    .min_by_key(|(cid, centre)| (game.wdist(pos, *centre), *cid))
+                    .map(|(cid, _)| *cid)
+            });
+            if owner.is_some() {
+                assign.push((pos, owner));
+            }
+        }
+    }
+    for (pos, owner) in assign {
+        let previous = game.map.tiles.get(&pos).and_then(|tile| tile.owner_city);
+        if previous == owner {
+            continue;
+        }
+        if let Some(old) = previous.and_then(|cid| game.cities.get_mut(&cid)) {
+            old.owned_tiles.retain(|held| *held != pos);
+        }
+        if let Some(tile) = game.map.tiles.get_mut(&pos) {
+            tile.owner_city = owner;
+        }
+        if let Some(new) = owner.and_then(|cid| game.cities.get_mut(&cid)) {
+            if !new.owned_tiles.contains(&pos) {
+                new.owned_tiles.push(pos);
+            }
+        }
     }
 }
 

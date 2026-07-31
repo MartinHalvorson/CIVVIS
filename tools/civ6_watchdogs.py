@@ -368,7 +368,13 @@ def main() -> int:
             print(f"{run.name}: no events")
             continue
         events = read_events(run)
-        report = {"run": run.name, "idle_stack": idle_stack(events, args.frozen_turns)}
+        report = {
+            "run": run.name,
+            # How much stream this verdict was formed on, so a check taken while the
+            # run was still playing can be told apart from the final one.
+            "events_bytes": (run / "events.jsonl").stat().st_size,
+            "idle_stack": idle_stack(events, args.frozen_turns),
+        }
         if not args.no_mirror:
             report["mirror"] = mirror_agreement(run, events, Path(args.orders_bin))
         found = verdicts(report, args.stuck_max, args.agree_min)

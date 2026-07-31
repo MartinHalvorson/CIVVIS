@@ -26,15 +26,25 @@ RUN_ROOT = Path.home() / "civvis-civ6-runs" / "control"
 REPORT = Path.home() / "civvis-civ6-runs" / "watchdogs.jsonl"
 
 
-def done_runs(seen: set[str], quiet_for: float) -> list[Path]:
-    """Runs whose event file has not grown for `quiet_for` seconds."""
+def done_runs(seen: dict[str, int], quiet_for: float) -> list[Path]:
+    """Runs whose event file has not grown for `quiet_for` seconds.
+
+    ⚠ KEYED ON SIZE, NOT ON NAME. A live attempt whose turn rate collapses under
+    machine load goes quiet for minutes at a time — this daemon checked one such run
+    mid-flight, wrote it down as done, and would then never have looked at it again.
+    A run is re-checked whenever its stream has grown since the last look, so a
+    premature verdict is replaced by the final one instead of standing.
+    """
     now = time.time()
     out = []
     for run in sorted(RUN_ROOT.iterdir()):
         events = run / "events.jsonl"
-        if run.name in seen or not events.exists():
+        if not events.exists():
             continue
-        if now - events.stat().st_mtime < quiet_for:
+        stat = events.stat()
+        if seen.get(run.name) == stat.st_size:
+            continue
+        if now - stat.st_mtime < quiet_for:
             continue
         out.append(run)
     return out
@@ -48,20 +58,21 @@ def main() -> int:
                     help="seconds of no new events before a run counts as finished")
     args = ap.parse_args()
 
-    seen: set[str] = set()
+    seen: dict[str, int] = {}
     if REPORT.exists():
         for line in REPORT.read_text(errors="replace").splitlines():
             try:
-                seen.add(json.loads(line)["run"])
+                record = json.loads(line)
+                seen[record["run"]] = record.get("events_bytes", -1)
             except (ValueError, KeyError):
                 continue
-    # ⚠ Everything already on disk when this starts is marked seen WITHOUT being
-    # checked only if it is already in the report. Otherwise it is checked once, so
-    # starting the daemon late does not lose the night's earlier attempts.
+    # ⚠ Everything already on disk when this starts is checked once unless the report
+    # already holds it at its current size, so starting the daemon late does not lose
+    # the night's earlier attempts.
     deadline = time.time() + args.seconds
     while time.time() < deadline:
         for run in done_runs(seen, args.quiet_for):
-            seen.add(run.name)
+            seen[run.name] = (run / "events.jsonl").stat().st_size
             proc = subprocess.run(
                 [sys.executable, str(HERE / "civ6_watchdogs.py"),
                  "--run", run.name, "--json", str(REPORT)],
