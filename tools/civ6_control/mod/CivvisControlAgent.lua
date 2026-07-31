@@ -4703,34 +4703,37 @@ local function applyOrder(player, pid, row, turn)
 		-- run, motionless for 114 turns in the longest case, with its production and
 		-- its maintenance already paid.
 		--
-		-- ⚠ UNTESTED AGAINST A LIVE GAME when it was written, which is why it asks the
-		-- engine rather than assuming: a refused operation is counted as a refusal
-		-- under this verb, so the tally says plainly whether it works. If
-		-- `UNITOPERATION_MAKE_TRADE_ROUTE` does not resolve on this build, `OP[...]` is
-		-- nil and `operate` refuses — no throw, no silent success.
+		-- ⚠ THE FIRST TWO VERSIONS WERE GUESSES AND BOTH WERE WRONG — 15 refusals in
+		-- one run, 87 in the next. Reporting a refusal instead of assuming success is
+		-- what made that visible in one line of the status output; the shipped call
+		-- below was then read out of the game's own `TradeRouteChooser.lua` rather
+		-- than guessed a third time.
 		if verb == "TRADE_ROUTE" then
 			if x == nil or y == nil then return false, "no_dest"; end
-			-- ⚠ MEASURED REFUSED WITH `PARAM_X`/`PARAM_Y`: 15 refusals in 66 turns of
-			-- run civvis-20260731T081728Z, which is the whole reason the first version
-			-- reported instead of assuming. The shipped `TradeRouteChooser.lua` sends
-			-- the DESTINATION as `PARAM_X0`/`PARAM_Y0`, and several other Civ 6
-			-- operations use the plain pair — so both are tried and the refusal names
-			-- which shapes were attempted rather than leaving another silent guess.
-			local shapes = {
-				{ "x0y0", UnitOperationTypes.PARAM_X0, UnitOperationTypes.PARAM_Y0 },
-				{ "xy", UnitOperationTypes.PARAM_X, UnitOperationTypes.PARAM_Y },
-			};
-			for _, shape in ipairs(shapes) do
-				if shape[2] ~= nil and shape[3] ~= nil then
-					local params = {};
-					params[shape[2]] = x;
-					params[shape[3]] = y;
-					if operate(unit, OP["UNITOPERATION_MAKE_TRADE_ROUTE"], params) then
-						return true, verb .. ":" .. shape[1];
-					end
-				end
-			end
-			return false, "TRADE_ROUTE_both_shapes";
+			-- ★★★★ COPIED FROM `TradeRouteChooser.lua`, NOT GUESSED — and the two
+			-- guesses before it cost 15 refusals in one run and 87 in the next, which
+			-- is exactly what reporting a refusal instead of assuming success is for.
+			--
+			-- The shipped `RequestTradeRoute()` sends FOUR parameters, not two: the
+			-- destination city as X0/Y0 and the TRADER'S OWN plot as X1/Y1. And the
+			-- operation is `UnitOperationTypes.MAKE_TRADE_ROUTE`, the engine constant,
+			-- not a hash looked up in `GameInfo.UnitOperations` — `MAKE_TRADE_ROUTE`
+			-- also exists as an `InterfaceModeTypes`, which is what made the name look
+			-- available when the row was not.
+			--
+			--   operationParams[PARAM_X0] = destinationCity:GetX();
+			--   operationParams[PARAM_Y0] = destinationCity:GetY();
+			--   operationParams[PARAM_X1] = m_selectedUnit:GetX();
+			--   operationParams[PARAM_Y1] = m_selectedUnit:GetY();
+			--   UnitManager.RequestOperation(unit, MAKE_TRADE_ROUTE, operationParams)
+			local op = UnitOperationTypes.MAKE_TRADE_ROUTE;
+			if op == nil then return false, "no_trade_route_op"; end
+			local params = {};
+			params[UnitOperationTypes.PARAM_X0] = x;
+			params[UnitOperationTypes.PARAM_Y0] = y;
+			params[UnitOperationTypes.PARAM_X1] = try(function() return unit:GetX(); end, -1);
+			params[UnitOperationTypes.PARAM_Y1] = try(function() return unit:GetY(); end, -1);
+			return operate(unit, op, params), verb;
 		end
 		if verb == "UPGRADE" then
 			return commandUnit(unit, CMD["UNITCOMMAND_UPGRADE"], {}), verb;
