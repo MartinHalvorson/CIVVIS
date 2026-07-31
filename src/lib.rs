@@ -26,6 +26,7 @@ pub mod obs_tensor;
 pub mod decision_features;
 pub mod policy;
 pub mod production;
+pub mod q_override;
 pub mod rating;
 pub mod reasoning;
 pub mod rng;

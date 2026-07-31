@@ -6,25 +6,19 @@
 //! context. Development is game-grouped out-of-fold; blind selection and
 //! external files are not opened unless the preceding gate passes.
 
-use serde::{Deserialize, Serialize};
+use civvis::q_override::{
+    self, Artifact, GateEvidence, Qualification, ReliabilityModel, DEPLOYMENT_GAMES,
+    DEPLOYMENT_SEED, DEVELOPMENT_GAMES, DEVELOPMENT_SEED, OVERRIDE_PROBABILITY,
+    RELIABILITY_FEATURES, RELIABILITY_WIDTH, REQUIRED_REPLICAS, SELECTION_GAMES,
+    SELECTION_SEED,
+};
+use serde::Deserialize;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::io::{BufRead, BufReader, Write};
 
 const EPS: f64 = 1e-9;
-const RANKER_SEED: u64 = 946_000;
-const RANKER_GAMES: usize = 64;
-const CONTEXT_SEED: u64 = 948_000;
-const CONTEXT_GAMES: usize = 32;
-const SELECTION_SEED: u64 = 948_032;
-const SELECTION_GAMES: usize = 32;
-const EXTERNAL_SEED: u64 = 947_000;
-const EXTERNAL_GAMES: usize = 32;
-const REQUIRED_REPLICAS: usize = 4;
 const FOLDS: usize = 5;
-const HOLDOUT_SHARE: f64 = 0.25;
-const RELIABILITY_WIDTH: usize =
-    civvis::decision_features::WIDTH + 2 * civvis::action_space::DESTINATION_WIDTH + 1;
 
 fn number(args: &[String], flag: &str, default: usize) -> usize {
     args.iter()
@@ -285,10 +279,6 @@ fn hash(game: u64) -> u64 {
     hash ^ (hash >> 32)
 }
 
-fn old_holdout(game: u64) -> bool {
-    (hash(game) % 1000) as f64 / 1000.0 < HOLDOUT_SHARE
-}
-
 fn fold(game: u64) -> usize {
     (hash(game) % FOLDS as u64) as usize
 }
@@ -358,17 +348,14 @@ struct Example {
 }
 
 fn make_example(ranker: &FrozenRanker, group: &Group) -> Example {
-    let state = civvis::decision_features::WIDTH;
-    let destination =
-        state + civvis::action_space::KINDS.len() + civvis::action_space::LEGACY_NUMERIC_WIDTH;
-    let end = destination + civvis::action_space::DESTINATION_WIDTH;
     let (sibling, margin) = best_sibling(ranker, group);
-    let mut features = Vec::with_capacity(RELIABILITY_WIDTH);
-    features.extend_from_slice(&group.rows[0][..state]);
-    features.extend_from_slice(&group.rows[0][destination..end]);
-    features.extend_from_slice(&group.rows[sibling][destination..end]);
-    features.push(margin);
-    assert_eq!(features.len(), RELIABILITY_WIDTH);
+    let action = civvis::decision_features::WIDTH;
+    let features = q_override::reliability_features(
+        &group.rows[0][action..],
+        &group.rows[sibling][action..],
+        margin,
+    )
+    .to_vec();
     Example {
         game: group.game,
         features,
@@ -399,28 +386,17 @@ fn game_weights(examples: &[Example]) -> Vec<f64> {
         .collect()
 }
 
-#[derive(Clone, Serialize)]
-struct ReliabilityModel {
-    means: Vec<f64>,
-    stddevs: Vec<f64>,
-    weights: Vec<f64>,
-    intercept: f64,
-    constant_probability: f64,
-}
-
-impl ReliabilityModel {
-    fn probability(&self, features: &[f64]) -> f64 {
-        let logit = self
-            .weights
-            .iter()
-            .zip(&self.means)
-            .zip(&self.stddevs)
-            .zip(features)
-            .fold(self.intercept, |sum, (((weight, mean), stddev), value)| {
-                sum + weight * (value - mean) / stddev
-            });
-        sigmoid(logit)
-    }
+fn probability(model: &ReliabilityModel, features: &[f64]) -> f64 {
+    let logit = model
+        .weights
+        .iter()
+        .zip(&model.means)
+        .zip(&model.stddevs)
+        .zip(features)
+        .fold(model.intercept, |sum, (((weight, mean), stddev), value)| {
+            sum + weight * (value - mean) / stddev
+        });
+    sigmoid(logit)
 }
 
 fn fit(examples: &[Example], steps: usize, rate: f64, l2: f64, quiet: bool) -> ReliabilityModel {
@@ -465,7 +441,7 @@ fn fit(examples: &[Example], steps: usize, rate: f64, l2: f64, quiet: bool) -> R
         let mut intercept_gradient = 0.0;
         let mut loss = 0.0;
         for (example, sample_weight) in examples.iter().zip(&sample_weights) {
-            let probability = model.probability(&example.features);
+            let probability = probability(&model, &example.features);
             let residual = probability - example.target;
             intercept_gradient += sample_weight * residual;
             for (((gradient, mean), stddev), value) in gradient
@@ -526,7 +502,7 @@ fn out_of_fold(examples: &[Example], steps: usize, rate: f64, l2: f64) -> Vec<Pr
                 held_games.insert(example.game);
                 held_decisions += 1;
                 predictions[index] = Some(Prediction {
-                    probability: model.probability(&example.features),
+                    probability: probability(&model, &example.features),
                     constant_probability: model.constant_probability,
                 });
             }
@@ -675,6 +651,8 @@ fn percentile(sorted: &[f64], quantile: f64) -> f64 {
 }
 
 struct Report {
+    games: usize,
+    decisions: usize,
     lift: f64,
     lift_se: f64,
     override_rate: f64,
@@ -741,12 +719,37 @@ fn report(examples: &[Example], predictions: &[Prediction], threshold: f64, labe
          doctrine outcomes +/=/− {doctrine_wins}/{doctrine_ties}/{doctrine_losses}"
     );
     Report {
+        games: games.len(),
+        decisions,
         lift,
         lift_se,
         override_rate,
         raw_brier,
         constant_brier,
         reliability_brier,
+    }
+}
+
+fn gate_evidence(
+    report: &Report,
+    profile: &str,
+    seed: u64,
+    games: usize,
+    passed: bool,
+) -> GateEvidence {
+    assert_eq!(report.games, games);
+    GateEvidence {
+        profile: profile.to_string(),
+        seed,
+        games,
+        decisions: report.decisions,
+        passed,
+        raw_brier: report.raw_brier,
+        constant_brier: report.constant_brier,
+        reliability_brier: report.reliability_brier,
+        lift: report.lift,
+        lift_se: report.lift_se,
+        override_rate: report.override_rate,
     }
 }
 
@@ -764,22 +767,6 @@ fn external_pass(report: &Report) -> bool {
         && report.override_rate >= 0.05
 }
 
-#[derive(Serialize)]
-struct Artifact<'a> {
-    schema: &'static str,
-    ranker_schema: &'a str,
-    ranker_weights: &'a [f64],
-    ranker_feature_width: usize,
-    reliability_feature_width: usize,
-    replicas: usize,
-    folds: usize,
-    steps: usize,
-    rate: f64,
-    l2: f64,
-    override_probability: f64,
-    reliability: &'a ReliabilityModel,
-}
-
 fn write_artifact(
     path: &str,
     ranker: &FrozenRanker,
@@ -788,12 +775,21 @@ fn write_artifact(
     rate: f64,
     l2: f64,
     threshold: f64,
+    development: GateEvidence,
+    selection: GateEvidence,
+    deployment: GateEvidence,
 ) {
     let artifact = Artifact {
-        schema: "civvis-q-override-v1",
-        ranker_schema: &ranker.schema,
-        ranker_weights: &ranker.weights,
+        schema: q_override::SCHEMA.to_string(),
+        ranker_schema: ranker.schema.clone(),
+        ranker_fingerprint: q_override::ranker_fingerprint(
+            &ranker.weights,
+            ranker.feature_width,
+            ranker.replicas,
+        ),
+        ranker_weights: ranker.weights.clone(),
         ranker_feature_width: ranker.feature_width,
+        reliability_features: RELIABILITY_FEATURES.map(str::to_string).to_vec(),
         reliability_feature_width: RELIABILITY_WIDTH,
         replicas: ranker.replicas,
         folds: FOLDS,
@@ -801,20 +797,36 @@ fn write_artifact(
         rate,
         l2,
         override_probability: threshold,
-        reliability: model,
+        reliability: model.clone(),
+        qualification: Qualification {
+            status: "qualified".to_string(),
+            development,
+            selection,
+            deployment,
+        },
     };
     if let Some(parent) = std::path::Path::new(path).parent() {
         if !parent.as_os_str().is_empty() {
             let _ = fs::create_dir_all(parent);
         }
     }
-    let json = serde_json::to_string(&artifact).expect("override artifact serializes");
-    fs::File::create(path)
-        .and_then(|mut file| file.write_all(json.as_bytes()))
+    let json = serde_json::to_vec(&artifact).expect("override artifact serializes");
+    let destination = std::path::Path::new(path);
+    let temporary = destination.with_extension("qualified.tmp");
+    fs::File::create(&temporary)
+        .and_then(|mut file| {
+            file.write_all(&json)?;
+            file.sync_all()
+        })
+        .and_then(|()| fs::rename(&temporary, destination))
         .unwrap_or_else(|error| {
             eprintln!("q_override_train: cannot write {path}: {error}");
             std::process::exit(2);
         });
+    q_override::QualifiedQOverride::load(path).unwrap_or_else(|error| {
+        eprintln!("q_override_train: wrote an unloadable artifact: {error}");
+        std::process::exit(2);
+    });
     println!("wrote {path}");
 }
 
@@ -848,19 +860,22 @@ fn load_experiment_data(
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     let ranker_path = text(&args, "--ranker", "/tmp/q-pairwise-base.json");
-    let ranker_data_path = text(&args, "--ranker-data", "/tmp/q-standard.csv");
-    let context_data_path = text(&args, "--context-data", "/tmp/q-context.csv");
+    let development_path = text(
+        &args,
+        "--development-data",
+        "/tmp/q-override-development.csv",
+    );
     let selection_path = args
         .iter()
         .position(|arg| arg == "--selection-data")
         .and_then(|index| args.get(index + 1))
         .cloned();
-    let external_path = args
+    let deployment_path = args
         .iter()
-        .position(|arg| arg == "--external-data")
+        .position(|arg| arg == "--deployment-data")
         .and_then(|index| args.get(index + 1))
         .cloned();
-    let out = text(&args, "--out", "/tmp/q-override.json");
+    let out = text(&args, "--out", "/tmp/q-override-qualified.json");
     let steps = number(&args, "--steps", 6_000);
     let rate = decimal(&args, "--rate", 0.05);
     let l2 = decimal(&args, "--l2", 0.02);
@@ -868,7 +883,7 @@ fn main() {
     if steps != 6_000
         || (rate - 0.05).abs() > EPS
         || (l2 - 0.02).abs() > EPS
-        || (threshold - 0.70).abs() > EPS
+        || (threshold - OVERRIDE_PROBABILITY).abs() > EPS
     {
         eprintln!(
             "q_override_train: preregistration fixes steps=6000, rate=0.05, l2=0.02, threshold=0.70"
@@ -883,49 +898,16 @@ fn main() {
         "frozen {ranker_path}: width {}, {} replicas, keep {}, raw threshold {:.2}",
         ranker.feature_width, ranker.replicas, ranker.keep, ranker.override_probability
     );
-    let ranker_data = load_experiment_data(
-        &ranker_data_path,
+    let development_data = load_experiment_data(
+        &development_path,
         &ranker,
-        RANKER_SEED,
-        RANKER_GAMES,
-        "ranker corpus",
+        DEVELOPMENT_SEED,
+        DEVELOPMENT_GAMES,
+        "development",
     );
-    let heldout: Vec<Group> = ranker_data
-        .groups
-        .into_iter()
-        .filter(|group| old_holdout(group.game))
-        .collect();
-    let heldout_games = heldout
-        .iter()
-        .map(|group| group.game)
-        .collect::<BTreeSet<_>>()
-        .len();
-    if heldout_games != 20 || heldout.len() != 76 {
-        eprintln!(
-            "q_override_train: old hash holdout changed: {heldout_games} games / {} decisions",
-            heldout.len()
-        );
-        std::process::exit(2);
-    }
-    let context = load_experiment_data(
-        &context_data_path,
-        &ranker,
-        CONTEXT_SEED,
-        CONTEXT_GAMES,
-        "context corpus",
-    );
-    if context.groups.len() != 125 {
-        eprintln!(
-            "q_override_train: context corpus changed: {} decisions, expected 125",
-            context.groups.len()
-        );
-        std::process::exit(2);
-    }
-    let mut development_groups = heldout;
-    development_groups.extend(context.groups);
-    let development = examples(&ranker, &development_groups);
+    let development = examples(&ranker, &development_data.groups);
     println!(
-        "development: {} decisions in {} games, reliability width {RELIABILITY_WIDTH}",
+        "development: {} decisions in {} games, fixed reliability width {RELIABILITY_WIDTH}",
         development.len(),
         development
             .iter()
@@ -935,37 +917,24 @@ fn main() {
     );
     let oof_predictions = out_of_fold(&development, steps, rate, l2);
     let oof_report = report(&development, &oof_predictions, threshold, "out-of-fold");
-    let mut old_examples = Vec::new();
-    let mut old_predictions = Vec::new();
-    let mut context_examples = Vec::new();
-    let mut context_predictions = Vec::new();
-    for (example, prediction) in development.iter().zip(&oof_predictions) {
-        if example.game < CONTEXT_SEED {
-            old_examples.push(example.clone());
-            old_predictions.push(*prediction);
-        } else {
-            context_examples.push(example.clone());
-            context_predictions.push(*prediction);
-        }
-    }
-    report(
-        &old_examples,
-        &old_predictions,
-        threshold,
-        "out-of-fold prior holdout",
-    );
-    report(
-        &context_examples,
-        &context_predictions,
-        threshold,
-        "out-of-fold independent context",
-    );
     let oof_pass = standard_pass(&oof_report);
     println!(
         "out-of-fold gate: {}",
         if oof_pass { "PASS" } else { "FAIL" }
     );
 
+    let Some(selection_path) = selection_path.as_deref() else {
+        if deployment_path.is_some() {
+            eprintln!("q_override_train: deployment data requires a passing selection corpus");
+            std::process::exit(2);
+        }
+        println!("selection and deployment data remained unopened; no artifact written");
+        return;
+    };
+    if !oof_pass {
+        eprintln!("q_override_train: refusing selection data because the out-of-fold gate failed");
+        std::process::exit(3);
+    }
     println!("fitting frozen all-development reliability head");
     let model = fit(&development, steps, rate, l2, false);
     println!(
@@ -983,20 +952,6 @@ fn main() {
             .map(|weight| weight.abs())
             .fold(0.0, f64::max)
     );
-    write_artifact(&out, &ranker, &model, steps, rate, l2, threshold);
-
-    let Some(selection_path) = selection_path.as_deref() else {
-        if external_path.is_some() {
-            eprintln!("q_override_train: external data requires a passing selection corpus");
-            std::process::exit(2);
-        }
-        println!("selection data remained unopened");
-        return;
-    };
-    if !oof_pass {
-        eprintln!("q_override_train: refusing selection data because the out-of-fold gate failed");
-        std::process::exit(3);
-    }
     let selection = load_experiment_data(
         selection_path,
         &ranker,
@@ -1008,7 +963,7 @@ fn main() {
     let selection_predictions: Vec<Prediction> = selection_examples
         .iter()
         .map(|example| Prediction {
-            probability: model.probability(&example.features),
+            probability: probability(&model, &example.features),
             constant_probability: model.constant_probability,
         })
         .collect();
@@ -1024,49 +979,83 @@ fn main() {
         if selection_pass { "PASS" } else { "FAIL" }
     );
 
-    if let Some(external_path) = external_path.as_deref() {
-        if !selection_pass {
-            eprintln!(
-                "q_override_train: refusing external data because the Standard selection gate failed"
-            );
-            std::process::exit(3);
-        }
-        let external = load_experiment_data(
-            external_path,
-            &ranker,
-            EXTERNAL_SEED,
-            EXTERNAL_GAMES,
-            "external",
+    if !selection_pass {
+        eprintln!(
+            "q_override_train: refusing deployment data because the Standard selection gate failed"
         );
-        let external_examples = examples(&ranker, &external.groups);
-        let external_predictions: Vec<Prediction> = external_examples
-            .iter()
-            .map(|example| Prediction {
-                probability: model.probability(&example.features),
-                constant_probability: model.constant_probability,
-            })
-            .collect();
-        let external_report = report(
-            &external_examples,
-            &external_predictions,
-            threshold,
-            "external",
-        );
-        println!(
-            "external gate: {}",
-            if external_pass(&external_report) {
-                "PASS"
-            } else {
-                "FAIL"
-            }
-        );
+        std::process::exit(3);
     }
+    let Some(deployment_path) = deployment_path.as_deref() else {
+        println!("deployment data remained unopened; no artifact written");
+        return;
+    };
+    let deployment = load_experiment_data(
+        deployment_path,
+        &ranker,
+        DEPLOYMENT_SEED,
+        DEPLOYMENT_GAMES,
+        "deployment",
+    );
+    let deployment_examples = examples(&ranker, &deployment.groups);
+    let deployment_predictions: Vec<Prediction> = deployment_examples
+        .iter()
+        .map(|example| Prediction {
+            probability: probability(&model, &example.features),
+            constant_probability: model.constant_probability,
+        })
+        .collect();
+    let deployment_report = report(
+        &deployment_examples,
+        &deployment_predictions,
+        threshold,
+        "deployment",
+    );
+    let deployment_pass = external_pass(&deployment_report);
+    println!(
+        "deployment gate: {}",
+        if deployment_pass { "PASS" } else { "FAIL" }
+    );
+    if !deployment_pass {
+        eprintln!("q_override_train: deployment gate failed; no artifact written");
+        std::process::exit(3);
+    }
+
+    write_artifact(
+        &out,
+        &ranker,
+        &model,
+        steps,
+        rate,
+        l2,
+        threshold,
+        gate_evidence(
+            &oof_report,
+            "standard_development_oof",
+            DEVELOPMENT_SEED,
+            DEVELOPMENT_GAMES,
+            oof_pass,
+        ),
+        gate_evidence(
+            &selection_report,
+            "standard_selection",
+            SELECTION_SEED,
+            SELECTION_GAMES,
+            selection_pass,
+        ),
+        gate_evidence(
+            &deployment_report,
+            "online_deployment",
+            DEPLOYMENT_SEED,
+            DEPLOYMENT_GAMES,
+            deployment_pass,
+        ),
+    );
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
-        fit, fold, game_weights, old_holdout, standard_pass, superiority_target, Example, Report,
+        fit, fold, game_weights, probability, standard_pass, superiority_target, Example, Report,
         RELIABILITY_WIDTH,
     };
 
@@ -1081,14 +1070,6 @@ mod tests {
             sibling_returns: vec![target; 4],
             sibling: 1,
         }
-    }
-
-    #[test]
-    fn old_hash_split_reproduces_the_frozen_ranker_holdout() {
-        let games: Vec<u64> = (946_000..946_064)
-            .filter(|game| old_holdout(*game))
-            .collect();
-        assert_eq!(games.len(), 20);
     }
 
     #[test]
@@ -1116,8 +1097,8 @@ mod tests {
             example(4, 1.0, 0.9),
         ];
         let model = fit(&training, 6_000, 0.05, 0.02, true);
-        assert!(model.probability(&training[3].features) > 0.70);
-        assert!(model.probability(&training[0].features) < 0.30);
+        assert!(probability(&model, &training[3].features) > 0.70);
+        assert!(probability(&model, &training[0].features) < 0.30);
     }
 
     #[test]
@@ -1136,6 +1117,8 @@ mod tests {
     #[test]
     fn development_gate_requires_calibration_lift_and_coverage() {
         let mut report = Report {
+            games: 10,
+            decisions: 20,
             lift: 0.01,
             lift_se: 0.0,
             override_rate: 0.05,

@@ -7,6 +7,7 @@ use super::{Ai, BasicAi, BasicUnitPlanState, ForceReport, PlanReport, UnitDoctri
 use crate::belief::BeliefState;
 use crate::name::Name;
 use crate::parallel::WorkPool;
+use crate::q_override::QualifiedQOverride;
 use crate::game::{
     Action, ActionFamilies, CityDirective, CityRole, CongressResolution, DiplomaticDeal, Game, Item,
 };
@@ -15,6 +16,7 @@ use crate::rules::Yields;
 use crate::think;
 use crate::Pos;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::path::Path;
 use std::sync::Arc;
 
 /// Local strength ratio a force group needs before it will advance or press an
@@ -1320,6 +1322,22 @@ impl AdvancedAi {
         let mut ai = Self::envoy_composite();
         ai.fog_honest_pressure = true;
         ai
+    }
+
+    /// Install an action-advantage head only after the artifact loader has
+    /// verified every embedded evidence gate. The ordinary constructor never
+    /// searches for this file, so a diagnostic fit cannot affect production.
+    pub fn with_qualified_q_override_dir(dir: impl AsRef<Path>) -> Result<AdvancedAi, String> {
+        let model = QualifiedQOverride::load_dir(dir)?;
+        let mut ai = Self::new();
+        ai.base.set_q_override(Some(Arc::new(model)));
+        Ok(ai)
+    }
+
+    /// Explicit fail-closed deployment boundary. Missing, malformed, stale,
+    /// or unqualified files produce the promoted scripted expert exactly.
+    pub fn qualified_q_override_or_expert(dir: impl AsRef<Path>) -> AdvancedAi {
+        Self::with_qualified_q_override_dir(dir).unwrap_or_else(|_| Self::new())
     }
 
     pub fn with_weights_and_target(weights: Weights, target: VictoryTarget) -> AdvancedAi {
@@ -13400,6 +13418,25 @@ impl AdvancedAi {
         } else {
             self.force_groups.clear();
         }
+        // Match the counterfactual emitter's objective contract exactly: the
+        // current force destinations plus threatened/target cities, sorted
+        // and deduplicated before any unit move is scored.
+        let mut q_objectives = self
+            .force_groups
+            .iter()
+            .map(|group| group.objective)
+            .collect::<Vec<_>>();
+        for city in [plan.threatened_city, plan.target_city]
+            .into_iter()
+            .flatten()
+        {
+            if let Some(city) = g.cities.get(&city) {
+                q_objectives.push(city.pos);
+            }
+        }
+        q_objectives.sort_unstable();
+        q_objectives.dedup();
+        self.base.set_q_override_objectives(q_objectives);
         self.force_groups_dirty = false;
         let religious_offensive = self.religious_offensive_posture(g, pid, plan.strategy);
         // Settlement feasibility is an empire/map question, not a unit
@@ -21930,6 +21967,29 @@ mod tests {
         let mut parallel = serial.clone();
         let mut serial_ais = AdvancedAi::fleet_parallel(&serial, 1);
         let mut parallel_ais = AdvancedAi::fleet_parallel(&parallel, 4);
+
+        run_game(&mut serial, &mut serial_ais);
+        run_game(&mut parallel, &mut parallel_ais);
+
+        assert_eq!(serial.log, parallel.log);
+        assert_eq!(
+            serde_json::to_value(&serial).unwrap(),
+            serde_json::to_value(&parallel).unwrap()
+        );
+    }
+
+    #[test]
+    fn qualified_q_override_replays_identically_across_worker_counts() {
+        let mut serial = Game::new(2, 20, 14, 73_001, 45, 1);
+        let mut parallel = serial.clone();
+        let model = Arc::new(
+            QualifiedQOverride::from_artifact(crate::q_override::valid_test_artifact()).unwrap(),
+        );
+        let mut serial_ais = AdvancedAi::fleet_parallel(&serial, 1);
+        let mut parallel_ais = AdvancedAi::fleet_parallel(&parallel, 4);
+        for ai in serial_ais.iter_mut().chain(&mut parallel_ais) {
+            ai.base.set_q_override(Some(Arc::clone(&model)));
+        }
 
         run_game(&mut serial, &mut serial_ais);
         run_game(&mut parallel, &mut parallel_ais);

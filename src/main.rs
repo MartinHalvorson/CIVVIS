@@ -27,7 +27,9 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// constructor, then after promoting the separately frozen fog-pressure arm.
 /// `AdvancedAi::legacy()` still constructs through `configured` with every
 /// treatment disabled; its existing shared decision behavior is unchanged.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x1a33_fee0_5bda_2169;
+// Re-pinned after adding the default-empty qualified action-override hook.
+// Legacy construction never installs an artifact, so this path is inert.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xfc00_9428_69ab_c4c7;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {

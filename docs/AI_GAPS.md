@@ -499,3 +499,12 @@ The next ranked set is:
    status to evaluator names and retain external games before broader claims.
 
 The next iteration takes item 1.
+
+That iteration is now preregistered and implemented at the trust boundary.
+`advanced_q_override` can construct only from a v2 artifact carrying passing
+development, blind Standard-selection, and untouched Online-deployment
+evidence. Its reliability input is a fixed 13-term causal-delta row, down from
+the failed 105-term absolute-context row, and it uses 192/96/96 independent
+games. Until those gates pass, both permissive runtime construction and a
+missing artifact execute production `advanced` exactly, while strict evaluator
+construction reports the learned arm unavailable.

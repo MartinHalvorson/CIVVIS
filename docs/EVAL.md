@@ -6733,3 +6733,75 @@ Every game reached a recorded result without a panic. The sample included
 science, culture, religion, and score outcomes, 146 wars, and 40 city captures
 (four of them capitals), so the health check exercised rather than avoided
 the strategic pressure and combat paths changed in this loop.
+
+## 2026-07-31 — PRE-REGISTRATION: qualified low-dimensional move override
+
+The prior 105-term reliability head overfit 52 development games and wrote a
+diagnostic v1 artifact before its gate failed. This successor repairs both
+problems before reading a new result. A runtime artifact now includes its
+qualification evidence and is loadable only when grouped development, blind
+Standard selection, and untouched Online deployment all pass. A missing,
+malformed, stale, failed, or merely diagnostic file executes the promoted
+scripted `advanced` expert exactly; the strict evaluator refuses to call that
+fallback `advanced_q_override`.
+
+The frozen destination ranker remains the deterministic
+`civvis-q-pairwise-v1` model trained on Standard seeds 946000–946063 with 80
+epochs, batch 32, rate 0.05, L2 0.0001, four doctrine replicas, destination
+features only, and raw threshold 0.70. Regeneration must reproduce its recorded
+SHA-256 `2c93f4456b72d1acf548f1994c9ce49569fe158c7b8eb18f4c903b606ce1c463`.
+It is frozen before any new reliability game is opened.
+
+The reliability representation is fixed at 13 terms rather than 105: raw rank
+margin, then sibling-minus-expert objective progress, hostile threat, hostile
+coverage, adjacent friendly strength, adjacent friend count, attack margin,
+ranged support, terrain defense, exits, frontier exposure, hostile progress,
+and home progress. It excludes empire aggregates, duplicated absolute
+destinations, and actor-role flags. Normalization remains training-fold-only;
+the deterministic five-fold logistic fit remains 6,000 full-batch steps at
+rate 0.05 with L2 0.02 and inverse decision-count game weights. The override
+threshold remains 0.70.
+
+New data are materially wider in independent games and fixed before collection:
+
+- development: 192 four-player 44x28 Standard games, seeds
+  1240000–1240191, no city-states, observations at turns 50 and 100;
+- blind selection: 96 otherwise identical games, seeds 1240192–1240287,
+  generated only after the out-of-fold development gate passes;
+- untouched deployment: 96 six-player 74x46 Online games, seeds
+  1241000–1241095, nine city-states, observations at turns 70 and 130,
+  generated only after Standard selection passes;
+- every observation uses three same-unit alternatives, four distinct doctrine
+  rotations, an 80-round horizon, and zero tolerated rejected branches,
+  repeat mismatches, or observation errors.
+
+The exact collection commands are:
+
+```sh
+target/release/q_counterfactual --games 192 --players 4 \
+  --width 44 --height 28 --turns 200 --city-states 0 --speed standard \
+  --warmup 50 --spacing 50 --decisions-per-game 2 \
+  --alternatives 3 --horizon 80 --replicas 4 \
+  --seed 1240000 --jobs 8 --out /tmp/q-override-development.csv
+
+target/release/q_counterfactual --games 96 --players 4 \
+  --width 44 --height 28 --turns 200 --city-states 0 --speed standard \
+  --warmup 50 --spacing 50 --decisions-per-game 2 \
+  --alternatives 3 --horizon 80 --replicas 4 \
+  --seed 1240192 --jobs 8 --out /tmp/q-override-selection.csv
+
+target/release/q_counterfactual --games 96 --players 6 \
+  --width 74 --height 46 --turns 250 --city-states 9 --speed online \
+  --warmup 70 --spacing 60 --decisions-per-game 2 \
+  --alternatives 3 --horizon 80 --replicas 4 \
+  --seed 1241000 --jobs 8 --out /tmp/q-override-deployment.csv
+```
+
+Development and selection each require reliability Brier strictly below both
+the raw margin and fold/full-development constant, positive game-macro return
+lift over the expert, and at least 5% game-macro coverage. Deployment requires
+the same conditions plus a positive 95% lower confidence bound on lift. Only
+all three passes atomically write `civvis-q-override-qualified-v2`; otherwise
+no loadable artifact is written and no gameplay A/B is authorized. A qualified
+artifact earns a separate 300-map-per-profile mirrored gameplay matrix against
+`advanced`; it does not itself authorize production promotion.

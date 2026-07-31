@@ -2,6 +2,7 @@
 //! sparring partner, not a fair-play agent.
 use crate::name::{AsName, Name};
 use crate::game::{effective_strength, Action, ActionFamilies, Game, Item};
+use crate::q_override::QualifiedQOverride;
 use crate::reasoning::{plain, Journal};
 use crate::rng::Rng;
 use crate::think;
@@ -9,6 +10,7 @@ use crate::Pos;
 use std::cell::RefCell;
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
+use std::sync::Arc;
 
 /// A bounded first-step initiative bonus breaks positional and formation ties
 /// in favor of doing something useful with the turn. Four points can overcome
@@ -1182,6 +1184,13 @@ pub struct BasicAi {
     /// needs four. Without this floor the rush plans a war it never builds
     /// the army for, which is the failure the census caught.
     pub(crate) rush_military_floor: usize,
+    /// A model reaches movement only after its artifact passed every
+    /// qualification gate. `None` is the exact scripted policy, not an
+    /// untrained approximation.
+    q_override: Option<Arc<QualifiedQOverride>>,
+    /// High-level destinations in force for the current AdvancedAi turn.
+    /// Empty for BasicAi and for any decision without a strategic objective.
+    q_override_objectives: Vec<Pos>,
     /// Where this agent tells an observer what it is doing. Off unless a
     /// spectator attached one; see [`crate::reasoning`].
     pub(crate) journal: Journal,
@@ -1973,6 +1982,8 @@ impl BasicAi {
             last_path_step_from: RefCell::new(HashMap::new()),
             unit_motion: BTreeMap::new(),
             rush_military_floor: 0,
+            q_override: None,
+            q_override_objectives: Vec::new(),
             journal: Journal::default(),
         }
     }
@@ -1992,6 +2003,8 @@ impl BasicAi {
             last_path_step_from: RefCell::new(HashMap::new()),
             unit_motion: BTreeMap::new(),
             rush_military_floor: 0,
+            q_override: None,
+            q_override_objectives: Vec::new(),
             journal: Journal::default(),
         }
     }
@@ -2032,6 +2045,24 @@ impl Ai for BasicAi {
 }
 
 impl BasicAi {
+    pub(crate) fn set_q_override(&mut self, model: Option<Arc<QualifiedQOverride>>) {
+        self.q_override = model;
+    }
+
+    pub(crate) fn set_q_override_objectives(&mut self, objectives: Vec<Pos>) {
+        self.q_override_objectives = objectives;
+    }
+
+    fn qualified_move(&self, g: &Game, pid: usize, expert: &Action) -> Action {
+        if self.minor || self.barb {
+            return expert.clone();
+        }
+        self.q_override
+            .as_ref()
+            .map(|model| model.decide(g, pid, &self.q_override_objectives, expert).action)
+            .unwrap_or_else(|| expert.clone())
+    }
+
     fn take_turn_inner(&mut self, g: &mut Game, pid: usize) {
         self.minor = g.players[pid].is_minor;
         // Free Cities are diplomatically hostile like barbarians, but unlike
@@ -5077,7 +5108,9 @@ impl BasicAi {
                     self.move_beats_holding(g, uid, sc, stay)
                 } =>
             {
-                g.apply(pid, &Action::Move { unit: uid, to: n }).is_ok()
+                let expert = Action::Move { unit: uid, to: n };
+                let movement = self.qualified_move(g, pid, &expert);
+                g.apply(pid, &movement).is_ok()
             }
             _ => {
                 // Long-range search is the fallback, not the hot path: most
@@ -5088,8 +5121,12 @@ impl BasicAi {
                     _ => return false,
                 };
                 let routed = score(g, n) + 2.5;
-                self.move_beats_holding(g, uid, routed, stay)
-                    && g.apply(pid, &Action::Move { unit: uid, to: n }).is_ok()
+                if !self.move_beats_holding(g, uid, routed, stay) {
+                    return false;
+                }
+                let expert = Action::Move { unit: uid, to: n };
+                let movement = self.qualified_move(g, pid, &expert);
+                g.apply(pid, &movement).is_ok()
             }
         }
     }
@@ -5155,6 +5192,7 @@ impl BasicAi {
         } else {
             Action::Move { unit: uid, to }
         };
+        let movement = self.qualified_move(g, pid, &movement);
         if g.apply(pid, &movement).is_err() {
             return false;
         }

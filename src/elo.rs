@@ -38,7 +38,7 @@ pub const BUILTIN_AIS: [&str; 10] = [
 /// tournament ratings. Keeping them out of `BUILTIN_AIS` prevents a control
 /// factory from being pooled into the same player/leader rating key as
 /// its treatment.
-pub const EVAL_ONLY_AIS: [&str; 77] = [
+pub const EVAL_ONLY_AIS: [&str; 78] = [
     "basic_evolved",
     "advanced_pre_envoy_composite",
     "advanced_pre_fog_pressure",
@@ -48,6 +48,7 @@ pub const EVAL_ONLY_AIS: [&str; 77] = [
     "advanced_envoy_priority",
     "advanced_envoy_composite",
     "advanced_fog_pressure",
+    "advanced_q_override",
     "advanced_envoy_economy",
     "advanced_strategic_commitment",
     "advanced_evolved_commitment",
@@ -1187,6 +1188,7 @@ fn artifact_effective_alias_from(
     net: bool,
     wide_net: bool,
     league: bool,
+    q_override: bool,
 ) -> Option<&'static str> {
     let basic_fallback = if champion { "basic_evolved" } else { "basic" };
     let advanced_fallback = if champion {
@@ -1197,6 +1199,11 @@ fn artifact_effective_alias_from(
     match name {
         "advanced_envoy_composite" => Some("advanced_pre_fog_pressure"),
         "advanced_fog_pressure" => Some("advanced"),
+        "advanced_q_override" => Some(if q_override {
+            "advanced_q_override"
+        } else {
+            "advanced"
+        }),
         "evolved" | "advanced_evolved" => Some(advanced_fallback),
         "basic_evolved" => Some(basic_fallback),
         "neural" => Some(if net { "neural" } else { basic_fallback }),
@@ -1292,6 +1299,9 @@ fn build_effective_ai(name: &str, seed: u64, dir: &str) -> Option<Box<dyn Ai>> {
         // First treatment created against the promoted composite. It changes
         // only the information source for Recovery/Bastion pressure.
         "advanced_fog_pressure" => Box::new(AdvancedAi::fog_pressure()),
+        "advanced_q_override" => {
+            Box::new(AdvancedAi::with_qualified_q_override_dir(dir).ok()?)
+        }
         "advanced_envoy_economy" => {
             let mut weights = Weights::default();
             weights.policy_deck = crate::ai::PolicyDeck::Live;
@@ -2127,6 +2137,7 @@ pub enum EvaluatorSource {
     ScoreShare,
     ValueNet25,
     ValueNet34,
+    QualifiedActionAdvantage13,
 }
 
 /// Behavior-defining axes of one fully resolved evaluator arm.
@@ -2171,6 +2182,12 @@ impl AgentSpec {
                 architecture: Architecture::Advanced,
                 weights: WeightSource::Legacy,
                 evaluator: EvaluatorSource::Scripted,
+                treatment: None,
+            },
+            "advanced_q_override" => AgentSpec {
+                architecture: Architecture::Advanced,
+                weights: WeightSource::Stock,
+                evaluator: EvaluatorSource::QualifiedActionAdvantage13,
                 treatment: None,
             },
             "basic" => AgentSpec {
@@ -2526,6 +2543,7 @@ fn artifact_statuses(
     net: bool,
     wide_net: bool,
     league: bool,
+    q_override: bool,
 ) -> Vec<ArtifactStatus> {
     let genome = |definitional| ArtifactStatus {
         file: CHAMPION_FILE,
@@ -2538,6 +2556,11 @@ fn artifact_statuses(
         definitional,
     };
     match name {
+        "advanced_q_override" => vec![ArtifactStatus {
+            file: crate::q_override::FILE,
+            found: q_override,
+            definitional: true,
+        }],
         "evolved"
         | "advanced_evolved"
         | "basic_evolved"
@@ -2577,11 +2600,19 @@ fn resolve_provenance(name: &str, dir: &str) -> AgentProvenance {
     let wide_net =
         crate::valuenet::ValueNet::load_width(dir, crate::decision_features::WIDTH).is_some();
     let league = league_generalist().is_some();
-    let effective = artifact_effective_alias_from(name, champion, net, wide_net, league)
+    let q_override = crate::q_override::QualifiedQOverride::load_dir(dir).is_ok();
+    let effective = artifact_effective_alias_from(
+        name,
+        champion,
+        net,
+        wide_net,
+        league,
+        q_override,
+    )
         .unwrap_or_else(|| registered_name(name).unwrap_or("basic"));
     AgentProvenance {
         requested: name.to_string(),
-        artifacts: artifact_statuses(name, champion, net, wide_net, league),
+        artifacts: artifact_statuses(name, champion, net, wide_net, league, q_override),
         effective,
     }
 }
@@ -3318,6 +3349,53 @@ mod tests {
         let fallback = builtin_arm_degraded("policy", 1, dir).unwrap();
         assert_eq!(fallback.provenance.effective, "advanced");
         assert_eq!(fallback.spec, builtin_spec("advanced", dir).unwrap());
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn q_override_provenance_requires_a_qualified_not_merely_present_artifact() {
+        let dir = "target/test-agent-spec-q-override";
+        let _ = fs::remove_dir_all(dir);
+        fs::create_dir_all(dir).unwrap();
+
+        fs::write(
+            crate::q_override::artifact_path(dir),
+            br#"{"schema":"civvis-q-override-qualified-v2"}"#,
+        )
+        .unwrap();
+        let malformed = builtin_provenance("advanced_q_override", dir);
+        assert!(malformed.degraded());
+        assert_eq!(malformed.effective, "advanced");
+        assert!(matches!(
+            builtin_arm("advanced_q_override", 1, dir),
+            Err(BuiltinAiError::Degraded(_))
+        ));
+        assert_eq!(
+            builtin_arm_degraded("advanced_q_override", 1, dir)
+                .unwrap()
+                .spec,
+            builtin_spec("advanced", dir).unwrap()
+        );
+
+        let artifact = crate::q_override::valid_test_artifact();
+        fs::write(
+            crate::q_override::artifact_path(dir),
+            serde_json::to_vec(&artifact).unwrap(),
+        )
+        .unwrap();
+        let qualified = builtin_provenance("advanced_q_override", dir);
+        assert!(!qualified.degraded());
+        assert_eq!(qualified.effective, "advanced_q_override");
+        let arm = builtin_arm("advanced_q_override", 1, dir).unwrap();
+        assert_eq!(arm.provenance, qualified);
+        assert_eq!(
+            arm.spec.evaluator,
+            EvaluatorSource::QualifiedActionAdvantage13
+        );
+        assert_eq!(
+            arm.spec.differing_axes(&builtin_spec("advanced", dir).unwrap()),
+            vec!["evaluator"]
+        );
         fs::remove_dir_all(dir).unwrap();
     }
 
