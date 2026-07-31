@@ -283,10 +283,23 @@ self-comparison guard described in the audit above: it compares effective
 carries, so the guard fires on two agents that differ and stays silent on two
 that do not.
 
-Rollout search is useful research machinery. On the small four-player Standard
-benchmark, `strategic_deep` beat its lower-compute parent by about +45
-Elo-equivalent in a pre-registered run. That is evidence for search on that
-profile, not a universal ranking and not a live-deployment result.
+Rollout search is useful research machinery, and on the small four-player
+Standard benchmark it is the lever with the most evidence behind it. Whether
+buying *more* search than already ships pays is a separate question, and the
+familiar “`strategic_deep` beat `strategic` by about +45 Elo-equivalent”
+cannot settle it, because that comparison is not a budget comparison. Run it
+and `ai_eval` says so itself:
+
+```
+strategic_deep: plays as strategic_deep with untrained defaults (missing valuenet.json)
+strategic:      plays as strategic_score (missing valuenet.json)
+```
+
+One arm blends an untrained default net at 25%; the other falls back to score
+share. They differ in evaluator as well as in search budget. `search_dose
+--only STOCK` is the instrument that answers the budget question, because it
+constructs both `StrategicAi` values in process with the same genome and the
+same net status.
 
 ### Where it is failing
 
