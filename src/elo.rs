@@ -38,7 +38,7 @@ pub const BUILTIN_AIS: [&str; 10] = [
 /// tournament ratings. Keeping them out of `BUILTIN_AIS` prevents a control
 /// factory from being pooled into the same player/leader rating key as
 /// its treatment.
-pub const EVAL_ONLY_AIS: [&str; 73] = [
+pub const EVAL_ONLY_AIS: [&str; 74] = [
     "basic_evolved",
     "advanced_policy_live_control",
     "advanced_envoy_policy",
@@ -81,6 +81,7 @@ pub const EVAL_ONLY_AIS: [&str; 73] = [
     "advanced_league_top",
     "strategic_cheap",
     "advanced_relief_scoped",
+    "advanced_joint_tactics",
     "strategic_score",
     "strategic_doctrine",
     "strategic_joint",
@@ -119,9 +120,12 @@ pub const ELO_SCHEMA_VERSION: u32 = 3;
 /// Version of the game/rating contract, independent of the JSON shape. Bump
 /// this when rules, default setup, or scoring semantics change enough that an
 /// Elo point no longer measures the same experiment.
-pub const ELO_PROTOCOL_VERSION: u32 = 1;
+pub const ELO_PROTOCOL_VERSION: u32 = 2;
 pub const ELO_BASE_RATING: f64 = 1500.0;
 pub const DEFAULT_RATINGS_PATH: &str = "data/elo_ratings.json";
+/// Immutable protocol-v1 baseline retained for historical comparison after
+/// the fog-honest city-pressure repair changed the shared legacy controller.
+pub const HISTORICAL_V1_RATINGS_PATH: &str = "data/elo_ratings_v1.json";
 const LEAGUE_SNAPSHOT_DIR: &str = "data/league";
 const LEAGUE_SNAPSHOT_FILE: &str = "data/league/league.json";
 
@@ -1676,6 +1680,17 @@ pub fn builtin_ai(name: &str, seed: u64) -> Box<dyn Ai> {
             ai.scoped_relief_hold = true;
             Box::new(ai)
         }
+        // Treatment for the tactical-commitment axis: identical to `advanced`
+        // in every other respect, deciding the turn's whole engagement as one
+        // joint problem instead of letting units commit greedily one at a time
+        // in a fixed class order. Paired against `advanced` this isolates the
+        // commitment rule and nothing else — the same per-unit evaluator, the
+        // same weights, the same everything above the battlefield.
+        "advanced_joint_tactics" => {
+            let mut ai = AdvancedAi::new();
+            ai.joint_tactics = true;
+            Box::new(ai)
+        }
         // The denial ablation on the weights the deployment actually plays.
         // Every other arm in `docs/COUNTERING_LEADERS.md` ran on
         // `Weights::default()`, and a genome moves `war_ratio`, `city_target`
@@ -2437,6 +2452,7 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "advanced_food_first" => (Vec::new(), "advanced_food_first"),
         "advanced_v1" => (Vec::new(), "advanced_v1"),
         "advanced_relief_scoped" => (Vec::new(), "advanced_relief_scoped"),
+        "advanced_joint_tactics" => (Vec::new(), "advanced_joint_tactics"),
         "random" => (Vec::new(), "random"),
         // `builtin_ai` answers every other name with the lightweight agent.
         "basic" => (Vec::new(), "basic"),
@@ -2828,7 +2844,9 @@ fn tournament_event_id(
         })
         .collect::<Vec<_>>()
         .join("|");
-    format!("v1:{run_seed:020}:{game_index:010}:{map_seed:020}:{seats}")
+    format!(
+        "v{ELO_PROTOCOL_VERSION}:{run_seed:020}:{game_index:010}:{map_seed:020}:{seats}"
+    )
 }
 
 /// Run a tournament against the latest shared ledger and atomically checkpoint
@@ -3075,7 +3093,8 @@ mod tests {
         leaderboard, league_generalist, performance_elo, scheduled_seats, seat_schedule,
         wilson_interval, win_shares, EloPool, RatedPlayer, RatingKey, TourneyCfg,
         TournamentProfile, ARTIFACT_DIR, BUILTIN_AIS, CHAMPION_FILE, DEFAULT_RATINGS_PATH,
-        ELO_BASE_RATING, ELO_SCHEMA_VERSION, EVAL_ONLY_AIS, VALUENET_FILE,
+        ELO_BASE_RATING, ELO_SCHEMA_VERSION, EVAL_ONLY_AIS, HISTORICAL_V1_RATINGS_PATH,
+        VALUENET_FILE,
     };
     use crate::rng::Rng;
     use std::collections::BTreeMap;
@@ -3286,7 +3305,7 @@ mod tests {
             // Anything else reaching that state fell through to the
             // catch-all and is claiming to need nothing while quietly
             // needing a net.
-            const SCRIPTED: [&str; 40] = [
+            const SCRIPTED: [&str; 41] = [
                 "advanced",
                 "advanced_policy_live_control",
                 "advanced_envoy_policy",
@@ -3322,6 +3341,7 @@ mod tests {
                 "advanced_league_top",
                 "advanced_parallel_settlers",
                 "advanced_prophet_first",
+                "advanced_joint_tactics",
                 "advanced_relief_scoped",
                 "advanced_settler_first",
                 "advanced_v1",
@@ -4016,8 +4036,8 @@ mod tests {
     }
 
     #[test]
-    fn shipped_ledger_is_the_canonical_standardized_baseline() {
-        let pool = EloPool::load(DEFAULT_RATINGS_PATH).unwrap();
+    fn historical_protocol_v1_ledger_is_preserved() {
+        let pool = EloPool::load(HISTORICAL_V1_RATINGS_PATH).unwrap();
         let expected_cfg = TourneyCfg {
             rating_anchor: Some("advanced_v1".to_string()),
             controller_roster: ["advanced", "advanced_v1", "basic", "random"]
@@ -4027,9 +4047,11 @@ mod tests {
             ..TourneyCfg::default()
         };
         assert_eq!(pool.base_rating, ELO_BASE_RATING);
+        let mut historical_profile = TournamentProfile::from_cfg(&expected_cfg);
+        historical_profile.protocol_version = 1;
         assert_eq!(
             pool.profile,
-            Some(TournamentProfile::from_cfg(&expected_cfg))
+            Some(historical_profile)
         );
         assert!(pool.history_complete);
         assert_eq!(pool.history.len(), 40);
@@ -4061,6 +4083,59 @@ mod tests {
         assert!((advanced.1 - 1708.2).abs() < 0.1);
         assert!((100.0 * advanced.4 - 62.5).abs() < 0.1);
         assert!((100.0 * advanced.5 - 87.7).abs() < 0.1);
+    }
+
+    #[test]
+    fn shipped_protocol_v2_ledger_is_a_canonical_fresh_baseline() {
+        let pool = EloPool::load(DEFAULT_RATINGS_PATH).unwrap();
+        let expected_cfg = TourneyCfg {
+            rating_anchor: Some("advanced_v1".to_string()),
+            controller_roster: ["advanced", "advanced_v1", "basic", "random"]
+                .into_iter()
+                .map(str::to_string)
+                .collect(),
+            ..TourneyCfg::default()
+        };
+        assert_eq!(pool.base_rating, ELO_BASE_RATING);
+        assert_eq!(
+            pool.profile,
+            Some(TournamentProfile::from_cfg(&expected_cfg))
+        );
+        assert!(pool.history_complete);
+        assert_eq!(pool.history.len(), 40);
+        assert!(pool.history.iter().all(|game| {
+            game.id
+                .as_deref()
+                .is_some_and(|id| id.starts_with("v2:"))
+        }));
+        assert_eq!(
+            pool.history.len(),
+            pool.overall
+                .values()
+                .map(|rating| rating.games)
+                .max()
+                .unwrap_or(0) as usize
+        );
+        assert_eq!(
+            pool.overall.keys().map(String::as_str).collect::<Vec<_>>(),
+            vec![
+                "advanced-20260731",
+                "advanced_v1",
+                "basic-20260730",
+                "random-20260730",
+            ]
+        );
+        assert_eq!(pool.ratings.len(), 16);
+
+        let direct = direct_anchor_performance(&pool, "advanced_v1");
+        let advanced = direct
+            .iter()
+            .find(|(player, _, _, _, _, _)| player == "advanced-20260731")
+            .unwrap();
+        assert_eq!((advanced.2, advanced.3), (27.0, 40));
+        assert!((advanced.1 - 1623.6).abs() < 0.1);
+        assert!((100.0 * advanced.4 - 52.0).abs() < 0.1);
+        assert!((100.0 * advanced.5 - 79.9).abs() < 0.1);
     }
 
     #[test]

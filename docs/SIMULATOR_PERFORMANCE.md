@@ -90,17 +90,152 @@ not materially affect this ranking.
 | Opportunity | Current signal | Promising next experiment | Main constraint |
 | --- | --- | --- | --- |
 | Intern effect and rules keys | `memcmp` 9.2%, `Name::new` 1.4%, and `SpecMap::position` 1.2% as exclusive leaves | Intern effect keys when loading rules, then carry typed IDs through the hottest effect queries while preserving lexical serialization | Broad representation change; compare saved comparisons against conversion and indirection cost |
-| Reuse movement and routing state | Traversal class, neighbors, passability, path checks, entry checks, and routing zones form roughly a 6-7% family | Derive a traversal profile once per unit and use generation-stamped arrays/reused search buffers instead of tree maps and fresh vectors | Movement rules have many conditional abilities and diplomatic dependencies |
+| Reuse movement and routing state | Traversal class, neighbors, passability, path checks, entry checks, and routing zones form roughly a 6-7% family | Identify one repeated rule derivation before changing it; generic search buffers and route-local traversal profiles were measured and rejected | Movement rules have many conditional abilities and diplomatic dependencies |
 | Remove targeted allocation and copying | `memmove` 5.9% and allocator leaves are prominent; `units_at` alone is 1.4% | Add narrow `tile_occupied` and callback/iterator queries, then migrate read-only and `is_empty` callers individually | These costs overlap the systems above; a wholesale borrowed API showed no win |
 | Reduce rollout clone cost | Clone alone is 8.5 us, 38% of the optimized no-fog clone-plus-move latency | Share more immutable state or prototype reversible branch deltas/undo for search | High correctness and determinism risk; cloning is currently the isolation boundary |
 | Broaden visibility and yield memoization | Line-of-sight/world-stamp leaves are about 2-3%; yield and adjacency work is fragmented across roughly 3-5% | Extend epoch-keyed memoization and precompute stable adjacency facts | Smaller expected return and potentially high cache-invalidation complexity |
 
 The string/key work is cross-cutting but invasive. With the production catalog
-now retained, movement reuse is the next narrower benchmark-driven project.
-These should be measured independently because removing one source of
-comparison or allocation cost will also shrink the apparent library leaves.
+now retained, no generic routing-state reuse is a standing target: a future
+movement experiment needs one measured repeated derivation first. These should
+be measured independently because removing one source of comparison or
+allocation cost will also shrink the apparent library leaves.
 
 Operationally, independent games should continue to use the existing outer
 `--jobs` parallelism. Production runs should use `--release`; its thin LTO and
 single codegen unit are intentionally more optimized than the faster-building
 `ci` profile used for the comparisons above.
+
+## Where the allocations are (2026-07-31)
+
+Every earlier profile here is a *time* profile — `sample`'s leaf ranking, or
+inclusive timers around suspect functions. Allocation had only ever been
+inferred from `memmove`/`malloc` leaves, which say how much it costs but not
+who is doing it. This is the direct measurement.
+
+**Method, and it is cheap to repeat.** A counting `GlobalAlloc` plus a global
+slot index and an RAII `Tag` that swaps the slot and restores it on drop, so a
+tagged function is charged exclusively and nested tags are charged to the
+innermost. It needs no thread-local — the probe is run under `--jobs 1`, and a
+lazily-initialised thread-local risks allocating inside the allocator. Roughly
+sixty lines in a scratch module plus one tag line per suspect, applied and
+stripped by a script; it must not reach a commit.
+
+**One 6p 74×46 150-turn game allocates 13,728,753 times for 3.09 GB.** Game
+setup is 142k of that, so essentially all of it is play. That is about 5,700
+allocations per seat-turn, and at a plausible 30 ns per malloc/free pair it is
+roughly a tenth of the game's runtime — consistent with the allocator and
+`memmove` leaves in the time profile.
+
+| site | allocations | share | bytes |
+| --- | ---: | ---: | ---: |
+| `advanced_units` | 5,842,083 | **42.6%** | 1.70 GB |
+| the rest of `AdvancedAi::take_turn` | 3,038,944 | 22.1% | 597 MB |
+| `city_yields` | 1,256,361 | 9.2% | 129 MB |
+| `units_at` | 1,076,368 | 7.8% | 4.5 MB |
+| `wdisk` | 817,304 | 6.0% | 128 MB |
+| `begin_turn` | 606,103 | 4.4% | 69 MB |
+| `legal_actions_within` | 325,139 | 2.4% | 51 MB |
+| `player_unit_ids` | 213,378 | 1.6% | 9 MB |
+| `player_city_ids` | 182,495 | 1.3% | 7 MB |
+| `route_step` | 89,702 | 0.7% | 292 MB |
+
+**Two thirds of all allocation is the AI's own decision code**, and
+`advanced_units` alone is 42.6% of it. That agrees with the long-standing
+finding that roughly two thirds of runtime is `AdvancedAi`'s deliberation
+rather than the engine's rules, and it says the largest remaining allocation
+work is in `src/ai/advanced.rs`, not in `src/game.rs`.
+
+**Read the count column, not the byte column.** `route_step` is the warning:
+292 MB — the largest byte figure outside the AI — from only 89,702
+allocations, because each search allocates two dense per-tile vectors. Its
+leaf time is about 1%. Large, short-lived, lazily-faulted buffers are cheap;
+volume of small allocations is what shows up in the allocator leaves.
+`units_at` is the mirror image: 1.08M allocations for 4.5 MB, an average of
+four bytes, because it clones a one- or two-element `Vec<u32>` out of the
+occupancy map.
+
+### Route-search scratch reuse: rejected
+
+The `route_step` byte total also suggested a generation-stamped, worker-local
+scratch buffer for A* and breadth-first routing. The prototype preserved the
+same search ordering and route rules, then compared release serial games with
+six major civilizations, a 74-by-46 map, nine city-states, 150 turns, and
+fixed seeds 7,310,500 through 7,310,514. Removing the per-game elapsed field,
+all fifteen baseline/prototype reports were byte-identical.
+
+| Five-game block | Run order | baseline | scratch prototype |
+| --- | --- | ---: | ---: |
+| 7,310,500–504 | baseline then prototype | 10.15s | 10.91s |
+| 7,310,505–509 | baseline then prototype | 11.42s | 14.93s |
+| 7,310,510–514 | prototype then baseline | 11.03s | 14.75s |
+
+The prototype was slower in every block (40.59s versus 32.60s in aggregate),
+so it was removed. It replaces cheap dense initialization with an extra
+per-tile generation array and a thread-local borrow on every search; for this
+map size, that additional cache traffic loses to the allocator. Future routing
+work should isolate traversal or entry-rule derivation instead of retrying
+generic scratch-buffer reuse.
+
+### Route-local traversal profile: rejected
+
+A follow-up passed the already memoized `TraversalClass` directly into A* and
+breadth-first entry checks, avoiding the memo-map lookup at each neighbor. It
+used the same release workload and three fresh five-game blocks (seeds
+7,310,520 through 7,310,534). Again, every normalized report was
+byte-identical.
+
+| Five-game block | Run order | baseline | direct profile |
+| --- | --- | ---: | ---: |
+| 7,310,520–524 | prototype then baseline | 12.48s | 13.44s |
+| 7,310,525–529 | baseline then prototype | 13.65s | 13.58s |
+| 7,310,530–534 | prototype then baseline | 11.33s | 12.23s |
+
+Two losses and one near-tie (39.25s versus 37.46s aggregate) do not clear the
+regression gate, so this plumbing was also removed. The profile lookup is too
+small relative to the rule checks that remain; future movement work needs a
+measured expensive derivation, not a generic memo lookup.
+
+**What this does and does not license.** It ranks allocation, which is one of
+the two things this codebase has repeatedly found to be worth removing (the
+other being an expensive derivation that is recomputed). It does not by itself
+predict a win: the record already contains a neutral result for removing ~30
+`String` allocations per citizen plan, and a neutral result for a wholesale
+borrowed `units_at`. Take the count column as a ranking of *candidates* and
+still A/B each one interleaved.
+
+### The first thing this profile suggested, measured and rejected
+
+The obvious read of the table is that `units_at` is worth attacking: 1.08M
+allocations, and 82 of its 183 call sites are an immediate `.is_empty()`, so a
+borrow-free `tile_occupied(pos)` removes the allocation entirely at every one
+of them. That is also the experiment the opportunity table above proposes.
+
+It was implemented — `tile_occupied` plus 50 converted sites, leaving
+`src/ai/advanced.rs` alone to avoid a conflicting branch — verified
+byte-identical on nine seed/player combinations, and measured against
+`origin/main` over ten interleaved pairs:
+
+| | main | `tile_occupied` |
+| --- | ---: | ---: |
+| best of 10 | 2.70s | 2.71s |
+| median | 3.69s | 3.71s |
+
+**0.996x best, 0.993x median, 52 of 100 pairs, p = 0.88 — a clean null.**
+Reverted.
+
+**This is the calibration the count column needed, and it should be read
+alongside the table above.** `units_at` allocations average *four bytes*: they
+are one-element `Vec<u32>` clones served straight from the tiny-allocation free
+list, and a million of them cost no measurable time. So allocation *count* is
+not by itself a predictor either — what the record's two paying allocation
+fixes had in common was that the allocation also did work (a `format!` builds
+and copies a string; a deep clone copies a structure). A malloc/free pair on
+its own is nearly free here.
+
+That makes this the eighth consecutive null for "remove cheap per-call work",
+and it narrows the standing rule usefully: **the payer is an expensive
+derivation that is recomputed, not a cheap operation that is frequent — and
+allocation only counts as expensive when something is built.** Applied to the
+table above, the interesting rows are the ones with a high byte-per-allocation
+ratio inside the AI, not `units_at`.

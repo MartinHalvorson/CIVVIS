@@ -15,16 +15,35 @@ use civvis::setup::{self, BaseRuleset, GameSpeed, MapPoles, MapScript, MapSize, 
 /// blend two players into one lifetime average and erase the very improvement
 /// the longitudinal tournament is supposed to expose.
 const DEFAULT_TOURNAMENT_ENTRANTS: &str =
-    "advanced-20260730=advanced,advanced_v1,basic-20260730=basic,random-20260730=random";
+    "advanced-20260731=advanced,advanced_v1,basic-20260730=basic,random-20260730=random";
 
 /// `advanced_v1` freezes the planning configuration, but deliberately shares
 /// the production Basic/Advanced implementation. Pin those sources so a code
 /// edit cannot silently change the longitudinal anchor. If an edit reaches
 /// the legacy path, bump the Elo protocol and start a new ledger; if it is
 /// provably gated away, review that fact before updating this guard.
-/// Re-pinned 2026-07-31 after adding default-off envoy/commitment evaluator
-/// fields; `AdvancedAi::legacy()` leaves each new gate disabled.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xccae_da00_2f1f_712e;
+///
+/// Re-pinned 2026-07-31 twice over, by #667 (fog-honest city pressure) and then
+/// by #663 (the joint tactical search) merging on top of it. The fingerprint
+/// covers the whole of both files, so it is order-dependent: neither PR's value
+/// survives the other's merge, and the second one in has to recompute rather
+/// than keep its own. This is that recomputation.
+///
+/// #663's own edit is provably gated away from the anchor, and that was
+/// **checked, not assumed**: `AdvancedAi::joint_tactics` defaults to `false`, so
+/// the only unconditional additions to the legacy path are inert struct fields,
+/// a `clear()` on one of them, and a set membership test that is always empty.
+/// Verified by building the pre-merge `origin/main` into a second worktree and
+/// running `ai_eval advanced basic --pairs 10 --players 4 --turns 200 --seed
+/// 31337` against both: identical paired score, identical sweeps, and identical
+/// strategy-transition counts across 40 seat-games and 4,390 player-turns. No
+/// Elo protocol bump on #663's account, because nothing the ledger measures
+/// moved.
+///
+/// #660 subsequently adds only default-off evaluator fields and a disabled
+/// production prepass. `AdvancedAi::legacy()` leaves those gates off; the merged
+/// source contract is re-pinned only after its fixed-prefix behavior check.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x93d9_195d_ff70_d727;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
@@ -1451,10 +1470,10 @@ mod tests {
     #[test]
     fn tournament_entrants_separate_immutable_identity_from_controller() {
         let entrants = parse_tournament_entrants(
-            "advanced-20260730=advanced, advanced_v1, basic-20260730=basic, random-20260730=random",
+            "advanced-20260731=advanced, advanced_v1, basic-20260730=basic, random-20260730=random",
         )
         .unwrap();
-        assert_eq!(entrants[0].identity, "advanced-20260730");
+        assert_eq!(entrants[0].identity, "advanced-20260731");
         assert_eq!(entrants[0].controller, "advanced");
         assert_eq!(entrants[1].identity, "advanced_v1");
         assert_eq!(entrants[1].controller, "advanced_v1");

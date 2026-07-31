@@ -1160,6 +1160,41 @@ pub struct AdvancedAi {
     /// for and 34 against (p=0.0365). Compact was +7 and inconclusive. Lower
     /// churn is real; stronger play is not, so the flag remains off.
     pub strategic_commitment: bool,
+
+    /// Plan the whole engagement at once instead of committing one unit at a
+    /// time in a fixed class order.
+    ///
+    /// The per-unit evaluator this sits in front of is strong: it scores every
+    /// attack on an exact cloned forward model and extends the line with a
+    /// quiescence reply search. What it cannot do is choose a *set* of attacks.
+    /// Units commit greedily and irreversibly in the order ranged, siege,
+    /// melee, so targets are assigned one at a time, the enemy's answer is
+    /// priced against a half-played turn, and no unit may take a worse attack
+    /// to set up a better one for the unit behind it.
+    ///
+    /// `src/ai/tactics.rs` replaces that commitment rule with a bounded
+    /// Portfolio Online Evolution over the joint assignment — the method
+    /// published for exactly this game shape (Churchill & Buro 2013; Justesen
+    /// et al. 2016; Wang et al. 2016). The greedy incumbent is always in the
+    /// population, so the search cannot score below today's behaviour under its
+    /// own evaluator.
+    ///
+    /// **Off by default until the paired whole-game gate clears.** Reachable as
+    /// the `advanced_joint_tactics` entrant. `docs/TACTICS.md` carries the
+    /// design and the measurements.
+    pub joint_tactics: bool,
+
+    /// Units this turn's joint plan already reached a decision for, including
+    /// the ones it decided should not attack. Their greedy attack selection is
+    /// suppressed so a declined trade is not immediately re-taken by the
+    /// per-unit path; movement is untouched.
+    tactics_resolved: BTreeSet<u32>,
+
+    /// Turns on which the joint search produced a plan, and unit decisions it
+    /// reached across them. Read by instruments through
+    /// [`AdvancedAi::joint_tactics_census`].
+    tactics_plans: usize,
+    tactics_decisions: usize,
 }
 
 impl Default for AdvancedAi {
@@ -1261,6 +1296,10 @@ impl AdvancedAi {
             envoy_infrastructure: false,
             envoy_priority: false,
             strategic_commitment: false,
+            joint_tactics: false,
+            tactics_resolved: BTreeSet::new(),
+            tactics_plans: 0,
+            tactics_decisions: 0,
         }
     }
 
@@ -1421,6 +1460,17 @@ impl AdvancedAi {
 
     /// Last set of force orders produced for this agent. This is useful to
     /// observers, evaluators, and tests; orders are rebuilt at every war turn.
+    /// How many turns this agent's joint tactical search actually planned, and
+    /// how many unit decisions it reached. For instruments only.
+    ///
+    /// A treatment that never fires produces a null for the wrong reason, and
+    /// on a whole-game evaluation "the layer barely runs" and "the layer runs
+    /// and does not matter" call for opposite next steps. `battle_bench --cost`
+    /// reports this so the two can be told apart.
+    pub fn joint_tactics_census(&self) -> (usize, usize) {
+        (self.tactics_plans, self.tactics_decisions)
+    }
+
     pub fn force_groups(&self) -> &[ForceGroup] {
         &self.force_groups
     }
@@ -1539,15 +1589,20 @@ impl AdvancedAi {
         false
     }
 
-    /// Local military pressure on one city: hostile military strength within
-    /// six tiles over the friendly strength answering it, city defenses
-    /// included. Zero when no hostile unit is in reach.
+    /// Local military pressure on one city: *observed* hostile military
+    /// strength within six tiles over the friendly strength answering it,
+    /// city defenses included. Zero when no visible hostile unit is in reach.
     ///
     /// This is the number `threatened_city` has always computed and then
     /// discarded for every city but the worst one. Naming it lets the same
     /// evidence reach the city's own decisions — what it builds and what its
     /// citizens work — instead of only the empire-wide recovery alarm.
-    fn city_pressure(g: &Game, pid: usize, cid: u32) -> f64 {
+    fn city_pressure_with_visibility(
+        g: &Game,
+        pid: usize,
+        cid: u32,
+        visible: &crate::world::TileBits,
+    ) -> f64 {
         let Some(city) = g.cities.get(&cid) else {
             return 0.0;
         };
@@ -1555,6 +1610,7 @@ impl AdvancedAi {
             .units
             .values()
             .filter(|unit| unit.owner != pid && g.is_at_war(pid, unit.owner))
+            .filter(|unit| g.sees(visible, unit.pos) && g.unit_visible_to(unit.id, pid))
             .filter(|unit| g.wdist(city.pos, unit.pos) <= 6)
             .filter(|unit| g.rules.units[unit.kind].class == "military")
             .map(|unit| crate::game::effective_strength(g.unit_strength(unit, false), unit.hp))
@@ -1572,22 +1628,34 @@ impl AdvancedAi {
         hostile / friendly.max(1.0)
     }
 
+    #[cfg(test)]
+    fn city_pressure(g: &Game, pid: usize, cid: u32) -> f64 {
+        let visible = g.player_vision_now(pid);
+        Self::city_pressure_with_visibility(g, pid, cid, &visible)
+    }
+
     /// Evaluate the independent city/unit distance matrix from compact,
     /// immutable inputs. Strength modifiers and city defenses are resolved on
     /// the simulation thread first, so workers share no `Game` caches and the
     /// floating-point sums retain unit-ID order exactly.
     fn city_pressures(&self, g: &Game, pid: usize, cities: &[u32]) -> Vec<f64> {
+        let visible = g.player_vision_now(pid);
         let Some(pool) = self.work_pool.as_ref() else {
             return cities
                 .iter()
-                .map(|city| Self::city_pressure(g, pid, *city))
+                .map(|city| Self::city_pressure_with_visibility(g, pid, *city, &visible))
                 .collect();
         };
         let relevant = g
             .units
             .values()
             .filter(|unit| g.rules.units[unit.kind].class == "military")
-            .filter(|unit| unit.owner == pid || g.is_at_war(pid, unit.owner))
+            .filter(|unit| {
+                unit.owner == pid
+                    || (g.is_at_war(pid, unit.owner)
+                        && g.sees(&visible, unit.pos)
+                        && g.unit_visible_to(unit.id, pid))
+            })
             .collect::<Vec<_>>();
         // Pool dispatch dominates tiny empires. This boundary is comparisons,
         // not a map/player constant: large armies with few cities and wide
@@ -1595,7 +1663,7 @@ impl AdvancedAi {
         if cities.len() < 2 || cities.len().saturating_mul(relevant.len()) < 128 {
             return cities
                 .iter()
-                .map(|city| Self::city_pressure(g, pid, *city))
+                .map(|city| Self::city_pressure_with_visibility(g, pid, *city, &visible))
                 .collect();
         }
 
@@ -1817,11 +1885,12 @@ impl AdvancedAi {
     }
 
     fn threatened_city(&self, g: &Game, pid: usize) -> Option<u32> {
+        let visible = g.player_vision_now(pid);
         g.player_city_ids(pid)
             .into_iter()
             .filter_map(|cid| {
                 let city = &g.cities[&cid];
-                let danger = Self::city_pressure(g, pid, cid);
+                let danger = Self::city_pressure_with_visibility(g, pid, cid, &visible);
                 if danger <= 0.0 {
                     return None;
                 }
@@ -12539,8 +12608,13 @@ impl AdvancedAi {
             1
         };
         let mut candidates = Vec::new();
+        // The joint search already decided this unit's fight, weighing it
+        // against what the rest of the army is doing. Re-running the greedy
+        // picker here would let a unit take a trade the plan declined on
+        // purpose, so it only keeps its movement.
+        let resolved_by_plan = self.tactics_resolved.contains(&uid);
         for pos in g.wdisk(unit.pos, radius) {
-            if spec.class != "military" {
+            if spec.class != "military" || resolved_by_plan {
                 break;
             }
             if pos == unit.pos || !self.base.is_enemy_tile(g, pos, &enemies) {
@@ -13296,6 +13370,39 @@ impl AdvancedAi {
         }
     }
 
+    /// Search the turn's whole engagement jointly and play the winning plan.
+    ///
+    /// The plan is replayed onto the authoritative game in the order the
+    /// search played it, starting from the position the search started from,
+    /// so the seeded combat rolls land exactly as they were evaluated.
+    fn plan_engagement(&mut self, g: &mut Game, pid: usize) {
+        let search = super::tactics::JointTactics::default();
+        let Some(plan) = search.plan(g, pid, &self.base) else {
+            return;
+        };
+        let mut played = 0usize;
+        for action in &plan.actions {
+            if g.apply(pid, action).is_ok() {
+                played += 1;
+            }
+        }
+        if played == 0 {
+            return;
+        }
+        self.tactics_resolved.extend(plan.resolved.iter().copied());
+        self.tactics_plans += 1;
+        self.tactics_decisions += plan.resolved.len();
+        self.force_groups_dirty = true;
+        if self.journal().wants(crate::reasoning::Level::Detail) {
+            let gain = plan.score - plan.greedy_score;
+            think!(self.journal(), Military, Detail,
+                   "the army fights as one";
+                   "{played} orders across {} units, worth {:.0} against {:.0} \
+                    for the same units attacking one at a time ({gain:+.0})",
+                   plan.resolved.len(), plan.score, plan.greedy_score);
+        }
+    }
+
     fn advanced_units(&mut self, g: &mut Game, pid: usize, plan: &StrategicPlan) {
         self.base.begin_movement_turn(g, pid);
         if self.victory_planning {
@@ -13310,6 +13417,13 @@ impl AdvancedAi {
         // counts up to eight times for every military unit in the same turn.
         let decline_settlers = self.counts(g, pid).settlers > 0
             || !self.base.has_practical_settle_site(g, pid);
+        // Decide the engagement as one problem before any unit commits. Units
+        // this resolves keep their own movement logic below; only the choice
+        // of what to attack is taken out of the greedy per-unit path.
+        self.tactics_resolved.clear();
+        if self.joint_tactics {
+            self.plan_engagement(g, pid);
+        }
         let mut ids = g.player_unit_ids(pid);
         ids.sort_by_key(|uid| {
             let u = &g.units[uid];
@@ -13793,6 +13907,10 @@ impl AdvancedAi {
 }
 
 impl Ai for AdvancedAi {
+    fn joint_tactics_census(&self) -> Option<(usize, usize)> {
+        self.joint_tactics.then(|| self.joint_tactics_census())
+    }
+
     fn strategy_label(&self) -> Option<&'static str> {
         self.plan.as_ref().map(|plan| plan.strategy.as_str())
     }
@@ -15734,6 +15852,15 @@ mod tests {
                 game.wdist(*position, home_pos) == 3 && game.city_at(*position).is_none()
             })
             .unwrap();
+        let observer_pos = game
+            .nbrs(intruder_pos)
+            .into_iter()
+            .find(|position| {
+                *position != home_pos
+                    && game.city_at(*position).is_none()
+                    && game.units_at(*position).is_empty()
+            })
+            .unwrap();
         let far_pos = game
             .map
             .tiles
@@ -15743,12 +15870,17 @@ mod tests {
                 game.wdist(*position, home_pos) >= 9 && game.city_at(*position).is_none()
             })
             .unwrap();
-        for position in [intruder_pos, far_pos] {
+        for position in [intruder_pos, observer_pos, far_pos] {
             let tile = game.map.tiles.get_mut(&position).unwrap();
             tile.terrain = crate::name!("grassland");
             tile.feature = None;
             tile.hills = false;
         }
+        game.spawn_test_unit("scout", 0, observer_pos);
+        assert!(
+            game.player_can_see(0, intruder_pos),
+            "the staged attackers must be visible to the defender"
+        );
         for _ in 0..4 {
             game.spawn_test_unit("modern_armor", 0, far_pos);
         }
@@ -22464,6 +22596,55 @@ mod tests {
         for cid in game.player_city_ids(0) {
             assert_eq!(AdvancedAi::city_pressure(&game, 0, cid), 0.0);
         }
+    }
+
+    #[test]
+    fn city_pressure_ignores_a_hidden_hostile_inside_its_radius() {
+        let mut game = Game::new_full(2, 30, 18, 411_005, 120, 0, false);
+        for unit in game.player_unit_ids(1) {
+            game.remove_unit(unit);
+        }
+        let city = found_test_city(&mut game, 0);
+        let city_pos = game.cities[&city].pos;
+        game.at_war.insert((0, 1));
+
+        let visible = game.player_visibility(0);
+        let candidates = game
+            .wdisk(city_pos, 6)
+            .into_iter()
+            .filter(|position| {
+                *position != city_pos
+                    && game.city_at(*position).is_none()
+                    && game.units_at(*position).is_empty()
+                    && game.map.get(*position).is_some_and(|tile| {
+                        game.rules.is_passable(tile) && !game.rules.is_water(tile)
+                    })
+            })
+            .collect::<Vec<_>>();
+        let hidden = candidates
+            .iter()
+            .copied()
+            .find(|position| !visible.contains(position))
+            .expect("test city has a hidden passable tile within pressure radius");
+        let seen = candidates
+            .iter()
+            .copied()
+            .find(|position| visible.contains(position))
+            .expect("test city has a visible passable tile within pressure radius");
+
+        let hidden_warrior = game.spawn_test_unit("warrior", 1, hidden);
+        assert_eq!(
+            AdvancedAi::city_pressure(&game, 0, city),
+            0.0,
+            "an unseen hostile must not contribute city pressure"
+        );
+        game.remove_unit(hidden_warrior);
+
+        game.spawn_test_unit("warrior", 1, seen);
+        assert!(
+            AdvancedAi::city_pressure(&game, 0, city) > 0.0,
+            "the same force must count once it is visible"
+        );
     }
 
     /// Census, not an assertion: how often each rung of the role ladder fires
