@@ -3347,6 +3347,18 @@ local SOFT_BLOCKERS = {
 	ENDTURN_BLOCKING_SPY_CHOOSE_DRAGNET_PRIORITY = true,
 };
 
+-- Decisions CIVVIS issues orders for, and which the heuristics must therefore not
+-- answer over while CIVVIS's reply is still in flight.
+--
+-- ⚠ Kept as an explicit list rather than "everything". A blocker CIVVIS has no
+-- opinion on must be answered immediately or the turn cannot end, and waiting on an
+-- answer that will never come is how a run stalls.
+local CIVVIS_OWNED_BLOCKERS = {
+	ENDTURN_BLOCKING_RESEARCH = true,
+	ENDTURN_BLOCKING_CIVIC = true,
+	ENDTURN_BLOCKING_PRODUCTION = true,
+};
+
 -- Answer the decision the game says it is waiting on. Returning the name of
 -- what was answered (rather than a boolean) is what makes a stuck run
 -- diagnosable: the log says which blocker recurred, not merely that one did.
@@ -3386,6 +3398,32 @@ local function answerBlocker(player, pid, blocker, turn)
 		residualAnswers[name] = (residualAnswers[name] or 0) + 1;
 		residualAnswers[name .. "@" .. tostring(awaiting.source)] =
 			(residualAnswers[name .. "@" .. tostring(awaiting.source)] or 0) + 1;
+	end
+	-- ★★★★★ WAIT FOR CIVVIS BEFORE ANSWERING A DECISION IT IS ABOUT TO MAKE.
+	--
+	-- These blockers fire from the game-core event loop, which runs BEFORE
+	-- `settleTurn` has CIVVIS's reply. The heuristic therefore answered first, every
+	-- time, and CIVVIS's own choice arrived to find the decision already taken.
+	--
+	-- Measured on run 233331Z. On 37 turns the heuristic named a tech or civic, and
+	-- on every one of them CIVVIS sent its own research/civic order the same turn.
+	-- They DISAGREED: at t11, t16 and t22 the heuristic answered `TECH_POTTERY`
+	-- while CIVVIS wanted `TECH_ASTROLOGY`. Pottery completed at **t24**; Astrology
+	-- not until **t59**. The heuristic's pick is what the game actually researched,
+	-- on a run reported as 100% CIVVIS.
+	--
+	-- So: while CIVVIS's answer is still outstanding, decline to answer. Returning
+	-- nil leaves the blocker up and the loop retries, which is exactly the pause
+	-- needed for the handshake to land. The fallback below still runs once CIVVIS
+	-- has answered, failed, or gone stale -- a blocker that is never answered would
+	-- hang the turn forever, which is worse than a heuristic answer.
+	--
+	-- ⚠ Only the decisions CIVVIS actually issues orders for. Blockers it has no
+	-- opinion on must still be answered immediately or the turn cannot end.
+	if cfg.CivvisDecides and awaiting.source == "pending"
+			and CIVVIS_OWNED_BLOCKERS[name]
+			and spend("civvis_wait_" .. name, cfg.MaxCivvisWaitPasses or 12) then
+		return nil;
 	end
 	-- Every answer below walks a GameInfo table, so each is budgeted. Answering
 	-- twice in a turn is the useful case -- the first attempt can be refused
