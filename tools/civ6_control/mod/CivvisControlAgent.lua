@@ -37,6 +37,9 @@ local PREFIX = "CIVVISJSON ";
 -- counts the built-in passes that ran on a turn CIVVIS was credited with.
 local awaiting = { turn = -1, ticks = 0, polls = 0, done = false, source = "none" };
 local residualAnswers = {};
+-- Civ 6 city id -> the item CIVVIS asked that city to build THIS turn. Cleared with
+-- the rest of the per-turn handshake state; see `chooseProduction`.
+local civvisBuild = {};
 -- Emitted once: a defeat is not a per-turn condition.
 local defeatReported = false;
 
@@ -2211,6 +2214,22 @@ end
 
 local function chooseProduction(city, counts, nCities, turn, refused)
 	refused = refused or {};
+	-- ★★★★★ ANSWER WITH CIVVIS'S CHOICE WHEN IT HAS ONE.
+	--
+	-- The end-turn production prompt must be answered or the turn never ends, so this
+	-- ladder cannot simply be switched off on a CIVVIS run — but it does not have to
+	-- INVENT an answer when CIVVIS has already given one for this city. Anything below
+	-- runs only when CIVVIS said nothing about this city this turn, or when what it
+	-- asked for cannot be started.
+	--
+	-- ⚠ `playable` is defined below and still gates it, so a CIVVIS item the engine
+	-- will not accept falls through to the ladder exactly as before. This changes WHO
+	-- decides, never whether the prompt gets answered.
+	local wanted = nil;
+	if cfg.CivvisDecides then
+		local cityId = try(function() return city:GetID(); end);
+		if cityId ~= nil then wanted = civvisBuild[cityId]; end
+	end
 	local function playable(name)
 		-- Already asked for this one on this turn and the game did not start it.
 		-- ⚠ This comment used to say `CanProduce` "will keep saying yes, so the
@@ -2476,6 +2495,15 @@ local function chooseProduction(city, counts, nCities, turn, refused)
 		ladder[#ladder + 1] = { name, "floor" };
 	end
 
+	-- CIVVIS FIRST. Its choice for this city, this turn, gated by the same `playable`
+	-- the ladder uses — so an item the engine will not start still falls through to
+	-- the ladder below and the prompt is still answered. Reported with its own reason
+	-- so the `build` events say which program decided, and the production fraction in
+	-- `civ6_civvis_status.py` can be read honestly.
+	if wanted ~= nil then
+		local row = playable(wanted);
+		if row ~= nil then return wanted, row, "civvis"; end
+	end
 	for _, entry in ipairs(ladder) do
 		local row = playable(entry[1]);
 		if row ~= nil then return entry[1], row, entry[2]; end
@@ -4406,6 +4434,18 @@ local function applyOrder(player, pid, row, turn)
 	if kind == "produce" then
 		local city = liveCity(player, subject);
 		if city == nil then return false, "no_city"; end
+		-- ★★★★★ REMEMBER WHAT CIVVIS ASKED THIS CITY TO BUILD.
+		--
+		-- `ENDTURN_BLOCKING_PRODUCTION` fires when a city finishes something, which is
+		-- usually AFTER CIVVIS has answered for the turn — and `driveProduction` then
+		-- picks the next item ITSELF from the hand-written ladder. Measured once the
+		-- residual counter was fixed: the ladder chose 76% of the build decisions on
+		-- run civvis-20260731T075743Z and 44% on 070956Z, ten battering rams among
+		-- them, on runs reported as 100% CIVVIS.
+		--
+		-- CIVVIS's own choice for that city is right here; keeping it means the
+		-- fallback answers the prompt with a CIVVIS decision instead of its own.
+		civvisBuild[tonumber(subject) or -1] = tostring(verb);
 		-- ⚠ `GameInfo.Types`, NOT the per-kind tables. `buildParams` switches on
 		-- `row.Kind`, and only the `Types` table carries that column — rows from
 		-- `GameInfo.Units`/`Buildings`/`Districts` have no `Kind`, so `buildParams`
@@ -4924,6 +4964,7 @@ local function beginTurn(player, pid, turn)
 	awaiting.source = "pending";
 	-- Per turn, or the tally becomes cumulative and unreadable.
 	residualAnswers = {};
+	civvisBuild = {};
 end
 
 -- Poll for CIVVIS's answer. Returns true once the turn's decisions are settled,

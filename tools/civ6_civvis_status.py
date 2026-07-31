@@ -151,18 +151,27 @@ def main() -> int:
     # economy": run civvis-20260731T075743Z was 11 CIVVIS produce orders against 33
     # heuristic builds, with ten battering rams among them.
     heuristic_builds = 0
+    civvis_answered = 0
     for line in (run / "events.jsonl").read_text(errors="replace").splitlines():
         try:
             event = json.loads(line)
         except ValueError:
             continue
         if event.get("kind") == "build":
-            heuristic_builds += 1
+            # ⚠ A build whose reason is `civvis` was the prompt being answered with
+            # CIVVIS's own choice for that city, not the ladder inventing one. Counting
+            # it as the ladder's would understate CIVVIS exactly as badly as the old
+            # `residual: none` overstated it.
+            if event.get("reason") == "civvis":
+                civvis_answered += 1
+            else:
+                heuristic_builds += 1
     civvis_produce = sum((o.get("by") or {}).get("produce", 0) for o in orders)
-    total_builds = heuristic_builds + civvis_produce
+    total_builds = heuristic_builds + civvis_produce + civvis_answered
     if total_builds:
-        print(f"  ⚠ PRODUCTION: CIVVIS chose {civvis_produce}, the built-in ladder "
-              f"chose {heuristic_builds} "
+        print(f"  ⚠ PRODUCTION: CIVVIS chose {civvis_produce} directly and "
+              f"{civvis_answered} through the blocker, the built-in ladder chose "
+              f"{heuristic_builds} "
               f"({100 * heuristic_builds // total_builds}% of build decisions)")
 
     # ★★★★★ CROSS-CHECK THE COUNTER AGAINST THE EVENT LOG, because the counter has
