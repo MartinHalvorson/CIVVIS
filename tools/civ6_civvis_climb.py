@@ -348,6 +348,12 @@ def main() -> int:
     ap.add_argument("--speed", default="GAMESPEED_ONLINE")
     ap.add_argument("--max-turns", type=int, default=250)
     ap.add_argument("--timeout", type=float, default=5400.0)
+    # ⚠ Passed straight to the brain, and domination is currently unreachable:
+    # `findWarTarget` needs a REVEALED rival city and meeting a civilization
+    # reveals none of its land, so the target set stays empty for the whole game.
+    # Measured 2026-07-31: `met: 1` with `cities_SEEN: 0` at t125 and zero
+    # declarations in every unforced run. A ladder left on this default measures a
+    # plan that cannot complete. See the note on `--victory` in civ6_brain.py.
     ap.add_argument("--victory", default="domination")
     ap.add_argument("--war-from-plan", action="store_true", default=False,
                     help="pass through to the brain; see its note for why")
