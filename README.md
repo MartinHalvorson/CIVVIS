@@ -79,7 +79,7 @@ the round-3143 league say so.
 1. **It ranks on the wrong statistic.** “Elo” here is the league's *placement*
    Glicko. Across the 14 active strategies with 100+ games, placement rating
    ranks them the same way outright wins do at only Spearman ρ = 0.31:
-   `advanced_v1` is last on rating and second on wins, and `advanced` leads
+   `advanced_v1` is 14th of 14 on rating and 3rd on wins, and `advanced` leads
    `basic` by +23 ± 86 rating points while winning 21.5% of its games against
    9.2%. The league's own selection contract stopped using placement for
    exactly this reason and orders parents, retirement and live seating by
@@ -88,6 +88,9 @@ the round-3143 league say so.
    printed strategy leads the runner-up by a mean of 34.7 Glicko points against
    a mean pooled deviation of 104.2 — |z| > 1.96 on **0 of 52** pairs. Even the
    widest comparison the table admits, rank 1 against rank 50, is z = 1.6.
+   Dropping Glicko's assumptions entirely and running a Fisher exact test on
+   the raw win counts of each pair's top two gives the same answer: **0 of 52**
+   at p < 0.05, smallest p = 0.088, before any correction for 52 tests.
 3. **The apparent lift is selection.** Each row is a max over ~7 candidates. A
    null model in which every strategy is equally strong for every civilization
    and only the deviations are real produces a larger winner's lift (+119
@@ -195,9 +198,10 @@ strategic: plays as strategic_score (missing valuenet.json)
 ```
 
 The loader's path bug is fixed — resolution now falls back from `<dir>` to
-`data/<dir>` — but fixing the path did not produce a net. The measured impact
-of every learned component in CIVVIS is exactly zero, because none has ever
-been loaded in a game.
+`data/<dir>` — but fixing the path did not produce a net. Nets have been
+trained and staged by hand for experiments; none has ever shipped. The
+*deployed* impact of every learned component in CIVVIS is therefore exactly
+zero, and the experiments that did stage one are the negative results below.
 
 **2. The only searching controller is structurally barred from live play.**
 Loading a league force-marks `strategic` as `anchor` and `league_only`
@@ -242,6 +246,16 @@ learned component at all** — the arm that won is `strategic_score`. And the
 40-gene champion is worth more than twice as much bolted onto the weak agent
 (+137) as onto the strong one (+61), which is what a genome largely overridden
 by hand-written logic looks like.
+
+**On tidiness.** The code itself is in good order: it builds clean, the tests
+pass, the seven controllers are small and documented, and the provenance
+system means an agent almost never lies about what it is. What has accreted is
+*experimental surface*. `builtin_ai` now has 78 arms behind those seven
+controllers and `src/bin` holds 44 research binaries; 41 of the 78 arms have no
+entry in `docs/EVAL.md` and 13 appear nowhere in `docs/` at all. Most name
+axes the repository has already closed. None of it is load-bearing and none of
+it costs anything at runtime, but a reader counting names will badly
+overestimate how many distinct agents exist.
 
 ### Where it works well
 
