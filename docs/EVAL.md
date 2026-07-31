@@ -6843,9 +6843,15 @@ The shipped genome was bred with `--players 4 --width 24 --height 16 --turns
 Nothing in this repository has ever bred one at the profile the deployment gate
 judges.
 
-`EvoCfg::speed` exists for exactly this and says so in its own doc comment,
-quoting the +58/−9 split as the reason it was added. It is wired through
-`main.rs`. It has not been used:
+**This is not a new idea and this entry does not claim it.** The 2026-07-28
+entry above already names it — *"the experiment this result demands is now one
+command … the first breeding run in this repository aimed at the game that
+ships"* — and records that it was **not launched**, because the box was at load
+36 with another agent's evaluation running. `EvoCfg::speed` was added that same
+day specifically to make it possible, is wired through `main.rs`, and three
+days later still has not been used. What this section adds is a second,
+independent reason to run it: the deficit is now attributed to eleven genes,
+so a deployment-profile breeder has a named target rather than forty:
 
 ```sh
 civvis evolve --pop 24 --generations 25 --games 96 \
