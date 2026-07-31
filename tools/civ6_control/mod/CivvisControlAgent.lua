@@ -4210,7 +4210,39 @@ local function applyOrder(player, pid, row, turn)
 		-- defended plot. CIVVIS's `Attack` therefore translates to MOVE_TO, and
 		-- that is not a workaround: it is how Civilization VI resolves it.
 		if verb == "FOUND_CITY" then
-			return operate(unit, OP["UNITOPERATION_FOUND_CITY"], {}), "found";
+			local placed = operate(unit, OP["UNITOPERATION_FOUND_CITY"], {});
+			-- ★★★★★ ASK THE ENGINE WHY, DO NOT INFER IT.
+			--
+			-- Peak city count is 2 in every run of the ladder from t88 to t233,
+			-- and `found` refusals were being counted without a cause: run
+			-- 230605Z refused 18 of them while re-choosing the SAME tile (18,29)
+			-- at t20, t33 and t79. Two theories were live -- a rival city hidden
+			-- in the fog, or the settler not standing where the order aims -- and
+			-- nothing in the export could separate them.
+			--
+			-- Civilization VI will say. `CanStartOperation` takes a results flag
+			-- and returns a reason table; the mod was calling it without one and
+			-- discarding exactly the answer it needed. Only on the failure path,
+			-- so it costs nothing on a normal found.
+			if not placed then
+				local why = "unknown";
+				pcall(function()
+					local ok, results = UnitManager.CanStartOperation(
+						unit, OP["UNITOPERATION_FOUND_CITY"], nil, {}, true);
+					if results ~= nil then
+						local parts = {};
+						for key, value in pairs(results) do
+							parts[#parts + 1] = tostring(key) .. "=" .. tostring(value);
+						end
+						if #parts > 0 then why = table.concat(parts, ","); end
+					elseif ok ~= nil then
+						why = "can_start=" .. tostring(ok);
+					end
+				end);
+				emit("found_refused", { turn = turn, unit = subject, why = why,
+				                        x = unit:GetX(), y = unit:GetY() });
+			end
+			return placed, "found";
 		end
 		if verb == "MOVE_TO" or verb == "ATTACK" then
 			if x == nil or y == nil then return false, "no_dest"; end
