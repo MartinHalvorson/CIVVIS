@@ -55,7 +55,7 @@
       "player": "advanced-20260731-settlement",
       "leader": "Cleopatra",
       "civilization": "Egypt",
-      "elo": 1511.4645120001583,
+      "elo": 1511.4645120001585,
       "games": 10,
       "wins": 8
     },
@@ -63,7 +63,7 @@
       "player": "advanced-20260731-settlement",
       "leader": "Pericles",
       "civilization": "Greece",
-      "elo": 1496.5752474849103,
+      "elo": 1496.5752474849105,
       "games": 10,
       "wins": 6
     },
@@ -111,7 +111,7 @@
       "player": "advanced_v1",
       "leader": "Trajan",
       "civilization": "Rome",
-      "elo": 1485.7657685624679,
+      "elo": 1485.765768562468,
       "games": 10,
       "wins": 4
     },
@@ -175,7 +175,7 @@
       "player": "random-20260730",
       "leader": "Trajan",
       "civilization": "Rome",
-      "elo": 1327.3642036213519,
+      "elo": 1327.364203621352,
       "games": 10,
       "wins": 0
     }
