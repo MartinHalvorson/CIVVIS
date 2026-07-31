@@ -12306,14 +12306,17 @@ struct MonopolyContext<'a> {
     connected: Vec<BTreeMap<&'a str, i32>>,
 }
 
-/// Memoized answers to expensive read-only queries, live only while a
-/// [`QueryMemo`] guard is held.
+/// Memoized answers to expensive read-only queries.
 ///
-/// The guard borrows the game immutably, so the borrow checker — not a
-/// hand-written stamp over the citizen plan, worked tiles, districts,
-/// buildings, techs, policies, religion and wonders — is what guarantees the
-/// cache cannot go stale. Nothing can reach a `&mut Game` while an entry is
-/// live, so every cached answer is still the answer.
+/// Most entries live only while a [`QueryMemo`] guard is held. The production
+/// catalog is deliberately retained between those short read-only scopes and
+/// is instead invalidated by a successful action.
+///
+/// For the guard-scoped entries, the guard borrows the game immutably, so the
+/// borrow checker — not a hand-written stamp over the citizen plan, worked
+/// tiles, districts, buildings, techs, policies, religion and wonders — is
+/// what guarantees the cache cannot go stale. Nothing can reach a `&mut Game`
+/// while one of those entries is live.
 #[derive(Default)]
 pub struct QueryCache {
     yields: std::cell::RefCell<Option<BTreeMap<u32, Yields>>>,
@@ -12344,6 +12347,19 @@ pub struct QueryCache {
     // yields and its Amenities are read through it, so a single valuation of
     // one city walks the whole empire's buildings twice.
     regional: std::cell::RefCell<Option<BTreeMap<u32, (Yields, f64)>>>,
+    // A city production menu walks every unit, building, wonder, project and
+    // district in the ruleset. Several city governors ask for that same menu
+    // more than once before they commit an action (repairs, products, and
+    // wonder fallbacks are separate passes), so retain the complete legal
+    // catalog across those read-only decisions. A successful `Game::apply`
+    // clears it: that normal mutation boundary can change any prerequisite,
+    // queue, resource, or placement fact the catalog reads.
+    //
+    // Unlike the other entries this intentionally outlives `QueryMemo`. A
+    // helper that opens and closes its own short memo must still share the
+    // catalog with the next helper in the same decision; retaining it only
+    // inside one guard would miss the duplicate scans this cache exists for.
+    producible: std::cell::RefCell<BTreeMap<(usize, u32), Vec<Item>>>,
 }
 
 impl Clone for QueryCache {
@@ -14820,8 +14836,9 @@ pub struct Game {
     /// rebuilt on demand whenever the world moves under it.
     #[serde(skip)]
     routing: std::cell::RefCell<RoutingCache>,
-    /// Memoized read-only answers; see [`QueryCache`]. Never saved, cleared
-    /// by the guard that opened it, and empty in any clone.
+    /// Memoized read-only answers; see [`QueryCache`]. Never saved, with
+    /// short-lived entries cleared by their guard and production catalogs
+    /// cleared by a successful action; empty in any clone.
     #[serde(skip)]
     query_memo: QueryCache,
     /// The state of the world each seat's remembered map was last taken
@@ -34920,6 +34937,15 @@ impl Game {
     }
 
     pub fn producible_items(&self, pid: usize, cid: u32) -> Vec<Item> {
+        if let Some(items) = self
+            .query_memo
+            .producible
+            .borrow()
+            .get(&(pid, cid))
+            .cloned()
+        {
+            return items;
+        }
         // Every unit, building, district and wonder in the ruleset is offered
         // to the same city in turn, and each offer re-asks that city the same
         // things.
@@ -35055,6 +35081,10 @@ impl Game {
                 fresh_sites += usize::from(!foundation);
             }
         }
+        self.query_memo
+            .producible
+            .borrow_mut()
+            .insert((pid, cid), items.clone());
         items
     }
 
@@ -36847,6 +36877,11 @@ impl Game {
             }
         };
         if r.is_ok() {
+            // `producible_items` is intentionally retained across short
+            // read-only decision helpers, rather than only one `QueryMemo`.
+            // Once an action succeeds any one of its prerequisites may have
+            // changed, so the next helper must derive a fresh catalog.
+            self.query_memo.producible.borrow_mut().clear();
             if monopoly_control_may_change {
                 self.note_first_monopoly_moments();
             }
@@ -50271,6 +50306,44 @@ impl Game {
         } else {
             false
         }
+    }
+}
+
+#[cfg(test)]
+mod production_catalog_tests {
+    use super::*;
+
+    #[test]
+    fn production_catalog_is_reused_until_a_successful_action_changes_the_world() {
+        let mut game = Game::new_full(2, 24, 16, 91_171, 100, 0, false);
+        let settler = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .expect("the opening roster includes a settler");
+        game.apply(0, &Action::FoundCity { unit: settler })
+            .expect("found the opening city");
+        let city = game.player_city_ids(0)[0];
+
+        let first = game.producible_items(0, city);
+        assert!(!first.is_empty(), "an opening city has a production menu");
+        assert_eq!(game.query_memo.producible.borrow().len(), 1);
+        assert_eq!(
+            game.producible_items(0, city),
+            first,
+            "a second helper reads the cached catalog"
+        );
+
+        let warrior = Item::Unit {
+            unit: crate::name!("warrior"),
+        };
+        assert!(first.contains(&warrior));
+        game.apply(0, &Action::Produce { city, item: warrior })
+            .expect("a successful action invalidates the cached read state");
+        assert!(
+            game.query_memo.producible.borrow().is_empty(),
+            "the next decision must derive its catalog from the new game state"
+        );
     }
 }
 

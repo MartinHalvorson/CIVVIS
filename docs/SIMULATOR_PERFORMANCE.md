@@ -1,9 +1,10 @@
 # Simulator performance
 
 This note records the July 2026 simulator profile, the changes kept from that
-work, and the next optimization targets. Percentages below are diagnostic
-signals, not an additive decomposition: library routines such as `memcmp` and
-`memmove` are costs incurred by several higher-level systems.
+work, the production-catalog follow-up, and the next optimization targets.
+Percentages below are diagnostic signals, not an additive decomposition:
+library routines such as `memcmp` and `memmove` are costs incurred by several
+higher-level systems.
 
 ## Representative workloads
 
@@ -33,7 +34,7 @@ identical. A separate optimized soak completed all 20 requested games.
 
 ## Changes retained
 
-Three deliberately small changes produced that result:
+Four deliberately small changes produced that result:
 
 1. Monopoly calculation now builds one connected-resource census per player
    and reuses it across every luxury and foreign player. Previously each query
@@ -44,6 +45,33 @@ Three deliberately small changes produced that result:
    reveal a luxury resource. Other action kinds remain conservative.
 3. `hex::disk` reserves its exact `1 + 3r(r + 1)` result size, avoiding growth
    copies in a primitive used by movement, combat, yields, and visibility.
+4. A per-player/city production catalog retains the complete legal `Item` list
+   across the separate read-only passes a city governor makes before acting.
+   A successful `Game::apply` clears it, and game clones and saves start empty,
+   so normal mutation and search branches cannot reuse a stale menu.
+
+## Production-catalog follow-up
+
+The production catalog was the narrow first experiment from the profile. Its
+target is a real multi-city decision path: repairs, products, and wonder
+fallbacks can each ask for the same city's legal production menu before a
+single action is committed. Caching only the fully derived menu preserves the
+existing item order and legality checks.
+
+On a release paired measurement of 20 fixed-seed games (four major
+civilizations, 44-by-28 map, no city-states, 200-turn limit, seeds 7,310,200
+through 7,310,219), aggregate serial wall time fell from 44.57 to 41.34
+seconds: **7.2%**, with a 6.8% median per-seed reduction. Baseline ran first
+for ten seeds and the catalog build first for the other ten; the two subsets
+improved 7.1% and 7.4% respectively. After removing the elapsed-time field,
+all 20 paired terminal reports were identical. A separate 40-game,
+eight-worker soak on the same map shape also had identical normalized reports
+and reduced accumulated per-game time from 230.54 to 221.51 seconds (3.9%).
+
+This is intentionally a targeted result, not a claim that every tiny
+production query is faster. A short two-player throughput run was not
+consistently improved; the retained cache earns its cost where a developed,
+multi-city controller repeats the catalog scan.
 
 Two broader prototypes were rejected rather than kept without evidence. A
 borrowed replacement for `units_at` did not materially improve adjacent rollout
@@ -62,15 +90,13 @@ not materially affect this ranking.
 | Opportunity | Current signal | Promising next experiment | Main constraint |
 | --- | --- | --- | --- |
 | Intern effect and rules keys | `memcmp` 9.2%, `Name::new` 1.4%, and `SpecMap::position` 1.2% as exclusive leaves | Intern effect keys when loading rules, then carry typed IDs through the hottest effect queries while preserving lexical serialization | Broad representation change; compare saved comparisons against conversion and indirection cost |
-| Cache production candidates | `can_produce` 3.4%, unit purchase cost 1.8%, plus wonder, district, unit, and building candidate scans; roughly an 8% family | Build a per-city, generation-keyed catalog of producible items and costs for AI selection | Invalidation spans technology, civics, resources, districts, queues, diplomacy, and policy effects |
 | Reuse movement and routing state | Traversal class, neighbors, passability, path checks, entry checks, and routing zones form roughly a 6-7% family | Derive a traversal profile once per unit and use generation-stamped arrays/reused search buffers instead of tree maps and fresh vectors | Movement rules have many conditional abilities and diplomatic dependencies |
 | Remove targeted allocation and copying | `memmove` 5.9% and allocator leaves are prominent; `units_at` alone is 1.4% | Add narrow `tile_occupied` and callback/iterator queries, then migrate read-only and `is_empty` callers individually | These costs overlap the systems above; a wholesale borrowed API showed no win |
 | Reduce rollout clone cost | Clone alone is 8.5 us, 38% of the optimized no-fog clone-plus-move latency | Share more immutable state or prototype reversible branch deltas/undo for search | High correctness and determinism risk; cloning is currently the isolation boundary |
 | Broaden visibility and yield memoization | Line-of-sight/world-stamp leaves are about 2-3%; yield and adjacency work is fragmented across roughly 3-5% | Extend epoch-keyed memoization and precompute stable adjacency facts | Smaller expected return and potentially high cache-invalidation complexity |
 
-The first two rows are the largest plausible code-level gains. The string/key
-work is cross-cutting but invasive; the production catalog is narrower and is
-the better next benchmark-driven project. Movement reuse follows closely.
+The string/key work is cross-cutting but invasive. With the production catalog
+now retained, movement reuse is the next narrower benchmark-driven project.
 These should be measured independently because removing one source of
 comparison or allocation cost will also shrink the apparent library leaves.
 
