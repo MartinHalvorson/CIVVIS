@@ -349,9 +349,20 @@ frame rate a loaded machine was managing, not drift.
 
 ## The lobby a run sets up
 
-**The map size IS the player count.** Civilization VI derives both majors and
-city-states from it — Duel 2, Tiny 4, **Small 6**, Standard 8 — and there is no
-separate player-count control on the Create Game screen for the harness to set.
+**The map size IS the player count.** There is no separate player-count control on
+the Create Game screen for the harness to set, and Civilization VI derives both the
+majors and the city-states from the size. Straight from the shipped `Maps` table
+(`Cache/DebugGameplay.sqlite`):
+
+| `MapSizeType` | `DefaultPlayers` | grid |
+|---|---|---|
+| `MAPSIZE_DUEL` | 2 | 44×26 |
+| `MAPSIZE_TINY` | 4 | 60×38 |
+| **`MAPSIZE_SMALL`** | **6** | **74×46** |
+| `MAPSIZE_STANDARD` | 8 | 84×54 |
+
+74×46 is also the board CIVVIS' own exhibition and league games run on, so a Small
+Civilization VI game and a CIVVIS game are the same size.
 
 `docs/COMPETITIVE.md` pins the competitive lobby CIVVIS aims at, and its size line
 is *"Firaxis-default map size and city-states for the player count"*. So a six-player
