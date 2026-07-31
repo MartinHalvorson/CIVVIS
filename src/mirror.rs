@@ -263,6 +263,7 @@ mod tests {
         Plot {
             x,
             y,
+            im: None,
             t: Some(t.to_string()),
             f: None,
             r: None,
@@ -422,6 +423,7 @@ mod tests {
             plots: vec![Plot {
                 x: 56,
                 y: 28,
+                im: None,
                 t: Some("TERRAIN_GRASS".to_string()),
                 f: None,
                 r: None,
@@ -814,6 +816,10 @@ pub struct StateSnapshot {
     /// every existing caller gets identity without changing its signature.
     #[serde(default)]
     pub seat: Seat,
+    /// Sites Civilization VI has refused to found on, AXIAL, from `found_refused`
+    /// events. Merged in by [`state_from_events`] for the same reason as `seat`.
+    #[serde(default)]
+    pub refused_sites: std::collections::BTreeSet<crate::Pos>,
 }
 
 /// The identity Civilization VI gave this game: who we play, and under what rules.
@@ -961,6 +967,9 @@ pub fn state_from_events(
     if let (Some(state), Some(seat)) = (best.as_mut(), seat) {
         state.seat = seat;
     }
+    if let Some(state) = best.as_mut() {
+        state.refused_sites = refused_city_sites(path);
+    }
     best
 }
 
@@ -1102,6 +1111,43 @@ pub(crate) fn grow_frontier(
 
 }
 
+/// Every site Civilization VI has refused to found a city on, in AXIAL coordinates.
+///
+/// ★★★★ THE CEILING WAS A FEEDBACK GAP. Peak city count was 2 in every run of the
+/// ladder from t88 to t233. Run `230605Z` refused 18 `FOUND_CITY` orders while the
+/// picker re-chose tile (18,29) at turns 20, 33 and 79; run `203028Z` refused 141.
+/// Nothing carried a refusal back into the next decision, so each turn re-derived the
+/// same site from the same board and re-sent the same rejected order — indefinitely.
+///
+/// ⚠ Reads the settler's ACTUAL position from the event, not the site CIVVIS aimed
+/// at. Those differ whenever the settler has not arrived, and blocking the tile the
+/// order named would blacklist good ground the settler simply had not reached.
+pub fn refused_city_sites(path: &std::path::Path) -> std::collections::BTreeSet<crate::Pos> {
+    let mut refused: std::collections::BTreeSet<crate::Pos> = Default::default();
+    let Ok(raw) = std::fs::read_to_string(path) else {
+        return refused;
+    };
+    for line in raw.lines() {
+        if !line.contains("found_refused") {
+            continue;
+        }
+        let Ok(event) = serde_json::from_str::<serde_json::Value>(line) else {
+            continue;
+        };
+        if event.get("kind").and_then(|k| k.as_str()) != Some("found_refused") {
+            continue;
+        }
+        let (Some(x), Some(y)) = (
+            event.get("x").and_then(|v| v.as_i64()),
+            event.get("y").and_then(|v| v.as_i64()),
+        ) else {
+            continue;
+        };
+        refused.insert(crate::hex::offset_to_axial(x as i32, y as i32));
+    }
+    refused
+}
+
 /// The newest `state` event as raw JSON, with the run's `seat` identity merged in.
 ///
 /// The typed [`state_from_events`] is what the decision path wants. This is for the
@@ -1186,6 +1232,10 @@ pub fn rebuild_from_state(
     frontier_depth: u32,
 ) -> Reconstruction {
     let mut game = rebuild_game(snapshot, players.max(2), seed);
+
+    // Sites the host engine has already rejected, so the planner stops re-deriving
+    // them. See `refused_city_sites`.
+    game.blocked_city_sites = state.refused_sites.clone();
 
     // Identity first: city naming reads it, so this cannot wait until after the
     // cities are placed. See `apply_identity`.
@@ -1546,6 +1596,13 @@ impl LiveMirror {
         let skip_rivals = std::env::var("CIVVIS_SYNC_NO_RIVALS").is_ok();
         let skip_units = std::env::var("CIVVIS_SYNC_NO_UNITS").is_ok();
         self.turns_synced += 1;
+        // ⚠ UNION, NEVER REPLACE. Refusals accumulate over a game and the set is
+        // rebuilt from the whole event log each time, but a sync that assigned
+        // instead of merging would silently drop anything the caller had added
+        // directly — and a forgotten refusal is a settler back in the same loop.
+        self.game
+            .blocked_city_sites
+            .extend(state.refused_sites.iter().copied());
         // Rivals are met as the game goes on, so identity is not a one-time job at
         // reconstruction: a civilization first seen on turn 90 arrives here.
         apply_identity(&mut self.game, state);
