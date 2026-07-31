@@ -625,6 +625,34 @@ mod tests {
     }
 
     #[test]
+    fn a_city_carries_the_religion_it_follows_and_the_one_converting_it() {
+        // ⚠ THIS FIELD EXISTED AND WAS NEVER FILLED. `religion` was null on all
+        // 26,954 city records ever exported — the schema had it, the mod never sent
+        // it, and nothing failed. So the test is not "does the struct have a field",
+        // it is "does the export shape actually deserialize into one".
+        let raw = r#"{
+            "id": 7, "name": "Nidaros", "x": 12, "y": 9, "pop": 6,
+            "buildings": ["BUILDING_MONUMENT"],
+            "religion": "RELIGION_CATHOLICISM",
+            "religion_next": "RELIGION_BUDDHISM",
+            "religion_turns": 4
+        }"#;
+        let city: StateCity = serde_json::from_str(raw).expect("city shape parses");
+        assert_eq!(city.religion.as_deref(), Some("RELIGION_CATHOLICISM"));
+        // The level alone cannot distinguish a city holding steady from one about
+        // to flip, which is the `loyalty` / `loyalty_per_turn` lesson again.
+        assert_eq!(city.religion_next.as_deref(), Some("RELIGION_BUDDHISM"));
+        assert_eq!(city.religion_turns, 4);
+
+        // An unconverted city omits them rather than sending an index, and must
+        // still parse — "could not ask" and "follows nothing" both read as None.
+        let bare = r#"{"id": 8, "name": "Ålesund", "x": 1, "y": 2, "pop": 1}"#;
+        let plain: StateCity = serde_json::from_str(bare).expect("bare city parses");
+        assert!(plain.religion.is_none() && plain.religion_next.is_none());
+        assert_eq!(plain.religion_turns, 0);
+    }
+
+    #[test]
     fn a_hostile_lands_on_the_barbarian_seat_and_not_on_dormant_free_cities() {
         // ⚠ The roster has TWO players carrying `is_barbarian`, and only one of them
         // is alive. Measured on run `civvis-20260731T172058Z`: all nine barbarians
@@ -1039,6 +1067,25 @@ pub struct StateCity {
     /// Civ 6 building type names this city has already finished.
     #[serde(default)]
     pub buildings: Vec<String>,
+    /// The religion this city actually follows, by Civ 6 type name, and the one
+    /// converting it.
+    ///
+    /// ★★★★★ Null on all 26,954 city records ever exported before this — the same
+    /// shape as `districts`: in the schema, never filled. A city can be converted
+    /// away turn by turn and the mirror says nothing, so CIVVIS can neither pursue
+    /// a religious victory nor defend against one. Two consecutive completed games
+    /// were lost to the same victory type well before the turn limit while CIVVIS
+    /// held hundreds of unspent faith.
+    #[serde(default)]
+    pub religion: Option<String>,
+    /// The religion gaining on this city, if one is. `religion` alone is a level:
+    /// a city holding steady and a city about to flip read identically — the same
+    /// reason `loyalty_per_turn` exists beside `loyalty`.
+    #[serde(default)]
+    pub religion_next: Option<String>,
+    /// Turns until `religion_next` takes the city, or -1 when nothing is.
+    #[serde(default)]
+    pub religion_turns: i64,
     /// Districts this city has placed, each with the plot it sits on.
     ///
     /// ★★★★★ The plot is why this exists. `Item::District` carries a `pos`, so
