@@ -4573,32 +4573,37 @@ local function applyOrder(player, pid, row, turn)
 				-- named, exactly as `plotRevealed` does for `PlayersVisibility` — a
 				-- silent gate is worse than a loud one, and guessing again without
 				-- recording which guess worked is how this happened the first time.
+				-- ★★★★★ THE SHIPPED CALL, READ OUT OF `UnitPanel.lua:630`. Two guesses
+				-- before it produced `can_start=false,no_results` on every refusal in
+				-- the project's history — the results table was never populated because
+				-- the fifth argument is `OperationResultsTypes.ALL`, not `true`, and the
+				-- reasons live under `UnitOperationResults.FAILURE_REASONS` rather than
+				-- at the top level:
+				--
+				--   local bCanStart, tResults = UnitManager.CanStartOperation(
+				--       pUnit, UnitOperationTypes.FOUND_CITY, nil, false,
+				--       OperationResultsTypes.ALL);   -- No exclusion test
+				--   tResults[UnitOperationResults.FAILURE_REASONS]
+				--
+				-- ⚠ The reasons are LOC keys, so they are localised before emitting —
+				-- an untranslated key names the rule but not in words anyone reading
+				-- the ledger would recognise.
 				local why = "unknown";
-				local function reasons(results)
-					if results == nil then return nil; end
-					local parts = {};
-					for key, value in pairs(results) do
-						parts[#parts + 1] = tostring(key) .. "=" .. tostring(value);
-					end
-					if #parts == 0 then return nil; end
-					return table.concat(parts, ",");
-				end
 				pcall(function()
 					local ok, results = UnitManager.CanStartOperation(
-						unit, OP["UNITOPERATION_FOUND_CITY"], nil, false, true);
-					local text = reasons(results);
-					if text ~= nil then
-						why = "bool4:" .. text;
-					else
-						local ok2, results2 = UnitManager.CanStartOperation(
-							unit, OP["UNITOPERATION_FOUND_CITY"], nil, {}, true);
-						local text2 = reasons(results2);
-						if text2 ~= nil then
-							why = "tbl4:" .. text2;
-						elseif ok ~= nil then
-							why = "can_start=" .. tostring(ok) .. ",no_results";
-							local _ = ok2;
+						unit, UnitOperationTypes.FOUND_CITY, nil, false,
+						OperationResultsTypes.ALL);
+					if results ~= nil
+							and results[UnitOperationResults.FAILURE_REASONS] ~= nil then
+						local parts = {};
+						for _, key in ipairs(results[UnitOperationResults.FAILURE_REASONS]) do
+							parts[#parts + 1] =
+								try(function() return Locale.Lookup(key); end, tostring(key));
 						end
+						if #parts > 0 then why = table.concat(parts, " | "); end
+					end
+					if why == "unknown" and ok ~= nil then
+						why = "can_start=" .. tostring(ok) .. ",no_reasons";
 					end
 				end);
 				emit("found_refused", { turn = turn, unit = subject, why = why,
