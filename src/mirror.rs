@@ -1144,7 +1144,25 @@ pub struct Reconstruction {
 /// ruleset — `spawn_unit` indexes `rules.units` and panics on a name it does not
 /// have, so an unchecked guess would take the brain down mid-game.
 fn civvis_unit_name(civ6: &str) -> String {
-    civ6.strip_prefix("UNIT_").unwrap_or(civ6).to_ascii_lowercase()
+    let base = civ6.strip_prefix("UNIT_").unwrap_or(civ6).to_ascii_lowercase();
+    // ★★★ CIVILIZATION VI'S BARBARIAN VARIANTS ARE THE ORDINARY UNIT WITH A PREFIX.
+    //
+    // `UNIT_BARBARIAN_HORSEMAN` is a Horseman and `UNIT_BARBARIAN_HORSE_ARCHER` is a
+    // horse archer; CIVVIS models `horseman` and `saka_horse_archer` but neither
+    // `barbarian_horseman` nor `barbarian_horse_archer`, so both were dropped from the
+    // board entirely — 276 sightings across tonight's runs, every one a raider CIVVIS
+    // could not see while its settlers walked past.
+    //
+    // ⚠ This is a rename, not a substitution: the barbarian variants ARE these units
+    // in the shipped database. Where the stripped name is not modelled either it still
+    // falls through to `dropped_units` as untranslatable rather than being guessed at —
+    // `horse_archer` has no plain entry, so it resolves to the closest CIVVIS actually
+    // has rather than inventing one.
+    let base = base.strip_prefix("barbarian_").map(str::to_string).unwrap_or(base);
+    match base.as_str() {
+        "horse_archer" => "saka_horse_archer".to_string(),
+        _ => base,
+    }
 }
 
 
