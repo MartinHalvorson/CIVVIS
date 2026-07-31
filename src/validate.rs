@@ -649,7 +649,7 @@ fn politics(check: &mut Check) {
     for (id, spec) in &policies {
         let subject = format!("policies/{id}");
         check.gates(&subject, None, spec.civic.as_ref());
-        check.reference(&subject, "replaces", spec.replaces.as_ref(), &policies, "policy");
+        check.references(&subject, "replaces", &spec.replaces, &policies, "policy");
         if !SLOTS.contains(&spec.slot.as_str()) {
             check.error(&subject, format!("slot {:?} is not a policy slot type", spec.slot));
         }
