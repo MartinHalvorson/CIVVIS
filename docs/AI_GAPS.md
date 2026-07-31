@@ -360,18 +360,25 @@ constant stride. Effective controller aliases and champion consumption are also
 canonicalized through the same table used by construction; degraded artifacts
 and effective self-play fail closed in promotion mode.
 
-## Next ranked work after the full-prefix audit
+## Next ranked work after the identity implementation
 
-1. **Finish the structural evaluator specification.** Replace stringly factory
-   selection with a fallible `AgentSpec`/`builtin_arm` boundary that compares
-   every behavior-defining axis before a run. The shared alias resolver closes
-   the observed champion and historical-alias failures, but it is not yet the
-   exhaustive typed specification described in `EVAL_INTEGRITY.md`.
+The former first item is now landed: every selectable arm has a typed
+`AgentSpec`, evaluator preflight prints its actual comparison axes, and an
+unlabelled multi-axis result cannot start. The remaining work should build on
+that boundary rather than re-running the old stringly comparisons.
+
+1. **Make artifact-dependent evaluation strict by default.** The typed boundary
+   prevents an evaluator from misnaming a fallback, but a learned entrant can
+   still degrade when a model is absent. Give strict evaluation construction a
+   fallible path and reserve the existing game-start fallback for callers that
+   explicitly need a game to continue. This is R2 in `EVAL_INTEGRITY.md`.
 2. **Test one rational composite, pre-registered.** Combine the live policy deck
    with direct envoy production, because the two controls independently moved
    deployment outcomes and the latter demonstrably moved the resource. Use new
    stable, disjoint 300+ map prefixes, preserve compact safety, and record build
-   opportunity costs. Do not run a parameter sweep on the confirmation seeds.
+   opportunity costs. Mark it as a deployment comparison; do not attribute its
+   outcome to either component or run a parameter sweep on the confirmation
+   seeds.
 3. **Build a fog-honest major controller.** Extend the now-tested bounded
    belief-pressure surface into a major civilization that consumes observation,
    memory, and belief end-to-end. This remains the largest rules-integrity gap

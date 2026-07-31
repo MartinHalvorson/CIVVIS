@@ -173,6 +173,45 @@ fallback to score-share evaluation really is the agent its provenance names.
 Two of three claims in the shipped binary are false, and the one that is true
 is confirmed by the same instrument.
 
+### Implemented 2026-07-31 — typed identity boundary
+
+The R1 root-cause repair is now in the evaluator. A private `ArmKind` registry
+names every selectable builtin and evaluator-only arm once. `builtin_ai`,
+`builtin_arm`, the artifact alias resolver, and the collapse guard resolve that
+same typed identity; a registered name with no factory row is an explicit
+failure rather than an accidental `BasicAi` fallback. The public game-start
+fallback for an *unknown* legacy name remains deliberate and separate.
+
+`builtin_arm` exposes the resolved `AgentSpec`: canonical factory target,
+architecture, weight source, terminal evaluator, and every declared treatment
+component. `AgentSpec::differing_axes` reports the actual replacement axes.
+`collapsed_entrants` compares full resolved specs rather than parallel
+effective-name strings. Provenance retains its detailed artifact report, but
+its published effective identity is now derived from the typed resolver and a
+debug assertion catches a disagreement with its legacy status rows.
+
+The `ai_eval` preflight now prints those axes before it starts games. It rejects
+a comparison with more than one axis unless the caller explicitly supplies
+`--deployment-comparison`; this allows a named replacement question but
+prevents its result from being filed as evidence for one component. Matrix
+children supply that flag because a matrix is explicitly a replacement test.
+
+The locking evidence is executable rather than a manually maintained alias
+table:
+
+- every selectable registry entry constructs through the typed factory;
+- every production-resolved alias plays the same deterministic 30-turn game as
+  its typed canonical arm on two independent seeds; and
+- no two distinct same-family selectable specs may fall back to an unclassified
+  `implementation` axis; and
+- a representative one-axis champion comparison, a three-component envoy
+  composite, and the shipped-roster `advanced_league_top` source all have
+  direct spec assertions.
+
+This closes R1's identity and false-self-comparison failures. It does **not**
+make missing learned artifacts acceptable for an evaluation: strict,
+artifact-dependent construction remains the R2 work item below.
+
 ---
 
 ## 3. R2 — degradation succeeds by default
@@ -486,7 +525,7 @@ trusting anything measured afterwards.
 | # | change | closes | cost |
 |---|---|---|---|
 | 0 | Correct `docs/GENOME.md`'s standing “`strategic_deep` at +45 Elo”, which #482 excluded | R3 corollary | one edit |
-| 1 | Single arm table (`AgentSpec` + `builtin_arm`), spec-based collapse check, the plays-as-it-claims test | R1 — both defects | ~1 day, `src/elo.rs` |
+| 1 | **Landed:** typed `ArmKind` / `AgentSpec` boundary, spec-based collapse check, factory and plays-as-typed-spec tests | R1 — both defects | PR #674, `src/elo.rs` |
 | 2 | Fallible strict `builtin_ai`; explicit degraded entry point | R2 | ~half a day |
 | 3 | Discovery-vs-confirmed effect sizes in `ai_eval`; the docs rule | R3 | ~half a day |
 | 4 | `strength_bound()` as the only ordering; table reproducible or gone | R4 | ~half a day |
@@ -494,11 +533,11 @@ trusting anything measured afterwards.
 | 6 | Restate the eight two-axis comparisons in §8 against matched controls | fallout of 1 and 3 | ~a day of compute |
 | 7 | Deployment-profile decision on seating search | §6 | compute, largest |
 
-Item 0 is free and should go first. Items 1–4 are code and are independent of
-each other. **Item 6 cannot be trusted before item 1 lands**, because
-re-measuring the confounded comparisons is exactly the work item 1 makes
-possible — running it against today's harness would reproduce the defect it is
-meant to correct.
+Item 0 is free and should go first. Item 1 is now landed; items 2–4 are
+independent follow-on code. **Item 6 cannot be trusted before item 1 lands**,
+because re-measuring the confounded comparisons is exactly the work item 1
+makes possible — running it against the former harness would reproduce the
+defect it is meant to correct.
 
 ## 10. What this is worth
 
