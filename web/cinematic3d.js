@@ -1444,8 +1444,16 @@
       action: clamp(Number(options.action || 0), 0, 1),
       seed: Number(options.seed || 0) * 1.713,
     };
+    // The flat board uses the compact default camera. Other canvases can pass
+    // their own orthographic frame: a unit standing on a globe, for example,
+    // still needs this same mesh but its local up points away from the planet's
+    // centre instead of at the top edge of the browser.
     const scene = new Scene(o.ctx, {scale:o.scale || 1.04, facing:o.facing,
-      bank:o.family === "air" ? Math.sin(o.time * 2.2 + o.seed) * .45 : 0});
+      bank:o.family === "air" ? Math.sin(o.time * 2.2 + o.seed) * .45 : 0,
+      yaw:Number(o.yaw || 0), tilt:Number(o.tilt || .38),
+      orthographic:!!o.orthographic,
+      sunAngle:Number.isFinite(o.sunAngle) ? o.sunAngle : undefined,
+      stroke:o.stroke});
     if (o.type === "supply_convoy" && o.family !== "embarked") drawConvoy(scene, o);
     else if (o.family === "mounted") drawMounted(scene, o);
     else if (o.family === "armor") drawArmor(scene, o);
