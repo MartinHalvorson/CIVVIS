@@ -38,12 +38,15 @@ pub const BUILTIN_AIS: [&str; 10] = [
 /// tournament ratings. Keeping them out of `BUILTIN_AIS` prevents a control
 /// factory from being pooled into the same player/leader rating key as
 /// its treatment.
-pub const EVAL_ONLY_AIS: [&str; 70] = [
+pub const EVAL_ONLY_AIS: [&str; 73] = [
+    "basic_evolved",
     "advanced_policy_live_control",
     "advanced_envoy_policy",
     "advanced_envoy_infrastructure",
+    "advanced_envoy_priority",
     "advanced_envoy_economy",
     "advanced_strategic_commitment",
+    "advanced_evolved_commitment",
     "advanced_congress_counter",
     "advanced_congress_votes",
     "advanced_congress_counter_hard",
@@ -1166,7 +1169,102 @@ impl EloPool {
     }
 }
 
+/// Canonical controller identity for names whose artifacts can make them an
+/// exact alias of another selectable agent.
+///
+/// Both construction and provenance go through this table. When it returns a
+/// different name, [`builtin_ai`] delegates to that name's factory instead of
+/// independently reconstructing what ought to be the same controller. This
+/// makes the provenance claim true by construction, including the embedded
+/// champion tier used by the production `evolved/` directory.
+fn artifact_effective_alias_from(
+    name: &str,
+    champion: bool,
+    net: bool,
+    wide_net: bool,
+    league: bool,
+) -> Option<&'static str> {
+    let basic_fallback = if champion { "basic_evolved" } else { "basic" };
+    let advanced_fallback = if champion {
+        "advanced_evolved"
+    } else {
+        "advanced"
+    };
+    match name {
+        "evolved" | "advanced_evolved" => Some(advanced_fallback),
+        "basic_evolved" => Some(basic_fallback),
+        "neural" => Some(if net { "neural" } else { basic_fallback }),
+        "policy" => Some(if net { "policy" } else { advanced_fallback }),
+        "policy_wide" => Some(if wide_net {
+            "policy_wide"
+        } else {
+            advanced_fallback
+        }),
+        "policy_wide_frozen" => Some(if wide_net {
+            "policy_wide_frozen"
+        } else {
+            advanced_fallback
+        }),
+        "strategic" => Some(if net { "strategic" } else { "strategic_score" }),
+        "strategic_warm" => Some(if net { "strategic" } else { "strategic_score" }),
+        "production_net" => Some(if net { "production_net" } else { "production" }),
+        "strategic_deep_league" => Some(if league {
+            "strategic_deep_league"
+        } else {
+            "strategic_deep"
+        }),
+        "advanced_evolved_commitment" => Some(if champion {
+            "advanced_evolved_commitment"
+        } else {
+            "advanced_strategic_commitment"
+        }),
+        "advanced_evolved_blind" => Some(if champion {
+            "advanced_evolved_blind"
+        } else {
+            "advanced_blind_to_leaders"
+        }),
+        "advanced_banking_dedication" => Some(advanced_fallback),
+        _ => None,
+    }
+}
+
+fn artifact_effective_alias(name: &str, dir: &str) -> Option<&'static str> {
+    if !matches!(
+        name,
+        "evolved"
+            | "advanced_evolved"
+            | "basic_evolved"
+            | "neural"
+            | "policy"
+            | "policy_wide"
+            | "policy_wide_frozen"
+            | "strategic"
+            | "strategic_warm"
+            | "production_net"
+            | "strategic_deep_league"
+            | "advanced_evolved_commitment"
+            | "advanced_evolved_blind"
+            | "advanced_banking_dedication"
+    ) {
+        return None;
+    }
+    let champion = crate::evolve::load_champion(dir).is_some();
+    let net = matches!(
+        name,
+        "neural" | "policy" | "strategic" | "strategic_warm" | "production_net"
+    ) && crate::valuenet::ValueNet::load_width(dir, crate::evolve::FEATURE_WIDTH).is_some();
+    let wide_net = matches!(name, "policy_wide" | "policy_wide_frozen")
+        && crate::valuenet::ValueNet::load_width(dir, crate::decision_features::WIDTH).is_some();
+    let league = name == "strategic_deep_league" && league_generalist().is_some();
+    artifact_effective_alias_from(name, champion, net, wide_net, league)
+}
+
 pub fn builtin_ai(name: &str, seed: u64) -> Box<dyn Ai> {
+    if let Some(effective) = artifact_effective_alias(name, ARTIFACT_DIR) {
+        if effective != name {
+            return builtin_ai(effective, seed);
+        }
+    }
     match name {
         "advanced" => Box::new(AdvancedAi::new()),
         // Four arms decompose the envoy-acquisition treatment. The live
@@ -1190,6 +1288,16 @@ pub fn builtin_ai(name: &str, seed: u64) -> Box<dyn Ai> {
             ai.envoy_infrastructure = true;
             Box::new(ai)
         }
+        // The valuation-only treatment above is routed around by ordinary
+        // adaptive production. This arm keeps that valuation and additionally
+        // reserves one empty city for the first legal, horizon-positive stage
+        // of the Diplomatic Quarter -> Consulate -> Chancery chain.
+        "advanced_envoy_priority" => {
+            let mut ai = AdvancedAi::new();
+            ai.envoy_infrastructure = true;
+            ai.envoy_priority = true;
+            Box::new(ai)
+        }
         "advanced_envoy_economy" => {
             let mut weights = Weights::default();
             weights.policy_deck = crate::ai::PolicyDeck::Live;
@@ -1200,6 +1308,18 @@ pub fn builtin_ai(name: &str, seed: u64) -> Box<dyn Ai> {
         }
         "advanced_strategic_commitment" => {
             let mut ai = AdvancedAi::new();
+            ai.strategic_commitment = true;
+            Box::new(ai)
+        }
+        // Composite of the strongest committed compact-profile genome and the
+        // independently causal strategy-stability treatment. Its artifact is
+        // definitional, so evaluators can refuse a silent stock fallback. The
+        // preregistered 20-map matrix rejected transfer: compact was +17, but
+        // deployment was -70 with terminal direction 5-15 (p=0.0414).
+        "advanced_evolved_commitment" => {
+            let mut ai = crate::evolve::load_champion("evolved")
+                .map(AdvancedAi::with_weights)
+                .unwrap_or_else(AdvancedAi::new);
             ai.strategic_commitment = true;
             Box::new(ai)
         }
@@ -1596,6 +1716,14 @@ pub fn builtin_ai(name: &str, seed: u64) -> Box<dyn Ai> {
         }
         "advanced_v1" => Box::new(AdvancedAi::legacy()),
         "random" => Box::new(RandomAi::new(seed)),
+        // Exact netless fallback played by `neural` when the committed
+        // champion is present. Naming it makes provenance collapse checks
+        // compare controller *and* weights instead of dropping the genome.
+        "basic_evolved" => Box::new(
+            crate::evolve::load_champion("evolved")
+                .map(BasicAi::with_weights)
+                .unwrap_or_default(),
+        ),
         "evolved" => Box::new(
             crate::evolve::load_champion("evolved")
                 .map(AdvancedAi::with_weights)
@@ -1990,25 +2118,29 @@ pub struct ArtifactStatus {
 /// `builtin_ai` falls back silently when a trained artifact is missing —
 /// correctly, because a missing file should not stop a game. What it must
 /// not do is let an evaluation record the result under the learned name: on
-/// a checkout with no `evolved/` directory, `neural` is `basic` and
-/// `policy` is `advanced`, so a run pitting them against `advanced`
-/// measures the scripted agent against itself and reports it as evidence
-/// about a learned one.
+/// a checkout with no value net, `neural` is either `basic_evolved` or
+/// `basic`, and `policy` is either `advanced_evolved` or `advanced`, depending
+/// on whether the champion genome loaded. Dropping that second artifact from
+/// the effective name makes the self-comparison guard wrong in both
+/// directions.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AgentProvenance {
     /// The name the caller asked for.
     pub requested: String,
     /// Every artifact the name reads, in the order it reads them.
     pub artifacts: Vec<ArtifactStatus>,
-    /// The agent that actually plays. Equals `requested` unless a
-    /// definitional artifact is missing.
+    /// Canonical identity of the agent that actually plays. Equals
+    /// `requested` unless a definitional artifact is missing or the requested
+    /// name is a historical alias of an identical controller and weight set.
     pub effective: &'static str,
 }
 
 impl AgentProvenance {
     /// True when the name promises more than the loaded artifacts deliver.
     pub fn degraded(&self) -> bool {
-        self.effective != self.requested
+        self.artifacts
+            .iter()
+            .any(|artifact| artifact.definitional && !artifact.found)
     }
 
     /// True when some artifact the name reads did not load, whether or not
@@ -2030,9 +2162,17 @@ impl AgentProvenance {
     pub fn line(&self) -> String {
         let missing = self.missing();
         if missing.is_empty() {
-            return match self.artifacts.is_empty() {
-                true => format!("{}: scripted, no artifacts required", self.requested),
-                false => format!("{}: loaded {}", self.requested, self.artifacts_list()),
+            return if self.artifacts.is_empty() {
+                format!("{}: scripted, no artifacts required", self.requested)
+            } else if self.effective != self.requested {
+                format!(
+                    "{}: plays as {} (loaded {})",
+                    self.requested,
+                    self.effective,
+                    self.artifacts_list()
+                )
+            } else {
+                format!("{}: loaded {}", self.requested, self.artifacts_list())
             };
         }
         let plays = match self.degraded() {
@@ -2059,6 +2199,14 @@ impl AgentProvenance {
 pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
     let champion = crate::evolve::load_champion(dir).is_some();
     let net = crate::valuenet::ValueNet::load_width(dir, crate::evolve::FEATURE_WIDTH).is_some();
+    let wide_net =
+        crate::valuenet::ValueNet::load_width(dir, crate::decision_features::WIDTH).is_some();
+    let basic_fallback = if champion { "basic_evolved" } else { "basic" };
+    let advanced_fallback = if champion {
+        "advanced_evolved"
+    } else {
+        "advanced"
+    };
     let genome = ArtifactStatus {
         file: CHAMPION_FILE,
         found: champion,
@@ -2070,7 +2218,7 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         definitional,
     };
     let league = league_generalist().is_some();
-    let (artifacts, effective) = match name {
+    let (artifacts, independently_declared_effective) = match name {
         // The genome *is* these two names; without it they are the stock
         // scripted agent under a name that claims otherwise.
         "evolved" => (
@@ -2078,7 +2226,14 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
                 definitional: true,
                 ..genome
             }],
-            if champion { "evolved" } else { "advanced" },
+            if champion {
+                // `evolved` and `advanced_evolved` construct the same
+                // `AdvancedAi::with_weights(champion)`; retain one canonical
+                // identity so their comparison is rejected as self-play.
+                "advanced_evolved"
+            } else {
+                "advanced"
+            },
         ),
         "advanced_evolved" => (
             vec![ArtifactStatus {
@@ -2091,15 +2246,23 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
                 "advanced"
             },
         ),
+        "basic_evolved" => (
+            vec![ArtifactStatus {
+                definitional: true,
+                ..genome
+            }],
+            basic_fallback,
+        ),
         // NeuralAi needs the net to exist at all and drops all the way to
-        // the lightweight agent without it — the largest silent gap here.
+        // the lightweight controller without it. Preserve whether that
+        // controller loaded the champion genome in the effective identity.
         "neural" => (
             vec![genome, value(true)],
-            if net { "neural" } else { "basic" },
+            if net { "neural" } else { basic_fallback },
         ),
         "policy" => (
             vec![genome, value(true)],
-            if net { "policy" } else { "advanced" },
+            if net { "policy" } else { advanced_fallback },
         ),
         // The *wide* net is definitional and is a different artifact from
         // the one `policy` wants: `load_width` refuses each to the other,
@@ -2109,23 +2272,18 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
                 genome,
                 ArtifactStatus {
                     file: VALUENET_FILE,
-                    found: crate::valuenet::ValueNet::load_width(
-                        dir,
-                        crate::decision_features::WIDTH,
-                    )
-                    .is_some(),
+                    found: wide_net,
                     definitional: true,
                 },
             ],
-            if crate::valuenet::ValueNet::load_width(dir, crate::decision_features::WIDTH).is_some()
-            {
+            if wide_net {
                 if name == "policy_wide" {
                     "policy_wide"
                 } else {
                     "policy_wide_frozen"
                 }
             } else {
-                "advanced"
+                advanced_fallback
             },
         ),
         // Strategic keeps its lane rollouts without a net; what it loses is
@@ -2151,7 +2309,10 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "strategic_r20h20" => (vec![genome, value(false)], "strategic_r20h20"),
         "strategic_h80" => (vec![genome, value(false)], "strategic_h80"),
         "strategic_rot20" => (vec![genome, value(false)], "strategic_rot20"),
-        "strategic_warm" => (vec![genome, value(false)], "strategic_warm"),
+        "strategic_warm" => (
+            vec![genome, value(true)],
+            if net { "strategic" } else { "strategic_score" },
+        ),
         "strategic_religion_expand" => (
             vec![genome, value(false)],
             "strategic_religion_expand",
@@ -2208,8 +2369,20 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "advanced_policy_live_control" => (Vec::new(), "advanced_policy_live_control"),
         "advanced_envoy_policy" => (Vec::new(), "advanced_envoy_policy"),
         "advanced_envoy_infrastructure" => (Vec::new(), "advanced_envoy_infrastructure"),
+        "advanced_envoy_priority" => (Vec::new(), "advanced_envoy_priority"),
         "advanced_envoy_economy" => (Vec::new(), "advanced_envoy_economy"),
         "advanced_strategic_commitment" => (Vec::new(), "advanced_strategic_commitment"),
+        "advanced_evolved_commitment" => (
+            vec![ArtifactStatus {
+                definitional: true,
+                ..genome
+            }],
+            if champion {
+                "advanced_evolved_commitment"
+            } else {
+                "advanced_strategic_commitment"
+            },
+        ),
         "advanced_lane_reachable" => (Vec::new(), "advanced_lane_reachable"),
         "advanced_wide_opening" => (Vec::new(), "advanced_wide_opening"),
         "advanced_expansion_payback" => (Vec::new(), "advanced_expansion_payback"),
@@ -2222,8 +2395,14 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "advanced_city_strategy_breadbasket_only" => (Vec::new(), "advanced_city_strategy_breadbasket_only"),
         "advanced_city_strategy_comparative_only" => (Vec::new(), "advanced_city_strategy_comparative_only"),
         "advanced_city_strategy_pressure_only" => (Vec::new(), "advanced_city_strategy_pressure_only"),
-        "advanced_banking_dedication" => (Vec::new(), "advanced_banking_dedication"),
-        "advanced_measured_dedication" => (Vec::new(), "advanced_measured_dedication"),
+        "advanced_banking_dedication" => (
+            vec![ArtifactStatus {
+                definitional: true,
+                ..genome
+            }],
+            advanced_fallback,
+        ),
+        "advanced_measured_dedication" => (vec![genome], "advanced_measured_dedication"),
         "advanced_parallel_settlers" => (Vec::new(), "advanced_parallel_settlers"),
         "advanced_settler_first" => (Vec::new(), "advanced_settler_first"),
         "advanced_prophet_first" => (Vec::new(), "advanced_prophet_first"),
@@ -2263,6 +2442,12 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "basic" => (Vec::new(), "basic"),
         _ => (Vec::new(), "basic"),
     };
+    let effective = artifact_effective_alias_from(name, champion, net, wide_net, league)
+        .unwrap_or(independently_declared_effective);
+    debug_assert_eq!(
+        effective, independently_declared_effective,
+        "artifact alias table and provenance row diverged for {name}"
+    );
     AgentProvenance {
         requested: name.to_string(),
         artifacts,
@@ -2889,8 +3074,8 @@ mod tests {
         builtin_ai, builtin_provenance, collapsed_entrants, direct_anchor_performance, expected,
         leaderboard, league_generalist, performance_elo, scheduled_seats, seat_schedule,
         wilson_interval, win_shares, EloPool, RatedPlayer, RatingKey, TourneyCfg,
-        TournamentProfile, BUILTIN_AIS, CHAMPION_FILE, DEFAULT_RATINGS_PATH, ELO_BASE_RATING,
-        ELO_SCHEMA_VERSION, EVAL_ONLY_AIS, VALUENET_FILE,
+        TournamentProfile, ARTIFACT_DIR, BUILTIN_AIS, CHAMPION_FILE, DEFAULT_RATINGS_PATH,
+        ELO_BASE_RATING, ELO_SCHEMA_VERSION, EVAL_ONLY_AIS, VALUENET_FILE,
     };
     use crate::rng::Rng;
     use std::collections::BTreeMap;
@@ -2960,6 +3145,109 @@ mod tests {
         fs::remove_dir_all(dir).unwrap();
     }
 
+    /// A missing net changes the controller, not its already-loaded genome.
+    /// The effective identity must retain both or the self-comparison guard
+    /// warns on distinct agents and misses identical ones.
+    #[test]
+    fn champion_weighted_fallbacks_keep_the_genome_in_their_identity() {
+        let dir = "target/test-provenance-champion-fallback";
+        let _ = fs::remove_dir_all(dir);
+        fs::create_dir_all(dir).unwrap();
+        fs::copy(
+            format!("data/evolved/{CHAMPION_FILE}"),
+            format!("{dir}/{CHAMPION_FILE}"),
+        )
+        .expect("the committed champion fixture must be available");
+
+        for (name, effective) in [
+            ("neural", "basic_evolved"),
+            ("policy", "advanced_evolved"),
+            ("policy_wide", "advanced_evolved"),
+            ("policy_wide_frozen", "advanced_evolved"),
+        ] {
+            let resolved = builtin_provenance(name, dir);
+            assert_eq!(resolved.effective, effective, "{name}");
+            assert!(resolved.degraded(), "{name}");
+            assert!(resolved.untrained(), "{name}");
+            assert_eq!(resolved.missing(), vec![VALUENET_FILE], "{name}");
+        }
+
+        let evolved_alias = builtin_provenance("evolved", dir);
+        assert_eq!(evolved_alias.effective, "advanced_evolved");
+        assert!(!evolved_alias.degraded(), "a loaded alias is not degraded");
+        assert_eq!(
+            collapsed_entrants(&["evolved", "advanced_evolved"], dir),
+            vec![(
+                "evolved".to_string(),
+                "advanced_evolved".to_string(),
+                "advanced_evolved"
+            )]
+        );
+
+        assert!(collapsed_entrants(&["neural", "basic"], dir).is_empty());
+        assert_eq!(
+            collapsed_entrants(&["neural", "basic_evolved"], dir),
+            vec![(
+                "neural".to_string(),
+                "basic_evolved".to_string(),
+                "basic_evolved"
+            )]
+        );
+        assert_eq!(
+            collapsed_entrants(&["policy", "advanced_evolved"], dir),
+            vec![(
+                "policy".to_string(),
+                "advanced_evolved".to_string(),
+                "advanced_evolved"
+            )]
+        );
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    /// Production resolves the committed embedded champion even when there is
+    /// no generated `evolved/` directory. Pin that real resolution path, not
+    /// only the useful-but-impossible bare-directory fixture above.
+    #[test]
+    fn production_fallback_identity_includes_the_embedded_champion() {
+        assert!(
+            crate::evolve::load_champion(ARTIFACT_DIR).is_some(),
+            "the production artifact tier must resolve the committed champion"
+        );
+        for (name, effective) in [
+            ("neural", "basic_evolved"),
+            ("policy", "advanced_evolved"),
+            ("policy_wide", "advanced_evolved"),
+            ("policy_wide_frozen", "advanced_evolved"),
+        ] {
+            assert_eq!(
+                builtin_provenance(name, ARTIFACT_DIR).effective,
+                effective,
+                "{name}"
+            );
+        }
+        assert!(collapsed_entrants(&["neural", "basic"], ARTIFACT_DIR).is_empty());
+        assert_eq!(
+            collapsed_entrants(&["policy", "advanced_evolved"], ARTIFACT_DIR),
+            vec![(
+                "policy".to_string(),
+                "advanced_evolved".to_string(),
+                "advanced_evolved"
+            )]
+        );
+        assert_eq!(
+            collapsed_entrants(
+                &["advanced_banking_dedication", "advanced_evolved"],
+                ARTIFACT_DIR
+            )[0]
+                .2,
+            "advanced_evolved"
+        );
+        assert_eq!(
+            collapsed_entrants(&["strategic_warm", "strategic"], ARTIFACT_DIR)[0].2,
+            "strategic_score"
+        );
+    }
+
     /// Two entrants that resolve to one agent make their difference noise.
     #[test]
     fn entrants_that_collapse_to_one_agent_are_reported() {
@@ -2998,11 +3286,12 @@ mod tests {
             // Anything else reaching that state fell through to the
             // catch-all and is claiming to need nothing while quietly
             // needing a net.
-            const SCRIPTED: [&str; 41] = [
+            const SCRIPTED: [&str; 40] = [
                 "advanced",
                 "advanced_policy_live_control",
                 "advanced_envoy_policy",
                 "advanced_envoy_infrastructure",
+                "advanced_envoy_priority",
                 "advanced_envoy_economy",
                 "advanced_strategic_commitment",
                 "advanced_blind_to_leaders",
@@ -3018,7 +3307,6 @@ mod tests {
                 "advanced_settler_commit",
                 "advanced_wide_opening",
                 "advanced_expansion_payback",
-                "advanced_banking_dedication",
                 "advanced_city_strategy",
                 "advanced_city_strategy_emphasis",
                 "advanced_city_strategy_roles",
@@ -3032,7 +3320,6 @@ mod tests {
                 "advanced_food_first",
                 "advanced_lane_reachable",
                 "advanced_league_top",
-                "advanced_measured_dedication",
                 "advanced_parallel_settlers",
                 "advanced_prophet_first",
                 "advanced_relief_scoped",
