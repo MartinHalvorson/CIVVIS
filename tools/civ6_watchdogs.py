@@ -173,26 +173,41 @@ def idle_stack(events: list[dict], frozen_turns: int = 20) -> dict:
                 lost.append({"turn": state.get("turn"), "plot": plot})
         previous = held
 
-    reach = {"furthest": None, "mean": None, "units": 0}
-    if states:
-        last = states[-1]
-        centres = [(c["x"], c["y"]) for c in (last.get("cities") or [])]
-        units = last.get("units") or []
-        if centres and units:
-            def offset_distance(a, b):
-                def axial(p):
-                    col, row = p
-                    return col - (row - (row & 1)) // 2, row
-                (aq, ar), (bq, br) = axial(a), axial(b)
-                return max(abs(aq - bq), abs(ar - br), abs((-aq - ar) - (-bq - br)))
-            spread = [
-                min(offset_distance((u["x"], u["y"]), c) for c in centres) for u in units
-            ]
-            reach = {
+    # ⚠⚠ OVER THE WHOLE RUN, NOT THE LAST TURN — and reading the last turn alone
+    # nearly bought me a wrong conclusion tonight. Sampled at the final state the four
+    # attempts of 2026-07-31 read 13, 56, 4 and 2 tiles, which looks like a collapse
+    # caused by whatever changed between them. It is not: the last turn of a run that
+    # is losing units has three units left, all of them at home defending, and a run
+    # that ended on a scout abroad reads 56. The number that means something is the
+    # furthest ANY unit got at ANY point, beside the last-turn picture.
+    def offset_distance(a, b):
+        def axial(p):
+            col, row = p
+            return col - (row - (row & 1)) // 2, row
+        (aq, ar), (bq, br) = axial(a), axial(b)
+        return max(abs(aq - bq), abs(ar - br), abs((-aq - ar) - (-bq - br)))
+
+    reach = {"furthest": None, "mean": None, "units": 0, "furthest_ever": None,
+             "furthest_ever_turn": None}
+    ever, ever_turn = None, None
+    for state in states:
+        centres = [(c["x"], c["y"]) for c in (state.get("cities") or [])]
+        units = state.get("units") or []
+        if not centres or not units:
+            continue
+        spread = [
+            min(offset_distance((u["x"], u["y"]), c) for c in centres) for u in units
+        ]
+        if ever is None or max(spread) > ever:
+            ever, ever_turn = max(spread), state.get("turn")
+        if state is states[-1]:
+            reach.update({
                 "furthest": max(spread),
                 "mean": round(sum(spread) / len(spread), 1),
                 "units": len(spread),
-            }
+            })
+    reach["furthest_ever"] = ever
+    reach["furthest_ever_turn"] = ever_turn
 
     frozen = [
         (uid, kinds.get(uid, "?"), last_seen[uid] - first)
@@ -372,12 +387,12 @@ def verdicts(report: dict, stuck_max: float, agree_min: float) -> list[str]:
             f"Founding a city and holding it are different problems and the peak "
             f"count hides the second one.")
     reach = idle.get("reach") or {}
-    if reach.get("furthest") is not None and reach["furthest"] <= 3 and reach["units"] >= 6:
+    if reach.get("furthest_ever") is not None and reach["furthest_ever"] <= 8:
         out.append(
-            f"THE EMPIRE DOES NOT REACH: {reach['units']} units and the furthest is "
-            f"{reach['furthest']} tiles from a city (mean {reach['mean']}). Nothing is "
-            f"looking for anybody — this is what makes `met` stall and domination "
-            f"unreachable.")
+            f"THE EMPIRE NEVER REACHED: the furthest any unit ever got from one of our "
+            f"cities was {reach['furthest_ever']} tiles, at turn "
+            f"{reach['furthest_ever_turn']}. Nothing went looking for anybody — this is "
+            f"what makes `met` stall and domination unreachable.")
     if idle.get("frozen_units"):
         out.append(
             f"FROZEN UNITS: {idle['frozen_units']} of {idle['units_seen']} units never "
@@ -451,8 +466,10 @@ def main() -> int:
         idle = report["idle_stack"]
         print(f"{run.name}")
         reach = idle.get("reach") or {}
-        print(f"  reach: furthest {reach.get('furthest')} tiles from a city, "
-              f"mean {reach.get('mean')}, over {reach.get('units')} units at the last turn")
+        print(f"  reach: furthest EVER {reach.get('furthest_ever')} tiles "
+              f"(at t{reach.get('furthest_ever_turn')}); at the last turn "
+              f"{reach.get('furthest')} furthest / {reach.get('mean')} mean "
+              f"over {reach.get('units')} units")
         print(f"  idle: stuck {idle['stuck_unit_turns']}/{idle['unit_turns']} unit-turns"
               f" ({idle['stuck_fraction']})  surplus-on-centres "
               f"{idle['surplus_on_centres_unit_turns']}  worst stack {idle['worst_stack']}"
