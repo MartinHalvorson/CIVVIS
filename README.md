@@ -270,9 +270,25 @@ extension before the agent commits.
 The best-established scripted regression result compares `advanced` with its
 frozen predecessor: on the recorded six-player 74×46, six-city-state Online
 benchmark, `advanced` measured **+207 Elo-equivalent** against `advanced_v1`
-and passed the promotion gate. Exact end-to-end tests also make the agent
-complete every victory type without injected progress. Those tests establish
-rules and planning coverage; they are not evidence of human-level play.
+and passed the promotion gate; this audit reproduced **+98** on the compact
+four-player benchmark on a fresh seed. Exact end-to-end tests also make the
+agent complete every victory type without injected progress. Those tests
+establish rules and planning coverage; they are not evidence of human-level
+play.
+
+**That head-to-head edge does not show up in league play.** Over the 3,681
+games the two have played in the round-3143 live league, `advanced` wins
+outright 21.5% of the time (440/2049) and `advanced_v1` wins 22.5%
+(368/1632) — a difference of −1.1 points against a standard error of 1.4, so
+the league is well powered to see a several-point gap and does not see one.
+The committed round-60 snapshot leans the same way (27.5% against 33.5%,
+p = 0.09). League seating is not randomised between the two, so this is
+observational rather than a controlled comparison, and a duel advantage need
+not convert into outright wins in a rotating 4-to-10-way race where any rival
+can take the game. But it is the largest body of evidence CIVVIS has at the
+profiles it actually runs, and it says the flagship improvement is worth
+roughly nothing in outright victories there. A mirrored duel and an N-way
+free-for-all are different questions, and only the first has been answered.
 
 The evaluation machinery is another genuine strength. Runs are seeded,
 seat-mirrored, profile-labelled, provenance-checked, and gated on wins. That
