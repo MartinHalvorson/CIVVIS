@@ -21,6 +21,7 @@ measurement:
 from __future__ import annotations
 
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -105,10 +106,35 @@ def install(config: dict) -> Path:
             error = check_syntax(written)
             if error:
                 raise SystemExit(f"{src.name} does not parse: {error}")
+        elif src.name == "CivvisControlConfig.xml":
+            # The setup DEFAULTS, applied through the one FrontEnd hook shipped
+            # content actually uses (`UpdateDatabase`). ⚠ The seed must be a real
+            # integer: a literal 0 reads as "unset" and silently restores random
+            # maps, which is the failure this whole file exists to end.
+            seed = int(config.get("MapSeed") or 0)
+            text_xml = src.read_text()
+            if seed > 0:
+                text_xml = text_xml.replace("CIVVIS_SEED", str(seed))
+            else:
+                # No seed asked for: drop the two seed updates rather than write a
+                # placeholder the database would reject.
+                text_xml = re.sub(
+                    r"\t\t<Update>\s*<Where ParameterId=\"(?:Map|Game)RandomSeed\"/>.*?</Update>\n",
+                    "", text_xml, flags=re.S)
+            (target / src.name).write_text(text_xml)
         else:
             shutil.copy2(src, target / src.name)
     # Kept beside the scripts so the active settings are readable in the
     # install without reading a whole script.
+    # ⚠⚠ THE RUN TAG IN THIS FILE IS THE GAME LOCK'S IDENTITY. `gamelock.foreign_run`
+    # reads it and, if the game is up and the tag is not the caller's, reports
+    # "another run holds the game" — which `civ6_climb` counts as a spent ATTEMPT.
+    # A throwaway install (a probe, a syntax check) that writes a made-up tag and
+    # leaves Civ 6 running therefore locks out every subsequent run: it burned all
+    # four attempts twice in a row with RunTag 'probe'. None is treated as "not
+    # foreign", so an install with no real run behind it must not invent one.
+    if not config.get("RunTag"):
+        config = dict(config, RunTag=None)
     (target / "config.json").write_text(json.dumps(config, indent=2, sort_keys=True))
 
     mod_db = env.user_dir() / "Mods.sqlite"
