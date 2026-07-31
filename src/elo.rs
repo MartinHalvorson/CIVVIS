@@ -2612,6 +2612,7 @@ impl ArmKind {
             Self::AdvancedExpansionDispatch => &["expansion-dispatch"],
             Self::AdvancedExpansionComplete => &["late-expansion", "expansion-dispatch"],
             Self::AdvancedWideOpening => &["city-target-floor"],
+            Self::AdvancedPlanCityTarget => &["plan-city-target"],
             Self::AdvancedLaneReachable => &["lane-reachability"],
             Self::AdvancedSettlerFirst => &["settler-oracle"],
             Self::AdvancedProphetFirst => &["prophet-priority"],
