@@ -858,6 +858,14 @@ pub struct StateSnapshot {
     /// not know it had.
     #[serde(default)]
     pub government: Option<String>,
+    /// Civ 6 belief type of the pantheon this seat has founded, if any.
+    ///
+    /// ⚠ Its absence was not silent, only unread: 125 `pantheon` orders in 173 turns,
+    /// every one counted applied, against one pantheon. A seat that does not know it
+    /// has a pantheon keeps choosing one — and is also missing that belief's yields
+    /// from every calculation it makes.
+    #[serde(default)]
+    pub pantheon: Option<String>,
     #[serde(default)]
     pub gold: i64,
     /// Faith BALANCE. `science` and `culture` are per-turn yields that CIVVIS
@@ -1486,6 +1494,19 @@ pub fn rebuild_from_state(
                     unmapped.push(civ6.clone());
                 }
             }
+        }
+    }
+    if let Some(civ6) = &state.pantheon {
+        let name = civ6
+            .strip_prefix("BELIEF_")
+            .unwrap_or(civ6)
+            .to_ascii_lowercase();
+        // ⚠ Not filtered against a CIVVIS table. Beliefs are a flat name list rather
+        // than a spec map here, so an unmodelled belief becomes a name CIVVIS carries
+        // and does not act on — which is honest, and better than a seat that believes
+        // it has no pantheon and keeps trying to found one.
+        if !game.players[0].religion_beliefs.contains(&name) {
+            game.players[0].religion_beliefs.push(name);
         }
     }
     if let Some(civ6) = &state.government {

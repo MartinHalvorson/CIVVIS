@@ -3799,11 +3799,23 @@ local function exportState(player, pid, turn)
 		local row = GameInfo.Governments[index];
 		return row ~= nil and row.GovernmentType or nil;
 	end);
+	-- ★★★★ THE PANTHEON WE ALREADY HOLD. Same shape as the government above and the
+	-- same consequence: nothing carried it, so CIVVIS's mirrored player had none and
+	-- chose one again every turn -- 125 `pantheon` orders in 173 turns of run
+	-- civvis-20260731T055749Z, all counted applied, against exactly one pantheon.
+	-- Refusing the order stops the waste; telling CIVVIS stops the decision.
+	local pantheon = try(function()
+		local index = player:GetReligion():GetPantheon();
+		if index == nil or index < 0 then return nil; end
+		local row = GameInfo.Beliefs[index];
+		return row ~= nil and row.BeliefType or nil;
+	end);
 	emit("state", {
 		turn = turn,
 		techs = techs,
 		civics = civics,
 		government = government,
+		pantheon = pantheon,
 		hostiles = hostiles,
 		gold = try(function() return math.floor(player:GetTreasury():GetGoldBalance()); end, -1),
 		faith = try(function() return math.floor(player:GetReligion():GetFaithBalance()); end, -1),
@@ -4311,6 +4323,20 @@ local function applyOrder(player, pid, row, turn)
 	if kind == "pantheon" then
 		local row2, resolved = resolveType(GameInfo.Beliefs, verb);
 		if row2 == nil then return false, "unknown_" .. verb; end
+		-- ★★★★★ WE ALREADY HAVE ONE, AND `pcall` WOULD NOT HAVE SAID SO.
+		--
+		-- `IsInSomePantheon` asks whether SOMEBODY has taken that belief. It does not
+		-- ask whether WE have already founded a pantheon — and once we have, the
+		-- request below does nothing while `pcall` returns true, so the order was
+		-- counted applied. Measured on run `civvis-20260731T055749Z`: **125 `pantheon`
+		-- orders**, every one recorded as applied, against exactly one pantheon.
+		--
+		-- The same trap as `PARAM_INSERT_MODE`, the silent purchase and the governor
+		-- answer, in a file that warns about it three times: ASK THE ENGINE WHETHER
+		-- THE THING CAN START.
+		if try(function() return player:GetReligion():GetPantheon(); end, -1) >= 0 then
+			return false, "pantheon_already_founded";
+		end
 		if try(function() return Game.GetReligion():IsInSomePantheon(row2.Index); end, true) then
 			return false, "taken_" .. resolved;
 		end
