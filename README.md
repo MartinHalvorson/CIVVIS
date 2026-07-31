@@ -379,7 +379,9 @@ same net status.
   against `advanced` (about **−313 Elo**) because its argmax maximized a
   correlate of winning—enemy contact—rather than the consequence of the move.
   Freezing the two contact features restored exact parity, confirming the
-  failure mechanism rather than producing a useful policy.
+  failure mechanism rather than producing a useful policy. That figure carries
+  the same genome confound as the rows above, but here it only flatters the
+  result: `policy_wide` had the champion `Weights` and still lost by 313.
 - **Production search:** `ProductionSearchAi` scored **45.0%** against the
   scripted governor and lost significantly by paired-map direction; this audit
   measured **45.8%** against a genome-matched control on a fresh seed.
