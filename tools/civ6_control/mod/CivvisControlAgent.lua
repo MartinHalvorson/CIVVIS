@@ -2555,6 +2555,25 @@ local function districtPlot(city, hash)
 	return nil;
 end
 
+-- The religion a city actually follows, by type name, and the one converting it.
+--
+-- ⚠ Names, not indices. An index is meaningless on the far side of the bridge and
+-- would have to be re-resolved against a table the mirror does not carry -- the
+-- same reason `producing` ships a name rather than the raw hash it used to send.
+local function cityReligion(city)
+	local id = try(function() return city:GetReligion():GetMajorityReligion(); end, -1);
+	if id == nil or id < 0 then return nil; end
+	local row = GameInfo.Religions[id];
+	return row ~= nil and row.ReligionType or nil;
+end
+
+local function cityNextReligion(city)
+	local id = try(function() return city:GetReligion():GetNextReligion(); end, -1);
+	if id == nil or id < 0 then return nil; end
+	local row = GameInfo.Religions[id];
+	return row ~= nil and row.ReligionType or nil;
+end
+
 local function buildParams(row, city)
 	local params = {};
 	-- ⚠ WITHOUT AN INSERT MODE THE GAME REJECTS EVERY BUILD.
@@ -3664,6 +3683,33 @@ local function exportState(player, pid, turn)
 		end
 		cities[#cities + 1] = {
 			districts = placed,
+			-- ★★★★★ WHOSE RELIGION THIS CITY FOLLOWS, AND WHAT IS CONVERTING IT.
+			--
+			-- `religion` was **null on all 26,954 city records ever exported**, the
+			-- same shape as `districts` before it: the field is in the schema, the
+			-- mod reads only the PLAYER-level religion object, and no city ever
+			-- reported one. So a city can be converted away from us turn by turn and
+			-- the mirror says nothing, and CIVVIS can neither pursue a religious
+			-- victory nor defend against one.
+			--
+			-- That is not hypothetical here. Two consecutive completed games were
+			-- lost to the same victory type well before the turn limit -- Greece at
+			-- t124 on a Duel, Spain at t182 on a tiny map -- while CIVVIS sat on
+			-- 327 and 953 unspent faith with a pantheon and no religion.
+			--
+			-- `next`/`turns` matter as much as the majority: a city at 100 loyalty
+			-- falling fast reads identically to a stable one, and the same is true of
+			-- conversion. This is the `loyalty_per_turn` lesson applied to faith.
+			religion = cityReligion(city),
+			religion_next = cityNextReligion(city),
+			religion_turns = try(function()
+				return city:GetReligion():GetTurnsToNextReligion();
+			end, -1),
+			pantheon_active = try(function()
+				local p = city:GetReligion():GetActivePantheon();
+				if p == nil or p < 0 then return nil; end
+				return GameInfo.Beliefs[p] and GameInfo.Beliefs[p].BeliefType or nil;
+			end),
 			id = try(function() return city:GetID(); end, -1),
 			-- The banner name, so the mirror can label the same city the same way.
 			-- Without it the reconstruction falls back to CIVVIS's own list for
