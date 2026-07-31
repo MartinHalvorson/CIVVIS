@@ -29727,19 +29727,25 @@ impl Game {
                 break;
             }
             for n in self.nbrs(cur) {
+                // As in `first_route_step`: the distance test is a array read
+                // and `can_path_through` is a ruleset sweep, so test the
+                // cheap one first. Every edge cost here is 1, so a neighbour
+                // that cannot improve on the distance already recorded is the
+                // common case, and both orders leave state untouched when
+                // they skip.
+                let Some(index) = self.map.tiles.index_of(n) else {
+                    continue;
+                };
+                let next_distance = traveled + 1;
+                if next_distance >= distance[index] {
+                    continue;
+                }
                 let enterable = if cur == start {
                     self.can_enter(uid, cur, n)
                 } else {
                     self.can_path_through(uid, cur, n, &territory_access)
                 };
                 if !enterable {
-                    continue;
-                }
-                let Some(index) = self.map.tiles.index_of(n) else {
-                    continue;
-                };
-                let next_distance = traveled + 1;
-                if next_distance >= distance[index] {
                     continue;
                 }
                 distance[index] = next_distance;
@@ -29964,18 +29970,27 @@ impl Game {
         let mut goal = None;
         'search: while let Some((cur, cur_index)) = queue.pop_front() {
             for n in self.nbrs(cur) {
+                // Settle the cheap disqualifiers before asking whether the
+                // unit may enter. Every interior tile is reached as a
+                // neighbour of all six of its own neighbours, so five of
+                // those six arrivals find it already seen — and asking
+                // `can_path_through` first meant paying for a traversal
+                // class, a passability sweep over the ruleset, a territory
+                // owner and a city lookup, only to discard the answer.
+                // Skipping earlier cannot change the walk: both orders
+                // `continue` without touching any state.
+                let Some(index) = self.map.tiles.index_of(n) else {
+                    continue;
+                };
+                if seen[index] {
+                    continue;
+                }
                 let enterable = if cur == start {
                     self.can_enter(uid, cur, n)
                 } else {
                     self.can_path_through(uid, cur, n, &territory_access)
                 };
                 if !enterable {
-                    continue;
-                }
-                let Some(index) = self.map.tiles.index_of(n) else {
-                    continue;
-                };
-                if seen[index] {
                     continue;
                 }
                 seen[index] = true;
