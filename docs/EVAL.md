@@ -6771,6 +6771,14 @@ and the other twenty-nine buy about four.
 300 maps from a different construction path on a disjoint seed, so the rig
 measures a known quantity correctly.
 
+The screen's own validity was checked rather than argued. `target/ci/ai_eval`
+was relinked between `r0` finishing and `r2` starting, because an unrelated
+one-line arm-identity tag landed in `src/elo.rs`. Rather than reason about
+whether that could reach a game, `r0` was re-run on the final binary at the
+same seed: its output is **byte-identical** to the original, line for line,
+including the paired score, every interval and every diagnostic column. The
+cross-arm comparison stands.
+
 `Weights` carries a second non-gene field that a JSON artifact could silently
 move, and it was checked rather than assumed: `dedication_choice` has
 `#[serde(default)]`, but `DedicationChoice::default()` is `Banking`, which is
