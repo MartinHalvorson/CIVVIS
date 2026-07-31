@@ -1550,10 +1550,18 @@ pub fn rebuild_from_state(
             .strip_prefix("BELIEF_")
             .unwrap_or(civ6)
             .to_ascii_lowercase();
-        // ⚠ Not filtered against a CIVVIS table. Beliefs are a flat name list rather
-        // than a spec map here, so an unmodelled belief becomes a name CIVVIS carries
-        // and does not act on — which is honest, and better than a seat that believes
-        // it has no pantheon and keeps trying to found one.
+        // ⚠⚠ `player.pantheon` IS THE FIELD THAT GATES THE DECISION, and the first
+        // version of this set `religion_beliefs` instead — which carries the belief
+        // for effects but leaves `do_choose_pantheon`'s `players[pid].pantheon.is_some()`
+        // check false, so CIVVIS went on asking for a pantheon every turn. Measured
+        // after that first fix: `pantheon_already_founded` 32 times in 41 turns — the
+        // mod refusing correctly while the mirror kept producing the order.
+        //
+        // Both are set: the gate so the decision stops being re-made, and the belief
+        // list so its effects are counted.
+        if game.players[0].pantheon.is_none() {
+            game.players[0].pantheon = Some(name.clone());
+        }
         if !game.players[0].religion_beliefs.contains(&name) {
             game.players[0].religion_beliefs.push(name);
         }
