@@ -4120,7 +4120,7 @@ impl AdvancedAi {
                     .as_ref()
                     .is_none_or(|civic| g.players[pid].civics.contains(civic))
             })
-            .filter_map(|policy| policy.replaces.clone())
+            .flat_map(|policy| policy.replaces.iter().copied())
             .collect();
         let obsolete_active: Vec<Name> = g.players[pid]
             .policies

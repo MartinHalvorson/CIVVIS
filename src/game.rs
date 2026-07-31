@@ -23605,6 +23605,9 @@ impl Game {
         if p.is_minor {
             return vec![];
         }
+        // A card is retired by ANY unlocked successor, and one successor can retire
+        // several — Public Works kills both Bastions and Serfdom — so this flattens
+        // rather than taking one name per card.
         let obsolete: BTreeSet<Name> = self
             .rules
             .policies
@@ -23615,7 +23618,7 @@ impl Game {
                     .map(|c| p.civics.contains(c))
                     .unwrap_or(true)
             })
-            .filter_map(|s| s.replaces)
+            .flat_map(|s| s.replaces.iter().copied())
             .collect();
         self.rules
             .policies
