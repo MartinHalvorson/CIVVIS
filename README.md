@@ -77,13 +77,14 @@ evidence that a strategy suits a civilization.** Three independent checks on
 the round-3143 league say so.
 
 1. **It ranks on the wrong statistic.** “Elo” here is the league's *placement*
-   Glicko. Across the 14 active strategies with 100+ games, placement rating
-   ranks them the same way outright wins do at only Spearman ρ = 0.31:
-   `advanced_v1` is 14th of 14 on rating and 3rd on wins, and `advanced` leads
-   `basic` by +23 ± 86 rating points while winning 21.5% of its games against
-   9.2%. The league's own selection contract stopped using placement for
-   exactly this reason and orders parents, retirement and live seating by
-   conservative outright-win bounds instead.
+   Glicko, and the league's own selection contract stopped using placement —
+   it orders parents, retirement and live seating by conservative outright-win
+   bounds instead. Over the 14 active strategies with 400+ games the two
+   orderings agree at only Spearman ρ = 0.31. Ranked by placement, `basic` —
+   the cheap controller written for city-states and barbarians — comes **8th
+   of 14, ahead of five strategies bred to beat it**, and `advanced_v1` comes
+   last. Ranked by the win bound the league actually uses, `basic` is last
+   where it belongs and `advanced_v1` is 3rd.
 2. **No row separates.** Over the 52 qualifying leader/civilization pairs the
    printed strategy leads the runner-up by a mean of 34.7 Glicko points against
    a mean pooled deviation of 104.2 — |z| > 1.96 on **0 of 52** pairs. Even the
