@@ -6957,3 +6957,35 @@ genome's are not doing it.
 matrix stride puts that gate's deployment child on seed 68,000,000 — so the two
 are **paired on shared terrain**, not independent, and neither replicates the
 other.
+
+### The extension and its disjoint confirmation both PASS
+
+The pre-registered extension of the same prefix to 300 maps, and then a
+confirmation on a seed untouched by this line, both under the **unmodified**
+matrix rule:
+
+| run | profile | paired score | Elo-equivalent | directions | sign p | anytime-valid | verdict |
+|---|---|---|---:|---:|---:|---|---|
+| seed 67,000,000, 300 maps | compact | 55.6% (95% Wilson 49.9–61.1) | +39 | 96–39 | 0.0000 | e=7.8e3 at map 159 | ACCEPT |
+| | deployment | 57.8% (95% Wilson 52.1–63.2) | +54 | 120–44 | 0.0000 | e=1.9e6 at map 27 | **PASS** |
+| seed 70,000,000, 300 maps | compact | 57.7% (95% Wilson 52.0–63.1) | +54 | 107–32 | 0.0000 | e=2.8e9 at map 73 | **PASS** |
+| | deployment | 56.2% (95% Wilson 50.6–61.7) | +44 | 117–63 | 0.0001 | e=3.2e3 at map 149 | **PASS** |
+
+Both return `multi-profile promotion gate: PASS — cleared every required
+profile`. That is **1,200 maps and 2,400 games across two independent
+matrices**, every direction test significant, every anytime-valid e-process
+crossed, and on the second seed the compact profile clears its own bound rather
+than merely failing to regress.
+
+The confirmation was pre-registered *before it ran* and for a stated reason:
+the 300-map extension was commissioned after an inconclusive 120-map read on
+the same prefix, so its **+54 alone is a discovery estimate and biased upward**
+— this file records a +207 that later re-measured to +86. The defensible
+quantity is the pooled reading of the two independent matrices: roughly **+47
+on compact and +49 at deployment**, against a shipped champion measured on its
+own 120-map matrix at +51 compact and **−30** at deployment.
+
+The artifact swap is proposed on that basis in a separate PR, because replacing
+`data/evolved/best.json` is resolved by 38 evaluator arms, the league seeding
+and the embedded fallback: every strength number measured against
+`advanced_evolved` before it is measured against a different agent after it.
