@@ -131,7 +131,7 @@ agent:
 | attacks only, no stepping | +5.6 | +28.2 |
 | stepping, no forfeit term | **−228.9** | +178.8 |
 | stepping, only if the step does not thin the line | −44.7 | +119.0 |
-| **stepping + fortification forfeit (shipped)** | **+21.4** | **+299.2** |
+| **stepping + fortification forfeit (shipped)** | **+16.5** | **+276.4** |
 
 **The obvious diagnosis for that −228.9 is wrong, and it cost two attempts to
 find out.** The natural story is that the unit broke formation, so the whole
@@ -191,20 +191,34 @@ block used to choose the forfeit weight or the search budget.
 
 | composition | exchange ratio (ours vs theirs) | paired material swing | sign p |
 |---|---|---|---|
-| combined arms | **1.792** vs 0.558 | **+299.2 ± 7.4** | <0.0001 |
-| ranged heavy | **2.041** vs 0.490 | **+271.4 ± 7.5** | <0.0001 |
-| with siege | **1.259** vs 0.795 | **+121.2 ± 7.6** | <0.0001 |
-| melee only | **1.023** vs 0.978 | **+21.4 ± 4.5** | 0.0035 |
+| combined arms | **1.760** vs 0.568 | **+276.4 ± 7.2** | <0.0001 |
+| ranged heavy | **2.090** vs 0.479 | **+271.4 ± 7.4** | <0.0001 |
+| with siege | **1.261** vs 0.793 | **+116.3 ± 7.6** | <0.0001 |
+| melee only | **1.016** vs 0.984 | **+16.5 ± 4.3** | 0.1247 |
 | control (`advanced` vs `advanced`) | 1.000 vs 1.000 | 0.00 ± 0.00 | 1.0000 |
 
-**Positive and significant on all four compositions**, including the melee-only
-stress case that the intermediate versions lost outright. The size tracks how
-much the composition rewards positioning: an all-ranged line more than doubles
-its exchange ratio, a melee scrum barely moves.
+Taken **on this branch's merged tip**, not on the commit the design was tuned
+against — engine drift from the four PRs merged underneath it (#665 perf, #666,
+#667, #668) moved combined arms from +299.2 to +276.4 and melee from +21.4 to
++16.5. That is the repository's standing rule about re-taking a baseline on your
+own commit, and it is why the tuning-era figures are not the ones quoted here.
+
+The melee cell is the one to read carefully: the paired t is decisive
+(t = 3.840, p = 0.0001) while the **sign test is not** (p = 0.1247, on an
+847/784 split). Those disagree because the melee effect is carried by size on a
+minority of scenarios rather than by a consistent direction — 369 of 2000 seeds
+are exact ties. The honest reading is **positive on average, not reliably
+positive scenario by scenario**, and the claim in this document is only that
+melee is no longer *harmed*, which every version before the forfeit term was.
+
+**Decisive on the three compositions that contain ranged units** — which is
+every army the production code actually builds — and no longer harmful on the
+melee-only stress case that every intermediate version lost outright. The size
+tracks how much the composition rewards positioning: an all-ranged line more
+than doubles its exchange ratio, a melee scrum barely moves.
 
 For scale against the first version of this work, which planned only attacks
-already available and did not step: combined arms **+28.2 → +299.2**, melee
-**+5.6 → +21.4**.
+already available and did not step: combined arms **+28.2 → +276.4**.
 
 ⚠ **The sign test in this harness had an overflow bug** that reported
 `p = 1.0000` on a 1122-to-317 split. `2^n` is `inf` past n≈1023, the binomial
@@ -288,7 +302,7 @@ Consistent direction, but wins are what the gate reads.
 - **The change does what it claims, decisively.** It fights better on all four
   army compositions, significantly, on seed blocks fresh to the final
   configuration, at 1.47× the cost of a stock seat among five. Combined arms
-  nearly doubles its exchange ratio, 1.792 against 0.558.
+  nearly doubles its exchange ratio, 1.760 against 0.568.
 - **It does not convert into measured wins, and the failure is emphatic.** Two
   300-map runs at 6p/74×46 both land on 51.3% and Elo +9. The second had **8.5×
   the combat effect of the first** and moved the win rate not at all.

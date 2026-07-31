@@ -88,7 +88,7 @@
 //! | attacks only, no stepping | +5.6 | +28.2 |
 //! | stepping, no forfeit term | **−228.9** | +178.8 |
 //! | stepping, only if the step does not thin the line | −44.7 | +119.0 |
-//! | **stepping + [`disturbance`] (shipped)** | **+7.5** | **+241.3** |
+//! | **stepping + [`disturbance`] (shipped)** | **+16.5** | **+276.4** |
 //!
 //! The obvious diagnosis for that −228.9 is that the unit broke formation and
 //! the whole enemy front answered it. **That diagnosis is wrong**, and it cost
@@ -98,7 +98,7 @@
 //! actually missing is that a unit which holds its ground can dig in and one
 //! that stepped cannot — a *future* action, invisible to every term that prices
 //! the position as it stands. Pricing it is one subtraction, and it moves
-//! combined arms from +28.2 to +241.3.
+//! combined arms from +28.2 to +276.4.
 //!
 //! ## Cost
 //!
