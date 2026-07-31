@@ -168,6 +168,8 @@ else
 	local remaining = 0;
 	local shown = 0;
 	local closes = 0;
+	-- Giving up is about THIS screen, never about the context. See `tick`.
+	local gaveUp = false;
 
 	-- What "up" means. Everywhere else it is the context not being hidden, the
 	-- same test the shipped popup manager uses. InGamePopup is *pushed as a
@@ -183,8 +185,15 @@ else
 		if not isUp() then
 			showing = false;
 			closes = 0;
+			-- The screen went down, so whatever we gave up on is gone and the
+			-- next one gets the full budget again.
+			gaveUp = false;
 			return;
 		end
+		-- Stop hammering a screen that has had its attempts, but keep ticking:
+		-- the reset above is the only way back, and it only runs while this
+		-- update is still installed.
+		if gaveUp then return; end
 		if not showing then
 			showing = true;
 			remaining = SECONDS;
@@ -205,9 +214,34 @@ else
 		local ended = false;
 		pcall(function() ended = endScreen(); end);
 		if NAME == "InGamePopup" then dialogIsAnnouncement = false; end
-		report("autoclose", string.format(',"after":%.2f,"ended":%s', upFor, tostring(ended)));
+		-- ⚠ `ended` IS NOT EVIDENCE THAT THE SCREEN CLOSED. It is whatever
+		-- `endScreen` returned, and every rung in there returns true when its
+		-- `pcall` did not throw -- the "pcall success is not acceptance" trap
+		-- this project keeps paying for. Measured on run civvis-20260731T144251Z:
+		-- DiplomacyActionView and TechCivicCompletedPopup each reported
+		-- `ended: true` on 20 of 20 attempts and then `autoclose_stuck`, with the
+		-- screen still sitting over the map. Reading those events, there was no
+		-- way to tell a rung that worked from one that did nothing.
+		--
+		-- `isUp` is the same test the shipped popup manager uses, so ask it.
+		-- It may read pessimistically when a hide lands at end of frame -- a
+		-- screen that really closed then shows one `gone: false` and no more,
+		-- because the next tick resets the counter -- so COUNT is the signal:
+		-- one line means closed, twenty mean stuck.
+		local gone = not isUp();
+		report("autoclose", string.format(',"after":%.2f,"ended":%s,"gone":%s',
+		                                  upFor, tostring(ended), tostring(gone)));
 		if closes >= GIVE_UP_AFTER then
-			ContextPtr:ClearUpdate();
+			-- ⚠⚠ NEVER `ContextPtr:ClearUpdate()` HERE. It unhooks the update from
+			-- the CONTEXT, not from this screen, and `closes` is only reset by the
+			-- `not isUp()` branch of the tick that no longer runs -- so one stubborn
+			-- screen permanently disables autoclose for every screen that context
+			-- ever shows again. That is the operator's "not all screens are always
+			-- closing out": the run above lost DiplomacyActionView and
+			-- TechCivicCompletedPopup by turn 73, and every later leader conversation
+			-- and completed-tech popup then sat over the map untouched for the rest
+			-- of the run. Latch the screen instead; the context stays armed.
+			gaveUp = true;
 			report("autoclose_stuck", string.format(',"attempts":%d', closes));
 		end
 	end
