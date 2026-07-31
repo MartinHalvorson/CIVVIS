@@ -386,3 +386,51 @@ and effective self-play fail closed in promotion mode.
 This supersedes the ordering immediately above: evaluator trust comes first,
 and the now-resolved policy/envoy prefixes justify one bounded composite before
 broader search.
+
+## 2026-07-31 typed evaluator-boundary resolution
+
+The first item in the full-prefix ranking is complete. Every selectable arm now
+resolves through a fallible `BuiltinArm` carrying its effective provenance and
+typed architecture/weights/evaluator/treatment specification. Spec equality,
+not display-name equality, drives collapse refusal. Missing definitional
+artifacts fail by default, degraded construction is explicit, multi-axis
+comparisons require an explicit whole-deployment question, and a custom
+artifact directory controls both reporting and the agent that plays.
+
+This iteration deliberately changes no production policy and therefore makes
+no strength claim. Its contribution is that subsequent comparisons cannot
+silently evaluate a different controller, weight source, evaluator, or
+artifact directory than the one printed. Exhaustive construction tests cover
+all 83 registered arms in production and bare-artifact configurations; seeded
+game-state tests certify every reported alias and reject collisions between
+known distinct controls.
+
+## Next ranked work after the typed boundary
+
+1. **Pre-register the live-policy/direct-envoy composite.** This is now the
+   highest-leverage bounded strength hypothesis: the 300-map live-deck prefix
+   and 120-map direct-production prefix each pointed +30 at deployment, while
+   only the latter demonstrably increased envoys. Combine exactly those two
+   mechanisms, use fresh stable prefixes, measure queue opportunity cost, and
+   promote only on the unchanged two-profile rule.
+2. **Build a fog-honest major-controller slice.** Route one consequential
+   decision family through observation, memory, and belief state, and verify
+   that hidden-state mutations cannot change its action. This remains the
+   largest fair-play and generalization gap.
+3. **Learn action-conditioned advantage with calibrated abstention.** Train on
+   counterfactual action deltas, reserve deployment games as untouched
+   calibration, and fall back to the scripted expert outside the calibrated
+   support. Do not optimize another state-outcome correlate.
+4. **Search the complete expansion investment.** Include settler production,
+   population opportunity cost, escort, route, settlement, and payback. Seven
+   city-target treatments failed because none priced the sequence the oracle
+   removed.
+5. **Price macro search against deployment strength.** Compare a searching arm
+   to a genome-matched sequential control and require enough gain to justify
+   the measured ~6.4× single-seat turn cost before live seating.
+6. **Finish evaluator evidence semantics.** Separate discovery decisions from
+   confirmation estimates, bind evaluator-only arms to evidence/status, and
+   make public league rankings consume the conservative win-strength accessor.
+
+The next iteration takes item 1. The following iterations retain items 2–4 in
+that order unless the composite exposes a more valuable causal bottleneck.

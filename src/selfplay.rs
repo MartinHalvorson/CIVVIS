@@ -107,7 +107,11 @@ fn play_one(cfg: &SelfPlayCfg, game_index: usize) -> PlayedGame {
     let mut ais: Vec<Box<dyn Ai>> = g
         .players
         .iter()
-        .map(|p| builtin_ai(&cfg.ai, seed.wrapping_add(p.id as u64)))
+        .map(|p| {
+            builtin_ai(&cfg.ai, seed.wrapping_add(p.id as u64)).unwrap_or_else(|error| {
+                panic!("self-play agent {:?} is unavailable: {error}", cfg.ai)
+            })
+        })
         .collect();
     let counterfactual_sampler = cfg.counterfactual.then(|| {
         StrategicAi::score_only_with_weights(

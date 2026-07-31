@@ -508,3 +508,55 @@ already promoted one retained negative result and overstated the project's
 flagship improvement by more than a factor of two. An engine optimized for
 winning is only as good as its ability to tell which of two agents wins, and
 that is the capability these defects take away.
+
+## 11. 2026-07-31 implementation status — R1 and R2 closed
+
+The structural arm boundary and strict construction contract are now
+implemented together.
+
+`builtin_arm(name, seed, artifact_dir)` resolves one `BuiltinArm` containing
+the constructed agent, its `AgentProvenance`, and its typed `AgentSpec`.
+`AgentSpec` separates architecture, weights, evaluator, and treatment. The
+canonical artifact-alias resolver is consumed before either the spec or agent
+is produced, and the private effective-agent factory accepts the same artifact
+directory. Policy, strategic, production-search, genome, and value-net
+constructors no longer have a second hard-coded `evolved/` read beneath a
+custom provenance result.
+
+Construction is fallible by default:
+
+- `builtin_arm` and `builtin_ai` reject unknown names and missing definitional
+  artifacts;
+- `builtin_arm_degraded` and `builtin_ai_degraded` are the explicit fallback
+  path;
+- `ai_eval` uses strict construction unless `--allow-degraded` is stated, and
+  matrix promotion never permits that override;
+- a custom `--artifact-dir` now controls both provenance and the model/genome
+  the agent actually loads, including matrix child processes.
+
+The comparison guard now compares resolved `AgentSpec`s. `ai_eval` prints the
+behavior-defining axes that differ and refuses more than one unless the caller
+states `--deployment-comparison`. Matrix mode supplies that statement because
+its question is explicitly whole-agent replacement, not component
+attribution.
+
+The implementation is locked by four independent invariants:
+
+1. all 83 registered builtin/evaluator-only names resolve a spec and construct
+   through the same boundary in both a bare artifact directory and the
+   production directory;
+2. every effective alias produces byte-identical seeded terminal game state to
+   the arm it claims to be, in both artifact tiers;
+3. known distinct controls (`advanced`/`basic` and
+   `advanced_evolved`/`advanced`) have distinct specs and distinct seeded game
+   states;
+4. a deliberately modified champion in a custom directory produces exactly
+   the same game state as direct construction from that champion, and a
+   different state from the production champion.
+
+Those checks caught two defects while being introduced: the refactored
+effective factory had omitted the plain `basic` arm, and
+`strategic_deep_league` provenance omitted the optional value net its search
+actually reads. Both are fixed. R1 and R2 are therefore closed at the root
+boundary rather than patched for another individual artifact path. R3, R4,
+arm lifecycle, and the deployment decision on live search remain open.

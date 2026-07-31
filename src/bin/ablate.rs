@@ -152,10 +152,12 @@ fn play(
                 ai_name
             };
             builtin_ai(name, game.seed.wrapping_add(player.id as u64))
+                .unwrap_or_else(|error| panic!("ablation controller {name:?} failed: {error}"))
         })
         .collect();
     let mut oracle = Oracle::new(
-        builtin_ai(ai_name, game.seed.wrapping_add(oracle_seat as u64)),
+        builtin_ai(ai_name, game.seed.wrapping_add(oracle_seat as u64))
+            .unwrap_or_else(|error| panic!("ablation controller {ai_name:?} failed: {error}")),
         grant,
     );
     while game.winner.is_none() && game.turn <= game.max_turns {

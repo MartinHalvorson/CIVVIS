@@ -1228,45 +1228,18 @@ fn artifact_effective_alias_from(
     }
 }
 
-fn artifact_effective_alias(name: &str, dir: &str) -> Option<&'static str> {
-    if !matches!(
-        name,
-        "evolved"
-            | "advanced_evolved"
-            | "basic_evolved"
-            | "neural"
-            | "policy"
-            | "policy_wide"
-            | "policy_wide_frozen"
-            | "strategic"
-            | "strategic_warm"
-            | "production_net"
-            | "strategic_deep_league"
-            | "advanced_evolved_commitment"
-            | "advanced_evolved_blind"
-            | "advanced_banking_dedication"
-    ) {
-        return None;
-    }
-    let champion = crate::evolve::load_champion(dir).is_some();
-    let net = matches!(
-        name,
-        "neural" | "policy" | "strategic" | "strategic_warm" | "production_net"
-    ) && crate::valuenet::ValueNet::load_width(dir, crate::evolve::FEATURE_WIDTH).is_some();
-    let wide_net = matches!(name, "policy_wide" | "policy_wide_frozen")
-        && crate::valuenet::ValueNet::load_width(dir, crate::decision_features::WIDTH).is_some();
-    let league = name == "strategic_deep_league" && league_generalist().is_some();
-    artifact_effective_alias_from(name, champion, net, wide_net, league)
-}
-
-pub fn builtin_ai(name: &str, seed: u64) -> Box<dyn Ai> {
-    if let Some(effective) = artifact_effective_alias(name, ARTIFACT_DIR) {
-        if effective != name {
-            return builtin_ai(effective, seed);
-        }
-    }
-    match name {
+/// Construct one canonical, already-resolved builtin name.
+///
+/// Artifact-dependent aliases are resolved before this boundary. Keeping this
+/// factory private prevents callers from constructing a requested name while
+/// independently describing a different effective controller.
+fn build_effective_ai(name: &str, seed: u64, dir: &str) -> Option<Box<dyn Ai>> {
+    let strategic = |weights: Weights| {
+        crate::strategic::StrategicAi::with_weights_from(weights, dir)
+    };
+    let ai: Box<dyn Ai> = match name {
         "advanced" => Box::new(AdvancedAi::new()),
+        "basic" => Box::new(BasicAi::new()),
         // Four arms decompose the envoy-acquisition treatment. The live
         // policy control differs from `advanced` only by enabling the existing
         // counterfactual deck; the policy treatment then adds only influence
@@ -1317,7 +1290,7 @@ pub fn builtin_ai(name: &str, seed: u64) -> Box<dyn Ai> {
         // preregistered 20-map matrix rejected transfer: compact was +17, but
         // deployment was -70 with terminal direction 5-15 (p=0.0414).
         "advanced_evolved_commitment" => {
-            let mut ai = crate::evolve::load_champion("evolved")
+            let mut ai = crate::evolve::load_champion(dir)
                 .map(AdvancedAi::with_weights)
                 .unwrap_or_else(AdvancedAi::new);
             ai.strategic_commitment = true;
@@ -1632,8 +1605,8 @@ pub fn builtin_ai(name: &str, seed: u64) -> Box<dyn Ai> {
         // ≈ 9x cheaper. `rotate_lanes` is a recorded NULL for strength, which
         // is exactly what a cost-bound deployment wants from it.
         "strategic_cheap" => {
-            let mut ai = crate::strategic::StrategicAi::with_weights(
-                crate::evolve::load_champion("evolved").unwrap_or_default(),
+            let mut ai = strategic(
+                crate::evolve::load_champion(dir).unwrap_or_default(),
             );
             ai.review_every = 80;
             ai.horizon = 20;
@@ -1684,14 +1657,14 @@ pub fn builtin_ai(name: &str, seed: u64) -> Box<dyn Ai> {
         // against `advanced_evolved`, this is the same ablation on the seat
         // the exhibition fills.
         "advanced_evolved_blind" => {
-            let mut ai = crate::evolve::load_champion("evolved")
+            let mut ai = crate::evolve::load_champion(dir)
                 .map(AdvancedAi::with_weights)
                 .unwrap_or_else(AdvancedAi::new);
             ai.deny_leaders = false;
             Box::new(ai)
         }
         "advanced_evolved" => Box::new(
-            crate::evolve::load_champion("evolved")
+            crate::evolve::load_champion(dir)
                 .map(AdvancedAi::with_weights)
                 .unwrap_or_else(AdvancedAi::new),
         ),
@@ -1702,7 +1675,7 @@ pub fn builtin_ai(name: &str, seed: u64) -> Box<dyn Ai> {
         // directions to 31, sign p=0.0015, e-process crossing against it at
         // map 51, and terminal score 46.3% (p=0.0000). See `docs/AGES.md`.
         "advanced_measured_dedication" => {
-            let mut w = crate::evolve::load_champion("evolved").unwrap_or_default();
+            let mut w = crate::evolve::load_champion(dir).unwrap_or_default();
             w.dedication_choice = crate::ai::DedicationChoice::Measured;
             Box::new(AdvancedAi::with_weights(w))
         }
@@ -1710,7 +1683,7 @@ pub fn builtin_ai(name: &str, seed: u64) -> Box<dyn Ai> {
         // Dark Age, where Era Score is the literal objective, and leave the
         // Golden and Heroic choice exactly as the default makes it.
         "advanced_banking_dedication" => {
-            let mut w = crate::evolve::load_champion("evolved").unwrap_or_default();
+            let mut w = crate::evolve::load_champion(dir).unwrap_or_default();
             w.dedication_choice = crate::ai::DedicationChoice::Banking;
             Box::new(AdvancedAi::with_weights(w))
         }
@@ -1720,18 +1693,18 @@ pub fn builtin_ai(name: &str, seed: u64) -> Box<dyn Ai> {
         // champion is present. Naming it makes provenance collapse checks
         // compare controller *and* weights instead of dropping the genome.
         "basic_evolved" => Box::new(
-            crate::evolve::load_champion("evolved")
+            crate::evolve::load_champion(dir)
                 .map(BasicAi::with_weights)
                 .unwrap_or_default(),
         ),
         "evolved" => Box::new(
-            crate::evolve::load_champion("evolved")
+            crate::evolve::load_champion(dir)
                 .map(AdvancedAi::with_weights)
                 .unwrap_or_default(),
         ),
         "neural" => {
-            let w = crate::evolve::load_champion("evolved").unwrap_or_default();
-            match crate::valuenet::ValueNet::load_width("evolved", crate::evolve::FEATURE_WIDTH) {
+            let w = crate::evolve::load_champion(dir).unwrap_or_default();
+            match crate::valuenet::ValueNet::load_width(dir, crate::evolve::FEATURE_WIDTH) {
                 Some(n) => Box::new(crate::neural::NeuralAi::new(w, n)),
                 None => Box::new(BasicAi::with_weights(w)),
             }
@@ -1745,22 +1718,25 @@ pub fn builtin_ai(name: &str, seed: u64) -> Box<dyn Ai> {
         // exploiting. A causal test of the ranking failure, not a proposed
         // agent.
         "policy_wide_frozen" => Box::new(
-            crate::policy::PolicyAi::with_weights(
-                crate::evolve::load_champion("evolved").unwrap_or_default(),
+            crate::policy::PolicyAi::with_weights_from(
+                crate::evolve::load_champion(dir).unwrap_or_default(),
+                dir,
             )
-            .with_frozen_contact(),
+            .with_frozen_contact_from(dir),
         ),
         "policy_wide" => Box::new(
-            crate::policy::PolicyAi::with_weights(
-                crate::evolve::load_champion("evolved").unwrap_or_default(),
+            crate::policy::PolicyAi::with_weights_from(
+                crate::evolve::load_champion(dir).unwrap_or_default(),
+                dir,
             )
-            .with_decision_features(),
+            .with_decision_features_from(dir),
         ),
-        "policy" => Box::new(crate::policy::PolicyAi::with_weights(
-            crate::evolve::load_champion("evolved").unwrap_or_default(),
+        "policy" => Box::new(crate::policy::PolicyAi::with_weights_from(
+            crate::evolve::load_champion(dir).unwrap_or_default(),
+            dir,
         )),
-        "strategic" => Box::new(crate::strategic::StrategicAi::with_weights(
-            crate::evolve::load_champion("evolved").unwrap_or_default(),
+        "strategic" => Box::new(strategic(
+            crate::evolve::load_champion(dir).unwrap_or_default(),
         )),
         // Treatment for the assigned-Religion expansion bypass: identical to
         // `strategic` except that a seat committed to Religion asks the same
@@ -1768,22 +1744,22 @@ pub fn builtin_ai(name: &str, seed: u64) -> Box<dyn Ai> {
         // lane asks — on the acting agent and on every projected branch alike.
         // See `StrategicAi::set_religion_may_expand`.
         "strategic_religion_expand" => {
-            let mut ai = crate::strategic::StrategicAi::with_weights(
-                crate::evolve::load_champion("evolved").unwrap_or_default(),
+            let mut ai = strategic(
+                crate::evolve::load_champion(dir).unwrap_or_default(),
             );
             ai.set_religion_may_expand(true);
             Box::new(ai)
         }
         "strategic_score" => Box::new(crate::strategic::StrategicAi::score_only_with_weights(
-            crate::evolve::load_champion("evolved").unwrap_or_default(),
+            crate::evolve::load_champion(dir).unwrap_or_default(),
         )),
         // Public-state opponent model. The searching seat, branch set and
         // compute budget are identical to `strategic`; only confidently
         // inferred rival lanes remain fixed through a projection instead of
         // being reconstructed as blank adaptive planners.
         "strategic_rivals" => {
-            let mut ai = crate::strategic::StrategicAi::with_weights(
-                crate::evolve::load_champion("evolved").unwrap_or_default(),
+            let mut ai = strategic(
+                crate::evolve::load_champion(dir).unwrap_or_default(),
             );
             ai.model_rival_lanes = true;
             Box::new(ai)
@@ -1797,15 +1773,15 @@ pub fn builtin_ai(name: &str, seed: u64) -> Box<dyn Ai> {
         // policy, priors — matches `strategic`, so a pair isolates how
         // often the search runs and nothing about how well it runs.
         "strategic_r20" => {
-            let mut ai = crate::strategic::StrategicAi::with_weights(
-                crate::evolve::load_champion("evolved").unwrap_or_default(),
+            let mut ai = strategic(
+                crate::evolve::load_champion(dir).unwrap_or_default(),
             );
             ai.review_every = 20;
             Box::new(ai)
         }
         "strategic_r10" => {
-            let mut ai = crate::strategic::StrategicAi::with_weights(
-                crate::evolve::load_champion("evolved").unwrap_or_default(),
+            let mut ai = strategic(
+                crate::evolve::load_champion(dir).unwrap_or_default(),
             );
             ai.review_every = 10;
             Box::new(ai)
@@ -1814,8 +1790,8 @@ pub fn builtin_ai(name: &str, seed: u64) -> Box<dyn Ai> {
         // so total simulated rounds per game match `strategic`. Paired
         // against it, this separates "more decisions" from "more compute".
         "strategic_r20h20" => {
-            let mut ai = crate::strategic::StrategicAi::with_weights(
-                crate::evolve::load_champion("evolved").unwrap_or_default(),
+            let mut ai = strategic(
+                crate::evolve::load_champion(dir).unwrap_or_default(),
             );
             ai.review_every = 20;
             ai.horizon = 20;
@@ -1826,8 +1802,8 @@ pub fn builtin_ai(name: &str, seed: u64) -> Box<dyn Ai> {
         // maps, the pair asks where a marginal unit of search compute is
         // worth more.
         "strategic_h80" => {
-            let mut ai = crate::strategic::StrategicAi::with_weights(
-                crate::evolve::load_champion("evolved").unwrap_or_default(),
+            let mut ai = strategic(
+                crate::evolve::load_champion(dir).unwrap_or_default(),
             );
             ai.horizon = 80;
             Box::new(ai)
@@ -1847,8 +1823,8 @@ pub fn builtin_ai(name: &str, seed: u64) -> Box<dyn Ai> {
         // `advanced`, and this costs four times the macro-search compute,
         // which batch callers should adopt on purpose rather than inherit.
         "strategic_deep" => {
-            let mut ai = crate::strategic::StrategicAi::with_weights(
-                crate::evolve::load_champion("evolved").unwrap_or_default(),
+            let mut ai = strategic(
+                crate::evolve::load_champion(dir).unwrap_or_default(),
             );
             ai.review_every = 20;
             ai.horizon = 80;
@@ -1860,8 +1836,8 @@ pub fn builtin_ai(name: &str, seed: u64) -> Box<dyn Ai> {
         // evaluator-only 8x entrant until an independent promotion gate says
         // that the extra compute buys strength.
         "strategic_ultra" => {
-            let mut ai = crate::strategic::StrategicAi::with_weights(
-                crate::evolve::load_champion("evolved").unwrap_or_default(),
+            let mut ai = strategic(
+                crate::evolve::load_champion(dir).unwrap_or_default(),
             );
             ai.review_every = 10;
             ai.horizon = 80;
@@ -1874,7 +1850,7 @@ pub fn builtin_ai(name: &str, seed: u64) -> Box<dyn Ai> {
         // transfer screen favored the champion 33-27 games and 5-2 map
         // directions; retained evaluator-only for future artifact audits.
         "strategic_deep_default" => {
-            let mut ai = crate::strategic::StrategicAi::with_weights(
+            let mut ai = strategic(
                 crate::ai::Weights::default(),
             );
             ai.review_every = 20;
@@ -1888,8 +1864,8 @@ pub fn builtin_ai(name: &str, seed: u64) -> Box<dyn Ai> {
         // unresolved branch. Measured 28-32 games on 30 fresh mirrored maps;
         // retained evaluator-only because it did not earn a disjoint gate.
         "strategic_deep_tempo" => {
-            let mut ai = crate::strategic::StrategicAi::with_weights(
-                crate::evolve::load_champion("evolved").unwrap_or_default(),
+            let mut ai = strategic(
+                crate::evolve::load_champion(dir).unwrap_or_default(),
             );
             ai.review_every = 20;
             ai.horizon = 80;
@@ -1901,8 +1877,8 @@ pub fn builtin_ai(name: &str, seed: u64) -> Box<dyn Ai> {
         // 20x80 macro budget as its control. Retained evaluator-only after it
         // lost the disjoint gate 114-126 games and religious wins fell 81-65.
         "strategic_deep_conversion" => {
-            let mut ai = crate::strategic::StrategicAi::with_weights(
-                crate::evolve::load_champion("evolved").unwrap_or_default(),
+            let mut ai = strategic(
+                crate::evolve::load_champion(dir).unwrap_or_default(),
             );
             ai.review_every = 20;
             ai.horizon = 80;
@@ -1916,8 +1892,8 @@ pub fn builtin_ai(name: &str, seed: u64) -> Box<dyn Ai> {
         // and evolved genomes -- with all 60 map directions neutral and
         // identical victory types within each pair.
         "strategic_deep_checkmate" => {
-            let mut ai = crate::strategic::StrategicAi::with_weights(
-                crate::evolve::load_champion("evolved").unwrap_or_default(),
+            let mut ai = strategic(
+                crate::evolve::load_champion(dir).unwrap_or_default(),
             );
             ai.review_every = 20;
             ai.horizon = 80;
@@ -1931,24 +1907,24 @@ pub fn builtin_ai(name: &str, seed: u64) -> Box<dyn Ai> {
         // measures whether that policy itself is stronger.
         "strategic_deep_expand" => {
             let weights = crate::strategic::Doctrine::Expand
-                .apply(&crate::evolve::load_champion("evolved").unwrap_or_default());
-            let mut ai = crate::strategic::StrategicAi::with_weights(weights);
+                .apply(&crate::evolve::load_champion(dir).unwrap_or_default());
+            let mut ai = strategic(weights);
             ai.review_every = 20;
             ai.horizon = 80;
             Box::new(ai)
         }
         "strategic_deep_consolidate" => {
             let weights = crate::strategic::Doctrine::Consolidate
-                .apply(&crate::evolve::load_champion("evolved").unwrap_or_default());
-            let mut ai = crate::strategic::StrategicAi::with_weights(weights);
+                .apply(&crate::evolve::load_champion(dir).unwrap_or_default());
+            let mut ai = strategic(weights);
             ai.review_every = 20;
             ai.horizon = 80;
             Box::new(ai)
         }
         "strategic_deep_militarize" => {
             let weights = crate::strategic::Doctrine::Militarize
-                .apply(&crate::evolve::load_champion("evolved").unwrap_or_default());
-            let mut ai = crate::strategic::StrategicAi::with_weights(weights);
+                .apply(&crate::evolve::load_champion(dir).unwrap_or_default());
+            let mut ai = strategic(weights);
             ai.review_every = 20;
             ai.horizon = 80;
             Box::new(ai)
@@ -1961,7 +1937,7 @@ pub fn builtin_ai(name: &str, seed: u64) -> Box<dyn Ai> {
             let weights = league_generalist()
                 .map(|(_, weights)| weights)
                 .unwrap_or_default();
-            let mut ai = crate::strategic::StrategicAi::with_weights(weights);
+            let mut ai = strategic(weights);
             ai.review_every = 20;
             ai.horizon = 80;
             Box::new(ai)
@@ -1970,8 +1946,8 @@ pub fn builtin_ai(name: &str, seed: u64) -> Box<dyn Ai> {
         // search, isolating whether better branch fidelity still helps when
         // each review already spends the promoted 20x80 budget.
         "strategic_deep_rivals" => {
-            let mut ai = crate::strategic::StrategicAi::with_weights(
-                crate::evolve::load_champion("evolved").unwrap_or_default(),
+            let mut ai = strategic(
+                crate::evolve::load_champion(dir).unwrap_or_default(),
             );
             ai.review_every = 20;
             ai.horizon = 80;
@@ -1988,20 +1964,20 @@ pub fn builtin_ai(name: &str, seed: u64) -> Box<dyn Ai> {
         // opinion. Kept so the comparison can be re-run.
         "production_net" => Box::new(
             crate::production::ProductionSearchAi::with_weights(
-                crate::evolve::load_champion("evolved").unwrap_or_default(),
+                crate::evolve::load_champion(dir).unwrap_or_default(),
             )
-            .with_value_net(),
+            .with_value_net_from(dir),
         ),
         "production" => Box::new(crate::production::ProductionSearchAi::with_weights(
-            crate::evolve::load_champion("evolved").unwrap_or_default(),
+            crate::evolve::load_champion(dir).unwrap_or_default(),
         )),
         // The frozen pre-promotion control: branches projected from a newly
         // constructed planner, which is what every `strategic` number
         // published before 2026-07-26 was measured on. Kept so those numbers
         // stay reproducible now that the promoted behaviour is the default.
         "strategic_cold" => {
-            let mut ai = crate::strategic::StrategicAi::with_weights(
-                crate::evolve::load_champion("evolved").unwrap_or_default(),
+            let mut ai = strategic(
+                crate::evolve::load_champion(dir).unwrap_or_default(),
             );
             ai.continue_from_plan = false;
             Box::new(ai)
@@ -2010,8 +1986,8 @@ pub fn builtin_ai(name: &str, seed: u64) -> Box<dyn Ai> {
         // now what `strategic` already does. Kept so the pre-registered runs
         // that earned the promotion can be re-run by name.
         "strategic_warm" => {
-            let mut ai = crate::strategic::StrategicAi::with_weights(
-                crate::evolve::load_champion("evolved").unwrap_or_default(),
+            let mut ai = strategic(
+                crate::evolve::load_champion(dir).unwrap_or_default(),
             );
             ai.continue_from_plan = true;
             Box::new(ai)
@@ -2030,8 +2006,8 @@ pub fn builtin_ai(name: &str, seed: u64) -> Box<dyn Ai> {
         // an evaluation of it would measure nothing, which is what #380
         // cost a 240-game run to discover.
         "strategic_deep_adaptive" => {
-            let mut ai = crate::strategic::StrategicAi::with_weights(
-                crate::evolve::load_champion("evolved").unwrap_or_default(),
+            let mut ai = strategic(
+                crate::evolve::load_champion(dir).unwrap_or_default(),
             );
             ai.review_every = 20;
             ai.horizon = 80;
@@ -2045,51 +2021,52 @@ pub fn builtin_ai(name: &str, seed: u64) -> Box<dyn Ai> {
         // restriction on this search that has ever been measured -- and an
         // entirely untested one.
         "strategic_noprophet" => {
-            let mut ai = crate::strategic::StrategicAi::with_weights(
-                crate::evolve::load_champion("evolved").unwrap_or_default(),
+            let mut ai = strategic(
+                crate::evolve::load_champion(dir).unwrap_or_default(),
             );
             ai.trust_religious_prior = false;
             Box::new(ai)
         }
         "strategic_rot20" => {
-            let mut ai = crate::strategic::StrategicAi::with_weights(
-                crate::evolve::load_champion("evolved").unwrap_or_default(),
+            let mut ai = strategic(
+                crate::evolve::load_champion(dir).unwrap_or_default(),
             );
             ai.review_every = 20;
             ai.rotate_lanes = true;
             Box::new(ai)
         }
         "strategic_rot10" => {
-            let mut ai = crate::strategic::StrategicAi::with_weights(
-                crate::evolve::load_champion("evolved").unwrap_or_default(),
+            let mut ai = strategic(
+                crate::evolve::load_champion(dir).unwrap_or_default(),
             );
             ai.review_every = 10;
             ai.rotate_lanes = true;
             Box::new(ai)
         }
         "strategic_nodefer" => {
-            let mut ai = crate::strategic::StrategicAi::with_weights(
-                crate::evolve::load_champion("evolved").unwrap_or_default(),
+            let mut ai = strategic(
+                crate::evolve::load_champion(dir).unwrap_or_default(),
             );
             ai.defer_periodic_on_interrupt = false;
             Box::new(ai)
         }
         "strategic_doctrine" => {
-            let mut ai = crate::strategic::StrategicAi::with_weights(
-                crate::evolve::load_champion("evolved").unwrap_or_default(),
+            let mut ai = strategic(
+                crate::evolve::load_champion(dir).unwrap_or_default(),
             );
             ai.doctrine_search = true;
             Box::new(ai)
         }
         "strategic_joint" => {
-            let mut ai = crate::strategic::StrategicAi::with_weights(
-                crate::evolve::load_champion("evolved").unwrap_or_default(),
+            let mut ai = strategic(
+                crate::evolve::load_champion(dir).unwrap_or_default(),
             );
             ai.joint_axis_search = true;
             Box::new(ai)
         }
-        _ => Box::new(BasicAi::new()),
-    }
+        _ => return None,
+    };
+    Some(ai)
 }
 
 /// Directory `builtin_ai` resolves trained artifacts from.
@@ -2098,6 +2075,225 @@ pub const ARTIFACT_DIR: &str = "evolved";
 pub const CHAMPION_FILE: &str = "best.json";
 /// Distilled scalar value net written by `tools/train_valuenet.py`.
 pub const VALUENET_FILE: &str = "valuenet.json";
+
+/// Controller family, separated from weights, evaluator, and treatments so an
+/// evaluator can state exactly which experimental axes differ.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Architecture {
+    Advanced,
+    Basic,
+    Random,
+    Neural,
+    Policy,
+    Strategic,
+    Production,
+}
+
+/// Source of the scripted policy parameters used by an arm.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum WeightSource {
+    Stock,
+    Champion,
+    Legacy,
+    League,
+}
+
+/// Terminal/action evaluator used by the controller.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum EvaluatorSource {
+    Scripted,
+    Random,
+    ScoreShare,
+    ValueNet25,
+    ValueNet34,
+}
+
+/// Behavior-defining axes of one fully resolved evaluator arm.
+///
+/// Requested aliases never appear here: `policy` without a net resolves to
+/// the same spec as `advanced_evolved`, and therefore compares equal by type
+/// rather than by a separately maintained display string.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct AgentSpec {
+    pub architecture: Architecture,
+    pub weights: WeightSource,
+    pub evaluator: EvaluatorSource,
+    pub treatment: Option<&'static str>,
+}
+
+impl AgentSpec {
+    fn resolved(
+        effective: &'static str,
+        champion: bool,
+        net: bool,
+        wide_net: bool,
+    ) -> AgentSpec {
+        let weights = if champion {
+            WeightSource::Champion
+        } else {
+            WeightSource::Stock
+        };
+        match effective {
+            "advanced" => AgentSpec {
+                architecture: Architecture::Advanced,
+                weights: WeightSource::Stock,
+                evaluator: EvaluatorSource::Scripted,
+                treatment: None,
+            },
+            "advanced_evolved" => AgentSpec {
+                architecture: Architecture::Advanced,
+                weights,
+                evaluator: EvaluatorSource::Scripted,
+                treatment: None,
+            },
+            "advanced_v1" => AgentSpec {
+                architecture: Architecture::Advanced,
+                weights: WeightSource::Legacy,
+                evaluator: EvaluatorSource::Scripted,
+                treatment: None,
+            },
+            "basic" => AgentSpec {
+                architecture: Architecture::Basic,
+                weights: WeightSource::Stock,
+                evaluator: EvaluatorSource::Scripted,
+                treatment: None,
+            },
+            "basic_evolved" => AgentSpec {
+                architecture: Architecture::Basic,
+                weights,
+                evaluator: EvaluatorSource::Scripted,
+                treatment: None,
+            },
+            "random" => AgentSpec {
+                architecture: Architecture::Random,
+                weights: WeightSource::Stock,
+                evaluator: EvaluatorSource::Random,
+                treatment: None,
+            },
+            "neural" => AgentSpec {
+                architecture: Architecture::Neural,
+                weights,
+                evaluator: EvaluatorSource::ValueNet25,
+                treatment: None,
+            },
+            "policy" => AgentSpec {
+                architecture: Architecture::Policy,
+                weights,
+                evaluator: EvaluatorSource::ValueNet25,
+                treatment: None,
+            },
+            "policy_wide" | "policy_wide_frozen" => AgentSpec {
+                architecture: Architecture::Policy,
+                weights,
+                evaluator: EvaluatorSource::ValueNet34,
+                treatment: (effective == "policy_wide_frozen").then_some("frozen_contact"),
+            },
+            "strategic" => AgentSpec {
+                architecture: Architecture::Strategic,
+                weights,
+                evaluator: if net {
+                    EvaluatorSource::ValueNet25
+                } else {
+                    EvaluatorSource::ScoreShare
+                },
+                treatment: None,
+            },
+            "strategic_score" => AgentSpec {
+                architecture: Architecture::Strategic,
+                weights,
+                evaluator: EvaluatorSource::ScoreShare,
+                treatment: None,
+            },
+            "production" => AgentSpec {
+                architecture: Architecture::Production,
+                weights,
+                evaluator: EvaluatorSource::ScoreShare,
+                treatment: None,
+            },
+            "production_net" => AgentSpec {
+                architecture: Architecture::Production,
+                weights,
+                evaluator: EvaluatorSource::ValueNet25,
+                treatment: None,
+            },
+            "advanced_league_top" => AgentSpec {
+                architecture: Architecture::Advanced,
+                weights: WeightSource::League,
+                evaluator: EvaluatorSource::Scripted,
+                treatment: None,
+            },
+            "strategic_deep_league" => AgentSpec {
+                architecture: Architecture::Strategic,
+                weights: WeightSource::League,
+                evaluator: if net {
+                    EvaluatorSource::ValueNet25
+                } else {
+                    EvaluatorSource::ScoreShare
+                },
+                treatment: Some("deep_league"),
+            },
+            name if name.starts_with("advanced_evolved_")
+                || name == "advanced_measured_dedication" => AgentSpec {
+                architecture: Architecture::Advanced,
+                weights,
+                evaluator: EvaluatorSource::Scripted,
+                treatment: Some(name),
+            },
+            name if name.starts_with("advanced_") => AgentSpec {
+                architecture: Architecture::Advanced,
+                weights: WeightSource::Stock,
+                evaluator: EvaluatorSource::Scripted,
+                treatment: Some(name),
+            },
+            name if name.starts_with("strategic_") => AgentSpec {
+                architecture: Architecture::Strategic,
+                weights: if name == "strategic_deep_default" {
+                    WeightSource::Stock
+                } else {
+                    weights
+                },
+                evaluator: if name == "strategic_score" || !net {
+                    EvaluatorSource::ScoreShare
+                } else {
+                    EvaluatorSource::ValueNet25
+                },
+                treatment: Some(name),
+            },
+            name if name.starts_with("policy_") => AgentSpec {
+                architecture: Architecture::Policy,
+                weights,
+                evaluator: if wide_net {
+                    EvaluatorSource::ValueNet34
+                } else {
+                    EvaluatorSource::ValueNet25
+                },
+                treatment: Some(name),
+            },
+            // `builtin_arm` admits only registered names, so this is an
+            // internal exhaustiveness failure rather than an unknown-agent
+            // fallback.
+            name => panic!("registered builtin {name:?} has no AgentSpec"),
+        }
+    }
+
+    /// Behavior-defining axes on which two fully resolved arms differ.
+    pub fn differing_axes(&self, other: &AgentSpec) -> Vec<&'static str> {
+        let mut out = Vec::new();
+        if self.architecture != other.architecture {
+            out.push("architecture");
+        }
+        if self.weights != other.weights {
+            out.push("weights");
+        }
+        if self.evaluator != other.evaluator {
+            out.push("evaluator");
+        }
+        if self.treatment != other.treatment {
+            out.push("treatment");
+        }
+        out
+    }
+}
 
 /// One trained artifact a builtin name reads, and whether it loaded.
 ///
@@ -2115,14 +2311,12 @@ pub struct ArtifactStatus {
 
 /// What a builtin name actually plays as once its artifacts are resolved.
 ///
-/// `builtin_ai` falls back silently when a trained artifact is missing —
-/// correctly, because a missing file should not stop a game. What it must
-/// not do is let an evaluation record the result under the learned name: on
-/// a checkout with no value net, `neural` is either `basic_evolved` or
-/// `basic`, and `policy` is either `advanced_evolved` or `advanced`, depending
-/// on whether the champion genome loaded. Dropping that second artifact from
-/// the effective name makes the self-comparison guard wrong in both
-/// directions.
+/// Strict construction refuses a missing definitional artifact. The explicit
+/// degraded path still needs this exact identity: on a checkout with no value
+/// net, `neural` is either `basic_evolved` or `basic`, and `policy` is either
+/// `advanced_evolved` or `advanced`, depending on whether the champion genome
+/// loaded. Dropping that second artifact from the effective name makes the
+/// self-comparison guard wrong in both directions.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AgentProvenance {
     /// The name the caller asked for.
@@ -2191,268 +2385,188 @@ impl AgentProvenance {
     }
 }
 
-/// Resolve what `builtin_ai(name, _)` will actually construct from `dir`.
-///
-/// Presence is decided by the same loaders the agents use, not by a stat:
-/// a `valuenet.json` that fails `ValueNet::valid` is rejected at load time,
-/// so reporting it as present would restate the bug it is meant to catch.
-pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
+/// Failure to resolve or strictly construct a registered evaluator arm.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BuiltinAiError {
+    Unknown(String),
+    Degraded(AgentProvenance),
+}
+
+impl std::fmt::Display for BuiltinAiError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            BuiltinAiError::Unknown(name) => write!(formatter, "unknown builtin AI {name:?}"),
+            BuiltinAiError::Degraded(provenance) => write!(
+                formatter,
+                "{} is unavailable: missing {}",
+                provenance.requested,
+                provenance.missing().join(", ")
+            ),
+        }
+    }
+}
+
+impl std::error::Error for BuiltinAiError {}
+
+/// A constructed agent and the typed description resolved by the same
+/// boundary. Callers cannot receive the agent without also resolving its
+/// canonical identity and behavior-defining axes.
+pub struct BuiltinArm {
+    pub provenance: AgentProvenance,
+    pub spec: AgentSpec,
+    agent: Box<dyn Ai>,
+}
+
+impl BuiltinArm {
+    pub fn into_ai(self) -> Box<dyn Ai> {
+        self.agent
+    }
+}
+
+fn registered_builtin(name: &str) -> bool {
+    BUILTIN_AIS.contains(&name) || EVAL_ONLY_AIS.contains(&name)
+}
+
+fn resolved_spec(
+    name: &str,
+    dir: &str,
+) -> Result<(AgentProvenance, AgentSpec), BuiltinAiError> {
+    if !registered_builtin(name) {
+        return Err(BuiltinAiError::Unknown(name.to_string()));
+    }
+    let provenance = resolve_provenance(name, dir);
     let champion = crate::evolve::load_champion(dir).is_some();
     let net = crate::valuenet::ValueNet::load_width(dir, crate::evolve::FEATURE_WIDTH).is_some();
     let wide_net =
         crate::valuenet::ValueNet::load_width(dir, crate::decision_features::WIDTH).is_some();
-    let basic_fallback = if champion { "basic_evolved" } else { "basic" };
-    let advanced_fallback = if champion {
-        "advanced_evolved"
-    } else {
-        "advanced"
-    };
-    let genome = ArtifactStatus {
+    let spec = AgentSpec::resolved(provenance.effective, champion, net, wide_net);
+    Ok((provenance, spec))
+}
+
+pub fn builtin_spec(name: &str, dir: &str) -> Result<AgentSpec, BuiltinAiError> {
+    resolved_spec(name, dir).map(|(_, spec)| spec)
+}
+
+/// Construct a registered arm while explicitly permitting artifact fallback.
+/// Evaluation code should use [`builtin_arm`] instead.
+pub fn builtin_arm_degraded(
+    name: &str,
+    seed: u64,
+    dir: &str,
+) -> Result<BuiltinArm, BuiltinAiError> {
+    let (provenance, spec) = resolved_spec(name, dir)?;
+    let agent = build_effective_ai(provenance.effective, seed, dir).ok_or_else(|| {
+        BuiltinAiError::Unknown(provenance.effective.to_string())
+    })?;
+    Ok(BuiltinArm {
+        provenance,
+        spec,
+        agent,
+    })
+}
+
+/// Strict construction for evaluators and rated games. A name whose
+/// definitional artifact is absent fails instead of silently yielding another
+/// controller under the requested label.
+pub fn builtin_arm(
+    name: &str,
+    seed: u64,
+    dir: &str,
+) -> Result<BuiltinArm, BuiltinAiError> {
+    let arm = builtin_arm_degraded(name, seed, dir)?;
+    if arm.provenance.degraded() {
+        return Err(BuiltinAiError::Degraded(arm.provenance));
+    }
+    Ok(arm)
+}
+
+/// Strict production-directory convenience used by evaluators and ratings.
+pub fn builtin_ai(name: &str, seed: u64) -> Result<Box<dyn Ai>, BuiltinAiError> {
+    builtin_arm(name, seed, ARTIFACT_DIR).map(BuiltinArm::into_ai)
+}
+
+/// Explicit compatibility path for an exhibition or diagnostic that prefers
+/// a named fallback over refusing to start.
+pub fn builtin_ai_degraded(name: &str, seed: u64) -> Result<Box<dyn Ai>, BuiltinAiError> {
+    builtin_arm_degraded(name, seed, ARTIFACT_DIR).map(BuiltinArm::into_ai)
+}
+
+fn registered_name(name: &str) -> Option<&'static str> {
+    BUILTIN_AIS
+        .iter()
+        .chain(EVAL_ONLY_AIS.iter())
+        .copied()
+        .find(|candidate| *candidate == name)
+}
+
+fn artifact_statuses(
+    name: &str,
+    champion: bool,
+    net: bool,
+    wide_net: bool,
+    league: bool,
+) -> Vec<ArtifactStatus> {
+    let genome = |definitional| ArtifactStatus {
         file: CHAMPION_FILE,
         found: champion,
-        definitional: false,
-    };
-    let value = |definitional| ArtifactStatus {
-        file: VALUENET_FILE,
-        found: net,
         definitional,
     };
-    let league = league_generalist().is_some();
-    let (artifacts, independently_declared_effective) = match name {
-        // The genome *is* these two names; without it they are the stock
-        // scripted agent under a name that claims otherwise.
-        "evolved" => (
-            vec![ArtifactStatus {
-                definitional: true,
-                ..genome
-            }],
-            if champion {
-                // `evolved` and `advanced_evolved` construct the same
-                // `AdvancedAi::with_weights(champion)`; retain one canonical
-                // identity so their comparison is rejected as self-play.
-                "advanced_evolved"
-            } else {
-                "advanced"
-            },
-        ),
-        "advanced_evolved" => (
-            vec![ArtifactStatus {
-                definitional: true,
-                ..genome
-            }],
-            if champion {
-                "advanced_evolved"
-            } else {
-                "advanced"
-            },
-        ),
-        "basic_evolved" => (
-            vec![ArtifactStatus {
-                definitional: true,
-                ..genome
-            }],
-            basic_fallback,
-        ),
-        // NeuralAi needs the net to exist at all and drops all the way to
-        // the lightweight controller without it. Preserve whether that
-        // controller loaded the champion genome in the effective identity.
-        "neural" => (
-            vec![genome, value(true)],
-            if net { "neural" } else { basic_fallback },
-        ),
-        "policy" => (
-            vec![genome, value(true)],
-            if net { "policy" } else { advanced_fallback },
-        ),
-        // The *wide* net is definitional and is a different artifact from
-        // the one `policy` wants: `load_width` refuses each to the other,
-        // so without a 34-wide net in place this is the scripted agent.
-        "policy_wide" | "policy_wide_frozen" => (
-            vec![
-                genome,
-                ArtifactStatus {
-                    file: VALUENET_FILE,
-                    found: wide_net,
-                    definitional: true,
-                },
-            ],
-            if wide_net {
-                if name == "policy_wide" {
-                    "policy_wide"
-                } else {
-                    "policy_wide_frozen"
-                }
-            } else {
-                advanced_fallback
-            },
-        ),
-        // Strategic keeps its lane rollouts without a net; what it loses is
-        // the learned terminal evaluator, which is exactly the published
-        // `strategic_score` control.
-        "strategic" => (
-            vec![genome, value(true)],
-            if net { "strategic" } else { "strategic_score" },
-        ),
-        // The control refuses a net by construction, so it is never
-        // degraded — only untrained when the genome is absent.
-        "strategic_score" => (vec![genome], "strategic_score"),
-        "strategic_rivals" => (vec![genome, value(false)], "strategic_rivals"),
-        // Unlike `strategic`, its netless form has no separate published
-        // name to degrade *to*: the doctrine axis runs either way. A
-        // missing net therefore leaves it untrained rather than renamed,
-        // which the provenance line says in those words.
-        "strategic_doctrine" => (vec![genome, value(false)], "strategic_doctrine"),
-        "strategic_joint" => (vec![genome, value(false)], "strategic_joint"),
-        "strategic_r20" => (vec![genome, value(false)], "strategic_r20"),
-        "strategic_r10" => (vec![genome, value(false)], "strategic_r10"),
-        "strategic_nodefer" => (vec![genome, value(false)], "strategic_nodefer"),
-        "strategic_r20h20" => (vec![genome, value(false)], "strategic_r20h20"),
-        "strategic_h80" => (vec![genome, value(false)], "strategic_h80"),
-        "strategic_rot20" => (vec![genome, value(false)], "strategic_rot20"),
-        "strategic_warm" => (
-            vec![genome, value(true)],
-            if net { "strategic" } else { "strategic_score" },
-        ),
-        "strategic_religion_expand" => (
-            vec![genome, value(false)],
-            "strategic_religion_expand",
-        ),
-        "strategic_cold" => (vec![genome, value(false)], "strategic_cold"),
-        "strategic_noprophet" => (vec![genome, value(false)], "strategic_noprophet"),
-        "strategic_deep_adaptive" => (vec![genome, value(false)], "strategic_deep_adaptive"),
-        // Same artifact dependencies as `strategic`: the genome tunes it,
-        // and the net is non-definitional because the search runs without
-        // one. There is no separate published netless name to degrade to.
-        "strategic_deep" => (vec![genome, value(false)], "strategic_deep"),
-        "strategic_ultra" => (vec![genome, value(false)], "strategic_ultra"),
-        // The frozen genome is in code; only the same optional value net read
-        // by `strategic_deep` remains in its provenance.
-        "strategic_deep_default" => (vec![value(false)], "strategic_deep_default"),
-        "strategic_deep_tempo" => (
-            vec![genome, value(false)],
-            "strategic_deep_tempo",
-        ),
-        "strategic_deep_conversion" => (
-            vec![genome, value(false)],
-            "strategic_deep_conversion",
-        ),
-        "strategic_deep_checkmate" => (
-            vec![genome, value(false)],
-            "strategic_deep_checkmate",
-        ),
-        "strategic_deep_expand" => (vec![genome, value(false)], "strategic_deep_expand"),
-        "strategic_deep_consolidate" => (vec![genome, value(false)], "strategic_deep_consolidate"),
-        "strategic_deep_militarize" => (vec![genome, value(false)], "strategic_deep_militarize"),
-        "strategic_deep_league" => (
-            vec![ArtifactStatus {
+    let value = |found, definitional| ArtifactStatus {
+        file: VALUENET_FILE,
+        found,
+        definitional,
+    };
+    match name {
+        "evolved"
+        | "advanced_evolved"
+        | "basic_evolved"
+        | "advanced_evolved_commitment"
+        | "advanced_evolved_blind"
+        | "advanced_banking_dedication" => vec![genome(true)],
+        "neural" | "policy" | "strategic" | "strategic_warm" | "production_net" => {
+            vec![genome(false), value(net, true)]
+        }
+        "policy_wide" | "policy_wide_frozen" => {
+            vec![genome(false), value(wide_net, true)]
+        }
+        "strategic_score" | "production" | "advanced_measured_dedication" => {
+            vec![genome(false)]
+        }
+        "strategic_deep_default" => vec![value(net, false)],
+        "strategic_deep_league" => vec![
+            ArtifactStatus {
                 file: LEAGUE_SNAPSHOT_FILE,
                 found: league,
                 definitional: true,
-            }],
-            if league {
-                "strategic_deep_league"
-            } else {
-                "strategic_deep"
             },
-        ),
-        "strategic_deep_rivals" => (vec![genome, value(false)], "strategic_deep_rivals"),
-        "strategic_rot10" => (vec![genome, value(false)], "strategic_rot10"),
-        // The genome tunes both its rollout policy and its scripted
-        // governor; it consults no net.
-        "production" => (vec![genome], "production"),
-        // The net is definitional: without it this is exactly `production`.
-        "production_net" => (
-            vec![genome, value(true)],
-            if net { "production_net" } else { "production" },
-        ),
-        "advanced" => (Vec::new(), "advanced"),
-        "advanced_policy_live_control" => (Vec::new(), "advanced_policy_live_control"),
-        "advanced_envoy_policy" => (Vec::new(), "advanced_envoy_policy"),
-        "advanced_envoy_infrastructure" => (Vec::new(), "advanced_envoy_infrastructure"),
-        "advanced_envoy_priority" => (Vec::new(), "advanced_envoy_priority"),
-        "advanced_envoy_economy" => (Vec::new(), "advanced_envoy_economy"),
-        "advanced_strategic_commitment" => (Vec::new(), "advanced_strategic_commitment"),
-        "advanced_evolved_commitment" => (
-            vec![ArtifactStatus {
-                definitional: true,
-                ..genome
-            }],
-            if champion {
-                "advanced_evolved_commitment"
-            } else {
-                "advanced_strategic_commitment"
-            },
-        ),
-        "advanced_lane_reachable" => (Vec::new(), "advanced_lane_reachable"),
-        "advanced_wide_opening" => (Vec::new(), "advanced_wide_opening"),
-        "advanced_expansion_payback" => (Vec::new(), "advanced_expansion_payback"),
-        "advanced_city_strategy" => (Vec::new(), "advanced_city_strategy"),
-        "advanced_city_strategy_emphasis" => (Vec::new(), "advanced_city_strategy_emphasis"),
-        "advanced_city_strategy_roles" => (Vec::new(), "advanced_city_strategy_roles"),
-        "advanced_city_strategy_roles_raw" => (Vec::new(), "advanced_city_strategy_roles_raw"),
-        "advanced_city_strategy_raw" => (Vec::new(), "advanced_city_strategy_raw"),
-        "advanced_city_strategy_bastion_only" => (Vec::new(), "advanced_city_strategy_bastion_only"),
-        "advanced_city_strategy_breadbasket_only" => (Vec::new(), "advanced_city_strategy_breadbasket_only"),
-        "advanced_city_strategy_comparative_only" => (Vec::new(), "advanced_city_strategy_comparative_only"),
-        "advanced_city_strategy_pressure_only" => (Vec::new(), "advanced_city_strategy_pressure_only"),
-        "advanced_banking_dedication" => (
-            vec![ArtifactStatus {
-                definitional: true,
-                ..genome
-            }],
-            advanced_fallback,
-        ),
-        "advanced_measured_dedication" => (vec![genome], "advanced_measured_dedication"),
-        "advanced_parallel_settlers" => (Vec::new(), "advanced_parallel_settlers"),
-        "advanced_settler_first" => (Vec::new(), "advanced_settler_first"),
-        "advanced_prophet_first" => (Vec::new(), "advanced_prophet_first"),
-        "advanced_league_top" => (Vec::new(), "advanced_league_top"),
-        "strategic_cheap" => (vec![genome, value(false)], "strategic_cheap"),
-        "advanced_blind_to_leaders" => (Vec::new(), "advanced_blind_to_leaders"),
-        "advanced_counter_in_lane" => (Vec::new(), "advanced_counter_in_lane"),
-        "advanced_congress_counter" => (Vec::new(), "advanced_congress_counter"),
-        "advanced_congress_votes" => (Vec::new(), "advanced_congress_votes"),
-        "advanced_congress_counter_hard" => (Vec::new(), "advanced_congress_counter_hard"),
-        "advanced_counter_stand_down" => (Vec::new(), "advanced_counter_stand_down"),
-        "advanced_early_score_alarm" => (Vec::new(), "advanced_early_score_alarm"),
-        "advanced_early_score_build" => (Vec::new(), "advanced_early_score_build"),
-        // The genome is definitional here for the same reason it is for
-        // `advanced_evolved`: without it this is the stock agent with the
-        // denial layer off, which is a different measurement entirely.
-        "advanced_evolved_blind" => (
-            vec![ArtifactStatus {
-                definitional: true,
-                ..genome
-            }],
-            if champion {
-                "advanced_evolved_blind"
-            } else {
-                "advanced_blind_to_leaders"
-            },
-        ),
-        "advanced_civ_blind" => (Vec::new(), "advanced_civ_blind"),
-        "advanced_rush" => (Vec::new(), "advanced_rush"),
-        "advanced_rush_connected" => (Vec::new(), "advanced_rush_connected"),
-        "advanced_settler_commit" => (Vec::new(), "advanced_settler_commit"),
-        "advanced_food_first" => (Vec::new(), "advanced_food_first"),
-        "advanced_v1" => (Vec::new(), "advanced_v1"),
-        "advanced_relief_scoped" => (Vec::new(), "advanced_relief_scoped"),
-        "random" => (Vec::new(), "random"),
-        // `builtin_ai` answers every other name with the lightweight agent.
-        "basic" => (Vec::new(), "basic"),
-        _ => (Vec::new(), "basic"),
-    };
+            value(net, false),
+        ],
+        other if other.starts_with("strategic_") => {
+            vec![genome(false), value(net, false)]
+        }
+        _ => Vec::new(),
+    }
+}
+
+/// Resolve the same artifact state, canonical identity, and spec consumed by
+/// [`builtin_arm`]. Presence is decided by the real loaders, not a file stat.
+fn resolve_provenance(name: &str, dir: &str) -> AgentProvenance {
+    let champion = crate::evolve::load_champion(dir).is_some();
+    let net = crate::valuenet::ValueNet::load_width(dir, crate::evolve::FEATURE_WIDTH).is_some();
+    let wide_net =
+        crate::valuenet::ValueNet::load_width(dir, crate::decision_features::WIDTH).is_some();
+    let league = league_generalist().is_some();
     let effective = artifact_effective_alias_from(name, champion, net, wide_net, league)
-        .unwrap_or(independently_declared_effective);
-    debug_assert_eq!(
-        effective, independently_declared_effective,
-        "artifact alias table and provenance row diverged for {name}"
-    );
+        .unwrap_or_else(|| registered_name(name).unwrap_or("basic"));
     AgentProvenance {
         requested: name.to_string(),
-        artifacts,
+        artifacts: artifact_statuses(name, champion, net, wide_net, league),
         effective,
     }
+}
+
+pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
+    resolve_provenance(name, dir)
 }
 
 /// Provenance for a whole entrant list, in the order given.
@@ -2466,15 +2580,21 @@ pub fn builtin_provenances(names: &[&str], dir: &str) -> Vec<AgentProvenance> {
 /// Distinct requested names that resolve to the same agent, which makes any
 /// difference between them noise. Returns `(first, second, shared agent)`.
 pub fn collapsed_entrants(names: &[&str], dir: &str) -> Vec<(String, String, &'static str)> {
-    let resolved = builtin_provenances(names, dir);
+    let resolved: Vec<(AgentProvenance, AgentSpec)> = names
+        .iter()
+        .map(|name| {
+            resolved_spec(name, dir)
+                .unwrap_or_else(|error| panic!("cannot resolve evaluator arm {name:?}: {error}"))
+        })
+        .collect();
     let mut out = Vec::new();
     for (index, left) in resolved.iter().enumerate() {
         for right in resolved.iter().skip(index + 1) {
-            if left.requested != right.requested && left.effective == right.effective {
+            if left.0.requested != right.0.requested && left.1 == right.1 {
                 out.push((
-                    left.requested.clone(),
-                    right.requested.clone(),
-                    left.effective,
+                    left.0.requested.clone(),
+                    right.0.requested.clone(),
+                    left.0.effective,
                 ));
             }
         }
@@ -2633,6 +2753,7 @@ where
                     make(&seats[player.id], gseed.wrapping_add(player.id as u64))
                 } else {
                     builtin_ai("basic", gseed.wrapping_add(player.id as u64))
+                        .expect("the artifact-free basic controller is always available")
                 }
             })
             .collect();
@@ -3071,17 +3192,242 @@ fn direct_anchor_performance(
 #[cfg(test)]
 mod tests {
     use super::{
-        builtin_ai, builtin_provenance, collapsed_entrants, direct_anchor_performance, expected,
-        leaderboard, league_generalist, performance_elo, scheduled_seats, seat_schedule,
-        wilson_interval, win_shares, EloPool, RatedPlayer, RatingKey, TourneyCfg,
-        TournamentProfile, ARTIFACT_DIR, BUILTIN_AIS, CHAMPION_FILE, DEFAULT_RATINGS_PATH,
-        ELO_BASE_RATING, ELO_SCHEMA_VERSION, EVAL_ONLY_AIS, VALUENET_FILE,
+        builtin_ai, builtin_arm, builtin_arm_degraded, builtin_provenance, builtin_spec,
+        collapsed_entrants, direct_anchor_performance, expected, leaderboard, league_generalist,
+        performance_elo, scheduled_seats, seat_schedule, wilson_interval, win_shares,
+        Architecture, BuiltinAiError, EloPool, EvaluatorSource, RatedPlayer, RatingKey,
+        TourneyCfg, TournamentProfile, WeightSource, ARTIFACT_DIR, BUILTIN_AIS, CHAMPION_FILE,
+        DEFAULT_RATINGS_PATH, ELO_BASE_RATING, ELO_SCHEMA_VERSION, EVAL_ONLY_AIS,
+        VALUENET_FILE,
     };
+    use crate::ai::{run_game, AdvancedAi, Ai, BasicAi};
+    use crate::game::Game;
     use crate::rng::Rng;
     use std::collections::BTreeMap;
     use std::fs;
     use std::sync::{Arc, Barrier};
     use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn arm_game_fingerprint(name: &str, dir: &str, seed: u64, turns: u32) -> Vec<u8> {
+        let mut game = Game::new(2, 16, 12, seed, turns, 0);
+        let mut ais: Vec<Box<dyn Ai>> = (0..game.players.len())
+            .map(|pid| {
+                if pid == 0 {
+                    builtin_arm_degraded(name, seed + 1, dir)
+                        .unwrap()
+                        .into_ai()
+                } else {
+                    Box::new(BasicAi::new()) as Box<dyn Ai>
+                }
+            })
+            .collect();
+        run_game(&mut game, &mut ais);
+        serde_json::to_vec(&game).unwrap()
+    }
+
+    fn direct_advanced_fingerprint(
+        weights: crate::ai::Weights,
+        seed: u64,
+        turns: u32,
+    ) -> Vec<u8> {
+        let mut game = Game::new(2, 16, 12, seed, turns, 0);
+        let mut weights = Some(weights);
+        let mut ais: Vec<Box<dyn Ai>> = (0..game.players.len())
+            .map(|pid| {
+                if pid == 0 {
+                    Box::new(AdvancedAi::with_weights(weights.take().unwrap())) as Box<dyn Ai>
+                } else {
+                    Box::new(BasicAi::new()) as Box<dyn Ai>
+                }
+            })
+            .collect();
+        run_game(&mut game, &mut ais);
+        serde_json::to_vec(&game).unwrap()
+    }
+
+    #[test]
+    fn every_selectable_name_resolves_and_constructs_through_one_boundary() {
+        let bare = "target/test-agent-spec-all-bare";
+        let _ = fs::remove_dir_all(bare);
+        fs::create_dir_all(bare).unwrap();
+
+        for dir in [bare, ARTIFACT_DIR] {
+            for name in BUILTIN_AIS.iter().chain(EVAL_ONLY_AIS.iter()) {
+                let provenance = builtin_provenance(name, dir);
+                let spec = builtin_spec(name, dir).unwrap();
+                let degraded = builtin_arm_degraded(name, 17, dir).unwrap();
+                assert_eq!(degraded.provenance, provenance, "{dir}: {name}");
+                assert_eq!(degraded.spec, spec, "{dir}: {name}");
+
+                match builtin_arm(name, 17, dir) {
+                    Ok(strict) => {
+                        assert!(!provenance.degraded(), "{dir}: {name}");
+                        assert_eq!(strict.provenance, provenance, "{dir}: {name}");
+                        assert_eq!(strict.spec, spec, "{dir}: {name}");
+                    }
+                    Err(BuiltinAiError::Degraded(rejected)) => {
+                        assert!(provenance.degraded(), "{dir}: {name}");
+                        assert_eq!(rejected, provenance, "{dir}: {name}");
+                    }
+                    Err(error) => panic!("{dir}: {name}: {error}"),
+                }
+            }
+        }
+
+        fs::remove_dir_all(bare).unwrap();
+    }
+
+    #[test]
+    fn strict_boundary_refuses_unknown_and_definitional_fallbacks() {
+        let dir = "target/test-agent-spec-strict";
+        let _ = fs::remove_dir_all(dir);
+        fs::create_dir_all(dir).unwrap();
+
+        assert!(matches!(
+            builtin_arm("not-a-controller", 1, dir),
+            Err(BuiltinAiError::Unknown(name)) if name == "not-a-controller"
+        ));
+        assert!(matches!(
+            builtin_arm("policy", 1, dir),
+            Err(BuiltinAiError::Degraded(provenance))
+                if provenance.effective == "advanced"
+                    && provenance.missing().contains(&VALUENET_FILE)
+        ));
+
+        let fallback = builtin_arm_degraded("policy", 1, dir).unwrap();
+        assert_eq!(fallback.provenance.effective, "advanced");
+        assert_eq!(fallback.spec, builtin_spec("advanced", dir).unwrap());
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn typed_specs_collapse_aliases_and_expose_each_changed_axis() {
+        let dir = "target/test-agent-spec-axes";
+        let _ = fs::remove_dir_all(dir);
+        fs::create_dir_all(dir).unwrap();
+
+        let advanced = builtin_spec("advanced", dir).unwrap();
+        assert_eq!(builtin_spec("policy", dir).unwrap(), advanced);
+        assert_eq!(builtin_spec("evolved", dir).unwrap(), advanced);
+        assert_eq!(
+            builtin_spec("advanced_envoy_priority", dir)
+                .unwrap()
+                .differing_axes(&advanced),
+            vec!["treatment"]
+        );
+
+        let production = builtin_spec("production", dir).unwrap();
+        assert_eq!(production.architecture, Architecture::Production);
+        assert_eq!(production.weights, WeightSource::Stock);
+        assert_eq!(production.evaluator, EvaluatorSource::ScoreShare);
+        assert_eq!(
+            production.differing_axes(&advanced),
+            vec!["architecture", "evaluator"]
+        );
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn every_reported_alias_plays_as_its_effective_arm() {
+        let bare = "target/test-agent-spec-alias-bare";
+        let _ = fs::remove_dir_all(bare);
+        fs::create_dir_all(bare).unwrap();
+
+        for (dir_index, dir) in [bare, ARTIFACT_DIR].into_iter().enumerate() {
+            for (name_index, name) in BUILTIN_AIS
+                .iter()
+                .chain(EVAL_ONLY_AIS.iter())
+                .enumerate()
+            {
+                let provenance = builtin_provenance(name, dir);
+                if provenance.effective == *name {
+                    continue;
+                }
+                assert_eq!(
+                    builtin_spec(name, dir).unwrap(),
+                    builtin_spec(provenance.effective, dir).unwrap(),
+                    "{dir}: {name} -> {}",
+                    provenance.effective
+                );
+                let seed = 81_000 + dir_index as u64 * 1_000 + name_index as u64;
+                assert_eq!(
+                    arm_game_fingerprint(name, dir, seed, 12),
+                    arm_game_fingerprint(provenance.effective, dir, seed, 12),
+                    "{dir}: {name} did not play as {}",
+                    provenance.effective
+                );
+            }
+        }
+
+        fs::remove_dir_all(bare).unwrap();
+    }
+
+    #[test]
+    fn distinct_control_specs_do_not_collapse_to_one_behavior() {
+        for (index, (left, right)) in [
+            ("advanced", "basic"),
+            ("advanced_evolved", "advanced"),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            assert_ne!(
+                builtin_spec(left, ARTIFACT_DIR).unwrap(),
+                builtin_spec(right, ARTIFACT_DIR).unwrap(),
+                "{left} and {right} need distinct specs"
+            );
+            let seed = 94_000 + index as u64;
+            assert_ne!(
+                arm_game_fingerprint(left, ARTIFACT_DIR, seed, 80),
+                arm_game_fingerprint(right, ARTIFACT_DIR, seed, 80),
+                "{left} and {right} collided on the seeded behavior check"
+            );
+        }
+    }
+
+    #[test]
+    fn custom_artifact_directory_drives_provenance_and_construction() {
+        let dir = "target/test-agent-spec-custom-artifacts";
+        let _ = fs::remove_dir_all(dir);
+        fs::create_dir_all(dir).unwrap();
+
+        let raw = fs::read_to_string(format!("data/evolved/{CHAMPION_FILE}"))
+            .expect("the committed champion fixture must be available");
+        let mut champion: serde_json::Value = serde_json::from_str(&raw).unwrap();
+        champion["weights"]["open0"] = serde_json::json!(0.0);
+        champion["weights"]["open1"] = serde_json::json!(0.0);
+        champion["weights"]["open2"] = serde_json::json!(0.0);
+        champion["weights"]["open3"] = serde_json::json!(0.0);
+        fs::write(
+            format!("{dir}/{CHAMPION_FILE}"),
+            serde_json::to_vec_pretty(&champion).unwrap(),
+        )
+        .unwrap();
+
+        let provenance = builtin_provenance("advanced_evolved", dir);
+        assert_eq!(provenance.effective, "advanced_evolved");
+        assert!(!provenance.degraded());
+        assert_eq!(
+            builtin_spec("advanced_evolved", dir).unwrap().weights,
+            WeightSource::Champion
+        );
+
+        let custom = crate::evolve::load_champion(dir).unwrap();
+        let seed = 93_117;
+        let from_boundary = arm_game_fingerprint("advanced_evolved", dir, seed, 35);
+        assert_eq!(
+            from_boundary,
+            direct_advanced_fingerprint(custom, seed, 35),
+            "construction did not use the genome provenance resolved from --artifact-dir"
+        );
+        assert_ne!(
+            from_boundary,
+            arm_game_fingerprint("advanced_evolved", ARTIFACT_DIR, seed, 35),
+            "custom artifact fixture did not distinguish its controller from production"
+        );
+
+        fs::remove_dir_all(dir).unwrap();
+    }
 
     /// A checkout with no trained artifacts is the default state of this
     /// repository — `evolved/` is generated and ignored — so every learned
@@ -3367,14 +3713,14 @@ mod tests {
             "strategic_deep_consolidate",
             "strategic_deep_militarize",
         ] {
-            let ai = builtin_ai(name, 1);
+            let ai = builtin_ai(name, 1).unwrap();
             assert_eq!(ai.review_census(), Some(Default::default()), "{name}");
         }
     }
 
     #[test]
     fn joint_axis_challenger_constructs_a_searching_agent() {
-        let ai = builtin_ai("strategic_joint", 1);
+        let ai = builtin_ai("strategic_joint", 1).unwrap();
         assert_eq!(ai.review_census(), Some(Default::default()));
         let provenance = builtin_provenance("strategic_joint", "unused");
         assert_eq!(provenance.effective, "strategic_joint");
@@ -3383,7 +3729,7 @@ mod tests {
 
     #[test]
     fn terminal_tempo_challenger_constructs_a_searching_agent() {
-        let ai = builtin_ai("strategic_deep_tempo", 1);
+        let ai = builtin_ai("strategic_deep_tempo", 1).unwrap();
         assert_eq!(ai.review_census(), Some(Default::default()));
         let provenance = builtin_provenance("strategic_deep_tempo", "unused");
         assert_eq!(provenance.effective, "strategic_deep_tempo");
@@ -3392,7 +3738,7 @@ mod tests {
 
     #[test]
     fn ultra_challenger_constructs_a_searching_agent() {
-        let ai = builtin_ai("strategic_ultra", 1);
+        let ai = builtin_ai("strategic_ultra", 1).unwrap();
         assert_eq!(ai.review_census(), Some(Default::default()));
         let provenance = builtin_provenance("strategic_ultra", "unused");
         assert_eq!(provenance.effective, "strategic_ultra");
@@ -3401,7 +3747,7 @@ mod tests {
 
     #[test]
     fn deep_default_control_refuses_the_champion_artifact() {
-        let ai = builtin_ai("strategic_deep_default", 1);
+        let ai = builtin_ai("strategic_deep_default", 1).unwrap();
         assert_eq!(ai.review_census(), Some(Default::default()));
         let provenance = builtin_provenance("strategic_deep_default", "unused");
         assert_eq!(provenance.effective, "strategic_deep_default");
@@ -3417,7 +3763,7 @@ mod tests {
 
     #[test]
     fn religious_conversion_challenger_constructs_a_searching_agent() {
-        let ai = builtin_ai("strategic_deep_conversion", 1);
+        let ai = builtin_ai("strategic_deep_conversion", 1).unwrap();
         assert_eq!(ai.review_census(), Some(Default::default()));
         let provenance = builtin_provenance("strategic_deep_conversion", "unused");
         assert_eq!(provenance.effective, "strategic_deep_conversion");
@@ -3426,7 +3772,7 @@ mod tests {
 
     #[test]
     fn religious_checkmate_challenger_constructs_a_searching_agent() {
-        let ai = builtin_ai("strategic_deep_checkmate", 1);
+        let ai = builtin_ai("strategic_deep_checkmate", 1).unwrap();
         assert_eq!(ai.review_census(), Some(Default::default()));
         let provenance = builtin_provenance("strategic_deep_checkmate", "unused");
         assert_eq!(provenance.effective, "strategic_deep_checkmate");
@@ -3437,12 +3783,13 @@ mod tests {
     fn league_genome_challenger_loads_a_win_selected_searching_agent() {
         let (name, _) = league_generalist().expect("committed league has a generalist genome");
         assert_eq!(name, "g20-21", "update the documented transfer candidate");
-        let ai = builtin_ai("strategic_deep_league", 1);
+        let ai = builtin_ai("strategic_deep_league", 1).unwrap();
         assert_eq!(ai.review_census(), Some(Default::default()));
         let provenance = builtin_provenance("strategic_deep_league", "unused");
         assert_eq!(provenance.effective, "strategic_deep_league");
         assert!(!provenance.degraded());
-        assert!(!provenance.untrained());
+        assert!(provenance.untrained(), "the optional value net is absent");
+        assert_eq!(provenance.missing(), vec![VALUENET_FILE]);
     }
 
     fn player(name: &str, leader: &str, civ: &str, score: i64, won: bool) -> RatedPlayer {

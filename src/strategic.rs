@@ -592,7 +592,13 @@ impl StrategicAi {
     }
 
     pub fn with_weights(weights: Weights) -> StrategicAi {
-        let net = ValueNet::load_width("evolved", crate::evolve::FEATURE_WIDTH);
+        Self::with_weights_from(weights, "evolved")
+    }
+
+    /// Construct against the artifact directory already resolved by the
+    /// evaluator arm, so provenance and play cannot read different models.
+    pub fn with_weights_from(weights: Weights, dir: &str) -> StrategicAi {
+        let net = ValueNet::load_width(dir, crate::evolve::FEATURE_WIDTH);
         Self::configured(weights, net)
     }
 

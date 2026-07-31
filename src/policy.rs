@@ -134,9 +134,14 @@ impl PolicyAi {
     }
 
     pub fn with_weights(weights: Weights) -> PolicyAi {
+        Self::with_weights_from(weights, "evolved")
+    }
+
+    /// Construct against the same artifact directory the evaluator resolved.
+    pub fn with_weights_from(weights: Weights, dir: &str) -> PolicyAi {
         PolicyAi {
             fallback: AdvancedAi::with_weights(weights),
-            net: ValueNet::load_width("evolved", crate::evolve::FEATURE_WIDTH),
+            net: ValueNet::load_width(dir, crate::evolve::FEATURE_WIDTH),
             wide: false,
             freeze_contact: false,
             width: 48,
@@ -152,14 +157,24 @@ impl PolicyAi {
 
     /// Load the wider net and score with the wider vector.
     pub fn with_decision_features(mut self) -> PolicyAi {
-        self.net = ValueNet::load_width("evolved", DECISION_WIDTH);
+        self = self.with_decision_features_from("evolved");
+        self
+    }
+
+    pub fn with_decision_features_from(mut self, dir: &str) -> PolicyAi {
+        self.net = ValueNet::load_width(dir, DECISION_WIDTH);
         self.wide = true;
         self
     }
 
     /// [`Self::with_decision_features`] with the contact terms frozen.
     pub fn with_frozen_contact(mut self) -> PolicyAi {
-        self = self.with_decision_features();
+        self = self.with_frozen_contact_from("evolved");
+        self
+    }
+
+    pub fn with_frozen_contact_from(mut self, dir: &str) -> PolicyAi {
+        self = self.with_decision_features_from(dir);
         self.freeze_contact = true;
         self
     }

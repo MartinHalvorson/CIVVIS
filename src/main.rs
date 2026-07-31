@@ -1080,7 +1080,9 @@ fn main() {
                     let controller = controllers
                         .get(identity)
                         .expect("every scheduled identity came from --ais");
-                    civvis::elo::builtin_ai(controller, seed)
+                    civvis::elo::builtin_ai(controller, seed).unwrap_or_else(|error| {
+                        panic!("preflighted tournament controller {controller:?} failed: {error}")
+                    })
                 },
                 &cfg,
                 &ratings_path,

@@ -6472,3 +6472,43 @@ with live declarations, unit losses, city captures, and three capital captures.
 Release-mode CLI checks independently confirmed exit 2 for effective self-play,
 exit 3 for a missing definitional artifact, and exit 2 when
 `--allow-degraded` is attempted in matrix mode.
+
+## 2026-07-31 — typed arm identity and strict evaluator construction
+
+This is an evaluator-integrity change, not a policy treatment. It adds no
+strength result and changes no production `advanced` behavior.
+
+The evaluator now receives an agent, effective provenance, and typed
+architecture/weights/evaluator/treatment specification from one fallible arm
+boundary. Collapse checks compare the resolved specs. Comparisons that differ
+on multiple behavior-defining axes refuse to run without
+`--deployment-comparison`; promotion-matrix children state that flag because
+the matrix asks whether the whole challenger should replace the incumbent.
+
+Artifact resolution is also end-to-end. `--artifact-dir` is threaded into the
+actual genome, policy-net, strategic-net, wide-net, and production-net
+constructors and into matrix children. Missing definitional artifacts fail by
+default; `--allow-degraded` is the explicit diagnostic path and remains
+forbidden in matrix mode.
+
+Independent checks exercised the runtime boundary, not only its display text:
+
+- all 83 registered names resolved and constructed in production and empty
+  artifact directories;
+- every reported alias matched its effective arm byte-for-byte after a seeded
+  short game;
+- distinct stock/genome controls produced distinct specs and game states;
+- a modified custom champion matched direct construction from that file and
+  differed from the production champion;
+- the 46 focused Elo tests and all 27 `ai_eval` tests passed.
+
+CLI probes additionally confirmed: a three-axis `production`/`advanced`
+comparison exits 2 without the deployment flag and completes with it; a
+single-axis `basic`/`advanced` comparison completes using a custom empty
+artifact directory; default degraded construction exits 3; and an explicitly
+degraded effective self-comparison exits 2.
+
+The complete integrated tree then passed `cargo test --profile ci --locked
+--no-fail-fast`: 1,297 library assertions passed, 20 censuses/benchmarks were
+intentionally ignored, and every binary, integration, and doc-test suite
+completed with zero failures.

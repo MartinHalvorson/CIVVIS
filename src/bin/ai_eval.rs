@@ -1,9 +1,11 @@
 //! Paired, seat-balanced head-to-head evaluator for built-in AIs.
 use civvis::ai::Ai;
 use civvis::elo::{
-    builtin_ai, builtin_provenances, collapsed_entrants, AgentProvenance, ARTIFACT_DIR,
-    BUILTIN_AIS, EVAL_ONLY_AIS,
+    builtin_arm, builtin_arm_degraded, builtin_provenances, builtin_spec, collapsed_entrants,
+    AgentProvenance, ARTIFACT_DIR, BUILTIN_AIS, EVAL_ONLY_AIS,
 };
+#[cfg(test)]
+use civvis::elo::builtin_ai;
 use civvis::game::{default_difficulty, Action, Game, GameOptions, VictoryConditions};
 use civvis::rules::Rules;
 use civvis::setup::{MapPoles, MapScript, MapTopology};
@@ -786,6 +788,7 @@ fn matrix_child_args(
     seed: u64,
     profile: MatrixProfile,
     difficulty: &str,
+    artifact_dir: &str,
     require_artifacts: bool,
 ) -> Vec<String> {
     let mut args: Vec<String> = [
@@ -820,11 +823,16 @@ fn matrix_child_args(
         "science,culture,domination".to_string(),
         "--difficulty".to_string(),
         difficulty.to_string(),
+        "--deployment-comparison".to_string(),
     ]
     .into_iter()
     .collect();
     if require_artifacts {
         args.push("--require-artifacts".to_string());
+    }
+    if artifact_dir != ARTIFACT_DIR {
+        args.push("--artifact-dir".to_string());
+        args.push(artifact_dir.to_string());
     }
     args
 }
@@ -902,12 +910,6 @@ fn run_profile_matrix(args: &[String], challenger: &str, incumbent: &str) -> ! {
         std::process::exit(2);
     }
     let artifact_dir = text(args, "--artifact-dir", ARTIFACT_DIR);
-    if artifact_dir != ARTIFACT_DIR {
-        eprintln!(
-            "--matrix cannot use --artifact-dir {artifact_dir}; agent construction resolves {ARTIFACT_DIR}"
-        );
-        std::process::exit(2);
-    }
     let total_jobs = match number(args, "--jobs", 0) {
         requested if requested > 0 => requested as usize,
         _ => civvis::parallel::default_jobs(),
@@ -934,6 +936,7 @@ fn run_profile_matrix(args: &[String], challenger: &str, incumbent: &str) -> ! {
                     profile_seed,
                     profile,
                     &difficulty,
+                    &artifact_dir,
                     require_artifacts,
                 );
                 let output = Command::new(&executable)
@@ -951,6 +954,7 @@ fn run_profile_matrix(args: &[String], challenger: &str, incumbent: &str) -> ! {
                 .map(|(index, profile)| {
                     let executable = executable.clone();
                     let difficulty = difficulty.clone();
+                    let artifact_dir = artifact_dir.clone();
                     scope.spawn(move || {
                         let profile_seed = matrix_profile_seed(seed, index);
                         let child_args = matrix_child_args(
@@ -961,6 +965,7 @@ fn run_profile_matrix(args: &[String], challenger: &str, incumbent: &str) -> ! {
                             profile_seed,
                             profile,
                             &difficulty,
+                            &artifact_dir,
                             require_artifacts,
                         );
                         let output = Command::new(executable)
@@ -1026,32 +1031,7 @@ fn main() {
     // loaded. Say what each entrant resolved to before playing anything, so
     // a result is never filed under an agent that was never in the game.
     let artifact_dir = text(&args, "--artifact-dir", ARTIFACT_DIR);
-    // `builtin_provenance`'s contract is "resolve what `builtin_ai` will
-    // actually construct from `dir`" -- but `builtin_ai(name, seed)` takes no
-    // directory. Every one of its arms resolves the constant `ARTIFACT_DIR`,
-    // and the agent constructors below it (`StrategicAi::with_weights`,
-    // `PolicyAi::with_weights`, `ProductionSearchAi::with_weights`) each load
-    // their own net from that same constant. So pointing this flag somewhere
-    // else moved the *report* and never the run: it would print a net found in
-    // one directory and then play the agent that read another.
-    //
-    // Reporting a provenance the run does not have is the single failure this
-    // whole reporting path exists to prevent, so refuse instead of printing it.
-    // Threading a directory into construction is the general fix and is a
-    // separate change: it is ~70 call sites inside `elo::builtin_ai`, in a file
-    // three open PRs already claim.
-    if artifact_dir != ARTIFACT_DIR {
-        eprintln!(
-            "--artifact-dir {artifact_dir}: unsupported. Agent construction resolves \
-             `{ARTIFACT_DIR}` and ignores this flag, so the provenance line would \
-             describe a directory this run never reads."
-        );
-        eprintln!(
-            "to evaluate a different artifact, run from a working directory that has \
-             it: `{ARTIFACT_DIR}/valuenet.json` or `data/{ARTIFACT_DIR}/valuenet.json`"
-        );
-        std::process::exit(2);
-    }
+    let allow_degraded = args.iter().any(|arg| arg == "--allow-degraded");
     let provenance = builtin_provenances(&[a, b], &artifact_dir);
     for entry in &provenance {
         println!("{}", entry.line());
@@ -1080,7 +1060,7 @@ fn main() {
             eprintln!("--require-artifacts: refusing to record an untrained result");
             std::process::exit(3);
         }
-    } else if !args.iter().any(|arg| arg == "--allow-degraded") {
+    } else if !allow_degraded {
         let degraded: Vec<&AgentProvenance> = provenance
             .iter()
             .filter(|entry| entry.degraded())
@@ -1100,6 +1080,23 @@ fn main() {
     }
     if !collapsed.is_empty() {
         eprintln!("refusing to evaluate two names that resolve to one agent");
+        std::process::exit(2);
+    }
+    let a_spec = builtin_spec(a, &artifact_dir)
+        .unwrap_or_else(|error| panic!("registered arm {a:?} has no spec: {error}"));
+    let b_spec = builtin_spec(b, &artifact_dir)
+        .unwrap_or_else(|error| panic!("registered arm {b:?} has no spec: {error}"));
+    let differing_axes = a_spec.differing_axes(&b_spec);
+    println!("arms differ on: {}", differing_axes.join(", "));
+    if differing_axes.len() > 1
+        && !args
+            .iter()
+            .any(|argument| argument == "--deployment-comparison")
+    {
+        eprintln!(
+            "refusing a multi-axis attribution ({}); pass --deployment-comparison only for the whole-agent replacement question",
+            differing_axes.join(", ")
+        );
         std::process::exit(2);
     }
     let pairs = number(&args, "--pairs", 50).max(1) as usize;
@@ -1242,7 +1239,15 @@ fn main() {
                 .iter()
                 .map(|p| {
                     let name = if p.id < players { seats[p.id] } else { "basic" };
-                    builtin_ai(name, game_seed + p.id as u64)
+                    let arm = if allow_degraded {
+                        builtin_arm_degraded(name, game_seed + p.id as u64, &artifact_dir)
+                    } else {
+                        builtin_arm(name, game_seed + p.id as u64, &artifact_dir)
+                    };
+                    arm.unwrap_or_else(|error| {
+                        panic!("preflighted evaluator arm {name:?} failed construction: {error}")
+                    })
+                    .into_ai()
                 })
                 .collect();
             let traces = run_traced_game(&mut game, &mut ais, players);
@@ -1664,6 +1669,7 @@ mod tests {
             90_000,
             PROMOTION_PROFILES[0],
             "prince",
+            ARTIFACT_DIR,
             false,
         );
         let deployment = matrix_child_args(
@@ -1674,6 +1680,7 @@ mod tests {
             1_090_000,
             PROMOTION_PROFILES[1],
             "prince",
+            ARTIFACT_DIR,
             false,
         );
         for args in [&compact, &deployment] {
@@ -1681,6 +1688,9 @@ mod tests {
             assert_eq!(text(args, "--shape", "missing"), "planet");
             assert_eq!(text(args, "--poles", "missing"), "poles");
             assert!(args.iter().any(|argument| argument == "--randomize-civs"));
+            assert!(args
+                .iter()
+                .any(|argument| argument == "--deployment-comparison"));
             assert!(!args.iter().any(|argument| argument == "--matrix"));
         }
         assert_eq!(number(&compact, "--players", 0), 4);
@@ -1701,9 +1711,29 @@ mod tests {
             matrix_profile_seed(90_000, 1),
             PROMOTION_PROFILES[1],
             "prince",
+            ARTIFACT_DIR,
             false,
         );
         assert_eq!(number(&extended, "--seed", 0), 1_090_000);
+
+        let custom = matrix_child_args(
+            "challenger",
+            "incumbent",
+            60,
+            4,
+            90_000,
+            PROMOTION_PROFILES[0],
+            "prince",
+            "target/custom-artifacts",
+            true,
+        );
+        assert_eq!(
+            text(&custom, "--artifact-dir", "missing"),
+            "target/custom-artifacts"
+        );
+        assert!(custom
+            .iter()
+            .any(|argument| argument == "--require-artifacts"));
     }
 
     #[test]
@@ -2083,6 +2113,7 @@ mod tests {
                     .map(|p| {
                         let name = if p.id < 2 { seats[p.id] } else { "basic" };
                         civvis::elo::builtin_ai(name, seed + p.id as u64)
+                            .expect("test controllers are artifact-free")
                     })
                     .collect();
                 run_traced_game(&mut game, &mut ais, 2);
@@ -2196,10 +2227,10 @@ mod tests {
         let mut plain = make_game();
         let mut traced = make_game();
         let mut plain_ais: Vec<Box<dyn Ai>> = (0..plain.players.len())
-            .map(|pid| builtin_ai("basic", pid as u64 + 1))
+            .map(|pid| builtin_ai("basic", pid as u64 + 1).unwrap())
             .collect();
         let mut traced_ais: Vec<Box<dyn Ai>> = (0..traced.players.len())
-            .map(|pid| builtin_ai("basic", pid as u64 + 1))
+            .map(|pid| builtin_ai("basic", pid as u64 + 1).unwrap())
             .collect();
 
         civvis::ai::run_game(&mut plain, &mut plain_ais);

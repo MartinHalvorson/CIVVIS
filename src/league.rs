@@ -660,7 +660,8 @@ fn apply_internal(s: &mut Strategy, g: Glicko) {
 
 fn make_ai(kind: &StrategyKind, seed: u64) -> Box<dyn Ai> {
     match kind {
-        StrategyKind::Builtin { ai } => crate::elo::builtin_ai(ai, seed),
+        StrategyKind::Builtin { ai } => crate::elo::builtin_ai(ai, seed)
+            .unwrap_or_else(|error| panic!("rated builtin {ai:?} is unavailable: {error}")),
         StrategyKind::Advanced { weights, target } => {
             match target.as_deref().and_then(|t| t.parse::<VictoryTarget>().ok()) {
                 Some(t) => Box::new(AdvancedAi::with_weights_and_target(weights.clone(), t)),
@@ -1975,6 +1976,7 @@ fn play_job(manifest: &RoundManifest, job: &WorkJob, worker: &str) -> StoredOutc
                 make_ai(&strategy.kind, job.seed.wrapping_add(player.id as u64))
             } else {
                 crate::elo::builtin_ai("basic", job.seed.wrapping_add(player.id as u64))
+                    .expect("the artifact-free basic controller is always available")
             }
         })
         .collect();
