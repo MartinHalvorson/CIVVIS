@@ -2511,7 +2511,51 @@ local function chooseProduction(city, counts, nCities, turn, refused)
 	return nil, nil, nil;
 end
 
-local function buildParams(row)
+-- ★★★★★ WHERE A DISTRICT GOES. A district BUILD carries a plot, and ours never did.
+--
+-- `CityManager.RequestOperation(city, BUILD, params)` with only
+-- `PARAM_DISTRICT_TYPE` set returns without throwing and starts nothing, exactly
+-- like the missing `PARAM_INSERT_MODE` documented in `buildParams` below — "the
+-- order was never malformed in a way Lua could see; it was missing a parameter the
+-- engine requires. That is the whole reason no run ever built anything."
+--
+-- Measured on run civvis-20260731T163924Z: the capital was ordered to build
+-- DISTRICT_GOVERNMENT on 60 turns between t46 and t128, every one `applied: true`,
+-- and at t130 it still had no district and three buildings. The city reported
+-- `producing: DISTRICT_GOVERNMENT` the whole time — the queue took the item, the
+-- engine never placed it, so the work never happened and CIVVIS re-ordered it
+-- forever.
+--
+-- The engine will say which plots are legal if asked, which is what the shipped
+-- placement UI does (`StrategicView_MapPlacement.lua`): probe with the district
+-- type, read `CityOperationResults.PLOTS`, and send one back as PARAM_X/PARAM_Y.
+--
+-- ⚠ Returns nil rather than guessing a plot. An illegal plot is another silent
+-- no-op, and a district we cannot place should fall through to the ladder so the
+-- city builds something real this turn.
+local function districtPlot(city, hash)
+	local probe = {};
+	probe[CityOperationTypes.PARAM_DISTRICT_TYPE] = hash;
+	local results = try(function()
+		return CityManager.GetOperationTargets(city, CityOperationTypes.BUILD, probe);
+	end);
+	if results == nil then return nil; end
+	local plots = results[CityOperationResults.PLOTS];
+	if plots == nil then return nil; end
+	-- Taken by iteration, not `plots[1]`: the shipped UI counts these with
+	-- `table.count`, so the result is not promised to be a dense array.
+	for _, plotIndex in pairs(plots) do
+		local plot = try(function() return Map.GetPlotByIndex(plotIndex); end);
+		if plot ~= nil then
+			local px = try(function() return plot:GetX(); end, -1);
+			local py = try(function() return plot:GetY(); end, -1);
+			if px >= 0 and py >= 0 then return { x = px, y = py }; end
+		end
+	end
+	return nil;
+end
+
+local function buildParams(row, city)
 	local params = {};
 	-- ⚠ WITHOUT AN INSERT MODE THE GAME REJECTS EVERY BUILD.
 	--
@@ -2535,6 +2579,13 @@ local function buildParams(row)
 		params[CityOperationTypes.PARAM_BUILDING_TYPE] = row.Hash;
 	elseif row.Kind == "KIND_DISTRICT" then
 		params[CityOperationTypes.PARAM_DISTRICT_TYPE] = row.Hash;
+		local where = districtPlot(city, row.Hash);
+		if where == nil then
+			emit("build_no_plot", { district = row.DistrictType or tostring(row.Hash) });
+			return nil;
+		end
+		params[CityOperationTypes.PARAM_X] = where.x;
+		params[CityOperationTypes.PARAM_Y] = where.y;
 	elseif row.Kind == "KIND_PROJECT" then
 		params[CityOperationTypes.PARAM_PROJECT_TYPE] = row.Hash;
 	else
@@ -2611,7 +2662,7 @@ local function driveProduction(player, turn, force)
 			-- made it look like a stalled game rather than a broken script.
 			local name, row, why = chooseProduction(city, counts, #cities, turn);
 			if row ~= nil then
-				local params = buildParams(row);
+				local params = buildParams(row, city);
 				if params ~= nil then
 					local ok = pcall(function()
 						CityManager.RequestOperation(city, CityOperationTypes.BUILD, params);
@@ -3563,7 +3614,56 @@ local function exportState(player, pid, turn)
 				end
 			end
 		end
+		-- ★★★★★ AND WHAT IT HAS DISTRICTED, WITH THE PLOT.
+		--
+		-- `districts` was **null on all 23,677 city records ever exported**, across
+		-- every run in `civvis-civ6-runs`. The field was in the schema and never once
+		-- filled, so a district is invisible exactly the way a building used to be.
+		--
+		-- ⚠ THE PLOT IS THE POINT, not the name. `mirror.rs` refuses to reconstruct a
+		-- district and says why: "`Item::District` carries a `pos` the export does not
+		-- give, and inventing one would place a district on arbitrary ground." So
+		-- `civvis_production_item` returns None for EVERY district, a city that is
+		-- currently BUILDING one looks IDLE, and CIVVIS re-decides the same production
+		-- next turn. Measured on run civvis-20260731T163924Z: the capital was ordered
+		-- to build DISTRICT_GOVERNMENT on 60 turns between t46 and t128, every one
+		-- answered `applied: true`, and it still showed pop 10 and three buildings at
+		-- t130. Sixty of that run's ~91 build orders went into one district.
+		--
+		-- Districts are also the score gap this file already complains about ("ZERO
+		-- districts, campuses, libraries ... 203 against 1088"): they are where
+		-- Civilization VI's score and yields come from.
+		--
+		-- ⚠ Walk the city's PLOTS, not `GetDistricts()`: a plot carries the type AND
+		-- the position together, and the collection's per-member accessors vary across
+		-- this build. Left nil when the plots cannot be read, so "could not ask" stays
+		-- distinguishable from "this city has none" -- the same rule as `built`.
+		local placed = nil;
+		local ownedPlots = try(function()
+			return Map.GetCityPlots():GetPurchasedPlots(city);
+		end);
+		if ownedPlots ~= nil then
+			placed = {};
+			for _, plotIndex in ipairs(ownedPlots) do
+				local plot = try(function() return Map.GetPlotByIndex(plotIndex); end);
+				if plot ~= nil then
+					local dtype = try(function() return plot:GetDistrictType(); end, -1);
+					if dtype ~= nil and dtype >= 0 then
+						local info = GameInfo.Districts[dtype];
+						if info ~= nil then
+							placed[#placed + 1] = {
+								type = info.DistrictType,
+								x = try(function() return plot:GetX(); end, -1),
+								y = try(function() return plot:GetY(); end, -1),
+								pillaged = try(function() return plot:IsDistrictPillaged(); end, false),
+							};
+						end
+					end
+				end
+			end
+		end
 		cities[#cities + 1] = {
+			districts = placed,
 			id = try(function() return city:GetID(); end, -1),
 			-- The banner name, so the mirror can label the same city the same way.
 			-- Without it the reconstruction falls back to CIVVIS's own list for
@@ -4493,7 +4593,7 @@ local function applyOrder(player, pid, row, turn)
 		if row2 == nil then return false, "unknown_" .. verb; end
 		verb = resolved;
 		civvisBuild[tonumber(subject) or -1] = resolved;
-		local params = buildParams(row2);
+		local params = buildParams(row2, city);
 		if params == nil then return false, "no_params"; end
 		-- ★★★★ DO NOT RE-ISSUE WHAT THE CITY IS ALREADY BUILDING.
 		--
