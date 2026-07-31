@@ -4764,6 +4764,12 @@ local function applyOrder(player, pid, row, turn)
 		-- defended plot. CIVVIS's `Attack` therefore translates to MOVE_TO, and
 		-- that is not a workaround: it is how Civilization VI resolves it.
 		if verb == "FOUND_CITY" then
+			-- ⚠ READ THE PLOT BEFORE FOUNDING. A settler founds where it STANDS, so
+			-- the order carries no x/y, and the unit is consumed by the operation —
+			-- afterwards there is nothing left to ask. The refusal path below can
+			-- still call `unit:GetX()` precisely because it did not found.
+			local atX = try(function() return unit:GetX(); end);
+			local atY = try(function() return unit:GetY(); end);
 			local placed = operate(unit, OP["UNITOPERATION_FOUND_CITY"], {});
 			-- ★★★★★ ASK THE ENGINE WHY, DO NOT INFER IT.
 			--
@@ -4826,6 +4832,23 @@ local function applyOrder(player, pid, row, turn)
 				end);
 				emit("found_refused", { turn = turn, unit = subject, why = why,
 				                        x = unit:GetX(), y = unit:GetY() });
+			else
+				-- ★★★★★ REPORT THE SUCCESS TOO, OR THE LEDGER ONLY KNOWS FAILURES.
+				--
+				-- Only the refusal was emitted, so a city that WAS founded left no
+				-- event at all — the sole trace was the `cities` count moving in the
+				-- next turn event. That is a state change the export does not carry,
+				-- and reading a run without it is guesswork.
+				--
+				-- Measured cost, on run civvis-20260731T213310Z: 32 `settle_choice`
+				-- and 0 `found` events, which reads as "no settler ever founded".
+				-- The city count says otherwise — 0->1 at t3, 1->2 at t89, 2->1 at
+				-- t93, 1->2 at t130, 2->3 at t153, 3->4 at t168, 4->3 at t172. The
+				-- empire founded four cities and lost two, and the event stream could
+				-- not distinguish that from settlers dying on the road. It cost this
+				-- loop a wrong conclusion, stated twice.
+				--
+				emit("found", { turn = turn, unit = subject, x = atX, y = atY });
 			end
 			return placed, "found";
 		end
