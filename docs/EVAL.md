@@ -6622,9 +6622,11 @@ ai_eval advanced_evolved advanced --pairs 40 --jobs 4 --seed 61000000 \
 # compact: --players 4 --width 24 --height 16 --city-states 4 --turns 500 --speed standard
 ```
 
-`advanced_evolved` resolves the embedded champion, `advanced` is stock
-`AdvancedAi::new()`, and `ai_eval` reports the arms differing on `weights`
-alone.
+`advanced_evolved` resolves the shipped champion — run from the checkout,
+`load_champion` finds `data/evolved/best.json`, which is byte-for-byte the file
+`src/evolve.rs` `include_str!`s as the embedded fallback, so this is the same
+genome either way. `advanced` is stock `AdvancedAi::new()`, and `ai_eval`
+reports the arms differing on `weights` alone.
 
 | profile | paired score | Elo-equivalent | games | map directions | sign p |
 |---|---:|---:|---:|---:|---:|
