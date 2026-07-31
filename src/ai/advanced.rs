@@ -9315,7 +9315,25 @@ impl AdvancedAi {
         radius: i32,
     ) -> Option<(Pos, f64)> {
         let from = g.units[&uid].pos;
-        let candidates = self.settle_sites(g, pid, from, radius);
+        let mut candidates = self.settle_sites(g, pid, from, radius);
+        // ★★★★ ONE SETTLER PER SITE. Two settlers ranking the same board pick the same
+        // best tile, and only one of them can ever found there — the other walks to it,
+        // finds it taken or occupied, and has nowhere to be.
+        //
+        // ⚠ THIS ONLY BECAME VISIBLE ONCE TARGETS PERSISTED. While the board was
+        // rebuilt and the memory forgotten every turn, both settlers re-derived the
+        // same site every turn and the symptom read as wandering. Replaying turns
+        // 90-100 of run `civvis-20260731T055749Z` with the memory carried across:
+        // BOTH settlers march to (48,13), one four tiles out and one five, turn after
+        // turn, escorted, with no hostile within reach and nothing else wrong.
+        //
+        // A fix that makes memory work has to make the memory CONSISTENT too.
+        candidates.retain(|(pos, _)| {
+            !self
+                .settler_targets
+                .iter()
+                .any(|(other, claimed)| *other != uid && claimed == pos)
+        });
         BasicAi::first_reachable_settle_site(g, uid, &candidates)
     }
 
