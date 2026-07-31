@@ -737,6 +737,46 @@ fn text(args: &[String], flag: &str, default: &str) -> String {
         .unwrap_or_else(|| default.to_string())
 }
 
+/// What the number under the gate is actually worth, said out loud.
+///
+/// The gate decides; this describes. Separating them is the whole of R3: a
+/// promotion gate accepts when the observed effect is large enough, so
+/// conditioning on "passed" conditions on the estimate being large, and every
+/// headline size in this repository is inflated by an amount that grows as the
+/// true effect shrinks. `+207` against a re-measured `+86` is the signature.
+///
+/// ⚠ Every branch must contain a token that `unevidenced_effect_sizes` in
+/// `tools/civvis_collab.py` accepts as provenance — each one names a seed. If
+/// it did not, this tool would print numbers the repository's own docs gate
+/// then refuses, and the two halves of R3 would disagree.
+fn effect_size_line(
+    elo: f64,
+    verdict: PromotionVerdict,
+    seed: u64,
+    confirm: Option<u64>,
+) -> String {
+    let selected_on_size = matches!(
+        verdict,
+        PromotionVerdict::Promote | PromotionVerdict::Retain
+    );
+    match (confirm, selected_on_size) {
+        (Some(prior), _) => format!(
+            "effect size:    {elo:+.0} (CONFIRMED — measured on seed {seed}, disjoint from the \
+             discovery seed {prior}; quotable, and quote this estimate rather than the \
+             discovery one)"
+        ),
+        (None, true) => format!(
+            "effect size:    {elo:+.0} (DISCOVERY ESTIMATE — selected on passing the gate, so \
+             biased upward; not quotable until confirmed on a disjoint seed: rerun with \
+             --seed <new> --confirm {seed})"
+        ),
+        (None, false) => format!(
+            "effect size:    {elo:+.0} (not gate-selected — the gate did not fire, so this \
+             estimate is not conditioned on being large; still a single run on seed {seed})"
+        ),
+    }
+}
+
 fn number(args: &[String], flag: &str, default: i64) -> i64 {
     args.iter()
         .position(|a| a == flag)
@@ -1169,6 +1209,34 @@ fn main() {
     let width = number(&args, "--width", 24).max(8) as i32;
     let height = number(&args, "--height", 16).max(8) as i32;
     let seed = number(&args, "--seed", 4000).max(0) as u64;
+    // A gate is a decision procedure. Its point estimate is not an estimator.
+    //
+    // Every published effect size here is conditioned on having passed a gate,
+    // so E[observed | PASS] > true effect — the winner's curse. It shows: +207
+    // re-measured to +86, +92 to +61, and `strategic_deep`'s +45 to -8, which
+    // #482 excluded outright. Direction and significance replicate; the size
+    // fails, always downward. See `docs/EVAL_INTEGRITY.md` §4.
+    //
+    // `--confirm <prior-seed>` is the claim that this run is the *replication*
+    // of one already made elsewhere. It must name a different seed, because a
+    // rerun on the same seed re-measures the same maps and confirms nothing.
+    let confirm_seed = args
+        .iter()
+        .position(|arg| arg == "--confirm")
+        .map(|index| match args.get(index + 1).and_then(|v| v.parse::<u64>().ok()) {
+            Some(prior) if prior != seed => prior,
+            Some(_) => {
+                eprintln!(
+                    "--confirm {seed} names the seed this run already uses; a confirmation \
+                     must be measured on maps the discovery was not found on"
+                );
+                std::process::exit(2);
+            }
+            None => {
+                eprintln!("--confirm needs the seed of the run being confirmed");
+                std::process::exit(2);
+            }
+        });
     // The exhibition varies all three world axes and pins its enabled victory
     // set. An evaluator that cannot name them silently measures a different
     // game: historically Pangaea/flat/fixed-roster/all-victories, whatever the
@@ -1486,6 +1554,19 @@ fn main() {
             inference.maps,
         ),
     }
+    // Separate the decision from the estimate, in the tool rather than in the
+    // discipline. The gate above decides; this line says what the number under
+    // it is worth, and it is deliberately printed even when the gate did not
+    // fire, so a reader never has to remember which verdicts select on size.
+    //
+    // The strings here are matched by `unevidenced_effect_sizes` in
+    // `tools/civvis_collab.py`: anything this prints must be something that
+    // gate already accepts as provenance, or the tool would emit numbers the
+    // repository's own docs check then refuses.
+    println!(
+        "{}",
+        effect_size_line(inference.elo, inference.verdict, seed, confirm_seed)
+    );
     let terminal_mean = pair_terminal_scores.iter().sum::<f64>() / pairs as f64;
     let terminal_directions = directional_outcomes(&pair_terminal_scores);
     let terminal_sign_p = exact_sign_p(
@@ -1777,6 +1858,60 @@ fn main() {
 mod tests {
     use super::*;
     use civvis::rng::Rng;
+
+    #[test]
+    fn a_gate_passing_size_is_labelled_the_discovery_estimate_it_is() {
+        let line = effect_size_line(207.0, PromotionVerdict::Promote, 4000, None);
+        assert!(line.contains("DISCOVERY ESTIMATE"), "{line}");
+        assert!(line.contains("biased upward"), "{line}");
+        assert!(line.contains("--confirm 4000"), "{line}");
+
+        // RETAIN selects on size in the other direction and is equally biased.
+        let retained = effect_size_line(-207.0, PromotionVerdict::Retain, 4000, None);
+        assert!(retained.contains("DISCOVERY ESTIMATE"), "{retained}");
+    }
+
+    #[test]
+    fn a_size_the_gate_did_not_select_says_so_rather_than_claiming_confirmation() {
+        for verdict in [PromotionVerdict::Inconclusive, PromotionVerdict::Insufficient] {
+            let line = effect_size_line(12.0, verdict, 4000, None);
+            assert!(line.contains("not gate-selected"), "{line}");
+            assert!(!line.contains("DISCOVERY ESTIMATE"), "{line}");
+            assert!(!line.contains("CONFIRMED"), "{line}");
+        }
+    }
+
+    #[test]
+    fn a_confirmation_names_both_seeds_and_is_marked_quotable() {
+        let line = effect_size_line(86.0, PromotionVerdict::Promote, 77_200_000, Some(4000));
+        assert!(line.contains("CONFIRMED"), "{line}");
+        assert!(line.contains("77200000"), "{line}");
+        assert!(line.contains("4000"), "{line}");
+        assert!(line.contains("quotable"), "{line}");
+    }
+
+    /// The two halves of R3 have to agree, or this tool prints numbers the
+    /// repository's own documentation gate then refuses. `EVIDENCE_RE` in
+    /// `tools/civvis_collab.py` accepts a seed as provenance; every branch here
+    /// names one.
+    #[test]
+    fn every_effect_size_line_carries_provenance_the_docs_gate_accepts() {
+        let verdicts = [
+            PromotionVerdict::Promote,
+            PromotionVerdict::Retain,
+            PromotionVerdict::Inconclusive,
+            PromotionVerdict::Insufficient,
+        ];
+        for verdict in verdicts {
+            for confirm in [None, Some(4000)] {
+                let line = effect_size_line(45.0, verdict, 90_000, confirm);
+                assert!(
+                    line.contains("seed"),
+                    "no provenance token the docs gate accepts: {line}",
+                );
+            }
+        }
+    }
 
     #[test]
     fn turn_list_is_stable_across_worker_completion_order() {
