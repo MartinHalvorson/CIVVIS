@@ -395,6 +395,9 @@ struct Divergence {
     fact: HiddenFact,
     plan_changed: bool,
     action_index: Option<usize>,
+    /// The action pair at the first differing index. Either side can be
+    /// absent when one trace simply ends first.
+    action_pair: Option<(Option<Action>, Option<Action>)>,
 }
 
 #[derive(Default)]
@@ -413,6 +416,9 @@ struct Reading {
     city_samples: u64,
     wartime_samples: u64,
     divergences: u64,
+    position_divergences: u64,
+    unit_hp_divergences: u64,
+    city_hp_divergences: u64,
     plan_divergences: u64,
     action_divergences: u64,
     first_action_divergences: u64,
@@ -508,12 +514,29 @@ fn read_map(
         let altered_actions = play_turn(&mut altered_ai, &mut altered_game, pid);
         if actual_actions != altered_actions {
             reading.divergences += 1;
+            match fact {
+                HiddenFact::UnitPosition { .. } => reading.position_divergences += 1,
+                HiddenFact::UnitHp { .. } => reading.unit_hp_divergences += 1,
+                HiddenFact::CityHp { .. } => reading.city_hp_divergences += 1,
+            }
             let plan_changed = actual_actions.plan != altered_actions.plan;
             let actions_changed = actual_actions.actions != altered_actions.actions;
             reading.plan_divergences += u64::from(plan_changed);
             reading.action_divergences += u64::from(actions_changed);
             let action_index = actions_changed
                 .then(|| first_difference(&actual_actions.actions, &altered_actions.actions));
+            let action_pair = action_index.map(|index| {
+                (
+                    actual_actions
+                        .actions
+                        .get(index)
+                        .map(|(_, action)| action.clone()),
+                    altered_actions
+                        .actions
+                        .get(index)
+                        .map(|(_, action)| action.clone()),
+                )
+            });
             reading.first_action_divergences +=
                 u64::from(action_index.is_some_and(|index| index == 0));
             if reading.examples.len() < 3 {
@@ -524,6 +547,7 @@ fn read_map(
                     fact,
                     plan_changed,
                     action_index,
+                    action_pair,
                 });
             }
         }
@@ -572,6 +596,9 @@ fn main() {
         total.city_samples += reading.city_samples;
         total.wartime_samples += reading.wartime_samples;
         total.divergences += reading.divergences;
+        total.position_divergences += reading.position_divergences;
+        total.unit_hp_divergences += reading.unit_hp_divergences;
+        total.city_hp_divergences += reading.city_hp_divergences;
         total.plan_divergences += reading.plan_divergences;
         total.action_divergences += reading.action_divergences;
         total.first_action_divergences += reading.first_action_divergences;
@@ -627,6 +654,10 @@ fn main() {
         total.divergences, total.selected
     );
     println!(
+        "  divergence treatments                {} unit positions, {} unit HP, {} city HP",
+        total.position_divergences, total.unit_hp_divergences, total.city_hp_divergences
+    );
+    println!(
         "  plan-report divergences              {}/{}",
         total.plan_divergences, total.selected
     );
@@ -657,6 +688,10 @@ fn main() {
             example.fact.change(),
             evidence,
         );
+        if let Some((left, right)) = &example.action_pair {
+            println!("      source action:  {left:?}");
+            println!("      treated action: {right:?}");
+        }
     }
     if total.divergences == 0 {
         println!(

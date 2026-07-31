@@ -83,9 +83,10 @@ reads full `Game` state that the tensor does not reveal. They do **not** measure
 every possible leak, and a zero result on any finite treatment set would not
 establish fog honesty.
 
-## Current post-repair spot check
+## Visible-only pressure baseline
 
-After the visible-only city-pressure repair, a fresh current-main spot check at
+After the visible-only city-pressure repair, and before the battlefront
+observation repair below, a current-main spot check at
 seed `872000` (`16` maps, the same four-player 44×28/200-turn shape, 12
 probes/map, six workers) produced 177 valid controls. All modified tensors,
 save/load tensors, and no-op decisions matched; 6/177 decisions diverged
@@ -99,6 +100,47 @@ information-set problem nor the need for a fog-honest controller.
 last-seen, player-visible military observations only for that repaired pressure
 path. Its memory term is intentionally too narrow to affect the census's other
 full-state reads, so it must not be cited as a fog-honesty repair.
+
+## Battlefront observation repair
+
+`AdvancedAi` now refreshes a controller-local `BeliefState` before every
+major turn. A foreign City Center sighting retains only the combat-relevant
+state that was visible then: owner, HP, wall HP, and the displayed city
+strength. Campaign scoring uses that report rather than a hidden city's live
+heal, breach, or garrison-derived strength; a never-seen city gets a
+conservative generic defense estimate instead of its private live state.
+
+The battlefront layer now also filters current hostile units and City Centers
+through the acting seat's live vision when it chooses a domain objective,
+focus target, local force ratio, and force posture. Last-seen military
+contacts remain available only through the existing bounded belief memory.
+That is an information-set repair for these decision boundaries, not a claim
+that the full controller is fog honest.
+
+The same `872000` spot-check shape now has 178 valid controls and 3/178
+divergences (1.7%): no plan-report divergence remains, and all three remaining
+witnesses are unit-position action differences. On the larger fixed
+`862000..862063` release shape, the pre-repair controller yielded 28/717
+divergences (3.9%; 11 plan reports); the repaired controller yielded 18/725
+(2.5%; zero plan reports). The probe counts differ because the altered
+controller reaches a slightly different sequence of live decision points, so
+this is a reproducible before/after regression measure, **not** a paired
+effect-size estimate.
+
+The repaired run's treatment breakdown is 14 hidden-unit-position witnesses,
+4 hidden-unit-HP witnesses, and **0 hidden-city-HP witnesses**. `fog_census`
+now prints that breakdown and both actions at the first action difference,
+which makes the remaining lower-level tactical leaks actionable without
+mistaking a reduced rate for a full proof of fog honesty.
+
+As a gameplay safety screen, the repaired controller and its immediately
+preceding build were both run against `basic` on identical seed prefixes. The
+compact 60-map/120-game screen was exactly equal at 113 `advanced` wins. On a
+24-map/48-game six-player 74×46 Online/planet deployment shape, the preceding
+build had 16 `advanced` wins and the repaired build had 14; terminal-score
+share was effectively unchanged (57.2% and 57.3%). This is not a
+promotion-strength comparison, and the small deployment difference is recorded
+as a regression screen rather than interpreted as an effect.
 
 ## Scope and limitations
 

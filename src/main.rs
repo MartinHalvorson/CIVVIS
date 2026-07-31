@@ -59,7 +59,17 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// strategy-transition counts across 40 Advanced seat-games and 4,022 observed
 /// Advanced turns on that same fixed prefix. The re-pin is justified because
 /// the arm never observes or contributes a nonzero term while its flag is off.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x2d27_2f08_7676_3f23;
+///
+/// #682 adds fog-aware campaign and battlefront observation to the live
+/// controller, but `AdvancedAi::legacy()` explicitly disables every new
+/// branch. A clean `41c02c0` release build and this branch produced identical
+/// output from `ai_eval advanced_v1 basic --pairs 10 --jobs 1 --seed 31337
+/// --players 4 --turns 200 --deployment-comparison`: all 20 game results,
+/// scores, sweeps, seat metrics, victory mix, and strategy-transition counts
+/// matched across 40 Advanced-v1 seat-games and 4,300 observed Advanced-v1
+/// turns. The source contract is deliberately re-pinned after that direct
+/// compatibility check rather than changing the Elo protocol.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x1364_a66e_eb3d_720e;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
