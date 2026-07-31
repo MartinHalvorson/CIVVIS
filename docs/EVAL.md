@@ -6738,3 +6738,115 @@ part: at deployment the empire reaches 4.83 cities against its own target of
 5.00 and is **target**-limited, while at the compact eval profile it reaches
 2.17 against 3.83 and is **execution**-limited. The expansion axis has two
 regimes and one profile cannot judge it.
+
+### Which genes carry it: a pre-registered partition on shared maps
+
+The split above says the same forty genes are worth +51 on one profile and −30
+on the other. This partitions them. The **yield half** is `docs/GENOME.md`'s
+`economy` (7) plus `expansion` (4) — `city_target`, `settler_min_pop`,
+`settler_stop_turn`, `min_city_dist`, `builder_per_city`, `wonder_min_bld`,
+`faith_builder`, `d_campus`, `d_commercial`, `d_holy`, `d_theater` — and the
+rest is the other twenty-nine.
+
+Four artifact arms were staged as `evolved/best.json` and run against stock
+`advanced` on the **same forty deployment maps**, seed prefix 66,000,000, so
+the arms are compared to each other on identical terrain. Every artifact
+deserializes to `PolicyDeck::Live` while `Weights::default()` is `Legacy`, so
+`r0` — an artifact carrying **no gene overrides at all** — is the rig's
+calibration rung and every other arm is read against it rather than against the
+control.
+
+| arm | champion genes | paired score | Elo-equivalent | games |
+|---|---:|---:|---:|---:|
+| `r0` stock artifact, deck only | 0 | **53.1%** (95% Wilson 38.1–67.6) | +22 | — |
+| `r2` yield half only | 11 | **44.4%** (95% Wilson 30.2–59.6) | −39 | 14–23 |
+| `r3` the other twenty-nine | 29 | **57.5%** (95% Wilson 42.2–71.5) | +53 | 27–15 |
+| the shipped champion, all forty (seed 61,000,000) | 40 | 42.5% (95% Wilson 28.5–57.8) | −53 | 13–25 |
+
+**The two halves point in opposite directions and the whole tracks the worse
+one.** Against the `r0` baseline the eleven yield genes cost about nine points
+and the other twenty-nine buy about four.
+
+`r0` at 53.1% reproduces `advanced_policy_live_control`'s recorded 54.3% at
+300 maps from a different construction path on a disjoint seed, so the rig
+measures a known quantity correctly.
+
+`Weights` carries a second non-gene field that a JSON artifact could silently
+move, and it was checked rather than assumed: `dedication_choice` has
+`#[serde(default)]`, but `DedicationChoice::default()` is `Banking`, which is
+also `Weights::default()`'s value, so an artifact that omits the field lands on
+the same dedication as the control. The rung is deck-only.
+
+**`r2` reproduces the whole champion using eleven genes.** Its midgame Science
+share is 15.9% against stock's 33.5% (the full champion: 16.1% against 31.4%);
+its midgame Expansion share is 35.6% against 18.5% (the full champion: 34.8%
+against 19.5%); it takes 9 science victories to stock's 16, holds 5.47 cities
+to 5.98, and 55.5 techs to 59.1. Its paired score, 44.4%, sits beside the full
+champion's 42.5% on a disjoint seed.
+
+`r3` is the mirror image of `r2` on the diagnostic that matters. Its midgame
+Science share is **33.9%** against `r2`'s 15.9%, its midgame Expansion share
+**18.7%** against `r2`'s 35.6%, and it takes **21 science victories to stock's
+13** while holding 6.58 cities to 5.45, 84.0 population to 70.4 and 61.1 techs
+to 56.5. Removing eleven genes does not merely stop the bleeding; the empire
+that remains is larger *and* converts.
+
+Within those eleven, one column stands out far enough to name: `r2` holds
+**1.48 builders against stock's 2.51**, a 41% cut, which is exactly what
+`builder_per_city = 0.200` — the gene's own lower bound, against a stock 0.5 —
+predicts. Builders improve tiles, tiles feed growth, growth pays for the next
+Settler and the Campus that follows it, so a builder cut is the cheapest
+available explanation for an empire that stays short of its city target and
+never routes to Science. Its faith is 3265 against 2929 and its tourists 33.8
+against 40.7, consistent with `faith_builder` 350.4 against 120.0 spending the
+difference on a lane the profile has switched off.
+
+⚠ **That is a reading of one column, not an attribution within the block.**
+Separating `economy` from `expansion` needs its own two arms and its own
+pre-registration; nothing here licenses moving a single gene.
+
+### The yield block is not more perturbed, it is more consequential
+
+An obvious deflation of the attribution would be that the eleven genes simply
+moved further from stock than the other twenty-nine. Measured as
+`|champion − stock| / (gene's own range)`, they did not:
+
+| block | mean normalised displacement | genes |
+|---|---:|---:|
+| yield (economy + expansion) | **0.194** | 11 |
+| the other twenty-nine | **0.185** | 29 |
+
+The two halves are displaced by the same amount and only one of them costs
+anything at deployment. The single largest displacement in the whole genome is
+`war_ratio` at 0.65 of its range (4.530 against a stock 1.800) — a member of
+the war-declaration block that `docs/GENOME.md` measured as **reached only by
+`BasicAi`**, so `AdvancedAi`'s own declaration path never consults it. A gene
+under no selection pressure drifting to the far end of its range is what that
+looks like from the outside, and it is a useful reminder that a large
+displacement is evidence about the *search*, not about the gene's importance.
+
+⚠ Forty maps resolve about ±14 points and both arms are individually
+`INCONCLUSIVE`; this is an ordering of arms on shared maps, not a promotion.
+
+### The experiment this points at, which has never been run
+
+The shipped genome was bred with `--players 4 --width 24 --height 16 --turns
+500` at Standard speed with all six victory conditions — 96 tiles per player.
+Nothing in this repository has ever bred one at the profile the deployment gate
+judges.
+
+`EvoCfg::speed` exists for exactly this and says so in its own doc comment,
+quoting the +58/−9 split as the reason it was added. It is wired through
+`main.rs`. It has not been used:
+
+```sh
+civvis evolve --pop 24 --generations 25 --games 96 \
+  --players 6 --width 74 --height 46 --turns 250 --speed online --seed <fresh>
+```
+
+Two mismatches remain even then, and both are worth stating before anyone runs
+it: `eval_game_observation` derives city-states from map size and takes the
+default victory set, so it would breed with religious victory enabled while the
+gate excludes it, and it plays every third game at twice `max_turns`. Neither
+touches the density and seat count, which the measurements above identify as
+the dominant difference, but a run should be read knowing them.
