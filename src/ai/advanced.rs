@@ -9232,7 +9232,32 @@ impl AdvancedAi {
 
     fn settle_sites(&self, g: &Game, pid: usize, from: Pos, radius: i32) -> Vec<(Pos, f64)> {
         let mut sites = Vec::new();
-        let distance_penalty = if radius > 12 { 0.45 } else { 0.9 };
+        // ★★★★★ THE SAME TILE MUST NOT BE WORTH MORE BECAUSE THE SEARCH WAS WIDER.
+        //
+        // This used to charge 0.45 a tile once the radius passed 12 and 0.9 below it,
+        // so the wide search scored every distant site at roughly double the near
+        // search's price — and `advanced_settler_step` then compares the two and takes
+        // the far one when it wins by 5. A comparison between two differently-priced
+        // scales is not a comparison.
+        //
+        // What it produced, replayed off run `civvis-20260731T040858Z`:
+        //
+        //   t42  Settler marching to (23, 13) | 25 tiles away, the site is worth 94.7
+        //   t48  Settler marching to (23, 13) | 20 tiles away
+        //   t56  Settler marching to (23, 13) | 19 tiles away
+        //
+        // A twenty-five tile trek, unescortable for most of its length, across a map
+        // whose far side is barbarian ground. The settler traces in every run of this
+        // ladder end the same way: `civvis-20260731T000644Z` had one settler alive for
+        // 123 turns that never founded anything, `civvis-20260730T203028Z` one alive
+        // for 150. The empire holds two cities because its third settler is always
+        // still walking.
+        //
+        // ⚠ Distance is not a preference here, it is a COST: a site twenty tiles away
+        // is twenty turns of a city that does not exist yet, out of a 250-turn game
+        // whose expansion window closes long before that. Charging it once, at one
+        // rate, is what makes "near and good" beat "far and slightly better".
+        let distance_penalty = 0.9;
         for pos in g.wdisk(from, radius) {
             let Some(tile) = g.map.get(pos) else { continue };
             if g.rules.is_water(tile)
@@ -12222,14 +12247,26 @@ impl AdvancedAi {
             .filter(|uid| g.rules.units[g.units[uid].kind].strength > 0.0)
             .collect();
         combat.sort();
-        // One defender stays with each city: the unit closest to it that nothing
-        // else has claimed. Everything left over is free to escort.
+        // One defender stays with each city, and it is the WEAKEST unit near it, not
+        // the closest.
+        //
+        // ⚠ MEASURED, AND THE FIRST VERSION OF THIS GOT IT BACKWARDS. Replaying turn
+        // 32 of run `civvis-20260731T040858Z` with "closest unit garrisons": both
+        // warriors were reserved for the two cities and the only surplus left to walk
+        // out with the settler was a SCOUT — strength 10 against a barbarian warrior's
+        // 20. The empire fielded the right number of escorts and sent the one unit
+        // that cannot win the fight it was sent to.
+        //
+        // A garrison's early job is to be present; an escort's job is to beat a raider.
+        // So the cheap unit holds the city and the soldier walks. Distance still breaks
+        // ties, because a keeper on the other side of the map defends nothing.
+        let strength = |uid: &u32| (g.rules.units[g.units[uid].kind].strength * 100.0) as i64;
         let mut held: std::collections::BTreeSet<u32> = Default::default();
         for city in &cities {
             if let Some(keeper) = combat
                 .iter()
                 .filter(|uid| !held.contains(uid))
-                .min_by_key(|uid| (g.wdist(g.units[uid].pos, *city), **uid))
+                .min_by_key(|uid| (strength(uid), g.wdist(g.units[uid].pos, *city), **uid))
             {
                 held.insert(*keeper);
             }
@@ -12254,13 +12291,25 @@ impl AdvancedAi {
         let mut taken: std::collections::BTreeSet<u32> = Default::default();
         for settler in settlers {
             let spos = g.units[&settler].pos;
+            // Nearest first so the escort can actually catch up, strongest to break
+            // ties: a settler walking beside a scout is still walking alone.
             let escort = combat
                 .iter()
                 .filter(|uid| !held.contains(uid) && !taken.contains(uid))
-                .min_by_key(|uid| (g.wdist(g.units[uid].pos, spos), **uid));
+                .min_by_key(|uid| (g.wdist(g.units[uid].pos, spos), -strength(uid), **uid));
             if let Some(escort) = escort.copied() {
                 taken.insert(escort);
                 self.settler_escorts.insert(escort, settler);
+                // Said out loud, because "the escort never fired" and "there was
+                // nobody spare to send" are indistinguishable from the orders alone —
+                // and the first version of this rule sent a SCOUT without saying so.
+                think!(self.journal(), Expansion, Detail,
+                       "Sending {} out with the settler at {spos:?}",
+                       g.units[&escort].kind.as_str();
+                       "{} tiles behind it, of {} soldiers and {} cities",
+                       g.wdist(g.units[&escort].pos, spos),
+                       combat.len(),
+                       cities.len(); spos);
             }
         }
     }

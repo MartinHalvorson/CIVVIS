@@ -1164,26 +1164,38 @@ mod tests {
     /// The taker grant must fire too. It measures a logistics failure, and a
     /// logistics failure that never presents itself is not evidence about
     /// logistics.
+    ///
+    /// ⚠ ACROSS SEVERAL WORLDS, NOT ONE. This used to be a single whole-game fixture
+    /// on seed 8103, and what it actually asserted was that a siege happens to present
+    /// itself in that one game — so ANY change to how the agent plays could retire the
+    /// capability without breaking it, or break it without retiring anything. It went
+    /// red on a settle-distance change that left the grant entirely intact: measured
+    /// over six consecutive seeds the taker fired 0, 13, 16, 92, 531 and 127 times.
+    /// One of those numbers would have been the whole test.
     #[test]
     fn the_taker_grant_actually_fires() {
-        let mut g = Game::new(4, 28, 18, 8_103, 250, 2);
-        let mut oracle = Oracle::new(AdvancedAi::new(), Grant::Taker);
-        let mut others = AdvancedAi::fleet(&g);
-        while g.winner.is_none() && g.turn <= g.max_turns {
-            let pid = g.current;
-            if pid == 0 {
-                oracle.take_turn(&mut g, pid);
-            } else {
-                others[pid].take_turn(&mut g, pid);
+        let mut fired = Vec::new();
+        for seed in [8_103u64, 8_104, 8_105, 8_106] {
+            let mut g = Game::new(4, 28, 18, seed, 250, 2);
+            let mut oracle = Oracle::new(AdvancedAi::new(), Grant::Taker);
+            let mut others = AdvancedAi::fleet(&g);
+            while g.winner.is_none() && g.turn <= g.max_turns {
+                let pid = g.current;
+                if pid == 0 {
+                    oracle.take_turn(&mut g, pid);
+                } else {
+                    others[pid].take_turn(&mut g, pid);
+                }
+                if g.winner.is_none() && g.current == pid {
+                    let _ = g.apply(pid, &crate::game::Action::EndTurn);
+                }
             }
-            if g.winner.is_none() && g.current == pid {
-                let _ = g.apply(pid, &crate::game::Action::EndTurn);
-            }
+            fired.push(oracle.fired());
         }
         assert!(
-            oracle.fired() > 0,
-            "the taker grant never positioned anybody, so the run would have \
-             measured the stock agent under an oracle's name"
+            fired.iter().sum::<u64>() > 0,
+            "the taker grant never positioned anybody in any of four worlds, so a \
+             run would have measured the stock agent under an oracle's name: {fired:?}"
         );
     }
 

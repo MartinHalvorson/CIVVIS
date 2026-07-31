@@ -16,6 +16,13 @@ use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 /// stepping into a dangerous attack envelope.
 const FIRST_MOVE_SCORE_BONUS: f64 = 4.0;
 
+/// How far a hostile can be and still take a civilian on its next turn.
+///
+/// Two, because an Ancient-era warrior has two movement points and a civilian has no
+/// defence: a settler one tile outside "adjacent" is already caught. Measured — the
+/// settler in run `civvis-20260731T040858Z` died from exactly that gap.
+const CAPTOR_REACH: i32 = 2;
+
 /// How many turns of a unit's recent whereabouts to keep. A livelock is not
 /// visible in one decision — every individual step looks like the best one
 /// available — so it can only be recognized from a unit's own recent past.
@@ -5203,8 +5210,16 @@ impl BasicAi {
             .filter(|next| g.can_move(uid, *next));
         // An escort makes the direct route the right route. So does the absence of
         // anything that could take the unit.
+        //
+        // ⚠ THE RADIUS IS TWO, NOT ONE, AND ONE WAS MEASURED WRONG. Replaying turn 33
+        // of run `civvis-20260731T040858Z`: the settler stood at (47,15), the nearest
+        // barbarian warrior was at (49,13) — two tiles — the step was judged safe, and
+        // on turn 34 the settler was gone. A warrior has two movement points, so
+        // "adjacent to a hostile" is not the danger line; "inside a hostile's reach"
+        // is. Anything that can close and strike in one turn has already caught a
+        // civilian, because a civilian cannot fight back.
         let unsafe_step = |g: &Game, pos: Pos| {
-            self.captor_within(g, pid, pos, 1) && !self.escorted(g, pid, pos)
+            self.captor_within(g, pid, pos, CAPTOR_REACH) && !self.escorted(g, pid, pos)
         };
         if let Some(next) = direct {
             if !unsafe_step(g, next) {
@@ -5226,7 +5241,8 @@ impl BasicAi {
             return false;
         }
         // Toward the site if we can, toward home if we are already in danger.
-        let in_danger = self.captor_within(g, pid, here, 1) && !self.escorted(g, pid, here);
+        let in_danger =
+            self.captor_within(g, pid, here, CAPTOR_REACH) && !self.escorted(g, pid, here);
         if in_danger {
             let refuge = g
                 .player_city_ids(pid)
@@ -8642,33 +8658,44 @@ mod tests {
     /// founded two cities and then lost every later settler 3-9 turns after building
     /// it, unescorted, with `found_refused` at zero — they were killed walking, and
     /// nothing in the settler path had ever consulted a hostile.
+    /// ⚠ THE AMBUSH SITS THREE TILES OUT, not beside the settler's first step, and the
+    /// distinction is the whole test. `CAPTOR_REACH` is 2, so a raider adjacent to the
+    /// first step is also within reach of where the settler is STANDING — the settler
+    /// is then already in danger, the retreat branch runs instead of the avoid branch,
+    /// and if home is boxed in the correct answer is to stand still. Staged that way
+    /// this test asserted the wrong thing and failed on working code.
     #[test]
     fn an_unescorted_settler_will_not_step_within_reach_of_a_captor() {
         let (mut g, settler, target) = lone_settler_world(77);
         let here = g.units[&settler].pos;
-        let direct = g
-            .route_step(settler, target, 0)
-            .expect("a route toward the site");
         let barb_pid = g.barb_pid.unwrap();
         let ambush = g
-            .nbrs(direct)
-            .into_iter()
-            .find(|pos| {
-                *pos != here
+            .map
+            .tiles
+            .keys()
+            .copied()
+            .filter(|pos| {
+                g.wdist(here, *pos) == 3
+                    && g.wdist(*pos, target) < g.wdist(here, target)
                     && g.units_at(*pos).is_empty()
                     && g.city_at(*pos).is_none()
                     && g.map.get(*pos).is_some_and(|tile| !g.rules.is_water(tile))
             })
-            .expect("open ground beside the step the settler was about to take");
+            .min()
+            .expect("open ground three tiles along the settler's route");
         let barb = g.spawn_test_unit("warrior", barb_pid, ambush);
+        assert!(
+            g.wdist(here, ambush) > CAPTOR_REACH,
+            "the settler must start out of reach, or this tests the retreat instead"
+        );
 
         let ai = BasicAi::new();
         ai.settler_step_toward(&mut g, 0, settler, target);
 
         let ended = g.units[&settler].pos;
         assert!(
-            g.wdist(ended, g.units[&barb].pos) > 1,
-            "settler ended at {ended:?}, within reach of a barbarian at {:?}",
+            g.wdist(ended, g.units[&barb].pos) > CAPTOR_REACH,
+            "settler ended at {ended:?}, inside the reach of a barbarian at {:?}",
             g.units[&barb].pos
         );
     }

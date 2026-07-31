@@ -737,7 +737,20 @@ fn main() {
         let mut live = civvis::mirror::LiveMirror::new(
             &snapshot, &state, players, 1, max_turns, frontier,
         );
-        println!("{}", decide(&mut live, &mut ai, &snapshot, &state, war_from_plan));
+        let reply = decide(&mut live, &mut ai, &snapshot, &state, war_from_plan);
+        // ⚠ `--explain` USED TO WORK ONLY UNDER `--serve`, which is the mode you cannot
+        // debug in. Replaying one recorded turn is the fast loop — seconds, no game,
+        // no lock — and it was the one path that could not say why it chose anything.
+        if let Some(j) = &journal {
+            for thought in &j.since(0).thoughts {
+                eprintln!(
+                    "[why] t{} {:?}/{:?} {} | {}",
+                    thought.turn, thought.topic, thought.level,
+                    thought.headline, thought.detail
+                );
+            }
+        }
+        println!("{reply}");
         return;
     }
 
