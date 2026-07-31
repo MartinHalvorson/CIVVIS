@@ -837,8 +837,10 @@ war-declaration threshold, and about a thousand rounds of whole-genome
 evolution. Meanwhile every promoted gain in the repository has come from
 **giving the search more counterfactual rollout**.
 
-⚠ **The sizes that sentence used to quote do not survive.** It cited
-`strategic_deep` at +45 Elo and warm branches at +37. **#482 excludes the +45**:
+⚠ **One of the two sizes that sentence used to quote is refuted.** It cited
+`strategic_deep` at +45 Elo and warm branches at +37. **#482 excludes the +45**
+(the +37 is untouched by that run, and remains a single-run discovery estimate
+in the sense below):
 `search_dose --only STOCK` builds both arms in process so the budget is the only
 difference, and pooled over 220 mirrored maps on two disjoint seeds it measured
 −0.0110 ± 0.0144, Elo-equivalent **−8 (95% CI −27..+12)**. The promoted effect
