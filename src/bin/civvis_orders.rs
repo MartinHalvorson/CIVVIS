@@ -795,13 +795,38 @@ fn main() {
                 // misdirects one settler, and CIVVIS re-targets next turn. Worth
                 // watching if settlers start wandering.
                 if fresh_board {
-                    // ⚠ The plan survives; the unit memory must not. Rebuilding the
-                    // board reassigns unit ids, and the livelock detector keyed to
-                    // them then stands the whole army down.
-                    ai.forget_unit_memory();
+                    // ★★★★★ CARRY THE UNIT MEMORY ACROSS THE REBUILD INSTEAD OF
+                    // DROPPING IT. This used to call `forget_unit_memory`, on the
+                    // sound reasoning that rebuilding the board reassigns unit ids so
+                    // every unit-keyed map describes the wrong unit. The reasoning was
+                    // right and the conclusion was too strong: the mirror knows each
+                    // board's Civ 6 id for every unit, so old id -> Civ 6 id -> new id
+                    // recovers the mapping exactly, and units that died just drop out.
+                    //
+                    // What forgetting cost, measured on run civvis-20260731T055749Z:
+                    // the settler's DESTINATION was re-derived from scratch every turn
+                    // and flipped — a site 23 tiles away on t14, t18 and t20, a
+                    // different one 7 tiles away on t16 — so it never committed to
+                    // anything and never arrived. The livelock detector is unit-keyed
+                    // too, so the one mechanism that exists to catch a unit going in
+                    // circles could never fire in this bridge at all.
+                    let previous: Option<std::collections::BTreeMap<u32, i64>> =
+                        live.as_ref().map(|board| board.civ6_of.clone());
                     let mut board = civvis::mirror::LiveMirror::new(
                         &snapshot, &state, players, 1, max_turns, frontier,
                     );
+                    match previous {
+                        Some(old) => {
+                            let carried: std::collections::BTreeMap<u32, u32> = old
+                                .iter()
+                                .filter_map(|(old_uid, civ6)| {
+                                    board.uid_of.get(civ6).map(|new| (*old_uid, *new))
+                                })
+                                .collect();
+                            ai.remap_unit_memory(&carried);
+                        }
+                        None => ai.forget_unit_memory(),
+                    }
                     let reply = decide(&mut board, &mut ai, &snapshot, &state, war_from_plan);
                     live = Some(board);
                     reply

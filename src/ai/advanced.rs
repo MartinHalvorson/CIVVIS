@@ -1083,6 +1083,29 @@ impl AdvancedAi {
         self.force_groups_dirty = true;
     }
 
+    /// Carry unit-keyed memory across a rebuilt board. See
+    /// [`BasicAi::remap_unit_memory`] for why forgetting it is what makes settlers
+    /// wander and what makes the livelock detector unreachable in the Civ 6 bridge.
+    pub fn remap_unit_memory(&mut self, map: &BTreeMap<u32, u32>) {
+        self.base.remap_unit_memory(map);
+        let remap = |old: &BTreeMap<u32, Pos>| -> BTreeMap<u32, Pos> {
+            old.iter()
+                .filter_map(|(uid, value)| map.get(uid).map(|new| (*new, *value)))
+                .collect()
+        };
+        self.settler_targets = remap(&self.settler_targets);
+        self.builder_targets = remap(&self.builder_targets);
+        self.settler_stalls = self
+            .settler_stalls
+            .iter()
+            .filter_map(|(uid, stalls)| map.get(uid).map(|new| (*new, *stalls)))
+            .collect();
+        // Rebuilt from the board every turn regardless, so there is nothing to carry.
+        self.settler_escorts.clear();
+        self.force_groups.clear();
+        self.force_groups_dirty = true;
+    }
+
     pub fn targeting(target: VictoryTarget) -> AdvancedAi {
         Self::configured(BasicAi::new(), true, Some(target))
     }
@@ -11646,17 +11669,30 @@ impl AdvancedAi {
                     return self.base.fortify_or_stop(g, pid, uid);
                 }
             }
-            // Catch up with the settler this unit is walking out with. Only while
-            // no major war is on: once there is a front, the front is where an army
-            // belongs, and `campaign_staging_step` below owns that decision.
+            // Catch up with the settler this unit is walking out with, and then STAY
+            // WITH IT. Only while no major war is on: once there is a front, the front
+            // is where an army belongs, and `campaign_staging_step` below owns that.
             //
-            // ⚠ Falls through once it is ALONGSIDE the settler rather than stopping
-            // there, so an escort standing next to a barbarian still fights it. An
-            // escort that will not strike is a second civilian.
+            // ⚠⚠ THE FIRST VERSION FELL THROUGH ONCE IT WAS ALONGSIDE, reasoning that
+            // an escort next to a barbarian should still fight it. What that actually
+            // produced, on run `civvis-20260731T055749Z`: at turn 20 the warrior and
+            // the settler stood on the SAME TILE at (54,9) with a barbarian scout
+            // adjacent at (53,9); the warrior went off to fight, and at turn 21 the
+            // settler appears in the export's `hostiles` list at (55,8) — captured.
+            // The escort left, and the thing it was escorting was taken that turn.
+            //
+            // A civilian stacked with a soldier cannot be taken until the soldier is
+            // beaten. So the escort's job is to BE THERE, and it holds. It gives up
+            // nothing real: an adjacent enemy that attacks the stack has to fight the
+            // escort anyway, on the escort's terms.
             if let Some(guarded) = self.settler_escorts.get(&uid).copied() {
                 if let Some(spos) = g.units.get(&guarded).map(|settler| settler.pos) {
-                    if g.wdist(unit.pos, spos) > 1 && self.base.step_toward(g, pid, uid, spos) {
-                        return true;
+                    if g.wdist(unit.pos, spos) > 1 {
+                        if self.base.step_toward(g, pid, uid, spos) {
+                            return true;
+                        }
+                    } else {
+                        return self.base.fortify_or_stop(g, pid, uid);
                     }
                 }
             }
@@ -15071,7 +15107,18 @@ mod tests {
         let mut differed = 0usize;
         let mut sampled = 0usize;
 
-        for seed in 0..3u64 {
+        // ⚠ EIGHT WORLDS, AND IT USED TO BE THREE. Measured 2026-07-31 over eight
+        // consecutive seeds: 42006 preempted on 11 of its 91 sampled turns and the
+        // other SEVEN preempted on none. Three worlds is a coin flip on whether this
+        // test can see the treatment at all — it went red on an unrelated
+        // settle-distance change that never touched the cascade, and before that
+        // change at least one of 42000..42002 did collide. The rarity is real; the
+        // sample was too small to survive any drift.
+        //
+        // Worth knowing on its own: an evaluation of `prophet_before_opportunism` run
+        // over a handful of games is measuring the stock agent under another name most
+        // of the time.
+        for seed in 0..8u64 {
             let mut game = Game::new(4, 60, 38, 42_000 + seed, 500, 6);
             let mut ais = AdvancedAi::fleet(&game);
             let mut reordered = AdvancedAi::new();

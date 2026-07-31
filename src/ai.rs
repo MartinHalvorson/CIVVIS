@@ -2084,6 +2084,53 @@ impl BasicAi {
         self.unit_motion.clear();
     }
 
+    /// Carry unit-keyed memory across a board that was rebuilt underneath it.
+    ///
+    /// ★★★★★ FORGETTING IS WHY THE SETTLERS WANDER. The Civilization VI bridge
+    /// rebuilds the board every turn (`Ai::take_turn` needs a turn that has advanced
+    /// through the engine's own private `begin_turn`), and unit ids are reassigned
+    /// when it does — so every unit-keyed map described a different unit and the only
+    /// safe thing to do was drop it. The cost of dropping it is that the settler's
+    /// DESTINATION is re-derived from scratch each turn, and a re-derived optimum
+    /// flips: measured on run `civvis-20260731T055749Z`, one settler was told to walk
+    /// to a site 23 tiles away on turns 14, 18 and 20 and to a different site 7 tiles
+    /// away on turn 16. The livelock detector is unit-keyed too, so the ONE mechanism
+    /// that exists to catch a unit going in circles could never fire in the bridge.
+    ///
+    /// The ids are recoverable, though: the mirror knows each board's Civ 6 id for
+    /// every unit, so old id -> Civ 6 id -> new id is a total function on the units
+    /// that still exist. Units that died simply drop out, which is what should happen
+    /// to their memory anyway.
+    pub fn remap_unit_memory(&mut self, map: &std::collections::BTreeMap<u32, u32>) {
+        fn remap<V: Clone>(
+            old: &HashMap<u32, V>,
+            map: &std::collections::BTreeMap<u32, u32>,
+        ) -> HashMap<u32, V> {
+            old.iter()
+                .filter_map(|(uid, value)| map.get(uid).map(|new| (*new, value.clone())))
+                .collect()
+        }
+        self.recovering_units = self
+            .recovering_units
+            .iter()
+            .filter_map(|uid| map.get(uid).copied())
+            .collect();
+        self.patrol_targets = remap(&self.patrol_targets, map);
+        // Posts are cleared every turn by `begin_movement_turn` anyway, and they are
+        // claims on ground rather than memory about a unit.
+        self.patrol_posts.clear();
+        self.settler_targets = remap(&self.settler_targets, map);
+        self.unit_motion = self
+            .unit_motion
+            .iter()
+            .filter_map(|(uid, motion)| map.get(uid).map(|new| (*new, motion.clone())))
+            .collect();
+        // ⚠ Cleared, not remapped. It records "this unit took a step FROM here on
+        // THIS turn", and the turn is over by the time a board is rebuilt, so every
+        // entry in it is already stale.
+        self.last_path_step_from.borrow_mut().clear();
+    }
+
     pub(crate) fn begin_movement_turn(&mut self, g: &Game, pid: usize) {
         self.patrol_posts.clear();
         self.observe_unit_motion(g, pid);
