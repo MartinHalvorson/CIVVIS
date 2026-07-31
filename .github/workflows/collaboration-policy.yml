@@ -21,15 +21,18 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-      # ⚠ THIS LIST IS HAND-MAINTAINED AND THAT IS ITS OWN DEFECT. A new
-      # tools/test_*.py is invisible to CI until someone remembers this line, which
-      # is part of why the Civilization VI harness reached 18k lines with no test at
-      # all. Discovery is the right answer and is NOT done here because
-      # tools/test_spectator_supervisor.py currently fails two assertions on main —
-      # switching to discovery in this change would turn someone else's red into
-      # this branch's problem. Fix that, then delete this comment and glob.
+      # ⚠ DISCOVERED, NOT LISTED. This step named three files by hand, so a new
+      # tools/test_*.py was invisible to CI until someone remembered to edit this
+      # line — and nobody did. The list ran 98 tests; discovery runs 210. The 112 in
+      # between included the whole of tools/test_spectator_supervisor.py, which was
+      # FAILING on main the entire time it went unrun, on the measurement the
+      # supervisor uses to decide whether to restart a wedged server.
+      #
+      # It is also part of why the Civilization VI harness reached 18k lines with no
+      # test at all: there was no place a new one would automatically run.
+      # Do not go back to a list.
       - name: Test the policy engine and the harness tools
-        run: python3 -m unittest tools/test_civvis_collab.py tools/test_civvis_push_guard.py tools/test_civvis_fleet.py tools/test_civ6_civvis_climb.py
+        run: python3 -m unittest discover -s tools -p 'test_*.py'
       - name: Validate branch, ownership, overlap, and commits
         if: github.event_name == 'pull_request'
         env:

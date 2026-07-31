@@ -1251,9 +1251,19 @@ def pid_alive(pid: int) -> bool:
     if os.name != "nt":
         try:
             os.kill(pid, 0)
-            return True
         except OSError:
             return False
+        # ⚠ A ZOMBIE ANSWERS `os.kill(pid, 0)`. It is an exit status waiting to be
+        # collected, not a running process, and reading it as alive makes
+        # `stop_server` spend its whole five-second grace period and then SIGKILL
+        # something that already exited — after which the pid STILL reads alive.
+        # Only reachable when the dead process is our own unreaped child, which is
+        # why it surfaced in a test rather than in the field; the answer is wrong
+        # either way, and "is it running" is the question every caller is asking.
+        state = command("ps", "-o", "state=", "-p", str(pid))
+        if state.returncode != 0:
+            return True  # ps could not say; do not invent a death kill(2) denies
+        return not state.stdout.strip().startswith("Z")
     # os.kill(pid, 0) is not a probe on Windows: it opens the target with
     # PROCESS_ALL_ACCESS and calls TerminateProcess. That open is denied for a
     # server this process did not create, so an adopting successor read every
@@ -1271,25 +1281,60 @@ def pid_alive(pid: int) -> bool:
         kernel32.CloseHandle(handle)
 
 
+def posix_cpu_seconds(pid: int) -> float | None:
+    """Total CPU time a process has consumed, in seconds.
+
+    `ps -o cputime=` prints `[[DD-]HH:]MM:SS[.ss]`, which is cumulative and monotonic
+    — the POSIX counterpart of GetProcessTimes above.
+    """
+    result = command("ps", "-o", "cputime=", "-p", str(pid))
+    if result.returncode != 0:
+        return None
+    text = result.stdout.strip()
+    if not text:
+        return None
+    days, _, rest = text.rpartition("-")
+    seconds = 0.0
+    try:
+        for part in rest.split(":"):
+            seconds = seconds * 60.0 + float(part)
+        if days:
+            seconds += float(days) * 86400.0
+    except ValueError:
+        return None
+    return seconds
+
+
 def process_cpu_percent(pid: int, window: float = 0.25) -> float | None:
-    """Recent CPU share of a process, or None when it cannot be measured."""
-    if os.name != "nt":
-        result = command("ps", "-o", "%cpu=", "-p", str(pid))
-        if result.returncode != 0:
-            return None
-        try:
-            return float(result.stdout.strip())
-        except ValueError:
-            return None
-    # Windows exposes cumulative CPU time rather than a rate, so sample twice.
-    before = windows_cpu_seconds(pid)
+    """Recent CPU share of a process, or None when it cannot be measured.
+
+    ⚠ THIS USED TO READ `ps -o %cpu` ON POSIX, WHICH IS THE LIFETIME AVERAGE, NOT A
+    RATE — and the only caller is `recently_busy`, which decides whether an
+    unresponsive server is still computing or should be restarted. A server that
+    worked hard for an hour and then WEDGED keeps a high lifetime average for a long
+    time, so the supervisor read the work it did before it hung as evidence that it
+    had not hung, and left it alone. The failure is silent and points the wrong way.
+
+    The `window` argument was accepted and ignored on POSIX, and the test that would
+    have caught this asserted a freshly-spawned spinner reads above 1.0 — it reads
+    0.0, because the average over a lifetime of microseconds is zero.
+
+    Both platforms now do the same thing: sample cumulative CPU time twice and divide
+    by the wall time between, so the answer means "since a moment ago" everywhere.
+    """
+    read = windows_cpu_seconds if os.name == "nt" else posix_cpu_seconds
+    before = read(pid)
     if before is None:
         return None
+    started = time.monotonic()
     time.sleep(window)
-    after = windows_cpu_seconds(pid)
+    after = read(pid)
     if after is None:
         return None
-    return max(0.0, (after - before) / window * 100.0)
+    # Measured, not assumed: a loaded machine oversleeps, and dividing by the
+    # requested window instead of the real one overstates the rate.
+    elapsed = max(time.monotonic() - started, 1e-6)
+    return max(0.0, (after - before) / elapsed * 100.0)
 
 
 def pid_listening_on(port: int) -> int | None:

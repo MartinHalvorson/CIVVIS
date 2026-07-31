@@ -2,10 +2,12 @@
 import json
 import os
 from pathlib import Path
+import signal
 import socket
 import subprocess
 import sys
 import tempfile
+import time
 from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
@@ -1090,6 +1092,50 @@ class RecoveryTests(unittest.TestCase):
             for process in (idle, spinning):
                 process.kill()
                 process.wait()
+
+    def test_cpu_measurement_forgets_work_the_process_has_stopped_doing(self):
+        """The dangerous direction, and the one that reached production.
+
+        ⚠ `recently_busy` decides whether an unresponsive server is still computing
+        or should be restarted. Read as a LIFETIME AVERAGE, a server that worked hard
+        for an hour and then wedged still scores high, so the supervisor treats the
+        work it did BEFORE it hung as proof it has not hung. A spinner that is
+        stopped mid-flight reproduces exactly that: high average, no current compute.
+        """
+        spinning = subprocess.Popen([sys.executable, "-c", "while True: pass"])
+        try:
+            time.sleep(1.5)                       # build up a high lifetime average
+            self.assertGreater(supervisor.process_cpu_percent(spinning.pid), 1.0)
+            os.kill(spinning.pid, signal.SIGSTOP)  # still alive, computing nothing
+            self.assertLess(supervisor.process_cpu_percent(spinning.pid), 1.0)
+            self.assertFalse(supervisor.process_busy(None, spinning.pid))
+            os.kill(spinning.pid, signal.SIGCONT)
+        finally:
+            spinning.kill()
+            spinning.wait()
+
+    def test_a_zombie_is_not_alive(self):
+        """`os.kill(pid, 0)` answers for an exit status nobody has collected yet.
+
+        ⚠ Do NOT poll() or wait() to find out it has exited — both REAP it, and a
+        reaped pid is simply gone, which is not the case under test. The first
+        version of this test did poll in a loop and passed against the very code it
+        was written to catch.
+        """
+        process = subprocess.Popen([sys.executable, "-c", "pass"])
+        deadline = time.monotonic() + 10
+        while time.monotonic() < deadline:
+            state = subprocess.run(["ps", "-o", "state=", "-p", str(process.pid)],
+                                   capture_output=True, text=True).stdout.strip()
+            if state.startswith("Z"):
+                break
+            time.sleep(0.02)
+        else:
+            self.skipTest("the child never reached zombie state")
+        try:
+            self.assertFalse(supervisor.pid_alive(process.pid))
+        finally:
+            process.wait()
 
     def test_liveness_probe_reports_truth_without_killing_the_process(self):
         process = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"])
