@@ -212,12 +212,22 @@ def main():
 
     cleared = 0
     last_target, misses = None, 0
+    waiting_since = None
     while True:
+        idle = False
         try:
             box = window_box()
             if not box:
-                log("no Civilization VI window")
+                # Say it once. This runs for the length of a ladder, and a line
+                # every six seconds between games buries the lines that matter.
+                if waiting_since is None:
+                    waiting_since = time.time()
+                    log("no Civilization VI window; waiting for a game")
+                idle = True
             else:
+                if waiting_since is not None:
+                    log(f"game window back after {time.time() - waiting_since:.0f}s")
+                    waiting_since = None
                 window, scale = capture(box)
                 kind, targets, dark = classify(window)
                 front = frontmost()
@@ -261,7 +271,7 @@ def main():
             log(f"error: {error}")
         if args.once:
             return
-        time.sleep(args.interval)
+        time.sleep(args.interval * 5 if idle else args.interval)
 
 
 if __name__ == "__main__":
