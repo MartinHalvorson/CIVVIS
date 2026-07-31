@@ -623,6 +623,88 @@ mod tests {
         // which would otherwise be read as a real type.
         assert!(chunk.plots[1].f.is_none() && chunk.plots[1].r.is_none());
     }
+
+    #[test]
+    fn a_hostile_lands_on_the_barbarian_seat_and_not_on_dormant_free_cities() {
+        // ⚠ The roster has TWO players carrying `is_barbarian`, and only one of them
+        // is alive. Measured on run `civvis-20260731T172058Z`: all nine barbarians
+        // were owned by seat 4, Free Cities, `alive = false`, while `barb_pid` was
+        // seat 5. Nothing reported it — a planted unit never reaches `dropped_units`,
+        // and the seat it landed on is barbarian by flag.
+        let chunks = vec![TilesChunk {
+            turn: 4,
+            width: 8,
+            height: 8,
+            chunk: 1,
+            plots: (0..8)
+                .flat_map(|x| {
+                    (0..8).map(move |y| Plot {
+                        x,
+                        y,
+                        im: None,
+                        t: Some("TERRAIN_GRASS".to_string()),
+                        f: None,
+                        r: None,
+                        o: -1,
+                        w: false,
+                        i: false,
+                        fw: false,
+                    })
+                })
+                .collect(),
+        }];
+        let snapshot = Snapshot::from_chunks(&chunks);
+        let mut state = StateSnapshot {
+            turn: 4,
+            ..StateSnapshot::default()
+        };
+        state.hostiles.push(StateUnit {
+            kind: "UNIT_WARRIOR".to_string(),
+            x: 3,
+            y: 3,
+            ..StateUnit::default()
+        });
+
+        let recon = rebuild_from_state(&snapshot, &state, 4, 1, 500, 0);
+        assert_eq!(recon.placed_rival_units, 1, "the hostile must reach the board");
+
+        let barb = recon.game.barb_pid.expect("a mirrored roster has a barbarian seat");
+        let owner = recon
+            .game
+            .units
+            .values()
+            .find(|unit| unit.owner != 0)
+            .map(|unit| unit.owner)
+            .expect("the hostile must be on the board");
+        assert_eq!(
+            owner, barb,
+            "a barbarian belongs to barb_pid, not to whichever seat carries the flag first"
+        );
+        assert!(
+            recon.game.players[owner].alive,
+            "and that seat must be alive — Free Cities is dormant until a revolt"
+        );
+        assert!(
+            !recon.game.players[owner].is_free_city,
+            "Free Cities is not the barbarian seat, however its flags read"
+        );
+    }
+
+    #[test]
+    fn a_unique_great_person_is_a_modelling_gap_not_a_bridge_defect() {
+        // Gran Colombia's Great General keeps its own name, so the `UNIT_GREAT_*`
+        // prefix does not catch it, and it was being reported as `untranslatable` —
+        // which reads as "add a vocabulary entry" when there is no entry to add.
+        assert!(
+            is_great_person("UNIT_COMANDANTE_GENERAL"),
+            "a civilization's unique Great Person is still a Great Person"
+        );
+        assert!(is_great_person("UNIT_GREAT_GENERAL"), "and the prefix still works");
+        assert!(
+            !is_great_person("UNIT_AZTEC_EAGLE_WARRIOR"),
+            "a genuinely untranslatable unit must stay a bridge defect"
+        );
+    }
 }
 
 /// Read every `tiles` chunk out of a run's `events.jsonl`.
@@ -1407,7 +1489,17 @@ const GREAT_PERSON_PREFIX: &str = "great";
 /// **modelling gap**: there is no name to produce, and no edit to this file will
 /// create one. Counting them together is what let 13 real drops a run hide inside a
 /// number that was being read as a translation score.
+///
+/// ⚠ The `UNIT_GREAT_*` prefix does not catch all of them. A civilization's unique
+/// replacement for a Great Person keeps its own name: Gran Colombia's
+/// `UNIT_COMANDANTE_GENERAL` is a Great General, granted free every era, and it was
+/// being counted as a bridge defect on the live run `civvis-20260731T172058Z` —
+/// `unmapped: UNIT_COMANDANTE_GENERAL`, which reads as "add a vocabulary entry" when
+/// there is no entry to add. See [`GREAT_PERSON_UNIQUES`].
 fn is_great_person(civ6: &str) -> bool {
+    if GREAT_PERSON_UNIQUES.contains(&civ6) {
+        return true;
+    }
     civ6.strip_prefix("UNIT_")
         .map(|base| base.to_ascii_lowercase())
         .and_then(|base| {
@@ -1416,6 +1508,13 @@ fn is_great_person(civ6: &str) -> bool {
         })
         .unwrap_or(false)
 }
+
+/// Great People whose Civilization VI name does not start with `UNIT_GREAT_`.
+///
+/// Only civilization-unique replacements land here, so the list is short and grows
+/// one entry at a time as a run meets a new civilization. Anything on it is a
+/// modelling gap, never a translation failure.
+const GREAT_PERSON_UNIQUES: &[&str] = &["UNIT_COMANDANTE_GENERAL"];
 
 
 /// Paint `depth` rings of neutral land beyond the edge of what the seat has seen.
@@ -2057,12 +2156,44 @@ pub fn rebuild_from_state(
 
     // Barbarians go on CIVVIS's own barbarian seat rather than a rival's, so the
     // threat is visible to the planner without inventing a civilization at war with
-    // us. Skipped silently when the roster has no barbarian seat.
-    let barbarian_seat = game.players.iter().position(|player| player.is_barbarian);
-    if let Some(barb) = barbarian_seat {
-        for unit in &state.hostiles {
-            if plant_unit(&mut game, barb, unit, &mut unmapped, &mut dropped).is_some() {
-                placed_rival_units += 1;
+    // us.
+    //
+    // ★★★★★ `barb_pid`, NOT THE FIRST `is_barbarian` SEAT. Those are two different
+    // players. `ensure_free_city_player` builds the dormant Free Cities seat with
+    // `is_barbarian = true` and pushes it BEFORE the real Barbarians seat, so a scan
+    // for the first barbarian finds Free Cities — which the engine holds at
+    // `alive = false` until a loyalty revolt wakes it.
+    //
+    // Measured on the live run `civvis-20260731T172058Z` at turn 43, reconstructing
+    // the same export `civvis-orders` decides from:
+    //
+    //   4 Free Cities  barbarian=true free_city=true  alive=FALSE
+    //   5 Barbarians   barbarian=true free_city=false alive=true   <- barb_pid
+    //   units on the board by owner: {0: 5, 4: 9}
+    //
+    // All nine barbarians — a warrior adjacent to the capital, an archer two tiles
+    // off, and a barbarian settler — were owned by a dead player. Every count read
+    // green: they are placed, so they never reach `dropped_units`, and the seat they
+    // land on is barbarian by flag, so a spot check of the flag agrees too.
+    let barbarian_seat = game.barb_pid.or_else(|| {
+        game.players
+            .iter()
+            .position(|player| player.is_barbarian && !player.is_free_city)
+    });
+    match barbarian_seat {
+        Some(barb) => {
+            for unit in &state.hostiles {
+                if plant_unit(&mut game, barb, unit, &mut unmapped, &mut dropped).is_some() {
+                    placed_rival_units += 1;
+                }
+            }
+        }
+        // ⚠ NEVER SKIP SILENTLY. A roster with no barbarian seat is a reconstruction
+        // that cannot hold the threat list, and the planner has to be told rather
+        // than left to read an empty board as a safe one.
+        None => {
+            for unit in &state.hostiles {
+                dropped.push(format!("{}@{},{}:no_barbarian_seat", unit.kind, unit.x, unit.y));
             }
         }
     }
