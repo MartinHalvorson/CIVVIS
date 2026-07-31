@@ -585,6 +585,26 @@ fn main() {
         }
     };
 
+    // ★★★★ HOLD THE SITE ACROSS A TURN THE SETTLER COULD NOT MOVE.
+    //
+    // Off by default in CIVVIS's own games; on here, and the reason is specific to
+    // this bridge rather than a preference. Without it `advanced_settler_step` drops
+    // the target on ANY turn the unit fails to move — a friendly unit in the way, a
+    // zone of control, a barbarian standing on the route — and this bridge fails to
+    // move settlers far more often than an ordinary game does, because it is also
+    // refusing steps that would end inside a captor's reach. Dropping the target on
+    // each of those turns would undo the unit memory that is now carried across the
+    // rebuild, which is the whole point of carrying it.
+    //
+    // ⚠ Bounded, and the bound is what makes it safe: `SETTLER_STALL_LIMIT`
+    // consecutive turns without moving releases the site, so an unreachable target
+    // cannot hold a settler hostage — which is the livelock #492 was merged to fix.
+    ai.settler_commit = true;
+    // ⚠ NOT `parallel_settlers`. That widens the RATE at which settlers are produced
+    // and it carries a measured null; this seat's constraint is settlers that never
+    // arrive, not settlers that are never built. Turning both on at once would make
+    // the next ledger unreadable.
+
     let events = Path::new(&dir).join("events.jsonl");
     let serve = args.iter().any(|a| a == "--serve");
     // ★ CIVVIS's own account of WHY. `--explain` attaches a recording journal — the
