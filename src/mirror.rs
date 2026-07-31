@@ -213,6 +213,15 @@ impl Snapshot {
         self.revealed.get(&pos)
     }
 
+    /// Every plot this seat has revealed, in offset coordinates.
+    ///
+    /// ⚠ Offset, like everything the mod emits — the caller converts. Handing out
+    /// axial here would put a coordinate conversion inside a getter, which is the
+    /// shape of the bug that cost an hour once already.
+    pub fn revealed_positions(&self) -> impl Iterator<Item = (i32, i32)> + '_ {
+        self.revealed.keys().copied()
+    }
+
     pub fn revealed_count(&self) -> usize {
         self.revealed.len()
     }
@@ -285,6 +294,141 @@ mod tests {
         assert_eq!(vocab.terrain_count(), 17, "all Civ 6 terrains");
         assert_eq!(vocab.feature_count(), 50, "all Civ 6 features");
         assert_eq!(vocab.resource_count(), 54, "all Civ 6 resources");
+    }
+
+    /// A civilization-unique unit resolves; a Great Person does not, and must not be
+    /// forced to by stripping a prefix that is not a civilization.
+    ///
+    /// ⚠ Both halves matter. Run `civvis-20260731T114437Z` dropped 175 units: 162
+    /// `UNIT_AZTEC_EAGLE_WARRIOR` (a real translation failure, since CIVVIS has
+    /// `eagle_warrior`) and 13 `UNIT_GREAT_GENERAL` (not a failure — CIVVIS models
+    /// Great People in `great_people.json`, not as units). Stripping the first token
+    /// unconditionally fixes the first and mis-reads the second as the civilization
+    /// "great".
+    #[test]
+    fn a_civ_qualifier_is_stripped_and_great_is_not() {
+        assert_eq!(
+            civvis_unit_name_unqualified("UNIT_AZTEC_EAGLE_WARRIOR").as_deref(),
+            Some("eagle_warrior"),
+            "a civ-unique unit is the bare unit; this is the 162"
+        );
+        assert_eq!(
+            civvis_unit_name_unqualified("UNIT_GREAT_GENERAL"),
+            None,
+            "`great` is not a civilization, so there is no qualifier to remove"
+        );
+        assert_eq!(
+            civvis_unit_name_unqualified("UNIT_SETTLER"),
+            None,
+            "a single-token name has no qualifier at all"
+        );
+    }
+
+    /// Every Great Person is recognised as one, whatever profession it is.
+    #[test]
+    fn great_people_are_named_as_a_modelling_gap_not_a_translation_failure() {
+        for civ6 in [
+            "UNIT_GREAT_GENERAL",
+            "UNIT_GREAT_PROPHET",
+            "UNIT_GREAT_MERCHANT",
+            "UNIT_GREAT_ADMIRAL",
+            "UNIT_GREAT_ENGINEER",
+        ] {
+            assert!(is_great_person(civ6), "{civ6} is a Great Person");
+        }
+        for civ6 in ["UNIT_SETTLER", "UNIT_AZTEC_EAGLE_WARRIOR", "UNIT_WARRIOR"] {
+            assert!(!is_great_person(civ6), "{civ6} is an ordinary unit");
+        }
+    }
+
+    /// ★★★★★ Unseen ground must be walkable, or the map can never be uncovered.
+    ///
+    /// The frontier used to be stamped `ocean`, and `BasicAi`'s explore step asks for a
+    /// tile that is unexplored AND traversable. For a land unit an ocean tile fails the
+    /// second half, so on a map whose unknown half was all sea there was no exploration
+    /// target anywhere: `revealed` sat at 383 from turn 150 to turn 180 while the army
+    /// staged an invasion of a civilization it had never met.
+    #[test]
+    fn unseen_ground_is_walkable_and_seen_ground_is_the_truth() {
+        let chunks = vec![TilesChunk {
+            turn: 4,
+            width: 20,
+            height: 20,
+            chunk: 1,
+            plots: vec![plot(5, 5, "TERRAIN_GRASS"), plot(6, 5, "TERRAIN_OCEAN")],
+        }];
+        let snapshot = Snapshot::from_chunks(&chunks);
+        let game = rebuild_game(&snapshot, 4, 7);
+
+        let seen = game.map.get(crate::hex::offset_to_axial(5, 5)).unwrap();
+        assert_eq!(seen.terrain.as_str(), "grassland", "revealed grass is grass");
+
+        let seen_water = game.map.get(crate::hex::offset_to_axial(6, 5)).unwrap();
+        assert!(
+            game.rules.is_water(seen_water),
+            "revealed ocean really is water — the fix must not turn the sea into land"
+        );
+
+        // (15,15) was never exported, so it is unseen rather than known-empty.
+        let unseen = game.map.get(crate::hex::offset_to_axial(15, 15)).unwrap();
+        assert!(
+            !game.rules.is_water(unseen),
+            "unseen ground must be walkable; stamping it ocean is what ended the world \
+             at the frontier"
+        );
+        assert!(
+            unseen.feature.is_none() && unseen.resource.is_none(),
+            "and it must be bare, so the unknown world cannot bait a settler with \
+             something it invented"
+        );
+    }
+
+    /// ★★★★★ The seat must know which ground it has seen, or every adjacent tile
+    /// looks like a frontier and the explorer shuffles in place.
+    #[test]
+    fn the_seat_knows_which_ground_it_has_seen() {
+        let chunks = vec![TilesChunk {
+            turn: 4,
+            width: 20,
+            height: 20,
+            chunk: 1,
+            plots: vec![plot(5, 5, "TERRAIN_GRASS"), plot(5, 6, "TERRAIN_GRASS")],
+        }];
+        let snapshot = Snapshot::from_chunks(&chunks);
+        let game = rebuild_game(&snapshot, 4, 7);
+        let explored = &game.players[0].explored;
+
+        // ⚠ This assertion is the one that corrected me. Before the fix this read 35,
+        // not 0: `Game::new` generates a CIVVIS map and reveals a start on it, so the
+        // set was populated with plots around a capital the real seat has never been
+        // near. `apply_explored` must REPLACE that, not extend it.
+        assert_eq!(
+            explored.len(),
+            2,
+            "exactly the two plots the mod exported — the generated map's invented \
+             start reveal must be gone, not merged with"
+        );
+        assert!(explored.contains(&crate::hex::offset_to_axial(5, 5)));
+        assert!(explored.contains(&crate::hex::offset_to_axial(5, 6)));
+        assert!(
+            !explored.contains(&crate::hex::offset_to_axial(15, 15)),
+            "ground the seat has never seen must not read as explored"
+        );
+
+        // The predicate `BasicAi::has_exploration_target` actually evaluates: some
+        // tile is unexplored AND not water. Empty `explored` satisfied this with the
+        // tile under the unit's feet; the point is that it now names real frontier.
+        let frontier = game
+            .map
+            .tiles
+            .iter()
+            .filter(|(pos, _)| !explored.contains(pos))
+            .filter(|(_, tile)| !game.rules.is_water(tile))
+            .count();
+        assert!(
+            frontier > 0,
+            "there must be somewhere left to explore, or the frontier stops growing"
+        );
     }
 
     #[test]
@@ -563,7 +707,9 @@ pub fn rebuild_game(snapshot: &Snapshot, players: usize, seed: u64) -> crate::ga
 /// overwrites terrain the snapshot has an opinion about.
 pub(crate) fn apply_terrain(game: &mut crate::game::Game, snapshot: &Snapshot) {
     let vocab = Vocabulary::embedded();
-    let ocean = Name::new("ocean");
+    // Unseen ground: traversable so the frontier can be walked out of, bare so it
+    // cannot bait a planner. See the note at the hole below.
+    let unknown_ground = Name::new("plains");
     let width = snapshot.width.max(1);
     let height = snapshot.height.max(1);
     for y in 0..height {
@@ -573,14 +719,39 @@ pub(crate) fn apply_terrain(game: &mut crate::game::Game, snapshot: &Snapshot) {
                 continue;
             };
             let Some(plot) = snapshot.plot((x, y)) else {
-                // ⚠ Only stamp ocean where nothing is known. A tile the frontier
-                // painted as land must not be reverted on the next sync, or the
-                // frontier would flicker between land and sea every turn and CIVVIS
-                // would re-plan around it — the oscillation bug in another costume.
-                if !snapshot.is_revealed((x, y)) && tile.terrain == Name::new("plains") {
+                // ★★★★★ UNKNOWN GROUND IS NOT WATER, AND CALLING IT WATER ENDED THE
+                // WORLD AT THE FRONTIER.
+                //
+                // This used to stamp `ocean` on every plot the seat had not revealed.
+                // Nothing can be walked to across it: `has_exploration_target` asks for
+                // a tile that is unexplored AND `unit_can_traverse`, and for a land unit
+                // an ocean tile fails the second half — so on a map whose unknown half
+                // was all sea there was no exploration target anywhere, the frontier
+                // stopped growing, and `met` stayed 0 with the army staging an invasion
+                // of a civilization it had never seen. Measured: `revealed` 383 at turn
+                // 150 and still 383 at turn 180 of `civvis-20260731T092642Z`.
+                //
+                // Both encodings are fictions — the engine has no "unknown" terrain and
+                // the generated map beyond the frontier is not the real one. The choice
+                // is which fiction costs less. Water is the expensive one: it is a
+                // confident claim that stops movement. Featureless land is traversable,
+                // so a unit walks out, the mod reveals the truth, and the next sync
+                // overwrites this with what is actually there.
+                //
+                // ⚠ It is honest only because `apply_explored` now excludes exactly
+                // these plots. Every fog-gated consumer still sees them as unseen; what
+                // changed is that a unit may now walk INTO them, which is what the real
+                // game allows and what uncovering the map requires. Do not restore the
+                // ocean stamp without restoring the exploration dead end with it.
+                //
+                // Yield-poor and bare by construction: no feature and no resource, so
+                // the unknown world cannot bait a settler with something it invented.
+                if snapshot.is_revealed((x, y)) {
+                    // Revealed, but the mod sent no plot for it: a genuine hole rather
+                    // than unseen ground. Left exactly as it is.
                     continue;
                 }
-                tile.terrain = ocean;
+                tile.terrain = unknown_ground;
                 tile.hills = false;
                 tile.feature = None;
                 tile.resource = None;
@@ -616,6 +787,56 @@ pub(crate) fn apply_terrain(game: &mut crate::game::Game, snapshot: &Snapshot) {
             });
         }
     }
+    // Called from here, and never separately, because a map and an explored set that
+    // disagree is the defect this pair repairs — see `apply_explored`.
+    apply_explored(game, snapshot);
+}
+
+/// Tell the seat which ground it has actually seen.
+///
+/// ★★★★★ **NOTHING IN THIS BRIDGE EVER WROTE `explored`, SO IT DESCRIBED A PLACE THE
+/// SEAT HAS NEVER BEEN.**
+///
+/// It was not empty, which is why this went unnoticed — and I asserted "empty" before
+/// a test corrected me. `rebuild_game` starts from `Game::new`, which generates an
+/// ordinary CIVVIS map and reveals a start position on it, leaving **35 explored plots
+/// around a capital that has nothing to do with the real Civilization VI seat**. The
+/// set was therefore populated, plausible, and pure fiction.
+///
+/// What that costs: `BasicAi`'s explore step walks outward in rings and takes the
+/// nearest tile that is `!explored` and traversable (`ai.rs`, `has_exploration_target`
+/// and the ring search beside it). Real ground the seat HAS seen is almost never inside
+/// the generated map's 35, so it reads as unexplored — the unit steps onto a tile it has
+/// already stood on, and next turn that tile is still "unexplored" because nothing here
+/// ever recorded otherwise. That is the three-tile shuffle the livelock detector
+/// reports: a scout, three archers and a heavy chariot moving every single turn and
+/// uncovering nothing, invisible to both the idle fraction and the frozen count
+/// *because the unit does move*.
+///
+/// The same fiction misdirects every tile purchase: `Game::plot_purchase_cost` requires
+/// `explored.contains(&pos)`, so it quotes prices for ground the seat cannot see and
+/// refuses the ground it can.
+///
+/// The snapshot has carried the answer the whole time — `Snapshot::revealed` is exactly
+/// the set of plots the mod has exported for this seat, and the mod exports a plot only
+/// once the seat can see it.
+///
+/// ⚠ This **replaces** rather than extends. Extending would keep the generated map's 35
+/// invented plots forever, and they are the whole defect. Replacing is still monotonic
+/// in practice because `Snapshot::revealed` itself only ever accumulates, so a plot seen
+/// on turn 40 is still explored on turn 200 even when the seat cannot currently see it —
+/// which is what `explored` means, as distinct from `is_revealed` at this instant.
+/// Idempotent.
+pub(crate) fn apply_explored(game: &mut crate::game::Game, snapshot: &Snapshot) {
+    // The seat is player 0 throughout this bridge: `plant_unit(&mut game, 0, …)` for
+    // our own units, `game.players[0]` for our civics and techs.
+    let Some(seat) = game.players.get_mut(0) else {
+        return;
+    };
+    seat.explored = snapshot
+        .revealed_positions()
+        .map(|(x, y)| crate::hex::offset_to_axial(x, y))
+        .collect();
 }
 
 /// Whether the CIVVIS ruleset knows this improvement name.
@@ -1176,12 +1397,59 @@ fn civvis_unit_name(civ6: &str) -> String {
 ///
 /// ⚠ A rename, not a substitution: the qualifier is the only difference. The caller
 /// checks the result against the ruleset, so a name that still does not resolve is
-/// reported in `dropped_units` rather than guessed at — `UNIT_GREAT_GENERAL` has no
-/// CIVVIS counterpart at all and stays honestly untranslatable.
+/// reported in `dropped_units` rather than guessed at.
+///
+/// ⚠⚠ **THE PREFIX IS ASSUMED TO BE A CIVILIZATION AND NOTHING CHECKED IT.** Stripping
+/// the first token unconditionally is only correct when that token really is an owner
+/// qualifier. Eight units CIVVIS models have a tail that is a *different real unit* —
+/// `jet_bomber`→`bomber`, `nuclear_submarine`→`submarine`, `line_infantry`→`infantry`,
+/// `rocket_artillery`→`artillery`, `mechanized_infantry`, `jet_fighter`,
+/// `pitati_archer`, `eagle_warrior` — so a Civilization VI name this bridge does not
+/// model under its full form but whose tail collides would be planted as the WRONG
+/// unit, silently, with **no entry in `dropped_units`**. That is strictly worse than
+/// dropping it, because the drop detector is the only thing that would have caught it.
+///
+/// A full guard needs an adjective map: `data/civs.json` is keyed by display name
+/// (`Rome`, `Aztec`), so `aztec` needs a case-insensitive match and `roman`/`nubian`
+/// need the adjectival form. What is certain under any casing is that **`great` is not
+/// a civilization**, and that is the one prefix measured doing this — see
+/// [`GREAT_PERSON_PREFIX`].
 fn civvis_unit_name_unqualified(civ6: &str) -> Option<String> {
     let base = civ6.strip_prefix("UNIT_")?.to_ascii_lowercase();
-    let (_, rest) = base.split_once('_')?;
+    let (qualifier, rest) = base.split_once('_')?;
+    if qualifier == GREAT_PERSON_PREFIX {
+        return None;
+    }
     (!rest.is_empty()).then(|| rest.to_string())
+}
+
+/// The one qualifier measured being mistaken for a civilization.
+const GREAT_PERSON_PREFIX: &str = "great";
+
+/// Whether Civilization VI's name is a Great Person.
+///
+/// ★★★★ **CIVVIS MODELS GREAT PEOPLE AS NAMED INDIVIDUALS, NOT AS UNITS.**
+/// `data/great_people.json` holds 29 of them (`hypatia`, `isaac_newton`, …) while
+/// `data/units.json` has 83 entries and none of `general`, `prophet`, `merchant`,
+/// `scientist`, `engineer`, `admiral`, `artist`, `writer` or `musician`. So every
+/// `UNIT_GREAT_*` standing on the board fails the ruleset lookup — 13 sightings of
+/// `UNIT_GREAT_GENERAL` in run `civvis-20260731T114437Z`, beside 162 genuinely
+/// untranslatable `UNIT_AZTEC_EAGLE_WARRIOR`.
+///
+/// ⚠ It is reported under its own reason rather than as `untranslatable` because the
+/// two call for opposite work. An untranslatable name is a **bridge defect** — a unit
+/// CIVVIS models under a name this code failed to produce. A Great Person is a
+/// **modelling gap**: there is no name to produce, and no edit to this file will
+/// create one. Counting them together is what let 13 real drops a run hide inside a
+/// number that was being read as a translation score.
+fn is_great_person(civ6: &str) -> bool {
+    civ6.strip_prefix("UNIT_")
+        .map(|base| base.to_ascii_lowercase())
+        .and_then(|base| {
+            base.split_once('_')
+                .map(|(qualifier, _)| qualifier == GREAT_PERSON_PREFIX)
+        })
+        .unwrap_or(false)
 }
 
 
@@ -1724,6 +1992,13 @@ pub fn rebuild_from_state(
             }
         }
         if !game.rules.units.contains_key(&name) {
+            // A Great Person is not a unit CIVVIS failed to name, it is a unit CIVVIS
+            // does not model — see `is_great_person`. Reported apart so the
+            // translation count stays a translation count.
+            if is_great_person(&u.kind) {
+                dropped.push(format!("{}@{},{}:great_person", u.kind, u.x, u.y));
+                return None;
+            }
             if !unmapped.contains(&u.kind) {
                 unmapped.push(u.kind.clone());
             }
