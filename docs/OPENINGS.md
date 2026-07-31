@@ -990,13 +990,17 @@ deadline = standard_duration(300)
              .min(max_turns - standard_duration(50))
 ```
 
-On the production Online/250-turn profile, those two deadlines are turn 150
-and turn 225, so the first one closes expansion at turn 150. But the planned
-city target rises on a `standard_duration(90)` cadence: on Online it asks for
-the fourth city at turn 45, fifth at 90, and sixth at **135**. The agent gives
-itself only 15 turns to produce and place the last city it just decided it
-wants. Settler transit alone was measured at roughly 15 turns; unlike costs and
-strategic durations, map movement does not become twice as fast on Online.
+On the production Online/250-turn profile, the live formulas resolve to turns
+198 and 217, so the first one closes expansion at turn 198. A prior draft said
+150 and 225 by applying Online's **cost** multiplier (50%) to a duration; the
+engine correctly uses Civilization VI's separate 66% duration curve. The
+formula above was never changed and no outcome seed was read before this source
+correction. The planned city target rises on a `standard_duration(90)` cadence:
+on Online it asks for the fourth city at turn 60, fifth at 120, and sixth at
+**180**. The agent gives itself only 18 turns to produce and place the last city
+it just decided it wants. Settler transit alone was measured at roughly 15
+turns; unlike costs and strategic durations, map movement does not become twice
+as fast on Online.
 
 The treatment removes only the absolute turn-300 cap:
 
@@ -1004,8 +1008,8 @@ The treatment removes only the absolute turn-300 cap:
 deadline = max_turns - standard_duration(50)
 ```
 
-Thus the focal Online window is `[150, 225)`, 75 newly eligible turns, while
-the final 25-turn reserve remains closed. The six-city target, one-settler
+Thus the focal Online window is `[198, 217)`, 19 newly eligible turns, while
+the final 33-turn reserve remains closed. The six-city target, one-settler
 serialization, population cost and floor, site requirement, production value,
 queue behavior, route choice, and assigned-victory-lane cutoff all remain
 unchanged. The default remains bit-identical behind an evaluator-only
@@ -1019,8 +1023,8 @@ unchanged. The default remains bit-identical behind an evaluator-only
 > rule.
 
 Implementation starts only after the active owner of the AI/evaluator paths
-clears. Unit fixtures must first establish that the control closes at turn 150,
-the treatment remains open through turn 224 and closes at 225, and assigned
+clears. Unit fixtures must first establish that the control closes at turn 198,
+the treatment remains open through turn 216 and closes at 217, and assigned
 victory targets retain their separate cutoff.
 
 Before any win evaluation, a fixed matched mechanism census uses eight fresh
@@ -1031,7 +1035,7 @@ all-treatment game per map and samples all 64 major seat-maps. The treatment
 earns an A/B only if:
 
 - at least eight seat-maps actually start a Settler during the newly opened
-  turns 150–224; and
+  turns 198–216; and
 - treatment games finish with at least four more founded cities in aggregate
   than their matched controls.
 
@@ -1076,10 +1080,10 @@ It separates two mechanisms that the code currently confounds.
 six cities. After the opening book, however, an untargeted adaptive agent calls
 `advanced_production` only for `Recovery`; every other adaptive plan ends by
 calling `BasicAi::cities`. That Basic governor has its own four-city target and
-turn-150 deadline. The six-city target, the fixed/payback expansion window, and
-§18's late-window switch all live in Advanced production. Thus changing an
-Advanced deadline and changing whether adaptive Expansion reaches it are
-distinct interventions.
+turn-116 Online deadline. The six-city target, the fixed/payback expansion
+window, and §18's late-window switch all live in Advanced production. Thus
+changing an Advanced deadline and changing whether adaptive Expansion reaches
+it are distinct interventions.
 
 ### Frozen dispatcher treatment
 
@@ -1124,9 +1128,9 @@ start. Also retain §18's arm-independent count of every successful Advanced
 late-Settler start, so late-only Recovery behavior remains observable. An
 attempted value, an open predicate, or a pre-action queue snapshot is not a
 fire. Unit fixtures must show that stock adaptive Expansion skips Advanced
-production, dispatcher-only enters it while retaining the turn-150 Settler
-cutoff, combined enters it with Settlers eligible through turn 224 and closed
-at turn 225, and assigned victory targets retain their separate cutoff.
+production, dispatcher-only enters it while retaining the turn-198 Settler
+cutoff, combined enters it with Settlers eligible through turn 216 and closed
+at turn 217, and assigned victory targets retain their separate cutoff.
 
 ### Fixed 2×2 mechanism census
 
@@ -1136,7 +1140,7 @@ seed 9994000. Every game uses the exact 8p/84x54-requested (105x44 realized),
 randomized-civilization, Science/Culture/Domination profile. All eight major
 seats use the same arm, yielding 64 major seat-maps per arm. Report actual new
 dispatcher calls, successful production actions, Settlers started before turn
-150, Settlers started during turns 150--224, and final founded cities excluding
+198, Settlers started during turns 198--216, and final founded cities excluding
 captures, by map and in aggregate.
 
 The combined policy earns an outcome screen only if every prospective term
@@ -1147,7 +1151,7 @@ passes:
    through that call on at least 8/64;
 2. dispatcher-only finishes with at least four more founded cities in aggregate
    than stock;
-3. combined starts a Settler through that call during turns 150--224 on at
+3. combined starts a Settler through that call during turns 198--216 on at
    least 8/64 seat-maps, and records any Advanced late-Settler start on more
    seat-maps than late-only; and
 4. combined finishes with at least four more founded cities in aggregate than
@@ -1157,6 +1161,41 @@ These are interaction gates: (1--2) establish that routing reaches and executes
 the six-city policy; (3--4) establish that the late permission adds execution
 and cities after that route exists. A failure stops the line. No arm, threshold,
 map count, or seed is substituted, and seeds 9994500 onward remain unread.
+
+### 2026-07-31 fixed 2×2 result — dispatcher fires; composition stops
+
+The implementation ran the exact eight-map prefix at seed 9994000 with the
+profile above. `expansion_funnel --arm <stock|late|dispatch|complete>` recorded
+the real `Game::apply(Action::Produce)` successes and every Settler-start turn;
+the realized Planet map was 105×44. The Online duration formulas resolved the
+pre-registered window to `[198, 217)`, as corrected in §18 before this seed was
+read.
+
+| arm | dispatcher calls | successful produces (seats) | dispatcher Settlers (seats) | dispatcher late Settlers (seats) | all Advanced late Settlers (seats) | founded cities |
+|---|---:|---:|---:|---:|---:|---:|
+| `advanced` | 0 | 0 (0/64) | 0 (0/64) | 0 (0/64) | 0 (0/64) | 270 |
+| `advanced_late_expansion` | 0 | 0 (0/64) | 0 (0/64) | 0 (0/64) | 9 (6/64) | 281 |
+| `advanced_expansion_dispatch` | 2,873 | 2,316 (62/64) | 111 (53/64) | 0 (0/64) | 0 (0/64) | 290 |
+| `advanced_expansion_complete` | 3,055 | 2,566 (62/64) | 115 (53/64) | 4 (3/64) | 9 (8/64) | 293 |
+
+The raw founded-city totals by seed, in stock / late / dispatch / complete
+order, were: 9994000 `34/34/35/35`, 9994001 `36/36/34/34`, 9994002
+`32/32/32/34`, 9994003 `33/34/38/40`, 9994004 `40/41/38/37`, 9994005
+`34/36/32/32`, 9994006 `33/36/44/44`, and 9994007 `28/32/37/37`. Captures are
+excluded from every total.
+
+Gates 1 and 2 pass: dispatcher-only reached a successful production action on
+62/64 seats, a Settler on 53/64, and finished **20** founded cities above stock.
+Gate 3 fails: the combined arm started a dispatcher Settler in the new window
+on only **3/64** seats, below the required 8 (although its arm-independent
+Advanced late-start coverage, 8 seats, exceeds late-only's 6). Gate 4 also
+fails: combined finishes only **3** founded cities above dispatcher-only,
+below the required 4, though it is 12 above late-only. The four dispatcher-late
+turns were 198, 212, 213, and 216.
+
+**STOP.** No outcome screen ran; seeds 9994500 and later remain unread. The
+three entrants and the instrumentation remain default-off so this null can be
+reproduced, but nothing in `advanced` changes.
 
 ### Advanced outcome screen and confirmation
 

@@ -1,5 +1,5 @@
 //! Paired, seat-balanced head-to-head evaluator for built-in AIs.
-use civvis::ai::Ai;
+use civvis::ai::{Ai, ExpansionCensus};
 use civvis::elo::{
     builtin_ai, builtin_provenances, collapsed_entrants, AgentProvenance, ARTIFACT_DIR,
     BUILTIN_AIS, EVAL_ONLY_AIS,
@@ -545,6 +545,16 @@ struct Metrics {
     /// Seats whose agent reports a search at all, distinguishing "searched
     /// zero times" from "has no search to report".
     searching_seats: usize,
+    /// Actual production telemetry for the adaptive-expansion evaluator arms.
+    /// Kept separately from city totals because a queue decision is not a
+    /// founded city, and neither is a plan predicate.
+    expansion_census: ExpansionCensus,
+    expansion_reporting_seats: usize,
+    dispatch_action_seats: usize,
+    dispatch_settler_seats: usize,
+    dispatch_late_settler_seats: usize,
+    advanced_late_settler_seats: usize,
+    expansion_deadlines: Option<(u32, u32)>,
 }
 
 impl Metrics {
@@ -701,6 +711,22 @@ fn transition_counts(transitions: &BTreeMap<String, usize>) -> String {
         .map(|(transition, count)| format!("{transition} {count}"))
         .collect::<Vec<_>>()
         .join(", ")
+}
+
+/// Keep production telemetry auditable without making evaluator output depend
+/// on worker completion order.
+fn turn_list(turns: &[u32]) -> String {
+    let mut sorted = turns.to_vec();
+    sorted.sort_unstable();
+    if sorted.is_empty() {
+        "none".to_string()
+    } else {
+        sorted
+            .into_iter()
+            .map(|turn| turn.to_string())
+            .collect::<Vec<_>>()
+            .join(",")
+    }
 }
 
 fn text(args: &[String], flag: &str, default: &str) -> String {
@@ -1194,6 +1220,7 @@ fn main() {
         traces: Vec<PlanTrace>,
         targets: Vec<&'static str>,
         censuses: Vec<Option<ReviewCensus>>,
+        expansion_censuses: Vec<Option<ExpansionCensus>>,
     }
 
     // Games share nothing but the immutable ruleset, and every one is fully
@@ -1250,12 +1277,16 @@ fn main() {
                 .map(|pid| plan_target(&game, pid, ais[pid].as_ref()))
                 .collect();
             let censuses = (0..players).map(|pid| ais[pid].review_census()).collect();
+            let expansion_censuses = (0..players)
+                .map(|pid| ais[pid].expansion_census())
+                .collect();
             PlayedGame {
                 game,
                 seats,
                 traces,
                 targets,
                 censuses,
+                expansion_censuses,
             }
         });
         for (index, result) in played.into_iter().enumerate() {
@@ -1265,6 +1296,7 @@ fn main() {
                 traces,
                 targets,
                 censuses,
+                expansion_censuses,
             } = result;
             total_turns += game.reported_turn() as u64;
             let score = game_score(game.winner, &seats, a);
@@ -1285,6 +1317,32 @@ fn main() {
                     let metrics = totals.get_mut(*name).unwrap();
                     metrics.census.merge(census);
                     metrics.searching_seats += 1;
+                }
+                if let Some(expansion) = expansion_censuses[pid].as_ref() {
+                    let metrics = totals.get_mut(*name).unwrap();
+                    metrics.expansion_census.merge(expansion);
+                    metrics.expansion_reporting_seats += 1;
+                    metrics.dispatch_action_seats +=
+                        usize::from(expansion.dispatch_productions > 0);
+                    metrics.dispatch_settler_seats +=
+                        usize::from(!expansion.dispatch_settler_turns.is_empty());
+                    let stock_deadline = game.standard_duration(300).min(
+                        game.max_turns
+                            .saturating_sub(game.standard_duration(50)),
+                    );
+                    let late_deadline = game
+                        .max_turns
+                        .saturating_sub(game.standard_duration(50));
+                    metrics.expansion_deadlines = Some((stock_deadline, late_deadline));
+                    metrics.dispatch_late_settler_seats += usize::from(
+                        expansion
+                            .dispatch_settler_turns
+                            .iter()
+                            .any(|turn| *turn >= stock_deadline && *turn < late_deadline),
+                    );
+                    metrics.advanced_late_settler_seats += usize::from(
+                        !expansion.advanced_late_settler_turns.is_empty(),
+                    );
                 }
                 totals.get_mut(*name).unwrap().record(
                     &game,
@@ -1581,6 +1639,51 @@ fn main() {
             100.0 * metrics.rush_turns as f64 / metrics.plan_observations.max(1) as f64,
         );
     }
+    if [a, b]
+        .iter()
+        .any(|name| totals[*name].expansion_reporting_seats > 0)
+    {
+        println!("\nAdaptive-expansion production exposure:");
+        for name in [a, b] {
+            let metrics = &totals[name];
+            if metrics.expansion_reporting_seats == 0 {
+                println!("  {name:<11} no Advanced-production census to report");
+                continue;
+            }
+            let (stock_deadline, late_deadline) = metrics
+                .expansion_deadlines
+                .expect("an expansion census records its game-speed deadlines");
+            let census = &metrics.expansion_census;
+            let dispatch_late_starts = census
+                .dispatch_settler_turns
+                .iter()
+                .filter(|turn| **turn >= stock_deadline && **turn < late_deadline)
+                .count();
+            println!(
+                "  {name:<11} dispatcher calls {}, successful produces {} on {}/{} seats; \
+                 Settlers {} on {}/{} seats (late [{stock_deadline},{late_deadline}) {} on {}/{}); \
+                 Advanced late Settlers {} on {}/{} seats",
+                census.dispatch_calls,
+                census.dispatch_productions,
+                metrics.dispatch_action_seats,
+                metrics.expansion_reporting_seats,
+                census.dispatch_settler_turns.len(),
+                metrics.dispatch_settler_seats,
+                metrics.expansion_reporting_seats,
+                dispatch_late_starts,
+                metrics.dispatch_late_settler_seats,
+                metrics.expansion_reporting_seats,
+                census.advanced_late_settler_turns.len(),
+                metrics.advanced_late_settler_seats,
+                metrics.expansion_reporting_seats,
+            );
+            println!(
+                "  {name:<11} dispatcher Settler turns [{}]; all Advanced late-Settler turns [{}]",
+                turn_list(&census.dispatch_settler_turns),
+                turn_list(&census.advanced_late_settler_turns),
+            );
+        }
+    }
     // A searching entrant that never reached its search is a scripted agent
     // under a searching agent's name. Say so beside the win rate, because
     // the win rate cannot.
@@ -1653,6 +1756,12 @@ fn main() {
 mod tests {
     use super::*;
     use civvis::rng::Rng;
+
+    #[test]
+    fn turn_list_is_stable_across_worker_completion_order() {
+        assert_eq!(turn_list(&[]), "none");
+        assert_eq!(turn_list(&[212, 198, 213, 198]), "198,198,212,213");
+    }
 
     #[test]
     fn promotion_matrix_pins_compact_and_deployment_profiles() {

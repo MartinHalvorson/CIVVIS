@@ -42,8 +42,17 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 ///
 /// #660 subsequently adds only default-off evaluator fields and a disabled
 /// production prepass. `AdvancedAi::legacy()` leaves those gates off; the merged
-/// source contract is re-pinned only after its fixed-prefix behavior check.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x93d9_195d_ff70_d727;
+/// source contract was re-pinned only after its fixed-prefix behavior check.
+///
+/// #672 adds two more default-off adaptive-Expansion flags and observer-only
+/// action telemetry. With all flags false, a matched release-mode `ai_eval
+/// advanced basic --pairs 10 --players 4 --turns 200 --seed 31337 --jobs 1`
+/// comparison against pre-#672 `374e0f0` had identical scores, sweeps, seat
+/// metrics, victory mix, and strategy-transition counts across 40 Advanced
+/// seat-games and 4,022 observed Advanced turns. The only added report is a
+/// zero-valued telemetry block, so this fingerprint is deliberately re-pinned
+/// rather than changing the Elo protocol.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x7954_5308_ec6a_36ef;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {

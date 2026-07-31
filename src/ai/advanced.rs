@@ -240,6 +240,41 @@ impl StrategyCensus {
     }
 }
 
+/// What the default-off adaptive-expansion dispatcher actually did.
+///
+/// These values are recorded only after [`Game::apply`] accepts a production
+/// action. They intentionally distinguish an exposed dispatcher *call* from
+/// a successful production decision: a treatment that reaches the routine but
+/// cannot legally queue anything has not fired its proposed mechanism.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct ExpansionCensus {
+    /// Times the newly exposed adaptive-Expansion dispatcher entered Advanced
+    /// production after the opening book.
+    pub dispatch_calls: u32,
+    /// Successful `Action::Produce` calls made by those invocations.
+    pub dispatch_productions: u32,
+    /// Turns on which one of those successful actions started a Settler.
+    pub dispatch_settler_turns: Vec<u32>,
+    /// Every successful Advanced-production Settler start in the time newly
+    /// opened by the late-window treatment, including Recovery/targeted calls
+    /// if one could make it there. This is intentionally independent of the
+    /// dispatcher treatment.
+    pub advanced_late_settler_turns: Vec<u32>,
+}
+
+impl ExpansionCensus {
+    /// Combine independent seats or games without discarding the exact turns
+    /// that make a late-start claim auditable.
+    pub fn merge(&mut self, other: &ExpansionCensus) {
+        self.dispatch_calls += other.dispatch_calls;
+        self.dispatch_productions += other.dispatch_productions;
+        self.dispatch_settler_turns
+            .extend(other.dispatch_settler_turns.iter().copied());
+        self.advanced_late_settler_turns
+            .extend(other.advanced_late_settler_turns.iter().copied());
+    }
+}
+
 /// A concrete game-ending objective. Unlike `GrandStrategy`, which may
 /// temporarily become Expansion or Recovery, this remains fixed for the
 /// lifetime of a deliberately targeted AI.
@@ -840,6 +875,18 @@ pub struct AdvancedAi {
     ///
     /// Reachable as `advanced_expansion_payback`, paired against `advanced`.
     pub expansion_pays_back: bool,
+    /// Remove only the absolute `standard_duration(300)` cap from adaptive
+    /// expansion's existing deadline. Default-off evaluator treatment; the
+    /// endgame reserve remains unchanged.
+    pub late_expansion: bool,
+    /// Let an adaptive Expansion plan reach the already-shipped Advanced
+    /// production routine after the four-build opening. Default-off evaluator
+    /// treatment; Recovery and explicit victory targets retain their existing
+    /// dispatcher paths either way.
+    pub expansion_dispatch: bool,
+    /// Factual mechanism telemetry for the two flags above. It never feeds a
+    /// decision, score, or action selection.
+    expansion_census: ExpansionCensus,
     /// Where the city-target ramp starts. **3 by default, the shipped value.**
     ///
     /// `assess` computes `desired_cities = (3 + turn / cadence).min(map_capacity).min(6)`
@@ -1272,6 +1319,9 @@ impl AdvancedAi {
             settler_stalls: BTreeMap::new(),
             parallel_settlers: false,
             expansion_pays_back: false,
+            late_expansion: false,
+            expansion_dispatch: false,
+            expansion_census: ExpansionCensus::default(),
             city_target_floor: 3,
             city_strategy: false,
             city_strategy_emphasis: true,
@@ -1439,6 +1489,24 @@ impl AdvancedAi {
     /// How many turns this agent spent on each grand strategy.
     pub fn strategy_census(&self) -> StrategyCensus {
         self.census
+    }
+
+    /// Snapshot expansion-treatment telemetry for an evaluator or census.
+    pub fn expansion_census(&self) -> ExpansionCensus {
+        self.expansion_census.clone()
+    }
+
+    /// Whether the default-off dispatcher exposes Advanced production for this
+    /// exact adaptive plan. Explicit targets and Recovery retain their
+    /// pre-existing route and therefore return `false` here.
+    fn adaptive_expansion_dispatches(
+        &self,
+        plan: &StrategicPlan,
+        active_victory_target: Option<VictoryTarget>,
+    ) -> bool {
+        self.expansion_dispatch
+            && active_victory_target.is_none()
+            && plan.strategy == GrandStrategy::Expansion
     }
 
     fn active_victory_target(&self, g: &Game) -> Option<VictoryTarget> {
@@ -2843,7 +2911,10 @@ impl AdvancedAi {
                 "already well down its best victory lane",
                 StrategyTrigger::LaneProgress,
             )
-        } else if cities.len() < desired_cities && has_site && Self::expansion_window_open(g) {
+        } else if cities.len() < desired_cities
+            && has_site
+            && self.adaptive_expansion_window_open(g)
+        {
             (
                 GrandStrategy::Expansion,
                 "short of cities with land still open",
@@ -3054,11 +3125,52 @@ impl AdvancedAi {
         remaining > build + g.standard_duration(SETTLE_LAG + SETTLE_PAYBACK) as f64
     }
 
+    /// The stock adaptive-expansion deadline: a payoff horizon, bounded by
+    /// the unchanged endgame reserve.
+    fn stock_expansion_deadline(g: &Game) -> u32 {
+        g.standard_duration(300)
+            .min(g.max_turns.saturating_sub(g.standard_duration(50)))
+    }
+
+    /// The deadline for the late-window treatment. It deliberately removes
+    /// only the absolute cap; the reserve is still part of the policy.
+    fn late_expansion_deadline(g: &Game) -> u32 {
+        g.max_turns.saturating_sub(g.standard_duration(50))
+    }
+
     fn expansion_window_open(g: &Game) -> bool {
-        let payback_window = g.standard_duration(300);
-        let endgame_reserve = g.standard_duration(50);
-        let deadline = payback_window.min(g.max_turns.saturating_sub(endgame_reserve));
-        g.turn < deadline
+        g.turn < Self::stock_expansion_deadline(g)
+    }
+
+    fn late_expansion_window_open(g: &Game) -> bool {
+        g.turn < Self::late_expansion_deadline(g)
+    }
+
+    fn adaptive_expansion_window_open(&self, g: &Game) -> bool {
+        if self.late_expansion {
+            Self::late_expansion_window_open(g)
+        } else {
+            Self::expansion_window_open(g)
+        }
+    }
+
+    /// The interval the late-window treatment adds over stock. This is
+    /// expressed from the live game-speed formulas so measurement cannot drift
+    /// into a hard-coded Online turn range when duration scaling changes.
+    fn newly_opened_late_window(g: &Game) -> bool {
+        g.turn >= Self::stock_expansion_deadline(g) && g.turn < Self::late_expansion_deadline(g)
+    }
+
+    fn settler_expansion_window_open(&self, g: &Game, pid: usize, cid: u32) -> bool {
+        if self.expansion_pays_back {
+            self.expansion_pays_back_for(g, pid, cid)
+        } else if self.victory_target.is_some() {
+            // Assigned lanes have always carried a distinct cutoff. Neither
+            // adaptive experiment is allowed to widen it.
+            g.turn < g.standard_duration(175)
+        } else {
+            self.adaptive_expansion_window_open(g)
+        }
     }
 
     /// Lower is a more attractive rival: nearby, weak empires with valuable
@@ -8528,7 +8640,20 @@ impl AdvancedAi {
         }
     }
 
-    fn advanced_production(&self, g: &mut Game, pid: usize, plan: &StrategicPlan) {
+    /// Run the strategic production governor. `adaptive_expansion_dispatch`
+    /// names the one new route exposed by the experiment, so the census does
+    /// not accidentally attribute Recovery or an explicitly targeted lane to
+    /// the treatment.
+    fn advanced_production(
+        &mut self,
+        g: &mut Game,
+        pid: usize,
+        plan: &StrategicPlan,
+        adaptive_expansion_dispatch: bool,
+    ) {
+        if adaptive_expansion_dispatch {
+            self.expansion_census.dispatch_calls += 1;
+        }
         let mut counts = self.counts(g, pid);
         let city_ids = g.player_city_ids(pid);
         for cid in city_ids {
@@ -8602,7 +8727,20 @@ impl AdvancedAi {
                     )
                     .is_ok()
                 {
+                    let is_settler =
+                        matches!(&item, Item::Unit { unit } if unit == "settler");
                     counts.add_item(g, &item);
+                    if adaptive_expansion_dispatch {
+                        self.expansion_census.dispatch_productions += 1;
+                        if is_settler {
+                            self.expansion_census.dispatch_settler_turns.push(g.turn);
+                        }
+                    }
+                    if is_settler && Self::newly_opened_late_window(g) {
+                        self.expansion_census
+                            .advanced_late_settler_turns
+                            .push(g.turn);
+                    }
                 }
             }
         }
@@ -9055,13 +9193,7 @@ impl AdvancedAi {
                         })
                         .flatten()
                 });
-                let expansion_open = if self.expansion_pays_back {
-                    self.expansion_pays_back_for(g, pid, cid)
-                } else if self.victory_target.is_some() {
-                    g.turn < g.standard_duration(175)
-                } else {
-                    Self::expansion_window_open(g)
-                };
+                let expansion_open = self.settler_expansion_window_open(g, pid, cid);
                 // One settler at a time empire-wide unless the treatment is
                 // on. The clause above already caps cities-plus-settlers at
                 // the target, so `parallel_settlers` widens the *rate* and
@@ -13911,6 +14043,10 @@ impl Ai for AdvancedAi {
         self.joint_tactics.then(|| self.joint_tactics_census())
     }
 
+    fn expansion_census(&self) -> Option<ExpansionCensus> {
+        Some(AdvancedAi::expansion_census(self))
+    }
+
     fn strategy_label(&self) -> Option<&'static str> {
         self.plan.as_ref().map(|plan| plan.strategy.as_str())
     }
@@ -14093,8 +14229,15 @@ impl AdvancedAi {
             if self.victory_planning && plan.strategy == GrandStrategy::Culture {
                 self.culture_spending(g, pid);
             }
-            if plan.strategy == GrandStrategy::Recovery || active_victory_target.is_some() {
-                self.advanced_production(g, pid, &plan);
+            let adaptive_expansion_dispatch = self.adaptive_expansion_dispatches(
+                &plan,
+                active_victory_target,
+            );
+            if plan.strategy == GrandStrategy::Recovery
+                || active_victory_target.is_some()
+                || adaptive_expansion_dispatch
+            {
+                self.advanced_production(g, pid, &plan, adaptive_expansion_dispatch);
             }
             if active_victory_target.is_none() {
                 self.advanced_support_production(g, pid, &plan);
@@ -14132,7 +14275,7 @@ impl AdvancedAi {
 mod tests {
     use super::*;
     use crate::ai::run_game;
-    use crate::game::GovernorState;
+    use crate::game::{GameOptions, GovernorState};
 
     fn found_test_city(game: &mut Game, pid: usize) -> u32 {
         let position = game
@@ -15313,6 +15456,63 @@ mod tests {
         game.turn = 300;
         assert!(!AdvancedAi::expansion_window_open(&game));
         assert!(ai.production_value(&game, 0, city, &item, &plan, &counts) < -9_000.0);
+    }
+
+    #[test]
+    fn expansion_dispatch_and_late_window_are_independent_on_online() {
+        let mut game = Game::new_with(GameOptions {
+            speed: "online".to_string(),
+            ..GameOptions::new(1, 30, 18, 7_114, 250, 0)
+        });
+        // These are intentionally derived from the live duration curve. The
+        // earlier preregistration prose named an obsolete 150..225 range,
+        // while the engine's fidelity-correct duration scaling resolves the
+        // shipped formulas to this 198..217 window.
+        assert_eq!(game.standard_duration(300), 198);
+        assert_eq!(game.standard_duration(50), 33);
+        assert_eq!(AdvancedAi::stock_expansion_deadline(&game), 198);
+        assert_eq!(AdvancedAi::late_expansion_deadline(&game), 217);
+
+        let plan = StrategicPlan {
+            strategy: GrandStrategy::Expansion,
+            target_player: None,
+            target_city: None,
+            threatened_city: None,
+            desired_cities: 6,
+            assessed_turn: 0,
+            rush: false,
+        };
+        let stock = AdvancedAi::new();
+        let mut dispatcher = AdvancedAi::new();
+        dispatcher.expansion_dispatch = true;
+        let mut late = AdvancedAi::new();
+        late.late_expansion = true;
+        let mut combined = AdvancedAi::new();
+        combined.expansion_dispatch = true;
+        combined.late_expansion = true;
+
+        game.turn = 197;
+        assert!(stock.adaptive_expansion_window_open(&game));
+        assert!(late.adaptive_expansion_window_open(&game));
+        game.turn = 198;
+        assert!(!stock.adaptive_expansion_window_open(&game));
+        assert!(late.adaptive_expansion_window_open(&game));
+        game.turn = 216;
+        assert!(combined.adaptive_expansion_window_open(&game));
+        game.turn = 217;
+        assert!(!combined.adaptive_expansion_window_open(&game));
+
+        assert!(!stock.adaptive_expansion_dispatches(&plan, None));
+        assert!(dispatcher.adaptive_expansion_dispatches(&plan, None));
+        assert!(!late.adaptive_expansion_dispatches(&plan, None));
+        assert!(combined.adaptive_expansion_dispatches(&plan, None));
+        assert!(!combined.adaptive_expansion_dispatches(&plan, Some(VictoryTarget::Culture)));
+
+        let targeted = AdvancedAi::targeting(VictoryTarget::Culture);
+        game.turn = game.standard_duration(175) - 1;
+        assert!(targeted.settler_expansion_window_open(&game, 0, 0));
+        game.turn = game.standard_duration(175);
+        assert!(!targeted.settler_expansion_window_open(&game, 0, 0));
     }
 
     #[test]
@@ -18996,8 +19196,8 @@ mod tests {
             assessed_turn: game.turn,
             rush: false,
         };
-        let ai = AdvancedAi::targeting(VictoryTarget::Culture);
-        ai.advanced_production(&mut game, 0, &plan);
+        let mut ai = AdvancedAi::targeting(VictoryTarget::Culture);
+        ai.advanced_production(&mut game, 0, &plan, false);
         assert!(
             matches!(
                 game.cities[&city].queue.first(),
@@ -19009,7 +19209,7 @@ mod tests {
 
         game.cities.get_mut(&city).unwrap().queue.clear();
         game.spawn_test_unit("archaeologist", 0, game.cities[&city].pos);
-        ai.advanced_production(&mut game, 0, &plan);
+        ai.advanced_production(&mut game, 0, &plan, false);
         assert!(!matches!(
             game.cities[&city].queue.first(),
             Some(Item::Unit { unit }) if unit == "archaeologist"
