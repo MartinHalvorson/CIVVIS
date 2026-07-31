@@ -1117,9 +1117,9 @@ pub struct AdvancedAi {
     /// government's threshold and envoy payout. It also lets a first
     /// Diplomatic Quarter see part of the Consulate stream it unlocks.
     ///
-    /// Off until the paired gameplay gate clears. The evaluator exposes the
-    /// infrastructure-only and combined arms separately so a policy-card gain
-    /// cannot be misattributed to production.
+    /// Enabled in the promoted production composite. The evaluator retains
+    /// the frozen pre-composite, infrastructure-only, and policy-only arms so
+    /// the causal components and historical results remain reproducible.
     pub envoy_infrastructure: bool,
 
     /// Reserve one empty city's next build for reachable envoy infrastructure.
@@ -1136,12 +1136,12 @@ pub struct AdvancedAi {
     /// city-state cannot trigger it, nor can an influence stream that will not
     /// yield an Envoy before the game ends.
     ///
-    /// **Measured, promising, and not promoted.** Over 120 mirrored maps it
-    /// raised deployment envoys 14.3 -> 19.3 and suzerainty 0.41 -> 0.70, with
-    /// 38 map directions for and 19 against (p=0.0163), but the unchanged
-    /// promotion gate remained INCONCLUSIVE (+30 Elo-equivalent, e-process
-    /// p<=0.0665). Compact was -12 and safely inconclusive. The preregistered
-    /// rule therefore leaves it off; reachable as `advanced_envoy_priority`.
+    /// **Promoted as part of the exact live-policy/direct-production
+    /// composite.** Over the fixed 300-map deployment prefix the composite
+    /// scored 58.9%, +63 Elo-equivalent (95% CI +23..+102), with directions
+    /// 119 to 40 and an anytime gate crossing at map 72. Compact was neutral
+    /// at 50.4%, +3. The historical direct-only treatment remains reachable
+    /// as `advanced_envoy_priority`.
     pub envoy_priority: bool,
 
     /// Hold a strategy through short-lived score and power fluctuations while
@@ -1170,6 +1170,14 @@ impl Default for AdvancedAi {
 
 impl AdvancedAi {
     pub fn new() -> AdvancedAi {
+        Self::envoy_composite()
+    }
+
+    /// Frozen production controller from before the live-policy/direct-envoy
+    /// bundle was promoted. Evaluator-only treatments build from this exact
+    /// baseline so their historical identity does not drift when `advanced`
+    /// improves.
+    pub(crate) fn pre_envoy_composite() -> AdvancedAi {
         Self::configured(BasicAi::new(), true, None)
     }
 
@@ -1268,9 +1276,10 @@ impl AdvancedAi {
         Self::configured(BasicAi::with_weights(weights), true, None)
     }
 
-    /// Exact pre-registered live-policy/direct-envoy composite. Keeping its
-    /// configuration here gives the evaluator one constructor to test and
-    /// prevents the treatment bundle from drifting between call sites.
+    /// Exact pre-registered live-policy/direct-envoy composite, promoted after
+    /// passing both the deployment strength gate and compact no-regression
+    /// gate. Keeping its configuration here prevents the production default
+    /// from drifting between call sites.
     pub(crate) fn envoy_composite() -> AdvancedAi {
         let mut weights = Weights::default();
         weights.policy_deck = super::PolicyDeck::Live;
@@ -17491,8 +17500,8 @@ mod tests {
             assessed_turn: game.turn,
             rush: false,
         };
-        let stock = AdvancedAi::new();
-        let mut treatment = AdvancedAi::new();
+        let stock = AdvancedAi::pre_envoy_composite();
+        let mut treatment = AdvancedAi::pre_envoy_composite();
         treatment.envoy_infrastructure = true;
         let counts = stock.counts(&game, 0);
         let unseen = treatment.production_value(&game, 0, city, &consulate, &plan, &counts);
@@ -17532,6 +17541,12 @@ mod tests {
         assert!(treatment.envoy_infrastructure);
         assert!(treatment.envoy_priority);
         assert!(!treatment.strategic_commitment);
+
+        let production = AdvancedAi::new();
+        assert_eq!(production.base.w, treatment.base.w);
+        assert_eq!(production.envoy_infrastructure, treatment.envoy_infrastructure);
+        assert_eq!(production.envoy_priority, treatment.envoy_priority);
+        assert_eq!(production.strategic_commitment, treatment.strategic_commitment);
     }
 
     #[test]
@@ -17574,7 +17589,7 @@ mod tests {
             assessed_turn: game.turn,
             rush: false,
         };
-        let mut treatment = AdvancedAi::new();
+        let mut treatment = AdvancedAi::pre_envoy_composite();
         treatment.envoy_infrastructure = true;
         treatment.envoy_priority = true;
 

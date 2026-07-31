@@ -38,8 +38,9 @@ pub const BUILTIN_AIS: [&str; 10] = [
 /// tournament ratings. Keeping them out of `BUILTIN_AIS` prevents a control
 /// factory from being pooled into the same player/leader rating key as
 /// its treatment.
-pub const EVAL_ONLY_AIS: [&str; 74] = [
+pub const EVAL_ONLY_AIS: [&str; 75] = [
     "basic_evolved",
+    "advanced_pre_envoy_composite",
     "advanced_policy_live_control",
     "advanced_envoy_policy",
     "advanced_envoy_infrastructure",
@@ -1192,6 +1193,7 @@ fn artifact_effective_alias_from(
         "advanced"
     };
     match name {
+        "advanced_envoy_composite" => Some("advanced"),
         "evolved" | "advanced_evolved" => Some(advanced_fallback),
         "basic_evolved" => Some(basic_fallback),
         "neural" => Some(if net { "neural" } else { basic_fallback }),
@@ -1238,8 +1240,13 @@ fn build_effective_ai(name: &str, seed: u64, dir: &str) -> Option<Box<dyn Ai>> {
     let strategic = |weights: Weights| {
         crate::strategic::StrategicAi::with_weights_from(weights, dir)
     };
+    // Existing evaluator-only `advanced_*` names are evidence identities, not
+    // moving aliases of the latest production controller. They intentionally
+    // construct from `pre_envoy_composite`; a future treatment against the
+    // promoted default must receive a new name and start from `AdvancedAi::new`.
     let ai: Box<dyn Ai> = match name {
         "advanced" => Box::new(AdvancedAi::new()),
+        "advanced_pre_envoy_composite" => Box::new(AdvancedAi::pre_envoy_composite()),
         "basic" => Box::new(BasicAi::new()),
         // Four arms decompose the envoy-acquisition treatment. The live
         // policy control differs from `advanced` only by enabling the existing
@@ -1258,7 +1265,7 @@ fn build_effective_ai(name: &str, seed: u64, dir: &str) -> Option<Box<dyn Ai>> {
             Box::new(AdvancedAi::with_weights(weights))
         }
         "advanced_envoy_infrastructure" => {
-            let mut ai = AdvancedAi::new();
+            let mut ai = AdvancedAi::pre_envoy_composite();
             ai.envoy_infrastructure = true;
             Box::new(ai)
         }
@@ -1267,7 +1274,7 @@ fn build_effective_ai(name: &str, seed: u64, dir: &str) -> Option<Box<dyn Ai>> {
         // reserves one empty city for the first legal, horizon-positive stage
         // of the Diplomatic Quarter -> Consulate -> Chancery chain.
         "advanced_envoy_priority" => {
-            let mut ai = AdvancedAi::new();
+            let mut ai = AdvancedAi::pre_envoy_composite();
             ai.envoy_infrastructure = true;
             ai.envoy_priority = true;
             Box::new(ai)
@@ -1287,7 +1294,7 @@ fn build_effective_ai(name: &str, seed: u64, dir: &str) -> Option<Box<dyn Ai>> {
             Box::new(ai)
         }
         "advanced_strategic_commitment" => {
-            let mut ai = AdvancedAi::new();
+            let mut ai = AdvancedAi::pre_envoy_composite();
             ai.strategic_commitment = true;
             Box::new(ai)
         }
@@ -1299,7 +1306,7 @@ fn build_effective_ai(name: &str, seed: u64, dir: &str) -> Option<Box<dyn Ai>> {
         "advanced_evolved_commitment" => {
             let mut ai = crate::evolve::load_champion(dir)
                 .map(AdvancedAi::with_weights)
-                .unwrap_or_else(AdvancedAi::new);
+                .unwrap_or_else(AdvancedAi::pre_envoy_composite);
             ai.strategic_commitment = true;
             Box::new(ai)
         }
@@ -1322,7 +1329,7 @@ fn build_effective_ai(name: &str, seed: u64, dir: &str) -> Option<Box<dyn Ai>> {
         // its city target. See `docs/OPENINGS.md` §11 for the ceiling that
         // motivated it and for the production it trades away.
         "advanced_food_first" => {
-            let mut ai = AdvancedAi::new();
+            let mut ai = AdvancedAi::pre_envoy_composite();
             ai.food_first = 0.6;
             Box::new(ai)
         }
@@ -1330,7 +1337,7 @@ fn build_effective_ai(name: &str, seed: u64, dir: &str) -> Option<Box<dyn Ai>> {
         // except that a settler holds its chosen site across a turn it could
         // not move, for up to three such turns. See `docs/OPENINGS.md` §15.
         "advanced_settler_commit" => {
-            let mut ai = AdvancedAi::new();
+            let mut ai = AdvancedAi::pre_envoy_composite();
             ai.settler_commit = true;
             Box::new(ai)
         }
@@ -1345,7 +1352,7 @@ fn build_effective_ai(name: &str, seed: u64, dir: &str) -> Option<Box<dyn Ai>> {
         // deterrent, and a real cost in development on its recorded large
         // profile.
         "advanced_blind_to_leaders" => {
-            let mut ai = AdvancedAi::new();
+            let mut ai = AdvancedAi::pre_envoy_composite();
             ai.deny_leaders = false;
             Box::new(ai)
         }
@@ -1359,7 +1366,7 @@ fn build_effective_ai(name: &str, seed: u64, dir: &str) -> Option<Box<dyn Ai>> {
         // Conquest until turn 55, and the declaration carries a turn-35 floor.
         // Paired against `advanced` this is what early aggression is worth.
         "advanced_rush" => {
-            let mut ai = AdvancedAi::new();
+            let mut ai = AdvancedAi::pre_envoy_composite();
             ai.early_rush = true;
             Box::new(ai)
         }
@@ -1367,7 +1374,7 @@ fn build_effective_ai(name: &str, seed: u64, dir: &str) -> Option<Box<dyn Ai>> {
         // rush rule after target eligibility: only rivals a starting land
         // melee unit could route to the existing staging ring may trigger it.
         "advanced_rush_connected" => {
-            let mut ai = AdvancedAi::new();
+            let mut ai = AdvancedAi::pre_envoy_composite();
             ai.early_rush = true;
             ai.route_connected_rush = true;
             Box::new(ai)
@@ -1379,7 +1386,7 @@ fn build_effective_ai(name: &str, seed: u64, dir: &str) -> Option<Box<dyn Ai>> {
         // `docs/COUNTERING_LEADERS.md`: on its recorded large profile, one or
         // two belligerents wins 4.4% and 10.7% of seats against a 16.7% base.
         "advanced_counter_in_lane" => {
-            let mut ai = AdvancedAi::new();
+            let mut ai = AdvancedAi::pre_envoy_composite();
             ai.counter_in_lane = true;
             Box::new(ai)
         }
@@ -1388,14 +1395,14 @@ fn build_effective_ai(name: &str, seed: u64, dir: &str) -> Option<Box<dyn Ai>> {
         // threat not at all. Read against `advanced_counter_in_lane` it says
         // whether that treatment's effect is "stop declaring" or "race them".
         "advanced_counter_stand_down" => {
-            let mut ai = AdvancedAi::new();
+            let mut ai = AdvancedAi::pre_envoy_composite();
             ai.counter_stand_down = true;
             Box::new(ai)
         }
         // Instrument treatment: reads the score race as a margin over the
         // field instead of as a last-quarter clock. The response is unchanged.
         "advanced_early_score_alarm" => {
-            let mut ai = AdvancedAi::new();
+            let mut ai = AdvancedAi::pre_envoy_composite();
             ai.early_score_alarm = true;
             Box::new(ai)
         }
@@ -1411,7 +1418,7 @@ fn build_effective_ai(name: &str, seed: u64, dir: &str) -> Option<Box<dyn Ai>> {
         // `docs/COUNTERING_LEADERS.md`, this response is not paid for in
         // development: `resolve_congress` refunds a losing vote in full.
         "advanced_congress_counter" => {
-            let mut ai = AdvancedAi::new();
+            let mut ai = AdvancedAi::pre_envoy_composite();
             ai.congress_counter_leader = true;
             Box::new(ai)
         }
@@ -1420,14 +1427,14 @@ fn build_effective_ai(name: &str, seed: u64, dir: &str) -> Option<Box<dyn Ai>> {
         // a ballot that opposes the empire closest to a victory. Read against
         // `advanced_congress_counter` it separates the target from the weight.
         "advanced_congress_votes" => {
-            let mut ai = AdvancedAi::new();
+            let mut ai = AdvancedAi::pre_envoy_composite();
             ai.congress_counter_votes = true;
             Box::new(ai)
         }
         // Both halves at once. Only informative once the two arms above have
         // been read separately.
         "advanced_congress_counter_hard" => {
-            let mut ai = AdvancedAi::new();
+            let mut ai = AdvancedAi::pre_envoy_composite();
             ai.congress_counter_leader = true;
             ai.congress_counter_votes = true;
             Box::new(ai)
@@ -1436,13 +1443,13 @@ fn build_effective_ai(name: &str, seed: u64, dir: &str) -> Option<Box<dyn Ai>> {
         // combination `docs/COUNTERING_LEADERS.md` leaves untested, since every
         // response-side change measured null on the shipped instrument.
         "advanced_early_score_build" => {
-            let mut ai = AdvancedAi::new();
+            let mut ai = AdvancedAi::pre_envoy_composite();
             ai.early_score_alarm = true;
             ai.counter_in_lane = true;
             Box::new(ai)
         }
         "advanced_civ_blind" => {
-            let mut ai = AdvancedAi::new();
+            let mut ai = AdvancedAi::pre_envoy_composite();
             ai.civ_blind = true;
             Box::new(ai)
         }
@@ -1453,7 +1460,7 @@ fn build_effective_ai(name: &str, seed: u64, dir: &str) -> Option<Box<dyn Ai>> {
         // nothing else. See `docs/OPENINGS.md` for the measurement that
         // motivated it and for what would refute it.
         "advanced_parallel_settlers" => {
-            let mut ai = AdvancedAi::new();
+            let mut ai = AdvancedAi::pre_envoy_composite();
             ai.parallel_settlers = true;
             Box::new(ai)
         }
@@ -1464,7 +1471,7 @@ fn build_effective_ai(name: &str, seed: u64, dir: &str) -> Option<Box<dyn Ai>> {
         // `advanced` this isolates the plan-to-tile channel and nothing else.
         // See `AdvancedAi::city_strategy`.
         "advanced_city_strategy" => {
-            let mut ai = AdvancedAi::new();
+            let mut ai = AdvancedAi::pre_envoy_composite();
             ai.city_strategy = true;
             Box::new(ai)
         }
@@ -1475,13 +1482,13 @@ fn build_effective_ai(name: &str, seed: u64, dir: &str) -> Option<Box<dyn Ai>> {
         // else. Paired against `advanced` they attribute that loss instead of
         // leaving it to be guessed at.
         "advanced_city_strategy_emphasis" => {
-            let mut ai = AdvancedAi::new();
+            let mut ai = AdvancedAi::pre_envoy_composite();
             ai.city_strategy = true;
             ai.city_strategy_roles = false;
             Box::new(ai)
         }
         "advanced_city_strategy_roles" => {
-            let mut ai = AdvancedAi::new();
+            let mut ai = AdvancedAi::pre_envoy_composite();
             ai.city_strategy = true;
             ai.city_strategy_emphasis = false;
             Box::new(ai)
@@ -1492,7 +1499,7 @@ fn build_effective_ai(name: &str, seed: u64, dir: &str) -> Option<Box<dyn Ai>> {
         // numbers stay reproducible now that the repair is the default.
         // Isolates only the Bastion rung: a locally outmatched city halts growth and wants hammers.
         "advanced_city_strategy_bastion_only" => {
-            let mut ai = AdvancedAi::new();
+            let mut ai = AdvancedAi::pre_envoy_composite();
             ai.city_strategy = true;
             ai.city_strategy_halt_growth = true;
             ai.city_strategy_emphasis = false;
@@ -1503,7 +1510,7 @@ fn build_effective_ai(name: &str, seed: u64, dir: &str) -> Option<Box<dyn Ai>> {
         }
         // Isolates only the Breadbasket rung: the best food city feeds settlers while the empire is short.
         "advanced_city_strategy_breadbasket_only" => {
-            let mut ai = AdvancedAi::new();
+            let mut ai = AdvancedAi::pre_envoy_composite();
             ai.city_strategy = true;
             ai.city_strategy_emphasis = false;
             ai.city_strategy_bastion = false;
@@ -1513,7 +1520,7 @@ fn build_effective_ai(name: &str, seed: u64, dir: &str) -> Option<Box<dyn Ai>> {
         }
         // Isolates only the comparative rungs, Forge and Specialist.
         "advanced_city_strategy_comparative_only" => {
-            let mut ai = AdvancedAi::new();
+            let mut ai = AdvancedAi::pre_envoy_composite();
             ai.city_strategy = true;
             ai.city_strategy_emphasis = false;
             ai.city_strategy_bastion = false;
@@ -1523,7 +1530,7 @@ fn build_effective_ai(name: &str, seed: u64, dir: &str) -> Option<Box<dyn Ai>> {
         }
         // Isolates only per-city military pressure, with no role ever assigned.
         "advanced_city_strategy_pressure_only" => {
-            let mut ai = AdvancedAi::new();
+            let mut ai = AdvancedAi::pre_envoy_composite();
             ai.city_strategy = true;
             ai.city_strategy_emphasis = false;
             ai.city_strategy_bastion = false;
@@ -1532,7 +1539,7 @@ fn build_effective_ai(name: &str, seed: u64, dir: &str) -> Option<Box<dyn Ai>> {
             Box::new(ai)
         }
         "advanced_city_strategy_roles_raw" => {
-            let mut ai = AdvancedAi::new();
+            let mut ai = AdvancedAi::pre_envoy_composite();
             ai.city_strategy = true;
             ai.city_strategy_halt_growth = true;
             ai.city_strategy_emphasis = false;
@@ -1540,7 +1547,7 @@ fn build_effective_ai(name: &str, seed: u64, dir: &str) -> Option<Box<dyn Ai>> {
             Box::new(ai)
         }
         "advanced_city_strategy_raw" => {
-            let mut ai = AdvancedAi::new();
+            let mut ai = AdvancedAi::pre_envoy_composite();
             ai.city_strategy = true;
             ai.city_strategy_halt_growth = true;
             ai.city_strategy_expansion_first = false;
@@ -1551,7 +1558,7 @@ fn build_effective_ai(name: &str, seed: u64, dir: &str) -> Option<Box<dyn Ai>> {
         // now would pay for itself, rather than on a flat end-of-game reserve.
         // See `AdvancedAi::expansion_pays_back` and #554/#559.
         "advanced_expansion_payback" => {
-            let mut ai = AdvancedAi::new();
+            let mut ai = AdvancedAi::pre_envoy_composite();
             ai.expansion_pays_back = true;
             Box::new(ai)
         }
@@ -1559,12 +1566,12 @@ fn build_effective_ai(name: &str, seed: u64, dir: &str) -> Option<Box<dyn Ai>> {
         // that the target ramp starts at six rather than three. See
         // `AdvancedAi::city_target_floor`, #554 and #569.
         "advanced_wide_opening" => {
-            let mut ai = AdvancedAi::new();
+            let mut ai = AdvancedAi::pre_envoy_composite();
             ai.city_target_floor = 6;
             Box::new(ai)
         }
         "advanced_lane_reachable" => {
-            let mut ai = AdvancedAi::new();
+            let mut ai = AdvancedAi::pre_envoy_composite();
             ai.refuse_unreachable_lanes = true;
             Box::new(ai)
         }
@@ -1579,7 +1586,7 @@ fn build_effective_ai(name: &str, seed: u64, dir: &str) -> Option<Box<dyn Ai>> {
         // flight, stop at the planned target, pop 2, window open), so it means
         // "beeline to the city target", not "settlers forever".
         "advanced_settler_first" => {
-            let mut ai = AdvancedAi::new();
+            let mut ai = AdvancedAi::pre_envoy_composite();
             ai.settler_price = 100.0;
             Box::new(ai)
         }
@@ -1640,7 +1647,7 @@ fn build_effective_ai(name: &str, seed: u64, dir: &str) -> Option<Box<dyn Ai>> {
             Box::new(AdvancedAi::with_weights(weights))
         }
         "advanced_prophet_first" => {
-            let mut ai = AdvancedAi::new();
+            let mut ai = AdvancedAi::pre_envoy_composite();
             ai.prophet_before_opportunism = true;
             Box::new(ai)
         }
@@ -1652,7 +1659,7 @@ fn build_effective_ai(name: &str, seed: u64, dir: &str) -> Option<Box<dyn Ai>> {
         // an entrant rather than the default; kept so the comparison can be
         // re-run once siege conversion improves.
         "advanced_relief_scoped" => {
-            let mut ai = AdvancedAi::new();
+            let mut ai = AdvancedAi::pre_envoy_composite();
             ai.scoped_relief_hold = true;
             Box::new(ai)
         }
@@ -1666,14 +1673,14 @@ fn build_effective_ai(name: &str, seed: u64, dir: &str) -> Option<Box<dyn Ai>> {
         "advanced_evolved_blind" => {
             let mut ai = crate::evolve::load_champion(dir)
                 .map(AdvancedAi::with_weights)
-                .unwrap_or_else(AdvancedAi::new);
+                .unwrap_or_else(AdvancedAi::pre_envoy_composite);
             ai.deny_leaders = false;
             Box::new(ai)
         }
         "advanced_evolved" => Box::new(
             crate::evolve::load_champion(dir)
                 .map(AdvancedAi::with_weights)
-                .unwrap_or_else(AdvancedAi::new),
+                .unwrap_or_else(AdvancedAi::pre_envoy_composite),
         ),
         // The Dedication chooser that ranks the offer by what each Dedication
         // would have paid over the era just ended. **A recorded negative
@@ -3317,13 +3324,17 @@ mod tests {
         assert_eq!(builtin_spec("policy", dir).unwrap(), advanced);
         assert_eq!(builtin_spec("evolved", dir).unwrap(), advanced);
         assert_eq!(
+            builtin_spec("advanced_envoy_composite", dir).unwrap(),
+            advanced
+        );
+        assert_eq!(
             builtin_spec("advanced_envoy_priority", dir)
                 .unwrap()
                 .differing_axes(&advanced),
             vec!["treatment"]
         );
         assert_eq!(
-            builtin_spec("advanced_envoy_composite", dir)
+            builtin_spec("advanced_pre_envoy_composite", dir)
                 .unwrap()
                 .differing_axes(&advanced),
             vec!["treatment"]
@@ -3645,8 +3656,9 @@ mod tests {
             // Anything else reaching that state fell through to the
             // catch-all and is claiming to need nothing while quietly
             // needing a net.
-            const SCRIPTED: [&str; 41] = [
+            const SCRIPTED: [&str; 42] = [
                 "advanced",
+                "advanced_pre_envoy_composite",
                 "advanced_policy_live_control",
                 "advanced_envoy_policy",
                 "advanced_envoy_infrastructure",
@@ -3696,13 +3708,15 @@ mod tests {
             // a scripted entrant is added and stops discriminating as it
             // does. This does not: the catch-all answers `basic`, so any
             // name that needs no artifacts and still does not resolve to
-            // itself reached that arm rather than a row of its own.
+            // itself reached that arm rather than a row of its own. The one
+            // exception is the explicitly promoted composite alias.
             if resolved.artifacts.is_empty() {
-                assert_eq!(
-                    resolved.effective, *name,
-                    "{name} needs no artifacts yet resolves to {}, which only \
-                     the catch-all does",
-                    resolved.effective
+                assert!(
+                    resolved.effective == *name
+                        || (*name == "advanced_envoy_composite"
+                            && resolved.effective == "advanced"),
+                    "unexpected scripted alias {name} -> {}",
+                    resolved.effective,
                 );
             }
         }

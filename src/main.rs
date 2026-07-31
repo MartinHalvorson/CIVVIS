@@ -22,9 +22,11 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// edit cannot silently change the longitudinal anchor. If an edit reaches
 /// the legacy path, bump the Elo protocol and start a new ledger; if it is
 /// provably gated away, review that fact before updating this guard.
-/// Re-pinned 2026-07-31 after adding default-off envoy/commitment evaluator
-/// fields; `AdvancedAi::legacy()` leaves each new gate disabled.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xccae_da00_2f1f_712e;
+/// Re-pinned 2026-07-31 after promoting `AdvancedAi::new()` to the
+/// live-policy/direct-envoy bundle and adding a separate historical
+/// constructor. `AdvancedAi::legacy()` and every shared decision path remain
+/// unchanged; only the production constructor, comments, and tests moved.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x0914_4710_cfb3_e972;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {

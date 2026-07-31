@@ -302,13 +302,17 @@ closed, both profiles run concurrently under one job budget, and matrix mode
 owns all outcome-affecting profile flags. This closes the specific process hole
 that allowed compact-only gains to acquire unqualified “stronger” labels.
 
-A fresh 40-map comparison of retained `advanced` with `advanced_v1` on that
-nine-city-state, randomized-civilization deployment profile was itself
-inconclusive: 47.5% (−17 Elo-equivalent, 95% CI −124..+89). That does not erase
-the recorded +207/PASS result on the older six-city-state fixed-roster profile,
-but it does prevent a profile-independent “top-tier” claim. The strongest
-supported conclusion is that `advanced` remains the production incumbent and
-no tested replacement cleared the deployment gate.
+A fresh 40-map comparison of the pre-composite `advanced` with `advanced_v1`
+on that nine-city-state, randomized-civilization deployment profile was itself
+inconclusive: 47.5% (−17 Elo-equivalent, 95% CI −124..+89). The subsequent
+fixed 300-map live-policy/direct-envoy composite did clear the current gate:
+58.9% paired score and +63 Elo-equivalent (95% CI +23..+102) at deployment,
+with compact neutral at 50.4% and +3. That exact controller is now production
+`advanced`; `advanced_pre_envoy_composite` preserves the old incumbent.
+
+This is strong internal evidence on two named CIVVIS profiles, not external or
+profile-independent evidence. Claims such as “world-class” or “superhuman”
+still require games against external engines and humans.
 
 ## Next priorities
 
@@ -325,14 +329,13 @@ no tested replacement cleared the deployment gate.
    ceiling, but seven decision treatments failed because the oracle removed
    settler production and population costs. Search or value the full
    build-settle-payback sequence instead of raising a city target again.
-4. **Policy-deck transfer confirmation.** The existing live deck, not the new
-   influence terms, produced the clearest direction in the envoy decomposition.
-   Its first 20-map matrix scored 53.8% (+26) at deployment with 52.1% terminal
-   score, while compact safety was inconclusive rather than harmful. Extend the
-   same pre-declared seed prefix until the anytime gate resolves; promote only
-   if deployment passes and compact continues not to retain the incumbent.
-5. **External calibration.** Complete retained games against Firaxis' AI and
-   humans with named settings. Internal Elo remains an internal ruler.
+4. **Cost-calibrated macro search.** Compare search to a genome-matched
+   sequential control on deployment and require enough gain to justify its
+   measured ~6.4× single-seat turn cost.
+5. **Evaluator evidence semantics and external calibration.** Bind
+   evaluator-only arms to evidence/status, separate discovery from
+   confirmation estimates, and add retained games against external engines or
+   humans. Internal Elo remains an internal ruler.
 
 For implementation details see `docs/AI_GUIDE.md`; for the run-by-run evidence
 and its corrections see `docs/EVAL.md`; for the rating/seating contract see
@@ -434,3 +437,34 @@ known distinct controls.
 
 The next iteration takes item 1. The following iterations retain items 2–4 in
 that order unless the composite exposes a more valuable causal bottleneck.
+
+## Live-policy/direct-envoy composite resolution
+
+The first item above is complete and promoted. The exact 300-map matrix passed
+both required profiles: deployment scored 58.9% (+63 Elo-equivalent, 95% CI
++23..+102) with an anytime-valid crossing at map 72; compact scored 50.4%
+(+3, CI −36..+42) and did not retain the incumbent. Envoys, suzerainties, all
+three infrastructure stages, cities, population, research, yields, military,
+and Science wins all moved in the challenger direction at deployment. The
+promotion is centralized in `AdvancedAi::new()`; the old behavior remains an
+explicit typed control rather than being overwritten in historical arms.
+
+## Next ranked work after the composite promotion
+
+1. **Route recovery pressure through fog-honest belief.** Replace omniscient
+   enemy unit positions and HP in `threatened_city` and Bastion pressure with
+   visible or decaying remembered sightings. Prove equal information sets
+   yield identical pressure decisions and retain own-unit exactness.
+2. **Learn action-conditioned advantage with calibrated abstention.** Train on
+   sibling-action deltas, reserve deployment for untouched calibration, and
+   fall back to the promoted scripted expert outside supported regions.
+3. **Search the full expansion investment.** Price population loss, Settler
+   build time, escort and route delay, settlement, and horizon payback as one
+   sequence rather than another city-target scalar.
+4. **Price macro search against deployment strength.** Use a genome-matched
+   sequential control and treat measured turn cost as a promotion input.
+5. **Finish evidence semantics and external calibration.** Attach status and
+   evidence to evaluator-only names, separate discovery from confirmation,
+   and add retained external opponents before making broader strength claims.
+
+The next iteration takes item 1.

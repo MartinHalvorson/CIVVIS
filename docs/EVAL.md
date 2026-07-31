@@ -6566,3 +6566,56 @@ elimination callbacks. Targeted regressions cover both levy directions and the
 exact elimination shape; seed 32,051,026 then completed. The full matrix must
 be rerun from seed 32,051,000 under the original command and decision rule;
 the already observed deployment result is not reused as the promotion result.
+
+### Complete fixed-prefix result and promotion
+
+The repaired executable reran the exact command over both complete prefixes.
+The matrix passed:
+
+| profile | paired score | 95% Wilson CI | Elo-equivalent | map direction | gate |
+|---|---:|---:|---:|---:|---|
+| compact Standard | 50.4% | 44.8%–56.0% | +3 (−36..+42) | 68–59, 173 neutral | ACCEPT / INCONCLUSIVE |
+| deployment Online | 58.9% | 53.3%–64.3% | +63 (+23..+102) | 119–40, 141 neutral | PASS |
+
+Deployment's exact sign test rounded below 0.0001 and its anytime-valid
+e-process crossed at map 72, peaking at `7.153e8`. The challenger won 232 of
+600 deployment games versus 125 for the incumbent. Compact completed all 300
+maps without an established regression: 161 challenger wins versus 156 and an
+exact directional `p=0.4779`. The parent therefore reported
+`multi-profile promotion gate: PASS`.
+
+The mechanism moved exactly as intended. At deployment, mean Envoys rose
+14.0→20.1 and suzerainties 0.38→0.72. Completed Diplomatic Quarters,
+Consulates, and Chanceries rose from 0.33/0.21/0.17 to 0.94/0.93/0.92, while
+terminal chain cost stayed essentially exhausted (0.1 Production). The gain
+did not come at an observed development loss: cities rose 5.86→6.18,
+Population 74.9→80.4, technologies 58.7→61.7, civics 44.8→46.5, Production
+328.1→364.5, Science 175.7→204.2, and military power 1028.1→1182.0. Science
+wins rose 105→200.
+
+The exact bundle is now production `AdvancedAi::new()` and therefore reaches
+server autoplay, CLI fleets, default fallbacks, and the `advanced` builtin
+through one constructor. `advanced_envoy_composite` is retained as a canonical
+alias of `advanced`; `advanced_pre_envoy_composite` freezes the old controller
+for historical comparisons. Every older evaluator-only treatment continues to
+construct from that frozen baseline, so promotion does not retroactively
+change what its recorded name means.
+
+Post-promotion verification used the production constructors rather than the
+experimental comparison alone. `cargo test --profile ci --locked
+--no-fail-fast` passed all 1,300 library tests (20 deliberate censuses and
+benchmarks ignored) and every binary, integration, and doc-test target.
+`cargo build --release --locked --bin civvis --bin ai_eval` completed, and the
+release deployment-scale health command below completed 12/12 fresh-seed games
+without a panic or incomplete result:
+
+```sh
+target/release/civvis soak --games 12 --players 6 \
+  --start-seed 34051000 --jobs 8 --width 74 --height 46 \
+  --city-states 9 --speed online --turns 250 \
+  --map continents --shape planet --poles poles
+```
+
+Finally, the release evaluator refused `advanced_envoy_composite advanced` as
+an effective self-comparison with exit code 2, confirming that the promoted
+alias cannot accidentally manufacture new evidence against itself.
