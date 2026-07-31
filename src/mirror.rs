@@ -820,6 +820,17 @@ pub struct StateSnapshot {
     /// events. Merged in by [`state_from_events`] for the same reason as `seat`.
     #[serde(default)]
     pub refused_sites: std::collections::BTreeSet<crate::Pos>,
+    /// Tiles Civilization VI refused to improve, AXIAL, from `improve_refused`.
+    #[serde(default)]
+    pub refused_improves: std::collections::BTreeSet<crate::Pos>,
+    /// Barbarian units this seat can SEE.
+    ///
+    /// ★★★★ The rival export is built from `GetAliveMajorIDs`, so barbarians could
+    /// never appear in it and could never show `at_war`. A city lost to them read as
+    /// "lost at peace with everyone", which is how the analysis of how cities are
+    /// lost was made with an instrument blind to the likeliest cause.
+    #[serde(default)]
+    pub hostiles: Vec<StateUnit>,
 }
 
 /// The identity Civilization VI gave this game: who we play, and under what rules.
@@ -969,6 +980,7 @@ pub fn state_from_events(
     }
     if let Some(state) = best.as_mut() {
         state.refused_sites = refused_city_sites(path);
+        state.refused_improves = refused_improve_sites(path);
     }
     best
 }
@@ -1122,19 +1134,22 @@ pub(crate) fn grow_frontier(
 /// ⚠ Reads the settler's ACTUAL position from the event, not the site CIVVIS aimed
 /// at. Those differ whenever the settler has not arrived, and blocking the tile the
 /// order named would blacklist good ground the settler simply had not reached.
-pub fn refused_city_sites(path: &std::path::Path) -> std::collections::BTreeSet<crate::Pos> {
+pub fn refused_sites_of_kind(
+    path: &std::path::Path,
+    kind: &str,
+) -> std::collections::BTreeSet<crate::Pos> {
     let mut refused: std::collections::BTreeSet<crate::Pos> = Default::default();
     let Ok(raw) = std::fs::read_to_string(path) else {
         return refused;
     };
     for line in raw.lines() {
-        if !line.contains("found_refused") {
+        if !line.contains(kind) {
             continue;
         }
         let Ok(event) = serde_json::from_str::<serde_json::Value>(line) else {
             continue;
         };
-        if event.get("kind").and_then(|k| k.as_str()) != Some("found_refused") {
+        if event.get("kind").and_then(|k| k.as_str()) != Some(kind) {
             continue;
         }
         let (Some(x), Some(y)) = (
@@ -1146,6 +1161,17 @@ pub fn refused_city_sites(path: &std::path::Path) -> std::collections::BTreeSet<
         refused.insert(crate::hex::offset_to_axial(x as i32, y as i32));
     }
     refused
+}
+
+/// Sites Civilization VI refused to found a city on.
+pub fn refused_city_sites(path: &std::path::Path) -> std::collections::BTreeSet<crate::Pos> {
+    refused_sites_of_kind(path, "found_refused")
+}
+
+/// Tiles Civilization VI refused to let a builder improve, after the mod had already
+/// tried the named improvement, any improvement, and automation.
+pub fn refused_improve_sites(path: &std::path::Path) -> std::collections::BTreeSet<crate::Pos> {
+    refused_sites_of_kind(path, "improve_refused")
 }
 
 /// The newest `state` event as raw JSON, with the run's `seat` identity merged in.
@@ -1236,6 +1262,7 @@ pub fn rebuild_from_state(
     // Sites the host engine has already rejected, so the planner stops re-deriving
     // them. See `refused_city_sites`.
     game.blocked_city_sites = state.refused_sites.clone();
+    game.blocked_improvement_sites = state.refused_improves.clone();
 
     // Identity first: city naming reads it, so this cannot wait until after the
     // cities are placed. See `apply_identity`.
@@ -1486,6 +1513,18 @@ pub fn rebuild_from_state(
         }
     }
 
+    // Barbarians go on CIVVIS's own barbarian seat rather than a rival's, so the
+    // threat is visible to the planner without inventing a civilization at war with
+    // us. Skipped silently when the roster has no barbarian seat.
+    let barbarian_seat = game.players.iter().position(|player| player.is_barbarian);
+    if let Some(barb) = barbarian_seat {
+        for unit in &state.hostiles {
+            if plant_unit(&mut game, barb, unit, &mut unmapped).is_some() {
+                placed_rival_units += 1;
+            }
+        }
+    }
+
     Reconstruction {
         game,
         unit_ids,
@@ -1603,6 +1642,9 @@ impl LiveMirror {
         self.game
             .blocked_city_sites
             .extend(state.refused_sites.iter().copied());
+        self.game
+            .blocked_improvement_sites
+            .extend(state.refused_improves.iter().copied());
         // Rivals are met as the game goes on, so identity is not a one-time job at
         // reconstruction: a civilization first seen on turn 90 arrives here.
         apply_identity(&mut self.game, state);

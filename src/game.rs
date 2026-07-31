@@ -2386,6 +2386,49 @@ mod city_name_tests {
         );
     }
 
+    /// A tile the HOST engine refused to improve must offer no improvements at all.
+    ///
+    /// The largest refusal category measured — 311 `IMPROVEMENT_MINE` refusals in one
+    /// run — because CIVVIS names improvements from its own terrain model and the two
+    /// rulesets disagree tile for tile. Gated in `valid_improvements` because that is
+    /// the single chokepoint every improvement decision passes through.
+    #[test]
+    fn a_host_refused_tile_offers_no_improvements() {
+        let mut game = Game::new(2, 24, 16, 1, 200, 0);
+        // A builder may only improve territory its own civilization holds, so the
+        // seat needs a CITY before any tile is improvable at all. `Game::new` hands
+        // out starting units, not cities, so one has to be founded here or the search
+        // below finds nothing and the test proves nothing.
+        let centre = game
+            .map
+            .tiles
+            .keys()
+            .copied()
+            .find(|pos| {
+                let tile = &game.map.tiles[pos];
+                !game.rules.is_water(tile)
+                    && game.rules.is_passable(tile)
+                    && !game.tile_is_natural_wonder(tile)
+            })
+            .expect("a standard map has open land");
+        game.place_city(0, centre, None);
+        let improvable = crate::hex::ring(centre, 1)
+            .into_iter()
+            .chain(crate::hex::ring(centre, 2))
+            .find(|pos| !game.valid_improvements(0, *pos).is_empty());
+        let Some(pos) = improvable else {
+            // Nothing to prove if no tile near the capital can be improved; say so
+            // rather than passing vacuously.
+            panic!("the ground around a capital should contain an improvable tile");
+        };
+
+        game.blocked_improvement_sites.insert(pos);
+        assert!(
+            game.valid_improvements(0, pos).is_empty(),
+            "a tile Civilization VI refused must offer nothing, or the builder loops on it"
+        );
+    }
+
     #[test]
     fn every_civilization_has_a_deep_unique_city_name_pool() {
         for civilization in CIV_NAMES {
@@ -14741,6 +14784,17 @@ pub struct Game {
     /// somewhere else.
     #[serde(default)]
     pub blocked_city_sites: BTreeSet<Pos>,
+    /// Tiles a HOST ruleset will not let a builder improve, for the same reasons and
+    /// with the same emptiness in an ordinary game as [`Game::blocked_city_sites`].
+    ///
+    /// ★★★★ The largest refusal category measured: **311 `IMPROVEMENT_MINE`
+    /// refusals in one run**, 51 and 31 in others. CIVVIS names improvements from ITS
+    /// terrain model and the two rulesets do not agree tile for tile, so a tile it
+    /// believes is a mine site simply stays bare — and because the mirror then keeps
+    /// reporting an undeveloped empire, CIVVIS orders another builder. One run ended
+    /// with seven builders alive against an army of one.
+    #[serde(default)]
+    pub blocked_improvement_sites: BTreeSet<Pos>,
     /// The turn each peace treaty runs until, keyed by signatory pair. War
     /// cannot be declared again before it expires — the shipped
     /// `DIPLOMACY_PEACE_MIN_TURNS`.
@@ -15043,6 +15097,7 @@ impl From<GameSer> for Game {
             // Not carried in a save: host refusals are rebuilt from the run's event
             // log on every reconstruction, so a stale copy would only mislead.
             blocked_city_sites: BTreeSet::new(),
+            blocked_improvement_sites: BTreeSet::new(),
             peace_treaties: s.peace_treaties.into_iter().collect(),
             wars: s.wars.into_iter().collect(),
             siege: SiegeCensus::default(),
@@ -15379,6 +15434,7 @@ impl Game {
             cities: BTreeMap::new(),
             at_war: BTreeSet::new(),
             blocked_city_sites: BTreeSet::new(),
+            blocked_improvement_sites: BTreeSet::new(),
             peace_treaties: BTreeMap::new(),
             wars: BTreeMap::new(),
             siege: SiegeCensus::default(),
@@ -32281,6 +32337,13 @@ impl Game {
     }
 
     pub fn valid_improvements(&self, pid: usize, pos: Pos) -> Vec<Name> {
+        // Ground the host engine has already refused to improve. Empty unless CIVVIS
+        // is driving one; see `blocked_improvement_sites`. Gated here because this is
+        // the single chokepoint every improvement decision passes through, so one
+        // check routes the planner around the tile everywhere at once.
+        if self.blocked_improvement_sites.contains(&pos) {
+            return vec![];
+        }
         let t = match self.map.get(pos) {
             Some(t) => t,
             None => return vec![],

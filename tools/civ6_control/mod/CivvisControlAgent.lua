@@ -3644,10 +3644,45 @@ local function exportState(player, pid, turn)
 		end
 	end
 
+	-- ★★★★★ BARBARIANS, WHICH THE RIVAL EXPORT STRUCTURALLY CANNOT SEE.
+	--
+	-- `rivals` is built from `PlayerManager.GetAliveMajorIDs()`, so barbarians are
+	-- absent by construction and can never show `at_war`. That is not a cosmetic gap:
+	-- run 233331Z lost Adrianople at t98 with loyalty 100 while "at peace" with every
+	-- civilization it had met, and the analysis of HOW cities are lost was made with
+	-- an instrument blind to the most likely culprit. `first_war = None` did not mean
+	-- nobody attacked us.
+	--
+	-- ⚠ Only units on plots this seat can SEE, the same rule the rival export uses.
+	-- A barbarian camp in the fog is not information a human has.
+	local hostiles = {};
+	pcall(function()
+		local ids = try(function() return PlayerManager.GetAliveBarbarianIDs(); end, {}) or {};
+		for _, bid in ipairs(ids) do
+			local barb = Players[bid];
+			if barb ~= nil then
+				pcall(function()
+					for _, unit in barb:GetUnits():Members() do
+						local ux, uy = unit:GetX(), unit:GetY();
+						if plotRevealed(pid, ux, uy) then
+							hostiles[#hostiles + 1] = {
+								x = ux, y = uy, player = bid,
+								type = try(function()
+									return GameInfo.Units[unit:GetUnitType()].UnitType;
+								end, "?"),
+							};
+						end
+					end
+				end);
+			end
+		end
+	end);
+
 	emit("state", {
 		turn = turn,
 		techs = techs,
 		civics = civics,
+		hostiles = hostiles,
 		gold = try(function() return math.floor(player:GetTreasury():GetGoldBalance()); end, -1),
 		faith = try(function() return math.floor(player:GetReligion():GetFaithBalance()); end, -1),
 		science = try(function() return player:GetTechs():GetScienceYield(); end, -1),
@@ -4320,6 +4355,20 @@ local function applyOrder(player, pid, row, turn)
 					and commandUnit(unit, CMD["UNITCOMMAND_AUTOMATE"], {}) then
 				return true, "IMPROVE_AUTOMATED";
 			end
+			-- ★★★★ TELL CIVVIS THE TILE IS DEAD, or it will order another builder.
+			--
+			-- All three rungs have now failed: the named improvement, any improvement,
+			-- and automation. Civilization VI is refusing the TILE, and nothing carried
+			-- that back — so CIVVIS re-derived the same target from the same board and
+			-- re-sent it. Measured: 311 `IMPROVEMENT_MINE` refusals in one run, 51 and
+			-- 31 in others, against an empire the mirror kept reporting as undeveloped,
+			-- which is precisely why it kept building builders.
+			--
+			-- Same cure as the settler loop: record the ground, let CIVVIS's own
+			-- planner route around it. See `Game::blocked_improvement_sites`.
+			emit("improve_refused", { turn = turn, unit = subject,
+			                          want = wanted or "IMPROVE",
+			                          x = unit:GetX(), y = unit:GetY() });
 			return false, wanted or "IMPROVE";
 		end
 		if verb == "UPGRADE" then
