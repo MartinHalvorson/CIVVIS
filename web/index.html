@@ -25428,10 +25428,13 @@ function drawUbar() {
   const bar = document.getElementById("ubar");
   if (!sel || SPEC) { bar.style.display = "none"; return; }
   const u = sel;
+  const linked = u.linked_to !== null && u.linked_to !== undefined;
+  const escortPeer = linked && state.units.find(candidate => candidate.id === u.linked_to);
+  const escortName = escortPeer ? titleCase(escortPeer.type) : null;
   let h = `<b>${u.type}</b> <span class="small">hp ${u.hp} · mp ${u.moves_left}` +
     (u.level > 1 ? ` · lvl ${u.level}` : "") + (u.fortified ? " · ⛨ fortified" : "") +
     (u.formation ? ` · ${formationName(u.type, u.formation)}` : "") +
-    (u.linked_to ? ` · linked #${u.linked_to}` : "") +
+    (linked ? ` · escort with ${escortName || `#${u.linked_to}`}` : "") +
     (u.religion ? ` · ${titleCase(u.religion)}` : "") +
     (u.charges ? ` · ${u.charges} charges` : "") +
     (u.obsolete ? ` · <span class="obsolete">obsolete</span>` : "") + `</span><br>`;
@@ -25475,10 +25478,14 @@ function drawUbar() {
       h += `<button class="primary" onclick='send(${JSON.stringify(a)})'>⬆ Upgrade to ${titleCase(a.to)}</button>`;
     if (a.type === "combine_units")
       h += `<button onclick='send(${JSON.stringify(a)})'>⚔ Form ${formationName(u.type, u.formation === 1 ? 2 : 1)} with #${a.unit === u.id ? a.with : a.unit}</button>`;
-    if (a.type === "link_units")
-      h += `<button onclick='send(${JSON.stringify(a)})'>🔗 Link with #${a.unit === u.id ? a.with : a.unit}</button>`;
+    if (a.type === "link_units") {
+      const peerId = a.unit === u.id ? a.with : a.unit;
+      const peer = state.units.find(candidate => candidate.id === peerId);
+      const peerName = peer ? titleCase(peer.type) : `unit #${peerId}`;
+      h += `<button title="Move together as one formation" onclick='send(${JSON.stringify(a)})'>🔗 Form escort with ${peerName}</button>`;
+    }
     if (a.type === "unlink_units")
-      h += `<button onclick='send(${JSON.stringify(a)})'>⛓ Unlink formation</button>`;
+      h += `<button title="Let each unit move independently" onclick='send(${JSON.stringify(a)})'>⛓ Unform escort${escortName ? ` with ${escortName}` : ""}</button>`;
     if (a.type === "spread")
       h += `<button onclick='send(${JSON.stringify(a)})'>☼ Spread religion</button>`;
     if (a.type === "theological_attack")
