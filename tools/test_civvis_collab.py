@@ -176,6 +176,120 @@ class HunkTests(unittest.TestCase):
         self.assertEqual(collab.colliding_paths(mine, theirs), ["a.rs"])
 
 
+class EffectSizeEvidenceTests(unittest.TestCase):
+    """The R3 gate: a number in a document must say where it came from.
+
+    The case that motivates all of this is real. `docs/GENOME.md` carried
+    "`strategic_deep` at +45 Elo" as a promoted gain; PR #482 measured -8
+    (95% CI -27..+12) over 220 maps and *excluded* it, and that refutation
+    reached a PR body and never reached the document.
+    """
+
+    #: The exact wrapping of the real defect. The figure ends one 80-column line
+    #: and its unit begins the next, which is why the check joins before matching.
+    BARE_CLAIM = [
+        "evolution. Meanwhile every promoted gain in the repository has come from",
+        "**giving the search more counterfactual rollout** — `strategic_deep` at +45",
+        "Elo, warm branches at +37.",
+    ]
+
+    def test_the_real_bare_claim_is_rejected_even_though_it_wraps(self):
+        problems = collab.unevidenced_effect_sizes({"docs/GENOME.md": self.BARE_CLAIM})
+
+        self.assertEqual(len(problems), 1)
+        self.assertIn("docs/GENOME.md", problems[0])
+        self.assertIn("no evidence beside it", problems[0])
+
+    def test_the_refutation_that_replaced_it_passes(self):
+        problems = collab.unevidenced_effect_sizes(
+            {
+                "docs/GENOME.md": [
+                    "It cited `strategic_deep` at +45 Elo and warm branches at +37.",
+                    "**#482 excludes the +45**: pooled over 220 mirrored maps on two",
+                    "disjoint seeds it measured Elo-equivalent **−8 (95% CI −27..+12)**.",
+                ]
+            }
+        )
+
+        self.assertEqual(problems, [])
+
+    def test_a_seed_alone_is_enough_provenance(self):
+        self.assertEqual(
+            collab.unevidenced_effect_sizes(
+                {"README.md": ["`advanced` measured +207 Elo-equivalent (seed 77200000)."]}
+            ),
+            [],
+        )
+
+    def test_an_explicit_discovery_estimate_marker_is_enough(self):
+        self.assertEqual(
+            collab.unevidenced_effect_sizes(
+                {"docs/EVAL.md": ["gain of +114 Elo (DISCOVERY ESTIMATE, not yet confirmed)"]}
+            ),
+            [],
+        )
+
+    def test_only_prose_documents_are_gated(self):
+        """Source and data carry Elo numbers for reasons a lint cannot judge."""
+        for path in ("src/elo.rs", "data/elo_ratings.json", "tools/x.py"):
+            self.assertEqual(
+                collab.unevidenced_effect_sizes({path: ["let promoted = +45; // Elo"]}),
+                [],
+                path,
+            )
+
+    def test_prose_without_a_figure_is_untouched(self):
+        self.assertEqual(
+            collab.unevidenced_effect_sizes(
+                {"docs/EVAL.md": ["Rollout search remains the best-supported lever."]}
+            ),
+            [],
+        )
+
+    def test_distant_evidence_does_not_launder_a_bare_claim(self):
+        """A measurement elsewhere in the same hunk is not this number's source."""
+        problems = collab.unevidenced_effect_sizes(
+            {
+                "docs/EVAL.md": [
+                    "The prophet-first arm measured +12 over 120 maps on seed 4100.",
+                    "x" * (collab.EVIDENCE_WINDOW_CHARS + 80),
+                    "Search is worth +45 Elo.",
+                ]
+            }
+        )
+
+        self.assertEqual(len(problems), 1)
+        self.assertIn("+45 Elo", problems[0])
+
+    def test_added_lines_are_read_from_the_patch_without_the_file_header(self):
+        patch = "@@ -1,2 +1,3 @@\n context\n-gone\n+kept\n+also kept\n"
+
+        self.assertEqual(collab.patch_added_lines(patch), ["kept", "also kept"])
+        self.assertEqual(
+            collab.patch_added_lines("+++ b/docs/EVAL.md\n+real line\n"), ["real line"]
+        )
+
+    def test_the_gate_runs_inside_validate_pr(self):
+        pr = {
+            "number": 700,
+            "headRefName": "agent/m1/a1/task-20260731T000000Z-abcd",
+            "body": (
+                "- Machine ID: `m1`\n- Agent/session ID: `a1`\n- Task: t\n"
+                "- Claimed paths: `docs/GENOME.md`\n- Coordinated with: none\n"
+            ),
+            "isDraft": False,
+        }
+
+        errors = collab.validate_pr(
+            pr,
+            files=["docs/GENOME.md"],
+            commit_subjects=["doc"],
+            added_lines={"docs/GENOME.md": self.BARE_CLAIM},
+        )
+
+        self.assertTrue(any("no evidence beside it" in error for error in errors), errors)
+
+
 class PolicyTests(unittest.TestCase):
     branch = "agent/render-win-02/codex-47/government-cleanup-20260723T210500Z-a31f"
 
