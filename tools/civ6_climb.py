@@ -160,7 +160,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--window-side", default="left")
     ap.add_argument("--window-frac", type=float, default=0.5)
     ap.add_argument("--window-vfrac", type=float, default=1.0)
-    ap.add_argument("--map-size", default="MAPSIZE_DUEL")
+    # Six players, because the size IS the player count — see `civ6_play.py`.
+    ap.add_argument("--map-size", default="MAPSIZE_SMALL")
     ap.add_argument("--speed", default="GAMESPEED_ONLINE")
     ap.add_argument("--max-turns", type=int, default=120)
     ap.add_argument("--timeout", type=float, default=7200.0)

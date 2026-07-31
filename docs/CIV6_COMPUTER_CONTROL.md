@@ -347,6 +347,47 @@ frame rate a loaded machine was managing, not drift.
   `GameInfo.UnitOperations` / `GameInfo.UnitCommands` and their resolution is
   reported at startup.
 
+## The lobby a run sets up
+
+**The map size IS the player count.** There is no separate player-count control on
+the Create Game screen for the harness to set, and Civilization VI derives both the
+majors and the city-states from the size. Straight from the shipped `Maps` table
+(`Cache/DebugGameplay.sqlite`):
+
+| `MapSizeType` | `DefaultPlayers` | grid |
+|---|---|---|
+| `MAPSIZE_DUEL` | 2 | 44×26 |
+| `MAPSIZE_TINY` | 4 | 60×38 |
+| **`MAPSIZE_SMALL`** | **6** | **74×46** |
+| `MAPSIZE_STANDARD` | 8 | 84×54 |
+
+74×46 is also the board CIVVIS' own exhibition and league games run on, so a Small
+Civilization VI game and a CIVVIS game are the same size.
+
+`docs/COMPETITIVE.md` pins the competitive lobby CIVVIS aims at, and its size line
+is *"Firaxis-default map size and city-states for the player count"*. So a six-player
+game is `MAPSIZE_SMALL`, and that is the default for `civ6_play.py`,
+`civ6_civvis_climb.py` and `civ6_climb.py`. Duel and Tiny were measuring two- and
+four-player games against rules written for six.
+
+| setting | value | why |
+|---|---|---|
+| map size | `MAPSIZE_SMALL` | six majors, Firaxis-default city-states |
+| speed | `GAMESPEED_ONLINE` | the competitive lobby's speed |
+| start era | Ancient | the competitive lobby's start |
+| game modes | none | the competitive lobby disables all of them |
+
+⚠ **`MapScript` in the baked config is ignored** — the FrontEnd context that would
+read it never loads, so every game is whatever the Create Game screen defaults to.
+Selecting the map on-screen was tried and reverted; see the comment in
+`configure_and_start`.
+
+**None of this is assumed.** The `seat` event reports the difficulty, size, speed
+and player count the game actually generated, read from inside it, and `configured`
+is false unless they match what the run asked for — so a misclick on the setup
+screen shows up as a run that says so rather than as a Small result recorded under a
+Duel heading.
+
 ## The ladder
 
 `tools/civ6_ladder.py` holds the record. A rung is claimed only by a victory
