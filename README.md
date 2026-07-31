@@ -15,12 +15,14 @@ Quick demo:
 -----------------------------------------------------------------------------
 
 <!-- BEGIN CIV6 LEADER STRATEGY RANKING -->
-## Best strategy for every Civilization VI civilization
+## Which strategy suits which civilization, where the evidence says so
 
-League round **3143**. This is the canonical 50-civilization Civ VI roster; CIVVIS's
-expanded historical roster is intentionally excluded. For each current
-leader/civilization pair, the table selects the active strategy with the highest settled
-leader-specific Elo.
+League round **60**, over the canonical 50-civilization Civ VI roster. A pair is listed
+only when the leading strategy's conservative outright-win bound clears the optimistic
+bound of every rival — the same lower-1.96σ Wilson bound the league itself selects
+parents, retirement and live seating on. **0 of 50 pairs meet that bar.** The rest are
+reported as coverage rather than ranked, because on this evidence they have no best
+strategy.
 
 Refresh after the live league changes:
 
@@ -28,102 +30,75 @@ Refresh after the live league changes:
 
 Add `--check` to verify without writing.
 
-| Rank | Civilization | Leader | Best active strategy | Elo (±RD) | Games |
-|---:|---|---|---|---:|---:|
-| 1 | Gaul | Ambiorix | `winbred-1` (WinBred) | 1976.8 (±72.7) | 34 |
-| 2 | Khmer | Jayavarman VII | `g28-28` (Opportunist3) | 1976.5 (±73.6) | 33 |
-| 3 | Maori | Kupe | `g60-52` (JackKnife2) | 1976.3 (±79.6) | 22 |
-| 4 | Babylon | Hammurabi | `g56-50` (WildCard10) | 1959.4 (±82.6) | 22 |
-| 5 | Sweden | Kristina | `g56-50` (WildCard10) | 1949.8 (±115.0) | 8 |
-| 6 | Indonesia | Gitarja | `g20-21` (Maverick2) | 1941.3 (±70.3) | 35 |
-| 7 | Korea | Seondeok | `advanced` (JackOfAllTrades) | 1938.3 (±69.7) | 38 |
-| 8 | Australia | John Curtin | `deck-legacy` (CardShark) | 1938.2 (±67.2) | 45 |
-| 9 | Scythia | Tomyris | `g28-28` (Opportunist3) | 1935.8 (±95.1) | 13 |
-| 10 | Canada | Wilfrid Laurier | `g20-21` (Maverick2) | 1935.8 (±87.7) | 17 |
-| 11 | Brazil | Pedro II | `g48-43` (WildCard6) | 1926.7 (±65.1) | 58 |
-| 12 | Byzantium | Basil II | `advanced_v1` (OldGuard) | 1924.5 (±65.4) | 65 |
-| 13 | Germany | Frederick Barbarossa | `deck-legacy` (CardShark) | 1917.9 (±65.1) | 49 |
-| 14 | Kongo | Mvemba a Nzinga | `winbred-1` (WinBred) | 1915.4 (±103.5) | 10 |
-| 15 | Scotland | Robert the Bruce | `g48-44` (FreeSpirit6) | 1913.7 (±67.9) | 48 |
-| 16 | France | Catherine de Medici | `g20-21` (Maverick2) | 1912.1 (±65.8) | 57 |
-| 17 | Cree | Poundmaker | `g48-44` (FreeSpirit6) | 1909.0 (±78.0) | 23 |
-| 18 | Mali | Mansa Musa | `g60-52` (JackKnife2) | 1906.2 (±63.0) | 65 |
-| 19 | Russia | Peter | `deck-legacy` (CardShark) | 1904.5 (±82.2) | 19 |
-| 20 | Vietnam | Ba Trieu | `advanced` (JackOfAllTrades) | 1896.8 (±64.0) | 72 |
-| 21 | Poland | Jadwiga | `g60-53` (DarkHorse7) | 1888.7 (±63.7) | 57 |
-| 22 | Ottomans | Suleiman | `g44-41` (JackKnife) | 1888.5 (±76.9) | 24 |
-| 23 | Maya | Lady Six Sky | `g48-44` (FreeSpirit6) | 1887.9 (±67.0) | 48 |
-| 24 | Inca | Pachacuti | `advanced_v1` (OldGuard) | 1886.7 (±72.2) | 31 |
-| 25 | China | Qin Shi Huang | `g60-52` (JackKnife2) | 1883.2 (±68.3) | 38 |
-| 26 | Phoenicia | Dido | `deck-legacy` (CardShark) | 1882.6 (±87.3) | 16 |
-| 27 | Spain | Philip II | `g44-41` (JackKnife) | 1876.0 (±71.8) | 32 |
-| 28 | Mongolia | Genghis Khan | `g56-50` (WildCard10) | 1874.2 (±63.0) | 74 |
-| 29 | India | Gandhi | `g44-41` (JackKnife) | 1873.9 (±68.4) | 39 |
-| 30 | Rome | Trajan | `winbred-1` (WinBred) | 1871.9 (±63.1) | 60 |
-| 31 | America | Abraham Lincoln | `g60-52` (JackKnife2) | 1869.9 (±63.0) | 61 |
-| 32 | Aztec | Montezuma | `winbred-1` (WinBred) | 1868.5 (±65.5) | 45 |
-| 33 | Gran Colombia | Simón Bolívar | `g48-43` (WildCard6) | 1867.0 (±66.9) | 44 |
-| 34 | Japan | Hojo Tokimune | `advanced` (JackOfAllTrades) | 1866.7 (±63.5) | 80 |
-| 35 | Greece | Pericles | `g20-21` (Maverick2) | 1866.6 (±60.9) | 114 |
-| 36 | Portugal | João III | `g56-50` (WildCard10) | 1865.5 (±84.3) | 18 |
-| 37 | Zulu | Shaka | `basic` (TrainingWheels) | 1863.0 (±74.9) | 26 |
-| 38 | Arabia | Saladin | `g20-21` (Maverick2) | 1862.9 (±74.7) | 28 |
-| 39 | Sumeria | Gilgamesh | `g44-41` (JackKnife) | 1861.8 (±62.7) | 485 |
-| 40 | Mapuche | Lautaro | `winbred-1` (WinBred) | 1856.1 (±67.6) | 38 |
-| 41 | Georgia | Tamar | `g60-52` (JackKnife2) | 1853.9 (±62.3) | 68 |
-| 42 | England | Victoria | `g28-28` (Opportunist3) | 1852.2 (±65.3) | 57 |
-| 43 | Macedon | Alexander | `g60-52` (JackKnife2) | 1848.1 (±74.5) | 26 |
-| 44 | Ethiopia | Menelik II | `g44-41` (JackKnife) | 1847.3 (±76.2) | 25 |
-| 45 | Norway | Harald Hardrada | `winbred-1` (WinBred) | 1843.6 (±67.0) | 40 |
-| 46 | Netherlands | Wilhelmina | `g60-52` (JackKnife2) | 1833.5 (±73.4) | 30 |
-| 47 | Egypt | Cleopatra | `deck-legacy` (CardShark) | 1833.5 (±66.1) | 43 |
-| 48 | Nubia | Amanitore | `g44-41` (JackKnife) | 1832.9 (±63.2) | 68 |
-| 49 | Hungary | Matthias Corvinus | `deck-legacy` (CardShark) | 1819.7 (±67.2) | 40 |
-| 50 | Persia | Cyrus | `g28-28` (Opportunist3) | 1812.1 (±70.2) | 37 |
+No leader/civilization pair separates at this round. Nothing is ranked.
 
-A strategy needs at least 5 games with that exact pair to qualify. “Elo” is the UI name
-for the league's leader/civilization-specific Glicko-2 rating; it only compares
-strategies inside CIVVIS.
+### All 50 pairs: what the league has, and what it would take
+
+These are unresolved, not tied. Where two or more strategies have been rated on a pair,
+the leading one is shown with its actual record so the gap between the evidence and the
+claim stays visible — none of them separates from its own runner-up, so naming one would
+report who has been seated, not what suits the civilization.
+
+| Civilization | Leader | Candidates | Games | Leading strategy | Its record |
+|---|---|---:|---:|---|---:|
+| China | Qin Shi Huang | 8 | 325 | `g20-21` | 32/70 |
+| Egypt | Cleopatra | 9 | 321 | `g28-28` | 16/43 |
+| Greece | Pericles | 9 | 316 | `g48-44` | 8/17 |
+| Rome | Trajan | 8 | 301 | `g20-21` | 24/46 |
+
+The remaining **46 of 50** pairs have no strategy with 5 games in this snapshot, so
+there is nothing to rank and nothing to contest: America (Abraham Lincoln), Arabia
+(Saladin), Australia (John Curtin), Aztec (Montezuma), Babylon (Hammurabi), Brazil
+(Pedro II), Byzantium (Basil II), Canada (Wilfrid Laurier), Cree (Poundmaker), England
+(Victoria), Ethiopia (Menelik II), France (Catherine de Medici), Gaul (Ambiorix),
+Georgia (Tamar), Germany (Frederick Barbarossa), Gran Colombia (Simón Bolívar), Hungary
+(Matthias Corvinus), Inca (Pachacuti), India (Gandhi), Indonesia (Gitarja), Japan (Hojo
+Tokimune), Khmer (Jayavarman VII), Kongo (Mvemba a Nzinga), Korea (Seondeok), Macedon
+(Alexander), Mali (Mansa Musa), Maori (Kupe), Mapuche (Lautaro), Maya (Lady Six Sky),
+Mongolia (Genghis Khan), Netherlands (Wilhelmina), Norway (Harald Hardrada), Nubia
+(Amanitore), Ottomans (Suleiman), Persia (Cyrus), Phoenicia (Dido), Poland (Jadwiga),
+Portugal (João III), Russia (Peter), Scotland (Robert the Bruce), Scythia (Tomyris),
+Spain (Philip II), Sumeria (Gilgamesh), Sweden (Kristina), Vietnam (Ba Trieu), Zulu
+(Shaka).
+
+A strategy needs at least 5 games with that exact pair to qualify. The league's Glicko
+rating is deliberately not shown: it orders matchmaking, not strength, and ranking on it
+named a different strategy in 23 of 50 pairs while separating in none of them. See
+`docs/EVAL_INTEGRITY.md` §5.
 <!-- END CIV6 LEADER STRATEGY RANKING -->
 
-**How to read that table: it is a leaderboard of who has been seated, not
-evidence that a strategy suits a civilization.** Three independent checks on
-the round-3143 league say so.
+**Why so little is ranked.** Until 2026-07-31 this table printed all 50 rows
+ordered by “Elo”, which is the league's *placement* Glicko. That was the wrong
+statistic and it was not a close call. The league's own selection contract
+abandoned placement — it orders parents, retirement and live seating by
+conservative outright-win bounds — because placement compresses who actually
+wins. Over the 14 active strategies with 400+ games the two orderings agree at
+Spearman ρ = 0.31, and on the live round-3205 league they name a **different
+strategy in 23 of the 50 pairs**.
 
-1. **It ranks on the wrong statistic.** “Elo” here is the league's *placement*
-   Glicko, and the league's own selection contract stopped using placement —
-   it orders parents, retirement and live seating by conservative outright-win
-   bounds instead. Over the 14 active strategies with 400+ games the two
-   orderings agree at only Spearman ρ = 0.31. Ranked by placement, `basic` —
-   the cheap controller written for city-states and barbarians — comes **8th
-   of 14, ahead of five strategies bred to beat it**, and `advanced_v1` comes
-   last. Ranked by the win bound the league actually uses, `basic` is last
-   where it belongs and `advanced_v1` is 3rd.
-2. **No row separates.** Over the 52 qualifying leader/civilization pairs the
-   printed strategy leads the runner-up by a mean of 34.7 Glicko points against
-   a mean pooled deviation of 104.2 — |z| > 1.96 on **0 of 52** pairs. Even the
-   widest comparison the table admits, rank 1 against rank 50, is z = 1.6.
-   Dropping Glicko's assumptions entirely and running a Fisher exact test on
-   the raw win counts of each pair's top two gives the same answer: **0 of 52**
-   at p < 0.05, smallest p = 0.088, before any correction for 52 tests.
-3. **The apparent lift is selection.** Each row is a max over ~7 candidates. A
-   null model in which every strategy is equally strong for every civilization
-   and only the deviations are real produces a larger winner's lift (+119
-   Glicko points) than the table actually shows (+92).
+One row showed the whole failure. For Cleopatra the placement table printed
+`deck-legacy`, which had won **8 of 43** games with that pair (18.6%); the win
+bound prints `g28-28`, which had won **230 of 625** (37.0%). The shipped table
+named a strategy that wins at half the rate, on a twentieth of the evidence,
+and called it Egypt's best. The strategy it ranked first overall, `winbred-1`,
+had won 15.8% of its 530 league games against stock `advanced`'s 21.5% of 2049
+— significantly *worse* (p = 0.004).
 
-What that costs in practice: the strategy the table ranks **first**,
-`winbred-1`, has won 15.8% of its 530 league games against stock `advanced`'s
-21.5% of 2049 — significantly *worse* (p = 0.004). Of the 12 bred genomes
-seated in that league, 2 beat stock `advanced` on outright wins and **9 lose
-to it significantly**. Ranking on placement is how a strategy that wins less
-often reaches the top of a table headed “best strategy”. (League seating is
-not randomised across entrants, so these comparisons are observational; but
-that one rests on 2,579 games, at the profiles the project actually runs.)
+So the table now ranks on the bound the league selects on, and prints a row
+only where that bound actually separates the leader from every rival. On the
+committed round-60 snapshot nothing separates, which is the honest answer for
+960 games spread across 50 pairs. On the live round-3205 league exactly **one**
+pair separates: Rome/Trajan → `advanced_v1`, 161/314, bound 0.458 — and that is
+a *baseline*, not one of the bred genomes. Everything else is reported as
+coverage, with the leading strategy's real record beside it, so the distance
+between the evidence and the claim stays visible.
 
-The table is also only reproducible on a machine that has been running the
-league: `/league/` is gitignored, the committed snapshot in `data/league/` is
-round 60 and covers 4 of the 50 pairs, and the refresh command exits 2 on a
-fresh clone.
+That also makes the table reproducible from the repository for the first time.
+It is generated from the committed `data/league/` snapshot, so
+`python3 tools/update_readme_rankings.py --check` passes on a fresh clone;
+previously `/league/` was gitignored and the refresh command exited 2.
+
+Design and rationale: `docs/EVAL_INTEGRITY.md` §5.
 
 ## How CivVis uses AI
 

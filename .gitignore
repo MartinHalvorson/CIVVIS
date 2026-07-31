@@ -13,6 +13,7 @@ target-tools/
 bin-run/
 exhibition-supervisor.log
 tools/__pycache__/
+tools/*/__pycache__/
 
 # A published build is assembled, never committed: it is 6MB of engine plus a
 # copy of the viewer, all of it reproducible from the revision it names.

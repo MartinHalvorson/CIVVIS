@@ -353,6 +353,39 @@ give confirmations for the four rows above.
 This costs one extra run per promoted change and buys numbers that mean what
 they say.
 
+### Implemented 2026-07-31 — the docs rule, enforced
+
+Fix (3) — the mechanical check — is in `tools/civvis_collab.py check-pr`, which
+already runs on every PR. `unevidenced_effect_sizes` reads the **added** lines of
+any `docs/**.md` or `README.md` in the diff and rejects an Elo-equivalent figure
+that has no provenance beside it: a seed, an interval, a map/pair/game count, the
+PR it was measured in, a p-value, or an explicit `DISCOVERY ESTIMATE` marker.
+
+Two design points, both learned from the instance it exists to catch:
+
+- **It joins before matching.** These documents wrap at 80 columns, and the real
+  defect put the figure at the end of one line (`… at +45`) and its unit at the
+  start of the next (`Elo, warm branches …`). A per-line scan sees neither half.
+- **The window is bounded** (`EVIDENCE_WINDOW_CHARS`, 320). Wide enough to reach
+  the sentence that sources the number, narrow enough that an unrelated
+  measurement elsewhere in the same hunk cannot launder a bare claim.
+
+Validated against the real before/after rather than invented fixtures: the gate
+**rejects** `docs/GENOME.md` as it read before #662, and **passes** the
+refutation that replaced it. Swept over the last 40 commits, 2 of the 30 that
+touch `docs/`/`README.md` would have been flagged — and both are effect-size
+claims of exactly this class, one of them the `+207` that later re-measured
+to +86.
+
+Note what it does **not** do. It cannot tell a discovery estimate from a
+confirmed one, because that distinction lives in how the run was commissioned
+rather than in the text. Fixes (1) and (2) — `ai_eval` labelling a gate-passing
+size as a `DISCOVERY ESTIMATE`, and a `--confirm <prior-seed>` mode — are the
+half that has to happen in the evaluator, and they are **not** done. They belong
+in `src/bin/ai_eval.rs`, which PR #679 holds; whoever picks them up should read
+the `EVIDENCE_RE` escape list first, so the string the tool prints is one the
+gate already accepts.
+
 ---
 
 ## 5. R4 — a display artifact bound to neither source nor semantics
@@ -417,6 +450,43 @@ Switching the statistic is therefore not a cosmetic change — it is most of the
 table. That it changes half the rows is also the clearest possible argument for
 fix (1): as long as two orderings are equally reachable, a rendering script
 will keep reaching for whichever is one float per pair.
+
+### Implemented 2026-07-31 — one strength accessor, and the bar applied
+
+All three fixes landed together in PR #678.
+
+**(1) One ordering key.** `Strategy::strength_bound()` and
+`CivRating::strength_bound()` / `strength_ceiling()` are the only public
+"which is better" accessors. Both `rating` fields now carry a doc comment
+marking them **matchmaking only** and pointing at the bound. The field is not
+renamed: the serde name is the on-disk league format and every committed
+snapshot would break, which buys nothing the doc comment does not.
+
+**(2) Reproducible or it does not ship.** `update_readme_rankings.py` no longer
+raises when a pair has no settled rating — it reports that pair as coverage.
+The table is therefore generated from the committed `data/league/` snapshot and
+`--check` **passes on a fresh clone**, where it previously exited 2. The
+snapshot is deliberately left at round 60: refreshing it changes what every
+checkout seats, which is a separate decision from how the README ranks.
+
+**(3) The bar, applied.** A pair is printed only when the leader's
+`strength_bound` clears the `strength_ceiling` of every rival. On the committed
+round-60 snapshot that is **0 of 50**; on the live round-3205 league it is
+**1 of 50** — Rome/Trajan → `advanced_v1`, 161/314, bound 0.458, which is a
+*baseline* rather than one of the bred genomes. The other 49 are printed as a
+coverage table carrying each leader's real record.
+
+Re-measured on round 3205, the two statistics name a different strategy in
+**23 of 50** pairs, reproducing the 26-of-52 finding at round 3143.
+
+The drift risk this creates is that the bound now has two implementations —
+Rust for selection, Python for rendering, because the tool emits Markdown and
+cannot call in. That is the R1 shape, so it is pinned rather than commented:
+`SELECTION_Z` is *parsed out of* `src/league.rs` by the tool, and a shared
+golden table of six `(wins, games) -> (lower, upper)` triples is asserted on
+both sides — `civ_rating_strength_bound_matches_the_readme_tool` in
+`src/league.rs` and `GOLDEN_BOUNDS` in `tools/test_update_readme_rankings.py`.
+If either formula moves, exactly one side fails and names the other.
 
 ---
 
@@ -527,8 +597,8 @@ trusting anything measured afterwards.
 | 0 | Correct `docs/GENOME.md`'s standing “`strategic_deep` at +45 Elo”, which #482 excluded | R3 corollary | one edit |
 | 1 | **Landed:** typed `ArmKind` / `AgentSpec` boundary, spec-based collapse check, factory and plays-as-typed-spec tests | R1 — both defects | PR #674, `src/elo.rs` |
 | 2 | Fallible strict `builtin_ai`; explicit degraded entry point | R2 | ~half a day |
-| 3 | Discovery-vs-confirmed effect sizes in `ai_eval`; the docs rule | R3 | ~half a day |
-| 4 | `strength_bound()` as the only ordering; table reproducible or gone | R4 | ~half a day |
+| 3 | **Half landed:** the docs rule is enforced in `check-pr` (PR #685); `ai_eval` labelling and `--confirm` remain | R3 | ~half a day left |
+| 4 | **Landed:** `strength_bound()` as the only ordering; separation bar applied; table reproducible from the committed snapshot | R4 | PR #678 |
 | 5 | Arm lifecycle: `EvalArm` with evidence + status, CI check that the section exists | §7 | falls out of 1 |
 | 6 | Restate the eight two-axis comparisons in §8 against matched controls | fallout of 1 and 3 | ~a day of compute |
 | 7 | Deployment-profile decision on seating search | §6 | compute, largest |

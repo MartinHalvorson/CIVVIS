@@ -82,11 +82,51 @@ pub enum StrategyKind {
 /// Glicko state of one player using one leader/civilization combination.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct CivRating {
+    /// ⚠ MATCHMAKING ONLY. This is the *placement* Glicko: it predicts finishing
+    /// order, which is what pairing needs. It is **not** the strength ordering
+    /// and must never answer a "which strategy is better" question — the league's
+    /// own selection contract abandoned placement for outright-win bounds because
+    /// placement compresses who actually wins. Use [`CivRating::strength_bound`].
+    ///
+    /// Ranking on this field instead of the bound named a different strategy in
+    /// 23 of 50 qualifying pairs at round 3205, and separated in none of them.
+    /// See `docs/EVAL_INTEGRITY.md` §5.
     pub rating: f64,
     pub rd: f64,
     pub vol: f64,
     pub games: u32,
     pub wins: u32,
+}
+
+impl CivRating {
+    /// The ordering key for "which strategy is better with this leader/civ".
+    ///
+    /// The conservative (lower) Wilson bound on outright wins, at the same
+    /// `SELECTION_Z` the league selects parents, retirement and live seating on.
+    /// One accessor so ranking code cannot reach for the wrong statistic; a pair
+    /// with no games sorts last rather than pretending to a rate.
+    pub fn strength_bound(&self) -> f64 {
+        win_confidence(
+            WinEvidence {
+                wins: self.wins,
+                games: self.games,
+            },
+            false,
+        )
+    }
+
+    /// The optimistic end of the same interval. A leader is only better than a
+    /// rival when its `strength_bound` clears the rival's `strength_ceiling`;
+    /// comparing point estimates is what let 8/43 outrank 230/622.
+    pub fn strength_ceiling(&self) -> f64 {
+        win_confidence(
+            WinEvidence {
+                wins: self.wins,
+                games: self.games,
+            },
+            true,
+        )
+    }
 }
 
 impl Default for CivRating {
@@ -159,6 +199,9 @@ pub struct Strategy {
     #[serde(default)]
     pub username: String,
     pub kind: StrategyKind,
+    /// ⚠ MATCHMAKING ONLY — see [`CivRating::rating`]. This is the placement
+    /// Glicko. For "which strategy is stronger", use
+    /// [`Strategy::strength_bound`], which is what selection already uses.
     pub rating: f64,
     pub rd: f64,
     pub vol: f64,
@@ -208,6 +251,17 @@ pub struct Strategy {
 }
 
 impl Strategy {
+    /// The ordering key for any "which strategy is better" question.
+    ///
+    /// The conservative Wilson bound on outright wins — the statistic selection,
+    /// retirement and live seating already order on. `rating` is the placement
+    /// Glicko and orders matchmaking only; the two agree at Spearman ρ = 0.31.
+    /// Exposing one strength accessor is what stops a rendering script reaching
+    /// for whichever number is a single float per row.
+    pub fn strength_bound(&self) -> f64 {
+        win_lower_confidence(self)
+    }
+
     /// A fresh entrant at the base rating with no history behind it.
     pub fn new(name: &str, kind: StrategyKind, born_round: u32) -> Strategy {
         Strategy {
@@ -4173,6 +4227,64 @@ mod tests {
         assert_eq!(child.rd, BASE_RD);
         // roster trimmed back to cap (retirees had games and low rd)
         assert!(league.active().len() <= cfg.max_pop.max(7));
+    }
+
+    /// The README's ranking tool reimplements this bound in Python, because it
+    /// renders Markdown and cannot call in here. Two implementations of one
+    /// statistic is exactly the R1 shape that produced the audit's defects, so
+    /// the drift is pinned by a shared golden table rather than by a comment.
+    ///
+    /// The identical values are asserted by `GOLDEN_BOUNDS` in
+    /// `tools/test_update_readme_rankings.py`. If either formula changes, exactly
+    /// one side of the pair fails and names the other.
+    #[test]
+    fn civ_rating_strength_bound_matches_the_readme_tool() {
+        // (wins, games, lower, upper)
+        let golden: [(u32, u32, f64, f64); 6] = [
+            (0, 5, 0.0, 0.434_491_494_752_081_04),
+            (1, 6, 0.030_052_585_871_730_285, 0.563_509_436_563_646_05),
+            (3, 27, 0.038_519_647_894_987_241, 0.280_581_825_439_729_48),
+            (161, 314, 0.457_633_149_634_529_78, 0.567_536_620_464_790_14),
+            (230, 625, 0.331_104_141_281_536_26, 0.406_508_637_516_812_99),
+            (8, 43, 0.097_416_355_801_059_812, 0.326_172_932_353_059_61),
+        ];
+        for (wins, games, lower, upper) in golden {
+            let rating = CivRating {
+                wins,
+                games,
+                ..CivRating::default()
+            };
+            assert!(
+                (rating.strength_bound() - lower).abs() < 1e-12,
+                "{wins}/{games} lower bound {} != {lower}",
+                rating.strength_bound(),
+            );
+            assert!(
+                (rating.strength_ceiling() - upper).abs() < 1e-12,
+                "{wins}/{games} upper bound {} != {upper}",
+                rating.strength_ceiling(),
+            );
+        }
+    }
+
+    /// The inversion the ranking change exists to prevent: a strategy can carry a
+    /// far higher placement rating and still be the weaker one on outright wins.
+    #[test]
+    fn placement_rating_and_strength_bound_can_disagree_completely() {
+        let plodder = CivRating {
+            rating: 2900.0,
+            wins: 5,
+            games: 100,
+            ..CivRating::default()
+        };
+        let runaway = CivRating {
+            rating: 1500.0,
+            wins: 90,
+            games: 100,
+            ..CivRating::default()
+        };
+        assert!(plodder.rating > runaway.rating);
+        assert!(runaway.strength_bound() > plodder.strength_ceiling());
     }
 
     #[test]
