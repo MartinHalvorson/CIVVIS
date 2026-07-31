@@ -1,50 +1,230 @@
 {
-  "optimus_princeps": {
-    "name": "Optimus Princeps",
-    "description": "Tries to include as much territory as possible in their empire. Does not like civilizations who control little territory.",
-    "measure": "territory",
-    "approves_of": "more"
-  },
-  "queen_of_the_nile": {
-    "name": "Queen of the Nile",
-    "description": "Likes civilizations with powerful armies. Dislikes civilizations with weak ones.",
-    "measure": "military",
-    "approves_of": "more"
-  },
-  "delian_league": {
-    "name": "Delian League",
-    "description": "Likes civilizations that aren't competing for the same city-state allegiance. Dislikes civilizations that are directly competing for city-state allegiance.",
-    "measure": "city_state_rivalry",
-    "approves_of": "less"
-  },
-  "wonder_obsessed": {
-    "name": "Wonder Obsessed",
-    "description": "Likes civilizations not competing for wonders, and builds wonders whenever possible. Dislikes losing a wonder to another civilization.",
-    "measure": "wonders",
-    "approves_of": "less"
-  },
-  "ally_of_enkidu": {
-    "name": "Ally of Enkidu",
-    "description": "Likes civilizations who are willing to form a long-term alliance. Dislikes anyone denouncing or attacking his friends and allies.",
-    "measure": "loyalty_to_friends",
-    "approves_of": "more"
-  },
-  "tlatoani": {
-    "name": "Tlatoani",
-    "description": "Likes civilizations who have the same Luxury resources as he does, and will try to collect every Luxury resource available. Dislikes civilizations who have a new Luxury resource he has not yet collected.",
-    "measure": "shared_luxuries",
-    "approves_of": "more"
-  },
-  "city_planner": {
-    "name": "City Planner",
-    "description": "Always tries to keep the maximum number of districts in each city. Respects other civilizations who also develop their cities in this fashion.",
-    "measure": "districts_per_city",
-    "approves_of": "more"
-  },
-  "backstab_averse": {
-    "name": "Backstab Averse",
-    "description": "Likes civilizations who are their declared friend. Hates civilizations who backstab and declare surprise wars.",
-    "measure": "trustworthiness",
-    "approves_of": "more"
-  }
+ "optimus_princeps": {
+  "name": "Optimus Princeps",
+  "description": "Tries to include as much territory as possible in their empire. Does not like civilizations who control little territory.",
+  "measure": "territory",
+  "approves_of": "more"
+ },
+ "queen_of_the_nile": {
+  "name": "Queen of the Nile",
+  "description": "Likes civilizations with powerful armies. Dislikes civilizations with weak ones.",
+  "measure": "military",
+  "approves_of": "more"
+ },
+ "delian_league": {
+  "name": "Delian League",
+  "description": "Likes civilizations that aren't competing for the same city-state allegiance. Dislikes civilizations that are directly competing for city-state allegiance.",
+  "measure": "city_state_rivalry",
+  "approves_of": "less"
+ },
+ "wonder_obsessed": {
+  "name": "Wonder Obsessed",
+  "description": "Likes civilizations not competing for wonders, and builds wonders whenever possible. Dislikes losing a wonder to another civilization.",
+  "measure": "wonders",
+  "approves_of": "less"
+ },
+ "ally_of_enkidu": {
+  "name": "Ally of Enkidu",
+  "description": "Likes civilizations who are willing to form a long-term alliance. Dislikes anyone denouncing or attacking his friends and allies.",
+  "measure": "loyalty_to_friends",
+  "approves_of": "more"
+ },
+ "tlatoani": {
+  "name": "Tlatoani",
+  "description": "Likes civilizations who have the same Luxury resources as he does, and will try to collect every Luxury resource available. Dislikes civilizations who have a new Luxury resource he has not yet collected.",
+  "measure": "shared_luxuries",
+  "approves_of": "more"
+ },
+ "city_planner": {
+  "name": "City Planner",
+  "description": "Always tries to keep the maximum number of districts in each city. Respects other civilizations who also develop their cities in this fashion.",
+  "measure": "districts_per_city",
+  "approves_of": "more"
+ },
+ "backstab_averse": {
+  "name": "Backstab Averse",
+  "description": "Likes civilizations who are their declared friend. Hates civilizations who backstab and declare surprise wars.",
+  "measure": "trustworthiness",
+  "approves_of": "more"
+ },
+ "iron_crown": {
+  "name": "Iron Crown",
+  "description": "Believes city-states belong under the crown, not courted. Dislikes civilizations that make themselves Suzerain of them.",
+  "measure": "city_state_suzerainties",
+  "approves_of": "less"
+ },
+ "cheomseongdae": {
+  "name": "Cheomseongdae",
+  "description": "Pursues the stars and the sciences. Admires civilizations with a strong Science output and thinks little of those without one.",
+  "measure": "science",
+  "approves_of": "more"
+ },
+ "westernizer": {
+  "name": "Westernizer",
+  "description": "Looks west for what he lacks. Friendly toward civilizations ahead of him in Science and Culture, and dislikes those that have fallen behind.",
+  "measure": "science",
+  "approves_of": "more"
+ },
+ "horn_chest_loins": {
+  "name": "Horn, Chest, Loins",
+  "description": "Fights in formations and expects others to. Respects civilizations that field Corps and Armies, and thinks little of those that do not.",
+  "measure": "formations",
+  "approves_of": "more"
+ },
+ "solitary": {
+  "name": "Solitary",
+  "description": "Keeps her cities close and her neighbours far. Approves of civilizations that settle at a distance and resents those that crowd her.",
+  "measure": "territory",
+  "approves_of": "less"
+ },
+ "scourge_of_rome": {
+  "name": "Scourge of Rome",
+  "description": "Counts a civilization by the men it can field. Respects large armies and holds small ones in contempt.",
+  "measure": "military",
+  "approves_of": "more"
+ },
+ "lord_of_the_mines": {
+  "name": "Lord of the Mines",
+  "description": "Measures a civilization by its treasury. Respects those who make Gold and thinks little of those who do not.",
+  "measure": "gold",
+  "approves_of": "more"
+ },
+ "sicilian_wars": {
+  "name": "Sicilian Wars",
+  "description": "Wants the coast to herself. Approves of civilizations that keep to the interior and resents those that crowd the shore.",
+  "measure": "territory",
+  "approves_of": "less"
+ },
+ "sun_never_sets": {
+  "name": "Sun Never Sets",
+  "description": "Means to plant a flag on every shore. Warms to civilizations that share her continent and cools toward those on continents where England has no city.",
+  "measure": "territory",
+  "approves_of": "more"
+ },
+ "divine_guardian": {
+  "name": "Divine Guardian",
+  "description": "Counts the faithful. Favours civilizations that follow his religion and looks coldly on those that do not.",
+  "measure": "faith",
+  "approves_of": "more"
+ },
+ "defender_of_the_homeland": {
+  "name": "Defender of the Homeland",
+  "description": "Never forgives a civilization that has declared war on her, and thinks well of those that never have.",
+  "measure": "aggression_against_me",
+  "approves_of": "less"
+ },
+ "enthusiastic_disciple": {
+  "name": "Enthusiastic Disciple",
+  "description": "Likes civilizations that bring their religion to the Kongo. Dislikes a civilization that founded a religion and never carried it to a Kongolese city.",
+  "measure": "religion_brought_to_me",
+  "approves_of": "more"
+ },
+ "patron_of_the_arts": {
+  "name": "Patron of the Arts",
+  "description": "Likes civilizations that are not competing for Great People, and recruits Great People whenever possible. Dislikes losing a Great Person to another civilization.",
+  "measure": "great_people",
+  "approves_of": "less"
+ },
+ "last_viking_king": {
+  "name": "Last Viking King",
+  "description": "Builds a large navy and respects civilizations that follow his lead. Thinks little of a civilization with a weak navy.",
+  "measure": "navy",
+  "approves_of": "more"
+ },
+ "short_life_of_glory": {
+  "name": "Short Life of Glory",
+  "description": "Likes civilizations at war with a major power other than Macedon. Has disdain for a civilization at peace.",
+  "measure": "wars_with_others",
+  "approves_of": "more"
+ },
+ "saint": {
+  "name": "Saint",
+  "description": "Builds up Faith, and likes civilizations that also make Faith their business.",
+  "measure": "faith",
+  "approves_of": "more"
+ },
+ "bushido": {
+  "name": "Bushido",
+  "description": "Likes a civilization strong in arms and in Faith and Culture alike. Has no time for one that is strong in arms and poor in both.",
+  "measure": "bushido",
+  "approves_of": "more"
+ },
+ "big_stick_policy": {
+  "name": "Big Stick Policy",
+  "description": "Likes a civilization that keeps a city on his own continent and keeps the peace there. Dislikes one that starts a war on it.",
+  "measure": "peace_on_my_continent",
+  "approves_of": "more"
+ },
+ "ayyubid_dynasty": {
+  "name": "Ayyubid Dynasty",
+  "description": "Wants his Worship building in as many cities as possible, and likes a civilization that has one. Dislikes a civilization following another religion.",
+  "measure": "shares_my_religion",
+  "approves_of": "more"
+ },
+ "horse_lord": {
+  "name": "Horse Lord",
+  "description": "Means to keep the world’s finest cavalry. Likes a civilization that does not compete for it, and dislikes one that rivals him.",
+  "measure": "cavalry",
+  "approves_of": "less"
+ },
+ "navigators_legacy": {
+  "name": "Navigator's Legacy",
+  "description": "Appreciates a civilization that goes out and sees the world, and thinks little of one that stays close to its own borders.",
+  "measure": "exploration",
+  "approves_of": "more"
+ },
+ "lawgiver": {
+  "name": "Lawgiver",
+  "description": "Keeps his citizens content and loyal, and is impressed by a civilization that manages the same.",
+  "measure": "contentment",
+  "approves_of": "more"
+ },
+ "raven_banner": {
+  "name": "Raven Banner",
+  "description": "Levies troops from city-states, and likes a civilization that does the same. Thinks little of one that shuns such mercenaries.",
+  "measure": "levied_troops",
+  "approves_of": "more"
+ },
+ "bibliophile": {
+  "name": "Bibliophile",
+  "description": "Means to hold more Great Works than anyone. Likes a civilization that leaves them to her and dislikes one that collects its own.",
+  "measure": "great_works",
+  "approves_of": "less"
+ },
+ "cradle_of_civilization": {
+  "name": "Cradle of Civilization",
+  "description": "Likes to build one of every kind of district, and admires a civilization that spreads itself as broadly.",
+  "measure": "district_variety",
+  "approves_of": "more"
+ },
+ "an_end_to_suffering": {
+  "name": "An End to Suffering",
+  "description": "Likes a civilization with many Holy Sites and populous cities, and dislikes one lacking in either.",
+  "measure": "piety_and_population",
+  "approves_of": "more"
+ },
+ "kaitiakitanga": {
+  "name": "Kaitiakitanga",
+  "description": "Keeps the natural features of his land and builds National Parks. Likes a civilization that respects the environment.",
+  "measure": "unspoiled_land",
+  "approves_of": "more"
+ },
+ "narikala_fortress": {
+  "name": "Narikala Fortress",
+  "description": "Puts high walls around her cities and respects a civilization that fortifies its own. Dislikes one that leaves its cities open.",
+  "measure": "city_defenses",
+  "approves_of": "more"
+ },
+ "opportunist": {
+  "name": "Opportunist",
+  "description": "Likes a leader who has declared a Surprise War, and dismisses one who never does.",
+  "measure": "surprise_wars_declared",
+  "approves_of": "more"
+ },
+ "black_queen": {
+  "name": "Black Queen",
+  "description": "Gathers as many Spies and as much diplomatic sight as she can, and thinks little of a civilization that ignores espionage.",
+  "measure": "espionage_reach",
+  "approves_of": "more"
+ }
 }

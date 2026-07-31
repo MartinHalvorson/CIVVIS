@@ -6476,6 +6476,22 @@ mod tests {
                     && game.rules.is_passable(tile)
                     && !game.rules.is_water(tile)
                     && game.units_at(**position).is_empty()
+                    // The city needs room around it: a Spaceport wants flat,
+                    // empty, buildable land, which a natural wonder denies.
+                    && game
+                        .nbrs(**position)
+                        .into_iter()
+                        .filter(|neighbor| {
+                            game.map.get(*neighbor).is_some_and(|near| {
+                                game.rules.is_passable(near)
+                                    && !game.rules.is_water(near)
+                                    && !near.hills
+                                    && near.feature.is_none()
+                                    && near.resource.is_none()
+                            })
+                        })
+                        .count()
+                        >= 4
             })
             .map(|(position, _)| *position)
             .next()
@@ -7080,11 +7096,27 @@ mod tests {
             .buildings
             .push("archaeological_museum".to_string());
         g.players[0].civics.insert("natural_history".to_string());
-        let site = g.cities[&city]
-            .owned_tiles
+        // Any antiquity site the map generated would compete for the
+        // archaeologist's attention; this test is about the one it plants.
+        let strays: Vec<Pos> = g
+            .map
+            .tiles
             .iter()
-            .copied()
-            .find(|position| *position != g.cities[&city].pos && g.units_at(*position).is_empty())
+            .filter(|(_, tile)| tile.resource.as_deref() == Some("antiquity_site"))
+            .map(|(position, _)| *position)
+            .collect();
+        for position in strays {
+            g.map.tiles.get_mut(&position).unwrap().resource = None;
+        }
+        let center = g.cities[&city].pos;
+        let site = g
+            .nbrs(center)
+            .into_iter()
+            .find(|position| {
+                g.cities[&city].owned_tiles.contains(position)
+                    && g.units_at(*position).is_empty()
+                    && g.rules.is_passable(&g.map.tiles[position])
+            })
             .unwrap();
         let tile = g.map.tiles.get_mut(&site).unwrap();
         tile.terrain = "plains".to_string();

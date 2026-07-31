@@ -1,149 +1,262 @@
 {
-  "forest": {
-    "yields": {
-      "production": 1
-    },
-    "move_cost": 1,
-    "chop": {
-      "production": 20
-    }
+ "forest": {
+  "yields": {
+   "production": 1
   },
-  "jungle": {
-    "yields": {
-      "food": 1
-    },
-    "move_cost": 1,
-    "chop": {
-      "production": 10,
-      "food": 10
-    }
-  },
-  "marsh": {
-    "yields": {
-      "food": 1
-    },
-    "move_cost": 1,
-    "chop": {
-      "food": 20
-    }
-  },
-  "floodplains": {
-    "yields": {
-      "food": 2
-    }
-  },
-  "grassland_floodplains": {
-    "yields": {}
-  },
-  "plains_floodplains": {
-    "yields": {}
-  },
-  "reef": {
-    "yields": {
-      "food": 1,
-      "production": 1
-    }
-  },
-  "geothermal_fissure": {
-    "yields": {
-      "science": 1
-    }
-  },
-  "ice": {
-    "impassable": true
-  },
-  "volcano": {
-    "impassable": true
-  },
-  "volcanic_soil": {},
-  "impact_zone": {
-    "impassable": true
-  },
-  "burning_forest": {
-    "yields": {},
-    "move_cost": 1
-  },
-  "burnt_forest": {
-    "yields": {},
-    "move_cost": 1
-  },
-  "burning_jungle": {
-    "yields": {},
-    "move_cost": 1
-  },
-  "burnt_jungle": {
-    "yields": {},
-    "move_cost": 1
-  },
-  "oasis": {
-    "yields": {
-      "food": 3,
-      "gold": 1
-    }
-  },
-  "great_barrier_reef": {
-    "yields": {
-      "science": 2,
-      "food": 3
-    },
-    "natural_wonder": true
-  },
-  "crater_lake": {
-    "yields": {
-      "faith": 5,
-      "science": 1
-    },
-    "natural_wonder": true
-  },
-  "pantanal": {
-    "yields": {
-      "culture": 2,
-      "food": 2
-    },
-    "move_cost": 1,
-    "natural_wonder": true
-  },
-  "uluru": {
-    "yields": {},
-    "adjacent_yields": {
-      "culture": 2,
-      "faith": 2
-    },
-    "natural_wonder": true,
-    "impassable": true
-  },
-  "yosemite": {
-    "yields": {},
-    "adjacent_yields": {
-      "gold": 1,
-      "food": 1,
-      "science": 1
-    },
-    "natural_wonder": true,
-    "impassable": true
-  },
-  "dead_sea": {
-    "yields": {
-      "culture": 2,
-      "faith": 2
-    },
-    "natural_wonder": true
-  },
-  "mount_everest": {
-    "yields": {},
-    "adjacent_yields": {
-      "faith": 1
-    },
-    "natural_wonder": true,
-    "impassable": true
-  },
-  "pamukkale": {
-    "yields": {},
-    "natural_wonder": true,
-    "impassable": true,
-    "effects": {
-      "city_amenity": 1,
-      "entertainment_complex_adjacent_amenity": 1
-    }
+  "move_cost": 1,
+  "chop": {
+   "production": 20
   }
+ },
+ "jungle": {
+  "yields": {
+   "food": 1
+  },
+  "move_cost": 1,
+  "chop": {
+   "production": 10,
+   "food": 10
+  }
+ },
+ "marsh": {
+  "yields": {
+   "food": 1
+  },
+  "move_cost": 1,
+  "chop": {
+   "food": 20
+  }
+ },
+ "floodplains": {
+  "yields": {
+   "food": 2
+  }
+ },
+ "grassland_floodplains": {
+  "yields": {}
+ },
+ "plains_floodplains": {
+  "yields": {}
+ },
+ "reef": {
+  "yields": {
+   "food": 1,
+   "production": 1
+  }
+ },
+ "geothermal_fissure": {
+  "yields": {
+   "science": 1
+  }
+ },
+ "ice": {
+  "impassable": true
+ },
+ "volcano": {
+  "impassable": true
+ },
+ "volcanic_soil": {},
+ "impact_zone": {
+  "impassable": true
+ },
+ "burning_forest": {
+  "yields": {},
+  "move_cost": 1
+ },
+ "burnt_forest": {
+  "yields": {},
+  "move_cost": 1
+ },
+ "burning_jungle": {
+  "yields": {},
+  "move_cost": 1
+ },
+ "burnt_jungle": {
+  "yields": {},
+  "move_cost": 1
+ },
+ "oasis": {
+  "yields": {
+   "food": 3,
+   "gold": 1
+  }
+ },
+ "great_barrier_reef": {
+  "yields": {
+   "science": 2,
+   "food": 3
+  },
+  "natural_wonder": true
+ },
+ "crater_lake": {
+  "yields": {
+   "faith": 5,
+   "science": 1
+  },
+  "natural_wonder": true
+ },
+ "pantanal": {
+  "yields": {
+   "culture": 2,
+   "food": 2
+  },
+  "move_cost": 1,
+  "natural_wonder": true
+ },
+ "uluru": {
+  "yields": {},
+  "adjacent_yields": {
+   "culture": 2,
+   "faith": 2
+  },
+  "natural_wonder": true,
+  "impassable": true,
+  "effects": {
+   "adjacent_appeal": 4
+  }
+ },
+ "yosemite": {
+  "yields": {},
+  "adjacent_yields": {
+   "gold": 1,
+   "food": 1,
+   "science": 1
+  },
+  "natural_wonder": true,
+  "impassable": true
+ },
+ "dead_sea": {
+  "yields": {
+   "culture": 2,
+   "faith": 2
+  },
+  "natural_wonder": true
+ },
+ "mount_everest": {
+  "yields": {},
+  "adjacent_yields": {
+   "faith": 1
+  },
+  "natural_wonder": true,
+  "impassable": true
+ },
+ "pamukkale": {
+  "yields": {},
+  "natural_wonder": true,
+  "impassable": true,
+  "effects": {
+   "city_amenity": 1,
+   "entertainment_complex_adjacent_amenity": 1
+  }
+ },
+ "kilimanjaro": {
+  "yields": {},
+  "adjacent_yields": {
+   "food": 2
+  },
+  "natural_wonder": true,
+  "impassable": true
+ },
+ "galapagos_islands": {
+  "yields": {},
+  "adjacent_yields": {
+   "science": 2
+  },
+  "natural_wonder": true,
+  "impassable": true
+ },
+ "cliffs_of_dover": {
+  "yields": {
+   "food": 2,
+   "gold": 3,
+   "culture": 3
+  },
+  "natural_wonder": true,
+  "effects": {
+   "adjacent_appeal": 4
+  }
+ },
+ "torres_del_paine": {
+  "yields": {},
+  "natural_wonder": true,
+  "impassable": true
+ },
+ "giants_causeway": {
+  "yields": {},
+  "adjacent_yields": {
+   "culture": 1
+  },
+  "natural_wonder": true,
+  "impassable": true,
+  "effects": {
+   "adjacent_unit_promotion": 1
+  }
+ },
+ "matterhorn": {
+  "yields": {},
+  "adjacent_yields": {
+   "culture": 1
+  },
+  "natural_wonder": true,
+  "impassable": true,
+  "effects": {
+   "adjacent_unit_promotion": 1
+  }
+ },
+ "eye_of_the_sahara": {
+  "yields": {
+   "production": 2,
+   "science": 1
+  },
+  "natural_wonder": true,
+  "effects": {
+   "atomic_era_production": 1,
+   "atomic_era_science": 3
+  }
+ },
+ "ubsunur_hollow": {
+  "yields": {
+   "food": 1,
+   "production": 1,
+   "faith": 2
+  },
+  "move_cost": 1,
+  "natural_wonder": true
+ },
+ "piopiotahi": {
+  "yields": {},
+  "adjacent_yields": {
+   "gold": 1,
+   "culture": 1
+  },
+  "natural_wonder": true,
+  "impassable": true
+ },
+ "zhangye_danxia": {
+  "yields": {},
+  "natural_wonder": true,
+  "impassable": true,
+  "effects": {
+   "gpp_general": 2,
+   "gpp_merchant": 2
+  }
+ },
+ "tsingy_de_bemaraha": {
+  "yields": {},
+  "adjacent_yields": {
+   "science": 1,
+   "culture": 1
+  },
+  "natural_wonder": true,
+  "impassable": true
+ },
+ "delicate_arch": {
+  "yields": {},
+  "adjacent_yields": {
+   "gold": 1,
+   "faith": 2
+  },
+  "natural_wonder": true,
+  "impassable": true
+ }
 }

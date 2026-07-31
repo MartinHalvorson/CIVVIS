@@ -203,6 +203,10 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
             "default_city_states": g.map_size().default_city_states,
             "max_city_states": g.map_size().max_city_states,
             "max_religions": g.max_religions(),
+            // Optional game modes change the legal action set, so an agent
+            // has to be able to see which are on.
+            "monopolies": g.monopolies,
+            "secret_societies": g.secret_societies,
             "natural_wonders": g.map_size().natural_wonders,
             "continents": g.map_size().continents,
             "tiles": tiles,
@@ -218,6 +222,8 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
             "gold": round1(p.gold), "faith": round1(p.faith),
             "gold_per_turn": round1(p.gold_per_turn),
             "bankruptcy_amenity_penalty": p.bankruptcy_amenity_penalty,
+            "war_weariness": round1(p.war_weariness),
+            "war_weariness_amenity_penalty": g.war_weariness_amenity_penalty(p.id),
             "techs": p.techs, "research": p.research,
             "research_progress": round1(p.research_progress),
             "civics": p.civics, "civic": p.civic,

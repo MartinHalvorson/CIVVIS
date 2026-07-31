@@ -277,8 +277,10 @@ mod tests {
             0
         );
         // The card is still in hand but out of its slot, so it does nothing.
+        // Ask for the effect Urban Planning actually carries: an effect name
+        // no card provides would read 0.0 whether or not the card were live.
         assert!(!g.has_policy(0, "urban_planning"));
-        assert_eq!(g.policy_effect(0, "production_flat"), 0.0);
+        assert_eq!(g.policy_effect(0, "city_production"), 0.0);
         // No second change until the Anarchy is served.
         assert!(g
             .apply(
@@ -297,7 +299,7 @@ mod tests {
         let (gold, science) = (g.players[0].gold, g.players[0].research_progress);
         let culture = g.players[0].civic_progress;
         let faith = g.players[0].faith;
-        for _ in 0..(g.players.len() + 1) {
+        for _ in 0..(g.players.iter().filter(|player| player.alive).count() + 1) {
             let current = g.current;
             let _ = g.apply(current, &Action::EndTurn);
         }
@@ -308,7 +310,7 @@ mod tests {
         assert_eq!(g.players[0].faith, faith);
 
         // The waiting government takes power on the second turn.
-        for _ in 0..(g.players.len() + 1) {
+        for _ in 0..(g.players.iter().filter(|player| player.alive).count() + 1) {
             let current = g.current;
             let _ = g.apply(current, &Action::EndTurn);
         }
@@ -469,7 +471,7 @@ mod tests {
         );
         g.apply(a, &Action::DeclareWar { player: b }).unwrap();
         // Run a full world turn so the upkeep pass sees the new stance.
-        for _ in 0..(g.players.len() + 1) {
+        for _ in 0..(g.players.iter().filter(|player| player.alive).count() + 1) {
             let current = g.current;
             let _ = g.apply(current, &Action::EndTurn);
         }
@@ -487,7 +489,7 @@ mod tests {
         );
         // Repeating the pass says nothing new.
         let before = g.events_for(a).len();
-        for _ in 0..(g.players.len() + 1) {
+        for _ in 0..(g.players.iter().filter(|player| player.alive).count() + 1) {
             let current = g.current;
             let _ = g.apply(current, &Action::EndTurn);
         }
@@ -1134,7 +1136,7 @@ mod tests {
         )
         .unwrap();
         // Urban Planning's +1 Production, scaled by the Happy amenity band.
-        assert!((g.city_yields(cid).production - base_prod - 1.0 * 1.1).abs() < 1e-9);
+        assert!((g.city_yields(cid).production - base_prod - 1.0 * 1.05).abs() < 1e-9);
         // second economic card cannot fit (no wildcard slots in chiefdom)
         assert!(g
             .apply(
@@ -1222,8 +1224,18 @@ mod tests {
         // A controlled housing-capped city needs two food from its two worked
         // tiles. It also has a culture option and a production option.
         g.map.clear_rivers();
-        for pos in g.cities[&cid].owned_tiles.clone() {
-            let tile = g.map.tiles.get_mut(&pos).unwrap();
+        // Flatten the ring outside the border as well: a natural wonder just
+        // beyond it still pays adjacency into the tiles under test.
+        let owned = g.cities[&cid].owned_tiles.clone();
+        let mut normalize: std::collections::BTreeSet<crate::Pos> =
+            owned.iter().copied().collect();
+        for pos in &owned {
+            normalize.extend(g.nbrs(*pos));
+        }
+        for pos in normalize {
+            let Some(tile) = g.map.tiles.get_mut(&pos) else {
+                continue;
+            };
             tile.terrain = "desert".to_string();
             tile.feature = None;
             tile.resource = None;
@@ -1545,9 +1557,9 @@ mod tests {
         let after = g.city_yields(cap);
         // Non-food envoy yields carry the Happy amenity band.
         let expected = if g.players[minor].civ == "Zanzibar" {
-            2.0 * 1.1
+            2.0 * 1.05
         } else {
-            1.1
+            1.05
         };
         let delta = after.total() - before.total();
         assert!(
@@ -1659,7 +1671,7 @@ mod tests {
             .buildings
             .push("shrine".to_string());
         let after = g.city_yields(cid).culture;
-        assert!((after - before - 2.0 * 1.1).abs() < 1e-9);
+        assert!((after - before - 2.0 * 1.05).abs() < 1e-9);
         // missionary spread converts a foreign city
         let religion = g.players[0].religion.clone().unwrap();
         let s1 = g
@@ -1758,7 +1770,7 @@ mod tests {
         round(&mut g);
         assert_eq!(g.players[0].gp_claimed.get("scientist"), Some(&1));
         assert_eq!(g.players[0].boosted_techs, boosts_before);
-        assert!((g.city_yields(cid).science - science_before - 1.0 * 1.1).abs() < 1e-9);
+        assert!((g.city_yields(cid).science - science_before - 1.0 * 1.05).abs() < 1e-9);
         // The global market advances to the next named Scientist rather than
         // fabricating a generic doubled threshold.
         assert_eq!(

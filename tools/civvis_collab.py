@@ -1,0 +1,1849 @@
+#!/usr/bin/env python3
+"""Create, validate, and monitor isolated CIVVIS agent tasks.
+
+This tool is intentionally dependency-free so the same workflow runs on macOS,
+Linux, and Windows. Git owns local isolation, GitHub draft PRs own fleet-visible
+claims, and this script checks the contract at both boundaries.
+"""
+
+from __future__ import annotations
+
+import argparse
+import datetime as dt
+import fnmatch
+import json
+import os
+from pathlib import Path
+import re
+import secrets
+import shutil
+import stat
+import subprocess
+import sys
+import time
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Tuple
+import urllib.error
+import urllib.request
+
+
+REPOSITORY = "MartinHalvorson/CIVVIS"
+DEFAULT_BRANCH = "main"
+REQUIRED_CHECKS = ("cargo-test", "collaboration-policy")
+BRANCH_RE = re.compile(
+    r"^agent/(?P<machine>[a-z0-9][a-z0-9-]{0,31})/"
+    r"(?P<agent>[a-z0-9][a-z0-9-]{0,31})/"
+    r"(?P<task>[a-z0-9][a-z0-9-]{0,47})-"
+    r"(?P<stamp>\d{8}T\d{6}Z)-(?P<nonce>[a-f0-9]{4,12})$"
+)
+ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,31}$")
+TASK_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,47}$")
+PUSH_GUARD_MARKER = "CIVVIS managed pre-push guard v1"
+FIELD_LABELS = {
+    "machine": "Machine ID",
+    "agent": "Agent/session ID",
+    "task": "Task",
+    "paths": "Claimed paths",
+    "coordinated": "Coordinated with",
+}
+PLACEHOLDERS = {"", "todo", "tbd", "fill me", "n/a"}
+
+# --- R3: an effect size must carry its evidence into the record -------------
+#
+# Every headline number in this repository is the point estimate of the run that
+# promoted it, so every one is conditioned on having passed a gate and is biased
+# upward. They replicate in direction and fail downward in size: +207 -> +86,
+# +92 -> +61, and `strategic_deep`'s +45 -> -8, which #482 *excluded* rather
+# than merely failed to reproduce. See `docs/EVAL_INTEGRITY.md` §4.
+#
+# The instance that motivates a mechanical check is the last one. The +45 lived
+# in `docs/GENOME.md` as a bare promoted figure; the refutation reached a PR body
+# and never reached the document, so the discovery estimate stayed in the record
+# and the replication did not. A bare number in a document outlives the run that
+# produced it, and nothing here could tell the two apart.
+#
+# The rule is therefore about *evidence adjacency*, not about the number: an Elo
+# figure added to a document must sit near something that says where it came
+# from. That admits well-sourced prose — including a refutation citing the number
+# it refutes, which necessarily carries a CI, a map count or a PR reference — and
+# rejects the bare promoted claim, which by construction carries none.
+EVIDENCE_DOC_RE = re.compile(r"^(docs/.*\.md|README\.md)$")
+EFFECT_SIZE_RE = re.compile(
+    r"""(?ix)
+    (?: elo[-\s]?equivalent \s* [+−-]? \d+     # "Elo-equivalent +207"
+      | [+−-] \d{2,4} \s* elo                  # "+45 Elo"
+      | \b elo \s* (?:of|at) \s* [+−-]? \d+    # "Elo of +61"
+    )
+    """
+)
+EVIDENCE_RE = re.compile(
+    r"""(?ix)
+    (?: \b seeds? \b
+      | \b CI \b | 95\s*% | ±                  # an interval
+      | \b\d+\s*(?:maps|pairs|games)\b              # the evidence base
+      | \bPR\s*\#?\d+ | \#\d{2,}                    # where it was measured
+      | discovery\s+estimate | confirmed\s+on | disjoint
+      | p\s*[=<>]                                   # a reported p-value
+    )
+    """
+)
+
+
+#: How much added prose around a figure counts as "beside it". Wide enough to
+#: reach the sentence that sources the number, narrow enough that an unrelated
+#: measurement elsewhere in the same hunk cannot launder a bare claim.
+EVIDENCE_WINDOW_CHARS = 320
+
+
+def unevidenced_effect_sizes(added: Dict[str, Sequence[str]]) -> List[str]:
+    """Added doc prose that states an effect size without saying where it came from.
+
+    Matched against the added lines *joined*, not line by line. These documents
+    are wrapped at 80 columns, so the real instance this exists to catch —
+    ``strategic_deep`` at +45 / Elo in `docs/GENOME.md` — puts the figure at the
+    end of one line and the unit at the start of the next, and a per-line scan
+    sees neither.
+    """
+    problems: List[str] = []
+    for path in sorted(added):
+        if not EVIDENCE_DOC_RE.match(path):
+            continue
+        joined = " ".join(line.strip() for line in added[path])
+        for match in EFFECT_SIZE_RE.finditer(joined):
+            start = max(0, match.start() - EVIDENCE_WINDOW_CHARS)
+            window = joined[start : match.end() + EVIDENCE_WINDOW_CHARS]
+            if EVIDENCE_RE.search(window):
+                continue
+            quoted = joined[max(0, match.start() - 40) : match.end() + 40].strip()
+            problems.append(
+                f"{path} adds an effect size with no evidence beside it: "
+                f"...{quoted}... A promoted number is selected on having passed a "
+                "gate, so it is biased upward and is not quotable alone "
+                "(docs/EVAL_INTEGRITY.md §4). Cite the seed, the interval, the map "
+                "count or the PR it was measured in, or mark it a DISCOVERY ESTIMATE."
+            )
+    return problems
+
+
+class CommandError(RuntimeError):
+    pass
+
+
+def run(
+    args: Sequence[str],
+    *,
+    cwd: Optional[Path] = None,
+    check: bool = True,
+    capture: bool = True,
+) -> subprocess.CompletedProcess[str]:
+    result = subprocess.run(
+        list(args),
+        cwd=str(cwd) if cwd else None,
+        text=True,
+        stdout=subprocess.PIPE if capture else None,
+        stderr=subprocess.PIPE if capture else None,
+        check=False,
+    )
+    if check and result.returncode:
+        rendered = " ".join(args)
+        detail = (result.stderr or result.stdout or "").strip()
+        raise CommandError(f"{rendered} failed ({result.returncode}): {detail}")
+    return result
+
+
+def git(repo: Path, *args: str, check: bool = True) -> str:
+    return run(("git", "-C", str(repo), *args), check=check).stdout.strip()
+
+
+def repo_root(path: Optional[Path] = None) -> Path:
+    start = path or Path.cwd()
+    result = run(("git", "-C", str(start), "rev-parse", "--show-toplevel"))
+    return Path(result.stdout.strip()).resolve()
+
+
+def clean_token(value: str) -> str:
+    return value.strip().strip("`").strip()
+
+
+def parse_claims(body: str) -> Dict[str, str]:
+    claims: Dict[str, str] = {}
+    wanted = {label.lower(): key for key, label in FIELD_LABELS.items()}
+    for raw in body.splitlines():
+        match = re.match(r"^\s*-\s*([^:]+):\s*(.*?)\s*$", raw)
+        if not match:
+            continue
+        key = wanted.get(match.group(1).strip().lower())
+        if key:
+            claims[key] = clean_token(match.group(2))
+    return claims
+
+
+def split_paths(raw: str) -> List[str]:
+    return [clean_token(item) for item in raw.split(",") if clean_token(item)]
+
+
+def split_coordination(raw: str) -> Set[int]:
+    return {int(value) for value in re.findall(r"#(\d+)", raw)}
+
+
+def valid_claim_pattern(pattern: str) -> bool:
+    if not pattern or pattern in {"*", "**", ".", "./"}:
+        return False
+    if pattern.startswith(("/", "\\")):
+        return False
+    parts = pattern.replace("\\", "/").split("/")
+    return ".." not in parts and all(parts)
+
+
+def path_is_claimed(path: str, patterns: Iterable[str]) -> bool:
+    normalized = path.replace("\\", "/")
+    return any(fnmatch.fnmatchcase(normalized, pattern) for pattern in patterns)
+
+
+def claim_patterns_overlap(left: str, right: str) -> bool:
+    if left == right:
+        return True
+    left_prefix = left[:-3] if left.endswith("/**") else None
+    right_prefix = right[:-3] if right.endswith("/**") else None
+    if left_prefix and (right == left_prefix or right.startswith(left_prefix + "/")):
+        return True
+    if right_prefix and (left == right_prefix or left.startswith(right_prefix + "/")):
+        return True
+    return fnmatch.fnmatchcase(left, right) or fnmatch.fnmatchcase(right, left)
+
+
+def claims_overlap(left: Iterable[str], right: Iterable[str]) -> bool:
+    return any(claim_patterns_overlap(a, b) for a in left for b in right)
+
+
+HUNK_RE = re.compile(r"^@@ -(?P<start>\d+)(?:,(?P<count>\d+))? \+")
+# Git needs three lines of unchanged context to merge two edits cleanly, so two
+# hunks that stop within this many lines of each other are treated as touching.
+MERGE_CONTEXT_LINES = 3
+
+
+def patch_base_ranges(patch: str) -> List[Tuple[int, int]]:
+    """Return inclusive base-side line ranges touched by a unified diff.
+
+    Only the pre-image (``-``) side matters: two branches conflict when they
+    rewrite the same original lines. A pure insertion has count 0; it is
+    recorded as a zero-width range at the insertion point so that two branches
+    inserting at the same seam still register as touching.
+    """
+    ranges: List[Tuple[int, int]] = []
+    for line in (patch or "").splitlines():
+        match = HUNK_RE.match(line)
+        if not match:
+            continue
+        start = int(match.group("start"))
+        count = int(match.group("count") or 1)
+        if count == 0:
+            ranges.append((start, start))
+        else:
+            ranges.append((start, start + count - 1))
+    return ranges
+
+
+def ranges_touch(
+    left: Sequence[Tuple[int, int]],
+    right: Sequence[Tuple[int, int]],
+    *,
+    context: int = MERGE_CONTEXT_LINES,
+) -> bool:
+    """Return whether any two line ranges overlap or sit within ``context``."""
+    for left_start, left_end in left:
+        for right_start, right_end in right:
+            if left_start - context <= right_end and right_start - context <= left_end:
+                return True
+    return False
+
+
+def file_edits_collide(
+    mine: Optional[Sequence[Tuple[int, int]]],
+    theirs: Optional[Sequence[Tuple[int, int]]],
+) -> bool:
+    """Return whether two PRs' edits to one file can actually conflict.
+
+    ``None`` means the ranges could not be determined (binary file, or a diff
+    GitHub truncated). Those fall back to whole-file collision so the policy
+    stays conservative exactly where it cannot see detail.
+    """
+    if mine is None or theirs is None:
+        return True
+    if not mine or not theirs:
+        return True
+    return ranges_touch(mine, theirs)
+
+
+def colliding_paths(
+    mine: Dict[str, Optional[List[Tuple[int, int]]]],
+    theirs: Dict[str, Optional[List[Tuple[int, int]]]],
+) -> List[str]:
+    """Return the shared paths whose edits actually touch the same lines."""
+    return sorted(
+        path
+        for path in set(mine) & set(theirs)
+        if file_edits_collide(mine[path], theirs[path])
+    )
+
+
+def as_range_map(
+    files: Iterable[str],
+    ranges: Optional[Dict[str, Optional[List[Tuple[int, int]]]]],
+) -> Dict[str, Optional[List[Tuple[int, int]]]]:
+    """Pair every changed path with its line ranges, or ``None`` when unknown."""
+    known = ranges or {}
+    return {path: known.get(path) for path in files}
+
+
+def validate_pr(
+    pr: Dict[str, Any],
+    *,
+    files: Sequence[str],
+    commit_subjects: Sequence[str],
+    other_files: Optional[Dict[int, Set[str]]] = None,
+    ranges: Optional[Dict[str, Optional[List[Tuple[int, int]]]]] = None,
+    other_ranges: Optional[Dict[int, Dict[str, Optional[List[Tuple[int, int]]]]]] = None,
+    advisories: Optional[List[str]] = None,
+    added_lines: Optional[Dict[str, Sequence[str]]] = None,
+) -> List[str]:
+    number = int(pr.get("number", 0))
+    branch = str(pr.get("headRefName") or pr.get("head", {}).get("ref") or "")
+    body = str(pr.get("body") or "")
+    draft = bool(pr.get("isDraft", pr.get("draft", False)))
+    errors: List[str] = []
+
+    branch_match = BRANCH_RE.fullmatch(branch)
+    if not branch_match:
+        errors.append(
+            "head branch must match "
+            "agent/<machine>/<agent>/<task>-<YYYYMMDDTHHMMSSZ>-<nonce>; "
+            "do not rename this branch, start a new task with: "
+            "python3 tools/civvis_collab.py start <task-slug> --path <path>"
+        )
+
+    claims = parse_claims(body)
+    for key, label in FIELD_LABELS.items():
+        value = claims.get(key, "").strip().lower()
+        if value in PLACEHOLDERS:
+            errors.append(f"PR body field '{label}' must be filled")
+
+    if branch_match:
+        if claims.get("machine") != branch_match.group("machine"):
+            errors.append("Machine ID must match the branch machine component")
+        if claims.get("agent") != branch_match.group("agent"):
+            errors.append("Agent/session ID must match the branch agent component")
+
+    patterns = split_paths(claims.get("paths", ""))
+    invalid = [pattern for pattern in patterns if not valid_claim_pattern(pattern)]
+    if invalid:
+        errors.append("invalid claimed path patterns: " + ", ".join(invalid))
+    for changed in files:
+        if patterns and not path_is_claimed(changed, patterns):
+            errors.append(
+                f"changed path is not claimed: {changed}; either revert it or add "
+                f"`{changed}` to the 'Claimed paths:' line of this PR body"
+            )
+
+    for subject in commit_subjects:
+        if subject.lower().startswith("autosync:"):
+            errors.append(f"mutating autosync commit is forbidden: {subject}")
+
+    errors.extend(unevidenced_effect_sizes(added_lines or {}))
+
+    coordinated = split_coordination(claims.get("coordinated", ""))
+    mine = as_range_map(files, ranges)
+    notes = advisories if advisories is not None else []
+    for other_number in sorted({*(other_files or {}), *(other_ranges or {})}):
+        if other_ranges and other_number in other_ranges:
+            theirs = other_ranges[other_number]
+        else:
+            theirs = {path: None for path in (other_files or {}).get(other_number, ())}
+        shared = sorted(set(mine) & set(theirs))
+        if not shared:
+            continue
+        collisions = colliding_paths(mine, theirs)
+        if not collisions:
+            # Same file, disjoint regions. Git merges this cleanly, so it is
+            # information for the author, never a gate.
+            notes.append(
+                f"PR #{other_number} edits the same file(s) in different places, "
+                f"no action needed: {', '.join(shared[:5])}"
+            )
+            continue
+        if other_number in coordinated:
+            continue
+        preview = ", ".join(collisions[:5])
+        detail = (
+            f"edits collide with PR #{other_number} on the same lines of {preview}"
+        )
+        if draft:
+            notes.append(
+                f"{detail} — resolve before marking ready, or add '#{other_number}' "
+                "to 'Coordinated with:' in this PR body"
+            )
+        else:
+            errors.append(
+                f"{detail}; coordinate in the older PR, then add '#{other_number}' "
+                "to the 'Coordinated with:' line of this PR body"
+            )
+
+    if not draft and re.search(r"^\s*- \[ \]", body, re.MULTILINE):
+        errors.append(
+            "ready PRs must complete every validation checkbox; run each listed "
+            "check, then change its '- [ ]' to '- [x]' in this PR body"
+        )
+
+    return errors
+
+
+def compare_status_is_current(status: str) -> bool:
+    """Return whether a PR head contains the current base branch tip."""
+    return status in {"ahead", "identical"}
+
+
+def github_json(path: str, token: str) -> Any:
+    url = f"https://api.github.com{path}"
+    request = urllib.request.Request(
+        url,
+        headers={
+            "Accept": "application/vnd.github+json",
+            "Authorization": f"Bearer {token}",
+            "User-Agent": "civvis-collaboration-policy",
+            "X-GitHub-Api-Version": "2022-11-28",
+        },
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=30) as response:
+            return json.load(response)
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", "replace")
+        raise CommandError(f"GitHub API {path} failed ({exc.code}): {detail}") from exc
+
+
+def pr_files(repository: str, number: int, token: str) -> List[str]:
+    rows = github_json(f"/repos/{repository}/pulls/{number}/files?per_page=100", token)
+    return [str(row["filename"]) for row in rows]
+
+
+def pr_file_ranges(
+    repository: str, number: int, token: str
+) -> Dict[str, Optional[List[Tuple[int, int]]]]:
+    """Map every changed path to the base-side line ranges the PR rewrites.
+
+    A path maps to ``None`` when GitHub does not return a patch (binary content
+    or a diff too large to inline); callers must treat that as whole-file.
+    """
+    rows = github_json(f"/repos/{repository}/pulls/{number}/files?per_page=100", token)
+    ranges: Dict[str, Optional[List[Tuple[int, int]]]] = {}
+    for row in rows:
+        patch = row.get("patch")
+        name = str(row["filename"])
+        ranges[name] = patch_base_ranges(str(patch)) if patch else None
+    return ranges
+
+
+def patch_added_lines(patch: str) -> List[str]:
+    """The added-side content of a unified diff, without the '+' marker.
+
+    `+++ b/path` is a header, not an addition; it is the only '+'-prefixed line
+    that must not be treated as content.
+    """
+    return [
+        line[1:]
+        for line in patch.splitlines()
+        if line.startswith("+") and not line.startswith("+++")
+    ]
+
+
+def pr_added_lines(repository: str, number: int, token: str) -> Dict[str, List[str]]:
+    """Map every changed path to the lines this PR adds to it.
+
+    A path with no inlined patch (binary, or a diff too large) maps to an empty
+    list: the effect-size gate can only judge text it can see, and silently
+    passing an unreadable diff is the correct failure direction for a lint.
+    """
+    rows = github_json(f"/repos/{repository}/pulls/{number}/files?per_page=100", token)
+    added: Dict[str, List[str]] = {}
+    for row in rows:
+        patch = row.get("patch")
+        added[str(row["filename"])] = patch_added_lines(str(patch)) if patch else []
+    return added
+
+
+def pr_commit_subjects(repository: str, number: int, token: str) -> List[str]:
+    rows = github_json(f"/repos/{repository}/pulls/{number}/commits?per_page=100", token)
+    return [str(row["commit"]["message"]).splitlines()[0] for row in rows]
+
+
+def check_pr_action(event_path: Path, token: str, repository: str) -> int:
+    event = json.loads(event_path.read_text(encoding="utf-8"))
+    if "pull_request" not in event:
+        print("collaboration policy: non-PR event, nothing to validate")
+        return 0
+
+    current = dict(event["pull_request"])
+    current["headRefName"] = current.get("head", {}).get("ref", "")
+    current["isDraft"] = current.get("draft", False)
+    number = int(current["number"])
+    ranges = pr_file_ranges(repository, number, token)
+    files = sorted(ranges)
+    subjects = pr_commit_subjects(repository, number, token)
+    open_prs = github_json(f"/repos/{repository}/pulls?state=open&per_page=100", token)
+    # Only PRs that share at least one path can collide, so fetch patches for
+    # those alone instead of every open PR on the repository.
+    other_ranges: Dict[int, Dict[str, Optional[List[Tuple[int, int]]]]] = {}
+    for other in open_prs:
+        other_number = int(other["number"])
+        if other_number == number:
+            continue
+        shared = set(pr_files(repository, other_number, token)) & set(files)
+        if shared:
+            other_ranges[other_number] = pr_file_ranges(repository, other_number, token)
+    advisories: List[str] = []
+    errors = validate_pr(
+        current,
+        files=files,
+        commit_subjects=subjects,
+        ranges=ranges,
+        other_ranges=other_ranges,
+        advisories=advisories,
+        added_lines=pr_added_lines(repository, number, token),
+    )
+    if not current["isDraft"]:
+        base_sha = str(current.get("base", {}).get("sha") or "")
+        head_sha = str(current.get("head", {}).get("sha") or "")
+        if base_sha and head_sha:
+            comparison = github_json(
+                f"/repos/{repository}/compare/{base_sha}...{head_sha}", token
+            )
+            if not compare_status_is_current(str(comparison.get("status") or "")):
+                # Staleness is not a policy violation. GitHub's own branch
+                # protection runs with strict=true, so it already refuses to
+                # merge a branch that is behind main, and `ship` re-merges main
+                # whenever it observes the base moving. Failing here as well
+                # only paints a red X on a PR whose author did nothing wrong and
+                # cannot durably fix, because main moves again during CI.
+                advisories.append(
+                    "main advanced while this PR was open; GitHub will require "
+                    "an update before merging. Run: "
+                    "git fetch origin main && git merge origin/main"
+                )
+    for advisory in advisories:
+        print(f"::notice::{advisory}")
+    if errors:
+        for error in errors:
+            print(f"::error::{error}")
+        print(f"collaboration policy: {len(errors)} violation(s)")
+        return 1
+    print(
+        f"collaboration policy: PR #{number} owns {len(files)} changed path(s) "
+        "on a valid single-writer branch"
+    )
+    return 0
+
+
+def gh_json(args: Sequence[str], *, cwd: Optional[Path] = None) -> Any:
+    result = run(("gh", *args), cwd=cwd)
+    return json.loads(result.stdout or "null")
+
+
+def gh_pr_file_ranges(
+    number: int, *, cwd: Optional[Path] = None
+) -> Dict[str, Optional[List[Tuple[int, int]]]]:
+    """``pr_file_ranges`` over the GitHub CLI, for commands that run locally."""
+    rows = gh_json(
+        (
+            "api",
+            "--paginate",
+            f"/repos/{REPOSITORY}/pulls/{number}/files?per_page=100",
+        ),
+        cwd=cwd,
+    )
+    ranges: Dict[str, Optional[List[Tuple[int, int]]]] = {}
+    for row in rows or []:
+        patch = row.get("patch")
+        ranges[str(row["filename"])] = patch_base_ranges(str(patch)) if patch else None
+    return ranges
+
+
+def required_check_state(
+    rows: Sequence[Dict[str, Any]],
+    *,
+    required: Iterable[str] = REQUIRED_CHECKS,
+    minimum_started: Optional[Dict[str, str]] = None,
+) -> Tuple[str, List[str]]:
+    """Summarize the newest check run for every required workflow.
+
+    GitHub can retain several runs with the same name on one PR head after a
+    body edit or draft/ready transition. Only the newest eligible run is the
+    current gate. ``minimum_started`` lets ``ship`` wait for the policy run
+    caused by its own ready-for-review transition instead of accepting an
+    older green draft check in the few seconds before the new run appears.
+    """
+    missing_or_pending: List[str] = []
+    failed: List[str] = []
+    thresholds = minimum_started or {}
+    for name in required:
+        candidates = [
+            row
+            for row in rows
+            if str(row.get("name") or row.get("context") or "") == name
+            and str(row.get("startedAt") or row.get("started_at") or "")
+            >= thresholds.get(name, "")
+        ]
+        if not candidates:
+            missing_or_pending.append(name)
+            continue
+        latest = max(
+            candidates,
+            key=lambda row: str(
+                row.get("startedAt")
+                or row.get("started_at")
+                or row.get("completedAt")
+                or row.get("completed_at")
+                or ""
+            ),
+        )
+        status = str(latest.get("status") or "").lower()
+        conclusion = str(
+            latest.get("conclusion") or latest.get("state") or ""
+        ).lower()
+        if status and status != "completed":
+            missing_or_pending.append(name)
+        elif conclusion not in {"success", "successful"}:
+            failed.append(name)
+    if failed:
+        return "failed", failed
+    if missing_or_pending:
+        return "pending", missing_or_pending
+    return "success", []
+
+
+def ship_pr_errors(pr: Dict[str, Any], branch: str) -> List[str]:
+    """Return reasons a task PR is not yet an honest finished feature."""
+    errors: List[str] = []
+    if str(pr.get("state") or "").upper() != "OPEN":
+        errors.append("the current branch PR is not open")
+    if str(pr.get("headRefName") or "") != branch:
+        errors.append("the current branch does not own the discovered PR")
+    body = str(pr.get("body") or "")
+    if re.search(r"^\s*- \[ \]", body, re.MULTILINE):
+        errors.append("complete every PR validation checkbox before shipping")
+    summary = re.search(
+        r"^## What changed\s*(.*?)(?=^## |\Z)",
+        body,
+        re.MULTILINE | re.DOTALL,
+    )
+    summary_text = summary.group(1).strip() if summary else ""
+    if not summary_text or "implementation is in progress" in summary_text.lower():
+        errors.append("replace the draft 'What changed' text with the finished summary")
+    return errors
+
+
+def ref_contains(repo: Path, ancestor: str, descendant: str = "HEAD") -> bool:
+    return run(
+        ("git", "-C", str(repo), "merge-base", "--is-ancestor", ancestor, descendant),
+        check=False,
+    ).returncode == 0
+
+
+def current_pr(repo: Path) -> Dict[str, Any]:
+    branch = git(repo, "symbolic-ref", "--quiet", "--short", "HEAD")
+    return dict(
+        gh_json(
+            (
+                "pr",
+                "view",
+                branch,
+                "--repo",
+                REPOSITORY,
+                "--json",
+                "number,url,state,isDraft,body,headRefName,headRefOid,baseRefOid,"
+                "mergeCommit,mergeStateStatus,mergedAt,statusCheckRollup,title",
+            ),
+            cwd=repo,
+        )
+    )
+
+
+def pr_merge_sha(pr: Dict[str, Any]) -> str:
+    """The squash commit of a PR GitHub has already auto-merged, if any."""
+    if str(pr.get("state") or "").upper() != "MERGED":
+        return ""
+    commit = pr.get("mergeCommit") or {}
+    if isinstance(commit, dict):
+        return str(commit.get("oid") or "")
+    return str(commit)
+
+
+def wait_for_pr_head(
+    repo: Path,
+    branch: str,
+    local_head: str,
+    *,
+    deadline: float,
+    poll_seconds: float,
+) -> Dict[str, Any]:
+    """Wait through GitHub's brief branch-ref to PR-view consistency gap."""
+    while True:
+        pr = current_pr(repo)
+        if str(pr.get("headRefOid") or "") == local_head:
+            return pr
+        # Armed auto-merge can close the PR between the push and this read.
+        # A closed PR's head is immutable and its branch may already be
+        # deleted, so waiting for it to observe a later local ref can only
+        # time out after a successful shipment.
+        if pr_merge_sha(pr):
+            return pr
+        remote_head = remote_heads(repo).get(branch, "")
+        if remote_head != local_head:
+            raise CommandError(
+                "the PR head changed outside this task's one-writer worktree"
+            )
+        if time.monotonic() >= deadline:
+            raise CommandError("timed out waiting for GitHub to observe the pushed PR head")
+        time.sleep(max(0.1, poll_seconds))
+
+
+def merge_current_main(repo: Path) -> bool:
+    """Integrate a newly advanced main and independently revalidate the result."""
+    fetch_main(repo)
+    if ref_contains(repo, "origin/main"):
+        return False
+    print("main advanced; merging it and rerunning the required local test")
+    merged = run(
+        ("git", "-C", str(repo), "merge", "--no-edit", "origin/main"),
+        check=False,
+    )
+    if merged.returncode:
+        detail = (merged.stderr or merged.stdout or "merge conflict").strip()
+        raise CommandError(
+            "latest main did not merge cleanly; resolve this task worktree, "
+            f"revalidate it, and run ship again: {detail}"
+        )
+    git(repo, "diff", "--check", "origin/main...")
+    run(
+        ("cargo", "test", "--profile", "ci", "--locked"),
+        cwd=repo,
+        capture=False,
+    )
+    return True
+
+
+def local_deploy_root(repo: Path) -> Optional[Path]:
+    common = common_git_dir(repo)
+    root = common.parent
+    return root if (root / "target" / "spectator" / "build.json").is_file() else None
+
+
+def live_status_commit(url: str, timeout: float = 5.0) -> str:
+    try:
+        with urllib.request.urlopen(url, timeout=timeout) as response:
+            payload = json.load(response)
+    except (OSError, ValueError, urllib.error.URLError):
+        return ""
+    return str(payload.get("commit") or "") if isinstance(payload, dict) else ""
+
+
+def deployed_commit_covers(repo: Path, deployed: str, merged_sha: str) -> bool:
+    if not deployed:
+        return False
+    if merged_sha.startswith(deployed) or deployed.startswith(merged_sha):
+        return True
+    resolved = git(repo, "rev-parse", "--verify", deployed, check=False)
+    return bool(resolved) and ref_contains(repo, merged_sha, resolved)
+
+
+def wait_for_local_live_build(
+    repo: Path,
+    merged_sha: str,
+    *,
+    url: str,
+    timeout_seconds: float,
+    poll_seconds: float,
+) -> bool:
+    if local_deploy_root(repo) is None or timeout_seconds <= 0:
+        print("no local production spectator detected; merge is complete")
+        return False
+    print(f"waiting for the production spectator at {url} to run {merged_sha[:7]}")
+    deadline = time.monotonic() + timeout_seconds
+    while time.monotonic() < deadline:
+        deployed = live_status_commit(url)
+        if deployed_commit_covers(repo, deployed, merged_sha):
+            print(f"production spectator is live on {deployed}")
+            return True
+        time.sleep(max(0.1, poll_seconds))
+        fetch_main(repo)
+    print(
+        "production spectator did not confirm the merged revision before the "
+        "live-build timeout"
+    )
+    return False
+
+
+def finish_ship(
+    repo: Path,
+    *,
+    number: int,
+    branch: str,
+    merged_sha: str,
+    live_url: str,
+    live_timeout_seconds: float,
+    poll_seconds: float,
+) -> int:
+    """Clean up and verify a PR merged manually or by armed auto-merge."""
+    if not merged_sha:
+        raise CommandError(f"merged PR #{number} did not report its merge commit")
+    print(f"PR #{number} squash-merged as {merged_sha[:7]}")
+    deletion = run(
+        ("git", "-C", str(repo), "push", "origin", "--delete", branch),
+        check=False,
+    )
+    if deletion.returncode:
+        print("remote branch was already deleted or could not be deleted")
+    fetch_main(repo)
+    wait_for_local_live_build(
+        repo,
+        merged_sha,
+        url=live_url,
+        timeout_seconds=live_timeout_seconds,
+        poll_seconds=poll_seconds,
+    )
+    return 0
+
+
+def ship_task(args: argparse.Namespace) -> int:
+    """Push a finished task, wait for green CI, squash-merge, and verify live."""
+    root = repo_root()
+    if not shutil.which("gh"):
+        raise CommandError("GitHub CLI 'gh' is required to ship a task")
+    run(("gh", "auth", "status"), cwd=root)
+    branch = git(root, "symbolic-ref", "--quiet", "--short", "HEAD", check=False)
+    if not BRANCH_RE.fullmatch(branch):
+        raise CommandError("ship must run from this task's conforming agent branch")
+    if git(root, "status", "--porcelain"):
+        raise CommandError("commit the finished feature and leave the worktree clean first")
+
+    install_push_guard(root)
+    fetch_main(root)
+    if run(
+        ("git", "-C", str(root), "diff", "--quiet", "origin/main...HEAD"),
+        check=False,
+    ).returncode == 0:
+        raise CommandError("the task has no file changes relative to main")
+
+    pr = current_pr(root)
+    errors = ship_pr_errors(pr, branch)
+    if errors:
+        raise CommandError("; ".join(errors))
+
+    deadline = time.monotonic() + max(1.0, args.timeout_seconds)
+    ready_thresholds: Dict[str, str] = {}
+    auto_merge_armed = False
+
+    def finish_merged(pr: Dict[str, Any]) -> Optional[int]:
+        merged_sha = pr_merge_sha(pr)
+        if not merged_sha:
+            return None
+        return finish_ship(
+            root,
+            number=int(pr["number"]),
+            branch=branch,
+            merged_sha=merged_sha,
+            live_url=args.live_url,
+            live_timeout_seconds=args.live_timeout_seconds,
+            poll_seconds=args.poll_seconds,
+        )
+
+    while True:
+        if time.monotonic() >= deadline:
+            raise CommandError("timed out waiting for the task to reach main")
+
+        # Auto-merge may have fired after the preceding poll. Detect that
+        # before comparing commit ancestry: a squash commit deliberately does
+        # not contain the task branch's commits, so ancestry cannot identify
+        # this successful terminal state.
+        pr = current_pr(root)
+        if (finished := finish_merged(pr)) is not None:
+            return finished
+
+        merged_main = merge_current_main(root)
+        if merged_main and git(root, "status", "--porcelain"):
+            raise CommandError("main integration left unexpected worktree changes")
+        git(root, "diff", "--check", "origin/main...")
+        git(root, "push", "origin", f"HEAD:{branch}")
+        local_head = git(root, "rev-parse", "HEAD")
+
+        pr = wait_for_pr_head(
+            root,
+            branch,
+            local_head,
+            deadline=deadline,
+            poll_seconds=args.poll_seconds,
+        )
+        if (finished := finish_merged(pr)) is not None:
+            return finished
+        errors = ship_pr_errors(pr, branch)
+        if errors:
+            raise CommandError("; ".join(errors))
+        if pr.get("isDraft"):
+            # Permit a small clock skew while still excluding earlier draft
+            # policy runs from the ready-for-review gate.
+            threshold = dt.datetime.now(dt.timezone.utc) - dt.timedelta(seconds=5)
+            ready_thresholds["collaboration-policy"] = threshold.isoformat().replace(
+                "+00:00", "Z"
+            )
+            run(
+                ("gh", "pr", "ready", str(pr["number"]), "--repo", REPOSITORY),
+                cwd=root,
+            )
+            print(f"PR #{pr['number']} is ready; waiting for required checks")
+
+        while True:
+            if time.monotonic() >= deadline:
+                raise CommandError("timed out waiting for required checks")
+            pr = current_pr(root)
+            if (finished := finish_merged(pr)) is not None:
+                return finished
+            if str(pr.get("state") or "").upper() != "OPEN":
+                raise CommandError("the PR closed before ship completed")
+            if str(pr.get("headRefOid") or "") != local_head:
+                raise CommandError(
+                    "the PR head changed outside this task's one-writer worktree"
+                )
+
+            if not auto_merge_armed:
+                # Armed auto-merge fires the instant a green run coincides with
+                # being current, instead of only when this poll happens to
+                # observe both at once. That window is small: `main` takes a
+                # merge every few minutes and the gate runs for several.
+                armed = run(
+                    (
+                        "gh", "pr", "merge", str(pr["number"]),
+                        "--repo", REPOSITORY, "--squash", "--auto",
+                        "--delete-branch",
+                    ),
+                    cwd=root,
+                    check=False,
+                )
+                if armed.returncode == 0:
+                    auto_merge_armed = True
+                    print(f"auto-merge armed on PR #{pr['number']}")
+
+            fetch_main(root)
+            # Auto-merge can fire during the fetch itself. Re-read the PR
+            # before trying to update a branch GitHub may just have deleted.
+            pr = current_pr(root)
+            if (finished := finish_merged(pr)) is not None:
+                return finished
+            if str(pr.get("state") or "").upper() != "OPEN":
+                raise CommandError("the PR closed before ship completed")
+            if str(pr.get("headRefOid") or "") != local_head:
+                raise CommandError("the PR head changed outside this task's one-writer worktree")
+            if not ref_contains(root, "origin/main"):
+                # Update the branch through GitHub rather than rebuilding the
+                # task locally. This merges `main` into the head server-side,
+                # so CI reruns on the exact merge result without paying for a
+                # local release build that CI is about to repeat anyway.
+                print("main advanced; updating the PR branch through GitHub")
+                updated = gh_api_write(
+                    "PUT",
+                    f"repos/{REPOSITORY}/pulls/{pr['number']}/update-branch",
+                    {},
+                    check=False,
+                )
+                if updated is None:
+                    # A conflict GitHub cannot resolve needs a real merge in the
+                    # worktree, which is what the outer loop does.
+                    print("GitHub could not update the branch; merging locally")
+                    ready_thresholds.clear()
+                    break
+                git(root, "fetch", "origin", branch)
+                git(root, "merge", "--ff-only", f"origin/{branch}")
+                local_head = git(root, "rev-parse", "HEAD")
+                ready_thresholds.clear()
+                time.sleep(args.poll_seconds)
+                continue
+
+            state, names = required_check_state(
+                pr.get("statusCheckRollup") or [], minimum_started=ready_thresholds
+            )
+            if state == "failed":
+                raise CommandError("required checks failed: " + ", ".join(names))
+            if state == "success":
+                merge_result = gh_api_write(
+                    "PUT",
+                    f"repos/{REPOSITORY}/pulls/{pr['number']}/merge",
+                    {"merge_method": "squash", "sha": local_head},
+                )
+                if not merge_result.get("merged"):
+                    raise CommandError(
+                        "GitHub refused the green squash merge: "
+                        + str(merge_result.get("message") or "unknown reason")
+                    )
+                merged_sha = str(merge_result.get("sha") or "")
+                return finish_ship(
+                    root,
+                    number=int(pr["number"]),
+                    branch=branch,
+                    merged_sha=merged_sha,
+                    live_url=args.live_url,
+                    live_timeout_seconds=args.live_timeout_seconds,
+                    poll_seconds=args.poll_seconds,
+                )
+
+            print("waiting on: " + ", ".join(names))
+            time.sleep(max(0.1, args.poll_seconds))
+
+
+def existing_pr_claims(repo: Path) -> List[Dict[str, Any]]:
+    rows = gh_json(
+        (
+            "pr",
+            "list",
+            "--repo",
+            REPOSITORY,
+            "--state",
+            "open",
+            "--limit",
+            "100",
+            "--json",
+            "number,body,headRefName,title",
+        ),
+        cwd=repo,
+    )
+    return list(rows)
+
+
+def parse_remote_heads(raw: str) -> Dict[str, str]:
+    heads: Dict[str, str] = {}
+    prefix = "refs/heads/"
+    for line in raw.splitlines():
+        sha, separator, ref = line.partition("\t")
+        if separator and ref.startswith(prefix):
+            heads[ref[len(prefix) :]] = sha
+    return heads
+
+
+def remote_heads(repo: Path) -> Dict[str, str]:
+    return parse_remote_heads(git(repo, "ls-remote", "--heads", "origin"))
+
+
+def commit_is_pr_backed(rows: Sequence[Dict[str, Any]], sha: str) -> Optional[int]:
+    for row in rows:
+        if row.get("merged_at") and row.get("merge_commit_sha") == sha:
+            return int(row["number"])
+    return None
+
+
+def associated_pr_number(sha: str) -> Optional[int]:
+    rows = gh_json(("api", f"repos/{REPOSITORY}/commits/{sha}/pulls"))
+    return commit_is_pr_backed(rows or [], sha)
+
+
+def required_check_gate_errors(
+    check_runs: Sequence[Dict[str, Any]],
+    merged_at: str,
+    required: Iterable[str] = REQUIRED_CHECKS,
+) -> List[str]:
+    """Report required checks that were not successful before a PR merged."""
+    merge_time = dt.datetime.fromisoformat(merged_at.replace("Z", "+00:00"))
+    errors: List[str] = []
+    for name in required:
+        eligible: List[Dict[str, Any]] = []
+        for row in check_runs:
+            if row.get("name") != name:
+                continue
+            started_at = str(row.get("started_at") or "")
+            if not started_at:
+                continue
+            started = dt.datetime.fromisoformat(started_at.replace("Z", "+00:00"))
+            if started <= merge_time:
+                eligible.append(row)
+        if not eligible:
+            errors.append(f"required check {name} had not started before merge")
+            continue
+        latest = max(eligible, key=lambda row: str(row.get("started_at") or ""))
+        completed_at = str(latest.get("completed_at") or "")
+        completed = (
+            dt.datetime.fromisoformat(completed_at.replace("Z", "+00:00"))
+            if completed_at
+            else None
+        )
+        if latest.get("conclusion") != "success" or not completed or completed > merge_time:
+            errors.append(f"required check {name} was not green before merge")
+    return errors
+
+
+def merged_pr_gate_errors(number: int, base_sha: str = "") -> List[str]:
+    view = gh_json(
+        (
+            "pr",
+            "view",
+            str(number),
+            "--repo",
+            REPOSITORY,
+            "--json",
+            "headRefOid,mergedAt",
+        )
+    )
+    head_sha = str(view.get("headRefOid") or "")
+    merged_at = str(view.get("mergedAt") or "")
+    if not head_sha or not merged_at:
+        return ["merged PR metadata is incomplete"]
+    errors: List[str] = []
+    if base_sha:
+        comparison = gh_json(
+            (
+                "api",
+                f"repos/{REPOSITORY}/compare/{base_sha}...{head_sha}",
+            )
+        )
+        if not compare_status_is_current(str(comparison.get("status") or "")):
+            errors.append("PR head did not contain current main before merge")
+    payload = gh_json(
+        (
+            "api",
+            f"repos/{REPOSITORY}/commits/{head_sha}/check-runs?per_page=100",
+        )
+    )
+    errors.extend(
+        required_check_gate_errors(payload.get("check_runs") or [], merged_at)
+    )
+    return errors
+
+
+def format_claim_body(
+    *,
+    machine: str,
+    agent: str,
+    task: str,
+    paths: Sequence[str],
+    coordinated: Sequence[int],
+) -> str:
+    coordination = ", ".join(f"#{number}" for number in coordinated) or "none"
+    claimed = ", ".join(f"`{path}`" for path in paths)
+    return f"""## Ownership claim
+
+- Machine ID: `{machine}`
+- Agent/session ID: `{agent}`
+- Task: {task.replace('-', ' ')}
+- Claimed paths: {claimed}
+- Coordinated with: {coordination}
+- Related issue/request: operator request
+
+## What changed
+
+Draft claim; implementation is in progress.
+
+## Validation
+
+- [ ] Branch started from current `origin/main`
+- [ ] Ownership/overlap is coordinated above
+- [ ] Latest `origin/main` merged before ready
+- [ ] `git diff --check origin/main...`
+- [ ] `cargo test --profile ci --locked`
+- [ ] Relevant focused tests
+- [ ] Soak run for engine changes, or reason it is not applicable
+- [ ] No unrelated formatting, generated output, or runtime artifacts
+
+## Notes for integration
+
+Squash merge only. Delete the branch after merge.
+"""
+
+
+def validate_identifier(label: str, value: str, pattern: re.Pattern[str]) -> None:
+    if not pattern.fullmatch(value):
+        raise CommandError(
+            f"{label} '{value}' must be lowercase letters, numbers, and hyphens "
+            f"and fit the fleet naming limit"
+        )
+
+
+def fetch_main(repo: Path) -> None:
+    last_error: Optional[Exception] = None
+    for delay in (0, 1, 2):
+        if delay:
+            time.sleep(delay)
+        try:
+            git(repo, "fetch", "--prune", "origin", DEFAULT_BRANCH)
+            return
+        except CommandError as exc:
+            last_error = exc
+    assert last_error is not None
+    raise last_error
+
+
+def common_git_dir(repo: Path) -> Path:
+    raw = Path(git(repo, "rev-parse", "--git-common-dir"))
+    return raw.resolve() if raw.is_absolute() else (repo / raw).resolve()
+
+
+def push_guard_paths(repo: Path) -> Tuple[Path, Path]:
+    source = repo / "tools" / "civvis_push_guard.py"
+    target = common_git_dir(repo) / "hooks" / "pre-push"
+    return source, target
+
+
+def install_push_guard(repo: Path) -> Path:
+    source, target = push_guard_paths(repo)
+    if not source.is_file():
+        raise CommandError(f"versioned push guard is missing: {source}")
+    source_bytes = source.read_bytes()
+    if target.is_symlink():
+        raise CommandError(f"refusing to replace symlinked pre-push hook: {target}")
+    if target.exists():
+        existing = target.read_bytes()
+        if existing != source_bytes and PUSH_GUARD_MARKER.encode() not in existing:
+            raise CommandError(
+                f"refusing to overwrite unmanaged pre-push hook: {target}; "
+                "preserve and resolve that hook explicitly before retrying"
+            )
+    target.parent.mkdir(parents=True, exist_ok=True)
+    temporary = target.with_name(
+        f".{target.name}.civvis-{os.getpid()}-{secrets.token_hex(4)}"
+    )
+    try:
+        with temporary.open("xb") as handle:
+            handle.write(source_bytes)
+            handle.flush()
+            os.fsync(handle.fileno())
+        if os.name != "nt":
+            temporary.chmod(
+                temporary.stat().st_mode
+                | stat.S_IXUSR
+                | stat.S_IXGRP
+                | stat.S_IXOTH
+            )
+        os.replace(temporary, target)
+    finally:
+        temporary.unlink(missing_ok=True)
+    return target
+
+
+def push_guard_error(repo: Path) -> Optional[str]:
+    source, target = push_guard_paths(repo)
+    if not source.is_file():
+        return f"versioned push guard is missing: {source}"
+    if target.is_symlink():
+        return f"local pre-push guard must not be a symlink: {target}"
+    if not target.is_file():
+        return (
+            "local pre-push guard is not installed; run "
+            "python3 tools/civvis_collab.py install-hooks"
+        )
+    if target.read_bytes() != source.read_bytes():
+        return (
+            "local pre-push guard is outdated or unmanaged; run "
+            "python3 tools/civvis_collab.py install-hooks"
+        )
+    if os.name != "nt" and not os.access(target, os.X_OK):
+        return f"local pre-push guard is not executable: {target}"
+    return None
+
+
+def install_hooks_command(args: argparse.Namespace) -> int:
+    del args
+    target = install_push_guard(repo_root())
+    print(f"installed CIVVIS pre-push guard: {target}")
+    return 0
+
+
+def start_task(args: argparse.Namespace) -> int:
+    root = repo_root()
+    if not shutil.which("gh"):
+        raise CommandError("GitHub CLI 'gh' is required to publish the draft claim")
+    run(("gh", "auth", "status"), cwd=root)
+
+    configured_machine = git(root, "config", "--get", "civvis.machine", check=False)
+    machine = args.machine or configured_machine
+    agent = args.agent or os.environ.get("CIVVIS_AGENT_ID", "")
+    if not machine:
+        raise CommandError("pass --machine once or set: git config civvis.machine <stable-id>")
+    if not agent:
+        raise CommandError("pass --agent or set CIVVIS_AGENT_ID")
+    validate_identifier("machine", machine, ID_RE)
+    validate_identifier("agent", agent, ID_RE)
+    validate_identifier("task", args.task, TASK_RE)
+
+    paths = [path.replace("\\", "/") for path in args.path]
+    if not paths or any(not valid_claim_pattern(path) for path in paths):
+        raise CommandError("provide one or more safe repo-relative --path claims")
+    coordinated = sorted(set(args.coordinate))
+
+    conflicts: List[Tuple[int, List[str]]] = []
+    for pr in existing_pr_claims(root):
+        other = split_paths(parse_claims(str(pr.get("body") or "")).get("paths", ""))
+        if other and claims_overlap(paths, other):
+            conflicts.append((int(pr["number"]), other))
+    undeclared = [(number, claim) for number, claim in conflicts if number not in coordinated]
+    if undeclared:
+        # Claim overlap is normal on hotspot files such as web/index.html and
+        # src/game.rs. Record the neighbours automatically instead of refusing
+        # to start; CI gates on real line-level collisions, not on shared files.
+        for number, claim in undeclared:
+            print(
+                f"note: PR #{number} already claims {', '.join(claim)}; "
+                "recording it under 'Coordinated with'"
+            )
+        coordinated = sorted({*coordinated, *(number for number, _ in undeclared)})
+
+    stamp = dt.datetime.now(dt.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    nonce = secrets.token_hex(2)
+    branch = f"agent/{machine}/{agent}/{args.task}-{stamp}-{nonce}"
+    parent = Path(args.parent).expanduser().resolve() if args.parent else root.parent
+    worktree = parent / f"civvis-{args.task}-{nonce}"
+    if worktree.exists():
+        raise CommandError(f"worktree path already exists: {worktree}")
+
+    if args.dry_run:
+        print(json.dumps({"branch": branch, "worktree": str(worktree), "paths": paths}, indent=2))
+        return 0
+
+    if args.machine and machine != configured_machine:
+        git(root, "config", "civvis.machine", machine)
+    for key, value in (
+        ("fetch.prune", "true"),
+        ("pull.ff", "only"),
+        ("push.default", "simple"),
+        ("merge.conflictStyle", "zdiff3"),
+        ("rerere.enabled", "true"),
+        ("rerere.autoupdate", "false"),
+    ):
+        git(root, "config", key, value)
+
+    install_push_guard(root)
+
+    fetch_main(root)
+    git(root, "worktree", "add", "-b", branch, str(worktree), "origin/main")
+    git(worktree, "commit", "--allow-empty", "-m", f"claim: {args.task.replace('-', ' ')}")
+    git(worktree, "push", "-u", "origin", branch)
+
+    body = format_claim_body(
+        machine=machine,
+        agent=agent,
+        task=args.task,
+        paths=paths,
+        coordinated=coordinated,
+    )
+    title = args.title or args.task.replace("-", " ").capitalize()
+    result = run(
+        (
+            "gh",
+            "pr",
+            "create",
+            "--repo",
+            REPOSITORY,
+            "--draft",
+            "--base",
+            DEFAULT_BRANCH,
+            "--head",
+            branch,
+            "--title",
+            title,
+            "--body",
+            body,
+        ),
+        cwd=worktree,
+    )
+    print(f"worktree: {worktree}")
+    print(f"branch:   {branch}")
+    print(f"draft PR: {result.stdout.strip()}")
+    return 0
+
+
+def parse_worktrees(raw: str) -> List[Dict[str, str]]:
+    rows: List[Dict[str, str]] = []
+    current: Dict[str, str] = {}
+    for line in raw.splitlines() + [""]:
+        if not line:
+            if current:
+                rows.append(current)
+                current = {}
+            continue
+        key, _, value = line.partition(" ")
+        current[key] = value
+    return rows
+
+
+def gh_api_optional(path: str) -> Tuple[int, Any]:
+    result = run(("gh", "api", path), check=False)
+    if result.returncode:
+        return result.returncode, None
+    return 0, json.loads(result.stdout)
+
+
+def gh_api_write(
+    method: str, path: str, payload: Dict[str, Any], *, check: bool = True
+) -> Any:
+    """Call a writing GitHub endpoint.
+
+    With ``check=False`` a rejected call returns ``None`` instead of raising, so
+    a caller can fall back to a different strategy.
+    """
+    result = subprocess.run(
+        ("gh", "api", "--method", method, path, "--input", "-"),
+        input=json.dumps(payload),
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    if result.returncode and not check:
+        return None
+    if result.returncode:
+        detail = "\n".join(
+            value.strip() for value in (result.stdout, result.stderr) if value.strip()
+        )
+        raise CommandError(
+            f"GitHub {method} {path} failed ({result.returncode}): {detail}"
+        )
+    return json.loads(result.stdout or "null")
+
+
+def personal_repository_protection_payload() -> Dict[str, Any]:
+    """Return branch protection accepted for a user-owned GitHub repository."""
+    return {
+        "required_status_checks": {
+            # Not strict. Requiring every branch to be rebased onto the newest
+            # main serialises the whole fleet: with N open PRs and one merge per
+            # CI round, every other branch is invalidated the moment one lands,
+            # and the queue spends its time re-running green checks. The checks
+            # themselves still gate; only the up-to-date requirement is dropped.
+            "strict": False,
+            "contexts": ["cargo-test", "collaboration-policy"],
+        },
+        # Admins are not held to the required checks, so an outage outside the
+        # repository can never hard-block main. On 2026-07-25 GitHub-hosted
+        # Actions stopped starting jobs at all (a billing failure), every run
+        # died in three seconds with zero steps, and with enforce_admins on there
+        # was no way to land verified work. Self-hosted runners fixed the cause;
+        # this keeps the next such outage from being unrecoverable.
+        "enforce_admins": False,
+        "required_pull_request_reviews": {
+            "dismiss_stale_reviews": False,
+            "require_code_owner_reviews": False,
+            "required_approving_review_count": 0,
+            "require_last_push_approval": False,
+        },
+        "restrictions": None,
+        "required_conversation_resolution": True,
+        "required_linear_history": True,
+        "allow_force_pushes": False,
+        "allow_deletions": False,
+        "block_creations": False,
+        "lock_branch": False,
+    }
+
+
+def enforce_github_command(args: argparse.Namespace) -> int:
+    root = repo_root()
+    permission = gh_json(("api", f"repos/{REPOSITORY}", "--jq", ".permissions.admin"), cwd=root)
+    if permission is not True:
+        raise CommandError(
+            "the active GitHub account is not a repository administrator; "
+            "authenticate the MartinHalvorson owner account, then rerun"
+        )
+
+    gh_api_write(
+        "PATCH",
+        f"repos/{REPOSITORY}",
+        {
+            "allow_squash_merge": True,
+            "allow_merge_commit": False,
+            "allow_rebase_merge": False,
+            "allow_auto_merge": True,
+            "delete_branch_on_merge": True,
+            "squash_merge_commit_title": "PR_TITLE",
+            "squash_merge_commit_message": "PR_BODY",
+        },
+    )
+    gh_api_write(
+        "PUT",
+        f"repos/{REPOSITORY}/branches/{DEFAULT_BRANCH}/protection",
+        personal_repository_protection_payload(),
+    )
+    print("GitHub enforcement applied: PR-only current green main, squash-only, no force/delete")
+    return audit_command(argparse.Namespace(json=False))
+
+
+def audit_repo(root: Path) -> Dict[str, List[str]]:
+    findings: Dict[str, List[str]] = {"errors": [], "warnings": [], "ok": []}
+    errors, warnings, ok = findings["errors"], findings["warnings"], findings["ok"]
+
+    if shutil.which("gh"):
+        repo = gh_json(("api", f"repos/{REPOSITORY}"), cwd=root)
+        heads = remote_heads(root)
+        main_sha = heads.get(DEFAULT_BRANCH, "")
+        if repo.get("allow_merge_commit") or repo.get("allow_rebase_merge"):
+            errors.append("repository permits non-squash merge methods")
+        else:
+            ok.append("squash is the only enabled merge method")
+        if not repo.get("delete_branch_on_merge"):
+            errors.append("merged branches are not deleted automatically")
+        else:
+            ok.append("merged branches are deleted automatically")
+
+        _, rulesets = gh_api_optional(f"repos/{REPOSITORY}/rulesets")
+        active = [row for row in (rulesets or []) if row.get("enforcement") == "active"]
+        protection_code, protection = gh_api_optional(
+            f"repos/{REPOSITORY}/branches/{DEFAULT_BRANCH}/protection"
+        )
+        is_admin = bool((repo.get("permissions") or {}).get("admin"))
+        if not active and protection_code and is_admin:
+            errors.append("no active GitHub ruleset or branch protection protects main")
+        elif not active and protection_code:
+            warnings.append(
+                "non-admin GitHub account cannot inspect main branch protection; "
+                "rerun the audit with owner credentials for authoritative verification"
+            )
+        else:
+            ok.append("GitHub protects main")
+        if protection:
+            checks = set((protection.get("required_status_checks") or {}).get("contexts") or [])
+            required = {"cargo-test", "collaboration-policy"}
+            if not required.issubset(checks):
+                errors.append("main does not require both cargo-test and collaboration-policy")
+            else:
+                ok.append("main requires cargo-test and collaboration-policy checks")
+            # `strict` and `enforce_admins` are deliberately off; see
+            # personal_repository_protection_payload(). Requiring up-to-date heads
+            # serialises the queue behind one merge per CI round, and holding
+            # admins to the checks left main unmergeable for hours on 2026-07-25
+            # when Actions could not start a single job. Flag the old settings as
+            # warnings so the audit agrees with what enforce-github writes.
+            if (protection.get("required_status_checks") or {}).get("strict"):
+                warnings.append(
+                    "main requires up-to-date PR heads; this serialises the merge queue"
+                )
+            if (protection.get("enforce_admins") or {}).get("enabled"):
+                warnings.append(
+                    "main holds admins to the required checks; a CI outage can hard-block main"
+                )
+            if not (protection.get("required_conversation_resolution") or {}).get("enabled"):
+                errors.append("main does not require conversation resolution")
+            if (protection.get("allow_force_pushes") or {}).get("enabled"):
+                errors.append("main permits force pushes")
+            if (protection.get("allow_deletions") or {}).get("enabled"):
+                errors.append("main permits deletion")
+
+        workflows = gh_json(
+            ("workflow", "list", "--repo", REPOSITORY, "--json", "name,path,state"),
+            cwd=root,
+        )
+        active_paths = {
+            row["path"] for row in (workflows or []) if row.get("state") == "active"
+        }
+        required_workflows = {
+            ".github/workflows/tests.yml",
+            ".github/workflows/collaboration-policy.yml",
+        }
+        missing = sorted(required_workflows - active_paths)
+        if missing:
+            errors.append("required workflows are not active: " + ", ".join(missing))
+        else:
+            ok.append("test and collaboration-policy workflows are active")
+
+        prs = existing_pr_claims(root)
+        open_heads = {str(pr.get("headRefName") or "") for pr in prs}
+        pr_views: Dict[int, Dict[str, Any]] = {}
+        pr_changed: Dict[int, Set[str]] = {}
+        for pr in prs:
+            number = int(pr["number"])
+            view = gh_json(
+                (
+                    "pr",
+                    "view",
+                    str(number),
+                    "--repo",
+                    REPOSITORY,
+                    "--json",
+                    "files,commits,isDraft,body,headRefName,headRefOid,number",
+                ),
+                cwd=root,
+            )
+            pr_views[number] = view
+            pr_changed[number] = {row["path"] for row in view.get("files", [])}
+        # `gh pr view` reports paths without patches, which would force the
+        # whole-file fallback and report collisions CI does not. Fetch the same
+        # hunk ranges check-pr uses so the audit and the gate always agree.
+        pr_ranges: Dict[int, Dict[str, Optional[List[Tuple[int, int]]]]] = {
+            number: gh_pr_file_ranges(number, cwd=root) for number in pr_views
+        }
+        for number, view in pr_views.items():
+            files = sorted(pr_changed[number])
+            subjects = [row["messageHeadline"] for row in view.get("commits", [])]
+            others = {
+                key: value
+                for key, value in pr_ranges.items()
+                if key != number and set(value) & set(pr_ranges[number])
+            }
+            violations = validate_pr(
+                view,
+                files=files,
+                commit_subjects=subjects,
+                ranges=pr_ranges[number],
+                other_ranges=others,
+            )
+            for violation in violations:
+                errors.append(f"PR #{number}: {violation}")
+            if not view.get("isDraft") and main_sha:
+                head_sha = str(view.get("headRefOid") or "")
+                if head_sha:
+                    comparison = gh_json(
+                        (
+                            "api",
+                            f"repos/{REPOSITORY}/compare/{main_sha}...{head_sha}",
+                        ),
+                        cwd=root,
+                    )
+                    if not compare_status_is_current(
+                        str(comparison.get("status") or "")
+                    ):
+                        # Transient, and enforced by GitHub at merge time. See
+                        # the note in check_pr_action.
+                        warnings.append(
+                            f"PR #{number}: behind current main; GitHub will "
+                            "require an update before it can merge"
+                        )
+        if prs and not any(item.startswith("PR #") for item in errors):
+            ok.append(f"all {len(prs)} open PR claim(s) satisfy policy")
+
+        for branch in sorted(heads):
+            if branch == DEFAULT_BRANCH:
+                continue
+            if not BRANCH_RE.fullmatch(branch):
+                errors.append(f"nonconforming remote development branch: {branch}")
+            elif branch not in open_heads:
+                errors.append(f"remote task branch has no open PR claim: {branch}")
+    else:
+        errors.append("GitHub CLI is unavailable; remote enforcement cannot be audited")
+
+    worktrees = parse_worktrees(git(root, "worktree", "list", "--porcelain"))
+    for row in worktrees:
+        path_text = row.get("worktree", "")
+        branch = row.get("branch", "").removeprefix("refs/heads/")
+        if "prunable" in row:
+            warnings.append(f"prunable worktree registration: {path_text}")
+            continue
+        path = Path(path_text)
+        status = git(path, "status", "--porcelain", check=False) if path.exists() else ""
+        if branch == DEFAULT_BRANCH and status:
+            errors.append(f"main worktree is dirty: {path}")
+        elif branch and branch != DEFAULT_BRANCH and not BRANCH_RE.fullmatch(branch):
+            label = "dirty" if status else "clean"
+            warnings.append(f"legacy/nonconforming {label} worktree branch {branch}: {path}")
+    ok.append(f"inspected {len(worktrees)} local worktree registration(s)")
+
+    hook_error = push_guard_error(root)
+    if hook_error:
+        errors.append(hook_error)
+    else:
+        ok.append("shared local pre-push guard is installed and current")
+
+    if sys.platform == "darwin":
+        agents = Path.home() / "Library" / "LaunchAgents"
+        active = sorted(agents.glob("*civvis*autosync*.plist")) if agents.exists() else []
+        if active:
+            errors.append("mutating CIVVIS launch agents remain installed: " + ", ".join(map(str, active)))
+        else:
+            ok.append("no mutating CIVVIS launch agent is installed")
+    elif os.name == "nt" and shutil.which("schtasks"):
+        result = run(("schtasks", "/Query", "/TN", "CIVVIS Git Autosync"), check=False)
+        if result.returncode == 0:
+            errors.append("mutating CIVVIS scheduled task remains installed")
+    elif shutil.which("systemctl"):
+        result = run(("systemctl", "--user", "is-enabled", "civvis-autosync.timer"), check=False)
+        if result.returncode == 0:
+            errors.append("mutating CIVVIS systemd timer remains enabled")
+
+    return findings
+
+
+def print_findings(findings: Dict[str, List[str]], *, as_json: bool = False) -> None:
+    if as_json:
+        print(json.dumps(findings, indent=2, sort_keys=True))
+        return
+    labels = {"errors": "ERROR", "warnings": "WARNING", "ok": "OK"}
+    for level in ("errors", "warnings", "ok"):
+        for message in findings[level]:
+            print(f"{labels[level]:7} {message}")
+    print(
+        f"SUMMARY errors={len(findings['errors'])} "
+        f"warnings={len(findings['warnings'])} ok={len(findings['ok'])}"
+    )
+
+
+def audit_command(args: argparse.Namespace) -> int:
+    findings = audit_repo(repo_root())
+    print_findings(findings, as_json=args.json)
+    return 1 if findings["errors"] else 0
+
+
+def monitor_command(args: argparse.Namespace) -> int:
+    root = repo_root()
+    duration = max(1, args.duration_minutes) * 60
+    interval = max(60, args.interval_seconds)
+    deadline = time.monotonic() + duration
+    log_path = Path(args.log).expanduser().resolve()
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    rounds = 0
+    ever_failed = False
+    previous_heads = remote_heads(root)
+    while True:
+        rounds += 1
+        observed = dt.datetime.now(dt.timezone.utc).isoformat()
+        findings = audit_repo(root)
+        current_heads = remote_heads(root)
+        main_before = previous_heads.get(DEFAULT_BRANCH)
+        main_after = current_heads.get(DEFAULT_BRANCH)
+        if main_before and main_after and main_before != main_after:
+            git(root, "fetch", "--prune", "origin", DEFAULT_BRANCH)
+            ancestry = run(
+                (
+                    "git",
+                    "-C",
+                    str(root),
+                    "merge-base",
+                    "--is-ancestor",
+                    main_before,
+                    main_after,
+                ),
+                check=False,
+            )
+            if ancestry.returncode:
+                findings["errors"].append(
+                    f"main was rewritten or force-pushed: {main_before[:7]} -> {main_after[:7]}"
+                )
+                commits = [main_after]
+            else:
+                commits = git(
+                    root, "rev-list", "--reverse", f"{main_before}..{main_after}"
+                ).splitlines()
+            for sha in commits:
+                pr_number = associated_pr_number(sha)
+                if pr_number is None:
+                    subject = git(root, "show", "-s", "--format=%s", sha)
+                    findings["errors"].append(
+                        f"direct main commit detected: {sha[:7]} {subject}"
+                    )
+                else:
+                    findings["ok"].append(
+                        f"main commit {sha[:7]} is backed by merged PR #{pr_number}"
+                    )
+                    parent_sha = git(root, "rev-parse", f"{sha}^")
+                    gate_errors = merged_pr_gate_errors(pr_number, parent_sha)
+                    for error in gate_errors:
+                        findings["errors"].append(
+                            f"PR #{pr_number} merged without a green gate: {error}"
+                        )
+                    if not gate_errors:
+                        findings["ok"].append(
+                            f"PR #{pr_number} had both required checks green before merge"
+                        )
+        for branch, sha in current_heads.items():
+            if branch == DEFAULT_BRANCH or previous_heads.get(branch) == sha:
+                continue
+            if not BRANCH_RE.fullmatch(branch):
+                findings["errors"].append(
+                    f"new or updated nonconforming remote branch: {branch} at {sha[:7]}"
+                )
+        previous_heads = current_heads
+        ever_failed = ever_failed or bool(findings["errors"])
+        record = {"observed_at": observed, "round": rounds, **findings}
+        with log_path.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(record, sort_keys=True) + "\n")
+        print(
+            f"MONITOR {observed} round={rounds} errors={len(findings['errors'])} "
+            f"warnings={len(findings['warnings'])}",
+            flush=True,
+        )
+        if time.monotonic() >= deadline:
+            break
+        next_audit = min(deadline, time.monotonic() + interval)
+        while time.monotonic() < next_audit:
+            remaining = next_audit - time.monotonic()
+            time.sleep(min(60, max(0, remaining)))
+            if time.monotonic() < next_audit:
+                print("MONITOR heartbeat: waiting for next fleet audit", flush=True)
+    print(f"MONITOR complete rounds={rounds} log={log_path}")
+    return 1 if ever_failed else 0
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description=__doc__)
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    start = sub.add_parser("start", help="create a task worktree, branch, and draft PR claim")
+    start.add_argument("task", help="lowercase hyphenated task slug")
+    start.add_argument("--machine", help="stable fleet-unique machine ID")
+    start.add_argument("--agent", help="active agent/session ID")
+    start.add_argument("--path", action="append", required=True, help="claimed path or glob")
+    start.add_argument("--coordinate", type=int, action="append", default=[], help="coordinated PR number")
+    start.add_argument("--title", help="draft PR title")
+    start.add_argument("--parent", help="directory in which to create the worktree")
+    start.add_argument("--dry-run", action="store_true")
+    start.set_defaults(func=start_task)
+
+    ship = sub.add_parser(
+        "ship",
+        help="push a finished task, wait for green CI, merge it, and verify live",
+    )
+    ship.add_argument("--timeout-seconds", type=float, default=1200.0)
+    ship.add_argument("--poll-seconds", type=float, default=10.0)
+    ship.add_argument("--live-timeout-seconds", type=float, default=600.0)
+    ship.add_argument(
+        "--live-url",
+        default=os.environ.get(
+            "CIVVIS_LIVE_STATUS_URL", "http://127.0.0.1:8766/status"
+        ),
+    )
+    ship.set_defaults(func=ship_task)
+
+    check_pr = sub.add_parser("check-pr", help="validate the current GitHub pull request event")
+    check_pr.add_argument("--event", default=os.environ.get("GITHUB_EVENT_PATH", ""))
+    check_pr.add_argument("--repository", default=os.environ.get("GITHUB_REPOSITORY", REPOSITORY))
+    check_pr.add_argument("--token", default=os.environ.get("GITHUB_TOKEN", ""))
+
+    audit = sub.add_parser("audit", help="audit local and GitHub fleet enforcement")
+    audit.add_argument("--json", action="store_true")
+    audit.set_defaults(func=audit_command)
+
+    enforce = sub.add_parser("enforce-github", help="apply repository and main protection settings")
+    enforce.set_defaults(func=enforce_github_command)
+
+    install_hooks = sub.add_parser(
+        "install-hooks", help="install the shared local pre-push guard for this clone"
+    )
+    install_hooks.set_defaults(func=install_hooks_command)
+
+    monitor = sub.add_parser("monitor", help="run recurring fleet audits")
+    monitor.add_argument("--duration-minutes", type=int, default=180)
+    monitor.add_argument("--interval-seconds", type=int, default=300)
+    monitor.add_argument(
+        "--log",
+        default=str(Path.home() / ".local/state/civvis-collab/monitor.jsonl"),
+    )
+    monitor.set_defaults(func=monitor_command)
+    return parser
+
+
+def main(argv: Optional[Sequence[str]] = None) -> int:
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    if args.command == "check-pr":
+        if not args.event:
+            parser.error("check-pr requires --event or GITHUB_EVENT_PATH")
+        if not args.token:
+            parser.error("check-pr requires --token or GITHUB_TOKEN")
+        return check_pr_action(Path(args.event), args.token, args.repository)
+    try:
+        return int(args.func(args))
+    except CommandError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

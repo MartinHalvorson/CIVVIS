@@ -25,13 +25,16 @@ import shutil
 import signal
 import subprocess
 import sys
+import tempfile
 import time
 from typing import Any
 from urllib.error import URLError
 from urllib.request import Request, urlopen
 
 
-SCRIPT_ROOT = Path(__file__).resolve().parents[1]
+SCRIPT_PATH = Path(__file__).resolve()
+SCRIPT_ROOT = SCRIPT_PATH.parents[1]
+RUNNING_SUPERVISOR_SHA256 = hashlib.sha256(SCRIPT_PATH.read_bytes()).hexdigest()
 ROOT = Path(os.environ.get("CIVVIS_DEPLOY_ROOT", str(SCRIPT_ROOT))).expanduser().resolve()
 SOURCE_ROOT = Path(
     os.environ.get(
@@ -47,10 +50,84 @@ RESULTS_DIR = RUNTIME_BINARY.parent / "results"
 RUNTIME_INPUTS = ("Cargo.toml", "Cargo.lock", "build.rs", "src", "data", "web")
 SYNC_REMOTE = os.environ.get("CIVVIS_SYNC_REMOTE", "origin")
 SYNC_BRANCH = os.environ.get("CIVVIS_SYNC_BRANCH", "main")
+LOG_FILE = Path(
+    os.environ.get("CIVVIS_SPECTATOR_LOG", str(ROOT / "spectator-supervisor.log"))
+).expanduser()
+# A console child - the game server, cargo, git - launched from a windowless
+# parent (pythonw, or a hidden scheduled task) pops its own console window on
+# Windows. CREATE_NO_WINDOW suppresses it so an unattended supervisor never
+# flashes a terminal. Empty, and so a no-op, on every other platform.
+_NO_WINDOW = {"creationflags": 0x08000000} if os.name == "nt" else {}
 
 
 def log(message: str) -> None:
-    print(f"[spectator] {message}", flush=True)
+    line = f"[spectator] {message}"
+    # An unattended supervisor has no console to print to - pythonw discards
+    # stdout, a detached task never had one - so the durable record is a file
+    # keyed off the deploy root. Printing stays best-effort on top of it.
+    try:
+        stamp = datetime.now(timezone.utc).strftime("%m-%d %H:%M:%S")
+        with open(LOG_FILE, "a", encoding="utf-8") as handle:
+            handle.write(f"{stamp} {line}\n")
+    except OSError:
+        pass
+    try:
+        print(line, flush=True)
+    except (OSError, ValueError, AttributeError):
+        pass
+
+
+def updated_supervisor_command(
+    server_pid: int | None, argv: list[str] | None = None
+) -> list[str] | None:
+    """Return an exec command when canonical source contains newer supervision.
+
+    The game binary is promoted atomically, but Python keeps executing the code
+    it imported at process start.  Re-exec the canonical script after a source
+    sync and hand it the live server PID so supervision upgrades without
+    stopping or replacing the visible match.
+    """
+    candidate = SOURCE_ROOT / "tools" / "spectator_supervisor.py"
+    try:
+        payload = candidate.read_bytes()
+    except OSError:
+        return None
+    if hashlib.sha256(payload).hexdigest() == RUNNING_SUPERVISOR_SHA256:
+        return None
+    try:
+        compile(payload, str(candidate), "exec")
+    except (SyntaxError, ValueError) as error:
+        log(f"canonical supervisor update is invalid; keeping current process: {error}")
+        return None
+
+    inherited = list(sys.argv[1:] if argv is None else argv)
+    while "--adopt-pid" in inherited:
+        index = inherited.index("--adopt-pid")
+        del inherited[index : index + 2]
+    if server_pid is not None:
+        inherited.extend(("--adopt-pid", str(server_pid)))
+    return [sys.executable, str(candidate), *inherited]
+
+
+def reexec_updated_supervisor(
+    server_pid: int | None, argv: list[str] | None = None
+) -> None:
+    command = updated_supervisor_command(server_pid, argv)
+    if command is None:
+        return
+    log("canonical supervisor advanced; adopting the live game under fresh code")
+    # Keep the deploy root stable across the hand-off. The re-exec runs the
+    # canonical script out of the private build worktree, so without pinning it
+    # the new process would recompute ROOT - and its log, runtime binary, and
+    # source paths - from that worktree instead of the deployment.
+    os.environ["CIVVIS_DEPLOY_ROOT"] = str(ROOT)
+    # Release the single-instance lock before handing off. On Windows os.execv
+    # spawns a fresh PID rather than replacing the image in place, so the
+    # re-exec'd process would otherwise find this still-exiting one holding the
+    # port lock, judge itself a duplicate, and exit - ending supervision on
+    # every self-update.
+    release_single_instance()
+    os.execv(command[0], command)
 
 
 def cargo_executable() -> str:
@@ -80,6 +157,7 @@ def command(
             stderr=subprocess.STDOUT,
             check=check,
             env=environment,
+            **_NO_WINDOW,
         )
     except OSError as error:
         # A missing build tool must fail this build attempt, not terminate the
@@ -185,13 +263,18 @@ def runtime_inputs_dirty() -> bool:
     return bool(status.stdout.strip())
 
 
-def write_runtime_metadata(snapshot: str) -> None:
-    revision = command(
+def source_revision() -> str:
+    return command(
         "git", "rev-parse", "--short", "HEAD", check=True, cwd=SOURCE_ROOT
     ).stdout.strip()
+
+
+def write_runtime_metadata(snapshot: str) -> None:
+    revision = source_revision()
     dirty = runtime_inputs_dirty()
     metadata = {
         "revision": revision,
+        "embedded_revision": revision,
         "dirty": dirty,
         "source_snapshot": snapshot,
         "binary_sha256": hashlib.sha256(RUNTIME_BINARY.read_bytes()).hexdigest(),
@@ -241,7 +324,7 @@ def refresh_runtime_metadata(snapshot: str) -> None:
 
 
 def runtime_matches(snapshot: str) -> bool:
-    """Return whether the promoted binary was built from this exact source."""
+    """Return whether the promoted binary and its stamp match this source."""
     if not RUNTIME_BINARY.is_file() or not RUNTIME_METADATA.is_file():
         return False
     try:
@@ -252,6 +335,7 @@ def runtime_matches(snapshot: str) -> bool:
     matches = (
         metadata.get("source_snapshot") == snapshot
         and metadata.get("binary_sha256") == binary_hash
+        and metadata.get("embedded_revision") == source_revision()
     )
     return matches
 
@@ -282,9 +366,7 @@ def build_latest(max_attempts: int = 3) -> bool:
             log("known-good spectator build already matches the latest worktree")
             return True
         log(f"building the latest worktree (attempt {attempt}/{max_attempts})")
-        revision = command(
-            "git", "rev-parse", "--short", "HEAD", check=True, cwd=SOURCE_ROOT
-        ).stdout.strip()
+        revision = source_revision()
         build_environment = os.environ.copy()
         build_environment["CIVVIS_COMMIT"] = revision
         # The visible game does not need to wait for unrelated evaluation
@@ -370,6 +452,7 @@ def start_background_prebuild() -> subprocess.Popen[str]:
         cwd=ROOT,
         text=True,
         start_new_session=os.name != "nt",
+        **_NO_WINDOW,
     )
 
 
@@ -410,6 +493,24 @@ def read_json(
 
 def read_state(port: int, timeout: float = 1.0) -> dict[str, Any] | None:
     return read_json(port, "/state", timeout)
+
+
+def set_spectator_pause(
+    port: int, paused: bool, timeout: float = 5.0
+) -> dict[str, Any] | None:
+    """Restore the viewer's explicit pause after replacing a server process."""
+    try:
+        request = Request(
+            f"http://127.0.0.1:{port}/pace",
+            data=json.dumps({"paused": paused}).encode(),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urlopen(request, timeout=timeout) as response:
+            value = json.load(response)
+            return value if isinstance(value, dict) else None
+    except (OSError, URLError, ValueError):
+        return None
 
 
 def step_spectator(port: int, timeout: float = 5.0) -> dict[str, Any] | None:
@@ -577,24 +678,25 @@ def quarantine_checkpoint(path: Path) -> None:
 
 
 def session_settings(state: dict[str, Any], defaults: dict[str, Any]) -> dict[str, Any]:
-    """Carry the just-finished game's setup forward to the next binary."""
+    """Carry the just-finished game's setup forward to the next binary.
+
+    The seat counts come from the operator's flags, never from the observation.
+    `/state` is fog-of-war trimmed -- with a civilization selected in "View as"
+    it carries only the players that civilization can see -- so counting the
+    majors in it and feeding that back as the next `--players` ratchets the
+    exhibition down and never recovers: a six-player match was observed
+    restarting as four, then two, with each smaller game re-confirming the
+    smaller count. Board *shape* may follow the finished game; how many seats
+    it has may not.
+    """
     players = state.get("players") or []
-    majors = sum(
-        1
-        for player in players
-        if not player.get("is_minor", False) and not player.get("is_barbarian", False)
-    )
-    city_states = sum(
-        1
-        for player in players
-        if player.get("is_minor", False) and not player.get("is_barbarian", False)
-    )
     game_map = state.get("map") or {}
     settings = {
-        "players": majors or defaults["players"],
+        # Seat counts stay with the operator's flags; see the note above.
+        "players": defaults["players"],
         "width": int(game_map.get("width") or defaults["width"]),
         "height": int(game_map.get("height") or defaults["height"]),
-        "city_states": city_states if players else defaults["city_states"],
+        "city_states": defaults["city_states"],
         "turns": int(state.get("max_turns") or defaults["turns"]),
         "map": game_map.get("script") or defaults["map"],
         "speed": state.get("game_speed") or defaults["speed"],
@@ -679,6 +781,50 @@ def result_standings(state: dict[str, Any]) -> str | None:
     return "; ".join(entries)
 
 
+# Supervisor-level policy, set once from --league in main(). Deliberately NOT
+# part of the per-game settings dict: session_settings() and manual restart
+# requests rebuild that dict from the finished game's state, which silently
+# dropped the key and unrated every game after the first victory boundary.
+LEAGUE_SPEC = "auto"
+LEAGUE_RECORD = True
+
+
+def league_dir(spec: str) -> tuple[Path, bool] | None:
+    """Resolve the --league setting to (directory holding league.json, record).
+
+    Resolved at every spawn, not at startup, because in 'auto' mode the
+    canonical source worktree may only gain data/league once it syncs a
+    commit that ships the snapshot.
+
+    'auto' hands back a *runtime* copy of that snapshot and asks the server to
+    rate its games into it. data/league is a committed file: writing results
+    straight back would leave every checkout permanently dirty, so the shipped
+    roster stays the starting position and the live table accumulates beside
+    it, under the repo-root league/ path .gitignore already reserves for
+    exactly this. Delete that directory to start again from the snapshot.
+    An explicitly named directory is left read-only unless the operator asks
+    for recording, since only they know whether it is disposable.
+    """
+    if spec == "off":
+        return None
+    if spec != "auto":
+        candidate = Path(spec).expanduser().resolve()
+        if not (candidate / "league.json").exists():
+            return None
+        return candidate, LEAGUE_RECORD
+    snapshot = SOURCE_ROOT / "data" / "league" / "league.json"
+    if not snapshot.exists():
+        return None
+    if not LEAGUE_RECORD:
+        return snapshot.parent, False
+    live = SOURCE_ROOT / "league"
+    if not (live / "league.json").exists():
+        live.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(snapshot, live / "league.json")
+        log(f"seeded the live rating table at {live} from {snapshot}")
+    return live, True
+
+
 def server_command(
     port: int,
     settings: dict[str, Any],
@@ -715,6 +861,13 @@ def server_command(
     ]
     if resume is not None:
         args.extend(("--resume", str(resume)))
+    roster = league_dir(LEAGUE_SPEC)
+    if roster is not None:
+        directory, record = roster
+        # Absolute path: the server runs from the runtime directory, not ROOT.
+        args.extend(("--league", str(directory)))
+        if record:
+            args.append("--league-record")
     if "victories" in settings:
         args.extend(("--victories", ",".join(settings["victories"])))
     if not open_browser:
@@ -736,6 +889,7 @@ def start_server(
         server_command(port, settings, open_browser, resume),
         cwd=RUNTIME_BINARY.parent,
         text=True,
+        **_NO_WINDOW,
     )
     detail = f", resuming {resume.name}" if resume is not None else ""
     log(f"started PID {process.pid} on port {port} ({settings['players']} players{detail})")
@@ -850,6 +1004,33 @@ def parse_args() -> argparse.Namespace:
         default="online",
     )
     parser.add_argument(
+        "--victories",
+        type=parse_victories,
+        help=(
+            "comma-separated enabled victories: science, culture, religious, "
+            "diplomatic, domination, score"
+        ),
+    )
+    parser.add_argument(
+        "--league",
+        default="auto",
+        help=(
+            "league directory for rated seating and the elo HUD: 'auto' uses "
+            "the canonical source's data/league when present, 'off' disables, "
+            "anything else is a directory containing league.json"
+        ),
+    )
+    parser.add_argument(
+        "--no-league-record",
+        dest="league_record",
+        action="store_false",
+        help=(
+            "seat rated players but leave their ratings alone. By default "
+            "every finished game is rated: 'auto' accumulates into a runtime "
+            "copy of the shipped roster, a named directory is written in place"
+        ),
+    )
+    parser.add_argument(
         "--cooldown",
         type=float,
         default=5.0,
@@ -903,10 +1084,83 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def parse_victories(value: str) -> list[str]:
+    allowed = {
+        "science",
+        "culture",
+        "religious",
+        "diplomatic",
+        "domination",
+        "score",
+    }
+    victories = [name.strip() for name in value.split(",") if name.strip()]
+    unknown = sorted(set(victories) - allowed)
+    if not victories or unknown:
+        detail = (
+            "at least one victory is required"
+            if not victories
+            else f"unknown: {', '.join(unknown)}"
+        )
+        raise argparse.ArgumentTypeError(detail)
+    return victories
+
+
+# Lock handles kept open for the process lifetime, one per owned port.
+_INSTANCE_LOCKS: dict[int, Any] = {}
+
+
+def acquire_single_instance(port: int) -> bool:
+    """Best-effort guard: at most one supervisor process per port per machine.
+
+    A scheduled relaunch, or a repeat trigger firing during the brief window
+    when a self-updating supervisor re-execs itself (on Windows os.execv spawns
+    a fresh PID rather than replacing the image, so the launcher can believe the
+    task has ended), must not start a second supervisor that would fight over
+    the same port. Returns False only when a *different* live process already
+    holds it; re-acquiring a port this process already owns is idempotent.
+    """
+    if port in _INSTANCE_LOCKS:
+        return True
+    lock_path = Path(tempfile.gettempdir()) / f"civvis-spectator-{port}.lock"
+    try:
+        handle = open(lock_path, "a+")
+    except OSError:
+        # If the lock file cannot even be created, do not block startup - the
+        # visible game matters more than a theoretical double-launch.
+        return True
+    try:
+        if os.name == "nt":
+            import msvcrt
+
+            msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+        else:
+            import fcntl
+
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        handle.close()
+        return False
+    _INSTANCE_LOCKS[port] = handle
+    return True
+
+
+def release_single_instance() -> None:
+    """Drop any held port locks so a re-exec of this process can re-acquire."""
+    for handle in _INSTANCE_LOCKS.values():
+        try:
+            handle.close()
+        except OSError:
+            pass
+    _INSTANCE_LOCKS.clear()
+
+
 def main() -> int:
     args = parse_args()
     if getattr(args, "prepare_once", False):
         return 0 if prepare_latest_once() else 1
+    if not acquire_single_instance(args.port):
+        log(f"another supervisor already owns port {args.port}; exiting")
+        return 0
     settings = {
         "players": args.players,
         "width": args.width,
@@ -916,6 +1170,11 @@ def main() -> int:
         "map": args.map,
         "speed": args.speed,
     }
+    if getattr(args, "victories", None):
+        settings["victories"] = list(args.victories)
+    global LEAGUE_SPEC, LEAGUE_RECORD
+    LEAGUE_SPEC = getattr(args, "league", "auto")
+    LEAGUE_RECORD = getattr(args, "league_record", True)
     process: subprocess.Popen[str] | None = None
     adopted_pid = args.adopt_pid
     # An adopted binary cannot be proven current, so replace it at the first
@@ -939,7 +1198,9 @@ def main() -> int:
     source_check_at = 0.0
     prebuild_process: subprocess.Popen[str] | None = None
 
-    def launch_recovery(open_browser: bool = False) -> dict[str, Any]:
+    def launch_recovery(
+        open_browser: bool = False, preserve_pause: bool = False
+    ) -> dict[str, Any]:
         nonlocal process, adopted_pid, running_runtime_id
         stop_server(process, adopted_pid)
         process = None
@@ -975,6 +1236,9 @@ def main() -> int:
             recovered = wait_for_server(args.port, process)
             marker = None
 
+        if preserve_pause:
+            recovered = set_spectator_pause(args.port, True) or recovered
+
         if resumed_checkpoint(recovered, marker):
             log(
                 f"resumed checkpoint at turn {recovered.get('turn')} "
@@ -992,6 +1256,7 @@ def main() -> int:
             # are compiled while a completed result screen remains reachable.
             if not RUNTIME_BINARY.exists():
                 prepare_latest(args.build_retry)
+                reexec_updated_supervisor(None)
             state = launch_recovery(not args.no_open)
         else:
             if not process_alive(None, adopted_pid):
@@ -1077,6 +1342,9 @@ def main() -> int:
                     latest_ready = runtime_matches(snapshot)
                     if prebuild_process is not None and prebuild_process.poll() is not None:
                         prebuild_process = None
+                        reexec_updated_supervisor(
+                            process.pid if process is not None else adopted_pid
+                        )
                         snapshot = source_snapshot()
                         latest_ready = runtime_matches(snapshot)
                     if latest_ready:
@@ -1092,6 +1360,7 @@ def main() -> int:
                 else:
                     log("restart requested; starting a new simulation on existing code")
 
+                preserve_pause = bool(state.get("spectator_paused"))
                 stop_server(process, adopted_pid)
                 process = None
                 adopted_pid = None
@@ -1104,6 +1373,8 @@ def main() -> int:
                 process = start_server(args.port, settings, False)
                 running_runtime_id = launch_runtime_id
                 state = wait_for_server(args.port, process)
+                if preserve_pause:
+                    state = set_spectator_pause(args.port, True) or state
                 unavailable_since = None
                 last_progress = progress_marker(state)
                 progress_at = time.monotonic()
@@ -1120,6 +1391,9 @@ def main() -> int:
                 now = time.monotonic()
                 if prebuild_process is not None and prebuild_process.poll() is not None:
                     prebuild_process = None
+                    reexec_updated_supervisor(
+                        process.pid if process is not None else adopted_pid
+                    )
                     if runtime_replacement_pending(
                         running_runtime_id, promoted_runtime_id()
                     ):
@@ -1170,7 +1444,9 @@ def main() -> int:
                         checkpoint_ready = False
                     if checkpoint_ready:
                         log("fresh runtime is ready; resuming the active game from checkpoint")
-                        state = launch_recovery()
+                        state = launch_recovery(
+                            preserve_pause=bool(state.get("spectator_paused"))
+                        )
                         refresh_pending = False
                         unavailable_since = None
                         busy_reported = False
@@ -1245,7 +1521,10 @@ def main() -> int:
             launch_runtime_id = promoted_runtime_id()
             process = start_server(args.port, settings, False)
             running_runtime_id = launch_runtime_id
+            preserve_pause = bool(state.get("spectator_paused"))
             state = wait_for_server(args.port, process)
+            if preserve_pause:
+                state = set_spectator_pause(args.port, True) or state
             refresh_pending = not latest_ready
             refresh_at = time.monotonic()
             source_check_at = time.monotonic() + max(1.0, args.source_check_interval)

@@ -1,89 +1,505 @@
 {
-  "Rome": {
-    "leader": "Trajan",
-    "ability": "trajans_column",
-    "unique_unit": "legion",
-    "note": "Trajan's Column: every founded city starts with a free monument",
-    "agenda": "optimus_princeps",
-    "traits": [
-      "expansionist",
-      "low_religious_preference"
-    ]
-  },
-  "Egypt": {
-    "leader": "Cleopatra",
-    "ability": "iteru",
-    "unique_unit": "maryannu_chariot_archer",
-    "note": "Iteru: +15% production toward wonders in cities on a river",
-    "agenda": "queen_of_the_nile",
-    "traits": [
-      "mediterranean"
-    ]
-  },
-  "Greece": {
-    "leader": "Pericles",
-    "ability": "platos_republic",
-    "unique_unit": "hoplite",
-    "note": "Plato's Republic: +1 wildcard policy slot; Surrounded by Glory: +5% culture per suzerained city-state",
-    "agenda": "delian_league",
-    "traits": [
-      "cultural_major_civ",
-      "low_religious_preference",
-      "pursue_diplomatic_victory",
-      "surrounded_by_glory"
-    ]
-  },
-  "China": {
-    "leader": "Qin Shi Huang",
-    "ability": "dynastic_cycle",
-    "unique_unit": "crouching_tiger",
-    "note": "Dynastic Cycle: eurekas and inspirations give 50% (vs 40%); First Emperor: builders get +1 charge",
-    "agenda": "wonder_obsessed",
-    "traits": [
-      "cultural_major_civ",
-      "low_religious_preference"
-    ]
-  },
-  "Sumeria": {
-    "leader": "Gilgamesh",
-    "ability": "epic_quest",
-    "unique_unit": "war_cart",
-    "note": "Epic Quest: clearing a barbarian camp also grants a tribal village reward",
-    "agenda": "ally_of_enkidu",
-    "traits": [
-      "science_major_civ",
-      "low_city_state_preference_war",
-      "low_religious_preference"
-    ]
-  },
-  "Aztec": {
-    "leader": "Montezuma",
-    "ability": "gifts_for_the_tlatoani",
-    "unique_unit": "eagle_warrior",
-    "note": "Gifts for the Tlatoani: +1 combat strength per distinct improved luxury",
-    "agenda": "tlatoani",
-    "traits": [
-      "aggressive_military"
-    ]
-  },
-  "Nubia": {
-    "leader": "Amanitore",
-    "ability": "ta_seti",
-    "unique_unit": "pitati_archer",
-    "note": "Ta-Seti: +50% production toward ranged units",
-    "agenda": "city_planner",
-    "traits": [
-      "science_major_civ"
-    ]
-  },
-  "Scythia": {
-    "leader": "Tomyris",
-    "ability": "killer_of_cyrus",
-    "unique_unit": "saka_horse_archer",
-    "note": "Killer of Cyrus: units heal 30 HP after killing a unit",
-    "agenda": "backstab_averse",
-    "traits": [
-      "killer_of_cyrus"
-    ]
-  }
+ "Rome": {
+  "leader": "Trajan",
+  "ability": "trajans_column",
+  "unique_unit": "legion",
+  "note": "Trajan's Column: every founded city starts with a free monument; All Roads Lead to Rome: every city is founded with a Trading Post and, when the Capital is in Trade Route range, a road to it",
+  "agenda": "optimus_princeps",
+  "traits": [
+   "expansionist",
+   "low_religious_preference"
+  ],
+  "abilities": [
+   "all_roads_lead_to_rome"
+  ]
+ },
+ "Egypt": {
+  "leader": "Cleopatra",
+  "ability": "iteru",
+  "unique_unit": "maryannu_chariot_archer",
+  "note": "Iteru: +15% production toward districts and wonders beside a river, and immunity to floods; Mediterranean's Bride: +4 Gold on Egypt's international routes, and a foreign route into Egypt pays its owner 2 Food and Egypt 2 Gold",
+  "agenda": "queen_of_the_nile",
+  "traits": [
+   "mediterranean"
+  ],
+  "abilities": [
+   "mediterraneans_bride"
+  ]
+ },
+ "Greece": {
+  "leader": "Pericles",
+  "ability": "platos_republic",
+  "unique_unit": "hoplite",
+  "note": "Plato's Republic: +1 wildcard policy slot; Surrounded by Glory: +5% culture per suzerained city-state",
+  "agenda": "delian_league",
+  "traits": [
+   "cultural_major_civ",
+   "low_religious_preference",
+   "pursue_diplomatic_victory",
+   "surrounded_by_glory"
+  ]
+ },
+ "China": {
+  "leader": "Qin Shi Huang",
+  "ability": "dynastic_cycle",
+  "unique_unit": "crouching_tiger",
+  "note": "Dynastic Cycle: eurekas and inspirations give 50% (vs 40%); First Emperor: builders get +1 charge and may spend one for 15% of an Ancient or Classical wonder",
+  "agenda": "wonder_obsessed",
+  "traits": [
+   "cultural_major_civ",
+   "low_religious_preference"
+  ],
+  "abilities": [
+   "first_emperor"
+  ]
+ },
+ "Sumeria": {
+  "leader": "Gilgamesh",
+  "ability": "epic_quest",
+  "unique_unit": "war_cart",
+  "note": "Epic Quest: clearing a barbarian camp also grants a tribal village reward; Adventures with Enkidu: no Grievances for declaring war on anyone already at war with an ally",
+  "agenda": "ally_of_enkidu",
+  "traits": [
+   "science_major_civ",
+   "low_city_state_preference_war",
+   "low_religious_preference"
+  ],
+  "abilities": [
+   "adventures_with_enkidu"
+  ]
+ },
+ "Aztec": {
+  "leader": "Montezuma",
+  "ability": "gifts_for_the_tlatoani",
+  "unique_unit": "eagle_warrior",
+  "note": "Gifts for the Tlatoani: +1 combat strength per distinct improved luxury and luxuries reach two more cities; Legend of the Five Suns: a Builder charge completes 20% of a district",
+  "agenda": "tlatoani",
+  "traits": [
+   "aggressive_military"
+  ],
+  "abilities": [
+   "legend_of_the_five_suns"
+  ]
+ },
+ "Nubia": {
+  "leader": "Amanitore",
+  "ability": "ta_seti",
+  "unique_unit": "pitati_archer",
+  "note": "Ta-Seti: +50% production and experience toward ranged units; Kandake of Meroe: +20% district production, +40% beside a Nubian Pyramid",
+  "agenda": "city_planner",
+  "traits": [
+   "science_major_civ"
+  ],
+  "abilities": [
+   "kandake_of_meroe"
+  ]
+ },
+ "Scythia": {
+  "leader": "Tomyris",
+  "ability": "killer_of_cyrus",
+  "unique_unit": "saka_horse_archer",
+  "note": "Killer of Cyrus: +5 combat strength attacking wounded units and 30 HP healed on a kill; People of the Steppe: every Light Cavalry unit is trained as a pair",
+  "agenda": "backstab_averse",
+  "traits": [
+   "killer_of_cyrus"
+  ],
+  "abilities": [
+   "people_of_the_steppe"
+  ]
+ },
+ "Germany": {
+  "leader": "Frederick Barbarossa",
+  "ability": "free_imperial_cities",
+  "abilities": [
+   "holy_roman_emperor"
+  ],
+  "unique_unit": "u_boat",
+  "note": "Free Imperial Cities: one district beyond the population limit; Holy Roman Emperor: an extra Military policy slot and +7 Combat Strength attacking city-states",
+  "agenda": "iron_crown",
+  "traits": [
+   "aggressive_military",
+   "low_city_state_preference_war"
+  ]
+ },
+ "Korea": {
+  "leader": "Seondeok",
+  "ability": "three_kingdoms",
+  "abilities": [
+   "hwarang"
+  ],
+  "unique_unit": "hwacha",
+  "note": "Three Kingdoms: Farms gain +1 Food and Mines +1 Science beside a Seowon; Hwarang: an established Governor adds +3% Culture and Science per promotion held",
+  "agenda": "cheomseongdae",
+  "traits": [
+   "science_major_civ"
+  ]
+ },
+ "Russia": {
+  "leader": "Peter",
+  "ability": "mother_russia",
+  "abilities": [
+   "grand_embassy"
+  ],
+  "unique_unit": "cossack",
+  "note": "Mother Russia: five extra tiles on founding and +1 Faith and +1 Production from Tundra; The Grand Embassy: trade routes to more advanced civilizations pay 1 Science or Culture per 3 nodes they are ahead",
+  "agenda": "westernizer",
+  "traits": [
+   "science_major_civ",
+   "cultural_major_civ"
+  ]
+ },
+ "Zulu": {
+  "leader": "Shaka",
+  "ability": "isibongo",
+  "abilities": [
+   "amabutho"
+  ],
+  "unique_unit": "impi",
+  "note": "Isibongo: a garrison holds a city loyal, and a Corps or Army holds it harder; Amabutho: Corps and Armies arrive earlier and fight 5 stronger",
+  "agenda": "horn_chest_loins",
+  "traits": [
+   "aggressive_military"
+  ]
+ },
+ "Maya": {
+  "leader": "Lady Six Sky",
+  "ability": "mayab",
+  "abilities": [
+   "ix_mutal_ajaw"
+  ],
+  "unique_unit": "hulche",
+  "note": "Mayab: no Housing from fresh water or coast, Farms carry it instead, and Luxuries beside the City Center pay Amenities; Ix Mutal Ajaw: cities within 6 tiles of the Capital gain a tenth of their yields and the rest lose a seventh",
+  "agenda": "solitary",
+  "traits": [
+   "science_major_civ"
+  ]
+ },
+ "Gaul": {
+  "leader": "Ambiorix",
+  "ability": "hallstatt_culture",
+  "abilities": [
+   "king_of_the_eburones"
+  ],
+  "unique_unit": "gaesatae",
+  "note": "Hallstatt Culture: Mines pay Culture and lend every district their adjacency, while specialty districts take none from other districts and never sit beside the City Center; King of the Eburones: training a unit pays Culture worth a fifth of it, and infantry fight 2 stronger for each unit beside them",
+  "agenda": "scourge_of_rome",
+  "traits": [
+   "aggressive_military",
+   "cultural_major_civ"
+  ]
+ },
+ "Mali": {
+  "leader": "Mansa Musa",
+  "ability": "songs_of_the_jeli",
+  "abilities": [
+   "sahel_merchants"
+  ],
+  "unique_unit": "mandekalu_cavalry",
+  "note": "Songs of the Jeli: the desert feeds the City Center, Mines trade a Production for four Gold, and everything built or trained costs 30% more; Sahel Merchants: international routes pay a Gold for every flat Desert tile at home",
+  "agenda": "lord_of_the_mines",
+  "traits": [
+   "mediterranean"
+  ]
+ },
+ "Phoenicia": {
+  "leader": "Dido",
+  "ability": "mediterranean_colonies",
+  "abilities": [
+   "founder_of_carthage"
+  ],
+  "unique_unit": "bireme",
+  "note": "Mediterranean Colonies: coastal cities on the Capital’s continent never waver, and Settlers move 4 and embark freely; Founder of Carthage: +1 Trade Route capacity per Government Plaza building and +50% district Production where the Plaza stands",
+  "agenda": "sicilian_wars",
+  "traits": [
+   "mediterranean",
+   "expansionist"
+  ]
+ },
+ "England": {
+  "leader": "Victoria",
+  "ability": "british_museum",
+  "abilities": [
+   "pax_britannica"
+  ],
+  "unique_unit": "sea_dog",
+  "note": "British Museum: Archaeological Museums hold six Artifacts and support two Archaeologists; Pax Britannica: the first city on a new continent brings a free melee unit and a Trade Route, and every Royal Navy Dockyard launches the best warship England can build",
+  "agenda": "sun_never_sets",
+  "traits": [
+   "expansionist",
+   "cultural_major_civ"
+  ]
+ },
+ "Byzantium": {
+  "leader": "Basil II",
+  "ability": "taxis",
+  "abilities": [
+   "porphyrogennetos"
+  ],
+  "unique_unit": "tagma",
+  "note": "Taxis: every Holy City following Byzantium arms its units by 3, and a Holy Site pays a Great Prophet point; Porphyrogennetos: cavalry does full damage to cities of Byzantium’s own religion",
+  "agenda": "divine_guardian",
+  "traits": [
+   "aggressive_military"
+  ]
+ },
+ "Vietnam": {
+  "leader": "Ba Trieu",
+  "ability": "nine_dragon_river_delta",
+  "abilities": [
+   "drive_out_the_aggressors"
+  ],
+  "unique_unit": "voi_chien",
+  "note": "Nine Dragon River Delta: land specialty districts only on Woods, Rainforest or Marsh, the feature is kept, and every building on one pays Culture, Science or Production; Drive Out the Aggressors: +5 Combat Strength and +1 Movement on those features, doubled at home",
+  "agenda": "defender_of_the_homeland",
+  "traits": [
+   "defensive"
+  ]
+ },
+ "Kongo": {
+  "leader": "Mvemba a Nzinga",
+  "ability": "nkisi",
+  "abilities": [
+   "religious_convert"
+  ],
+  "unique_unit": "ngao_mbeba",
+  "note": "Nkisi: Relics and Artifacts pay Food, Production, Faith and Gold beside their Culture, Artist/Musician/Merchant points come half again as fast, and the Palace holds five Great Works; Religious Convert: no Holy Sites, no Great Prophets and no religion of his own, but he keeps the beliefs of whatever faith takes his cities and an Apostle follows every Mbanza and Theater Square",
+  "agenda": "enthusiastic_disciple",
+  "traits": [
+   "cultural_major_civ"
+  ]
+ },
+ "Brazil": {
+  "leader": "Pedro II",
+  "ability": "amazon",
+  "abilities": [
+   "magnanimous"
+  ],
+  "unique_unit": "minas_geraes",
+  "note": "Amazon: Rainforest pays a Campus, Commercial Hub, Holy Site or Theater Square beside it and raises the Appeal of its neighbours instead of lowering it; Magnanimous: a fifth of every Great Person’s point cost comes straight back",
+  "agenda": "patron_of_the_arts",
+  "traits": [
+   "cultural_major_civ"
+  ]
+ },
+ "Norway": {
+  "leader": "Harald Hardrada",
+  "ability": "knarr",
+  "abilities": [
+   "thunderbolt_of_the_north"
+  ],
+  "unique_unit": "viking_longship",
+  "note": "Knarr: Ocean from Shipbuilding rather than Cartography, naval melee heals in neutral territory, and embarking costs nothing extra; Thunderbolt of the North: naval melee units raid the coast and cost half again less, and what is pillaged pays Science or Culture beside its Gold or Faith",
+  "agenda": "last_viking_king",
+  "traits": [
+   "aggressive_military"
+  ]
+ },
+ "Macedon": {
+  "leader": "Alexander",
+  "ability": "hellenistic_fusion",
+  "abilities": [
+   "to_worlds_end"
+  ],
+  "unique_unit": "hetairoi",
+  "note": "Hellenistic Fusion: taking a city pays a Eureka for each Encampment or Campus in it and an Inspiration for each Holy Site or Theater Square; To World’s End: Macedonian cities never tire of war, every military unit is made whole when a city holding a wonder falls, and grievances against Alexander fade twice as fast",
+  "agenda": "short_life_of_glory",
+  "traits": [
+   "aggressive_military"
+  ]
+ },
+ "Poland": {
+  "leader": "Jadwiga",
+  "ability": "golden_liberty",
+  "abilities": [
+   "lithuanian_union"
+  ],
+  "unique_unit": "winged_hussar",
+  "note": "Golden Liberty: an Encampment or a Fort finished at home takes the ground around it, and one Military policy slot becomes a Wildcard; Lithuanian Union: a city that loses a tile to that Culture Bomb takes Poland’s religion, Holy Sites take a standard Faith adjacency from neighbouring districts, and every Relic pays 2 Faith, 2 Culture and 4 Gold",
+  "agenda": "saint",
+  "traits": [
+   "cultural_major_civ"
+  ]
+ },
+ "Japan": {
+  "leader": "Hojo Tokimune",
+  "ability": "meiji_restoration",
+  "abilities": [
+   "divine_wind"
+  ],
+  "unique_unit": "samurai",
+  "note": "Meiji Restoration: every district takes a whole standard adjacency from each district beside it, on top of the usual half; Divine Wind: land units fight 5 harder within sight of the sea and ships 5 harder in shallow water, and Encampments, Holy Sites and Theater Squares are built in half the time",
+  "agenda": "bushido",
+  "traits": [
+   "aggressive_military"
+  ]
+ },
+ "America": {
+  "leader": "Teddy Roosevelt",
+  "ability": "founding_fathers",
+  "abilities": [
+   "roosevelt_corollary"
+  ],
+  "unique_unit": "p51_mustang",
+  "note": "Founding Fathers: every Diplomatic policy slot runs as a Wildcard, and each Wildcard slot pays a Diplomatic Favor a turn; Roosevelt Corollary: units fight 5 harder on America’s own continent, and a city holding a National Park lifts the Appeal of every tile it owns",
+  "agenda": "big_stick_policy",
+  "traits": [
+   "pursue_diplomatic_victory"
+  ]
+ },
+ "Arabia": {
+  "leader": "Saladin",
+  "ability": "the_last_prophet",
+  "abilities": [
+   "righteousness_of_the_faith"
+  ],
+  "unique_unit": "mamluk",
+  "note": "The Last Prophet: the final Great Prophet comes to Arabia unasked, and every foreign city following its religion pays a Science; Righteousness of the Faith: Arabia’s Worship building costs a tenth of the usual Faith for anyone, and lends Arabian cities a tenth more Science, Faith and Culture",
+  "agenda": "ayyubid_dynasty",
+  "traits": [
+   "science_major_civ"
+  ]
+ },
+ "Mongolia": {
+  "leader": "Genghis Khan",
+  "ability": "ortoo",
+  "abilities": [
+   "mongol_horde"
+  ],
+  "unique_unit": "keshig",
+  "note": "Örtöö: a Trade Route lays a Trading Post the moment it starts, a Trading Post in any of a civilization’s cities is a level of Diplomatic Visibility, and Mongolian units take double the usual combat bonus for seeing further than their enemy; Mongol Horde: every cavalry unit fights 3 harder",
+  "agenda": "horse_lord",
+  "traits": [
+   "aggressive_military"
+  ]
+ },
+ "Portugal": {
+  "leader": "Joao III",
+  "ability": "casa_da_india",
+  "abilities": [
+   "porta_do_cerco"
+  ],
+  "unique_unit": "nau",
+  "note": "Casa da India: an international Trade Route must start on the coast and end at a coastal city or one with a Harbour, and pays half again as much of everything; Porta do Cerco: every unit sees one tile further, meeting a civilization widens Portugal’s trade capacity, and every city-state keeps its borders open",
+  "agenda": "navigators_legacy",
+  "traits": [
+   "mediterranean"
+  ]
+ },
+ "Ottomans": {
+  "leader": "Suleiman",
+  "ability": "great_turkish_bombard",
+  "abilities": [
+   "grand_vizier"
+  ],
+  "unique_unit": "janissary",
+  "note": "Great Turkish Bombard: siege units are built half again as fast and break walls 5 harder, a taken city keeps its people, and a city the Ottomans did not found is calmer and more loyal; Grand Vizier: a Governor Title arrives with Gunpowder, along with the Janissary",
+  "agenda": "lawgiver",
+  "traits": [
+   "aggressive_military"
+  ]
+ },
+ "Hungary": {
+  "leader": "Matthias Corvinus",
+  "ability": "pearl_of_the_danube",
+  "abilities": [
+   "raven_king"
+  ],
+  "unique_unit": "black_army",
+  "note": "Pearl of the Danube: a district or building raised across a river from its City Center goes up half again as fast; Raven King: levied troops move 2 further and fight 5 harder, cost three quarters less to upgrade, and levying from a city-state sends two Envoys with the money",
+  "agenda": "raven_banner",
+  "traits": [
+   "aggressive_military"
+  ]
+ },
+ "Sweden": {
+  "leader": "Kristina",
+  "ability": "nobel_prize",
+  "abilities": [
+   "minerva_of_the_north"
+  ],
+  "unique_unit": "carolean",
+  "note": "Nobel Prize: every Great Person earns Sweden 50 Diplomatic Favor, Factories pay a Great Engineer point and Universities a Great Scientist point; Minerva of the North: a building with three or more Great Work slots, or a wonder with two or more, themes itself the moment its slots are full",
+  "agenda": "bibliophile",
+  "traits": [
+   "cultural_major_civ"
+  ]
+ },
+ "Babylon": {
+  "leader": "Hammurabi",
+  "ability": "enuma_anu_enlil",
+  "abilities": [
+   "ninu_ilu_sirum"
+  ],
+  "unique_unit": "sabum_kibittum",
+  "note": "Enuma Anu Enlil: a Eureka finishes its technology outright, but Babylon makes half the Science everyone else does; Ninu Ilu Sirum: the first of each specialty district (but the Government Plaza) brings the cheapest building it can hold, and any other district its first time brings an Envoy",
+  "agenda": "cradle_of_civilization",
+  "traits": [
+   "science_major_civ"
+  ]
+ },
+ "Khmer": {
+  "leader": "Jayavarman VII",
+  "ability": "grand_barays",
+  "abilities": [
+   "monasteries_of_the_king"
+  ],
+  "unique_unit": "domrey",
+  "note": "Grand Barays: a city with an Aqueduct gains an Amenity and a Faith per Citizen, and a Farm beside an Aqueduct grows richer while one beside a Holy Site turns pious; Monasteries of the King: a Holy Site takes a major adjacency from a River, culture-bombs the ground around it, pays Food equal to its adjacency, and adds 2 Housing on a River",
+  "agenda": "an_end_to_suffering",
+  "traits": [
+   "cultural_major_civ"
+  ]
+ },
+ "Maori": {
+  "leader": "Kupe",
+  "ability": "mana",
+  "abilities": [
+   "kupes_voyage"
+  ],
+  "unique_unit": "toa",
+  "note": "Mana: the sea is open from the first turn, embarked units move 2 further, unimproved Woods and Rainforest pay Production (more with Mercantilism and Conservation), Fishing Boats feed and culture-bomb, resources cannot be harvested and no Great Writer is earned; Kupes Voyage: the Palace houses three more and calms one, and the empire earns Science and Culture until its first city is founded",
+  "agenda": "kaitiakitanga",
+  "traits": [
+   "cultural_major_civ"
+  ]
+ },
+ "Georgia": {
+  "leader": "Tamar",
+  "ability": "strength_in_unity",
+  "abilities": [
+   "glory_of_the_world"
+  ],
+  "unique_unit": "khevsur",
+  "note": "Strength in Unity: a Dedication taken into a Golden or Heroic Age pays its Era Score half as well, and defensive buildings go up half again as fast; Glory of the World: a combat victory pays Faith worth half the strength of what was beaten, and an Envoy sent to a city-state of Georgia’s religion counts double",
+  "agenda": "narikala_fortress",
+  "traits": [
+   "defensive"
+  ]
+ },
+ "Persia": {
+  "leader": "Cyrus",
+  "ability": "satrapies",
+  "abilities": [
+   "fall_of_babylon"
+  ],
+  "unique_unit": "immortal",
+  "note": "Satrapies: Political Philosophy widens the trade Persia carries, a domestic route pays 2 Gold and a Culture, and Persian roads are laid a level better than anyone else’s; Fall of Babylon: a Surprise War costs only a Formal War’s grievances, quickens the army 2 for ten turns, and a garrison holds an occupied city 5 Loyalty steadier",
+  "agenda": "opportunist",
+  "traits": [
+   "aggressive_military"
+  ]
+ },
+ "France": {
+  "leader": "Catherine de Medici",
+  "ability": "grand_tour",
+  "abilities": [
+   "catherines_flying_squadron"
+  ],
+  "unique_unit": "garde_imperiale",
+  "note": "Grand Tour: Medieval, Renaissance and Industrial wonders go up a fifth faster and every wonder draws twice the Tourism; Catherine’s Flying Squadron: France always sees one level further than anyone it has met, and Castles brings a free Spy and the capacity to keep it",
+  "agenda": "black_queen",
+  "traits": [
+   "cultural_major_civ"
+  ]
+ }
 }

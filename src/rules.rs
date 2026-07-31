@@ -635,6 +635,10 @@ pub struct GovEffects {
     pub improved_strategic_resource_rate: f64,
     pub power_per_city: f64,
     pub tourism_pct: f64,
+    /// Tourism turned away from civilizations running a different government;
+    /// Civ 6 adds both sides' values.
+    #[serde(default)]
+    pub tourism_intolerance: f64,
     pub combat_strength: f64,
     pub amenity: f64,
     pub housing: f64,
@@ -695,6 +699,10 @@ pub struct CivSpec {
     #[serde(default)]
     pub traits: Vec<String>,
     pub ability: String,
+    /// Civilizations carry two: the civilization's own ability and its
+    /// leader's. `ability` is the headline one, these are the rest.
+    #[serde(default)]
+    pub abilities: Vec<String>,
     #[serde(default)]
     pub unique_unit: Option<String>,
     #[serde(default)]
@@ -737,6 +745,23 @@ pub struct PolicySpec {
     /// the card is not era-gated.
     #[serde(default)]
     pub unit_eras: Vec<usize>,
+    /// Wonder-Production cards apply only to wonders of these eras. Corvee
+    /// reaches Ancient and Classical, Gothic Architecture everything before
+    /// the Industrial era, Skyscrapers all of them; an empty list means the
+    /// card is not era-gated.
+    #[serde(default)]
+    pub wonder_eras: Vec<usize>,
+    /// A Dark Age card. It sits in a Wildcard slot, is offered only while its
+    /// civilization is actually in a Dark Age, and only inside the era window
+    /// below. Leaving the Dark Age takes it out of the slot.
+    #[serde(default)]
+    pub dark_age: bool,
+    /// Earliest world era a Dark Age card may be taken in.
+    #[serde(default)]
+    pub min_era: usize,
+    /// Last world era a Dark Age card may be taken in. Zero means no ceiling.
+    #[serde(default)]
+    pub max_era: usize,
 }
 
 /// A stock unit-promotion node. Effects are numeric flags so rules data can
@@ -1306,6 +1331,41 @@ mod tests {
             ("battleship", "missile_cruiser"),
             ("privateer", "submarine"),
             ("submarine", "nuclear_submarine"),
+            ("u_boat", "nuclear_submarine"),
+            ("hwacha", "machine_gun"),
+            ("cossack", "helicopter"),
+            ("impi", "pike_and_shot"),
+            ("hulche", "crossbowman"),
+            ("gaesatae", "swordsman"),
+            ("mandekalu_cavalry", "cuirassier"),
+            ("bireme", "caravel"),
+            ("sea_dog", "submarine"),
+            ("redcoat", "infantry"),
+            ("tagma", "cuirassier"),
+            ("dromon", "frigate"),
+            ("voi_chien", "field_cannon"),
+            ("ngao_mbeba", "man_at_arms"),
+            ("minas_geraes", "missile_cruiser"),
+            ("viking_longship", "caravel"),
+            ("berserker", "musketman"),
+            ("hetairoi", "knight"),
+            ("hypaspist", "man_at_arms"),
+            ("winged_hussar", "tank"),
+            ("samurai", "musketman"),
+            ("p51_mustang", "jet_fighter"),
+            ("mamluk", "cuirassier"),
+            ("keshig", "field_cannon"),
+            ("nau", "ironclad"),
+            ("janissary", "line_infantry"),
+            ("black_army", "cavalry"),
+            ("carolean", "at_crew"),
+            ("sabum_kibittum", "swordsman"),
+            ("domrey", "bombard"),
+            ("toa", "man_at_arms"),
+            ("khevsur", "musketman"),
+            ("huszar", "helicopter"),
+            ("immortal", "man_at_arms"),
+            ("garde_imperiale", "infantry"),
             ("biplane", "fighter"),
             ("fighter", "jet_fighter"),
             ("bomber", "jet_bomber"),
@@ -1354,14 +1414,14 @@ mod tests {
         let rules = Rules::embedded();
         assert_eq!(rules.techs.len(), 77);
         assert_eq!(rules.civics.len(), 61);
-        assert_eq!(rules.units.len(), 82);
+        assert_eq!(rules.units.len(), 117);
         assert_eq!(rules.buildings.len(), 85);
         assert_eq!(rules.districts.len(), 35);
         assert_eq!(rules.wonders.len(), 53);
-        assert_eq!(rules.improvements.len(), 35);
+        assert_eq!(rules.improvements.len(), 41);
         assert_eq!(rules.resources.len(), 52);
         assert_eq!(rules.projects.len(), 25);
-        assert_eq!(rules.policies.len(), 118);
+        assert_eq!(rules.policies.len(), 129);
         assert_eq!(rules.governments.len(), 13);
 
         let check_gate = |kind: &str, id: &str, tech: &Option<String>, civic: &Option<String>| {
@@ -1752,10 +1812,19 @@ mod tests {
             "rock_band" => 12,
             _ => 7,
         };
+        // Two promotions are granted by the map rather than chosen from a
+        // class tree: the Giant's Causeway's Spear of Fionn and the
+        // Matterhorn's climbing mark.
+        let map_granted = rules
+            .promotions
+            .values()
+            .filter(|promotion| promotion.class == "natural_wonder")
+            .count();
         let expected_promotions = classes
             .iter()
             .map(|class| promotion_count(class))
-            .sum::<usize>();
+            .sum::<usize>()
+            + map_granted;
         assert_eq!(
             rules.promotions.len(),
             expected_promotions,

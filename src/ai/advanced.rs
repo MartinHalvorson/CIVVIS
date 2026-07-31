@@ -12964,6 +12964,18 @@ mod tests {
             .unwrap();
         game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
         let city = game.player_city_ids(0)[0];
+        // The city needs somewhere legal to put a Campus: a natural wonder or
+        // a resource on every tile would leave it nowhere to build.
+        for position in game.cities[&city].owned_tiles.clone() {
+            if position == game.cities[&city].pos {
+                continue;
+            }
+            if let Some(tile) = game.map.tiles.get_mut(&position) {
+                tile.feature = None;
+                tile.resource = None;
+                tile.improvement = None;
+            }
+        }
         game.turn = 10;
         game.players[0].techs.insert("writing".to_string());
         game.players[0].gold = 10_000.0;
@@ -13494,6 +13506,8 @@ mod tests {
         .enumerate()
         {
             let mut game = Game::new(2, 24, 16, 110 + index as u64, 80, 0);
+            // The mode has to be on for anyone to join a society at all.
+            game.secret_societies = true;
             game.players[0].civics.insert("code_of_laws".to_string());
             let ai = AdvancedAi::targeting(target);
             ai.advanced_secret_society(&mut game, 0, target.strategy());
@@ -13894,7 +13908,11 @@ mod tests {
                 })
             })
             .expect("city-state needs an open attack front");
+        // Three units, not two: the posture turns on a strength ratio, and a
+        // borderline force makes this assertion depend on the map draw rather
+        // than on the rule under test.
         let attackers = [
+            g.spawn_test_unit("warrior", 0, staging),
             g.spawn_test_unit("warrior", 0, staging),
             g.spawn_test_unit("archer", 0, staging),
         ];

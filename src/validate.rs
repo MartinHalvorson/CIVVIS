@@ -611,7 +611,7 @@ fn people(check: &mut Check) {
 /// Agendas: every measure needs an engine handler, or the leader silently
 /// holds no opinion at all.
 fn agendas(check: &mut Check) {
-    const MEASURES: [&str; 8] = [
+    const MEASURES: [&str; 32] = [
         "territory",
         "military",
         "wonders",
@@ -620,6 +620,30 @@ fn agendas(check: &mut Check) {
         "loyalty_to_friends",
         "shared_luxuries",
         "trustworthiness",
+        "city_state_suzerainties",
+        "science",
+        "formations",
+        "gold",
+        "faith",
+        "aggression_against_me",
+        "religion_brought_to_me",
+        "great_people",
+        "navy",
+        "wars_with_others",
+        "bushido",
+        "peace_on_my_continent",
+        "shares_my_religion",
+        "cavalry",
+        "exploration",
+        "contentment",
+        "levied_troops",
+        "great_works",
+        "district_variety",
+        "piety_and_population",
+        "unspoiled_land",
+        "city_defenses",
+        "surprise_wars_declared",
+        "espionage_reach",
     ];
     for (id, spec) in &check.rules.agendas.clone() {
         let subject = format!("agendas/{id}");

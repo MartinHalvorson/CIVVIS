@@ -15,7 +15,7 @@ use crate::Pos;
 
 /// Every `Action` discriminant, in a stable order. Appending is safe;
 /// reordering invalidates trained policies.
-pub const KINDS: [&str; 76] = [
+pub const KINDS: [&str; 77] = [
     "move", "move_to", "attack", "ranged", "found_city", "improve",
     "found_corporation", "move_product", "contribute_project",
     "contribute_district", "perform_concert", "pillage", "repair_improvement",
@@ -23,7 +23,8 @@ pub const KINDS: [&str; 76] = [
     "buy_building", "buy_district", "research", "civic", "declare_war",
     "declare_war_with_casus_belli", "make_peace", "denounce", "propose_deal",
     "accept_deal", "reject_deal", "trade", "congress_vote", "assign_spy",
-    "spy_mission", "promote_spy", "choose_dedication", "fortify", "upgrade_unit",
+    "spy_mission", "promote_spy", "choose_dedication", "fortify", "delete_unit",
+    "upgrade_unit",
     "promote",
     "combine_units", "link_units", "unlink_units", "government", "slot_policy",
     "unslot_policy", "trade_route", "send_envoy", "levy_military",
@@ -88,6 +89,7 @@ pub fn kind_name(action: &Action) -> &'static str {
         Action::PromoteSpy { .. } => "promote_spy",
         Action::ChooseDedication { .. } => "choose_dedication",
         Action::Fortify { .. } => "fortify",
+        Action::DeleteUnit { .. } => "delete_unit",
         Action::UpgradeUnit { .. } => "upgrade_unit",
         Action::Promote { .. } => "promote",
         Action::CombineUnits { .. } => "combine_units",
@@ -150,6 +152,7 @@ pub fn target_tile(g: &Game, action: &Action) -> Option<Pos> {
         | Action::RepairImprovement { unit }
         | Action::CoastalRaid { unit, .. }
         | Action::Fortify { unit }
+        | Action::DeleteUnit { unit }
         | Action::UpgradeUnit { unit }
         | Action::Promote { unit, .. }
         | Action::Spread { unit }
@@ -234,6 +237,7 @@ fn acting_unit(action: &Action) -> Option<u32> {
         | Action::PriorityTarget { unit, .. }
         | Action::Upgrade { unit, .. }
         | Action::Fortify { unit }
+        | Action::DeleteUnit { unit }
         | Action::UpgradeUnit { unit }
         | Action::Promote { unit, .. }
         | Action::Spread { unit }

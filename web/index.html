@@ -76,16 +76,6 @@
     letter-spacing: .2em; text-transform: uppercase;
   }
   .tagline { color: var(--muted); font-size: 9px; letter-spacing: .13em; text-transform: uppercase; margin-top: 5px; }
-  #gameidentity { min-height: 34px; margin-top: 11px; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 12px; }
-  .identity-copy { min-width: 0; }
-  #gameidentity .civ-name { font: 600 15px/1.2 Georgia, serif; color: var(--text); }
-  .identity-meta { margin-top: 2px; overflow: hidden; color: var(--muted); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
-  .live-badge {
-    display: inline-flex; align-items: center; gap: 6px; padding: 5px 8px; border-radius: 999px;
-    color: #a9dcbc; background: #173126; border: 1px solid #2e5b45;
-    font-size: 9px; font-weight: 800; letter-spacing: .13em; text-transform: uppercase;
-  }
-  .live-badge::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: #66d38b; box-shadow: 0 0 0 4px #66d38b1c; }
   /* The deck is a column: the fixed panels take the height they need and the
      two chronicles share whatever is left, so a tall screen reads more
      history rather than more empty parchment. Below the point where the
@@ -227,10 +217,13 @@
   .row { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 3px 0; }
   .chip { display: inline-block; width: 8px; height: 8px; margin-right: 7px; border-radius: 50%; box-shadow: 0 0 0 3px #ffffff09; }
 
-  /* Floating map HUD */
+  /* Floating map HUD. The bar owns every pixel between the zoom control and
+     the leader ribbon: its right edge tracks the ribbon's width, and the
+     observer plate in the first cell carries what the sidebar identity block
+     used to say. */
   #topbar {
-    position: absolute; z-index: 5; top: 10px; left: 64px; right: 753px;
-    display: grid; grid-template-columns: 96px repeat(6, minmax(74px, 1fr)); align-items: stretch; gap: 4px;
+    position: absolute; z-index: 5; top: 10px; left: 64px; right: 644px;
+    display: grid; grid-template-columns: minmax(148px, 1.2fr) repeat(6, minmax(74px, 1fr)); align-items: stretch; gap: 4px;
     min-width: 0; padding: 5px; border: 1px solid #4961598c; border-radius: 13px;
     background: #0a1512e0; box-shadow: 0 12px 34px #0008; backdrop-filter: blur(16px) saturate(130%);
     pointer-events: none;
@@ -244,12 +237,11 @@
     color: #b9c8c2; font-size: 9px; font-weight: 900; letter-spacing: .1em; line-height: 1; text-transform: uppercase;
   }
   .victory-turn strong { margin-top: 5px; font-size: 19px; line-height: 1; font-variant-numeric: tabular-nums; }
-  /* The spectator line carries the acting civilization and the era, which on
-     one line is always wider than the cell and so was always an ellipsis. The
-     cell is tall enough for two lines, so let it wrap and clamp there instead
-     of truncating the era away every turn. */
+  /* The plate line carries the acting civilization, the era and the world —
+     always wider than one line — so it wraps and clamps rather than
+     truncating the era away every turn. */
   .victory-turn i {
-    display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
+    display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3;
     margin-top: 5px; overflow: hidden; color: #9aaba5; font-size: 9px; font-style: normal;
     line-height: 1.25; overflow-wrap: anywhere;
   }
@@ -257,18 +249,25 @@
   .victory-meter b { display: block; height: 100%; border-radius: inherit; background: currentColor; }
   /* Two of the races are really two races at once — the technology tree and
      the launches that follow it, the culture a civilization keeps and the
-     tourism it exports — so those rows split their meter down the middle. */
+     tourism it exports — so those rows split their meter. The first half is
+     the long haul and the second only starts once it is nearly done, so the
+     tail takes the right third and leaves the rest to the run-up. */
   .victory-meter.split {
-    display: grid; grid-template-columns: 1fr 1fr; align-items: center; gap: 4px;
+    display: grid; grid-template-columns: 2fr 1fr; align-items: center; gap: 4px;
     height: 4px; overflow: visible; background: none; box-shadow: none;
   }
   .victory-half {
     height: 3px; overflow: hidden; border-radius: 3px;
     background: #020706b3; box-shadow: inset 0 1px 2px #000b;
   }
-  .victory-dots { display: flex; align-items: center; gap: 3px; }
+  /* Four dots at a fixed 4px are wider than the third they are given, and a
+     grid column never shrinks below its content, so a rigid dot would quietly
+     take the science row's split back to halves. They share their third
+     instead, keeping their circle and stopping at the old 4px. */
+  .victory-dots { display: flex; align-items: center; gap: 2px; }
   .victory-dots i {
-    width: 4px; height: 4px; border-radius: 50%; background: #02070699;
+    flex: 1 1 0; max-width: 4px; height: auto; aspect-ratio: 1;
+    border-radius: 50%; background: #02070699;
     box-shadow: inset 0 0 0 1px #ffffff2b;
   }
   .victory-dots i.on { background: currentColor; box-shadow: 0 0 4px currentColor; }
@@ -299,7 +298,7 @@
   .victory-value { color: #c2d0ca; font-size: 10px; line-height: 1; font-variant-numeric: tabular-nums; white-space: nowrap; }
   .victory-meter { height: 3px; margin: 0 0 0 9px; border-radius: 3px; }
   #playerhud {
-    position: absolute; z-index: 7; top: 10px; right: 12px; width: min(729px, calc(100% - 82px));
+    position: absolute; z-index: 7; top: 10px; right: 12px; width: min(620px, calc(100% - 82px));
     max-height: calc(100% - 238px); overflow-y: auto; pointer-events: auto;
     scrollbar-width: none; filter: drop-shadow(0 12px 28px #0009);
   }
@@ -312,8 +311,8 @@
   .ribbon-heading span:last-child { color: #82968f; letter-spacing: .08em; }
   .diplomacy-ribbon { display: flex; flex-direction: column; gap: 3px; }
   .diplomacy-card {
-    display: grid; grid-template-columns: 42px minmax(150px, 1.6fr) minmax(380px, 2.3fr); align-items: center; gap: 6px;
-    width: 100%; min-height: 56px; margin: 0; padding: 4px 5px; overflow: hidden; border-radius: 9px;
+    display: grid; grid-template-columns: 36px minmax(128px, 1.6fr) minmax(322px, 2.3fr); align-items: center; gap: 5px;
+    width: 100%; min-height: 48px; margin: 0; padding: 3px 4px; overflow: hidden; border-radius: 9px;
     color: var(--text); background: linear-gradient(100deg, #0a1512f0, #13231fe8);
     border: 1px solid #40574f; box-shadow: inset 0 1px #ffffff0b;
     text-align: left; transition: border-color .12s ease, background .12s ease;
@@ -328,10 +327,10 @@
      block follow a civilization, the name column opens its dossier. Each is a
      real button, so the ribbon stays keyboard-reachable. */
   .leader-medallion {
-    width: 38px; height: 38px; display: grid; place-items: center; padding: 0; border-radius: 50%;
+    width: 32px; height: 32px; display: grid; place-items: center; padding: 0; border-radius: 50%;
     color: #fff; background: radial-gradient(circle at 35% 28%, color-mix(in srgb, var(--civ) 72%, white), var(--civ) 58%, #07110f);
     border: 2px solid var(--civ); box-shadow: 0 0 0 2px #07110f, 0 4px 12px #0008;
-    font: 700 15px/1 Georgia, serif; text-shadow: 0 1px 3px #000; cursor: pointer;
+    font: 700 13px/1 Georgia, serif; text-shadow: 0 1px 3px #000; cursor: pointer;
   }
   .diplomacy-identity, .diplomacy-stats {
     margin: 0; padding: 0; border: 0; background: none; color: inherit; font: inherit;
@@ -340,14 +339,14 @@
   .diplomacy-identity { min-width: 0; }
   .diplomacy-identity:hover .diplomacy-name, .diplomacy-identity:focus-visible .diplomacy-name { color: #fff; }
   .detail-caret { margin-left: 5px; color: #93aca1; font-size: 9px; vertical-align: 1px; }
-  .diplomacy-name { display: block; overflow: hidden; color: #f1f4ed; font-size: 13px; font-weight: 800; text-overflow: ellipsis; white-space: nowrap; }
-  .diplomacy-rank { margin-right: 5px; color: var(--gold-bright); font: 700 11px Georgia, serif; }
+  .diplomacy-name { display: block; overflow: hidden; color: #f1f4ed; font-size: 12px; font-weight: 800; text-overflow: ellipsis; white-space: nowrap; }
+  .diplomacy-rank { margin-right: 5px; color: var(--gold-bright); font: 700 10px Georgia, serif; }
   /* Leader, war plan and standing all share this line, which as a single
      nowrap row was an ellipsis on nearly every card. The card is tall enough
      for two lines of it, so spend the height rather than cut the sentence. */
   .diplomacy-leader {
     display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
-    margin-top: 1px; overflow: hidden; color: var(--muted); font-size: 10px;
+    margin-top: 1px; overflow: hidden; color: var(--muted); font-size: 9px;
     line-height: 1.25; overflow-wrap: anywhere;
   }
   .agenda-mark { margin-left: 3px; font-size: 8px; vertical-align: 1px; }
@@ -363,8 +362,8 @@
   .ai-plan.recovery { color: #e9ad74; }
   .diplomacy-stats { display: grid; grid-template-columns: repeat(10, 1fr); gap: 0; }
   .ribbon-stat { min-width: 0; padding: 3px 0 2px; text-align: center; border-left: 1px solid #ffffff0b; }
-  .ribbon-stat b { display: block; overflow: hidden; font-size: 12px; line-height: 1.1; text-overflow: ellipsis; font-variant-numeric: tabular-nums; white-space: nowrap; }
-  .ribbon-stat em { display: block; margin-top: 2px; color: #82958e; font-size: 8px; font-style: normal; font-weight: 850; letter-spacing: 0; line-height: 1; }
+  .ribbon-stat b { display: block; overflow: hidden; font-size: 11px; line-height: 1.1; text-overflow: ellipsis; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .ribbon-stat em { display: block; margin-top: 2px; color: #82958e; font-size: 7px; font-style: normal; font-weight: 850; letter-spacing: 0; line-height: 1; }
   .ribbon-stat.production b { color: #e9ad74; }
   .ribbon-stat.science b { color: var(--blue); }
   .ribbon-stat.culture b { color: var(--violet); }
@@ -638,14 +637,14 @@
 
   /* A wide desktop has room to read the ribbon from across the room. */
   @media (min-width: 2200px) {
-    #topbar { right: 864px; }
-    #playerhud { width: min(840px, calc(100% - 82px)); }
-    .diplomacy-card { grid-template-columns: 46px minmax(170px, 1.6fr) minmax(440px, 2.3fr); min-height: 60px; }
-    .leader-medallion { width: 42px; height: 42px; font-size: 16px; }
-    .diplomacy-name { font-size: 14px; }
-    .diplomacy-leader { font-size: 11px; }
-    .ribbon-stat b { font-size: 13px; }
-    .ribbon-stat em { font-size: 9px; }
+    #topbar { right: 738px; }
+    #playerhud { width: min(714px, calc(100% - 82px)); }
+    .diplomacy-card { grid-template-columns: 39px minmax(145px, 1.6fr) minmax(374px, 2.3fr); min-height: 51px; }
+    .leader-medallion { width: 36px; height: 36px; font-size: 14px; }
+    .diplomacy-name { font-size: 13px; }
+    .diplomacy-leader { font-size: 10px; }
+    .ribbon-stat b { font-size: 12px; }
+    .ribbon-stat em { font-size: 8px; }
   }
   /* Each step down keeps the six victory tracks inside the topbar's own box:
      at full size they need 576px, and if the box is narrower than its columns
@@ -654,18 +653,18 @@
      until, below 1580px, both are back at the sizes they had before the
      ribbon was widened. */
   @media (max-width: 1770px) {
-    #topbar { right: 664px; grid-template-columns: 92px repeat(6, minmax(62px, 1fr)); }
-    #playerhud { width: min(640px, calc(100% - 82px)); }
+    #topbar { right: 568px; grid-template-columns: minmax(136px, 1.2fr) repeat(6, minmax(62px, 1fr)); }
+    #playerhud { width: min(544px, calc(100% - 82px)); }
   }
   @media (max-width: 1580px) {
-    #topbar { right: 510px; grid-template-columns: 68px repeat(6, minmax(50px, 1fr)); }
-    #playerhud { width: min(486px, calc(100% - 82px)); }
-    .diplomacy-card { grid-template-columns: 38px minmax(74px, .72fr) minmax(300px, 2.7fr); min-height: 50px; }
-    .leader-medallion { width: 34px; height: 34px; font-size: 13px; }
-    .diplomacy-name { font-size: 12px; }
-    .diplomacy-leader { font-size: 9px; }
-    .ribbon-stat b { font-size: 11px; }
-    .ribbon-stat em { font-size: 7px; }
+    #topbar { right: 437px; grid-template-columns: minmax(118px, 1.2fr) repeat(6, minmax(50px, 1fr)); }
+    #playerhud { width: min(413px, calc(100% - 82px)); }
+    .diplomacy-card { grid-template-columns: 32px minmax(63px, .72fr) minmax(255px, 2.7fr); min-height: 43px; }
+    .leader-medallion { width: 29px; height: 29px; font-size: 12px; }
+    .diplomacy-name { font-size: 11px; }
+    .diplomacy-leader { font-size: 8px; }
+    .ribbon-stat b { font-size: 10px; }
+    .ribbon-stat em { font-size: 6px; }
     /* Four dossier columns need about 480px to stay readable; below that they
        stack two by two rather than shedding sections. */
     .dossier-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -680,7 +679,7 @@
     #ubar { max-width: calc(100% - 70px); }
   }
   @media (max-width: 940px) {
-    #topbar { grid-template-columns: 92px repeat(3, minmax(70px, 1fr)); }
+    #topbar { grid-template-columns: minmax(120px, 1fr) repeat(3, minmax(70px, 1fr)); }
     #playerhud { top: 190px; }
   }
   @media (max-width: 720px) {
@@ -688,7 +687,7 @@
     #maparea { height: 100%; }
     #side { position: fixed; inset: 72px auto 8px 8px; width: min(390px, calc(100% - 16px)); min-width: 0; height: auto; border: 1px solid #40584f; border-radius: 16px; }
     body.sidebar-hidden #side { width: min(390px, calc(100% - 16px)); transform: translateX(calc(-100% - 16px)); opacity: 0; }
-    #topbar { grid-template-columns: 104px repeat(6, minmax(80px, 1fr)); }
+    #topbar { grid-template-columns: minmax(120px, 1fr) repeat(6, minmax(80px, 1fr)); }
     #playerhud { top: 104px; right: 12px; max-height: calc(100% - 122px); }
     .minimap-frame { display: none; }
     #zoomctl { left: 12px; bottom: 12px; }
@@ -698,7 +697,7 @@
     #tradelist { grid-template-columns: 1fr; padding-inline: 10px; }
   }
   @media (max-width: 620px) {
-    #topbar { grid-template-columns: 92px repeat(3, minmax(70px, 1fr)); }
+    #topbar { grid-template-columns: minmax(120px, 1fr) repeat(3, minmax(70px, 1fr)); }
     #playerhud { top: 190px; }
   }
   @media (max-width: 430px) {
@@ -781,7 +780,6 @@
         <div class="tagline">AI strategy simulator · Civ VI</div>
       </div>
     </div>
-    <div id="gameidentity"></div>
   </div>
   <div class="side-scroll">
     <details class="sidebar-section" data-section="game-settings">
@@ -4419,25 +4417,29 @@ function drawTopbar() {
           victoryMeter(track.id, metric, progress) + `</div>`;
       }).join("") + `</div></section>`;
   }).join("");
-  document.getElementById("topbar").innerHTML =
-    `<section class="victory-turn" title="Turn ${state.turn}"><span>Turn</span>` +
-    `<strong>${state.turn}</strong><i>${SPEC ? `◉ ${actor.civ} · ` : ""}${era}</i></section>${victoryTracks}`;
-
+  // The bar's first cell is the observer plate: everything the sidebar
+  // identity block used to say — who is watched, the world it lives on, its
+  // climate — folded in next to the turn and era it always carried. The plate
+  // line clamps at three lines; the tooltip keeps the unabridged sentence.
   const playerView = SPEC && state.view_player !== null && state.view_player !== undefined;
   const identity = SPEC ? viewer : state.players[0];
+  const badge = playerView ? "Player view" : SPEC ? "Observing" : "Your empire";
+  const watched = playerView ? `${identity.civ} · ` : SPEC ? `◉ ${actor.civ} · ` : "";
   const mapName = titleCase(state.map.script || "pangaea");
   const speedName = titleCase(state.game_speed || "standard");
   const mapLabel = `${mapName} · ${state.map.size_name || "Custom"} ${state.map.width}×${state.map.height} · ${speedName}`;
   const profile = spectatorIdentity(identity);
   const climateLabel = (Number(state.me.global_co2) || 0) !== 0 || Number(eraRaw) >= 4
-    ? `Global lifetime carbon emissions: ${compactStat(state.me.global_co2)} CO₂`
+    ? `${compactStat(state.me.global_co2)} CO₂`
     : null;
-  const meta = [...profile.details, mapLabel, climateLabel].filter(Boolean).join(" · ");
-  document.getElementById("gameidentity").innerHTML =
-    `<div class="identity-copy"><div class="civ-name">${identity.civ}</div>` +
-    `<div class="identity-meta" title="${profile.role} · ${meta}">` +
-    `${profile.role} · ${meta}</div></div>` +
-    `<span class="live-badge">${playerView ? "Player view" : SPEC ? "Observing" : "Your empire"}</span>`;
+  const plateLine = [`${watched}${era}`, mapLabel, climateLabel].filter(Boolean).join(" · ");
+  const plateTitle = [`${badge} · Turn ${state.turn}`, identity.civ, profile.role,
+    ...profile.details, mapLabel,
+    climateLabel ? `Global lifetime carbon emissions: ${climateLabel}` : null,
+  ].filter(Boolean).join(" · ");
+  document.getElementById("topbar").innerHTML =
+    `<section class="victory-turn" title="${plateTitle}"><span>${badge}</span>` +
+    `<strong>Turn ${state.turn}</strong><i>${plateLine}</i></section>${victoryTracks}`;
 }
 
 function spectatorIdentity(player) {
@@ -4473,21 +4475,16 @@ function compactStat(value) {
 // The world-leaders ribbon gives every stat the same narrow column, so a value
 // that renders wider than four glyphs used to clip to an ellipsis ("15…") —
 // the number went missing exactly once an empire got big enough for it to be
-// interesting. Spend the four glyphs from the top down: magnitude suffix first,
-// then whole digits, then a decimal only if there is still room for one.
+// interesting. The column reads whole numbers only: round first, then take
+// the first magnitude suffix that fits the figure back into four glyphs. The
+// tooltip still carries the exact fraction.
 function ribbonStat(value) {
-  const n = Number(value) || 0;
-  const abs = Math.abs(n);
-  const [suffix, divisor] =
-    abs >= 1e9 ? ["b", 1e9] : abs >= 1e6 ? ["m", 1e6] : abs >= 1e3 ? ["k", 1e3] : ["", 1];
-  const scaled = n / divisor;
-  const room = 4 - suffix.length - (n < 0 ? 1 : 0) - String(Math.floor(Math.abs(scaled))).length;
-  const rounded = scaled.toFixed(room >= 2 && !Number.isInteger(scaled) ? 1 : 0);
-  // Rounding up can add a digit (9.96 → "10.0"), which spends a glyph on a
-  // decimal that is no longer telling anyone anything.
-  const digits = suffix ? rounded : rounded.replace(/\.0$/, "");
-  const text = `${digits}${suffix}`;
-  return text.length > 4 ? `${Math.round(scaled)}${suffix}` : text;
+  const n = Math.round(Number(value) || 0);
+  for (const [suffix, divisor] of [["", 1], ["k", 1e3], ["m", 1e6], ["b", 1e9]]) {
+    const scaled = Math.round(n / divisor);
+    if (`${scaled}${suffix}`.length <= 4) return `${scaled}${suffix}`;
+  }
+  return `${Math.round(n / 1e9)}b`;
 }
 
 // Tooltips have all the room in the world, so they carry the exact figure the

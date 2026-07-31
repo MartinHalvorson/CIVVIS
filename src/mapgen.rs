@@ -430,6 +430,18 @@ pub fn generate_with_script(
         "dead_sea",
         "mount_everest",
         "pamukkale",
+        "kilimanjaro",
+        "galapagos_islands",
+        "cliffs_of_dover",
+        "torres_del_paine",
+        "giants_causeway",
+        "matterhorn",
+        "eye_of_the_sahara",
+        "ubsunur_hollow",
+        "piopiotahi",
+        "zhangye_danxia",
+        "tsingy_de_bemaraha",
+        "delicate_arch",
     ];
     for index in (1..wonder_names.len()).rev() {
         let other = rng.below(index + 1);
@@ -437,7 +449,10 @@ pub fn generate_with_script(
     }
     for wonder in wonder_names.iter().take(num_natural_wonders) {
         let footprint = match *wonder {
-            "great_barrier_reef" | "yosemite" | "dead_sea" | "pamukkale" => 2,
+            "great_barrier_reef" | "yosemite" | "dead_sea" | "pamukkale"
+            | "galapagos_islands" | "cliffs_of_dover" | "torres_del_paine" => 2,
+            "eye_of_the_sahara" | "piopiotahi" | "zhangye_danxia" => 3,
+            "ubsunur_hollow" => 4,
             "mount_everest" => 3,
             "pantanal" => 4,
             _ => 1,
@@ -461,6 +476,30 @@ pub fn generate_with_script(
                 }
                 "pamukkale" => {
                     matches!(t.terrain.as_str(), "desert" | "grassland" | "plains") && !t.hills
+                }
+                "kilimanjaro" => {
+                    matches!(t.terrain.as_str(), "grassland" | "plains") && !t.hills
+                }
+                "galapagos_islands" => t.terrain == "coast",
+                "cliffs_of_dover" => {
+                    matches!(t.terrain.as_str(), "grassland" | "plains") && !t.hills
+                }
+                "torres_del_paine" => {
+                    matches!(t.terrain.as_str(), "grassland" | "plains" | "tundra") && t.hills
+                }
+                "giants_causeway" => t.terrain == "coast",
+                "matterhorn" => t.terrain == "mountain",
+                "eye_of_the_sahara" => t.terrain == "desert" && !t.hills,
+                "piopiotahi" => t.terrain == "coast",
+                "zhangye_danxia" => {
+                    matches!(t.terrain.as_str(), "desert" | "plains") && t.hills
+                }
+                "tsingy_de_bemaraha" => {
+                    matches!(t.terrain.as_str(), "plains" | "grassland") && t.hills
+                }
+                "delicate_arch" => t.terrain == "desert" && !t.hills,
+                "ubsunur_hollow" => {
+                    matches!(t.terrain.as_str(), "plains" | "tundra") && !t.hills
                 }
                 _ => false,
             }
@@ -2030,6 +2069,8 @@ mod river_tests {
         let rules = Rules::embedded();
         let mut rng = Rng::new(88_104);
         let (world, _) = generate(&rules, 50, 32, 2, 0, 8, 3, &mut rng);
+        // The roster is larger than the number of wonders a map places, so
+        // check the footprint of each wonder that was actually drawn.
         let expected = [
             ("great_barrier_reef", 2usize),
             ("crater_lake", 1),
@@ -2039,7 +2080,20 @@ mod river_tests {
             ("dead_sea", 2),
             ("mount_everest", 3),
             ("pamukkale", 2),
+            ("kilimanjaro", 1),
+            ("galapagos_islands", 2),
+            ("cliffs_of_dover", 2),
+            ("torres_del_paine", 2),
+            ("giants_causeway", 1),
+            ("matterhorn", 1),
+            ("eye_of_the_sahara", 3),
+            ("piopiotahi", 3),
+            ("zhangye_danxia", 3),
+            ("tsingy_de_bemaraha", 1),
+            ("delicate_arch", 1),
+            ("ubsunur_hollow", 4),
         ];
+        let mut placed = 0;
         for (wonder, footprint) in expected {
             let tiles: BTreeSet<Pos> = world
                 .tiles
@@ -2047,6 +2101,10 @@ mod river_tests {
                 .filter(|(_, tile)| tile.feature.as_deref() == Some(wonder))
                 .map(|(position, _)| *position)
                 .collect();
+            if tiles.is_empty() {
+                continue;
+            }
+            placed += 1;
             assert_eq!(tiles.len(), footprint, "{wonder} footprint");
             let mut reached = BTreeSet::new();
             let mut frontier = vec![*tiles.iter().next().unwrap()];
@@ -2063,5 +2121,6 @@ mod river_tests {
             }
             assert_eq!(reached, tiles, "{wonder} must be contiguous");
         }
+        assert!(placed >= 6, "a standard map still draws most of the roster");
     }
 }
