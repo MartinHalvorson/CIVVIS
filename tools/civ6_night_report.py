@@ -107,6 +107,35 @@ def main() -> int:
     if quiet:
         print("  none — no idle stacks, no frozen units, mirror agrees tile for tile")
 
+    # ★★★★ WHO ACTUALLY CHOSE WHAT THE EMPIRE BUILT. `orders_source: civvis` on every
+    # turn says nothing about this: the end-turn production prompt fires after CIVVIS
+    # has answered and the built-in ladder used to pick the item itself, which
+    # `residual: none` could not show because it was emitted before the prompt. This
+    # column is the honest version and belongs in the overnight readout, not in a
+    # separate tool nobody runs.
+    print("\nwho chose production (CIVVIS direct + via the prompt vs the built-in ladder):")
+    for row in rows:
+        run = RUN_ROOT / str(row.get("tag"))
+        if not (run / "events.jsonl").exists():
+            continue
+        direct, answered, ladder = 0, 0, 0
+        for line in (run / "events.jsonl").read_text(errors="replace").splitlines():
+            try:
+                event = json.loads(line)
+            except ValueError:
+                continue
+            if event.get("kind") == "orders":
+                direct += (event.get("by") or {}).get("produce", 0)
+            elif event.get("kind") == "build":
+                if event.get("reason") == "civvis":
+                    answered += 1
+                else:
+                    ladder += 1
+        total = direct + answered + ladder
+        if total:
+            print(f"  {row.get('tag')}  CIVVIS {direct}+{answered}  ladder {ladder}  "
+                  f"({100 * ladder // total}% of build decisions were the ladder's)")
+
     print("\nsettler fates (the city count, explained):")
     try:
         import civ6_settler_trace as trace  # type: ignore
