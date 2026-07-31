@@ -270,9 +270,29 @@ def main() -> int:
     ap.add_argument("--mode", choices=["stub", "civvis"], default="civvis")
     ap.add_argument("--bin", default=None,
                     help="path to the civvis-orders binary (--mode civvis)")
+    # ⚠⚠ DOMINATION IS CURRENTLY UNREACHABLE, AND IT IS THE DEFAULT.
+    #
+    # Domination needs a captured capital, and `findWarTarget` needs a rival city
+    # plot to be REVEALED before it will target one -- correctly, or the seat would
+    # attack a capital it has never seen. But meeting a civilization reveals none of
+    # its land, so the revealed gate binds forever. Measured 2026-07-31 across a full
+    # day of Settler runs: `met: 1` with `their cities_SEEN: 0` at t125, `met: 0` on
+    # two Duel seeds, and zero war declarations in every unforced run.
+    #
+    # So a run left on this default spends the whole game planning toward a victory
+    # whose target set is empty, and every measurement taken from it is a
+    # measurement of that, not of how CIVVIS plays. That cost most of a session
+    # before anybody noticed the flag.
+    #
+    # `science` and `score` need no contact at all and are reachable today.
+    # `civvis` lets the agent choose. Until reconnaissance can cross water and
+    # reveal a city -- see the frontier and probe notes in CivvisControlAgent.lua --
+    # prefer one of those and pass `domination` deliberately, not by default.
     ap.add_argument("--victory", default="domination",
                     choices=["domination", "science", "score", "civvis"],
-                    help="which victory CIVVIS plays for; `civvis` lets it choose")
+                    help="which victory CIVVIS plays for; `civvis` lets it choose. "
+                         "⚠ domination is unreachable while no rival city is ever "
+                         "revealed -- see the note above")
     ap.add_argument("--skip-kinds", default="",
                     help="comma-separated order kinds to drop (bisect only)")
     ap.add_argument("--skip-verbs", default="",
