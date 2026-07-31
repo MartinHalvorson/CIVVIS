@@ -152,9 +152,26 @@ fn every_name_plays_as_the_agent_its_provenance_claims() {
 
 Two seeded 30-turn games per name and a hash of the terminal diagnostics. It
 runs in seconds, it resolves `ARTIFACT_DIR` the way production does, and it
-fails immediately on today's tree for `policy` and `neural`. Add the dual —
-distinct specs must *not* fingerprint-collide — and the `policy` ==
-`advanced_evolved` false negative is closed too.
+fails immediately on today's tree. Add the dual — distinct specs must *not*
+fingerprint-collide — and the `policy` == `advanced_evolved` false negative is
+closed too.
+
+**Run against today's tree, before writing it.** Exactly three builtin names
+make a substitution claim, and the check was performed by hand on each (8
+mirrored pairs, 4p, seed 78,000,101 — for an identity check any single decisive
+map disproves the claim):
+
+| name | claims to play as | outcome | verdict |
+|---|---|---|---|
+| `neural` | `basic` | 3 sweeps / 3 neutral / 2 sweeps | **claim false** |
+| `policy` | `advanced` | 3 sweeps / 5 neutral / 0 | **claim false** |
+| `strategic` | `strategic_score` | 0 / **8 neutral** / 0, +0 Elo | claim holds |
+
+The point of the third row is that the test *discriminates*. It is not a check
+that fails on everything degraded — it correctly certifies `strategic`, whose
+fallback to score-share evaluation really is the agent its provenance names.
+Two of three claims in the shipped binary are false, and the one that is true
+is confirmed by the same instrument.
 
 ---
 
