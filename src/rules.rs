@@ -3037,14 +3037,7 @@ mod tests {
         assert_eq!(rules.districts.len(), 35);
         assert_eq!(rules.wonders.len(), 53);
         assert_eq!(rules.improvements.len(), 36);
-        // 52 shipped plus Cinnamon and Cloves. Those two came out of the
-        // Civilization VI database while completing the Civ-6-to-CIVVIS
-        // vocabulary (tools/civ6_control/vocab.py) and they are the only two
-        // resources the real game has that CIVVIS lacked. They carry class and
-        // nothing else, because that is all the shipped `Resources` row carries:
-        // no yield, terrain, feature or improvement anywhere in the database,
-        // the same shape as the manufactured luxuries (Toys, Jeans, Perfume).
-        assert_eq!(rules.resources.len(), 54);
+        assert_eq!(rules.resources.len(), 52);
         assert_eq!(rules.projects.len(), 25);
         // 118 civic-unlocked cards plus the seven Dark Age cards, which no
         // civic unlocks — a Dark Age is what puts them on offer.
