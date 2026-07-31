@@ -7086,3 +7086,83 @@ victories, and five score finishes across the fixed horizon. The games included
 the final default-off boundary and promoted production stack completed varied
 economic, religious, scientific, and combat trajectories after the negative
 experiment.
+
+## 2026-07-31 — PRE-REGISTRATION: fog-honest battlefront observation
+
+The promoted fog-pressure repair removed current hidden unit positions and HP
+from Recovery/Bastion pressure, but the fixed fog census still finds 16/698
+controlled witnesses. The residual channel is tactical/campaign planning:
+campaign-city scoring reads a hidden city's live defenses and nearby force,
+while domain objectives, focus targets, local force ratios, and force posture
+read hidden enemies and their HP directly. This experiment repairs that one
+information boundary; it does not claim whole-controller fog honesty.
+
+`advanced_fog_battlefront` starts from the current production `advanced` and
+changes only battlefront observation. At the start of each major turn it
+records player-visible enemy units and City Centers in a controller-local
+`BeliefState`. A City Center sighting contains only its last visible owner, HP,
+wall HP, displayed defense strength, position, and turn. Campaign scoring uses
+that sighting; an unseen city with no sighting receives a conservative generic
+defense estimate. Current foreign units, City Centers, encampments, hit points,
+and enemy tiles are considered only if the acting player can currently see
+them. Bounded stale unit sightings may contribute through the existing
+memory-decay rule. Own units, own cities, explored terrain, and a plan target
+already learned while visible remain exact.
+
+The candidate scope is frozen to `campaign_city_value`, `domain_objective`,
+`force_focus_target`, `local_strength_ratio`, and the posture checks built
+from them. It may not alter production, research, diplomacy, city pressure,
+combat resolution, move legality, or tactical action selection. The current
+production constructor keeps the candidate off. `advanced_fog_battlefront` is
+evaluator-only until it passes every gate; a promotion, if authorized, changes
+`AdvancedAi::new()` once and preserves today's controller as an explicit
+`advanced_pre_battlefront` control.
+
+Integrity is required before any strength map:
+
+- an observed City Center retains the exact visible combat report, and mutating
+  its live HP, walls, owner, garrison-derived strength, or nearby hidden unit
+  after it returns to fog cannot change candidate campaign value or force
+  planning;
+- a visible update must change the corresponding candidate result, preventing
+  a trivial controller that ignores valid observations;
+- hidden unit position/HP and hidden city HP counterfactuals preserve the
+  complete observation tensor, while no-op save/load branches reproduce the
+  full action trace and plan report;
+- serial and worker-pool battlefront construction must give identical force
+  reports and complete headless games;
+- all pre-existing evaluator arms and `advanced_v1` retain their frozen
+  behavior, and the full locked CI suite must pass.
+
+The fog release gate is the exact fixed census:
+
+```sh
+target/release/fog_census --maps 64 --probes 12 --players 4 \
+  --width 44 --height 28 --turns 200 --seed 862000 --jobs 8 \
+  --fog-honest-pressure --battlefront-observation
+```
+
+It must have zero tensor/save-load/null-control failures, fewer decision
+witnesses than the archived current-pressure baseline (28/717 on the same
+shape), zero hidden-city-HP witnesses, and zero plan-report witnesses. A
+failure is a fidelity failure: no strength result can promote it.
+
+Strength follows the existing staged matrix rule:
+
+```sh
+target/release/ai_eval advanced_fog_battlefront advanced \
+  --matrix --pairs 60 --jobs 8 --seed 42071000
+```
+
+The compact profile consumes 42,071,000–42,071,059 and deployment consumes
+43,071,000–43,071,059. Discovery advances only when deployment earns the
+existing superiority PASS and compact does not retain the incumbent. If it
+advances, the sole authorized confirmation is a disjoint 300-map matrix at
+seed 44,071,000; promotion requires that confirmation to satisfy the same
+two-profile rule and the fog release gate again. An inconclusive or retained
+discovery leaves production unchanged and seals confirmation.
+
+After either result, rebuild release binaries, run the full locked CI suite,
+and complete a fresh 12-game production deployment soak. No parameter, seed,
+or policy adjustment is authorized between the fixed discovery result and its
+promotion decision.
