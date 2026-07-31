@@ -376,7 +376,43 @@ the audit even though it is not a bug.
 
 ---
 
-## 7. Order of work
+## 7. The accretion, which is the same root cause wearing different clothes
+
+The audit also found 78 evaluator arms and 44 research binaries behind seven
+controllers, with 41 arms having no entry in `docs/EVAL.md` and 13 named
+nowhere in `docs/` at all. Most name axes the repository has already closed.
+
+None of it costs anything at runtime, and the instinct to delete it is mostly
+wrong — a closed axis with its arm still present is *reproducible*, which is
+worth more than tidiness. The real problem is that you cannot tell the
+reproducible ones from the abandoned ones.
+
+The mechanism is the same as R1. `EVAL_ONLY_AIS` (`src/elo.rs:41`) is a flat
+`[&str; 70]`: an arm is a bare string in an array, so nothing can require it to
+say why it exists, what it measured, or whether that question is still open. An
+experiment arm has **no lifecycle** — it is added for one run and lives
+forever.
+
+**The fix** is the same shape as the R1 fix, and falls out of it for free once
+arms are structured rather than stringly-typed: give each arm the evidence that
+justifies it.
+
+```rust
+pub struct EvalArm {
+    pub name: &'static str,
+    pub evidence: &'static str,   // e.g. "docs/EVAL.md#2026-07-26-strategic-deep"
+    pub status: ArmStatus,        // Open | Closed { verdict: &'static str }
+}
+```
+
+with one CI check: **every eval-only arm names a document section that
+exists.** An arm whose axis is closed keeps its name and carries its verdict,
+so the next agent finds the negative result instead of rediscovering it — which
+is the failure mode this repository loses whole iterations to, and which
+`docs/EVAL.md` exists to prevent but cannot when the arm and the record are not
+linked.
+
+## 8. Order of work
 
 Ordered by damage prevented per unit cost. The first two are prerequisites for
 trusting anything measured afterwards.
@@ -387,14 +423,15 @@ trusting anything measured afterwards.
 | 2 | Fallible strict `builtin_ai`; explicit degraded entry point | R2 | ~half a day |
 | 3 | Discovery-vs-confirmed effect sizes in `ai_eval`; the docs rule | R3 | ~half a day |
 | 4 | `strength_bound()` as the only ordering; table reproducible or gone | R4 | ~half a day |
-| 5 | Restate affected published numbers against matched controls | fallout of 1 and 3 | compute |
-| 6 | Deployment-profile decision on seating search | §6 | compute, largest |
+| 5 | Arm lifecycle: `EvalArm` with evidence + status, CI check that the section exists | §7 | falls out of 1 |
+| 6 | Restate affected published numbers against matched controls | fallout of 1 and 3 | compute |
+| 7 | Deployment-profile decision on seating search | §6 | compute, largest |
 
 Items 1–4 are code and are independent of each other. Item 5 cannot be trusted
 before item 1 lands, because it is exactly the measurement item 1 makes
 possible.
 
-## 8. What this is worth
+## 9. What this is worth
 
 Items 1–3 do not make the AI stronger by a single Elo point. They make the
 number that says so trustworthy — and on current evidence the instrument has
