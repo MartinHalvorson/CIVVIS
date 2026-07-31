@@ -3489,6 +3489,20 @@ local function exportState(player, pid, turn)
 			moves = try(function() return unit:GetMovesRemaining(); end, -1),
 			combat = row ~= nil and (row.Combat or 0) or 0,
 			ranged = row ~= nil and (row.RangedCombat or 0) or 0,
+			-- ★★★ ALREADY FORTIFIED, WHICH IS WHY FORTIFY WAS BEING REFUSED.
+			--
+			-- Civilization VI refuses `UNITOPERATION_FORTIFY` on a unit that is
+			-- already fortified. CIVVIS's board did not carry the state, so it
+			-- re-ordered every turn and the refusal repeated: run 233331Z shows
+			-- exactly one FORTIFY refusal per turn from t196 onward, 28 in all.
+			--
+			-- Harmless on its own -- the unit is already doing what CIVVIS asked --
+			-- but it is noise on top of the refusal counters that real defects are
+			-- read from, and it is the same shape as the settler and builder loops:
+			-- the board did not know, so the order repeated forever.
+			fortified = try(function()
+				return (unit:GetFortifyTurns() or 0) > 0;
+			end, false),
 		};
 	end);
 

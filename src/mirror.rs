@@ -758,6 +758,11 @@ pub struct StateUnit {
     /// Movement points left, as Civilization VI reports them this turn.
     #[serde(default = "unknown_strength")]
     pub moves: f64,
+    /// Already fortified. Civilization VI REFUSES `FORTIFY` on a unit that is, so a
+    /// board that did not carry this re-ordered it every turn — 28 refusals in run
+    /// 233331Z, exactly one per turn from t196 on.
+    #[serde(default)]
+    pub fortified: bool,
 }
 
 #[derive(Clone, Debug, Default, serde::Deserialize)]
@@ -1466,6 +1471,7 @@ pub fn rebuild_from_state(
             if hp > 0 && hp < 100 {
                 unit.hp = hp;
             }
+            unit.fortified = u.fortified;
         }
         Some(uid)
     };
@@ -1687,6 +1693,7 @@ impl LiveMirror {
                     let hp = unit.hp.round() as i32;
                     if let Some(live) = self.game.units.get_mut(&uid) {
                         live.hp = if hp > 0 { hp.min(100) } else { 1 };
+                        live.fortified = unit.fortified;
                         // ★★★★★ REFRESH THE TURN FROM REALITY, DO NOT SIMULATE IT.
                         //
                         // `take_turn` spends a unit's movement, and on a persistent
