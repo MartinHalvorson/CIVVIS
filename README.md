@@ -96,6 +96,16 @@ the round-3143 league say so.
    and only the deviations are real produces a larger winner's lift (+119
    Glicko points) than the table actually shows (+92).
 
+What that costs in practice: the strategy the table ranks **first**,
+`winbred-1`, has won 15.8% of its 530 league games against stock `advanced`'s
+21.5% of 2049 — significantly *worse* (p = 0.004). Of the 12 bred genomes
+seated in that league, 2 beat stock `advanced` on outright wins and **9 lose
+to it significantly**. Ranking on placement is how a strategy that wins less
+often reaches the top of a table headed “best strategy”. (League seating is
+not randomised across entrants, so these comparisons are observational; but
+they are drawn from 3,681 and 530 games at the profiles the project actually
+runs.)
+
 The table is also only reproducible on a machine that has been running the
 league: `/league/` is gitignored, the committed snapshot in `data/league/` is
 round 60 and covers 4 of the 50 pairs, and the refresh command exits 2 on a
