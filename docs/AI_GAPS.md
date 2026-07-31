@@ -277,21 +277,62 @@ Claims such as “world-class,” “superhuman,” or “three times stronger�
 supported. The defensible form is always: agent A beat agent B, on a named
 profile, under a named decision rule.
 
-## Priorities
+## 2026-07-31 ranked intervention audit
 
-1. Make a major-civilization controller consume the fog-honest observation and
-   maintain explicit memory/beliefs.
-2. Train action-conditioned return, Q, or advantage targets from
-   counterfactual consequences; do not greedily maximize another state-outcome
-   correlate.
-3. Require a profile matrix that covers the rotating exhibition before a
-   strength label or live promotion. Keep artifact provenance mandatory.
-4. Pursue structural oracle headroom at the profile that would ship. Keep the
-   corrected joint-macro arm reproducible, but require substantially more
-   evidence before spending 28 branches where 11 produced the same measured
-   wins.
-5. Add external calibration: completed games against Firaxis' AI and humans,
-   with settings and logs retained.
+The first implementation set ranked envoy acquisition first, strategy
+commitment second, and a cross-profile promotion gate third. The ordering came
+from replicated headroom rather than code aesthetics: suzerainty has the
+largest oracle win-rate ceiling, and the deployment evaluator records 2–3
+unanchored midgame plan changes per seat-game.
+
+Both direct hypotheses were implemented behind independent evaluator arms and
+then rejected as defaults. Influence infrastructure and influence-aware policy
+selection increased the named resource in some compact samples, but component
+controls could not attribute the promising deployment direction to either
+mechanism. Corrected trigger-scoped commitment reliably reduced churn and
+pointed +26 on compact and +35 at deployment, but both 20-map results were
+inconclusive; deployment therefore failed the strength gate. These are useful
+bounded results: more envoys are not automatically worth their opportunity
+cost, and less plan motion is not yet established as stronger adaptation.
+
+The systematic item did survive. `ai_eval --matrix` now requires a strength
+PASS on the six-player Online deployment and no statistically established
+regression on the compact Standard safety profile. Insufficient evidence fails
+closed, both profiles run concurrently under one job budget, and matrix mode
+owns all outcome-affecting profile flags. This closes the specific process hole
+that allowed compact-only gains to acquire unqualified “stronger” labels.
+
+A fresh 40-map comparison of retained `advanced` with `advanced_v1` on that
+nine-city-state, randomized-civilization deployment profile was itself
+inconclusive: 47.5% (−17 Elo-equivalent, 95% CI −124..+89). That does not erase
+the recorded +207/PASS result on the older six-city-state fixed-roster profile,
+but it does prevent a profile-independent “top-tier” claim. The strongest
+supported conclusion is that `advanced` remains the production incumbent and
+no tested replacement cleared the deployment gate.
+
+## Next priorities
+
+1. **Fog-honest major controller.** Make a major civilization consume the
+   existing observation, memory, and belief surfaces. This is the largest
+   remaining rules-integrity gap and creates honest uncertainty for every
+   later policy improvement.
+2. **Action-conditioned return with external-profile calibration.** Expand the
+   counterfactual Q/advantage corpus well beyond the current 52-game sample,
+   reserve the deployment profile as an untouched calibration set, and require
+   selective abstention when the model is out of distribution. Do not greedily
+   maximize another state-outcome correlate.
+3. **Cost-aware expansion search.** Expansion is the second replicated oracle
+   ceiling, but seven decision treatments failed because the oracle removed
+   settler production and population costs. Search or value the full
+   build-settle-payback sequence instead of raising a city target again.
+4. **Policy-deck transfer confirmation.** The existing live deck, not the new
+   influence terms, produced the clearest direction in the envoy decomposition.
+   Its first 20-map matrix scored 53.8% (+26) at deployment with 52.1% terminal
+   score, while compact safety was inconclusive rather than harmful. Extend the
+   same pre-declared seed prefix until the anytime gate resolves; promote only
+   if deployment passes and compact continues not to retain the incumbent.
+5. **External calibration.** Complete retained games against Firaxis' AI and
+   humans with named settings. Internal Elo remains an internal ruler.
 
 For implementation details see `docs/AI_GUIDE.md`; for the run-by-run evidence
 and its corrections see `docs/EVAL.md`; for the rating/seating contract see

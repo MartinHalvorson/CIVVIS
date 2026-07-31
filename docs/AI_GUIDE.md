@@ -557,9 +557,10 @@ run at four players on a 24×16 Standard map.
 | comparison | measured profile | result | interpretation |
 |---|---|---|---|
 | `advanced` vs `advanced_v1` | 6p, 74×46, 6 city-states, Online | **+207**, gate PASS | robust scripted improvement on that recorded comparison profile |
-| `advanced_evolved` vs `advanced` | same | −9, inconclusive | small-profile genome gain did not transfer |
-| `strategic` vs `advanced` | same, 60 maps | −47, wins inconclusive | open; the planned 300-map confirmation did not finish |
-| `strategic_cheap` vs `advanced` | same | **−63**, retain `advanced` | cheap search regressed |
+| `advanced` vs `advanced_v1` | 6p, 74×46, 9 city-states, Online, randomized civilizations | −17, inconclusive (40 maps) | the ordering is not established on the matrix deployment profile |
+| `advanced_evolved` vs `advanced` | 6p recorded profile above | −9, inconclusive | small-profile genome gain did not transfer |
+| `strategic` vs `advanced` | 6p recorded profile above, 60 maps | −47, wins inconclusive | open; the planned 300-map confirmation did not finish |
+| `strategic_cheap` vs `advanced` | 6p recorded profile above | **−63**, retain `advanced` | cheap search regressed |
 | `strategic_deep` vs `strategic` | 4p, 24×16, Standard | **+45**, gate PASS | deeper search won on its source benchmark only |
 | `policy_wide` vs `advanced` | 4p benchmark | **−313**, 14.2% | outcome correlation was harmful when greedily maximized |
 | `production` vs `advanced` | 4p benchmark | 45.0%, sign p=0.0428 | scripted governor retained |
@@ -583,6 +584,25 @@ roster keeps `strategic` as an offline-only anchor.
 ## Evaluation tips
 
 - Fix multiple seed sets; report paired win rate vs `basic` plus multiplayer Elo.
+- Use the promotion matrix for any claim that a challenger should replace
+  `advanced`:
+
+  ```sh
+  cargo run --release --bin ai_eval -- challenger advanced \
+    --matrix --pairs 120 --jobs 12 --seed 12000000
+  ```
+
+  It runs the compact Standard safety profile and the six-player Online
+  deployment concurrently. Deployment must PASS; compact must have enough
+  evidence and must not RETAIN `advanced`. Matrix mode rejects profile-shaping
+  flags, so the command cannot silently test a different game under the same
+  label.
+- Keep mechanism controls separate. `advanced_policy_live_control`,
+  `advanced_envoy_policy`, `advanced_envoy_infrastructure`, and
+  `advanced_envoy_economy` decompose policy-deck, influence-card, and production
+  effects. `advanced_strategic_commitment` is the default-off soft-replan
+  treatment. None is production behavior unless a later matrix gate promotes
+  it.
 - Use `ai_eval` to catch regressions hidden by wins (stalled settlers, obsolete
   armies, unfinished queues, or weak science/culture output).
 - Keep `random` in the pool as a sanity floor.

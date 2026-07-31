@@ -38,7 +38,12 @@ pub const BUILTIN_AIS: [&str; 10] = [
 /// tournament ratings. Keeping them out of `BUILTIN_AIS` prevents a control
 /// factory from being pooled into the same player/leader rating key as
 /// its treatment.
-pub const EVAL_ONLY_AIS: [&str; 65] = [
+pub const EVAL_ONLY_AIS: [&str; 70] = [
+    "advanced_policy_live_control",
+    "advanced_envoy_policy",
+    "advanced_envoy_infrastructure",
+    "advanced_envoy_economy",
+    "advanced_strategic_commitment",
     "advanced_congress_counter",
     "advanced_congress_votes",
     "advanced_congress_counter_hard",
@@ -1164,6 +1169,40 @@ impl EloPool {
 pub fn builtin_ai(name: &str, seed: u64) -> Box<dyn Ai> {
     match name {
         "advanced" => Box::new(AdvancedAi::new()),
+        // Four arms decompose the envoy-acquisition treatment. The live
+        // policy control differs from `advanced` only by enabling the existing
+        // counterfactual deck; the policy treatment then adds only influence
+        // to that deck's valuation. Infrastructure remains on the stock deck,
+        // and the combined arm carries both mechanisms.
+        "advanced_policy_live_control" => {
+            let mut weights = Weights::default();
+            weights.policy_deck = crate::ai::PolicyDeck::Live;
+            Box::new(AdvancedAi::with_weights(weights))
+        }
+        "advanced_envoy_policy" => {
+            let mut weights = Weights::default();
+            weights.policy_deck = crate::ai::PolicyDeck::Live;
+            weights.pol_influence = 4.0;
+            Box::new(AdvancedAi::with_weights(weights))
+        }
+        "advanced_envoy_infrastructure" => {
+            let mut ai = AdvancedAi::new();
+            ai.envoy_infrastructure = true;
+            Box::new(ai)
+        }
+        "advanced_envoy_economy" => {
+            let mut weights = Weights::default();
+            weights.policy_deck = crate::ai::PolicyDeck::Live;
+            weights.pol_influence = 4.0;
+            let mut ai = AdvancedAi::with_weights(weights);
+            ai.envoy_infrastructure = true;
+            Box::new(ai)
+        }
+        "advanced_strategic_commitment" => {
+            let mut ai = AdvancedAi::new();
+            ai.strategic_commitment = true;
+            Box::new(ai)
+        }
         // Treatment for the lane-reachability axis: identical to `advanced`
         // except that it refuses to route toward a victory lane it cannot
         // finish inside the turn budget. Paired against `advanced` this
@@ -2166,6 +2205,11 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
             if net { "production_net" } else { "production" },
         ),
         "advanced" => (Vec::new(), "advanced"),
+        "advanced_policy_live_control" => (Vec::new(), "advanced_policy_live_control"),
+        "advanced_envoy_policy" => (Vec::new(), "advanced_envoy_policy"),
+        "advanced_envoy_infrastructure" => (Vec::new(), "advanced_envoy_infrastructure"),
+        "advanced_envoy_economy" => (Vec::new(), "advanced_envoy_economy"),
+        "advanced_strategic_commitment" => (Vec::new(), "advanced_strategic_commitment"),
         "advanced_lane_reachable" => (Vec::new(), "advanced_lane_reachable"),
         "advanced_wide_opening" => (Vec::new(), "advanced_wide_opening"),
         "advanced_expansion_payback" => (Vec::new(), "advanced_expansion_payback"),
@@ -2954,8 +2998,13 @@ mod tests {
             // Anything else reaching that state fell through to the
             // catch-all and is claiming to need nothing while quietly
             // needing a net.
-            const SCRIPTED: [&str; 36] = [
+            const SCRIPTED: [&str; 41] = [
                 "advanced",
+                "advanced_policy_live_control",
+                "advanced_envoy_policy",
+                "advanced_envoy_infrastructure",
+                "advanced_envoy_economy",
+                "advanced_strategic_commitment",
                 "advanced_blind_to_leaders",
                 "advanced_rush",
                 "advanced_rush_connected",
