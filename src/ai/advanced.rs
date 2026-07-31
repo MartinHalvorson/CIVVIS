@@ -3,7 +3,7 @@
 //! `BasicAi` deliberately remains the small deterministic baseline.  This
 //! agent adds a shared strategic model so research, production, diplomacy,
 //! civilian work, and military movement pursue the same medium-term goal.
-use super::{Ai, BasicAi, ForceReport, PlanReport, UnitDoctrine, Weights};
+use super::{Ai, BasicAi, BasicUnitPlanState, ForceReport, PlanReport, UnitDoctrine, Weights};
 use crate::name::Name;
 use crate::parallel::WorkPool;
 use crate::game::{
@@ -361,7 +361,7 @@ pub struct ForceGroup {
     pub local_strength_ratio: f64,
 }
 
-#[derive(Default)]
+#[derive(Clone, Copy, Default)]
 struct EmpireCounts {
     settlers: usize,
     builders: usize,
@@ -381,6 +381,40 @@ struct EmpireCounts {
     air_defense: usize,
     military_engineers: usize,
     missionaries: usize,
+}
+
+struct UnitIntent {
+    actions: Vec<Action>,
+    took_a_turn: bool,
+    base_state: BasicUnitPlanState,
+}
+
+#[derive(Clone)]
+enum CityDistance {
+    Cylinder(i32),
+    Globe(Arc<crate::sphere::Sphere>),
+}
+
+impl CityDistance {
+    fn between(&self, first: Pos, second: Pos) -> i32 {
+        match self {
+            CityDistance::Cylinder(width) => crate::hex::wdistance(first, second, *width),
+            CityDistance::Globe(sphere) => sphere.distance(first, second),
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+struct CityPressureUnit {
+    position: Pos,
+    friendly: bool,
+    strength: f64,
+}
+
+#[derive(Clone, Copy)]
+struct CityPressureSite {
+    position: Pos,
+    defense: f64,
 }
 
 #[derive(Clone, Copy)]
@@ -1459,6 +1493,85 @@ impl AdvancedAi {
         hostile / friendly.max(1.0)
     }
 
+    /// Evaluate the independent city/unit distance matrix from compact,
+    /// immutable inputs. Strength modifiers and city defenses are resolved on
+    /// the simulation thread first, so workers share no `Game` caches and the
+    /// floating-point sums retain unit-ID order exactly.
+    fn city_pressures(&self, g: &Game, pid: usize, cities: &[u32]) -> Vec<f64> {
+        let Some(pool) = self.work_pool.as_ref() else {
+            return cities
+                .iter()
+                .map(|city| Self::city_pressure(g, pid, *city))
+                .collect();
+        };
+        let relevant = g
+            .units
+            .values()
+            .filter(|unit| g.rules.units[unit.kind].class == "military")
+            .filter(|unit| unit.owner == pid || g.is_at_war(pid, unit.owner))
+            .collect::<Vec<_>>();
+        // Pool dispatch dominates tiny empires. This boundary is comparisons,
+        // not a map/player constant: large armies with few cities and wide
+        // empires with small garrisons reach the same measured work floor.
+        if cities.len() < 2 || cities.len().saturating_mul(relevant.len()) < 128 {
+            return cities
+                .iter()
+                .map(|city| Self::city_pressure(g, pid, *city))
+                .collect();
+        }
+
+        let units = relevant
+            .into_iter()
+            .map(|unit| {
+                let friendly = unit.owner == pid;
+                CityPressureUnit {
+                    position: unit.pos,
+                    friendly,
+                    strength: crate::game::effective_strength(
+                        g.unit_strength(unit, friendly),
+                        unit.hp,
+                    ),
+                }
+            })
+            .collect::<Vec<_>>();
+        let sites = cities
+            .iter()
+            .map(|city| CityPressureSite {
+                position: g.cities[city].pos,
+                defense: g.city_strength(*city),
+            })
+            .collect::<Vec<_>>();
+        let distance = match g.map.topology {
+            crate::world::Topology::Cylinder => CityDistance::Cylinder(g.map.width),
+            crate::world::Topology::Globe(frequency) => {
+                CityDistance::Globe(crate::sphere::sphere(frequency))
+            }
+        };
+        let units = Arc::new(units);
+        let sites = Arc::new(sites);
+        let distance = Arc::new(distance);
+        pool.map(cities.len(), move |index| {
+            let site = sites[index];
+            let hostile = units
+                .iter()
+                .filter(|unit| !unit.friendly)
+                .filter(|unit| distance.between(site.position, unit.position) <= 6)
+                .map(|unit| unit.strength)
+                .sum::<f64>();
+            if hostile <= 0.0 {
+                return 0.0;
+            }
+            let friendly = site.defense
+                + units
+                    .iter()
+                    .filter(|unit| unit.friendly)
+                    .filter(|unit| distance.between(site.position, unit.position) <= 6)
+                    .map(|unit| unit.strength)
+                    .sum::<f64>();
+            hostile / friendly.max(1.0)
+        })
+    }
+
     /// The empire's objective translated into the citizen governor's own
     /// vocabulary: how much extra appetite this lane asks for, per yield.
     ///
@@ -1552,9 +1665,22 @@ impl AdvancedAi {
         };
         let short = cities.len() < plan.desired_cities;
 
+        let (city_yields, pressures) = {
+            // City yields share empire-wide Amenity, regional-building, and
+            // Great Work derivations. Keep one scope across the complete
+            // census, and reuse each city's answer for both the mean and its
+            // own role instead of deriving it twice.
+            let _memo = g.query_memo();
+            let city_yields = cities
+                .iter()
+                .map(|city| g.city_yields(*city))
+                .collect::<Vec<_>>();
+            let pressures = self.city_pressures(g, pid, &cities);
+            (city_yields, pressures)
+        };
         let mut totals = Yields::default();
-        for cid in &cities {
-            totals.add(g.city_yields(*cid));
+        for yields in &city_yields {
+            totals.add(*yields);
         }
         let count = cities.len() as f64;
         let mean_food = totals.food / count;
@@ -1562,9 +1688,11 @@ impl AdvancedAi {
         let mean_specialty = (totals.science + totals.culture + totals.faith + totals.gold) / count;
 
         let mut directives = BTreeMap::new();
-        for cid in cities {
-            let pressure = Self::city_pressure(g, pid, cid);
-            let ys = g.city_yields(cid);
+        for ((cid, ys), pressure) in cities
+            .into_iter()
+            .zip(city_yields)
+            .zip(pressures)
+        {
             let specialty = ys.science + ys.culture + ys.faith + ys.gold;
             // `BASTION_PRESSURE` is the same 0.45 `threatened_city` treats as
             // a locally competitive hostile force, so the city's own governor
@@ -6029,6 +6157,65 @@ impl AdvancedAi {
         }
     }
 
+    /// Enumerate only purchase actions, distributing independent city menus
+    /// across worker-private worlds. The game helper returns the PURCHASES
+    /// and later EMPIRE contributions separately; flattening each phase in
+    /// city order exactly matches the filtered stock legal-action order.
+    fn legal_purchase_actions(&self, g: &Game, pid: usize) -> Vec<Action> {
+        let city_ids = g.purchase_action_city_ids(pid);
+        let Some(pool) = self.work_pool.as_ref() else {
+            // Interactive and frozen-control agents retain the literal stock
+            // enumeration path. The specialized projection is a headless
+            // simulation optimization, gated by the attached work pool.
+            return g
+                .legal_actions_within(
+                    pid,
+                    ActionFamilies::PURCHASES | ActionFamilies::EMPIRE,
+                )
+                .into_iter()
+                .filter(|action| {
+                    matches!(
+                        action,
+                        Action::Buy { .. }
+                            | Action::BuyBuilding { .. }
+                            | Action::BuyDistrict { .. }
+                            | Action::BuyPlot { .. }
+                    )
+                })
+                .collect();
+        };
+        if pool.threads() == 1 || city_ids.len() < 2 {
+            return g.legal_purchase_actions(pid);
+        }
+
+        let city_ids = Arc::new(city_ids);
+        let active = pool.threads().min(city_ids.len());
+        let states = (0..active).map(|_| g.clone()).collect::<Vec<_>>();
+        let per_city = pool.map_stateful(city_ids.len(), states, move |game, indices| {
+            let _memo = game.query_memo();
+            indices
+                .map(|index| {
+                    (
+                        index,
+                        game.legal_purchase_actions_for_city(pid, city_ids[index]),
+                    )
+                })
+                .collect()
+        });
+        let mut actions = Vec::new();
+        actions.extend(
+            per_city
+                .iter()
+                .flat_map(|(purchases, _)| purchases.iter().cloned()),
+        );
+        actions.extend(
+            per_city
+                .into_iter()
+                .flat_map(|(_, empire)| empire.into_iter()),
+        );
+        actions
+    }
+
     /// Convert a deep treasury into immediate tempo gains. Candidate
     /// units, buildings, and Governor-enabled districts reuse the strategic
     /// production evaluator, but are scored at their undiscounted positional
@@ -6064,15 +6251,13 @@ impl AdvancedAi {
             let counts = self.counts(g, pid);
             let mut candidates = Vec::new();
             let mut plot_options = Vec::new();
+            let mut purchase_options = Vec::new();
             // Every candidate asks its city for the same yields, twice — once
             // here and once inside `production_value`. The guard borrows the
             // game immutably, so those answers cannot go stale before it is
             // dropped below.
             let memo = g.query_memo();
-            for action in g.legal_actions_within(
-                pid,
-                ActionFamilies::PURCHASES | ActionFamilies::EMPIRE,
-            ) {
+            for action in self.legal_purchase_actions(g, pid) {
                 if let Action::BuyPlot {
                     city: _,
                     pos,
@@ -6204,30 +6389,19 @@ impl AdvancedAi {
                 if purchased_units >= unit_purchase_limit && matches!(&item, Item::Unit { .. }) {
                     continue;
                 }
-                let production = g.city_yields(city).production.max(1.0);
-                let turns = g.item_remaining_cost_for_city(pid, city, &item) / production;
-                let production_score = self.production_value(g, pid, city, &item, plan, &counts);
-                if production_score <= -1_000.0 {
-                    continue;
-                }
-                // Long production time can make even a strategically
-                // redundant unit clear the combined purchase score below.
-                // Require the underlying need itself to be meaningful before
-                // converting a deep treasury into more bodies on the map.
-                if matches!(&item, Item::Unit { .. }) && production_score < 120.0 {
-                    continue;
-                }
-                let mut after = g.clone();
-                if after.apply(pid, &action).is_err() {
-                    continue;
-                }
-                let cost = (bank - after.players[pid].gold).max(0.0);
-                if after.players[pid].gold + f64::EPSILON < reserve {
-                    continue;
-                }
-                let positional = production_score * (7.0 + turns.max(1.0));
-                let score = positional + turns.clamp(0.0, 20.0) * 6.0 - cost * 0.30;
-                if score >= 120.0 {
+                purchase_options.push((action, city, item));
+            }
+            let purchase_scores = self.gold_purchase_scores(
+                g,
+                pid,
+                &purchase_options,
+                plan,
+                counts,
+                bank,
+                reserve,
+            );
+            for ((action, _, _), score) in purchase_options.into_iter().zip(purchase_scores) {
+                if let Some(score) = score {
                     candidates.push((score, std::cmp::Reverse(format!("{action:?}")), action));
                 }
             }
@@ -6242,36 +6416,10 @@ impl AdvancedAi {
                         .then_with(|| left.2.cmp(&right.2))
                 });
                 plot_options.truncate(4);
-                for (_, base_score, _, action) in plot_options {
-                    let Action::BuyPlot { city, pos, .. } = &action else {
-                        unreachable!("plot shortlist contains only BuyPlot actions")
-                    };
-                    let mut after = g.clone();
-                    if after.apply(pid, &action).is_err()
-                        || after.players[pid].gold + f64::EPSILON < reserve + 200.0
-                    {
-                        continue;
-                    }
-                    // Buying the right hex can be valuable even before a
-                    // Citizen works it: ownership may expose a district or
-                    // Wonder site.
-                    let site_value = after
-                        .producible_items(pid, *city)
-                        .into_iter()
-                        .filter(|item| match item {
-                            Item::District { pos: site, .. } | Item::Wonder { pos: site, .. } => {
-                                site == pos
-                            }
-                            _ => false,
-                        })
-                        .map(|item| {
-                            self.production_value(&after, pid, *city, &item, plan, &counts)
-                        })
-                        .fold(0.0, f64::max)
-                        .max(0.0)
-                        * 0.35;
-                    let score = base_score + site_value;
-                    if score >= 120.0 {
+                let plot_scores =
+                    self.gold_plot_scores(g, pid, &plot_options, plan, counts, reserve);
+                for ((_, _, _, action), score) in plot_options.into_iter().zip(plot_scores) {
+                    if let Some(score) = score {
                         candidates.push((
                             score,
                             std::cmp::Reverse(format!("{action:?}")),
@@ -6325,6 +6473,115 @@ impl AdvancedAi {
             purchased_units += is_unit as usize;
         }
         purchased
+    }
+
+    fn gold_purchase_score(
+        &self,
+        g: &Game,
+        pid: usize,
+        action: &Action,
+        city: u32,
+        item: &Item,
+        plan: &StrategicPlan,
+        counts: &EmpireCounts,
+        bank: f64,
+        reserve: f64,
+    ) -> Option<f64> {
+        let production = g.city_yields(city).production.max(1.0);
+        let turns = g.item_remaining_cost_for_city(pid, city, item) / production;
+        let production_score = self.production_value(g, pid, city, item, plan, counts);
+        if production_score <= -1_000.0 {
+            return None;
+        }
+        // Long production time can make even a strategically redundant unit
+        // clear the combined purchase score below. Require the underlying
+        // need itself to be meaningful before converting a deep treasury into
+        // more bodies on the map.
+        if matches!(item, Item::Unit { .. }) && production_score < 120.0 {
+            return None;
+        }
+        let mut after = g.clone();
+        after.apply(pid, action).ok()?;
+        let cost = (bank - after.players[pid].gold).max(0.0);
+        if after.players[pid].gold + f64::EPSILON < reserve {
+            return None;
+        }
+        let positional = production_score * (7.0 + turns.max(1.0));
+        let score = positional + turns.clamp(0.0, 20.0) * 6.0 - cost * 0.30;
+        (score >= 120.0).then_some(score)
+    }
+
+    fn gold_purchase_scores(
+        &self,
+        g: &Game,
+        pid: usize,
+        options: &[(Action, u32, Item)],
+        plan: &StrategicPlan,
+        counts: EmpireCounts,
+        bank: f64,
+        reserve: f64,
+    ) -> Vec<Option<f64>> {
+        options
+            .iter()
+            .map(|(action, city, item)| {
+                self.gold_purchase_score(
+                    g, pid, action, *city, item, plan, &counts, bank, reserve,
+                )
+            })
+            .collect()
+    }
+
+    fn gold_plot_score(
+        &self,
+        g: &Game,
+        pid: usize,
+        action: &Action,
+        base_score: f64,
+        plan: &StrategicPlan,
+        counts: &EmpireCounts,
+        reserve: f64,
+    ) -> Option<f64> {
+        let Action::BuyPlot { city, pos, .. } = action else {
+            unreachable!("plot shortlist contains only BuyPlot actions")
+        };
+        let mut after = g.clone();
+        if after.apply(pid, action).is_err()
+            || after.players[pid].gold + f64::EPSILON < reserve + 200.0
+        {
+            return None;
+        }
+        // Buying the right hex can be valuable even before a Citizen works
+        // it: ownership may expose a district or Wonder site.
+        let site_value = after
+            .producible_items(pid, *city)
+            .into_iter()
+            .filter(|item| match item {
+                Item::District { pos: site, .. } | Item::Wonder { pos: site, .. } => site == pos,
+                _ => false,
+            })
+            .map(|item| self.production_value(&after, pid, *city, &item, plan, counts))
+            .fold(0.0, f64::max)
+            .max(0.0)
+            * 0.35;
+        let score = base_score + site_value;
+        (score >= 120.0).then_some(score)
+    }
+
+    fn gold_plot_scores(
+        &self,
+        g: &Game,
+        pid: usize,
+        options: &[(f64, f64, std::cmp::Reverse<String>, Action)],
+        plan: &StrategicPlan,
+        counts: EmpireCounts,
+        reserve: f64,
+    ) -> Vec<Option<f64>> {
+        options
+            .iter()
+            .map(|(_, base_score, _, action)| {
+                self.gold_plot_score(g, pid, action, *base_score, plan, &counts, reserve)
+            })
+            .collect()
     }
 
     fn counts(&self, g: &Game, pid: usize) -> EmpireCounts {
@@ -6809,8 +7066,8 @@ impl AdvancedAi {
             GrandStrategy::Culture if g.players[pid].civics.contains(&crate::name!("cold_war")) => 700.0,
             _ => 80.0,
         };
-        let best = g
-            .legal_actions_within(pid, ActionFamilies::PURCHASES | ActionFamilies::EMPIRE)
+        let best = self
+            .legal_purchase_actions(g, pid)
             .into_iter()
             .filter_map(|action| match &action {
                 Action::BuyBuilding {
@@ -7215,15 +7472,13 @@ impl AdvancedAi {
         let bank = g.players[pid].faith;
         let reserve = 180.0;
         let counts = self.counts(g, pid);
-        let mut candidates = Vec::new();
+        let mut options = Vec::new();
         let memo = g.query_memo();
-        for action in
-            g.legal_actions_within(pid, ActionFamilies::PURCHASES | ActionFamilies::EMPIRE)
-        {
+        for action in self.legal_purchase_actions(g, pid) {
             let Action::Buy {
-                city,
+                city: _,
                 unit,
-                formation,
+                formation: _,
                 currency,
             } = &action
             else {
@@ -7232,41 +7487,20 @@ impl AdvancedAi {
             if currency != "faith" || g.rules.units[unit].class != "military" {
                 continue;
             }
-            let mut after = g.clone();
-            if after.apply(pid, &action).is_err() || after.players[pid].faith < reserve {
-                continue;
-            }
-            let cost = (bank - after.players[pid].faith).max(0.0);
-            let spec = &g.rules.units[unit];
-            let combat = spec
-                .strength
-                .max(spec.ranged_strength)
-                .max(spec.bombard_strength)
-                + match *formation {
-                    1 => 10.0,
-                    2.. => 17.0,
-                    _ => 0.0,
-                };
-            let strategic = self
-                .production_value(
-                    g,
-                    pid,
-                    *city,
-                    &if *formation == 0 {
-                        Item::Unit { unit: unit.clone() }
-                    } else {
-                        Item::Formation {
-                            unit: unit.clone(),
-                            formation: *formation,
-                        }
-                    },
-                    plan,
-                    &counts,
-                )
-                .max(0.0);
-            let score = strategic + combat * 12.0 - cost * 0.25;
-            candidates.push((score, std::cmp::Reverse((*city, unit.clone())), action));
+            options.push(action);
         }
+        let scores = self.military_faith_scores(g, pid, &options, plan, counts, bank, reserve);
+        let candidates = options
+            .into_iter()
+            .zip(scores)
+            .filter_map(|(action, score)| {
+                let score = score?;
+                let Action::Buy { city, unit, .. } = &action else {
+                    unreachable!("faith military shortlist contains only Buy actions")
+                };
+                Some((score, std::cmp::Reverse((*city, unit.clone())), action))
+            })
+            .collect::<Vec<_>>();
         drop(memo);
         candidates
             .into_iter()
@@ -7276,6 +7510,72 @@ impl AdvancedAi {
                     .then_with(|| left.1.cmp(&right.1))
             })
             .is_some_and(|(_, _, action)| g.apply(pid, &action).is_ok())
+    }
+
+    fn military_faith_score(
+        &self,
+        g: &Game,
+        pid: usize,
+        action: &Action,
+        plan: &StrategicPlan,
+        counts: &EmpireCounts,
+        bank: f64,
+        reserve: f64,
+    ) -> Option<f64> {
+        let Action::Buy {
+            city,
+            unit,
+            formation,
+            ..
+        } = action
+        else {
+            unreachable!("faith military shortlist contains only Buy actions")
+        };
+        let mut after = g.clone();
+        if after.apply(pid, action).is_err() || after.players[pid].faith < reserve {
+            return None;
+        }
+        let cost = (bank - after.players[pid].faith).max(0.0);
+        let spec = &g.rules.units[unit];
+        let combat = spec
+            .strength
+            .max(spec.ranged_strength)
+            .max(spec.bombard_strength)
+            + match *formation {
+                1 => 10.0,
+                2.. => 17.0,
+                _ => 0.0,
+            };
+        let item = if *formation == 0 {
+            Item::Unit { unit: unit.clone() }
+        } else {
+            Item::Formation {
+                unit: unit.clone(),
+                formation: *formation,
+            }
+        };
+        let strategic = self
+            .production_value(g, pid, *city, &item, plan, counts)
+            .max(0.0);
+        Some(strategic + combat * 12.0 - cost * 0.25)
+    }
+
+    fn military_faith_scores(
+        &self,
+        g: &Game,
+        pid: usize,
+        options: &[Action],
+        plan: &StrategicPlan,
+        counts: EmpireCounts,
+        bank: f64,
+        reserve: f64,
+    ) -> Vec<Option<f64>> {
+        options
+            .iter()
+            .map(|action| {
+                self.military_faith_score(g, pid, action, plan, &counts, bank, reserve)
+            })
+            .collect()
     }
 
     fn science_production(&self, g: &mut Game, pid: usize) {
@@ -8003,24 +8303,28 @@ impl AdvancedAi {
             }
             let best: Option<(f64, String, Item)> = {
                 let _memo = g.query_memo();
-                let mut best = None;
-                for item in g.producible_items(pid, cid) {
-                    if let Item::Project { project } = &item {
+                let items = g
+                    .producible_items(pid, cid)
+                    .into_iter()
+                    .filter(|item| {
+                        let Item::Project { project } = item else {
+                            return true;
+                        };
                         let spec = &g.rules.projects[project];
-                        let already_queued_elsewhere = !spec.repeatable
-                            && g.cities.values().any(|city| {
+                        spec.repeatable
+                            || !g.cities.values().any(|city| {
                                 city.owner == pid
                                     && city.id != cid
                                     && matches!(
                                         city.queue.first(),
                                         Some(Item::Project { project: queued }) if queued == project
                                     )
-                            });
-                        if already_queued_elsewhere {
-                            continue;
-                        }
-                    }
-                    let score = self.production_value(g, pid, cid, &item, plan, &counts);
+                            })
+                    })
+                    .collect::<Vec<_>>();
+                let scores = self.production_values(g, pid, cid, &items, plan, counts);
+                let mut best = None;
+                for (item, score) in items.into_iter().zip(scores) {
                     let key = format!("{item:?}");
                     let replace = best
                         .as_ref()
@@ -8061,6 +8365,26 @@ impl AdvancedAi {
                 }
             }
         }
+    }
+
+    /// Score the production shortlist under one memo scope, retaining item
+    /// order and therefore the stock tie-break. These individual arithmetic
+    /// evaluations are too small to amortize worker-private game snapshots;
+    /// the heavier legal-action and route phases are the parallel frontiers.
+    fn production_values(
+        &self,
+        g: &Game,
+        pid: usize,
+        cid: u32,
+        items: &[Item],
+        plan: &StrategicPlan,
+        counts: EmpireCounts,
+    ) -> Vec<f64> {
+        let _memo = g.query_memo();
+        items
+            .iter()
+            .map(|item| self.production_value(g, pid, cid, item, plan, &counts))
+            .collect()
     }
 
     /// Basil II's timing attack: bank Hippodrome production just short of
@@ -12354,6 +12678,191 @@ impl AdvancedAi {
         }
     }
 
+    fn unit_uses_general_planner(&self, g: &Game, uid: u32) -> bool {
+        let unit = &g.units[&uid];
+        !matches!(
+            unit.kind.as_str(),
+            "settler"
+                | "builder"
+                | "military_engineer"
+                | "naturalist"
+                | "archaeologist"
+                | "trader"
+                | "missionary"
+                | "rock_band"
+        ) && !(self.victory_planning && g.rules.units[unit.kind].class == "religious")
+    }
+
+    fn advance_unit_serial(
+        &mut self,
+        g: &mut Game,
+        pid: usize,
+        uid: u32,
+        plan: &StrategicPlan,
+        religious_offensive: bool,
+        decline_settlers: bool,
+    ) -> bool {
+        let mut took_a_turn = false;
+        for _ in 0..8 {
+            if !g.units.contains_key(&uid) || g.units[&uid].moves_left <= 0.0 {
+                break;
+            }
+            let kind = g.units[&uid].kind.clone();
+            let class = g.rules.units[kind].class.clone();
+            let acted = match kind.as_str() {
+                "settler" => self.advanced_settler_step(g, pid, uid),
+                "builder" => self.advanced_builder_step(g, pid, uid, plan.strategy),
+                "military_engineer" => self.base.military_engineer_step(g, pid, uid),
+                "naturalist" => self.base.naturalist_step(g, pid, uid),
+                "archaeologist" => self.base.archaeologist_step(g, pid, uid),
+                "trader" => self.advanced_trader_step(g, pid, uid, plan.strategy),
+                "missionary" if self.victory_planning => {
+                    self.advanced_missionary_step(g, pid, uid, religious_offensive)
+                }
+                "missionary" => self.base.missionary_step(g, pid, uid),
+                "rock_band" => self.base.rock_band_step(g, pid, uid),
+                _ if self.victory_planning && class == "religious" => {
+                    self.advanced_religious_step(g, pid, uid, religious_offensive)
+                }
+                _ => self.advanced_military_step_with_decline(
+                    g,
+                    pid,
+                    uid,
+                    plan,
+                    decline_settlers,
+                ),
+            };
+            if !acted {
+                break;
+            }
+            took_a_turn = true;
+        }
+        took_a_turn
+    }
+
+    fn plan_general_unit_turn(
+        &mut self,
+        g: &mut Game,
+        pid: usize,
+        uid: u32,
+        plan: &StrategicPlan,
+        decline_settlers: bool,
+    ) -> UnitIntent {
+        let start = g.log.len();
+        let mut took_a_turn = false;
+        for _ in 0..8 {
+            if !g.units.contains_key(&uid) || g.units[&uid].moves_left <= 0.0 {
+                break;
+            }
+            if !self.advanced_military_step_with_decline(g, pid, uid, plan, decline_settlers) {
+                break;
+            }
+            took_a_turn = true;
+        }
+        UnitIntent {
+            actions: g
+                .log
+                .since(start)
+                .filter(|(seat, _)| *seat == pid)
+                .map(|(_, action)| action.clone())
+                .collect(),
+            took_a_turn,
+            base_state: self.base.unit_plan_state(uid),
+        }
+    }
+
+    fn apply_unit_intents(
+        &mut self,
+        g: &mut Game,
+        pid: usize,
+        ids: &[u32],
+        intents: Vec<UnitIntent>,
+        plan: &StrategicPlan,
+        religious_offensive: bool,
+        decline_settlers: bool,
+    ) {
+        let mut snapshot_invalid = false;
+        for (&uid, intent) in ids.iter().zip(intents) {
+            if snapshot_invalid || !g.units.contains_key(&uid) {
+                let took_a_turn = g.units.contains_key(&uid)
+                    && self.advance_unit_serial(
+                        g,
+                        pid,
+                        uid,
+                        plan,
+                        religious_offensive,
+                        decline_settlers,
+                    );
+                if !took_a_turn {
+                    self.base.hold_stood_down_unit(g, pid, uid);
+                }
+                continue;
+            }
+
+            let mut took_a_turn = false;
+            let mut valid = true;
+            for action in &intent.actions {
+                let invalidates_followers = match action {
+                    Action::Move { to, .. } => {
+                        g.barb_camps.contains_key(to)
+                            || g.map.get(*to).is_some_and(|tile| {
+                                matches!(
+                                    tile.improvement.as_deref(),
+                                    Some("goody_hut" | "meteor_goody" | "barbarian_camp")
+                                )
+                            })
+                            || g.units_at(*to)
+                                .iter()
+                                .any(|other| g.units[other].owner != pid)
+                    }
+                    // Ordinary empty-tile movement, rebasing, patrol, and
+                    // fortification only change this unit. Every other action
+                    // available to the general planner can damage, remove,
+                    // convert, or alter the shared map and therefore ends the
+                    // immutable-position batch after it is committed.
+                    Action::AirRebase { .. } | Action::AirPatrol { .. } | Action::Fortify { .. } => {
+                        false
+                    }
+                    _ => true,
+                };
+                if g.apply(pid, action).is_err() {
+                    valid = false;
+                    break;
+                }
+                took_a_turn = true;
+                if matches!(
+                    action,
+                    Action::Attack { .. }
+                        | Action::Ranged { .. }
+                        | Action::AirStrike { .. }
+                        | Action::PriorityTarget { .. }
+                ) {
+                    self.force_groups_dirty = true;
+                }
+                snapshot_invalid |= invalidates_followers;
+            }
+            if valid {
+                self.base.merge_unit_plan_state(uid, intent.base_state);
+                took_a_turn |= intent.took_a_turn;
+            } else if g.units.contains_key(&uid) {
+                // Earlier moves can occupy a planned route. Keep anything
+                // already committed, then finish this unit from live state.
+                snapshot_invalid = true;
+                took_a_turn |= self.advance_unit_serial(
+                    g,
+                    pid,
+                    uid,
+                    plan,
+                    religious_offensive,
+                    decline_settlers,
+                );
+            }
+            if !took_a_turn {
+                self.base.hold_stood_down_unit(g, pid, uid);
+            }
+        }
+    }
+
     fn advanced_units(&mut self, g: &mut Game, pid: usize, plan: &StrategicPlan) {
         self.base.begin_movement_turn(g, pid);
         if self.victory_planning {
@@ -12386,52 +12895,82 @@ impl AdvancedAi {
             };
             (order, *uid)
         });
-        for uid in ids {
-            let mut took_a_turn = false;
-            for _ in 0..8 {
-                if !g.units.contains_key(&uid) || g.units[&uid].moves_left <= 0.0 {
-                    break;
+        let pool = self
+            .work_pool
+            .clone()
+            .filter(|_| !self.journal().is_recording());
+        let mut cursor = 0;
+        while cursor < ids.len() {
+            let uid = ids[cursor];
+            if pool.is_none() || !self.unit_uses_general_planner(g, uid) {
+                let took_a_turn = self.advance_unit_serial(
+                    g,
+                    pid,
+                    uid,
+                    plan,
+                    religious_offensive,
+                    decline_settlers,
+                );
+                if !took_a_turn {
+                    self.base.hold_stood_down_unit(g, pid, uid);
                 }
-                let kind = g.units[&uid].kind.clone();
-                let class = g.rules.units[kind].class.clone();
-                let acted = match kind.as_str() {
-                    "settler" => self.advanced_settler_step(g, pid, uid),
-                    "builder" => self.advanced_builder_step(g, pid, uid, plan.strategy),
-                    "military_engineer" => self.base.military_engineer_step(g, pid, uid),
-                    "naturalist" => self.base.naturalist_step(g, pid, uid),
-                    "archaeologist" => self.base.archaeologist_step(g, pid, uid),
-                    "trader" => self.advanced_trader_step(g, pid, uid, plan.strategy),
-                    "missionary" if self.victory_planning => self.advanced_missionary_step(
-                        g,
-                        pid,
-                        uid,
-                        religious_offensive,
-                    ),
-                    "missionary" => self.base.missionary_step(g, pid, uid),
-                    "rock_band" => self.base.rock_band_step(g, pid, uid),
-                    _ if self.victory_planning && class == "religious" => self
-                        .advanced_religious_step(
-                            g,
+                cursor += 1;
+                continue;
+            }
+
+            let end = (cursor + 1..ids.len())
+                .find(|index| !self.unit_uses_general_planner(g, ids[*index]))
+                .unwrap_or(ids.len());
+            let batch = ids[cursor..end].to_vec();
+            if batch.len() == 1 {
+                let took_a_turn = self.advance_unit_serial(
+                    g,
+                    pid,
+                    uid,
+                    plan,
+                    religious_offensive,
+                    decline_settlers,
+                );
+                if !took_a_turn {
+                    self.base.hold_stood_down_unit(g, pid, uid);
+                }
+                cursor = end;
+                continue;
+            }
+
+            let pool = pool.as_ref().expect("parallel unit batch has a pool");
+            let batch_ids = Arc::new(batch.clone());
+            let plan_snapshot = plan.clone();
+            let active = pool.threads().min(batch.len());
+            let states = (0..active)
+                .map(|_| (g.clone(), self.clone()))
+                .collect::<Vec<_>>();
+            let intents = pool.map_stateful(batch.len(), states, move |(game, ai), indices| {
+                indices
+                    .map(|index| {
+                        let mut branch = game.clone();
+                        let mut planner = ai.clone();
+                        let intent = planner.plan_general_unit_turn(
+                            &mut branch,
                             pid,
-                            uid,
-                            religious_offensive,
-                        ),
-                    _ => self.advanced_military_step_with_decline(
-                        g,
-                        pid,
-                        uid,
-                        plan,
-                        decline_settlers,
-                    ),
-                };
-                if !acted {
-                    break;
-                }
-                took_a_turn = true;
-            }
-            if !took_a_turn {
-                self.base.hold_stood_down_unit(g, pid, uid);
-            }
+                            batch_ids[index],
+                            &plan_snapshot,
+                            decline_settlers,
+                        );
+                        (index, intent)
+                    })
+                    .collect()
+            });
+            self.apply_unit_intents(
+                g,
+                pid,
+                &batch,
+                intents,
+                plan,
+                religious_offensive,
+                decline_settlers,
+            );
+            cursor = end;
         }
         self.settler_targets
             .retain(|uid, _| g.units.contains_key(uid));
@@ -12855,7 +13394,8 @@ impl Ai for AdvancedAi {
         // Stamp the context once, for every layer. Nothing below repeats the
         // turn number or the acting civilization.
         self.journal().begin_turn(g.turn, pid);
-        g.with_deferred_visibility(|g| self.take_turn_inner(g, pid));
+        let pool = self.work_pool.clone();
+        g.with_deferred_visibility_pool(pool.as_deref(), |g| self.take_turn_inner(g, pid));
     }
 
     fn attach_journal(&mut self, journal: Journal) {
@@ -18435,8 +18975,32 @@ mod tests {
             .map(|city| city.buildings.len())
             .sum::<usize>();
 
-        assert!(AdvancedAi::targeting(VictoryTarget::Science)
-            .advanced_gold_spending(&mut game, 0, &plan));
+        let ai = AdvancedAi::targeting(VictoryTarget::Science);
+        let stock_purchases = game
+            .legal_actions_within(0, ActionFamilies::PURCHASES | ActionFamilies::EMPIRE)
+            .into_iter()
+            .filter(|action| {
+                matches!(
+                    action,
+                    Action::Buy { .. }
+                        | Action::BuyBuilding { .. }
+                        | Action::BuyDistrict { .. }
+                        | Action::BuyPlot { .. }
+                )
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(ai.legal_purchase_actions(&game, 0), stock_purchases);
+        let mut parallel_ai = ai.clone();
+        parallel_ai.work_pool = Some(Arc::new(WorkPool::new(4)));
+        assert_eq!(parallel_ai.legal_purchase_actions(&game, 0), stock_purchases);
+        let mut parallel_game = game.clone();
+
+        assert!(ai.advanced_gold_spending(&mut game, 0, &plan));
+        assert!(parallel_ai.advanced_gold_spending(&mut parallel_game, 0, &plan));
+        assert_eq!(
+            serde_json::to_value(&parallel_game).unwrap(),
+            serde_json::to_value(&game).unwrap()
+        );
         let units_after = game.player_unit_ids(0).len();
         let buildings_after = game
             .cities
@@ -20496,10 +21060,10 @@ mod tests {
     }
 
     #[test]
-    fn parallel_tactical_workers_replay_the_serial_game_exactly() {
+    fn parallel_worker_counts_replay_the_same_game_exactly() {
         let mut serial = Game::new(2, 20, 14, 73, 80, 1);
         let mut parallel = serial.clone();
-        let mut serial_ais = AdvancedAi::fleet(&serial);
+        let mut serial_ais = AdvancedAi::fleet_parallel(&serial, 1);
         let mut parallel_ais = AdvancedAi::fleet_parallel(&parallel, 4);
 
         run_game(&mut serial, &mut serial_ais);
@@ -20510,6 +21074,111 @@ mod tests {
             serde_json::to_value(&serial).unwrap(),
             serde_json::to_value(&parallel).unwrap()
         );
+    }
+
+    #[test]
+    #[ignore = "quality census; run explicitly with --nocapture"]
+    fn parallel_planner_quality_census() {
+        let mut candidate_wins = 0usize;
+        let mut control_wins = 0usize;
+        let mut candidate_score_share = 0.0;
+        let pairs = 8usize;
+        for pair in 0..pairs {
+            for swap in 0..2 {
+                let mut game = Game::new_full(4, 24, 16, 93_000 + pair as u64, 180, 0, false);
+                let candidate = |pid: usize| (pid + swap) % 2 == 0;
+                let mut ais = AdvancedAi::fleet_parallel(&game, 4);
+                for (pid, ai) in ais.iter_mut().enumerate() {
+                    if !candidate(pid) {
+                        *ai = AdvancedAi::new();
+                    }
+                }
+                run_game(&mut game, &mut ais);
+                match game.winner {
+                    Some(winner) if candidate(winner) => candidate_wins += 1,
+                    Some(_) => control_wins += 1,
+                    None => {}
+                }
+                let scores = (0..4)
+                    .map(|pid| game.score(pid).max(0) as f64)
+                    .collect::<Vec<_>>();
+                let total = scores.iter().sum::<f64>().max(1.0);
+                candidate_score_share += (0..4)
+                    .filter(|pid| candidate(*pid))
+                    .map(|pid| scores[pid])
+                    .sum::<f64>()
+                    / total;
+            }
+        }
+        let games = 2 * pairs;
+        let share = candidate_score_share / games as f64;
+        println!(
+            "parallel planner: {candidate_wins} wins; serial control: {control_wins}; terminal score share {share:.3}"
+        );
+        assert!(
+            share >= 0.45,
+            "parallel planning lost a material share of terminal position: {share:.3}"
+        );
+    }
+
+    #[test]
+    fn colliding_unit_intents_revalidate_and_finish_from_live_state() {
+        let mut game = Game::new(2, 20, 14, 73, 20, 0);
+        let existing = game.units.keys().copied().collect::<Vec<_>>();
+        for unit in existing {
+            game.remove_unit(unit);
+        }
+        let (target, origins) = game
+            .map
+            .tiles
+            .keys()
+            .copied()
+            .find_map(|target| {
+                if game.map.get(target).is_none_or(|tile| {
+                    !game.rules.is_passable(tile) || game.rules.is_water(tile)
+                }) {
+                    return None;
+                }
+                let origins = game
+                    .nbrs(target)
+                    .into_iter()
+                    .filter(|position| {
+                        game.map.get(*position).is_some_and(|tile| {
+                            game.rules.is_passable(tile) && !game.rules.is_water(tile)
+                        })
+                    })
+                    .take(2)
+                    .collect::<Vec<_>>();
+                (origins.len() == 2).then_some((target, origins))
+            })
+            .expect("test map has two approaches to one land tile");
+        let first = game.spawn_test_unit("warrior", 0, origins[0]);
+        let second = game.spawn_test_unit("warrior", 0, origins[1]);
+        game.current = 0;
+
+        let mut ai = AdvancedAi::new();
+        let plan = ai.assess(&game, 0);
+        let intents = [first, second]
+            .into_iter()
+            .map(|unit| UnitIntent {
+                actions: vec![Action::Move { unit, to: target }],
+                took_a_turn: true,
+                base_state: ai.base.unit_plan_state(unit),
+            })
+            .collect();
+        ai.apply_unit_intents(
+            &mut game,
+            0,
+            &[first, second],
+            intents,
+            &plan,
+            false,
+            true,
+        );
+
+        assert_eq!(game.units[&first].pos, target);
+        assert_ne!(game.units[&second].pos, target);
+        assert_eq!(game.units_at(target), vec![first]);
     }
 
     #[test]
@@ -21231,6 +21900,39 @@ mod tests {
             "  population under a growth halt: {halted_pop} citizen-turns ({:.1}% of all city-turns were halted)\n",
             bastions as f64 / city_turns.max(1) as f64 * 100.0
         );
+    }
+
+    #[test]
+    fn city_pressure_matrix_matches_serial_unit_order_exactly() {
+        let mut game = Game::new_full(2, 30, 18, 91_210, 80, 0, false);
+        let first = found_test_city(&mut game, 0);
+        let second = found_test_city(&mut game, 0);
+        let enemy = found_test_city(&mut game, 1);
+        game.at_war.insert((0, 1));
+        let positions = [
+            game.cities[&first].pos,
+            game.cities[&second].pos,
+            game.cities[&enemy].pos,
+        ];
+        for index in 0..64 {
+            game.spawn_test_unit(
+                "warrior",
+                usize::from(index % 3 == 2),
+                positions[index % positions.len()],
+            );
+        }
+        let cities = [first, second];
+        let expected = cities
+            .iter()
+            .map(|city| AdvancedAi::city_pressure(&game, 0, *city))
+            .collect::<Vec<_>>();
+        let mut one = AdvancedAi::new();
+        one.work_pool = Some(Arc::new(WorkPool::new(1)));
+        let mut four = AdvancedAi::new();
+        four.work_pool = Some(Arc::new(WorkPool::new(4)));
+
+        assert_eq!(one.city_pressures(&game, 0, &cities), expected);
+        assert_eq!(four.city_pressures(&game, 0, &cities), expected);
     }
 
     /// Census, not an assertion: how often a city faces a locally competitive
