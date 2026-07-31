@@ -89,7 +89,7 @@ not materially affect this ranking.
 
 | Opportunity | Current signal | Promising next experiment | Main constraint |
 | --- | --- | --- | --- |
-| Intern effect and rules keys | `memcmp` 9.2%, `Name::new` 1.4%, and `SpecMap::position` 1.2% as exclusive leaves | Intern effect keys when loading rules, then carry typed IDs through the hottest effect queries while preserving lexical serialization | Broad representation change; compare saved comparisons against conversion and indirection cost |
+| Intern effect and rules keys | `memcmp` 9.2%, `Name::new` 1.4%, and `SpecMap::position` 1.2% as exclusive leaves | The full effect-map conversion was exact but a 0.3% CPU loss; retry only after isolating a direct typed lookup in a measured hot path | Broad representation change; conversion alone leaves dynamic `&str` callers doing the same comparisons |
 | Reuse movement and routing state | Traversal class, neighbors, passability, path checks, entry checks, and routing zones form roughly a 6-7% family | Identify one repeated rule derivation before changing it; generic search buffers and route-local traversal profiles were measured and rejected | Movement rules have many conditional abilities and diplomatic dependencies |
 | Remove targeted allocation and copying | `memmove` 5.9% and allocator leaves are prominent; `units_at` alone is 1.4% | Add narrow `tile_occupied` and callback/iterator queries, then migrate read-only and `is_empty` callers individually | These costs overlap the systems above; a wholesale borrowed API showed no win |
 | Reduce rollout clone cost | Clone alone is 8.5 us, 38% of the optimized no-fog clone-plus-move latency | Share more immutable state or prototype reversible branch deltas/undo for search | High correctness and determinism risk; cloning is currently the isolation boundary |
@@ -239,3 +239,32 @@ derivation that is recomputed, not a cheap operation that is frequent — and
 allocation only counts as expensive when something is built.** Applied to the
 table above, the interesting rows are the ones with a high byte-per-allocation
 ratio inside the AI, not `units_at`.
+
+### Interned effect-map keys: rejected
+
+The remaining string-key opportunity was tested directly. The candidate
+changed each numeric rules `effects` table from `BTreeMap<String, f64>` to
+`BTreeMap<Name, f64>`, keeping the same lexical `Ord` and JSON string shape.
+`Name` also exposed a borrowed `str` lookup so every dynamic caller continued
+to compile unchanged. The source was then replayed against the unchanged
+baseline over fifteen release headless games: six major civilizations, a
+74-by-46 map, nine city-states, 150 turns, and seeds 7,310,700 through
+7,310,714.
+
+After removing the per-game elapsed field, all fifteen baseline/candidate
+reports had identical SHA-256 hashes. The CPU result did not earn the added
+representation:
+
+| run order | seeds | baseline user CPU | interned effect maps |
+| --- | --- | ---: | ---: |
+| baseline then candidate | 7,310,700–705; 7,310,711–714 | 46.77s | 46.99s |
+| candidate then baseline | 7,310,706–710 | 27.60s | 27.57s |
+| aggregate | 15 pairs | 74.37s | 74.56s |
+
+The median was a noisy 4.92s versus 4.90s, but the aggregate is a **0.3%
+loss**, not an optimization. The mechanical conversion removes duplicate keys
+at rules-load time, yet nearly all runtime effect queries still begin with a
+borrowed string and therefore retain the original string comparison. It was
+removed. A future retry needs one profiled high-frequency caller that can carry
+a `Name` all the way to the map lookup; broad key conversion on its own is not
+a standing target.
