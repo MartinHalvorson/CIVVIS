@@ -37,7 +37,10 @@ gate is
 
 — a **flat gene that cannot see the map**. `ai_eval` reports stock `advanced`
 at *100% adaptive plans, 0.00 switches*, so this is the governor deciding
-every evaluated game.
+every evaluated game. That is not a property of stock alone: on the
+deployment-profile screen recorded in `docs/EVAL.md`, **all four genome arms
+report `{"adaptive": 240}` — 240 of 240 seat-games each** — so every arm
+compared there took this path.
 
 So the empire computes one city target and expands to a different one, and the
 number that decides is the one that knows least about the map.
