@@ -6867,3 +6867,74 @@ No further retry or seed substitution is authorized. Failure to cover all v3
 game IDs ends the iteration. The existing calibration/lift/coverage rules then
 apply unchanged, and `/tmp/q-override-v3-qualified.json` must be absent before
 training begins.
+
+### v3 development resolution: corpus integrity passed, reliability failed
+
+The exact v3 development command completed over all 192 preregistered games.
+The ten-turn retry rule recovered the eligibility holes without changing the
+sample or silently replacing a seed: 25 scheduled seat-turns had no supported
+Move, but every game ultimately supplied at least one decision. The completed
+corpus contained 379 decisions, 1,463 candidate rows, and 5,852 matched
+continuations. All 5,852 branches applied successfully; the deterministic
+repeat check found zero mismatches and the observer reported zero errors.
+There were 1,232 continuations that resolved to a victory inside the fixed
+80-round horizon.
+
+The action-ranking problem remained real. Mean candidate-return spread was
+0.0380, a sibling beat the scripted expert in every doctrine replica on
+42/379 decisions, and the expert selected the best mean-return candidate on
+only 165/379 decisions (43.5%). Its mean oracle regret was 0.0244. The
+mean-return winner also tied or won 74.0% of individual doctrine replicas, so
+this was not a corpus with interchangeable destinations.
+
+The preregistered reliability model nevertheless failed out of fold:
+
+| development metric | result |
+|---|---:|
+| decisions / exact games | 379 / 192 |
+| mean return spread | 0.0381 |
+| expert oracle regret | 0.0245 |
+| ungated lift vs expert | +0.0030 ± 0.0019 |
+| gated lift vs expert | +0.0000 ± 0.0000 |
+| raw-margin Brier | 0.02880 |
+| constant Brier | 0.02891 |
+| 13-term reliability Brier | 0.02944 ± 0.00244 |
+| reliability p50 / p90 / p99 / max | 0.520 / 0.553 / 0.584 / 0.622 |
+| threshold-0.70 coverage | 0/379 (0.0%) |
+
+Thus the learned reliability score was worse than both preregistered Brier
+comparators and never reached the frozen 0.70 deployment threshold. The OOF
+gate returned **FAIL**. In accordance with the sequential contract, neither
+`/tmp/q-override-v3-selection.csv` nor
+`/tmp/q-override-v3-deployment.csv` was generated or read, and
+`/tmp/q-override-v3-qualified.json` does not exist. No gameplay A/B and no
+promotion are authorized.
+
+This closes the attempted low-dimensional confidence repair, not the measured
+action headroom. Ungated ranking improved average return, but these 13 causal
+deltas did not separate the rare safe overrides with calibrated confidence.
+Production remains the promoted scripted expert exactly. The strict
+`advanced_q_override` construction stays unavailable without a fully qualified
+artifact, while permissive construction retains its tested expert fallback.
+
+Post-result verification rebuilt `civvis`, `ai_eval`, `q_counterfactual`, and
+`q_override_train` in the release profile. With no qualified artifact, strict
+`advanced_q_override advanced` evaluation exited 3 as unavailable; the
+explicitly degraded form resolved both names to `advanced` and exited 2 rather
+than reporting a self-comparison as evidence. The complete locked CI suite
+passed 1,310 library tests plus every binary, integration, and doc-test target
+with zero failures (20 long censuses/benchmarks intentionally ignored).
+
+A fresh deployment-scale production soak completed 12/12 games:
+
+```sh
+target/release/civvis soak --games 12 --players 6 \
+  --start-seed 37051000 --jobs 8 --width 74 --height 46 \
+  --city-states 9 --speed online --turns 250 \
+  --map continents --shape planet --poles poles
+```
+
+The sample produced religious, culture, and score outcomes, 124 wars, 44 city
+captures, four captured capitals, and nuclear strikes. Thus the missing-model
+fallback completed real strategic/combat trajectories rather than only a
+construction test, while remaining behaviorally the production expert.

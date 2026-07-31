@@ -512,3 +512,45 @@ the failed 105-term absolute-context row, and it uses 192/96/96 independent
 games. Until those gates pass, both permissive runtime construction and a
 missing artifact execute production `advanced` exactly, while strict evaluator
 construction reports the learned arm unavailable.
+
+## Qualified action-advantage resolution and next ranking
+
+The v3 collection repair passed its stronger integrity boundary over all 192
+exact development games: 379 decisions, 1,463 candidate rows, 5,852 matched
+continuations, and zero rejected, nondeterministic, or observation-error
+branches. Counterfactual headroom was substantial—the expert was best on only
+43.5% of decisions and left 0.0244 mean oracle regret—but the fixed 13-term
+reliability model did not calibrate. Its OOF Brier was 0.02944, worse than the
+raw margin's 0.02880 and constant baseline's 0.02891; maximum predicted
+confidence was 0.622, yielding zero decisions at the fixed 0.70 threshold.
+
+The gate therefore failed before selection. Blind Standard selection and
+untouched Online deployment stayed unopened, no qualified artifact was
+written, and production behavior did not change. The trust boundary and its
+tests remain useful infrastructure, but this representation is a measured
+negative rather than an AI-strength promotion.
+
+The next ranked set is:
+
+1. **Search the complete expansion investment.** Compare the untouched policy
+   with each legal Settler commitment on cloned trajectories, carrying real
+   build time, population consumption, escorting, route delay, settlement,
+   defense, and horizon return. Run independent branches through the existing
+   deterministic per-game worker pool, and require strength worth the measured
+   single-simulation cost.
+2. **Remove the next fog leak family.** Localize the tactical/campaign channel
+   behind the remaining 16/698 controlled witnesses and retain the same
+   equal-information invariant.
+3. **Price general macro search against deployment strength and cost.** Use a
+   genome-matched sequential control and require enough gain to justify the
+   measured ~6.4× single-seat turn cost.
+4. **Finish evidence semantics and external calibration.** Bind evaluator-only
+   names to explicit experiment status and retain external opponents before
+   making broad strength claims.
+5. **Revisit action advantage only with a different confidence signal.** The
+   frozen ranker has counterfactual headroom, but neither the 105-term absolute
+   context nor this 13-term causal-delta logistic head earned calibrated
+   abstention. A successor needs a new, preregistered identification idea—not
+   another threshold or seed sweep over these failed representations.
+
+The next iteration takes item 1.
