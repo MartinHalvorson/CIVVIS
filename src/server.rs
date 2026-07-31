@@ -15,6 +15,7 @@ use std::time::{Duration, Instant};
 use serde_json::{json, Value};
 
 use crate::ai::{AdvancedAi, Ai, BasicAi};
+use crate::civ6;
 use crate::game::{
     Action, Game, GameOptions, LeaderPool, PlayOnMode, VictoryConditions, CIV6_LEADER_POOL,
 };
@@ -3761,6 +3762,11 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
                     "map_topologies": MAP_TOPOLOGIES,
                     "map_poles": MAP_POLES,
                     "game_speeds": CIV6_GAME_SPEEDS,
+                    // The other game's vocabulary, for the mode that plays it.
+                    // It never changes while a server runs, unlike the host
+                    // report at `/civ6`, which is a different question asked of
+                    // a different machine's installation.
+                    "civ6": civ6::vocabulary(),
                     "strategies": strategy_roster(&session),
                     "seat_strategy": session.seated_strategy_name(0),
                 }),
@@ -4043,6 +4049,51 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
             drop(session);
             decorate(&mut o, sh);
             respond_json(stream, &o);
+        }
+        // What this computer can do about the Civilization VI mode, and what a
+        // run it can see is doing. Answered without the simulation lock: it is
+        // a question about the machine and another game's files, and a page
+        // watching a simulation must be able to ask it between turns.
+        //
+        // The mode is offered on every computer and refused on the ones that
+        // cannot run it, so this always answers. A silent no is what made a
+        // dead Steam client cost eleven ladder attempts.
+        ("GET", "/civ6") => {
+            let host = civ6::Host::probe();
+            respond_json(
+                stream,
+                &json!({
+                    "ready": host.ready(),
+                    "install": host.install,
+                    "controller": host.controller,
+                    "blocked": host.blocked,
+                    "holder": host.holder,
+                    "run": host.run,
+                }),
+            );
+        }
+        // Start a real game of Civilization VI with the lobby's settings.
+        //
+        // The reply is a receipt, not a game: bringing the other game up takes
+        // about three minutes on this install, and the run outlives both this
+        // request and the page that made it. Progress is read back from
+        // `GET /civ6`.
+        ("POST", "/civ6/start") => {
+            let started = civ6::Request::from_settings(&parsed).and_then(|request| {
+                let tag = parsed["tag"]
+                    .as_str()
+                    .filter(|tag| !tag.is_empty())
+                    .map(str::to_string)
+                    .unwrap_or_else(|| civ6::new_tag(std::time::SystemTime::now()));
+                civ6::start(&request, &tag)
+            });
+            respond_json(
+                stream,
+                &match started {
+                    Ok(run) => json!({"error": Value::Null, "started": run}),
+                    Err(error) => json!({"error": error, "started": Value::Null}),
+                },
+            );
         }
         ("POST", "/supervisor-new") => {
             // Answered without the simulation lock, and answered *small*. The
@@ -9270,9 +9321,12 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("RULES.civs && typeof RULES.civs === \"object\""));
         assert!(EMBEDDED_INDEX
             .contains("RULES.difficulties && typeof RULES.difficulties === \"object\""));
-        // A spectated world has nobody to hand a leader or a handicap to.
+        // A spectated world has nobody to hand a leader or a handicap to, and
+        // neither has a Civilization VI run — its seat's civilization is dealt
+        // by that game. Its *difficulty* still travels, because that is the one
+        // setting the mode exists for.
         assert!(EMBEDDED_INDEX.contains(
-            "...(gameMode === \"ai_sim\" ? {} : {civs: leader ? [leader] : [], difficulty})"
+            "...(gameMode === \"ai_sim\" ? {} : {civs: civ6 || !leader ? [] : [leader], difficulty})"
         ));
         // A build without the save endpoints hides the group rather than
         // offering one that cannot work.
@@ -9323,14 +9377,127 @@ mod tests {
         assert_eq!(EMBEDDED_INDEX.matches("id=\"restart-sim\"").count(), 1);
         assert!(!EMBEDDED_INDEX.contains("id=\"startgame\""));
         assert!(EMBEDDED_INDEX.contains("document.body.classList.toggle(\"watching-sim\", SPEC);"));
-        // Leader and difficulty still do follow the selection.
+        // Leader and difficulty still do follow the selection. The leader row
+        // carries a second class because a third mode hides it for a different
+        // reason — see `browser_offers_the_civilization_vi_mode`.
         assert!(EMBEDDED_INDEX.contains("body.spectating .human-setting { display: none; }"));
-        assert!(EMBEDDED_INDEX.contains("class=\"small human-setting\">Leader"));
+        assert!(EMBEDDED_INDEX.contains("class=\"small human-setting civ6-hidden\">Leader"));
         assert!(EMBEDDED_INDEX.contains("class=\"small human-setting\">Difficulty"));
         // Settings staged for the next simulation describe a spectated world,
         // so they may only adopt that mode while one is on screen.
         assert!(EMBEDDED_INDEX
             .contains("if (SPEC) document.getElementById(\"gamemode\").value = \"ai_sim\";"));
+    }
+
+    /// The third mode plays the other game, so the panel it is chosen in has
+    /// to stop describing one of ours.
+    ///
+    /// Every assertion here is a setting that would otherwise stay on screen
+    /// and be silently dropped. `CivvisControlSetup.lua` writes ruleset, map,
+    /// size, difficulty and speed into Civilization VI and nothing else, so a
+    /// leader, a team, a start era or a victory condition offered in this mode
+    /// is a promise about the run that the run does not keep — and the run
+    /// takes hours to disprove it.
+    #[test]
+    fn browser_offers_the_civilization_vi_mode() {
+        // The mode is in the list, named after what it does.
+        assert!(EMBEDDED_INDEX.contains(
+            "<option value=\"civ6\">Play Firaxis Civ 6 with computer control</option>"
+        ));
+        // A third body state, not a variation on either of the other two.
+        assert!(EMBEDDED_INDEX
+            .contains("document.body.classList.toggle(\"playing-civ6\", civ6);"));
+        assert!(EMBEDDED_INDEX.contains("body.playing-civ6 .civ6-hidden { display: none; }"));
+        // Exactly the rows that are not carried, and no others. Difficulty is
+        // deliberately absent: it is the setting the mode exists for.
+        for row in [
+            "class=\"small game-advanced-setting civ6-hidden\" data-advanced-order=\"20\"", // leader pool
+            "class=\"small game-advanced-setting civ6-hidden\" data-advanced-order=\"30\"", // teams
+            "class=\"small human-setting civ6-hidden\">Leader",
+            "class=\"small game-advanced-setting civ6-hidden\" data-advanced-order=\"40\"", // world shape
+            "class=\"small game-advanced-setting civ6-hidden\" data-advanced-order=\"50\"", // thermal
+            "class=\"small game-advanced-setting civ6-hidden\" data-advanced-order=\"60\"", // start era
+            "class=\"small game-advanced-setting civ6-hidden\" data-advanced-order=\"70\"", // future era
+            "class=\"victory-options game-advanced-setting civ6-hidden\"",
+            "class=\"mod-options game-advanced-setting civ6-hidden\"",
+        ] {
+            assert!(EMBEDDED_INDEX.contains(row), "{row} is not hidden in the Civ 6 mode");
+        }
+        assert!(!EMBEDDED_INDEX.contains("class=\"small human-setting civ6-hidden\">Difficulty"));
+        // The map control becomes the other game's roster rather than a
+        // filtered copy of ours; neither list contains the other.
+        assert!(EMBEDDED_INDEX.contains("function syncMapRoster(civ6)"));
+        assert!(EMBEDDED_INDEX.contains("const carried = maps.find(map => map.civvis === chosen);"));
+        // The one start control is named after the game it starts.
+        assert!(EMBEDDED_INDEX.contains("? \"Play Firaxis Civ 6\""));
+        assert!(EMBEDDED_INDEX
+            .contains("if (readSetting(\"gamemode\") === \"civ6\") { startCiv6Game(); return; }"));
+        assert!(EMBEDDED_INDEX.contains("await fetchJSON(\"/civ6/start\", {method: \"POST\","));
+        // A refusal is shown rather than hidden. A run that silently never
+        // starts is how a dead Steam client cost eleven ladder attempts.
+        assert!(EMBEDDED_INDEX.contains("civ6Status = await fetchJSON(\"/civ6\");"));
+        assert!(EMBEDDED_INDEX.contains("`Cannot start: ${status.blocked}`"));
+        assert!(EMBEDDED_INDEX.contains("button.disabled = blocked;"));
+    }
+
+    /// The mode is offered on every computer and refused on the ones that
+    /// cannot run it, so both of its endpoints always answer — and the refusal
+    /// is a sentence a person can act on rather than a missing response.
+    #[test]
+    fn the_civ6_endpoints_answer_on_any_host() {
+        let port = TcpListener::bind(("127.0.0.1", 0))
+            .expect("a free port")
+            .local_addr()
+            .unwrap()
+            .port();
+        let mut params = current();
+        params.spectate = true;
+        params.num_players = 2;
+        params.num_city_states = 0;
+        params.width = 24;
+        params.height = 16;
+        params.seed = 20_260_731;
+        std::thread::spawn(move || super::serve_with_game(port, false, params, None, true));
+        let deadline = Instant::now() + Duration::from_secs(60);
+        while http_get(port, "/status").is_none() {
+            assert!(Instant::now() < deadline, "the server never came up");
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        let json_at = |target: &str| -> Value {
+            serde_json::from_str(&http_get(port, target).expect(target)).expect(target)
+        };
+
+        let host = json_at("/civ6");
+        assert!(host["ready"].is_boolean(), "{host}");
+        assert_eq!(host["ready"].as_bool(), Some(host["blocked"].is_null()));
+        if let Some(blocked) = host["blocked"].as_str() {
+            assert!(!blocked.is_empty() && !blocked.contains('\n'), "{blocked:?}");
+        }
+        // The other game's vocabulary rides on the ruleset, because it never
+        // changes while a server runs — unlike the host report above, which is
+        // a question about this machine's installation.
+        let rules = json_at("/rules");
+        let civ6 = &rules["civ6"];
+        assert_eq!(civ6["maps"].as_array().map(Vec::len), Some(crate::civ6::MAPS.len()));
+        assert_eq!(civ6["difficulties"].as_array().map(Vec::len), Some(8));
+        assert_eq!(civ6["default_map"].as_str(), Some(crate::civ6::DEFAULT_MAP));
+        // Every map names a script this build would pass to the other game.
+        for map in civ6["maps"].as_array().unwrap() {
+            assert!(map["id"].as_str().is_some_and(|id| id.ends_with(".lua")), "{map}");
+        }
+        // A start is refused, with a reason, rather than 404ing or hanging —
+        // which is the only claim this test can make about starting one,
+        // because the other one takes over the computer for hours.
+        let refused: Value = serde_json::from_str(
+            &http_post(port, "/civ6/start", &json!({"difficulty": "not-a-rung"}).to_string())
+                .expect("a refusal"),
+        )
+        .expect("refusal JSON");
+        assert_eq!(
+            refused["error"].as_str(),
+            Some("no Civilization VI difficulty is called \"not-a-rung\"")
+        );
+        assert!(refused["started"].is_null());
     }
 
     /// War, peace and denouncement have been in `legal_actions(0)` since v0.6

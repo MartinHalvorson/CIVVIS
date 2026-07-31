@@ -1575,6 +1575,32 @@
   .save-entry button { margin: 0 0 0 auto; padding: 4px 8px; font-size: var(--type-small); }
   /* Leader and difficulty only mean anything with somebody at the keyboard. */
   body.spectating .human-setting { display: none; }
+  /* Playing the other game, the panel configures the other game. Only the
+     settings `CivvisControlSetup.lua` actually writes into Civilization VI
+     survive the switch — difficulty, map, size, speed — because a row that
+     stays on screen and is not carried is a promise about the run that the run
+     does not keep. See docs/CIV6_GAME_MODE.md. */
+  body.playing-civ6 .civ6-hidden { display: none; }
+  /* Whether this computer can play it at all, and what a run it can see is
+     doing. The mode is offered everywhere and refused where it cannot run, so
+     the refusal has somewhere to be read: a dead Steam client once cost eleven
+     ladder attempts, each recorded as a loss rather than as an attempt that
+     never happened. */
+  #civ6-status { display: none; grid-column: 1 / -1; margin: 1px 0 2px; }
+  body.playing-civ6 #civ6-status { display: block; }
+  #civ6-status .civ6-line {
+    display: flex; gap: 6px; align-items: baseline;
+    font-size: var(--type-small); color: var(--muted); line-height: 1.45;
+  }
+  #civ6-status .civ6-dot {
+    flex: none; width: 7px; height: 7px; border-radius: 50%;
+    background: var(--muted); align-self: center;
+  }
+  #civ6-status.ready .civ6-dot { background: #6fbf73; }
+  #civ6-status.blocked .civ6-dot { background: #d08a3e; }
+  #civ6-status.playing .civ6-dot { background: #6fbf73; box-shadow: 0 0 0 3px rgba(111,191,115,.22); }
+  #civ6-status .civ6-run { color: var(--text); }
+  #civ6-status .civ6-run b { font-weight: 650; }
   /* The restart control is the one persistent way to replace the current
      world. In a human game Pause has no meaning, so the same row contracts to
      that one control instead of revealing a second Start new game button. */
@@ -3757,16 +3783,21 @@
         <label class="small game-advanced-setting" data-advanced-order="10">Base game ruleset<select id="baseruleset" style="margin-top:4px">
           <option value="civ6" selected>Civ 6</option>
         </select></label>
-        <label class="small game-advanced-setting" data-advanced-order="20">Leader Pool<select id="leaderpool" style="margin-top:4px">
+        <label class="small game-advanced-setting civ6-hidden" data-advanced-order="20">Leader Pool<select id="leaderpool" style="margin-top:4px">
           <option value="civ6" selected>Civ 6 Leaders</option>
           <option value="expanded">Expanded</option>
         </select></label>
         <label class="small">Game mode<select id="gamemode" style="margin-top:4px">
           <option value="ai_sim" selected>AI-only simulation</option>
           <option value="single">Single player</option>
+          <option value="civ6">Play Firaxis Civ 6 with computer control</option>
           <option disabled>Multiplayer · later</option>
         </select></label>
-        <label class="small game-advanced-setting" data-advanced-order="30">Teams<select id="teams" style="margin-top:4px"
+        <div id="civ6-status">
+          <div class="civ6-line"><span class="civ6-dot"></span><span id="civ6-host">Checking this computer…</span></div>
+          <div class="civ6-line civ6-run" id="civ6-run" hidden></div>
+        </div>
+        <label class="small game-advanced-setting civ6-hidden" data-advanced-order="30">Teams<select id="teams" style="margin-top:4px"
           title="Permanent pre-game teams. Teammates share sight, pass each other the Eureka for a technology they have not researched, fight the same wars and win together.">
           <option value="ffa" selected>Free-for-all</option>
           <option value="2">2 teams</option>
@@ -3774,11 +3805,11 @@
           <option value="4">4 teams</option>
           <option value="pairs">Pairs</option>
         </select></label>
-        <label class="small human-setting">Leader<select id="leader" style="margin-top:4px">
+        <label class="small human-setting civ6-hidden">Leader<select id="leader" style="margin-top:4px">
           <option value="">Random</option>
         </select></label>
         <label class="small human-setting">Difficulty<select id="difficulty" style="margin-top:4px"></select></label>
-        <label class="small game-advanced-setting" data-advanced-order="40">World shape<select id="mapshape" style="margin-top:4px">
+        <label class="small game-advanced-setting civ6-hidden" data-advanced-order="40">World shape<select id="mapshape" style="margin-top:4px">
           <option value="flat">Flat</option>
           <option value="planet">Planet</option>
         </select></label>
@@ -3795,7 +3826,7 @@
           <option value="water_world">Water World</option>
           <option value="true_start_earth">True Start Earth</option>
         </select></label>
-        <label class="small game-advanced-setting" data-advanced-order="50">Thermal distribution<select id="mappoles" style="margin-top:4px">
+        <label class="small game-advanced-setting civ6-hidden" data-advanced-order="50">Thermal distribution<select id="mappoles" style="margin-top:4px">
           <option value="poles">Hot equator, cold poles</option>
           <option value="randomized">Randomized</option>
         </select></label>
@@ -3807,7 +3838,7 @@
           <option value="10">Large · 10 civs · 15 city-states · 96×60</option>
           <option value="12">Huge · 12 civs · 18 city-states · 106×66</option>
         </select></label>
-        <label class="small game-advanced-setting" data-advanced-order="60">Start era<select id="startera" style="margin-top:4px">
+        <label class="small game-advanced-setting civ6-hidden" data-advanced-order="60">Start era<select id="startera" style="margin-top:4px">
           <option value="stone_age" disabled>Stone Age · later</option>
           <option value="ancient" selected>Ancient</option>
         </select></label>
@@ -3827,7 +3858,7 @@
             <button id="savebtn" title="Write a save this server can offer back later">Save</button>
           </div>
         </div>
-        <div class="victory-options game-advanced-setting" data-advanced-order="80" role="group" aria-labelledby="victory-options-title">
+        <div class="victory-options game-advanced-setting civ6-hidden" data-advanced-order="80" role="group" aria-labelledby="victory-options-title">
           <h2 id="victory-options-title">Victory conditions</h2>
           <div class="victory-option-grid">
             <label class="victory-option"><input type="checkbox" id="victory-science" checked>Science</label>
@@ -3838,11 +3869,11 @@
             <label class="victory-option"><input type="checkbox" id="victory-score" checked>Score</label>
           </div>
         </div>
-        <label class="small game-advanced-setting" data-advanced-order="70">Future Era<select id="futureera" style="margin-top:4px">
+        <label class="small game-advanced-setting civ6-hidden" data-advanced-order="70">Future Era<select id="futureera" style="margin-top:4px">
           <option value="classic" selected>Classic Future Era</option>
           <option value="martin" disabled>Martin's Future Era · later</option>
         </select></label>
-        <div class="mod-options game-advanced-setting" data-advanced-order="90"
+        <div class="mod-options game-advanced-setting civ6-hidden" data-advanced-order="90"
              role="group" aria-labelledby="mod-options-title">
           <h2 id="mod-options-title">Mods</h2>
           <div class="small mod-help">Tournament defaults are preselected. These choices are saved for the upcoming per-game mod loader; the active server ruleset is unchanged for now.</div>
@@ -4135,6 +4166,11 @@ function initAdvancedSettings() {
     .map(id => document.getElementById(id).closest("label"));
   basic.push(document.getElementById("saves-group"));
   for (const node of basic) gameAdvanced.before(node);
+  // The Civ 6 host line describes the mode chosen directly above it, so it
+  // follows that control through the reorder rather than staying where the
+  // source happens to put it.
+  document.getElementById("gamemode").closest("label")
+    .after(document.getElementById("civ6-status"));
 
   const display = document.getElementById("display-settings");
   moveByOrder(display, ".display-advanced-setting", document.getElementById("display-advanced-settings-body"));
@@ -8296,6 +8332,9 @@ async function boot() {
       ).join("");
       document.getElementById("gamespeed").value = "online";
     }
+    // The ruleset carries the other game's vocabulary too, and the mode may
+    // already be selected by the time it lands.
+    syncSetupMode();
     fillStrategies(RULES);
     render(adoptTiles(await fetchJSON("/state" + paintedQuery())));
     if (bootAttempts) { bootAttempts = 0; clearBootRetrying(); }
@@ -12580,10 +12619,16 @@ const BAKED_FAMILIES = new Set(["infantry", "civilian", "religious", "mounted",
 const UNIT_SPAN = 32;               // measured widest figure, sprite units
 const UNIT_FILL = 0.80;
 const UNIT_SCALE = S * SQ3 * UNIT_FILL / UNIT_SPAN;
+// Flat-board figures live in world coordinates, while a Planet figure is
+// composed in projected screen coordinates.  The latter supplies its local
+// tile scale here rather than teaching every painted part about spherical
+// projection.  It is set only for the duration of one planet-unit draw.
+let UNIT_RENDER_CONTEXT = null;
 // Strategic does not draw figures at all — it draws a flat disc token whose
 // size is set by the glyph it has to hold — so the figure scale is a painted
 // concern and that view is left exactly as it was.
-const unitScale = () => MODE.painted ? UNIT_SCALE : 1;
+const unitScale = () => MODE.painted
+  ? UNIT_SCALE * (UNIT_RENDER_CONTEXT?.scale || 1) : 1;
 // Every mark that hangs off a unit — the ground plate, the type badge, the
 // fortify shield, the health bar — is laid out against the figure it belongs
 // to, so all of them take the figure's scale or the composition comes apart:
@@ -12600,7 +12645,6 @@ const ART_BOX = 26;
 const UNIT_ART = new Map();
 const UNIT_ART_WARNED = new Set();
 const UNIT_ART_CAP = 192;           // ~24 types x 8 jerseys live on screen at once
-let UNIT_ART_RES = 0;
 let BAKE_RES = 2;
 // Bake resolution follows the zoom in whole steps — the same rule `artRes`
 // uses for terrain, so a pinch does not thrash the cache — but it *rounds up*.
@@ -12630,7 +12674,8 @@ function unitArtScale() {
   // it and then magnified by it is exactly the softening this cache exists to
   // avoid, and it would have been invisible because the sprite still appears —
   // just blurred.
-  return cam.scale * DPR * close * unitScale();
+  const screenScale = UNIT_RENDER_CONTEXT?.screenScale ?? cam.scale * DPR;
+  return screenScale * close * unitScale();
 }
 function unitArtRes() {
   return Math.min(ART_MAX_RES, Math.max(1, Math.ceil(unitArtScale())));
@@ -12640,11 +12685,13 @@ function unitArtUsable() {
 }
 function unitArt(type, col, family, fc, skin) {
   const res = unitArtRes();
-  if (res !== UNIT_ART_RES) { UNIT_ART.clear(); UNIT_ART_RES = res; }
   // Orientation is baked in rather than mirrored at blit time: a mirrored blit
   // would carry the highlight round with the figure and light it from the
   // wrong side, which is the thing the whole `dir` convention exists to avoid.
-  const key = `${type}|${col}|${fc}|${LITF}`;
+  // Resolution and family belong in the key too. A planet's near cells can be
+  // larger than its far cells in one frame, and an embarked unit uses the same
+  // rules ID as the land figure it temporarily replaces.
+  const key = `${res}|${family}|${type}|${col}|${fc}|${LITF}|${skin}`;
   const had = UNIT_ART.get(key);
   if (had !== undefined) return had;
   const D = Math.ceil(ART_BOX * 2 * res);
@@ -13005,12 +13052,20 @@ function drawUnitChar(u, x, y, now, moving) {
   // `unitVisualFamily` is implemented by the module; this guard preserves the
   // zero-dependency vector fallback if an old cached page or constrained
   // browser cannot load it.
+  // A planet supplies its own local ground frame. It is still this same unit
+  // renderer — only its projection and world-fixed light differ from the flat
+  // board — so the handoff remains one behavior for every unit family.
+  const cinematicSurface = UNIT_RENDER_CONTEXT?.cinematic3d;
   const depthModel = cinemaActive() && MODE.fx && cam.scale >= 1.18 &&
     (cinematicDepthSubject(u, now) || cam.scale >= 1.58) &&
-    !u.survey_count && globalThis.Cinematic3D?.supports(family);
+    !u.survey_count && cinematicSurface?.depthAllowed !== false &&
+    globalThis.Cinematic3D?.supports(family);
   if (depthModel && Cinematic3D.draw({
       ctx:cx, family, type:k, color:col, skin, facing:fc,
       time:now, seed:Number(u.id || 0), moving, action, scale:1.04,
+      orthographic:cinematicSurface?.orthographic,
+      tilt:cinematicSurface?.tilt,
+      sunAngle:cinematicSurface?.sunAngle,
     })) {
     cx.restore();
     return;
@@ -15457,12 +15512,247 @@ function unitPad() {
 // Status marks keep their on-screen size as the map zooms out, so a unit's
 // state stays readable at the scale you actually survey an empire at.
 const UI_K = () => 1 / Math.min(1, Math.max(cam.scale, 0.5));
-// Strategic's unit *is* its token, not a figure with a small annotation. Hold
-// that token at authored size through ordinary survey zoom; once a whole hex
-// is only one token wide, let both shrink together instead of covering adjacent
-// cells. The floor is derived from token diameter / hex width.
-const COMMAND_UNIT_K = () => 1 / Math.min(1, Math.max(cam.scale,
-  (2 * 10.5) / (S * SQ3)));
+// Strategic's unit *is* its token, so its footprint is stated in hexes instead
+// of in fixed screen pixels. At the flat map's far zoom it can use 90% of the
+// hex's inscribed diameter; at the close zoom it uses 50%. Zoom is
+// multiplicative, so interpolate over its logarithm: every zoom step gets the
+// same share of the change. The token therefore gets physically smaller within
+// its hex as the camera approaches, while still becoming larger on screen.
+const STRATEGIC_UNIT_ZOOM_OUT = 0.25;
+const STRATEGIC_UNIT_ZOOM_IN = 3.2;
+const STRATEGIC_UNIT_FILL_OUT = 0.90;
+const STRATEGIC_UNIT_FILL_IN = 0.50;
+function strategicUnitFill(scale = cam.scale) {
+  const lo = Math.log(STRATEGIC_UNIT_ZOOM_OUT);
+  const hi = Math.log(STRATEGIC_UNIT_ZOOM_IN);
+  const at = Math.max(0, Math.min(1,
+    (Math.log(Math.max(STRATEGIC_UNIT_ZOOM_OUT, scale)) - lo) / (hi - lo)));
+  return STRATEGIC_UNIT_FILL_OUT +
+    (STRATEGIC_UNIT_FILL_IN - STRATEGIC_UNIT_FILL_OUT) * at;
+}
+// The outer edge of a command token is the useful radius of a hex. A stack
+// packs several such circles into that same disk; retaining this as a separate
+// value means an outline never makes the layout quietly cross a tile boundary.
+function strategicUnitOuterRadius(hexInradius) {
+  return Math.max(0, hexInradius * strategicUnitFill());
+}
+// `hexInradius` is the shortest center-to-edge distance of the rendered hex.
+// Removing half the outline width means the *painted* token, rather than just
+// its fill path, stays within the requested fraction of that hex.
+function strategicUnitRadius(hexInradius, outlineWidth = 0) {
+  return Math.max(0, strategicUnitOuterRadius(hexInradius) - outlineWidth / 2);
+}
+function flatStrategicUnitInradius() {
+  // A rotated, vertically projected hex can only promise its shortest
+  // center-to-edge span. This is the exact lower bound for every bearing, so a
+  // circular token never crosses a neighboring cell.
+  return S * SQ3 / 2 * Math.min(1, YS);
+}
+
+// ---------------------------------------------------------------- unit stacks
+//
+// A tile may legitimately hold a military unit, civilian, support unit, and
+// more. The command map used to draw every one at its centre, leaving only the
+// last icon visible. Slots below describe equal circles packed inside a unit
+// disk: `x` and `y` are centre offsets in disk radii, and `r` is each token's
+// outer radius in the same units. A singleton therefore remains exactly the
+// authored size, while a pair sits side-by-side and a trio is a triangle.
+const UNIT_STACK_SLOT_CACHE = new Map();
+const UNIT_STACK_SINGLE_SLOT = Object.freeze({x:0, y:0, r:1});
+
+function unitStackCircleContains(circle, point) {
+  const dx = point.x - circle.x, dy = point.y - circle.y;
+  return dx * dx + dy * dy <= (circle.r + 1e-7) * (circle.r + 1e-7);
+}
+function unitStackCircleFromPair(a, b) {
+  const x = (a.x + b.x) / 2, y = (a.y + b.y) / 2;
+  return {x, y, r:Math.hypot(a.x - x, a.y - y)};
+}
+function unitStackCircleFromThree(a, b, c) {
+  const ax = a.x, ay = a.y, bx = b.x, by = b.y, cx2 = c.x, cy = c.y;
+  const d = 2 * (ax * (by - cy) + bx * (cy - ay) + cx2 * (ay - by));
+  if (Math.abs(d) < 1e-7) {
+    // Collinear supports are enclosed by their longest diameter.
+    return [[a, b], [a, c], [b, c]].map(([p, q]) => unitStackCircleFromPair(p, q))
+      .sort((left, right) => right.r - left.r)[0];
+  }
+  const aa = ax * ax + ay * ay, bb = bx * bx + by * by, cc = cx2 * cx2 + cy * cy;
+  const x = (aa * (by - cy) + bb * (cy - ay) + cc * (ay - by)) / d;
+  const y = (aa * (cx2 - bx) + bb * (ax - cx2) + cc * (bx - ax)) / d;
+  return {x, y, r:Math.hypot(ax - x, ay - y)};
+}
+// A tiny deterministic enclosing-circle solver lets the general lattice pack
+// stay centred even when its last ring is only partly occupied. It runs once
+// for each distinct stack count and is never part of the per-frame work.
+function unitStackMinimumEnclosingCircle(points) {
+  let circle = null;
+  for (let i = 0; i < points.length; i++) {
+    const point = points[i];
+    if (circle && unitStackCircleContains(circle, point)) continue;
+    circle = {x:point.x, y:point.y, r:0};
+    for (let j = 0; j < i; j++) {
+      const other = points[j];
+      if (unitStackCircleContains(circle, other)) continue;
+      circle = unitStackCircleFromPair(point, other);
+      for (let k = 0; k < j; k++) {
+        const third = points[k];
+        if (!unitStackCircleContains(circle, third))
+          circle = unitStackCircleFromThree(point, other, third);
+      }
+    }
+  }
+  return circle || {x:0, y:0, r:0};
+}
+function unitStackSlotsFromPoints(points) {
+  const circle = unitStackMinimumEnclosingCircle(points);
+  // Every source point is one token-radius from its nearest neighbour. Adding
+  // one to the enclosing circle is exactly the space needed to keep each
+  // token's complete outline inside the tile's safe disk.
+  const span = Math.max(1e-7, circle.r + 1);
+  return points.map(point => ({x:(point.x - circle.x) / span,
+                               y:(point.y - circle.y) / span,
+                               r:1 / span}));
+}
+function unitStackRingSlots(count, withCentre = false) {
+  const ringCount = count - (withCentre ? 1 : 0);
+  const separation = Math.sin(Math.PI / ringCount);
+  // A centre token demands a two-radius lane around it; the ring's own
+  // neighbours can demand even more room once it has seven or more members.
+  const distance = Math.max(withCentre ? 2 : 0, 1 / separation);
+  const start = count === 2 ? Math.PI : -Math.PI / 2;
+  const points = withCentre ? [{x:0, y:0}] : [];
+  for (let i = 0; i < ringCount; i++) {
+    const angle = start + Math.PI * 2 * i / ringCount;
+    points.push({x:Math.cos(angle) * distance, y:Math.sin(angle) * distance});
+  }
+  return unitStackSlotsFromPoints(points);
+}
+function unitStackLatticeSlots(count) {
+  // A compact hexagonal lattice is the fallback for unusually large stacks.
+  // It is denser than extending one enormous ring, yet every neighbouring pair
+  // remains exactly two token radii apart.
+  const reach = Math.ceil(Math.sqrt(count)) + 2;
+  const points = [];
+  for (let q = -reach; q <= reach; q++) for (let r = -reach; r <= reach; r++) {
+    const x = 2 * q + r, y = SQ3 * r;
+    points.push({x, y, d2:x * x + y * y, angle:Math.atan2(y, x)});
+  }
+  points.sort((a, b) => a.d2 - b.d2 || a.angle - b.angle);
+  const selected = [];
+  for (let index = 0; index < points.length;) {
+    let end = index + 1;
+    while (end < points.length && Math.abs(points[end].d2 - points[index].d2) < 1e-7) end++;
+    const ring = points.slice(index, end);
+    const need = count - selected.length;
+    if (ring.length <= need) selected.push(...ring);
+    else {
+      // An incomplete ring is distributed around the centre instead of filling
+      // from one edge. Try every phase and keep the smallest enclosing circle.
+      let best = null;
+      for (let start = 0; start < ring.length; start++) {
+        const candidate = selected.concat(Array.from({length:need}, (_, i) =>
+          ring[Math.floor(start + i * ring.length / need) % ring.length]));
+        const circle = unitStackMinimumEnclosingCircle(candidate);
+        if (!best || circle.r < best.circle.r) best = {candidate, circle};
+      }
+      selected.push(...best.candidate.slice(selected.length));
+      break;
+    }
+    if (selected.length === count) break;
+    index = end;
+  }
+  return unitStackSlotsFromPoints(selected);
+}
+function unitStackSlots(count) {
+  count = Math.max(1, Math.floor(count || 1));
+  const cached = UNIT_STACK_SLOT_CACHE.get(count);
+  if (cached) return cached;
+  if (count === 1) return [UNIT_STACK_SINGLE_SLOT];
+  const candidates = [unitStackRingSlots(count)];
+  // Seven is the first stack that benefits from a token in the middle. Keep
+  // evaluating that centred ring after that; it remains useful at larger sizes.
+  if (count >= 4) candidates.push(unitStackRingSlots(count, true));
+  candidates.push(unitStackLatticeSlots(count));
+  // Prefer the clean symmetric ring whenever it is effectively tied with a
+  // lattice. The lattice earns its less regular silhouette only when it can
+  // make every icon meaningfully larger.
+  const slots = candidates.reduce((best, candidate) =>
+    candidate[0].r > best[0].r + 1e-7 ? candidate : best);
+  UNIT_STACK_SLOT_CACHE.set(count, slots);
+  return slots;
+}
+function unitStackIdOrder(left, right) {
+  const a = Number(left.id), b = Number(right.id);
+  if (Number.isFinite(a) && Number.isFinite(b) && a !== b) return a - b;
+  return String(left.id).localeCompare(String(right.id));
+}
+function strategicUnitStackSlots(units, movingIds = null) {
+  const stacks = new Map(), slots = new Map();
+  for (const unit of units) {
+    // A unit in transit is between cells, not occupying either stack. It joins
+    // the arrangement on the next settled frame rather than making a token
+    // already standing on its destination jump aside mid-move.
+    if (movingIds?.has(unit.id)) continue;
+    const tile = key(unit.pos);
+    if (!stacks.has(tile)) stacks.set(tile, []);
+    stacks.get(tile).push(unit);
+  }
+  for (const stack of stacks.values()) {
+    if (stack.length < 2) continue;
+    stack.sort(unitStackIdOrder);
+    const layout = unitStackSlots(stack.length);
+    stack.forEach((unit, index) => slots.set(unit.id, layout[index]));
+  }
+  return slots;
+}
+function strategicUnitStackPlacement(slots, unit, hexInradius, outlineWidth = 0) {
+  const slot = slots?.get(unit.id) || UNIT_STACK_SINGLE_SLOT;
+  const outerRadius = strategicUnitOuterRadius(hexInradius);
+  return {
+    x:outerRadius * slot.x,
+    y:outerRadius * slot.y,
+    // Keep the singleton on the pre-stack size path exactly; stacked tokens
+    // receive the same outline allowance after their packing scale is applied.
+    r:slot === UNIT_STACK_SINGLE_SLOT
+      ? strategicUnitRadius(hexInradius, outlineWidth)
+      : Math.max(0, outerRadius * slot.r - outlineWidth / 2)
+  };
+}
+// Civilian tokens retain their rounded-rectangle cue, but use a capsule whose
+// entire outline fits the same enclosing circle as a military token.
+function strategicUnitTokenPath(civilian, x, y, r) {
+  cx.beginPath();
+  if (civilian) {
+    const h = r * 1.08;
+    cx.roundRect(x - r, y - h / 2, r * 2, h, h / 2);
+  } else cx.arc(x, y, r, 0, 7);
+}
+// A strategic health strip is part of the token rather than a floating map
+// label. Its largest corner is still inside the token's enclosing circle, so
+// the same inradius calculation that contains the unit contains its health.
+function drawStrategicUnitHealth(x, y, r, hp, now) {
+  if (!(r > 0)) return;
+  cx.save();
+  const frac = Math.max(0, Math.min(1, (hp ?? 100) / 100));
+  const bw = r * 1.18, bh = r * 0.16, frame = r * 0.05;
+  const by = y + r * 0.28 - bh / 2;
+  const color = frac > 0.5 ? "#4fd45c" : (frac > 0.25 ? "#f0b429" : "#f04f3f");
+  cx.fillStyle = "#10151dd8";
+  cx.beginPath(); cx.roundRect(x - bw / 2 - frame, by - frame,
+                               bw + frame * 2, bh + frame * 2, bh * .55);
+  cx.fill();
+  cx.fillStyle = color;
+  cx.beginPath(); cx.roundRect(x - bw / 2, by, bw * frac, bh, bh * .45);
+  cx.fill();
+  if (frac <= 0.25) { // low health pulses for attention without growing outward
+    cx.globalAlpha = 0.35 + 0.3 * Math.sin(now / 160);
+    cx.strokeStyle = "#ff7060"; cx.lineWidth = Math.min(1, frame);
+    cx.beginPath(); cx.roundRect(x - bw / 2 - frame / 2, by - frame / 2,
+                                 bw + frame, bh + frame, bh * .55);
+    cx.stroke();
+  }
+  cx.restore();
+}
 // The Civ VI atlas cells carry breathing room around each silhouette. Preserve
 // the authored survey size through zoom 1, then spend that room as the camera
 // closes in: at maximum zoom the glyph fills nearly a third more of its token
@@ -16301,6 +16591,144 @@ function planetCellInradius(cell) {
   }
   return Number.isFinite(inradius) ? inradius : 0;
 }
+
+// A painted soldier needs enough of a projected cell to carry its silhouette,
+// owner plate and type badge.  Below this it would be a few noisy pixels, so
+// the existing overview token remains the truthful representation of an army.
+const PLANET_PAINTED_UNIT_INRADIUS = 9;
+const PLANET_PAINTED_UNIT_BADGE_INRADIUS = 12;
+// The 3D mesh reads at roughly an eighteen-pixel width. Smaller than this its
+// face detail aliases into the same noise the compact token intentionally
+// avoids, so it stays on the regular painted path until the globe is close.
+const PLANET_CINEMATIC_UNIT_INRADIUS = 11.5;
+
+function planetUnitTangentAngle(cell, centerX, centerY) {
+  const dx = cell.center.x - centerX, dy = cell.center.y - centerY;
+  // Local negative Y points away from the centre of the globe, matching the
+  // landform convention in drawPlanetSurfaceDetail. At the exact centre there
+  // is no preferred tangent, so keep the screen's normal upright reading.
+  return Math.hypot(dx, dy) > 1e-4 ? Math.atan2(dy, dx) + Math.PI / 2 : 0;
+}
+
+function drawPlanetPaintedUnitMarks(unit, y, cellRadius, now) {
+  const us = unitScale();
+  const detail = cellRadius >= PLANET_PAINTED_UNIT_BADGE_INRADIUS;
+  if (unit.survey_count > 1) drawUnitFormationBadge(unit, 0, y);
+  else if (detail) drawUnitBadge(unit, 0, y);
+  if (unit.fortified && detail) {
+    const k = UNIT_K(), w = 3.5 * k;
+    const sx = -9.5 * k, sy = y + 1;
+    cx.beginPath();
+    cx.moveTo(sx - w, sy - 4.2 * k); cx.lineTo(sx + w, sy - 4.2 * k);
+    cx.lineTo(sx + w, sy + 0.5 * k);
+    cx.quadraticCurveTo(sx, sy + 5.2 * k, sx - w, sy + 0.5 * k);
+    cx.closePath();
+    cx.fillStyle = "#dee7f4ee"; cx.fill();
+    cx.strokeStyle = "#10151d"; cx.lineWidth = 1.2; cx.stroke();
+  }
+  if (unit.hp < 100) {
+    const bw = Math.min(cellRadius * 1.45,
+      24 * us / Math.min(1, Math.max(cam.scale, 0.45)));
+    const bh = Math.max(2.1, Math.min(cellRadius * .24,
+      4.5 * us / Math.min(1, Math.max(cam.scale, 0.55))));
+    const by = y - 18 * us;
+    const frac = Math.max(0, Math.min(1, unit.hp / 100));
+    const color = frac > .5 ? "#4fd45c" : (frac > .25 ? "#f0b429" : "#f04f3f");
+    cx.fillStyle = "#10151dd8";
+    cx.beginPath(); cx.roundRect(-bw / 2 - 1, by - 1, bw + 2, bh + 2, 2); cx.fill();
+    cx.fillStyle = color;
+    cx.beginPath(); cx.roundRect(-bw / 2, by, bw * frac, bh, 1.5); cx.fill();
+    if (frac <= .25) {
+      cx.globalAlpha = .35 + .3 * Math.sin(now / 160);
+      cx.strokeStyle = "#ff7060"; cx.lineWidth = 1.6;
+      cx.strokeRect(-bw / 2 - 2, by - 2, bw + 4, bh + 4);
+      cx.globalAlpha = 1;
+    }
+  }
+  if (detail && unit.level > 1) {
+    cx.fillStyle = "#ffd700";
+    for (let index = 0; index < unit.level - 1; index++) {
+      cx.beginPath();
+      cx.arc((index * 6 - 6) * us,
+             y - 10.5 * us - (unit.hp < 100 ? 12 : 4) * us,
+             2 * us, 0, 7);
+      cx.fill();
+    }
+  }
+  if (sel && sel.id === unit.id) {
+    const r = Math.min(cellRadius * .86, 16 * us + 6 * us);
+    cx.strokeStyle = "#f0c674"; cx.lineWidth = 2.1;
+    cx.setLineDash([5, 4]);
+    cx.beginPath(); cx.ellipse(0, y + 8.5 * us, r, r * .42, 0, 0, 7); cx.stroke();
+    cx.setLineDash([]);
+  }
+}
+
+function drawPlanetPaintedUnits(units, cellByKey, centerX, centerY,
+                                 visible, spectator, onSheet, camera) {
+  const cities = new Set(state.cities.map(city => key(city.pos)));
+  const figures = [];
+  const drawn = new Set();
+  for (const unit of units) {
+    const cell = cellByKey.get(key(unit.pos));
+    if (!cell || (!spectator && !visible.has(key(unit.pos))) ||
+        cell.center.z < (onSheet ?? .025)) continue;
+    const radius = planetCellInradius(cell);
+    if (radius < PLANET_PAINTED_UNIT_INRADIUS) continue;
+    // planetCells contains the whole facing hemisphere so relief at its rim
+    // can meet cleanly; a close camera only shows a small patch of that set.
+    // Meshes outside the canvas are still expensive to build and sort, so cull
+    // by the largest silhouette the cell can project before entering the unit
+    // renderer. The generous margin preserves a figure or a health bar that
+    // just reaches in from beyond the frame.
+    const margin = Math.max(22, radius * 2.4);
+    if (cell.center.x < -margin || cell.center.x > MAPW + margin ||
+        cell.center.y < -margin || cell.center.y > MAPH + margin) continue;
+    figures.push({unit, cell, radius});
+  }
+  // The ground is painted back-to-front. Preserve that order for figures so a
+  // close regiment can cover one just beyond it without either appearing to
+  // float through the other at the limb.
+  figures.sort((a, b) => a.cell.center.z - b.cell.center.z);
+  const now = performance.now();
+  for (const {unit, cell, radius} of figures) {
+    const previous = UNIT_RENDER_CONTEXT;
+    // UNIT_SCALE makes a 32-unit silhouette fill 80% of a normal flat hex.
+    // A projected cell follows that same contract from its measured inradius.
+    const angle = planetUnitTangentAngle(cell, centerX, centerY);
+    UNIT_RENDER_CONTEXT = {
+      scale:(radius * 2 * UNIT_FILL / UNIT_SPAN) / UNIT_SCALE,
+      screenScale:DPR,
+      // The globe is orthographic, while a flat scene looks down a tilted
+      // board. Give the shared mesh the former projection and turn its light
+      // back through this cell's local frame so the sun stays in the world as
+      // the camera turns around the planet.
+      cinematic3d:{
+        depthAllowed:radius >= PLANET_CINEMATIC_UNIT_INRADIUS &&
+          (camera.chart || cell.center.z >= .13),
+        orthographic:true, tilt:.42, sunAngle:SUN - angle,
+      },
+    };
+    cx.save();
+    try {
+      const y = cities.has(key(unit.pos)) ? radius * .52 : 0;
+      cx.translate(cell.center.x, cell.center.y);
+      cx.rotate(angle);
+      if (VIEW === "cinematic") drawCinematicSubjectMarker(unit, 0, y, now);
+      drawUnitBase(unit, 0, y);
+      if (VIEW === "cinematic") drawUnitCompany(unit, 0, y, now, false);
+      else drawUnitChar(unit, 0, y, now, false);
+      if (VIEW === "cinematic") drawCinematicSubjectBrackets(unit, 0, y, now);
+      drawPlanetPaintedUnitMarks(unit, y, radius, now);
+      drawn.add(unit.id);
+    } finally {
+      cx.restore();
+      UNIT_RENDER_CONTEXT = previous;
+    }
+  }
+  return drawn;
+}
+
 function pointInsidePlanetCell(x, y, points) {
   let inside = false;
   for (let i = 0, j = points.length - 1; i < points.length; j = i++) {
@@ -20740,6 +21168,7 @@ function drawPlanetMap() {
   }
   const camera = planetCamera();
   const scale = cam.scale;
+  const now = performance.now();
   const radius = camera.radius * scale;
   // Home is at the centre of the stage right up until the camera leaves it, so
   // everything below draws around wherever the Earth actually is rather than
@@ -20935,29 +21364,59 @@ function drawPlanetMap() {
     }
     if (cityState) cx.restore();
   }
-  for (const unit of empireLens ? [] : state.units) {
+  const visibleUnits = empireLens ? [] : (cinemaActive()
+    ? cinematicSurveyUnits(state.units) : state.units);
+  // Use the same stable tile layout as the flat command map. The globe has no
+  // in-flight unit animation, so every overview marker on a cell belongs here.
+  const planetUnitStacks = !MODE.painted
+    ? strategicUnitStackSlots(visibleUnits)
+    : null;
+  // Both painted styles share one spherical figure pass. In Balanced it keeps
+  // the illustrated unit; in Cinematic the familiar close-shot handoff inside
+  // drawUnitChar promotes the exact same family to its low-poly 3D model.
+  // Small or side-on cells deliberately keep their overview token, so every
+  // map script, globe frequency and chart scale retains a readable army.
+  const paintedFigureIds = MODE.painted
+    ? drawPlanetPaintedUnits(visibleUnits, cellByKey, centerX, centerY,
+                              visible, spectator, onSheet, camera)
+    : null;
+  for (const unit of visibleUnits) {
+    // A painting replaces its overview dot only when the cell is wide enough
+    // to read it. Farther out, retain the lightweight globe-level marker so a
+    // player never loses an army while zooming through the handoff.
+    if (paintedFigureIds?.has(unit.id)) continue;
     const cell = cellByKey.get(key(unit.pos));
     if (!cell || cell.center.z < (onSheet ?? .025)) continue;
-    // A coloured dot answers only "whose unit?". Strategic is the command-map
-    // view, so keep its tokens large enough to carry the same type pictogram as
-    // the flat map. Painted globes retain the quieter army dot; their figures
-    // take over once the camera is close enough to make them useful.
+    // A coloured dot answers only "whose unit?". Strategic uses the same
+    // hex-relative command token as the flat map, rather than a fixed pixel
+    // floor that can swallow a small or foreshortened cell. Painted views
+    // retain this quiet overview dot only when the figure pass has no readable
+    // model to show at the current globe scale.
     const commandToken = !MODE.painted;
+    const outline = sel?.id === unit.id ? 2.3 : 1.2;
+    const stack = commandToken
+      ? strategicUnitStackPlacement(planetUnitStacks, unit, planetCellInradius(cell), outline)
+      : null;
     const r = commandToken
-      ? Math.max(7.2, Math.min(10.5, 7.8 * Math.sqrt(scale)))
+      ? stack.r
       : Math.max(3.5, Math.min(7, 4.5 * Math.sqrt(scale)));
-    const ux = cell.center.x + r * .7, uy = cell.center.y + r * .6;
+    // A singleton stays centred; a stack takes its own compact, non-overlapping
+    // seat in the same cell. Each token is still clipped to that real face.
+    const ux = cell.center.x + (stack?.x || 0), uy = cell.center.y + (stack?.y || 0);
     const civilian = CIVILIAN_UNITS.has(unit.type);
     const tokenInk = unitTokenInk(unit.owner);
     cx.fillStyle = pcol(unit.owner); cx.strokeStyle = sel?.id === unit.id ? "#fff2a8" : tokenInk;
-    cx.lineWidth = sel?.id === unit.id ? 2.3 : 1.2;
-    cx.beginPath();
-    if (commandToken && civilian) cx.roundRect(ux - r, uy - r, r * 2, r * 2, r * .42);
-    else cx.arc(ux, uy, r, 0, 7);
+    cx.lineWidth = outline;
+    if (commandToken) { cx.save(); planetPath(cx, cell.points); cx.clip(); }
+    if (commandToken) strategicUnitTokenPath(civilian, ux, uy, r);
+    else { cx.beginPath(); cx.arc(ux, uy, r, 0, 7); }
     cx.fill(); cx.stroke();
-    if (commandToken)
+    if (commandToken) {
       drawUnitPictogram(unit.embarked ? "galley" : unit.type, ux, uy,
                         r * 1.48, tokenInk);
+      drawStrategicUnitHealth(ux, uy, r, unit.hp, now);
+      cx.restore();
+    }
   }
   for (const tack of empireLens ? [] : tacks) {
     const cell = cellByKey.get(key(tack));
@@ -22160,6 +22619,10 @@ function draw() {
   const sorted = [...drawnUnits].sort((a, b) =>
     (hexXY(a.pos[0], a.pos[1])[1] - hexXY(b.pos[0], b.pos[1])[1]) ||
     (CIVILIAN_UNITS.has(a.type) ? -1 : 1));
+  // Stationary units sharing a tile receive stable seats before this pass. A
+  // moving unit keeps its world-space animation and joins the stack only once
+  // it has settled, so a defender does not jump sideways during an arrival.
+  const strategicUnitStacks = beau ? null : strategicUnitStackSlots(drawnUnits, anim.moves);
   // The massifs held back by the decorations pass, released as the figures
   // reach them: everything standing further back is already on the board, so
   // the mountain paints over exactly what it should be hiding and over nothing
@@ -22176,7 +22639,8 @@ function draw() {
   const now = performance.now();
   for (const u of sorted) {
     releaseMassifs(hexXY(u.pos[0], u.pos[1])[1]);
-    let [x, y] = worldXY(u.pos);
+    const [tileX, tileY] = worldXY(u.pos);
+    let x = tileX, y = tileY;
     let moving = false;
     let moveSample = null, trailPoints = null;
     const mv = anim.moves.get(u.id);
@@ -22268,10 +22732,24 @@ function draw() {
       inTown = a + (b - a) * Math.min(1, Math.max(0, mv.e || 0));
     }
     // How far forward the garrison steps is a function of how much of the town
-    // it would otherwise stand on, which is the figure's size.
+    // it would otherwise stand on, which is the figure's size. Strategic tokens
+    // stay at their hex center: moving a large command token toward a city can
+    // place part of it in a neighboring hex.
     const us = unitScale();
-    y += 12 * us * inTown;
-    const rr = 10.5 * (beau ? 1 : COMMAND_UNIT_K());
+    if (beau) y += 12 * us * inTown;
+    const tokenOutline = u.fortified ? 2.6 : 1.6;
+    const stack = !beau
+      ? strategicUnitStackPlacement(strategicUnitStacks, u,
+                                    flatStrategicUnitInradius(), tokenOutline)
+      : null;
+    if (stack) { x += stack.x; y += stack.y; }
+    const rr = beau ? 10.5 : stack.r;
+    // A moving unit is deliberately between its two cells; every stationary
+    // strategic unit is clipped to the exact hex it occupies. This also keeps
+    // an icon's longest weapon, health strip, promotion pips, and selection
+    // cue from escaping the cell at any map bearing.
+    const strategicTokenClip = !beau && !moving;
+    if (strategicTokenClip) { cx.save(); hexPath(tileX, tileY); cx.clip(); }
     if (beau) {
       drawCinematicSubjectMarker(u, x, y, now);
       drawUnitBase(u, x, y);
@@ -22299,36 +22777,30 @@ function draw() {
       // spent units recede so the ones that can still act carry the eye
       cx.globalAlpha = (u.moves_left !== undefined && u.moves_left <= 0) ? 0.62 : 1;
       cx.save();
-      cx.shadowColor = "#000a"; cx.shadowBlur = 5; cx.shadowOffsetY = 2;
       cx.fillStyle = pcol(u.owner);
-      cx.beginPath();
-      if (civ) cx.roundRect(x - rr, y - rr, rr * 2, rr * 2, 5);
-      else cx.arc(x, y, rr, 0, 7);
+      strategicUnitTokenPath(civ, x, y, rr);
       cx.fill();
       cx.restore();
       const tokenInk = unitTokenInk(u.owner);
       cx.strokeStyle = u.fortified ? "#f4f8ff" : tokenInk;
-      cx.lineWidth = u.fortified ? 2.6 : 1.6;
-      cx.beginPath();
-      if (civ) cx.roundRect(x - rr, y - rr, rr * 2, rr * 2, 5);
-      else cx.arc(x, y, rr, 0, 7);
+      cx.lineWidth = tokenOutline;
+      strategicUnitTokenPath(civ, x, y, rr);
       cx.stroke();
       drawUnitPictogram(u.type, x, y,
                         rr * 1.45 * COMMAND_UNIT_ICON_K(), tokenInk);
       cx.globalAlpha = 1;
     }
-    // chunky health bar — sized against zoom so it stays readable far out, and
-    // against the figure so it clears the head of the one it belongs to. Both
-    // factors are needed: zoom alone would leave it buried in a painted
-    // figure's chest, the figure alone would let it vanish at survey range.
-    if (u.hp < 100) {
+    // Flat strategic tokens always carry their health state. The strip is
+    // built from the same hex-relative radius as the token and seated in its
+    // lower interior, so it becomes larger on screen with zoom but never
+    // crosses the boundary of the unit's assigned tile. Painted figures keep
+    // their existing, damage-only bar above the model.
+    if (!beau) {
+      drawStrategicUnitHealth(x, y, rr, u.hp, now);
+    } else if (u.hp < 100) {
       const bw = 24 * us / Math.min(1, Math.max(cam.scale, 0.45));
       const bh = 4.5 * us / Math.min(1, Math.max(cam.scale, 0.55));
-      // The command token grows at survey zoom; keep its health strip above
-      // the rim instead of laying it across the pictogram it is meant to name.
-      const by = beau
-        ? y - 18 * us
-        : y - rr - 5 * COMMAND_UNIT_K();
+      const by = y - 18 * us;
       const frac = u.hp / 100;
       const fc2 = frac > 0.5 ? "#4fd45c" : (frac > 0.25 ? "#f0b429" : "#f04f3f");
       cx.fillStyle = "#10151dd8";
@@ -22350,20 +22822,35 @@ function draw() {
     // helmet and the ring inside the boots.
     const ur = rr * us;
     if (u.level > 1) {
+      const count = u.level - 1;
+      const strategicPips = !beau;
+      const pipRadius = strategicPips ? Math.min(2, rr * .12) : 2 * us;
+      const pipY = strategicPips
+        ? y - rr * .28
+        : y - ur - (u.hp < 100 ? 12 : 4) * us;
+      // Keep a row of promotion pips inside the token's upper interior. The
+      // available width is deliberately narrower than its full diameter so
+      // even the civilian capsule stays inside its hex.
+      const pipGap = strategicPips && count > 1
+        ? Math.min(5, Math.max(0, (rr * 1.25 - pipRadius * 2) / (count - 1)))
+        : 6 * us;
       cx.fillStyle = "#ffd700";
-      for (let i = 0; i < u.level - 1; i++) {
+      for (let i = 0; i < count; i++) {
         cx.beginPath();
-        cx.arc(x + (i * 6 - 6) * us,
-               y - ur - (u.hp < 100 ? 12 : 4) * us, 2 * us, 0, 7);
+        cx.arc(x + (i - (count - 1) / 2) * pipGap, pipY, pipRadius, 0, 7);
         cx.fill();
       }
     }
     if (sel && sel.id === u.id) {
       cx.strokeStyle = "#f0c674"; cx.lineWidth = 2.4;
       cx.setLineDash([5, 4]);
-      cx.beginPath(); cx.arc(x, y, ur + 6 * us, 0, 7); cx.stroke();
+      // The strategic selection cue lives inside its token rather than growing
+      // beyond the hex boundary at survey zoom.
+      const selectionRadius = beau ? ur + 6 * us : Math.max(0, rr - 1.2);
+      cx.beginPath(); cx.arc(x, y, selectionRadius, 0, 7); cx.stroke();
       cx.setLineDash([]);
     }
+    if (strategicTokenClip) cx.restore();
   }
   // Whatever the figures never reached: a massif is never simply dropped.
   releaseMassifs(Infinity);
@@ -30245,6 +30732,14 @@ async function autoplay(turns) {
 }
 document.getElementById("autoplaybtn").onclick = () => autoplay(autoplayRequest());
 document.getElementById("tradebtn").onclick = () => openTrade();
+// Mode state, declared here rather than beside the functions that use it: the
+// wiring immediately below calls syncSetupMode() during load, and a `let` read
+// before its own statement has run is a ReferenceError rather than an
+// undefined.
+let civ6Status = null;
+let civ6StatusTimer = null;
+let civ6StatusInFlight = false;
+let civvisMapOptions = null;
 document.getElementById("gamemode").addEventListener("change", syncSetupMode);
 document.getElementById("leaderpool").addEventListener("change", syncLeaderPool);
 document.getElementById("maptype").addEventListener("change", syncEarthShape);
@@ -30307,6 +30802,64 @@ function readVictorySetting(id) {
   const box = document.getElementById(id);
   return box ? box.checked : true;
 }
+// What this computer can do about the other game, and what a run it can see is
+// doing. The mode is offered everywhere and refused where it cannot run, so the
+// refusal needs somewhere to be read: a run that silently never starts is how a
+// dead Steam client cost eleven ladder attempts, every one of them recorded as
+// a loss rather than as an attempt that never happened.
+async function refreshCiv6Status() {
+  if (civ6StatusInFlight) return;
+  civ6StatusInFlight = true;
+  try {
+    civ6Status = await fetchJSON("/civ6");
+  } catch (error) {
+    civ6Status = {ready: false, blocked: `this server did not answer (${error.message || error})`};
+  } finally {
+    civ6StatusInFlight = false;
+  }
+  drawCiv6Status();
+  updateRestartSimulationButton();
+  // A run takes minutes to reach its first turn and hours to finish, so this
+  // is a slow poll, and it only runs while somebody is looking at the mode.
+  clearTimeout(civ6StatusTimer);
+  if (document.body.classList.contains("playing-civ6"))
+    civ6StatusTimer = setTimeout(refreshCiv6Status, 10000);
+}
+function civ6RunLine(run) {
+  if (!run) return "";
+  const who = [run.leader, run.civ]
+    .map(name => (name || "").replace(/^(LEADER|CIVILIZATION)_/, "").toLowerCase())
+    .filter(Boolean)
+    .map(titleCase);
+  // Joined after the names are cased, because titleCase upper-cases every word
+  // it is given and "Wu Zetian Of China" is not how anybody writes that.
+  const seat = who.length ? who.join(" of ") : "a seat";
+  const rung = (run.difficulty || "").replace(/^DIFFICULTY_/, "").toLowerCase();
+  const turn = run.max_turns ? `turn ${run.turn} of ${run.max_turns}` : `turn ${run.turn}`;
+  const empire = `${run.cities} ${run.cities === 1 ? "city" : "cities"}`;
+  const verb = run.live ? "playing" : "played";
+  const ended = run.live ? ""
+    : run.won === true ? " · won"
+    : run.reason ? ` · ${run.reason}` : "";
+  return `<b>${escapeAttr(seat)}</b> ${verb} ${rung ? rung + ", " : ""}${turn} · ${empire}${ended}`;
+}
+function drawCiv6Status() {
+  const box = document.getElementById("civ6-status");
+  const host = document.getElementById("civ6-host");
+  const runLine = document.getElementById("civ6-run");
+  if (!box || !host || !runLine) return;
+  const status = civ6Status;
+  const playing = !!(status && status.run && status.run.live);
+  box.classList.toggle("ready", !!(status && status.ready) && !playing);
+  box.classList.toggle("blocked", !!(status && status.blocked) && !playing);
+  box.classList.toggle("playing", playing);
+  host.textContent = !status ? "Checking this computer…"
+    : playing ? "A game is being played on this computer"
+    : status.blocked ? `Cannot start: ${status.blocked}`
+    : "Civilization VI is installed here and free";
+  runLine.innerHTML = civ6RunLine(status && status.run);
+  runLine.hidden = !runLine.innerHTML;
+}
 function selectedSimulationSettings() {
   const np = +readSetting("np");
   const gameMode = readSetting("gamemode");
@@ -30321,7 +30874,17 @@ function selectedSimulationSettings() {
     [track.id, readVictorySetting(`victory-${track.id}`)]));
   const leader = readSetting("leader");
   const difficulty = readSetting("difficulty");
-  return {num_players: np, map_script: mapScript, map_topology: mapTopology,
+  // In the Civilization VI mode the map control holds one of that game's
+  // scripts, so it travels as `civ6_map` and `map_script` keeps a world this
+  // engine could still build — the payload has to stay a valid description of a
+  // CIVVIS world for the settings staging and the summary line, which are the
+  // same code in every mode.
+  const civ6 = gameMode === "civ6";
+  const civ6Map = civ6 ? mapScript : "";
+  const ourMap = civ6
+    ? (civ6Maps().find(map => map.id === civ6Map) || {}).civvis || "continents"
+    : mapScript;
+  return {num_players: np, map_script: ourMap, map_topology: mapTopology,
           map_poles: mapPoles, game_speed: gameSpeed,
           leader_pool: leaderPool,
           base_ruleset: baseRuleset, start_era: startEra,
@@ -30330,8 +30893,12 @@ function selectedSimulationSettings() {
           teams: teamAssignment(np, readSetting("teams")),
           victory_conditions: victoryConditions,
           spectate: gameMode === "ai_sim",
+          ...(civ6 ? {mode: "civ6", civ6_map: civ6Map} : {}),
           // A spectated world has nobody to hand a leader or a handicap to.
-          ...(gameMode === "ai_sim" ? {} : {civs: leader ? [leader] : [], difficulty})};
+          // Neither has this one, but its difficulty is the point of it: the
+          // other game hands its handicap bonuses to human seats only, which is
+          // what makes the ladder climbable from one.
+          ...(gameMode === "ai_sim" ? {} : {civs: civ6 || !leader ? [] : [leader], difficulty})};
 }
 // The handoff screen describes the world being built, so it reports the values
 // the payload actually carries rather than re-reading the panel behind it.
@@ -30346,7 +30913,10 @@ function selectedSimulationSummary(settings = null) {
   };
   const spectate = settings ? settings.spectate
     : document.getElementById("gamemode").value === "ai_sim";
-  const mode = spectate === true ? "AI simulation" : "Single player";
+  const civ6 = settings ? settings.mode === "civ6"
+    : document.getElementById("gamemode").value === "civ6";
+  const mode = civ6 ? "Firaxis Civ 6"
+    : spectate === true ? "AI simulation" : "Single player";
   // The world-size option already includes its dimensions and seat count; the
   // compact first clause is enough to identify the choice without turning the
   // handoff screen into a settings table.
@@ -30409,19 +30979,35 @@ function updateRestartSimulationButton() {
   // into that game: it becomes Start new game, and always reads as a change
   // from the world on screen.
   const human = settings.spectate !== true;
+  // The control is named after the game it starts, and the other game's name
+  // is the whole point of choosing it: nothing else on the screen says that
+  // pressing this takes over a real Civilization VI window for hours.
+  const civ6 = settings.mode === "civ6";
+  const blocked = civ6 && !!(civ6Status && !civ6Status.ready);
   const changed = human || (activeSimulationSettingsKey !== null &&
     simulationSettingsKey(settings) !== activeSimulationSettingsKey);
-  button.classList.toggle("primary", changed);
+  button.classList.toggle("primary", changed && !blocked);
   button.classList.toggle("human-start", human);
-  button.querySelector(".lbl").textContent = human
+  // A refusal is shown rather than hidden: the button stays, says so, and the
+  // reason sits above it.
+  button.disabled = blocked;
+  button.querySelector(".lbl").textContent = civ6
+    ? "Play Firaxis Civ 6"
+    : human
     ? "Start new game"
     : "Restart sim";
-  button.title = human
+  button.title = civ6
+    ? blocked
+      ? `Cannot start: ${civ6Status.blocked}`
+      : "Start a real Civilization VI game on this computer and play it"
+    : human
     ? "Start a single-player game with the selected settings"
     : changed
     ? "Restart with the selected settings"
     : "Restart with the same settings";
-  button.querySelector(".sub").textContent = human || changed
+  button.querySelector(".sub").textContent = civ6
+    ? "on this computer"
+    : human || changed
     ? "with selected settings"
     : "same settings";
 }
@@ -30479,9 +31065,57 @@ function adoptRunningMode() {
 // Leader and difficulty are meaningless in a spectated world: nobody is at
 // the keyboard. The restart control remains above the settings in either mode
 // and transforms to describe the selected next game.
+//
+// The Civilization VI mode is a third state rather than a variation on either:
+// a difficulty is chosen and it is real (that game hands its handicaps to human
+// seats, which is the whole reason to occupy one), and nobody is at the
+// keyboard once it starts. So the settings follow single player and the
+// controls follow the simulation. See docs/CIV6_GAME_MODE.md.
 function syncSetupMode() {
   const mode = (document.getElementById("gamemode") || {}).value || "ai_sim";
+  const civ6 = mode === "civ6";
   document.body.classList.toggle("spectating", mode === "ai_sim");
+  document.body.classList.toggle("playing-civ6", civ6);
+  syncMapRoster(civ6);
+  // The control's label is not relabelled from here. This runs once during
+  // load, before the settings state it would read has been initialised, and
+  // `#newgame-options`'s delegated change listener already relabels it on
+  // every real selection.
+  if (civ6) refreshCiv6Status();
+}
+// In the Civilization VI mode the map control is that game's own list, not
+// ours. The two rosters overlap without either containing the other — Grand
+// Canals is a CIVVIS world with no counterpart there, Shuffle and Tilted Axis
+// are its worlds with no counterpart here — so the list is replaced rather
+// than filtered, and a choice that exists in both survives the switch.
+function civ6Maps() {
+  return (RULES && RULES.civ6 && Array.isArray(RULES.civ6.maps)) ? RULES.civ6.maps : [];
+}
+function syncMapRoster(civ6) {
+  const select = document.getElementById("maptype");
+  if (!select) return;
+  const maps = civ6Maps();
+  // Before /rules has answered there is nothing to swap to; syncSetupMode runs
+  // again once it has.
+  if (civ6 && !maps.length) return;
+  const roster = civ6 ? "civ6" : "civvis";
+  // `/rules` refills this control after load, so what is put back must be
+  // whatever it holds now rather than the markup it was born with.
+  if (select.dataset.roster !== "civ6") civvisMapOptions = select.innerHTML;
+  if (select.dataset.roster === roster) return;
+  const chosen = select.value;
+  if (civ6) {
+    select.innerHTML = maps.map(map =>
+      `<option value="${escapeAttr(map.id)}">${map.name}</option>`).join("");
+    const carried = maps.find(map => map.civvis === chosen);
+    select.value = carried ? carried.id : (RULES.civ6.default_map || maps[0].id);
+  } else {
+    select.innerHTML = civvisMapOptions;
+    const carried = maps.find(map => map.id === chosen);
+    if (carried && carried.civvis) select.value = carried.civvis;
+  }
+  select.dataset.roster = roster;
+  syncEarthShape();
 }
 
 // The broad historical ruleset remains available, but a normal lobby offers
@@ -30640,8 +31274,35 @@ async function writeSave() {
   }
 }
 
+// Start a real game of Civilization VI on the computer serving this page.
+//
+// Nothing about the world-handoff path applies: no CIVVIS world is built, this
+// server is not replaced, and the page keeps showing whatever it was showing.
+// What is started is another application, and it takes about three minutes to
+// reach its first turn — so the reply is a receipt and the status line above
+// the button is where the run is then followed.
+async function startCiv6Game() {
+  const button = document.getElementById("restart-sim");
+  const host = document.getElementById("civ6-host");
+  if (button) button.disabled = true;
+  if (host) host.textContent = "Starting Civilization VI…";
+  try {
+    const reply = await fetchJSON("/civ6/start", {method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify(selectedSimulationSettings())}, 30000);
+    if (reply.error) throw new Error(reply.error);
+    if (host) host.textContent =
+      `Started ${reply.started.tag} · the game takes a few minutes to come up`;
+  } catch (error) {
+    showNewSimulationError(error, "start Civilization VI");
+  } finally {
+    if (button) button.disabled = false;
+    refreshCiv6Status();
+  }
+}
 async function startNewSimulation(restartSource = "manual") {
   if (newSimulationBusy) return;
+  if (readSetting("gamemode") === "civ6") { startCiv6Game(); return; }
   cancelFinaleCountdown();
   const wasPaused = specPaused;
   const payload = {...newSimulationPayload(), paused: wasPaused};

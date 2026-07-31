@@ -380,6 +380,39 @@ give confirmations for the four rows above.
 This costs one extra run per promoted change and buys numbers that mean what
 they say.
 
+### Implemented 2026-07-31 — the docs rule, enforced
+
+Fix (3) — the mechanical check — is in `tools/civvis_collab.py check-pr`, which
+already runs on every PR. `unevidenced_effect_sizes` reads the **added** lines of
+any `docs/**.md` or `README.md` in the diff and rejects an Elo-equivalent figure
+that has no provenance beside it: a seed, an interval, a map/pair/game count, the
+PR it was measured in, a p-value, or an explicit `DISCOVERY ESTIMATE` marker.
+
+Two design points, both learned from the instance it exists to catch:
+
+- **It joins before matching.** These documents wrap at 80 columns, and the real
+  defect put the figure at the end of one line (`… at +45`) and its unit at the
+  start of the next (`Elo, warm branches …`). A per-line scan sees neither half.
+- **The window is bounded** (`EVIDENCE_WINDOW_CHARS`, 320). Wide enough to reach
+  the sentence that sources the number, narrow enough that an unrelated
+  measurement elsewhere in the same hunk cannot launder a bare claim.
+
+Validated against the real before/after rather than invented fixtures: the gate
+**rejects** `docs/GENOME.md` as it read before #662, and **passes** the
+refutation that replaced it. Swept over the last 40 commits, 2 of the 30 that
+touch `docs/`/`README.md` would have been flagged — and both are effect-size
+claims of exactly this class, one of them the `+207` that later re-measured
+to +86.
+
+Note what it does **not** do. It cannot tell a discovery estimate from a
+confirmed one, because that distinction lives in how the run was commissioned
+rather than in the text. Fixes (1) and (2) — `ai_eval` labelling a gate-passing
+size as a `DISCOVERY ESTIMATE`, and a `--confirm <prior-seed>` mode — are the
+half that has to happen in the evaluator, and they are **not** done. They belong
+in `src/bin/ai_eval.rs`, which PR #679 holds; whoever picks them up should read
+the `EVIDENCE_RE` escape list first, so the string the tool prints is one the
+gate already accepts.
+
 ---
 
 ## 5. R4 — a display artifact bound to neither source nor semantics
@@ -445,6 +478,43 @@ table. That it changes half the rows is also the clearest possible argument for
 fix (1): as long as two orderings are equally reachable, a rendering script
 will keep reaching for whichever is one float per pair.
 
+### Implemented 2026-07-31 — one strength accessor, and the bar applied
+
+All three fixes landed together in PR #678.
+
+**(1) One ordering key.** `Strategy::strength_bound()` and
+`CivRating::strength_bound()` / `strength_ceiling()` are the only public
+"which is better" accessors. Both `rating` fields now carry a doc comment
+marking them **matchmaking only** and pointing at the bound. The field is not
+renamed: the serde name is the on-disk league format and every committed
+snapshot would break, which buys nothing the doc comment does not.
+
+**(2) Reproducible or it does not ship.** `update_readme_rankings.py` no longer
+raises when a pair has no settled rating — it reports that pair as coverage.
+The table is therefore generated from the committed `data/league/` snapshot and
+`--check` **passes on a fresh clone**, where it previously exited 2. The
+snapshot is deliberately left at round 60: refreshing it changes what every
+checkout seats, which is a separate decision from how the README ranks.
+
+**(3) The bar, applied.** A pair is printed only when the leader's
+`strength_bound` clears the `strength_ceiling` of every rival. On the committed
+round-60 snapshot that is **0 of 50**; on the live round-3205 league it is
+**1 of 50** — Rome/Trajan → `advanced_v1`, 161/314, bound 0.458, which is a
+*baseline* rather than one of the bred genomes. The other 49 are printed as a
+coverage table carrying each leader's real record.
+
+Re-measured on round 3205, the two statistics name a different strategy in
+**23 of 50** pairs, reproducing the 26-of-52 finding at round 3143.
+
+The drift risk this creates is that the bound now has two implementations —
+Rust for selection, Python for rendering, because the tool emits Markdown and
+cannot call in. That is the R1 shape, so it is pinned rather than commented:
+`SELECTION_Z` is *parsed out of* `src/league.rs` by the tool, and a shared
+golden table of six `(wins, games) -> (lower, upper)` triples is asserted on
+both sides — `civ_rating_strength_bound_matches_the_readme_tool` in
+`src/league.rs` and `GOLDEN_BOUNDS` in `tools/test_update_readme_rankings.py`.
+If either formula moves, exactly one side fails and names the other.
+
 ---
 
 ## 6. The one gap that is not an evaluator defect
@@ -473,6 +543,57 @@ the audit even though it is not a bug.
    that search does not transfer to the deployment profile — which would be the
    most important negative result in the project, because search is the
    repository's own stated best lever.
+
+### Implemented 2026-07-31 — step 2, the exclusion carries its own expiry
+
+`Exclusion { reason, revisit_when }` is on `Strategy`, and
+`Strategy::exclude_from_live(reason, revisit_when)` is the **only** way to set
+`league_only` — there is no longer a way to exclude an entrant without saying
+what would put it back. The searching anchor's own exclusion now reads:
+
+> **reason** 6.4x game-turn cost at the 6p 74x46 profile (76.7 ms against 13.3),
+> `docs/EVAL.md` 2026-07-29
+> **revisit_when** a deployment-profile run against a genome-matched control
+> clears parity, or the turn-cost ratio falls below 2x
+
+The bool is kept beside the reason rather than replaced. It is the on-disk
+format every committed snapshot carries and the value every seating filter
+reads, and replacing it buys nothing the pair does not — provided the two cannot
+drift, which is the failure mode this whole document is about. So they are
+pinned: `every_live_exclusion_states_what_would_reverse_it` asserts
+`league_only == exclusion.is_some()` across a reconciled league and that no
+`revisit_when` is empty, and `reconcile_required_entrants` backfills any
+pre-existing snapshot that carries the bare bool.
+
+### Step 1 is running, and the control is not the one this document specified
+
+Started 2026-07-31, 120 mirrored pairs at the deployment profile
+(6p, 74×46, 9 city-states, Online, planet/poles, 250 turns) on seed 900000000 —
+disjoint from every seed in `docs/EVAL.md`.
+
+⚠ **The pairing §8 prescribes does not isolate search.** With the typed specs
+from #674 in place, `ai_eval` reports `strategic_score` v `advanced_evolved` as
+differing on **two** axes — `architecture, evaluator` — not one. Matching the
+genome fixed the weights axis that the audit identified and left a second one
+standing, because the searching agent also *evaluates* differently. So this run
+answers the replacement question — should search be seated — and it is filed
+with `--deployment-comparison`, which is exactly the flag for that. It cannot
+attribute its result to search alone.
+
+The genuinely one-axis search comparisons, for whoever wants that attribution:
+
+| pairing | axes `ai_eval` reports |
+|---|---|
+| `strategic_cheap` v `strategic_score` | `search-cheap` — **one** |
+| `strategic_r20` v `strategic_r10` | `search-cadence-20`, `search-cadence-10` |
+| `strategic_deep` v `strategic` | `search-cadence-20`, `search-horizon-80` |
+
+The third row is worth keeping. `strategic_deep` v `strategic` is the comparison
+that produced the promoted **+45**, and it varies *two* treatment components at
+once — so that number was never attributable to a single mechanism even before
+#482 excluded it on size. §8's restatement worklist should be recomputed against
+what `arms differ on:` actually prints, rather than against the hand-built table,
+which is one axis short on every `strategic` row.
 
 ---
 
@@ -544,6 +665,67 @@ profiles, and it is the only way to know what search is actually worth. The
 audit has already done two of them: `strategic` → +61 rather than +92 at 4p
 compact, and `production` → 45.8%/−29 rather than +76.
 
+### Recomputed 2026-07-31 — the table above is wrong on five of its rows
+
+Everything above this heading was counted **by hand**, before `ai_eval` could
+report the axes itself. With the typed specs from #674 in place it can, so the
+worklist was recomputed by running every pairing's preflight and reading
+`arms differ on:`. The hand count is wrong in **both** directions — it
+undercounts three rows, overcounts one, and its prescribed *fix* does not work
+on three more.
+
+| comparison | §8 counted | `ai_eval` reports | |
+|---|---|---|---|
+| `strategic` v `advanced` | 2 | **3** — architecture, weights, evaluator | undercount |
+| `production` v `advanced` | 2 | **3** — architecture, weights, evaluator | undercount |
+| `strategic_cheap` v `advanced` | 2 | **4** — architecture, weights, evaluator, search-cheap | undercount |
+| `policy_wide` v `advanced` | 3 | **1** — weights | **overcount** |
+| `policy` v `advanced` | 1 | 1 — weights | correct |
+| `advanced_evolved` v `advanced` | 1 | 1 — weights | correct |
+
+The missing axis in the first three is the same one every time. A netless
+`strategic`/`production` falls back to score-share terminal evaluation, so it
+differs from any `AdvancedAi` in *evaluator* as well as in architecture — and
+that axis is invisible to a reading of the entrant names, which is exactly why
+counting by hand produced it wrong.
+
+**And the prescribed fix does not fix them.** Re-running against
+`advanced_evolved` removes the *weights* axis and leaves the rest:
+
+| replacement pairing | axes remaining |
+|---|---|
+| `strategic` v `advanced_evolved` | architecture, evaluator — **still 2** |
+| `production` v `advanced_evolved` | architecture, evaluator — **still 2** |
+| `strategic_cheap` v `advanced_evolved` | architecture, evaluator, search-cheap — **still 3** |
+| `policy_wide` v `advanced_evolved` | **none** |
+
+That last row is the sharpest result of the recompute. `policy_wide` and
+`advanced_evolved` differ on **nothing**: the recorded `policy_wide` result is
+not a mislabelled *architecture* result, it is a **self-comparison**, and the
+same holds for `policy_wide_frozen`. §8 filed it as the worst-confounded row of
+the eight; it is in fact the one row that measures nothing at all.
+
+**The corrected worklist.** Three of the eight can be re-run as a *replacement*
+question and filed with `--deployment-comparison`, which is honest but cannot
+attribute anything to one mechanism. Two need withdrawing rather than re-running.
+Only one entrant pairing in the repository isolates search on one axis:
+
+| pairing | axes | what it can answer |
+|---|---|---|
+| `strategic_cheap` v `strategic_score` | **search-cheap** — one | what a cheaper search budget costs |
+| `strategic_deep` v `strategic_score` | search-cadence-20, search-horizon-80 | nothing attributable — **two** treatment components |
+| `advanced_v1` v `advanced` | architecture, legacy-advanced | a version replacement, correctly |
+
+The middle row is worth reading twice. `strategic_deep` v `strategic` is the
+comparison that produced the promoted **+45**, and it varies *two* treatment
+components at once. That number was never attributable to a single mechanism —
+a defect separate from, and prior to, #482 excluding it on size.
+
+**Standing rule, so this is not recounted by hand again:** ask the tool. Run the
+preflight and read `arms differ on:` before designing or citing a comparison.
+A hand count of entrant names cannot see the evaluator axis, and that is the
+axis that was missing from most of this table.
+
 ## 9. Order of work
 
 Ordered by damage prevented per unit cost. The first two are prerequisites for
@@ -554,11 +736,11 @@ trusting anything measured afterwards.
 | 0 | Correct `docs/GENOME.md`'s standing “`strategic_deep` at +45 Elo”, which #482 excluded | R3 corollary | one edit |
 | 1 | **Landed:** typed `ArmKind` / `AgentSpec` boundary, spec-based collapse check, factory and plays-as-typed-spec tests | R1 — both defects | PR #674, `src/elo.rs` |
 | 2 | **Landed:** fallible `builtin_ai_strict`; explicit degraded entry point | R2 | PR #679, `src/elo.rs`, `src/bin/ai_eval.rs` |
-| 3 | Discovery-vs-confirmed effect sizes in `ai_eval`; the docs rule | R3 | ~half a day |
-| 4 | `strength_bound()` as the only ordering; table reproducible or gone | R4 | ~half a day |
+| 3 | **Landed:** docs rule in `check-pr` (#685); `ai_eval` discovery/confirmed labels and `--confirm` (#693) | R3 | done |
+| 4 | **Landed:** `strength_bound()` as the only ordering; separation bar applied; table reproducible from the committed snapshot | R4 | PR #678 |
 | 5 | Arm lifecycle: `EvalArm` with evidence + status, CI check that the section exists | §7 | falls out of 1 |
-| 6 | Restate the eight two-axis comparisons in §8 against matched controls | fallout of 1 and 3 | ~a day of compute |
-| 7 | Deployment-profile decision on seating search | §6 | compute, largest |
+| 6 | **Recomputed (#693):** §8's hand-counted axes were wrong on 5 of 6 rows and two entries measure nothing; the corrected worklist is 3 replacement re-runs, 2 withdrawals, 1 one-axis pairing | fallout of 1 and 3 | ~a day of compute for the re-runs |
+| 7 | **Step 2 landed** (`Exclusion` with a review condition, PR #687); step 1's 120-pair deployment run is in flight | §6 | compute, largest |
 
 Item 0 is free and should go first. Item 1 is now landed; items 2–4 are
 independent follow-on code. **Item 6 cannot be trusted before item 1 lands**,

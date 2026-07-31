@@ -2326,6 +2326,110 @@ fn city_names(civ: &str) -> &'static [&'static str] {
 mod city_name_tests {
     use super::*;
 
+    /// A site the HOST engine refused must stop being settleable, and must stop
+    /// nothing else.
+    ///
+    /// The 2-city ceiling was a feedback gap: Civilization VI refused a FOUND_CITY
+    /// order, nothing carried that back, and CIVVIS re-derived the same site from the
+    /// same board every turn — 18 refusals on one tile across turns 20, 33 and 79,
+    /// 141 in another run. This is the mechanism that breaks the loop, so it is worth
+    /// a test that would fail if the check were dropped or inverted.
+    #[test]
+    fn a_host_refused_site_is_not_settleable_but_its_neighbour_still_is() {
+        let mut game = Game::new(2, 24, 16, 1, 200, 0);
+        for uid in game.units.keys().copied().collect::<Vec<_>>() {
+            game.remove_unit(uid);
+        }
+        // Somewhere open, well clear of any city so only the block can refuse it.
+        let site = game
+            .map
+            .tiles
+            .keys()
+            .copied()
+            .find(|pos| {
+                let tile = &game.map.tiles[pos];
+                !game.rules.is_water(tile)
+                    && game.rules.is_passable(tile)
+                    && !game.tile_is_natural_wonder(tile)
+                    && game.cities.values().all(|c| game.wdist(c.pos, *pos) >= 4)
+            })
+            .expect("a standard map has open land");
+        let settler = game.spawn_unit("settler", 0, site);
+
+        assert!(
+            game.can_found_city(settler),
+            "the site must be settleable before anything blocks it, or the test proves nothing"
+        );
+
+        game.blocked_city_sites.insert(site);
+        assert!(
+            !game.can_found_city(settler),
+            "a site Civilization VI refused must not be offered again"
+        );
+
+        // ⚠ The block is per TILE, not a blanket ban on founding. A settler that
+        // walks one tile off a refused site must be able to found there, otherwise
+        // the cure is worse than the ceiling it was added to fix.
+        let elsewhere = crate::hex::neighbors(site)
+            .into_iter()
+            .find(|pos| {
+                game.map.tiles.get(pos).is_some_and(|tile| {
+                    !game.rules.is_water(tile)
+                        && game.rules.is_passable(tile)
+                        && !game.tile_is_natural_wonder(tile)
+                })
+            })
+            .expect("an inland site has a passable neighbour");
+        game.units.get_mut(&settler).unwrap().pos = elsewhere;
+        assert!(
+            game.can_found_city(settler),
+            "blocking one tile must not block the ground beside it"
+        );
+    }
+
+    /// A tile the HOST engine refused to improve must offer no improvements at all.
+    ///
+    /// The largest refusal category measured — 311 `IMPROVEMENT_MINE` refusals in one
+    /// run — because CIVVIS names improvements from its own terrain model and the two
+    /// rulesets disagree tile for tile. Gated in `valid_improvements` because that is
+    /// the single chokepoint every improvement decision passes through.
+    #[test]
+    fn a_host_refused_tile_offers_no_improvements() {
+        let mut game = Game::new(2, 24, 16, 1, 200, 0);
+        // A builder may only improve territory its own civilization holds, so the
+        // seat needs a CITY before any tile is improvable at all. `Game::new` hands
+        // out starting units, not cities, so one has to be founded here or the search
+        // below finds nothing and the test proves nothing.
+        let centre = game
+            .map
+            .tiles
+            .keys()
+            .copied()
+            .find(|pos| {
+                let tile = &game.map.tiles[pos];
+                !game.rules.is_water(tile)
+                    && game.rules.is_passable(tile)
+                    && !game.tile_is_natural_wonder(tile)
+            })
+            .expect("a standard map has open land");
+        game.place_city(0, centre, None);
+        let improvable = crate::hex::ring(centre, 1)
+            .into_iter()
+            .chain(crate::hex::ring(centre, 2))
+            .find(|pos| !game.valid_improvements(0, *pos).is_empty());
+        let Some(pos) = improvable else {
+            // Nothing to prove if no tile near the capital can be improved; say so
+            // rather than passing vacuously.
+            panic!("the ground around a capital should contain an improvable tile");
+        };
+
+        game.blocked_improvement_sites.insert(pos);
+        assert!(
+            game.valid_improvements(0, pos).is_empty(),
+            "a tile Civilization VI refused must offer nothing, or the builder loops on it"
+        );
+    }
+
     #[test]
     fn every_civilization_has_a_deep_unique_city_name_pool() {
         for civilization in CIV_NAMES {
@@ -14915,6 +15019,33 @@ pub struct Game {
     pub spies: BTreeMap<u32, Spy>,
     pub cities: BTreeMap<u32, City>,
     pub at_war: BTreeSet<(usize, usize)>,
+    /// Sites a HOST ruleset forbids for a reason CIVVIS's own rules cannot see.
+    ///
+    /// ★★★★ Empty in an ordinary game, and load-bearing when CIVVIS is driving a
+    /// foreign engine. Civilization VI refused 141 `FOUND_CITY` orders in one run and
+    /// 18 in another while the site picker re-chose the SAME tile at turns 20, 33 and
+    /// 79 — because nothing carried the refusal back, so every turn re-derived the
+    /// same answer from the same board and re-sent the same rejected order. Peak city
+    /// count was 2 in every run of the ladder.
+    ///
+    /// The fix is the one this whole bridge keeps needing: stop lying to CIVVIS. A
+    /// site the host rejected is recorded here, `can_found_city` honours it, and the
+    /// planner routes around it on its own. Filtering the order at the bridge instead
+    /// would only have made the turn do nothing — CIVVIS would never learn to pick
+    /// somewhere else.
+    #[serde(default)]
+    pub blocked_city_sites: BTreeSet<Pos>,
+    /// Tiles a HOST ruleset will not let a builder improve, for the same reasons and
+    /// with the same emptiness in an ordinary game as [`Game::blocked_city_sites`].
+    ///
+    /// ★★★★ The largest refusal category measured: **311 `IMPROVEMENT_MINE`
+    /// refusals in one run**, 51 and 31 in others. CIVVIS names improvements from ITS
+    /// terrain model and the two rulesets do not agree tile for tile, so a tile it
+    /// believes is a mine site simply stays bare — and because the mirror then keeps
+    /// reporting an undeveloped empire, CIVVIS orders another builder. One run ended
+    /// with seven builders alive against an army of one.
+    #[serde(default)]
+    pub blocked_improvement_sites: BTreeSet<Pos>,
     /// The turn each peace treaty runs until, keyed by signatory pair. War
     /// cannot be declared again before it expires — the shipped
     /// `DIPLOMACY_PEACE_MIN_TURNS`.
@@ -15219,6 +15350,10 @@ impl From<GameSer> for Game {
             spies: s.spies.into_iter().map(|spy| (spy.id, spy)).collect(),
             cities: s.cities.into_iter().map(|c| (c.id, c)).collect(),
             at_war: s.at_war.into_iter().collect(),
+            // Not carried in a save: host refusals are rebuilt from the run's event
+            // log on every reconstruction, so a stale copy would only mislead.
+            blocked_city_sites: BTreeSet::new(),
+            blocked_improvement_sites: BTreeSet::new(),
             peace_treaties: s.peace_treaties.into_iter().collect(),
             wars: s.wars.into_iter().collect(),
             siege: SiegeCensus::default(),
@@ -15556,6 +15691,8 @@ impl Game {
             spies: BTreeMap::new(),
             cities: BTreeMap::new(),
             at_war: BTreeSet::new(),
+            blocked_city_sites: BTreeSet::new(),
+            blocked_improvement_sites: BTreeSet::new(),
             peace_treaties: BTreeMap::new(),
             wars: BTreeMap::new(),
             siege: SiegeCensus::default(),
@@ -23468,6 +23605,9 @@ impl Game {
         if p.is_minor {
             return vec![];
         }
+        // A card is retired by ANY unlocked successor, and one successor can retire
+        // several — Public Works kills both Bastions and Serfdom — so this flattens
+        // rather than taking one name per card.
         let obsolete: BTreeSet<Name> = self
             .rules
             .policies
@@ -23478,7 +23618,7 @@ impl Game {
                     .map(|c| p.civics.contains(c))
                     .unwrap_or(true)
             })
-            .filter_map(|s| s.replaces)
+            .flat_map(|s| s.replaces.iter().copied())
             .collect();
         self.rules
             .policies
@@ -30163,6 +30303,11 @@ impl Game {
         if self.players[u.owner].is_minor {
             return false;
         }
+        // A site the host engine has already refused. Empty unless CIVVIS is driving
+        // one; see `blocked_city_sites`.
+        if self.blocked_city_sites.contains(&u.pos) {
+            return false;
+        }
         let t = &self.map.tiles[&u.pos];
         // Founding clears the centre tile's feature, so a Settler standing on
         // a natural wonder would erase it. Civ VI blocks the site outright.
@@ -33244,6 +33389,13 @@ impl Game {
     }
 
     pub fn valid_improvements(&self, pid: usize, pos: Pos) -> Vec<Name> {
+        // Ground the host engine has already refused to improve. Empty unless CIVVIS
+        // is driving one; see `blocked_improvement_sites`. Gated here because this is
+        // the single chokepoint every improvement decision passes through, so one
+        // check routes the planner around the tile everywhere at once.
+        if self.blocked_improvement_sites.contains(&pos) {
+            return vec![];
+        }
         let t = match self.map.get(pos) {
             Some(t) => t,
             None => return vec![],
@@ -38121,6 +38273,17 @@ impl Game {
         }
         self.remove_unit(uid);
         Ok(())
+    }
+
+    /// Place a city for `pid` at `pos`.
+    ///
+    /// Public so a mirrored game can be given the empire it is mirroring.
+    /// `mirror::rebuild_game` rebuilds the MAP; without the cities, every score
+    /// that reads spacing or owned territory is evaluated against an empty world —
+    /// which made CIVVIS's settle ranking recommend plots two tiles from the real
+    /// capital, illegal at Civilization VI's own `CITY_MIN_RANGE` of 3.
+    pub fn place_city(&mut self, pid: usize, pos: Pos, name: Option<String>) -> u32 {
+        self.found_city_for(pid, pos, name)
     }
 
     pub(crate) fn found_city_for(&mut self, pid: usize, pos: Pos, name: Option<String>) -> u32 {

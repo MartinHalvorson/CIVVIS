@@ -79,14 +79,82 @@ pub enum StrategyKind {
     },
 }
 
+/// Why an entrant is kept out of live seating, and what would reverse that.
+///
+/// The point of the type is `revisit_when`. A cost-based exclusion is a
+/// judgement made against numbers that move — hardware, engine speed, the
+/// measured strength of the thing excluded — so recording only the verdict
+/// throws away the half that says when to look again. Writing the condition
+/// down at the moment of exclusion is the only time anyone knows what it is.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Exclusion {
+    /// The measurement that justified it, in the units it was measured in, so a
+    /// later reader can check whether it still holds rather than re-deriving it.
+    pub reason: String,
+    /// The observation that reopens the question. Must name something a reader
+    /// could actually go and check; "when we have time" is not a condition.
+    pub revisit_when: String,
+}
+
+/// What the searching anchor's exclusion has always meant, written down.
+///
+/// `docs/EVAL.md` 2026-07-29: at 6p, 74x46, 9 city-states, one searching seat
+/// among five scripted ones measured 76.7 ms a game-turn against 13.3.
+const SEARCH_COST_EXCLUSION: (&str, &str) = (
+    "6.4x game-turn cost at the 6p 74x46 profile (76.7 ms against 13.3), \
+     docs/EVAL.md 2026-07-29",
+    "a deployment-profile run against a genome-matched control clears parity, \
+     or the turn-cost ratio falls below 2x",
+);
+
 /// Glicko state of one player using one leader/civilization combination.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct CivRating {
+    /// ⚠ MATCHMAKING ONLY. This is the *placement* Glicko: it predicts finishing
+    /// order, which is what pairing needs. It is **not** the strength ordering
+    /// and must never answer a "which strategy is better" question — the league's
+    /// own selection contract abandoned placement for outright-win bounds because
+    /// placement compresses who actually wins. Use [`CivRating::strength_bound`].
+    ///
+    /// Ranking on this field instead of the bound named a different strategy in
+    /// 23 of 50 qualifying pairs at round 3205, and separated in none of them.
+    /// See `docs/EVAL_INTEGRITY.md` §5.
     pub rating: f64,
     pub rd: f64,
     pub vol: f64,
     pub games: u32,
     pub wins: u32,
+}
+
+impl CivRating {
+    /// The ordering key for "which strategy is better with this leader/civ".
+    ///
+    /// The conservative (lower) Wilson bound on outright wins, at the same
+    /// `SELECTION_Z` the league selects parents, retirement and live seating on.
+    /// One accessor so ranking code cannot reach for the wrong statistic; a pair
+    /// with no games sorts last rather than pretending to a rate.
+    pub fn strength_bound(&self) -> f64 {
+        win_confidence(
+            WinEvidence {
+                wins: self.wins,
+                games: self.games,
+            },
+            false,
+        )
+    }
+
+    /// The optimistic end of the same interval. A leader is only better than a
+    /// rival when its `strength_bound` clears the rival's `strength_ceiling`;
+    /// comparing point estimates is what let 8/43 outrank 230/622.
+    pub fn strength_ceiling(&self) -> f64 {
+        win_confidence(
+            WinEvidence {
+                wins: self.wins,
+                games: self.games,
+            },
+            true,
+        )
+    }
 }
 
 impl Default for CivRating {
@@ -159,6 +227,9 @@ pub struct Strategy {
     #[serde(default)]
     pub username: String,
     pub kind: StrategyKind,
+    /// ⚠ MATCHMAKING ONLY — see [`CivRating::rating`]. This is the placement
+    /// Glicko. For "which strategy is stronger", use
+    /// [`Strategy::strength_bound`], which is what selection already uses.
     pub rating: f64,
     pub rd: f64,
     pub vol: f64,
@@ -198,6 +269,22 @@ pub struct Strategy {
     /// exposure through a hand-set rating. Old snapshots default to false.
     #[serde(default)]
     pub league_only: bool,
+    /// Why live seating excludes this entrant, and what would put it back.
+    ///
+    /// Kept beside `league_only` rather than replacing it, because the bool is
+    /// the on-disk format every committed snapshot already carries and every
+    /// seating filter already reads. What the bool cannot carry is an **expiry**
+    /// — and an exclusion with no expiry is not a decision, it is a permanent
+    /// state that nobody ever revisits. `strategic` is the standing example: the
+    /// only component with a plausible route to superhuman play was excluded
+    /// once on cost, and the exclusion carried no condition that would reopen
+    /// it, so it spent its whole life outside the thing being optimized.
+    ///
+    /// The two are pinned together — see
+    /// `every_live_exclusion_states_what_would_reverse_it` — so this cannot
+    /// become a second, drifting source of truth for the same fact.
+    #[serde(default)]
+    pub exclusion: Option<Exclusion>,
     /// A person, registered when they sat down to play. They are rated here
     /// exactly like an agent — that is the whole point of one identity model
     /// — but they are not an entrant: `League::active` leaves them out, so
@@ -208,6 +295,39 @@ pub struct Strategy {
 }
 
 impl Strategy {
+    /// Keep this entrant out of live seating, on the record.
+    ///
+    /// The only way to set `league_only`. Setting the bool alone is what
+    /// produced an exclusion nobody could review, so the reason and the review
+    /// condition are arguments rather than an afterthought — there is no way to
+    /// exclude an entrant without saying what would put it back.
+    pub fn exclude_from_live(&mut self, reason: &str, revisit_when: &str) -> bool {
+        let exclusion = Exclusion {
+            reason: reason.to_string(),
+            revisit_when: revisit_when.to_string(),
+        };
+        let changed = !self.league_only || self.exclusion.as_ref() != Some(&exclusion);
+        self.league_only = true;
+        self.exclusion = Some(exclusion);
+        changed
+    }
+
+    /// Why this entrant is not seated live, if it is not.
+    pub fn live_exclusion(&self) -> Option<&Exclusion> {
+        self.exclusion.as_ref().filter(|_| self.league_only)
+    }
+
+    /// The ordering key for any "which strategy is better" question.
+    ///
+    /// The conservative Wilson bound on outright wins — the statistic selection,
+    /// retirement and live seating already order on. `rating` is the placement
+    /// Glicko and orders matchmaking only; the two agree at Spearman ρ = 0.31.
+    /// Exposing one strength accessor is what stops a rendering script reaching
+    /// for whichever number is a single float per row.
+    pub fn strength_bound(&self) -> f64 {
+        win_lower_confidence(self)
+    }
+
     /// A fresh entrant at the base rating with no history behind it.
     pub fn new(name: &str, kind: StrategyKind, born_round: u32) -> Strategy {
         Strategy {
@@ -227,6 +347,7 @@ impl Strategy {
             retired: false,
             anchor: false,
             league_only: false,
+            exclusion: None,
             human: false,
         }
     }
@@ -1503,7 +1624,7 @@ fn seed_league(dir: &str) -> League {
     strategies
         .last_mut()
         .expect("the searching anchor was just inserted")
-        .league_only = true;
+        .exclude_from_live(SEARCH_COST_EXCLUSION.0, SEARCH_COST_EXCLUSION.1);
     for lane in VictoryTarget::ALL {
         strategies.push(Strategy::new(
             &format!("adv-{}", lane.as_str()),
@@ -1655,6 +1776,20 @@ fn parse_league(raw: &str) -> Option<League> {
 /// row of any other kind is left untouched rather than silently reinterpreted.
 fn reconcile_required_entrants(league: &mut League) -> bool {
     let mut changed = false;
+
+    // Snapshots written before the exclusion carried a reason hold the bare bool.
+    // Backfill them so the invariant holds for every loaded league rather than
+    // only for rows this function happens to rewrite: an excluded entrant whose
+    // review condition is unknown is exactly the state this type exists to end,
+    // and saying so is more useful than leaving the field empty.
+    for strategy in &mut league.strategies {
+        if strategy.league_only && strategy.exclusion.is_none() {
+            changed = strategy.exclude_from_live(
+                "recorded before exclusions carried a reason; not re-measured",
+                "the next time this entrant's cost or strength is measured",
+            ) || changed;
+        }
+    }
     let advanced_rating = league
         .strategies
         .iter()
@@ -1698,8 +1833,9 @@ fn reconcile_required_entrants(league: &mut League) -> bool {
                 strategy.anchor = true;
                 changed = true;
             }
-            if !strategy.league_only {
-                strategy.league_only = true;
+            if strategy
+                .exclude_from_live(SEARCH_COST_EXCLUSION.0, SEARCH_COST_EXCLUSION.1)
+            {
                 changed = true;
             }
         }
@@ -1713,7 +1849,7 @@ fn reconcile_required_entrants(league: &mut League) -> bool {
                 league.round,
             );
             strategic.anchor = true;
-            strategic.league_only = true;
+            strategic.exclude_from_live(SEARCH_COST_EXCLUSION.0, SEARCH_COST_EXCLUSION.1);
             league.strategies.push(strategic);
             changed = true;
         }
@@ -4175,6 +4311,132 @@ mod tests {
         assert!(league.active().len() <= cfg.max_pop.max(7));
     }
 
+    /// The README's ranking tool reimplements this bound in Python, because it
+    /// renders Markdown and cannot call in here. Two implementations of one
+    /// statistic is exactly the R1 shape that produced the audit's defects, so
+    /// the drift is pinned by a shared golden table rather than by a comment.
+    ///
+    /// The identical values are asserted by `GOLDEN_BOUNDS` in
+    /// `tools/test_update_readme_rankings.py`. If either formula changes, exactly
+    /// one side of the pair fails and names the other.
+    #[test]
+    fn civ_rating_strength_bound_matches_the_readme_tool() {
+        // (wins, games, lower, upper)
+        let golden: [(u32, u32, f64, f64); 6] = [
+            (0, 5, 0.0, 0.434_491_494_752_081_04),
+            (1, 6, 0.030_052_585_871_730_285, 0.563_509_436_563_646_05),
+            (3, 27, 0.038_519_647_894_987_241, 0.280_581_825_439_729_48),
+            (161, 314, 0.457_633_149_634_529_78, 0.567_536_620_464_790_14),
+            (230, 625, 0.331_104_141_281_536_26, 0.406_508_637_516_812_99),
+            (8, 43, 0.097_416_355_801_059_812, 0.326_172_932_353_059_61),
+        ];
+        for (wins, games, lower, upper) in golden {
+            let rating = CivRating {
+                wins,
+                games,
+                ..CivRating::default()
+            };
+            assert!(
+                (rating.strength_bound() - lower).abs() < 1e-12,
+                "{wins}/{games} lower bound {} != {lower}",
+                rating.strength_bound(),
+            );
+            assert!(
+                (rating.strength_ceiling() - upper).abs() < 1e-12,
+                "{wins}/{games} upper bound {} != {upper}",
+                rating.strength_ceiling(),
+            );
+        }
+    }
+
+    /// The inversion the ranking change exists to prevent: a strategy can carry a
+    /// far higher placement rating and still be the weaker one on outright wins.
+    #[test]
+    fn placement_rating_and_strength_bound_can_disagree_completely() {
+        let plodder = CivRating {
+            rating: 2900.0,
+            wins: 5,
+            games: 100,
+            ..CivRating::default()
+        };
+        let runaway = CivRating {
+            rating: 1500.0,
+            wins: 90,
+            games: 100,
+            ..CivRating::default()
+        };
+        assert!(plodder.rating > runaway.rating);
+        assert!(runaway.strength_bound() > plodder.strength_ceiling());
+    }
+
+    /// `seed_league` writes the roster it builds, so these checks get their own
+    /// scratch directory rather than dropping a `league.json` in the repository.
+    fn scratch_league_dir(tag: &str) -> String {
+        let dir = std::env::temp_dir().join(format!(
+            "civvis-league-{}-{}-{:?}",
+            tag,
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        dir.to_str().unwrap().to_string()
+    }
+
+    /// The invariant that keeps the bool and the reason from becoming two
+    /// sources of truth for one fact — the R1 shape, in a new place.
+    #[test]
+    fn every_live_exclusion_states_what_would_reverse_it() {
+        let dir = scratch_league_dir("exclusion-invariant");
+        let mut league = seed_league(&dir);
+        // A snapshot written before the field existed carries the bare bool.
+        let mut legacy = Strategy::new("legacy", StrategyKind::Builtin { ai: "basic".into() }, 0);
+        legacy.league_only = true;
+        league.strategies.push(legacy);
+
+        assert!(reconcile_required_entrants(&mut league));
+
+        for strategy in &league.strategies {
+            assert_eq!(
+                strategy.league_only,
+                strategy.exclusion.is_some(),
+                "{} carries the bool and the reason apart",
+                strategy.name,
+            );
+            if let Some(exclusion) = strategy.live_exclusion() {
+                assert!(!exclusion.reason.trim().is_empty(), "{}", strategy.name);
+                assert!(
+                    !exclusion.revisit_when.trim().is_empty(),
+                    "{} is excluded with no condition that would reopen it",
+                    strategy.name,
+                );
+            }
+        }
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn the_searching_anchor_records_the_cost_that_excluded_it() {
+        let dir = scratch_league_dir("anchor-reason");
+        let roster = seed_league(&dir);
+        let strategic = roster
+            .strategies
+            .iter()
+            .find(|strategy| strategy.name == "strategic")
+            .expect("the searching anchor ships in the roster");
+
+        let exclusion = strategic
+            .live_exclusion()
+            .expect("the searching anchor is excluded from live seating");
+        assert!(exclusion.reason.contains("6.4x"), "{}", exclusion.reason);
+        // The half a bare bool could never carry.
+        assert!(
+            exclusion.revisit_when.contains("deployment-profile"),
+            "{}",
+            exclusion.revisit_when,
+        );
+        let _ = fs::remove_dir_all(&dir);
+    }
+
     #[test]
     fn breeding_uses_conservative_wins_before_placement_rating() {
         let mut league = League {
@@ -4993,6 +5255,7 @@ mod searching_anchor_tests {
         ensure_usernames, load_league, load_league_for_update, make_send_ai, manifest_path,
         parse_league, save_league, seat_by_civ_seeded, seed_league, shipped_league, Calibration,
         League, Strategy, StrategyKind, BASE_RATING, BASE_RD, BASE_VOL, MANAGED_ROSTER_MARKER,
+        SEARCH_COST_EXCLUSION,
     };
 
     fn temp_roster(label: &str) -> std::path::PathBuf {
@@ -5301,7 +5564,10 @@ mod searching_anchor_tests {
         let actual = &migrated.strategies[2];
         let mut expected = strategic;
         expected.anchor = true;
-        expected.league_only = true;
+        // Reconciliation now records *why* the anchor is held back, not just
+        // that it is. Everything this test exists to protect — rating, RD,
+        // games, wins, born_round, username — still has to survive untouched.
+        expected.exclude_from_live(SEARCH_COST_EXCLUSION.0, SEARCH_COST_EXCLUSION.1);
         assert_eq!(actual, &expected);
         assert_eq!(migrated.strategies.len(), league.strategies.len());
         std::fs::remove_dir_all(dir).unwrap();
