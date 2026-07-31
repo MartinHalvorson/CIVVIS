@@ -234,6 +234,26 @@ def write_turn(conn: sqlite3.Connection, run: str, turn: int,
     return len(rows)
 
 
+
+def record_note(run_dir: Path, turn: int, note: str) -> None:
+    """Append CIVVIS's per-turn diagnostic to a durable file beside the events.
+
+    ⚠ A SEPARATE FILE, not `events.jsonl`. That file is written by the log tail that
+    follows Civilization VI's own output; a second writer would interleave partial
+    lines into it. `civvis_notes.jsonl` sits in the same run directory and is read
+    the same way.
+
+    Failures are swallowed deliberately: a diagnostic that can stall the turn loop is
+    worse than no diagnostic.
+    """
+    try:
+        line = json.dumps({"kind": "civvis_note", "turn": turn, "note": note})
+        with (run_dir / "civvis_notes.jsonl").open("a") as handle:
+            handle.write(line + "\n")
+    except OSError:
+        pass
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--run-dir", required=True)
@@ -311,6 +331,17 @@ def main() -> int:
                 rows, note = decider.ask(turn)
                 if note:
                     print(f"[brain] civvis: {note[:220]}", flush=True)
+                    # ★★★★ WRITE IT DOWN. This note is the richest diagnostic in the
+                    # pipeline -- it carries `skipped` (actions that had no
+                    # counterpart or named a unit the bridge could not map),
+                    # `unmapped`, `plan=none`, and how many units could still move --
+                    # and it went ONLY to this console. Nothing durable recorded it,
+                    # so afterwards there was no way to tell "CIVVIS ordered nothing"
+                    # apart from "CIVVIS's order was dropped in translation".
+                    #
+                    # That gap is why a unit parked for 171 consecutive turns could
+                    # not be explained from a finished run.
+                    record_note(run_dir, turn, note)
             else:
                 rows = civvis_orders(binary, run_dir, turn, args.victory)
             before = len(rows)

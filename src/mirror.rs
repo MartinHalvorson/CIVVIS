@@ -715,6 +715,32 @@ pub fn rebuild_with_empire(
 // through `hex::offset_to_axial`, because mixing them is silent: a capital at
 // offset (56,28) landed on NO TILE and the ranker then blamed the map.
 
+
+/// Accept a production field that is EITHER a type name or Civilization VI's raw hash.
+///
+/// ⚠⚠ THIS GUARD IS NOT HYPOTHETICAL — its absence was measured. Typing `producing`
+/// as `Option<String>` made serde reject every state event carrying a city, because
+/// runs recorded before the mod resolved the hash carry `producing: -1743686858`, a
+/// NUMBER. `state_from_events` skips a state it cannot parse, silently, so the whole
+/// mirror fell back to the newest state that happened to have no cities in it — turn
+/// 3 of a 233-turn game, reported as an empty board with no error anywhere.
+///
+/// Any older run, and any run from a mod build that predates the fix, must keep
+/// working: a schema change that silently invalidates recorded history is worse than
+/// the missing field it was added for.
+fn name_or_nothing<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = serde_json::Value::deserialize(deserializer)?;
+    Ok(match value {
+        serde_json::Value::String(text) if !text.trim().is_empty() => Some(text),
+        // A bare hash is not a name and cannot be turned back into one here; it is
+        // the same as knowing nothing, which is what the field meant before.
+        _ => None,
+    })
+}
+
 /// One city as Civilization VI reported it, in OFFSET coordinates.
 #[derive(Clone, Debug, Default, serde::Deserialize)]
 pub struct StateCity {
@@ -736,7 +762,7 @@ pub struct StateCity {
     /// -1743686858`) and therefore unusable, so the mirror had no idea what any
     /// city already had underway and CIVVIS re-decided production every turn blind
     /// to work in progress.
-    #[serde(default)]
+    #[serde(default, deserialize_with = "name_or_nothing")]
     pub producing: Option<String>,
     /// Food stockpiled toward the next citizen.
     #[serde(default)]
