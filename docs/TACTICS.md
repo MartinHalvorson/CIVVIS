@@ -61,7 +61,7 @@ It is not a weak heuristic and it should not be described as one.
 The weakness is one level up. The turn is assembled by
 `advanced_units` walking the units in a **fixed class order** — ranged, then
 siege, then melee — and letting each one commit **greedily and irreversibly**
-before the next is considered. That commitment rule costs three things:
+before the next is considered. That commitment rule costs four things:
 
 1. **The reply term is biased by position in the order.** Each unit prices the
    enemy's answer against a board where its own teammates have not moved yet.
@@ -75,6 +75,9 @@ before the next is considered. That commitment rule costs three things:
 3. **The order is never questioned.** Soften-then-capture is usually right,
    which is why a fixed order works as well as it does, but it is wrong whenever
    a melee kill has to clear a tile or a firing lane first.
+4. **Movement is blind to the attacks it enables.** A tile is scored on
+   depth-to-target, adjacent support and incoming threat; nothing scores it for
+   the shot it opens. This is the largest of the four by a wide margin — see §4.
 
 ## 3. What was built
 
@@ -83,21 +86,23 @@ engagement, behind `AdvancedAi::joint_tactics`, reachable as the
 `advanced_joint_tactics` entrant.
 
 - **Portfolio.** Each engaged unit gets a short list of candidate *lines* — an
-  attack it can make from where it stands, or the empty line that declines.
-  Generated geometrically, so candidate generation costs no clones, and pruned
-  to the best few by a closed-form damage prior.
+  attack from where it stands, a step onto an adjacent tile followed by the
+  attack that step opens, or the empty line that declines. Generated
+  geometrically, so candidate generation costs no clones, and pruned to the best
+  few by a closed-form damage prior.
 - **Genome.** A line per unit plus a permutation giving the play order.
 - **Fitness.** Clone once, play the whole turn, score the resulting position:
   material swing across the whole board, minus the **marginal** change in the
   enemy's best answer, minus the same `attack_threshold` toll the shipped agent
-  charges itself. Pricing the reply once against the finished turn is the direct
-  repair for defect 1.
+  charges itself, minus `FORTIFICATION_FORFEIT` for each unit the plan moved.
+  Pricing the reply once against the finished turn is the direct repair for
+  defect 1; the forfeit term is what makes defect 4 reachable.
 - **Seeding.** Sequential greedy — the shipped construction — restarted from
   several orders, which is Portfolio Greedy Search's own remedy for
   order-dependence.
 
-Two design rules earned by measurement, both recorded because getting them wrong
-cost real iterations:
+Three design rules earned by measurement, all recorded because getting them
+wrong cost real iterations:
 
 **Charge the shipped attack toll.** A first version dropped
 `attack_threshold`, which made the treatment "plan jointly *and* be far more
@@ -113,35 +118,49 @@ damage where the sequential rule concentrates it, and **lost 700 kills on
 identical total damage** (2306 vs 3009 kills at 456,200 vs 456,220 damage). A
 search that starts behind the incumbent cannot climb back on a small budget.
 
-## 4. Approach moves: built, measured, not shipped
+## 4. Approach moves, and the one term that made them work
 
-The obvious fourth defect — movement being blind to the attacks it enables —
-turns out not to be reachable this way. Adding "step onto a tile, then take the
-attack that step opens" to the portfolio, at 400 matched scenarios per cell:
+Letting a unit **step onto a tile and then take the attack that step opens** is
+where most of the value in this whole layer turned out to be. It is also
+*actively harmful* until the evaluation can price what the step gave up.
+Measured on `battle_bench`, paired material swing per scenario against the stock
+agent:
 
-| approach moves | melee-only army | combined arms |
+| portfolio | melee-only | combined arms |
 |---|---|---|
-| none (**shipped**) | **+12.8** | **+16.1** |
-| only if the step does not thin the line | −44.7 | +119.0 |
-| unrestricted | −228.9 | +178.8 |
+| attacks only, no stepping | +5.6 | +28.2 |
+| stepping, no forfeit term | **−228.9** | +178.8 |
+| stepping, only if the step does not thin the line | −44.7 | +119.0 |
+| **stepping + fortification forfeit (shipped)** | **+7.5** | **+241.3** |
 
-Paired material swing per scenario against the stock agent; positive is better.
+**The obvious diagnosis for that −228.9 is wrong, and it cost two attempts to
+find out.** The natural story is that the unit broke formation, so the whole
+enemy front answered it. An explicit adjacent-friendly-support term was built
+and swept over weights 0/10/20/25/50 against three compositions on disjoint
+seeds — and **could not be distinguished from zero at any weight**, with
+combined arms in fact *highest* with it switched off entirely. The formation
+hypothesis is refuted, not merely unhelpful; it is not worth re-attempting.
 
-Approach moves are worth a great deal with ranged support and **ruinous without
-it**. A melee unit that leaves the line to land a blow is answered by the whole
-enemy front, and this module cannot see that: its evaluation prices material and
-a one-step damage estimate and has **no positional term at all**. The
-formation-preserving filter recovers two thirds of the loss and still does not
-clear zero.
+What the evaluation was actually missing is much simpler: **a unit that holds
+its ground can dig in next turn, and one that stepped forward cannot.**
+Fortification is a *future* action, so it is invisible to every term that prices
+the position as it stands — material, damage, reply. Charging a flat
+`FORTIFICATION_FORFEIT = 40` per unit that moved is one subtraction, and it
+moves combined arms from +28.2 to +241.3 while taking melee-only from −228.9 to
+neutral.
 
-So the module does what it can evaluate — which attacks to make, and in what
-order — and leaves where to stand to the tuned movement layer. **Re-opening this
-needs a positional evaluation first, not a wider portfolio.**
+The weight is a plateau, not a knife edge. Swept out-of-sample at 700 seeds a
+cell:
 
-This is also a caution about the earlier, larger-looking numbers: an unrestricted
-portfolio measured +178.8 on combined arms, roughly eleven times the shipped
-variant. That number was real and it was not a gain worth taking, because the
-same mechanism produced −228.9 one composition over.
+| forfeit weight | melee-only | combined arms |
+|---|---|---|
+| 20 | −19.5 | +228.1 |
+| 30 | +0.5 | +219.4 |
+| **40 (shipped)** | **+14.2** | **+223.3** |
+| 50 | +15.4 | +195.7 |
+
+Combined arms is flat across the whole range; melee crosses zero near 30. 40
+sits comfortably inside both.
 
 ## 5. The instrument
 
@@ -166,21 +185,28 @@ treatment that never fired says nothing about the game.
 ### Combat, where the change acts
 
 `battle_bench`, 24 turns, 28×20, armies of six, each seed played twice with
-seats swapped. `advanced_joint_tactics` against `advanced`.
+seats swapped. `advanced_joint_tactics` against `advanced`, **2000 seeds a
+cell, every block disjoint from the ones the design was tuned on**.
 
-| cell | seeds | exchange ratio (ours vs theirs) | paired material swing | sign p |
-|---|---|---|---|---|
-| combined arms, block 900k | 1500 | **1.094** vs 0.914 | **+29.9 ± 4.1** | <0.0001 |
-| combined arms, block 5M (out of sample) | 1500 | **1.087** vs 0.920 | **+28.2 ± 4.4** | <0.0001 |
-| melee only, block 2M | 1500 | **1.045** vs 0.957 | **+7.4 ± 2.0** | 0.0158 |
-| melee only, block 7M (out of sample) | 1500 | **1.023** vs 0.978 | **+5.6 ± 1.8** | 0.0116 |
-| control (`advanced` vs `advanced`) | 60 | 1.000 vs 1.000 | 0.00 ± 0.00 | 1.0000 |
+| composition | exchange ratio (ours vs theirs) | paired material swing | sign p |
+|---|---|---|---|
+| ranged heavy | **2.021** vs 0.495 | **+264.5 ± 7.1** | <0.0001 |
+| combined arms | **1.642** vs 0.609 | **+241.3 ± 7.0** | <0.0001 |
+| with siege | **1.184** vs 0.845 | **+88.7 ± 7.6** | <0.0001 |
+| melee only | 0.975 vs 1.026 | +7.5 ± 4.4 | 0.1992 (ns) |
+| control (`advanced` vs `advanced`) | 1.000 vs 1.000 | 0.00 ± 0.00 | 1.0000 |
 
-The effect replicates on disjoint seed blocks it was not chosen on. Both
-out-of-sample point estimates are *smaller* than their in-sample counterparts
-(+28.2 against +29.9; +5.6 against +7.4), which is what
-`civvis-effect-sizes-are-winners-curse` predicts and a reason to quote the
-out-of-sample figures.
+Strongly positive wherever the army contains ranged units — which is every army
+the production code actually builds — and **neutral, not negative**, on a
+melee-only stress case. The effect scales with how much the composition rewards
+positioning: an all-ranged line more than doubles its exchange ratio.
+
+⚠ **The sign test in this harness had an overflow bug** that reported
+`p = 1.0000` on a 1122-to-317 split. `2^n` is `inf` past n≈1023, the binomial
+coefficients overflow with it, `inf / inf` is NaN, and Rust's `NaN.min(1.0)`
+returns **1.0** — a perfectly confident null on overwhelming evidence. Large n
+now uses a normal approximation. Every number in the table above was recomputed
+after the fix.
 
 ### Cost
 
@@ -189,19 +215,21 @@ so both fleets meet the same contention:
 
 | fleet | ms a game-turn | ratio |
 |---|---|---|
-| all `advanced` | 51.68 | 1× |
-| **one joint-tactics seat among five** | **53.82** | **1.04×** |
+| all `advanced` | 41.29 | 1× |
+| **one joint-tactics seat among five** | **53.61** | **1.30×** |
 
 Measured in the configuration that would ship — one seat among five — for the
 reason `docs/EVAL.md` records: measuring only an all-treated fleet once read 29×
 for something that costs 6.4× seated. For scale, a `StrategicAi` seat is 6.4×;
-this is 1.04×.
+this is 1.30×.
 
 ### Fires-check at deployment scale
 
-Over 965 treated seat-turns in full six-player games, the search planned on **91
-turns (9.4%)**, reaching **277 unit decisions**. It is not a no-op in
-deployment, so the whole-game result below is not "the layer never ran".
+Over 1004 treated seat-turns in full six-player games, the search planned on
+**230 turns (22.9%)**, reaching **915 unit decisions**. (The attack-only variant
+managed 9.4% and 277; admitting approach moves more than tripled the layer's
+footprint, because a unit no longer has to already be in contact for the search
+to have anything to decide.) It is emphatically not a no-op in deployment.
 
 ⚠ Getting this number required fixing a real instrumentation bug first: the
 blanket `impl<T: Ai + ?Sized> Ai for Box<T>` in `src/ai.rs` forwards each trait

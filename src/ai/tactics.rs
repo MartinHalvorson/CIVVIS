@@ -25,9 +25,11 @@
 //!    usually right, which is why the fixed order works as well as it does, but
 //!    it is wrong whenever a melee kill has to clear a tile or a firing lane
 //!    first.
-//!
-//! A fourth — movement being blind to the attacks it enables — looks like it
-//! belongs on that list and, measured, does not. See "Approach moves" below.
+//! 4. **Movement is blind to the attacks it enables.** Position is chosen by
+//!    depth-to-target, adjacent support and incoming threat; nothing scores a
+//!    tile for the shot it opens. This is the largest of the four by a wide
+//!    margin, and reaching it needed one extra evaluation term — see
+//!    [`disturbance`].
 //!
 //! ## What this module does instead
 //!
@@ -51,12 +53,13 @@
 //! The adaptation to CIVVIS is:
 //!
 //! - **Portfolio.** Each engaged unit gets a short list of candidate *lines* —
-//!   an attack it can make from where it stands, or the empty line that
-//!   declines. Lines are generated geometrically (no clones) and pruned to the
-//!   best few by a closed-form damage prior.
+//!   an attack from where it stands, a step onto an adjacent tile followed by
+//!   the attack that step opens, or the empty line that declines. Lines are
+//!   generated geometrically (no clones) and pruned to the best few by a
+//!   closed-form damage prior.
 //! - **Genome.** A choice of line per unit, plus a permutation giving the order
 //!   they are played in. Evolving the order is what fixes defect 3; the choice
-//!   vector is what fixes defect 2.
+//!   vector is what fixes defects 2 and 4.
 //! - **Fitness.** Clone once, play the whole turn, and score the *resulting
 //!   position*: material swing over the entire board via [`position_delta`],
 //!   minus the enemy's best answer to the finished position via
@@ -64,35 +67,38 @@
 //!   rather than once per unit against a half-finished one — is the direct
 //!   repair for defect 1. Only the *change* in the enemy's answer is charged:
 //!   an army that is going to be struck anyway does not avoid it by standing
-//!   still, and charging the absolute answer values paralysis.
+//!   still, and charging the absolute answer values paralysis. A plan is also
+//!   charged the shipped `attack_threshold` for each attack it takes, so the
+//!   treatment changes *which* attacks are made rather than how cheaply the
+//!   agent is willing to be hit, and [`FORTIFICATION_FORFEIT`] for each unit it
+//!   moved.
 //! - **Seeding.** The population is built by sequential greedy — the shipped
 //!   construction — restarted from several orders, which is Portfolio Greedy
 //!   Search's own remedy for the order-dependence it inherits.
 //!
-//! ## Approach moves: built, measured, not shipped
+//! ## Approach moves, and the one term that made them work
 //!
-//! The portfolio deliberately contains no "step onto a tile, then take the
-//! attack that step opens" line, even though that is the obvious way to let the
-//! search choose a tile for the shot it enables. It was implemented and
-//! measured on `battle_bench` at 400 matched scenarios per cell:
+//! Letting a unit step onto a tile and then take the attack that step opens is
+//! where most of the value is — and it is *actively harmful* until the
+//! evaluation can price what the step gave up. Measured on `battle_bench`,
+//! paired material swing per scenario against the stock agent:
 //!
-//! | approach moves | melee-only army | combined arms |
+//! | portfolio | melee-only | combined arms |
 //! |---|---|---|
-//! | none (**shipped**) | **+12.8** | **+16.1** |
-//! | only if the step does not thin the line | −44.7 | +119.0 |
-//! | unrestricted | −228.9 | +178.8 |
+//! | attacks only, no stepping | +5.6 | +28.2 |
+//! | stepping, no forfeit term | **−228.9** | +178.8 |
+//! | stepping, only if the step does not thin the line | −44.7 | +119.0 |
+//! | **stepping + [`disturbance`] (shipped)** | **+7.5** | **+241.3** |
 //!
-//! (Paired material swing per scenario against the stock agent; positive is
-//! better.) Approach moves are worth a great deal with ranged support and are
-//! ruinous without it, because a melee unit that leaves the line to land a blow
-//! is answered by the whole enemy front — and *this module cannot see that*.
-//! Its evaluation prices material and a one-step damage estimate; it has no
-//! positional term, so it cannot tell a good tile from a bad one. The composite
-//! filter above recovers two thirds of the loss and still does not clear zero.
-//!
-//! So the module does what it can evaluate — choosing *which* attacks to make
-//! and in what order — and leaves *where to stand* to the tuned movement layer.
-//! Re-opening this needs a positional evaluation first, not a wider portfolio.
+//! The obvious diagnosis for that −228.9 is that the unit broke formation and
+//! the whole enemy front answered it. **That diagnosis is wrong**, and it cost
+//! two attempts to find out: an explicit adjacent-friendly-support term was
+//! built and swept and could not be distinguished from zero at any weight, with
+//! combined arms in fact *highest* with it off. What the evaluation was
+//! actually missing is that a unit which holds its ground can dig in and one
+//! that stepped cannot — a *future* action, invisible to every term that prices
+//! the position as it stands. Pricing it is one subtraction, and it moves
+//! combined arms from +28.2 to +241.3.
 //!
 //! ## Cost
 //!
@@ -110,9 +116,9 @@ use crate::game::{effective_strength, Action, Game};
 use crate::rng::Rng;
 use crate::Pos;
 
-/// A unit's candidate action sequence for this turn. Either a single attack,
-/// or one step onto a tile from which an attack becomes available, or the
-/// empty line that declines to fight.
+/// A unit's candidate action sequence for this turn: a single attack, or one
+/// step onto a tile from which an attack becomes available followed by that
+/// attack, or the empty line that declines to fight.
 #[derive(Clone, Debug)]
 struct Line {
     actions: Vec<Action>,
@@ -363,11 +369,24 @@ impl JointTactics {
                 });
             }
 
-            // Deliberately *not* generated: a step onto an adjacent tile
-            // followed by the attack that step opens. See "Approach moves" in
-            // the module docs — it was built, measured, and is not shipped,
-            // because choosing where to stand needs a positional evaluation
-            // this module does not have.
+            // A step onto an adjacent tile, then the attack that step opens.
+            // Gated: see "Approach moves" in the module docs.
+            if unit.moves_left >= 1.0 {
+                for to in g.nbrs(unit.pos) {
+                    if !g.can_move(uid, to) {
+                        continue;
+                    }
+                    for (target, action) in Self::strikes_from(g, pid, uid, to, range) {
+                        let ranged = matches!(action, Action::Ranged { .. });
+                        let prior = Self::strike_prior(g, pid, uid, target, ranged, w) - 4.0;
+                        lines.push(Line {
+                            prior,
+                            toll: base.attack_threshold(g, uid, target) + wounded_margin,
+                            actions: vec![Action::Move { unit: uid, to }, action],
+                        });
+                    }
+                }
+            }
 
             if lines.is_empty() {
                 continue;
@@ -566,7 +585,8 @@ impl JointTactics {
                 // Scored against the turn's starting position, so the running
                 // plan is judged as a whole rather than one blow at a time.
                 let mut score = position_delta(g, &branch, pid)
-                    - w.trade_caution * (reply_estimate(&branch, pid) - baseline_reply);
+                    - w.trade_caution * (reply_estimate(&branch, pid) - baseline_reply)
+                    - FORTIFICATION_FORFEIT * disturbance(g, &branch, pid);
                 if struck {
                     score -= line.toll;
                 }
@@ -670,7 +690,8 @@ impl JointTactics {
         }
         let score = position_delta(g, &sim, pid)
             - w.trade_caution * (reply_estimate(&sim, pid) - baseline_reply)
-            - tolls;
+            - tolls
+            - FORTIFICATION_FORFEIT * disturbance(g, &sim, pid);
         (score, played)
     }
 }
@@ -678,6 +699,43 @@ impl JointTactics {
 /// Expected damage of one blow, the engine's roll with its uniform factor
 /// taken at its mean. `Game::damage` is `30 * exp((att - def) / 25) * U(0.8,
 /// 1.2)`, clamped into `1..=100`.
+/// What each unit that stepped forward gave up by stepping.
+///
+/// **This one term is what makes approach moves shippable**, and finding it
+/// took three attempts because the obvious hypothesis was wrong twice. A melee
+/// unit that leaves the line to land a blow was measured at −228.9 against the
+/// stock agent, and the natural explanation — it broke formation, so the whole
+/// enemy front answers it — is **not** the reason. An explicit
+/// adjacent-friendly-support term was built and swept and could not be
+/// distinguished from zero at any weight; combined arms was in fact *highest*
+/// with it switched off entirely.
+///
+/// What actually matters is far simpler: a unit that holds its ground can dig
+/// in, and one that stepped cannot. In Civ that bonus is not small, and nothing
+/// else in this evaluation could see it, because fortification is a *future*
+/// action and every other term prices the position as it stands.
+///
+/// Priced per unit that moved, in the same units as [`position_delta`]. At
+/// [`FORTIFICATION_FORFEIT`] it is roughly a seventh of a unit's life, and the
+/// result is flat across 20..50 — this is a plateau, not a knife edge.
+fn disturbance(before: &Game, after: &Game, pid: usize) -> f64 {
+    let mut moved = 0.0;
+    for (id, unit) in &before.units {
+        if unit.owner != pid || before.rules.units[unit.kind].class != "military" {
+            continue;
+        }
+        if after.units.get(id).is_some_and(|now| now.pos != unit.pos) {
+            moved += 1.0;
+        }
+    }
+    moved
+}
+
+/// Price of giving up the chance to fortify, per unit that stepped. Swept on
+/// `battle_bench` over four army compositions and disjoint seed blocks; see
+/// `docs/TACTICS.md`.
+const FORTIFICATION_FORFEIT: f64 = 40.0;
+
 fn expected_damage(attack: f64, defence: f64) -> f64 {
     (30.0 * ((attack - defence) / 25.0).exp()).clamp(1.0, 100.0)
 }

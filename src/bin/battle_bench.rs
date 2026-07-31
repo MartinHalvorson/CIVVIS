@@ -46,12 +46,25 @@ fn known_ai(name: &str) -> bool {
 /// the treatment did nothing. Ties are dropped, which is the conservative
 /// convention — a harness that counts them as agreement inflates its own
 /// confidence.
+/// ⚠ The exact form below overflows: `2^n` is `inf` past n≈1023, the binomial
+/// coefficients overflow with it, `inf / inf` is NaN, and `NaN.min(1.0)` in
+/// Rust returns **1.0**. A 1122-to-317 split silently reported `p = 1.0000` —
+/// a perfectly confident null on overwhelming evidence. Large n therefore uses
+/// the normal approximation with a continuity correction, which is accurate to
+/// far better than any decision here turns on, and the exact sum is kept for
+/// the small-n case where it matters.
 fn sign_test(wins: usize, losses: usize) -> f64 {
     let n = wins + losses;
     if n == 0 {
         return 1.0;
     }
     let extreme = wins.max(losses);
+    if n > 1000 {
+        let mean = n as f64 / 2.0;
+        let sd = (n as f64 / 4.0).sqrt();
+        let z = ((extreme as f64 - 0.5) - mean) / sd;
+        return erfc(z / 2f64.sqrt()).clamp(0.0, 1.0);
+    }
     let mut tail = 0.0f64;
     let mut coefficient = 1.0f64;
     for k in 0..=n {
