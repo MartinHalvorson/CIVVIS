@@ -90,15 +90,16 @@ not materially affect this ranking.
 | Opportunity | Current signal | Promising next experiment | Main constraint |
 | --- | --- | --- | --- |
 | Intern effect and rules keys | `memcmp` 9.2%, `Name::new` 1.4%, and `SpecMap::position` 1.2% as exclusive leaves | Intern effect keys when loading rules, then carry typed IDs through the hottest effect queries while preserving lexical serialization | Broad representation change; compare saved comparisons against conversion and indirection cost |
-| Reuse movement and routing state | Traversal class, neighbors, passability, path checks, entry checks, and routing zones form roughly a 6-7% family | Derive a traversal profile once per unit and use generation-stamped arrays/reused search buffers instead of tree maps and fresh vectors | Movement rules have many conditional abilities and diplomatic dependencies |
+| Reuse movement and routing state | Traversal class, neighbors, passability, path checks, entry checks, and routing zones form roughly a 6-7% family | Identify one repeated rule derivation before changing it; generic search buffers and route-local traversal profiles were measured and rejected | Movement rules have many conditional abilities and diplomatic dependencies |
 | Remove targeted allocation and copying | `memmove` 5.9% and allocator leaves are prominent; `units_at` alone is 1.4% | Add narrow `tile_occupied` and callback/iterator queries, then migrate read-only and `is_empty` callers individually | These costs overlap the systems above; a wholesale borrowed API showed no win |
 | Reduce rollout clone cost | Clone alone is 8.5 us, 38% of the optimized no-fog clone-plus-move latency | Share more immutable state or prototype reversible branch deltas/undo for search | High correctness and determinism risk; cloning is currently the isolation boundary |
 | Broaden visibility and yield memoization | Line-of-sight/world-stamp leaves are about 2-3%; yield and adjacency work is fragmented across roughly 3-5% | Extend epoch-keyed memoization and precompute stable adjacency facts | Smaller expected return and potentially high cache-invalidation complexity |
 
 The string/key work is cross-cutting but invasive. With the production catalog
-now retained, movement reuse is the next narrower benchmark-driven project.
-These should be measured independently because removing one source of
-comparison or allocation cost will also shrink the apparent library leaves.
+now retained, no generic routing-state reuse is a standing target: a future
+movement experiment needs one measured repeated derivation first. These should
+be measured independently because removing one source of comparison or
+allocation cost will also shrink the apparent library leaves.
 
 Operationally, independent games should continue to use the existing outer
 `--jobs` parallelism. Production runs should use `--release`; its thin LTO and
@@ -153,6 +154,47 @@ volume of small allocations is what shows up in the allocator leaves.
 `units_at` is the mirror image: 1.08M allocations for 4.5 MB, an average of
 four bytes, because it clones a one- or two-element `Vec<u32>` out of the
 occupancy map.
+
+### Route-search scratch reuse: rejected
+
+The `route_step` byte total also suggested a generation-stamped, worker-local
+scratch buffer for A* and breadth-first routing. The prototype preserved the
+same search ordering and route rules, then compared release serial games with
+six major civilizations, a 74-by-46 map, nine city-states, 150 turns, and
+fixed seeds 7,310,500 through 7,310,514. Removing the per-game elapsed field,
+all fifteen baseline/prototype reports were byte-identical.
+
+| Five-game block | Run order | baseline | scratch prototype |
+| --- | --- | ---: | ---: |
+| 7,310,500–504 | baseline then prototype | 10.15s | 10.91s |
+| 7,310,505–509 | baseline then prototype | 11.42s | 14.93s |
+| 7,310,510–514 | prototype then baseline | 11.03s | 14.75s |
+
+The prototype was slower in every block (40.59s versus 32.60s in aggregate),
+so it was removed. It replaces cheap dense initialization with an extra
+per-tile generation array and a thread-local borrow on every search; for this
+map size, that additional cache traffic loses to the allocator. Future routing
+work should isolate traversal or entry-rule derivation instead of retrying
+generic scratch-buffer reuse.
+
+### Route-local traversal profile: rejected
+
+A follow-up passed the already memoized `TraversalClass` directly into A* and
+breadth-first entry checks, avoiding the memo-map lookup at each neighbor. It
+used the same release workload and three fresh five-game blocks (seeds
+7,310,520 through 7,310,534). Again, every normalized report was
+byte-identical.
+
+| Five-game block | Run order | baseline | direct profile |
+| --- | --- | ---: | ---: |
+| 7,310,520–524 | prototype then baseline | 12.48s | 13.44s |
+| 7,310,525–529 | baseline then prototype | 13.65s | 13.58s |
+| 7,310,530–534 | prototype then baseline | 11.33s | 12.23s |
+
+Two losses and one near-tie (39.25s versus 37.46s aggregate) do not clear the
+regression gate, so this plumbing was also removed. The profile lookup is too
+small relative to the rule checks that remain; future movement work needs a
+measured expensive derivation, not a generic memo lookup.
 
 **What this does and does not license.** It ranks allocation, which is one of
 the two things this codebase has repeatedly found to be worth removing (the
