@@ -26,6 +26,21 @@
 local cfg = CivvisControlConfig or {};
 local PREFIX = "CIVVISJSON ";
 
+-- The optional game modes, from the `ConfigurationId`s the content packs
+-- register. Same list as CivvisControlSetup.lua's; that one sets them and this
+-- one reports what the running game actually has.
+local GAME_MODES = {
+	"GAMEMODE_APOCALYPSE",
+	"GAMEMODE_BARBARIAN_CLANS",
+	"GAMEMODE_DRAMATICAGES",
+	"GAMEMODE_HEROES",
+	"GAMEMODE_MONOPOLIES",
+	"GAMEMODE_RANDOM",
+	"GAMEMODE_SECRETSOCIETIES",
+	"GAMEMODE_TOWERDEFENSE",
+	"GAMEMODE_TREE_RANDOMIZER",
+};
+
 -- ⚠ DECLARED HERE, NOT WHERE THEY ARE USED. Both are read by `answerBlocker`,
 -- which is defined hundreds of lines above the orders section that owns them. A
 -- Lua local referenced before its `local` statement resolves to a GLOBAL instead —
@@ -241,6 +256,27 @@ local function survey()
 		size = typeName(GameInfo.Maps,
 			try(function() return MapConfiguration.GetMapSize(); end)) or "?",
 		max_turns = try(function() return GameConfiguration.GetMaxTurns(); end, -1),
+		-- ★★★ WHICH OPTIONAL GAME MODES ARE ON, read from inside the game.
+		-- Exactly the `victories` argument below, and it went the same way: the
+		-- modes are the one setting on the Create Game screen that PERSISTS
+		-- across games, so one switched on months ago stays on forever, and
+		-- nothing here ever said so. GAMEMODE_HEROES was found true on a live
+		-- run -- twelve hero units and their rules, on a board CIVVIS models
+		-- none of, under a heading that said plain Gathering Storm.
+		--
+		-- Reported as the list of what is ON, so a clean run answers `[]`.
+		-- `civ6_play.py` refuses to call a run "configured" when this is not
+		-- what the run asked for.
+		modes = (function()
+			local on = {};
+			for _, mode in ipairs(GAME_MODES) do
+				local set = try(function() return GameConfiguration.GetValue(mode); end);
+				-- 0 is truthy in Lua, and these come back 0/1 on some builds:
+				-- a plain `if set then` reports every mode as enabled.
+				if set == true or set == 1 then on[#on + 1] = mode; end
+			end
+			return on;
+		end)(),
 		-- ★★★ WHICH VICTORIES THIS GAME ACTUALLY ALLOWS. Everything the war layer does
 		-- is aimed at domination, and none of it means anything if the lobby has
 		-- VICTORY_CONQUEST switched off. That was never checked — the whole siege

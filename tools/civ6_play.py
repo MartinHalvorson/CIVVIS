@@ -34,6 +34,36 @@ RUN_ROOT = Path.home() / "civvis-civ6-runs" / "control"
 
 # The ladder, weakest first. These are the game's own handicap type names; the
 # ladder is climbed in this order and each rung is only claimed by a win.
+# Civilization VI's optional game modes, from the `ConfigurationId`s its
+# content packs register. They are all OFF unless a run asks for one.
+#
+# ⚠ These PERSIST. `GameConfiguration.SetToDefaults()` does not clear them, so a
+# mode enabled once -- by a person hosting a game, or by GAMEMODE_RANDOM
+# choosing some -- stays on for every run afterwards. That is not hypothetical:
+# GAMEMODE_HEROES was found true on a live run, which had been playing with
+# twelve hero units and the Heroes & Legends rules while every log said plain
+# Gathering Storm. Nothing in this harness set them and nothing reported them,
+# so there was no reading that could have been wrong -- the axis did not exist.
+#
+# CIVVIS's ruleset is Gathering Storm and nothing else; `src/elo.rs` writes the
+# same thing into its setup contract as `modes=none`. A mode adds units,
+# districts and rules CIVVIS has no model for, so a run with one on is not
+# measuring the game CIVVIS is being compared against.
+GAME_MODES = [
+    "GAMEMODE_APOCALYPSE",
+    "GAMEMODE_BARBARIAN_CLANS",
+    "GAMEMODE_DRAMATICAGES",
+    "GAMEMODE_HEROES",
+    "GAMEMODE_MONOPOLIES",
+    # Not a mode but a chooser: left on it enables the others for you, so a
+    # harness that cleared the other eight and not this one would still be
+    # playing a game nobody picked.
+    "GAMEMODE_RANDOM",
+    "GAMEMODE_SECRETSOCIETIES",
+    "GAMEMODE_TOWERDEFENSE",
+    "GAMEMODE_TREE_RANDOMIZER",
+]
+
 LADDER = [
     "DIFFICULTY_SETTLER",
     "DIFFICULTY_CHIEFTAIN",
@@ -90,6 +120,9 @@ def build_config(args: argparse.Namespace) -> dict:
         "GameSeed": args.seed,
         "MaxTurns": args.max_turns,
         "HumanPlayers": 1,
+        # Explicit, every run, so a mode can never be inherited from whatever
+        # was last configured on this installation. See GAME_MODES.
+        "GameModes": {mode: mode in set(args.game_mode) for mode in GAME_MODES},
         "CityTarget": args.city_target,
         # Domination on a Duel map is the only victory reachable inside a
         # hundred-odd turns — an unassisted science win lands past turn 900 —
@@ -757,6 +790,7 @@ def _play(args: argparse.Namespace) -> int:
     state = {
         "hosted": False, "seat": None, "turn": -1, "score": -1,
         "outcome": None, "last_progress": time.time(), "configured": False,
+        "modes": None,
     }
 
     def record(event: dict) -> None:
@@ -787,17 +821,30 @@ def _play(args: argparse.Namespace) -> int:
             # run asked for -- read back from inside it, not from the command
             # line. Without this a misclick on the setup screen records a
             # Prince result under a Settler heading.
+            # An older mod does not report `modes` at all, and a missing
+            # field is not the same answer as an empty list: it means nobody
+            # looked. Treat it as unknown rather than as clean, or this gate
+            # passes for exactly the runs it was added to catch.
+            modes = event.get("modes")
+            state["modes"] = modes
+            modes_match = modes is not None and sorted(modes) == sorted(args.game_mode)
             state["configured"] = (
                 event.get("difficulty") == args.difficulty
                 and event.get("size") == args.map_size
-                and event.get("speed") == args.speed)
+                and event.get("speed") == args.speed
+                and modes_match)
             if not state["configured"]:
                 print("[agent] the game does not match what was asked for",
                       file=sys.stderr)
+            if not modes_match:
+                print(f"[agent] game modes are {modes if modes is not None else 'UNREPORTED'}, "
+                      f"asked for {args.game_mode or '[]'} -- this is not the "
+                      f"ruleset CIVVIS is compared against", file=sys.stderr)
             print(f"[agent] seat {event.get('local_player')} {event.get('civ')} "
                   f"difficulty={event.get('difficulty')} size={event.get('size')} "
                   f"speed={event.get('speed')} max_turns={event.get('max_turns')} "
-                  f"players={event.get('players')} setup={event.get('setup')}")
+                  f"players={event.get('players')} modes={modes} "
+                  f"setup={event.get('setup')}")
         elif kind == "turn":
             state["turn"] = event.get("turn", -1)
             state["score"] = event.get("score", -1)
@@ -984,6 +1031,11 @@ def _play(args: argparse.Namespace) -> int:
         # A summary that reports the requested difficulty without this is a
         # claim about the command line, not about the game.
         "configured": state["configured"],
+        # Which game this actually was. A run whose modes are not `[]` was not
+        # playing the ruleset any CIVVIS comparison assumes, and the summary is
+        # the artefact those comparisons are read from.
+        "modes": state["modes"],
+        "modes_requested": sorted(args.game_mode),
         "last_turn": state["turn"],
         "last_score": state["score"],
         "seat": state["seat"],
@@ -1019,6 +1071,10 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--tag", default=None, help="run tag; names the run directory")
     ap.add_argument("--difficulty", default="DIFFICULTY_SETTLER", choices=LADDER)
     ap.add_argument("--ruleset", default="RULESET_EXPANSION_2")
+    ap.add_argument("--game-mode", action="append", default=[], choices=GAME_MODES,
+                    help="enable an optional game mode (repeatable; default none). "
+                         "CIVVIS models none of them, so a run with one on is not "
+                         "measuring the game CIVVIS is compared against.")
     ap.add_argument("--map", default="Continents.lua")
     ap.add_argument("--map-size", default="MAPSIZE_DUEL")
     ap.add_argument("--speed", default="GAMESPEED_ONLINE")
