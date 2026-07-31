@@ -65,7 +65,20 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// Because that behavior is live for `advanced_v1`, the Elo protocol advances
 /// to v3 and the source contract is recomputed with the new ledger rather than
 /// being treated as a default-off compatibility re-pin.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x297b_4adf_496d_2282;
+///
+/// #697 lands the Civilization VI bridge. It adds `forget_unit_memory` and
+/// `remap_unit_memory` to both agents and a `settle_ranking` wrapper, none of
+/// which the play path calls — only `civvis_orders --fresh-board` and
+/// `civvis-advise` do — and one guard inside `settle_sites` that skips a site in
+/// `Game::blocked_city_sites`. That set has exactly one production writer,
+/// `mirror.rs`, which fills it from a host engine's refusals; `Game::new` and
+/// `From<GameSer>` both leave it empty and nothing in an ordinary game ever
+/// inserts into it, so the guard cannot fire outside the bridge. Re-pinned as a
+/// default-off compatibility change; the Elo protocol does not move. The matched
+/// fixed-prefix comparison the re-pins above use — `ai_eval advanced basic
+/// --pairs 10 --players 4 --turns 200 --seed 31337 --jobs 1`, this branch against
+/// `main` at `81636d9` — is recorded on #697.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x8f87_2f61_ae5f_abff;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
