@@ -38,12 +38,13 @@ pub const BUILTIN_AIS: [&str; 10] = [
 /// tournament ratings. Keeping them out of `BUILTIN_AIS` prevents a control
 /// factory from being pooled into the same player/leader rating key as
 /// its treatment.
-pub const EVAL_ONLY_AIS: [&str; 73] = [
+pub const EVAL_ONLY_AIS: [&str; 74] = [
     "basic_evolved",
     "advanced_policy_live_control",
     "advanced_envoy_policy",
     "advanced_envoy_infrastructure",
     "advanced_envoy_priority",
+    "advanced_envoy_composite",
     "advanced_envoy_economy",
     "advanced_strategic_commitment",
     "advanced_evolved_commitment",
@@ -1271,6 +1272,12 @@ fn build_effective_ai(name: &str, seed: u64, dir: &str) -> Option<Box<dyn Ai>> {
             ai.envoy_priority = true;
             Box::new(ai)
         }
+        // Pre-registered composite of the two independently positive
+        // deployment directions: the live policy deck and direct production
+        // of the first horizon-positive Diplomatic Quarter chain stage. It
+        // deliberately leaves `pol_influence` at zero, because the isolated
+        // influence-weight treatment was flat.
+        "advanced_envoy_composite" => Box::new(AdvancedAi::envoy_composite()),
         "advanced_envoy_economy" => {
             let mut weights = Weights::default();
             weights.policy_deck = crate::ai::PolicyDeck::Live;
@@ -3315,6 +3322,12 @@ mod tests {
                 .differing_axes(&advanced),
             vec!["treatment"]
         );
+        assert_eq!(
+            builtin_spec("advanced_envoy_composite", dir)
+                .unwrap()
+                .differing_axes(&advanced),
+            vec!["treatment"]
+        );
 
         let production = builtin_spec("production", dir).unwrap();
         assert_eq!(production.architecture, Architecture::Production);
@@ -3632,12 +3645,13 @@ mod tests {
             // Anything else reaching that state fell through to the
             // catch-all and is claiming to need nothing while quietly
             // needing a net.
-            const SCRIPTED: [&str; 40] = [
+            const SCRIPTED: [&str; 41] = [
                 "advanced",
                 "advanced_policy_live_control",
                 "advanced_envoy_policy",
                 "advanced_envoy_infrastructure",
                 "advanced_envoy_priority",
+                "advanced_envoy_composite",
                 "advanced_envoy_economy",
                 "advanced_strategic_commitment",
                 "advanced_blind_to_leaders",

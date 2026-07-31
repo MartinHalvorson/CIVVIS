@@ -34279,7 +34279,7 @@ impl Game {
     /// Production still required after active progress, item-specific paused
     /// progress, and unassigned overflow are applied. Search agents use this
     /// instead of treating a nearly complete build like a fresh one.
-    pub(crate) fn item_remaining_cost_for_city(&self, pid: usize, cid: u32, item: &Item) -> f64 {
+    pub fn item_remaining_cost_for_city(&self, pid: usize, cid: u32, item: &Item) -> f64 {
         let city = &self.cities[&cid];
         let key = Self::item_progress_key(item);
         let mut invested = city.production_progress.get(&key).copied().unwrap_or(0.0);

@@ -6512,3 +6512,38 @@ The complete integrated tree then passed `cargo test --profile ci --locked
 --no-fail-fast`: 1,297 library assertions passed, 20 censuses/benchmarks were
 intentionally ignored, and every binary, integration, and doc-test suite
 completed with zero failures.
+
+## 2026-07-31 — preregistration: live-policy/direct-envoy composite
+
+The next strength hypothesis is fixed before reading a result. The challenger
+`advanced_envoy_composite` differs from stock `advanced` in exactly one named
+treatment bundle: it enables the existing `PolicyDeck::Live` and the existing
+direct, horizon-gated Diplomatic Quarter → Consulate → Chancery production
+path. It makes no other change. In particular, `pol_influence` remains zero
+because the isolated influence-weight treatment was flat.
+
+The fixed command and seed prefixes are:
+
+```sh
+target/ci/ai_eval advanced_envoy_composite advanced \
+  --matrix --pairs 300 --jobs 8 --seed 32051000
+```
+
+Compact consumes seeds 32,051,000–32,051,299 and deployment consumes
+33,051,000–33,051,299. They are disjoint from every prefix used to choose or
+extend either component. Reading the same prefix at 20 or 120 maps is an
+interim diagnostic only; the committed result is the full 300-map prefix and
+no parameter or mechanism may change inside it.
+
+The decision rule is unchanged: deployment must earn an ordinary win-based
+`promotion gate: PASS`, compact must contain at least 20 maps and must not
+retain the incumbent, and both children must complete. Only that matrix PASS
+permits changing the production default. Any other result retains stock
+`advanced` and leaves the composite evaluator-only.
+
+Mechanism and opportunity-cost diagnostics are also fixed in advance. The run
+will report envoys and suzerainties, completed Diplomatic Quarters, Consulates,
+and Chanceries, any terminal chain stage still queued and its remaining
+production cost, plus cities, population, research, yields, military, and
+ordinary queue cost. The primary decision remains completed-game wins; none of
+these diagnostics can substitute for it.

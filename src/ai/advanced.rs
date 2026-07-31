@@ -1268,6 +1268,18 @@ impl AdvancedAi {
         Self::configured(BasicAi::with_weights(weights), true, None)
     }
 
+    /// Exact pre-registered live-policy/direct-envoy composite. Keeping its
+    /// configuration here gives the evaluator one constructor to test and
+    /// prevents the treatment bundle from drifting between call sites.
+    pub(crate) fn envoy_composite() -> AdvancedAi {
+        let mut weights = Weights::default();
+        weights.policy_deck = super::PolicyDeck::Live;
+        let mut ai = Self::with_weights(weights);
+        ai.envoy_infrastructure = true;
+        ai.envoy_priority = true;
+        ai
+    }
+
     pub fn with_weights_and_target(weights: Weights, target: VictoryTarget) -> AdvancedAi {
         Self::configured(BasicAi::with_weights(weights), true, Some(target))
     }
@@ -17510,6 +17522,16 @@ mod tests {
             expired, expired_stock,
             "income that begins after the game ends has no envoy value"
         );
+    }
+
+    #[test]
+    fn envoy_composite_is_exactly_the_preregistered_bundle() {
+        let treatment = AdvancedAi::envoy_composite();
+        assert_eq!(treatment.base.w.policy_deck, super::super::PolicyDeck::Live);
+        assert_eq!(treatment.base.w.pol_influence, 0.0);
+        assert!(treatment.envoy_infrastructure);
+        assert!(treatment.envoy_priority);
+        assert!(!treatment.strategic_commitment);
     }
 
     #[test]

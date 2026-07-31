@@ -505,6 +505,11 @@ struct Metrics {
     dvp: f64,
     envoys: f64,
     suzerainties: f64,
+    diplomatic_quarters: f64,
+    consulates: f64,
+    chanceries: f64,
+    envoy_chain_queued: f64,
+    envoy_chain_queued_cost: f64,
     military_units: f64,
     civilian_units: f64,
     religious_units: f64,
@@ -634,6 +639,25 @@ impl Metrics {
             .iter()
             .filter(|minor| minor.alive && minor.is_minor && g.suzerain_of(minor.id) == Some(pid))
             .count() as f64;
+        self.diplomatic_quarters += cities
+            .iter()
+            .filter(|city| {
+                g.city_has_district_family(
+                    &g.cities[city],
+                    civvis::name!("diplomatic_quarter"),
+                )
+            })
+            .count() as f64;
+        self.consulates += cities
+            .iter()
+            .flat_map(|city| g.cities[city].buildings.iter())
+            .filter(|building| building.as_str() == "consulate")
+            .count() as f64;
+        self.chanceries += cities
+            .iter()
+            .flat_map(|city| g.cities[city].buildings.iter())
+            .filter(|building| building.as_str() == "chancery")
+            .count() as f64;
         self.active_routes += g.active_routes(pid) as f64;
         self.trade_capacity += g.trade_capacity(pid) as f64;
         for unit in g.units.values().filter(|u| u.owner == pid) {
@@ -664,6 +688,19 @@ impl Metrics {
             self.culture_yield += yields.culture;
             if let Some(item) = g.cities[cid].queue.first() {
                 self.queued_cost += g.item_cost_for(pid, item);
+                if matches!(
+                    item,
+                    civvis::game::Item::District { district, .. }
+                        if district.as_str() == "diplomatic_quarter"
+                ) || matches!(
+                    item,
+                    civvis::game::Item::Building { building }
+                        if matches!(building.as_str(), "consulate" | "chancery")
+                ) {
+                    self.envoy_chain_queued += 1.0;
+                    self.envoy_chain_queued_cost +=
+                        g.item_remaining_cost_for_city(pid, *cid, item);
+                }
             }
         }
     }
@@ -1495,6 +1532,19 @@ fn main() {
             m.envoys / n,
             m.suzerainties / n,
             m.religious_units / n,
+        );
+    }
+    println!("\nAI          diplo-q consulate chancery chain-queued remaining-cost");
+    for name in [a, b] {
+        let m = &totals[name];
+        let n = m.games.max(1) as f64;
+        println!(
+            "{name:<11} {:>7.2} {:>9.2} {:>8.2} {:>12.2} {:>14.1}",
+            m.diplomatic_quarters / n,
+            m.consulates / n,
+            m.chanceries / n,
+            m.envoy_chain_queued / n,
+            m.envoy_chain_queued_cost / n,
         );
     }
     println!("\nAI          mil# civ#  food prod science culture queued-cost");
