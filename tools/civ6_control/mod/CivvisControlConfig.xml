@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The inbound channel the project spent a day concluding did not exist.
+
+     Three settings have never applied on this install — MapScript, Leader and
+     MapSeed — and all three failed for one reason: the mod tried to reach the
+     setup screen with `<AddUserInterfaces><Context>FrontEnd</Context>`, and
+     NOTHING SHIPPED USES THAT. Across 38 shipped DLC, `AddUserInterfaces`
+     appears in `InGameActions` nine times and in `FrontEndActions` zero times.
+     Every InGame hook this mod has works; the single FrontEnd hook never did,
+     which is the `setup: "(absent)"` in every seat event.
+
+     What shipped DLC DO use in FrontEndActions is `<UpdateDatabase>` — and the
+     Create Game screen is driven by the CONFIGURATION DATABASE, not by Lua. So
+     the setup defaults are reachable as data.
+
+     ⚠ WHY EVERY GAME WAS CONTINENTS. `Base/Assets/Configuration/Data/SetupParameters.xml`
+     ships TWO rows for the Map parameter, differing only in which modes they
+     support:
+
+       DefaultValue="Continents.lua"  SupportsSinglePlayer=1  LAN/Internet/HotSeat=0
+       DefaultValue="Pangaea.lua"     SupportsSinglePlayer=0  LAN/Internet/HotSeat=1
+
+     Pangaea was ALREADY the default — for multiplayer. Single player gets
+     Continents. The game was doing exactly what its data said, and asking for
+     Pangaea through a channel it never read.
+
+     This matters because on Continents a seat can start alone: 21 of 43 runs
+     past turn 60 (49%) NEVER met another civilization, so no war target, no
+     captured capital, no domination — and score is unreachable at ~5:1 behind.
+     Half of all runs were unwinnable from the map draw.
+
+     ⚠ Matched on DefaultValue rather than on SupportsSinglePlayer, because that
+     names exactly the one row to change and cannot accidentally match the
+     multiplayer row (which is already Pangaea) if the flags are ever edited. -->
+<GameInfo>
+	<Parameters>
+		<Update>
+			<Where ParameterId="Map" DefaultValue="Continents.lua"/>
+			<Set>
+				<DefaultValue>Pangaea.lua</DefaultValue>
+			</Set>
+		</Update>
+		<!-- Pin the world. Both seeds are Domain="int" and ship with NO
+		     DefaultValue, which is why the fixed-seed flag was inert: capitals landed
+		     at (44,20), (19,30) and (13,27) on four runs launched with the same
+		     seed, and the civ drawn was AMERICA, SWEDEN, KOREA, SWEDEN.
+
+		     ⚠ A fixed map is worth more than the map type: it restores PAIRED
+		     experiments. Without it every A/B here compares two different games,
+		     which is why tools/civ6_ab.py and tools/civ6_near_ab.py are both
+		     invalid as written. MapRandomSeed writes Map/RANDOM_SEED;
+		     GameRandomSeed writes Game/GAME_SYNC_RANDOM_SEED — the map needs the
+		     first, reproducible play needs both.
+
+		     ⚠ CIVVIS_SEED is substituted by install.py. A literal 0 here would
+		     read as "unset" and silently restore random maps. -->
+		<Update>
+			<Where ParameterId="MapRandomSeed"/>
+			<Set>
+				<DefaultValue>CIVVIS_SEED</DefaultValue>
+			</Set>
+		</Update>
+		<Update>
+			<Where ParameterId="GameRandomSeed"/>
+			<Set>
+				<DefaultValue>CIVVIS_SEED</DefaultValue>
+			</Set>
+		</Update>
+	</Parameters>
+</GameInfo>

@@ -32,8 +32,26 @@ local cfg = CivvisControlConfig or {};
 -- Long enough to read a headline and the line of quote under it, short enough
 -- that nobody sits through it twice. It is a setting because "long enough to
 -- read" is a judgement about the person watching, not a fact about the game.
-local SECONDS = tonumber(cfg.AnnouncementSeconds) or 2.0;
-if SECONDS < 0 then SECONDS = 0; end
+local SECONDS = tonumber(cfg.AnnouncementSeconds) or 1.0;
+
+-- Era screens get a shorter clock than the rest. They are the most frequent
+-- interruption in a long game and carry the least the agent needs to read, and
+-- at Online speed an era can turn over every twenty turns or so.
+local ERA_SECONDS = tonumber(cfg.EraAnnouncementSeconds) or 0.5;
+local ERA_SCREENS = {
+	EraCompletePopup = true, EraReviewPopup = true,
+	DedicationPopup = true, BoostUnlockedPopup = true,
+	-- The era-score animations: a historic moment plays a card flourish and
+	-- the era progress panel animates a bar. Both are pure spectacle for an
+	-- unattended run and both sit over the map while they play.
+	HistoricMoments = true, EraProgressPanel = true,
+};
+-- ⚠ The era clock is applied further down, AFTER `NAME` is declared. It used to
+-- be applied right here, twelve lines before `local NAME` existed, so `NAME` was
+-- the nil global and `ERA_SCREENS[nil]` was nil: the branch never once ran and
+-- every era screen sat for the full announcement time. Lua does not complain —
+-- indexing a table with a nil key READS fine and only assignment throws — so the
+-- setting simply had no effect. Found by check_scope.py.
 
 -- A screen that will not go away must not write a line every two seconds for
 -- the rest of a multi-hour run. Legitimate repeats -- two wonders finishing on
@@ -46,6 +64,11 @@ local PREFIX = "CIVVISJSON ";
 
 local NAME = "unknown";
 pcall(function() NAME = ContextPtr:GetID() or "unknown"; end);
+
+-- Now that this context knows its own name, the era screens can get their
+-- shorter clock. This must stay below `local NAME`.
+if ERA_SCREENS[NAME] then SECONDS = ERA_SECONDS; end
+if SECONDS < 0 then SECONDS = 0; end
 
 local RUN = tostring(cfg.RunTag or "unset");
 
@@ -66,16 +89,52 @@ end
 -- one loads after it; this then loads *their* file rather than the shipped
 -- one, so their comet-strike label survives. Their file opens with
 -- include("NaturalDisasterPopup"), which is this same pattern, from Firaxis.
+--
+-- The same table also covers the other case where the live script is not the one
+-- named after the context.
+--
+-- ⚠ Gathering Storm is Expansion2 and ships a *Replacement* for the diplomacy
+-- view, so `include("DiplomacyActionView")` pulls the BASE file and misses
+-- everything the expansion changed, including its own `Close`. Chain to the
+-- replacement, which includes Expansion1, which includes the base.
 local CHAINED = {
 	NaturalDisasterPopup = "NaturalDisasterPopup_GranColombia_Maya",
+	DiplomacyActionView = "DiplomacyActionView_Expansion2",
 };
 
 -- Whether a screen is in there at all. An include that finds no file fails
 -- silently on this build, so the test has to be for what the script defines
 -- rather than for the include returning.
+--
+-- ⚠⚠ THESE MUST BE BARE GLOBAL REFERENCES, NOT `_G[name]` LOOKUPS.
+--
+-- A previous version of this file kept the names in a table and tested them with
+-- `type(_G[name]) == "function"` so that this check and `endScreen` could share
+-- one list. It broke every screen: each Civilization VI UI context runs in its
+-- own environment, so `_G["OnClose"]` does not resolve the same name that a bare
+-- `OnClose` resolves. The run went from three unarmed screens to EIGHT, taking
+-- EraCompletePopup, NaturalWonderPopup, NaturalDisasterPopup, WonderBuiltPopup
+-- and RockBandMoviePopup with it — all of which had been arming correctly for
+-- hours. Found by the `autoclose_unarmed` line in the event stream.
+--
+-- So the list is spelled out. It has to stay in step with the ladder in
+-- `endScreen` by hand, and tools/civ6_control/check_closers.py fails if it
+-- drifts or if anybody reaches for `_G` again.
 local function haveScreen()
-	return type(OnClose) == "function" or type(Close) == "function"
-	       or type(OnContinue) == "function" or type(OnClosePopup) == "function";
+	return type(OnClose) == "function"
+		or type(Close) == "function"
+		or type(OnContinue) == "function"
+		or type(OnClosePopup) == "function"
+		or type(OnHideScreen) == "function"        -- GreatWorkShowcase
+		or type(OnButton1) == "function"           -- ChooseArtifact
+		or type(ReleaseEventLock) == "function"    -- WorldCongressBetweenTurns
+		or type(CloseFocusedState) == "function"   -- DiplomacyActionView
+		or type(OnRefuseDeal) == "function"        -- DiplomacyDealView
+		or type(OnSelectConversationDiplomacyStatement) == "function"  -- leader asking
+		or type(OnSelectInitialDiplomacyStatement) == "function"       -- opening statement
+		or type(ExitConversationMode) == "function"
+		or type(OnHide) == "function"
+		or type(InputHandler) == "function";
 end
 
 -- The shipped screen, unchanged and unread. A context's id is the name of the
@@ -119,7 +178,7 @@ end
 
 -- What a click on this screen's own button does. Everything shipped registers
 -- OnClose; the era review is the exception explained at the top.
-local function endScreen()
+local function endScreen(attempt)
 	if NAME == "InGamePopup" then
 		-- The shipped Escape path rather than a bare close, so the single
 		-- button's own callback runs. Escape tries CANCEL, then DEFAULT, then
@@ -135,6 +194,143 @@ local function endScreen()
 	end
 	if NAME == "EraReviewPopup" and type(OnContinue) == "function" then
 		OnContinue();
+		return true;
+	end
+	-- ⚠ THE MEET-A-NEW-CIV SCREEN NEEDS ITS OWN EXIT.
+	--
+	-- `OnClose`/`Close` do not clear a leader conversation, and the operator saw
+	-- Wilfrid Laurier sitting over the map with his three dialogue options while
+	-- turns went on advancing behind him. The evidence was
+	-- `autoclose_stuck {"attempts":20,"screen":"DiplomacyActionView"}` — twenty
+	-- failed tries, then the shim gave up. A first-contact scene is a diplomacy
+	-- SESSION, and it ends only when the session is closed.
+	--
+	-- `ExitConversationMode` is the shipped exit and is a global function, so it
+	-- is reachable from here; it closes the active session and falls back to
+	-- `Close()` when there is none. `ms_ActiveSessionID` is likewise a global in
+	-- the shipped script (no `local`), so closing the session directly is
+	-- available as a second try if the view mode is not what we assumed.
+	--
+	-- ⚠ ESCALATE, do not retry one rung forever. `ExitConversationMode` returns
+	-- silently when the view is not in conversation mode, so `pcall` succeeding
+	-- does not mean the screen went away — the same "pcall success is not
+	-- acceptance" trap that voided every build order in this project. If the
+	-- first few attempts have not worked, stop trying this rung and fall through
+	-- to the plain handlers below.
+	-- ⚠ MY FIRST FIX HERE WAS AIMED AT THE WRONG MODE AND DID NOT WORK: the run
+	-- reported `autoclose_stuck DiplomacyActionView` a second time, after twenty
+	-- attempts, with `ExitConversationMode` in the ladder.
+	--
+	-- `ExitConversationMode` only acts `if ms_currentViewMode == CONVERSATION_MODE`.
+	-- A first-contact leader is CINEMA_MODE — a full-screen portrait, which is
+	-- exactly what the screenshot showed — so it returned having done nothing, and
+	-- `Close()` does not dismiss a cinema either. `CloseFocusedState` is the one
+	-- entry point that handles all three states (open popup, conversation, cinema)
+	-- and it is what the shipped Escape key calls, so it is what we call.
+	-- ★★★★★ THE DEAL SCREEN CLOSES BY REFUSING, AND NOTHING ELSE SHUTS IT.
+	--
+	-- `DiplomacyDealView` is another civilization proposing a trade. It exposes no
+	-- `OnClose`/`Close`, and `CloseFocusedState` does not dismiss it either — measured:
+	-- twenty attempts, every one reporting `ended: false`, then `autoclose_stuck`, and
+	-- the game held there until the harness gave up. That is now the DOMINANT way runs
+	-- die: the governor segfault is fixed, and the last three attempts ended in stalls
+	-- at t87, t184 and t95, the best of them holding FOUR cities and score 139.
+	--
+	-- The shipped screen's own exit is `OnRefuseDeal(bForceClose)` — declining is what
+	-- closing this screen means, and `true` forces it shut rather than waiting on the
+	-- other player. Tried FIRST, because it is the specific answer and the generic ones
+	-- demonstrably do nothing here.
+	--
+	-- ⚠ This declines every offered deal. That is a decision, and the honest defence is
+	-- that the alternative measured is not "consider the deal" but "the run ends".
+	if type(OnRefuseDeal) == "function"
+			and pcall(function() OnRefuseDeal(true); end) then
+		return true;
+	end
+	if (attempt or 1) <= 6 and type(CloseFocusedState) == "function"
+			and pcall(function() CloseFocusedState(true); end) then
+		return true;
+	end
+	if (attempt or 1) <= 9 and type(ExitConversationMode) == "function"
+			and pcall(function() ExitConversationMode(true); end) then
+		return true;
+	end
+	if (attempt or 1) <= 12 and type(DiplomacyManager) == "table"
+			and ms_ActiveSessionID ~= nil
+			and pcall(function()
+				DiplomacyManager.CloseSession(ms_ActiveSessionID);
+			end) then
+		return true;
+	end
+	-- ★★★★★ A LEADER ASKING A QUESTION IS NOT A POPUP — but answering it is a LATER
+	-- rung, not the first.
+	--
+	-- Photographed at the moment of two stalls (`stalled.png`): Cyrus, then Wilhelmina,
+	-- asking "Will you allow us to establish an embassy in your capital?" with three
+	-- dialogue choices. Nothing that merely CLOSES a screen answers a question.
+	--
+	-- ⚠⚠ AND THE FIRST VERSION OF THIS MADE IT WORSE, in the way this project keeps
+	-- being bitten. It sat at the TOP of the ladder and returned true whenever `pcall`
+	-- succeeded — but `pcall` succeeding means the call did not throw, NOT that the
+	-- screen closed. Measured: **22 `autoclose` events, every one `ended: true`,
+	-- followed by `autoclose_stuck`**. `CHOICE_EXIT` runs `ExitConversationMode(false)`,
+	-- which drops the view while the REQUEST is still pending, so the screen reopens
+	-- immediately — and by returning first it also short-circuited the
+	-- `DiplomacyManager.CloseSession` rung that had been running before it.
+	--
+	-- So it goes here, after the generic closers and after CloseSession have each had
+	-- their attempts, and it is bounded like every other rung.
+	-- ⚠⚠ DECLINE THE REQUEST, DO NOT JUST LEAVE THE ROOM. `CHOICE_EXIT` runs
+	-- `ExitConversationMode`, which drops the VIEW while the request is still pending,
+	-- so the screen comes straight back — 22 closes and 22 reopens, measured. The
+	-- shipped handler answers with `DiplomacyManager.AddResponse(session, player,
+	-- "NEGATIVE")` under `CHOICE_NEGATIVE`, and an answered request does not return.
+	-- `CHOICE_IGNORE` is the same shape via "RESPONSE_IGNORE".
+	if (attempt or 1) <= 14 and type(OnSelectConversationDiplomacyStatement) == "function"
+			and pcall(function()
+				OnSelectConversationDiplomacyStatement("CHOICE_NEGATIVE");
+			end) then
+		return true;
+	end
+	if (attempt or 1) <= 15 and type(OnSelectConversationDiplomacyStatement) == "function"
+			and pcall(function()
+				OnSelectConversationDiplomacyStatement("CHOICE_IGNORE");
+			end) then
+		return true;
+	end
+	if (attempt or 1) <= 16 and type(OnSelectConversationDiplomacyStatement) == "function"
+			and pcall(function()
+				OnSelectConversationDiplomacyStatement("CHOICE_EXIT");
+			end) then
+		return true;
+	end
+	if (attempt or 1) <= 18 and type(OnSelectInitialDiplomacyStatement) == "function"
+			and pcall(function()
+				OnSelectInitialDiplomacyStatement("CHOICE_EXIT");
+			end) then
+		return true;
+	end
+
+	-- The relic screens. Neither exposes OnClose or Close, which is why both sat
+	-- over the map: the operator reported "relic found" alongside the Canada
+	-- delegation. Their close buttons are wired to these globals instead.
+	--
+	-- GreatWorkShowcase shows a relic or great work just acquired and its close
+	-- button calls OnHideScreen. ChooseArtifact is a real decision -- which
+	-- artifact an Archaeologist lifts -- and Button1 takes the first. Taking the
+	-- first is a worse choice than a human would make and a far better one than
+	-- staring at the dialog until the timeout, which is the current behaviour.
+	if type(OnHideScreen) == "function" then OnHideScreen(); return true; end
+	if NAME == "ChooseArtifact" and type(OnButton1) == "function" then
+		OnButton1();
+		return true;
+	end
+	-- The between-turns congress screen holds an EVENT LOCK, so closing it is not
+	-- cosmetic: until the lock is released the game will not proceed. Releasing it
+	-- is what the shipped Continue button does.
+	if NAME == "WorldCongressBetweenTurns"
+			and type(ReleaseEventLock) == "function" then
+		ReleaseEventLock();
 		return true;
 	end
 	if type(OnClose) == "function" then OnClose(); return true; end
@@ -213,7 +409,7 @@ else
 		shown = 0;
 		closes = closes + 1;
 		local ended = false;
-		pcall(function() ended = endScreen(); end);
+		pcall(function() ended = endScreen(closes); end);
 		if NAME == "InGamePopup" then dialogIsAnnouncement = false; end
 		-- ⚠ `ended` IS NOT EVIDENCE THAT THE SCREEN CLOSED. It is whatever
 		-- `endScreen` returned, and every rung in there returns true when its

@@ -29,12 +29,16 @@
 		<Mod id="9DE86512-DE1A-400D-8C0A-AB46EBBF76B9" title="GranColombia_Maya"/>
 	</References>
 	<FrontEndActions>
-		<AddUserInterfaces id="CivvisControlSetupUI">
-			<Properties>
-				<Context>FrontEnd</Context>
-			</Properties>
-			<File>CivvisControlSetup.xml</File>
-		</AddUserInterfaces>
+		<!-- ⚠ `AddUserInterfaces` with `<Context>FrontEnd</Context>` USED TO BE HERE and
+		     never loaded: across 38 shipped DLC that pattern appears in FrontEndActions
+		     ZERO times (and in InGameActions nine times). That single dead hook is why
+		     `setup: "(absent)"` appears in every seat event, and therefore why MapScript,
+		     Leader and MapSeed have never applied. `UpdateDatabase` is what shipped DLC
+		     actually use here, and the Create Game screen is driven by the configuration
+		     DATABASE rather than by Lua — so the defaults are reachable as data. -->
+		<UpdateDatabase id="CivvisControlSetupDefaults">
+			<File>CivvisControlConfig.xml</File>
+		</UpdateDatabase>
 	</FrontEndActions>
 	<InGameActions>
 		<AddUserInterfaces id="CivvisControlAgentUI">
@@ -56,6 +60,115 @@
 		<ImportFiles id="CivvisControlAutoCloseFiles">
 			<File>CivvisControlAutoClose.lua</File>
 		</ImportFiles>
+		<!-- ★★★★ THE END OF THE GAME, WHICH WAS BEING LOGGED AS A STALL.
+		     Run civvis-20260730T211350Z was photographed showing Civilization
+		     VI's DEFEAT screen for the Swedish Empire at turn 144, and the
+		     ledger recorded `reason: "stalled: no event for 240s"` with
+		     `outcome: null` — a loss and a hang are indistinguishable in the
+		     one column the ladder exists to fill.
+
+		     The cause is that this screen HALTS THE GAME CORE the way the era
+		     screens do, so the agent's own 0-cities defeat check never gets
+		     another turn to run: the empire still held one city on the last
+		     turn it managed to export. Registering the screen here makes it
+		     announce itself through the shim's `screen` field, so the run ends
+		     with evidence instead of silence.
+
+		     ⚠ Deliberately NOT relied on for won/lost. The shim reports which
+		     screen it closed, not who won; `won()` still requires the mod's own
+		     victory event naming us, because a rival's victory raises this same
+		     screen and recording that as ours would be the worst possible bug. -->
+		<ReplaceUIScript id="CivvisControlAutoCloseEndGameMenu">
+			<Properties>
+				<LuaContext>EndGameMenu</LuaContext>
+				<LuaReplace>CivvisControlAutoClose.lua</LuaReplace>
+			</Properties>
+		</ReplaceUIScript>
+		<ReplaceUIScript id="CivvisControlAutoCloseDiplomacyActionView">
+			<Properties>
+				<LuaContext>DiplomacyActionView</LuaContext>
+				<LuaReplace>CivvisControlAutoClose.lua</LuaReplace>
+			</Properties>
+		</ReplaceUIScript>
+		<!-- The trade and deal screens. A rival opening a deal lays a
+		     full-screen table over the map and leaves it there, so these
+		     block the view exactly as the congress screens did.
+		     DiplomacyDealView is the one an AI proposal raises. -->
+		<ReplaceUIScript id="CivvisControlAutoCloseDiplomacyDealView">
+			<Properties>
+				<LuaContext>DiplomacyDealView</LuaContext>
+				<LuaReplace>CivvisControlAutoClose.lua</LuaReplace>
+			</Properties>
+		</ReplaceUIScript>
+		<!-- The relic screens, reported sitting over the map. Neither
+		     exposes OnClose or Close; their buttons call OnHideScreen and
+		     OnButton1, which the shim now tries. -->
+		<ReplaceUIScript id="CivvisControlAutoCloseGreatWorkShowcase">
+			<Properties>
+				<LuaContext>GreatWorkShowcase</LuaContext>
+				<LuaReplace>CivvisControlAutoClose.lua</LuaReplace>
+			</Properties>
+		</ReplaceUIScript>
+		<ReplaceUIScript id="CivvisControlAutoCloseChooseArtifact">
+			<Properties>
+				<LuaContext>ChooseArtifact</LuaContext>
+				<LuaReplace>CivvisControlAutoClose.lua</LuaReplace>
+			</Properties>
+		</ReplaceUIScript>
+		<ReplaceUIScript id="CivvisControlAutoCloseTradeOverview">
+			<Properties>
+				<LuaContext>TradeOverview</LuaContext>
+				<LuaReplace>CivvisControlAutoClose.lua</LuaReplace>
+			</Properties>
+		</ReplaceUIScript>
+		<ReplaceUIScript id="CivvisControlAutoCloseTradeRouteChooser">
+			<Properties>
+				<LuaContext>TradeRouteChooser</LuaContext>
+				<LuaReplace>CivvisControlAutoClose.lua</LuaReplace>
+			</Properties>
+		</ReplaceUIScript>
+		<ReplaceUIScript id="CivvisControlAutoCloseLeaderView">
+			<Properties>
+				<LuaContext>LeaderView</LuaContext>
+				<LuaReplace>CivvisControlAutoClose.lua</LuaReplace>
+			</Properties>
+		</ReplaceUIScript>
+		<ReplaceUIScript id="CivvisControlAutoCloseHistoricMoments">
+			<Properties>
+				<LuaContext>HistoricMoments</LuaContext>
+				<LuaReplace>CivvisControlAutoClose.lua</LuaReplace>
+			</Properties>
+		</ReplaceUIScript>
+		<ReplaceUIScript id="CivvisControlAutoCloseEraProgressPanel">
+			<Properties>
+				<LuaContext>EraProgressPanel</LuaContext>
+				<LuaReplace>CivvisControlAutoClose.lua</LuaReplace>
+			</Properties>
+		</ReplaceUIScript>
+		<ReplaceUIScript id="CivvisControlAutoCloseWorldCongressIntro">
+			<Properties>
+				<LuaContext>WorldCongressIntro</LuaContext>
+				<LuaReplace>CivvisControlAutoClose.lua</LuaReplace>
+			</Properties>
+		</ReplaceUIScript>
+		<ReplaceUIScript id="CivvisControlAutoCloseWorldCongressBetweenTurns">
+			<Properties>
+				<LuaContext>WorldCongressBetweenTurns</LuaContext>
+				<LuaReplace>CivvisControlAutoClose.lua</LuaReplace>
+			</Properties>
+		</ReplaceUIScript>
+		<ReplaceUIScript id="CivvisControlAutoCloseDedicationPopup">
+			<Properties>
+				<LuaContext>DedicationPopup</LuaContext>
+				<LuaReplace>CivvisControlAutoClose.lua</LuaReplace>
+			</Properties>
+		</ReplaceUIScript>
+		<ReplaceUIScript id="CivvisControlAutoCloseEraReviewPopup">
+			<Properties>
+				<LuaContext>EraReviewPopup</LuaContext>
+				<LuaReplace>CivvisControlAutoClose.lua</LuaReplace>
+			</Properties>
+		</ReplaceUIScript>
 		<ReplaceUIScript id="CivvisControlAutoCloseWonderBuilt">
 			<Properties>
 				<LuaContext>WonderBuiltPopup</LuaContext>
@@ -118,6 +231,13 @@
 		</ReplaceUIScript>
 	</InGameActions>
 	<Files>
+		<!-- ⚠ EVERY FILE AN ACTION REFERENCES MUST BE LISTED HERE, or the game logs
+		     "Invalid file reference in action, did you forgot to add it in <Files>?"
+		     and silently drops that action. CivvisControlConfig.xml was missing, so the
+		     whole setup-defaults UpdateDatabase never ran and the seat kept reporting
+		     Continents — the change was correct and simply never loaded. The game names
+		     this in Modding.log; grep it before theorising about a mechanism. -->
+		<File>CivvisControlConfig.xml</File>
 		<File>CivvisControlSetup.xml</File>
 		<File>CivvisControlSetup.lua</File>
 		<File>CivvisControlAgent.xml</File>

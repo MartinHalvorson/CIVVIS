@@ -84,6 +84,54 @@ This would be a useful accelerator — it would replace a three-minute restart
 per question with a round trip — but it is not required, and the sweep above is
 where a future attempt should resume rather than starting over.
 
+### ★★★★★ The inbound channel EXISTS: `DB.Query` can ATTACH a database we own
+
+⚠ THIS DOCUMENT USED TO SAY THERE WAS NO INBOUND CHANNEL, and that claim shaped the
+whole architecture — a settle plan baked in at install, and a hand-written Lua
+heuristic for every other decision. It is false.
+
+From the InGame gameplay context:
+
+```lua
+DB.Query("ATTACH DATABASE '/Users/martin/civvis-civ6-runs/orders.sqlite' AS civvis")
+DB.Query("SELECT turn, payload FROM civvis.orders WHERE id = 1")
+```
+
+Measured on run `sqlprobe-20260730T103836Z` over 29 turns: ATTACH returned no error and
+the SELECT returned **23 distinct payloads** tracking a nonce an outside process
+rewrote every second. The value FOLLOWED the external writer — that is the check that
+matters, not that the name resolves.
+
+So CIVVIS decides per turn and this mod actuates. See `tools/civ6_brain.py`,
+`src/bin/civvis_orders.rs`, and `tools/civ6_civvis_status.py` for the fires-check.
+
+**Measured DEAD on this build — do not spend time on these again:**
+
+- `ModUserData` — nil. Does not exist; zero hits in the shipped UI either.
+- `io`, `loadfile`, `dofile` — nil. The sandbox claim is real.
+- `UIManager` — exists, but only `SetClipboardString`. There is no getter, so the
+  clipboard is useless inbound.
+- `Options.GetAppOption` / `GetUserOption`, `GameConfiguration.GetValue`,
+  `UserConfiguration.GetValue` — all nil for a custom key, even with a `[Civvis]`
+  section written into `AppOptions.txt`/`UserOptions.txt` on disk.
+
+`tools/civ6_control/probe_channel.py` is the harness that found it: it writes a
+CHANGING nonce into every candidate sink, and the mod emits what each candidate
+answers. Existence is not a channel.
+
+⚠⚠ **The outbound leg drops its last line.** `Automation.Log` does not terminate its
+record — the log's final byte was `}` — and `watch.py` holds the unterminated tail as
+`partial`, so the most recent event is never delivered until the next one flushes it.
+Harmless while the mod only reports; fatal once it WAITS, because the last line written
+before the wait is the `state` export the brain must answer. Two runs deadlocked on
+turn 2 with the game spinning at 139% CPU. Fixed at the source with
+`Automation.Log(line .. "\n")`.
+
+⚠ And do not busy-wait on the channel from inside the mod:
+`GameCoreEventPublishComplete` fires thousands of times per turn, so a `DB.Query` per
+tick starves the very log flush the brain depends on. Poll every ~30 ticks, and count
+the wait in POLLS rather than ticks.
+
 ### The mod is the control channel
 
 Two Lua contexts, installed by `tools/civ6_control/install.py`:

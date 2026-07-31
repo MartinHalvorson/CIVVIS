@@ -66,7 +66,7 @@ class LogTail:
 
 
 def follow(tail: LogTail, timeout_s: float, on_event, poll_s: float = 2.0,
-           stop_when=None, each_poll=None) -> str:
+           stop_when=None, each_poll=None, stall_s: float | None = 600.0) -> str:
     """Pump events to ``on_event`` until ``stop_when`` says so or time runs out.
 
     Returns a short reason string. The game exiting is reported as its own
@@ -81,15 +81,24 @@ def follow(tail: LogTail, timeout_s: float, on_event, poll_s: float = 2.0,
     15 for ten minutes with nothing wrong in any log.
     """
     deadline = time.time() + timeout_s
+    last_event = time.time()
     while time.time() < deadline:
         for event in tail.poll():
             on_event(event)
+            last_event = time.time()
             if stop_when is not None and stop_when(event):
                 return "stopped"
         if not env.game_pids():
             for event in tail.poll():
                 on_event(event)
             return "game exited"
+        # ⚠ A game can end without its process ending. One run played to turn
+        # 152, dropped back to the main menu, and sat there: `game_pids()` was
+        # still non-empty so this loop waited another twenty-six minutes and
+        # would have burned the whole timeout. A live process is not a live
+        # game, and a stalled attempt costs the next one its slot.
+        if stall_s is not None and time.time() - last_event > stall_s:
+            return f"stalled: no event for {stall_s:.0f}s"
         if each_poll is not None:
             each_poll()
         time.sleep(poll_s)

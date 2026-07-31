@@ -1261,6 +1261,124 @@ fn main() {
         }
         "play" => {
             let players = arg(&args, "--players", 4);
+            // `--mirror <run-dir>`: show the board a Civilization VI seat can
+            // actually see, rebuilt as a CIVVIS game, instead of generating one.
+            //
+            // This is what makes the two windows one game rather than two. The
+            // control mod exports only revealed plots, so what appears here is
+            // what the seat has earned and nothing more.
+            //
+            // ⚠ Unrevealed ground arrives as ocean — see `mirror::rebuild_game`
+            // for why that is the least misleading filler and where it is wrong.
+            let mirrored: Option<Game> = args
+                .iter()
+                .position(|value| value == "--mirror")
+                .and_then(|index| args.get(index + 1))
+                .map(|dir| {
+                    let events = std::path::Path::new(dir).join("events.jsonl");
+                    let snapshot = civvis::mirror::snapshot_from_events(&events)
+                        .unwrap_or_else(|error| {
+                            eprintln!("cannot read {}: {error}", events.display());
+                            std::process::exit(2);
+                        });
+                    if snapshot.revealed_count() == 0 {
+                        eprintln!(
+                            "{} has no tiles to mirror — the run needs --export-state, \
+                             and before the PlayersVisibility fix the export emitted nothing",
+                            events.display()
+                        );
+                        std::process::exit(2);
+                    }
+                    println!(
+                        "mirroring {} revealed plots of a {}x{} world at turn {}",
+                        snapshot.revealed_count(),
+                        snapshot.width,
+                        snapshot.height,
+                        snapshot.turn
+                    );
+                    // ★★★★ MIRROR THE EMPIRE, NOT JUST THE GROUND. `rebuild_game`
+                    // returns terrain only, so this window read "Ancient Age TURN 1"
+                    // with an empty world while Civilization VI sat at turn 7 with a
+                    // revealed continent, two cities and an army. Side by side that is
+                    // worse than no mirror: the operator is asked to verify the two
+                    // match and shown a board that cannot match by construction.
+                    //
+                    // `rebuild_from_state` places both empires' cities, our units and
+                    // every visible rival unit, and sets the turn — the same
+                    // reconstruction `civvis-orders` decides from, so what is on screen
+                    // is what CIVVIS is actually reasoning about.
+                    // ★ MOCK MODE. `--dump-state <file>` writes the observed board out
+                    // as JSON; `--state <file>` merges a file back over it before the
+                    // reconstruction runs. Together they give a round trip — capture the
+                    // real Civilization VI position, edit anything, replay it — which is
+                    // what makes a disagreement between the two screens reproducible
+                    // instead of a thing you have to catch live.
+                    let flag = |name: &str| {
+                        args.iter()
+                            .position(|value| value == name)
+                            .and_then(|at| args.get(at + 1))
+                            .cloned()
+                    };
+                    let mut observed = civvis::mirror::state_value_from_events(&events, None);
+                    // ⚠ DUMP BEFORE MERGE. Writing the file after the override records
+                    // the mock, not the observation, so using both flags at once would
+                    // overwrite the very board you were trying to capture — and the
+                    // second run would silently start from the edit.
+                    if let (Some(state), Some(path)) = (observed.as_ref(), flag("--dump-state")) {
+                        match serde_json::to_string_pretty(state)
+                            .map_err(|e| e.to_string())
+                            .and_then(|text| std::fs::write(&path, text).map_err(|e| e.to_string()))
+                        {
+                            Ok(()) => println!("  observed state written to {path}"),
+                            Err(why) => println!("  ⚠ could not write --dump-state {path}: {why}"),
+                        }
+                    }
+                    if let (Some(state), Some(path)) = (observed.as_mut(), flag("--state")) {
+                        match std::fs::read_to_string(&path)
+                            .ok()
+                            .and_then(|raw| serde_json::from_str::<serde_json::Value>(&raw).ok())
+                        {
+                            Some(patch) => {
+                                civvis::mirror::merge_state(state, &patch);
+                                println!("  state overridden from {path}");
+                            }
+                            // Loud, because silently mirroring the real board when the
+                            // operator asked for a mocked one is a wrong answer that
+                            // looks exactly like a right one.
+                            None => println!("  ⚠ could not read --state {path}: using observed board"),
+                        }
+                    }
+                    let from_value = observed
+                        .as_ref()
+                        .and_then(|v| serde_json::from_value::<civvis::mirror::StateSnapshot>(v.clone()).ok());
+                    match from_value.or_else(|| civvis::mirror::state_from_events(&events, None)) {
+                        Some(state) => {
+                            let rebuilt = civvis::mirror::rebuild_from_state(
+                                &snapshot, &state, players as usize, 1, 250, 6,
+                            );
+                            println!(
+                                "  empire: {} cities, {} units, {} rival cities, \
+                                 {} rival units at turn {}",
+                                rebuilt.placed_cities,
+                                rebuilt.placed_units,
+                                rebuilt.placed_rival_cities,
+                                rebuilt.placed_rival_units,
+                                state.turn
+                            );
+                            if !rebuilt.unmapped.is_empty() {
+                                println!("  untranslatable: {}", rebuilt.unmapped.join(","));
+                            }
+                            rebuilt.game
+                        }
+                        // No `state` event means the run is not exporting one; terrain
+                        // alone is still worth showing, and saying so beats implying
+                        // the empty empire is real.
+                        None => {
+                            println!("  no `state` event: terrain only, no cities or units");
+                            civvis::mirror::rebuild_game(&snapshot, players as usize, 1)
+                        }
+                    }
+                });
             let resumed: Option<Game> = args
                 .iter()
                 .position(|value| value == "--resume")
@@ -1332,7 +1450,7 @@ fn main() {
                     },
                     league_record: args.iter().any(|a| a == "--league-record"),
                 },
-                resumed,
+                mirrored.or(resumed),
                 args.iter().any(|a| a == "--paused"),
             );
         }
