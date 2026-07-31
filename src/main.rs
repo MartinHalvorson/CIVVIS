@@ -59,7 +59,16 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// strategy-transition counts across 40 Advanced seat-games and 4,022 observed
 /// Advanced turns on that same fixed prefix. The re-pin is justified because
 /// the arm never observes or contributes a nonzero term while its flag is off.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x2d27_2f08_7676_3f23;
+/// #684 adds one default-off evaluator field, `AdvancedAi::plan_city_target`,
+/// and the delegated-call substitution it gates. With the flag false the
+/// substitution is a `bool::then` that returns `None` and touches nothing. A
+/// matched `ai_eval advanced basic --pairs 10 --players 4 --turns 200 --seed
+/// 31337 --jobs 1` on a clean `3916358` build and on this branch produced
+/// **byte-identical output** — same 19/20 game wins, sweeps, seat metrics,
+/// victory mix, plan-commitment and strategy-transition counts. The
+/// fingerprint is therefore deliberately re-pinned rather than changing the
+/// Elo protocol.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x27fb_7b3c_8ece_fc8f;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
