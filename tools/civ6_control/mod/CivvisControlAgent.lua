@@ -4672,6 +4672,43 @@ local function applyOrder(player, pid, row, turn)
 	--
 	-- Pattern copied from the shipped `ProductionPanel.lua`: a PURCHASE **command**,
 	-- not a BUILD operation, with the item hash and the yield to pay from.
+	-- ★★★★★ BUYING GROUND FOR A CITY.
+	--
+	-- `BuyPlot` had no arm at all: `civvis_orders` counted it in the `skipped` tally
+	-- (25 across the runs of 2026-07-31) and the bridge threw every one away, so
+	-- CIVVIS's cities only ever worked the tiles they happened to grow into. A
+	-- treasury that ends a game unspent -- 1459 gold at t182 of run
+	-- civvis-clean-20260731T191337Z -- is a treasury that bought no ground.
+	--
+	-- Pattern from the shipped `PlotInfo.lua`: a PURCHASE **command** carrying the
+	-- plot flag and the plot's own X/Y, gated by `CanStartCommand`.
+	--
+	-- ⚠ ASK BEFORE CLAIMING, the trap this file documents at every other actuator:
+	-- `pcall` succeeding means the call did not throw, not that the city bought
+	-- anything. `CanStartCommand` is the engine's own answer and is checked first, so
+	-- a refusal is reported as a refusal instead of becoming a phantom tile CIVVIS
+	-- believes it owns.
+	if kind == "buy_plot" then
+		local city = liveCity(player, subject);
+		if city == nil then return false, "no_city"; end
+		if x == nil or y == nil then return false, "no_plot"; end
+		local params = {};
+		params[CityCommandTypes.PARAM_PLOT_PURCHASE] = true;
+		params[CityCommandTypes.PARAM_X] = x;
+		params[CityCommandTypes.PARAM_Y] = y;
+		local can = try(function()
+			return CityManager.CanStartCommand(city, CityCommandTypes.PURCHASE, params);
+		end, false);
+		if not can then
+			emit("plot_refused", { turn = turn, x = x, y = y });
+			return false, "cannot_buy_plot";
+		end
+		local ok = pcall(function()
+			CityManager.RequestCommand(city, CityCommandTypes.PURCHASE, params);
+		end);
+		return ok, ok and "bought_plot" or "throw";
+	end
+
 	if kind == "purchase" then
 		local city = liveCity(player, subject);
 		if city == nil then return false, "no_city"; end
