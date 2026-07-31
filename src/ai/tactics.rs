@@ -157,7 +157,22 @@ struct Genome {
     order: Vec<usize>,
 }
 
-/// Search budget. Small on purpose — see the cost note in the module docs.
+/// Search budget.
+///
+/// **This is binding, not a formality.** Unlike the macro search — where
+/// doubling the budget is the one reproducible win and quadrupling does
+/// nothing — combat quality here keeps climbing with budget across the whole
+/// range measured, 700 scenarios a cell on combined arms:
+///
+/// | pop / gen / lines | combined arms | melee | seated cost |
+/// |---|---|---|---|
+/// | 12 / 6 / 6 | +236.9 | +6.2 | 1.13x |
+/// | **20 / 10 / 10 (shipped)** | **+279.1** | **+17.6** | **1.29x** |
+/// | 32 / 20 / 16 | +300.0 | +17.6 | 2.19x |
+///
+/// 20/10/10 is chosen as the knee: it takes most of the available gain at a
+/// cost still far under the 6.4x a searching macro seat costs. Raising it
+/// further is a live option if the compute is ever worth spending.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct JointTactics {
     pub population: usize,
@@ -172,10 +187,10 @@ pub(crate) struct JointTactics {
 impl Default for JointTactics {
     fn default() -> Self {
         JointTactics {
-            population: 12,
-            generations: 6,
+            population: 20,
+            generations: 10,
             max_units: 8,
-            max_lines: 6,
+            max_lines: 10,
         }
     }
 }
