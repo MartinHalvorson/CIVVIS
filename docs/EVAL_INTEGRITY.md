@@ -414,7 +414,39 @@ is the failure mode this repository loses whole iterations to, and which
 `docs/EVAL.md` exists to prevent but cannot when the arm and the record are not
 linked.
 
-## 8. Order of work
+## 8. The restatement worklist
+
+How much of the record this touches, counted over the 32 `ai_eval` invocations
+recorded in `docs/EVAL.md`. The criterion is the one §2 proposes: how many axes
+separate the two arms.
+
+**Two axes — genuinely confounded, re-run against `advanced_evolved` (8 of 32):**
+
+| comparison | occurrences | axes that differ |
+|---|---:|---|
+| `strategic` v `advanced` | 5 | architecture, weights |
+| `production` v `advanced` | 1 | architecture, weights |
+| `policy_wide` v `advanced` | 1 | architecture, weights, evaluator |
+| `strategic_cheap` v `advanced` | 1 | architecture, weights |
+
+**One axis, correctly designed — no change needed (6 of 32):**
+`advanced_evolved` v `advanced` varies weights alone, which is exactly what a
+genome measurement should do. This is the reassuring half: when the repository
+set out to measure one thing it built the right control. The confound appears
+where a *component* was measured against the habitual baseline rather than
+against a matched one.
+
+**One axis but mislabelled (2 of 32):** `policy` v `advanced`. With no net,
+`policy` is `AdvancedAi` with champion weights, so only weights differ — the
+comparison is sound but it is a genome result filed as a policy result. It
+needs relabelling, not re-running.
+
+Re-running the eight is roughly a day of compute at 120 pairs each on both
+profiles, and it is the only way to know what search is actually worth. The
+audit has already done two of them: `strategic` → +61 rather than +92 at 4p
+compact, and `production` → 45.8%/−29 rather than +76.
+
+## 9. Order of work
 
 Ordered by damage prevented per unit cost. The first two are prerequisites for
 trusting anything measured afterwards.
@@ -426,14 +458,14 @@ trusting anything measured afterwards.
 | 3 | Discovery-vs-confirmed effect sizes in `ai_eval`; the docs rule | R3 | ~half a day |
 | 4 | `strength_bound()` as the only ordering; table reproducible or gone | R4 | ~half a day |
 | 5 | Arm lifecycle: `EvalArm` with evidence + status, CI check that the section exists | §7 | falls out of 1 |
-| 6 | Restate affected published numbers against matched controls | fallout of 1 and 3 | compute |
+| 6 | Restate the eight two-axis comparisons in §8 against matched controls | fallout of 1 and 3 | ~a day of compute |
 | 7 | Deployment-profile decision on seating search | §6 | compute, largest |
 
 Items 1–4 are code and are independent of each other. Item 5 cannot be trusted
 before item 1 lands, because it is exactly the measurement item 1 makes
 possible.
 
-## 9. What this is worth
+## 10. What this is worth
 
 Items 1–3 do not make the AI stronger by a single Elo point. They make the
 number that says so trustworthy — and on current evidence the instrument has
