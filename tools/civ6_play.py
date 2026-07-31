@@ -790,7 +790,7 @@ def _play(args: argparse.Namespace) -> int:
     state = {
         "hosted": False, "seat": None, "turn": -1, "score": -1,
         "outcome": None, "last_progress": time.time(), "configured": False,
-        "modes": None,
+        "modes": None, "mode_mismatch": False,
     }
 
     def record(event: dict) -> None:
@@ -828,6 +828,7 @@ def _play(args: argparse.Namespace) -> int:
             modes = event.get("modes")
             state["modes"] = modes
             modes_match = modes is not None and sorted(modes) == sorted(args.game_mode)
+            state["mode_mismatch"] = not modes_match
             state["configured"] = (
                 event.get("difficulty") == args.difficulty
                 and event.get("size") == args.map_size
@@ -930,6 +931,18 @@ def _play(args: argparse.Namespace) -> int:
             return True
         if kind == "defeat":
             return bool(event.get("ours"))
+        # A game with an optional mode on is not the game CIVVIS is compared
+        # against, and 250 turns of it is 250 turns of nothing. Stop at the
+        # seat event rather than at the end.
+        #
+        # ⚠ This is the only thing standing between a wrong game and a full
+        # run, because the setter cannot be relied on: the setup context that
+        # would apply it does not host on this installation -- `configured` is
+        # absent on all twenty recent runs -- so the modes are whatever the
+        # Create Game screen carries, and nothing drives its Advanced Setup
+        # tab. Detection is the guarantee here; setting is best effort.
+        if kind == "seat" and state["mode_mismatch"]:
+            return True
         return False
 
     if not bootstrap_game(tail, record, run_dir, args):
@@ -1026,7 +1039,10 @@ def _play(args: argparse.Namespace) -> int:
         "speed": config["GameSpeed"],
         "seed": config["MapSeed"],
         "max_turns": config["MaxTurns"],
-        "reason": reason,
+        # A run stopped because the game had the wrong modes never played; it
+        # is a refusal, not a result. Recording it as `stopped` would file it
+        # beside games that were played and lost.
+        "reason": "wrong_game_modes" if state["mode_mismatch"] else reason,
         # Whether the game actually played was the one this run asked for.
         # A summary that reports the requested difficulty without this is a
         # claim about the command line, not about the game.
