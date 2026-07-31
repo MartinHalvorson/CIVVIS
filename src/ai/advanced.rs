@@ -924,6 +924,37 @@ pub struct AdvancedAi {
     ///
     /// Reachable as `advanced_wide_opening`, paired against `advanced`.
     pub city_target_floor: usize,
+    /// Let the baseline production governor use the empire's own city target
+    /// instead of the flat `city_target` gene.
+    ///
+    /// `assess` computes `plan.desired_cities` from the land actually on the
+    /// map: `(city_target_floor + turn / cadence).min(map_capacity).min(6)`,
+    /// where `map_capacity = (2 + land / 55).clamp(3, 9)`. Nothing on the
+    /// adaptive path consumes it. `docs/OPENINGS.md` §19 records why: after
+    /// the four-build opening an untargeted adaptive empire reaches
+    /// `advanced_production` only for `Recovery`, and every other adaptive
+    /// plan ends in `BasicAi::cities` — whose Settler gate is
+    /// `(n_cities + settlers) as f64 < self.w.city_target`, a **flat gene
+    /// that cannot see the map**. `ai_eval` reports stock `advanced` at 100%
+    /// adaptive plans, so that is the governor deciding the evaluated games.
+    ///
+    /// The two numbers disagree by construction and the one that decides is
+    /// the one that knows least. Stock ships `city_target = 4.0` on every map
+    /// size; the shipped gen-14 champion ships **2.408**, below the opening
+    /// floor of three, having been bred at 4p 24×16 = 96 tiles per player and
+    /// deployed at 6p 74×46 = 567.
+    ///
+    /// This flag makes the delegation carry the plan: the base governor is
+    /// handed `plan.desired_cities` for the duration of that call and its own
+    /// gene is restored afterwards. It changes no other gate — population,
+    /// production cost, the one-settler-at-a-time rule, the site search and
+    /// `settler_stop_turn` all still apply — and it deliberately does not
+    /// touch the opening-book branch, so the proven four-build opening is
+    /// unchanged.
+    ///
+    /// Default-off evaluator treatment, reachable as
+    /// `advanced_plan_city_target` and paired against `advanced`.
+    pub plan_city_target: bool,
     pub city_strategy: bool,
     /// Ablation halves of `city_strategy`, so the loss above can be attributed
     /// rather than guessed at. Each is meaningless unless `city_strategy` is
@@ -1340,6 +1371,7 @@ impl AdvancedAi {
             expansion_census: ExpansionCensus::default(),
             belief_pressure: false,
             city_target_floor: 3,
+            plan_city_target: false,
             city_strategy: false,
             city_strategy_emphasis: true,
             city_strategy_roles: true,
@@ -14315,7 +14347,19 @@ impl AdvancedAi {
             }
             if active_victory_target.is_none() {
                 self.advanced_support_production(g, pid, &plan);
+                // The adaptive empire's Settler gate lives in the baseline
+                // governor, which reads a flat gene. Hand it the target this
+                // empire actually computed for this map, then put the gene
+                // back so nothing else in the turn sees the substitution.
+                let restore = self.plan_city_target.then(|| {
+                    let gene = self.base.w.city_target;
+                    self.base.w.city_target = plan.desired_cities as f64;
+                    gene
+                });
                 self.base.cities(g, pid);
+                if let Some(gene) = restore {
+                    self.base.w.city_target = gene;
+                }
             }
         }
         if active_victory_target.is_some() {
@@ -24374,6 +24418,98 @@ mod tests {
                     cities / maps as f64,
                     target / maps as f64,
                     score / maps as f64
+                );
+            }
+        }
+        println!();
+    }
+
+    /// The delegation must carry the plan's target and must not leak it.
+    ///
+    /// Two properties, both deterministic: with the flag off the baseline
+    /// governor still sees the gene, and with it on the gene is restored
+    /// after the turn so no later consumer — gold purchase, the `assess`
+    /// fallback, a census — reads the substituted value.
+    #[test]
+    fn plan_city_target_substitutes_only_inside_the_delegated_call() {
+        for flag in [false, true] {
+            let mut game = Game::new_full(4, 24, 16, 4_810_001, 120, 1, false);
+            game.set_fog_memory(false);
+            let mut ais: Vec<AdvancedAi> = (0..game.players.len())
+                .map(|_| {
+                    let mut ai = AdvancedAi::new();
+                    ai.plan_city_target = flag;
+                    ai
+                })
+                .collect();
+            let gene = ais[0].base.w.city_target;
+            while game.winner.is_none() && game.turn <= 40 {
+                let pid = game.current;
+                ais[pid].take_turn(&mut game, pid);
+                assert_eq!(
+                    ais[pid].base.w.city_target, gene,
+                    "the gene must be restored before the turn returns"
+                );
+                if game.winner.is_none() && game.current == pid {
+                    let _ = game.apply(pid, &crate::game::Action::EndTurn);
+                }
+            }
+        }
+    }
+
+    /// Fires-check for `plan_city_target`, at both map scales.
+    ///
+    /// The criterion is the **outcome** — cities at end — for the same reason
+    /// `city_target_floor_fires` gives: a mechanism bucket the treatment
+    /// cannot move is not falsifiable in the helpful direction. It prints the
+    /// plan's own target beside the cities held, because the whole claim is
+    /// that those two numbers currently disagree.
+    ///
+    /// Run with
+    /// `cargo test --profile ci plan_city_target_fires -- --ignored --nocapture`.
+    #[test]
+    #[ignore = "census, not an assertion; run explicitly with --nocapture"]
+    fn plan_city_target_fires() {
+        for (label, players, width, height) in [
+            ("eval 4p 24x16", 4usize, 24i32, 16i32),
+            ("deployment 6p 74x46", 6, 74, 46),
+        ] {
+            for flag in [false, true] {
+                let (mut cities, mut target, mut score) = (0.0f64, 0.0f64, 0.0f64);
+                let maps = 6u64;
+                for map in 0..maps {
+                    let mut game =
+                        Game::new_full(players, width, height, 482_000 + map, 200, 1, false);
+                    let mut ais: Vec<AdvancedAi> = (0..game.players.len())
+                        .map(|_| {
+                            let mut ai = AdvancedAi::new();
+                            ai.plan_city_target = flag;
+                            ai
+                        })
+                        .collect();
+                    game.set_fog_memory(false);
+                    while game.winner.is_none() && game.turn <= game.max_turns {
+                        let pid = game.current;
+                        ais[pid].take_turn(&mut game, pid);
+                        if game.winner.is_none() && game.current == pid {
+                            let _ = game.apply(pid, &crate::game::Action::EndTurn);
+                        }
+                    }
+                    cities += game.player_city_ids(0).len() as f64;
+                    score += game.score(0) as f64;
+                    target += ais[0]
+                        .plan
+                        .as_ref()
+                        .map(|p| p.desired_cities as f64)
+                        .unwrap_or(0.0);
+                }
+                println!(
+                    "  [{label}] plan_city_target={flag}  cities {:.2} / plan target {:.2}   \
+                     score {:.0}   gene {:.3}",
+                    cities / maps as f64,
+                    target / maps as f64,
+                    score / maps as f64,
+                    Weights::default().city_target
                 );
             }
         }
