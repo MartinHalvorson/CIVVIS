@@ -22,7 +22,18 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// edit cannot silently change the longitudinal anchor. If an edit reaches
 /// the legacy path, bump the Elo protocol and start a new ledger; if it is
 /// provably gated away, review that fact before updating this guard.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xec48_6cf8_b1c2_d9fb;
+///
+/// Re-pinned 2026-07-31 for the joint tactical search (`src/ai/tactics.rs`).
+/// The edit is provably gated away from the anchor and that was **checked, not
+/// assumed**: `AdvancedAi::joint_tactics` defaults to `false`, so the only
+/// unconditional additions to the legacy path are inert struct fields, a
+/// `clear()` on one of them, and a set membership test that is always empty.
+/// Verified empirically by building `origin/main` into a second worktree and
+/// running `ai_eval advanced basic --pairs 10 --players 4 --turns 200 --seed
+/// 31337` on both: identical paired score, identical sweeps, and identical
+/// strategy-transition counts across 40 seat-games and 4,390 player-turns. No
+/// Elo protocol bump, because nothing the ledger measures moved.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xf3ce_b570_47cf_badb;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {

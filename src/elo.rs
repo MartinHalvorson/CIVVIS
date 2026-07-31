@@ -38,7 +38,7 @@ pub const BUILTIN_AIS: [&str; 10] = [
 /// tournament ratings. Keeping them out of `BUILTIN_AIS` prevents a control
 /// factory from being pooled into the same player/leader rating key as
 /// its treatment.
-pub const EVAL_ONLY_AIS: [&str; 70] = [
+pub const EVAL_ONLY_AIS: [&str; 71] = [
     "advanced_policy_live_control",
     "advanced_envoy_policy",
     "advanced_envoy_infrastructure",
@@ -78,6 +78,7 @@ pub const EVAL_ONLY_AIS: [&str; 70] = [
     "advanced_league_top",
     "strategic_cheap",
     "advanced_relief_scoped",
+    "advanced_joint_tactics",
     "strategic_score",
     "strategic_doctrine",
     "strategic_joint",
@@ -1556,6 +1557,17 @@ pub fn builtin_ai(name: &str, seed: u64) -> Box<dyn Ai> {
             ai.scoped_relief_hold = true;
             Box::new(ai)
         }
+        // Treatment for the tactical-commitment axis: identical to `advanced`
+        // in every other respect, deciding the turn's whole engagement as one
+        // joint problem instead of letting units commit greedily one at a time
+        // in a fixed class order. Paired against `advanced` this isolates the
+        // commitment rule and nothing else — the same per-unit evaluator, the
+        // same weights, the same everything above the battlefield.
+        "advanced_joint_tactics" => {
+            let mut ai = AdvancedAi::new();
+            ai.joint_tactics = true;
+            Box::new(ai)
+        }
         // The denial ablation on the weights the deployment actually plays.
         // Every other arm in `docs/COUNTERING_LEADERS.md` ran on
         // `Weights::default()`, and a genome moves `war_ratio`, `city_target`
@@ -2258,6 +2270,7 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "advanced_food_first" => (Vec::new(), "advanced_food_first"),
         "advanced_v1" => (Vec::new(), "advanced_v1"),
         "advanced_relief_scoped" => (Vec::new(), "advanced_relief_scoped"),
+        "advanced_joint_tactics" => (Vec::new(), "advanced_joint_tactics"),
         "random" => (Vec::new(), "random"),
         // `builtin_ai` answers every other name with the lightweight agent.
         "basic" => (Vec::new(), "basic"),
@@ -2998,7 +3011,7 @@ mod tests {
             // Anything else reaching that state fell through to the
             // catch-all and is claiming to need nothing while quietly
             // needing a net.
-            const SCRIPTED: [&str; 41] = [
+            const SCRIPTED: [&str; 42] = [
                 "advanced",
                 "advanced_policy_live_control",
                 "advanced_envoy_policy",
@@ -3035,6 +3048,7 @@ mod tests {
                 "advanced_measured_dedication",
                 "advanced_parallel_settlers",
                 "advanced_prophet_first",
+                "advanced_joint_tactics",
                 "advanced_relief_scoped",
                 "advanced_settler_first",
                 "advanced_v1",
