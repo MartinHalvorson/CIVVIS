@@ -16,6 +16,17 @@ lock, so quitting Civ 6 is part of cleanup, not optional.
 ⚠ A WIN IS ONLY A WIN IF THE SETTINGS WERE WHAT WE ASKED FOR. The ledger records the
 `seat` event read back from inside the game beside the outcome, because
 `setup: "(absent)"` on this build means several requested settings never applied.
+
+⚠⚠ AN ATTEMPT THAT NEVER STARTED A GAME IS NOT AN ATTEMPT. On 2026-07-31 a login
+killed Steam mid-batch; `launcher.launch` then raised "the Steam client is not
+running" on every remaining iteration, each one took twelve seconds, and the loop
+spent attempts 14 through 24 in two minutes before printing "no win in the attempts
+given" — a conclusion drawn from eleven games that were never played. It destroyed
+the thirteen-attempt frozen-build batch the whole night's work was to be judged on.
+
+The budget counts MEASUREMENTS, not iterations. A precondition failure waits and
+retries; it does not spend a rung. This is the same defect as every instrument this
+project has had to repair: a number that reports a result where nothing happened.
 """
 
 from __future__ import annotations
@@ -33,6 +44,15 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 RUN_ROOT = Path.home() / "civvis-civ6-runs" / "control"
 LEDGER = Path.home() / "civvis-civ6-runs" / "civvis_ladder.jsonl"
+
+sys.path.insert(0, str(HERE))
+from civ6_control import launcher  # noqa: E402
+
+# Backoff between blocked starts. The first steps are short because the usual cause
+# is a Steam client that is coming back up on its own; the last is long because if
+# it is still down after four minutes a human has to do something, and a loop
+# polling every fifteen seconds for an hour teaches nobody anything.
+BLOCKED_BACKOFF_S = (15.0, 30.0, 60.0, 120.0, 240.0)
 
 
 def stamp() -> str:
@@ -104,6 +124,57 @@ def teardown() -> None:
 def busy() -> str | None:
     out = run(["pgrep", "-f", "Civ6_Exe|civ6_play.py|civ6_brain.py"])
     return out.strip() or None
+
+
+def blocked_reason() -> str | None:
+    """Why an attempt cannot BEGIN, or None if it can. Checked before spending a rung.
+
+    ⚠ THIS IS A DIFFERENT QUESTION FROM "DID THE ATTEMPT LOSE", and conflating the two
+    is what cost the frozen-build batch. A game that starts and is conquered on turn
+    240 is evidence. A game that never starts is the absence of evidence, and the two
+    were indistinguishable to a loop that counted iterations.
+
+    Deliberately cheap and deliberately narrow: it names only preconditions this
+    harness cannot itself supply, so it can be polled every few seconds without
+    becoming its own reason for a slow run. `launcher` is imported rather than
+    re-implemented so there is ONE definition of "Steam is up" — the check here and
+    the `SystemExit` inside `launcher.launch` must never be able to disagree.
+    """
+    if not launcher.steam_running():
+        return "the Steam client is not running"
+    binary = launcher.game_binary()
+    if not binary.is_file():
+        return f"game binary not found: {binary}"
+    return None
+
+
+def wake_steam() -> None:
+    """Ask Steam to come back, in the background so it cannot steal the game's focus.
+
+    Best effort. The harness already quits Civ 6, `pkill`s its children and clicks
+    modal buttons through System Events, so starting the client it depends on is well
+    inside what it already does — and the alternative, discovered the hard way, is a
+    machine that sits idle all night because one app exited at a login.
+    """
+    run(["open", "-ga", "Steam"], timeout=30.0)
+
+
+def tail_of(path: Path, limit: int = 200) -> str:
+    """The last thing a dead attempt said, for the ledger row that records the hole.
+
+    A blocked row whose reason is "no turn observed" tells the next reader nothing
+    they could act on. The play log's final line is usually the whole diagnosis —
+    "the Steam client is not running; the game cannot initialise" — and it costs one
+    read to carry it into the ledger instead of leaving it in a file nobody opens.
+    """
+    try:
+        lines = [ln.strip() for ln in path.read_text(errors="replace").splitlines()]
+    except OSError:
+        return ""
+    for line in reversed(lines):
+        if line:
+            return line[:limit]
+    return ""
 
 
 def outcome_of(tag: str) -> dict:
@@ -226,7 +297,33 @@ def main() -> int:
         print("something already holds the game; tearing it down first", flush=True)
     teardown()
 
-    for attempt in range(1, args.attempts + 1):
+    played = 0          # attempts that produced a MEASUREMENT — the only budget
+    started = 0         # iterations, for the log line only
+    blocked_streak = 0
+
+    while played < args.attempts:
+        # ⚠ Gate BEFORE the tag, the mod sync and the log files. A blocked start that
+        # gets that far leaves a run directory and two empty logs behind, which is
+        # what made the dead-Steam batch look like eleven real attempts on disk.
+        reason = blocked_reason()
+        if reason is not None:
+            if blocked_streak >= len(BLOCKED_BACKOFF_S):
+                print(f"cannot start a game: {reason}. Gave up after "
+                      f"{blocked_streak} waits; {played}/{args.attempts} attempts "
+                      f"were played. NO CONCLUSION IS AVAILABLE FROM THIS BATCH.",
+                      flush=True)
+                return 3
+            wait = BLOCKED_BACKOFF_S[blocked_streak]
+            blocked_streak += 1
+            print(f"blocked: {reason} — waiting {wait:.0f}s "
+                  f"(no attempt spent; {played}/{args.attempts} played)", flush=True)
+            if "Steam" in reason:
+                wake_steam()
+            time.sleep(wait)
+            continue
+
+        attempt = played + 1
+        started += 1
         tag = f"civvis-{stamp()}"
         # ⚠ THE CODE CHANGES BETWEEN ATTEMPTS AND THE LEDGER COULD NOT SAY SO.
         # The harness re-installs the mod at the start of every attempt, so a fix
@@ -299,10 +396,34 @@ def main() -> int:
 
         record = outcome_of(tag)
         record["utc"] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-        record["attempt"] = attempt
         record["victory_target"] = args.victory
         record["difficulty_asked"] = args.difficulty
         record["code_rev"] = code_rev
+
+        # ⚠ NO TURN WAS EVER OBSERVED, so this row is not a loss — it is a run that
+        # did not happen. It is still written down, because a batch with holes in it
+        # has to SHOW the holes, but it is marked and it does not spend a rung. The
+        # game can also die after the gate above passed (Steam quitting between the
+        # check and the launch is the exact case that started this), so the same
+        # judgement has to be made here, on evidence, and not only up front.
+        if record.get("last_turn") is None:
+            record["blocked"] = tail_of(logs / f"{tag}-play.log") or "no turn observed"
+            record["attempt"] = None
+            with LEDGER.open("a") as handle:
+                handle.write(json.dumps(record, sort_keys=True) + "\n")
+            blocked_streak += 1
+            print(f"  NO GAME — {record['blocked']}", flush=True)
+            if blocked_streak >= len(BLOCKED_BACKOFF_S):
+                print(f"{blocked_streak} starts in a row produced no game; stopping. "
+                      f"{played}/{args.attempts} attempts were played. "
+                      f"NO CONCLUSION IS AVAILABLE FROM THIS BATCH.", flush=True)
+                return 3
+            time.sleep(BLOCKED_BACKOFF_S[blocked_streak - 1])
+            continue
+
+        played += 1
+        blocked_streak = 0
+        record["attempt"] = played
         with LEDGER.open("a") as handle:
             handle.write(json.dumps(record, sort_keys=True) + "\n")
 
@@ -310,10 +431,11 @@ def main() -> int:
               f"rival_best={record.get('rival_best')} cities={record.get('cities')}",
               flush=True)
         if won(record):
-            print(f"*** WON on attempt {attempt} ({tag}) ***", flush=True)
+            print(f"*** WON on attempt {played} ({tag}) ***", flush=True)
             return 0
 
-    print("no win in the attempts given", flush=True)
+    print(f"no win in {played} attempts played "
+          f"({started - played} starts produced no game)", flush=True)
     return 1
 
 

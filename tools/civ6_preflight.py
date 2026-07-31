@@ -145,6 +145,37 @@ def check_installed(report: Report) -> None:
             report.ok(path.name, "matches worktree")
 
 
+def check_host(report: Report) -> None:
+    """Can a game start AT ALL on this machine right now.
+
+    ⚠ THIS TOOL GATES A LADDER AND DID NOT CHECK THE ONE THING THAT STOPS A LADDER
+    DEAD. On 2026-07-31 a login exited Steam and the climb loop burned eleven of
+    twenty-four attempts in two minutes; every check here passed, because every check
+    here was about our own code. The mod can be perfect and the harness can parse and
+    the engine tests can be green while the game cannot be launched.
+
+    A WARNING, not a failure. Preflight is often run to check an edit on a machine
+    where nobody intends to play — failing there would train the operator to pass
+    `--skip` and lose the check entirely. The climb loop enforces it; this reports it.
+    """
+    print("host")
+    sys.path.insert(0, str(ROOT / "tools"))
+    from civ6_control import launcher
+
+    if launcher.steam_running():
+        report.ok("Steam", "running")
+    else:
+        report.warn("Steam", "not running; a ladder started now plays no games")
+    # Asked of the launcher rather than rebuilt from INSTALLED: the real binary is
+    # `Civ6_Exe_Child`, four directories up and under a different name, and writing
+    # that path out a second time is how two checks come to disagree.
+    binary = launcher.game_binary()
+    if binary.is_file():
+        report.ok("game binary", binary.name)
+    else:
+        report.warn("game binary", f"not found at {binary}")
+
+
 def check_engine(report: Report) -> None:
     print("engine")
     cargo = Path.home() / ".cargo" / "bin" / "cargo"
@@ -223,6 +254,7 @@ def main() -> int:
     check_modinfo(report)
     check_python(report)
     check_installed(report)
+    check_host(report)
     if not args.skip_engine:
         check_engine(report)
     if args.run:
