@@ -1,8 +1,8 @@
 //! Paired, seat-balanced head-to-head evaluator for built-in AIs.
 use civvis::ai::{Ai, ExpansionCensus};
 use civvis::elo::{
-    builtin_ai, builtin_provenances, collapsed_entrants, AgentProvenance, ARTIFACT_DIR,
-    BUILTIN_AIS, EVAL_ONLY_AIS,
+    builtin_ai, builtin_arm, builtin_provenances, collapsed_entrants, AgentProvenance,
+    ARTIFACT_DIR, BUILTIN_AIS, EVAL_ONLY_AIS,
 };
 use civvis::game::{default_difficulty, Action, Game, GameOptions, VictoryConditions};
 use civvis::rules::Rules;
@@ -846,6 +846,10 @@ fn matrix_child_args(
         "science,culture,domination".to_string(),
         "--difficulty".to_string(),
         difficulty.to_string(),
+        // A profile matrix asks the explicitly replacement-oriented question
+        // of whether the challenger should displace the incumbent. It is not
+        // an attribution claim, so its child runs opt into multi-axis arms.
+        "--deployment-comparison".to_string(),
     ]
     .into_iter()
     .collect();
@@ -1082,6 +1086,16 @@ fn main() {
     for entry in &provenance {
         println!("{}", entry.line());
     }
+    let arms = [
+        builtin_arm(a).expect("validated left builtin arm"),
+        builtin_arm(b).expect("validated right builtin arm"),
+    ];
+    let axes = arms[0].spec.differing_axes(&arms[1].spec);
+    if axes.is_empty() {
+        println!("arms differ on: none");
+    } else {
+        println!("arms differ on: {}", axes.join(", "));
+    }
     let collapsed = collapsed_entrants(&[a, b], &artifact_dir);
     for (left, right, shared) in &collapsed {
         println!(
@@ -1126,6 +1140,13 @@ fn main() {
     }
     if !collapsed.is_empty() {
         eprintln!("refusing to evaluate two names that resolve to one agent");
+        std::process::exit(2);
+    }
+    if axes.len() > 1 && !args.iter().any(|arg| arg == "--deployment-comparison") {
+        eprintln!(
+            "refusing a {}-axis comparison without --deployment-comparison; this run cannot attribute a replacement result to one mechanism",
+            axes.len()
+        );
         std::process::exit(2);
     }
     let pairs = number(&args, "--pairs", 50).max(1) as usize;
@@ -1790,6 +1811,9 @@ mod tests {
             assert_eq!(text(args, "--shape", "missing"), "planet");
             assert_eq!(text(args, "--poles", "missing"), "poles");
             assert!(args.iter().any(|argument| argument == "--randomize-civs"));
+            assert!(args
+                .iter()
+                .any(|argument| argument == "--deployment-comparison"));
             assert!(!args.iter().any(|argument| argument == "--matrix"));
         }
         assert_eq!(number(&compact, "--players", 0), 4);

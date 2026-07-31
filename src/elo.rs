@@ -119,6 +119,123 @@ pub const EVAL_ONLY_AIS: [&str; 78] = [
     "strategic_deep_rivals",
 ];
 
+/// Register a selectable arm once, under a typed identity.  The factory,
+/// artifact resolver, provenance report, and evaluator-collapse guard all use
+/// this identity rather than maintaining separate string matches.
+macro_rules! define_arm_kinds {
+    ($($variant:ident => $name:literal),+ $(,)?) => {
+        #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
+        enum ArmKind {
+            $($variant),+
+        }
+
+        impl ArmKind {
+            fn from_name(name: &str) -> Option<Self> {
+                match name {
+                    $($name => Some(Self::$variant),)+
+                    _ => None,
+                }
+            }
+
+            const fn name(self) -> &'static str {
+                match self {
+                    $(Self::$variant => $name,)+
+                }
+            }
+        }
+    };
+}
+
+define_arm_kinds! {
+    Advanced => "advanced",
+    AdvancedBankingDedication => "advanced_banking_dedication",
+    AdvancedBeliefPressure => "advanced_belief_pressure",
+    AdvancedBlindToLeaders => "advanced_blind_to_leaders",
+    AdvancedCityStrategy => "advanced_city_strategy",
+    AdvancedCityStrategyBastionOnly => "advanced_city_strategy_bastion_only",
+    AdvancedCityStrategyBreadbasketOnly => "advanced_city_strategy_breadbasket_only",
+    AdvancedCityStrategyComparativeOnly => "advanced_city_strategy_comparative_only",
+    AdvancedCityStrategyEmphasis => "advanced_city_strategy_emphasis",
+    AdvancedCityStrategyPressureOnly => "advanced_city_strategy_pressure_only",
+    AdvancedCityStrategyRaw => "advanced_city_strategy_raw",
+    AdvancedCityStrategyRoles => "advanced_city_strategy_roles",
+    AdvancedCityStrategyRolesRaw => "advanced_city_strategy_roles_raw",
+    AdvancedCivBlind => "advanced_civ_blind",
+    AdvancedCongressCounter => "advanced_congress_counter",
+    AdvancedCongressCounterHard => "advanced_congress_counter_hard",
+    AdvancedCongressVotes => "advanced_congress_votes",
+    AdvancedCounterInLane => "advanced_counter_in_lane",
+    AdvancedCounterStandDown => "advanced_counter_stand_down",
+    AdvancedEarlyScoreAlarm => "advanced_early_score_alarm",
+    AdvancedEarlyScoreBuild => "advanced_early_score_build",
+    AdvancedEnvoyEconomy => "advanced_envoy_economy",
+    AdvancedEnvoyInfrastructure => "advanced_envoy_infrastructure",
+    AdvancedEnvoyPolicy => "advanced_envoy_policy",
+    AdvancedEnvoyPriority => "advanced_envoy_priority",
+    AdvancedEvolved => "advanced_evolved",
+    AdvancedEvolvedBlind => "advanced_evolved_blind",
+    AdvancedEvolvedCommitment => "advanced_evolved_commitment",
+    AdvancedExpansionComplete => "advanced_expansion_complete",
+    AdvancedExpansionDispatch => "advanced_expansion_dispatch",
+    AdvancedExpansionPayback => "advanced_expansion_payback",
+    AdvancedFoodFirst => "advanced_food_first",
+    AdvancedJointTactics => "advanced_joint_tactics",
+    AdvancedLaneReachable => "advanced_lane_reachable",
+    AdvancedLateExpansion => "advanced_late_expansion",
+    AdvancedLeagueTop => "advanced_league_top",
+    AdvancedMeasuredDedication => "advanced_measured_dedication",
+    AdvancedParallelSettlers => "advanced_parallel_settlers",
+    AdvancedPolicyLiveControl => "advanced_policy_live_control",
+    AdvancedProphetFirst => "advanced_prophet_first",
+    AdvancedReliefScoped => "advanced_relief_scoped",
+    AdvancedRush => "advanced_rush",
+    AdvancedRushConnected => "advanced_rush_connected",
+    AdvancedSettlerCommit => "advanced_settler_commit",
+    AdvancedSettlerFirst => "advanced_settler_first",
+    AdvancedStrategicCommitment => "advanced_strategic_commitment",
+    AdvancedV1 => "advanced_v1",
+    AdvancedWideOpening => "advanced_wide_opening",
+    Basic => "basic",
+    BasicEvolved => "basic_evolved",
+    Evolved => "evolved",
+    Neural => "neural",
+    Policy => "policy",
+    PolicyWide => "policy_wide",
+    PolicyWideFrozen => "policy_wide_frozen",
+    Production => "production",
+    ProductionNet => "production_net",
+    Random => "random",
+    Strategic => "strategic",
+    StrategicCheap => "strategic_cheap",
+    StrategicCold => "strategic_cold",
+    StrategicDeep => "strategic_deep",
+    StrategicDeepAdaptive => "strategic_deep_adaptive",
+    StrategicDeepCheckmate => "strategic_deep_checkmate",
+    StrategicDeepConsolidate => "strategic_deep_consolidate",
+    StrategicDeepConversion => "strategic_deep_conversion",
+    StrategicDeepDefault => "strategic_deep_default",
+    StrategicDeepExpand => "strategic_deep_expand",
+    StrategicDeepLeague => "strategic_deep_league",
+    StrategicDeepMilitarize => "strategic_deep_militarize",
+    StrategicDeepRivals => "strategic_deep_rivals",
+    StrategicDeepTempo => "strategic_deep_tempo",
+    StrategicDoctrine => "strategic_doctrine",
+    StrategicH80 => "strategic_h80",
+    StrategicJoint => "strategic_joint",
+    StrategicNodefer => "strategic_nodefer",
+    StrategicNoprophet => "strategic_noprophet",
+    StrategicR10 => "strategic_r10",
+    StrategicR20 => "strategic_r20",
+    StrategicR20H20 => "strategic_r20h20",
+    StrategicReligionExpand => "strategic_religion_expand",
+    StrategicRivals => "strategic_rivals",
+    StrategicRot10 => "strategic_rot10",
+    StrategicRot20 => "strategic_rot20",
+    StrategicScore => "strategic_score",
+    StrategicUltra => "strategic_ultra",
+    StrategicWarm => "strategic_warm",
+}
+
 /// On-disk schema for the shared player/leader/civilization rating ledger.
 pub const ELO_SCHEMA_VERSION: u32 = 3;
 /// Version of the game/rating contract, independent of the JSON shape. Bump
@@ -241,6 +358,27 @@ fn league_generalist() -> Option<(String, Weights)> {
                 .then_with(|| right.2.cmp(&left.2))
         })
         .map(|(_, _, name, weights)| (name, weights))
+}
+
+/// The weights used by `advanced_league_top`.  Keep this extraction shared
+/// with the evaluator spec so the reported source cannot diverge from the
+/// controller the factory constructs.
+fn shipped_league_top_advanced() -> Option<Weights> {
+    let league = crate::league::shipped_league()?;
+    let mut best: Option<(f64, Weights)> = None;
+    for index in league.active() {
+        let strategy = &league.strategies[index];
+        if let crate::league::StrategyKind::Advanced { weights, .. } = &strategy.kind {
+            if best
+                .as_ref()
+                .map(|(rating, _)| strategy.rating > *rating)
+                .unwrap_or(true)
+            {
+                best = Some((strategy.rating, weights.clone()));
+            }
+        }
+    }
+    best.map(|(_, weights)| weights)
 }
 
 /// Resolve the leader supplied by the active ruleset. Keeping this beside the
@@ -1178,102 +1316,133 @@ impl EloPool {
 }
 
 /// Canonical controller identity for names whose artifacts can make them an
-/// exact alias of another selectable agent.
-///
-/// Both construction and provenance go through this table. When it returns a
-/// different name, [`builtin_ai`] delegates to that name's factory instead of
-/// independently reconstructing what ought to be the same controller. This
-/// makes the provenance claim true by construction, including the embedded
-/// champion tier used by the production `evolved/` directory.
+/// exact alias of another selectable agent. The resolved [`ArmKind`] is what
+/// construction, provenance, and comparison all receive; a label cannot
+/// independently describe a controller that the factory did not build.
 fn artifact_effective_alias_from(
-    name: &str,
+    kind: ArmKind,
     champion: bool,
     net: bool,
     wide_net: bool,
     league: bool,
-) -> Option<&'static str> {
-    let basic_fallback = if champion { "basic_evolved" } else { "basic" };
-    let advanced_fallback = if champion {
-        "advanced_evolved"
+) -> ArmKind {
+    let basic_fallback = if champion {
+        ArmKind::BasicEvolved
     } else {
-        "advanced"
+        ArmKind::Basic
     };
-    match name {
-        "evolved" | "advanced_evolved" => Some(advanced_fallback),
-        "basic_evolved" => Some(basic_fallback),
-        "neural" => Some(if net { "neural" } else { basic_fallback }),
-        "policy" => Some(if net { "policy" } else { advanced_fallback }),
-        "policy_wide" => Some(if wide_net {
-            "policy_wide"
-        } else {
-            advanced_fallback
-        }),
-        "policy_wide_frozen" => Some(if wide_net {
-            "policy_wide_frozen"
-        } else {
-            advanced_fallback
-        }),
-        "strategic" => Some(if net { "strategic" } else { "strategic_score" }),
-        "strategic_warm" => Some(if net { "strategic" } else { "strategic_score" }),
-        "production_net" => Some(if net { "production_net" } else { "production" }),
-        "strategic_deep_league" => Some(if league {
-            "strategic_deep_league"
-        } else {
-            "strategic_deep"
-        }),
-        "advanced_evolved_commitment" => Some(if champion {
-            "advanced_evolved_commitment"
-        } else {
-            "advanced_strategic_commitment"
-        }),
-        "advanced_evolved_blind" => Some(if champion {
-            "advanced_evolved_blind"
-        } else {
-            "advanced_blind_to_leaders"
-        }),
-        "advanced_banking_dedication" => Some(advanced_fallback),
-        _ => None,
-    }
-}
-
-fn artifact_effective_alias(name: &str, dir: &str) -> Option<&'static str> {
-    if !matches!(
-        name,
-        "evolved"
-            | "advanced_evolved"
-            | "basic_evolved"
-            | "neural"
-            | "policy"
-            | "policy_wide"
-            | "policy_wide_frozen"
-            | "strategic"
-            | "strategic_warm"
-            | "production_net"
-            | "strategic_deep_league"
-            | "advanced_evolved_commitment"
-            | "advanced_evolved_blind"
-            | "advanced_banking_dedication"
-    ) {
-        return None;
-    }
-    let champion = crate::evolve::load_champion(dir).is_some();
-    let net = matches!(
-        name,
-        "neural" | "policy" | "strategic" | "strategic_warm" | "production_net"
-    ) && crate::valuenet::ValueNet::load_width(dir, crate::evolve::FEATURE_WIDTH).is_some();
-    let wide_net = matches!(name, "policy_wide" | "policy_wide_frozen")
-        && crate::valuenet::ValueNet::load_width(dir, crate::decision_features::WIDTH).is_some();
-    let league = name == "strategic_deep_league" && league_generalist().is_some();
-    artifact_effective_alias_from(name, champion, net, wide_net, league)
-}
-
-pub fn builtin_ai(name: &str, seed: u64) -> Box<dyn Ai> {
-    if let Some(effective) = artifact_effective_alias(name, ARTIFACT_DIR) {
-        if effective != name {
-            return builtin_ai(effective, seed);
+    let advanced_fallback = if champion {
+        ArmKind::AdvancedEvolved
+    } else {
+        ArmKind::Advanced
+    };
+    match kind {
+        ArmKind::Evolved | ArmKind::AdvancedEvolved => advanced_fallback,
+        ArmKind::BasicEvolved => basic_fallback,
+        ArmKind::Neural => {
+            if net {
+                ArmKind::Neural
+            } else {
+                basic_fallback
+            }
         }
+        ArmKind::Policy => {
+            if net {
+                ArmKind::Policy
+            } else {
+                advanced_fallback
+            }
+        }
+        ArmKind::PolicyWide => {
+            if wide_net {
+                ArmKind::PolicyWide
+            } else {
+                advanced_fallback
+            }
+        }
+        ArmKind::PolicyWideFrozen => {
+            if wide_net {
+                ArmKind::PolicyWideFrozen
+            } else {
+                advanced_fallback
+            }
+        }
+        ArmKind::Strategic | ArmKind::StrategicWarm => {
+            if net {
+                ArmKind::Strategic
+            } else {
+                ArmKind::StrategicScore
+            }
+        }
+        ArmKind::ProductionNet => {
+            if net {
+                ArmKind::ProductionNet
+            } else {
+                ArmKind::Production
+            }
+        }
+        ArmKind::StrategicDeepLeague => {
+            if league {
+                ArmKind::StrategicDeepLeague
+            } else {
+                ArmKind::StrategicDeep
+            }
+        }
+        ArmKind::AdvancedEvolvedCommitment => {
+            if champion {
+                ArmKind::AdvancedEvolvedCommitment
+            } else {
+                ArmKind::AdvancedStrategicCommitment
+            }
+        }
+        ArmKind::AdvancedEvolvedBlind => {
+            if champion {
+                ArmKind::AdvancedEvolvedBlind
+            } else {
+                ArmKind::AdvancedBlindToLeaders
+            }
+        }
+        ArmKind::AdvancedBankingDedication => advanced_fallback,
+        _ => kind,
     }
-    match name {
+}
+
+fn artifact_effective_alias(kind: ArmKind, dir: &str) -> ArmKind {
+    // The hot factory path resolves only artifacts which can change its
+    // canonical controller.  In particular, scripted `advanced` used to pay
+    // a champion parse solely because evaluator metadata was bolted onto
+    // construction; ordinary games must not do evaluator work per seat.
+    let champion = matches!(
+        kind,
+        ArmKind::Evolved
+            | ArmKind::AdvancedEvolved
+            | ArmKind::BasicEvolved
+            | ArmKind::Neural
+            | ArmKind::Policy
+            | ArmKind::PolicyWide
+            | ArmKind::PolicyWideFrozen
+            | ArmKind::AdvancedEvolvedCommitment
+            | ArmKind::AdvancedEvolvedBlind
+            | ArmKind::AdvancedBankingDedication
+    ) && crate::evolve::load_champion(dir).is_some();
+    let net = matches!(
+        kind,
+        ArmKind::Neural
+            | ArmKind::Policy
+            | ArmKind::Strategic
+            | ArmKind::StrategicWarm
+            | ArmKind::ProductionNet
+    ) && crate::valuenet::ValueNet::load_width(dir, crate::evolve::FEATURE_WIDTH).is_some();
+    let wide_net = matches!(kind, ArmKind::PolicyWide | ArmKind::PolicyWideFrozen)
+        && crate::valuenet::ValueNet::load_width(dir, crate::decision_features::WIDTH).is_some();
+    let league = kind == ArmKind::StrategicDeepLeague && league_generalist().is_some();
+    artifact_effective_alias_from(kind, champion, net, wide_net, league)
+}
+
+/// Construct a canonical, already-resolved arm. Public callers enter through
+/// [`builtin_arm`] or [`builtin_ai`], never by selecting a raw string here.
+fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
+    match kind.name() {
         "advanced" => Box::new(AdvancedAi::new()),
         // The first bounded use of the fog-safe belief surface. It retains
         // only last-seen military strength for the already fog-filtered
@@ -1679,22 +1848,7 @@ pub fn builtin_ai(name: &str, seed: u64) -> Box<dyn Ai> {
             Box::new(ai)
         }
         "advanced_league_top" => {
-            let weights = crate::league::shipped_league()
-                .and_then(|league| {
-                    let mut best: Option<(f64, Weights)> = None;
-                    for index in league.active() {
-                        let strategy = &league.strategies[index];
-                        if let crate::league::StrategyKind::Advanced { weights, .. } =
-                            &strategy.kind
-                        {
-                            if best.as_ref().map(|(r, _)| strategy.rating > *r).unwrap_or(true) {
-                                best = Some((strategy.rating, weights.clone()));
-                            }
-                        }
-                    }
-                    best.map(|(_, weights)| weights)
-                })
-                .unwrap_or_default();
+            let weights = shipped_league_top_advanced().unwrap_or_default();
             Box::new(AdvancedAi::with_weights(weights))
         }
         "advanced_prophet_first" => {
@@ -2137,8 +2291,17 @@ pub fn builtin_ai(name: &str, seed: u64) -> Box<dyn Ai> {
             ai.joint_axis_search = true;
             Box::new(ai)
         }
-        _ => Box::new(BasicAi::new()),
+        "basic" => Box::new(BasicAi::new()),
+        _ => unreachable!("registered arm {} has no factory row", kind.name()),
     }
+}
+
+/// Build a selectable arm using the production artifact tier. Unknown names
+/// retain the historical lightweight fallback for game-start callers; the
+/// evaluator validates names and instead consumes [`builtin_arm`].
+pub fn builtin_ai(name: &str, seed: u64) -> Box<dyn Ai> {
+    let requested = ArmKind::from_name(name).unwrap_or(ArmKind::Basic);
+    build_arm(artifact_effective_alias(requested, ARTIFACT_DIR), seed)
 }
 
 /// Directory `builtin_ai` resolves trained artifacts from.
@@ -2160,6 +2323,359 @@ pub struct ArtifactStatus {
     pub file: &'static str,
     pub found: bool,
     pub definitional: bool,
+}
+
+/// Controller family at the evaluator boundary.  This records the agent that
+/// actually receives turns after artifact aliases have resolved.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Architecture {
+    Advanced,
+    LegacyAdvanced,
+    Basic,
+    Random,
+    Neural,
+    Policy,
+    Strategic,
+    Production,
+}
+
+/// Origin of the policy weights actually supplied to an arm.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WeightSource {
+    Stock,
+    Champion,
+    League,
+    FrozenStock,
+    Doctrine(&'static str),
+}
+
+/// Terminal evaluator or selection rule that the controller actually uses.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EvaluatorSource {
+    Scripted,
+    Random,
+    ScoreShare,
+    ValueNet { width: usize },
+}
+
+/// What an entrant is on every behavior-defining axis the paired evaluator
+/// currently understands.  `canonical` is the typed factory target after
+/// artifact resolution, so aliases share a spec by construction rather than
+/// by a separately maintained display label.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AgentSpec {
+    pub canonical: &'static str,
+    pub architecture: Architecture,
+    pub weights: WeightSource,
+    pub evaluator: EvaluatorSource,
+    pub treatments: &'static [&'static str],
+}
+
+impl AgentSpec {
+    /// The independent axes an evaluator would change by replacing `self`
+    /// with `other`.  Treatment components are compared as a set so a
+    /// composite reports each mechanism rather than hiding several changes
+    /// behind one experiment name.
+    pub fn differing_axes(&self, other: &Self) -> Vec<&'static str> {
+        let mut out = Vec::new();
+        if self.architecture != other.architecture {
+            out.push("architecture");
+        }
+        if self.weights != other.weights {
+            out.push("weights");
+        }
+        if self.evaluator != other.evaluator {
+            out.push("evaluator");
+        }
+        for treatment in self
+            .treatments
+            .iter()
+            .chain(other.treatments.iter())
+        {
+            if self.treatments.contains(treatment) != other.treatments.contains(treatment)
+                && !out.contains(treatment)
+            {
+                out.push(treatment);
+            }
+        }
+        // A newly added factory configuration cannot quietly be called a
+        // controlled comparison merely because its semantic tags were not
+        // filled in.  The canonical target is part of equality, and remains a
+        // conservative final axis until an explicit treatment tag is added.
+        if out.is_empty() && self.canonical != other.canonical {
+            out.push("implementation");
+        }
+        out
+    }
+}
+
+impl ArmKind {
+    fn architecture(self) -> Architecture {
+        match self {
+            Self::Basic | Self::BasicEvolved => Architecture::Basic,
+            Self::Random => Architecture::Random,
+            Self::Neural => Architecture::Neural,
+            Self::Policy | Self::PolicyWide | Self::PolicyWideFrozen => Architecture::Policy,
+            Self::Production | Self::ProductionNet => Architecture::Production,
+            Self::AdvancedV1 => Architecture::LegacyAdvanced,
+            Self::Strategic
+            | Self::StrategicCheap
+            | Self::StrategicCold
+            | Self::StrategicDeep
+            | Self::StrategicDeepAdaptive
+            | Self::StrategicDeepCheckmate
+            | Self::StrategicDeepConsolidate
+            | Self::StrategicDeepConversion
+            | Self::StrategicDeepDefault
+            | Self::StrategicDeepExpand
+            | Self::StrategicDeepLeague
+            | Self::StrategicDeepMilitarize
+            | Self::StrategicDeepRivals
+            | Self::StrategicDeepTempo
+            | Self::StrategicDoctrine
+            | Self::StrategicH80
+            | Self::StrategicJoint
+            | Self::StrategicNodefer
+            | Self::StrategicNoprophet
+            | Self::StrategicR10
+            | Self::StrategicR20
+            | Self::StrategicR20H20
+            | Self::StrategicReligionExpand
+            | Self::StrategicRivals
+            | Self::StrategicRot10
+            | Self::StrategicRot20
+            | Self::StrategicScore
+            | Self::StrategicUltra
+            | Self::StrategicWarm => Architecture::Strategic,
+            _ => Architecture::Advanced,
+        }
+    }
+
+    fn weights(self, champion: bool, league: bool) -> WeightSource {
+        match self {
+            Self::StrategicDeepDefault => WeightSource::FrozenStock,
+            Self::StrategicDeepLeague | Self::AdvancedLeagueTop if league => WeightSource::League,
+            Self::StrategicDeepLeague | Self::AdvancedLeagueTop => WeightSource::Stock,
+            Self::StrategicDeepExpand => WeightSource::Doctrine("expand"),
+            Self::StrategicDeepConsolidate => WeightSource::Doctrine("consolidate"),
+            Self::StrategicDeepMilitarize => WeightSource::Doctrine("militarize"),
+            Self::AdvancedEvolved | Self::BasicEvolved => WeightSource::Champion,
+            Self::Evolved => WeightSource::Champion,
+            Self::Neural
+            | Self::Policy
+            | Self::PolicyWide
+            | Self::PolicyWideFrozen
+            | Self::Production
+            | Self::ProductionNet
+            | Self::Strategic
+            | Self::StrategicCheap
+            | Self::StrategicCold
+            | Self::StrategicDeep
+            | Self::StrategicDeepAdaptive
+            | Self::StrategicDeepCheckmate
+            | Self::StrategicDeepConversion
+            | Self::StrategicDeepRivals
+            | Self::StrategicDeepTempo
+            | Self::StrategicDoctrine
+            | Self::StrategicH80
+            | Self::StrategicJoint
+            | Self::StrategicNodefer
+            | Self::StrategicNoprophet
+            | Self::StrategicR10
+            | Self::StrategicR20
+            | Self::StrategicR20H20
+            | Self::StrategicReligionExpand
+            | Self::StrategicRivals
+            | Self::StrategicRot10
+            | Self::StrategicRot20
+            | Self::StrategicScore
+            | Self::StrategicUltra
+            | Self::StrategicWarm
+            | Self::AdvancedMeasuredDedication
+            | Self::AdvancedEvolvedCommitment
+            | Self::AdvancedEvolvedBlind => {
+                if champion {
+                    WeightSource::Champion
+                } else {
+                    WeightSource::Stock
+                }
+            }
+            _ => WeightSource::Stock,
+        }
+    }
+
+    fn evaluator(self, net: bool, wide_net: bool) -> EvaluatorSource {
+        match self {
+            Self::Random => EvaluatorSource::Random,
+            Self::Neural | Self::Policy | Self::ProductionNet if net => {
+                EvaluatorSource::ValueNet { width: crate::evolve::FEATURE_WIDTH }
+            }
+            Self::PolicyWide | Self::PolicyWideFrozen if wide_net => {
+                EvaluatorSource::ValueNet { width: crate::decision_features::WIDTH }
+            }
+            Self::StrategicScore | Self::Production => EvaluatorSource::ScoreShare,
+            Self::Strategic
+            | Self::StrategicCheap
+            | Self::StrategicCold
+            | Self::StrategicDeep
+            | Self::StrategicDeepAdaptive
+            | Self::StrategicDeepCheckmate
+            | Self::StrategicDeepConsolidate
+            | Self::StrategicDeepConversion
+            | Self::StrategicDeepDefault
+            | Self::StrategicDeepExpand
+            | Self::StrategicDeepLeague
+            | Self::StrategicDeepMilitarize
+            | Self::StrategicDeepRivals
+            | Self::StrategicDeepTempo
+            | Self::StrategicDoctrine
+            | Self::StrategicH80
+            | Self::StrategicJoint
+            | Self::StrategicNodefer
+            | Self::StrategicNoprophet
+            | Self::StrategicR10
+            | Self::StrategicR20
+            | Self::StrategicR20H20
+            | Self::StrategicReligionExpand
+            | Self::StrategicRivals
+            | Self::StrategicRot10
+            | Self::StrategicRot20
+            | Self::StrategicUltra
+            | Self::StrategicWarm => {
+                if net {
+                    EvaluatorSource::ValueNet { width: crate::evolve::FEATURE_WIDTH }
+                } else {
+                    EvaluatorSource::ScoreShare
+                }
+            }
+            _ => EvaluatorSource::Scripted,
+        }
+    }
+
+    fn treatments(self) -> &'static [&'static str] {
+        match self {
+            Self::AdvancedBeliefPressure => &["belief-pressure"],
+            Self::AdvancedPolicyLiveControl => &["policy-deck-live"],
+            Self::AdvancedEnvoyPolicy => &["policy-deck-live", "envoy-influence"],
+            Self::AdvancedEnvoyInfrastructure => &["envoy-infrastructure"],
+            Self::AdvancedEnvoyPriority => &["envoy-infrastructure", "envoy-priority"],
+            Self::AdvancedEnvoyEconomy => &[
+                "policy-deck-live",
+                "envoy-influence",
+                "envoy-infrastructure",
+            ],
+            Self::AdvancedStrategicCommitment | Self::AdvancedEvolvedCommitment => {
+                &["strategy-commitment"]
+            }
+            Self::AdvancedFoodFirst => &["food-first"],
+            Self::AdvancedSettlerCommit => &["settler-commitment"],
+            Self::AdvancedBlindToLeaders | Self::AdvancedEvolvedBlind => &["leader-denial-off"],
+            Self::AdvancedRush => &["early-rush"],
+            Self::AdvancedRushConnected => &["early-rush", "connected-rush"],
+            Self::AdvancedCounterInLane => &["counter-in-lane"],
+            Self::AdvancedCounterStandDown => &["counter-stand-down"],
+            Self::AdvancedEarlyScoreAlarm => &["early-score-alarm"],
+            Self::AdvancedCongressCounter => &["congress-counter-target"],
+            Self::AdvancedCongressVotes => &["congress-counter-votes"],
+            Self::AdvancedCongressCounterHard => {
+                &["congress-counter-target", "congress-counter-votes"]
+            }
+            Self::AdvancedEarlyScoreBuild => &["early-score-alarm", "counter-in-lane"],
+            Self::AdvancedCivBlind => &["civilization-blind"],
+            Self::AdvancedParallelSettlers => &["parallel-settlers"],
+            Self::AdvancedCityStrategy => &["city-directives"],
+            Self::AdvancedCityStrategyEmphasis => &["city-directives", "city-emphasis-only"],
+            Self::AdvancedCityStrategyRoles => &["city-directives", "city-roles-only"],
+            Self::AdvancedCityStrategyRolesRaw => &["city-directives", "city-roles-raw"],
+            Self::AdvancedCityStrategyRaw => &["city-directives", "city-raw"],
+            Self::AdvancedCityStrategyBastionOnly => &["city-directives", "city-bastion-only"],
+            Self::AdvancedCityStrategyBreadbasketOnly => {
+                &["city-directives", "city-breadbasket-only"]
+            }
+            Self::AdvancedCityStrategyComparativeOnly => {
+                &["city-directives", "city-comparative-only"]
+            }
+            Self::AdvancedCityStrategyPressureOnly => &["city-directives", "city-pressure-only"],
+            Self::AdvancedExpansionPayback => &["expansion-payback"],
+            Self::AdvancedLateExpansion => &["late-expansion"],
+            Self::AdvancedExpansionDispatch => &["expansion-dispatch"],
+            Self::AdvancedExpansionComplete => &["late-expansion", "expansion-dispatch"],
+            Self::AdvancedWideOpening => &["city-target-floor"],
+            Self::AdvancedLaneReachable => &["lane-reachability"],
+            Self::AdvancedSettlerFirst => &["settler-oracle"],
+            Self::AdvancedProphetFirst => &["prophet-priority"],
+            Self::AdvancedReliefScoped => &["scoped-relief"],
+            Self::AdvancedJointTactics => &["joint-tactics"],
+            Self::AdvancedMeasuredDedication => &["dedication-measured"],
+            Self::StrategicCheap => &["search-cheap"],
+            Self::StrategicCold => &["search-cold"],
+            Self::StrategicDeep => &["search-cadence-20", "search-horizon-80"],
+            Self::StrategicDeepAdaptive => {
+                &["search-cadence-20", "search-horizon-80", "search-adaptive-horizon"]
+            }
+            Self::StrategicDeepCheckmate => {
+                &["search-cadence-20", "search-horizon-80", "religious-checkmate-search"]
+            }
+            Self::StrategicDeepConversion => {
+                &["search-cadence-20", "search-horizon-80", "religious-conversion-search"]
+            }
+            Self::StrategicDeepDefault => &["search-cadence-20", "search-horizon-80"],
+            Self::StrategicDeepExpand => {
+                &["search-cadence-20", "search-horizon-80", "doctrine-expand"]
+            }
+            Self::StrategicDeepConsolidate => {
+                &["search-cadence-20", "search-horizon-80", "doctrine-consolidate"]
+            }
+            Self::StrategicDeepMilitarize => {
+                &["search-cadence-20", "search-horizon-80", "doctrine-militarize"]
+            }
+            Self::StrategicDeepLeague => &["search-cadence-20", "search-horizon-80"],
+            Self::StrategicDeepRivals => {
+                &["search-cadence-20", "search-horizon-80", "rival-lane-model"]
+            }
+            Self::StrategicDeepTempo => {
+                &["search-cadence-20", "search-horizon-80", "terminal-tempo"]
+            }
+            Self::StrategicDoctrine => &["doctrine-search"],
+            Self::StrategicH80 => &["search-horizon-80"],
+            Self::StrategicJoint => &["joint-axis-search"],
+            Self::StrategicNodefer => &["search-no-defer"],
+            Self::StrategicNoprophet => &["religious-prior-off"],
+            Self::StrategicR10 => &["search-cadence-10"],
+            Self::StrategicR20 => &["search-cadence-20"],
+            Self::StrategicR20H20 => &["search-cadence-20", "search-horizon-20"],
+            Self::StrategicReligionExpand => &["religion-may-expand"],
+            Self::StrategicRivals => &["rival-lane-model"],
+            Self::StrategicRot10 => &["search-cadence-10", "rotate-lanes"],
+            Self::StrategicRot20 => &["search-cadence-20", "rotate-lanes"],
+            Self::StrategicUltra => &["search-cadence-10", "search-horizon-80"],
+            Self::AdvancedV1 => &["legacy-advanced"],
+            _ => &[],
+        }
+    }
+
+    fn spec(self, dir: &str) -> AgentSpec {
+        let champion = crate::evolve::load_champion(dir).is_some();
+        let net = crate::valuenet::ValueNet::load_width(dir, crate::evolve::FEATURE_WIDTH)
+            .is_some();
+        let wide_net = crate::valuenet::ValueNet::load_width(
+            dir,
+            crate::decision_features::WIDTH,
+        )
+        .is_some();
+        let league = match self {
+            Self::StrategicDeepLeague => league_generalist().is_some(),
+            Self::AdvancedLeagueTop => shipped_league_top_advanced().is_some(),
+            _ => false,
+        };
+        AgentSpec {
+            canonical: self.name(),
+            architecture: self.architecture(),
+            weights: self.weights(champion, league),
+            evaluator: self.evaluator(net, wide_net),
+            treatments: self.treatments(),
+        }
+    }
 }
 
 /// What a builtin name actually plays as once its artifacts are resolved.
@@ -2240,12 +2756,44 @@ impl AgentProvenance {
     }
 }
 
+/// A resolved evaluator arm. The private `kind` is the exact canonical target
+/// sent to the factory; public consumers can compare `spec` without relying on
+/// a display alias or a second factory match.
+#[derive(Debug, Clone)]
+pub struct BuiltinArm {
+    pub spec: AgentSpec,
+    kind: ArmKind,
+}
+
+impl BuiltinArm {
+    pub fn build(&self, seed: u64) -> Box<dyn Ai> {
+        build_arm(self.kind, seed)
+    }
+}
+
+fn builtin_arm_in(name: &str, dir: &str) -> Option<BuiltinArm> {
+    let requested = ArmKind::from_name(name)?;
+    let effective = artifact_effective_alias(requested, dir);
+    Some(BuiltinArm {
+        spec: effective.spec(dir),
+        kind: effective,
+    })
+}
+
+/// Resolve one selectable arm at the production artifact tier. Returning
+/// `None` for an unknown name makes strict evaluator callers fail closed while
+/// [`builtin_ai`] retains the explicit game-start fallback for legacy callers.
+pub fn builtin_arm(name: &str) -> Option<BuiltinArm> {
+    builtin_arm_in(name, ARTIFACT_DIR)
+}
+
 /// Resolve what `builtin_ai(name, _)` will actually construct from `dir`.
 ///
 /// Presence is decided by the same loaders the agents use, not by a stat:
 /// a `valuenet.json` that fails `ValueNet::valid` is rejected at load time,
 /// so reporting it as present would restate the bug it is meant to catch.
 pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
+    let kind = ArmKind::from_name(name).unwrap_or(ArmKind::Basic);
     let champion = crate::evolve::load_champion(dir).is_some();
     let net = crate::valuenet::ValueNet::load_width(dir, crate::evolve::FEATURE_WIDTH).is_some();
     let wide_net =
@@ -2496,8 +3044,7 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "basic" => (Vec::new(), "basic"),
         _ => (Vec::new(), "basic"),
     };
-    let effective = artifact_effective_alias_from(name, champion, net, wide_net, league)
-        .unwrap_or(independently_declared_effective);
+    let effective = artifact_effective_alias_from(kind, champion, net, wide_net, league).name();
     debug_assert_eq!(
         effective, independently_declared_effective,
         "artifact alias table and provenance row diverged for {name}"
@@ -2520,15 +3067,18 @@ pub fn builtin_provenances(names: &[&str], dir: &str) -> Vec<AgentProvenance> {
 /// Distinct requested names that resolve to the same agent, which makes any
 /// difference between them noise. Returns `(first, second, shared agent)`.
 pub fn collapsed_entrants(names: &[&str], dir: &str) -> Vec<(String, String, &'static str)> {
-    let resolved = builtin_provenances(names, dir);
+    let resolved = names
+        .iter()
+        .filter_map(|name| builtin_arm_in(name, dir).map(|arm| (*name, arm)))
+        .collect::<Vec<_>>();
     let mut out = Vec::new();
     for (index, left) in resolved.iter().enumerate() {
         for right in resolved.iter().skip(index + 1) {
-            if left.requested != right.requested && left.effective == right.effective {
+            if left.0 != right.0 && left.1.spec == right.1.spec {
                 out.push((
-                    left.requested.clone(),
-                    right.requested.clone(),
-                    left.effective,
+                    left.0.to_string(),
+                    right.0.to_string(),
+                    left.1.spec.canonical,
                 ));
             }
         }
@@ -3127,18 +3677,34 @@ fn direct_anchor_performance(
 #[cfg(test)]
 mod tests {
     use super::{
-        builtin_ai, builtin_provenance, collapsed_entrants, direct_anchor_performance, expected,
-        leaderboard, league_generalist, performance_elo, scheduled_seats, seat_schedule,
-        wilson_interval, win_shares, EloPool, RatedPlayer, RatingKey, TourneyCfg,
-        TournamentProfile, ARTIFACT_DIR, BUILTIN_AIS, CHAMPION_FILE, DEFAULT_RATINGS_PATH,
-        ELO_BASE_RATING, ELO_SCHEMA_VERSION, EVAL_ONLY_AIS, HISTORICAL_V1_RATINGS_PATH,
-        VALUENET_FILE,
+        builtin_ai, builtin_arm, builtin_provenance, collapsed_entrants,
+        direct_anchor_performance, expected, leaderboard, league_generalist, performance_elo,
+        scheduled_seats, seat_schedule, wilson_interval, win_shares, EloPool, RatedPlayer,
+        RatingKey, TourneyCfg, TournamentProfile, ARTIFACT_DIR, BUILTIN_AIS, CHAMPION_FILE,
+        DEFAULT_RATINGS_PATH, ELO_BASE_RATING, ELO_SCHEMA_VERSION, EVAL_ONLY_AIS,
+        HISTORICAL_V1_RATINGS_PATH, VALUENET_FILE, WeightSource,
     };
+    use crate::game::{Action, Game};
     use crate::rng::Rng;
     use std::collections::BTreeMap;
     use std::fs;
     use std::sync::{Arc, Barrier};
     use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn short_game_fingerprint(name: &str, seed: u64) -> String {
+        let mut game = Game::new_full(2, 24, 16, seed, 30, 0, false);
+        let mut ais = (0..game.players.len())
+            .map(|pid| builtin_ai(name, seed.wrapping_add(pid as u64)))
+            .collect::<Vec<_>>();
+        while game.winner.is_none() {
+            let pid = game.current;
+            ais[pid].take_turn(&mut game, pid);
+            if game.winner.is_none() && game.current == pid {
+                let _ = game.apply(pid, &Action::EndTurn);
+            }
+        }
+        serde_json::to_string(&game).expect("serialize deterministic game fingerprint")
+    }
 
     /// A checkout with no trained artifacts is the default state of this
     /// repository — `evolved/` is generated and ignored — so every learned
@@ -3303,6 +3869,83 @@ mod tests {
             collapsed_entrants(&["strategic_warm", "strategic"], ARTIFACT_DIR)[0].2,
             "strategic_score"
         );
+    }
+
+    #[test]
+    fn typed_specs_keep_aliases_collapsed_and_components_visible() {
+        let policy = builtin_arm("policy").expect("policy is selectable");
+        let evolved = builtin_arm("advanced_evolved").expect("control is selectable");
+        assert_eq!(policy.spec, evolved.spec);
+
+        let stock = builtin_arm("advanced").expect("stock is selectable");
+        assert_eq!(
+            evolved.spec.differing_axes(&stock.spec),
+            vec!["weights"],
+            "the champion comparison is a one-axis control"
+        );
+
+        let economy = builtin_arm("advanced_envoy_economy").expect("arm is selectable");
+        assert_eq!(
+            economy.spec.differing_axes(&stock.spec),
+            vec!["policy-deck-live", "envoy-influence", "envoy-infrastructure"],
+            "a composite must expose every changed treatment component"
+        );
+
+        let league_top = builtin_arm("advanced_league_top").expect("arm is selectable");
+        assert_eq!(
+            league_top.spec.weights,
+            WeightSource::League,
+            "the committed roster has an active Advanced top weight source"
+        );
+    }
+
+    #[test]
+    fn every_selectable_typed_arm_has_a_factory_and_matching_provenance() {
+        for name in BUILTIN_AIS.iter().chain(EVAL_ONLY_AIS.iter()) {
+            let arm = builtin_arm(name).expect("every selectable name has a typed arm");
+            let _ = arm.build(78_000_100);
+            assert_eq!(
+                builtin_provenance(name, ARTIFACT_DIR).effective,
+                arm.spec.canonical,
+                "provenance and factory disagree for {name}"
+            );
+        }
+    }
+
+    #[test]
+    fn every_distinct_same_family_arm_declares_a_semantic_axis() {
+        let arms = BUILTIN_AIS
+            .iter()
+            .chain(EVAL_ONLY_AIS.iter())
+            .map(|name| (*name, builtin_arm(name).expect("every selectable name has a typed arm")))
+            .collect::<Vec<_>>();
+        for (index, (left_name, left)) in arms.iter().enumerate() {
+            for (right_name, right) in arms.iter().skip(index + 1) {
+                let axes = left.spec.differing_axes(&right.spec);
+                assert!(
+                    !axes.contains(&"implementation"),
+                    "{left_name} and {right_name} need an explicit treatment or source axis: {axes:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn production_aliases_play_as_their_typed_specs_claim() {
+        for name in BUILTIN_AIS.iter().chain(EVAL_ONLY_AIS.iter()) {
+            let arm = builtin_arm(name).expect("every selectable name has a typed arm");
+            let effective = arm.spec.canonical;
+            if *name == effective {
+                continue;
+            }
+            for seed in [78_000_101, 78_000_102] {
+                assert_eq!(
+                    short_game_fingerprint(name, seed),
+                    short_game_fingerprint(effective, seed),
+                    "{name} does not play as its typed canonical arm {effective} on seed {seed}"
+                );
+            }
+        }
     }
 
     /// Two entrants that resolve to one agent make their difference noise.
