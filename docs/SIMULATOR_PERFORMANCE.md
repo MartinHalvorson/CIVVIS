@@ -104,3 +104,60 @@ Operationally, independent games should continue to use the existing outer
 `--jobs` parallelism. Production runs should use `--release`; its thin LTO and
 single codegen unit are intentionally more optimized than the faster-building
 `ci` profile used for the comparisons above.
+
+## Where the allocations are (2026-07-31)
+
+Every earlier profile here is a *time* profile — `sample`'s leaf ranking, or
+inclusive timers around suspect functions. Allocation had only ever been
+inferred from `memmove`/`malloc` leaves, which say how much it costs but not
+who is doing it. This is the direct measurement.
+
+**Method, and it is cheap to repeat.** A counting `GlobalAlloc` plus a global
+slot index and an RAII `Tag` that swaps the slot and restores it on drop, so a
+tagged function is charged exclusively and nested tags are charged to the
+innermost. It needs no thread-local — the probe is run under `--jobs 1`, and a
+lazily-initialised thread-local risks allocating inside the allocator. Roughly
+sixty lines in a scratch module plus one tag line per suspect, applied and
+stripped by a script; it must not reach a commit.
+
+**One 6p 74×46 150-turn game allocates 13,728,753 times for 3.09 GB.** Game
+setup is 142k of that, so essentially all of it is play. That is about 5,700
+allocations per seat-turn, and at a plausible 30 ns per malloc/free pair it is
+roughly a tenth of the game's runtime — consistent with the allocator and
+`memmove` leaves in the time profile.
+
+| site | allocations | share | bytes |
+| --- | ---: | ---: | ---: |
+| `advanced_units` | 5,842,083 | **42.6%** | 1.70 GB |
+| the rest of `AdvancedAi::take_turn` | 3,038,944 | 22.1% | 597 MB |
+| `city_yields` | 1,256,361 | 9.2% | 129 MB |
+| `units_at` | 1,076,368 | 7.8% | 4.5 MB |
+| `wdisk` | 817,304 | 6.0% | 128 MB |
+| `begin_turn` | 606,103 | 4.4% | 69 MB |
+| `legal_actions_within` | 325,139 | 2.4% | 51 MB |
+| `player_unit_ids` | 213,378 | 1.6% | 9 MB |
+| `player_city_ids` | 182,495 | 1.3% | 7 MB |
+| `route_step` | 89,702 | 0.7% | 292 MB |
+
+**Two thirds of all allocation is the AI's own decision code**, and
+`advanced_units` alone is 42.6% of it. That agrees with the long-standing
+finding that roughly two thirds of runtime is `AdvancedAi`'s deliberation
+rather than the engine's rules, and it says the largest remaining allocation
+work is in `src/ai/advanced.rs`, not in `src/game.rs`.
+
+**Read the count column, not the byte column.** `route_step` is the warning:
+292 MB — the largest byte figure outside the AI — from only 89,702
+allocations, because each search allocates two dense per-tile vectors. Its
+leaf time is about 1%. Large, short-lived, lazily-faulted buffers are cheap;
+volume of small allocations is what shows up in the allocator leaves.
+`units_at` is the mirror image: 1.08M allocations for 4.5 MB, an average of
+four bytes, because it clones a one- or two-element `Vec<u32>` out of the
+occupancy map.
+
+**What this does and does not license.** It ranks allocation, which is one of
+the two things this codebase has repeatedly found to be worth removing (the
+other being an expensive derivation that is recomputed). It does not by itself
+predict a win: the record already contains a neutral result for removing ~30
+`String` allocations per citizen plan, and a neutral result for a wholesale
+borrowed `units_at`. Take the count column as a ranking of *candidates* and
+still A/B each one interleaved.
