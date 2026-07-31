@@ -289,6 +289,39 @@ class CodeStateTests(unittest.TestCase):
         added = self._state("1ee5dcb\n", status="?? tools/civ6_newthing.py\n")
         self.assertNotEqual(clean, added)
 
+    def test_a_git_failure_is_never_accepted_as_a_revision(self):
+        """`run()` returns stdout+stderr, so a non-repo handed back its own error.
+
+        The ledger recorded rows whose identity was the words `fatal: not a git
+        repository`, and the hash appended to it was a hash of that same message —
+        so every non-repo tree pinned alike. Two different programs, one name, which
+        is precisely what this function exists to prevent.
+        """
+        name = self._state("fatal: not a git repository (or any of the "
+                           "parent directories): .git\n")
+        self.assertNotIn("fatal", name)
+        self.assertNotIn(" ", name)
+        self.assertTrue(name.startswith("nogit+"), name)
+
+    def test_two_non_git_trees_that_differ_get_different_names(self):
+        """The old code gave both the same name, because it hashed the error text."""
+        import pathlib
+        import tempfile
+
+        def name_for(body):
+            with tempfile.TemporaryDirectory() as tmp:
+                root = pathlib.Path(tmp)
+                (root / "tools").mkdir()
+                (root / "tools" / "civ6_play.py").write_text(body)
+                saved, climb.HERE = climb.HERE, root / "tools"
+                try:
+                    return self._state("fatal: not a git repository\n")
+                finally:
+                    climb.HERE = saved
+
+        self.assertNotEqual(name_for("one"), name_for("two"))
+        self.assertEqual(name_for("same"), name_for("same"))
+
 
 if __name__ == "__main__":
     unittest.main()
