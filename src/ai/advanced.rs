@@ -1560,15 +1560,20 @@ impl AdvancedAi {
         false
     }
 
-    /// Local military pressure on one city: hostile military strength within
-    /// six tiles over the friendly strength answering it, city defenses
-    /// included. Zero when no hostile unit is in reach.
+    /// Local military pressure on one city: *observed* hostile military
+    /// strength within six tiles over the friendly strength answering it,
+    /// city defenses included. Zero when no visible hostile unit is in reach.
     ///
     /// This is the number `threatened_city` has always computed and then
     /// discarded for every city but the worst one. Naming it lets the same
     /// evidence reach the city's own decisions — what it builds and what its
     /// citizens work — instead of only the empire-wide recovery alarm.
-    fn city_pressure(g: &Game, pid: usize, cid: u32) -> f64 {
+    fn city_pressure_with_visibility(
+        g: &Game,
+        pid: usize,
+        cid: u32,
+        visible: &crate::world::TileBits,
+    ) -> f64 {
         let Some(city) = g.cities.get(&cid) else {
             return 0.0;
         };
@@ -1576,6 +1581,7 @@ impl AdvancedAi {
             .units
             .values()
             .filter(|unit| unit.owner != pid && g.is_at_war(pid, unit.owner))
+            .filter(|unit| g.sees(visible, unit.pos) && g.unit_visible_to(unit.id, pid))
             .filter(|unit| g.wdist(city.pos, unit.pos) <= 6)
             .filter(|unit| g.rules.units[unit.kind].class == "military")
             .map(|unit| crate::game::effective_strength(g.unit_strength(unit, false), unit.hp))
@@ -1593,22 +1599,34 @@ impl AdvancedAi {
         hostile / friendly.max(1.0)
     }
 
+    #[cfg(test)]
+    fn city_pressure(g: &Game, pid: usize, cid: u32) -> f64 {
+        let visible = g.player_vision_now(pid);
+        Self::city_pressure_with_visibility(g, pid, cid, &visible)
+    }
+
     /// Evaluate the independent city/unit distance matrix from compact,
     /// immutable inputs. Strength modifiers and city defenses are resolved on
     /// the simulation thread first, so workers share no `Game` caches and the
     /// floating-point sums retain unit-ID order exactly.
     fn city_pressures(&self, g: &Game, pid: usize, cities: &[u32]) -> Vec<f64> {
+        let visible = g.player_vision_now(pid);
         let Some(pool) = self.work_pool.as_ref() else {
             return cities
                 .iter()
-                .map(|city| Self::city_pressure(g, pid, *city))
+                .map(|city| Self::city_pressure_with_visibility(g, pid, *city, &visible))
                 .collect();
         };
         let relevant = g
             .units
             .values()
             .filter(|unit| g.rules.units[unit.kind].class == "military")
-            .filter(|unit| unit.owner == pid || g.is_at_war(pid, unit.owner))
+            .filter(|unit| {
+                unit.owner == pid
+                    || (g.is_at_war(pid, unit.owner)
+                        && g.sees(&visible, unit.pos)
+                        && g.unit_visible_to(unit.id, pid))
+            })
             .collect::<Vec<_>>();
         // Pool dispatch dominates tiny empires. This boundary is comparisons,
         // not a map/player constant: large armies with few cities and wide
@@ -1616,7 +1634,7 @@ impl AdvancedAi {
         if cities.len() < 2 || cities.len().saturating_mul(relevant.len()) < 128 {
             return cities
                 .iter()
-                .map(|city| Self::city_pressure(g, pid, *city))
+                .map(|city| Self::city_pressure_with_visibility(g, pid, *city, &visible))
                 .collect();
         }
 
@@ -1838,11 +1856,12 @@ impl AdvancedAi {
     }
 
     fn threatened_city(&self, g: &Game, pid: usize) -> Option<u32> {
+        let visible = g.player_vision_now(pid);
         g.player_city_ids(pid)
             .into_iter()
             .filter_map(|cid| {
                 let city = &g.cities[&cid];
-                let danger = Self::city_pressure(g, pid, cid);
+                let danger = Self::city_pressure_with_visibility(g, pid, cid, &visible);
                 if danger <= 0.0 {
                     return None;
                 }
@@ -15618,6 +15637,15 @@ mod tests {
                 game.wdist(*position, home_pos) == 3 && game.city_at(*position).is_none()
             })
             .unwrap();
+        let observer_pos = game
+            .nbrs(intruder_pos)
+            .into_iter()
+            .find(|position| {
+                *position != home_pos
+                    && game.city_at(*position).is_none()
+                    && game.units_at(*position).is_empty()
+            })
+            .unwrap();
         let far_pos = game
             .map
             .tiles
@@ -15627,12 +15655,17 @@ mod tests {
                 game.wdist(*position, home_pos) >= 9 && game.city_at(*position).is_none()
             })
             .unwrap();
-        for position in [intruder_pos, far_pos] {
+        for position in [intruder_pos, observer_pos, far_pos] {
             let tile = game.map.tiles.get_mut(&position).unwrap();
             tile.terrain = crate::name!("grassland");
             tile.feature = None;
             tile.hills = false;
         }
+        game.spawn_test_unit("scout", 0, observer_pos);
+        assert!(
+            game.player_can_see(0, intruder_pos),
+            "the staged attackers must be visible to the defender"
+        );
         for _ in 0..4 {
             game.spawn_test_unit("modern_armor", 0, far_pos);
         }
@@ -22168,6 +22201,55 @@ mod tests {
         for cid in game.player_city_ids(0) {
             assert_eq!(AdvancedAi::city_pressure(&game, 0, cid), 0.0);
         }
+    }
+
+    #[test]
+    fn city_pressure_ignores_a_hidden_hostile_inside_its_radius() {
+        let mut game = Game::new_full(2, 30, 18, 411_005, 120, 0, false);
+        for unit in game.player_unit_ids(1) {
+            game.remove_unit(unit);
+        }
+        let city = found_test_city(&mut game, 0);
+        let city_pos = game.cities[&city].pos;
+        game.at_war.insert((0, 1));
+
+        let visible = game.player_visibility(0);
+        let candidates = game
+            .wdisk(city_pos, 6)
+            .into_iter()
+            .filter(|position| {
+                *position != city_pos
+                    && game.city_at(*position).is_none()
+                    && game.units_at(*position).is_empty()
+                    && game.map.get(*position).is_some_and(|tile| {
+                        game.rules.is_passable(tile) && !game.rules.is_water(tile)
+                    })
+            })
+            .collect::<Vec<_>>();
+        let hidden = candidates
+            .iter()
+            .copied()
+            .find(|position| !visible.contains(position))
+            .expect("test city has a hidden passable tile within pressure radius");
+        let seen = candidates
+            .iter()
+            .copied()
+            .find(|position| visible.contains(position))
+            .expect("test city has a visible passable tile within pressure radius");
+
+        let hidden_warrior = game.spawn_test_unit("warrior", 1, hidden);
+        assert_eq!(
+            AdvancedAi::city_pressure(&game, 0, city),
+            0.0,
+            "an unseen hostile must not contribute city pressure"
+        );
+        game.remove_unit(hidden_warrior);
+
+        game.spawn_test_unit("warrior", 1, seen);
+        assert!(
+            AdvancedAi::city_pressure(&game, 0, city) > 0.0,
+            "the same force must count once it is visible"
+        );
     }
 
     /// Census, not an assertion: how often each rung of the role ladder fires
