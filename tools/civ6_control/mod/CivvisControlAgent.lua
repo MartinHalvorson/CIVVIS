@@ -4710,10 +4710,27 @@ local function applyOrder(player, pid, row, turn)
 		-- nil and `operate` refuses — no throw, no silent success.
 		if verb == "TRADE_ROUTE" then
 			if x == nil or y == nil then return false, "no_dest"; end
-			local params = {};
-			params[UnitOperationTypes.PARAM_X] = x;
-			params[UnitOperationTypes.PARAM_Y] = y;
-			return operate(unit, OP["UNITOPERATION_MAKE_TRADE_ROUTE"], params), verb;
+			-- ⚠ MEASURED REFUSED WITH `PARAM_X`/`PARAM_Y`: 15 refusals in 66 turns of
+			-- run civvis-20260731T081728Z, which is the whole reason the first version
+			-- reported instead of assuming. The shipped `TradeRouteChooser.lua` sends
+			-- the DESTINATION as `PARAM_X0`/`PARAM_Y0`, and several other Civ 6
+			-- operations use the plain pair — so both are tried and the refusal names
+			-- which shapes were attempted rather than leaving another silent guess.
+			local shapes = {
+				{ "x0y0", UnitOperationTypes.PARAM_X0, UnitOperationTypes.PARAM_Y0 },
+				{ "xy", UnitOperationTypes.PARAM_X, UnitOperationTypes.PARAM_Y },
+			};
+			for _, shape in ipairs(shapes) do
+				if shape[2] ~= nil and shape[3] ~= nil then
+					local params = {};
+					params[shape[2]] = x;
+					params[shape[3]] = y;
+					if operate(unit, OP["UNITOPERATION_MAKE_TRADE_ROUTE"], params) then
+						return true, verb .. ":" .. shape[1];
+					end
+				end
+			end
+			return false, "TRADE_ROUTE_both_shapes";
 		end
 		if verb == "UPGRADE" then
 			return commandUnit(unit, CMD["UNITCOMMAND_UPGRADE"], {}), verb;
