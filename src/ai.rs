@@ -5268,13 +5268,35 @@ impl BasicAi {
         let unsafe_step = |g: &Game, pos: Pos| {
             self.captor_within(g, pid, pos, CAPTOR_REACH) && !self.escorted(g, pid, pos)
         };
+        let in_danger =
+            self.captor_within(g, pid, here, CAPTOR_REACH) && !self.escorted(g, pid, here);
         if let Some(next) = direct {
             if !unsafe_step(g, next) {
                 return self.path_move(g, pid, uid, next);
             }
+        } else if !in_danger {
+            // Nothing is threatening this unit and the route step was simply
+            // unavailable — a friendly unit in the way, a zone of control, terrain the
+            // one-step lookahead cannot see around. That is a PATHFINDING question and
+            // this guard has no opinion on it, so it hands back to `step_toward`, which
+            // tries the improving neighbours and then pays for A*.
+            //
+            // This restores what the function did before the danger rule was added.
+            // Replacing a pathfinder with a neighbour scan is a capability reduction
+            // whether or not a given fixture exercises it, and the guard's job is to
+            // SUBTRACT dangerous moves, never to subtract the search.
+            //
+            // ⚠ NOT ESTABLISHED BY A MEASUREMENT. I first wrote this comment claiming
+            // it was proven by a settler that moved one tile and then stood still for
+            // eighty turns with 139 sites on offer. That run was real and the cause was
+            // NOT this: the test loop was ending the turn from seat 0 unconditionally
+            // in a game with a barbarian seat, so the clock never advanced. Deleting
+            // this branch and re-running leaves the test passing. Kept on the argument
+            // above, not on evidence it does not have.
+            return self.step_toward(g, pid, uid, target);
         }
-        // The direct step would end beside something that can take the settler. Look
-        // for a step that does not.
+        // The direct step would end inside something's reach. Look for one that does
+        // not.
         let mut safe: Vec<Pos> = g
             .nbrs(here)
             .into_iter()
@@ -5287,9 +5309,6 @@ impl BasicAi {
             // site is still worth waiting for.
             return false;
         }
-        // Toward the site if we can, toward home if we are already in danger.
-        let in_danger =
-            self.captor_within(g, pid, here, CAPTOR_REACH) && !self.escorted(g, pid, here);
         if in_danger {
             let refuge = g
                 .player_city_ids(pid)

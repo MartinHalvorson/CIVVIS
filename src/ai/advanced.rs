@@ -13497,6 +13497,100 @@ mod tests {
         (game, settler, soldiers)
     }
 
+    /// ★★★★ THE WHOLE CHAIN, END TO END, WITH A RAIDER ON THE MAP.
+    ///
+    /// Every piece of tonight's settler work is a rule that makes a settler MORE
+    /// cautious — it will not step inside a captor's reach, it will not sidestep, it
+    /// holds its site through a blocked turn, it will not take a site another settler
+    /// has claimed — and each of those, alone, can be satisfied by a settler that
+    /// never goes anywhere. A guard without a floor is the zero-cities failure in the
+    /// fix's clothes, and this project has already shipped that once.
+    ///
+    /// So the thing worth asserting is not any of the rules. It is that a settler with
+    /// a barbarian in the neighbourhood and a soldier to spare still ends up founding
+    /// a city.
+    #[test]
+    fn a_settler_with_a_raider_nearby_still_founds_its_city() {
+        let mut game = Game::new_full(1, 26, 16, 5_150, 200, 0, true);
+        let barb_pid = game.barb_pid.unwrap();
+        for unit in game
+            .units
+            .values()
+            .filter(|unit| unit.owner == barb_pid)
+            .map(|unit| unit.id)
+            .collect::<Vec<_>>()
+        {
+            game.remove_unit(unit);
+        }
+        game.barb_camps.clear();
+        let founder = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|uid| game.units[uid].kind == "settler")
+            .unwrap();
+        let home = game.units[&founder].pos;
+        game.apply(0, &Action::FoundCity { unit: founder }).unwrap();
+        // ⚠ THE GENERATED MAP IS LEFT ALONE. Flattening every tile to grassland made
+        // every site score the same, so nothing cleared the settle-value bar and the
+        // settler had no target at all — the test then failed for a reason that had
+        // nothing to do with the raider it was written to test.
+        //
+        // A second settler, two spare soldiers, and one raider loose between here and
+        // wherever it decides to go.
+        let settler = game.spawn_test_unit("settler", 0, home);
+        game.spawn_test_unit("warrior", 0, home);
+        game.spawn_test_unit("warrior", 0, home);
+        let raider = game
+            .map
+            .tiles
+            .keys()
+            .copied()
+            .filter(|pos| game.wdist(home, *pos) == 5 && game.units_at(*pos).is_empty())
+            .min()
+            .expect("open ground five tiles out");
+        let raider_unit = game.spawn_test_unit("warrior", barb_pid, raider);
+
+        let mut ai = AdvancedAi::new();
+        // The fixture is only worth running if the map actually offers somewhere to
+        // go; a test that passes because there was nothing to do is not a test.
+        assert!(
+            ai.settle_sites(&game, 0, home, 12).len() > 20,
+            "this map offers too few settle sites for the fixture to mean anything"
+        );
+        // ⚠ DRIVE WHOEVER'S TURN IT IS. Calling `take_turn(&mut game, 0)` and then
+        // `EndTurn` from seat 0 unconditionally does not advance a game that has a
+        // barbarian seat: the EndTurn is refused whenever it is not our turn, so the
+        // clock never moves and the settler gets exactly one step. That is what the
+        // first version of this test was actually measuring.
+        let mut others = AdvancedAi::fleet(&game);
+        let before = game.player_city_ids(0).len();
+        for _ in 0..400 {
+            if game.player_city_ids(0).len() > before || !game.units.contains_key(&settler) {
+                break;
+            }
+            if game.turn > 80 {
+                break;
+            }
+            let pid = game.current;
+            if pid == 0 {
+                ai.take_turn(&mut game, pid);
+            } else {
+                others[pid].take_turn(&mut game, pid);
+            }
+            if game.winner.is_none() && game.current == pid {
+                let _ = game.apply(pid, &Action::EndTurn);
+            }
+        }
+
+        assert!(
+            game.player_city_ids(0).len() > before,
+            "the settler never founded a second city in eighty turns; it is at {:?} \
+             and the raider is at {:?}",
+            game.units.get(&settler).map(|unit| unit.pos),
+            game.units.get(&raider_unit).map(|unit| unit.pos),
+        );
+    }
+
     #[test]
     fn a_spare_soldier_is_sent_out_with_a_settler_walking_alone() {
         let (game, settler, soldiers) = settler_escort_world();
