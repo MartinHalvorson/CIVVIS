@@ -6502,3 +6502,58 @@ not rescue the failed dispatcher-late condition.
 three arms remain evaluator-only and the production `advanced` default is
 unchanged. The new telemetry stays in place because it records completed
 actions and exact turns rather than treating an open predicate as evidence.
+
+## 2026-07-31 — pre-registered belief-memory pressure evaluation
+
+`BeliefState` already records only player-visible sightings, but no production
+major consumed it. The bounded first use is `advanced_belief_pressure`: before
+each major turn it refreshes that memory, then adds only a last-seen, currently
+hidden enemy military force to the *already fog-filtered* city-pressure path.
+The remembered strength is the observed effective strength at last sighting and
+decays linearly to zero after four turns. It affects local pressure and the
+Recovery selector; it does not claim to make the rest of `AdvancedAi`, which
+still has full-state reads, fog honest.
+
+The pre-outcome fires check was fixed before any treatment outcome seed was
+read:
+
+```sh
+cargo test --profile ci belief_pressure_census -- --ignored --nocapture
+```
+
+On 12 four-player 44×28/200-turn maps at seeds `871000..871011`, with fog
+presentation memory disabled as in headless play, it found remembered pressure
+on 328 of 24,048 city-turns (114 with no live hostile pressure) and changed the
+imminent Recovery selector 18 times. A focused unit test additionally proves
+that a refreshed visible sighting is not double counted, deleting the actual
+hidden unit does not change the memory term, and the term expires on turn four.
+That establishes reach and information-set discipline, not strength.
+
+The sole outcome screen is the untouched 120-map matrix prefix:
+
+```sh
+target/release/ai_eval advanced_belief_pressure advanced \
+  --matrix --pairs 120 --jobs 12 --seed 23173000
+```
+
+No horizon, radius, threshold, or follow-up seed will be selected after seeing
+that result. The existing matrix rule decides promotion: deployment must earn
+`PASS` and compact must not retain the incumbent. Any other result leaves the
+arm evaluator-only and production `advanced` unchanged.
+
+The fixed prefix completed with **one accepted safety profile and no strength
+PASS**, so the matrix retained `advanced`:
+
+| profile | paired score for `advanced_belief_pressure` | direction | matrix result |
+|---|---|---|---|
+| compact Standard | 48.5% (95% Wilson 39.8–57.4), −10 Elo-equivalent | 7–13, p=0.2632 | accept: inconclusive, no established regression |
+| deployment Online | 52.9% (95% Wilson 44.0–61.6), +20 Elo-equivalent | 26–12, p=0.0336 | reject: ordinary and anytime-valid promotion evidence both inconclusive |
+
+The deployment arm won 70 of 240 games against 56 for stock, but its
+anytime-valid peak was only `e=4.239` and its Wilson interval still crossed
+parity. Compact was similarly unresolved (54 wins versus 61). Terminal scores
+were effectively flat on deployment (50.0%) and pointed slightly toward the
+arm on compact (50.3%), so they do not rescue the required win-based strength
+test. The result is a useful mechanism finding, not permission to promote a
+plausible direction: `advanced_belief_pressure` remains evaluator-only and
+production `advanced` stays unchanged.

@@ -38,7 +38,7 @@ pub const BUILTIN_AIS: [&str; 10] = [
 /// tournament ratings. Keeping them out of `BUILTIN_AIS` prevents a control
 /// factory from being pooled into the same player/leader rating key as
 /// its treatment.
-pub const EVAL_ONLY_AIS: [&str; 77] = [
+pub const EVAL_ONLY_AIS: [&str; 78] = [
     "basic_evolved",
     "advanced_policy_live_control",
     "advanced_envoy_policy",
@@ -63,6 +63,7 @@ pub const EVAL_ONLY_AIS: [&str; 77] = [
     "advanced_city_strategy_breadbasket_only",
     "advanced_city_strategy_comparative_only",
     "advanced_city_strategy_pressure_only",
+    "advanced_belief_pressure",
     "advanced_civ_blind",
     "advanced_counter_in_lane",
     "advanced_counter_stand_down",
@@ -1274,6 +1275,16 @@ pub fn builtin_ai(name: &str, seed: u64) -> Box<dyn Ai> {
     }
     match name {
         "advanced" => Box::new(AdvancedAi::new()),
+        // The first bounded use of the fog-safe belief surface. It retains
+        // only last-seen military strength for the already fog-filtered
+        // city-pressure/recovery path; every other Advanced policy remains
+        // unchanged, so this is an evaluator arm rather than a fog-honesty
+        // claim for the whole controller.
+        "advanced_belief_pressure" => {
+            let mut ai = AdvancedAi::new();
+            ai.belief_pressure = true;
+            Box::new(ai)
+        }
         // Four arms decompose the envoy-acquisition treatment. The live
         // policy control differs from `advanced` only by enabling the existing
         // counterfactual deck; the policy treatment then adds only influence
@@ -2404,6 +2415,7 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
             if net { "production_net" } else { "production" },
         ),
         "advanced" => (Vec::new(), "advanced"),
+        "advanced_belief_pressure" => (Vec::new(), "advanced_belief_pressure"),
         "advanced_policy_live_control" => (Vec::new(), "advanced_policy_live_control"),
         "advanced_envoy_policy" => (Vec::new(), "advanced_envoy_policy"),
         "advanced_envoy_infrastructure" => (Vec::new(), "advanced_envoy_infrastructure"),
@@ -3331,8 +3343,9 @@ mod tests {
             // Anything else reaching that state fell through to the
             // catch-all and is claiming to need nothing while quietly
             // needing a net.
-            const SCRIPTED: [&str; 44] = [
+            const SCRIPTED: [&str; 45] = [
                 "advanced",
+                "advanced_belief_pressure",
                 "advanced_policy_live_control",
                 "advanced_envoy_policy",
                 "advanced_envoy_infrastructure",
