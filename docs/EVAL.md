@@ -6379,3 +6379,96 @@ the earlier +207/PASS result on the six-city-state fixed-roster profile and not
 evidence that `advanced` is universally strongest. It establishes the narrower
 claim needed here: none of the new treatments displaced the incumbent, and the
 incumbent/anchor ordering itself must remain profile-qualified.
+
+## 2026-07-31 — full-prefix resolution and evaluator integrity
+
+The initial screens above were followed by fixed, non-optional prefixes. No
+treatment cleared both sides of the promotion matrix, so this work does **not**
+change the production `advanced` controller. `advanced_v1` remains the frozen
+source-pinned anchor; it is not renamed as the production winner either.
+
+Before extending the experiments, the evaluator's identity path was hardened.
+Netless `policy`, `policy_wide`, and `policy_frozen` arms that consume the
+embedded champion are now canonically identified as `advanced_evolved`, while
+netless `neural` is `basic_evolved`. Loaded aliases print the same canonical
+identity. A shared alias table drives both provenance and construction, so the
+factory cannot silently build one controller while provenance reports another.
+Direct evaluation now refuses missing definitional artifacts unless the caller
+explicitly supplies `--allow-degraded`; matrix promotion never permits that
+override. True effective self-play is an error rather than a warning.
+
+The matrix runner also received two reproducibility/latency fixes. Each profile
+seed now uses a constant 1,000,000-seed stride, independent of `--pairs`, so
+extending a prefix cannot move the other profile onto different maps. The total
+worker budget is split approximately one third to compact and two thirds to
+deployment, with every worker retained; result windows contain four games per
+worker to reduce scheduler-tail idle time without material buffering.
+
+The fixed-prefix outcomes were:
+
+| challenger | maps/profile | compact safety | deployment strength | matrix decision |
+|---|---:|---|---|---|
+| `advanced_strategic_commitment` | 120 | 51.0%, +7 | 46.5%, −25; direction 18–34, p=0.0365 | retain stock |
+| `advanced_evolved_commitment` | 20 | 52.5%, +17 | 40.0%, −70; direction 5–15, p=0.0414 | retain stock |
+| `advanced_evolved` | 120 | 57.3%, +51; direction 44–16, p=0.0004 | 45.6%, −30; direction 24–40 | retain stock |
+| `advanced_envoy_priority` | 120 | 48.3%, −12 | 54.4%, +30; direction 38–19, p=0.0163 | inconclusive; retain stock |
+| `advanced_policy_live_control` | 300 | 52.3%, +16; 95% Wilson 46.7–57.9 | 54.3%, +30; 95% Wilson 48.7–59.9 | inconclusive; retain stock |
+
+The 300-map live-policy confirmation used a new, disjoint prefix:
+
+```sh
+target/ci/ai_eval advanced_policy_live_control advanced \
+  --matrix --pairs 300 --jobs 8 --seed 22051000
+```
+
+Its deployment direction was 92–51 (p=0.0008), and its anytime evidence crossed
+the directional threshold at map 98, but the ordinary paired-score Wilson lower
+bound remained below 50%. The pre-declared gate therefore stayed INCONCLUSIVE.
+This is evidence for another targeted treatment, not permission to weaken the
+gate after seeing the result.
+
+Two independent anchor checks kept the conclusion profile-qualified. The live
+policy control versus `advanced_v1` over 300 fresh maps scored 50.5% (+3) on
+compact and 53.7% (+26) on deployment; both matrix verdicts were inconclusive.
+Stock `advanced` versus `advanced_v1` over a separate 120-map prefix scored
+45.6% (−30) on compact and 48.8% (−9) on deployment; that matrix likewise did
+not establish a replacement. These do not contradict older PASS results on a
+different six-city-state, fixed-roster profile. They demonstrate why controller
+rankings must name the profile and decision rule.
+
+The direct envoy arm did change the intended mechanism. Its deployment averages
+were 19.3 versus 14.3 envoys and 0.70 versus 0.41 suzerainty share, with higher
+science, culture, and economy diagnostics. The new production prepass constructs
+the empire-unique Diplomatic Quarter → Consulate → Chancery chain only when a
+met, contestable city-state and enough remaining envoy stream exist. It never
+overwrites an occupied queue and yields to Recovery, local danger, rushing, and
+major war. Those behaviors remain default-off because their opportunity cost has
+not cleared the promotion rule.
+
+### Verification of the integrated tree
+
+The rebased implementation passed the complete optimized test suite:
+
+```sh
+cargo test --profile ci --locked
+# library: 1291 passed, 0 failed, 20 intentionally ignored
+# all binary, integration, and doc-test suites: 0 failed
+
+cargo build --release --locked --bin civvis --bin ai_eval
+```
+
+A fresh deployment-scale health soak also completed 12/12 games without a
+panic, no-tech-progress flag, minor winner, or unexplained no-winner result:
+
+```sh
+target/release/civvis soak --games 12 --players 6 \
+  --start-seed 26051000 --jobs 8 --width 74 --height 46 \
+  --city-states 9 --speed online --turns 250 \
+  --map continents --shape planet --poles poles
+```
+
+The outcomes included science, culture, religion, and turn-cap score victories,
+with live declarations, unit losses, city captures, and three capital captures.
+Release-mode CLI checks independently confirmed exit 2 for effective self-play,
+exit 3 for a missing definitional artifact, and exit 2 when
+`--allow-degraded` is attempted in matrix mode.
