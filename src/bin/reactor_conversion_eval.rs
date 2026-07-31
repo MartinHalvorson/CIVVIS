@@ -25,7 +25,24 @@ const REGISTERED_HEIGHT: i32 = 44;
 const REGISTERED_TILES: usize = 4_412;
 const FROZEN_AI: &str = "advanced_evolved";
 const FROZEN_CHAMPION_GENERATION: u32 = 14;
-const FROZEN_CHAMPION_FNV1A: u64 = 0x40b1_fbb2_a5b8_8bc6;
+/// Fingerprint of `data/evolved/best.json`, re-pinned 2026-07-31.
+///
+/// This binary froze `advanced_evolved` so its own screens stayed
+/// interpretable, and its experiment finished: the registered 2026-07-29
+/// result is **STOP, retain stock `AdvancedAi`**, a recorded null. Those
+/// numbers were measured on the gen-14 champion as it stood then.
+///
+/// The champion has since been replaced deliberately — the same genome with
+/// `docs/GENOME.md`'s eleven economy and expansion genes reverted to
+/// `Weights::default()`, promoted on three `ai_eval --matrix` runs at 300
+/// maps per profile (seeds 67,000,000 and 70,000,000, the last built from the
+/// current tip), all `PASS`. See `docs/EVAL.md`.
+///
+/// ⚠ The re-pin does **not** revise the recorded reactor result, which stands
+/// as measured. It does mean any *future* `reactor_conversion_eval` run is on
+/// a different agent, so a new number here is not comparable with the
+/// 2026-07-29 one and must say which champion it ran against.
+const FROZEN_CHAMPION_FNV1A: u64 = 0x31cd_12c3_a1ba_5302;
 const EMBEDDED_CHAMPION: &str = include_str!("../../data/evolved/best.json");
 const FLAG_OPTIONS: [&str; 2] = ["--null", "--randomize-civs"];
 const VALUE_OPTIONS: [&str; 15] = [
