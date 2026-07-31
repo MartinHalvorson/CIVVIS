@@ -6938,3 +6938,79 @@ The sample produced religious, culture, and score outcomes, 124 wars, 44 city
 captures, four captured capitals, and nuclear strikes. Thus the missing-model
 fallback completed real strategic/combat trajectories rather than only a
 construction test, while remaining behaviorally the production expert.
+
+## 2026-07-31 — PRE-REGISTRATION: full-sequence expansion search
+
+The expansion oracle is the second large replicated causal ceiling in this
+repository, but it creates a free Settler and therefore removes the production
+and population investment the live policy must recover. Seven scalar
+treatments changed target, price, cadence, siting, serialization, payback, or
+growth separately and did not move wins. This experiment changes the unit of
+decision: it searches the complete legal commitment and lets the engine carry
+every consequence forward.
+
+`advanced_expansion_sequence` starts from the current promoted `advanced` and
+changes only the following boundary. After the four-build opening, when the
+live plan is short of its city target and the empire has no walking or queued
+Settler, it constructs an untouched control plus one branch for every city
+that can legally start a Settler. Existing queues are valid candidates because
+paused progress is banked by item key; refusing them would quietly omit the
+measured 25.8% of shortfall turns on which every city is mid-build. A review
+may recur no sooner than 20 Standard-speed turns after the previous review.
+
+Each branch begins from an exact `Game` clone. The candidate branch applies
+the real `Action::Produce { Settler }`; the control applies nothing. A clone of
+the focal live `AdvancedAi` then plays the branch with this search disabled,
+while every rival uses the same current production `AdvancedAi` class. All
+players and the engine—not a proxy—therefore determine build duration,
+population consumption, escorting, route delay, site choice, settlement,
+defense, yields, war, and victory. The horizon is 50 Standard-speed world
+rounds, scaled by game speed and clipped naturally by game end. A focal win is
+1, a focal loss is 0, and an unresolved endpoint is focal terminal score share
+among living majors.
+
+Candidate order is control then ascending city ID. The highest-valued Settler
+branch is committed in the real game only when it exceeds control by more than
+0.005; control wins every tie and sub-margin difference. Every independent
+branch is eligible for the existing persistent per-game worker pool. Results
+must return in candidate order, and nested tactical/visibility frontiers must
+use the pool's existing deterministic serial fallback. Batch evaluators attach
+no inner pool and therefore do not oversubscribe their whole-game workers.
+
+Integrity requirements are fixed before the first strength map:
+
+- `AdvancedAi::new()` and every pre-existing evaluator arm keep the search off;
+- the treatment reports reviews, branches, commitments, and control decisions,
+  and an ordinary-game fires test must reach real reviews;
+- every generated candidate must apply on its private branch, and neither
+  searching nor scoring may mutate the authoritative position;
+- a constructed branch must demonstrate real Settler completion, population
+  loss, travel, and city founding rather than only a changed queue;
+- serial, one-worker, and four-worker branch values and chosen city must be
+  bit-identical, as must complete repeated games;
+- the complete locked CI suite and a release deployment soak must pass.
+
+Strength uses a staged fixed-prefix design so an expensive null does not buy a
+larger sample after its direction is known. The discovery matrix is:
+
+```sh
+target/release/ai_eval advanced_expansion_sequence advanced \
+  --matrix --pairs 60 --jobs 8 --seed 38061000
+```
+
+Compact Standard consumes seeds 38,061,000–38,061,059 and deployment Online
+consumes 39,061,000–39,061,059. The treatment advances only if deployment
+earns the existing superiority PASS and compact does not retain the incumbent.
+If it advances, one disjoint 300-map confirmation matrix is authorized at seed
+40,061,000; production promotion requires the same deployment PASS and compact
+no-regression rule there. An inconclusive or retained discovery result ends
+the strength experiment without opening confirmation.
+
+Cost is a co-equal gate, measured by extending `turn_cost` with this exact
+treatment. Four interleaved seeds compare all-scripted, one treated seat among
+five controls, and all-treated fleets on the 6-player 74x46 profile through
+turn 120. Promotion requires the median one-seat ratio to be at most 3.0x.
+Separately, the same all-treated single game is run with one and four attached
+workers; outcomes must be identical and four workers must reduce branch-search
+wall time. Loaded-host absolutes remain diagnostic, but a treatment that misses
+the ratio or parallel-speedup gate stays evaluator-only even if it wins.
