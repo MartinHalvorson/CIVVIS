@@ -6858,3 +6858,30 @@ default victory set, so it would breed with religious victory enabled while the
 gate excludes it, and it plays every third game at twice `max_turns`. Neither
 touches the density and seat count, which the measurements above identify as
 the dominant difference, but a run should be read knowing them.
+
+### The nomination, and the fixed condition it had to clear first
+
+`r3` scoring above the `r0` baseline nominates it under the partition's
+pre-registered rule. The rule carried one extra condition, fixed while only
+`r0` and `r2` were known: the matrix's compact profile asks only for *no
+established regression against stock*, which is the right bar for a new
+evaluator arm and the wrong one for replacing an artifact recorded at +51
+there. So `r3` was also run against `advanced` on the compact profile at seed
+61,000,000 — the same forty maps the champion scored 56.9% on — and had to land
+at or above 50%.
+
+| arm on compact 4p 24×16 Standard/500, seed 61,000,000 | paired score | Elo-equivalent | games |
+|---|---:|---:|---:|
+| the shipped champion | 56.9% (95% Wilson 41.6–70.9) | +48 | 28–17 |
+| `r3` | **55.6%** (95% Wilson 40.4–69.8) | +39 | 24–15 |
+
+**`r3` keeps essentially all of the champion's compact strength** — the two
+intervals overlap almost entirely — while scoring +53 at deployment where the
+champion scores −53. Its compact victory mix moves from the champion's
+`{domination 21, culture 5, science 2}` to `{domination 12, culture 12}`, so
+it is trading some of the champion's conquest conversion for culture rather
+than losing the compact edge outright.
+
+Both readings are `INCONCLUSIVE` at forty maps. The nomination therefore goes
+to the unmodified `ai_eval --matrix --pairs 120` at seed 67,000,000, and only
+that decides. **Nothing here proposes replacing `data/evolved/best.json`.**
