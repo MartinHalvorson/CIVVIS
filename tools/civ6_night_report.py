@@ -62,13 +62,32 @@ def main() -> int:
     for entry in read_jsonl(WATCHDOGS):
         watch[entry.get("run", "")] = entry
 
+    # ⚠ PEAK CITIES, NOT THE LAST TURN'S. The ledger records the final `cities`, and a
+    # city lost at turn 230 hides an empire that reached four — which is exactly the
+    # number this ladder is trying to move. Both are printed; they differ for a reason
+    # worth seeing.
+    peaks: dict[str, int] = {}
+    for row in rows:
+        run = RUN_ROOT / str(row.get("tag"))
+        if (run / "events.jsonl").exists():
+            best = 0
+            for line in (run / "events.jsonl").read_text(errors="replace").splitlines():
+                try:
+                    event = json.loads(line)
+                except ValueError:
+                    continue
+                if event.get("kind") == "turn":
+                    best = max(best, event.get("cities") or 0)
+            peaks[str(row.get("tag"))] = best
     print(f"{'#':>3}  {'run':<26} {'code':<14} {'turn':>4} {'score':>5} {'rival':>5} "
-          f"{'cit':>3} {'army':>4} {'met':>3}  reason")
+          f"{'peak':>4} {'end':>3} {'army':>4} {'met':>3}  reason")
     for row in rows:
         print(f"{row.get('attempt'):>3}  {str(row.get('tag')):<26} "
               f"{str(row.get('code_rev'))[:14]:<14} "
               f"{str(row.get('last_turn')):>4} {str(row.get('last_score')):>5} "
-              f"{str(row.get('rival_best')):>5} {str(row.get('cities')):>3} "
+              f"{str(row.get('rival_best')):>5} "
+              f"{str(peaks.get(str(row.get('tag')), '?')):>4} "
+              f"{str(row.get('cities')):>3} "
               f"{str(row.get('army')):>4} {str(row.get('met')):>3}  "
               f"{str(row.get('reason'))[:44]}")
 
