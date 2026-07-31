@@ -418,6 +418,43 @@ table. That it changes half the rows is also the clearest possible argument for
 fix (1): as long as two orderings are equally reachable, a rendering script
 will keep reaching for whichever is one float per pair.
 
+### Implemented 2026-07-31 — one strength accessor, and the bar applied
+
+All three fixes landed together in PR #678.
+
+**(1) One ordering key.** `Strategy::strength_bound()` and
+`CivRating::strength_bound()` / `strength_ceiling()` are the only public
+"which is better" accessors. Both `rating` fields now carry a doc comment
+marking them **matchmaking only** and pointing at the bound. The field is not
+renamed: the serde name is the on-disk league format and every committed
+snapshot would break, which buys nothing the doc comment does not.
+
+**(2) Reproducible or it does not ship.** `update_readme_rankings.py` no longer
+raises when a pair has no settled rating — it reports that pair as coverage.
+The table is therefore generated from the committed `data/league/` snapshot and
+`--check` **passes on a fresh clone**, where it previously exited 2. The
+snapshot is deliberately left at round 60: refreshing it changes what every
+checkout seats, which is a separate decision from how the README ranks.
+
+**(3) The bar, applied.** A pair is printed only when the leader's
+`strength_bound` clears the `strength_ceiling` of every rival. On the committed
+round-60 snapshot that is **0 of 50**; on the live round-3205 league it is
+**1 of 50** — Rome/Trajan → `advanced_v1`, 161/314, bound 0.458, which is a
+*baseline* rather than one of the bred genomes. The other 49 are printed as a
+coverage table carrying each leader's real record.
+
+Re-measured on round 3205, the two statistics name a different strategy in
+**23 of 50** pairs, reproducing the 26-of-52 finding at round 3143.
+
+The drift risk this creates is that the bound now has two implementations —
+Rust for selection, Python for rendering, because the tool emits Markdown and
+cannot call in. That is the R1 shape, so it is pinned rather than commented:
+`SELECTION_Z` is *parsed out of* `src/league.rs` by the tool, and a shared
+golden table of six `(wins, games) -> (lower, upper)` triples is asserted on
+both sides — `civ_rating_strength_bound_matches_the_readme_tool` in
+`src/league.rs` and `GOLDEN_BOUNDS` in `tools/test_update_readme_rankings.py`.
+If either formula moves, exactly one side fails and names the other.
+
 ---
 
 ## 6. The one gap that is not an evaluator defect
@@ -528,7 +565,7 @@ trusting anything measured afterwards.
 | 1 | **Landed:** typed `ArmKind` / `AgentSpec` boundary, spec-based collapse check, factory and plays-as-typed-spec tests | R1 — both defects | PR #674, `src/elo.rs` |
 | 2 | Fallible strict `builtin_ai`; explicit degraded entry point | R2 | ~half a day |
 | 3 | Discovery-vs-confirmed effect sizes in `ai_eval`; the docs rule | R3 | ~half a day |
-| 4 | `strength_bound()` as the only ordering; table reproducible or gone | R4 | ~half a day |
+| 4 | **Landed:** `strength_bound()` as the only ordering; separation bar applied; table reproducible from the committed snapshot | R4 | PR #678 |
 | 5 | Arm lifecycle: `EvalArm` with evidence + status, CI check that the section exists | §7 | falls out of 1 |
 | 6 | Restate the eight two-axis comparisons in §8 against matched controls | fallout of 1 and 3 | ~a day of compute |
 | 7 | Deployment-profile decision on seating search | §6 | compute, largest |
