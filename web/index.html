@@ -12580,10 +12580,16 @@ const BAKED_FAMILIES = new Set(["infantry", "civilian", "religious", "mounted",
 const UNIT_SPAN = 32;               // measured widest figure, sprite units
 const UNIT_FILL = 0.80;
 const UNIT_SCALE = S * SQ3 * UNIT_FILL / UNIT_SPAN;
+// Flat-board figures live in world coordinates, while a Planet figure is
+// composed in projected screen coordinates.  The latter supplies its local
+// tile scale here rather than teaching every painted part about spherical
+// projection.  It is set only for the duration of one planet-unit draw.
+let UNIT_RENDER_CONTEXT = null;
 // Strategic does not draw figures at all — it draws a flat disc token whose
 // size is set by the glyph it has to hold — so the figure scale is a painted
 // concern and that view is left exactly as it was.
-const unitScale = () => MODE.painted ? UNIT_SCALE : 1;
+const unitScale = () => MODE.painted
+  ? UNIT_SCALE * (UNIT_RENDER_CONTEXT?.scale || 1) : 1;
 // Every mark that hangs off a unit — the ground plate, the type badge, the
 // fortify shield, the health bar — is laid out against the figure it belongs
 // to, so all of them take the figure's scale or the composition comes apart:
@@ -12600,7 +12606,6 @@ const ART_BOX = 26;
 const UNIT_ART = new Map();
 const UNIT_ART_WARNED = new Set();
 const UNIT_ART_CAP = 192;           // ~24 types x 8 jerseys live on screen at once
-let UNIT_ART_RES = 0;
 let BAKE_RES = 2;
 // Bake resolution follows the zoom in whole steps — the same rule `artRes`
 // uses for terrain, so a pinch does not thrash the cache — but it *rounds up*.
@@ -12630,7 +12635,8 @@ function unitArtScale() {
   // it and then magnified by it is exactly the softening this cache exists to
   // avoid, and it would have been invisible because the sprite still appears —
   // just blurred.
-  return cam.scale * DPR * close * unitScale();
+  const screenScale = UNIT_RENDER_CONTEXT?.screenScale ?? cam.scale * DPR;
+  return screenScale * close * unitScale();
 }
 function unitArtRes() {
   return Math.min(ART_MAX_RES, Math.max(1, Math.ceil(unitArtScale())));
@@ -12640,11 +12646,13 @@ function unitArtUsable() {
 }
 function unitArt(type, col, family, fc, skin) {
   const res = unitArtRes();
-  if (res !== UNIT_ART_RES) { UNIT_ART.clear(); UNIT_ART_RES = res; }
   // Orientation is baked in rather than mirrored at blit time: a mirrored blit
   // would carry the highlight round with the figure and light it from the
   // wrong side, which is the thing the whole `dir` convention exists to avoid.
-  const key = `${type}|${col}|${fc}|${LITF}`;
+  // Resolution and family belong in the key too. A planet's near cells can be
+  // larger than its far cells in one frame, and an embarked unit uses the same
+  // rules ID as the land figure it temporarily replaces.
+  const key = `${res}|${family}|${type}|${col}|${fc}|${LITF}|${skin}`;
   const had = UNIT_ART.get(key);
   if (had !== undefined) return had;
   const D = Math.ceil(ART_BOX * 2 * res);
@@ -13005,12 +13013,20 @@ function drawUnitChar(u, x, y, now, moving) {
   // `unitVisualFamily` is implemented by the module; this guard preserves the
   // zero-dependency vector fallback if an old cached page or constrained
   // browser cannot load it.
+  // A planet supplies its own local ground frame. It is still this same unit
+  // renderer — only its projection and world-fixed light differ from the flat
+  // board — so the handoff remains one behavior for every unit family.
+  const cinematicSurface = UNIT_RENDER_CONTEXT?.cinematic3d;
   const depthModel = cinemaActive() && MODE.fx && cam.scale >= 1.18 &&
     (cinematicDepthSubject(u, now) || cam.scale >= 1.58) &&
-    !u.survey_count && globalThis.Cinematic3D?.supports(family);
+    !u.survey_count && cinematicSurface?.depthAllowed !== false &&
+    globalThis.Cinematic3D?.supports(family);
   if (depthModel && Cinematic3D.draw({
       ctx:cx, family, type:k, color:col, skin, facing:fc,
       time:now, seed:Number(u.id || 0), moving, action, scale:1.04,
+      orthographic:cinematicSurface?.orthographic,
+      tilt:cinematicSurface?.tilt,
+      sunAngle:cinematicSurface?.sunAngle,
     })) {
     cx.restore();
     return;
@@ -16536,6 +16552,144 @@ function planetCellInradius(cell) {
   }
   return Number.isFinite(inradius) ? inradius : 0;
 }
+
+// A painted soldier needs enough of a projected cell to carry its silhouette,
+// owner plate and type badge.  Below this it would be a few noisy pixels, so
+// the existing overview token remains the truthful representation of an army.
+const PLANET_PAINTED_UNIT_INRADIUS = 9;
+const PLANET_PAINTED_UNIT_BADGE_INRADIUS = 12;
+// The 3D mesh reads at roughly an eighteen-pixel width. Smaller than this its
+// face detail aliases into the same noise the compact token intentionally
+// avoids, so it stays on the regular painted path until the globe is close.
+const PLANET_CINEMATIC_UNIT_INRADIUS = 11.5;
+
+function planetUnitTangentAngle(cell, centerX, centerY) {
+  const dx = cell.center.x - centerX, dy = cell.center.y - centerY;
+  // Local negative Y points away from the centre of the globe, matching the
+  // landform convention in drawPlanetSurfaceDetail. At the exact centre there
+  // is no preferred tangent, so keep the screen's normal upright reading.
+  return Math.hypot(dx, dy) > 1e-4 ? Math.atan2(dy, dx) + Math.PI / 2 : 0;
+}
+
+function drawPlanetPaintedUnitMarks(unit, y, cellRadius, now) {
+  const us = unitScale();
+  const detail = cellRadius >= PLANET_PAINTED_UNIT_BADGE_INRADIUS;
+  if (unit.survey_count > 1) drawUnitFormationBadge(unit, 0, y);
+  else if (detail) drawUnitBadge(unit, 0, y);
+  if (unit.fortified && detail) {
+    const k = UNIT_K(), w = 3.5 * k;
+    const sx = -9.5 * k, sy = y + 1;
+    cx.beginPath();
+    cx.moveTo(sx - w, sy - 4.2 * k); cx.lineTo(sx + w, sy - 4.2 * k);
+    cx.lineTo(sx + w, sy + 0.5 * k);
+    cx.quadraticCurveTo(sx, sy + 5.2 * k, sx - w, sy + 0.5 * k);
+    cx.closePath();
+    cx.fillStyle = "#dee7f4ee"; cx.fill();
+    cx.strokeStyle = "#10151d"; cx.lineWidth = 1.2; cx.stroke();
+  }
+  if (unit.hp < 100) {
+    const bw = Math.min(cellRadius * 1.45,
+      24 * us / Math.min(1, Math.max(cam.scale, 0.45)));
+    const bh = Math.max(2.1, Math.min(cellRadius * .24,
+      4.5 * us / Math.min(1, Math.max(cam.scale, 0.55))));
+    const by = y - 18 * us;
+    const frac = Math.max(0, Math.min(1, unit.hp / 100));
+    const color = frac > .5 ? "#4fd45c" : (frac > .25 ? "#f0b429" : "#f04f3f");
+    cx.fillStyle = "#10151dd8";
+    cx.beginPath(); cx.roundRect(-bw / 2 - 1, by - 1, bw + 2, bh + 2, 2); cx.fill();
+    cx.fillStyle = color;
+    cx.beginPath(); cx.roundRect(-bw / 2, by, bw * frac, bh, 1.5); cx.fill();
+    if (frac <= .25) {
+      cx.globalAlpha = .35 + .3 * Math.sin(now / 160);
+      cx.strokeStyle = "#ff7060"; cx.lineWidth = 1.6;
+      cx.strokeRect(-bw / 2 - 2, by - 2, bw + 4, bh + 4);
+      cx.globalAlpha = 1;
+    }
+  }
+  if (detail && unit.level > 1) {
+    cx.fillStyle = "#ffd700";
+    for (let index = 0; index < unit.level - 1; index++) {
+      cx.beginPath();
+      cx.arc((index * 6 - 6) * us,
+             y - 10.5 * us - (unit.hp < 100 ? 12 : 4) * us,
+             2 * us, 0, 7);
+      cx.fill();
+    }
+  }
+  if (sel && sel.id === unit.id) {
+    const r = Math.min(cellRadius * .86, 16 * us + 6 * us);
+    cx.strokeStyle = "#f0c674"; cx.lineWidth = 2.1;
+    cx.setLineDash([5, 4]);
+    cx.beginPath(); cx.ellipse(0, y + 8.5 * us, r, r * .42, 0, 0, 7); cx.stroke();
+    cx.setLineDash([]);
+  }
+}
+
+function drawPlanetPaintedUnits(units, cellByKey, centerX, centerY,
+                                 visible, spectator, onSheet, camera) {
+  const cities = new Set(state.cities.map(city => key(city.pos)));
+  const figures = [];
+  const drawn = new Set();
+  for (const unit of units) {
+    const cell = cellByKey.get(key(unit.pos));
+    if (!cell || (!spectator && !visible.has(key(unit.pos))) ||
+        cell.center.z < (onSheet ?? .025)) continue;
+    const radius = planetCellInradius(cell);
+    if (radius < PLANET_PAINTED_UNIT_INRADIUS) continue;
+    // planetCells contains the whole facing hemisphere so relief at its rim
+    // can meet cleanly; a close camera only shows a small patch of that set.
+    // Meshes outside the canvas are still expensive to build and sort, so cull
+    // by the largest silhouette the cell can project before entering the unit
+    // renderer. The generous margin preserves a figure or a health bar that
+    // just reaches in from beyond the frame.
+    const margin = Math.max(22, radius * 2.4);
+    if (cell.center.x < -margin || cell.center.x > MAPW + margin ||
+        cell.center.y < -margin || cell.center.y > MAPH + margin) continue;
+    figures.push({unit, cell, radius});
+  }
+  // The ground is painted back-to-front. Preserve that order for figures so a
+  // close regiment can cover one just beyond it without either appearing to
+  // float through the other at the limb.
+  figures.sort((a, b) => a.cell.center.z - b.cell.center.z);
+  const now = performance.now();
+  for (const {unit, cell, radius} of figures) {
+    const previous = UNIT_RENDER_CONTEXT;
+    // UNIT_SCALE makes a 32-unit silhouette fill 80% of a normal flat hex.
+    // A projected cell follows that same contract from its measured inradius.
+    const angle = planetUnitTangentAngle(cell, centerX, centerY);
+    UNIT_RENDER_CONTEXT = {
+      scale:(radius * 2 * UNIT_FILL / UNIT_SPAN) / UNIT_SCALE,
+      screenScale:DPR,
+      // The globe is orthographic, while a flat scene looks down a tilted
+      // board. Give the shared mesh the former projection and turn its light
+      // back through this cell's local frame so the sun stays in the world as
+      // the camera turns around the planet.
+      cinematic3d:{
+        depthAllowed:radius >= PLANET_CINEMATIC_UNIT_INRADIUS &&
+          (camera.chart || cell.center.z >= .13),
+        orthographic:true, tilt:.42, sunAngle:SUN - angle,
+      },
+    };
+    cx.save();
+    try {
+      const y = cities.has(key(unit.pos)) ? radius * .52 : 0;
+      cx.translate(cell.center.x, cell.center.y);
+      cx.rotate(angle);
+      if (VIEW === "cinematic") drawCinematicSubjectMarker(unit, 0, y, now);
+      drawUnitBase(unit, 0, y);
+      if (VIEW === "cinematic") drawUnitCompany(unit, 0, y, now, false);
+      else drawUnitChar(unit, 0, y, now, false);
+      if (VIEW === "cinematic") drawCinematicSubjectBrackets(unit, 0, y, now);
+      drawPlanetPaintedUnitMarks(unit, y, radius, now);
+      drawn.add(unit.id);
+    } finally {
+      cx.restore();
+      UNIT_RENDER_CONTEXT = previous;
+    }
+  }
+  return drawn;
+}
+
 function pointInsidePlanetCell(x, y, points) {
   let inside = false;
   for (let i = 0, j = points.length - 1; i < points.length; j = i++) {
@@ -21125,11 +21279,6 @@ function drawPlanetMap() {
   const cellByKey = radius >= SKY_MARKERS
     ? new Map(cells.map(cell => [key(cell.tile.pos), cell]))
     : new Map();
-  // Use the same stable tile layout as the flat command map. The globe has no
-  // in-flight unit animation, so every current unit on a cell belongs here.
-  const planetUnitStacks = !empireLens && !MODE.painted
-    ? strategicUnitStackSlots(state.units)
-    : null;
   for (const city of state.cities) {
     const cell = cellByKey.get(key(city.pos));
     if (!cell || cell.center.z < (onSheet ?? .02)) continue;
@@ -21176,14 +21325,34 @@ function drawPlanetMap() {
     }
     if (cityState) cx.restore();
   }
-  for (const unit of empireLens ? [] : state.units) {
+  const visibleUnits = empireLens ? [] : (cinemaActive()
+    ? cinematicSurveyUnits(state.units) : state.units);
+  // Use the same stable tile layout as the flat command map. The globe has no
+  // in-flight unit animation, so every overview marker on a cell belongs here.
+  const planetUnitStacks = !MODE.painted
+    ? strategicUnitStackSlots(visibleUnits)
+    : null;
+  // Both painted styles share one spherical figure pass. In Balanced it keeps
+  // the illustrated unit; in Cinematic the familiar close-shot handoff inside
+  // drawUnitChar promotes the exact same family to its low-poly 3D model.
+  // Small or side-on cells deliberately keep their overview token, so every
+  // map script, globe frequency and chart scale retains a readable army.
+  const paintedFigureIds = MODE.painted
+    ? drawPlanetPaintedUnits(visibleUnits, cellByKey, centerX, centerY,
+                              visible, spectator, onSheet, camera)
+    : null;
+  for (const unit of visibleUnits) {
+    // A painting replaces its overview dot only when the cell is wide enough
+    // to read it. Farther out, retain the lightweight globe-level marker so a
+    // player never loses an army while zooming through the handoff.
+    if (paintedFigureIds?.has(unit.id)) continue;
     const cell = cellByKey.get(key(unit.pos));
     if (!cell || cell.center.z < (onSheet ?? .025)) continue;
     // A coloured dot answers only "whose unit?". Strategic uses the same
     // hex-relative command token as the flat map, rather than a fixed pixel
-    // floor that can swallow a small or foreshortened cell. Painted globes
-    // retain the quieter army dot; their figures take over once the camera is
-    // close enough to make them useful.
+    // floor that can swallow a small or foreshortened cell. Painted views
+    // retain this quiet overview dot only when the figure pass has no readable
+    // model to show at the current globe scale.
     const commandToken = !MODE.painted;
     const outline = sel?.id === unit.id ? 2.3 : 1.2;
     const stack = commandToken
