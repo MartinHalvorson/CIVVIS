@@ -607,3 +607,36 @@ roster keeps `strategic` as an offline-only anchor.
   armies, unfinished queues, or weak science/culture output).
 - Keep `random` in the pool as a sanity floor.
 - `soak` flags anomalies (no tech progress, minor winners) across seeds.
+
+### 2026-07-31 full-prefix status
+
+Production remains `advanced`, with every new behavior below default-off. This
+is a failed-replacement conclusion, not a profile-independent strength claim.
+
+| comparison | matrix sample | compact | deployment | production consequence |
+|---|---:|---:|---:|---|
+| live policy deck vs `advanced` | 300 maps/profile | 52.3%, +16 | 54.3%, +30 | Wilson gate inconclusive; no promotion |
+| direct envoy production vs `advanced` | 120 maps/profile | 48.3%, −12 | 54.4%, +30 | gate inconclusive; no promotion |
+| commitment vs `advanced` | 120 maps/profile | 51.0%, +7 | 46.5%, −25 | reject treatment |
+| `advanced_evolved` vs `advanced` | 120 maps/profile | 57.3%, +51 | 45.6%, −30 | reject transfer |
+| live policy deck vs `advanced_v1` | 300 maps/profile | 50.5%, +3 | 53.7%, +26 | gate inconclusive; anchor retained |
+
+`advanced_envoy_priority` is the direct mechanism arm. After the opening book,
+it can place the first incomplete empire-unique Diplomatic Quarter, Consulate,
+or Chancery stage into an idle adaptive-production queue. It requires a met and
+contestable city-state plus useful remaining envoy stream, preserves existing
+queues, and yields to Recovery, local danger, active rushes, and major war.
+`advanced_envoy_infrastructure` remains the valuation-only control. Do not infer
+direct production behavior from that older arm.
+
+Evaluator-only fallbacks now report what they actually build: champion-backed
+netless policy arms are `advanced_evolved`, and champion-backed netless neural
+is `basic_evolved`. Direct evaluation refuses degraded artifacts by default;
+`--allow-degraded` is a diagnostic opt-in and is forbidden in `--matrix` mode.
+The matrix also uses sample-size-independent profile seeds, so extending a
+prefix preserves both profiles' earlier maps.
+
+The next strength experiment should be a single pre-registered composite of the
+live policy deck and direct envoy production on fresh stable prefixes. Treat it
+as a new hypothesis: the two favorable directions may overlap, and higher envoy
+income may simply move production cost elsewhere.
