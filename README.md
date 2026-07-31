@@ -257,11 +257,11 @@ otherwise:
 | the whole scripted stack | `advanced` vs `basic` | 88.8% | **+359** (+262..+456) | PASS |
 | the scripted planning upgrade (both stock) | `advanced` vs `advanced_v1` | 63.7% | **+98** (+34..+162) | PASS |
 | …the same, at the six-player 74×46 Online deployment profile | seed 77,100,000 | 62.1% | **+86** (+22..+149) | PASS |
-| the champion `Weights`, on `AdvancedAi` | `advanced_evolved` vs `advanced` | 58.8% | +61 (−1..+124) | p=0.0031 |
+| the champion `Weights`, on `AdvancedAi` | `advanced_evolved` vs `advanced` | 58.8% | +61 (−1..+124) | INCONCLUSIVE |
 | the champion `Weights`, on `BasicAi` | `neural` vs `basic` | 68.8% | **+137** (+70..+204) | PASS |
 | macro rollout search **plus** the genome | `strategic` vs `advanced` | 62.9% | +92 (+28..+156) | PASS |
 | macro rollout search **alone** | `strategic` vs `advanced_evolved` | 58.8% | +61 (−1..+124) | INCONCLUSIVE |
-| production rollout search **plus** the genome | `production` vs `advanced` | 60.8% | +76 (+13..+140) | p=0.0290 |
+| production rollout search **plus** the genome | `production` vs `advanced` | 60.8% | +76 (+13..+140) | PASS |
 | production rollout search **alone** | `production` vs `advanced_evolved` | 45.8% | **−29** (−91..+33) | INCONCLUSIVE |
 | the learned tactical policy | `policy` vs `advanced_evolved` | 50.0% | the same agent | — |
 
@@ -271,10 +271,12 @@ Read the two pairs of rows together, because they are the point:
   was the genome, and once the genome is held fixed the search no longer
   clears the promotion gate — its direction is still significant (p=0.0003),
   its effect size is not.
-- **Production search reverses sign.** Against stock `advanced` it looks like a
-  significant **+76**; against a genome-matched control it is **45.8%, −29** —
-  which reproduces the repository's own recorded 45.0% almost exactly. The
-  confounded comparison had turned a known negative result into a positive one.
+- **Production search reverses sign, and the confounded version passes the
+  promotion gate.** Against stock `advanced` it reads **+76, gate PASS**;
+  against a genome-matched control it is **45.8%, −29**, which reproduces the
+  repository's own recorded 45.0% almost exactly. `ProductionSearchAi` is a
+  retained *negative* result, and the wrong control is enough to promote it.
+  That is the concrete cost of the confound, not a hypothetical one.
 
 Two other things are worth stating plainly. The 40-gene champion is worth more
 than twice as much bolted onto the weak agent (+137) as onto the strong one
