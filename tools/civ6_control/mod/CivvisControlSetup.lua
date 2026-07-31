@@ -21,6 +21,23 @@
 local cfg = CivvisControlConfig or {};
 local PREFIX = "CIVVISJSON ";
 
+-- Every optional game mode this install defines, from the `ConfigurationId`s
+-- the content packs register (`grep -o 'ConfigurationId="GAMEMODE_[A-Z_]*"'`
+-- over Assets). GAMEMODE_RANDOM is in the list and matters most: left on, it
+-- picks modes for you, so a harness that cleared the other eight and not this
+-- one would still be playing a game it had not chosen.
+local GAME_MODES = {
+	"GAMEMODE_APOCALYPSE",
+	"GAMEMODE_BARBARIAN_CLANS",
+	"GAMEMODE_DRAMATICAGES",
+	"GAMEMODE_HEROES",
+	"GAMEMODE_MONOPOLIES",
+	"GAMEMODE_RANDOM",
+	"GAMEMODE_SECRETSOCIETIES",
+	"GAMEMODE_TOWERDEFENSE",
+	"GAMEMODE_TREE_RANDOMIZER",
+};
+
 -- ---------------------------------------------------------------- reporting
 
 local function esc(s)
@@ -123,6 +140,31 @@ local function seatHuman(count)
 	return count - needed;
 end
 
+-- The modes a run asked for, and the modes the game actually has. Both are
+-- reported as the list of what is ON, not as nine booleans: a run's whole
+-- answer should be `"modes": []`, and an empty list is a claim that reads at a
+-- glance. `[]` and a missing field are different answers, and older logs have
+-- the missing one.
+local function modesRequested()
+	local on = {};
+	for _, mode in ipairs(GAME_MODES) do
+		if (cfg.GameModes or {})[mode] then on[#on + 1] = mode; end
+	end
+	return on;
+end
+
+local function modesApplied()
+	local on = {};
+	for _, mode in ipairs(GAME_MODES) do
+		local set = try(function() return GameConfiguration.GetValue(mode); end);
+		-- The value comes back as a boolean on some builds and 0/1 on others,
+		-- and `0` is truthy in Lua -- so a naive check reports every mode as
+		-- enabled, which is the same failure this whole change exists to stop.
+		if set == true or set == 1 then on[#on + 1] = mode; end
+	end
+	return on;
+end
+
 local function applyConfiguration()
 	GameConfiguration.SetToDefaults();
 	-- SetToDefaults pins the ruleset to standard. Clearing it lets the setup
@@ -150,6 +192,25 @@ local function applyConfiguration()
 	if cfg.MaxTurns and cfg.MaxTurns >= 1 then
 		GameConfiguration.SetMaxTurns(cfg.MaxTurns);
 		GameConfiguration.SetTurnLimitType(TurnLimitTypes.CUSTOM);
+	end
+
+	-- Every optional game mode, set explicitly, every run.
+	--
+	-- These are the one setting on this screen that PERSISTS. `SetToDefaults`
+	-- does not clear them, so a mode switched on once -- by a person hosting a
+	-- game months ago, or by GAMEMODE_RANDOM picking some -- stays on for every
+	-- run afterwards, and nothing in this harness ever said so. It was found
+	-- that way: GAMEMODE_HEROES was true on a live run, which had been playing
+	-- with twelve hero units and their rules on a board CIVVIS models none of.
+	--
+	-- The modes are all off unless a run asks for one, because CIVVIS's ruleset
+	-- is Gathering Storm and nothing else; `src/elo.rs` writes the same thing
+	-- into its setup contract as `modes=none`. Each one is gated purely on its
+	-- configuration value (`Babylon.modinfo`'s `Heroes_Mode` criteria and its
+	-- siblings), so clearing the value is what turns the content off.
+	for _, mode in ipairs(GAME_MODES) do
+		local wanted = (cfg.GameModes or {})[mode];
+		GameConfiguration.SetValue(mode, wanted and true or false);
 	end
 
 	-- Free-form passthrough for anything without a named setter above, using
@@ -197,6 +258,7 @@ local function applyConfiguration()
 			map_seed = cfg.MapSeed, game_seed = cfg.GameSeed,
 			leader = cfg.Leader,
 			max_turns = cfg.MaxTurns, humans = cfg.HumanPlayers or 1,
+			modes = modesRequested(),
 		},
 		applied = {
 			ruleset = try(function() return GameConfiguration.GetRuleSet(); end),
@@ -213,6 +275,10 @@ local function applyConfiguration()
 			participants = try(function()
 				return GameConfiguration.GetParticipatingPlayerCount();
 			end),
+			-- Read back, like everything else here, and for the same reason:
+			-- a mode that stays on is a different game, and until this line
+			-- existed no run said which game it had played.
+			modes = modesApplied(),
 			seated = seated,
 		},
 	});
