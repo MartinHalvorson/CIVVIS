@@ -730,6 +730,25 @@ pub struct StateCity {
     /// Civ 6 building type names this city has already finished.
     #[serde(default)]
     pub buildings: Vec<String>,
+    /// What Civilization VI is CURRENTLY building here, by type name.
+    ///
+    /// ★★★★ Exported as a raw hash for the whole project (`producing:
+    /// -1743686858`) and therefore unusable, so the mirror had no idea what any
+    /// city already had underway and CIVVIS re-decided production every turn blind
+    /// to work in progress.
+    #[serde(default)]
+    pub producing: Option<String>,
+    /// Food stockpiled toward the next citizen.
+    #[serde(default)]
+    pub food: f64,
+    /// Loyalty CHANGE per turn. `loyalty` alone is a level, and a city at 100
+    /// falling fast looks identical to one at 100 holding steady — which is exactly
+    /// how a city was lost at t98 with loyalty reading 100.
+    #[serde(default)]
+    pub loyalty_per_turn: f64,
+    /// Civilization VI's own verdict on who this city would defect to, by player id.
+    #[serde(default)]
+    pub falls_to: i64,
     pub x: i32,
     pub y: i32,
     #[serde(default)]
@@ -805,6 +824,11 @@ pub struct StateSnapshot {
     pub civics: Vec<String>,
     #[serde(default)]
     pub gold: i64,
+    /// Faith BALANCE. `science` and `culture` are per-turn yields that CIVVIS
+    /// derives from its own board, so injecting them would fight the simulation;
+    /// faith is a stockpile and crosses cleanly, exactly like gold.
+    #[serde(default)]
+    pub faith: i64,
     #[serde(default)]
     pub score: i64,
     #[serde(default = "unknown_strength")]
@@ -1179,6 +1203,37 @@ pub fn refused_improve_sites(path: &std::path::Path) -> std::collections::BTreeS
     refused_sites_of_kind(path, "improve_refused")
 }
 
+
+/// A Civilization VI production type name as a CIVVIS queue [`Item`].
+///
+/// ⚠ Returns None rather than guessing. A wrong item would tell CIVVIS a city is
+/// busy with something it is not, which is worse than the idle city this fixes: it
+/// would suppress a real production decision instead of merely repeating one.
+///
+/// Districts are deliberately NOT reconstructed — `Item::District` carries a `pos`
+/// the export does not give, and inventing one would place a district on arbitrary
+/// ground.
+fn civvis_production_item(
+    rules: &crate::rules::Rules,
+    civ6: Option<&str>,
+) -> Option<crate::game::Item> {
+    let civ6 = civ6?.trim();
+    if civ6.is_empty() {
+        return None;
+    }
+    if let Some(name) = civvis_node_name(&rules.units, civ6, "UNIT_") {
+        return Some(crate::game::Item::Unit {
+            unit: crate::name::Name::new(&name),
+        });
+    }
+    if let Some(name) = civvis_node_name(&rules.buildings, civ6, "BUILDING_") {
+        return Some(crate::game::Item::Building {
+            building: crate::name::Name::new(&name),
+        });
+    }
+    None
+}
+
 /// The newest `state` event as raw JSON, with the run's `seat` identity merged in.
 ///
 /// The typed [`state_from_events`] is what the decision path wants. This is for the
@@ -1374,6 +1429,12 @@ pub fn rebuild_from_state(
     if state.gold >= 0 {
         game.players[0].gold = state.gold as f64;
     }
+    if state.faith >= 0 {
+        game.players[0].faith = state.faith as f64;
+    }
+    // Cheap: `rules` is an Arc. Cloned so the city loop below can consult it while
+    // holding a mutable borrow of `game`.
+    let game_rules = std::sync::Arc::clone(&game.rules);
 
     // ★ Research first: what a seat KNOWS bounds what it can sensibly do, and a
     // CIVVIS player with an empty tree recommends Slingers in the Medieval era.
@@ -1420,6 +1481,21 @@ pub fn rebuild_from_state(
                 // the seat needs to weigh loyalty itself and could not even read it.
                 if city.loyalty >= 0.0 {
                     built.loyalty = city.loyalty;
+                }
+                if city.food >= 0.0 {
+                    built.food = city.food;
+                }
+                // ★★★★ SEED THE QUEUE WITH WHAT CIVILIZATION VI IS ALREADY BUILDING.
+                //
+                // Without it every city reads as idle, so CIVVIS chooses production
+                // from scratch each turn with no knowledge of work in progress —
+                // which is what a run alternating Builder / Monument / Campus every
+                // second turn looks like from the inside.
+                if let Some(item) = civvis_production_item(&game_rules, city.producing.as_deref())
+                {
+                    if built.queue.is_empty() {
+                        built.queue.push(item);
+                    }
                 }
                 // ★★★★ WHAT THE CITY ALREADY HAS. Without this a city reads as empty
                 // forever and CIVVIS re-orders the same development every turn:
@@ -1938,5 +2014,40 @@ impl LiveMirror {
                 self.rival_units.push(uid);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod host_fact_tests {
+    use super::*;
+
+    /// Civilization VI's production names must reach CIVVIS's queue as real items.
+    ///
+    /// ⚠ The export shipped a raw HASH for the whole project, so this path was dead
+    /// and every city read as idle — CIVVIS then chose production from scratch each
+    /// turn, blind to work already underway.
+    #[test]
+    fn civ6_production_names_become_civvis_queue_items() {
+        let rules = crate::rules::Rules::shared();
+        let settler = civvis_production_item(&rules, Some("UNIT_SETTLER"));
+        assert!(
+            matches!(settler, Some(crate::game::Item::Unit { .. })),
+            "UNIT_SETTLER should map to a CIVVIS unit build, got {settler:?}"
+        );
+        let monument = civvis_production_item(&rules, Some("BUILDING_MONUMENT"));
+        assert!(
+            matches!(monument, Some(crate::game::Item::Building { .. })),
+            "BUILDING_MONUMENT should map to a CIVVIS building, got {monument:?}"
+        );
+
+        // ⚠ Refusing to guess is the point. A wrong item tells CIVVIS a city is busy
+        // with something it is not, which SUPPRESSES a real production decision —
+        // worse than the repeated one this fixes.
+        assert!(civvis_production_item(&rules, Some("UNIT_NOT_A_REAL_THING")).is_none());
+        assert!(civvis_production_item(&rules, Some("")).is_none());
+        assert!(civvis_production_item(&rules, None).is_none());
+        // Districts carry a `pos` the export does not provide; inventing one would
+        // place a district on arbitrary ground.
+        assert!(civvis_production_item(&rules, Some("DISTRICT_CAMPUS")).is_none());
     }
 }

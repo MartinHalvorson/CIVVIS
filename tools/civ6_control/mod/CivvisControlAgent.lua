@@ -174,6 +174,32 @@ local function typeName(kindTable, hash)
 	end);
 end
 
+-- What a city is CURRENTLY building, as a name rather than a hash.
+--
+-- ★★★★ `GetCurrentProductionTypeHash()` returns a signed hash, and the export
+-- shipped it raw: `producing: -1743686858`. That is the same trap already fixed for
+-- difficulty — **reporting the hash is reporting nothing**, because nothing
+-- downstream can turn it back into a thing. The mirror consequently had no idea what
+-- any city was already building, so CIVVIS re-decided production from scratch every
+-- turn with no knowledge of work in progress.
+--
+-- A production item can be a unit, a building, a district or a project, and the hash
+-- namespace is shared, so each table is tried in turn.
+local function productionName(hash)
+	if hash == nil or hash == 0 then return nil; end
+	local tables = { GameInfo.Units, GameInfo.Buildings,
+	                 GameInfo.Districts, GameInfo.Projects };
+	for _, kindTable in ipairs(tables) do
+		local name = try(function()
+			local row = kindTable[hash];
+			return row and (row.UnitType or row.BuildingType
+				or row.DistrictType or row.ProjectType or row.Type) or nil;
+		end);
+		if name ~= nil then return name; end
+	end
+	return nil;
+end
+
 local function enumMembers(getter)
 	local ok, tbl = pcall(getter);
 	if not ok or type(tbl) ~= "table" then return nil; end
@@ -3459,7 +3485,11 @@ local function exportState(player, pid, turn)
 			y = try(function() return city:GetY(); end, -1),
 			pop = try(function() return city:GetPopulation(); end, -1),
 			capital = try(function() return city:IsCapital(); end, false),
-			producing = queue,
+			-- The NAME, not the hash. See `productionName`: shipping the raw hash
+			-- meant the mirror never knew what any city was already building, so
+			-- CIVVIS re-decided production every turn blind to work in progress.
+			producing = productionName(queue),
+			producing_hash = queue,
 			food = try(function() return city:GetGrowth():GetFood(); end, -1),
 			-- ⚠ Was `GetDistricts():GetDefenseStrength()` — the method on the
 			-- collection, which does not exist, so this read -1 for the whole
