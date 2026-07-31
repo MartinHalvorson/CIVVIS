@@ -333,7 +333,7 @@ its separate promotion gate remains the point where wins decide shipment.
 
 ```bash
 civvis tournament \
-  --ais advanced-20260730=advanced,advanced_v1,basic-20260730=basic,random-20260730=random \
+  --ais advanced-20260731=advanced,advanced_v1,basic-20260730=basic,random-20260730=random \
   --games 40 --players 4
 civvis tournament --standings          # verify and print without playing
 ```
@@ -370,6 +370,12 @@ must use a new ledger; an edit proved to be gated away from that path still
 requires an explicit review and re-pin. This guard prevents the word “frozen”
 from hiding a moving control, while allowing candidate-only code to evolve.
 
+The fog-honest city-pressure repair changes that shared legacy path, so the
+default `data/elo_ratings.json` is a new, replay-verified 40-game protocol-v2
+ledger. The complete protocol-v1 baseline is preserved, read-only, at
+`data/elo_ratings_v1.json`; it remains useful historical evidence but must not
+be extended or mixed with protocol-v2 results.
+
 Schema 3 binds a ledger to the complete rating profile: an explicit experiment
 protocol version, a deterministic fingerprint of the fully merged rules JSON,
 a readable contract for every fixed lobby default, ordered controller roster,
@@ -386,11 +392,14 @@ advanced_v1, basic, random`; this is what lets a new challenger join without
 quietly changing its multiplayer controls. Bump the protocol when engine
 behavior, implicit setup defaults, or scoring semantics change enough to
 define a different contest; rules-data changes are detected automatically.
-The shipped ledger is a canonical 40-game,
-1500-centred protocol-v1 baseline bound to the CLI's stock 4-player Standard
-game (rules `fnv1a64:3423bd46da2b8cd7`, 60×38, 500 turns, six city-states,
-Pangaea, flat/poles, no mods, K=24).
-Its frozen July 30 run rates `advanced-20260730` at 1589 and the
+The preserved protocol-v1 ledger is a canonical 40-game,
+1500-centred baseline bound to the CLI's stock 4-player Standard game (rules
+`fnv1a64:3423bd46da2b8cd7`, 60×38, 500 turns, six city-states, Pangaea,
+flat/poles, no mods, K=24). Protocol-v2 uses the same fixed setup with a new
+40-game evidence set: `advanced-20260731` is 1570.5 online Elo and 1623.6
+direct Elo against `advanced_v1`, from a 27/40 pair score (95% 52.0–79.9%, or
+1514.0–1739.9 direct Elo). The historical frozen July 30 run rates
+`advanced-20260730` at 1589 and the
 `advanced_v1` anchor at 1500, an +89-point online gap. The order-independent
 direct result is 1708, from a 31/40 pair score whose 95% interval is
 62.5–87.7%, or 1589–1841 after the same monotone Elo transform. Future dated
