@@ -38,9 +38,10 @@ pub const BUILTIN_AIS: [&str; 10] = [
 /// tournament ratings. Keeping them out of `BUILTIN_AIS` prevents a control
 /// factory from being pooled into the same player/leader rating key as
 /// its treatment.
-pub const EVAL_ONLY_AIS: [&str; 76] = [
+pub const EVAL_ONLY_AIS: [&str; 77] = [
     "basic_evolved",
     "advanced_pre_envoy_composite",
+    "advanced_pre_fog_pressure",
     "advanced_policy_live_control",
     "advanced_envoy_policy",
     "advanced_envoy_infrastructure",
@@ -1194,7 +1195,8 @@ fn artifact_effective_alias_from(
         "advanced"
     };
     match name {
-        "advanced_envoy_composite" => Some("advanced"),
+        "advanced_envoy_composite" => Some("advanced_pre_fog_pressure"),
+        "advanced_fog_pressure" => Some("advanced"),
         "evolved" | "advanced_evolved" => Some(advanced_fallback),
         "basic_evolved" => Some(basic_fallback),
         "neural" => Some(if net { "neural" } else { basic_fallback }),
@@ -1248,6 +1250,7 @@ fn build_effective_ai(name: &str, seed: u64, dir: &str) -> Option<Box<dyn Ai>> {
     let ai: Box<dyn Ai> = match name {
         "advanced" => Box::new(AdvancedAi::new()),
         "advanced_pre_envoy_composite" => Box::new(AdvancedAi::pre_envoy_composite()),
+        "advanced_pre_fog_pressure" => Box::new(AdvancedAi::pre_fog_pressure()),
         "basic" => Box::new(BasicAi::new()),
         // Four arms decompose the envoy-acquisition treatment. The live
         // policy control differs from `advanced` only by enabling the existing
@@ -3328,7 +3331,7 @@ mod tests {
         assert_eq!(builtin_spec("policy", dir).unwrap(), advanced);
         assert_eq!(builtin_spec("evolved", dir).unwrap(), advanced);
         assert_eq!(
-            builtin_spec("advanced_envoy_composite", dir).unwrap(),
+            builtin_spec("advanced_fog_pressure", dir).unwrap(),
             advanced
         );
         assert_eq!(
@@ -3343,12 +3346,9 @@ mod tests {
                 .differing_axes(&advanced),
             vec!["treatment"]
         );
-        assert_eq!(
-            builtin_spec("advanced_fog_pressure", dir)
-                .unwrap()
-                .differing_axes(&advanced),
-            vec!["treatment"]
-        );
+        let pre_fog = builtin_spec("advanced_pre_fog_pressure", dir).unwrap();
+        assert_eq!(builtin_spec("advanced_envoy_composite", dir).unwrap(), pre_fog);
+        assert_eq!(pre_fog.differing_axes(&advanced), vec!["treatment"]);
 
         let production = builtin_spec("production", dir).unwrap();
         assert_eq!(production.architecture, Architecture::Production);
@@ -3666,9 +3666,10 @@ mod tests {
             // Anything else reaching that state fell through to the
             // catch-all and is claiming to need nothing while quietly
             // needing a net.
-            const SCRIPTED: [&str; 43] = [
+            const SCRIPTED: [&str; 44] = [
                 "advanced",
                 "advanced_pre_envoy_composite",
+                "advanced_pre_fog_pressure",
                 "advanced_policy_live_control",
                 "advanced_envoy_policy",
                 "advanced_envoy_infrastructure",
@@ -3720,11 +3721,14 @@ mod tests {
             // does. This does not: the catch-all answers `basic`, so any
             // name that needs no artifacts and still does not resolve to
             // itself reached that arm rather than a row of its own. The one
-            // exception is the explicitly promoted composite alias.
+            // exceptions are explicitly promoted aliases and their frozen
+            // predecessor names.
             if resolved.artifacts.is_empty() {
                 assert!(
                     resolved.effective == *name
                         || (*name == "advanced_envoy_composite"
+                            && resolved.effective == "advanced_pre_fog_pressure")
+                        || (*name == "advanced_fog_pressure"
                             && resolved.effective == "advanced"),
                     "unexpected scripted alias {name} -> {}",
                     resolved.effective,

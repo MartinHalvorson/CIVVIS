@@ -24,10 +24,10 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// provably gated away, review that fact before updating this guard.
 /// Re-pinned 2026-07-31 after promoting `AdvancedAi::new()` to the
 /// live-policy/direct-envoy bundle and adding a separate historical
-/// constructor, then after adding the default-off fog-pressure evaluator arm.
-/// `AdvancedAi::legacy()` leaves that treatment disabled; its existing shared
-/// decision behavior remains unchanged.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x63bf_f2a5_0ffc_cf6b;
+/// constructor, then after promoting the separately frozen fog-pressure arm.
+/// `AdvancedAi::legacy()` still constructs through `configured` with every
+/// treatment disabled; its existing shared decision behavior is unchanged.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x1a33_fee0_5bda_2169;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {

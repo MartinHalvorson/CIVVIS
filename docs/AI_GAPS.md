@@ -467,9 +467,35 @@ explicit typed control rather than being overwritten in historical arms.
    evidence to evaluator-only names, separate discovery from confirmation,
    and add retained external opponents before making broader strength claims.
 
-Item 1 is now implemented as the evaluator-only `advanced_fog_pressure` arm
-and preregistered on a fresh 300-map-per-profile matrix. It cannot become the
-default until both profiles complete without retaining the incumbent. The
-implementation keeps own defense exact, freezes observed enemy effective HP,
-decays last-known pressure over six turns, and shares one immutable snapshot
-between serial and pooled evaluation.
+## Fog-honest pressure resolution and next ranking
+
+Item 1 is complete and promoted. The 300-map children both met the fixed
+integrity/non-regression rule: compact was 48.2% (−12 Elo-equivalent, CI
+−51..+27) and deployment 51.4% (+10, CI −29..+49); neither profile retained
+the incumbent. The full 64-map fog census passed every tensor/null integrity
+check and reduced residual trajectory-level hidden-fact divergences from 8.0%
+to 2.3%. It did not erase them, so `advanced` is more honest rather than fully
+fog-honest.
+
+The next ranked set is:
+
+1. **Build a qualified action-advantage boundary with real abstention.** The
+   existing destination ranker has positive average counterfactual lift, but
+   its 105-term reliability head failed out of fold. Require materially more
+   independent games, a preregistered lower-dimensional confidence model, and
+   an artifact that is unloadable unless Standard selection and untouched
+   deployment calibration both pass. Missing or unqualified artifacts must
+   execute the promoted scripted expert exactly.
+2. **Remove the next fog leak family.** The pressure slice leaves 16/698
+   controlled witnesses, mostly hidden unit facts entering tactical/campaign
+   choices. Localize one channel at a time with the same equal-information
+   invariant rather than claiming whole-controller honesty.
+3. **Search the complete expansion investment.** Price build time, lost
+   population, escort, travel, settlement, and horizon return together.
+4. **Price macro search against deployment strength and cost.** Use a
+   genome-matched sequential control and require strength worth its measured
+   ~6.4× single-seat turn cost.
+5. **Finish evidence semantics and external calibration.** Bind experiment
+   status to evaluator names and retain external games before broader claims.
+
+The next iteration takes item 1.

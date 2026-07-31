@@ -544,8 +544,10 @@ pub struct AdvancedAi {
     /// last-seen enemy units instead of current hidden unit positions and HP.
     /// Own defenders and city strength remain exact.
     ///
-    /// This is a separately named evaluator treatment until it clears the
-    /// deployment strength gate and compact no-regression gate.
+    /// Promoted under the preregistered integrity/non-regression rule. Over
+    /// 300 maps per profile it scored -12 Elo-equivalent on compact and +10
+    /// on deployment, both inconclusive; neither profile retained the
+    /// omniscient incumbent. `advanced_pre_fog_pressure` freezes that control.
     pub fog_honest_pressure: bool,
     /// Hold only the force groups that could actually reach the threatened
     /// city, instead of every group in the empire.
@@ -1186,7 +1188,7 @@ impl Default for AdvancedAi {
 
 impl AdvancedAi {
     pub fn new() -> AdvancedAi {
-        Self::envoy_composite()
+        Self::fog_pressure()
     }
 
     /// Frozen production controller from before the live-policy/direct-envoy
@@ -1305,6 +1307,12 @@ impl AdvancedAi {
         ai.envoy_infrastructure = true;
         ai.envoy_priority = true;
         ai
+    }
+
+    /// Frozen production controller from before city pressure was routed
+    /// through observed and remembered enemy information.
+    pub(crate) fn pre_fog_pressure() -> AdvancedAi {
+        Self::envoy_composite()
     }
 
     /// Promoted controller plus the single fog-honest pressure treatment.
@@ -15838,17 +15846,29 @@ mod tests {
                 game.wdist(*position, home_pos) >= 9 && game.city_at(*position).is_none()
             })
             .unwrap();
-        for position in [intruder_pos, far_pos] {
+        let observer_pos = game
+            .nbrs(intruder_pos)
+            .into_iter()
+            .find(|position| {
+                game.wdist(*position, home_pos) == 2 && game.city_at(*position).is_none()
+            })
+            .unwrap();
+        for position in [intruder_pos, far_pos, observer_pos] {
             let tile = game.map.tiles.get_mut(&position).unwrap();
             tile.terrain = crate::name!("grassland");
             tile.feature = None;
             tile.hills = false;
         }
+        // The production policy may learn enemy pressure only through current
+        // sight or memory. A civilian observer supplies sight without adding
+        // friendly military pressure to the recovery calculation.
+        game.spawn_test_unit("builder", 0, observer_pos);
         for _ in 0..4 {
             game.spawn_test_unit("modern_armor", 0, far_pos);
         }
         let mut intruders = vec![game.spawn_test_unit("warrior", 1, intruder_pos)];
         let mut ai = AdvancedAi::new();
+        ai.belief.observe(&game, 0);
 
         assert_eq!(
             ai.threatened_city(&game, 0),
@@ -15860,6 +15880,7 @@ mod tests {
         for _ in 0..4 {
             intruders.push(game.spawn_test_unit("modern_armor", 1, intruder_pos));
         }
+        ai.belief.observe(&game, 0);
         assert_eq!(ai.threatened_city(&game, 0), Some(home));
         let recovery = ai.assess(&game, 0);
         assert_eq!(recovery.strategy, GrandStrategy::Recovery);
@@ -15869,6 +15890,7 @@ mod tests {
         for unit in intruders {
             game.remove_unit(unit);
         }
+        ai.belief.observe(&game, 0);
         assert!(
             ai.plan_stale(&game, 0),
             "clearing the emergency must resume the campaign immediately"
@@ -17616,11 +17638,18 @@ mod tests {
         assert!(treatment.envoy_priority);
         assert!(!treatment.strategic_commitment);
 
+        let frozen = AdvancedAi::pre_fog_pressure();
+        assert_eq!(frozen.base.w, treatment.base.w);
+        assert_eq!(frozen.envoy_infrastructure, treatment.envoy_infrastructure);
+        assert_eq!(frozen.envoy_priority, treatment.envoy_priority);
+        assert_eq!(frozen.strategic_commitment, treatment.strategic_commitment);
+        assert!(!frozen.fog_honest_pressure);
+
         let production = AdvancedAi::new();
         assert_eq!(production.base.w, treatment.base.w);
         assert_eq!(production.envoy_infrastructure, treatment.envoy_infrastructure);
         assert_eq!(production.envoy_priority, treatment.envoy_priority);
-        assert_eq!(production.strategic_commitment, treatment.strategic_commitment);
+        assert!(production.fog_honest_pressure);
     }
 
     #[test]

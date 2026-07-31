@@ -6659,3 +6659,77 @@ the same probe prefix with and without `--fog-honest-pressure`. Because it
 perturbs other controller inputs too, only removal of pressure-caused
 divergences is attributable to this treatment; unrelated residual witnesses
 must remain reported rather than hidden.
+
+### Complete fixed-prefix result and promotion
+
+Both 300-map children completed. The ordinary strength parent retained
+`advanced` because deployment superiority was inconclusive, but the
+preregistered integrity/non-regression rule passed: neither profile retained
+the omniscient incumbent.
+
+| profile | paired score | 95% Wilson CI | Elo-equivalent | map direction | fixed integrity rule |
+|---|---:|---:|---:|---:|---|
+| compact Standard | 48.2% | 42.7%–53.9% | −12 (−51..+27) | 50–68, 182 neutral | ACCEPT / no retained regression |
+| deployment Online | 51.4% | 45.8%–57.0% | +10 (−29..+49) | 67–59, 174 neutral | ACCEPT / no retained regression |
+
+Compact's exact sign test was `p=0.1172`; terminal score was exactly 50.0%
+with directions 146–150. Deployment's sign test was `p=0.5331`; terminal
+score was 50.1% with directions 161–139. The treatment won 202 deployment
+games versus 185 for the incumbent, while compact recorded 150 versus 171.
+Neither anytime-valid process crossed in either direction.
+
+The mechanism diagnostic moved strongly in the intended channel. On compact,
+threat-accompanied plan boundaries fell 1,548→1,049; on deployment they fell
+2,165→1,448. Recovery exposure fell 9.8%→9.4% compact and 15.5%→14.5%
+deployment. The main economy stayed close: deployment cities were 6.03 versus
+6.00, Population 77.6 versus 77.4, Science 193.7 versus 191.6, and military
+power 1130 versus 1120. Production was 348.4 versus 350.4. This is evidence
+that hidden contacts had been generating alarms, not an ordinary superiority
+claim.
+
+The full fresh-prefix integrity census then ran both controllers:
+
+```sh
+target/ci/fog_census --maps 64 --probes 12 --players 4 \
+  --width 44 --height 28 --turns 200 --seed 34060000 --jobs 8
+target/ci/fog_census --maps 64 --probes 12 --players 4 \
+  --width 44 --height 28 --turns 200 --seed 34060000 --jobs 8 \
+  --fog-honest-pressure
+```
+
+All 1,407 treatment-tensor, save/load-tensor, and null-controller checks
+matched. Controlled hidden-fact divergences fell from 57/709 (8.0%) on the
+frozen incumbent trajectory to 16/698 (2.3%) on the treated trajectory;
+plan-report divergences fell 41→7 and first-action divergences 2→0. Different
+policies reach different later states, so that aggregate change is a
+trajectory-level diagnostic rather than a paired effect estimate. The unit
+tests remain the causal proof for this pressure channel. The 16 residual
+witnesses are explicitly retained as work for other omniscient inputs.
+
+`AdvancedAi::new()` now enables the fog-honest pressure path. The exact former
+production controller is `advanced_pre_fog_pressure`; historical
+`advanced_envoy_composite` resolves to that frozen identity, while
+`advanced_fog_pressure` is a canonical alias of production `advanced`.
+
+Post-promotion verification exercised the production construction boundary.
+`cargo test --profile ci --locked --no-fail-fast` passed all 1,304 library
+tests (20 long censuses/benchmarks intentionally ignored) and every binary,
+integration, and doc-test target. The release build of `civvis`, `ai_eval`,
+and `fog_census` completed. Release evaluator probes independently refused
+both promoted aliases as effective self-comparisons: `advanced_fog_pressure`
+versus `advanced` and `advanced_envoy_composite` versus
+`advanced_pre_fog_pressure` each exited 2.
+
+A fresh deployment-scale production soak also completed 12/12 games:
+
+```sh
+target/release/civvis soak --games 12 --players 6 \
+  --start-seed 36051000 --jobs 8 --width 74 --height 46 \
+  --city-states 9 --speed online --turns 250 \
+  --map continents --shape planet --poles poles
+```
+
+Every game reached a recorded result without a panic. The sample included
+science, culture, religion, and score outcomes, 146 wars, and 40 city captures
+(four of them capitals), so the health check exercised rather than avoided
+the strategic pressure and combat paths changed in this loop.
