@@ -9402,6 +9402,18 @@ impl AdvancedAi {
             })
         });
         let Some(target) = target else {
+            // ⚠ SAY SO. Without this the settler simply disappears from the journal —
+            // there is no "marching to" line, no "founding" line, and nothing to
+            // distinguish "CIVVIS looked and the ground is bad" from "CIVVIS never
+            // reached the question". Watching a live run, that silence was mistaken
+            // for the escort rule holding the settler still, which it was not.
+            think!(self.journal(), Expansion, Detail,
+                   "No site worth walking to for the settler at {current:?}";
+                   "{} within 8 and {} anywhere pass the bar; falling back to the \
+                    basic search",
+                   self.settle_sites(g, pid, current, 8).len(),
+                   self.settle_sites(g, pid, current, g.map.width + g.map.height).len();
+                   current);
             return self.base.settler_step(g, pid, uid);
         };
         if current == target && g.can_found_city(uid) {

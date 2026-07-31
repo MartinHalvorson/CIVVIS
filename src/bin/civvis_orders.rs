@@ -743,11 +743,7 @@ fn main() {
         // no lock — and it was the one path that could not say why it chose anything.
         if let Some(j) = &journal {
             for thought in &j.since(0).thoughts {
-                eprintln!(
-                    "[why] t{} {:?}/{:?} {} | {}",
-                    thought.turn, thought.topic, thought.level,
-                    thought.headline, thought.detail
-                );
+                eprintln!("{}", explain_line(thought));
             }
         }
         println!("{reply}");
@@ -849,11 +845,7 @@ fn main() {
             let delta = j.since(explain_cursor);
             explain_cursor = delta.cursor;
             for thought in &delta.thoughts {
-                eprintln!(
-                    "[why] t{} {:?}/{:?} {} | {}",
-                    thought.turn, thought.topic, thought.level,
-                    thought.headline, thought.detail
-                );
+                eprintln!("{}", explain_line(thought));
             }
         }
         if writeln!(out, "{reply}").is_err() {
@@ -863,6 +855,35 @@ fn main() {
             break;
         }
     }
+}
+
+
+/// One line of CIVVIS's reasoning, with the coordinates the OPERATOR can check.
+///
+/// ★★★★★ EVERY POSITION IN THE JOURNAL IS AXIAL AND EVERY POSITION ON THE SCREEN IS
+/// OFFSET, and the two are both pairs of small integers. Reading "Settler marching to
+/// (10, 11)" against a game window showing the settler at (15, 11) reads as CIVVIS
+/// ordering nonsense; they are the SAME TILE. I lost most of an hour to it tonight,
+/// chasing a coordinate bug that did not exist, on the very run the operator asked me
+/// to watch for exactly this.
+///
+/// The headline text is CIVVIS's own and stays in CIVVIS's own coordinates — rewriting
+/// another module's prose would be worse — but the thought carries its focus position
+/// separately, and that is appended here in OFFSET, tagged, so the number beside the
+/// line is the number on the screen. See [[civvis-civ6-bridge]]: Civ 6 exports OFFSET,
+/// CIVVIS stores AXIAL, and nothing complains when they are mixed.
+fn explain_line(thought: &civvis::reasoning::Thought) -> String {
+    let focus = match thought.focus {
+        Some(pos) => {
+            let (x, y) = civvis::hex::axial_to_offset(pos.0, pos.1);
+            format!("  [civ6 ({x},{y}) = axial ({},{})]", pos.0, pos.1)
+        }
+        None => String::new(),
+    };
+    format!(
+        "[why] t{} {:?}/{:?} {} | {}{}",
+        thought.turn, thought.topic, thought.level, thought.headline, thought.detail, focus
+    )
 }
 
 /// A short, stable label per action kind, for the skipped tally.

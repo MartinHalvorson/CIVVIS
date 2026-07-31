@@ -85,7 +85,14 @@ def main() -> int:
     refused = sum(o.get("refused", 0) for o in orders)
     pct = (100 * applied // seen) if seen else 0
     explored = sum(o.get("explored", 0) or 0 for o in orders)
-    print(f"  orders: applied {applied}/{seen} ({pct}%)  refused {refused}")
+    # ★★★★★ ACCEPTED IS NOT DONE. `missed` counts orders Civilization VI took and
+    # then did not carry out — the unit ended FARTHER from where it was sent. It is
+    # kept out of `refused` because a refusal is the bridge working; this is the
+    # bridge reporting success for something that did not happen, which is the failure
+    # mode that has cost this project the most days.
+    missed = sum(o.get("missed", 0) or 0 for o in orders)
+    print(f"  orders: applied {applied}/{seen} ({pct}%)  refused {refused}  "
+          f"MISSED (accepted, unit went the other way) {missed}")
     # Kept apart from `applied` on purpose: these are units CIVVIS said nothing about,
     # handed to Civ 6's own explore automation. Reporting them inside `applied` would
     # credit CIVVIS with orders it never gave.
@@ -107,12 +114,20 @@ def main() -> int:
     if refusals:
         print(f"  refusals: {dict(refusals.most_common(6))}")
 
+    # ⚠ A LUA TABLE WITH NO KEYS ENCODES AS `[]`, NOT `{}`, and this used to count
+    # only dicts — so an EMPTY residual read as "none" correctly and a residual the mod
+    # happened to emit as a list would have read as "none" too. The counter that is
+    # supposed to prove the heuristics are quiet must not have a shape it silently
+    # ignores; this one has already been wrong in the reassuring direction once.
     residual = Counter()
     for turn in turns:
         entries = turn.get("residual")
         if isinstance(entries, dict):
             for key, value in entries.items():
                 residual[key] += value
+        elif isinstance(entries, list):
+            for entry in entries:
+                residual[str(entry)] += 1
     print(f"  residual (built-ins on a CIVVIS turn): "
           f"{dict(residual.most_common(6)) if residual else 'none'}")
 

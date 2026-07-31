@@ -4598,8 +4598,46 @@ local function applyOrders(player, pid, turn, rows)
 	-- the move still happens, and it settles next turn) and fixes the case where it has
 	-- already arrived. Either way it converges instead of looping.
 	local ordered = {};
+	local missed = 0;
+
+	-- ★★★★★ DID THE UNIT ACTUALLY GO WHERE IT WAS SENT?
+	--
+	-- ⚠⚠ `applied = true` MEANS THE ENGINE ACCEPTED THE REQUEST, NOT THAT ANYTHING
+	-- MOVED. That distinction has now cost this project four separate days — a Settler
+	-- requested on 83 consecutive turns with `applied = true` and nothing built, a
+	-- purchase whose `pcall` did not throw and bought nothing, and this. Every
+	-- accounting we have is on the ISSUING side of the bridge; nothing has ever checked
+	-- the RECEIVING side.
+	--
+	-- Measured on run `civvis-20260731T052021Z`, which is what this is for: at turn 42
+	-- the settler stood at (13,11) and CIVVIS ordered `MOVE_TO (14,11)`. The order was
+	-- counted applied, no refusal was recorded — and at turn 43 the settler was at
+	-- (12,9), which is not on any path between those two tiles. It then bounced
+	-- (13,11)/(12,9) for forty turns while the empire held one city. From the harness's
+	-- side that run reads `orders_source: civvis`, `applied 11/12`, `residual: none`.
+	--
+	-- A move is not required to ARRIVE — `UNITOPERATION_MOVE_TO` is a multi-turn route
+	-- and stopping short is ordinary. What is not ordinary is ending FARTHER from the
+	-- destination than the unit started, so that is what this reports, with both
+	-- positions, in Civilization VI's own OFFSET coordinates.
+	local function plotDistance(x1, y1, x2, y2)
+		return try(function() return Map.GetPlotDistance(x1, y1, x2, y2); end, -1);
+	end
 	local function runOrder(index, row)
 		local kind = tostring(row.kind or "?");
+		local verb = tostring(row.verb or "");
+		local subject = tonumber(row.subject);
+		local wantX, wantY = tonumber(row.x), tonumber(row.y);
+		local fromX, fromY;
+		local watched = (kind == "unit" and verb == "MOVE_TO"
+			and subject ~= nil and wantX ~= nil and wantY ~= nil);
+		if watched then
+			local unit = liveUnit(pid, subject);
+			if unit ~= nil then
+				fromX = try(function() return unit:GetX(); end);
+				fromY = try(function() return unit:GetY(); end);
+			end
+		end
 		-- One pcall PER ORDER, never around the loop: the first order that throws
 		-- must cost one order, not every order after it. That exact mistake
 		-- (`pcall` outside the roster loop) hid seven separate bugs in this file.
@@ -4611,6 +4649,28 @@ local function applyOrders(player, pid, turn, rows)
 		if ok then
 			applied = applied + 1;
 			byKind[kind] = (byKind[kind] or 0) + 1;
+			if watched and fromX ~= nil then
+				local unit = liveUnit(pid, subject);
+				-- A unit that no longer exists was consumed or lost, which is not a
+				-- missed move and must not be reported as one.
+				if unit ~= nil then
+					local toX = try(function() return unit:GetX(); end);
+					local toY = try(function() return unit:GetY(); end);
+					if toX ~= nil and toY ~= nil then
+						local before = plotDistance(fromX, fromY, wantX, wantY);
+						local after = plotDistance(toX, toY, wantX, wantY);
+						if before >= 0 and after > before then
+							missed = missed + 1;
+							emit("move_missed", {
+								turn = turn, unit = subject,
+								from = { fromX, fromY }, to = { toX, toY },
+								want = { wantX, wantY },
+								before = before, after = after,
+							});
+						end
+					end
+				end
+			end
 		else
 			refused = refused + 1;
 			whyNot[tostring(why)] = (whyNot[tostring(why)] or 0) + 1;
@@ -4670,6 +4730,11 @@ local function applyOrders(player, pid, turn, rows)
 		applied = applied, refused = refused, by = byKind, refusals = whyNot,
 		-- Not part of `applied`: these are units CIVVIS said nothing about.
 		explored = explored,
+		-- Orders the engine ACCEPTED that left the unit farther from where it was
+		-- sent. Counted apart from `refused` on purpose: a refusal is the bridge
+		-- working and being told no; this is the bridge reporting success for
+		-- something that did not happen.
+		missed = missed,
 	});
 
 	-- ⚠⚠ A CIVVIS TURN MUST STILL EMIT A `turn` RECORD. The full one lives at the

@@ -5260,12 +5260,21 @@ impl BasicAi {
             }
         }
         safe.sort_by_key(|next| (g.wdist(*next, target), *next));
-        // Only take a detour that still gets somewhere: a step that moves AWAY from
-        // the site while nothing is chasing us is how a settler wanders forever, and
-        // wandering settlers are already on this project's record.
+        // ⚠⚠ STRICTLY CLOSER, AND ALLOWING EQUAL WAS A BUG I SHIPPED FOR AN HOUR.
+        //
+        // The first version of this took any safe step that did not move AWAY from
+        // the site. A step that keeps the distance the same is a sidestep, and a
+        // settler that may sidestep forever does: run `civvis-20260731T052021Z`
+        // reached the tile next to its site at turn 28 and then bounced between
+        // (13,11) and (12,9) for the next forty turns without ever founding
+        // anything. `step_toward` had the same rule right — `>=` breaks the loop —
+        // and the reason is exactly this.
+        //
+        // If nothing safe gets strictly closer, standing still is the honest answer
+        // and the caller's stall counter is what decides when the site is given up.
         let progress = g.wdist(here, target);
         for next in safe {
-            if g.wdist(next, target) > progress {
+            if g.wdist(next, target) >= progress {
                 break;
             }
             if self.path_move(g, pid, uid, next) {
