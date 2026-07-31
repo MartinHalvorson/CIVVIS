@@ -58,11 +58,12 @@ champion at 120 maps per profile as **+51 on compact and −30 at deployment,
 verdict retain stock** (`docs/AI_GAPS.md` §5 has the same shape as +58/−9 on an
 older comparison).
 
-Meanwhile the league — which plays six-player games continuously — has bred
-its leader to `city_target = 9.681` over 1011 six-player games (19.7% outright
-wins against stock `advanced`'s 16.4%). Selection on the deployment table has
-been pushing this gene up for thousands of rounds; the compact breeding
-profile pushed it down.
+Meanwhile the league — which plays six-player games continuously — has its
+current leader at `city_target = 9.681` after 1011 six-player games (19.7%
+outright wins against stock `advanced`'s 16.4%). ⚠ That is one entrant, not a
+trend: the next-best-evidenced league genome, `g44-41`, sits at exactly the
+stock 4.0. The defensible reading is only that six-player selection has not
+pushed this gene *down* the way the compact breeding profile did.
 
 `docs/GENOME.md`'s `gene_leverage` independently reports **expansion as the
 one block where replacing the shipped values with uniform draws from their own
