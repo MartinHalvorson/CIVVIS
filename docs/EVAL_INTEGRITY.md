@@ -320,11 +320,30 @@ became the project's public definition of “best”.
    it, or have `update_readme_rankings.py` refuse to write a table it cannot
    rebuild from a tracked source.
 3. **Apply the table's own bar honestly.** Print a row only where the leading
-   strategy's win bound actually separates from the field. On current data that
-   prints *nothing*, which is the correct and informative outcome: the league
-   does not yet have the power to answer “best strategy per civilization”. The
-   honest replacement is a coverage table — games per pair, and what would be
-   needed to resolve it.
+   strategy's win bound actually separates from the field. The honest
+   replacement for the rest is a coverage table — games per pair, and what
+   would be needed to resolve it.
+
+### What switching the statistic actually changes
+
+Recomputed over the 52 qualifying pairs of round 3143, ranking by the
+conservative outright-win bound instead of placement:
+
+- the two statistics **name a different strategy in 26 of 52 pairs** — the
+  agreement rate is a coin flip;
+- **44 of 52** printed leaders do not beat the pooled win rate of the very
+  field they are being ranked against.
+
+One row shows the whole failure. For Cleopatra the placement table prints
+`deck-legacy`, which has won **8 of 43** games with that pair (18.6%); the win
+bound prints `g28-28`, which has won **230 of 622** (37.0%). The shipped table
+names a strategy that wins at half the rate, on a twentieth of the evidence,
+and calls it Egypt's best.
+
+Switching the statistic is therefore not a cosmetic change — it is most of the
+table. That it changes half the rows is also the clearest possible argument for
+fix (1): as long as two orderings are equally reachable, a rendering script
+will keep reaching for whichever is one float per pair.
 
 ---
 
