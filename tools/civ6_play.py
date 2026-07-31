@@ -397,9 +397,32 @@ def click_at(px: int, py: int) -> None:
     # Move first, then click. Clicking without moving lands wherever the
     # pointer already was, and cliclick's own move is not always processed by
     # the game before the button event.
+    #
+    # ★★★★★ AND THE PRESS MUST BE HELD. `cliclick c:` sends down and up in the same
+    # instant and Civilization VI's leader-dialogue buttons do not act on it.
+    #
+    # Measured live at 04:29 on 2026-07-31, attempt 6 stalled at turn 66 on a
+    # three-option `DiplomacyActionView` from Pericles. Everything checkable checked
+    # out and the screen would not close: the window rect the harness read (864, 33,
+    # 864, 542) matches the screenshot exactly, the three buttons sit at fy 0.827,
+    # 0.869 and 0.913 which the 0.02-step sweep straddles within ~5 points, and
+    # `cliclick p` afterwards reported the pointer at the last swept position — so the
+    # move was delivered and Accessibility permission was granted. Three full passes,
+    # sixty clicks, nothing.
+    #
+    # One `dd:` / wait / `du:` on the same pixel, by hand, and the turn advanced
+    # immediately. Stalls have been the dominant way runs end in this project
+    # (t87, t95, t106, t142, t179, t199), and a zero-length click is why the rescue
+    # that "already works" so often did not.
+    #
+    # ⚠ n = 1, and the harness's own stall watchdog had not fired yet when the held
+    # press landed, so nothing else can account for the recovery. Worth re-checking on
+    # the next stuck screen before treating it as settled.
     subprocess.run(["cliclick", f"m:{px},{py}"], capture_output=True)
     time.sleep(0.5)
-    subprocess.run(["cliclick", f"c:{px},{py}"], capture_output=True)
+    subprocess.run(["cliclick", f"dd:{px},{py}"], capture_output=True)
+    time.sleep(0.12)
+    subprocess.run(["cliclick", f"du:{px},{py}"], capture_output=True)
 
 
 def click_menu(item: str, bounds: tuple[int, int, int, int]) -> None:
