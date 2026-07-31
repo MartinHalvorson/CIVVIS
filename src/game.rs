@@ -14669,7 +14669,7 @@ impl ActionFamilies {
     pub const CORPORATIONS: ActionFamilies = ActionFamilies(16);
     /// Moving products between slots in the empire's cities.
     pub const PRODUCTS: ActionFamilies = ActionFamilies(32);
-    /// Combining Corps/Armies and linking support or naval escorts.
+    /// Combining Corps/Armies and forming or releasing support or naval escorts.
     pub const FORMATIONS: ActionFamilies = ActionFamilies(64);
     /// The historical "cheap" query: the core plus every small optional
     /// family, but no unit orders, purchases, empire management or offers.
@@ -35671,9 +35671,6 @@ impl Game {
                     }
                 }
             }
-            if u.linked_to.is_some() {
-                acts.push(Action::UnlinkUnits { unit: uid });
-            }
             if spec.religious_spread > 0.0 && u.charges > 0 && u.moves_left > 0.0 {
                 let near_city = self.city_at(u.pos).is_some()
                     || self
@@ -35830,6 +35827,16 @@ impl Game {
         }
         if families.has(ActionFamilies::FORMATIONS) {
             let owned_units = self.player_unit_ids(pid);
+            // Releasing an escort belongs with the action that forms it.  In
+            // particular, callers that ask only for FORMATIONS must be able
+            // to both create and dissolve an escort formation.
+            for &uid in &owned_units {
+                if self.units[&uid].linked_to.is_some()
+                    && !self.noncombat_action_blocked_by_zoc(uid)
+                {
+                    acts.push(Action::UnlinkUnits { unit: uid });
+                }
+            }
             for (index, &uid) in owned_units.iter().enumerate() {
                 for &other in &owned_units[index + 1..] {
                     if self.can_combine_units(pid, uid, other).is_some() {
@@ -54628,14 +54635,15 @@ mod combat_scenarios {
         let (mut g, center, ring) = controlled_game(3162);
         let escort = g.spawn_unit("warrior", 0, center);
         let builder = g.spawn_unit("builder", 0, center);
-        g.apply(
-            0,
-            &Action::LinkUnits {
-                unit: escort,
-                with: builder,
-            },
-        )
-        .unwrap();
+        let form_escort = Action::LinkUnits {
+            unit: escort,
+            with: builder,
+        };
+        assert!(
+            g.legal_actions_within(0, ActionFamilies::FORMATIONS)
+                .contains(&form_escort)
+        );
+        g.apply(0, &form_escort).unwrap();
         assert_eq!(g.units[&escort].linked_to, Some(builder));
         assert_eq!(g.units[&builder].linked_to, Some(escort));
         g.apply(
@@ -54648,7 +54656,12 @@ mod combat_scenarios {
         .unwrap();
         assert_eq!(g.units[&escort].pos, ring[0]);
         assert_eq!(g.units[&builder].pos, ring[0]);
-        g.apply(0, &Action::UnlinkUnits { unit: escort }).unwrap();
+        let unform_escort = Action::UnlinkUnits { unit: escort };
+        assert!(
+            g.legal_actions_within(0, ActionFamilies::FORMATIONS)
+                .contains(&unform_escort)
+        );
+        g.apply(0, &unform_escort).unwrap();
         assert_eq!(g.units[&escort].linked_to, None);
         assert_eq!(g.units[&builder].linked_to, None);
     }
