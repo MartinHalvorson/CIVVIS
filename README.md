@@ -239,23 +239,56 @@ So `policy` and `neural` are not policy and neural results. They are the
 shipped genome measured on `AdvancedAi` and on `BasicAi`, which is a real
 result — just not the one the name implies.
 
-**4. Measured impact, four-player 24×16 Standard, 120 mirrored map pairs,
-seed 77,200,000.** Each row is the agent *with* a feature against the same
-agent *without* it.
+**4. The champion genome rides along with most experimental arms, and it is
+most of what several published numbers measured.** `elo::builtin_ai` builds 38
+of its 78 arms from `load_champion("evolved")` — the whole `strategic*`
+family, `policy*`, `neural`, `production*` — while the usual control,
+`advanced`, is stock `AdvancedAi::new()`. `X vs advanced` is a fair
+*deployment* question for those arms (“should this replace stock?”) but it is
+not a measurement of X. Re-running each against a genome-matched control
+separates the two.
 
-| feature | comparison | paired score | Elo-equivalent | gate |
+Everything below is 120 mirrored, seat-swapped map pairs on fresh seeds, at
+four players on 24×16 Standard (seed 77,200,000) unless the row says
+otherwise:
+
+| what actually differs between the arms | comparison | paired | Elo-equivalent | gate |
 |---|---|---:|---:|---|
-| the scripted planning upgrade | `advanced` vs `advanced_v1` | 63.7% | **+98** (+34..+162) | PASS |
-| the shipped champion `Weights` on `AdvancedAi` | `advanced_evolved` vs `advanced` | 58.8% | +61 (−1..+124) | direction p=0.0031 |
-| the shipped champion `Weights` on `BasicAi` | `neural` vs `basic` | 68.8% | **+137** (+70..+204) | PASS |
-| macro rollout search, score-share evaluated | `strategic` vs `advanced` | 62.9% | **+92** (+28..+156) | PASS |
-| the learned tactical policy | `policy` vs `advanced_evolved` | 50.0% | — | same agent |
+| the whole scripted stack | `advanced` vs `basic` | 88.8% | **+359** (+262..+456) | PASS |
+| the scripted planning upgrade (both stock) | `advanced` vs `advanced_v1` | 63.7% | **+98** (+34..+162) | PASS |
+| …the same, at the six-player 74×46 Online deployment profile | seed 77,100,000 | 62.1% | **+86** (+22..+149) | PASS |
+| the champion `Weights`, on `AdvancedAi` | `advanced_evolved` vs `advanced` | 58.8% | +61 (−1..+124) | p=0.0031 |
+| the champion `Weights`, on `BasicAi` | `neural` vs `basic` | 68.8% | **+137** (+70..+204) | PASS |
+| macro rollout search **plus** the genome | `strategic` vs `advanced` | 62.9% | +92 (+28..+156) | PASS |
+| macro rollout search **alone** | `strategic` vs `advanced_evolved` | 58.8% | +61 (−1..+124) | INCONCLUSIVE |
+| production rollout search **plus** the genome | `production` vs `advanced` | 60.8% | +76 (+13..+140) | p=0.0290 |
+| production rollout search **alone** | `production` vs `advanced_evolved` | 45.8% | **−29** (−91..+33) | INCONCLUSIVE |
+| the learned tactical policy | `policy` vs `advanced_evolved` | 50.0% | the same agent | — |
 
-Two of these are worth stating plainly. Rollout search wins by +92 with **no
-learned component at all** — the arm that won is `strategic_score`. And the
-40-gene champion is worth more than twice as much bolted onto the weak agent
-(+137) as onto the strong one (+61), which is what a genome largely overridden
-by hand-written logic looks like.
+Read the two pairs of rows together, because they are the point:
+
+- **Macro search is worth about +61, not +92.** A third of the headline number
+  was the genome, and once the genome is held fixed the search no longer
+  clears the promotion gate — its direction is still significant (p=0.0003),
+  its effect size is not.
+- **Production search reverses sign.** Against stock `advanced` it looks like a
+  significant **+76**; against a genome-matched control it is **45.8%, −29** —
+  which reproduces the repository's own recorded 45.0% almost exactly. The
+  confounded comparison had turned a known negative result into a positive one.
+
+Two other things are worth stating plainly. The 40-gene champion is worth more
+than twice as much bolted onto the weak agent (+137) as onto the strong one
+(+61) — what a genome largely overridden by hand-written logic looks like. And
+the `advanced_evolved` row reproduces the repository's own 300-pair result
+(58.3%, +58, seed 3,700,000) on a disjoint seed, which is the check that
+matters most here.
+
+**The flagship deployment number does not replicate at its recorded size.**
+`advanced` over `advanced_v1` at the six-player Online benchmark is recorded
+at 76.7%, +207, gate PASS. At the same profile on a disjoint seed it measured
+62.1%, **+86** — same direction, same significance, same gate verdict, but
+76.7% sits outside the 95% interval of 53.2–70.3%. The improvement is real;
+its size was overstated by roughly a factor of two.
 
 **On tidiness.** The code itself is in good order: it builds clean, the tests
 pass, and every controller module carries a doc comment that states its own
@@ -279,12 +312,13 @@ extension before the agent commits.
 
 The best-established scripted regression result compares `advanced` with its
 frozen predecessor: on the recorded six-player 74×46, six-city-state Online
-benchmark, `advanced` measured **+207 Elo-equivalent** against `advanced_v1`
-and passed the promotion gate; this audit reproduced **+98** on the compact
-four-player benchmark on a fresh seed. Exact end-to-end tests also make the
-agent complete every victory type without injected progress. Those tests
-establish rules and planning coverage; they are not evidence of human-level
-play.
+benchmark, `advanced` measured +207 Elo-equivalent against `advanced_v1` and
+passed the promotion gate. This audit re-ran that on a disjoint seed and got
+**+86** at the same profile and **+98** at the compact one — the improvement
+replicates in direction, significance and gate verdict, at under half the
+recorded size. Exact end-to-end tests also make the agent complete every
+victory type without injected progress. Those tests establish rules and
+planning coverage; they are not evidence of human-level play.
 
 **That head-to-head edge does not show up in league play.** Over the 3,681
 games the two have played in the round-3143 live league, `advanced` wins
@@ -311,11 +345,12 @@ carries, so the guard fires on two agents that differ and stays silent on two
 that do not.
 
 Rollout search is useful research machinery, and on the small four-player
-Standard benchmark it is the lever with the most evidence behind it. Whether
-buying *more* search than already ships pays is a separate question, and the
-familiar “`strategic_deep` beat `strategic` by about +45 Elo-equivalent”
-cannot settle it, because that comparison is not a budget comparison. Run it
-and `ai_eval` says so itself:
+Standard benchmark it is the lever with the most evidence behind it — though
+held against a genome-matched control it is worth +61 rather than +92 and does
+not clear the promotion gate on its own. Whether buying *more* search than
+already ships pays is a further question, and the familiar “`strategic_deep`
+beat `strategic` by about +45 Elo-equivalent” cannot settle it, because that
+comparison is not a budget comparison. Run it and `ai_eval` says so itself:
 
 ```
 strategic_deep: plays as strategic_deep with untrained defaults (missing valuenet.json)
@@ -344,16 +379,19 @@ same net status.
   Freezing the two contact features restored exact parity, confirming the
   failure mechanism rather than producing a useful policy.
 - **Production search:** `ProductionSearchAi` scored **45.0%** against the
-  scripted governor and lost significantly by paired-map direction. Extending
-  its horizon from 40 to 200 barely changed its choices; the problem is the
-  proxy objective, not insufficient lookahead.
+  scripted governor and lost significantly by paired-map direction; this audit
+  measured **45.8%** against a genome-matched control on a fresh seed.
+  Extending its horizon from 40 to 200 barely changed its choices; the problem
+  is the proxy objective, not insufficient lookahead.
 - **Generalization:** the embedded evolved genome measured +58 on the small
   four-player Standard profile and **−9, inconclusive**, on the recorded
   six-player 74×46, six-city-state Online benchmark. `strategic` moved from
   +117 on the former to **−47, inconclusive on wins**, on the latter; the
   completed 300-map confirmation does not exist. A cheaper search variant
   reversed from +16 to a significant **−63**. Search and evolution results
-  must therefore travel with their exact profile.
+  must therefore travel with their exact profile — and, per the audit above,
+  with their control: every `strategic` figure here is measured against stock
+  `advanced` and so carries the champion genome inside it.
 - **Optimization surface:** `Weights` has 40 active genes; policy appetites and
   policy-deck/dedication choices stored in the same struct are not genes. Several
   genes are bypassed on common `AdvancedAi` paths, and inexpensive score-share
