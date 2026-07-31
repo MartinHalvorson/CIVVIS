@@ -2299,12 +2299,23 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
     }
 }
 
-/// Build a selectable arm using the production artifact tier. Unknown names
-/// retain the historical lightweight fallback for game-start callers; the
-/// evaluator validates names and instead consumes [`builtin_arm`].
-pub fn builtin_ai(name: &str, seed: u64) -> Box<dyn Ai> {
+/// Build a selectable arm using the production artifact tier, deliberately
+/// allowing a missing trained artifact to resolve to its scripted fallback.
+///
+/// Game-start callers that need to continue without an artifact should use
+/// this named escape hatch. Evaluators use [`builtin_ai_strict`] instead, so a
+/// result cannot silently be recorded under an unavailable learned name.
+pub fn builtin_ai_degraded(name: &str, seed: u64) -> Box<dyn Ai> {
     let requested = ArmKind::from_name(name).unwrap_or(ArmKind::Basic);
     build_arm(artifact_effective_alias(requested, ARTIFACT_DIR), seed)
+}
+
+/// Historical compatibility alias for [`builtin_ai_degraded`].
+///
+/// New callers should make fallback behavior visible by naming
+/// `builtin_ai_degraded`; strict evaluator callers use [`builtin_ai_strict`].
+pub fn builtin_ai(name: &str, seed: u64) -> Box<dyn Ai> {
+    builtin_ai_degraded(name, seed)
 }
 
 /// Directory `builtin_ai` resolves trained artifacts from.
@@ -2759,6 +2770,56 @@ impl AgentProvenance {
     }
 }
 
+/// Why strict builtin construction refused a requested evaluator arm.
+///
+/// An artifact can be absent without changing the controller (for example, an
+/// optional tuning net). Only [`Self::Degraded`] rejects construction: it
+/// means a definitional artifact is absent and the requested name would play
+/// as a different controller.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BuiltinAiBuildError {
+    /// No selectable builtin or evaluator-only arm has this name.
+    UnknownName { requested: String },
+    /// A definitional artifact did not load, so construction would substitute
+    /// the effective scripted fallback recorded in this provenance.
+    Degraded { provenance: AgentProvenance },
+}
+
+impl BuiltinAiBuildError {
+    /// The name the caller attempted to construct.
+    pub fn requested(&self) -> &str {
+        match self {
+            Self::UnknownName { requested } => requested,
+            Self::Degraded { provenance } => &provenance.requested,
+        }
+    }
+
+    /// Detailed artifact resolution when a known arm degraded.
+    pub fn provenance(&self) -> Option<&AgentProvenance> {
+        match self {
+            Self::UnknownName { .. } => None,
+            Self::Degraded { provenance } => Some(provenance),
+        }
+    }
+}
+
+impl std::fmt::Display for BuiltinAiBuildError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::UnknownName { requested } => write!(f, "unknown builtin AI {requested:?}"),
+            Self::Degraded { provenance } => write!(
+                f,
+                "{} is unavailable and would play as {} (missing {})",
+                provenance.requested,
+                provenance.effective,
+                provenance.missing().join(", ")
+            ),
+        }
+    }
+}
+
+impl std::error::Error for BuiltinAiBuildError {}
+
 /// A resolved evaluator arm. The private `kind` is the exact canonical target
 /// sent to the factory; public consumers can compare `spec` without relying on
 /// a display alias or a second factory match.
@@ -2788,6 +2849,36 @@ fn builtin_arm_in(name: &str, dir: &str) -> Option<BuiltinArm> {
 /// [`builtin_ai`] retains the explicit game-start fallback for legacy callers.
 pub fn builtin_arm(name: &str) -> Option<BuiltinArm> {
     builtin_arm_in(name, ARTIFACT_DIR)
+}
+
+/// Resolve a known arm only when its definitional artifacts loaded.
+///
+/// Keeping the resolver separate makes the invariant testable against a
+/// fixture directory; public construction below always uses the production
+/// artifact tier that the factories actually read.
+fn strict_builtin_arm_in(name: &str, dir: &str) -> Result<BuiltinArm, BuiltinAiBuildError> {
+    let arm = builtin_arm_in(name, dir).ok_or_else(|| BuiltinAiBuildError::UnknownName {
+        requested: name.to_string(),
+    })?;
+    let provenance = builtin_provenance(name, dir);
+    debug_assert_eq!(
+        arm.spec.canonical, provenance.effective,
+        "strict arm and provenance disagree for {name}"
+    );
+    if provenance.degraded() {
+        return Err(BuiltinAiBuildError::Degraded { provenance });
+    }
+    Ok(arm)
+}
+
+/// Build a selectable arm only when the requested identity is available.
+///
+/// This is the fail-closed evaluator boundary. It rejects unknown names and
+/// names whose missing definitional artifact would silently substitute a
+/// different agent. Call [`builtin_ai_degraded`] only when continuing with
+/// that substitution is an intentional, reportable choice.
+pub fn builtin_ai_strict(name: &str, seed: u64) -> Result<Box<dyn Ai>, BuiltinAiBuildError> {
+    Ok(strict_builtin_arm_in(name, ARTIFACT_DIR)?.build(seed))
 }
 
 /// Resolve what `builtin_ai(name, _)` will actually construct from `dir`.
@@ -3680,12 +3771,13 @@ fn direct_anchor_performance(
 #[cfg(test)]
 mod tests {
     use super::{
-        builtin_ai, builtin_arm, builtin_provenance, collapsed_entrants,
-        direct_anchor_performance, expected, leaderboard, league_generalist, performance_elo,
-        scheduled_seats, seat_schedule, wilson_interval, win_shares, EloPool, RatedPlayer,
-        RatingKey, TourneyCfg, TournamentProfile, ARTIFACT_DIR, BUILTIN_AIS, CHAMPION_FILE,
-        DEFAULT_RATINGS_PATH, ELO_BASE_RATING, ELO_SCHEMA_VERSION, EVAL_ONLY_AIS,
-        HISTORICAL_V1_RATINGS_PATH, HISTORICAL_V2_RATINGS_PATH, VALUENET_FILE, WeightSource,
+        builtin_ai, builtin_ai_degraded, builtin_ai_strict, builtin_arm, builtin_provenance,
+        collapsed_entrants, direct_anchor_performance, expected, leaderboard, league_generalist,
+        performance_elo, scheduled_seats, seat_schedule, strict_builtin_arm_in, wilson_interval,
+        win_shares, BuiltinAiBuildError, EloPool, RatedPlayer, RatingKey, TournamentProfile,
+        TourneyCfg, WeightSource, ARTIFACT_DIR, BUILTIN_AIS, CHAMPION_FILE, DEFAULT_RATINGS_PATH,
+        ELO_BASE_RATING, ELO_SCHEMA_VERSION, EVAL_ONLY_AIS, HISTORICAL_V1_RATINGS_PATH, HISTORICAL_V2_RATINGS_PATH,
+        VALUENET_FILE,
     };
     use crate::game::{Action, Game};
     use crate::rng::Rng;
@@ -3753,6 +3845,33 @@ mod tests {
         assert!(!control.degraded());
         assert!(control.untrained());
         fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn strict_construction_refuses_degraded_names_and_unknown_names() {
+        let dir = "target/test-strict-builtin-arms";
+        let _ = fs::remove_dir_all(dir);
+        fs::create_dir_all(dir).unwrap();
+
+        let error = strict_builtin_arm_in("policy", dir)
+            .expect_err("a bare artifact tier must not construct the learned policy");
+        assert_eq!(error.requested(), "policy");
+        let provenance = error
+            .provenance()
+            .expect("a known degraded arm reports its provenance");
+        assert!(provenance.degraded());
+        assert_eq!(provenance.effective, "advanced");
+        assert_eq!(provenance.missing(), vec![CHAMPION_FILE, VALUENET_FILE]);
+
+        let unknown = strict_builtin_arm_in("not-a-selectable-arm", dir)
+            .expect_err("strict construction must reject an unknown name");
+        assert!(matches!(unknown, BuiltinAiBuildError::UnknownName { .. }));
+        assert!(strict_builtin_arm_in("advanced", dir).is_ok());
+        fs::remove_dir_all(dir).unwrap();
+
+        builtin_ai_strict("basic", 78_000_090)
+            .expect("a production scripted arm must construct strictly");
+        let _ = builtin_ai_degraded("not-a-selectable-arm", 78_000_091);
     }
 
     /// Presence is decided by the loaders the agents use. A file that exists

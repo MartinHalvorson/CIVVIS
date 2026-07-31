@@ -1,8 +1,8 @@
 //! Paired, seat-balanced head-to-head evaluator for built-in AIs.
 use civvis::ai::{Ai, ExpansionCensus};
 use civvis::elo::{
-    builtin_ai, builtin_arm, builtin_provenances, collapsed_entrants, AgentProvenance,
-    ARTIFACT_DIR, BUILTIN_AIS, EVAL_ONLY_AIS,
+    builtin_ai_degraded, builtin_ai_strict, builtin_arm, builtin_provenances, collapsed_entrants,
+    AgentProvenance, BuiltinAiBuildError, ARTIFACT_DIR, BUILTIN_AIS, EVAL_ONLY_AIS,
 };
 use civvis::game::{default_difficulty, Action, Game, GameOptions, VictoryConditions};
 use civvis::rules::Rules;
@@ -77,6 +77,21 @@ fn game_score(winner: Option<usize>, seats: &[&str], challenger: &str) -> f64 {
     winner
         .and_then(|pid| seats.get(pid))
         .map_or(0.5, |name| if *name == challenger { 1.0 } else { 0.0 })
+}
+
+/// Construct one evaluator seat through the same strict boundary that guards
+/// the command-line preflight. `--allow-degraded` is intentionally the only
+/// route to the explicitly named fallback factory.
+fn evaluator_ai(
+    name: &str,
+    seed: u64,
+    allow_degraded: bool,
+) -> Result<Box<dyn Ai>, BuiltinAiBuildError> {
+    if allow_degraded {
+        Ok(builtin_ai_degraded(name, seed))
+    } else {
+        builtin_ai_strict(name, seed)
+    }
 }
 
 /// Challenger share of terminal Civilization score across the evaluated
@@ -1096,9 +1111,9 @@ fn main() {
     // loaded. Say what each entrant resolved to before playing anything, so
     // a result is never filed under an agent that was never in the game.
     let artifact_dir = text(&args, "--artifact-dir", ARTIFACT_DIR);
-    // `builtin_provenance`'s contract is "resolve what `builtin_ai` will
-    // actually construct from `dir`" -- but `builtin_ai(name, seed)` takes no
-    // directory. Every one of its arms resolves the constant `ARTIFACT_DIR`,
+    // `builtin_provenance`'s contract is "resolve what the production builtin
+    // factory will actually construct from `dir`" -- but that factory takes
+    // no directory. Every one of its arms resolves the constant `ARTIFACT_DIR`,
     // and the agent constructors below it (`StrategicAi::with_weights`,
     // `PolicyAi::with_weights`, `ProductionSearchAi::with_weights`) each load
     // their own net from that same constant. So pointing this flag somewhere
@@ -1178,6 +1193,7 @@ fn main() {
             std::process::exit(3);
         }
     }
+    let allow_degraded = args.iter().any(|arg| arg == "--allow-degraded");
     if !collapsed.is_empty() {
         eprintln!("refusing to evaluate two names that resolve to one agent");
         std::process::exit(2);
@@ -1358,7 +1374,13 @@ fn main() {
                 .iter()
                 .map(|p| {
                     let name = if p.id < players { seats[p.id] } else { "basic" };
-                    builtin_ai(name, game_seed + p.id as u64)
+                    evaluator_ai(name, game_seed + p.id as u64, allow_degraded).unwrap_or_else(
+                        |error| {
+                            panic!(
+                                "evaluator preflight permitted an unavailable arm {name:?}: {error}"
+                            )
+                        },
+                    )
                 })
                 .collect();
             let traces = run_traced_game(&mut game, &mut ais, players);
@@ -2350,7 +2372,8 @@ mod tests {
                     .iter()
                     .map(|p| {
                         let name = if p.id < 2 { seats[p.id] } else { "basic" };
-                        civvis::elo::builtin_ai(name, seed + p.id as u64)
+                        evaluator_ai(name, seed + p.id as u64, false)
+                            .expect("scripted evaluator fixture must construct")
                     })
                     .collect();
                 run_traced_game(&mut game, &mut ais, 2);
@@ -2362,6 +2385,19 @@ mod tests {
             })
         };
         assert_eq!(play(1), play(4));
+    }
+
+    #[test]
+    fn evaluator_factory_requires_the_strict_path_without_its_escape_flag() {
+        let error = match evaluator_ai("not-a-selectable-arm", 52_100, false) {
+            Ok(_) => panic!("the default evaluator factory must fail closed"),
+            Err(error) => error,
+        };
+        assert!(matches!(error, BuiltinAiBuildError::UnknownName { .. }));
+        assert!(
+            evaluator_ai("not-a-selectable-arm", 52_100, true).is_ok(),
+            "the diagnostic escape is the only degraded construction route"
+        );
     }
 
     #[test]
@@ -2464,10 +2500,16 @@ mod tests {
         let mut plain = make_game();
         let mut traced = make_game();
         let mut plain_ais: Vec<Box<dyn Ai>> = (0..plain.players.len())
-            .map(|pid| builtin_ai("basic", pid as u64 + 1))
+            .map(|pid| {
+                evaluator_ai("basic", pid as u64 + 1, false)
+                    .expect("scripted evaluator fixture must construct")
+            })
             .collect();
         let mut traced_ais: Vec<Box<dyn Ai>> = (0..traced.players.len())
-            .map(|pid| builtin_ai("basic", pid as u64 + 1))
+            .map(|pid| {
+                evaluator_ai("basic", pid as u64 + 1, false)
+                    .expect("scripted evaluator fixture must construct")
+            })
             .collect();
 
         civvis::ai::run_game(&mut plain, &mut plain_ais);
