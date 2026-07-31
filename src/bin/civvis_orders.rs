@@ -490,6 +490,35 @@ fn translate(
             verb: Some(civ6_civic_name(civic.as_str())),
             pos: None,
         }),
+        // ★★★★★ POLICY CARDS, WHICH WERE BEING DROPPED WHOLESALE.
+        //
+        // CIVVIS issued `SlotPolicy` on every turn from t80 to t233 of run 233331Z --
+        // six a turn by the end -- and translate() had no arm, so every one was
+        // counted as `skipped` and thrown away. Meanwhile the mod filled the slots
+        // with its own crude "first unlocked card that fits" heuristic, which is
+        // precisely the arrangement this project was told to remove: the harness
+        // deciding while CIVVIS's decision is discarded.
+        //
+        // Policy cards are not a marginal lever here -- this project has already
+        // measured them as mattering (p=0.0023).
+        Action::SlotPolicy { policy } => Some(Order {
+            kind: "policy",
+            subject: None,
+            verb: Some(format!("POLICY_{}", policy.as_str().to_ascii_uppercase())),
+            pos: None,
+        }),
+        Action::Government { government } => Some(Order {
+            kind: "government",
+            subject: None,
+            verb: Some(format!("GOVERNMENT_{}", government.as_str().to_ascii_uppercase())),
+            pos: None,
+        }),
+        Action::ChoosePantheon { belief } => Some(Order {
+            kind: "pantheon",
+            subject: None,
+            verb: Some(format!("BELIEF_{}", belief.as_str().to_ascii_uppercase())),
+            pos: None,
+        }),
         Action::Produce { city, item } => {
             mirror_state.cid_of.iter().find(|(_, cid)| **cid == *city).and_then(
                 |(civ6, _)| {

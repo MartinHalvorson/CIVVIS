@@ -4223,6 +4223,88 @@ local function applyOrder(player, pid, row, turn)
 		return ok, ok and "declared" or "throw";
 	end
 
+	-- ★★★★★ CIVVIS'S OWN POLICY, GOVERNMENT AND PANTHEON CHOICES.
+	--
+	-- These had NO arm at all: CIVVIS issued `SlotPolicy` on every turn from t80 to
+	-- t233 of run 233331Z -- six a turn by the end -- plus `Government` every turn
+	-- from t40, and the bridge counted them all as `skipped` and threw them away.
+	-- The mod then filled the slots with its own "first unlocked card that fits"
+	-- heuristic. That is the exact arrangement this project was told to remove: the
+	-- harness deciding while CIVVIS's decision is discarded.
+	--
+	-- Policy cards are not marginal here -- already measured as mattering
+	-- (p=0.0023).
+	if kind == "policy" then
+		local culture = try(function() return player:GetCulture(); end);
+		if culture == nil then return false, "no_culture"; end
+		local row2, resolved = resolveType(GameInfo.Policies, verb);
+		if row2 == nil then return false, "unknown_" .. verb; end
+		if try(function() return culture:IsPolicyObsolete(row2.Hash); end, false) then
+			return false, "obsolete_" .. resolved;
+		end
+		if not try(function() return culture:IsPolicyUnlocked(row2.Hash); end, false) then
+			return false, "locked_" .. resolved;
+		end
+		-- Find a slot this card fits that is not already holding it. A wildcard slot
+		-- takes anything; a typed slot must match.
+		local slots = try(function() return culture:GetNumPolicySlots(); end, 0) or 0;
+		local target;
+		for i = 0, slots - 1 do
+			local held = try(function() return culture:GetSlotPolicy(i); end, -1);
+			if held == row2.Index then return false, "already_" .. resolved; end
+			if target == nil and (held == nil or held < 0) then
+				local slotName = try(function()
+					local slotId = culture:GetSlotType(i);
+					return GameInfo.GovernmentSlots[slotId].GovernmentSlotType;
+				end);
+				if slotName == nil or slotName == "SLOT_WILDCARD"
+						or slotName == row2.GovernmentSlotType then
+					target = i;
+				end
+			end
+		end
+		if target == nil then return false, "no_slot_for_" .. resolved; end
+		local addList = {};
+		addList[target] = row2.Hash;
+		local ok = pcall(function() culture:RequestPolicyChanges({}, addList); end);
+		return ok, ok and resolved or "throw";
+	end
+
+	if kind == "government" then
+		local culture = try(function() return player:GetCulture(); end);
+		if culture == nil then return false, "no_culture"; end
+		if not try(function() return culture:CanChangeGovernmentAtAll(); end, false) then
+			return false, "cannot_change_government";
+		end
+		local row2, resolved = resolveType(GameInfo.Governments, verb);
+		if row2 == nil then return false, "unknown_" .. verb; end
+		if not try(function() return culture:IsGovernmentUnlocked(row2.Hash); end, false) then
+			return false, "locked_" .. resolved;
+		end
+		if try(function() return culture:GetCurrentGovernment(); end, -1) == row2.Index then
+			return false, "already_" .. resolved;
+		end
+		local ok = pcall(function() culture:RequestChangeGovernment(row2.Hash); end);
+		-- Tell the game the prompt has been dealt with either way, or it re-raises
+		-- the blocker every turn.
+		pcall(function() culture:SetGovernmentChangeConsidered(true); end);
+		return ok, ok and resolved or "throw";
+	end
+
+	if kind == "pantheon" then
+		local row2, resolved = resolveType(GameInfo.Beliefs, verb);
+		if row2 == nil then return false, "unknown_" .. verb; end
+		if try(function() return Game.GetReligion():IsInSomePantheon(row2.Index); end, true) then
+			return false, "taken_" .. resolved;
+		end
+		local params = {};
+		params[PlayerOperations.PARAM_BELIEF_TYPE] = row2.Hash;
+		local ok = pcall(function()
+			UI.RequestPlayerOperation(pid, PlayerOperations.FOUND_PANTHEON, params);
+		end);
+		return ok, ok and resolved or "throw";
+	end
+
 	if kind == "research" or kind == "civic" then
 		local isTech = kind == "research";
 		local table_ = isTech and GameInfo.Technologies or GameInfo.Civics;
