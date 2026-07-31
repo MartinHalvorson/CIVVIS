@@ -167,7 +167,16 @@ values them:
 1. **AI-only simulation**, the default. It is what the engine exists for and
    what the exhibition deployment runs, so it is what the panel opens on.
 2. **Single player**, a person in seat 0 against the agents.
-3. **Multiplayer · later**, still greyed out.
+3. **Play Firaxis Civ 6 with computer control** — not a CIVVIS world at all.
+   It starts a real game of Civilization VI on the computer serving the page
+   and hands the human seat to `tools/civ6_play.py`. A mix of the two above,
+   in the operator's framing: single player's stakes, because that game gives
+   its handicap bonuses to human seats and the difficulty you choose is
+   therefore real; a simulation's controls, because nobody is at the keyboard
+   once it starts. Selecting it re-points the panel at the other game's
+   settings, and every row it does not carry is hidden rather than shown and
+   dropped. See [CIV6_GAME_MODE.md](CIV6_GAME_MODE.md).
+4. **Multiplayer · later**, still greyed out.
 
 A world already on screen overrides that default: open the page on a running
 `civvis play` and the select reads Single player, because a person playing a
