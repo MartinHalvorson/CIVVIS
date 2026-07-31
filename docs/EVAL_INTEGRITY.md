@@ -485,6 +485,7 @@ trusting anything measured afterwards.
 
 | # | change | closes | cost |
 |---|---|---|---|
+| 0 | Correct `docs/GENOME.md`'s standing “`strategic_deep` at +45 Elo”, which #482 excluded | R3 corollary | one edit |
 | 1 | Single arm table (`AgentSpec` + `builtin_arm`), spec-based collapse check, the plays-as-it-claims test | R1 — both defects | ~1 day, `src/elo.rs` |
 | 2 | Fallible strict `builtin_ai`; explicit degraded entry point | R2 | ~half a day |
 | 3 | Discovery-vs-confirmed effect sizes in `ai_eval`; the docs rule | R3 | ~half a day |
@@ -493,9 +494,11 @@ trusting anything measured afterwards.
 | 6 | Restate the eight two-axis comparisons in §8 against matched controls | fallout of 1 and 3 | ~a day of compute |
 | 7 | Deployment-profile decision on seating search | §6 | compute, largest |
 
-Items 1–4 are code and are independent of each other. Item 5 cannot be trusted
-before item 1 lands, because it is exactly the measurement item 1 makes
-possible.
+Item 0 is free and should go first. Items 1–4 are code and are independent of
+each other. **Item 6 cannot be trusted before item 1 lands**, because
+re-measuring the confounded comparisons is exactly the work item 1 makes
+possible — running it against today's harness would reproduce the defect it is
+meant to correct.
 
 ## 10. What this is worth
 
