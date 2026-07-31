@@ -210,6 +210,26 @@ exists and consults this gene only as a fallback. The experiment therefore
 establishes saturation on the sampled fallback path, not that the live agent's
 city target binds or that it cannot reach six cities.
 
+⚠ **Amended 2026-07-31: the fallback is not the gene's only live consumer, and
+the other one decides every evaluated game.** `docs/OPENINGS.md` §19 records
+the dispatch and the code still reads that way: after the four-build opening an
+untargeted **adaptive** empire enters `advanced_production` only for
+`Recovery`, and every other adaptive plan ends in `BasicAi::cities`, whose
+Settler gate is `((n_cities + settlers) as f64) < self.w.city_target`.
+`ai_eval` reports stock `advanced` at *100% adaptive plans, 0.00 switches*.
+Proved causally in `docs/PLAN_CITY_TARGET.md`: changing **only** the number
+handed to that one call moves cities at end from 2.17 to 1.50 at 4p 24×16 and
+from 4.83 to 4.33 at 6p 74×46.
+
+So the saturation table above is still a reading of the fallback path, and the
+correct statement is sharper than "the gene is a fallback": the gene has **two**
+consumers, the sweep moved the dead one, and a future sweep must move it
+through `BasicAi::cities` or it will read flat again for the same reason. That
+doc also records the axis having two regimes — deployment is target-limited
+(4.83 cities against its own target of 5.00) while this 4p 24×16 profile is
+execution-limited (2.17 against 3.83) — so a single-profile sweep of any
+expansion gene is reading one of them and not the other.
+
 And the magnitudes do not work. The block effect is +0.0305; the largest
 single-gene effect here is +0.0035, a tenth of it, at 0.8 SE. **So
 `city_target` is not what makes randomised expansion beat the shipped values**
