@@ -1165,6 +1165,25 @@ fn civvis_unit_name(civ6: &str) -> String {
     }
 }
 
+/// A Civilization VI unit name with its owner qualifier removed, when that is what
+/// stands between it and a name CIVVIS models.
+///
+/// ★★★ CIVILIZATION-UNIQUE UNITS CARRY THE CIV AS A PREFIX and CIVVIS stores the bare
+/// name. `UNIT_AZTEC_EAGLE_WARRIOR` is `eagle_warrior`, which CIVVIS has — and without
+/// this it was dropped from the board on **162 of the 240 turns** of run
+/// `civvis-20260731T114437Z`, the dominant reason units went missing once the earlier
+/// three routes were closed. A rival's unique unit is most of what a rival's army IS.
+///
+/// ⚠ A rename, not a substitution: the qualifier is the only difference. The caller
+/// checks the result against the ruleset, so a name that still does not resolve is
+/// reported in `dropped_units` rather than guessed at — `UNIT_GREAT_GENERAL` has no
+/// CIVVIS counterpart at all and stays honestly untranslatable.
+fn civvis_unit_name_unqualified(civ6: &str) -> Option<String> {
+    let base = civ6.strip_prefix("UNIT_")?.to_ascii_lowercase();
+    let (_, rest) = base.split_once('_')?;
+    (!rest.is_empty()).then(|| rest.to_string())
+}
+
 
 /// Paint `depth` rings of neutral land beyond the edge of what the seat has seen.
 ///
@@ -1694,7 +1713,16 @@ pub fn rebuild_from_state(
         // that, because the settler danger rule reads exactly this list. The tile is
         // still checked for EXISTENCE below; that is the honest gate.
         let _ = &snapshot;
-        let name = civvis_unit_name(&u.kind);
+        let mut name = civvis_unit_name(&u.kind);
+        if !game.rules.units.contains_key(&name) {
+            // A civilization-unique unit wears its civ as a prefix; try the bare name
+            // before giving up on it. See `civvis_unit_name_unqualified`.
+            if let Some(bare) = civvis_unit_name_unqualified(&u.kind) {
+                if game.rules.units.contains_key(&bare) {
+                    name = bare;
+                }
+            }
+        }
         if !game.rules.units.contains_key(&name) {
             if !unmapped.contains(&u.kind) {
                 unmapped.push(u.kind.clone());
