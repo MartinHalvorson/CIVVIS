@@ -491,6 +491,28 @@ fn translate(
                 verb: Some(format!("BUILDING_{}", building.as_str().to_ascii_uppercase())),
                 pos: None,
             }),
+        // ★★★★★ BUYING GROUND. Discarded for the life of this bridge: `BuyPlot`
+        // reached `translate` only to be counted in the `skipped` tally, 25 of them
+        // across the runs of 2026-07-31, while cities finished games on the tiles
+        // they happened to grow into.
+        //
+        // A bought plot is how a city reaches the resource, the river or the hill it
+        // needs, and a treasury that ends a game unspent (1459 gold at t182 of run
+        // civvis-clean-20260731T191337Z) is a treasury that bought no ground.
+        //
+        // ⚠ AXIAL IN, OFFSET OUT, like every other position this file sends —
+        // Civilization VI reads offsets and CIVVIS keeps axial, and nothing complains
+        // when they are mixed because both are pairs of small integers.
+        Action::BuyPlot { city, pos, .. } => mirror_state
+            .cid_of
+            .iter()
+            .find(|(_, cid)| **cid == *city)
+            .map(|(civ6, _)| Order {
+                kind: "buy_plot",
+                subject: Some(*civ6),
+                verb: None,
+                pos: Some(civvis::hex::axial_to_offset(pos.0, pos.1)),
+            }),
         Action::Improve { unit, improvement } => civ6_of.get(unit).map(|civ6| Order {
             kind: "unit",
             subject: Some(*civ6),
