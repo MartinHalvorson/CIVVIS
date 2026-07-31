@@ -1659,7 +1659,18 @@ pub fn rebuild_from_state(
         //
         // Four distinct reasons, counted apart, because they need different repairs and
         // "6 units missing" is not a diagnosis.
-        if !snapshot.is_revealed((u.x, u.y)) {
+        // ⚠ FOG HONESTY IS ABOUT OTHER PEOPLE'S UNITS, NOT OUR OWN. A plot one of OUR
+        // units is standing on is revealed by definition — Civilization VI is telling
+        // us the unit is there. What the gate was actually catching is the tile export
+        // being on a slower cadence than the unit export (`--tile-export-every 4`), so
+        // a scout that walks onto fresh ground vanishes from CIVVIS's board until the
+        // map catches up. Measured on run `civvis-20260731T090445Z`: units dropped
+        // `unrevealed` on 6 of the first 39 turns, two at once at worst — and a unit
+        // CIVVIS cannot see gets no order and stands where it was built.
+        //
+        // Rivals and hostiles keep the gate: reporting an enemy on ground this seat has
+        // not seen would grant contact it has not earned.
+        if owner != 0 && !snapshot.is_revealed((u.x, u.y)) {
             dropped.push(format!("{}@{},{}:unrevealed", u.kind, u.x, u.y));
             return None;
         }

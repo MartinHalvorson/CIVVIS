@@ -58,6 +58,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import subprocess
 import sys
 from collections import Counter, defaultdict
@@ -83,6 +84,44 @@ def read_events(run: Path) -> list[dict]:
 
 
 # --------------------------------------------------------------------------- 1
+
+
+def dropped_units(run: Path) -> dict:
+    """Units the export named that never reached CIVVIS's board, from the decider's note.
+
+    ★★★★★ THIS IS THE DETECTOR FOR THE NIGHT'S WORST FINDING. Six of twenty-one units
+    were missing from the reconstruction on run `civvis-20260731T070956Z` — every
+    barbarian (the `hostiles` list exports `type` and `StateUnit` read `kind`) and
+    every embarked unit (`plant_unit` refused water). A unit the mirror drops gets no
+    order and stands where it was built for the rest of the game, and nothing in the
+    project's reporting could go red for it: `unmapped` was EMPTY, because an unread
+    field is not a translation failure.
+
+    Read from `civvis_notes.jsonl`, which the brain already writes — the decider's own
+    per-turn note carries `dropped_units=N [...]` with a reason on each entry.
+    """
+    notes = run / "civvis_notes.jsonl"
+    if not notes.exists():
+        return {"checked": False}
+    worst, reasons, turns_with = 0, Counter(), 0
+    for line in notes.read_text(errors="replace").splitlines():
+        try:
+            note = json.loads(line).get("note", "")
+        except ValueError:
+            continue
+        found = re.search(r"dropped_units=(\d+) \[([^\]]*)\]", note)
+        if not found:
+            continue
+        turns_with += 1
+        worst = max(worst, int(found.group(1)))
+        for entry in found.group(2).split():
+            reasons[entry.rsplit(":", 1)[-1]] += 1
+    return {
+        "checked": True,
+        "turns_with_drops": turns_with,
+        "worst_on_one_turn": worst,
+        "by_reason": dict(reasons.most_common(6)),
+    }
 
 
 def idle_stack(events: list[dict], frozen_turns: int = 20) -> dict:
@@ -385,6 +424,13 @@ def verdicts(report: dict, stuck_max: float, agree_min: float) -> list[str]:
             f"IDLE STACK: {idle['stuck_unit_turns']}/{idle['unit_turns']} unit-turns "
             f"({frac:.0%}) motionless on a city centre, worst stack "
             f"{idle['worst_stack']} at {idle['worst_stack_at']}")
+    drops = report.get("dropped_units") or {}
+    if drops.get("checked") and drops.get("turns_with_drops"):
+        out.append(
+            f"UNITS MISSING FROM CIVVIS'S BOARD: on {drops['turns_with_drops']} turns, "
+            f"worst {drops['worst_on_one_turn']} at once, by reason "
+            f"{drops['by_reason']}. A unit the mirror drops gets no order and stands "
+            f"where it was built.")
     if idle.get("cities_lost"):
         out.append(
             f"CITIES LOST: {len(idle['cities_lost'])} — {idle['cities_lost']}. "
@@ -458,6 +504,7 @@ def main() -> int:
         events = read_events(run)
         report = {
             "run": run.name,
+            "dropped_units": dropped_units(run),
             # How much stream this verdict was formed on, so a check taken while the
             # run was still playing can be told apart from the final one.
             "events_bytes": (run / "events.jsonl").stat().st_size,
