@@ -116,6 +116,49 @@ def main() -> int:
     print(f"  residual (built-ins on a CIVVIS turn): "
           f"{dict(residual.most_common(6)) if residual else 'none'}")
 
+    # ★★★★★ CROSS-CHECK THE COUNTER AGAINST THE EVENT LOG, because the counter has
+    # already been wrong once and a zero read as proof.
+    #
+    # `residual` only ever incremented when `awaiting.source == "civvis"`, but
+    # blockers are answered from the game-core event loop BEFORE CIVVIS's reply
+    # arrives — so it read NONE for the whole project while the mod's own heuristics
+    # were picking policy cards and pantheons. A `blocked` event carrying an
+    # `answered` value IS a decision something other than CIVVIS made, whatever the
+    # counter says, so it is counted here independently.
+    # Two classes, kept apart on purpose. Merging them overstates the problem, and
+    # this counter has already been wrong in the reassuring direction once.
+    #
+    #   named   the answer IS the choice — `TECH_MATHEMATICS`, `CIVIC_FEUDALISM`,
+    #           `BELIEF_DANCE_OF_THE_AURORA`. Unambiguously a hand-written decision.
+    #   passes  the answer is a pass name — `units`, `production`. The pass may well
+    #           be applying CIVVIS's own order, so this is NOT evidence of a
+    #           heuristic choice and must not be reported as one.
+    named, passes = Counter(), Counter()
+    for line in (run / "events.jsonl").read_text(errors="replace").splitlines():
+        try:
+            event = json.loads(line)
+        except ValueError:
+            continue
+        if event.get("kind") != "blocked":
+            continue
+        answer = str(event.get("answered") or "")
+        if not answer or answer in ("False", "None"):
+            continue
+        blocker = str(event.get("blocker"))
+        if answer in ("units", "production"):
+            passes[blocker] += 1
+        else:
+            named[f"{blocker}={answer[:28]}"] += 1
+    if named:
+        print(f"  ⚠ DECISIONS MADE BY THE HARNESS, NOT CIVVIS: {sum(named.values())}")
+        for label, count in named.most_common(6):
+            print(f"      {count}x {label}")
+    else:
+        print("  decisions made by the harness: none")
+    if passes:
+        print(f"  (order/production passes re-run for a blocker, may be CIVVIS's own: "
+              f"{dict(passes.most_common(4))})")
+
     if wars:
         print(f"  WARS DECLARED: {[(w.get('turn'), w.get('target')) for w in wars]}")
     else:

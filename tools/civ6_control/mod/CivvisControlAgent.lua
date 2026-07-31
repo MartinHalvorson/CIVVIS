@@ -3361,8 +3361,31 @@ local function answerBlocker(player, pid, blocker, turn)
 	-- This counts those. `residual` is what stands between a real measurement and
 	-- the failure this project has already shipped twice: a mechanism that reads
 	-- connected whether it is driving or not.
-	if cfg.CivvisDecides and awaiting.source == "civvis" then
+	-- ⚠⚠⚠ THIS CONDITION USED TO REQUIRE `awaiting.source == "civvis"`, AND THAT
+	-- MADE THE COUNTER READ ZERO FOR THE WHOLE PROJECT.
+	--
+	-- Blockers are answered from the game-core event loop, which runs BEFORE
+	-- `settleTurn` has received CIVVIS's reply and set the source. At that moment the
+	-- source is still "pending", so the increment never happened. Measured on run
+	-- 233331Z, which reported `residual: NONE` across 233 turns while the event log
+	-- shows the heuristics deciding twice:
+	--
+	--     t9   ENDTURN_BLOCKING_FILL_CIVIC_SLOT  answered "policies+2"
+	--     t23  ENDTURN_BLOCKING_PANTHEON         answered "BELIEF_DANCE_OF_THE_AURORA"
+	--
+	-- Two policy cards and a pantheon chosen by hand-written code on a run reported
+	-- as 100% CIVVIS. **This is the exact failure the comment above warns about — a
+	-- mechanism that reads connected whether it is driving or not — committed by the
+	-- instrument built to detect it.**
+	--
+	-- The question the counter answers is "did anything other than CIVVIS decide
+	-- something on a run where CIVVIS was supposed to decide", and that does not
+	-- depend on when in the turn it happened. `source` is recorded alongside instead,
+	-- so the timing is still visible without gating the count on it.
+	if cfg.CivvisDecides then
 		residualAnswers[name] = (residualAnswers[name] or 0) + 1;
+		residualAnswers[name .. "@" .. tostring(awaiting.source)] =
+			(residualAnswers[name .. "@" .. tostring(awaiting.source)] or 0) + 1;
 	end
 	-- Every answer below walks a GameInfo table, so each is budgeted. Answering
 	-- twice in a turn is the useful case -- the first attempt can be refused
