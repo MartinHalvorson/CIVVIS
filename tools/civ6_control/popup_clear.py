@@ -34,6 +34,7 @@ Both detectors were measured against the live game rather than guessed:
 
 import argparse
 import json
+import os
 import subprocess
 import sys
 import time
@@ -53,6 +54,38 @@ SHOT = "/tmp/civ6-popup-clear.png"
 def osa(script):
     done = subprocess.run(["osascript", "-e", script], capture_output=True, text=True, timeout=20)
     return (done.stdout or "").strip(), (done.stderr or "").strip()
+
+
+def game_in_progress(runs_dir, fresh_seconds=180.0):
+    """Is a game actually being PLAYED, as opposed to being set up?
+
+    ⚠ THE SETUP SCREENS LOOK LIKE A LEADER SCENE. Create Game is dark, and on
+    2026-07-31 this tool clicked one at dark=0.36 while a run was still
+    configuring itself -- a click that can change difficulty or map size and
+    silently invalidate the run it was meant to protect. There is no popup worth
+    clearing before the first turn, so the cheapest correct guard is to refuse
+    to act until the harness has recorded one.
+    """
+    try:
+        newest, newest_at = None, 0.0
+        for name in os.listdir(runs_dir):
+            events = os.path.join(runs_dir, name, "events.jsonl")
+            try:
+                at = os.path.getmtime(events)
+            except OSError:
+                continue
+            if at > newest_at:
+                newest, newest_at = events, at
+        if not newest or time.time() - newest_at > fresh_seconds:
+            return False
+        with open(newest, "rb") as handle:
+            blob = handle.read()
+        # ⚠ Both spellings. The mod writes compact JSON from Lua and the harness
+        # writes `json.dumps` with a space after the colon; checking only the
+        # compact form matched nothing and the guard blocked a live game.
+        return b'"kind": "turn"' in blob or b'"kind":"turn"' in blob
+    except OSError:
+        return False
 
 
 def frontmost():
@@ -198,6 +231,11 @@ def main():
     ap.add_argument("--interval", type=float, default=6.0)
     ap.add_argument("--once", action="store_true")
     ap.add_argument("--dry-run", action="store_true", help="report only, never click")
+    ap.add_argument("--runs", default="/Users/martin/civvis-civ6-runs/control",
+                    help="run directories; nothing is clicked until one records a turn")
+    ap.add_argument("--cards", action="store_true",
+                    help="also click completion cards (off: the mod closes those, "
+                         "and a false positive here clicks the live map)")
     ap.add_argument("--log", default="/Users/martin/civvis-civ6-mirror/popup-clear.log")
     args = ap.parse_args()
 
@@ -213,6 +251,8 @@ def main():
     cleared = 0
     last_target, misses = None, 0
     waiting_since = None
+    warned_setup = False
+    warned_cards = False
     while True:
         idle = False
         try:
@@ -228,11 +268,31 @@ def main():
                 if waiting_since is not None:
                     log(f"game window back after {time.time() - waiting_since:.0f}s")
                     waiting_since = None
+                    warned_setup = False
                 window, scale = capture(box)
                 kind, targets, dark = classify(window)
                 front = frontmost()
+                playing = game_in_progress(args.runs)
                 if kind == "map":
                     pass
+                elif kind == "card" and not args.cards:
+                    # ⚠ OFF BY DEFAULT, ON EVIDENCE. With the counter fixed, the
+                    # mod closes completion cards from Lua and says so:
+                    # TechCivicCompletedPopup reported `gone: true` on 9 of 9
+                    # closes on run civvis-20260731T161131Z. The only screen that
+                    # still resists is the leader conversation (`gone: false` on
+                    # 5 of 6). So a "card" seen here is usually a red map marker
+                    # that slipped the band -- and clicking it is a click on the
+                    # live map, which is the one mistake this must not make.
+                    if not warned_cards:
+                        warned_cards = True
+                        log("a card matched, but the mod closes those now; "
+                            "not clicking it (pass --cards to override)")
+                elif not playing:
+                    if not warned_setup:
+                        warned_setup = True
+                        log(f"{kind} on screen but no turn recorded yet; "
+                            "this is setup, not a popup -- not clicking")
                 elif not targets:
                     log(f"{kind} on screen (dark={dark:.2f}) but no target found; leaving it alone")
                 elif not front.startswith("Civ6"):
@@ -256,14 +316,23 @@ def main():
                     time.sleep(1.5)
                     after, _ = capture(box)
                     kind_after, targets_after, _ = classify(after)
-                    same = (kind_after == kind and targets_after
-                            and tuple(int(v) for v in targets_after[-1]) == target[1])
-                    misses = misses + 1 if (same and target == last_target) else 0
+                    # ⚠ SAY WHAT HAPPENED, NOT WHAT WAS INTENDED. This used to
+                    # call anything "cleared" whose target had merely MOVED, so
+                    # a card popup replaced by another card popup was logged as
+                    # a success. That is the same lie as the mod's `ended`, in
+                    # the tool written to expose it.
+                    identical = (kind_after == kind and targets_after
+                                 and tuple(int(v) for v in targets_after[-1]) == target[1])
+                    misses = misses + 1 if (identical and target == last_target) else 0
                     last_target = target
-                    if not same:
+                    if kind_after == "map":
                         cleared += 1
                         log(f"cleared {kind} with a held click at {where} "
-                            f"(dark={dark:.2f}, now {kind_after}, total {cleared})")
+                            f"(dark={dark:.2f}, map is back, total {cleared})")
+                    elif not identical:
+                        # A queue: one went, another took its place. Progress,
+                        # but the map is still covered, so do not claim a clear.
+                        log(f"clicked {kind} at {where}; a {kind_after} is up now")
                     else:
                         log(f"clicked {kind} at {where} but it is still there "
                             f"(miss {misses})")
