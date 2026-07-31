@@ -333,7 +333,7 @@ its separate promotion gate remains the point where wins decide shipment.
 
 ```bash
 civvis tournament \
-  --ais advanced-20260731=advanced,advanced_v1,basic-20260730=basic,random-20260730=random \
+  --ais advanced-20260731-settlement=advanced,advanced_v1,basic-20260731-settlement=basic,random-20260730=random \
   --games 40 --players 4
 civvis tournament --standings          # verify and print without playing
 ```
@@ -370,11 +370,18 @@ must use a new ledger; an edit proved to be gated away from that path still
 requires an explicit review and re-pin. This guard prevents the word “frozen”
 from hiding a moving control, while allowing candidate-only code to evolve.
 
-The fog-honest city-pressure repair changes that shared legacy path, so the
-default `data/elo_ratings.json` is a new, replay-verified 40-game protocol-v2
-ledger. The complete protocol-v1 baseline is preserved, read-only, at
-`data/elo_ratings_v1.json`; it remains useful historical evidence but must not
-be extended or mixed with protocol-v2 results.
+The fog-honest city-pressure repair changed that shared legacy path, so the
+complete protocol-v1 baseline is preserved, read-only, at
+`data/elo_ratings_v1.json`. The island-settlement repair also changes the
+shared path: a passable natural wonder is no longer an unbuildable settler
+target. It therefore starts protocol v3 with a new replay-verified 40-game
+ledger at `data/elo_ratings.json`; the complete protocol-v2 baseline is
+preserved, read-only, at `data/elo_ratings_v2.json`. Historical ledgers remain
+useful evidence but must not be extended or mixed with a later protocol.
+The protocol-v3 baseline rates `advanced-20260731-settlement` at 1615.0 online
+Elo and 1643.2 direct Elo against `advanced_v1`, from a 28/40 pair score (95%
+54.6–81.9%, or 1531.8–1762.5 direct Elo). This is a fresh measurement record
+for the corrected controller, not an effect-size claim for the settlement fix.
 
 Schema 3 binds a ledger to the complete rating profile: an explicit experiment
 protocol version, a deterministic fingerprint of the fully merged rules JSON,

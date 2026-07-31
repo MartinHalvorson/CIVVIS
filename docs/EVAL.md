@@ -14,7 +14,7 @@ and seed set.
 
 ```bash
 civvis soak --games 12 --players 4 --turns 350 --start-seed 100
-civvis tournament --ais advanced-20260731=advanced,advanced_v1,basic-20260730=basic,random-20260730=random \
+civvis tournament --ais advanced-20260731-settlement=advanced,advanced_v1,basic-20260731-settlement=basic,random-20260730=random \
   --games 40 --players 4 --quiet
 victory_eval --games 2 --players 2       # all six targets, stock turn limits
 ai_eval advanced basic --pairs 100 --seed 4000   # paired, low-variance
@@ -6598,3 +6598,23 @@ matrix consequently returned `RETAIN advanced — advanced_expansion_dispatch
 cleared 1/2 required profiles`. This is a full-prefix null, not a reason to
 search a more favorable seed or tune the switch after the fact. The arm remains
 evaluator-only and production `advanced` is unchanged.
+
+## 2026-07-31 — protocol-v3 corrected-settlement baseline
+
+The island-settlement repair changes the shared `BasicAi`/`AdvancedAi` path:
+passable natural wonders no longer remain targets that `Game::can_found_city`
+will reject. `advanced_v1` shares that implementation, so the prior
+protocol-v2 ledger is preserved read-only at `data/elo_ratings_v2.json` and a
+fresh protocol-v3 ledger replaces the default; the two experiments must not be
+mixed.
+
+```sh
+cargo run --profile ci --locked --bin civvis -- tournament --games 40 --players 4 --quiet --jobs 8
+```
+
+The fresh, replay-verified 40-game Standard/Pangaea baseline rates
+`advanced-20260731-settlement` at 1615.0 online Elo and 1643.2 direct Elo
+against `advanced_v1`, from a 28/40 pair score (70.0%, 95% Wilson
+54.6–81.9%). `basic-20260731-settlement` is a new identity as well because the
+same corrected predicate changes Basic AI behavior. This records a new
+controller definition; it is not an effect-size claim for the bug fix.
