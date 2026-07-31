@@ -4558,18 +4558,44 @@ local function applyOrder(player, pid, row, turn)
 			-- discarding exactly the answer it needed. Only on the failure path,
 			-- so it costs nothing on a normal found.
 			if not placed then
+				-- ⚠ ONE SIGNATURE WAS GUESSED AND IT ANSWERS NOTHING. Every
+				-- `found_refused` this project has recorded reads `can_start=false` —
+				-- 14 of 14 across every run — because the call below passed `{}` where
+				-- Civilization VI wants a BOOLEAN `bTestOnly`, so the results table
+				-- came back nil and the useful half of the answer was never produced.
+				-- The reason this event exists is to say WHY, and it has only ever
+				-- said "no".
+				--
+				-- Both plausible shipped forms are tried and the one that answers is
+				-- named, exactly as `plotRevealed` does for `PlayersVisibility` — a
+				-- silent gate is worse than a loud one, and guessing again without
+				-- recording which guess worked is how this happened the first time.
 				local why = "unknown";
+				local function reasons(results)
+					if results == nil then return nil; end
+					local parts = {};
+					for key, value in pairs(results) do
+						parts[#parts + 1] = tostring(key) .. "=" .. tostring(value);
+					end
+					if #parts == 0 then return nil; end
+					return table.concat(parts, ",");
+				end
 				pcall(function()
 					local ok, results = UnitManager.CanStartOperation(
-						unit, OP["UNITOPERATION_FOUND_CITY"], nil, {}, true);
-					if results ~= nil then
-						local parts = {};
-						for key, value in pairs(results) do
-							parts[#parts + 1] = tostring(key) .. "=" .. tostring(value);
+						unit, OP["UNITOPERATION_FOUND_CITY"], nil, false, true);
+					local text = reasons(results);
+					if text ~= nil then
+						why = "bool4:" .. text;
+					else
+						local ok2, results2 = UnitManager.CanStartOperation(
+							unit, OP["UNITOPERATION_FOUND_CITY"], nil, {}, true);
+						local text2 = reasons(results2);
+						if text2 ~= nil then
+							why = "tbl4:" .. text2;
+						elseif ok ~= nil then
+							why = "can_start=" .. tostring(ok) .. ",no_results";
+							local _ = ok2;
 						end
-						if #parts > 0 then why = table.concat(parts, ","); end
-					elseif ok ~= nil then
-						why = "can_start=" .. tostring(ok);
 					end
 				end);
 				emit("found_refused", { turn = turn, unit = subject, why = why,
