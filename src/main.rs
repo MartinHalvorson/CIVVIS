@@ -73,11 +73,13 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// `Game::blocked_city_sites`. That set has exactly one production writer,
 /// `mirror.rs`, which fills it from a host engine's refusals; `Game::new` and
 /// `From<GameSer>` both leave it empty and nothing in an ordinary game ever
-/// inserts into it, so the guard cannot fire outside the bridge. Re-pinned as a
-/// default-off compatibility change; the Elo protocol does not move. The matched
-/// fixed-prefix comparison the re-pins above use — `ai_eval advanced basic
-/// --pairs 10 --players 4 --turns 200 --seed 31337 --jobs 1`, this branch against
-/// `main` at `81636d9` — is recorded on #697.
+/// inserts into it, so the guard cannot fire outside the bridge. Measured on the
+/// fixed prefix the re-pins above use — `ai_eval advanced basic --pairs 10
+/// --players 4 --turns 200 --seed 31337 --jobs 1`, release, this branch against
+/// `main` at `81636d9` — the two reports are **byte-identical**: 19/20 game wins,
+/// 95.0% paired-map score, 9 sweeps and 1 neutral, and every seat metric equal
+/// across 20 games and 2,310 turns. Default-off compatibility re-pin; the Elo
+/// protocol does not move.
 const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x8f87_2f61_ae5f_abff;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
