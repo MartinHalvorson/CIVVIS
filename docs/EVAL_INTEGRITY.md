@@ -208,9 +208,9 @@ table:
   composite, and the shipped-roster `advanced_league_top` source all have
   direct spec assertions.
 
-This closes R1's identity and false-self-comparison failures. It does **not**
-make missing learned artifacts acceptable for an evaluation: strict,
-artifact-dependent construction remains the R2 work item below.
+This closes R1's identity and false-self-comparison failures. R2's strict
+artifact-construction boundary below closes the remaining silent-substitution
+path for evaluator seats.
 
 ---
 
@@ -252,7 +252,7 @@ the learned `strategic` should not be selectable without an explicit opt-in.
 **Make artifact-dependent construction fallible, and strict by default.**
 
 ```rust
-pub fn builtin_ai(name: &str, seed: u64) -> Result<Box<dyn Ai>, Degraded>;
+pub fn builtin_ai_strict(name: &str, seed: u64) -> Result<Box<dyn Ai>, BuiltinAiBuildError>;
 pub fn builtin_ai_degraded(name: &str, seed: u64) -> Box<dyn Ai>;  // explicit opt-in
 ```
 
@@ -270,6 +270,33 @@ it:
 `basic_evolved` and `advanced_evolved` already demonstrate the pattern: the
 fallback *is* a legitimate agent, so give it its own name and let the learned
 name fail honestly.
+
+### Implemented 2026-07-31 — strict evaluator construction
+
+`builtin_ai_strict` now resolves the same typed `BuiltinArm` and provenance
+that the evaluator reports, then returns `BuiltinAiBuildError::Degraded` when a
+definitional artifact is missing. Unknown names return a distinct error. Its
+private directory-aware resolver is tested against a bare artifact fixture, so
+the property does not depend on what happens to be present in a developer's
+working tree.
+
+`builtin_ai_degraded` gives intentional game-start and diagnostic callers a
+named infallible path. The pre-existing `builtin_ai` is retained as a
+source-compatible alias for legacy non-evaluator callers; new evaluator code
+does not use it. This stages the API migration without letting compatibility
+hide an evaluation fallback.
+
+Every `ai_eval` seat, including matrix children, now constructs through the
+strict function after its human-readable preflight; a filesystem change after
+preflight still fails closed instead of silently substituting a controller.
+`--allow-degraded` is the sole direct-evaluation branch that selects
+`builtin_ai_degraded`; the matrix continues to reject that flag.
+`--require-artifacts` remains the separate, stricter policy that also rejects
+optional untrained tuning artifacts.
+
+The locking tests cover a bare `policy` arm (which would otherwise become
+`advanced`), unknown-name rejection, a production scripted strict arm, and the
+evaluator's strict-versus-explicit-escape dispatch.
 
 ---
 
@@ -708,7 +735,7 @@ trusting anything measured afterwards.
 |---|---|---|---|
 | 0 | Correct `docs/GENOME.md`'s standing “`strategic_deep` at +45 Elo”, which #482 excluded | R3 corollary | one edit |
 | 1 | **Landed:** typed `ArmKind` / `AgentSpec` boundary, spec-based collapse check, factory and plays-as-typed-spec tests | R1 — both defects | PR #674, `src/elo.rs` |
-| 2 | Fallible strict `builtin_ai`; explicit degraded entry point | R2 | ~half a day |
+| 2 | **Landed:** fallible `builtin_ai_strict`; explicit degraded entry point | R2 | PR #679, `src/elo.rs`, `src/bin/ai_eval.rs` |
 | 3 | **Landed:** docs rule in `check-pr` (#685); `ai_eval` discovery/confirmed labels and `--confirm` (#693) | R3 | done |
 | 4 | **Landed:** `strength_bound()` as the only ordering; separation bar applied; table reproducible from the committed snapshot | R4 | PR #678 |
 | 5 | Arm lifecycle: `EvalArm` with evidence + status, CI check that the section exists | §7 | falls out of 1 |
