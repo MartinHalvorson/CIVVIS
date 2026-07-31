@@ -1575,6 +1575,32 @@
   .save-entry button { margin: 0 0 0 auto; padding: 4px 8px; font-size: var(--type-small); }
   /* Leader and difficulty only mean anything with somebody at the keyboard. */
   body.spectating .human-setting { display: none; }
+  /* Playing the other game, the panel configures the other game. Only the
+     settings `CivvisControlSetup.lua` actually writes into Civilization VI
+     survive the switch — difficulty, map, size, speed — because a row that
+     stays on screen and is not carried is a promise about the run that the run
+     does not keep. See docs/CIV6_GAME_MODE.md. */
+  body.playing-civ6 .civ6-hidden { display: none; }
+  /* Whether this computer can play it at all, and what a run it can see is
+     doing. The mode is offered everywhere and refused where it cannot run, so
+     the refusal has somewhere to be read: a dead Steam client once cost eleven
+     ladder attempts, each recorded as a loss rather than as an attempt that
+     never happened. */
+  #civ6-status { display: none; grid-column: 1 / -1; margin: 1px 0 2px; }
+  body.playing-civ6 #civ6-status { display: block; }
+  #civ6-status .civ6-line {
+    display: flex; gap: 6px; align-items: baseline;
+    font-size: var(--type-small); color: var(--muted); line-height: 1.45;
+  }
+  #civ6-status .civ6-dot {
+    flex: none; width: 7px; height: 7px; border-radius: 50%;
+    background: var(--muted); align-self: center;
+  }
+  #civ6-status.ready .civ6-dot { background: #6fbf73; }
+  #civ6-status.blocked .civ6-dot { background: #d08a3e; }
+  #civ6-status.playing .civ6-dot { background: #6fbf73; box-shadow: 0 0 0 3px rgba(111,191,115,.22); }
+  #civ6-status .civ6-run { color: var(--text); }
+  #civ6-status .civ6-run b { font-weight: 650; }
   /* The restart control is the one persistent way to replace the current
      world. In a human game Pause has no meaning, so the same row contracts to
      that one control instead of revealing a second Start new game button. */
@@ -3757,16 +3783,21 @@
         <label class="small game-advanced-setting" data-advanced-order="10">Base game ruleset<select id="baseruleset" style="margin-top:4px">
           <option value="civ6" selected>Civ 6</option>
         </select></label>
-        <label class="small game-advanced-setting" data-advanced-order="20">Leader Pool<select id="leaderpool" style="margin-top:4px">
+        <label class="small game-advanced-setting civ6-hidden" data-advanced-order="20">Leader Pool<select id="leaderpool" style="margin-top:4px">
           <option value="civ6" selected>Civ 6 Leaders</option>
           <option value="expanded">Expanded</option>
         </select></label>
         <label class="small">Game mode<select id="gamemode" style="margin-top:4px">
           <option value="ai_sim" selected>AI-only simulation</option>
           <option value="single">Single player</option>
+          <option value="civ6">Play Firaxis Civ 6 with computer control</option>
           <option disabled>Multiplayer · later</option>
         </select></label>
-        <label class="small game-advanced-setting" data-advanced-order="30">Teams<select id="teams" style="margin-top:4px"
+        <div id="civ6-status">
+          <div class="civ6-line"><span class="civ6-dot"></span><span id="civ6-host">Checking this computer…</span></div>
+          <div class="civ6-line civ6-run" id="civ6-run" hidden></div>
+        </div>
+        <label class="small game-advanced-setting civ6-hidden" data-advanced-order="30">Teams<select id="teams" style="margin-top:4px"
           title="Permanent pre-game teams. Teammates share sight, pass each other the Eureka for a technology they have not researched, fight the same wars and win together.">
           <option value="ffa" selected>Free-for-all</option>
           <option value="2">2 teams</option>
@@ -3774,11 +3805,11 @@
           <option value="4">4 teams</option>
           <option value="pairs">Pairs</option>
         </select></label>
-        <label class="small human-setting">Leader<select id="leader" style="margin-top:4px">
+        <label class="small human-setting civ6-hidden">Leader<select id="leader" style="margin-top:4px">
           <option value="">Random</option>
         </select></label>
         <label class="small human-setting">Difficulty<select id="difficulty" style="margin-top:4px"></select></label>
-        <label class="small game-advanced-setting" data-advanced-order="40">World shape<select id="mapshape" style="margin-top:4px">
+        <label class="small game-advanced-setting civ6-hidden" data-advanced-order="40">World shape<select id="mapshape" style="margin-top:4px">
           <option value="flat">Flat</option>
           <option value="planet">Planet</option>
         </select></label>
@@ -3795,7 +3826,7 @@
           <option value="water_world">Water World</option>
           <option value="true_start_earth">True Start Earth</option>
         </select></label>
-        <label class="small game-advanced-setting" data-advanced-order="50">Thermal distribution<select id="mappoles" style="margin-top:4px">
+        <label class="small game-advanced-setting civ6-hidden" data-advanced-order="50">Thermal distribution<select id="mappoles" style="margin-top:4px">
           <option value="poles">Hot equator, cold poles</option>
           <option value="randomized">Randomized</option>
         </select></label>
@@ -3807,7 +3838,7 @@
           <option value="10">Large · 10 civs · 15 city-states · 96×60</option>
           <option value="12">Huge · 12 civs · 18 city-states · 106×66</option>
         </select></label>
-        <label class="small game-advanced-setting" data-advanced-order="60">Start era<select id="startera" style="margin-top:4px">
+        <label class="small game-advanced-setting civ6-hidden" data-advanced-order="60">Start era<select id="startera" style="margin-top:4px">
           <option value="stone_age" disabled>Stone Age · later</option>
           <option value="ancient" selected>Ancient</option>
         </select></label>
@@ -3827,7 +3858,7 @@
             <button id="savebtn" title="Write a save this server can offer back later">Save</button>
           </div>
         </div>
-        <div class="victory-options game-advanced-setting" data-advanced-order="80" role="group" aria-labelledby="victory-options-title">
+        <div class="victory-options game-advanced-setting civ6-hidden" data-advanced-order="80" role="group" aria-labelledby="victory-options-title">
           <h2 id="victory-options-title">Victory conditions</h2>
           <div class="victory-option-grid">
             <label class="victory-option"><input type="checkbox" id="victory-science" checked>Science</label>
@@ -3838,11 +3869,11 @@
             <label class="victory-option"><input type="checkbox" id="victory-score" checked>Score</label>
           </div>
         </div>
-        <label class="small game-advanced-setting" data-advanced-order="70">Future Era<select id="futureera" style="margin-top:4px">
+        <label class="small game-advanced-setting civ6-hidden" data-advanced-order="70">Future Era<select id="futureera" style="margin-top:4px">
           <option value="classic" selected>Classic Future Era</option>
           <option value="martin" disabled>Martin's Future Era · later</option>
         </select></label>
-        <div class="mod-options game-advanced-setting" data-advanced-order="90"
+        <div class="mod-options game-advanced-setting civ6-hidden" data-advanced-order="90"
              role="group" aria-labelledby="mod-options-title">
           <h2 id="mod-options-title">Mods</h2>
           <div class="small mod-help">Tournament defaults are preselected. These choices are saved for the upcoming per-game mod loader; the active server ruleset is unchanged for now.</div>
@@ -4135,6 +4166,11 @@ function initAdvancedSettings() {
     .map(id => document.getElementById(id).closest("label"));
   basic.push(document.getElementById("saves-group"));
   for (const node of basic) gameAdvanced.before(node);
+  // The Civ 6 host line describes the mode chosen directly above it, so it
+  // follows that control through the reorder rather than staying where the
+  // source happens to put it.
+  document.getElementById("gamemode").closest("label")
+    .after(document.getElementById("civ6-status"));
 
   const display = document.getElementById("display-settings");
   moveByOrder(display, ".display-advanced-setting", document.getElementById("display-advanced-settings-body"));
@@ -8296,6 +8332,9 @@ async function boot() {
       ).join("");
       document.getElementById("gamespeed").value = "online";
     }
+    // The ruleset carries the other game's vocabulary too, and the mode may
+    // already be selected by the time it lands.
+    syncSetupMode();
     fillStrategies(RULES);
     render(adoptTiles(await fetchJSON("/state" + paintedQuery())));
     if (bootAttempts) { bootAttempts = 0; clearBootRetrying(); }
@@ -30693,6 +30732,14 @@ async function autoplay(turns) {
 }
 document.getElementById("autoplaybtn").onclick = () => autoplay(autoplayRequest());
 document.getElementById("tradebtn").onclick = () => openTrade();
+// Mode state, declared here rather than beside the functions that use it: the
+// wiring immediately below calls syncSetupMode() during load, and a `let` read
+// before its own statement has run is a ReferenceError rather than an
+// undefined.
+let civ6Status = null;
+let civ6StatusTimer = null;
+let civ6StatusInFlight = false;
+let civvisMapOptions = null;
 document.getElementById("gamemode").addEventListener("change", syncSetupMode);
 document.getElementById("leaderpool").addEventListener("change", syncLeaderPool);
 document.getElementById("maptype").addEventListener("change", syncEarthShape);
@@ -30755,6 +30802,64 @@ function readVictorySetting(id) {
   const box = document.getElementById(id);
   return box ? box.checked : true;
 }
+// What this computer can do about the other game, and what a run it can see is
+// doing. The mode is offered everywhere and refused where it cannot run, so the
+// refusal needs somewhere to be read: a run that silently never starts is how a
+// dead Steam client cost eleven ladder attempts, every one of them recorded as
+// a loss rather than as an attempt that never happened.
+async function refreshCiv6Status() {
+  if (civ6StatusInFlight) return;
+  civ6StatusInFlight = true;
+  try {
+    civ6Status = await fetchJSON("/civ6");
+  } catch (error) {
+    civ6Status = {ready: false, blocked: `this server did not answer (${error.message || error})`};
+  } finally {
+    civ6StatusInFlight = false;
+  }
+  drawCiv6Status();
+  updateRestartSimulationButton();
+  // A run takes minutes to reach its first turn and hours to finish, so this
+  // is a slow poll, and it only runs while somebody is looking at the mode.
+  clearTimeout(civ6StatusTimer);
+  if (document.body.classList.contains("playing-civ6"))
+    civ6StatusTimer = setTimeout(refreshCiv6Status, 10000);
+}
+function civ6RunLine(run) {
+  if (!run) return "";
+  const who = [run.leader, run.civ]
+    .map(name => (name || "").replace(/^(LEADER|CIVILIZATION)_/, "").toLowerCase())
+    .filter(Boolean)
+    .map(titleCase);
+  // Joined after the names are cased, because titleCase upper-cases every word
+  // it is given and "Wu Zetian Of China" is not how anybody writes that.
+  const seat = who.length ? who.join(" of ") : "a seat";
+  const rung = (run.difficulty || "").replace(/^DIFFICULTY_/, "").toLowerCase();
+  const turn = run.max_turns ? `turn ${run.turn} of ${run.max_turns}` : `turn ${run.turn}`;
+  const empire = `${run.cities} ${run.cities === 1 ? "city" : "cities"}`;
+  const verb = run.live ? "playing" : "played";
+  const ended = run.live ? ""
+    : run.won === true ? " · won"
+    : run.reason ? ` · ${run.reason}` : "";
+  return `<b>${escapeAttr(seat)}</b> ${verb} ${rung ? rung + ", " : ""}${turn} · ${empire}${ended}`;
+}
+function drawCiv6Status() {
+  const box = document.getElementById("civ6-status");
+  const host = document.getElementById("civ6-host");
+  const runLine = document.getElementById("civ6-run");
+  if (!box || !host || !runLine) return;
+  const status = civ6Status;
+  const playing = !!(status && status.run && status.run.live);
+  box.classList.toggle("ready", !!(status && status.ready) && !playing);
+  box.classList.toggle("blocked", !!(status && status.blocked) && !playing);
+  box.classList.toggle("playing", playing);
+  host.textContent = !status ? "Checking this computer…"
+    : playing ? "A game is being played on this computer"
+    : status.blocked ? `Cannot start: ${status.blocked}`
+    : "Civilization VI is installed here and free";
+  runLine.innerHTML = civ6RunLine(status && status.run);
+  runLine.hidden = !runLine.innerHTML;
+}
 function selectedSimulationSettings() {
   const np = +readSetting("np");
   const gameMode = readSetting("gamemode");
@@ -30769,7 +30874,17 @@ function selectedSimulationSettings() {
     [track.id, readVictorySetting(`victory-${track.id}`)]));
   const leader = readSetting("leader");
   const difficulty = readSetting("difficulty");
-  return {num_players: np, map_script: mapScript, map_topology: mapTopology,
+  // In the Civilization VI mode the map control holds one of that game's
+  // scripts, so it travels as `civ6_map` and `map_script` keeps a world this
+  // engine could still build — the payload has to stay a valid description of a
+  // CIVVIS world for the settings staging and the summary line, which are the
+  // same code in every mode.
+  const civ6 = gameMode === "civ6";
+  const civ6Map = civ6 ? mapScript : "";
+  const ourMap = civ6
+    ? (civ6Maps().find(map => map.id === civ6Map) || {}).civvis || "continents"
+    : mapScript;
+  return {num_players: np, map_script: ourMap, map_topology: mapTopology,
           map_poles: mapPoles, game_speed: gameSpeed,
           leader_pool: leaderPool,
           base_ruleset: baseRuleset, start_era: startEra,
@@ -30778,8 +30893,12 @@ function selectedSimulationSettings() {
           teams: teamAssignment(np, readSetting("teams")),
           victory_conditions: victoryConditions,
           spectate: gameMode === "ai_sim",
+          ...(civ6 ? {mode: "civ6", civ6_map: civ6Map} : {}),
           // A spectated world has nobody to hand a leader or a handicap to.
-          ...(gameMode === "ai_sim" ? {} : {civs: leader ? [leader] : [], difficulty})};
+          // Neither has this one, but its difficulty is the point of it: the
+          // other game hands its handicap bonuses to human seats only, which is
+          // what makes the ladder climbable from one.
+          ...(gameMode === "ai_sim" ? {} : {civs: civ6 || !leader ? [] : [leader], difficulty})};
 }
 // The handoff screen describes the world being built, so it reports the values
 // the payload actually carries rather than re-reading the panel behind it.
@@ -30794,7 +30913,10 @@ function selectedSimulationSummary(settings = null) {
   };
   const spectate = settings ? settings.spectate
     : document.getElementById("gamemode").value === "ai_sim";
-  const mode = spectate === true ? "AI simulation" : "Single player";
+  const civ6 = settings ? settings.mode === "civ6"
+    : document.getElementById("gamemode").value === "civ6";
+  const mode = civ6 ? "Firaxis Civ 6"
+    : spectate === true ? "AI simulation" : "Single player";
   // The world-size option already includes its dimensions and seat count; the
   // compact first clause is enough to identify the choice without turning the
   // handoff screen into a settings table.
@@ -30857,19 +30979,35 @@ function updateRestartSimulationButton() {
   // into that game: it becomes Start new game, and always reads as a change
   // from the world on screen.
   const human = settings.spectate !== true;
+  // The control is named after the game it starts, and the other game's name
+  // is the whole point of choosing it: nothing else on the screen says that
+  // pressing this takes over a real Civilization VI window for hours.
+  const civ6 = settings.mode === "civ6";
+  const blocked = civ6 && !!(civ6Status && !civ6Status.ready);
   const changed = human || (activeSimulationSettingsKey !== null &&
     simulationSettingsKey(settings) !== activeSimulationSettingsKey);
-  button.classList.toggle("primary", changed);
+  button.classList.toggle("primary", changed && !blocked);
   button.classList.toggle("human-start", human);
-  button.querySelector(".lbl").textContent = human
+  // A refusal is shown rather than hidden: the button stays, says so, and the
+  // reason sits above it.
+  button.disabled = blocked;
+  button.querySelector(".lbl").textContent = civ6
+    ? "Play Firaxis Civ 6"
+    : human
     ? "Start new game"
     : "Restart sim";
-  button.title = human
+  button.title = civ6
+    ? blocked
+      ? `Cannot start: ${civ6Status.blocked}`
+      : "Start a real Civilization VI game on this computer and play it"
+    : human
     ? "Start a single-player game with the selected settings"
     : changed
     ? "Restart with the selected settings"
     : "Restart with the same settings";
-  button.querySelector(".sub").textContent = human || changed
+  button.querySelector(".sub").textContent = civ6
+    ? "on this computer"
+    : human || changed
     ? "with selected settings"
     : "same settings";
 }
@@ -30927,9 +31065,57 @@ function adoptRunningMode() {
 // Leader and difficulty are meaningless in a spectated world: nobody is at
 // the keyboard. The restart control remains above the settings in either mode
 // and transforms to describe the selected next game.
+//
+// The Civilization VI mode is a third state rather than a variation on either:
+// a difficulty is chosen and it is real (that game hands its handicaps to human
+// seats, which is the whole reason to occupy one), and nobody is at the
+// keyboard once it starts. So the settings follow single player and the
+// controls follow the simulation. See docs/CIV6_GAME_MODE.md.
 function syncSetupMode() {
   const mode = (document.getElementById("gamemode") || {}).value || "ai_sim";
+  const civ6 = mode === "civ6";
   document.body.classList.toggle("spectating", mode === "ai_sim");
+  document.body.classList.toggle("playing-civ6", civ6);
+  syncMapRoster(civ6);
+  // The control's label is not relabelled from here. This runs once during
+  // load, before the settings state it would read has been initialised, and
+  // `#newgame-options`'s delegated change listener already relabels it on
+  // every real selection.
+  if (civ6) refreshCiv6Status();
+}
+// In the Civilization VI mode the map control is that game's own list, not
+// ours. The two rosters overlap without either containing the other — Grand
+// Canals is a CIVVIS world with no counterpart there, Shuffle and Tilted Axis
+// are its worlds with no counterpart here — so the list is replaced rather
+// than filtered, and a choice that exists in both survives the switch.
+function civ6Maps() {
+  return (RULES && RULES.civ6 && Array.isArray(RULES.civ6.maps)) ? RULES.civ6.maps : [];
+}
+function syncMapRoster(civ6) {
+  const select = document.getElementById("maptype");
+  if (!select) return;
+  const maps = civ6Maps();
+  // Before /rules has answered there is nothing to swap to; syncSetupMode runs
+  // again once it has.
+  if (civ6 && !maps.length) return;
+  const roster = civ6 ? "civ6" : "civvis";
+  // `/rules` refills this control after load, so what is put back must be
+  // whatever it holds now rather than the markup it was born with.
+  if (select.dataset.roster !== "civ6") civvisMapOptions = select.innerHTML;
+  if (select.dataset.roster === roster) return;
+  const chosen = select.value;
+  if (civ6) {
+    select.innerHTML = maps.map(map =>
+      `<option value="${escapeAttr(map.id)}">${map.name}</option>`).join("");
+    const carried = maps.find(map => map.civvis === chosen);
+    select.value = carried ? carried.id : (RULES.civ6.default_map || maps[0].id);
+  } else {
+    select.innerHTML = civvisMapOptions;
+    const carried = maps.find(map => map.id === chosen);
+    if (carried && carried.civvis) select.value = carried.civvis;
+  }
+  select.dataset.roster = roster;
+  syncEarthShape();
 }
 
 // The broad historical ruleset remains available, but a normal lobby offers
@@ -31088,8 +31274,35 @@ async function writeSave() {
   }
 }
 
+// Start a real game of Civilization VI on the computer serving this page.
+//
+// Nothing about the world-handoff path applies: no CIVVIS world is built, this
+// server is not replaced, and the page keeps showing whatever it was showing.
+// What is started is another application, and it takes about three minutes to
+// reach its first turn — so the reply is a receipt and the status line above
+// the button is where the run is then followed.
+async function startCiv6Game() {
+  const button = document.getElementById("restart-sim");
+  const host = document.getElementById("civ6-host");
+  if (button) button.disabled = true;
+  if (host) host.textContent = "Starting Civilization VI…";
+  try {
+    const reply = await fetchJSON("/civ6/start", {method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify(selectedSimulationSettings())}, 30000);
+    if (reply.error) throw new Error(reply.error);
+    if (host) host.textContent =
+      `Started ${reply.started.tag} · the game takes a few minutes to come up`;
+  } catch (error) {
+    showNewSimulationError(error, "start Civilization VI");
+  } finally {
+    if (button) button.disabled = false;
+    refreshCiv6Status();
+  }
+}
 async function startNewSimulation(restartSource = "manual") {
   if (newSimulationBusy) return;
+  if (readSetting("gamemode") === "civ6") { startCiv6Game(); return; }
   cancelFinaleCountdown();
   const wasPaused = specPaused;
   const payload = {...newSimulationPayload(), paused: wasPaused};
