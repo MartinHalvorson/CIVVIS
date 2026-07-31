@@ -252,6 +252,46 @@ def idle_stack(events: list[dict], frozen_turns: int = 20) -> dict:
     # people learn to scroll past.
     reach["last_turn"] = states[-1].get("turn") if states else None
 
+    # ★★★★ OSCILLATION, WHICH THE IDLE FRACTION CANNOT SEE AT ALL. A unit bouncing
+    # between two tiles moves every single turn, so it is never "stuck" and never
+    # "frozen" — and it is doing exactly as much for the empire as one that stands
+    # still. Measured on run `civvis-20260731T092642Z` at turn 93: two warriors and an
+    # archer, all embarked, alternating (18,11)/(19,11) and (16,7)/(16,8) for ten turns.
+    #
+    # The settler version of this cost forty turns of a one-city empire before it was
+    # found by hand; the general form gets a number.
+    tracks: dict[int, list] = defaultdict(list)
+    for state in states:
+        for unit in state.get("units") or []:
+            uid = unit.get("id")
+            if uid is not None:
+                tracks[uid].append((unit.get("x"), unit.get("y")))
+    # ⚠ EVERY WINDOW, NOT JUST THE LAST ONE. A run-level report asks "did any unit
+    # ever go in circles", and the tail alone answers "is one doing it right now" —
+    # which read ZERO on a run whose warriors had been shuttling ten turns earlier and
+    # then escaped. The first version of this checked only `trail[-12:]` and therefore
+    # could not see the thing it was written after.
+    oscillating = []
+    for uid, trail in tracks.items():
+        window = None
+        for start in range(0, max(1, len(trail) - 11)):
+            candidate = trail[start:start + 12]
+            if len(candidate) < 8:
+                continue
+            distinct = set(candidate)
+            moved = sum(1 for a, b in zip(candidate, candidate[1:]) if a != b)
+            if len(distinct) <= 3 and moved >= len(candidate) - 3:
+                window = candidate
+                break
+        if window is None:
+            continue
+        # ⚠ THREE TILES, NOT TWO, AND THE NUMBER IS NOT ARBITRARY: it is CIVVIS's own
+        # `LIVELOCK_FOOTPRINT`. The first version asked for exactly two and missed the
+        # very units it was written for — warriors shuttling (18,11)/(18,12)/(19,11)
+        # on run civvis-20260731T092642Z. A loop is a small FOOTPRINT being re-entered,
+        # not necessarily a pair.
+        oscillating.append((uid, kinds.get(uid, "?"), sorted(set(window))))
+
     frozen = [
         (uid, kinds.get(uid, "?"), last_seen[uid] - first)
         for uid, first in first_seen.items()
@@ -266,6 +306,8 @@ def idle_stack(events: list[dict], frozen_turns: int = 20) -> dict:
         "worst_stack_at": worst_at,
         "reach": reach,
         "cities_lost": lost,
+        "oscillating": oscillating[:6],
+        "oscillating_count": len(oscillating),
         "frozen_units": len(frozen),
         "frozen_by_kind": dict(Counter(kind for _, kind, _ in frozen).most_common()),
         "frozen_worst": sorted(frozen, key=lambda row: -row[2])[:4],
@@ -445,6 +487,12 @@ def verdicts(report: dict, stuck_max: float, agree_min: float) -> list[str]:
             f"cities was {reach['furthest_ever']} tiles, at turn "
             f"{reach['furthest_ever_turn']}. Nothing went looking for anybody — this is "
             f"what makes `met` stall and domination unreachable.")
+    if idle.get("oscillating_count"):
+        out.append(
+            f"UNITS GOING IN CIRCLES: {idle['oscillating_count']} — "
+            f"{idle['oscillating']}. They move every turn, so neither the idle "
+            f"fraction nor the frozen count can see them, and they are doing as much "
+            f"for the empire as a unit that stands still.")
     if idle.get("frozen_units"):
         out.append(
             f"FROZEN UNITS: {idle['frozen_units']} of {idle['units_seen']} units never "
