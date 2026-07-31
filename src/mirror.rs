@@ -1664,13 +1664,23 @@ pub fn rebuild_from_state(
             return None;
         }
         let pos = crate::hex::offset_to_axial(u.x, u.y);
-        let water = game
-            .map
-            .get(pos)
-            .map(|tile| game.rules.is_water(tile))
-            .unwrap_or(true);
-        if water {
-            dropped.push(format!("{}@{},{}:water", u.kind, u.x, u.y));
+        // ★★★★★ A LAND UNIT ON A COAST TILE IS EMBARKED, NOT ABSENT.
+        //
+        // This used to refuse every unit standing on water, and the cost was total:
+        // a settler that puts to sea disappears from CIVVIS's board and is therefore
+        // never ordered again. Measured on run `civvis-20260731T070956Z` at turn 147 —
+        // two settlers on TERRAIN_COAST at (42,14) and (49,12), motionless for
+        // fourteen turns and counting, with a third still walking. The empire had
+        // three settlers alive and none of them existed as far as CIVVIS knew.
+        //
+        // CIVVIS already models this correctly: `is_embarked` is emergent, a land unit
+        // whose tile is water IS embarked, so nothing has to be flagged. Reality wins
+        // — Civilization VI says the unit is on that plot, so the mirror puts it there.
+        //
+        // ⚠ The tile is still checked for EXISTENCE. A plot outside the map has no
+        // tile at all and spawning there would be inventing ground.
+        if game.map.get(pos).is_none() {
+            dropped.push(format!("{}@{},{}:off_map", u.kind, u.x, u.y));
             return None;
         }
         let before = game.units.len();
