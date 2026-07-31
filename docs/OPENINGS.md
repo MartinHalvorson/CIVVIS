@@ -1197,6 +1197,59 @@ turns were 198, 212, 213, and 216.
 three entrants and the instrumentation remain default-off so this null can be
 reproduced, but nothing in `advanced` changes.
 
+### 2026-07-31 independent dispatcher evaluation — preregistered
+
+The composed policy has stopped: its late-window interaction did not clear the
+fixed fires check above. That does not erase the separate dispatcher result.
+`advanced_expansion_dispatch` changes one switch, reaches its existing
+Advanced-production path on 62/64 seats, starts Settlers through that path on
+53/64 seats, and ends the mechanism census with 20 more founded cities than
+stock. It has not had an outcome screen of its own.
+
+This is therefore a new, single-axis replacement question, recorded before
+reading any of its outcome maps. It does **not** reopen the stopped composed
+experiment or use any of its reserved `9994500`-series seeds. The sole screen
+is the repository's two-profile matrix, whose compact Standard profile rejects
+an established regression and whose deployment Online profile requires the
+ordinary unchanged win-promotion gate:
+
+```text
+ai_eval advanced_expansion_dispatch advanced \
+  --matrix --pairs 120 --jobs 12 --seed 24073100
+```
+
+The compact child owns seeds `24073100..24073219`; the deployment child owns
+the disjoint, fixed-stride `25073100..25073219` prefix. Both retain the
+matrix's fixed randomized-civilization, Continents/Planet/Poles, and
+Science/Culture/Domination contract. No knob, profile, sample size, or
+follow-up seed is selected after the result is read.
+
+Only a complete matrix `PASS` changes the production default, and then it
+changes only `AdvancedAi::expansion_dispatch` to true. `late_expansion` stays
+false, so the failed composition remains unavailable. Any other matrix result
+keeps `advanced_expansion_dispatch` evaluator-only and leaves production
+`advanced` bit-for-bit on its current route.
+
+### 2026-07-31 independent dispatcher result — mechanism without strength
+
+The fixed matrix completed exactly as registered. Both profiles saw the
+dispatcher at large scale, so this is not a reach failure:
+
+| profile | dispatcher fire | paired score vs `advanced` | direction | terminal score | matrix decision |
+|---|---:|---:|---:|---:|---|
+| compact Standard | 8,362 accepted productions on 426/480 seats; 2,294 Settlers on 355 | 49.8% (95% Wilson 41.0%..58.6%), −1 Elo | 20–21, 79 neutral | 49.1% | safety accepts inconclusive |
+| deployment Online | 23,763 accepted productions on 673/720 seats; 1,028 Settlers on 550 | 49.4% (95% Wilson 40.6%..58.2%), −4 Elo | 24–32, 64 neutral | 49.7% | strength rejects inconclusive |
+
+The deployment treatment finishes with slightly *fewer* cities (5.97 versus
+6.03), despite its 1,028 dispatcher Settlers. That is a useful counterexample
+to treating exposed production and Settler starts as a proxy for an empire
+advantage: the policy displaces enough other work that the extra calls do not
+improve the actual replacement objective. The full matrix therefore reports
+`RETAIN advanced — advanced_expansion_dispatch cleared 1/2 required profiles`.
+No follow-up seed, knob adjustment, composition revival, or default flip is
+permitted by this experiment. The dispatcher remains evaluator-only and both
+production flags remain false.
+
 ### Advanced outcome screen and confirmation
 
 Passing all four mechanism terms earns exactly one 120-map comparison:

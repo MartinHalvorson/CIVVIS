@@ -6557,3 +6557,44 @@ arm on compact (50.3%), so they do not rescue the required win-based strength
 test. The result is a useful mechanism finding, not permission to promote a
 plausible direction: `advanced_belief_pressure` remains evaluator-only and
 production `advanced` stays unchanged.
+
+## 2026-07-31 — preregistered single-axis evaluation of adaptive Expansion dispatch
+
+The preceding 2×2 expansion mechanism census established a real dispatcher
+path: the single `advanced_expansion_dispatch` switch made 2,316 accepted
+Advanced-production actions across 62/64 seats, started 111 Settlers on 53/64
+seats, and ended 20 founded cities ahead of stock. Its late-window composition
+correctly stopped at an interaction fires check, so that *composition* did not
+receive an outcome screen. The dispatcher alone remains an untested,
+one-component treatment.
+
+Before inspecting outcome maps, its replacement test is fixed as:
+
+```sh
+target/release/ai_eval advanced_expansion_dispatch advanced \
+  --matrix --pairs 120 --jobs 12 --seed 24073100
+```
+
+The matrix fixes compact Standard safety at seeds `24073100..24073219` and
+deployment Online strength at the disjoint fixed-stride prefix
+`25073100..25073219`. It retains randomized civilizations, Continents/Planet/
+Poles, science/culture/domination victories, and the unmodified two-profile
+promotion rule. No outcome seed, map profile, treatment knob, or sample size
+will be chosen after observing this result. A full matrix PASS alone may enable
+the dispatcher in production; every other outcome keeps it evaluator-only.
+
+The fixed 120-map prefix completed with reach in both profiles but no evidence
+of a stronger controller:
+
+| profile | paired score for `advanced_expansion_dispatch` | direction | terminal score | factual dispatcher exposure | matrix result |
+|---|---:|---:|---:|---:|---|
+| compact Standard | 49.8% (95% Wilson 41.0%..58.6%), −1 Elo | 20–21, 79 neutral | 49.1% | 8,362 accepted productions on 426/480 seats; 2,294 Settlers on 355 | accept: inconclusive safety |
+| deployment Online | 49.4% (95% Wilson 40.6%..58.2%), −4 Elo | 24–32, 64 neutral | 49.7% | 23,763 accepted productions on 673/720 seats; 1,028 Settlers on 550 | reject: inconclusive strength |
+
+The deployment arm ended at 5.97 cities per seat versus 6.03 for stock. The
+mechanism fires broadly but does not turn its extra production into either
+more finished cities or wins; it changes the allocation, not the outcome. The
+matrix consequently returned `RETAIN advanced — advanced_expansion_dispatch
+cleared 1/2 required profiles`. This is a full-prefix null, not a reason to
+search a more favorable seed or tune the switch after the fact. The arm remains
+evaluator-only and production `advanced` is unchanged.
