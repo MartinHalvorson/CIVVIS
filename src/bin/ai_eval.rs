@@ -9,6 +9,7 @@ use civvis::rules::Rules;
 use civvis::setup::{MapPoles, MapScript, MapTopology};
 use civvis::strategic::ReviewCensus;
 use std::collections::{BTreeMap, BTreeSet};
+use std::io::Write;
 use std::process::Command;
 
 const PROMOTION_MIN_MAPS: usize = 20;
@@ -767,6 +768,16 @@ const PROMOTION_PROFILES: [MatrixProfile; 2] = [
     },
 ];
 
+/// Stable separation between profile seed streams.
+///
+/// This must not depend on `--pairs`: increasing a preregistered sample must
+/// extend each profile's existing seed prefix, not silently select a new one.
+const MATRIX_PROFILE_SEED_STRIDE: u64 = 1_000_000;
+
+fn matrix_profile_seed(seed: u64, profile_index: usize) -> u64 {
+    seed + profile_index as u64 * MATRIX_PROFILE_SEED_STRIDE
+}
+
 fn matrix_child_args(
     challenger: &str,
     incumbent: &str,
@@ -842,6 +853,22 @@ fn matrix_profile_accepts(requirement: MatrixRequirement, verdict: MatrixVerdict
     }
 }
 
+/// Split the concurrent matrix budget around the measured critical path.
+///
+/// The 6p 74x46 deployment profile has roughly twice the work of the compact
+/// 4p 24x16 profile in repeated matrix runs. An equal split therefore leaves
+/// compact idle while deployment determines wall time; integer division also
+/// discarded every odd remainder. Keep every requested worker and give the
+/// heavier profile about two thirds, while retaining at least one per profile.
+fn matrix_job_budgets(total_jobs: usize) -> [usize; 2] {
+    if total_jobs < PROMOTION_PROFILES.len() {
+        // These run sequentially, so each child can use the sole worker.
+        return [1, 1];
+    }
+    let compact = ((total_jobs + 2) / 3).max(1);
+    [compact, total_jobs - compact]
+}
+
 fn run_profile_matrix(args: &[String], challenger: &str, incumbent: &str) -> ! {
     const PROFILE_FLAGS: [&str; 11] = [
         "--players",
@@ -863,7 +890,17 @@ fn run_profile_matrix(args: &[String], challenger: &str, incumbent: &str) -> ! {
         eprintln!("--matrix owns the promotion profiles; remove conflicting profile flag {flag}");
         std::process::exit(2);
     }
+    if args.iter().any(|argument| argument == "--allow-degraded") {
+        eprintln!("--matrix never permits degraded agents; remove --allow-degraded");
+        std::process::exit(2);
+    }
     let pairs = number(args, "--pairs", 50).max(1) as usize;
+    if pairs as u64 >= MATRIX_PROFILE_SEED_STRIDE {
+        eprintln!(
+            "--matrix supports fewer than {MATRIX_PROFILE_SEED_STRIDE} pairs so profile seed streams remain disjoint"
+        );
+        std::process::exit(2);
+    }
     let artifact_dir = text(args, "--artifact-dir", ARTIFACT_DIR);
     if artifact_dir != ARTIFACT_DIR {
         eprintln!(
@@ -875,7 +912,7 @@ fn run_profile_matrix(args: &[String], challenger: &str, incumbent: &str) -> ! {
         requested if requested > 0 => requested as usize,
         _ => civvis::parallel::default_jobs(),
     };
-    let jobs_per_profile = (total_jobs / PROMOTION_PROFILES.len()).max(1);
+    let job_budgets = matrix_job_budgets(total_jobs);
     let seed = number(args, "--seed", 4000).max(0) as u64;
     let difficulty = text(args, "--difficulty", &default_difficulty());
     let require_artifacts = args
@@ -888,7 +925,7 @@ fn run_profile_matrix(args: &[String], challenger: &str, incumbent: &str) -> ! {
             .into_iter()
             .enumerate()
             .map(|(index, profile)| {
-                let profile_seed = seed + index as u64 * (pairs as u64 + 1_000_000);
+                let profile_seed = matrix_profile_seed(seed, index);
                 let child_args = matrix_child_args(
                     challenger,
                     incumbent,
@@ -915,12 +952,12 @@ fn run_profile_matrix(args: &[String], challenger: &str, incumbent: &str) -> ! {
                     let executable = executable.clone();
                     let difficulty = difficulty.clone();
                     scope.spawn(move || {
-                        let profile_seed = seed + index as u64 * (pairs as u64 + 1_000_000);
+                        let profile_seed = matrix_profile_seed(seed, index);
                         let child_args = matrix_child_args(
                             challenger,
                             incumbent,
                             pairs,
-                            jobs_per_profile,
+                            job_budgets[index],
                             profile_seed,
                             profile,
                             &difficulty,
@@ -1019,12 +1056,14 @@ fn main() {
     for entry in &provenance {
         println!("{}", entry.line());
     }
-    for (left, right, shared) in collapsed_entrants(&[a, b], &artifact_dir) {
+    let collapsed = collapsed_entrants(&[a, b], &artifact_dir);
+    for (left, right, shared) in &collapsed {
         println!(
             "warning: {left} and {right} both play as {shared}; this run measures \
              {shared} against itself and says nothing about either name"
         );
     }
+    let _ = std::io::stdout().flush();
     if args.iter().any(|arg| arg == "--require-artifacts") {
         let untrained: Vec<&AgentProvenance> = provenance
             .iter()
@@ -1041,6 +1080,27 @@ fn main() {
             eprintln!("--require-artifacts: refusing to record an untrained result");
             std::process::exit(3);
         }
+    } else if !args.iter().any(|arg| arg == "--allow-degraded") {
+        let degraded: Vec<&AgentProvenance> = provenance
+            .iter()
+            .filter(|entry| entry.degraded())
+            .collect();
+        if !degraded.is_empty() {
+            for entry in degraded {
+                eprintln!(
+                    "{}: requested agent is unavailable and would play as {}",
+                    entry.requested, entry.effective
+                );
+            }
+            eprintln!(
+                "refusing degraded evaluation by default; name the effective agent or pass --allow-degraded"
+            );
+            std::process::exit(3);
+        }
+    }
+    if !collapsed.is_empty() {
+        eprintln!("refusing to evaluate two names that resolve to one agent");
+        std::process::exit(2);
     }
     let pairs = number(&args, "--pairs", 50).max(1) as usize;
     // How many games run at once. Every game is independent and seeded, so
@@ -1144,9 +1204,12 @@ fn main() {
     // this binary is the promotion gate, and how many maps it can afford is
     // what decides whether an effect is resolvable at all.
     //
-    // Chunked rather than one flat batch so peak memory holds a chunk of
-    // finished games rather than the whole run.
-    let chunk_pairs = jobs.max(1);
+    // Chunked rather than one flat batch so peak memory holds a bounded set of
+    // finished games rather than the whole run. Four games per worker gives
+    // the dynamic scheduler enough slack to hide the large early-victory vs
+    // turn-limit cost variance; the former two-game window repeatedly left
+    // half the workers idle on each chunk's long tail.
+    let chunk_pairs = jobs.max(1).saturating_mul(2);
     let mut pair = 0usize;
     while pair < pairs {
         let chunk = chunk_pairs.min(pairs - pair);
@@ -1263,6 +1326,10 @@ fn main() {
         "mirrored head-to-head: {pairs} maps, {} games, {players} players, average {:.1} turns",
         2 * pairs,
         total_turns as f64 / (2 * pairs) as f64
+    );
+    println!(
+        "seed prefix: {seed}..={} (inclusive, one independent map per seed)",
+        seed + pairs.saturating_sub(1) as u64
     );
     let games = 2 * pairs;
     print!("game-win share:");
@@ -1604,7 +1671,7 @@ mod tests {
             "incumbent",
             60,
             4,
-            1_090_060,
+            1_090_000,
             PROMOTION_PROFILES[1],
             "prince",
             false,
@@ -1624,6 +1691,34 @@ mod tests {
         assert_eq!(number(&deployment, "--height", 0), 46);
         assert_eq!(number(&deployment, "--turns", 0), 250);
         assert_eq!(text(&deployment, "--speed", "missing"), "online");
+        assert_eq!(matrix_profile_seed(90_000, 0), 90_000);
+        assert_eq!(matrix_profile_seed(90_000, 1), 1_090_000);
+        let extended = matrix_child_args(
+            "challenger",
+            "incumbent",
+            120,
+            4,
+            matrix_profile_seed(90_000, 1),
+            PROMOTION_PROFILES[1],
+            "prince",
+            false,
+        );
+        assert_eq!(number(&extended, "--seed", 0), 1_090_000);
+    }
+
+    #[test]
+    fn promotion_matrix_uses_every_worker_and_weights_the_critical_path() {
+        assert_eq!(matrix_job_budgets(1), [1, 1]);
+        assert_eq!(matrix_job_budgets(2), [1, 1]);
+        assert_eq!(matrix_job_budgets(3), [1, 2]);
+        assert_eq!(matrix_job_budgets(4), [2, 2]);
+        assert_eq!(matrix_job_budgets(5), [2, 3]);
+        assert_eq!(matrix_job_budgets(6), [2, 4]);
+        assert_eq!(matrix_job_budgets(12), [4, 8]);
+        for jobs in 2..32 {
+            assert_eq!(matrix_job_budgets(jobs).iter().sum::<usize>(), jobs);
+            assert!(matrix_job_budgets(jobs).into_iter().all(|budget| budget > 0));
+        }
     }
 
     #[test]

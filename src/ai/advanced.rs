@@ -1122,6 +1122,28 @@ pub struct AdvancedAi {
     /// cannot be misattributed to production.
     pub envoy_infrastructure: bool,
 
+    /// Reserve one empty city's next build for reachable envoy infrastructure.
+    ///
+    /// `envoy_infrastructure` teaches `advanced_production` what the Diplomatic
+    /// Quarter, Consulate, and Chancery are worth, but the adaptive production
+    /// path normally delegates idle cities to `BasicAi::cities`. Consequently
+    /// that valuation can be correct without ever being asked. This separate
+    /// treatment crosses that routing boundary after the proven opening book:
+    /// it queues at most one legal empire-wide stage, preserves every existing
+    /// queue, and fails closed during wars, Recovery, rushes, or a local threat.
+    ///
+    /// Fog and horizon gates are shared with the valuation treatment: an unmet
+    /// city-state cannot trigger it, nor can an influence stream that will not
+    /// yield an Envoy before the game ends.
+    ///
+    /// **Measured, promising, and not promoted.** Over 120 mirrored maps it
+    /// raised deployment envoys 14.3 -> 19.3 and suzerainty 0.41 -> 0.70, with
+    /// 38 map directions for and 19 against (p=0.0163), but the unchanged
+    /// promotion gate remained INCONCLUSIVE (+30 Elo-equivalent, e-process
+    /// p<=0.0665). Compact was -12 and safely inconclusive. The preregistered
+    /// rule therefore leaves it off; reachable as `advanced_envoy_priority`.
+    pub envoy_priority: bool,
+
     /// Hold a strategy through short-lived score and power fluctuations while
     /// still responding immediately to wars, emergencies, city deficits,
     /// assigned lanes, and finite Prophet races.
@@ -1131,6 +1153,12 @@ pub struct AdvancedAi {
     /// is trigger-scoped: only best-lane/progress changes and opportunistic
     /// wars can be delayed. Recovery exits remain immediate because the first
     /// screen showed that lingering there erased cities and production.
+    ///
+    /// **Measured and rejected as a default.** It reduced deployment midgame
+    /// switches 3.22 -> 2.78 and unanchored switches 1.90 -> 1.64, but over the
+    /// full 120-map prefix scored -25 Elo-equivalent with 18 map directions
+    /// for and 34 against (p=0.0365). Compact was +7 and inconclusive. Lower
+    /// churn is real; stronger play is not, so the flag remains off.
     pub strategic_commitment: bool,
 
     /// Plan the whole engagement at once instead of committing one unit at a
@@ -1266,6 +1294,7 @@ impl AdvancedAi {
             congress_counter_leader: false,
             congress_counter_votes: false,
             envoy_infrastructure: false,
+            envoy_priority: false,
             strategic_commitment: false,
             joint_tactics: false,
             tactics_resolved: BTreeSet::new(),
@@ -8753,6 +8782,49 @@ impl AdvancedAi {
         current
     }
 
+    fn contestable_city_states(&self, g: &Game, pid: usize) -> usize {
+        g.players
+            .iter()
+            .filter(|player| {
+                player.alive
+                    && player.is_minor
+                    && !player.is_barbarian
+                    && !player.is_free_city
+                    && g.has_met(pid, player.id)
+                    && !g.is_at_war(pid, player.id)
+                    && g.suzerain_of(player.id) != Some(pid)
+            })
+            .count()
+    }
+
+    /// Envoys produced by an incremental influence stream beginning after
+    /// `starts_after` turns, before the contestable-city-state cap is applied.
+    fn projected_stream_envoys(
+        &self,
+        g: &Game,
+        pid: usize,
+        influence_per_turn: f64,
+        starts_after: f64,
+        remaining_turns: f64,
+    ) -> f64 {
+        if influence_per_turn <= 0.0 {
+            return 0.0;
+        }
+        let Some(government) = g.players[pid]
+            .government
+            .as_deref()
+            .and_then(|government| g.rules.governments.get(government))
+        else {
+            return 0.0;
+        };
+        if government.influence_threshold <= 0.0 || government.envoys_per_threshold <= 0 {
+            return 0.0;
+        }
+        let active_turns = (remaining_turns - starts_after).max(0.0);
+        influence_per_turn * active_turns / government.influence_threshold
+            * government.envoys_per_threshold as f64
+    }
+
     /// Raw production utility of an influence stream beginning after
     /// `starts_after` turns. A stream matters only after this empire has met a
     /// city-state it does not already control; this makes the treatment
@@ -8768,38 +8840,175 @@ impl AdvancedAi {
         if !self.envoy_infrastructure || influence_per_turn <= 0.0 {
             return 0.0;
         }
-        let contestable = g
-            .players
-            .iter()
-            .filter(|player| {
-                player.alive
-                    && player.is_minor
-                    && !player.is_barbarian
-                    && !player.is_free_city
-                    && g.has_met(pid, player.id)
-                    && g.suzerain_of(player.id) != Some(pid)
-            })
-            .count();
+        let contestable = self.contestable_city_states(g, pid);
         if contestable == 0 {
             return 0.0;
         }
-        let Some(government) = g.players[pid]
-            .government
-            .as_deref()
-            .and_then(|government| g.rules.governments.get(government))
-        else {
-            return 0.0;
-        };
-        if government.influence_threshold <= 0.0 || government.envoys_per_threshold <= 0 {
-            return 0.0;
-        }
-        let active_turns = (remaining_turns - starts_after).max(0.0);
-        let expected_envoys = influence_per_turn * active_turns / government.influence_threshold
-            * government.envoys_per_threshold as f64;
+        let expected_envoys = self.projected_stream_envoys(
+            g,
+            pid,
+            influence_per_turn,
+            starts_after,
+            remaining_turns,
+        );
         // Three envoys establish first suzerainty. Extra income is still
         // useful for defense, but projecting beyond three per currently open
         // contest lets a very long score game crowd out every other system.
         expected_envoys.min(contestable as f64 * 3.0) * ENVOY_PRODUCTION_VALUE
+    }
+
+    /// Put the envoy valuation on the production path the adaptive controller
+    /// actually uses. This is deliberately a reservation rather than another
+    /// full production governor: one empty city advances one empire-unique
+    /// chain, and all other cities keep their normal policy.
+    fn prioritize_envoy_infrastructure(
+        &self,
+        g: &mut Game,
+        pid: usize,
+        plan: &StrategicPlan,
+    ) -> bool {
+        if !self.envoy_priority
+            || plan.strategy == GrandStrategy::Recovery
+            || plan.threatened_city.is_some()
+            || plan.rush
+            || g.turn >= g.max_turns
+            || self.contestable_city_states(g, pid) == 0
+            || g.players.iter().any(|player| {
+                player.id != pid
+                    && player.alive
+                    && !player.is_minor
+                    && !player.is_barbarian
+                    && g.is_at_war(pid, player.id)
+            })
+        {
+            return false;
+        }
+
+        let city_ids = g.player_city_ids(pid);
+        let diplomatic_city = city_ids.iter().copied().find(|city| {
+            g.city_has_district_family(
+                &g.cities[city],
+                crate::name!("diplomatic_quarter"),
+            )
+        });
+        let queued_district = city_ids.iter().any(|city| {
+            g.cities[city].queue.iter().any(|item| {
+                matches!(item, Item::District { district, .. } if district == "diplomatic_quarter")
+            })
+        });
+        let consulate_built = diplomatic_city.is_some_and(|city| {
+            g.cities[&city]
+                .buildings
+                .iter()
+                .any(|building| building == "consulate")
+        });
+        let consulate_queued = city_ids.iter().any(|city| {
+            g.cities[city].queue.iter().any(|item| {
+                matches!(item, Item::Building { building } if building == "consulate")
+            })
+        });
+        let chancery_built = diplomatic_city.is_some_and(|city| {
+            g.cities[&city]
+                .buildings
+                .iter()
+                .any(|building| building == "chancery")
+        });
+        let chancery_queued = city_ids.iter().any(|city| {
+            g.cities[city].queue.iter().any(|item| {
+                matches!(item, Item::Building { building } if building == "chancery")
+            })
+        });
+
+        // The target is the first incomplete stage. A stage already in any
+        // city's queue owns the reservation until it completes.
+        let (target, influence_per_turn) = if diplomatic_city.is_none() {
+            if queued_district {
+                return false;
+            }
+            ("diplomatic_quarter", 2.0)
+        } else if !consulate_built {
+            if consulate_queued {
+                return false;
+            }
+            ("consulate", 2.0)
+        } else if !chancery_built {
+            if chancery_queued {
+                return false;
+            }
+            ("chancery", 3.0)
+        } else {
+            return false;
+        };
+
+        let remaining_turns = g.max_turns.saturating_sub(g.turn) as f64;
+        let mut best: Option<(f64, f64, u32, String, Item)> = None;
+        for city in city_ids {
+            if !g.cities[&city].queue.is_empty() {
+                continue;
+            }
+            let production = g.city_yields(city).production.max(0.1);
+            for item in g.producible_items(pid, city).into_iter().filter(|item| match item {
+                Item::District { district, .. } => {
+                    target == "diplomatic_quarter" && district == target
+                }
+                Item::Building { building } => building == target,
+                _ => false,
+            }) {
+                let build_turns =
+                    g.item_remaining_cost_for_city(pid, city, &item) / production;
+                if build_turns > remaining_turns + f64::EPSILON {
+                    continue;
+                }
+                let adjacent_envoy = matches!(
+                    &item,
+                    Item::District { pos, .. } if g.wdist(g.cities[&city].pos, *pos) == 1
+                );
+                // The Quarter unlocks, rather than itself supplying, the
+                // incremental stream. Include the Consulate's real cost in
+                // its horizon gate; an adjacent placement may instead pay one
+                // Envoy immediately on completion.
+                let stream_start = if target == "diplomatic_quarter" {
+                    build_turns
+                        + g.rules
+                            .buildings
+                            .get("consulate")
+                            .map(|building| g.game_speed.scale(building.cost) / production)
+                            .unwrap_or(remaining_turns)
+                } else {
+                    build_turns
+                };
+                let projected = self.projected_stream_envoys(
+                    g,
+                    pid,
+                    influence_per_turn,
+                    stream_start,
+                    remaining_turns,
+                );
+                let total_envoys = projected + f64::from(adjacent_envoy);
+                if total_envoys + f64::EPSILON < 1.0 {
+                    continue;
+                }
+                let key = format!("{item:?}");
+                let replace = best.as_ref().is_none_or(
+                    |(old_envoys, old_turns, old_city, old_key, _)| {
+                        total_envoys > *old_envoys + 1e-9
+                            || ((total_envoys - *old_envoys).abs() <= 1e-9
+                                && (stream_start < *old_turns - 1e-9
+                                    || ((stream_start - *old_turns).abs() <= 1e-9
+                                        && (city < *old_city
+                                            || (city == *old_city && key < *old_key)))))
+                    },
+                );
+                if replace {
+                    best = Some((total_envoys, stream_start, city, key, item));
+                }
+            }
+        }
+
+        let Some((_, _, city, _, item)) = best else {
+            return false;
+        };
+        g.apply(pid, &Action::Produce { city, item }).is_ok()
     }
 
     fn production_value(
@@ -13852,6 +14061,12 @@ impl AdvancedAi {
             if self.victory_planning {
                 self.redirect_repeatable_projects_for_force_gap(g, pid, &plan);
             }
+            // The adaptive controller normally hands empty cities straight to
+            // `BasicAi::cities`, bypassing `production_value`. Reserve one
+            // legal stage before the strategic and baseline governors fill
+            // those queues so the envoy-infrastructure treatment can actually
+            // reach play. The helper is an exact no-op while its flag is off.
+            self.prioritize_envoy_infrastructure(g, pid, &plan);
             // Explicit victory-target runs use strategic production directly;
             // otherwise the baseline governor remains the stronger general
             // policy in paired evaluation.
@@ -17427,6 +17642,186 @@ mod tests {
             expired, expired_stock,
             "income that begins after the game ends has no envoy value"
         );
+    }
+
+    #[test]
+    fn envoy_priority_reaches_adaptive_production_and_obeys_safety_gates() {
+        let mut game = Game::new_full(2, 20, 14, 71_005, 500, 1, false);
+        let settler = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+        let city = game.player_city_ids(0)[0];
+        game.players[0].government = Some("chiefdom".to_string());
+        game.players[0].techs.insert(crate::name!("mathematics"));
+        game.turn = 30;
+        let minor = game
+            .players
+            .iter()
+            .find(|player| player.is_minor && !player.is_barbarian && !player.is_free_city)
+            .map(|player| player.id)
+            .expect("fixture needs a city-state");
+        let rival = game
+            .players
+            .iter()
+            .find(|player| {
+                player.id != 0
+                    && player.alive
+                    && !player.is_minor
+                    && !player.is_barbarian
+                    && !player.is_free_city
+            })
+            .map(|player| player.id)
+            .expect("fixture needs another major");
+        let plan = StrategicPlan {
+            strategy: GrandStrategy::Science,
+            target_player: None,
+            target_city: None,
+            threatened_city: None,
+            desired_cities: 3,
+            assessed_turn: game.turn,
+            rush: false,
+        };
+        let mut treatment = AdvancedAi::new();
+        treatment.envoy_infrastructure = true;
+        treatment.envoy_priority = true;
+
+        let mut unmet = game.clone();
+        assert!(!treatment.prioritize_envoy_infrastructure(&mut unmet, 0, &plan));
+        assert!(unmet.cities[&city].queue.is_empty());
+
+        let mut recovery = game.clone();
+        recovery.record_contact(0, minor);
+        let mut recovery_plan = plan.clone();
+        recovery_plan.strategy = GrandStrategy::Recovery;
+        assert!(!treatment.prioritize_envoy_infrastructure(
+            &mut recovery,
+            0,
+            &recovery_plan
+        ));
+        assert!(recovery.cities[&city].queue.is_empty());
+
+        let mut threatened = game.clone();
+        threatened.record_contact(0, minor);
+        let mut threatened_plan = plan.clone();
+        threatened_plan.threatened_city = Some(city);
+        assert!(!treatment.prioritize_envoy_infrastructure(
+            &mut threatened,
+            0,
+            &threatened_plan
+        ));
+
+        let mut rushing = game.clone();
+        rushing.record_contact(0, minor);
+        let mut rush_plan = plan.clone();
+        rush_plan.rush = true;
+        assert!(!treatment.prioritize_envoy_infrastructure(
+            &mut rushing,
+            0,
+            &rush_plan
+        ));
+
+        let mut major_war = game.clone();
+        major_war.record_contact(0, minor);
+        major_war.record_contact(0, rival);
+        major_war
+            .apply(0, &Action::DeclareWar { player: rival })
+            .unwrap();
+        assert!(!treatment.prioritize_envoy_infrastructure(
+            &mut major_war,
+            0,
+            &plan
+        ));
+
+        let mut occupied = game.clone();
+        occupied.record_contact(0, minor);
+        let occupied_item = occupied
+            .producible_items(0, city)
+            .into_iter()
+            .find(|item| {
+                !matches!(item, Item::District { district, .. } if district == "diplomatic_quarter")
+            })
+            .expect("fixture needs an ordinary legal build");
+        occupied
+            .apply(
+                0,
+                &Action::Produce {
+                    city,
+                    item: occupied_item.clone(),
+                },
+            )
+            .unwrap();
+        assert!(!treatment.prioritize_envoy_infrastructure(
+            &mut occupied,
+            0,
+            &plan
+        ));
+        assert_eq!(occupied.cities[&city].queue.first(), Some(&occupied_item));
+
+        let mut quarter = game.clone();
+        quarter.record_contact(0, minor);
+        assert!(treatment.prioritize_envoy_infrastructure(&mut quarter, 0, &plan));
+        assert!(matches!(
+            quarter.cities[&city].queue.first(),
+            Some(Item::District { district, .. }) if district == "diplomatic_quarter"
+        ));
+
+        // Pin the routing boundary as well as the helper. Once the opening
+        // book is complete, an ordinary adaptive turn must reach this prepass
+        // before `BasicAi::cities` fills the empty queue.
+        let mut adaptive_turn = game.clone();
+        adaptive_turn.record_contact(0, minor);
+        let mut integrated = treatment.clone();
+        integrated.base.book_pos = 4;
+        integrated.plan = Some(plan.clone());
+        integrated.last_city_count = 1;
+        integrated.take_turn(&mut adaptive_turn, 0);
+        assert!(matches!(
+            adaptive_turn.cities[&city].queue.first(),
+            Some(Item::District { district, .. }) if district == "diplomatic_quarter"
+        ));
+
+        let mut consulate = game.clone();
+        consulate.record_contact(0, minor);
+        install_ai_test_district(&mut consulate, city, "diplomatic_quarter");
+        assert!(treatment.prioritize_envoy_infrastructure(
+            &mut consulate,
+            0,
+            &plan
+        ));
+        assert!(matches!(
+            consulate.cities[&city].queue.first(),
+            Some(Item::Building { building }) if building == "consulate"
+        ));
+
+        let mut chancery = game.clone();
+        chancery.record_contact(0, minor);
+        install_ai_test_district(&mut chancery, city, "diplomatic_quarter");
+        chancery.cities.get_mut(&city).unwrap().buildings.push(crate::name!("consulate"));
+        chancery.players[0]
+            .civics
+            .insert(crate::name!("diplomatic_service"));
+        assert!(treatment.prioritize_envoy_infrastructure(
+            &mut chancery,
+            0,
+            &plan
+        ));
+        assert!(matches!(
+            chancery.cities[&city].queue.first(),
+            Some(Item::Building { building }) if building == "chancery"
+        ));
+
+        let mut expired = game.clone();
+        expired.record_contact(0, minor);
+        expired.turn = expired.max_turns;
+        assert!(!treatment.prioritize_envoy_infrastructure(
+            &mut expired,
+            0,
+            &plan
+        ));
+        assert!(expired.cities[&city].queue.is_empty());
     }
 
     #[test]

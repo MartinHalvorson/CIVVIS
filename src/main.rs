@@ -39,7 +39,11 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// strategy-transition counts across 40 seat-games and 4,390 player-turns. No
 /// Elo protocol bump on #663's account, because nothing the ledger measures
 /// moved.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xbdc2_c5f6_0b70_bada;
+///
+/// #660 subsequently adds only default-off evaluator fields and a disabled
+/// production prepass. `AdvancedAi::legacy()` leaves those gates off; the merged
+/// source contract is re-pinned only after its fixed-prefix behavior check.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x93d9_195d_ff70_d727;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {

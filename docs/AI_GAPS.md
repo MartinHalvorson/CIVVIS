@@ -337,3 +337,52 @@ no tested replacement cleared the deployment gate.
 For implementation details see `docs/AI_GUIDE.md`; for the run-by-run evidence
 and its corrections see `docs/EVAL.md`; for the rating/seating contract see
 `docs/LEAGUE.md`.
+
+## 2026-07-31 full-prefix resolution
+
+The fixed-prefix follow-through strengthens the audit's negative conclusion.
+Neither a 120-map direct envoy-production treatment nor a 300-map live-policy
+control cleared the unchanged matrix rule. Both pointed +30 Elo-equivalent on
+deployment, and the envoy treatment raised deployment envoys from 14.3 to 19.3
+and suzerainty share from 0.41 to 0.70, but both Wilson lower bounds still
+included 50%. Strategy commitment regressed over 120 maps, and champion-weight
+commitment regressed sharply. Stock `advanced` therefore remains the production
+incumbent by failed-replacement logic, not by a claim of universal superiority.
+
+The work also found a measurement defect with direct implications for future
+research: extending `--pairs` used to move the deployment seed prefix because
+the profile offset depended on sample size. Matrix profile seeds now have a
+constant stride. Effective controller aliases and champion consumption are also
+canonicalized through the same table used by construction; degraded artifacts
+and effective self-play fail closed in promotion mode.
+
+## Next ranked work after the full-prefix audit
+
+1. **Finish the structural evaluator specification.** Replace stringly factory
+   selection with a fallible `AgentSpec`/`builtin_arm` boundary that compares
+   every behavior-defining axis before a run. The shared alias resolver closes
+   the observed champion and historical-alias failures, but it is not yet the
+   exhaustive typed specification described in `EVAL_INTEGRITY.md`.
+2. **Test one rational composite, pre-registered.** Combine the live policy deck
+   with direct envoy production, because the two controls independently moved
+   deployment outcomes and the latter demonstrably moved the resource. Use new
+   stable, disjoint 300+ map prefixes, preserve compact safety, and record build
+   opportunity costs. Do not run a parameter sweep on the confirmation seeds.
+3. **Build a fog-honest major controller.** Make a major civilization consume
+   the existing observation, memory, and belief surfaces. This remains the
+   largest rules-integrity gap and is prerequisite to honest learned policies.
+4. **Learn action-conditioned advantage with abstention.** Expand the
+   counterfactual action corpus, reserve deployment as an untouched calibration
+   set, and fall back to scripted play out of distribution. A state-value argmax
+   is not an action-value policy.
+5. **Search the full expansion investment.** Model settler production,
+   population, escort, travel, settlement, and payback together. The oracle
+   ceiling is large, but seven city-target treatments failed because the oracle
+   removed those costs.
+6. **Price strategic search on deployment.** Compare the searching controller
+   with a genome-matched sequential control and keep it out of the live league
+   unless its measured gain justifies its roughly 6.4× turn cost.
+
+This supersedes the ordering immediately above: evaluator trust comes first,
+and the now-resolved policy/envoy prefixes justify one bounded composite before
+broader search.
