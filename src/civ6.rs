@@ -724,6 +724,43 @@ mod tests {
         assert_eq!(map_for_civvis("grand_canals"), None);
     }
 
+    /// Every script in the roster is a file this installation actually has.
+    ///
+    /// The roster is a transcription, so the failure it is exposed to is a
+    /// typo — `Small_Continents.lua` is spelled with an underscore where the
+    /// game's own name for it has a space, and `InlandSea.lua` has neither.
+    /// A wrong name is not refused at the door: the run configures, launches,
+    /// and comes up on whatever map the game falls back to, three minutes
+    /// later and several screens away from the cause.
+    ///
+    /// This can only run where the game is, so it is a check rather than an
+    /// assertion about the world: on a machine with no installation (CI is
+    /// Linux) it passes without looking, and `Host::probe` is what tells a
+    /// person the mode is unavailable there.
+    #[test]
+    fn every_map_in_the_roster_exists_on_an_install_that_is_here() {
+        let Some(install) = install_dir() else {
+            return; // no game on this computer; the mode is refused, not broken
+        };
+        // Base ships the stock scripts, the expansions add and override.
+        let assets = install.join("Civ6.app/Contents/Assets");
+        let dirs = [
+            assets.join("Base/Assets/Maps"),
+            assets.join("DLC/Expansion1/Maps"),
+            assets.join("DLC/Expansion2/Maps"),
+        ];
+        if !dirs.iter().any(|dir| dir.is_dir()) {
+            return; // an install laid out some other way, or a partial one
+        }
+        for spec in MAPS {
+            assert!(
+                dirs.iter().any(|dir| dir.join(spec.id).is_file()),
+                "{} is in the lobby's roster but no such script is installed",
+                spec.id
+            );
+        }
+    }
+
     /// The two ladders are the same eight rungs in the same order, because ours
     /// was built from theirs. A rung added to one and not the other would hand
     /// out a handicap nobody chose.

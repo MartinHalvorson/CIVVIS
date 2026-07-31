@@ -61,11 +61,19 @@ of its list.
 The map roster is not read from the installation. It is the `Maps` rows of
 `Base/Assets/Configuration/Data/StandardMaps.xml` plus
 `DLC/Expansion1|2/Config/*_StandardMaps.xml`, transcribed with their
-`SortIndex` order into `src/civ6.rs` and checked against the `.lua` files
-present on this install by `tools/civ6_setup.py`. Reading them live would make
-the lobby's contents depend on a game being installed on whatever machine
-serves the page, which is exactly backwards: the mode is offered, then refused
-with a reason.
+`SortIndex` order into `src/civ6.rs`. Reading them live would make the lobby's
+contents depend on a game being installed on whatever machine serves the page,
+which is exactly backwards: the mode is offered everywhere, then refused with a
+reason where it cannot run.
+
+A transcription's failure mode is a typo, and a wrong script name is not
+refused at the door — the run configures, launches, and comes up on whatever
+the game falls back to, three minutes later and several screens from the cause.
+The names are not guessable: `Small_Continents.lua` takes an underscore where
+the game's own name for that world has a space, and `InlandSea.lua` has
+neither. So `every_map_in_the_roster_exists_on_an_install_that_is_here` checks
+each one against the `.lua` files actually present, and passes without looking
+where there is no installation to check against — which is every CI runner.
 
 Everything else in the panel is hidden while the mode is selected, because
 nothing carries it:
