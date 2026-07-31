@@ -11646,6 +11646,39 @@ impl AdvancedAi {
             self.force_groups_dirty |= acted && changes_force_picture;
             return acted;
         }
+        // ★★★★★ AN ESCORT CATCHES UP BEFORE IT DOES ANYTHING ELSE, AND THEN STAYS.
+        //
+        // ⚠ FIRST VERSION: the escort left, and the settler was captured that turn.
+        // Run `civvis-20260731T055749Z` t20 — warrior and settler on the SAME TILE at
+        // (54,9), barbarian scout adjacent at (53,9); the warrior went off to fight,
+        // and at t21 the settler appears in the export's `hostiles` list at (55,8).
+        // A civilian stacked with a soldier cannot be taken until the soldier is
+        // beaten, so the escort's job is to BE THERE. Once alongside, it holds.
+        //
+        // ⚠⚠ SECOND VERSION: the escort never arrived. Placed after `doctrine_action`
+        // it was outbid every turn by whatever barbarian happened to be attackable, so
+        // it kept starting the journey and never finished it. From `why.log` on run
+        // `civvis-20260731T070956Z`: "Sending spearman out with the settler at (43,14),
+        // 5 tiles behind it" at t79, and still "4 tiles behind it" at t113 — thirty-four
+        // turns of a permanently-2-tiles-late escort while the settler walked in
+        // circles. A soldier that has been assigned to a settler is NOT available for
+        // opportunistic attacks until it has arrived; that is the whole content of the
+        // assignment.
+        //
+        // Healing still comes first, above: a wounded escort that dies on the way is
+        // not an escort. And this is only reached while `unwanted_settler_adjacent` is
+        // false, so capturing an enemy civilian standing right there still wins.
+        if let Some(guarded) = self.settler_escorts.get(&uid).copied() {
+            if let Some(spos) = g.units.get(&guarded).map(|settler| settler.pos) {
+                if g.wdist(unit.pos, spos) > 1 {
+                    if self.base.step_toward(g, pid, uid, spos) {
+                        return true;
+                    }
+                } else {
+                    return self.base.fortify_or_stop(g, pid, uid);
+                }
+            }
+        }
         if let Some(action) = self.base.doctrine_action(g, pid, uid) {
             let changes_force_picture = matches!(
                 &action,
@@ -11685,33 +11718,6 @@ impl AdvancedAi {
                         }
                     }
                     return self.base.fortify_or_stop(g, pid, uid);
-                }
-            }
-            // Catch up with the settler this unit is walking out with, and then STAY
-            // WITH IT. Only while no major war is on: once there is a front, the front
-            // is where an army belongs, and `campaign_staging_step` below owns that.
-            //
-            // ⚠⚠ THE FIRST VERSION FELL THROUGH ONCE IT WAS ALONGSIDE, reasoning that
-            // an escort next to a barbarian should still fight it. What that actually
-            // produced, on run `civvis-20260731T055749Z`: at turn 20 the warrior and
-            // the settler stood on the SAME TILE at (54,9) with a barbarian scout
-            // adjacent at (53,9); the warrior went off to fight, and at turn 21 the
-            // settler appears in the export's `hostiles` list at (55,8) — captured.
-            // The escort left, and the thing it was escorting was taken that turn.
-            //
-            // A civilian stacked with a soldier cannot be taken until the soldier is
-            // beaten. So the escort's job is to BE THERE, and it holds. It gives up
-            // nothing real: an adjacent enemy that attacks the stack has to fight the
-            // escort anyway, on the escort's terms.
-            if let Some(guarded) = self.settler_escorts.get(&uid).copied() {
-                if let Some(spos) = g.units.get(&guarded).map(|settler| settler.pos) {
-                    if g.wdist(unit.pos, spos) > 1 {
-                        if self.base.step_toward(g, pid, uid, spos) {
-                            return true;
-                        }
-                    } else {
-                        return self.base.fortify_or_stop(g, pid, uid);
-                    }
                 }
             }
             if let Some(acted) = self.campaign_staging_step(g, pid, uid, plan) {
