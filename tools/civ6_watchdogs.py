@@ -151,6 +151,36 @@ def idle_stack(events: list[dict], frozen_turns: int = 20) -> dict:
         per_turn.append((turn, turn_units, turn_stuck, turn_surplus))
         prev = {u["id"]: (u["x"], u["y"]) for u in units if u.get("id") is not None}
 
+    # ★★★★ HOW FAR THE EMPIRE REACHES. A stack on the city centre is one way an army
+    # goes unused; the other is an army that never leaves the neighbourhood, and the
+    # idle-stack fraction cannot see it — every unit moves a tile each turn and none of
+    # them goes anywhere. It is the failure behind `met` stalling at 1-2 of 3 rivals,
+    # which makes domination unreachable no matter how good the siege code is: no
+    # contact, no visible rival city, nothing for the army to attack.
+    #
+    # Measured on run civvis-20260731T075743Z at turn 77: TWELVE units alive, five of
+    # them archers, and the FURTHEST from any of our cities was 2 tiles (mean 1.2).
+    reach = {"furthest": None, "mean": None, "units": 0}
+    if states:
+        last = states[-1]
+        centres = [(c["x"], c["y"]) for c in (last.get("cities") or [])]
+        units = last.get("units") or []
+        if centres and units:
+            def offset_distance(a, b):
+                def axial(p):
+                    col, row = p
+                    return col - (row - (row & 1)) // 2, row
+                (aq, ar), (bq, br) = axial(a), axial(b)
+                return max(abs(aq - bq), abs(ar - br), abs((-aq - ar) - (-bq - br)))
+            spread = [
+                min(offset_distance((u["x"], u["y"]), c) for c in centres) for u in units
+            ]
+            reach = {
+                "furthest": max(spread),
+                "mean": round(sum(spread) / len(spread), 1),
+                "units": len(spread),
+            }
+
     frozen = [
         (uid, kinds.get(uid, "?"), last_seen[uid] - first)
         for uid, first in first_seen.items()
@@ -163,6 +193,7 @@ def idle_stack(events: list[dict], frozen_turns: int = 20) -> dict:
         "surplus_on_centres_unit_turns": surplus_turns,
         "worst_stack": worst_stack,
         "worst_stack_at": worst_at,
+        "reach": reach,
         "frozen_units": len(frozen),
         "frozen_by_kind": dict(Counter(kind for _, kind, _ in frozen).most_common()),
         "frozen_worst": sorted(frozen, key=lambda row: -row[2])[:4],
@@ -321,6 +352,13 @@ def verdicts(report: dict, stuck_max: float, agree_min: float) -> list[str]:
             f"IDLE STACK: {idle['stuck_unit_turns']}/{idle['unit_turns']} unit-turns "
             f"({frac:.0%}) motionless on a city centre, worst stack "
             f"{idle['worst_stack']} at {idle['worst_stack_at']}")
+    reach = idle.get("reach") or {}
+    if reach.get("furthest") is not None and reach["furthest"] <= 3 and reach["units"] >= 6:
+        out.append(
+            f"THE EMPIRE DOES NOT REACH: {reach['units']} units and the furthest is "
+            f"{reach['furthest']} tiles from a city (mean {reach['mean']}). Nothing is "
+            f"looking for anybody — this is what makes `met` stall and domination "
+            f"unreachable.")
     if idle.get("frozen_units"):
         out.append(
             f"FROZEN UNITS: {idle['frozen_units']} of {idle['units_seen']} units never "
@@ -393,6 +431,9 @@ def main() -> int:
             handle.write(json.dumps(report, sort_keys=True, default=str) + "\n")
         idle = report["idle_stack"]
         print(f"{run.name}")
+        reach = idle.get("reach") or {}
+        print(f"  reach: furthest {reach.get('furthest')} tiles from a city, "
+              f"mean {reach.get('mean')}, over {reach.get('units')} units at the last turn")
         print(f"  idle: stuck {idle['stuck_unit_turns']}/{idle['unit_turns']} unit-turns"
               f" ({idle['stuck_fraction']})  surplus-on-centres "
               f"{idle['surplus_on_centres_unit_turns']}  worst stack {idle['worst_stack']}"
