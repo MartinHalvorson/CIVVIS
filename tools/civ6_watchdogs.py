@@ -99,6 +99,11 @@ def idle_stack(events: list[dict], frozen_turns: int = 20) -> dict:
     prev: dict[int, tuple[int, int]] = {}
     first_seen: dict[int, int] = {}
     last_seen: dict[int, int] = {}
+    # ⚠ NAME THE KIND. "2 of 36 units never moved" is a number nobody can act on;
+    # "a TRADER stood still for 113 turns" names a whole capability that does not
+    # cross the bridge — Civ 6 trade routes are not actuated, so every trader CIVVIS
+    # builds is dead weight for the rest of the game. The count alone read as noise.
+    kinds: dict[int, str] = {}
     ever_moved: set[int] = set()
     unit_turns = 0
     stuck_turns = 0
@@ -119,6 +124,7 @@ def idle_stack(events: list[dict], frozen_turns: int = 20) -> dict:
             if uid is None:
                 continue
             plot = (unit.get("x"), unit.get("y"))
+            kinds[uid] = unit.get("kind", "?")
             first_seen.setdefault(uid, turn)
             last_seen[uid] = turn
             occupancy[plot].append(uid)
@@ -146,7 +152,8 @@ def idle_stack(events: list[dict], frozen_turns: int = 20) -> dict:
         prev = {u["id"]: (u["x"], u["y"]) for u in units if u.get("id") is not None}
 
     frozen = [
-        uid for uid, first in first_seen.items()
+        (uid, kinds.get(uid, "?"), last_seen[uid] - first)
+        for uid, first in first_seen.items()
         if uid not in ever_moved and (last_seen[uid] - first) >= frozen_turns
     ]
     return {
@@ -157,6 +164,8 @@ def idle_stack(events: list[dict], frozen_turns: int = 20) -> dict:
         "worst_stack": worst_stack,
         "worst_stack_at": worst_at,
         "frozen_units": len(frozen),
+        "frozen_by_kind": dict(Counter(kind for _, kind, _ in frozen).most_common()),
+        "frozen_worst": sorted(frozen, key=lambda row: -row[2])[:4],
         "units_seen": len(first_seen),
         "per_turn_tail": per_turn[-8:],
     }
@@ -315,7 +324,8 @@ def verdicts(report: dict, stuck_max: float, agree_min: float) -> list[str]:
     if idle.get("frozen_units"):
         out.append(
             f"FROZEN UNITS: {idle['frozen_units']} of {idle['units_seen']} units never "
-            f"moved once in their whole life")
+            f"moved once in their whole life — {idle.get('frozen_by_kind')} "
+            f"(longest: {idle.get('frozen_worst')})")
     mirror = report.get("mirror") or {}
     if mirror.get("error"):
         out.append(f"MIRROR NOT CHECKED: {mirror['error']}")
