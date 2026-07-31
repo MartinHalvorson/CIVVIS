@@ -160,6 +160,19 @@ def idle_stack(events: list[dict], frozen_turns: int = 20) -> dict:
     #
     # Measured on run civvis-20260731T075743Z at turn 77: TWELVE units alive, five of
     # them archers, and the FURTHEST from any of our cities was 2 tiles (mean 1.2).
+    # ★★★★ CITIES LOST, WHICH CAPS THE EMPIRE EXACTLY AS HARD AS SETTLERS DYING.
+    # A ladder that reads "peak 4, final 3" has founded four cities and been unable to
+    # HOLD four, and those are different repairs. Recorded with the turn and the plot
+    # so the event stream around it can be read.
+    lost: list = []
+    previous: set | None = None
+    for state in states:
+        held = {(c["x"], c["y"]) for c in (state.get("cities") or [])}
+        if previous is not None:
+            for plot in sorted(previous - held):
+                lost.append({"turn": state.get("turn"), "plot": plot})
+        previous = held
+
     reach = {"furthest": None, "mean": None, "units": 0}
     if states:
         last = states[-1]
@@ -194,6 +207,7 @@ def idle_stack(events: list[dict], frozen_turns: int = 20) -> dict:
         "worst_stack": worst_stack,
         "worst_stack_at": worst_at,
         "reach": reach,
+        "cities_lost": lost,
         "frozen_units": len(frozen),
         "frozen_by_kind": dict(Counter(kind for _, kind, _ in frozen).most_common()),
         "frozen_worst": sorted(frozen, key=lambda row: -row[2])[:4],
@@ -352,6 +366,11 @@ def verdicts(report: dict, stuck_max: float, agree_min: float) -> list[str]:
             f"IDLE STACK: {idle['stuck_unit_turns']}/{idle['unit_turns']} unit-turns "
             f"({frac:.0%}) motionless on a city centre, worst stack "
             f"{idle['worst_stack']} at {idle['worst_stack_at']}")
+    if idle.get("cities_lost"):
+        out.append(
+            f"CITIES LOST: {len(idle['cities_lost'])} — {idle['cities_lost']}. "
+            f"Founding a city and holding it are different problems and the peak "
+            f"count hides the second one.")
     reach = idle.get("reach") or {}
     if reach.get("furthest") is not None and reach["furthest"] <= 3 and reach["units"] >= 6:
         out.append(
