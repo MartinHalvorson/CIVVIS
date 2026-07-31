@@ -14,7 +14,7 @@ and seed set.
 
 ```bash
 civvis soak --games 12 --players 4 --turns 350 --start-seed 100
-civvis tournament --ais advanced-20260731=advanced,advanced_v1,basic-20260730=basic,random-20260730=random \
+civvis tournament --ais advanced-20260731-settlement=advanced,advanced_v1,basic-20260731-settlement=basic,random-20260730=random \
   --games 40 --players 4 --quiet
 victory_eval --games 2 --players 2       # all six targets, stock turn limits
 ai_eval advanced basic --pairs 100 --seed 4000   # paired, low-variance
@@ -6599,7 +6599,98 @@ cleared 1/2 required profiles`. This is a full-prefix null, not a reason to
 search a more favorable seed or tune the switch after the fact. The arm remains
 evaluator-only and production `advanced` is unchanged.
 
+## 2026-07-31 — protocol-v3 corrected-settlement baseline
+
+The island-settlement repair changes the shared `BasicAi`/`AdvancedAi` path:
+passable natural wonders no longer remain targets that `Game::can_found_city`
+will reject. `advanced_v1` shares that implementation, so the prior
+protocol-v2 ledger is preserved read-only at `data/elo_ratings_v2.json` and a
+fresh protocol-v3 ledger replaces the default; the two experiments must not be
+mixed.
+
+```sh
+cargo run --profile ci --locked --bin civvis -- tournament --games 40 --players 4 --quiet --jobs 8
+```
+
+The fresh, replay-verified 40-game Standard/Pangaea baseline rates
+`advanced-20260731-settlement` at 1615.0 online Elo and 1643.2 direct Elo
+against `advanced_v1`, from a 28/40 pair score (70.0%, 95% Wilson
+54.6–81.9%). `basic-20260731-settlement` is a new identity as well because the
+same corrected predicate changes Basic AI behavior. This records a new
+controller definition; it is not an effect-size claim for the bug fix.
+
+## 2026-07-31 — a deployment-capable champion: eleven genes reverted, three matrices
+
+`docs/EVAL.md`'s matrix table records the embedded gen-14 champion at **+51 on
+the compact promotion profile and −30 at deployment** over 120 maps per
+profile, verdict retain stock, and the dated section above attributes that split
+entirely to **eleven of its forty genes** — `docs/GENOME.md`'s `economy` (7)
+plus `expansion` (4). This replaces `data/evolved/best.json` with the same
+genome carrying those eleven at `Weights::default()` and the other twenty-nine
+untouched.
+
+### Three matrices, all `PASS`, under the unmodified rule
+
+```sh
+ai_eval advanced_evolved advanced --matrix --pairs 300 --jobs 5 --seed <seed>
+```
+
+| run | agent built from | profile | paired score | Elo-equivalent | directions | sign p | anytime-valid | verdict |
+|---|---|---|---|---:|---:|---:|---|---|
+| seed 67,000,000 | `3916358` | compact | 55.6% (95% Wilson 49.9–61.1) | +39 | 96–39 | 0.0000 | e=7.8e3, map 159 | ACCEPT |
+| | | deployment | 57.8% (95% Wilson 52.1–63.2) | +54 | 120–44 | 0.0000 | e=1.9e6, map 27 | **PASS** |
+| seed 70,000,000 | `3916358` | compact | 57.7% (95% Wilson 52.0–63.1) | +54 | 107–32 | 0.0000 | e=2.8e9, map 73 | **PASS** |
+| | | deployment | 56.2% (95% Wilson 50.6–61.7) | +44 | 117–63 | 0.0001 | e=3.2e3, map 149 | **PASS** |
+| seed 70,000,000 | **current tip** | compact | 57.5% (95% Wilson 51.8–63.0) | +53 | 106–32 | 0.0000 | e=2.8e8, map 80 | **PASS** |
+| | | deployment | 56.6% (95% Wilson 50.9–62.1) | +46 | 118–63 | 0.0001 | e=6.7e3, map 146 | **PASS** |
+
+Every one returns `multi-profile promotion gate: PASS`. **1,800 maps, 3,600
+games.**
+
+### Why three and not one
+
+The seed-67,000,000 run **extended a prefix after an inconclusive 120-map read
+on those same maps** (55.2%/+36 compact, 56.9%/+48 deployment, both significant
+in direction, deployment short only of the fixed-*n* Wilson bound at 47.9%).
+Extending after a promising read biases the estimate upward — this file records
+a +207 that re-measured to +86 — so **the +54 from that run is a discovery
+estimate and is not the quotable number**. Seed 70,000,000 is the disjoint
+confirmation.
+
+The third run exists because the first two were built from `3916358` and
+seventeen commits landed while they ran, including **`065beec` "Prevent
+settlers stalling beside viable island sites" (#686)**, which changes settler
+behaviour in `src/ai.rs` and `src/ai/advanced.rs` — the same subsystem the
+eleven reverted genes govern. So the agent measured was not the agent that
+ships. Re-running at the **same seed** isolates that change: pre-#686 reads
+57.7%/56.2% and post-#686 reads 57.5%/56.6%, a difference of 0.2 and 0.4
+points. **#686 does not disturb this effect**, and the confirmation is on the
+shipping agent.
+
+The defensible summary is the two seed-70,000,000 confirmations: roughly
+**+53 on compact and +45 at deployment**, against an incumbent measured at +51
+and −30.
+
+### What the file is, and what it touches
+
+All forty genes are written explicitly rather than relying on serde defaults,
+so a future change to `Weights::default()` cannot move the shipped champion
+silently. The explicit form was checked gene-for-gene against the gated form
+and then run beside it on a shared five-map prefix, producing **byte-identical**
+evaluator output.
+
+⚠ `data/evolved/best.json` is `include_str!`'d by `src/evolve.rs`, so this one
+file updates both the on-disk artifact and the embedded fallback, and it is
+resolved by 38 evaluator arms, the league seeding and that fallback. **Every
+strength number measured against `advanced_evolved` before this change is
+measured against a different agent after it.**
 ## 2026-07-31 — why the shipped genome's sign flips between the promotion profiles
+
+⚠⚠ **HISTORICAL: "the shipped genome" below means the gen-14 champion as it
+stood before the entry above replaced it.** These sections are the measurement
+and the attribution that *led* to that replacement; every number in them was
+taken against the pre-swap artifact. For what ships now, read the deployment-
+capable champion entry above.
 
 ⚠ **The result being explained here is already recorded and this section does
 not claim it.** The matrix table above has `advanced_evolved` at 120 maps per

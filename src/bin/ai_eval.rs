@@ -1,8 +1,8 @@
 //! Paired, seat-balanced head-to-head evaluator for built-in AIs.
 use civvis::ai::{Ai, ExpansionCensus};
 use civvis::elo::{
-    builtin_ai, builtin_arm, builtin_provenances, collapsed_entrants, AgentProvenance,
-    ARTIFACT_DIR, BUILTIN_AIS, EVAL_ONLY_AIS,
+    builtin_ai_degraded, builtin_ai_strict, builtin_arm, builtin_provenances, collapsed_entrants,
+    AgentProvenance, BuiltinAiBuildError, ARTIFACT_DIR, BUILTIN_AIS, EVAL_ONLY_AIS,
 };
 use civvis::game::{default_difficulty, Action, Game, GameOptions, VictoryConditions};
 use civvis::rules::Rules;
@@ -77,6 +77,21 @@ fn game_score(winner: Option<usize>, seats: &[&str], challenger: &str) -> f64 {
     winner
         .and_then(|pid| seats.get(pid))
         .map_or(0.5, |name| if *name == challenger { 1.0 } else { 0.0 })
+}
+
+/// Construct one evaluator seat through the same strict boundary that guards
+/// the command-line preflight. `--allow-degraded` is intentionally the only
+/// route to the explicitly named fallback factory.
+fn evaluator_ai(
+    name: &str,
+    seed: u64,
+    allow_degraded: bool,
+) -> Result<Box<dyn Ai>, BuiltinAiBuildError> {
+    if allow_degraded {
+        Ok(builtin_ai_degraded(name, seed))
+    } else {
+        builtin_ai_strict(name, seed)
+    }
 }
 
 /// Challenger share of terminal Civilization score across the evaluated
@@ -737,6 +752,46 @@ fn text(args: &[String], flag: &str, default: &str) -> String {
         .unwrap_or_else(|| default.to_string())
 }
 
+/// What the number under the gate is actually worth, said out loud.
+///
+/// The gate decides; this describes. Separating them is the whole of R3: a
+/// promotion gate accepts when the observed effect is large enough, so
+/// conditioning on "passed" conditions on the estimate being large, and every
+/// headline size in this repository is inflated by an amount that grows as the
+/// true effect shrinks. `+207` against a re-measured `+86` is the signature.
+///
+/// ⚠ Every branch must contain a token that `unevidenced_effect_sizes` in
+/// `tools/civvis_collab.py` accepts as provenance — each one names a seed. If
+/// it did not, this tool would print numbers the repository's own docs gate
+/// then refuses, and the two halves of R3 would disagree.
+fn effect_size_line(
+    elo: f64,
+    verdict: PromotionVerdict,
+    seed: u64,
+    confirm: Option<u64>,
+) -> String {
+    let selected_on_size = matches!(
+        verdict,
+        PromotionVerdict::Promote | PromotionVerdict::Retain
+    );
+    match (confirm, selected_on_size) {
+        (Some(prior), _) => format!(
+            "effect size:    {elo:+.0} (CONFIRMED — measured on seed {seed}, disjoint from the \
+             discovery seed {prior}; quotable, and quote this estimate rather than the \
+             discovery one)"
+        ),
+        (None, true) => format!(
+            "effect size:    {elo:+.0} (DISCOVERY ESTIMATE — selected on passing the gate, so \
+             biased upward; not quotable until confirmed on a disjoint seed: rerun with \
+             --seed <new> --confirm {seed})"
+        ),
+        (None, false) => format!(
+            "effect size:    {elo:+.0} (not gate-selected — the gate did not fire, so this \
+             estimate is not conditioned on being large; still a single run on seed {seed})"
+        ),
+    }
+}
+
 fn number(args: &[String], flag: &str, default: i64) -> i64 {
     args.iter()
         .position(|a| a == flag)
@@ -1056,9 +1111,9 @@ fn main() {
     // loaded. Say what each entrant resolved to before playing anything, so
     // a result is never filed under an agent that was never in the game.
     let artifact_dir = text(&args, "--artifact-dir", ARTIFACT_DIR);
-    // `builtin_provenance`'s contract is "resolve what `builtin_ai` will
-    // actually construct from `dir`" -- but `builtin_ai(name, seed)` takes no
-    // directory. Every one of its arms resolves the constant `ARTIFACT_DIR`,
+    // `builtin_provenance`'s contract is "resolve what the production builtin
+    // factory will actually construct from `dir`" -- but that factory takes
+    // no directory. Every one of its arms resolves the constant `ARTIFACT_DIR`,
     // and the agent constructors below it (`StrategicAi::with_weights`,
     // `PolicyAi::with_weights`, `ProductionSearchAi::with_weights`) each load
     // their own net from that same constant. So pointing this flag somewhere
@@ -1138,6 +1193,7 @@ fn main() {
             std::process::exit(3);
         }
     }
+    let allow_degraded = args.iter().any(|arg| arg == "--allow-degraded");
     if !collapsed.is_empty() {
         eprintln!("refusing to evaluate two names that resolve to one agent");
         std::process::exit(2);
@@ -1169,6 +1225,34 @@ fn main() {
     let width = number(&args, "--width", 24).max(8) as i32;
     let height = number(&args, "--height", 16).max(8) as i32;
     let seed = number(&args, "--seed", 4000).max(0) as u64;
+    // A gate is a decision procedure. Its point estimate is not an estimator.
+    //
+    // Every published effect size here is conditioned on having passed a gate,
+    // so E[observed | PASS] > true effect — the winner's curse. It shows: +207
+    // re-measured to +86, +92 to +61, and `strategic_deep`'s +45 to -8, which
+    // #482 excluded outright. Direction and significance replicate; the size
+    // fails, always downward. See `docs/EVAL_INTEGRITY.md` §4.
+    //
+    // `--confirm <prior-seed>` is the claim that this run is the *replication*
+    // of one already made elsewhere. It must name a different seed, because a
+    // rerun on the same seed re-measures the same maps and confirms nothing.
+    let confirm_seed = args
+        .iter()
+        .position(|arg| arg == "--confirm")
+        .map(|index| match args.get(index + 1).and_then(|v| v.parse::<u64>().ok()) {
+            Some(prior) if prior != seed => prior,
+            Some(_) => {
+                eprintln!(
+                    "--confirm {seed} names the seed this run already uses; a confirmation \
+                     must be measured on maps the discovery was not found on"
+                );
+                std::process::exit(2);
+            }
+            None => {
+                eprintln!("--confirm needs the seed of the run being confirmed");
+                std::process::exit(2);
+            }
+        });
     // The exhibition varies all three world axes and pins its enabled victory
     // set. An evaluator that cannot name them silently measures a different
     // game: historically Pangaea/flat/fixed-roster/all-victories, whatever the
@@ -1290,7 +1374,13 @@ fn main() {
                 .iter()
                 .map(|p| {
                     let name = if p.id < players { seats[p.id] } else { "basic" };
-                    builtin_ai(name, game_seed + p.id as u64)
+                    evaluator_ai(name, game_seed + p.id as u64, allow_degraded).unwrap_or_else(
+                        |error| {
+                            panic!(
+                                "evaluator preflight permitted an unavailable arm {name:?}: {error}"
+                            )
+                        },
+                    )
                 })
                 .collect();
             let traces = run_traced_game(&mut game, &mut ais, players);
@@ -1486,6 +1576,19 @@ fn main() {
             inference.maps,
         ),
     }
+    // Separate the decision from the estimate, in the tool rather than in the
+    // discipline. The gate above decides; this line says what the number under
+    // it is worth, and it is deliberately printed even when the gate did not
+    // fire, so a reader never has to remember which verdicts select on size.
+    //
+    // The strings here are matched by `unevidenced_effect_sizes` in
+    // `tools/civvis_collab.py`: anything this prints must be something that
+    // gate already accepts as provenance, or the tool would emit numbers the
+    // repository's own docs check then refuses.
+    println!(
+        "{}",
+        effect_size_line(inference.elo, inference.verdict, seed, confirm_seed)
+    );
     let terminal_mean = pair_terminal_scores.iter().sum::<f64>() / pairs as f64;
     let terminal_directions = directional_outcomes(&pair_terminal_scores);
     let terminal_sign_p = exact_sign_p(
@@ -1777,6 +1880,60 @@ fn main() {
 mod tests {
     use super::*;
     use civvis::rng::Rng;
+
+    #[test]
+    fn a_gate_passing_size_is_labelled_the_discovery_estimate_it_is() {
+        let line = effect_size_line(207.0, PromotionVerdict::Promote, 4000, None);
+        assert!(line.contains("DISCOVERY ESTIMATE"), "{line}");
+        assert!(line.contains("biased upward"), "{line}");
+        assert!(line.contains("--confirm 4000"), "{line}");
+
+        // RETAIN selects on size in the other direction and is equally biased.
+        let retained = effect_size_line(-207.0, PromotionVerdict::Retain, 4000, None);
+        assert!(retained.contains("DISCOVERY ESTIMATE"), "{retained}");
+    }
+
+    #[test]
+    fn a_size_the_gate_did_not_select_says_so_rather_than_claiming_confirmation() {
+        for verdict in [PromotionVerdict::Inconclusive, PromotionVerdict::Insufficient] {
+            let line = effect_size_line(12.0, verdict, 4000, None);
+            assert!(line.contains("not gate-selected"), "{line}");
+            assert!(!line.contains("DISCOVERY ESTIMATE"), "{line}");
+            assert!(!line.contains("CONFIRMED"), "{line}");
+        }
+    }
+
+    #[test]
+    fn a_confirmation_names_both_seeds_and_is_marked_quotable() {
+        let line = effect_size_line(86.0, PromotionVerdict::Promote, 77_200_000, Some(4000));
+        assert!(line.contains("CONFIRMED"), "{line}");
+        assert!(line.contains("77200000"), "{line}");
+        assert!(line.contains("4000"), "{line}");
+        assert!(line.contains("quotable"), "{line}");
+    }
+
+    /// The two halves of R3 have to agree, or this tool prints numbers the
+    /// repository's own documentation gate then refuses. `EVIDENCE_RE` in
+    /// `tools/civvis_collab.py` accepts a seed as provenance; every branch here
+    /// names one.
+    #[test]
+    fn every_effect_size_line_carries_provenance_the_docs_gate_accepts() {
+        let verdicts = [
+            PromotionVerdict::Promote,
+            PromotionVerdict::Retain,
+            PromotionVerdict::Inconclusive,
+            PromotionVerdict::Insufficient,
+        ];
+        for verdict in verdicts {
+            for confirm in [None, Some(4000)] {
+                let line = effect_size_line(45.0, verdict, 90_000, confirm);
+                assert!(
+                    line.contains("seed"),
+                    "no provenance token the docs gate accepts: {line}",
+                );
+            }
+        }
+    }
 
     #[test]
     fn turn_list_is_stable_across_worker_completion_order() {
@@ -2215,7 +2372,8 @@ mod tests {
                     .iter()
                     .map(|p| {
                         let name = if p.id < 2 { seats[p.id] } else { "basic" };
-                        civvis::elo::builtin_ai(name, seed + p.id as u64)
+                        evaluator_ai(name, seed + p.id as u64, false)
+                            .expect("scripted evaluator fixture must construct")
                     })
                     .collect();
                 run_traced_game(&mut game, &mut ais, 2);
@@ -2227,6 +2385,19 @@ mod tests {
             })
         };
         assert_eq!(play(1), play(4));
+    }
+
+    #[test]
+    fn evaluator_factory_requires_the_strict_path_without_its_escape_flag() {
+        let error = match evaluator_ai("not-a-selectable-arm", 52_100, false) {
+            Ok(_) => panic!("the default evaluator factory must fail closed"),
+            Err(error) => error,
+        };
+        assert!(matches!(error, BuiltinAiBuildError::UnknownName { .. }));
+        assert!(
+            evaluator_ai("not-a-selectable-arm", 52_100, true).is_ok(),
+            "the diagnostic escape is the only degraded construction route"
+        );
     }
 
     #[test]
@@ -2329,10 +2500,16 @@ mod tests {
         let mut plain = make_game();
         let mut traced = make_game();
         let mut plain_ais: Vec<Box<dyn Ai>> = (0..plain.players.len())
-            .map(|pid| builtin_ai("basic", pid as u64 + 1))
+            .map(|pid| {
+                evaluator_ai("basic", pid as u64 + 1, false)
+                    .expect("scripted evaluator fixture must construct")
+            })
             .collect();
         let mut traced_ais: Vec<Box<dyn Ai>> = (0..traced.players.len())
-            .map(|pid| builtin_ai("basic", pid as u64 + 1))
+            .map(|pid| {
+                evaluator_ai("basic", pid as u64 + 1, false)
+                    .expect("scripted evaluator fixture must construct")
+            })
             .collect();
 
         civvis::ai::run_game(&mut plain, &mut plain_ais);

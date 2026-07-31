@@ -995,13 +995,43 @@ pub struct BeliefsData {
     pub worship: BTreeMap<String, BeliefSpec>,
 }
 
+/// Read `"replaces": "x"` and `"replaces": ["x", "y"]` alike.
+///
+/// The one-card form is by far the common one and there are 19 of them already in
+/// `data/policies.json`; rewriting every one of them into a single-element list to
+/// express the three that need two would be a large diff for no gain.
+fn one_or_many_names<'de, D>(deserializer: D) -> Result<Vec<Name>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum OneOrMany {
+        One(Name),
+        Many(Vec<Name>),
+    }
+    Ok(match OneOrMany::deserialize(deserializer)? {
+        OneOrMany::One(name) => vec![name],
+        OneOrMany::Many(names) => names,
+    })
+}
+
 #[derive(Clone, Serialize, Deserialize)]
 pub struct PolicySpec {
     pub slot: String, // military | economic | diplomatic | wildcard
     #[serde(default)]
     pub civic: Option<Name>,
-    #[serde(default)]
-    pub replaces: Option<Name>, // unlocking this obsoletes the named card
+    /// Cards this one retires when it unlocks.
+    ///
+    /// ⚠ ONE CARD CAN RETIRE SEVERAL. Civilization VI's `ObsoletePolicies` is keyed
+    /// by the *predecessor*, so a successor appears once per card it kills, and three
+    /// of them kill two: Public Works (Bastions + Serfdom), Lightning Warfare (Limes
+    /// + Maneuver) and Native Conquest (Discipline + Survey). A single `Option` could
+    /// only ever carry one of each pair, which is why this reads as a list.
+    ///
+    /// A bare string is still accepted, so entries naming one card stay one line.
+    #[serde(default, deserialize_with = "one_or_many_names")]
+    pub replaces: Vec<Name>,
     #[serde(default)]
     pub note: String,
     /// Numeric, data-driven policy primitives consumed by the game engine.
@@ -2547,6 +2577,40 @@ mod tests {
     use std::collections::BTreeSet;
 
     #[test]
+    fn a_policy_may_retire_one_card_or_several_and_both_shapes_parse() {
+        // Civilization VI's `ObsoletePolicies` is keyed by the PREDECESSOR, so a
+        // successor appears once per card it retires — and three of them retire two
+        // apiece. The one-card form has to keep working: 19 entries already use it,
+        // and rewriting every one into a single-element list to express those three
+        // would be a large diff for no gain.
+        let one: PolicySpec =
+            serde_json::from_value(json!({"slot": "economic", "replaces": "ilkum"})).unwrap();
+        assert_eq!(one.replaces, vec![Name::new("ilkum")]);
+
+        let many: PolicySpec = serde_json::from_value(
+            json!({"slot": "economic", "replaces": ["bastions", "serfdom"]}),
+        )
+        .unwrap();
+        assert_eq!(many.replaces, vec![Name::new("bastions"), Name::new("serfdom")]);
+
+        let none: PolicySpec = serde_json::from_value(json!({"slot": "economic"})).unwrap();
+        assert!(none.replaces.is_empty(), "a card that retires nothing stays empty");
+    }
+
+    #[test]
+    fn widening_replaces_does_not_move_the_ruleset_fingerprint() {
+        // ⚠ THE FINGERPRINT IS THE ELO LEDGER'S BINDING. `from_values` hashes the raw
+        // JSON, so a schema change cannot move it while the data is untouched — which
+        // is the whole reason this PR is separable from the data rows that follow.
+        // If this ever fails, the split was not as inert as it claims.
+        assert_eq!(
+            Rules::shipped().source_fingerprint(),
+            "fnv1a64:3423bd46da2b8cd7",
+            "reading `replaces` as a list must not change what the data hashes to"
+        );
+    }
+
+    #[test]
     fn rules_fingerprint_is_stable_and_content_sensitive() {
         let stock = Rules::shipped();
         let repeated = Rules::shipped();
@@ -3194,7 +3258,7 @@ mod tests {
                 !spec.effects.is_empty(),
                 "policy {id} has no runtime effect"
             );
-            if let Some(replaced) = &spec.replaces {
+            for replaced in &spec.replaces {
                 assert!(
                     rules.policies.contains_key(replaced),
                     "{id} replaces missing policy {replaced}"

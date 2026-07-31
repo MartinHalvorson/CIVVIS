@@ -357,8 +357,9 @@ The work also found a measurement defect with direct implications for future
 research: extending `--pairs` used to move the deployment seed prefix because
 the profile offset depended on sample size. Matrix profile seeds now have a
 constant stride. Effective controller aliases and champion consumption are also
-canonicalized through the same table used by construction; degraded artifacts
-and effective self-play fail closed in promotion mode.
+canonicalized through the same table used by construction; strict evaluator
+construction now fails closed on degraded artifacts, and effective self-play
+also fails closed in promotion mode.
 
 ## Next ranked work after the identity implementation
 
@@ -367,11 +368,10 @@ The former first item is now landed: every selectable arm has a typed
 unlabelled multi-axis result cannot start. The remaining work should build on
 that boundary rather than re-running the old stringly comparisons.
 
-1. **Make artifact-dependent evaluation strict by default.** The typed boundary
-   prevents an evaluator from misnaming a fallback, but a learned entrant can
-   still degrade when a model is absent. Give strict evaluation construction a
-   fallible path and reserve the existing game-start fallback for callers that
-   explicitly need a game to continue. This is R2 in `EVAL_INTEGRITY.md`.
+1. **Separate discovery from confirmation effect sizes.** Treat a promotion run
+   as a decision, not an unbiased estimate: record its result as discovery and
+   use disjoint, pre-registered confirmation maps for the reported effect size.
+   This is R3 in `EVAL_INTEGRITY.md`.
 2. **Test one rational composite, pre-registered.** Combine the live policy deck
    with direct envoy production, because the two controls independently moved
    deployment outcomes and the latter demonstrably moved the resource. Use new

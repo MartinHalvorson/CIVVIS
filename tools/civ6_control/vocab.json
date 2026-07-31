@@ -1,0 +1,183 @@
+{
+  "terrains": {
+    "TERRAIN_COAST": {
+      "terrain": "coast",
+      "hills": false
+    },
+    "TERRAIN_DESERT": {
+      "terrain": "desert",
+      "hills": false
+    },
+    "TERRAIN_DESERT_HILLS": {
+      "terrain": "desert",
+      "hills": true
+    },
+    "TERRAIN_DESERT_MOUNTAIN": {
+      "terrain": "mountain",
+      "hills": false
+    },
+    "TERRAIN_GRASS": {
+      "terrain": "grassland",
+      "hills": false
+    },
+    "TERRAIN_GRASS_HILLS": {
+      "terrain": "grassland",
+      "hills": true
+    },
+    "TERRAIN_GRASS_MOUNTAIN": {
+      "terrain": "mountain",
+      "hills": false
+    },
+    "TERRAIN_OCEAN": {
+      "terrain": "ocean",
+      "hills": false
+    },
+    "TERRAIN_PLAINS": {
+      "terrain": "plains",
+      "hills": false
+    },
+    "TERRAIN_PLAINS_HILLS": {
+      "terrain": "plains",
+      "hills": true
+    },
+    "TERRAIN_PLAINS_MOUNTAIN": {
+      "terrain": "mountain",
+      "hills": false
+    },
+    "TERRAIN_SNOW": {
+      "terrain": "snow",
+      "hills": false
+    },
+    "TERRAIN_SNOW_HILLS": {
+      "terrain": "snow",
+      "hills": true
+    },
+    "TERRAIN_SNOW_MOUNTAIN": {
+      "terrain": "mountain",
+      "hills": false
+    },
+    "TERRAIN_TUNDRA": {
+      "terrain": "tundra",
+      "hills": false
+    },
+    "TERRAIN_TUNDRA_HILLS": {
+      "terrain": "tundra",
+      "hills": true
+    },
+    "TERRAIN_TUNDRA_MOUNTAIN": {
+      "terrain": "mountain",
+      "hills": false
+    }
+  },
+  "features": {
+    "FEATURE_BARRIER_REEF": "great_barrier_reef",
+    "FEATURE_BERMUDA_TRIANGLE": "bermuda_triangle",
+    "FEATURE_BURNING_FOREST": "burning_forest",
+    "FEATURE_BURNING_JUNGLE": "burning_jungle",
+    "FEATURE_BURNT_FOREST": "burnt_forest",
+    "FEATURE_BURNT_JUNGLE": "burnt_jungle",
+    "FEATURE_CHOCOLATEHILLS": "chocolate_hills",
+    "FEATURE_CLIFFS_DOVER": "cliffs_of_dover",
+    "FEATURE_CRATER_LAKE": "crater_lake",
+    "FEATURE_DEAD_SEA": "dead_sea",
+    "FEATURE_DELICATE_ARCH": "delicate_arch",
+    "FEATURE_DEVILSTOWER": "mato_tipila",
+    "FEATURE_EVEREST": "mount_everest",
+    "FEATURE_EYE_OF_THE_SAHARA": "eye_of_the_sahara",
+    "FEATURE_EYJAFJALLAJOKULL": "eyjafjallajokull",
+    "FEATURE_FLOODPLAINS": "floodplains",
+    "FEATURE_FLOODPLAINS_GRASSLAND": "grassland_floodplains",
+    "FEATURE_FLOODPLAINS_PLAINS": "plains_floodplains",
+    "FEATURE_FOREST": "forest",
+    "FEATURE_FOUNTAIN_OF_YOUTH": "fountain_of_youth",
+    "FEATURE_GALAPAGOS": "galapagos_islands",
+    "FEATURE_GEOTHERMAL_FISSURE": "geothermal_fissure",
+    "FEATURE_GIANTS_CAUSEWAY": "giants_causeway",
+    "FEATURE_GOBUSTAN": "gobustan",
+    "FEATURE_HA_LONG_BAY": "ha_long_bay",
+    "FEATURE_ICE": "ice",
+    "FEATURE_IKKIL": "ik_kil",
+    "FEATURE_JUNGLE": "jungle",
+    "FEATURE_KILIMANJARO": "kilimanjaro",
+    "FEATURE_LAKE_RETBA": "lake_retba",
+    "FEATURE_LYSEFJORDEN": "lysefjord",
+    "FEATURE_MARSH": "marsh",
+    "FEATURE_MATTERHORN": "matterhorn",
+    "FEATURE_OASIS": "oasis",
+    "FEATURE_PAITITI": "paititi",
+    "FEATURE_PAMUKKALE": "pamukkale",
+    "FEATURE_PANTANAL": "pantanal",
+    "FEATURE_PIOPIOTAHI": "piopiotahi",
+    "FEATURE_REEF": "reef",
+    "FEATURE_RORAIMA": "mount_roraima",
+    "FEATURE_TORRES_DEL_PAINE": "torres_del_paine",
+    "FEATURE_TSINGY": "tsingy_de_bemaraha",
+    "FEATURE_UBSUNUR_HOLLOW": "ubsunur_hollow",
+    "FEATURE_ULURU": "uluru",
+    "FEATURE_VESUVIUS": "vesuvius",
+    "FEATURE_VOLCANIC_SOIL": "volcanic_soil",
+    "FEATURE_VOLCANO": "volcano",
+    "FEATURE_WHITEDESERT": "sahara_el_beyda",
+    "FEATURE_YOSEMITE": "yosemite",
+    "FEATURE_ZHANGYE_DANXIA": "zhangye_danxia"
+  },
+  "resources": {
+    "RESOURCE_ALUMINUM": "aluminum",
+    "RESOURCE_AMBER": "amber",
+    "RESOURCE_ANTIQUITY_SITE": "antiquity_site",
+    "RESOURCE_BANANAS": "bananas",
+    "RESOURCE_CATTLE": "cattle",
+    "RESOURCE_CINNAMON": "cinnamon",
+    "RESOURCE_CITRUS": "citrus",
+    "RESOURCE_CLOVES": "cloves",
+    "RESOURCE_COAL": "coal",
+    "RESOURCE_COCOA": "cocoa",
+    "RESOURCE_COFFEE": "coffee",
+    "RESOURCE_COPPER": "copper",
+    "RESOURCE_COSMETICS": "cosmetics",
+    "RESOURCE_COTTON": "cotton",
+    "RESOURCE_CRABS": "crabs",
+    "RESOURCE_DEER": "deer",
+    "RESOURCE_DIAMONDS": "diamonds",
+    "RESOURCE_DYES": "dyes",
+    "RESOURCE_FISH": "fish",
+    "RESOURCE_FURS": "furs",
+    "RESOURCE_GYPSUM": "gypsum",
+    "RESOURCE_HONEY": "honey",
+    "RESOURCE_HORSES": "horses",
+    "RESOURCE_INCENSE": "incense",
+    "RESOURCE_IRON": "iron",
+    "RESOURCE_IVORY": "ivory",
+    "RESOURCE_JADE": "jade",
+    "RESOURCE_JEANS": "jeans",
+    "RESOURCE_MAIZE": "maize",
+    "RESOURCE_MARBLE": "marble",
+    "RESOURCE_MERCURY": "mercury",
+    "RESOURCE_NITER": "niter",
+    "RESOURCE_OIL": "oil",
+    "RESOURCE_OLIVES": "olives",
+    "RESOURCE_PEARLS": "pearls",
+    "RESOURCE_PERFUME": "perfume",
+    "RESOURCE_RICE": "rice",
+    "RESOURCE_SALT": "salt",
+    "RESOURCE_SHEEP": "sheep",
+    "RESOURCE_SHIPWRECK": "shipwreck",
+    "RESOURCE_SILK": "silk",
+    "RESOURCE_SILVER": "silver",
+    "RESOURCE_SPICES": "spices",
+    "RESOURCE_STONE": "stone",
+    "RESOURCE_SUGAR": "sugar",
+    "RESOURCE_TEA": "tea",
+    "RESOURCE_TOBACCO": "tobacco",
+    "RESOURCE_TOYS": "toys",
+    "RESOURCE_TRUFFLES": "truffles",
+    "RESOURCE_TURTLES": "turtles",
+    "RESOURCE_URANIUM": "uranium",
+    "RESOURCE_WHALES": "whales",
+    "RESOURCE_WHEAT": "wheat",
+    "RESOURCE_WINE": "wine"
+  },
+  "excluded": {
+    "RESOURCE_LEY_LINE": "Secret Societies game mode only. RESOURCECLASS_LEY_LINE with no yields — a mode marker, not a resource. Absent from a standard game, and inventing CIVVIS semantics for it would be fabrication."
+  }
+}

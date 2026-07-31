@@ -411,7 +411,7 @@ pub fn entries(rules: &Rules) -> Vec<Entry> {
     for (id, spec) in &rules.policies {
         let (mut facts, mut links) = gates(&None, &spec.civic);
         facts.insert(0, ("Slot".to_string(), title(&spec.slot)));
-        if let Some(replaced) = &spec.replaces {
+        for replaced in &spec.replaces {
             facts.push(("Replaces".to_string(), title(replaced)));
             links.push(format!("policies/{replaced}"));
         }

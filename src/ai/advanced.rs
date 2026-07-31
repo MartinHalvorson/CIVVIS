@@ -4,7 +4,7 @@
 //! agent adds a shared strategic model so research, production, diplomacy,
 //! civilian work, and military movement pursue the same medium-term goal.
 use super::{Ai, BasicAi, BasicUnitPlanState, ForceReport, PlanReport, UnitDoctrine, Weights};
-use crate::belief::BeliefState;
+use crate::belief::{BeliefState, CitySighting};
 use crate::name::Name;
 use crate::parallel::WorkPool;
 use crate::game::{
@@ -572,10 +572,17 @@ pub struct AdvancedAi {
     /// The authoritative game is never shared: only owned search branches
     /// cross this boundary, and their results return in candidate order.
     work_pool: Option<Arc<WorkPool>>,
-    /// Observations retained only while the evaluator-only pressure arm is on.
-    /// Keeping this state inside the controller makes cloned counterfactuals
-    /// carry exactly the same player-visible history.
+    /// Player-visible observations retained across turns. Keeping this state
+    /// inside the controller makes cloned counterfactuals carry exactly the
+    /// same fog-safe history.
     belief: BeliefState,
+    /// Use player-visible observations for campaign and battlefront planning.
+    ///
+    /// The live controller enables this repair. `advanced_v1` disables it so
+    /// its frozen rating anchor continues to run the historical controller;
+    /// that compatibility boundary is guarded by the source contract in the
+    /// CLI tests.
+    battlefront_observation: bool,
     /// Hold only the force groups that could actually reach the threatened
     /// city, instead of every group in the empire.
     ///
@@ -1321,6 +1328,41 @@ impl AdvancedAi {
         self.settler_targets.get(&uid).copied()
     }
 
+    /// Forget unit-keyed memory in this agent and its baseline, keeping the plan.
+    ///
+    /// See [`BasicAi::forget_unit_memory`] for why: the board this agent mirrors has
+    /// its unit ids reassigned every turn, so anything keyed to one describes a
+    /// different unit than it did last turn.
+    pub fn forget_unit_memory(&mut self) {
+        self.base.forget_unit_memory();
+        self.settler_targets.clear();
+        self.builder_targets.clear();
+        self.force_groups.clear();
+        self.force_groups_dirty = true;
+    }
+
+    /// Carry unit-keyed memory across a rebuilt board. See
+    /// [`BasicAi::remap_unit_memory`] for why forgetting it is what makes settlers
+    /// wander and what makes the livelock detector unreachable in the Civ 6 bridge.
+    pub fn remap_unit_memory(&mut self, map: &BTreeMap<u32, u32>) {
+        self.base.remap_unit_memory(map);
+        let remap = |old: &BTreeMap<u32, Pos>| -> BTreeMap<u32, Pos> {
+            old.iter()
+                .filter_map(|(uid, value)| map.get(uid).map(|new| (*new, *value)))
+                .collect()
+        };
+        self.settler_targets = remap(&self.settler_targets);
+        self.builder_targets = remap(&self.builder_targets);
+        self.settler_stalls = self
+            .settler_stalls
+            .iter()
+            .filter_map(|(uid, stalls)| map.get(uid).map(|new| (*new, *stalls)))
+            .collect();
+        // Rebuilt from the board every turn regardless, so there is nothing to carry.
+        self.force_groups.clear();
+        self.force_groups_dirty = true;
+    }
+
     pub fn targeting(target: VictoryTarget) -> AdvancedAi {
         Self::configured(BasicAi::new(), true, Some(target))
     }
@@ -1328,7 +1370,9 @@ impl AdvancedAi {
     /// Frozen control for measuring future strategic changes against the
     /// first promoted hierarchical agent rather than only against BasicAi.
     pub fn legacy() -> AdvancedAi {
-        Self::configured(BasicAi::new(), false, None)
+        let mut ai = Self::configured(BasicAi::new(), false, None);
+        ai.battlefront_observation = false;
+        ai
     }
 
     fn configured(
@@ -1354,6 +1398,7 @@ impl AdvancedAi {
             force_groups_dirty: false,
             work_pool: None,
             belief: BeliefState::new(),
+            battlefront_observation: true,
             scoped_relief_hold: false,
             refuse_unreachable_lanes: false,
             prophet_before_opportunism: false,
@@ -1769,6 +1814,13 @@ impl AdvancedAi {
             BELIEF_PRESSURE_HORIZON,
         );
         remembered / Self::city_friendly_strength(g, pid, cid).max(1.0)
+    }
+
+    /// Combat state at the last City Center sighting, if this controller has
+    /// one. Campaign code uses this rather than re-reading a hidden city's
+    /// live durability or garrison-derived strength.
+    fn remembered_city(&self, cid: u32) -> Option<&CitySighting> {
+        self.belief.cities.get(&cid)
     }
 
     fn city_pressure_with_belief(
@@ -4117,7 +4169,7 @@ impl AdvancedAi {
                     .as_ref()
                     .is_none_or(|civic| g.players[pid].civics.contains(civic))
             })
-            .filter_map(|policy| policy.replaces.clone())
+            .flat_map(|policy| policy.replaces.iter().copied())
             .collect();
         let obsolete_active: Vec<Name> = g.players[pid]
             .policies
@@ -5910,7 +5962,7 @@ impl AdvancedAi {
         let has_capturer = units.iter().any(|uid| {
             g.rules.units[g.units[uid].kind].is_melee_capable()
         });
-        let ratio = self.local_strength_ratio(g, &units, &[target], objective);
+        let ratio = self.local_strength_ratio(g, pid, &units, &[target], objective);
         let formation_ready = units.len() >= 3 || (units.len() >= 2 && ratio >= 1.60);
         let minimum_ratio = if committed_domination { 0.90 } else { 1.05 };
         formation_ready && has_capturer && ratio + 1e-9 >= minimum_ratio
@@ -10190,6 +10242,32 @@ impl AdvancedAi {
         city: &crate::game::City,
         strategy: GrandStrategy,
     ) -> f64 {
+        // A campaign can remember a city it has seen, but cannot know that a
+        // hidden city healed, lost its walls, or received a garrison this
+        // turn.  Use the sighting refreshed at the start of the acting turn;
+        // an unseen city with no report receives a conservative generic
+        // defense estimate rather than its live private combat state.
+        let sighting = self
+            .battlefront_observation
+            .then(|| self.remembered_city(city.id))
+            .flatten();
+        let observed_hp = sighting.map(|report| report.hp).unwrap_or_else(|| {
+            self.battlefront_observation
+                .then_some(200)
+                .unwrap_or(city.hp)
+        });
+        let observed_wall_hp = sighting.map(|report| report.wall_hp).unwrap_or_else(|| {
+            self.battlefront_observation
+                .then_some(0)
+                .unwrap_or(city.wall_hp)
+        });
+        let observed_strength = sighting.map(|report| report.strength).unwrap_or_else(|| {
+            self.battlefront_observation
+                .then_some(20.0)
+                .unwrap_or_else(|| g.city_strength(city.id))
+        });
+        let observed_owner = sighting.map(|report| report.owner).unwrap_or(city.owner);
+        let visible = g.player_vision_now(pid);
         let core_distance = g
             .player_city_ids(pid)
             .into_iter()
@@ -10252,10 +10330,26 @@ impl AdvancedAi {
         let hostile_local: f64 = g
             .units
             .values()
-            .filter(|unit| unit.owner == city.owner && g.wdist(unit.pos, city.pos) <= 7)
+            .filter(|unit| unit.owner == observed_owner && g.wdist(unit.pos, city.pos) <= 7)
+            .filter(|unit| {
+                !self.battlefront_observation
+                    || (g.sees(&visible, unit.pos) && g.unit_visible_to(unit.id, pid))
+            })
             .filter(|unit| g.rules.units[unit.kind].class == "military")
             .map(|unit| crate::game::effective_strength(g.unit_strength(unit, true), unit.hp))
-            .sum();
+            .sum::<f64>()
+            + self
+                .battlefront_observation
+                .then(|| {
+                    self.belief.remembered_hidden_military_threat(
+                        g,
+                        pid,
+                        city.pos,
+                        7,
+                        BELIEF_PRESSURE_HORIZON,
+                    )
+                })
+                .unwrap_or(0.0);
 
         let friendly_pressure: f64 = g
             .cities
@@ -10292,9 +10386,9 @@ impl AdvancedAi {
             0.0
         };
 
-        let defenses = g.city_strength(city.id) * 1.8
-            + city.hp.max(0) as f64 * 0.12
-            + city.wall_hp.max(0) as f64 * 0.16;
+        let defenses = observed_strength * 1.8
+            + observed_hp.max(0) as f64 * 0.12
+            + observed_wall_hp.max(0) as f64 * 0.16;
         let local_balance = (hostile_local - friendly_local).clamp(-250.0, 250.0) * 0.45;
         let approach_cost = (6usize.saturating_sub(approaches)) as f64 * 11.0;
         let development = city.pop.max(1) as f64 * 7.0
@@ -10348,13 +10442,40 @@ impl AdvancedAi {
             - liberation_value
     }
 
+    /// Rank settleable ground the way this agent would, for a caller outside the
+    /// engine.
+    ///
+    /// `civvis-advise` uses this to turn a mirrored Civilization VI board into a
+    /// settle plan the control mod can prefer. It is deliberately the SAME ranking
+    /// the agent settles by — a plan derived from a second, parallel notion of a good
+    /// site would be measuring something no CIVVIS game has ever played.
+    ///
+    /// ⚠ `from` and the returned positions are AXIAL, like everything else in the
+    /// engine. The Civilization VI export is OFFSET; convert at the boundary with
+    /// `hex::offset_to_axial`. Getting this wrong is silent — both are pairs of small
+    /// integers — and it cost this project a run that reported "no legal revealed
+    /// site" on a map with 323 revealed plots.
+    pub fn settle_ranking(
+        &self,
+        g: &Game,
+        pid: usize,
+        from: Pos,
+        radius: i32,
+    ) -> Vec<(Pos, f64)> {
+        self.settle_sites(g, pid, from, radius)
+    }
+
     fn settle_sites(&self, g: &Game, pid: usize, from: Pos, radius: i32) -> Vec<(Pos, f64)> {
         let mut sites = Vec::new();
         let distance_penalty = if radius > 12 { 0.45 } else { 0.9 };
         for pos in g.wdisk(from, radius) {
             let Some(tile) = g.map.get(pos) else { continue };
-            if g.rules.is_water(tile)
+            // A site the HOST engine refused is not settleable however good it looks;
+            // see `Game::blocked_city_sites`, which is empty in an ordinary game.
+            if g.blocked_city_sites.contains(&pos)
+                || g.rules.is_water(tile)
                 || !g.rules.is_passable(tile)
+                || g.tile_is_natural_wonder(tile)
                 || g.cities.values().any(|c| g.wdist(c.pos, pos) < 4)
                 || tile
                     .owner_city
@@ -11172,6 +11293,7 @@ impl AdvancedAi {
         anchor: Pos,
         enemies: &[usize],
     ) -> Pos {
+        let visible = g.player_vision_now(pid);
         // An ancient rush keeps its objective. `threatened_city` outranks
         // `target_city` here and is an empire-wide fact, so the turn the
         // victim's counter-raid puts any city of ours under pressure the whole
@@ -11199,6 +11321,8 @@ impl AdvancedAi {
                 .values()
                 .filter(|unit| {
                     enemies.contains(&unit.owner)
+                        && (!self.battlefront_observation
+                            || (g.sees(&visible, unit.pos) && g.unit_visible_to(unit.id, pid)))
                         && match domain {
                             ForceDomain::Sea => BasicAi::waterborne(g, unit.id),
                             ForceDomain::Land => !BasicAi::waterborne(g, unit.id),
@@ -11218,7 +11342,20 @@ impl AdvancedAi {
             .and_then(|cid| g.cities.get(&cid).map(|city| city.pos));
         if domain == ForceDomain::Land {
             return planned
-                .or_else(|| self.base.nearest_enemy_from(g, pid, anchor, enemies))
+                .or_else(|| {
+                    if self.battlefront_observation {
+                        g.units
+                            .values()
+                            .filter(|unit| enemies.contains(&unit.owner))
+                            .filter(|unit| {
+                                g.sees(&visible, unit.pos) && g.unit_visible_to(unit.id, pid)
+                            })
+                            .min_by_key(|unit| (g.wdist(anchor, unit.pos), unit.id))
+                            .map(|unit| unit.pos)
+                    } else {
+                        self.base.nearest_enemy_from(g, pid, anchor, enemies)
+                    }
+                })
                 .unwrap_or(anchor);
         }
 
@@ -11227,7 +11364,12 @@ impl AdvancedAi {
         if let Some(pos) = g
             .units
             .values()
-            .filter(|unit| enemies.contains(&unit.owner) && BasicAi::waterborne(g, unit.id))
+            .filter(|unit| {
+                enemies.contains(&unit.owner)
+                    && (!self.battlefront_observation
+                        || (g.sees(&visible, unit.pos) && g.unit_visible_to(unit.id, pid)))
+                    && BasicAi::waterborne(g, unit.id)
+            })
             .min_by_key(|unit| (g.wdist(anchor, unit.pos), unit.id))
             .map(|unit| unit.pos)
         {
@@ -11261,7 +11403,9 @@ impl AdvancedAi {
                 g.cities
                     .values()
                     .filter(|city| {
-                        enemies.contains(&city.owner) && BasicAi::city_is_coastal(g, city.id)
+                        enemies.contains(&city.owner)
+                            && (!self.battlefront_observation || g.sees(&visible, city.pos))
+                            && BasicAi::city_is_coastal(g, city.id)
                     })
                     .min_by_key(|city| (g.wdist(anchor, city.pos), city.id))
                     .map(|city| city.pos)
@@ -11292,10 +11436,12 @@ impl AdvancedAi {
     fn force_focus_target(
         &self,
         g: &Game,
+        pid: usize,
         units: &[u32],
         enemies: &[usize],
         plan: &StrategicPlan,
     ) -> Option<Pos> {
+        let visible = g.player_vision_now(pid);
         let mut targets = BTreeSet::new();
         for uid in units {
             let unit = &g.units[uid];
@@ -11309,7 +11455,19 @@ impl AdvancedAi {
                 1
             };
             for pos in g.wdisk(unit.pos, radius) {
-                if pos != unit.pos && self.base.is_enemy_tile(g, pos, enemies) {
+                let visible_enemy = if self.battlefront_observation {
+                    g.sees(&visible, pos)
+                        && (g
+                            .city_at(pos)
+                            .is_some_and(|city| enemies.contains(&g.cities[&city].owner))
+                            || g.units_at(pos).into_iter().any(|other| {
+                                enemies.contains(&g.units[&other].owner)
+                                    && g.unit_visible_to(other, pid)
+                            }))
+                } else {
+                    self.base.is_enemy_tile(g, pos, enemies)
+                };
+                if pos != unit.pos && visible_enemy {
                     targets.insert(pos);
                 }
             }
@@ -11350,9 +11508,9 @@ impl AdvancedAi {
                     .units_at(target)
                     .iter()
                     .filter_map(|uid| {
-                        enemies
-                            .contains(&g.units[uid].owner)
-                            .then_some(g.units[uid].hp)
+                        (enemies.contains(&g.units[uid].owner)
+                            && (!self.battlefront_observation || g.unit_visible_to(*uid, pid)))
+                        .then_some(g.units[uid].hp)
                     })
                     .min()
                 {
@@ -11370,10 +11528,12 @@ impl AdvancedAi {
     fn local_strength_ratio(
         &self,
         g: &Game,
+        pid: usize,
         units: &[u32],
         enemies: &[usize],
         objective: Pos,
     ) -> f64 {
+        let visible = g.player_vision_now(pid);
         let friendly: f64 = units
             .iter()
             .filter_map(|uid| {
@@ -11387,15 +11547,25 @@ impl AdvancedAi {
             .units
             .values()
             .filter(|unit| enemies.contains(&unit.owner) && g.wdist(unit.pos, objective) <= 6)
+            .filter(|unit| {
+                !self.battlefront_observation
+                    || (g.sees(&visible, unit.pos) && g.unit_visible_to(unit.id, pid))
+            })
             .filter(|unit| g.rules.units[unit.kind].class == "military")
             .map(|unit| crate::game::effective_strength(g.unit_strength(unit, true), unit.hp))
             .sum::<f64>()
             + g.city_at(objective)
-                .filter(|city| enemies.contains(&g.cities[city].owner))
+                .filter(|city| {
+                    enemies.contains(&g.cities[city].owner)
+                        && (!self.battlefront_observation || g.sees(&visible, g.cities[city].pos))
+                })
                 .map(|city| g.city_strength(city))
                 .unwrap_or(0.0)
             + g.encampment_at(objective)
-                .filter(|city| enemies.contains(&g.cities[city].owner))
+                .filter(|city| {
+                    enemies.contains(&g.cities[city].owner)
+                        && (!self.battlefront_observation || g.sees(&visible, g.cities[city].pos))
+                })
                 .map(|city| g.encampment_strength(city))
                 .unwrap_or(0.0);
         if hostile <= 0.0 {
@@ -11421,6 +11591,7 @@ impl AdvancedAi {
         if enemies.is_empty() {
             return;
         }
+        let visible = g.player_vision_now(pid);
 
         let mut remaining: BTreeSet<u32> = g
             .player_unit_ids(pid)
@@ -11473,7 +11644,7 @@ impl AdvancedAi {
             // capture slipped turn 65 to 86 — and the city's own ring still
             // never held more than two. A rush that walks past the defenders
             // to stand on the ring is a rush that gets killed on the ring.
-            let focus_target = self.force_focus_target(g, &units, &enemies, plan);
+            let focus_target = self.force_focus_target(g, pid, &units, &enemies, plan);
             let muster_radius = self.base.w.muster_radius.round().max(1.0) as i32;
             let readiness = units
                 .iter()
@@ -11483,16 +11654,20 @@ impl AdvancedAi {
                 })
                 .count() as f64
                 / units.len().max(1) as f64;
-            let local_strength_ratio = self.local_strength_ratio(g, &units, &enemies, objective);
+            let local_strength_ratio =
+                self.local_strength_ratio(g, pid, &units, &enemies, objective);
             let average_hp = units.iter().map(|uid| g.units[uid].hp).sum::<i32>() as f64
                 / units.len().max(1) as f64;
             let forcing_focus = focus_target.is_some_and(|target| {
-                let low_hp_unit = g
-                    .units_at(target)
-                    .into_iter()
-                    .any(|unit| enemies.contains(&g.units[&unit].owner) && g.units[&unit].hp <= 35);
+                let low_hp_unit = g.units_at(target).into_iter().any(|unit| {
+                    enemies.contains(&g.units[&unit].owner)
+                        && (!self.battlefront_observation
+                            || (g.sees(&visible, target) && g.unit_visible_to(unit, pid)))
+                        && g.units[&unit].hp <= 35
+                });
                 let capturable_city = g.city_at(target).is_some_and(|city| {
                     enemies.contains(&g.cities[&city].owner)
+                        && (!self.battlefront_observation || g.sees(&visible, target))
                         && g.cities[&city].hp <= 40
                         && g.cities[&city].wall_hp <= 0
                         && units.iter().any(|unit| {
@@ -11532,6 +11707,9 @@ impl AdvancedAi {
                 || (units.iter().any(|uid| {
                     g.units.values().any(|enemy| {
                         enemies.contains(&enemy.owner)
+                            && (!self.battlefront_observation
+                                || (g.sees(&visible, enemy.pos)
+                                    && g.unit_visible_to(enemy.id, pid)))
                             && g.wdist(g.units[uid].pos, enemy.pos) <= 2
                             && (local_strength_ratio >= LOCAL_SUPERIORITY_FLOOR
                                 || plan.threatened_city.is_some()
@@ -14205,7 +14383,11 @@ impl AdvancedAi {
             self.base.take_turn(g, pid);
             return;
         }
-        if self.belief_pressure {
+        // Campaign and battlefront planning share this fog-safe history. A
+        // refresh sees only the acting seat's current vision, so a hidden
+        // heal, garrison move, or ownership change cannot rewrite a plan.
+        // `advanced_v1` keeps its original opt-in pressure observation only.
+        if self.battlefront_observation || self.belief_pressure {
             self.belief.observe(g, pid);
         }
         let rush_routes_frozen = self.freeze_rush_route_targets(g, pid);
@@ -14394,6 +14576,12 @@ mod tests {
     use super::*;
     use crate::ai::run_game;
     use crate::game::{GameOptions, GovernorState};
+
+    #[test]
+    fn legacy_controller_keeps_battlefront_observation_off() {
+        assert!(AdvancedAi::new().battlefront_observation);
+        assert!(!AdvancedAi::legacy().battlefront_observation);
+    }
 
     fn found_test_city(game: &mut Game, pid: usize) -> u32 {
         let position = game
@@ -14860,7 +15048,12 @@ mod tests {
                     .map(|neighbor| (*pos, neighbor))
             })
             .expect("map has adjacent water");
+        let _observer = g.spawn_test_unit("galley", 0, anchor);
         let embarked = g.spawn_test_unit("settler", 1, contact);
+        assert!(
+            g.player_can_see(0, contact),
+            "the fleet can only target an embarked contact it can actually see"
+        );
         let plan = StrategicPlan {
             strategy: GrandStrategy::Conquest,
             target_player: Some(1),
@@ -15814,10 +16007,13 @@ mod tests {
                 )
             });
         };
-        let ai = AdvancedAi::targeting(VictoryTarget::Domination);
+        let _capital_observer = game.spawn_test_unit("scout", 0, game.cities[&enemy_capital].pos);
+        let _outpost_observer = game.spawn_test_unit("scout", 0, game.cities[&enemy_outpost].pos);
+        let mut ai = AdvancedAi::targeting(VictoryTarget::Domination);
 
         fortify(&mut game, enemy_capital);
         breach(&mut game, enemy_outpost);
+        ai.belief.observe(&game, 0);
         let exposed_outpost = ai.campaign_city_value(
             &game,
             0,
@@ -15840,6 +16036,9 @@ mod tests {
         }
         breach(&mut game, enemy_capital);
         fortify(&mut game, enemy_outpost);
+        let _capital_refresh = game.spawn_test_unit("scout", 0, game.cities[&enemy_capital].pos);
+        let _outpost_refresh = game.spawn_test_unit("scout", 0, game.cities[&enemy_outpost].pos);
+        ai.belief.observe(&game, 0);
         assert!(
             ai.campaign_city_value(
                 &game,
@@ -18495,7 +18694,13 @@ mod tests {
         game.at_war.insert((0, 1));
         let mut ai = AdvancedAi::targeting(VictoryTarget::Domination);
 
-        let ratio = ai.local_strength_ratio(&game, &[warrior], &[1], game.cities[&target_city].pos);
+        let ratio = ai.local_strength_ratio(
+            &game,
+            0,
+            &[warrior],
+            &[1],
+            game.cities[&target_city].pos,
+        );
 
         assert!(
             ratio < 0.72,
@@ -19232,6 +19437,9 @@ mod tests {
             target,
         };
         let mut ai = AdvancedAi::targeting(VictoryTarget::Domination);
+        let _target_observer = game.spawn_test_unit("scout", 0, game.cities[&target_city].pos);
+        let _pressure_observer = game.spawn_test_unit("scout", 0, game.cities[&pressure_city].pos);
+        ai.belief.observe(&game, 0);
 
         assert!(AdvancedAi::should_defer_city_capture(&game, 0, target_city));
         assert!(
@@ -22962,6 +23170,48 @@ mod tests {
         assert!(
             AdvancedAi::city_pressure(&game, 0, city) > 0.0,
             "the same force must count once it is visible"
+        );
+    }
+
+    #[test]
+    fn campaign_city_score_uses_the_last_seen_city_combat_state() {
+        let mut game = Game::new_full(2, 30, 18, 411_007, 120, 0, false);
+        let settler = game
+            .player_unit_ids(1)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .expect("second player has a settler");
+        game.current = 1;
+        game.apply(1, &Action::FoundCity { unit: settler })
+            .expect("foreign city can be founded");
+        let city = game.player_city_ids(1)[0];
+        let city_pos = game.cities[&city].pos;
+        for unit in game.units.keys().copied().collect::<Vec<_>>() {
+            game.remove_unit(unit);
+        }
+
+        let observer = game.spawn_test_unit("scout", 0, city_pos);
+        let mut ai = AdvancedAi::new();
+        ai.belief.observe(&game, 0);
+        assert!(ai.remembered_city(city).is_some(), "the City Center was seen");
+        game.remove_unit(observer);
+        assert!(
+            !game.player_visibility(0).contains(&city_pos),
+            "the City Center returns to fog before its live state changes"
+        );
+
+        let before = ai.campaign_city_value(&game, 0, &game.cities[&city], GrandStrategy::Conquest);
+        {
+            let target = game.cities.get_mut(&city).unwrap();
+            target.hp = 1;
+            target.wall_hp = 0;
+        }
+        game.spawn_test_unit("giant_death_robot", 1, city_pos);
+        let after = ai.campaign_city_value(&game, 0, &game.cities[&city], GrandStrategy::Conquest);
+
+        assert_eq!(
+            before, after,
+            "a hidden heal, breach, or garrison cannot rewrite the remembered campaign score"
         );
     }
 
