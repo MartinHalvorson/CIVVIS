@@ -38,7 +38,7 @@ pub const BUILTIN_AIS: [&str; 10] = [
 /// tournament ratings. Keeping them out of `BUILTIN_AIS` prevents a control
 /// factory from being pooled into the same player/leader rating key as
 /// its treatment.
-pub const EVAL_ONLY_AIS: [&str; 74] = [
+pub const EVAL_ONLY_AIS: [&str; 77] = [
     "basic_evolved",
     "advanced_policy_live_control",
     "advanced_envoy_policy",
@@ -72,6 +72,9 @@ pub const EVAL_ONLY_AIS: [&str; 74] = [
     "advanced_settler_commit",
     "advanced_wide_opening",
     "advanced_expansion_payback",
+    "advanced_late_expansion",
+    "advanced_expansion_dispatch",
+    "advanced_expansion_complete",
     "advanced_food_first",
     "advanced_measured_dedication",
     "advanced_lane_reachable",
@@ -1579,6 +1582,26 @@ pub fn builtin_ai(name: &str, seed: u64) -> Box<dyn Ai> {
             ai.expansion_pays_back = true;
             Box::new(ai)
         }
+        // The two frozen adaptive-expansion axes and their factorial
+        // composition. They are evaluator-only: `advanced` itself leaves both
+        // flags false, while the mechanism census proves actual production
+        // actions before any outcome seed is read.
+        "advanced_late_expansion" => {
+            let mut ai = AdvancedAi::new();
+            ai.late_expansion = true;
+            Box::new(ai)
+        }
+        "advanced_expansion_dispatch" => {
+            let mut ai = AdvancedAi::new();
+            ai.expansion_dispatch = true;
+            Box::new(ai)
+        }
+        "advanced_expansion_complete" => {
+            let mut ai = AdvancedAi::new();
+            ai.late_expansion = true;
+            ai.expansion_dispatch = true;
+            Box::new(ai)
+        }
         // Treatment for the city-target axis: identical to `advanced` except
         // that the target ramp starts at six rather than three. See
         // `AdvancedAi::city_target_floor`, #554 and #569.
@@ -2401,6 +2424,9 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "advanced_lane_reachable" => (Vec::new(), "advanced_lane_reachable"),
         "advanced_wide_opening" => (Vec::new(), "advanced_wide_opening"),
         "advanced_expansion_payback" => (Vec::new(), "advanced_expansion_payback"),
+        "advanced_late_expansion" => (Vec::new(), "advanced_late_expansion"),
+        "advanced_expansion_dispatch" => (Vec::new(), "advanced_expansion_dispatch"),
+        "advanced_expansion_complete" => (Vec::new(), "advanced_expansion_complete"),
         "advanced_city_strategy" => (Vec::new(), "advanced_city_strategy"),
         "advanced_city_strategy_emphasis" => (Vec::new(), "advanced_city_strategy_emphasis"),
         "advanced_city_strategy_roles" => (Vec::new(), "advanced_city_strategy_roles"),
@@ -3305,7 +3331,7 @@ mod tests {
             // Anything else reaching that state fell through to the
             // catch-all and is claiming to need nothing while quietly
             // needing a net.
-            const SCRIPTED: [&str; 41] = [
+            const SCRIPTED: [&str; 44] = [
                 "advanced",
                 "advanced_policy_live_control",
                 "advanced_envoy_policy",
@@ -3326,6 +3352,9 @@ mod tests {
                 "advanced_settler_commit",
                 "advanced_wide_opening",
                 "advanced_expansion_payback",
+                "advanced_late_expansion",
+                "advanced_expansion_dispatch",
+                "advanced_expansion_complete",
                 "advanced_city_strategy",
                 "advanced_city_strategy_emphasis",
                 "advanced_city_strategy_roles",

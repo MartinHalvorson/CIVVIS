@@ -58,7 +58,7 @@ mod advanced;
 mod tactics;
 pub use advanced::{
     AdvancedAi, ForceDomain, ForceGroup, ForcePosture, GrandStrategy, StrategicPlan,
-    StrategyCensus, VictoryTarget,
+    ExpansionCensus, StrategyCensus, VictoryTarget,
 };
 
 const TECH_PRIORITY: [&str; 15] = [
@@ -144,6 +144,14 @@ pub trait Ai {
         None
     }
 
+    /// How often an adaptive Expansion plan reached the Advanced-production
+    /// dispatcher, and what that newly exposed call actually completed. This
+    /// is observer-only telemetry for the default-off expansion experiments;
+    /// agents without the instrument return `None`.
+    fn expansion_census(&self) -> Option<ExpansionCensus> {
+        None
+    }
+
     /// How often this agent's joint tactical planner produced a plan, and how
     /// many unit decisions it reached. Agents without one return `None`.
     ///
@@ -180,6 +188,10 @@ impl<T: Ai + ?Sized> Ai for Box<T> {
 
     fn review_census(&self) -> Option<crate::strategic::ReviewCensus> {
         (**self).review_census()
+    }
+
+    fn expansion_census(&self) -> Option<ExpansionCensus> {
+        (**self).expansion_census()
     }
 
     fn joint_tactics_census(&self) -> Option<(usize, usize)> {

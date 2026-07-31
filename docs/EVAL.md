@@ -6472,3 +6472,33 @@ with live declarations, unit losses, city captures, and three capital captures.
 Release-mode CLI checks independently confirmed exit 2 for effective self-play,
 exit 3 for a missing definitional artifact, and exit 2 when
 `--allow-degraded` is attempted in matrix mode.
+
+## 2026-07-31 — adaptive Expansion dispatch reaches production; the combined policy stops at its fires-check
+
+The frozen 2×2 mechanism census in `OPENINGS.md` §19 ran before any outcome
+seed: eight maps, seed prefix 9994000..9994007, all eight major seats on one
+arm, Online/250, requested 84×54 (Planet-realized 105×44), Continents/Planet/
+Poles, randomized civilizations, twelve city-states, and only
+science/culture/domination victories. The source-derived Online interval was
+`[198,217)`, not the stale `[150,225)` prose that had mixed cost and duration
+scaling; that correction was recorded before this prefix ran.
+
+| arm | successful dispatcher actions (seats) | dispatcher Settlers (seats) | dispatcher late Settlers (seats) | founded cities |
+|---|---:|---:|---:|---:|
+| `advanced` | 0 (0/64) | 0 (0/64) | 0 (0/64) | 270 |
+| `advanced_late_expansion` | 0 (0/64) | 0 (0/64) | 0 (0/64) | 281 |
+| `advanced_expansion_dispatch` | 2,316 (62/64) | 111 (53/64) | 0 (0/64) | 290 |
+| `advanced_expansion_complete` | 2,566 (62/64) | 115 (53/64) | **4 (3/64)** | 293 |
+
+Dispatcher-only passes its two reach gates (at least 16 action seats, at least
+8 Settler seats) and ends +20 founded cities over stock. The combined arm fails
+the first interaction gate: its four dispatcher-late starts occur on only 3/64
+seats, below the fixed floor of 8. It also ends only +3 founded cities over
+dispatcher-only, below the fixed +4 floor. The arm-independent Advanced
+late-start count is 9 on 8 seats versus 9 on 6 late-only seats, but that does
+not rescue the failed dispatcher-late condition.
+
+**No `ai_eval` outcome screen ran.** Seeds 9994500 onward remain unread; the
+three arms remain evaluator-only and the production `advanced` default is
+unchanged. The new telemetry stays in place because it records completed
+actions and exact turns rather than treating an open predicate as evidence.
