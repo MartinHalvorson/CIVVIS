@@ -233,6 +233,9 @@ def main():
     ap.add_argument("--dry-run", action="store_true", help="report only, never click")
     ap.add_argument("--runs", default="/Users/martin/civvis-civ6-runs/control",
                     help="run directories; nothing is clicked until one records a turn")
+    ap.add_argument("--cards", action="store_true",
+                    help="also click completion cards (off: the mod closes those, "
+                         "and a false positive here clicks the live map)")
     ap.add_argument("--log", default="/Users/martin/civvis-civ6-mirror/popup-clear.log")
     args = ap.parse_args()
 
@@ -249,6 +252,7 @@ def main():
     last_target, misses = None, 0
     waiting_since = None
     warned_setup = False
+    warned_cards = False
     while True:
         idle = False
         try:
@@ -271,6 +275,19 @@ def main():
                 playing = game_in_progress(args.runs)
                 if kind == "map":
                     pass
+                elif kind == "card" and not args.cards:
+                    # ⚠ OFF BY DEFAULT, ON EVIDENCE. With the counter fixed, the
+                    # mod closes completion cards from Lua and says so:
+                    # TechCivicCompletedPopup reported `gone: true` on 9 of 9
+                    # closes on run civvis-20260731T161131Z. The only screen that
+                    # still resists is the leader conversation (`gone: false` on
+                    # 5 of 6). So a "card" seen here is usually a red map marker
+                    # that slipped the band -- and clicking it is a click on the
+                    # live map, which is the one mistake this must not make.
+                    if not warned_cards:
+                        warned_cards = True
+                        log("a card matched, but the mod closes those now; "
+                            "not clicking it (pass --cards to override)")
                 elif not playing:
                     if not warned_setup:
                         warned_setup = True
