@@ -4445,7 +4445,9 @@ local function applyOrder(player, pid, row, turn)
 		--
 		-- CIVVIS's own choice for that city is right here; keeping it means the
 		-- fallback answers the prompt with a CIVVIS decision instead of its own.
-		civvisBuild[tonumber(subject) or -1] = tostring(verb);
+		--
+		-- ⚠ Recorded AFTER `resolveType` below, not here: `chooseProduction` looks the
+		-- name up in `GameInfo.Types` and a raw verb that needed resolving would miss.
 		-- ⚠ `GameInfo.Types`, NOT the per-kind tables. `buildParams` switches on
 		-- `row.Kind`, and only the `Types` table carries that column — rows from
 		-- `GameInfo.Units`/`Buildings`/`Districts` have no `Kind`, so `buildParams`
@@ -4455,6 +4457,7 @@ local function applyOrder(player, pid, row, turn)
 		local row2, resolved = resolveType(GameInfo.Types, verb);
 		if row2 == nil then return false, "unknown_" .. verb; end
 		verb = resolved;
+		civvisBuild[tonumber(subject) or -1] = resolved;
 		local params = buildParams(row2);
 		if params == nil then return false, "no_params"; end
 		-- ★★★★ DO NOT RE-ISSUE WHAT THE CITY IS ALREADY BUILDING.
