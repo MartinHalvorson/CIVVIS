@@ -104,8 +104,7 @@ seated in that league, 2 beat stock `advanced` on outright wins and **9 lose
 to it significantly**. Ranking on placement is how a strategy that wins less
 often reaches the top of a table headed “best strategy”. (League seating is
 not randomised across entrants, so these comparisons are observational; but
-they are drawn from 3,681 and 530 games at the profiles the project actually
-runs.)
+that one rests on 2,579 games, at the profiles the project actually runs.)
 
 The table is also only reproducible on a machine that has been running the
 league: `/league/` is gitignored, the committed snapshot in `data/league/` is
