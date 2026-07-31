@@ -37,6 +37,21 @@ class RankedLeader:
     elo: float
     rd: float
     games: int
+    wins: int
+    bound: float
+    upper: float
+
+
+@dataclass(frozen=True)
+class Coverage:
+    """A pair the evidence does not resolve, and what it would take to resolve it."""
+
+    civilization: str
+    leader: str
+    candidates: int
+    games: int
+    leader_name: str
+    leader_record: str
 
 
 def load_object(path: Path) -> dict[str, Any]:
@@ -145,11 +160,60 @@ def positive_games(value: Any, description: str) -> int:
     return value
 
 
+def selection_z(root: Path) -> float:
+    """Read the league's own selection z, so this tool cannot drift from it.
+
+    The bound printed here must be the bound the league *selects* on. Copying the
+    constant would let the two diverge silently, which is the whole failure this
+    change exists to correct, so it is parsed out of the Rust exactly as the
+    roster is parsed out of ``CIV6_LEADER_POOL``.
+    """
+    league_path = root / "src/league.rs"
+    try:
+        source = league_path.read_text(encoding="utf-8")
+    except OSError as error:
+        raise RankingError(f"cannot read {league_path}: {error}") from error
+    matches = re.findall(
+        r"^const\s+SELECTION_Z\s*:\s*f64\s*=\s*([0-9.]+)\s*;", source, flags=re.MULTILINE
+    )
+    if len(matches) != 1:
+        raise RankingError(
+            f"expected exactly one SELECTION_Z in {league_path}, found {len(matches)}"
+        )
+    value = float(matches[0])
+    if not math.isfinite(value) or value <= 0.0:
+        raise RankingError(f"SELECTION_Z is not a positive finite number: {matches[0]}")
+    return value
+
+
+def win_confidence(wins: int, games: int, z: float, upper: bool) -> float:
+    """Wilson bound on outright wins — a line-for-line mirror of `win_confidence`
+    in `src/league.rs`. Same inputs must give the same number to the digit."""
+    if games == 0:
+        return 1.0 if upper else 0.0
+    n = float(games)
+    p = wins / n
+    z2 = z * z
+    centre = p + z2 / (2.0 * n)
+    margin = z * math.sqrt(p * (1.0 - p) / n + z2 / (4.0 * n * n))
+    return min(1.0, max(0.0, (centre + (margin if upper else -margin)) / (1.0 + z2 / n)))
+
+
 def rank_leaders(
     roster: list[tuple[str, str]],
     league: dict[str, Any],
     minimum_games: int,
-) -> tuple[int, list[RankedLeader]]:
+    z: float,
+) -> tuple[int, list[RankedLeader], list[Coverage]]:
+    """Order every pair by the statistic the league actually selects on, and print
+    only the pairs whose leader separates from the field.
+
+    ⚠ THIS DELIBERATELY PRINTS ALMOST NOTHING. Ranking by placement Glicko named a
+    different strategy in 23 of 50 pairs and separated in none of them; the honest
+    bar leaves one row. A short true table and an explicit coverage count is the
+    point of the change, not a bug in it — see the README caption and
+    `docs/EVAL_INTEGRITY.md` §5.
+    """
     if minimum_games < 1:
         raise RankingError("minimum games must be positive")
     round_number = league.get("round")
@@ -160,7 +224,7 @@ def rank_leaders(
         raise RankingError("league strategies is not a list")
 
     rows: list[RankedLeader] = []
-    missing: list[str] = []
+    coverage: list[Coverage] = []
     for civilization, leader in roster:
         candidates: list[RankedLeader] = []
         for index, raw_strategy in enumerate(strategies):
@@ -200,6 +264,15 @@ def rank_leaders(
             )
             if games < minimum_games:
                 continue
+            wins = rating.get("wins", 0)
+            if isinstance(wins, bool) or not isinstance(wins, int) or wins < 0:
+                raise RankingError(
+                    f"{strategy!r} {leader}/{civilization} has invalid wins: {wins!r}"
+                )
+            if wins > games:
+                raise RankingError(
+                    f"{strategy!r} {leader}/{civilization} records {wins} wins in {games} games"
+                )
             candidates.append(
                 RankedLeader(
                     civilization=civilization,
@@ -215,40 +288,61 @@ def rank_leaders(
                         f"{strategy!r} {leader}/{civilization} RD",
                     ),
                     games=games,
+                    wins=wins,
+                    bound=win_confidence(wins, games, z, upper=False),
+                    upper=win_confidence(wins, games, z, upper=True),
                 )
             )
         if not candidates:
-            missing.append(f"{leader} / {civilization}")
+            coverage.append(
+                Coverage(
+                    civilization=civilization,
+                    leader=leader,
+                    candidates=0,
+                    games=0,
+                    leader_name="—",
+                    leader_record="no qualifying record",
+                )
+            )
             continue
         candidates.sort(
             key=lambda row: (
-                -row.elo,
-                row.rd,
+                -row.bound,
+                -row.games,
                 row.strategy.casefold(),
                 row.username.casefold(),
             )
         )
-        rows.append(candidates[0])
-
-    if missing:
-        preview = ", ".join(missing[:8])
-        if len(missing) > 8:
-            preview += f", and {len(missing) - 8} more"
-        raise RankingError(
-            f"league round {round_number} has no active settled rating for "
-            f"{len(missing)} of {len(roster)} canonical Civ VI leader/civ pairs: {preview}. "
-            "Pass a complete live league snapshot; the README was not changed."
-        )
+        best = candidates[0]
+        rest = candidates[1:]
+        # Separation, applied the way the table's own heading claims. A strategy is
+        # "best for this civilization" only if its conservative win bound clears the
+        # OPTIMISTIC bound of every rival. Comparing point estimates is exactly what
+        # let a strategy winning 8/43 outrank one winning 230/622.
+        if rest and best.bound > max(row.upper for row in rest):
+            rows.append(best)
+        else:
+            coverage.append(
+                Coverage(
+                    civilization=civilization,
+                    leader=leader,
+                    candidates=len(candidates),
+                    games=sum(row.games for row in candidates),
+                    leader_name=best.strategy,
+                    leader_record=f"{best.wins}/{best.games}",
+                )
+            )
 
     rows.sort(
         key=lambda row: (
-            -row.elo,
+            -row.bound,
             row.civilization.casefold(),
             row.leader.casefold(),
             row.strategy.casefold(),
         )
     )
-    return round_number, rows
+    coverage.sort(key=lambda row: (-row.games, row.civilization.casefold()))
+    return round_number, rows, coverage
 
 
 def markdown_text(value: str) -> str:
@@ -261,17 +355,24 @@ def inline_code(value: str) -> str:
 
 
 def render_block(
-    round_number: int, rows: list[RankedLeader], minimum_games: int
+    round_number: int,
+    rows: list[RankedLeader],
+    coverage: list[Coverage],
+    minimum_games: int,
+    z: float,
 ) -> str:
+    total = len(rows) + len(coverage)
     lines = [
         START_MARKER,
-        "## Best strategy for every Civilization VI civilization",
+        "## Which strategy suits which civilization, where the evidence says so",
         "",
         textwrap.fill(
-            f"League round **{round_number}**. This is the canonical {len(rows)}-civilization "
-            "Civ VI roster; CIVVIS's expanded historical roster is intentionally excluded. "
-            "For each current leader/civilization pair, the table selects the active strategy "
-            "with the highest settled leader-specific Elo.",
+            f"League round **{round_number}**, over the canonical {total}-civilization Civ VI "
+            "roster. A pair is listed only when the leading strategy's conservative outright-win "
+            f"bound clears the optimistic bound of every rival — the same lower-{z:g}σ Wilson "
+            "bound the league itself selects parents, retirement and live seating on. "
+            f"**{len(rows)} of {total} pairs meet that bar.** The rest are reported as coverage "
+            "rather than ranked, because on this evidence they have no best strategy.",
             width=88,
         ),
         "",
@@ -281,25 +382,82 @@ def render_block(
         "",
         "Add `--check` to verify without writing.",
         "",
-        "| Rank | Civilization | Leader | Best active strategy | Elo (±RD) | Games |",
-        "|---:|---|---|---|---:|---:|",
     ]
-    for rank, row in enumerate(rows, start=1):
-        strategy = inline_code(row.strategy)
-        if row.username and row.username != row.strategy:
-            strategy += f" ({markdown_text(row.username)})"
+    if rows:
+        lines.extend(
+            [
+                "| Rank | Civilization | Leader | Strategy | Wins/games | Win bound |",
+                "|---:|---|---|---|---:|---:|",
+            ]
+        )
+        for rank, row in enumerate(rows, start=1):
+            strategy = inline_code(row.strategy)
+            if row.username and row.username != row.strategy:
+                strategy += f" ({markdown_text(row.username)})"
+            lines.append(
+                f"| {rank} | {markdown_text(row.civilization)} | "
+                f"{markdown_text(row.leader)} | {strategy} | "
+                f"{row.wins}/{row.games} | {row.bound:.3f} |"
+            )
+    else:
         lines.append(
-            f"| {rank} | {markdown_text(row.civilization)} | "
-            f"{markdown_text(row.leader)} | {strategy} | "
-            f"{row.elo:.1f} (±{row.rd:.1f}) | {row.games} |"
+            "No leader/civilization pair separates at this round. Nothing is ranked."
+        )
+    lines.extend(
+        [
+            "",
+            f"### {'All' if not rows else 'The other'} {len(coverage)} pairs: "
+            "what the league has, and what it would take",
+            "",
+            textwrap.fill(
+                "These are unresolved, not tied. Where two or more strategies have been rated "
+                "on a pair, the leading one is shown with its actual record so the gap between "
+                "the evidence and the claim stays visible — none of them separates from its own "
+                "runner-up, so naming one would report who has been seated, not what suits the "
+                "civilization.",
+                width=88,
+            ),
+            "",
+            "| Civilization | Leader | Candidates | Games | Leading strategy | Its record |",
+            "|---|---|---:|---:|---|---:|",
+        ]
+    )
+    contested = [row for row in coverage if row.candidates]
+    for row in contested:
+        lines.append(
+            f"| {markdown_text(row.civilization)} | {markdown_text(row.leader)} | "
+            f"{row.candidates} | {row.games} | {inline_code(row.leader_name)} | "
+            f"{markdown_text(row.leader_record)} |"
+        )
+    # Pairs nobody has played enough to rate are a coverage fact, not fifty rows of
+    # the same sentence. They are named rather than counted so a gap in the
+    # snapshot cannot hide behind a number.
+    unplayed = [row for row in coverage if not row.candidates]
+    if unplayed:
+        named = ", ".join(
+            f"{markdown_text(row.civilization)} ({markdown_text(row.leader)})"
+            for row in sorted(unplayed, key=lambda row: row.civilization.casefold())
+        )
+        lines.extend(
+            [
+                "",
+                textwrap.fill(
+                    f"The remaining **{len(unplayed)} of {len(rows) + len(coverage)}** pairs have "
+                    f"no strategy with {minimum_games} games in this snapshot, so there is "
+                    f"nothing to rank and nothing to contest: {named}.",
+                    width=88,
+                ),
+            ]
         )
     lines.extend(
         [
             "",
             textwrap.fill(
                 f"A strategy needs at least {minimum_games} games with that exact pair to "
-                "qualify. “Elo” is the UI name for the league's leader/civilization-specific "
-                "Glicko-2 rating; it only compares strategies inside CIVVIS.",
+                "qualify. The league's Glicko rating is deliberately not shown: it orders "
+                "matchmaking, not strength, and ranking on it named a different strategy in "
+                "23 of 50 pairs while separating in none of them. See "
+                "`docs/EVAL_INTEGRITY.md` §5.",
                 width=88,
             ),
             END_MARKER,
@@ -372,10 +530,11 @@ def main(argv: list[str] | None = None) -> int:
         readme_path = repo_path(ROOT, args.readme)
         roster = official_roster(ROOT)
         minimum_games = settled_games_threshold(ROOT)
-        round_number, rows = rank_leaders(
-            roster, load_object(league_path), minimum_games
+        z = selection_z(ROOT)
+        round_number, rows, coverage = rank_leaders(
+            roster, load_object(league_path), minimum_games, z
         )
-        block = render_block(round_number, rows, minimum_games)
+        block = render_block(round_number, rows, coverage, minimum_games, z)
         if args.stdout:
             print(block)
             return 0
@@ -390,14 +549,14 @@ def main(argv: list[str] | None = None) -> int:
                 )
                 return 1
             print(
-                f"{readme_path} is current for all {len(rows)} Civ VI leaders "
-                f"at league round {round_number}"
+                f"{readme_path} is current at league round {round_number}: "
+                f"{len(rows)} pair(s) resolve, {len(coverage)} reported as coverage"
             )
             return 0
         readme_path.write_text(expected, encoding="utf-8")
         print(
-            f"updated {readme_path} with {len(rows)} Civ VI leaders "
-            f"from league round {round_number}"
+            f"updated {readme_path} from league round {round_number}: "
+            f"{len(rows)} pair(s) resolve, {len(coverage)} reported as coverage"
         )
         return 0
     except RankingError as error:
