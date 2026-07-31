@@ -161,3 +161,39 @@ predict a win: the record already contains a neutral result for removing ~30
 `String` allocations per citizen plan, and a neutral result for a wholesale
 borrowed `units_at`. Take the count column as a ranking of *candidates* and
 still A/B each one interleaved.
+
+### The first thing this profile suggested, measured and rejected
+
+The obvious read of the table is that `units_at` is worth attacking: 1.08M
+allocations, and 82 of its 183 call sites are an immediate `.is_empty()`, so a
+borrow-free `tile_occupied(pos)` removes the allocation entirely at every one
+of them. That is also the experiment the opportunity table above proposes.
+
+It was implemented — `tile_occupied` plus 50 converted sites, leaving
+`src/ai/advanced.rs` alone to avoid a conflicting branch — verified
+byte-identical on nine seed/player combinations, and measured against
+`origin/main` over ten interleaved pairs:
+
+| | main | `tile_occupied` |
+| --- | ---: | ---: |
+| best of 10 | 2.70s | 2.71s |
+| median | 3.69s | 3.71s |
+
+**0.996x best, 0.993x median, 52 of 100 pairs, p = 0.88 — a clean null.**
+Reverted.
+
+**This is the calibration the count column needed, and it should be read
+alongside the table above.** `units_at` allocations average *four bytes*: they
+are one-element `Vec<u32>` clones served straight from the tiny-allocation free
+list, and a million of them cost no measurable time. So allocation *count* is
+not by itself a predictor either — what the record's two paying allocation
+fixes had in common was that the allocation also did work (a `format!` builds
+and copies a string; a deep clone copies a structure). A malloc/free pair on
+its own is nearly free here.
+
+That makes this the eighth consecutive null for "remove cheap per-call work",
+and it narrows the standing rule usefully: **the payer is an expensive
+derivation that is recomputed, not a cheap operation that is frequent — and
+allocation only counts as expensive when something is built.** Applied to the
+table above, the interesting rows are the ones with a high byte-per-allocation
+ratio inside the AI, not `units_at`.
