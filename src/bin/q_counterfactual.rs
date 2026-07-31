@@ -369,6 +369,7 @@ fn harvest_game(
     alternatives: usize,
     horizon: u32,
     replicas: usize,
+    eligibility_retries: usize,
 ) -> GameHarvest {
     let options = GameOptions {
         speed: speed.to_string(),
@@ -391,14 +392,36 @@ fn harvest_game(
         if game.winner.is_some() || game.turn > game.max_turns || !game.players[seat].alive {
             break;
         }
-        match observe_move(&game, &fleet, game_id, alternatives) {
-            Ok(Some(decision)) => {
-                let measured = harvest_decision(&decision, horizon, replicas);
-                harvest.rows.push_str(&measured.rows);
-                harvest.decisions.push(measured);
+        let mut retries = 0usize;
+        loop {
+            match observe_move(&game, &fleet, game_id, alternatives) {
+                Ok(Some(decision)) => {
+                    let measured = harvest_decision(&decision, horizon, replicas);
+                    harvest.rows.push_str(&measured.rows);
+                    harvest.decisions.push(measured);
+                    break;
+                }
+                Ok(None) => harvest.observed_without_choice += 1,
+                Err(error) => {
+                    harvest.errors.push(error);
+                    break;
+                }
             }
-            Ok(None) => harvest.observed_without_choice += 1,
-            Err(error) => harvest.errors.push(error),
+            if retries >= eligibility_retries {
+                break;
+            }
+            retries += 1;
+            let retry_turn = game.turn.saturating_add(1);
+            while game.winner.is_none()
+                && game.turn <= game.max_turns
+                && game.players[seat].alive
+                && (game.turn < retry_turn || game.current != seat)
+            {
+                step(&mut game, &mut fleet);
+            }
+            if game.winner.is_some() || game.turn > game.max_turns || !game.players[seat].alive {
+                break;
+            }
         }
         // Advance at least one complete world turn before another sample even
         // when spacing is zero; duplicate positions are not new evidence.
@@ -441,6 +464,7 @@ fn main() {
     let alternatives = number(&args, "--alternatives", 3);
     let horizon = number(&args, "--horizon", 80).max(1) as u32;
     let replicas = number(&args, "--replicas", Doctrine::ALL.len()).max(1);
+    let eligibility_retries = number(&args, "--eligibility-retries", 0);
     let seed = number(&args, "--seed", 940_000) as u64;
     let jobs = number(&args, "--jobs", parallel::default_jobs());
     let out = text(&args, "--out", "/tmp/q-counterfactual.csv");
@@ -453,7 +477,8 @@ fn main() {
     println!(
         "q_counterfactual: {games} games, {players}p {width}x{height}, {speed}, \
          warmup {warmup}, {decisions} decision(s)/game every {spacing} turns, \
-         {alternatives} alternatives, horizon {horizon}, {replicas} matched replicas, jobs {jobs}"
+         {alternatives} alternatives, horizon {horizon}, {replicas} matched replicas, \
+         {eligibility_retries} eligibility retries, jobs {jobs}"
     );
 
     let harvests = parallel::map(games, jobs, |index| {
@@ -473,6 +498,7 @@ fn main() {
             alternatives,
             horizon,
             replicas,
+            eligibility_retries,
         )
     });
 
@@ -537,7 +563,23 @@ fn main() {
     for error in errors.iter().take(5) {
         eprintln!("  {error}");
     }
-    if samples == 0 || rejected > 0 || nondeterministic > 0 || !errors.is_empty() {
+    let uncovered: Vec<u64> = harvests
+        .iter()
+        .enumerate()
+        .filter(|(_, game)| game.decisions.is_empty())
+        .map(|(index, _)| seed + index as u64)
+        .collect();
+    if eligibility_retries > 0 && !uncovered.is_empty() {
+        eprintln!(
+            "q_counterfactual: exact-game coverage failed after {eligibility_retries} retries; uncovered {uncovered:?}"
+        );
+    }
+    if samples == 0
+        || rejected > 0
+        || nondeterministic > 0
+        || !errors.is_empty()
+        || (eligibility_retries > 0 && !uncovered.is_empty())
+    {
         eprintln!("q_counterfactual: integrity gate failed; refusing to write a dataset");
         std::process::exit(2);
     }
@@ -606,7 +648,9 @@ mod tests {
 
     #[test]
     fn harvest_rows_match_the_declared_schema() {
-        let run = harvest_game(919, 0, 3, 24, 16, 40, 0, "standard", 3, 1, 1, 2, 2, 1);
+        let run = harvest_game(
+            919, 0, 3, 24, 16, 40, 0, "standard", 3, 1, 1, 2, 2, 1, 2,
+        );
         assert!(run.errors.is_empty(), "{:?}", run.errors);
         assert!(!run.decisions.is_empty(), "pilot found no decision");
         let columns = header(1).trim_end().split(',').count();

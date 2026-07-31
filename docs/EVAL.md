@@ -6812,3 +6812,58 @@ all three passes atomically write `civvis-q-override-qualified-v2`; otherwise
 no loadable artifact is written and no gameplay A/B is authorized. A qualified
 artifact earns a separate 300-map-per-profile mirrored gameplay matrix against
 `advanced`; it does not itself authorize production promotion.
+
+### Integrity failure and disjoint v3 replacement preregistration
+
+The v2 development collection completed its engine-level integrity checks:
+369 decisions, 1,418 candidate rows, 5,672 matched continuations, zero rejected
+branches, zero repeat mismatches, and zero observation errors. It nevertheless
+failed the stronger corpus gate before fitting. Both scheduled observations in
+game 1240068 had no `Move` with a same-unit sibling, so the CSV covered only
+191 of the exact 192 game IDs. `q_override_train` exited 2 naming that missing
+game. Standard selection and Online deployment remained nonexistent, no
+out-of-fold metrics were computed, and no artifact was written. The exact-game
+rule is not weakened and seed 1240068 is not replaced after observing the file.
+
+The repair is collection-only and fixed before opening another outcome.
+`q_counterfactual --eligibility-retries 10` advances one complete world turn
+after an ineligible scheduled observation and retries, up to ten times. It
+still emits at most two decisions per game, reports every ineligible attempt,
+and now refuses the entire CSV if any preregistered game remains uncovered.
+The eligibility predicate, three-candidate sampler, frozen ranker, 13 features,
+five folds, optimizer, thresholds, profile sizes, and sequential gates do not
+change. The artifact schema advances to `civvis-q-override-qualified-v3`, and
+all three seed ranges are wholly disjoint from v2:
+
+- development: 192 Standard games, 1250000–1250191;
+- blind selection: 96 Standard games, 1250192–1250287, only after development
+  passes;
+- untouched deployment: 96 Online games, 1251000–1251095, only after selection
+  passes.
+
+The exact v3 commands are:
+
+```sh
+target/release/q_counterfactual --games 192 --players 4 \
+  --width 44 --height 28 --turns 200 --city-states 0 --speed standard \
+  --warmup 50 --spacing 50 --decisions-per-game 2 \
+  --alternatives 3 --horizon 80 --replicas 4 --eligibility-retries 10 \
+  --seed 1250000 --jobs 8 --out /tmp/q-override-v3-development.csv
+
+target/release/q_counterfactual --games 96 --players 4 \
+  --width 44 --height 28 --turns 200 --city-states 0 --speed standard \
+  --warmup 50 --spacing 50 --decisions-per-game 2 \
+  --alternatives 3 --horizon 80 --replicas 4 --eligibility-retries 10 \
+  --seed 1250192 --jobs 8 --out /tmp/q-override-v3-selection.csv
+
+target/release/q_counterfactual --games 96 --players 6 \
+  --width 74 --height 46 --turns 250 --city-states 9 --speed online \
+  --warmup 70 --spacing 60 --decisions-per-game 2 \
+  --alternatives 3 --horizon 80 --replicas 4 --eligibility-retries 10 \
+  --seed 1251000 --jobs 8 --out /tmp/q-override-v3-deployment.csv
+```
+
+No further retry or seed substitution is authorized. Failure to cover all v3
+game IDs ends the iteration. The existing calibration/lift/coverage rules then
+apply unchanged, and `/tmp/q-override-v3-qualified.json` must be absent before
+training begins.

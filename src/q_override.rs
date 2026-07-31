@@ -18,7 +18,7 @@ use crate::game::{Action, Game};
 use crate::Pos;
 
 pub const FILE: &str = "q_override.json";
-pub const SCHEMA: &str = "civvis-q-override-qualified-v2";
+pub const SCHEMA: &str = "civvis-q-override-qualified-v3";
 pub const RANKER_SCHEMA: &str = "civvis-q-pairwise-v1";
 /// Byte identity of the historical JSON regenerated from source commit
 /// `90335031354b28eda33eb41dc03fb03fab5f9a92`. This is retained for external
@@ -35,11 +35,11 @@ pub const RELIABILITY_STEPS: usize = 6_000;
 pub const RELIABILITY_RATE: f64 = 0.05;
 pub const RELIABILITY_L2: f64 = 0.02;
 
-pub const DEVELOPMENT_SEED: u64 = 1_240_000;
+pub const DEVELOPMENT_SEED: u64 = 1_250_000;
 pub const DEVELOPMENT_GAMES: usize = 192;
-pub const SELECTION_SEED: u64 = 1_240_192;
+pub const SELECTION_SEED: u64 = 1_250_192;
 pub const SELECTION_GAMES: usize = 96;
-pub const DEPLOYMENT_SEED: u64 = 1_241_000;
+pub const DEPLOYMENT_SEED: u64 = 1_251_000;
 pub const DEPLOYMENT_GAMES: usize = 96;
 
 /// Fixed thirteen-term reliability representation. It deliberately excludes

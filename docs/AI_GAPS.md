@@ -501,7 +501,11 @@ The next ranked set is:
 The next iteration takes item 1.
 
 That iteration is now preregistered and implemented at the trust boundary.
-`advanced_q_override` can construct only from a v2 artifact carrying passing
+Its first v2 development corpus failed closed before fitting because one of
+192 games supplied no eligible decision at either scheduled observation. The
+disjoint v3 replacement adds only a fixed ten-turn eligibility retry protocol;
+the emitter refuses a CSV unless every exact game is represented.
+`advanced_q_override` can construct only from a v3 artifact carrying passing
 development, blind Standard-selection, and untouched Online-deployment
 evidence. Its reliability input is a fixed 13-term causal-delta row, down from
 the failed 105-term absolute-context row, and it uses 192/96/96 independent
