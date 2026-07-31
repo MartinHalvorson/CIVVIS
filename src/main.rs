@@ -15,14 +15,14 @@ use civvis::setup::{self, BaseRuleset, GameSpeed, MapPoles, MapScript, MapSize, 
 /// blend two players into one lifetime average and erase the very improvement
 /// the longitudinal tournament is supposed to expose.
 const DEFAULT_TOURNAMENT_ENTRANTS: &str =
-    "advanced-20260730=advanced,advanced_v1,basic-20260730=basic,random-20260730=random";
+    "advanced-20260731=advanced,advanced_v1,basic-20260730=basic,random-20260730=random";
 
 /// `advanced_v1` freezes the planning configuration, but deliberately shares
 /// the production Basic/Advanced implementation. Pin those sources so a code
 /// edit cannot silently change the longitudinal anchor. If an edit reaches
 /// the legacy path, bump the Elo protocol and start a new ledger; if it is
 /// provably gated away, review that fact before updating this guard.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xec48_6cf8_b1c2_d9fb;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x685f_931b_425b_d65e;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
@@ -1449,10 +1449,10 @@ mod tests {
     #[test]
     fn tournament_entrants_separate_immutable_identity_from_controller() {
         let entrants = parse_tournament_entrants(
-            "advanced-20260730=advanced, advanced_v1, basic-20260730=basic, random-20260730=random",
+            "advanced-20260731=advanced, advanced_v1, basic-20260730=basic, random-20260730=random",
         )
         .unwrap();
-        assert_eq!(entrants[0].identity, "advanced-20260730");
+        assert_eq!(entrants[0].identity, "advanced-20260731");
         assert_eq!(entrants[0].controller, "advanced");
         assert_eq!(entrants[1].identity, "advanced_v1");
         assert_eq!(entrants[1].controller, "advanced_v1");
