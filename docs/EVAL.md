@@ -6619,3 +6619,43 @@ target/release/civvis soak --games 12 --players 6 \
 Finally, the release evaluator refused `advanced_envoy_composite advanced` as
 an effective self-comparison with exit code 2, confirming that the promoted
 alias cannot accidentally manufacture new evidence against itself.
+
+## 2026-07-31 — preregistration: fog-honest city pressure
+
+`advanced_fog_pressure` starts from the promoted live-policy/direct-envoy
+controller and changes one information channel. Friendly units and city
+defenses remain current facts. Hostile contributions to Recovery and Bastion
+pressure instead come only from units observed through the shared visibility
+contract: current sightings use their observed effective HP, and last-known
+strength fades linearly to zero over six turns. Current hidden position and HP
+are never read by this channel. The incumbent retains the old omniscient scan.
+
+The fixed strength command is:
+
+```sh
+target/ci/ai_eval advanced_fog_pressure advanced \
+  --matrix --pairs 300 --jobs 8 --seed 34061000
+```
+
+Compact consumes seeds 34,061,000–34,061,299 and deployment consumes
+35,061,000–35,061,299. Neither prefix was used to select the treatment,
+memory horizon, or decay. The complete prefix must be read once; interim
+results cannot alter the mechanism.
+
+This is an information-integrity change rather than an optional value tweak,
+so its rule is non-inferiority: promote only if both 300-map children complete
+and neither child retains the incumbent. An ordinary deployment superiority
+PASS is stronger evidence but is not required. Any retained regression leaves
+the arm evaluator-only and sends the implementation back for repair rather
+than knowingly trading substantial strength for the first attempted policy.
+
+Independent integrity checks are fixed before the strength result. Unit tests
+must prove that byte-identical observation tensors with different hidden
+current position/HP produce identical pressure and Recovery selection; that a
+new visible sighting can change pressure; that stale memory decays to zero;
+that own current HP remains exact; and that serial, one-worker, and four-worker
+pressure vectors are bit-identical. The general `fog_census` is also run on
+the same probe prefix with and without `--fog-honest-pressure`. Because it
+perturbs other controller inputs too, only removal of pressure-caused
+divergences is attributable to this treatment; unrelated residual witnesses
+must remain reported rather than hidden.

@@ -12,7 +12,6 @@
 //! it to value scouting as information gain is the next step.
 use std::collections::BTreeMap;
 
-use crate::name::Name;
 use crate::game::Game;
 use crate::obs::visibility;
 use crate::Pos;
@@ -23,7 +22,9 @@ pub struct Sighting {
     pub turn: u32,
     pub owner: usize,
     pub kind: String,
-    /// Strength when last seen, not current strength: the memory ages.
+    /// Effective strength at the hit points last seen, not current strength:
+    /// both damage and position are facts the memory must preserve rather
+    /// than reread through fog.
     pub strength: f64,
 }
 
@@ -66,7 +67,10 @@ impl BeliefState {
                     turn: g.turn,
                     owner: unit.owner,
                     kind: unit.kind.to_string(),
-                    strength: g.unit_strength(unit, false),
+                    strength: crate::game::effective_strength(
+                        g.unit_strength(unit, false),
+                        unit.hp,
+                    ),
                 },
             );
         }
@@ -236,5 +240,37 @@ mod tests {
         belief.updated_turn += 20;
         let stale = belief.remembered_threat(&g, 0, near, 3, 20);
         assert_eq!(stale, 0.0, "a memory past the horizon is worthless");
+    }
+
+    #[test]
+    fn sighting_freezes_last_seen_effective_hit_point_strength() {
+        let mut g = two_player_game();
+        let capital = g.player_city_ids(0)[0];
+        let near = g.cities[&capital].pos;
+        let enemy = g.spawn_test_unit("warrior", 1, near);
+        g.units.get_mut(&enemy).unwrap().hp = 20;
+        let expected = crate::game::effective_strength(
+            g.unit_strength(&g.units[&enemy], false),
+            g.units[&enemy].hp,
+        );
+
+        let mut belief = BeliefState::new();
+        belief.observe(&g, 0);
+        assert_eq!(belief.units[&enemy].strength, expected);
+
+        // A hidden future mutation cannot rewrite what was observed.
+        let far = g
+            .map
+            .tiles
+            .keys()
+            .copied()
+            .find(|position| {
+                g.wdist(*position, near) > 10 && !g.player_visibility(0).contains(position)
+            })
+            .expect("a hidden tile");
+        g.units.get_mut(&enemy).unwrap().pos = far;
+        g.units.get_mut(&enemy).unwrap().hp = 100;
+        belief.updated_turn += 1;
+        assert_eq!(belief.units[&enemy].strength, expected);
     }
 }

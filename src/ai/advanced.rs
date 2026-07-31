@@ -4,6 +4,7 @@
 //! agent adds a shared strategic model so research, production, diplomacy,
 //! civilian work, and military movement pursue the same medium-term goal.
 use super::{Ai, BasicAi, BasicUnitPlanState, ForceReport, PlanReport, UnitDoctrine, Weights};
+use crate::belief::BeliefState;
 use crate::name::Name;
 use crate::parallel::WorkPool;
 use crate::game::{
@@ -23,6 +24,11 @@ const LOCAL_SUPERIORITY_FLOOR: f64 = 0.72;
 /// Radius `threatened_city` scores hostiles in. A group already inside it is
 /// part of the defence rather than a column marching to it.
 const THREAT_RELIEF_RADIUS: i32 = 6;
+/// Last-seen hostile strength fades linearly over this many turns. Six is the
+/// pressure radius itself: a remembered ordinary unit can cross that local
+/// envelope in fewer turns, so after six turns its old position is no longer
+/// decision-grade evidence of a city emergency.
+const THREAT_MEMORY_HORIZON: u32 = 6;
 /// Turns of march a group is allowed in order to count as a relief force. Long
 /// enough to cover a neighbouring front, short enough that an army on the far
 /// side of the map keeps prosecuting its own campaign.
@@ -527,10 +533,20 @@ pub struct AdvancedAi {
     forced_target_player: Option<usize>,
     force_groups: Vec<ForceGroup>,
     force_groups_dirty: bool,
+    /// Enemy information remembered through the public visibility contract.
+    /// It is behaviorally inert unless `fog_honest_pressure` is enabled.
+    belief: BeliefState,
     /// Reusable workers shared by every controller in one headless game.
     /// The authoritative game is never shared: only owned search branches
     /// cross this boundary, and their results return in candidate order.
     work_pool: Option<Arc<WorkPool>>,
+    /// Route Recovery and Bastion pressure through visible or decaying
+    /// last-seen enemy units instead of current hidden unit positions and HP.
+    /// Own defenders and city strength remain exact.
+    ///
+    /// This is a separately named evaluator treatment until it clears the
+    /// deployment strength gate and compact no-regression gate.
+    pub fog_honest_pressure: bool,
     /// Hold only the force groups that could actually reach the threatened
     /// city, instead of every group in the empire.
     ///
@@ -1232,7 +1248,9 @@ impl AdvancedAi {
             forced_target_player: None,
             force_groups: Vec::new(),
             force_groups_dirty: false,
+            belief: BeliefState::new(),
             work_pool: None,
+            fog_honest_pressure: false,
             scoped_relief_hold: false,
             refuse_unreachable_lanes: false,
             prophet_before_opportunism: false,
@@ -1286,6 +1304,13 @@ impl AdvancedAi {
         let mut ai = Self::with_weights(weights);
         ai.envoy_infrastructure = true;
         ai.envoy_priority = true;
+        ai
+    }
+
+    /// Promoted controller plus the single fog-honest pressure treatment.
+    pub(crate) fn fog_pressure() -> AdvancedAi {
+        let mut ai = Self::envoy_composite();
+        ai.fog_honest_pressure = true;
         ai
     }
 
@@ -1560,37 +1585,96 @@ impl AdvancedAi {
         false
     }
 
-    /// Local military pressure on one city: hostile military strength within
-    /// six tiles over the friendly strength answering it, city defenses
-    /// included. Zero when no hostile unit is in reach.
-    ///
-    /// This is the number `threatened_city` has always computed and then
-    /// discarded for every city but the worst one. Naming it lets the same
-    /// evidence reach the city's own decisions — what it builds and what its
-    /// citizens work — instead of only the empire-wide recovery alarm.
-    fn city_pressure(g: &Game, pid: usize, cid: u32) -> f64 {
+    /// Snapshot every unit contribution on the simulation thread. The
+    /// incumbent branch deliberately preserves the old omniscient inputs. The
+    /// treatment branch takes enemy facts only from `BeliefState`; current
+    /// hidden positions and HP are never read here.
+    fn city_pressure_units(&self, g: &Game, pid: usize) -> Vec<CityPressureUnit> {
+        let mut units = g
+            .units
+            .values()
+            .filter(|unit| unit.owner == pid)
+            .filter(|unit| g.rules.units[unit.kind].class == "military")
+            .map(|unit| CityPressureUnit {
+                position: unit.pos,
+                friendly: true,
+                strength: crate::game::effective_strength(g.unit_strength(unit, true), unit.hp),
+            })
+            .collect::<Vec<_>>();
+
+        if !self.fog_honest_pressure {
+            units.extend(
+                g.units
+                    .values()
+                    .filter(|unit| unit.owner != pid && g.is_at_war(pid, unit.owner))
+                    .filter(|unit| g.rules.units[unit.kind].class == "military")
+                    .map(|unit| CityPressureUnit {
+                        position: unit.pos,
+                        friendly: false,
+                        strength: crate::game::effective_strength(
+                            g.unit_strength(unit, false),
+                            unit.hp,
+                        ),
+                    }),
+            );
+            return units;
+        }
+
+        units.extend(self.belief.units.values().filter_map(|sighting| {
+            if sighting.owner == pid || !g.is_at_war(pid, sighting.owner) {
+                return None;
+            }
+            let kind = Name::new(&sighting.kind);
+            if !g
+                .rules
+                .units
+                .get(&kind)
+                .is_some_and(|unit| unit.class == "military")
+            {
+                return None;
+            }
+            let age = self.belief.staleness(sighting);
+            if age >= THREAT_MEMORY_HORIZON {
+                return None;
+            }
+            Some(CityPressureUnit {
+                position: sighting.pos,
+                friendly: false,
+                strength: sighting.strength
+                    * (1.0 - age as f64 / THREAT_MEMORY_HORIZON as f64),
+            })
+        }));
+        units
+    }
+
+    fn pressure_at(g: &Game, cid: u32, units: &[CityPressureUnit]) -> f64 {
         let Some(city) = g.cities.get(&cid) else {
             return 0.0;
         };
-        let hostile: f64 = g
-            .units
-            .values()
-            .filter(|unit| unit.owner != pid && g.is_at_war(pid, unit.owner))
-            .filter(|unit| g.wdist(city.pos, unit.pos) <= 6)
-            .filter(|unit| g.rules.units[unit.kind].class == "military")
-            .map(|unit| crate::game::effective_strength(g.unit_strength(unit, false), unit.hp))
-            .sum();
+        let hostile = units
+            .iter()
+            .filter(|unit| !unit.friendly)
+            .filter(|unit| g.wdist(city.pos, unit.position) <= THREAT_RELIEF_RADIUS)
+            .map(|unit| unit.strength)
+            .sum::<f64>();
         if hostile <= 0.0 {
             return 0.0;
         }
         let friendly = g.city_strength(cid)
-            + g.units
-                .values()
-                .filter(|unit| unit.owner == pid && g.wdist(city.pos, unit.pos) <= 6)
-                .filter(|unit| g.rules.units[unit.kind].class == "military")
-                .map(|unit| crate::game::effective_strength(g.unit_strength(unit, true), unit.hp))
+            + units
+                .iter()
+                .filter(|unit| unit.friendly)
+                .filter(|unit| g.wdist(city.pos, unit.position) <= THREAT_RELIEF_RADIUS)
+                .map(|unit| unit.strength)
                 .sum::<f64>();
         hostile / friendly.max(1.0)
+    }
+
+    /// Local military pressure on one city: hostile military strength within
+    /// six tiles over the friendly strength answering it, city defenses
+    /// included. Zero when no hostile unit is in reach.
+    fn city_pressure(&self, g: &Game, pid: usize, cid: u32) -> f64 {
+        Self::pressure_at(g, cid, &self.city_pressure_units(g, pid))
     }
 
     /// Evaluate the independent city/unit distance matrix from compact,
@@ -1598,42 +1682,22 @@ impl AdvancedAi {
     /// the simulation thread first, so workers share no `Game` caches and the
     /// floating-point sums retain unit-ID order exactly.
     fn city_pressures(&self, g: &Game, pid: usize, cities: &[u32]) -> Vec<f64> {
+        let units = self.city_pressure_units(g, pid);
         let Some(pool) = self.work_pool.as_ref() else {
             return cities
                 .iter()
-                .map(|city| Self::city_pressure(g, pid, *city))
+                .map(|city| Self::pressure_at(g, *city, &units))
                 .collect();
         };
-        let relevant = g
-            .units
-            .values()
-            .filter(|unit| g.rules.units[unit.kind].class == "military")
-            .filter(|unit| unit.owner == pid || g.is_at_war(pid, unit.owner))
-            .collect::<Vec<_>>();
         // Pool dispatch dominates tiny empires. This boundary is comparisons,
         // not a map/player constant: large armies with few cities and wide
         // empires with small garrisons reach the same measured work floor.
-        if cities.len() < 2 || cities.len().saturating_mul(relevant.len()) < 128 {
+        if cities.len() < 2 || cities.len().saturating_mul(units.len()) < 128 {
             return cities
                 .iter()
-                .map(|city| Self::city_pressure(g, pid, *city))
+                .map(|city| Self::pressure_at(g, *city, &units))
                 .collect();
         }
-
-        let units = relevant
-            .into_iter()
-            .map(|unit| {
-                let friendly = unit.owner == pid;
-                CityPressureUnit {
-                    position: unit.pos,
-                    friendly,
-                    strength: crate::game::effective_strength(
-                        g.unit_strength(unit, friendly),
-                        unit.hp,
-                    ),
-                }
-            })
-            .collect::<Vec<_>>();
         let sites = cities
             .iter()
             .map(|city| CityPressureSite {
@@ -1655,7 +1719,9 @@ impl AdvancedAi {
             let hostile = units
                 .iter()
                 .filter(|unit| !unit.friendly)
-                .filter(|unit| distance.between(site.position, unit.position) <= 6)
+                .filter(|unit| {
+                    distance.between(site.position, unit.position) <= THREAT_RELIEF_RADIUS
+                })
                 .map(|unit| unit.strength)
                 .sum::<f64>();
             if hostile <= 0.0 {
@@ -1665,7 +1731,9 @@ impl AdvancedAi {
                 + units
                     .iter()
                     .filter(|unit| unit.friendly)
-                    .filter(|unit| distance.between(site.position, unit.position) <= 6)
+                    .filter(|unit| {
+                        distance.between(site.position, unit.position) <= THREAT_RELIEF_RADIUS
+                    })
                     .map(|unit| unit.strength)
                     .sum::<f64>();
             hostile / friendly.max(1.0)
@@ -1842,7 +1910,7 @@ impl AdvancedAi {
             .into_iter()
             .filter_map(|cid| {
                 let city = &g.cities[&cid];
-                let danger = Self::city_pressure(g, pid, cid);
+                let danger = self.city_pressure(g, pid, cid);
                 if danger <= 0.0 {
                     return None;
                 }
@@ -13869,6 +13937,12 @@ impl AdvancedAi {
             self.base.take_turn(g, pid);
             return;
         }
+        if self.fog_honest_pressure {
+            // This is the only boundary at which enemy pressure facts enter
+            // memory. It runs before both stale-plan interrupts and assessment,
+            // so every pressure consumer sees one coherent information set.
+            self.belief.observe(g, pid);
+        }
         let rush_routes_frozen = self.freeze_rush_route_targets(g, pid);
         let disposition_strategy = active_victory_target
             .map(VictoryTarget::strategy)
@@ -22498,8 +22572,9 @@ mod tests {
     fn city_pressure_is_zero_with_no_hostile_force_in_reach() {
         let mut game = Game::new_full(2, 24, 16, 411_004, 120, 1, false);
         found_test_city(&mut game, 0);
+        let ai = AdvancedAi::new();
         for cid in game.player_city_ids(0) {
-            assert_eq!(AdvancedAi::city_pressure(&game, 0, cid), 0.0);
+            assert_eq!(ai.city_pressure(&game, 0, cid), 0.0);
         }
     }
 
@@ -22684,13 +22759,189 @@ mod tests {
             );
         }
         let cities = [first, second];
+        let serial = AdvancedAi::new();
         let expected = cities
             .iter()
-            .map(|city| AdvancedAi::city_pressure(&game, 0, *city))
+            .map(|city| serial.city_pressure(&game, 0, *city))
             .collect::<Vec<_>>();
         let mut one = AdvancedAi::new();
         one.work_pool = Some(Arc::new(WorkPool::new(1)));
         let mut four = AdvancedAi::new();
+        four.work_pool = Some(Arc::new(WorkPool::new(4)));
+
+        assert_eq!(one.city_pressures(&game, 0, &cities), expected);
+        assert_eq!(four.city_pressures(&game, 0, &cities), expected);
+    }
+
+    #[test]
+    fn fog_pressure_ignores_current_hidden_position_and_hp() {
+        let mut game = Game::new_full(2, 30, 18, 91_211, 100, 0, false);
+        let home = found_test_city(&mut game, 0);
+        let _enemy_city = found_test_city(&mut game, 1);
+        for unit in game.units.keys().copied().collect::<Vec<_>>() {
+            game.remove_unit(unit);
+        }
+        game.at_war.insert((0, 1));
+        game.turn = 50;
+        let center = game.cities[&home].pos;
+        let visibility = game.player_visibility(0);
+        let remembered = game
+            .wdisk(center, THREAT_RELIEF_RADIUS)
+            .into_iter()
+            .find(|position| {
+                game.wdist(center, *position) == THREAT_RELIEF_RADIUS
+                    && !visibility.contains(position)
+                    && game.map.get(*position).is_some()
+            })
+            .expect("city has a hidden outer-pressure tile");
+        let hidden = game
+            .map
+            .tiles
+            .keys()
+            .copied()
+            .filter(|position| !visibility.contains(position))
+            .filter(|position| game.wdist(center, *position) > THREAT_RELIEF_RADIUS + 2)
+            .take(2)
+            .collect::<Vec<_>>();
+        assert_eq!(hidden.len(), 2);
+        let enemy = game.spawn_test_unit("modern_armor", 1, hidden[0]);
+
+        let mut ai = AdvancedAi::fog_pressure();
+        ai.belief.updated_turn = game.turn;
+        ai.belief.units.insert(
+            enemy,
+            crate::belief::Sighting {
+                pos: remembered,
+                turn: game.turn,
+                owner: 1,
+                kind: "modern_armor".to_string(),
+                strength: 95.0,
+            },
+        );
+        let expected = ai.city_pressure(&game, 0, home);
+        assert!(expected > 0.0, "the last-seen outer force is remembered");
+
+        let source_observation = crate::obs_tensor::obs_tensor(&game, 0);
+        let mut altered = game.clone();
+        altered.units.get_mut(&enemy).unwrap().pos = hidden[1];
+        altered.units.get_mut(&enemy).unwrap().hp = 1;
+        let altered_observation = crate::obs_tensor::obs_tensor(&altered, 0);
+        assert!(
+            source_observation.width == altered_observation.width
+                && source_observation.height == altered_observation.height
+                && source_observation.planes == altered_observation.planes
+                && source_observation.data == altered_observation.data
+                && source_observation.global_names == altered_observation.global_names
+                && source_observation.global == altered_observation.global,
+            "the treatment changes only facts absent from the information set"
+        );
+        assert_eq!(
+            ai.city_pressure(&altered, 0, home),
+            expected,
+            "current hidden position and HP cannot enter pressure"
+        );
+        assert_eq!(ai.threatened_city(&altered, 0), ai.threatened_city(&game, 0));
+
+        let mut visible = game.clone();
+        let seen = visible
+            .nbrs(center)
+            .into_iter()
+            .find(|position| visible.player_visibility(0).contains(position))
+            .expect("a visible tile beside the city");
+        visible.units.get_mut(&enemy).unwrap().pos = seen;
+        visible.units.get_mut(&enemy).unwrap().hp = 1;
+        ai.belief.observe(&visible, 0);
+        assert_eq!(ai.belief.units[&enemy].pos, seen);
+        assert_ne!(
+            ai.city_pressure(&visible, 0, home),
+            expected,
+            "a genuinely visible HP/position update must enter pressure"
+        );
+    }
+
+    #[test]
+    fn fog_pressure_decays_memory_and_keeps_own_defenders_exact() {
+        let mut game = Game::new_full(2, 30, 18, 91_212, 100, 0, false);
+        let home = found_test_city(&mut game, 0);
+        let _enemy_city = found_test_city(&mut game, 1);
+        for unit in game.units.keys().copied().collect::<Vec<_>>() {
+            game.remove_unit(unit);
+        }
+        game.at_war.insert((0, 1));
+        game.turn = 40;
+        let center = game.cities[&home].pos;
+        let enemy = game.spawn_test_unit("modern_armor", 1, center);
+        let defender = game.spawn_test_unit("modern_armor", 0, center);
+        let mut ai = AdvancedAi::fog_pressure();
+        ai.belief.updated_turn = game.turn;
+        ai.belief.units.insert(
+            enemy,
+            crate::belief::Sighting {
+                pos: center,
+                turn: game.turn,
+                owner: 1,
+                kind: "modern_armor".to_string(),
+                strength: 95.0,
+            },
+        );
+
+        let fresh = ai.city_pressure(&game, 0, home);
+        ai.belief.updated_turn += THREAT_MEMORY_HORIZON / 2;
+        let fading = ai.city_pressure(&game, 0, home);
+        assert!(fading > 0.0 && fading < fresh);
+        ai.belief.updated_turn += THREAT_MEMORY_HORIZON;
+        assert_eq!(ai.city_pressure(&game, 0, home), 0.0);
+
+        ai.belief.updated_turn = game.turn;
+        game.units.get_mut(&defender).unwrap().hp = 1;
+        let wounded_defense = ai.city_pressure(&game, 0, home);
+        assert!(
+            wounded_defense > fresh,
+            "own current HP remains exact while enemy HP is remembered"
+        );
+    }
+
+    #[test]
+    fn fog_pressure_matrix_matches_serial_and_parallel_exactly() {
+        let mut game = Game::new_full(2, 30, 18, 91_213, 80, 0, false);
+        let first = found_test_city(&mut game, 0);
+        let second = found_test_city(&mut game, 0);
+        let enemy_city = found_test_city(&mut game, 1);
+        game.at_war.insert((0, 1));
+        let positions = [
+            game.cities[&first].pos,
+            game.cities[&second].pos,
+            game.cities[&enemy_city].pos,
+        ];
+        for index in 0..64 {
+            game.spawn_test_unit(
+                "warrior",
+                usize::from(index % 3 == 2),
+                positions[index % positions.len()],
+            );
+        }
+        let mut serial = AdvancedAi::fog_pressure();
+        serial.belief.updated_turn = game.turn;
+        for unit in game.units.values().filter(|unit| unit.owner == 1) {
+            serial.belief.units.insert(
+                unit.id,
+                crate::belief::Sighting {
+                    pos: unit.pos,
+                    turn: game.turn,
+                    owner: unit.owner,
+                    kind: unit.kind.to_string(),
+                    strength: crate::game::effective_strength(
+                        game.unit_strength(unit, false),
+                        unit.hp,
+                    ),
+                },
+            );
+        }
+        let cities = [first, second];
+        let expected = serial.city_pressures(&game, 0, &cities);
+        let mut one = serial.clone();
+        one.work_pool = Some(Arc::new(WorkPool::new(1)));
+        let mut four = serial.clone();
         four.work_pool = Some(Arc::new(WorkPool::new(4)));
 
         assert_eq!(one.city_pressures(&game, 0, &cities), expected);
@@ -22744,7 +22995,7 @@ mod tests {
                 };
                 for cid in game.player_city_ids(0) {
                     city_turns += 1;
-                    let pressure = AdvancedAi::city_pressure(&game, 0, cid);
+                    let pressure = ais[0].city_pressure(&game, 0, cid);
                     if pressure < BASTION_PRESSURE {
                         continue;
                     }

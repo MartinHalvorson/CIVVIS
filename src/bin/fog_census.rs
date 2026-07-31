@@ -19,7 +19,7 @@
 //!
 //! ```text
 //! fog_census --maps 12 --probes 12 --players 4 --width 44 --height 28 \
-//!   --turns 200 --seed 860000 --jobs 6
+//!   --turns 200 --seed 860000 --jobs 6 --fog-honest-pressure
 //! ```
 //!
 //! This is deliberately a diagnostic, not a new controller. It makes the
@@ -431,12 +431,16 @@ fn read_map(
     height: i32,
     turns: u32,
     probes: usize,
+    fog_honest_pressure: bool,
 ) -> Reading {
     let mut game = Game::new(players, width, height, seed, turns, 0);
     // Match ordinary headless simulation: remembered presentation state is not
     // part of decision execution, while explored tiles and live visibility are.
     game.set_fog_memory(false);
     let mut fleet = AdvancedAi::fleet(&game);
+    for ai in &mut fleet {
+        ai.fog_honest_pressure = fog_honest_pressure;
+    }
     let mut reading = Reading::default();
     // A cap alone front-loads every probe into the first few player turns.
     // Spread it through the game so wars, sieges, and mature force planning
@@ -541,6 +545,7 @@ fn main() {
     let turns = number(&args, "--turns", 200) as u32;
     let seed0 = number(&args, "--seed", 860_000) as u64;
     let jobs = number(&args, "--jobs", parallel::default_jobs());
+    let fog_honest_pressure = args.iter().any(|arg| arg == "--fog-honest-pressure");
     if maps == 0 || probes == 0 || players < 2 || width < 8 || height < 8 || turns == 0 {
         eprintln!(
             "fog_census: maps and probes must be positive; players >= 2; map dimensions >= 8; turns > 0"
@@ -550,10 +555,18 @@ fn main() {
 
     println!(
         "fog_census: {maps} maps, {players}p {width}x{height}, cap {turns} turns, \
-         {probes} hidden-fact probes/map, seed {seed0}, jobs {jobs}"
+         {probes} hidden-fact probes/map, seed {seed0}, jobs {jobs}, fog-honest-pressure={fog_honest_pressure}"
     );
     let readings = parallel::map(maps, jobs, move |index| {
-        read_map(seed0 + index as u64, players, width, height, turns, probes)
+        read_map(
+            seed0 + index as u64,
+            players,
+            width,
+            height,
+            turns,
+            probes,
+            fog_honest_pressure,
+        )
     });
 
     let mut total = Reading::default();

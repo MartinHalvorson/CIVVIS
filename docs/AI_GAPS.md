@@ -467,4 +467,9 @@ explicit typed control rather than being overwritten in historical arms.
    evidence to evaluator-only names, separate discovery from confirmation,
    and add retained external opponents before making broader strength claims.
 
-The next iteration takes item 1.
+Item 1 is now implemented as the evaluator-only `advanced_fog_pressure` arm
+and preregistered on a fresh 300-map-per-profile matrix. It cannot become the
+default until both profiles complete without retaining the incumbent. The
+implementation keeps own defense exact, freezes observed enemy effective HP,
+decays last-known pressure over six turns, and shares one immutable snapshot
+between serial and pooled evaluation.

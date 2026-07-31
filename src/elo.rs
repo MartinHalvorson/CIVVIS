@@ -38,7 +38,7 @@ pub const BUILTIN_AIS: [&str; 10] = [
 /// tournament ratings. Keeping them out of `BUILTIN_AIS` prevents a control
 /// factory from being pooled into the same player/leader rating key as
 /// its treatment.
-pub const EVAL_ONLY_AIS: [&str; 75] = [
+pub const EVAL_ONLY_AIS: [&str; 76] = [
     "basic_evolved",
     "advanced_pre_envoy_composite",
     "advanced_policy_live_control",
@@ -46,6 +46,7 @@ pub const EVAL_ONLY_AIS: [&str; 75] = [
     "advanced_envoy_infrastructure",
     "advanced_envoy_priority",
     "advanced_envoy_composite",
+    "advanced_fog_pressure",
     "advanced_envoy_economy",
     "advanced_strategic_commitment",
     "advanced_evolved_commitment",
@@ -1285,6 +1286,9 @@ fn build_effective_ai(name: &str, seed: u64, dir: &str) -> Option<Box<dyn Ai>> {
         // deliberately leaves `pol_influence` at zero, because the isolated
         // influence-weight treatment was flat.
         "advanced_envoy_composite" => Box::new(AdvancedAi::envoy_composite()),
+        // First treatment created against the promoted composite. It changes
+        // only the information source for Recovery/Bastion pressure.
+        "advanced_fog_pressure" => Box::new(AdvancedAi::fog_pressure()),
         "advanced_envoy_economy" => {
             let mut weights = Weights::default();
             weights.policy_deck = crate::ai::PolicyDeck::Live;
@@ -3339,6 +3343,12 @@ mod tests {
                 .differing_axes(&advanced),
             vec!["treatment"]
         );
+        assert_eq!(
+            builtin_spec("advanced_fog_pressure", dir)
+                .unwrap()
+                .differing_axes(&advanced),
+            vec!["treatment"]
+        );
 
         let production = builtin_spec("production", dir).unwrap();
         assert_eq!(production.architecture, Architecture::Production);
@@ -3656,7 +3666,7 @@ mod tests {
             // Anything else reaching that state fell through to the
             // catch-all and is claiming to need nothing while quietly
             // needing a net.
-            const SCRIPTED: [&str; 42] = [
+            const SCRIPTED: [&str; 43] = [
                 "advanced",
                 "advanced_pre_envoy_composite",
                 "advanced_policy_live_control",
@@ -3664,6 +3674,7 @@ mod tests {
                 "advanced_envoy_infrastructure",
                 "advanced_envoy_priority",
                 "advanced_envoy_composite",
+                "advanced_fog_pressure",
                 "advanced_envoy_economy",
                 "advanced_strategic_commitment",
                 "advanced_blind_to_leaders",
