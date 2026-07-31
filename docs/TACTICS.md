@@ -194,7 +194,7 @@ block used to choose the forfeit weight or the search budget.
 | combined arms | **1.760** vs 0.568 | **+276.4 ± 7.2** | <0.0001 |
 | ranged heavy | **2.090** vs 0.479 | **+271.4 ± 7.4** | <0.0001 |
 | with siege | **1.261** vs 0.793 | **+116.3 ± 7.6** | <0.0001 |
-| melee only | **1.016** vs 0.984 | **+16.5 ± 4.3** | 0.1247 |
+| melee only | 1.016 vs 0.984 | +16.5 ± 4.3 | 0.1247 (see below) |
 | control (`advanced` vs `advanced`) | 1.000 vs 1.000 | 0.00 ± 0.00 | 1.0000 |
 
 Taken **on this branch's merged tip**, not on the commit the design was tuned
