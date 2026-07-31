@@ -1,5 +1,19 @@
 # CIVVIS
 
+### Notes from Martin:
+
+Some videos up on [@civvis YouTube channel](https://www.youtube.com/@civvis)
+
+A good bit of vibecoding. Still a bit buggy, apologies for any slop. Continues to be a work in progress.
+
+Quick demo:
+
+[![Spectate mode: a whole AI-vs-AI game on a Planet world of canal-ringed islands — six civilizations settle a globe of hexagons, the camera turns the planet and drops onto the Grand Canals II shelves and channels, Babylon puts the first satellite up on turn 189 and lands on the Moon and Mars, and three expeditions race for another star until Babylon's arrives on turn 282 for the science victory](docs/exhibition.gif)](docs/exhibition.mp4)
+
+### The rest of this doc (and project) is written and maintained by AI:
+
+-----------------------------------------------------------------------------
+
 <!-- BEGIN CIV6 LEADER STRATEGY RANKING -->
 ## Best strategy for every Civilization VI civilization
 
@@ -110,26 +124,6 @@ The table is also only reproducible on a machine that has been running the
 league: `/league/` is gitignored, the committed snapshot in `data/league/` is
 round 60 and covers 4 of the 50 pairs, and the refresh command exits 2 on a
 fresh clone.
-
-### Notes from Martin:
-
-A good bit of vibecoding. Still a bit buggy, apologies for any slop. 
-
-### The rest of the project is AI-generated and maintained:
-
-That note is about authorship. The game-playing agents below are local Civ
-controllers; CIVVIS does not call an LLM or a hosted model while a game runs.
-
-A whole
-AI-vs-AI game below, first settler to space victory (click for the full video):
-
-[![Spectate mode: a whole AI-vs-AI game on a Planet world of canal-ringed islands — six civilizations settle a globe of hexagons, the camera turns the planet and drops onto the Grand Canals II shelves and channels, Babylon puts the first satellite up on turn 189 and lands on the Moon and Mars, and three expeditions race for another star until Babylon's arrives on turn 282 for the science victory](docs/exhibition.gif)](docs/exhibition.mp4)
-
-*Six AI civilizations, Grand Canals II on a globe at Small size, Online speed
-with the turn cap lifted so the space race could finish. Recorded live off the
-spectator's own view — standings, victory tracker and each AI's live plan — with
-the camera flown out to the Moon, Mars and the voyage as each launch happened.
-The waiting is compressed; the camera work is close to real time.*
 
 ## How CivVis uses AI
 
