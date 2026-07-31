@@ -169,6 +169,17 @@ fn decide(
             .count();
         (legal.len(), wars)
     };
+    // ⚠ MEASURE MOVEMENT BEFORE THE TURN IS TAKEN, for the same reason as legality
+    // above. Counted afterwards, `movable` reports what is left AFTER CIVVIS has
+    // moved everything -- so a perfectly healthy turn reads `movable=0/8`, which
+    // looks exactly like an army that cannot move. It nearly cost a wrong conclusion
+    // about units parked for 171 turns.
+    let pre_movable = mirror_state
+        .game
+        .units
+        .values()
+        .filter(|u| u.owner == 0 && u.moves_left > 0.0)
+        .count();
     ai.take_turn(&mut mirror_state.game, 0);
 
     let mut orders: Vec<Order> = Vec::new();
@@ -274,6 +285,8 @@ fn decide(
     // ⚠ Diagnostics for the "CIVVIS returned nothing" case, which is otherwise
     // indistinguishable from "CIVVIS chose to do nothing". Both a stopped game
     // (`winner` set) and an army with no movement produce an empty order list.
+    // What is left after the turn. Reported beside the pre-turn count, because the
+    // pair is what distinguishes "could not move" from "already moved".
     let movable = mirror_state
         .game
         .units
@@ -343,9 +356,10 @@ fn decide(
         mirror_state.game.player_unit_ids(0).len()
     ));
     note_bits.push(format!(
-        "movable={}/{} winner={:?} logged={}",
-        movable,
+        "movable_before={}/{} movable_after={} winner={:?} logged={}",
+        pre_movable,
         ours,
+        movable,
         mirror_state.game.winner,
         mirror_state.game.log.len() - before
     ));
