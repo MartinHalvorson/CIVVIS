@@ -5359,7 +5359,13 @@ impl BasicAi {
         let Some(tile) = g.map.get(pos) else {
             return false;
         };
-        !g.rules.is_water(tile)
+        // ⚠ GROUND THE HOST HAS ALREADY SAID NO TO. `blocked_city_sites` was only ever
+        // consulted by `can_found_city`, which asks about the tile a settler is
+        // STANDING on — so a site the engine will refuse could still be chosen, walked
+        // to, and then refused on arrival, every turn, forever. The planner has to see
+        // the prohibition too or the refusal teaches it nothing.
+        !g.blocked_city_sites.contains(&pos)
+            && !g.rules.is_water(tile)
             && g.rules.is_passable(tile)
             && !g
                 .cities

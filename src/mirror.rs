@@ -1696,6 +1696,8 @@ fn apply_territory(
     // Decided first, applied second: the nearest-city lookup needs `game` immutably
     // while the assignment needs it mutably.
     let mut assign: Vec<(crate::Pos, Option<u32>)> = Vec::new();
+    // Ground somebody else holds that we cannot attribute to a mirrored seat.
+    let mut blocked: std::collections::BTreeSet<crate::Pos> = Default::default();
     for y in 0..snapshot.height.max(1) {
         for x in 0..snapshot.width.max(1) {
             let Some(plot) = snapshot.plot((x, y)) else {
@@ -1708,11 +1710,33 @@ fn apply_territory(
             let Some(&seat) = seat_of.get(&plot.o) else {
                 // `o = -1` is nobody, and Civilization VI is authoritative about that
                 // too: a tile CIVVIS thinks it owns and the game says is neutral is
-                // the same class of error in the other direction. An owner we cannot
-                // map (a met civ with no seat) is left alone rather than guessed.
+                // the same class of error in the other direction.
                 if plot.o < 0 {
                     assign.push((pos, None));
+                    continue;
                 }
+                // ★★★★★ SOMEBODY OWNS IT AND WE CANNOT NAME THEM — USUALLY A
+                // CITY-STATE. `state.rivals` carries the MAJOR civilizations this seat
+                // has met, so a minor's territory maps to no seat at all and used to
+                // arrive as free land. It is not free: Civilization VI will not let a
+                // settler found there, and CIVVIS will happily pick it because on its
+                // board the tile is unowned, high-yield and often already improved.
+                //
+                // Measured on run `civvis-20260731T052021Z`, which is the whole 53-turn
+                // stall in one line: CIVVIS chose offset (15,11) — plains hills, worth
+                // 99.6, with a MINE at (14,11) and a FARM at (16,11) beside it, all
+                // three exported as `o: 6`. That is a city-state's improved land. The
+                // settler walked to the border, could not take the last step, and
+                // bounced between two tiles for the rest of the game while the empire
+                // held one city.
+                //
+                // Recorded through `blocked_city_sites`, the channel the host's own
+                // `found` refusals already use, rather than as a new kind of fact: it
+                // means the same thing — ground this seat cannot found on — and it is
+                // read by the same planner. We do not invent a city to own it, because
+                // we do not know where their city is and a phantom owner is worse than
+                // a known prohibition.
+                blocked.insert(pos);
                 continue;
             };
             // The city that would work it: the owner's nearest. Civ 6 records only
@@ -1728,6 +1752,7 @@ fn apply_territory(
             }
         }
     }
+    game.blocked_city_sites.extend(blocked);
     for (pos, owner) in assign {
         let previous = game.map.tiles.get(&pos).and_then(|tile| tile.owner_city);
         if previous == owner {

@@ -9260,7 +9260,8 @@ impl AdvancedAi {
         let distance_penalty = 0.9;
         for pos in g.wdisk(from, radius) {
             let Some(tile) = g.map.get(pos) else { continue };
-            if g.rules.is_water(tile)
+            if g.blocked_city_sites.contains(&pos)
+                || g.rules.is_water(tile)
                 || !g.rules.is_passable(tile)
                 || g.cities.values().any(|c| g.wdist(c.pos, pos) < 4)
                 || tile
