@@ -22,7 +22,7 @@ Four root causes generate all six defects.
 | # | root cause | defects it produced |
 |---|---|---|
 | **R1** | **Agent identity is a label, and the label is maintained separately from the thing it labels.** | confounded controls; inverted self-comparison guard |
-| **R2** | **Degradation is silent and permitted by default**: constructing an agent that cannot do what its name promises *succeeds*. | three controllers that never run; both R1 defects were only reachable through a degraded path |
+| **R2** | **Degradation is silent and permitted by default**: constructing an agent that cannot do what its name promises *succeeds*. | three controllers that never run; and the guard inversion, which is only reachable on a degraded name |
 | **R3** | **A decision procedure is reused as an estimator.** A promotion gate is tuned to accept or reject; its point estimate is then quoted as the size of the effect. | every published effect size is selected on having passed, so every one is biased upward |
 | **R4** | **Derived display artifacts are bound neither to their source nor to their semantics.** | the README ranking table |
 
@@ -67,7 +67,9 @@ Two consequences, both reproduced in the audit:
 - **Controls are not matched.** 38 of the 78 arms are built from
   `load_champion("evolved")` while the habitual control `advanced` is stock
   `AdvancedAi::new()`. `X vs advanced` therefore measures X *plus* a genome
-  worth +61 on `AdvancedAi` and +137 on `BasicAi`.
+  worth +61 on `AdvancedAi` and +137 on `BasicAi`. Note this half is
+  independent of degradation — `production` loads every artifact it wants and
+  is still confounded, because the *control* is the arm carrying less.
 
 The cost is not hypothetical. `ProductionSearchAi` is a **retained negative
 result**; against `advanced` it reads +76 and **passes the promotion gate**,
