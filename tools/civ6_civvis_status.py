@@ -165,7 +165,21 @@ def main() -> int:
         else:
             named[f"{blocker}={answer[:28]}"] += 1
     if named:
-        print(f"  ⚠ DECISIONS MADE BY THE HARNESS, NOT CIVVIS: {sum(named.values())}")
+        # ⚠ THIS NUMBER LOOKS WORSE THAN IT IS, AND THE FIRST READING OF IT WAS WRONG.
+        # Measured on run civvis-20260731T040858Z: 25 research answers and 22 civic
+        # answers, and EVERY ONE of them lands within a turn of a tech or civic
+        # completing (25/25, 22/22). Civilization VI asks for the next item the instant
+        # one finishes, and CIVVIS has already spoken for that turn — so the heuristic
+        # is filling the completion frame, not choosing the plan.
+        #
+        # What actually gets researched is CIVVIS's: of the 26 techs that completed in
+        # that run, only 2 were the tech the harness had last asked for. CIVVIS's own
+        # research order lands every turn and replaces the stopgap. The real cost is
+        # about one turn of the wrong research per completion, plus progress spread
+        # across two techs — worth closing, not worth calling the plan heuristic.
+        print(f"  harness answers on a CIVVIS turn: {sum(named.values())} "
+              f"(expect ~1 per tech/civic COMPLETION — the game asks for the next "
+              f"item mid-turn, after CIVVIS has spoken)")
         for label, count in named.most_common(6):
             print(f"      {count}x {label}")
     else:

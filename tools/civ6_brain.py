@@ -171,14 +171,23 @@ class Decider:
         self.proc: subprocess.Popen | None = None
 
     def start(self) -> None:
+        # ★★★★ KEEP CIVVIS'S REASONING. This used to send the decider's stderr to
+        # DEVNULL, so a live run recorded WHAT was ordered and never WHY — and the two
+        # questions this project keeps having to answer are "did it choose that" and
+        # "did it ever reach the question", which only the journal separates. Every
+        # diagnosis tonight came from replaying turns with `--explain` after the fact;
+        # this makes the same account available for the run as it happens, including
+        # the decider's own crash output, which DEVNULL was also swallowing.
+        why = (self.run_dir / "why.log").open("a", buffering=1)
         self.proc = subprocess.Popen(
             [str(self.binary), "--mirror", str(self.run_dir), "--serve",
-             "--fresh-board", "--victory", self.victory]
+             "--fresh-board", "--explain", "--victory", self.victory]
             + (["--war-from-plan"] if self.war_from_plan else []),
             stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL, text=True, bufsize=1,
+            stderr=why, text=True, bufsize=1,
         )
-        print("[brain] decider server up (fresh board, persistent agent)", flush=True)
+        print("[brain] decider server up (fresh board, persistent agent, explaining "
+              f"into {self.run_dir / 'why.log'})", flush=True)
 
     def ask(self, turn: int) -> tuple[list[tuple], str]:
         if self.proc is None or self.proc.poll() is not None:
