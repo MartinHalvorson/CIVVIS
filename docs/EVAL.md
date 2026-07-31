@@ -6900,3 +6900,60 @@ than losing the compact edge outright.
 Both readings are `INCONCLUSIVE` at forty maps. The nomination therefore goes
 to the unmodified `ai_eval --matrix --pairs 120` at seed 67,000,000, and only
 that decides. **Nothing here proposes replacing `data/evolved/best.json`.**
+
+### The gate the nomination went to, and what it returned
+
+```sh
+ai_eval advanced_evolved advanced --matrix --pairs 120 --jobs 5 --seed 67000000
+```
+
+fixed before the screen above was read, run from a directory staging `r3`.
+
+| profile | paired score | Elo-equivalent | directions | sign p | anytime-valid | verdict |
+|---|---|---:|---:|---:|---|---|
+| compact standard | 55.2% (95% Wilson 46.3–63.8) | +36 | 42–18 | **0.0027** | e=6.62, not crossed | INCONCLUSIVE → ACCEPT |
+| deployment online | 56.9% (95% Wilson 47.9–65.4) | +48 | 44–17 | **0.0007** | **e=485.8, p≤0.0021, crossed at map 27** | INCONCLUSIVE → REJECT |
+
+`multi-profile promotion gate: RETAIN advanced — advanced_evolved cleared 1/2
+required profiles.` **`r3` is not promoted, and the shipped genome is
+unchanged.**
+
+The failure is narrow and worth naming precisely: `r3` is positive on **both**
+profiles at 120 maps each with a **significant direction on both**, and misses
+on one quantity — the fixed-*n* Wilson lower bound at deployment, 47.9%, three
+points short of parity. For contrast the shipped champion's own 120-map matrix
+in the table above reads +51 compact and **−30** deployment.
+
+That is the situation `docs/SUPERHUMAN.md` records for warm branches — *"Gate
+INCONCLUSIVE **only** on the fixed-n Wilson bound (48.3%); 54.6% needs ~450 maps
+to clear it arithmetically"* — which passed once the maps were bought. An
+extension of the same prefix to 300 maps is pre-registered at
+`/Users/martin/civvis-r3-extension-preregistration.md` under the **unmodified**
+rule, with the limits stated there: no third extension, no new seed, no pooling,
+and a PASS there would be a **discovery estimate biased upward** by having been
+commissioned after an inconclusive read — the verdict would travel, the number
+would not.
+
+### `g44-41` does not carry either, and it is a clean null
+
+The one league genome with a well-powered positive deployment reading
+(`docs/LIVE_GENOME_TRANSFER.md`, 51.9% at 8p 84×54) was measured on this
+profile at seed 68,000,000, pre-registered to be nominated only if it beat the
+deck-matched baseline:
+
+| | paired score | Elo-equivalent | games | directions | sign p |
+|---|---|---:|---:|---:|---:|
+| `r0` baseline (stock genes, deck only) | 53.1% | +22 | — | — | — |
+| `g44-41` | **53.1%** | **+22** | 25–20 | 12–10 | 0.8318 |
+
+It lands on the baseline to the digit and its directions are noise. **Not
+nominated.** Read with the partition, that is coherent rather than surprising:
+`g44-41`'s yield block already sits at or near stock, so it does not carry the
+champion's deficit — and its other genes buy nothing over a stock genome
+holding the same policy deck. Whatever `r3`'s twenty-nine are doing, this
+genome's are not doing it.
+
+⚠ Its deployment maps are the `r3` gate's first forty deployment maps — the
+matrix stride puts that gate's deployment child on seed 68,000,000 — so the two
+are **paired on shared terrain**, not independent, and neither replicates the
+other.
