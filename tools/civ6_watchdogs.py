@@ -124,6 +124,62 @@ def dropped_units(run: Path) -> dict:
     }
 
 
+def world_growth(run: Path) -> dict:
+    """How many plots the seat has revealed, turn by turn, and how long it stalls.
+
+    ★★★★★ A FLAT `revealed` LINE IS THE WHOLE DOMINATION CHAIN FAILING AT ITS FIRST
+    LINK, and nothing else in this project's reporting showed it. On
+    `civvis-20260731T0*` the count read **383 at turn 150 and still 383 at turn 180**:
+    the mirror held 142 tiles of land ringed by 241 of water and nothing beyond, so
+    there was nowhere to explore to, `met` stayed empty, the campaign never got a city
+    objective, and the army circled at home with nothing to march at.
+
+    ⚠ Read this BESIDE `reach`. They fail together and they are not the same thing: an
+    army can range far across ground it has already seen while the world stops getting
+    bigger, and it can also sit at home on a map that is still opening up.
+
+    ⚠ Growth is measured over the WHOLE run rather than the last few turns. Revealing
+    slows honestly as a continent fills in, so a short window reads red on a healthy
+    late game; the longest stall is what distinguishes "finished exploring" from
+    "sealed in".
+    """
+    notes = run / "civvis_notes.jsonl"
+    if not notes.exists():
+        return {"checked": False}
+    seen: dict[int, int] = {}
+    for line in notes.read_text(errors="replace").splitlines():
+        try:
+            note = json.loads(line)
+        except ValueError:
+            continue
+        found = re.search(r"revealed=(\d+)", note.get("note", ""))
+        turn = note.get("turn")
+        if found and isinstance(turn, int):
+            seen[turn] = int(found.group(1))
+    if not seen:
+        return {"checked": False}
+
+    turns = sorted(seen)
+    first, last = seen[turns[0]], seen[turns[-1]]
+    # The longest run of consecutive recorded turns over which the count never rose.
+    worst, worst_from, run_start = 0, None, turns[0]
+    for previous, turn in zip(turns, turns[1:]):
+        if seen[turn] > seen[previous]:
+            run_start = turn
+            continue
+        if turn - run_start > worst:
+            worst, worst_from = turn - run_start, run_start
+    return {
+        "checked": True,
+        "first": first,
+        "last": last,
+        "grew_by": last - first,
+        "longest_stall_turns": worst,
+        "stall_from_turn": worst_from,
+        "last_turn": turns[-1],
+    }
+
+
 def idle_stack(events: list[dict], frozen_turns: int = 20) -> dict:
     """Unit-turns spent motionless on our own city centres.
 
@@ -487,6 +543,19 @@ def verdicts(report: dict, stuck_max: float, agree_min: float) -> list[str]:
             f"cities was {reach['furthest_ever']} tiles, at turn "
             f"{reach['furthest_ever_turn']}. Nothing went looking for anybody — this is "
             f"what makes `met` stall and domination unreachable.")
+    world = report.get("world") or {}
+    # 30 turns without one new plot is not a continent filling in, it is a wall. The
+    # gate is late enough that a young run cannot trip it, for the same reason `reach`
+    # waits for turn 60: a detector that cries wolf is one people learn to scroll past.
+    if (world.get("checked")
+            and (world.get("last_turn") or 0) >= 60
+            and (world.get("longest_stall_turns") or 0) >= 30):
+        out.append(
+            f"THE WORLD STOPPED GETTING BIGGER: `revealed` did not rise for "
+            f"{world['longest_stall_turns']} turns from t{world['stall_from_turn']} "
+            f"(ended at {world['last']} plots). Nowhere to explore to means `met` "
+            f"stalls, the campaign never gets a city objective, and the army has "
+            f"nothing to march at — read this beside `reach`.")
     if idle.get("oscillating_count"):
         out.append(
             f"UNITS GOING IN CIRCLES: {idle['oscillating_count']} — "
@@ -557,6 +626,7 @@ def main() -> int:
             # run was still playing can be told apart from the final one.
             "events_bytes": (run / "events.jsonl").stat().st_size,
             "idle_stack": idle_stack(events, args.frozen_turns),
+            "world": world_growth(run),
         }
         if not args.no_mirror:
             report["mirror"] = mirror_agreement(run, events, Path(args.orders_bin))
@@ -571,6 +641,11 @@ def main() -> int:
               f"(at t{reach.get('furthest_ever_turn')}); at the last turn "
               f"{reach.get('furthest')} furthest / {reach.get('mean')} mean "
               f"over {reach.get('units')} units")
+        world = report.get("world") or {}
+        if world.get("checked"):
+            print(f"  world: revealed {world['first']} → {world['last']} plots "
+                  f"(+{world['grew_by']}); longest stall "
+                  f"{world['longest_stall_turns']} turns from t{world['stall_from_turn']}")
         print(f"  idle: stuck {idle['stuck_unit_turns']}/{idle['unit_turns']} unit-turns"
               f" ({idle['stuck_fraction']})  surplus-on-centres "
               f"{idle['surplus_on_centres_unit_turns']}  worst stack {idle['worst_stack']}"

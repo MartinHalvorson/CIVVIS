@@ -551,8 +551,30 @@ pub fn rebuild_game(snapshot: &Snapshot, players: usize, seed: u64) -> crate::ga
     let vocab = Vocabulary::embedded();
     let ocean = Name::new("ocean");
 
+    // ⚠⚠ A RECONSTRUCTION IS NOT A GENERATED WORLD. `Game::new` lays down a real
+    // random map, and `apply_terrain` stamps ocean only where nothing is known — with
+    // one exception, that it must not revert ground the frontier painted. It cannot
+    // tell frontier paint from generator output, both being plains, so it KEPT every
+    // unrevealed tile the generator happened to make plains.
+    //
+    // Measured on a 60x38 rebuild revealing a 5x5 box: **416 tiles of generated land
+    // survived** as ground the seat never saw and the frontier never painted. Nothing
+    // showed it, because `--dump-mirror` prints only revealed plots. Scattered across
+    // the map and unreachable across water, they are exactly the "unexplored
+    // traversable tile" that `has_exploration_target` answers yes to and a land unit
+    // then circles in a three-tile footprint failing to reach.
+    //
+    // Wiping to ocean here makes the frontier the ONLY source of invented land, which
+    // is what every comment in this file already assumes.
+    for tile in game.map.tiles.values_mut() {
+        tile.terrain = ocean;
+        tile.hills = false;
+        tile.feature = None;
+        tile.resource = None;
+    }
+
     apply_terrain(&mut game, snapshot);
-    let _ = (ocean, vocab);
+    let _ = vocab;
     game
 }
 
@@ -1220,24 +1242,30 @@ pub(crate) fn grow_frontier(
     // 25 -> 109 across 64 turns, `met = 1`, and **zero** rival cities ever seen —
     // so the army had nothing to attack and domination was unreachable. The
     // heuristic path, which hands scouts to AUTOMATE_EXPLORE, had 468 by t190.
-    let mut land: std::collections::BTreeSet<crate::Pos> = std::collections::BTreeSet::new();
+    //
+    // ⚠⚠ AND THE SEED IS EVERYTHING REVEALED, NOT EVERYTHING REVEALED THAT IS LAND.
+    // Seeding from revealed LAND was a guarantee that the ring "cannot invent a
+    // continent, because the far unknown stays sea" — and that guarantee is exactly
+    // what seals a coastal empire inside its own coastline. Measured on
+    // civvis-20260731T0*: a 60x38 world, 2280 plots, of which the mirror held 142
+    // tiles of land ringed by 241 of water and NOTHING else. Every neighbour of the
+    // land edge was already-revealed coast, so the first ring was blocked and
+    // `--frontier 6` changed nothing. `revealed` read 383 at turn 150 and 383 at
+    // turn 180, `met` stayed 0, so the campaign never got a city objective and
+    // domination was unreachable at its first link.
+    //
+    // The unknown beyond a shore is not ocean; it is unknown, and answering "ocean"
+    // is as much a claim as answering "land". The prior belongs at the true boundary
+    // of what the seat knows, wherever that boundary happens to fall.
+    let mut known: std::collections::BTreeSet<crate::Pos> = std::collections::BTreeSet::new();
     for y in 0..height {
         for x in 0..width {
-            if !snapshot.is_revealed((x, y)) {
-                continue;
-            }
-            let pos = crate::hex::offset_to_axial(x, y);
-            if game
-                .map
-                .get(pos)
-                .map(|tile| !game.rules.is_water(tile))
-                .unwrap_or(false)
-            {
-                land.insert(pos);
+            if snapshot.is_revealed((x, y)) {
+                known.insert(crate::hex::offset_to_axial(x, y));
             }
         }
     }
-    let mut edge: Vec<crate::Pos> = land.iter().copied().collect();
+    let mut edge: Vec<crate::Pos> = known.iter().copied().collect();
     for _ in 0..depth {
         let mut next_edge: Vec<crate::Pos> = Vec::new();
         for pos in &edge {
@@ -1248,8 +1276,10 @@ pub(crate) fn grow_frontier(
                 }
                 // Never overwrite ground the seat has actually seen: a coast we
                 // scouted must stay coast, or this would invent land over water
-                // we know about.
-                if snapshot.is_revealed((nx, ny)) || land.contains(&neighbour) {
+                // we know about. THIS is the guarantee that matters, and it is
+                // untouched — the change above widens where the ring may START,
+                // never what it may overwrite.
+                if snapshot.is_revealed((nx, ny)) || known.contains(&neighbour) {
                     continue;
                 }
                 if let Some(tile) = game.map.tiles.get_mut(&neighbour) {
@@ -1258,7 +1288,7 @@ pub(crate) fn grow_frontier(
                     tile.feature = None;
                     tile.resource = None;
                 }
-                land.insert(neighbour);
+                known.insert(neighbour);
                 next_edge.push(neighbour);
             }
         }
@@ -1517,13 +1547,18 @@ pub fn rebuild_from_state(
     // Measured on run bisect1-114111Z: `desired_cities = 3`, and at turn 34 the empire
     // was still ONE city with 33 production orders, every one of them a Warrior.
     //
-    // One ring of neutral land at the edge of what we have seen is the minimum that
+    // A ring of neutral land at the edge of what we have seen is the minimum that
     // lets expansion and exploration aim OUTWARD, and it is what a human knows: the
-    // ground past your border is probably ground. It stays one ring — the far unknown
-    // is still ocean — so this cannot invent a continent, and each ring becomes real
-    // terrain as it is revealed. An order onto ground that turns out to be sea is
-    // refused by Civilization VI and counted as a refusal, so the failure mode is a
-    // wasted order rather than a plan built on a phantom.
+    // ground past your border is probably ground. Each ring becomes real terrain as it
+    // is revealed. An order onto ground that turns out to be sea is refused by
+    // Civilization VI and counted as a refusal, so the failure mode is a wasted order
+    // rather than a plan built on a phantom.
+    //
+    // ⚠ The ring grows from the edge of everything REVEALED, not from revealed land.
+    // Seeding from land was meant to guarantee "the far unknown stays ocean", and that
+    // guarantee is what sealed a coastal empire inside its own coastline — see
+    // `grow_frontier`. What it must never do is overwrite ground the seat has actually
+    // seen, and that is still true.
     grow_frontier(&mut game, snapshot, frontier_depth);
 
     // ★★★★ TELL CIVVIS WHAT TURN IT IS. `Game::new` starts at the beginning, and the
@@ -2371,6 +2406,132 @@ impl LiveMirror {
 }
 
 #[cfg(test)]
+mod frontier_tests {
+    use super::*;
+
+    /// A seat that has scouted its own coastline, on a much larger world.
+    ///
+    /// The revealed box is `5x5` at (10..15, 10..15): a `3x3` core of land ringed by
+    /// the water the seat has actually seen. This is the shape every coastal start
+    /// takes, and it is the shape that sealed the mirror at 142 land tiles.
+    pub(super) fn island_snapshot() -> Snapshot {
+        let mut plots = Vec::new();
+        for y in 10..15 {
+            for x in 10..15 {
+                let land = (11..14).contains(&x) && (11..14).contains(&y);
+                plots.push(Plot {
+                    x,
+                    y,
+                    t: Some(if land { "TERRAIN_PLAINS" } else { "TERRAIN_OCEAN" }.into()),
+                    f: None,
+                    r: None,
+                    o: -1,
+                    w: !land,
+                    i: false,
+                    fw: false,
+                    im: None,
+                });
+            }
+        }
+        Snapshot::from_chunks(&[TilesChunk {
+            turn: 150,
+            width: 60,
+            height: 38,
+            chunk: 0,
+            plots,
+        }])
+    }
+
+    fn land_tiles(game: &crate::game::Game) -> usize {
+        game.map
+            .tiles
+            .values()
+            .filter(|tile| !game.rules.is_water(tile))
+            .count()
+    }
+
+    /// ⚠ THE REGRESSION: seeded from revealed LAND, every neighbour of the land edge
+    /// is already-revealed coast, so the first ring is blocked and the world ends at
+    /// the shore. `met` stays 0 and domination is unreachable at its first link.
+    #[test]
+    fn a_coastal_seat_is_not_sealed_inside_its_own_coastline() {
+        let snapshot = island_snapshot();
+        let mut game = rebuild_game(&snapshot, 2, 7);
+        let before = land_tiles(&game);
+        assert_eq!(before, 9, "the seat starts knowing a 3x3 island");
+
+        grow_frontier(&mut game, &snapshot, 1);
+
+        assert!(
+            land_tiles(&game) > before,
+            "the frontier must cross the seat's own coast; it painted nothing, so \
+             there is nowhere to explore to and `revealed` goes flat"
+        );
+    }
+
+    /// The guarantee that must survive the fix: ground the seat has SEEN is truth.
+    #[test]
+    fn the_frontier_never_overwrites_water_the_seat_has_scouted() {
+        let snapshot = island_snapshot();
+        let mut game = rebuild_game(&snapshot, 2, 7);
+        grow_frontier(&mut game, &snapshot, 3);
+
+        for y in 10..15 {
+            for x in 10..15 {
+                let revealed_water = !((11..14).contains(&x) && (11..14).contains(&y));
+                let pos = crate::hex::offset_to_axial(x, y);
+                let tile = game.map.get(pos).expect("revealed plot is on the map");
+                assert_eq!(
+                    game.rules.is_water(tile),
+                    revealed_water,
+                    "the seat scouted ({x},{y}); the frontier must not rewrite it"
+                );
+            }
+        }
+    }
+
+    /// Depth still means "rings beyond what we have seen", measured from the coast.
+    #[test]
+    fn deeper_frontiers_reach_further_out() {
+        let snapshot = island_snapshot();
+        let mut shallow = rebuild_game(&snapshot, 2, 7);
+        let mut deep = rebuild_game(&snapshot, 2, 7);
+
+        grow_frontier(&mut shallow, &snapshot, 1);
+        grow_frontier(&mut deep, &snapshot, 3);
+
+        assert!(
+            land_tiles(&deep) > land_tiles(&shallow),
+            "depth 3 must reach past depth 1"
+        );
+    }
+
+    /// ⚠ The reconstruction must contain no land the seat has not seen and the
+    /// frontier has not painted. 416 tiles of `Game::new`'s generated map survived
+    /// here, invisible because `--dump-mirror` prints only revealed plots.
+    #[test]
+    fn a_rebuild_invents_no_land_of_its_own() {
+        let snapshot = island_snapshot();
+        let game = rebuild_game(&snapshot, 2, 7);
+        assert_eq!(
+            land_tiles(&game),
+            9,
+            "only the 3x3 the seat actually revealed may be land before any frontier"
+        );
+    }
+
+    /// Depth 0 is still "do nothing", so the knob can be turned off.
+    #[test]
+    fn depth_zero_paints_nothing() {
+        let snapshot = island_snapshot();
+        let mut game = rebuild_game(&snapshot, 2, 7);
+        let before = land_tiles(&game);
+        grow_frontier(&mut game, &snapshot, 0);
+        assert_eq!(land_tiles(&game), before);
+    }
+}
+
+#[cfg(test)]
 mod host_fact_tests {
     use super::*;
 
@@ -2404,3 +2565,4 @@ mod host_fact_tests {
         assert!(civvis_production_item(&rules, Some("DISTRICT_CAMPUS")).is_none());
     }
 }
+
